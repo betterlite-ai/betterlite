@@ -3,6 +3,8 @@
 use std::collections::VecDeque;
 use std::io;
 
+use rstest::rstest;
+
 use crate::cli::Failure;
 use crate::cli::tests::support::{Captured, FakeEnvironment, FakeVault, session};
 use crate::commands_listing::show_commands;
@@ -91,16 +93,16 @@ fn clearing_the_screen_only_writes_to_a_terminal() {
     assert_eq!(String::from_utf8(written).unwrap(), "\x1b[2J\x1b[1;1H");
 }
 
-#[test]
-fn exit_and_quit_both_end_the_session() {
-    for word in ["exit", "quit"] {
-        let outcome = run_shell(&[word]);
-        outcome.result.unwrap();
-        assert!(
-            outcome.stdout.trim_end().ends_with("Goodbye!"),
-            "{word} must say goodbye"
-        );
-    }
+#[rstest]
+#[case::exit("exit")]
+#[case::quit("quit")]
+fn exit_and_quit_both_end_the_session(#[case] word: &str) {
+    let outcome = run_shell(&[word]);
+    outcome.result.unwrap();
+    assert!(
+        outcome.stdout.trim_end().ends_with("Goodbye!"),
+        "{word} must say goodbye"
+    );
 }
 
 #[test]

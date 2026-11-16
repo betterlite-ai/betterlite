@@ -2,14 +2,7 @@ use std::io::{self, Write};
 use std::sync::{Arc, Mutex, PoisonError};
 
 #[derive(Clone)]
-pub(crate) struct Channel(Arc<Mutex<Box<dyn Write + Send>>>);
-
-impl Channel {
-    #[must_use]
-    pub(crate) fn new(sink: Box<dyn Write + Send>) -> Self {
-        Self(Arc::new(Mutex::new(sink)))
-    }
-}
+pub(crate) struct Channel(pub(crate) Arc<Mutex<Box<dyn Write + Send>>>);
 
 impl Write for Channel {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -31,10 +24,10 @@ pub(crate) struct Streams {
 
 impl Streams {
     #[must_use]
-    pub(crate) fn process() -> Self {
+    pub(crate) fn new(stdout: Box<dyn Write + Send>, stderr: Box<dyn Write + Send>) -> Self {
         Self {
-            stdout: Channel::new(Box::new(io::stdout())),
-            stderr: Channel::new(Box::new(io::stderr())),
+            stdout: Channel(Arc::new(Mutex::new(stdout))),
+            stderr: Channel(Arc::new(Mutex::new(stderr))),
         }
     }
 }

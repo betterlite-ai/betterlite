@@ -1,5 +1,9 @@
+use rstest::rstest;
+
 use crate::cli::root::root_command;
 use crate::cli::tests::support::FakeEnvironment;
+
+const REMAINING_AGENT_ARGV: [&[&str]; 2] = [&["opencode"], &["pi"]];
 
 const MINIMAL_ARGV: [&[&str]; 26] = [
     &["login"],
@@ -30,36 +34,32 @@ const MINIMAL_ARGV: [&[&str]; 26] = [
     &["codex"],
 ];
 
-#[test]
-fn every_family_command_parses_a_minimal_argv() {
+#[rstest]
+fn every_family_command_parses_a_minimal_argv(#[values(MINIMAL_ARGV)] argv: &[&str]) {
     let environment = FakeEnvironment::default();
-    for argv in MINIMAL_ARGV {
-        let mut full: Vec<&str> = vec!["lite"];
-        full.extend_from_slice(argv);
-        let matches = root_command(&environment)
-            .try_get_matches_from(full)
-            .unwrap_or_else(|error| panic!("{argv:?} must parse: {error}"));
-        let (name, _sub) = matches
-            .subcommand()
-            .unwrap_or_else(|| panic!("{argv:?} must reach a subcommand"));
-        assert_eq!(
-            name, argv[0],
-            "the parsed subcommand must be the one requested"
-        );
-    }
+    let mut full: Vec<&str> = vec!["lite"];
+    full.extend_from_slice(argv);
+    let matches = root_command(&environment)
+        .try_get_matches_from(full)
+        .unwrap_or_else(|error| panic!("{argv:?} must parse: {error}"));
+    let (name, _sub) = matches
+        .subcommand()
+        .unwrap_or_else(|| panic!("{argv:?} must reach a subcommand"));
+    assert_eq!(
+        name, argv[0],
+        "the parsed subcommand must be the one requested"
+    );
 }
 
-#[test]
-fn every_remaining_agent_parses_a_minimal_argv() {
+#[rstest]
+fn every_remaining_agent_parses_a_minimal_argv(#[values(REMAINING_AGENT_ARGV)] argv: &[&str]) {
     let environment = FakeEnvironment::default();
-    for argv in [&["opencode"][..], &["pi"][..]] {
-        let mut full: Vec<&str> = vec!["lite"];
-        full.extend_from_slice(argv);
-        let matches = root_command(&environment)
-            .try_get_matches_from(full)
-            .unwrap_or_else(|error| panic!("{argv:?} must parse: {error}"));
-        assert!(matches.subcommand().is_some());
-    }
+    let mut full: Vec<&str> = vec!["lite"];
+    full.extend_from_slice(argv);
+    let matches = root_command(&environment)
+        .try_get_matches_from(full)
+        .unwrap_or_else(|error| panic!("{argv:?} must parse: {error}"));
+    assert!(matches.subcommand().is_some());
 }
 
 #[test]

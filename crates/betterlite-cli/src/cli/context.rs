@@ -66,11 +66,13 @@ pub(crate) fn resolve_for_run(mut request: Request<'_>) -> Result<CliContext, Fa
         .is_some_and(|name| SETUP_COMMANDS.contains(&name));
     let (chosen, stored, provided) =
         base_url_choice(request.environment, &request.globals, &mut request.stderr);
-    let explicit_api_key = request
-        .globals
-        .api_key
-        .take()
-        .or_else(|| env_value(request.environment, API_KEY_ENV).map(SecretString::from));
+    let explicit_api_key = request.globals.api_key.take().or_else(|| {
+        request
+            .environment
+            .lookup(API_KEY_ENV)
+            .filter(|value| !value.is_empty())
+            .map(SecretString::from)
+    });
     let from_token_file = explicit_api_key.is_none() && !setup;
     let context = CliContext {
         base_url: normalize_base_url(&chosen).map_err(Failure::from)?,
@@ -93,10 +95,11 @@ fn base_url_choice(
         .get("base_url")
         .cloned()
         .filter(|value| !value.is_empty());
-    let provided = globals
-        .base_url
-        .clone()
-        .or_else(|| env_value(environment, BASE_URL_ENV));
+    let provided = globals.base_url.clone().or_else(|| {
+        environment
+            .lookup(BASE_URL_ENV)
+            .filter(|value| !value.is_empty())
+    });
     let chosen = provided
         .clone()
         .or_else(|| stored.clone())
@@ -146,8 +149,4 @@ fn stored_api_key(request: StoredKey<'_>) -> Result<Option<SecretString>, Failur
         warn: request.warn,
         token_path: request.token_path,
     })))
-}
-
-fn env_value(environment: &dyn EnvironmentLookup, name: &str) -> Option<String> {
-    environment.lookup(name).filter(|value| !value.is_empty())
 }

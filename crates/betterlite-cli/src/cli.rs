@@ -61,7 +61,7 @@ pub fn run(arguments: &[String]) -> u8 {
         variables: variables.clone(),
         home: home_dir(),
     };
-    let mut streams = Streams::process();
+    let mut streams = Streams::new(Box::new(io::stdout()), Box::new(io::stderr()));
     let mut vault = match KeyringVault::new(&environment) {
         Ok(vault) => vault,
         Err(error) => {

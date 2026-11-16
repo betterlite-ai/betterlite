@@ -1,29 +1,6 @@
-use crate::cli::tests::support::{FakeEnvironment, Harness};
+use rstest::rstest;
 
-const FAMILY_COMMANDS: [&str; 22] = [
-    "auth",
-    "autoroute",
-    "chat",
-    "config",
-    "configure",
-    "credentials",
-    "debug",
-    "down",
-    "encryption",
-    "http",
-    "keys",
-    "login",
-    "logout",
-    "model-groups",
-    "models",
-    "reconfigure",
-    "teams",
-    "unconfigure",
-    "up",
-    "users",
-    "version",
-    "whoami",
-];
+use crate::cli::tests::support::{FAMILY_COMMANDS, FakeEnvironment, Harness};
 
 pub(super) fn listed_commands(help: &str) -> Vec<String> {
     let mut names = Vec::new();
@@ -54,18 +31,16 @@ fn help_output() -> String {
     harness.stdout()
 }
 
-#[test]
-fn help_lists_every_family_command_alphabetically() {
+#[rstest]
+fn help_lists_every_family_command_alphabetically(#[values(FAMILY_COMMANDS)] command: &str) {
     let names = listed_commands(&help_output());
     let mut sorted = names.clone();
     sorted.sort();
     assert_eq!(names, sorted, "the listing must be alphabetical");
-    for command in FAMILY_COMMANDS {
-        assert!(
-            names.iter().any(|name| name == command),
-            "{command} is missing"
-        );
-    }
+    assert!(
+        names.iter().any(|name| name == command),
+        "{command} is missing"
+    );
 }
 
 #[test]

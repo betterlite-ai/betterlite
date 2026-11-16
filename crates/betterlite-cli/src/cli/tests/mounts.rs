@@ -1,42 +1,17 @@
+use rstest::rstest;
+
 use crate::agent_launch::KNOWN_AGENTS;
 use crate::cli::root::root_command;
-use crate::cli::tests::support::FakeEnvironment;
+use crate::cli::tests::support::{FAMILY_COMMANDS, FakeEnvironment};
 
-const FAMILY_COMMANDS: [&str; 22] = [
-    "auth",
-    "autoroute",
-    "chat",
-    "config",
-    "configure",
-    "credentials",
-    "debug",
-    "down",
-    "encryption",
-    "http",
-    "keys",
-    "login",
-    "logout",
-    "model-groups",
-    "models",
-    "reconfigure",
-    "teams",
-    "unconfigure",
-    "up",
-    "users",
-    "version",
-    "whoami",
-];
-
-#[test]
-fn every_family_command_is_mounted() {
+#[rstest]
+fn every_family_command_is_mounted(#[values(FAMILY_COMMANDS)] command: &str) {
     let root = root_command(&FakeEnvironment::default());
     let names: Vec<&str> = root
         .get_subcommands()
         .map(|subcommand| subcommand.get_name())
         .collect();
-    for command in FAMILY_COMMANDS {
-        assert!(names.contains(&command), "{command} is not mounted");
-    }
+    assert!(names.contains(&command), "{command} is not mounted");
 }
 
 #[test]
@@ -46,9 +21,12 @@ fn every_known_agent_is_mounted() {
         .get_subcommands()
         .map(|subcommand| subcommand.get_name())
         .collect();
-    for (binary, _display, _profiles, _hidden) in KNOWN_AGENTS {
-        assert!(names.contains(&binary), "{binary} is not mounted");
-    }
+    let missing: Vec<&str> = KNOWN_AGENTS
+        .iter()
+        .map(|(binary, _display, _profiles, _hidden)| *binary)
+        .filter(|binary| !names.contains(binary))
+        .collect();
+    assert!(missing.is_empty(), "{missing:?} are not mounted");
 }
 
 #[test]

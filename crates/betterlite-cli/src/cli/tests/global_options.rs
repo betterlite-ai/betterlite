@@ -2,10 +2,11 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use rstest::rstest;
+
 use crate::cli::context::{self, GlobalArgs, Request};
 use crate::cli::session::CliClock;
-use crate::cli::streams::Channel;
-use crate::cli::tests::support::{Captured, FakeEnvironment, FakeVault};
+use crate::cli::tests::support::{Captured, FakeEnvironment, FakeVault, channel};
 
 const SETUP_COMMANDS: [&str; 3] = ["configure", "reconfigure", "unconfigure"];
 
@@ -36,7 +37,7 @@ fn resolve(
         vault: &mut vault,
         clock: Arc::new(CliClock),
         token_path: None,
-        stderr: Channel::new(Box::new(stderr)),
+        stderr: channel(Box::new(stderr)),
     })
     .unwrap()
 }
@@ -68,18 +69,16 @@ fn stored_base_url_is_explicit_for_a_normal_command() {
     assert!(context.base_url_explicit);
 }
 
-#[test]
-fn stored_base_url_is_implicit_inside_setup_commands() {
+#[rstest]
+fn stored_base_url_is_implicit_inside_setup_commands(#[values(SETUP_COMMANDS)] command: &str) {
     let home = tempfile::tempdir().unwrap();
     store_base_url(home.path(), "https://stored.example");
     let environment = FakeEnvironment::with_home(home.path().to_path_buf());
-    for command in SETUP_COMMANDS {
-        let context = resolve(&environment, None, Some(command));
-        assert!(
-            !context.base_url_explicit,
-            "{command} must not treat the stored URL as explicit"
-        );
-    }
+    let context = resolve(&environment, None, Some(command));
+    assert!(
+        !context.base_url_explicit,
+        "{command} must not treat the stored URL as explicit"
+    );
 }
 
 #[test]
@@ -98,15 +97,13 @@ fn normal_commands_read_the_token_file_when_no_key_is_given() {
     assert!(context.api_key_from_token_file);
 }
 
-#[test]
-fn setup_commands_never_read_the_token_file() {
-    for command in SETUP_COMMANDS {
-        let context = resolve(&FakeEnvironment::default(), None, Some(command));
-        assert!(
-            !context.api_key_from_token_file,
-            "{command} must not take its key from the token file"
-        );
-    }
+#[rstest]
+fn setup_commands_never_read_the_token_file(#[values(SETUP_COMMANDS)] command: &str) {
+    let context = resolve(&FakeEnvironment::default(), None, Some(command));
+    assert!(
+        !context.api_key_from_token_file,
+        "{command} must not take its key from the token file"
+    );
 }
 
 #[test]

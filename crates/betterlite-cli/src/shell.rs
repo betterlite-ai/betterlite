@@ -50,7 +50,7 @@ pub fn run(session: &mut Session<'_>, reader: &mut dyn LineReader) -> Result<(),
 }
 
 fn setup(session: &mut Session<'_>) -> Result<(), Failure> {
-    show_banner(session)?;
+    writeln!(session.streams.stdout, "\n{BANNER}\n")?;
     writeln!(
         session.streams.stdout,
         "Connected to betterlite server: {}\n",
@@ -58,10 +58,6 @@ fn setup(session: &mut Session<'_>) -> Result<(), Failure> {
     )?;
     show_commands(&mut session.streams.stdout, session.environment)?;
     Ok(())
-}
-
-fn show_banner(session: &mut Session<'_>) -> io::Result<()> {
-    writeln!(session.streams.stdout, "\n{BANNER}\n")
 }
 
 fn clear_screen(out: &mut dyn io::Write, terminal: bool) -> io::Result<()> {
@@ -84,7 +80,7 @@ fn special(session: &mut Session<'_>, line: &str) -> Result<Option<bool>, Failur
         }
         "clear" => {
             clear_screen(&mut session.streams.stdout, io::stdout().is_terminal())?;
-            show_banner(session)?;
+            writeln!(session.streams.stdout, "\n{BANNER}\n")?;
             show_commands(&mut session.streams.stdout, session.environment)?;
             Ok(Some(false))
         }

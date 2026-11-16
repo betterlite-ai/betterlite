@@ -16,6 +16,31 @@ use crate::keyring::{
     Erase, Read, SecretErase, SecretRead, SecretVault, SecretWrite, Write as VaultWrite,
 };
 
+pub(crate) const FAMILY_COMMANDS: [&str; 22] = [
+    "auth",
+    "autoroute",
+    "chat",
+    "config",
+    "configure",
+    "credentials",
+    "debug",
+    "down",
+    "encryption",
+    "http",
+    "keys",
+    "login",
+    "logout",
+    "model-groups",
+    "models",
+    "reconfigure",
+    "teams",
+    "unconfigure",
+    "up",
+    "users",
+    "version",
+    "whoami",
+];
+
 #[derive(Default)]
 pub(crate) struct FakeEnvironment {
     pub(crate) variables: BTreeMap<String, String>,
@@ -73,6 +98,10 @@ impl Captured {
     }
 }
 
+pub(crate) fn channel(sink: Box<dyn Write + Send>) -> Channel {
+    Channel(Arc::new(Mutex::new(sink)))
+}
+
 impl Write for Captured {
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
         match self.0.lock() {
@@ -102,10 +131,7 @@ impl Harness {
         Self {
             environment,
             vault: FakeVault,
-            streams: Streams {
-                stdout: Channel::new(Box::new(out.clone())),
-                stderr: Channel::new(Box::new(err.clone())),
-            },
+            streams: Streams::new(Box::new(out.clone()), Box::new(err.clone())),
             out,
             err,
         }
@@ -149,10 +175,7 @@ pub(crate) fn session<'session>(
         api_key_from_token_file: false,
     };
     let client = Arc::new(Client::new(&context, environment).unwrap());
-    let streams = Streams {
-        stdout: Channel::new(Box::new(out.clone())),
-        stderr: Channel::new(Box::new(err.clone())),
-    };
+    let streams = Streams::new(Box::new(out.clone()), Box::new(err.clone()));
     crate::cli::session::Session::new(crate::cli::session::SessionParts {
         context: &context,
         environment,

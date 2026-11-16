@@ -7,8 +7,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::cli::Failure;
 use crate::cli::context::{self, GlobalArgs, Request};
 use crate::cli::session::CliClock;
-use crate::cli::streams::Channel;
-use crate::cli::tests::support::{Captured, FakeEnvironment, FakeVault};
+use crate::cli::tests::support::{Captured, FakeEnvironment, FakeVault, channel};
 use crate::cli_context::CliContext;
 
 fn write_config(home: &Path, contents: &str) {
@@ -42,7 +41,7 @@ fn resolve(
         vault: &mut vault,
         clock: Arc::new(CliClock),
         token_path: None,
-        stderr: Channel::new(Box::new(stderr)),
+        stderr: channel(Box::new(stderr)),
     })
 }
 
