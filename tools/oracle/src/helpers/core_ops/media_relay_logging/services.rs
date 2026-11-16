@@ -23,6 +23,7 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::provider_model_sets::ProviderModelSets;
 use betterlite_models::tool_fees::prices::ToolPrices;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_provider::pricing::ProviderPricing;
 use betterlite_provider::pricing::grounding::{GroundingPricing, ProviderFormulas};
 use betterlite_provider::pricing::image::ProviderImagePricing;
@@ -31,8 +32,6 @@ use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
-
-use crate::helpers::HelperError;
 
 // The case's catalog stands in for litellm.model_cost for the Fal cost, where a raw lookup is the key and an effective one is provider-qualified.
 pub(super) struct CaseLookup {

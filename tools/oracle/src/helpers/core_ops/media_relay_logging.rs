@@ -11,13 +11,14 @@ use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingK
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use self::services::{Adjustments, fal_lookup, listen_outcome};
-use crate::helpers::{Helper, HelperError, HelperResult};
 
 mod services;
 
