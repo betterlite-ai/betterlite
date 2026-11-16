@@ -146,7 +146,7 @@ fn the_environment_is_never_decrypted() {
     let host = sealed(&cipher, "environment-host");
     let stored = stored_from_raw(&raw_settings("{}"), &cipher).unwrap();
     let current = effective_values(&stored, lookup(&[("REDIS_HOST", &host)]).as_ref());
-    assert_eq!(current.get("host"), Some(&Value::String(host.clone())));
+    assert_eq!(current.get("host"), Some(&Value::String(host)));
 }
 
 #[test]

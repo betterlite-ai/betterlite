@@ -8,7 +8,7 @@ use betterlite_server::cache_settings_read::view::effective_values;
 use serde::Deserialize;
 use serde_json::Value;
 
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]

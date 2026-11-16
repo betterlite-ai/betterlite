@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use betterlite_config::loader::startup::process_environment;
-use betterlite_redis::redis_connection_settings::environment::EnvironmentLookup;
+use betterlite_redis::redis_connection_settings::environment::EnvironmentLookup as _;
 use rstest::rstest;
 use serde_json::{Map, Value};
 
