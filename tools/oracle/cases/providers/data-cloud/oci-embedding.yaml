@@ -26,7 +26,7 @@ call:
         -----END PRIVATE KEY-----
     answer:
       status: 200
-      body: '{"embeddings":[[0.1,0.2]],"model_id":"cohere.embed-english-v3.0","model_version":"1.0"}'
+      body: '{"embeddings":[[0.1,0.2]],"modelId":"cohere.embed-english-v3.0","modelVersion":"1.0"}'
 env:
   OCI_REGION: us-ashburn-1
   OCI_USER: ocid1.user.oc1..oracle

@@ -7,9 +7,7 @@ from typing import Literal, NotRequired, TypedDict
 import httpx
 import litellm
 import openai
-from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
-from litellm.types.utils import ModelResponse
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
@@ -45,11 +43,6 @@ class Raised(BaseModel):
     status_code: int
 
 
-class EmbeddingShape(BaseModel):
-    model: str
-    data: list[JsonValue]
-
-
 class Message(TypedDict):
     role: Literal["user"]
     content: str
@@ -62,7 +55,7 @@ class Answer(TypedDict):
 
 class RequestRecord(TypedDict):
     url: str
-    headers: dict[str, JsonValue]
+    headers: dict[str, str]
     body: JsonValue
 
 
@@ -81,14 +74,6 @@ class Case(TypedDict):
     answer: NotRequired[Answer]
 
 
-def kept_view(
-    headers: dict[str, JsonValue], names: Iterable[str]
-) -> dict[str, JsonValue]:
-    return {
-        name: headers[name] for name in names if name in headers
-    }
-
-
 def parsed(content: bytes) -> JsonValue:
     if not content:
         return None
@@ -96,13 +81,13 @@ def parsed(content: bytes) -> JsonValue:
 
 
 class Recorder:
-    def __init__(self, answer: Answer, streaming: bool) -> None:
+    def __init__(self, answer: Answer, *, streaming: bool) -> None:
         self.answer = answer
         self.streaming = streaming
         self.requests: list[RequestRecord] = []
 
     def handle(self, request: httpx.Request) -> httpx.Response:
-        headers: dict[str, JsonValue] = {
+        headers = {
             name: request.headers[name]
             for name in RECORDED_HEADERS
             if name in request.headers
@@ -121,24 +106,25 @@ class Recorder:
             headers={"content-type": content_type},
         )
 
-    def request_view(self, names: Iterable[str], upstream: str) -> JsonValue:
+    def request_view(
+        self, names: Iterable[str], upstream: str, *, include_body: bool
+    ) -> JsonValue:
         if not self.requests:
             return None
         recorded = self.requests[0]
-        return {
-            "url": recorded["url"].replace(upstream, UPSTREAM),
-            "headers": kept_view(recorded["headers"], names),
+        recorded_headers = recorded["headers"]
+        headers: dict[str, JsonValue] = {
+            name: recorded_headers[name]
+            for name in names
+            if name in recorded_headers
         }
-
-    def embedding_view(self, names: Iterable[str], upstream: str) -> JsonValue:
-        if not self.requests:
-            return None
-        recorded = self.requests[0]
-        return {
+        view: dict[str, JsonValue] = {
             "url": recorded["url"].replace(upstream, UPSTREAM),
-            "headers": kept_view(recorded["headers"], names),
-            "body": recorded["body"],
+            "headers": headers,
         }
+        if include_body:
+            view["body"] = recorded["body"]
+        return view
 
 
 class TokenHandler(BaseHTTPRequestHandler):
@@ -164,41 +150,28 @@ def substitute_environment(upstream: str) -> None:
             os.environ[name] = value.replace(PLACEHOLDER, upstream)
 
 
-def call_provider(case: Case, client: HTTPHandler) -> JsonValue:
+def call_provider(case: Case, client: HTTPHandler) -> None:
     model = f"{case['provider']}/{case['model']}"
     api_base = case.get("api_base")
     api_key = case.get("api_key")
     if case["op"] == "embedding":
-        response = litellm.embedding(
+        litellm.embedding(
             model=model,
-            input=case["input"],
+            input=case.get("input"),
             api_base=api_base,
             api_key=api_key,
             extra_headers=case.get("headers"),
             client=client,
         )
-        shape = EmbeddingShape.model_validate(response, from_attributes=True)
-        return {"model": shape.model, "count": len(shape.data)}
-    completion = litellm.completion(
+        return
+    litellm.completion(
         model=model,
-        messages=case["messages"],
+        messages=case.get("messages"),
         api_base=api_base,
         api_key=api_key,
         stream=case.get("stream"),
         client=client,
     )
-    if case["op"] == "oci_stream":
-        match completion:
-            case ModelResponse():
-                return {"content": ""}
-            case CustomStreamWrapper():
-                text = ""
-                for chunk in completion:
-                    content = chunk.choices[0].delta.content
-                    if content is not None:
-                        text += content
-                return {"content": text}
-    return None
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
@@ -210,29 +183,21 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
     api_base = case.get("api_base")
     if api_base is not None:
         case["api_base"] = api_base.replace(PLACEHOLDER, upstream)
-    answer = case.get("answer")
-    if answer is None:
-        answer = {"status": 200, "body": ""}
-    recorder = Recorder(answer, case.get("stream") is True)
-    client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder.handle)))
+    answer: Answer = {"status": 200, "body": ""}
+    reported = case.get("answer")
+    if reported is not None:
+        answer = reported
+    recorder = Recorder(answer, streaming=case.get("stream") is True)
+    client = HTTPHandler(
+        client=httpx.Client(transport=httpx.MockTransport(recorder.handle))
+    )
     litellm.module_level_client = client
     error: JsonValue = None
-    reply: JsonValue = None
     try:
-        reply = call_provider(case, client)
+        call_provider(case, client)
     except openai.APIError as raised:
         status = Raised.model_validate(raised, from_attributes=True).status_code
         error = {"status": status}
     names = KEPT_HEADERS[case["provider"]]
-    if case["op"] == "chat":
-        return {
-            "request": recorder.request_view(names, upstream),
-            "error": error,
-        }
-    if case["op"] == "oci_stream":
-        return {
-            "request": recorder.request_view(names, upstream),
-            "reply": reply if error is None else None,
-            "error": error,
-        }
-    return {"request": recorder.embedding_view(names, upstream), "reply": reply, "error": error}
+    view = recorder.request_view(names, upstream, include_body=case["op"] == "embedding")
+    return {"request": view, "error": error}
