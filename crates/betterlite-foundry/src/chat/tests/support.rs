@@ -201,11 +201,7 @@ impl ReasoningCapabilities for CapabilityFixture {
         &mut self,
         request: &CapabilityRequest<'_>,
     ) -> impl Future<Output = bool> + Send {
-        let Some(Json::Bool(declared)) = self.field(request.model, "supports_response_schema")
-        else {
-            return ready(false);
-        };
-        ready(*declared)
+        self.supports_factory(request, "supports_response_schema")
     }
 
     fn catalogue_declares_default(&mut self) -> bool {

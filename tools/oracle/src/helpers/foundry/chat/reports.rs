@@ -147,7 +147,6 @@ pub(super) fn provider_report(installed: &Installed, call: &ProviderCall) -> Val
 
 // litellm.api_key, litellm.azure_key and the Azure key variables, through the production config section
 pub(super) fn auth_report(call: &AuthCall) -> Result<Value, Box<HelperError>> {
-    let argument = call.api_key.as_deref().map(SecretString::from);
     let params = call
         .litellm_params
         .get("api_key")
@@ -173,9 +172,9 @@ pub(super) fn auth_report(call: &AuthCall) -> Result<Value, Box<HelperError>> {
         azure_username: None,
         azure_password: None,
     };
-    let validated = validate_environment(EnvironmentRequest {
+    let Ok(headers) = validate_environment(EnvironmentRequest {
         headers: call.headers.clone(),
-        argument_key: argument.as_ref(),
+        argument_key: call.api_key.as_deref().map(SecretString::from).as_ref(),
         params_key: params.as_ref(),
         configured_key: configured.as_ref(),
         token: TokenSource {
@@ -185,8 +184,7 @@ pub(super) fn auth_report(call: &AuthCall) -> Result<Value, Box<HelperError>> {
             sources: &NoSources,
         },
         api_base: call.api_base.as_deref(),
-    });
-    let Ok(headers) = validated else {
+    }) else {
         return Ok(json!({"error": {"kind": "EnvironmentError"}}));
     };
     Ok(json!(headers))
