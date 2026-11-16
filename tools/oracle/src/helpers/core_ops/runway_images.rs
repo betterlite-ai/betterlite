@@ -21,6 +21,7 @@ use serde_json::json;
 
 use self::fakes::{Clock, EmptyLookup};
 use self::script::Script;
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MappingCall {
