@@ -109,6 +109,19 @@ fn a_missing_resolution_lets_the_size_infer_one(#[case] resolution: Option<Json>
 }
 
 #[test]
+fn an_absent_resolution_lets_a_recognized_size_infer_one() {
+    assert_eq!(mapped_resolution(None), Some(text("720p")));
+}
+
+#[test]
+fn an_empty_text_resolution_lets_the_size_infer_one() {
+    assert_eq!(
+        mapped_resolution(Some(Json::Text(String::new()))),
+        Some(text("720p"))
+    );
+}
+
+#[test]
 fn a_resolution_without_a_recognized_size_is_kept_as_given() {
     let mut input = map_input();
     input.resolution = Some(text(""));
@@ -408,6 +421,20 @@ fn the_parameter_model_rejects_a_field_of_another_type(
     assert_eq!(reported_expected, expected);
 }
 
+#[test]
+fn the_parameter_model_rejects_a_fractional_duration() {
+    let error = create(
+        mapped(None, object([("durationSeconds", fraction(8.5))])),
+        &RefusingMime,
+    )
+    .expect_err("a fractional duration is not an integer");
+    let StudioVeoError::ParameterType { field, expected } = error else {
+        panic!("the error names the field");
+    };
+    assert_eq!(field, "durationSeconds");
+    assert_eq!(expected, "an integer");
+}
+
 fn settings(environment: [Option<&str>; 2], generic: Option<&str>) -> Settings {
     Settings {
         environment_key: environment
@@ -587,4 +614,12 @@ fn the_complete_url_follows_litellm(
     #[case] expected: &str,
 ) {
     assert_eq!(url_for(model, api_base, configured), expected);
+}
+
+#[test]
+fn the_default_base_builds_the_predict_long_running_url() {
+    assert_eq!(
+        url_for("veo-3", None, DEFAULT_API_BASE),
+        "https://generativelanguage.googleapis.com/v1beta/models/veo-3:predictLongRunning"
+    );
 }
