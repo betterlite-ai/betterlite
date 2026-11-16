@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_guardrails::agent_365::enforcement::error::EnforcementError;
 use betterlite_guardrails::agent_365::enforcement::pre_mcp_call_hook;
 use betterlite_guardrails::agent_365_tokens::Agent365Guardrail;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
@@ -14,13 +15,13 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 
 // What the caller observes when the hook raises: the HTTP status and the error detail
-fn failure_outcome(failure: &GuardrailFailure) -> Result<Value, Box<HelperError>> {
+fn failure_outcome(failure: &EnforcementError) -> Result<Value, Box<HelperError>> {
     match failure {
-        GuardrailFailure::HttpObject { status, detail } => {
+        EnforcementError::Guardrail(GuardrailFailure::HttpObject { status, detail }) => {
             let detail = serde_json::to_value(detail).or_value_error()?;
             Ok(json!({"kind": "rejected", "status_code": status, "detail": detail}))
         }
-        GuardrailFailure::Http { status, detail } => {
+        EnforcementError::Guardrail(GuardrailFailure::Http { status, detail }) => {
             Ok(json!({"kind": "rejected", "status_code": status, "detail": detail}))
         }
         other => Err(format!("the Agent 365 hook failed unexpectedly: {other}")).or_value_error(),

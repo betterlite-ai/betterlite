@@ -6,7 +6,10 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::agent_365::enforcement::handlers::EvaluateError;
+use crate::agent_365::enforcement::error::EnforcementError;
+use crate::agent_365::enforcement::handlers::EvaluationReply;
+use crate::agent_365::enforcement::record::VerdictRecord;
+use crate::agent_365::enforcement_types::Verdict;
 use crate::agent_365_tokens::error::{Agent365TokenError, Agent365TokenExchangeError};
 use crate::agent_365_tokens::exchange::entra_assertion;
 use crate::agent_365_tokens::payload::{Agent365PayloadError, build_evaluate_payload};
@@ -16,6 +19,7 @@ use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_metadata::RequestData;
 use crate::guardrail_selection::gate::GuardrailSelection as _;
 
+pub mod error;
 mod handlers;
 mod record;
 mod refusals;
@@ -39,7 +43,7 @@ pub async fn pre_mcp_call_hook(
     call_type: &str,
     key_alias: Option<&str>,
     suppressed: &BTreeSet<String>,
-) -> Result<(), GuardrailFailure> {
+) -> Result<(), EnforcementError> {
     if !runs_for(guardrail, data, call_type, suppressed)? {
         return Ok(());
     }
@@ -53,7 +57,8 @@ pub async fn pre_mcp_call_hook(
                 tool_name: tool_name.as_str(),
                 reason: MISSING_BEARER_REASON,
             },
-        );
+        )
+        .map_err(EnforcementError::from);
     };
     let Some(token) = obo_token(guardrail, data, &tool_name, assertion.expose_secret()).await?
     else {
@@ -63,13 +68,13 @@ pub async fn pre_mcp_call_hook(
     else {
         return Ok(());
     };
-    let error = EvaluateError {
+    let evaluation = EvaluationReply {
         tool_name: &tool_name,
         assertion: assertion.expose_secret(),
         reply: &reply,
         latency,
     };
-    handlers::enforce_reply(guardrail, data, &error)
+    handlers::enforce_reply(guardrail, data, &evaluation).map_err(EnforcementError::from)
 }
 
 fn runs_for(
@@ -150,7 +155,13 @@ fn token_failure(
             guardrail,
             data,
             tool_name,
-            &handlers::unavailable_record(&reason),
+            &VerdictRecord {
+                verdict: Verdict::Unavailable,
+                defender_status: None,
+                correlation_id: None,
+                latency: None,
+                reason: Some(&reason),
+            },
         ),
     }
 }
@@ -192,7 +203,7 @@ async fn evaluate(
     tool_name: &str,
     token: &SecretString,
     key_alias: Option<&str>,
-) -> Result<Option<(PostReply, Duration)>, GuardrailFailure> {
+) -> Result<Option<(PostReply, Duration)>, EnforcementError> {
     let body = evaluate_body(data, key_alias)?;
     let headers = evaluation_headers(token)?;
     let started = (guardrail.clock)();
@@ -207,7 +218,13 @@ async fn evaluate(
                 guardrail,
                 data,
                 tool_name,
-                &handlers::unavailable_record(&reason),
+                &VerdictRecord {
+                    verdict: Verdict::Unavailable,
+                    defender_status: None,
+                    correlation_id: None,
+                    latency: None,
+                    reason: Some(&reason),
+                },
             )?;
             return Ok(None);
         }
@@ -217,38 +234,29 @@ async fn evaluate(
     Ok(Some((reply, latency)))
 }
 
-fn evaluate_body(data: &RequestData, key_alias: Option<&str>) -> Result<Vec<u8>, GuardrailFailure> {
+fn evaluate_body(data: &RequestData, key_alias: Option<&str>) -> Result<Vec<u8>, EnforcementError> {
     let payload = match build_evaluate_payload(data, key_alias) {
         Ok(payload) => payload,
         Err(error) => {
-            return Err(GuardrailFailure::Http {
+            return Err(EnforcementError::Guardrail(GuardrailFailure::Http {
                 status: 400,
                 detail: error.to_string(),
-            });
+            }));
         }
     };
-    match serde_json::to_vec(&payload) {
-        Ok(body) => Ok(body),
-        Err(error) => Err(GuardrailFailure::Other(format!(
-            "the Agent 365 evaluation payload could not be written as JSON: {error}"
-        ))),
-    }
+    serde_json::to_vec(&payload).map_err(|source| EnforcementError::PayloadEncoding { source })
 }
 
-fn evaluation_headers(token: &SecretString) -> Result<HeaderMap, GuardrailFailure> {
-    let value = format!("Bearer {}", token.expose_secret());
-    match HeaderValue::from_str(&value) {
-        Ok(authorization) => {
-            let mut headers = HeaderMap::new();
-            let _replaced =
-                headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE));
-            let _replaced = headers.insert(AUTHORIZATION, authorization);
-            Ok(headers)
-        }
-        Err(_error) => Err(GuardrailFailure::Other(
-            "the Agent 365 token is not a valid header value".to_owned(),
-        )),
-    }
+// The bearer value is marked sensitive so the header map never prints the OBO token
+fn evaluation_headers(token: &SecretString) -> Result<HeaderMap, EnforcementError> {
+    let value = SecretString::from(format!("Bearer {}", token.expose_secret()));
+    let mut authorization = HeaderValue::from_str(value.expose_secret())
+        .map_err(|source| EnforcementError::TokenHeader { source })?;
+    authorization.set_sensitive(true);
+    let mut headers = HeaderMap::new();
+    let _replaced = headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE));
+    let _replaced = headers.insert(AUTHORIZATION, authorization);
+    Ok(headers)
 }
 
 fn tool_name(data: &RequestData) -> Result<String, GuardrailFailure> {

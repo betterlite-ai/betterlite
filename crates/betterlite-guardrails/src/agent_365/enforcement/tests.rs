@@ -16,6 +16,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use secrecy::SecretString;
 use serde::Deserialize;
 
+use super::error::EnforcementError;
 use super::pre_mcp_call_hook;
 use crate::agent_365_tokens::poster::{Agent365Poster, Agent365PosterError, PostReply};
 use crate::agent_365_tokens::{Agent365Guardrail, Agent365Settings, EVALUATE_URL};
@@ -47,6 +48,7 @@ struct FakePoster {
 struct RecordedPost {
     url: String,
     authorization: Option<String>,
+    headers_debug: String,
     content_type: Option<String>,
     body: Vec<u8>,
 }
@@ -93,6 +95,7 @@ impl Agent365Poster for FakePoster {
         self.seen.lock().unwrap().push(RecordedPost {
             url: url.to_owned(),
             authorization: header(AUTHORIZATION),
+            headers_debug: format!("{headers:?}"),
             content_type: header(CONTENT_TYPE),
             body: body.to_vec(),
         });
@@ -198,7 +201,7 @@ fn exchange_failure(error: &str) -> ScriptedReply {
     ))
 }
 
-async fn run(guardrail: &Agent365Guardrail, data: &mut Data) -> Result<(), GuardrailFailure> {
+async fn run(guardrail: &Agent365Guardrail, data: &mut Data) -> Result<(), EnforcementError> {
     pre_mcp_call_hook(
         guardrail,
         data,
@@ -246,8 +249,9 @@ fn decimal(value: &GuardrailValue) -> f64 {
     *number
 }
 
-fn http_detail(failure: &GuardrailFailure) -> (u16, &IndexMap<String, GuardrailValue>) {
-    let GuardrailFailure::HttpObject { status, detail } = failure else {
+fn http_detail(failure: &EnforcementError) -> (u16, &IndexMap<String, GuardrailValue>) {
+    let EnforcementError::Guardrail(GuardrailFailure::HttpObject { status, detail }) = failure
+    else {
         panic!("expected an HTTP object failure, got {failure:?}");
     };
     (*status, detail)
@@ -447,6 +451,7 @@ async fn allows_an_evaluated_verdict() {
         requests[1].authorization.as_deref(),
         Some("Bearer obo-token")
     );
+    assert!(!requests[1].headers_debug.contains(OBO_TOKEN));
     assert_eq!(
         requests[1].content_type.as_deref(),
         Some("application/json")
@@ -690,6 +695,66 @@ async fn non_object_evaluation_body_is_unavailable() {
         detail_text(detail, "message")
             .contains("the Agent 365 endpoint returned a non-object JSON body")
     );
+}
+
+#[tokio::test]
+async fn an_array_verdict_is_unavailable_rather_than_allowed() {
+    let Harness {
+        guardrail,
+        poster,
+        mut data,
+    } = harness(UnreachableFallback::FailClosed);
+    poster.enqueue(vec![token(), evaluate(r#"[true, {"status":"Evaluated"}]"#)]);
+    let failure = run(&guardrail, &mut data).await.unwrap_err();
+    let (status, _detail) = http_detail(&failure);
+    assert_eq!(status, 503);
+    let fields = record_fields(&data);
+    let recorded = response(fields);
+    assert_eq!(text(recorded.get("verdict").unwrap()), "Unavailable");
+    assert_eq!(
+        text(recorded.get("reason").unwrap()),
+        "the Agent 365 endpoint returned a non-object JSON body"
+    );
+    assert!(!recorded.contains_key("defender_status"));
+}
+
+#[tokio::test]
+async fn an_array_defender_is_an_unevaluated_allow() {
+    let Harness {
+        guardrail,
+        poster,
+        mut data,
+    } = harness(UnreachableFallback::FailClosed);
+    poster.enqueue(vec![
+        token(),
+        evaluate(r#"{"allowed":true,"defender":["Evaluated",null,null]}"#),
+    ]);
+    let failure = run(&guardrail, &mut data).await.unwrap_err();
+    let (status, _detail) = http_detail(&failure);
+    assert_eq!(status, 503);
+    let recorded = response(record_fields(&data));
+    assert_eq!(text(recorded.get("verdict").unwrap()), "Unavailable");
+    assert_eq!(
+        text(recorded.get("reason").unwrap()),
+        "Microsoft Defender did not evaluate the call (defender.status=missing)"
+    );
+}
+
+#[tokio::test]
+async fn an_obo_token_that_is_not_a_header_value_is_an_error() {
+    let Harness {
+        guardrail,
+        poster,
+        mut data,
+    } = harness(UnreachableFallback::FailOpen);
+    poster.enqueue(vec![ScriptedReply::Reply(reply(
+        200,
+        r#"{"access_token":"obo\ntoken","expires_in":3600}"#,
+    ))]);
+    let failure = run(&guardrail, &mut data).await.unwrap_err();
+    assert!(matches!(failure, EnforcementError::TokenHeader { .. }));
+    assert_eq!(poster.recorded().len(), 1);
+    assert!(!data.contains_key("metadata"));
 }
 
 #[tokio::test]

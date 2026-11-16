@@ -7,7 +7,6 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 
 use crate::agent_365::enforcement_types::Verdict;
 use crate::agent_365_tokens::Agent365Guardrail;
-use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_metadata::RequestData;
 use crate::guardrail_records::error::GuardrailSpanError;
 use crate::guardrail_records::metadata::add_guardrail_record;
@@ -30,19 +29,6 @@ pub(super) struct VerdictRecord<'record> {
     pub reason: Option<&'record str>,
 }
 
-impl<'record> VerdictRecord<'record> {
-    // The same decision under another verdict, as when fail_open records an unavailable call as unscanned
-    pub(super) fn relabelled(&self, verdict: Verdict) -> Self {
-        Self {
-            verdict,
-            defender_status: self.defender_status,
-            correlation_id: self.correlation_id,
-            latency: self.latency,
-            reason: self.reason,
-        }
-    }
-}
-
 struct NoSpan;
 
 impl GuardrailSpanSink for NoSpan {
@@ -51,36 +37,32 @@ impl GuardrailSpanSink for NoSpan {
     }
 }
 
+// A record that cannot be written is logged, so it never decides the tool call
 pub(super) fn record_verdict(
     guardrail: &Agent365Guardrail,
     data: &mut RequestData,
     record: &VerdictRecord<'_>,
-) -> Result<(), GuardrailFailure> {
+) {
     let mut context = GuardrailRecordContext {
         base: &guardrail.base,
         request_data: data,
         log_target: None,
         sink: &NoSpan,
     };
-    add_guardrail_record(
-        &mut context,
-        GuardrailRecordInput {
-            guardrail_response: payload_for(record),
-            guardrail_status: status_for(record.verdict),
-            start_time: None,
-            end_time: None,
-            duration: duration_of(record),
-            masked_entity_count: None,
-            guardrail_provider: Some(GUARDRAIL_PROVIDER.to_owned()),
-            event_type: Some(GuardrailEventHooks::PreMcpCall),
-            tracing_detail: None,
-        },
-    )
-    .map_err(|error| {
-        GuardrailFailure::Other(format!(
-            "the Agent 365 guardrail record could not be written: {error}"
-        ))
-    })
+    let input = GuardrailRecordInput {
+        guardrail_response: payload_for(record),
+        guardrail_status: status_for(record.verdict),
+        start_time: None,
+        end_time: None,
+        duration: duration_of(record),
+        masked_entity_count: None,
+        guardrail_provider: Some(GUARDRAIL_PROVIDER.to_owned()),
+        event_type: Some(GuardrailEventHooks::PreMcpCall),
+        tracing_detail: None,
+    };
+    if let Err(error) = add_guardrail_record(&mut context, input) {
+        tracing::warn!(%error, "Agent 365: guardrail record could not be written");
+    }
 }
 
 // LiteLLM's _record_verdict payload, with latency_ms rounded to one decimal

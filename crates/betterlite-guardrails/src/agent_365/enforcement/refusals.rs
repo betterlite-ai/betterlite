@@ -78,7 +78,7 @@ pub(super) fn refuse(
             latency,
             reason: Some(reason),
         },
-    )?;
+    );
     Err(refusal_failure(status, error, refusal.message(), tool_name))
 }
 

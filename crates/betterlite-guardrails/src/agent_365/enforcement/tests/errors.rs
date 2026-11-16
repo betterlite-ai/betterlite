@@ -92,7 +92,7 @@ async fn evaluation_400_uses_the_truncated_body_as_its_message() {
     );
 }
 
-fn assert_throttled(failure: &GuardrailFailure, status: u16) {
+fn assert_throttled(failure: &EnforcementError, status: u16) {
     let (code, detail) = http_detail(failure);
     assert_eq!(code, 503);
     let reason = format!("the Agent 365 endpoint returned HTTP {status}");
@@ -353,7 +353,7 @@ async fn an_invalid_tool_name_is_a_bad_request() {
     } = harness(UnreachableFallback::FailClosed);
     let _previous = data.insert("mcp_tool_name".to_owned(), GuardrailValue::SignedInteger(7));
     let failure = run(&guardrail, &mut data).await.unwrap_err();
-    let GuardrailFailure::Http { status, detail } = failure else {
+    let EnforcementError::Guardrail(GuardrailFailure::Http { status, detail }) = failure else {
         panic!("expected an HTTP failure");
     };
     assert_eq!(status, 400);
