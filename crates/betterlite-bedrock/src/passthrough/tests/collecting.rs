@@ -194,6 +194,9 @@ fn oversized_streams_stop_collecting() {
     let mut fed = collector(Some(Box::new(FixtureDecoder)), &assembler);
     let error = fed.feed(&big).unwrap_err();
     assert!(matches!(error, StreamLogError::TooLarge));
+    let mut edge = collector(Some(Box::new(FixtureDecoder)), &assembler);
+    let at_bound = edge.feed(&big[..MAX_COLLECTED_BYTES]);
+    assert!(!matches!(at_bound, Err(StreamLogError::TooLarge)));
     let mut stream = collector(Some(Box::new(FixtureDecoder)), &assembler);
     stream.add(&big);
     stream.add(&hello_frame());
