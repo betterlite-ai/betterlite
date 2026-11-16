@@ -1,0 +1,27 @@
+task: B1528
+deviations:
+  - what: A Nano Banana size whose width-to-height ratio sits exactly midway between two supported ratios, such as 37x18 between 21:9 and 16:9, takes the earlier list entry (21:9), where LiteLLM's double arithmetic rounds the two distances differently and picks 16:9.
+    why: betterlite does no float arithmetic and compares the distances as exact fractions, so a mathematical tie keeps the first ratio as the list order intends; the sizes that differ are rare custom sizes and none is one of OpenAI's named sizes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/nano_banana_transformation.py#L80-L96
+  - what: An Imagen or Nano Banana custom size is placed by exact rational comparison, and a dimension that does not fit i64 falls back to 1:1, where LiteLLM divides unbounded Python integers into an IEEE double first.
+    why: betterlite reads Fal sizes with the shared i64 parser and does no float arithmetic; every whole-pixel size below 2^53 gives the same answer both ways, and a size past that is not one a client names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/imagen4_transformation.py#L121-L141
+  - what: A ByteDance size string whose width or height does not fit i64 falls back to landscape_4_3, where LiteLLM returns a width/height object with an unbounded integer.
+    why: the shared Flux size mapper reads the string with the i64 parser, and a working image request spells whole pixels well inside i64.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/bytedance_transformation.py#L73-L80
+  - what: An Imagen size that is not a string fails with a typed error naming the size field, where LiteLLM raises an unhandled TypeError from the dictionary lookup or the substring test and the client sees a 500.
+    why: a 500 where a client mistake belongs hides the cause; a working setup sends size as a string, the type OpenAI declares.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/imagen4_transformation.py#L117-L121
+  - what: An Imagen reply image map whose url is present but not a string fails with a typed error naming the url field, where LiteLLM lets pydantic's validation error escape as a 500.
+    why: the shared B997 rule reads a missing or null field as none and refuses any other type by name; no working Fal reply carries a non-string url.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/imagen4_transformation.py#L221-L225
+  - what: An Imagen, Nano Banana or ByteDance reply that is not JSON, or whose root is not an object, fails with a typed error that keeps the upstream status and headers, and a reply larger than 16 MiB is refused the same way, where LiteLLM raises an unhandled AttributeError on a non-object root and reads any size.
+    why: B1525's shared Fal decoder classifies and bounds the reply and these projections reuse it, so the client sees a typed failure instead of a 500 that loses the upstream status; no working Fal setup returns such a reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/imagen4_transformation.py#L204-L212
+kept_bugs:
+  - what: Imagen's ordered thresholds leave ratios strictly between 1.05 and 1.2, and strictly between 0.8 and 0.95, outside every branch, so a size such as 1100x1000 falls to the 1:1 default instead of the nearest ratio.
+    why: a setup sending those custom sizes gets 1:1 today; choosing the nearest supported ratio would change the aspect ratio its requests receive, and the task text names the 1:1 default for gaps.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/imagen4_transformation.py#L126-L141
+  - what: Imagen4 routes the fast and ultra model names to the standard preview endpoint, although the class docstring lists separate fast and ultra endpoints.
+    why: a setup that names a variant is billed and served as the standard preview today; honoring the docstring would change the endpoint, and the task text says the fixed endpoint stays.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/imagen4_transformation.py#L32-L40
