@@ -1865,6 +1865,7 @@ name = "betterlite-foundry"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-anthropic",
  "betterlite-azure",
  "betterlite-config",
  "betterlite-context",
@@ -2922,6 +2923,7 @@ name = "betterlite-oracle-foundry"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-anthropic",
  "betterlite-azure",
  "betterlite-config",
  "betterlite-core",
@@ -2935,6 +2937,7 @@ dependencies = [
  "betterlite-secret-managers",
  "chrono",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "jiff",
  "rust_decimal",
  "secrecy",
@@ -2942,6 +2945,8 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

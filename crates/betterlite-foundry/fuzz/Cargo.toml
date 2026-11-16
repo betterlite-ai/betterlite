@@ -30,6 +30,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "foundry_anthropic_count"
+path = "fuzz_targets/foundry_anthropic_count.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "foundry_embeddings"
 path = "fuzz_targets/foundry_embeddings.rs"
 test = false
