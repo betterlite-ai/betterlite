@@ -97,26 +97,18 @@ fn assign_level(
 ) {
     match level {
         RollupLevel::GrandTotal | RollupLevel::Daily | RollupLevel::Other => {}
-        RollupLevel::ApiKeys => {
-            assign_api_key(breakdown, record, metrics, api_key_metadata);
+        RollupLevel::ApiKeys => assign_api_key(breakdown, record, metrics, api_key_metadata),
+        RollupLevel::Dimension(dimension) => {
+            assign_dimension(breakdown, dimension, record, metrics);
         }
-        RollupLevel::Dimension {
-            dimension,
-            zero_flat_cost,
-        } => {
-            assign_dimension(breakdown, dimension, zero_flat_cost, record, metrics);
-        }
-        RollupLevel::Keyed {
-            dimension,
-            sentinel_filtered,
-        } => {
+        RollupLevel::Keyed(dimension) => {
             let Some(name) = dimension.name(record) else {
                 return;
             };
-            let api_key = if sentinel_filtered {
-                non_sentinel_key(&record.metrics)
-            } else {
+            let api_key = if matches!(dimension, Dimension::Mcp | Dimension::Endpoint) {
                 record.metrics.api_key.as_deref()
+            } else {
+                non_sentinel_key(&record.metrics)
             };
             let Some(key) = api_key else {
                 return;
@@ -135,14 +127,13 @@ fn assign_level(
 fn assign_dimension(
     breakdown: &mut BreakdownMetrics,
     dimension: Dimension,
-    zero_flat_cost: bool,
     record: &GroupingSetsRow,
     mut metrics: SpendMetrics,
 ) {
     let Some(name) = dimension.name(record) else {
         return;
     };
-    if zero_flat_cost {
+    if matches!(dimension, Dimension::Provider) {
         metrics.flat_cost = Decimal::ZERO;
     }
     assign_metric_with_metadata(dimension.target(breakdown), name, metrics);
