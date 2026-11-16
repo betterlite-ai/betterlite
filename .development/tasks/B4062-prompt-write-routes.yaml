@@ -14,6 +14,8 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/routes/prompts/write.rs
+    - crates/betterlite-server/src/routes/prompts/write/**
+    - crates/betterlite-models/src/prompt_spec.rs
     - crates/betterlite-server/src/routes/prompts/write/tests.rs
     - tools/oracle/helpers/b4062.py
     - tools/oracle/helpers/b4062/**
@@ -154,6 +156,9 @@ checks:
       why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::prompts::write::tests::oneshot_/)'
 pitfalls:
+  - "Nothing mounts these routes until B8672, so in the non-test build every item in write.rs is dead code and clippy -D warnings fails. Start write.rs with one `#![expect(dead_code, reason = \"B8672 mounts the prompt write routes\")]`: it is this task's one expect, it covers the submodules, and B8672 deletes it."
+  - "The 300-line file cap does not fit four handlers, the state, the error enum and the wire types in write.rs. Split them into modules under routes/prompts/write/ (for example error.rs, state.rs, wire.rs) declared in write.rs."
+  - "PromptSpec and PromptLiteLLMParams in crates/betterlite-models/src/prompt_spec.rs derive only Deserialize. Add Serialize there for the database row and the response, writing what LiteLLM's model_dump_json writes. If LiteLLM returns the api_key in plain in a route response, report that as a LiteLLM bug instead of copying it."
   - "POST and PUT both allocate next version but only PUT strips the version suffix from the incoming prompt_id; POST accepts it without stripping."
   - "PATCH defaults environment to development via prompt_environment_or_default, but PUT uses the request's environment or defaults the same way; the same function should be used."
   - "DELETE checks resolve_prompt_spec (which requires the prompt to exist) before removing rows; database rows are deleted before calling delete_prompts_by_base_id, preserving observable order."
@@ -176,4 +181,4 @@ out_of_scope:
 review_level: security
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 1

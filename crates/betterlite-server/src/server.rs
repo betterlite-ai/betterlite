@@ -216,8 +216,9 @@ pub(crate) struct ErrorBody {
 #[derive(serde::Serialize)]
 pub(crate) struct ErrorObject {
     pub(crate) message: String,
+    // a provider exception with no type of its own travels as null, which the completion route hands on
     #[serde(rename = "type")]
-    pub(crate) error_type: String,
+    pub(crate) error_type: Option<String>,
     pub(crate) param: Option<String>,
     pub(crate) code: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -243,7 +244,7 @@ pub(crate) fn plain_failure(
     let body = ErrorBody {
         error: ErrorObject {
             message,
-            error_type: error_type.to_owned(),
+            error_type: Some(error_type.to_owned()),
             param,
             code: status.as_u16().to_string(),
             provider_specific_fields: None,
@@ -273,7 +274,7 @@ pub(crate) fn failure(
     let body = ErrorBody {
         error: ErrorObject {
             message,
-            error_type: redactor.redact_internal_details(&failure.error_type),
+            error_type: Some(redactor.redact_internal_details(&failure.error_type)),
             param: failure
                 .param
                 .map(|param| redactor.redact_internal_details(&param)),
