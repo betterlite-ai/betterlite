@@ -166,6 +166,18 @@ async fn async_create_interaction_uses_the_callers_timeout_else_the_request_time
 }
 
 #[tokio::test]
+async fn async_create_interaction_returns_a_connection_failure_to_the_caller() {
+    let fixture = Fixture::new();
+
+    let (outcome, _logging) = run_async(&fixture, &Call::new(dead_address())).await;
+
+    assert!(matches!(
+        transport_error(outcome),
+        RequestFailure::Transport(source) if source.is_connect()
+    ));
+}
+
+#[tokio::test]
 async fn async_create_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_directly() {
     let fixture = Fixture::new();
     let mut clients = HttpClients::new(
