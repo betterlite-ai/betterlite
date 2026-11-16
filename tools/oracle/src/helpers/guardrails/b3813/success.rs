@@ -8,21 +8,15 @@ use serde_json::Value;
 
 use betterlite_oracle_helper_api::helper::HelperResult;
 
-use super::Input;
 use super::support::{build_guardrail, failure};
 use super::views::{applied_guardrails, blocked_view, response_view};
+use super::{Format, Input};
 
 pub(crate) fn success(input: &Input) -> HelperResult {
     let guardrail = build_guardrail(input)?;
-    let format = match input.format.as_str() {
-        "openai" => ResponseFormat::OpenAi,
-        "anthropic" => ResponseFormat::Anthropic,
-        other => {
-            return Err(failure(
-                "ValueError",
-                format!("unknown response format {other}"),
-            ));
-        }
+    let format = match input.format {
+        Format::Openai => ResponseFormat::OpenAi,
+        Format::Anthropic => ResponseFormat::Anthropic,
     };
     let Some(response_fields) = &input.response else {
         return Err(failure(
@@ -45,8 +39,7 @@ pub(crate) fn success(input: &Input) -> HelperResult {
             None => return Err(failure("GuardrailFailure", error.to_string())),
         },
     };
-    let format_name = input.format.clone();
-    let projected = response_view(&format_name, &response)?;
+    let projected = response_view(input.format, &response)?;
     Ok(serde_json::json!({
         "blocked": blocked,
         "response": projected,

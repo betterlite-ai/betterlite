@@ -3028,6 +3028,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",

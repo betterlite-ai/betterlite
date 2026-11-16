@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use betterlite_oracle_helper_api::error::HelperError;
 
-use super::support::failure;
+use super::Format;
 
 fn text_of(value: &GuardrailValue) -> Value {
     match value {
@@ -112,19 +112,15 @@ fn anthropic_view(response: &Object) -> Value {
 }
 
 pub(crate) fn response_view(
-    format: &str,
+    format: Format,
     response: &GuardrailValue,
 ) -> Result<Value, Box<HelperError>> {
     let Some(fields) = object_mapping(response) else {
         return Ok(Value::Null);
     };
     match format {
-        "openai" => Ok(serde_json::json!({ "choices": choices_view(fields) })),
-        "anthropic" => Ok(anthropic_view(fields)),
-        other => Err(failure(
-            "ValueError",
-            format!("unknown response format {other}"),
-        )),
+        Format::Openai => Ok(serde_json::json!({ "choices": choices_view(fields) })),
+        Format::Anthropic => Ok(anthropic_view(fields)),
     }
 }
 

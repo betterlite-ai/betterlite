@@ -1,4 +1,5 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::tool_permission::ToolPermissionGuardrail;
 use betterlite_guardrails::tool_permission::types::object_mapping;
@@ -101,6 +102,7 @@ pub(crate) fn streaming(input: &Input) -> HelperResult {
     let services = services(DEFAULT_NOW)?;
     let limits = StreamBufferLimits {
         max_chunks: input.max_chunks.unwrap_or(DEFAULT_MAX_STREAM_CHUNKS),
+        max_bytes: ApiLimits::default().max_json_bytes,
     };
     let runtime = runtime()?;
     let (result, collected) = runtime.block_on(run_stream_hook(

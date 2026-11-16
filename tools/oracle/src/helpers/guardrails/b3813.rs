@@ -25,8 +25,8 @@ pub(crate) struct Input {
     default_on: bool,
     #[serde(default)]
     violation_message_template: Option<String>,
-    mode: String,
-    format: String,
+    mode: Mode,
+    format: Format,
     #[serde(default)]
     data: BTreeMap<String, GuardrailValue>,
     #[serde(default)]
@@ -39,17 +39,27 @@ pub(crate) struct Input {
     max_chunks: Option<usize>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Mode {
+    Success,
+    Streaming,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Format {
+    Openai,
+    Anthropic,
+}
+
 impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        match input.mode.as_str() {
-            "success" => success::success(input),
-            "streaming" => stream::streaming(input),
-            other => Err(support::failure(
-                "ValueError",
-                format!("unknown mode {other}"),
-            )),
+        match input.mode {
+            Mode::Success => success::success(input),
+            Mode::Streaming => stream::streaming(input),
         }
     }
 }

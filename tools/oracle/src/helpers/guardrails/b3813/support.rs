@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::guardrail_initializers::tool_permission::ToolPermissionArgs;
 use betterlite_guardrails::tool_permission::ToolPermissionGuardrail;
@@ -16,6 +17,7 @@ use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
 use rust_decimal::Decimal;
 use tokio::runtime::{Builder, Runtime};
+use uuid::Uuid;
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
@@ -65,6 +67,16 @@ impl UsageTokenCounter for NoCounter {
 static NO_COSTS: NoCosts = NoCosts;
 static NO_COUNTER: NoCounter = NoCounter;
 
+struct FixedIds;
+
+impl IdSource for FixedIds {
+    fn next_id(&self) -> Uuid {
+        Uuid::from_u128(0x3813)
+    }
+}
+
+static FIXED_IDS: FixedIds = FixedIds;
+
 pub(crate) fn failure(class: &str, message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: class.to_owned(),
@@ -103,6 +115,7 @@ pub(crate) fn services(now: i64) -> Result<StreamServices<'static>, Box<HelperEr
         costs: &NO_COSTS,
         counter: &NO_COUNTER,
         redactor: Arc::new(redactor),
+        ids: &FIXED_IDS,
         now,
     })
 }
