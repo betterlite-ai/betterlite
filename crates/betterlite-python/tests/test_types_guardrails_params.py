@@ -135,7 +135,6 @@ def module_of(name):
     raise KeyError(name)
 
 
-ours = {**vars(our_params), **vars(our_endpoints), **vars(our_content_filter)}
 report = {
     "defined": {
         "betterlite": sorted(
