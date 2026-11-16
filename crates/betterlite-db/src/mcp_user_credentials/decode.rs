@@ -23,55 +23,48 @@ const UNREADABLE: DecryptPolicy = DecryptPolicy {
 };
 
 // returns None where LiteLLM's decrypt_value_helper returns None: a wrong key, a tampered cipher, or a value written before this deployment encrypted credentials
-fn decrypt_credential(cipher: &DbCipher, stored: &str) -> Option<String> {
+fn decrypt_credential(cipher: &DbCipher, stored: &str) -> Option<SecretString> {
     let value = StoredValue::<()>::Text(SecretString::from(stored.to_owned()));
     let StoredValue::Text(plaintext) = cipher.decrypt_value(value, CREDENTIAL_KEY, UNREADABLE)?
     else {
         return None;
     };
-    Some(plaintext.expose_secret().to_owned())
+    Some(plaintext)
 }
 
-// LiteLLM decodes older plain-base64 rows with the URL-safe alphabet and then falls back to the standard one
-fn legacy_plaintext(stored: &str) -> Option<String> {
-    let bytes = decode_lenient(stored, true).ok()?;
-    let text = String::from_utf8(bytes).ok()?;
-    Some(text)
-}
-
-// LiteLLM uses decrypt_value_helper(return_original_value=False), so an unreadable ciphertext falls through to the legacy decode instead of being the answer
+// LiteLLM uses decrypt_value_helper(return_original_value=False), so an unreadable ciphertext falls through to the plain-base64 decode (URL-safe alphabet first, then the standard one) instead of being the answer
 #[must_use]
-pub fn decode_user_credential(cipher: &DbCipher, stored: &str) -> Option<String> {
+pub fn decode_user_credential(cipher: &DbCipher, stored: &str) -> Option<SecretString> {
     if let Some(decrypted) = decrypt_credential(cipher, stored) {
         return Some(decrypted);
     }
-    legacy_plaintext(stored)
+    String::from_utf8(decode_lenient(stored, true).ok()?)
+        .ok()
+        .map(SecretString::from)
 }
 
-#[must_use]
 pub fn parse_oauth_payload(
-    decoded: Option<&str>,
+    decoded: Option<&SecretString>,
 ) -> Result<Option<OAuthCredentialPayload>, CredentialError> {
     let Some(decoded) = decoded else {
         return Ok(None);
     };
-    let Ok(kind) = serde_json::from_str::<CredentialKind>(decoded) else {
+    let Ok(kind) = serde_json::from_str::<CredentialKind>(decoded.expose_secret()) else {
         return Ok(None);
     };
     if kind.credential_type.as_deref() != Some(OAUTH2) {
         return Ok(None);
     }
-    let payload = serde_json::from_str(decoded).map_err(CredentialError::Json)?;
+    let payload = serde_json::from_str(decoded.expose_secret()).map_err(CredentialError::Json)?;
     Ok(Some(payload))
 }
 
-#[must_use]
-pub fn decode_oauth_payload(cipher: &DbCipher, stored: &str) -> Option<OAuthCredentialPayload> {
-    let decoded = decode_user_credential(cipher, stored);
-    let Some(payload) = parse_oauth_payload(decoded.as_deref()).ok().flatten() else {
-        return None;
-    };
-    Some(payload)
+// a row that is not OAuth2 is Ok(None); a row that claims oauth2 with a mistyped field is the Json error on every path
+pub fn decode_oauth_payload(
+    cipher: &DbCipher,
+    stored: &str,
+) -> Result<Option<OAuthCredentialPayload>, CredentialError> {
+    parse_oauth_payload(decode_user_credential(cipher, stored).as_ref())
 }
 
 pub(crate) fn warn_undecryptable_credential(user_id: &str, server_id: &str) {

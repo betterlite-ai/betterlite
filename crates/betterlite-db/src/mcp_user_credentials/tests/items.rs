@@ -2,11 +2,14 @@ use rstest::rstest;
 
 use crate::budget_permission_rows::JsonData;
 
+use super::super::store::store_user_credential;
 use super::super::types::{CredentialError, CredentialType};
 use super::super::{
     list_server_user_credentials, list_user_oauth_credentials, server_user_credential_item,
 };
-use super::support::{FakeTable, UPDATED_AT, block_on, cipher, credential_row, warnings_during};
+use super::support::{
+    FakeTable, UPDATED_AT, block_on, cipher, credential_row, exposed, warnings_during,
+};
 use super::{ENCRYPTED_OAUTH, ENCRYPTED_SECRET, LEGACY_OAUTH, UNDECRYPTABLE};
 
 #[test]
@@ -107,7 +110,7 @@ fn list_user_oauth_credentials_tags_each_payload_with_its_server() {
         block_on(list_user_oauth_credentials(&table, &cipher(), "u1")).expect("the listing runs");
     assert_eq!(payloads.len(), 1);
     assert_eq!(payloads[0].server_id.as_deref(), Some("s1"));
-    assert_eq!(payloads[0].access_token.as_deref(), Some("tok-123"));
+    assert_eq!(exposed(payloads[0].access_token.as_ref()), Some("tok-123"));
     assert_eq!(
         payloads[0].scopes,
         Some(vec!["read".to_owned(), "write".to_owned()])
@@ -140,4 +143,40 @@ fn list_user_oauth_credentials_keeps_a_byok_row_without_a_warning() {
         assert!(listed.expect("the listing runs").is_empty());
     });
     assert!(payloads.is_empty());
+}
+
+const MISTYPED_PAYLOAD: &str = r#"{"type":"oauth2","access_token":"tok","scopes":"read"}"#;
+
+fn mistyped_table() -> FakeTable {
+    let table = FakeTable::new(Vec::new());
+    block_on(store_user_credential(
+        &table,
+        &cipher(),
+        "u1",
+        "s1",
+        MISTYPED_PAYLOAD,
+    ))
+    .expect("the store runs");
+    table
+}
+
+#[test]
+fn item_reports_a_mistyped_oauth_payload_as_an_error_and_not_as_byok() {
+    let row = mistyped_table().stored().remove(0);
+    let failed = server_user_credential_item(&row, &cipher());
+    assert!(matches!(failed, Err(CredentialError::Json(_))));
+}
+
+#[test]
+fn list_server_credentials_fails_on_a_mistyped_oauth_payload() {
+    let table = mistyped_table();
+    let failed = block_on(list_server_user_credentials(&table, &cipher(), "s1"));
+    assert!(matches!(failed, Err(CredentialError::Json(_))));
+}
+
+#[test]
+fn list_user_oauth_credentials_fails_on_a_mistyped_oauth_payload() {
+    let table = mistyped_table();
+    let failed = block_on(list_user_oauth_credentials(&table, &cipher(), "u1"));
+    assert!(matches!(failed, Err(CredentialError::Json(_))));
 }

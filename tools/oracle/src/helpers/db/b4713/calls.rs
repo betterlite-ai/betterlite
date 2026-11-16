@@ -13,8 +13,8 @@ use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
-use chrono::DateTime;
-use secrecy::SecretString;
+use chrono::{DateTime, Utc};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use super::rows::RowStore;
@@ -43,7 +43,9 @@ pub(super) async fn get_credential(call: &GetCredential) -> HelperResult {
         &call.server_id,
     )
     .await;
-    Ok(read.or_value_error()?.map_or(Value::Null, Value::String))
+    Ok(read.or_value_error()?.map_or(Value::Null, |secret| {
+        Value::String(secret.expose_secret().to_owned())
+    }))
 }
 
 pub(super) async fn get_oauth_credential(call: &GetOauthCredential) -> HelperResult {
@@ -79,17 +81,19 @@ pub(super) async fn store_credential(call: &StoreCredential) -> HelperResult {
 pub(super) async fn store_oauth_credential(call: &StoreOauthCredential) -> HelperResult {
     let store = RowStore::new(&call.rows);
     let db_cipher = cipher(&call.salt_key);
+    let access_token = SecretString::from(call.access_token.clone());
+    let refresh_token = call.refresh_token.clone().map(SecretString::from);
     let request = OAuthRequest {
         user_id: &call.user_id,
         server_id: &call.server_id,
-        access_token: &call.access_token,
-        refresh_token: call.refresh_token.as_deref(),
+        access_token: &access_token,
+        refresh_token: refresh_token.as_ref(),
         expires_in: call.expires_in,
         scopes: call.scopes.as_deref(),
         skip_byok_guard: call.skip_byok_guard,
         identity_binding_proof: call.identity_binding_proof.as_deref(),
     };
-    let written = store_user_oauth_credential(&store, &db_cipher, &request).await;
+    let written = store_user_oauth_credential(&store, &db_cipher, &request, Utc::now()).await;
     let refused = match written {
         Ok(()) => false,
         Err(CredentialError::RefusesByokOverwrite { .. }) => true,
@@ -128,8 +132,8 @@ fn payload_summary(payload: &OAuthCredentialPayload) -> HelperResult {
     };
     Ok(json!({
         "type": payload.credential_type,
-        "access_token": payload.access_token,
-        "refresh_token": payload.refresh_token,
+        "access_token": payload.access_token.as_ref().map(|token| token.expose_secret()),
+        "refresh_token": payload.refresh_token.as_ref().map(|token| token.expose_secret()),
         "scopes": payload.scopes,
         "identity_binding_proof": payload.identity_binding_proof,
         "connected_at_present": payload.connected_at.is_some(),

@@ -1,6 +1,7 @@
 use super::super::types::{
     CredentialType, McpUserCredentialListItem, OAuthCredentialPayload, OAuthGrantState,
 };
+use super::support::exposed;
 
 #[test]
 fn credential_type_uses_the_lite_llm_names() {
@@ -29,8 +30,8 @@ fn payload_reads_the_lite_llm_field_names() {
     let text = r#"{"type":"oauth2","access_token":"tok","refresh_token":null,"expires_at":"2030-01-02T03:04:05+00:00","connected_at":"2024-01-02T03:04:05+00:00","scopes":["read"],"identity_binding_proof":"proof","server_id":"s1"}"#;
     let payload: OAuthCredentialPayload = serde_json::from_str(text).expect("the payload reads");
     assert_eq!(payload.credential_type, CredentialType::Oauth2);
-    assert_eq!(payload.access_token.as_deref(), Some("tok"));
-    assert_eq!(payload.refresh_token, None);
+    assert_eq!(exposed(payload.access_token.as_ref()), Some("tok"));
+    assert!(payload.refresh_token.is_none());
     assert_eq!(
         payload.expires_at.as_deref(),
         Some("2030-01-02T03:04:05+00:00")

@@ -32,7 +32,7 @@ pub async fn get_user_credential<A: CredentialRows>(
     cipher: &DbCipher,
     user_id: &str,
     server_id: &str,
-) -> Result<Option<String>, CredentialError> {
+) -> Result<Option<SecretString>, CredentialError> {
     let Some(row) = table.find_credential(user_id, server_id).await? else {
         return Ok(None);
     };
@@ -67,7 +67,7 @@ pub async fn get_user_oauth_credential<A: CredentialRows>(
     if decoded.is_none() {
         warn_undecryptable_credential(user_id, server_id);
     }
-    parse_oauth_payload(decoded.as_deref())
+    parse_oauth_payload(decoded.as_ref())
 }
 
 // LiteLLM lets a new OAuth2 grant replace a row that no longer decrypts, an empty one, and another grant, and refuses a readable BYOK key so an authorization cannot destroy an API key
@@ -84,11 +84,14 @@ pub(super) fn guard_byok_overwrite(
         field: CREDENTIAL_COLUMN,
     })?;
     let decoded = decode_user_credential(cipher, stored);
-    if decoded.as_deref().is_none_or(str::is_empty) {
+    if decoded
+        .as_ref()
+        .is_none_or(|text| text.expose_secret().is_empty())
+    {
         warn_replacing_undecryptable(user_id, server_id);
         return Ok(());
     }
-    if parse_oauth_payload(decoded.as_deref())?.is_some() {
+    if parse_oauth_payload(decoded.as_ref())?.is_some() {
         return Ok(());
     }
     Err(CredentialError::RefusesByokOverwrite {

@@ -1,4 +1,5 @@
 use betterlite_secrets::error::SecretError;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -31,15 +32,34 @@ impl OAuthGrantState {
     }
 }
 
+// serde's library adapter builds this private, non-Debug value only while a payload is serialized for encryption
+#[derive(Serialize)]
+#[serde(transparent)]
+struct ExposedSecret(String);
+
+impl From<&SecretString> for ExposedSecret {
+    fn from(secret: &SecretString) -> Self {
+        Self(secret.expose_secret().to_owned())
+    }
+}
+
 // LiteLLM writes this payload into the encrypted column beside plain BYOK keys and tells them apart by "type"
-#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct OAuthCredentialPayload {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub access_token: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serde_with::As::<Option<serde_with::FromIntoRef<ExposedSecret>>>::serialize"
+    )]
+    pub access_token: Option<SecretString>,
     #[serde(rename = "type", default)]
     pub credential_type: CredentialType,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub refresh_token: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serde_with::As::<Option<serde_with::FromIntoRef<ExposedSecret>>>::serialize"
+    )]
+    pub refresh_token: Option<SecretString>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -66,8 +86,8 @@ pub struct McpUserCredentialListItem {
 pub struct StoreOAuthCredential<'a> {
     pub user_id: &'a str,
     pub server_id: &'a str,
-    pub access_token: &'a str,
-    pub refresh_token: Option<&'a str>,
+    pub access_token: &'a SecretString,
+    pub refresh_token: Option<&'a SecretString>,
     pub expires_in: Option<i64>,
     pub scopes: Option<&'a [String]>,
     pub skip_byok_guard: bool,

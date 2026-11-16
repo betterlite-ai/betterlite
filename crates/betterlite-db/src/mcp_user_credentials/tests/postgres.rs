@@ -20,7 +20,7 @@ use super::super::types::{CredentialError, CredentialType, StoreOAuthCredential}
 use super::super::{
     list_server_user_credentials, list_user_oauth_credentials, store_user_oauth_credential,
 };
-use super::support::cipher;
+use super::support::{cipher, exposed, now};
 
 const STORAGE: &str = r#"
 CREATE TABLE "LiteLLM_MCPUserCredentials" (
@@ -76,12 +76,20 @@ fn table<'db>(writer: &'db PostgresStore, availability: &'db Availability) -> Mc
     McpTableStore::new(Some(client), publisher()).expect("a client builds a store")
 }
 
-fn oauth_request(skip_byok_guard: bool) -> StoreOAuthCredential<'static> {
+fn tokens() -> (SecretString, SecretString) {
+    (SecretString::from("tok-abc"), SecretString::from("ref-1"))
+}
+
+fn oauth_request<'a>(
+    token: &'a SecretString,
+    refresh: &'a SecretString,
+    skip_byok_guard: bool,
+) -> StoreOAuthCredential<'a> {
     StoreOAuthCredential {
         user_id: "u1",
         server_id: "s1",
-        access_token: "tok-abc",
-        refresh_token: Some("ref-1"),
+        access_token: token,
+        refresh_token: Some(refresh),
         expires_in: Some(3600),
         scopes: None,
         skip_byok_guard,
@@ -100,18 +108,18 @@ async fn a_byok_credential_round_trips_through_the_table() {
     let read = get_user_credential(&table, &cipher(), "u1", "s1")
         .await
         .expect("the read runs");
-    assert_eq!(read.as_deref(), Some("secret-value"));
+    assert_eq!(exposed(read.as_ref()), Some("secret-value"));
     let other = get_user_credential(&table, &cipher(), "u1", "s2")
         .await
         .expect("the read runs");
-    assert_eq!(other, None);
+    assert!(other.is_none());
     delete_user_credential(&table, "u1", "s1")
         .await
         .expect("the delete runs");
     let gone = get_user_credential(&table, &cipher(), "u1", "s1")
         .await
         .expect("the read runs");
-    assert_eq!(gone, None);
+    assert!(gone.is_none());
 }
 
 #[tokio::test]
@@ -119,12 +127,18 @@ async fn an_oauth_grant_refuses_a_readable_byok_key_until_the_guard_is_skipped()
     let (_fixture, writer) = seeded().await;
     let availability = Availability::default();
     let table = table(&writer, &availability);
+    let (token, refresh) = tokens();
     store_user_credential(&table, &cipher(), "u1", "s1", "secret-value")
         .await
         .expect("the BYOK key stores");
-    let refused = store_user_oauth_credential(&table, &cipher(), &oauth_request(false))
-        .await
-        .expect_err("the readable key is protected");
+    let refused = store_user_oauth_credential(
+        &table,
+        &cipher(),
+        &oauth_request(&token, &refresh, false),
+        now(),
+    )
+    .await
+    .expect_err("the readable key is protected");
     assert!(matches!(
         refused,
         CredentialError::RefusesByokOverwrite { .. }
@@ -132,16 +146,21 @@ async fn an_oauth_grant_refuses_a_readable_byok_key_until_the_guard_is_skipped()
     let kept = get_user_credential(&table, &cipher(), "u1", "s1")
         .await
         .expect("the read runs");
-    assert_eq!(kept.as_deref(), Some("secret-value"));
-    store_user_oauth_credential(&table, &cipher(), &oauth_request(true))
-        .await
-        .expect("the skipped guard writes");
+    assert_eq!(exposed(kept.as_ref()), Some("secret-value"));
+    store_user_oauth_credential(
+        &table,
+        &cipher(),
+        &oauth_request(&token, &refresh, true),
+        now(),
+    )
+    .await
+    .expect("the skipped guard writes");
     let payload = get_user_oauth_credential(&table, &cipher(), "u1", "s1")
         .await
         .expect("the read runs")
         .expect("u1 holds an OAuth2 payload");
-    assert_eq!(payload.access_token.as_deref(), Some("tok-abc"));
-    assert_eq!(payload.refresh_token.as_deref(), Some("ref-1"));
+    assert_eq!(exposed(payload.access_token.as_ref()), Some("tok-abc"));
+    assert_eq!(exposed(payload.refresh_token.as_ref()), Some("ref-1"));
     let items = list_server_user_credentials(&table, &cipher(), "s1")
         .await
         .expect("the listing runs");
@@ -162,17 +181,23 @@ async fn an_undecryptable_row_is_replaced_by_a_new_oauth_grant() {
     let (_fixture, writer) = seeded().await;
     let availability = Availability::default();
     let table = table(&writer, &availability);
+    let (token, refresh) = tokens();
     db_upsert_user_credential_row(&table, "u1", "s1", "_w==")
         .await
         .expect("the unreadable row inserts");
-    store_user_oauth_credential(&table, &cipher(), &oauth_request(false))
-        .await
-        .expect("the unreadable row is replaced");
+    store_user_oauth_credential(
+        &table,
+        &cipher(),
+        &oauth_request(&token, &refresh, false),
+        now(),
+    )
+    .await
+    .expect("the unreadable row is replaced");
     let payload = get_user_oauth_credential(&table, &cipher(), "u1", "s1")
         .await
         .expect("the read runs")
         .expect("u1 holds an OAuth2 payload");
-    assert_eq!(payload.access_token.as_deref(), Some("tok-abc"));
+    assert_eq!(exposed(payload.access_token.as_ref()), Some("tok-abc"));
     let items = list_server_user_credentials(&table, &cipher(), "s1")
         .await
         .expect("the listing runs");
@@ -185,15 +210,21 @@ async fn an_empty_stored_value_is_replaced_by_a_new_oauth_grant() {
     let (_fixture, writer) = seeded().await;
     let availability = Availability::default();
     let table = table(&writer, &availability);
+    let (token, refresh) = tokens();
     store_user_credential(&table, &cipher(), "u1", "s1", "")
         .await
         .expect("the empty value stores");
-    store_user_oauth_credential(&table, &cipher(), &oauth_request(false))
-        .await
-        .expect("the empty value is replaced");
+    store_user_oauth_credential(
+        &table,
+        &cipher(),
+        &oauth_request(&token, &refresh, false),
+        now(),
+    )
+    .await
+    .expect("the empty value is replaced");
     let payload = get_user_oauth_credential(&table, &cipher(), "u1", "s1")
         .await
         .expect("the read runs")
         .expect("u1 holds an OAuth2 payload");
-    assert_eq!(payload.access_token.as_deref(), Some("tok-abc"));
+    assert_eq!(exposed(payload.access_token.as_ref()), Some("tok-abc"));
 }

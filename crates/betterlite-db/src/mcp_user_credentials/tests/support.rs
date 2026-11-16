@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
-use secrecy::SecretString;
+use chrono::{DateTime, Utc};
+use secrecy::{ExposeSecret, SecretString};
 use tracing::field::{Field, Visit};
 use tracing::subscriber::Subscriber;
 use tracing::{Dispatch, Level};
@@ -28,6 +29,25 @@ pub(super) fn cipher() -> DbCipher {
         nonces: OsNonces,
         diagnostics: TracingDiagnostics,
     }
+}
+
+pub(super) fn secret(text: &str) -> SecretString {
+    SecretString::from(text)
+}
+
+pub(super) fn exposed(token: Option<&SecretString>) -> Option<&str> {
+    token.map(ExposeSecret::expose_secret)
+}
+
+pub(super) fn moment(text: &str) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(text)
+        .expect("the test moment is RFC 3339")
+        .with_timezone(&Utc)
+}
+
+// the instant every store and expiry test reads as "now"
+pub(super) fn now() -> DateTime<Utc> {
+    moment("2024-01-02T03:04:05+00:00")
 }
 
 pub(super) fn payload(text: &str) -> OAuthCredentialPayload {

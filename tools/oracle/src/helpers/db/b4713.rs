@@ -3,11 +3,15 @@ use betterlite_db::mcp_user_credentials::types::OAuthCredentialPayload;
 use betterlite_db::mcp_user_credentials::{is_oauth_credential_expired, oauth_grant_state};
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use chrono::Utc;
 use serde::Deserialize;
 use tokio::runtime::Builder;
 
 mod calls;
 mod rows;
+
+// the value LiteLLM's MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS holds when the environment does not set it
+const TOKEN_EXPIRY_BUFFER_SECONDS: i64 = 60;
 
 pub(crate) struct Op;
 
@@ -119,10 +123,15 @@ impl Helper for Op {
                 Input::DeleteCredential(call) => calls::delete_credential(call).await,
                 Input::IsExpired(call) => Ok(serde_json::Value::Bool(is_oauth_credential_expired(
                     &call.credential,
+                    Utc::now(),
                     call.buffer_seconds,
                 ))),
                 Input::GrantState(call) => {
-                    let state = oauth_grant_state(call.credential.as_ref());
+                    let state = oauth_grant_state(
+                        call.credential.as_ref(),
+                        Utc::now(),
+                        TOKEN_EXPIRY_BUFFER_SECONDS,
+                    );
                     serde_json::to_value(state).or_value_error()
                 }
                 Input::ListServerCredentials(call) => calls::list_server_credentials(call).await,

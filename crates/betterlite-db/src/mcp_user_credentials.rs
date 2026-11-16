@@ -1,7 +1,9 @@
-use chrono::{DateTime, NaiveDate, NaiveDateTime, SecondsFormat, TimeDelta, Utc};
+use betterlite_models::savings_evidence::billed_at::decode_billed_at;
+use chrono::{DateTime, TimeDelta, Utc};
 
 use crate::budget_permission_rows::JsonData;
 use crate::mcp::table_access::rows::server_id_of;
+use crate::search_tools::convert::isoformat;
 use crate::stored_cipher::DbCipher;
 
 pub mod decode;
@@ -22,23 +24,12 @@ use types::{
     OAuthGrantState, StoreOAuthCredential,
 };
 
-// ast-grep-ignore: no-long-names
-pub const MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS: i64 = 60;
-
-const NAIVE_FORMATS: [&str; 4] = [
-    "%Y-%m-%dT%H:%M:%S%.f",
-    "%Y-%m-%d %H:%M:%S%.f",
-    "%Y-%m-%dT%H:%M",
-    "%Y-%m-%d %H:%M",
-];
-
-const OFFSET_FORMATS: [&str; 2] = ["%Y-%m-%dT%H:%M:%S%.f%z", "%Y-%m-%d %H:%M:%S%.f%z"];
-
-// LiteLLM's store_user_oauth_credential: one JSON payload encrypted into the BYOK column, with a fresh connected_at and expires_at from the same instant
+// LiteLLM's store_user_oauth_credential: one JSON payload encrypted into the BYOK column, with a connected_at and expires_at from the one `now` the caller read
 pub async fn store_user_oauth_credential<A: CredentialRows>(
     table: &A,
     cipher: &DbCipher,
     request: &StoreOAuthCredential<'_>,
+    now: DateTime<Utc>,
 ) -> Result<(), CredentialError> {
     if !request.skip_byok_guard {
         let existing = table
@@ -51,7 +42,7 @@ pub async fn store_user_oauth_credential<A: CredentialRows>(
             request.server_id,
         )?;
     }
-    let payload = oauth_payload(request, Utc::now())?;
+    let payload = oauth_payload(request, now)?;
     let encoded = serde_json::to_string(&payload).map_err(CredentialError::Json)?;
     store_user_credential(table, cipher, request.user_id, request.server_id, &encoded).await
 }
@@ -66,9 +57,9 @@ fn oauth_payload(
         .map(|seconds| moment_after(now, seconds).map(isoformat))
         .transpose()?;
     let payload = OAuthCredentialPayload {
-        access_token: Some(request.access_token.to_owned()),
+        access_token: Some(request.access_token.clone()),
         credential_type: CredentialType::Oauth2,
-        refresh_token: request.refresh_token.map(str::to_owned),
+        refresh_token: request.refresh_token.cloned(),
         expires_at,
         connected_at: Some(isoformat(now)),
         scopes: request.scopes.map(<[String]>::to_vec),
@@ -85,55 +76,16 @@ fn moment_after(now: DateTime<Utc>, seconds: i64) -> Result<DateTime<Utc>, Crede
         .ok_or(CredentialError::ExpiresInOutOfRange { seconds })
 }
 
-// Python's isoformat writes six fractional digits only when the microsecond is set, and +00:00 for UTC
-fn isoformat(moment: DateTime<Utc>) -> String {
-    let precision = if moment.timestamp_subsec_micros() == 0 {
-        SecondsFormat::Secs
-    } else {
-        SecondsFormat::Micros
-    };
-    moment.to_rfc3339_opts(precision, false)
-}
-
-// Python's fromisoformat reads a bare Z, a space separator, a naive value and a date alone; the forms it also reads and this does not are in docs/deviations
-fn parse_iso_moment(value: &str) -> Option<DateTime<Utc>> {
-    let normalized = value.replace('Z', "+00:00");
-    if let Ok(moment) = DateTime::parse_from_rfc3339(&normalized) {
-        return Some(moment.with_timezone(&Utc));
-    }
-    for format in OFFSET_FORMATS {
-        if let Ok(moment) = DateTime::parse_from_str(&normalized, format) {
-            return Some(moment.with_timezone(&Utc));
-        }
-    }
-    for format in NAIVE_FORMATS {
-        if let Ok(naive) = NaiveDateTime::parse_from_str(value, format) {
-            return Some(naive.and_utc());
-        }
-    }
-    let midnight = NaiveDate::parse_from_str(value, "%Y-%m-%d")
-        .ok()
-        .and_then(|date| date.and_hms_opt(0, 0, 0));
-    midnight.map(NaiveDateTime::and_utc)
-}
-
-// LiteLLM's is_oauth_credential_expired: a naive timestamp is UTC, and an absent or unparseable one never counts as expired
+// LiteLLM's is_oauth_credential_expired: a naive timestamp is UTC, an absent or unparseable one never counts as expired, and now + buffer > expires is the comparison, so a token expiring exactly at the deadline is still live
 #[must_use]
 pub fn is_oauth_credential_expired(
     credential: &OAuthCredentialPayload,
+    now: DateTime<Utc>,
     buffer_seconds: i64,
 ) -> bool {
-    let Some(expires_at) = credential.expires_at.as_deref() else {
+    let Some(expires) = credential.expires_at.as_deref().and_then(decode_billed_at) else {
         return false;
     };
-    let Some(expires) = parse_iso_moment(expires_at) else {
-        return false;
-    };
-    expires_within_buffer(Utc::now(), expires, buffer_seconds)
-}
-
-// now + buffer > expires, the comparison LiteLLM makes; a token expiring exactly at the deadline is still live
-fn expires_within_buffer(now: DateTime<Utc>, expires: DateTime<Utc>, buffer_seconds: i64) -> bool {
     let Some(buffer) = TimeDelta::try_seconds(buffer_seconds) else {
         return false;
     };
@@ -141,17 +93,20 @@ fn expires_within_buffer(now: DateTime<Utc>, expires: DateTime<Utc>, buffer_seco
         .is_some_and(|deadline| deadline > expires)
 }
 
-// LiteLLM's oauth_grant_state: a token inside the refresh buffer is not valid, and only a stored refresh token makes it refreshable
+// LiteLLM's oauth_grant_state: a token inside the refresh buffer is not valid, and only a stored refresh token makes it refreshable; the caller owns the buffer setting
 #[must_use]
-pub fn oauth_grant_state(credential: Option<&OAuthCredentialPayload>) -> OAuthGrantState {
+pub fn oauth_grant_state(
+    credential: Option<&OAuthCredentialPayload>,
+    now: DateTime<Utc>,
+    buffer_seconds: i64,
+) -> OAuthGrantState {
     let Some(credential) = credential else {
         return OAuthGrantState::Absent;
     };
     if credential.access_token.is_none() {
         return OAuthGrantState::Absent;
     }
-    // ast-grep-ignore: no-long-names
-    if !is_oauth_credential_expired(credential, MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS) {
+    if !is_oauth_credential_expired(credential, now, buffer_seconds) {
         return OAuthGrantState::Valid;
     }
     if credential.refresh_token.is_some() {
@@ -160,8 +115,7 @@ pub fn oauth_grant_state(credential: Option<&OAuthCredentialPayload>) -> OAuthGr
     OAuthGrantState::Absent
 }
 
-// LiteLLM's _server_user_credential_item: a row whose payload is not OAuth2 is a BYOK key, and neither shape carries the secret
-#[must_use]
+// LiteLLM's _server_user_credential_item: a row whose payload is not OAuth2 is a BYOK key, and neither shape carries the secret; a payload that claims oauth2 with a mistyped field is the Json error
 pub fn server_user_credential_item(
     row: &JsonData,
     cipher: &DbCipher,
@@ -174,16 +128,14 @@ pub fn server_user_credential_item(
     let stored = text_field(row, "credential_b64").ok_or(CredentialError::MissingField {
         field: "credential_b64",
     })?;
-    let (credential_type, expires_at, connected_at) = decode_oauth_payload(cipher, stored).map_or(
-        (CredentialType::Byok, None, None),
-        |payload| {
-            (
-                CredentialType::Oauth2,
-                payload.expires_at,
-                payload.connected_at,
-            )
-        },
-    );
+    let (credential_type, expires_at, connected_at) = match decode_oauth_payload(cipher, stored)? {
+        Some(payload) => (
+            CredentialType::Oauth2,
+            payload.expires_at,
+            payload.connected_at,
+        ),
+        None => (CredentialType::Byok, None, None),
+    };
     Ok(McpUserCredentialListItem {
         user_id: user_id.to_owned(),
         credential_type,
@@ -209,7 +161,7 @@ pub async fn list_server_user_credentials<A: CredentialRows>(
     Ok(items)
 }
 
-// LiteLLM's list_user_oauth_credentials: a row that does not decrypt is warned about and skipped, and the payload is tagged with its server_id
+// LiteLLM's list_user_oauth_credentials: a row that does not decrypt is warned about and skipped, a row that is not OAuth2 is skipped, and the payload is tagged with its server_id
 pub async fn list_user_oauth_credentials<A: CredentialRows>(
     table: &A,
     cipher: &DbCipher,
@@ -228,7 +180,7 @@ pub async fn list_user_oauth_credentials<A: CredentialRows>(
         if decoded.is_none() {
             warn_undecryptable_credential(user_id, &server_id);
         }
-        let Some(mut payload) = parse_oauth_payload(decoded.as_deref()).ok().flatten() else {
+        let Some(mut payload) = parse_oauth_payload(decoded.as_ref())? else {
             continue;
         };
         payload.server_id = Some(server_id);
