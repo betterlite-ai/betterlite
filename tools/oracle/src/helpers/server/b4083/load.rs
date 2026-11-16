@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_server::shadow_eval_job_loading::cache::Clock;
@@ -34,7 +35,7 @@ pub(crate) fn load(call: &LoadCall) -> HelperResult {
         .cloned()
         .unwrap_or_default();
     Ok(json!({
-        "find_calls": *tables.find_calls.lock().unwrap_or_else(PoisonError::into_inner),
+        "find_calls": tables.find_calls.load(Ordering::Relaxed),
         "group_by": ["job_id"],
         "group_by_count": true,
         "group_by_sum": ["judge_cost", "shadow_classifier_cost", "shadow_cost"],

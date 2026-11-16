@@ -9,16 +9,24 @@ deviations:
       B118 retries on the next request because the failed read is not cached.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L851-L903
   - what: >-
-      The cross-pod spend counter is injected as the SpendCounter trait on the shadow job loader instead of
-      callable fields. read_spend(counter_key, fallback_spend, max_budget) returns a Decimal, and
-      add_spend(counter_key, cost) takes one; LiteLLM passes and returns floats. Production adapters over
-      B2321::get_current_spend and B3015::increment_spend_counter implement the trait in B8660, and tests inject
-      an in-memory counter. A failed write logs at warn and continues, so the attempt row is still recorded.
+      The counter write is injected as the SpendCounter trait's add_spend(counter_key, cost: Decimal) instead
+      of LiteLLM's callable field, which takes and returns floats. Production adapters over
+      B3015::increment_spend_counter implement the trait in B8660, and tests inject an in-memory counter. A
+      failed write logs at warn and continues, so the attempt row is still recorded.
     why: >-
       Money in betterlite is Decimal end to end (no-float-money), and the counter is external to the shadow
       pipeline, so tests must control it without a proxy global. The write still happens before the attempt
       insert, so a lost row leaves the job's budget gate closed on the next read.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L828-L845
+  - what: >-
+      The counter read is not part of this loader: LiteLLM reads the cross-pod counter with the fill-time
+      spend as its fallback inside the per-request budget gate, and that gate is B4085's spending logic.
+      B4083 supplies the counter key and the fill-time spend from attempt stats.
+    why: >-
+      The task's out_of_scope puts spending logic in B4081/B4085, and the sampling admission B4083 owns
+      already skips a job whose fill-time spend reached its budget, the same check LiteLLM makes before
+      sampling. A loader-side reader with no caller would be dead surface.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1075-L1084
   - what: >-
       A funnel flush drops the batch it snapshotted on any database error instead of retrying it, logging the
       job and its dropped counters at error level.

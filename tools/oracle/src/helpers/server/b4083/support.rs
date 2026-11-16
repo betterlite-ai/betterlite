@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::shadow_tables::rows::{
@@ -30,8 +31,8 @@ pub(crate) struct StoredJob {
 pub(crate) struct LoadTables {
     rows: Vec<StoredJob>,
     stats: Vec<JobAttemptStats>,
-    pub(crate) find_calls: Mutex<usize>,
-    pub(crate) stats_requests: Mutex<Vec<String>>,
+    pub(crate) find_calls: AtomicUsize,
+    pub(crate) stats_requests: Mutex<Vec<Vec<String>>>,
 }
 
 impl LoadTables {
@@ -54,7 +55,7 @@ impl LoadTables {
         Self {
             rows,
             stats,
-            find_calls: Mutex::new(0),
+            find_calls: AtomicUsize::new(0),
             stats_requests: Mutex::new(Vec::new()),
         }
     }
@@ -68,11 +69,7 @@ impl ShadowTables for LoadTables {
         now: DateTime<Utc>,
     ) -> ShadowFuture<'_, Vec<ShadowJobRow>, Self::Error> {
         Box::pin(async move {
-            let mut find_calls = self
-                .find_calls
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            *find_calls = find_calls.saturating_add(1);
+            self.find_calls.fetch_add(1, Ordering::Relaxed);
             Ok(self
                 .rows
                 .iter()
@@ -121,6 +118,20 @@ pub(crate) struct AttemptTables {
     pub(crate) inserts: Mutex<Vec<ShadowAttemptRow>>,
 }
 
+impl AttemptTables {
+    fn record(&self, attempt: &ShadowAttemptRow) -> Result<(), Scripted> {
+        self.events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(format!("insert:{}", attempt.request_id));
+        self.inserts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ShadowAttemptRow::clone(attempt));
+        Ok(())
+    }
+}
+
 impl ShadowTables for AttemptTables {
     type Error = Scripted;
 
@@ -142,17 +153,7 @@ impl ShadowTables for AttemptTables {
         &'database self,
         attempt: &'database ShadowAttemptRow,
     ) -> ShadowFuture<'database, (), Self::Error> {
-        Box::pin(async move {
-            self.events
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(format!("insert:{}", attempt.request_id));
-            self.inserts
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(ShadowAttemptRow::clone(attempt));
-            Ok(())
-        })
+        Box::pin(async move { self.record(attempt) })
     }
 
     fn upsert_funnel<'database>(
@@ -170,15 +171,6 @@ pub(crate) struct FakeCounter {
 
 impl SpendCounter for FakeCounter {
     type Error = Scripted;
-
-    fn read_spend<'counter>(
-        &'counter self,
-        _counter_key: &'counter str,
-        fallback_spend: Decimal,
-        _max_budget: Decimal,
-    ) -> SpendFuture<'counter, Decimal, Self::Error> {
-        Box::pin(async move { Ok(fallback_spend) })
-    }
 
     fn add_spend<'counter>(
         &'counter self,

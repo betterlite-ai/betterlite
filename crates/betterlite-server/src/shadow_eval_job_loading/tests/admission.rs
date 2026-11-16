@@ -110,13 +110,13 @@ fn shadow_eval_admission_budget_gate_closes_at_the_limit() {
     job.ends_at = later();
     job.max_budget = Some(Decimal::ONE);
     job.spend = Decimal::new(99, 2);
-    let jobs = [&job];
     let aliases = BTreeMap::new();
     let starts = BTreeMap::new();
-    let just_under = sampled_jobs(&jobs, &sample("req-1"), &starts, &aliases, now);
+    let just_under = sampled_jobs(&[&job], &sample("req-1"), &starts, &aliases, now);
+    let just_under_len = just_under.eligible.len();
     job.spend = Decimal::ONE;
-    let at_limit = sampled_jobs(&jobs, &sample("req-1"), &starts, &aliases, now);
-    assert_eq!(just_under.eligible.len(), 1);
+    let at_limit = sampled_jobs(&[&job], &sample("req-1"), &starts, &aliases, now);
+    assert_eq!(just_under_len, 1);
     assert!(at_limit.eligible.is_empty());
 }
 

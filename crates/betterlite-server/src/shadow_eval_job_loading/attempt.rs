@@ -13,16 +13,9 @@ pub const MAX_ERROR_CHARS: usize = 500;
 pub type SpendFuture<'counter, Value, Failure> =
     Pin<Box<dyn Future<Output = Result<Value, Failure>> + Send + 'counter>>;
 
-// the cross-pod job spend counter, injected: the read side owns the fill-time floor
+// the cross-pod job spend counter's write side, injected so tests own the sequencing
 pub trait SpendCounter: Send + Sync {
     type Error: StdError + Send + Sync + 'static;
-
-    fn read_spend<'counter>(
-        &'counter self,
-        counter_key: &'counter str,
-        fallback_spend: Decimal,
-        max_budget: Decimal,
-    ) -> SpendFuture<'counter, Decimal, Self::Error>;
 
     fn add_spend<'counter>(
         &'counter self,

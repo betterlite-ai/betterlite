@@ -124,6 +124,24 @@ pub(crate) fn active_job(
     }
 }
 
+impl FakeTables {
+    fn record_attempt(&self, attempt: &ShadowAttemptRow) -> Result<(), Scripted> {
+        self.events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(format!("insert:{}", attempt.request_id));
+        let failed = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            state.inserts.push(attempt.clone());
+            state.fail_insert
+        };
+        if failed {
+            return Err(Scripted);
+        }
+        Ok(())
+    }
+}
+
 impl ShadowTables for FakeTables {
     type Error = Scripted;
 
@@ -159,18 +177,7 @@ impl ShadowTables for FakeTables {
         &'database self,
         attempt: &'database ShadowAttemptRow,
     ) -> ShadowFuture<'database, (), Self::Error> {
-        Box::pin(async move {
-            self.events
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(format!("insert:{}", attempt.request_id));
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.inserts.push(attempt.clone());
-            if state.fail_insert {
-                return Err(Scripted);
-            }
-            Ok(())
-        })
+        Box::pin(async move { self.record_attempt(attempt) })
     }
 
     fn upsert_funnel<'database>(
@@ -184,21 +191,6 @@ impl ShadowTables for FakeTables {
 
 impl SpendCounter for FakeCounter {
     type Error = Scripted;
-
-    fn read_spend<'counter>(
-        &'counter self,
-        counter_key: &'counter str,
-        fallback_spend: Decimal,
-        _max_budget: Decimal,
-    ) -> SpendFuture<'counter, Decimal, Self::Error> {
-        Box::pin(async move {
-            self.events
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(format!("read:{counter_key}"));
-            Ok(fallback_spend)
-        })
-    }
 
     fn add_spend<'counter>(
         &'counter self,
@@ -215,6 +207,7 @@ impl SpendCounter for FakeCounter {
                 return Err(Scripted);
             }
             state.spend = state.spend.saturating_add(cost);
+            drop(state);
             Ok(())
         })
     }
