@@ -2,10 +2,14 @@ use betterlite_models::call_helpers::drop_params::drop_params_env_flag;
 use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use std::collections::{BTreeMap, BTreeSet};
+use std::io;
 use std::num::{ParseFloatError, ParseIntError};
+use std::panic;
 use std::path::PathBuf;
 use std::thread;
 use thiserror::Error;
+use tracing::Span;
+use tracing::dispatcher::{get_default, set_default};
 
 use crate::providers::bedrock::request_policy::metadata_fields;
 use crate::providers::vertex::gemini_live_defer_setup;
@@ -61,7 +65,7 @@ pub enum ConfigError {
     #[error("could not start the config load thread: {source}")]
     LoadThread {
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
 }
 
@@ -90,22 +94,21 @@ const CONFIG_LOAD_STACK_SIZE: usize = 64 * 1024 * 1024;
 
 impl<L: EnvironmentLookup + Sync> ConfigLoader<L> {
     pub fn load(&self, source: &str) -> Result<Config, ConfigError> {
-        // the subscriber and span are per thread, so the load thread gets the caller's
-        let dispatch = tracing::dispatcher::get_default(Clone::clone);
-        let span = tracing::Span::current();
+        // scoped subscribers and spans live on the caller's thread, so the load thread re-enters them
+        let dispatch = get_default(Clone::clone);
+        let span = Span::current();
         thread::scope(|scope| {
             let handle = thread::Builder::new()
                 .name("config-load".to_owned())
                 .stack_size(CONFIG_LOAD_STACK_SIZE)
                 .spawn_scoped(scope, || {
-                    tracing::dispatcher::with_default(&dispatch, || {
-                        span.in_scope(|| self.load_document(source))
-                    })
+                    let _dispatch = set_default(&dispatch);
+                    span.in_scope(|| self.load_document(source))
                 })
                 .map_err(|error| ConfigError::LoadThread { source: error })?;
             match handle.join() {
                 Ok(result) => result,
-                Err(payload) => std::panic::resume_unwind(payload),
+                Err(payload) => panic::resume_unwind(payload),
             }
         })
     }
