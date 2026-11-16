@@ -52,27 +52,21 @@ pub fn create_sync_iterator<C>(
 where
     C: SyncStreamingConfig,
 {
-    let status_code = response.status().as_u16();
-    if !(200..=299).contains(&status_code) {
-        let headers = response_headers(response.headers());
-        // _safe_read_response: a body that cannot be read reads as empty, and the real status still names the error
-        let body = read_body(response, MAX_RESPONSE_BYTES).unwrap_or_default();
-        return Err(handle_failure(
-            interactions_api_config,
-            status_failure(status_code, headers, &body),
-        ));
+    if response.status().is_success() {
+        let buffered = finish_blocking(response)
+            .map_err(|failure| handle_failure(interactions_api_config, failure))?;
+        interactions_api_config
+            .create_sync_stream_iterator(buffered, model, logging_obj)
+            .map_err(CreateInteractionError::Provider)
+    } else {
+        Err(sync_failure(interactions_api_config, response))
     }
-    let buffered = finish_blocking(response)
-        .map_err(|failure| handle_failure(interactions_api_config, failure))?;
-    interactions_api_config
-        .create_sync_stream_iterator(buffered, model, logging_obj)
-        .map_err(CreateInteractionError::Provider)
 }
 
 // LiteLLM's _create_async_streaming_iterator: a 2xx body stays unread, a failing one is read for its message
 pub async fn create_async_iterator<C>(
     client: &Client,
-    mut response: Response,
+    response: Response,
     model: Option<&str>,
     logging_obj: &mut Logging,
     interactions_api_config: &C,
@@ -80,33 +74,48 @@ pub async fn create_async_iterator<C>(
 where
     C: AsyncStreamingConfig,
 {
-    let status_code = response.status().as_u16();
-    if !(200..=299).contains(&status_code) {
-        let headers = response_headers(response.headers());
-        // _safe_aread_response: the read gets five seconds, then a failure or an expiry reads as empty
-        let read = timeout(
-            STREAM_ERROR_BODY_TIMEOUT,
-            read_bounded(&mut response, MAX_RESPONSE_BYTES),
-        )
-        .await;
-        let body = match read {
-            Ok(Ok(body)) => body,
-            Ok(Err(_failed)) | Err(_expired) => Vec::new(),
-        };
-        return Err(handle_failure(
-            interactions_api_config,
-            status_failure(status_code, headers, &body),
-        ));
+    if !response.status().is_success() {
+        return Err(async_failure(interactions_api_config, response).await);
     }
-    // the interaction clients keep no server drain tracker, so the lease carries a token of its own to hold the body
-    let source = StreamResponse {
+    interactions_api_config
+        .create_async_stream_iterator(held(client, response), model, logging_obj)
+        .map_err(CreateInteractionError::Provider)
+}
+
+// the interaction clients keep no server drain tracker, so the lease carries a token of its own to hold the body
+fn held(client: &Client, response: Response) -> StreamResponse {
+    StreamResponse {
         response,
         lease: Lease {
             _client: client.clone(),
             _token: TaskTracker::new().token(),
         },
-    };
-    interactions_api_config
-        .create_async_stream_iterator(source, model, logging_obj)
-        .map_err(CreateInteractionError::Provider)
+    }
+}
+
+// _safe_read_response: a body that cannot be read reads as empty, and the real status still names the error
+fn sync_failure<C: ErrorClasses>(
+    config: &C,
+    response: BlockingResponse,
+) -> CreateInteractionError<C::Error> {
+    let status_code = response.status().as_u16();
+    let headers = response_headers(response.headers());
+    let body = read_body(response, MAX_RESPONSE_BYTES).unwrap_or_default();
+    handle_failure(config, status_failure(status_code, headers, &body))
+}
+
+// _safe_aread_response: the read gets five seconds, then a failure or an expiry reads as empty
+async fn async_failure<C: ErrorClasses>(
+    config: &C,
+    mut response: Response,
+) -> CreateInteractionError<C::Error> {
+    let status_code = response.status().as_u16();
+    let headers = response_headers(response.headers());
+    let read = timeout(
+        STREAM_ERROR_BODY_TIMEOUT,
+        read_bounded(&mut response, MAX_RESPONSE_BYTES),
+    )
+    .await;
+    let body = read.ok().and_then(Result::ok).unwrap_or_default();
+    handle_failure(config, status_failure(status_code, headers, &body))
 }
