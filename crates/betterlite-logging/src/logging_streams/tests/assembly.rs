@@ -204,6 +204,17 @@ fn test_backfills_cache_creation_from_nested_details() {
     assert_eq!(field(&recorded, "cache_creation_input_tokens"), json("5"));
 }
 
+fn test_backfills_cache_creation_from_the_write_count_first() {
+    let mut state = state(Some(true));
+    let assembly = FakeAssembly::complete(partial_response(
+        r#"{"cache_write_tokens":0,"cache_creation_tokens":3}"#,
+    ));
+    let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| Some(Decimal::ONE));
+    assert_eq!(cost, Some(Decimal::ONE));
+    let recorded = combined_usage(&state);
+    assert_eq!(field(&recorded, "cache_creation_input_tokens"), json("0"));
+}
+
 fn test_keeps_the_assembled_model_when_the_call_has_no_model() {
     let mut state = state(Some(true));
     state.model = String::new();
@@ -292,6 +303,9 @@ fn test_skips_partial_usage_when_the_assembly_is_empty() {
 )]
 #[case::partial_handoff_backfills_nested_cache_creation(
     test_backfills_cache_creation_from_nested_details
+)]
+#[case::partial_handoff_backfills_cache_creation_from_the_write_count(
+    test_backfills_cache_creation_from_the_write_count_first
 )]
 #[case::partial_handoff_keeps_the_routed_model(
     test_keeps_the_assembled_model_when_the_call_has_no_model
