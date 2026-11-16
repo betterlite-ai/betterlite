@@ -18,11 +18,11 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::api::image_contracts::records::{
     ImageFile, ImageFiles, ImageHeaders, ImageHttpResponse, ImageParams,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
-
-use crate::helpers::{Helper, HelperError, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -250,19 +250,9 @@ fn files_value(files: &ImageFiles) -> Value {
 
 struct Catalog;
 
-#[derive(Debug, thiserror::Error)]
-#[error("the model {model} is not mapped")]
-struct NotMapped {
-    model: String,
-}
-
 impl ModelInfoLookup for Catalog {
-    type Error = NotMapped;
-
-    fn model_info(&self, model: &str) -> Result<JsonObject, NotMapped> {
-        price_record(model).ok_or_else(|| NotMapped {
-            model: model.to_owned(),
-        })
+    fn model_info(&self, model: &str) -> Option<JsonObject> {
+        price_record(model)
     }
 }
 
@@ -276,15 +266,14 @@ fn price_record(model: &str) -> Option<JsonObject> {
     serde_json::from_value(prices).ok()
 }
 
-fn reply_error(error: &StabilityEditError<NotMapped>) -> Box<HelperError> {
+fn reply_error(error: &StabilityEditError) -> Box<HelperError> {
     let status = match error {
         StabilityEditError::Reply(reply) => Some(reply.status()),
         StabilityEditError::MissingApiKey
         | StabilityEditError::UnsupportedParameter { .. }
         | StabilityEditError::RequestField { .. }
         | StabilityEditError::MissingFile { .. }
-        | StabilityEditError::CostValue(_)
-        | StabilityEditError::ModelInfo(_) => None,
+        | StabilityEditError::CostValue(_) => None,
     };
     Box::new(HelperError {
         class: "BaseLLMException".to_owned(),

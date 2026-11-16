@@ -1,6 +1,14 @@
 task: B1523
 deviations:
   - what: >-
+      A Stability edit for a model with no catalog entry returns the decoded image with a zero
+      response-cost header.
+    why: >-
+      LiteLLM calls get_model_info after the provider has already returned and billed the image, so an
+      unmapped model name loses the image on every call. betterlite treats the missing entry like an
+      entry without output_cost_per_image.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L306-L312
+  - what: >-
       A model record without output_cost_per_image attaches a 0.0 header, where LiteLLM attaches no header at
       all. get_model_info fills every known cost key with None first, so the .get("output_cost_per_image", 0)
       default never fires and the None value suppresses the header.

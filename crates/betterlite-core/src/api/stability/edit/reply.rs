@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use betterlite_logging::langfuse_assembly::usage::cost_value;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
@@ -15,11 +13,9 @@ pub const COST_HEADER: &str = "llm_provider-x-litellm-response-cost";
 
 const OUTPUT_COST_PER_IMAGE: &str = "output_cost_per_image";
 
-// B2225 get_model_info hands over the model's metadata record; a failed lookup keeps its own error type
+// B2225 get_model_info hands over the model's metadata record; an unmapped model has none
 pub trait ModelInfoLookup {
-    type Error: Error + 'static;
-
-    fn model_info(&self, model: &str) -> Result<JsonObject, Self::Error>;
+    fn model_info(&self, model: &str) -> Option<JsonObject>;
 }
 
 #[derive(Debug)]
@@ -34,7 +30,7 @@ pub fn transform_image_edit_response<Lookup>(
     upstream: &ImageHttpResponse,
     now_seconds: i64,
     lookup: &Lookup,
-) -> Result<ImageEditReply, StabilityEditError<Lookup::Error>>
+) -> Result<ImageEditReply, StabilityEditError>
 where
     Lookup: ModelInfoLookup,
 {
@@ -44,11 +40,12 @@ where
         usage: None,
     };
     decode_stability_image(upstream, &mut response)?;
-    let info = lookup
-        .model_info(model)
-        .map_err(StabilityEditError::ModelInfo)?;
+    let record = lookup.model_info(model);
+    let price = record
+        .as_ref()
+        .and_then(|info| info.get(OUTPUT_COST_PER_IMAGE));
     let mut additional_headers = AdditionalHeaders::new();
-    if let Some(value) = cost_header(info.get(OUTPUT_COST_PER_IMAGE))? {
+    if let Some(value) = cost_header(price)? {
         additional_headers.insert(COST_HEADER.to_owned(), value);
     }
     Ok(ImageEditReply {

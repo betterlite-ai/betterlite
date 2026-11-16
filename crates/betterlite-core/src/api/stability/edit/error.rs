@@ -1,6 +1,3 @@
-use std::convert::Infallible;
-use std::error::Error;
-
 use betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError;
 use thiserror::Error;
 
@@ -18,10 +15,7 @@ pub enum CostValueError {
 }
 
 #[derive(Debug, Error)]
-pub enum StabilityEditError<LookupError = Infallible>
-where
-    LookupError: Error + 'static,
-{
+pub enum StabilityEditError {
     #[error("STABILITY_API_KEY is not set; set the environment variable or pass an api_key")]
     MissingApiKey,
     #[error(
@@ -36,6 +30,4 @@ where
     CostValue(#[from] CostValueError),
     #[error(transparent)]
     Reply(#[from] StabilityReplyError),
-    #[error(transparent)]
-    ModelInfo(LookupError),
 }

@@ -94,25 +94,17 @@ fn image(value: &str) -> ImageData {
 
 struct Catalog(JsonObject);
 
-#[derive(Debug, thiserror::Error)]
-#[error("the model is not mapped")]
-struct Unmapped;
-
 impl ModelInfoLookup for Catalog {
-    type Error = Unmapped;
-
-    fn model_info(&self, _model: &str) -> Result<JsonObject, Unmapped> {
-        Ok(self.0.clone())
+    fn model_info(&self, _model: &str) -> Option<JsonObject> {
+        Some(self.0.clone())
     }
 }
 
 struct Missing;
 
 impl ModelInfoLookup for Missing {
-    type Error = Unmapped;
-
-    fn model_info(&self, _model: &str) -> Result<JsonObject, Unmapped> {
-        Err(Unmapped)
+    fn model_info(&self, _model: &str) -> Option<JsonObject> {
+        None
     }
 }
 
@@ -120,10 +112,7 @@ fn catalog(source: &str) -> Catalog {
     Catalog(serde_json::from_str(source).expect("the catalog entry is a price record"))
 }
 
-fn response<Lookup>(
-    lookup: &Lookup,
-    body: &str,
-) -> Result<ImageEditReply, StabilityEditError<Lookup::Error>>
+fn response<Lookup>(lookup: &Lookup, body: &str) -> Result<ImageEditReply, StabilityEditError>
 where
     Lookup: ModelInfoLookup,
 {
@@ -838,11 +827,17 @@ fn a_cost_that_is_not_a_decimal_price_names_the_failure(
 }
 
 #[test]
-fn an_unmapped_model_fails_the_lookup() {
-    let error =
-        response(&Missing, r#"{"image": "abc"}"#).expect_err("the model has no price record");
+fn an_unmapped_model_gets_the_image_and_a_zero_cost() {
+    let reply = transform_image_edit_response(
+        "stability/my-inpaint",
+        &upstream(200, r#"{"image": "abc", "finish_reason": "SUCCESS"}"#),
+        NOW,
+        &Missing,
+    )
+    .expect("an unmapped model still returns the image");
 
-    assert!(matches!(error, StabilityEditError::ModelInfo(Unmapped)));
+    assert_eq!(reply.response.data, Some(vec![image("abc")]));
+    assert_eq!(header(&reply), Some(&price("0.0")));
 }
 
 #[test]
@@ -857,15 +852,14 @@ fn the_reply_is_decoded_before_the_model_lookup() {
     ));
 }
 
-fn error_status(error: &StabilityEditError<Unmapped>) -> u16 {
+fn error_status(error: &StabilityEditError) -> u16 {
     match error {
         StabilityEditError::Reply(reply) => reply.status(),
         StabilityEditError::MissingApiKey
         | StabilityEditError::UnsupportedParameter { .. }
         | StabilityEditError::RequestField { .. }
         | StabilityEditError::MissingFile { .. }
-        | StabilityEditError::CostValue(_)
-        | StabilityEditError::ModelInfo(_) => 0,
+        | StabilityEditError::CostValue(_) => 0,
     }
 }
 
