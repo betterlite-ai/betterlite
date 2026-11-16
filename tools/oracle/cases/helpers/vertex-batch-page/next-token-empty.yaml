@@ -1,0 +1,7 @@
+kind: helper
+name: vertex-batch-page-next-token-empty
+call:
+  vertex_batch_page:
+    body: '{"batchPredictionJobs":[],"nextPageToken":""}'
+env: {}
+compare: {ignore: []}

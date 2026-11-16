@@ -1,0 +1,14 @@
+kind: helper
+name: fal-flux-dev-endpoint
+call:
+  fal_flux:
+    operation: dev_endpoint
+    environments:
+      - {}
+      - {FAL_AI_API_BASE: "https://env.test/base///"}
+      - {FAL_AI_API_BASE: "", FAL_AI_API_KEY: env-key}
+    api_bases: [null, "", "https://proxy.test/fal///"]
+    profiles: [ultra, pro_v11, schnell, dev]
+env: {}
+compare:
+  ignore: []
