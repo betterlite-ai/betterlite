@@ -63,12 +63,6 @@ fn image(url: &str) -> ImageData {
     }
 }
 
-fn urls(data: &[ImageData]) -> Vec<&str> {
-    data.iter()
-        .filter_map(|image| image.url.as_deref())
-        .collect()
-}
-
 fn reply_failure(result: Result<Vec<ImageData>, DashscopeImageError>) -> DashscopeError {
     match result {
         Err(DashscopeImageError::Reply(error)) => error,
@@ -283,15 +277,11 @@ fn resolve_image_key_prefers_a_non_empty_argument() {
     assert_eq!(
         resolve_image_key(&identity, Some("sk-arg"))
             .unwrap()
-            .expose_secret()
-            .as_str(),
+            .expose_secret(),
         "sk-arg"
     );
     assert_eq!(
-        resolve_image_key(&identity, None)
-            .unwrap()
-            .expose_secret()
-            .as_str(),
+        resolve_image_key(&identity, None).unwrap().expose_secret(),
         "sk-env"
     );
 }
@@ -302,8 +292,7 @@ fn resolve_image_key_skips_an_empty_argument() {
     assert_eq!(
         resolve_image_key(&identity, Some(""))
             .unwrap()
-            .expose_secret()
-            .as_str(),
+            .expose_secret(),
         "sk-env"
     );
 }
@@ -317,8 +306,7 @@ fn resolve_image_key_falls_through_to_the_fallback_and_then_the_message() {
     assert_eq!(
         resolve_image_key(&identity, Some(""))
             .unwrap()
-            .expose_secret()
-            .as_str(),
+            .expose_secret(),
         "sk-fallback"
     );
     let message = resolve_image_key(&plain_identity(None, None), None).unwrap_err();
@@ -373,18 +361,14 @@ fn transform_image_generation_request_sends_an_empty_parameter_object() {
     );
 }
 
-fn reply_body() -> &'static [u8] {
-    br#"{"output":{"choices":[{"message":{"content":[{"image":"https://img/1.png"}]}},{"message":{"content":[{"image":"https://img/2.png"},{"image":""},{"text":"hi"}]}}]}}"#
-}
-
 #[test]
 fn the_reply_collects_every_image_from_every_choice() {
-    let data = decode_dashscope_image_reply(reply_body(), 200, &Headers::new()).unwrap();
+    let body = br#"{"output":{"choices":[{"message":{"content":[{"image":"https://img/1.png"}]}},{"message":{"content":[{"image":"https://img/2.png"},{"image":""},{"text":"hi"}]}}]}}"#;
+    let data = decode_dashscope_image_reply(body, 200, &Headers::new()).unwrap();
     assert_eq!(
         data,
         vec![image("https://img/1.png"), image("https://img/2.png")]
     );
-    assert_eq!(urls(&data), ["https://img/1.png", "https://img/2.png"]);
 }
 
 #[rstest]
@@ -476,7 +460,7 @@ fn a_status_other_than_200_is_an_error() {
     let body = br#"{"output":{"choices":[]}}"#;
     let error = reply_failure(decode_dashscope_image_reply(body, 201, &Headers::new()));
     assert_eq!(error.status_code, 201);
-    assert_eq!(error.message, std::str::from_utf8(body).unwrap());
+    assert_eq!(error.message.as_bytes(), body);
 }
 
 #[test]

@@ -45,7 +45,7 @@ impl DashscopeImageConfig {
     // a chat-shaped base is dropped, then an empty environment base, then the default answer as is
     #[must_use]
     pub fn complete_url(&self, api_base: Option<&str>) -> String {
-        let api_base = api_base.filter(|base| {
+        let explicit_base = api_base.filter(|base| {
             !base.is_empty()
                 && !base
                     .trim_end_matches('/')
@@ -56,7 +56,7 @@ impl DashscopeImageConfig {
             .env_image_base
             .as_deref()
             .filter(|base| !base.is_empty());
-        api_base
+        explicit_base
             .or(env_image_base)
             .map_or_else(|| self.identity.default_image_base.clone(), str::to_owned)
     }

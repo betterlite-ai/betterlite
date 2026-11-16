@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::{
     DashscopeFamily, FamilyEnv, chat_config, chat_policy, embedding_config, embedding_identity,
@@ -67,10 +67,7 @@ fn a_brand_chat_config_falls_through_to_the_dashscope_key(#[case] family: Dashsc
     };
     let brand_key = chat_config(family, &with_brand).provider_info(None, None);
     assert_eq!(
-        brand_key
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        brand_key.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-brand")
     );
     let dashscope_only = FamilyEnv {
@@ -82,7 +79,7 @@ fn a_brand_chat_config_falls_through_to_the_dashscope_key(#[case] family: Dashsc
         dashscope_key
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("sk-dash")
     );
 }
@@ -97,57 +94,71 @@ fn the_plain_embedding_identity_reads_only_the_dashscope_key() {
     );
     assert_eq!(identity.env_base.as_deref(), Some("https://env.test/v1"));
     assert_eq!(
-        identity
-            .env_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        identity.env_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-dash")
     );
     assert_eq!(
         identity
             .fallback_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         None
     );
     assert!(identity.empty_key_is_set);
 }
 
+// both brand identities carry the same key values behind their different bases and messages
 #[rstest]
 #[case::qwencloud(
     DashscopeFamily::QwenCloud,
     "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
     "QwenCloud API key is required. Set 'QWENCLOUD_API_KEY' or 'DASHSCOPE_API_KEY' env var or pass api_key explicitly."
 )]
 #[case::qwen_ai_platform(
     DashscopeFamily::QwenAiPlatform,
     "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
     "Qianwen AI Platform API key is required. Set 'QWEN_AI_PLATFORM_API_KEY' or 'DASHSCOPE_API_KEY' env var or pass api_key explicitly."
 )]
-fn a_brand_embedding_identity_reads_the_brand_key_before_the_dashscope_key(
+fn a_brand_identity_reads_the_brand_key_before_the_dashscope_key(
     #[case] family: DashscopeFamily,
     #[case] default_base: &str,
+    #[case] default_image_base: &str,
     #[case] message: &str,
 ) {
-    let identity = embedding_identity(family, &env_with_keys());
-    assert_eq!(identity.default_base, default_base);
-    assert_eq!(identity.missing_key_message, message);
-    assert_eq!(identity.env_base.as_deref(), Some("https://env.test/v1"));
+    let env = env_with_keys();
+    let embedding = embedding_identity(family, &env);
+    let image = image_identity(family, &env);
+    assert_eq!(embedding.default_base, default_base);
+    assert_eq!(image.default_image_base, default_image_base);
+    assert_eq!(embedding.missing_key_message, message);
+    assert_eq!(image.missing_key_message, message);
+    assert_eq!(embedding.env_base.as_deref(), Some("https://env.test/v1"));
     assert_eq!(
-        identity
-            .env_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        image.env_image_base.as_deref(),
+        Some("https://env.test/image")
+    );
+    assert_eq!(
+        embedding.env_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-brand")
     );
     assert_eq!(
-        identity
+        image.env_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("sk-brand")
+    );
+    assert_eq!(
+        embedding
             .fallback_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("sk-dash")
     );
-    assert!(!identity.empty_key_is_set);
+    assert_eq!(
+        image.fallback_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("sk-dash")
+    );
+    assert!(!embedding.empty_key_is_set);
 }
 
 #[test]
@@ -162,7 +173,7 @@ fn embedding_config_carries_the_family_identity() {
             .identity
             .env_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("sk-brand")
     );
 }
@@ -204,7 +215,7 @@ fn rerank_config_carries_the_family_identity_and_settings() {
             .identity
             .env_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("sk-brand")
     );
     assert_eq!(config.settings, rerank_settings(family, &env_with_keys()));
@@ -226,57 +237,15 @@ fn the_plain_image_identity_takes_the_international_host_and_the_dashscope_key()
         Some("https://env.test/image")
     );
     assert_eq!(
-        identity
-            .env_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        identity.env_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-dash")
     );
     assert_eq!(
         identity
             .fallback_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         None
-    );
-}
-
-#[rstest]
-#[case::qwencloud(
-    DashscopeFamily::QwenCloud,
-    "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
-    "QwenCloud API key is required. Set 'QWENCLOUD_API_KEY' or 'DASHSCOPE_API_KEY' env var or pass api_key explicitly."
-)]
-#[case::qwen_ai_platform(
-    DashscopeFamily::QwenAiPlatform,
-    "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
-    "Qianwen AI Platform API key is required. Set 'QWEN_AI_PLATFORM_API_KEY' or 'DASHSCOPE_API_KEY' env var or pass api_key explicitly."
-)]
-fn a_brand_image_identity_reads_the_brand_key_and_its_own_host(
-    #[case] family: DashscopeFamily,
-    #[case] default_image_base: &str,
-    #[case] message: &str,
-) {
-    let identity = image_identity(family, &env_with_keys());
-    assert_eq!(identity.default_image_base, default_image_base);
-    assert_eq!(identity.missing_key_message, message);
-    assert_eq!(
-        identity.env_image_base.as_deref(),
-        Some("https://env.test/image")
-    );
-    assert_eq!(
-        identity
-            .env_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("sk-brand")
-    );
-    assert_eq!(
-        identity
-            .fallback_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("sk-dash")
     );
 }
 
@@ -292,7 +261,7 @@ fn image_config_carries_the_family_identity() {
             .identity
             .env_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("sk-brand")
     );
 }
@@ -306,46 +275,45 @@ fn a_non_empty_argument_wins_for_every_family(#[case] family: DashscopeFamily) {
     let dashscope = SecretString::from("sk-dash");
     let key = resolve_family_api_key(family, Some("sk-arg"), Some(&brand), Some(&dashscope));
     assert_eq!(
-        key.as_ref().map(|key| key.expose_secret().as_str()),
+        key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-arg")
     );
 }
 
 #[rstest]
-#[case::qwencloud(DashscopeFamily::QwenCloud)]
-#[case::qwen_ai_platform(DashscopeFamily::QwenAiPlatform)]
-fn a_brand_takes_the_brand_key_before_the_dashscope_key(#[case] family: DashscopeFamily) {
-    let brand = SecretString::from("sk-brand");
+#[case::brand_key_wins(None, Some("sk-brand"), Some("sk-brand"))]
+#[case::an_empty_argument_keeps_the_brand(Some(""), Some("sk-brand"), Some("sk-brand"))]
+#[case::no_brand_key_falls_through(None, None, Some("sk-dash"))]
+#[case::an_empty_brand_key_falls_through(None, Some(""), Some("sk-dash"))]
+fn a_qwencloud_key_takes_the_brand_key_before_the_dashscope_key(
+    #[case] argument: Option<&str>,
+    #[case] brand_value: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
+    let brand = brand_value.map(SecretString::from);
     let dashscope = SecretString::from("sk-dash");
-    let given = resolve_family_api_key(family, None, Some(&brand), Some(&dashscope));
-    let empty_argument = resolve_family_api_key(family, Some(""), Some(&brand), Some(&dashscope));
-    assert_eq!(
-        given.as_ref().map(|key| key.expose_secret().as_str()),
-        Some("sk-brand")
+    let key = resolve_family_api_key(
+        DashscopeFamily::QwenCloud,
+        argument,
+        brand.as_ref(),
+        Some(&dashscope),
     );
-    assert_eq!(
-        empty_argument
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("sk-brand")
-    );
+    assert_eq!(key.as_ref().map(ExposeSecret::expose_secret), expected);
 }
 
-#[rstest]
-#[case::qwencloud(DashscopeFamily::QwenCloud)]
-#[case::qwen_ai_platform(DashscopeFamily::QwenAiPlatform)]
-fn a_brand_falls_through_an_absent_or_empty_brand_key(#[case] family: DashscopeFamily) {
+#[test]
+fn a_platform_key_takes_the_brand_key_before_the_dashscope_key() {
+    let brand = SecretString::from("sk-brand");
     let dashscope = SecretString::from("sk-dash");
-    let empty = SecretString::from("");
-    let absent = resolve_family_api_key(family, None, None, Some(&dashscope));
-    let blank = resolve_family_api_key(family, None, Some(&empty), Some(&dashscope));
-    assert_eq!(
-        absent.as_ref().map(|key| key.expose_secret().as_str()),
-        Some("sk-dash")
+    let key = resolve_family_api_key(
+        DashscopeFamily::QwenAiPlatform,
+        None,
+        Some(&brand),
+        Some(&dashscope),
     );
     assert_eq!(
-        blank.as_ref().map(|key| key.expose_secret().as_str()),
-        Some("sk-dash")
+        key.as_ref().map(ExposeSecret::expose_secret),
+        Some("sk-brand")
     );
 }
 
@@ -360,7 +328,7 @@ fn the_plain_family_never_reads_the_brand_key() {
         Some(&dashscope),
     );
     assert_eq!(
-        key.as_ref().map(|key| key.expose_secret().as_str()),
+        key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-dash")
     );
 }
@@ -373,7 +341,7 @@ fn no_key_at_all_resolves_to_none(#[case] family: DashscopeFamily) {
     assert!(resolve_family_api_key(family, None, None, None).is_none());
     let empty = SecretString::from("");
     let key = resolve_family_api_key(family, Some(""), Some(&empty), Some(&empty));
-    assert_eq!(key.as_ref().map(|key| key.expose_secret().as_str()), None);
+    assert_eq!(key.as_ref().map(ExposeSecret::expose_secret), None);
 }
 
 #[rstest]

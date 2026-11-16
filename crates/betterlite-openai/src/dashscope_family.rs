@@ -2,11 +2,13 @@ mod tests;
 
 use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::dashscope_chat::DEFAULT_BASE as CHAT_DEFAULT_BASE;
 use crate::dashscope_chat::{ChatBasePolicy, DashscopeChatConfig};
+use crate::dashscope_embedding::DASHSCOPE_MISSING_KEY_MESSAGE;
 use crate::dashscope_embedding::DashscopeEmbeddingConfig;
 use crate::dashscope_embedding::identity::FamilyIdentity;
-use crate::dashscope_image::DashscopeImageConfig;
 use crate::dashscope_image::identity::ImageIdentity;
+use crate::dashscope_image::{DEFAULT_API_BASE, DashscopeImageConfig, MISSING_KEY_MESSAGE};
 
 const DASHSCOPE_RERANK_URL: &str = "https://dashscope.aliyuncs.com/compatible-api/v1/reranks";
 const QWENCLOUD_CHAT_BASE: &str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
@@ -79,15 +81,14 @@ struct FamilyDefaults {
     env_in_complete_url: bool,
 }
 
-fn defaults(family: DashscopeFamily) -> FamilyDefaults {
+const fn defaults(family: DashscopeFamily) -> FamilyDefaults {
     match family {
         DashscopeFamily::Dashscope => FamilyDefaults {
-            chat_base: crate::dashscope_chat::DEFAULT_BASE,
+            chat_base: CHAT_DEFAULT_BASE,
             rerank_url: DASHSCOPE_RERANK_URL,
-            image_base: crate::dashscope_image::DEFAULT_API_BASE,
-            embedding_missing_key_message:
-                crate::dashscope_embedding::DASHSCOPE_MISSING_KEY_MESSAGE,
-            image_missing_key_message: crate::dashscope_image::MISSING_KEY_MESSAGE,
+            image_base: DEFAULT_API_BASE,
+            embedding_missing_key_message: DASHSCOPE_MISSING_KEY_MESSAGE,
+            image_missing_key_message: MISSING_KEY_MESSAGE,
             env_in_complete_url: false,
         },
         DashscopeFamily::QwenCloud => FamilyDefaults {
@@ -134,22 +135,30 @@ pub fn chat_config(family: DashscopeFamily, env: &FamilyEnv) -> DashscopeChatCon
     }
 }
 
+// a brand reads its own key before the DashScope one; the plain family has only the DashScope key
+fn family_keys(
+    family: DashscopeFamily,
+    env: &FamilyEnv,
+) -> (Option<SecretString>, Option<SecretString>) {
+    match family {
+        DashscopeFamily::Dashscope => (env.fallback_key.clone(), None),
+        DashscopeFamily::QwenCloud | DashscopeFamily::QwenAiPlatform => {
+            (env.brand_key.clone(), env.fallback_key.clone())
+        }
+    }
+}
+
 #[must_use]
 pub fn embedding_identity(family: DashscopeFamily, env: &FamilyEnv) -> FamilyIdentity {
     let defaults = defaults(family);
-    let (env_key, fallback_key, empty_key_is_set) = match family {
-        DashscopeFamily::Dashscope => (env.fallback_key.clone(), None, true),
-        DashscopeFamily::QwenCloud | DashscopeFamily::QwenAiPlatform => {
-            (env.brand_key.clone(), env.fallback_key.clone(), false)
-        }
-    };
+    let (env_key, fallback_key) = family_keys(family, env);
     FamilyIdentity {
         missing_key_message: defaults.embedding_missing_key_message.to_owned(),
         default_base: defaults.chat_base.to_owned(),
         env_base: env.base.clone(),
         env_key,
         fallback_key,
-        empty_key_is_set,
+        empty_key_is_set: family == DashscopeFamily::Dashscope,
     }
 }
 
@@ -179,12 +188,7 @@ pub fn rerank_config(family: DashscopeFamily, env: &FamilyEnv) -> RerankConfig {
 #[must_use]
 pub fn image_identity(family: DashscopeFamily, env: &FamilyEnv) -> ImageIdentity {
     let defaults = defaults(family);
-    let (env_key, fallback_key) = match family {
-        DashscopeFamily::Dashscope => (env.fallback_key.clone(), None),
-        DashscopeFamily::QwenCloud | DashscopeFamily::QwenAiPlatform => {
-            (env.brand_key.clone(), env.fallback_key.clone())
-        }
-    };
+    let (env_key, fallback_key) = family_keys(family, env);
     ImageIdentity {
         missing_key_message: defaults.image_missing_key_message.to_owned(),
         env_key,

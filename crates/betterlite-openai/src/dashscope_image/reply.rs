@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -54,7 +56,7 @@ fn read_output(
         return Err(shape_error("the reply", headers));
     };
     check_body_error(&fields, status_code, headers)?;
-    match fields.remove("output") {
+    match fields.shift_remove("output") {
         None => Ok(None),
         Some(Json::Object(output)) => Ok(Some(output)),
         Some(_) => Err(shape_error("output", headers)),
@@ -72,11 +74,11 @@ pub fn decode_dashscope_image_reply(
     let Some(choices) = output.get("choices") else {
         return Ok(Vec::new());
     };
-    let Json::List(choices) = choices else {
+    let Json::List(entries) = choices else {
         return Err(shape_error("output.choices", headers));
     };
     let mut data = Vec::new();
-    for choice in choices {
+    for choice in entries {
         collect_choice(choice, headers, &mut data)?;
     }
     Ok(data)
@@ -87,22 +89,22 @@ fn collect_choice(
     headers: &Headers,
     data: &mut Vec<ImageData>,
 ) -> Result<(), DashscopeImageError> {
-    let Json::Object(choice) = choice else {
+    let Json::Object(fields) = choice else {
         return Err(shape_error("output.choices", headers));
     };
-    let Some(message) = choice.get("message") else {
+    let Some(message) = fields.get("message") else {
         return Ok(());
     };
-    let Json::Object(message) = message else {
+    let Json::Object(message_fields) = message else {
         return Err(shape_error("output.choices.message", headers));
     };
-    let Some(content) = message.get("content") else {
+    let Some(content) = message_fields.get("content") else {
         return Ok(());
     };
-    let Json::List(content) = content else {
+    let Json::List(items) = content else {
         return Err(shape_error("output.choices.message.content", headers));
     };
-    for item in content {
+    for item in items {
         collect_image(item, headers, data)?;
     }
     Ok(())
@@ -113,10 +115,10 @@ fn collect_image(
     headers: &Headers,
     data: &mut Vec<ImageData>,
 ) -> Result<(), DashscopeImageError> {
-    let Json::Object(item) = item else {
+    let Json::Object(entry) = item else {
         return Err(shape_error("output.choices.message.content", headers));
     };
-    let Some(image) = item.get("image") else {
+    let Some(image) = entry.get("image") else {
         return Ok(());
     };
     if image == &Json::Null {
@@ -137,10 +139,10 @@ fn collect_image(
 }
 
 fn body_text(bytes: &[u8]) -> String {
-    match std::str::from_utf8(bytes) {
-        Ok(text) => text.to_owned(),
-        Err(_) => format!("{} bytes of a body that is not UTF-8", bytes.len()),
-    }
+    from_utf8(bytes).map_or_else(
+        |_| format!("{} bytes of a body that is not UTF-8", bytes.len()),
+        str::to_owned,
+    )
 }
 
 fn shape_error(field: &str, headers: &Headers) -> DashscopeImageError {
