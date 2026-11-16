@@ -1,0 +1,16 @@
+kind: helper
+name: studio-veo-typed-parameter-filter
+call:
+  studio_veo_request:
+    requests:
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {resolution: 720p, aspectRatio: '', durationSeconds: 0, referenceImages: []}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {sampleCount: 3, parameters: {sampleCount: 2}, bogus: {nested: [1, null]}}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {personGeneration: null, negativePrompt: null, lastFrame: null, referenceImages: null, video: null}}
+      - model: veo-3
+        prompt: a prompt
+        api_key: oracle-key
+        params:
+          lastFrame: {a: null, b: 1}
+          referenceImages: [null, {b: null}, 1]
+env: {}
+compare: {ignore: []}
