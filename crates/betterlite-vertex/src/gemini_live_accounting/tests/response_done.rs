@@ -119,22 +119,23 @@ fn modalities_default_to_audio_and_are_lowercased(
 }
 
 #[rstest]
-#[case::absent(r#"{"setup": {"generationConfig": {}}}"#, false, false)]
-#[case::temperature_only(r#"{"setup": {"generationConfig": {"temperature": 0}}}"#, true, false)]
+#[case::absent(r#"{"setup": {"generationConfig": {}}}"#, &[])]
+#[case::temperature_only(r#"{"setup": {"generationConfig": {"temperature": 0}}}"#, &["temperature"])]
 #[case::max_tokens_only(
     r#"{"setup": {"generationConfig": {"maxOutputTokens": 0}}}"#,
-    false,
-    true
+    &["max_output_tokens"]
+)]
+#[case::both(
+    r#"{"setup": {"generationConfig": {"temperature": 1, "maxOutputTokens": 2}}}"#,
+    &["temperature", "max_output_tokens"]
 )]
 #[case::explicit_nulls(
     r#"{"setup": {"generationConfig": {"temperature": null, "maxOutputTokens": null}}}"#,
-    false,
-    false
+    &[]
 )]
 fn temperature_and_max_output_tokens_appear_only_when_set(
     #[case] setup: &str,
-    #[case] has_temperature: bool,
-    #[case] has_max_tokens: bool,
+    #[case] expected: &[&str],
 ) {
     let event = done(
         &mut LiveSessionState::default(),
@@ -143,8 +144,11 @@ fn temperature_and_max_output_tokens_appear_only_when_set(
     )
     .expect("the event builds");
     let response = response(&event);
-    assert_eq!(response.contains_key("temperature"), has_temperature);
-    assert_eq!(response.contains_key("max_output_tokens"), has_max_tokens);
+    let present: Vec<&str> = ["temperature", "max_output_tokens"]
+        .into_iter()
+        .filter(|key| response.contains_key(*key))
+        .collect();
+    assert_eq!(present, expected);
 }
 
 #[test]

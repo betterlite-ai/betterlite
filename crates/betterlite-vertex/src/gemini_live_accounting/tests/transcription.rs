@@ -85,6 +85,25 @@ fn a_model_that_is_not_transcription_keeps_its_bytes(#[case] model: &str) {
 }
 
 #[test]
+fn audio_ties_go_to_the_even_neighbour() {
+    let audio_tokens = |bytes: u64| {
+        estimate(&mut state_with(bytes), TRANSCRIBE_MODEL).map(|usage| usage.input_tokens)
+    };
+    assert_eq!(audio_tokens(960), Some(0));
+    assert_eq!(audio_tokens(2_880), Some(2));
+    assert_eq!(audio_tokens(4_800), Some(2));
+}
+
+#[test]
+fn output_ties_go_to_the_even_neighbour() {
+    let output_tokens = |bytes: u64| {
+        estimate(&mut state_with(bytes), TRANSCRIBE_MODEL).map(|usage| usage.output_tokens)
+    };
+    assert_eq!(output_tokens(57_600), Some(4));
+    assert_eq!(output_tokens(172_800), Some(10));
+}
+
+#[test]
 fn the_largest_byte_count_still_fits_the_token_fields() {
     let mut state = state_with(u64::MAX);
     let usage = estimate(&mut state, TRANSCRIBE_MODEL).expect("a transcribe session bills");

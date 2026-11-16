@@ -26,14 +26,14 @@ pub fn chat_usage(
     reported: Option<&Object>,
     grounding_metadata: Option<&Object>,
 ) -> Result<Usage, LiveAccountingError> {
-    let Some(reported) = reported else {
+    let Some(reported_usage) = reported else {
         return Ok(Usage::default());
     };
-    let metadata: UsageMetadata = reencode(reported)?;
+    let metadata: UsageMetadata = reencode(reported_usage)?;
     let mut usage = calculate_usage(Some(&metadata), &[])?;
     if let Some(grounding) = grounding_metadata {
-        let grounding: Json = reencode(grounding)?;
-        apply_grounding_counters(&mut usage, &[grounding]);
+        let converted: Json = reencode(grounding)?;
+        apply_grounding_counters(&mut usage, &[converted]);
     }
     Ok(usage)
 }

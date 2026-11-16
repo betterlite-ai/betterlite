@@ -144,6 +144,20 @@ fn arguments_are_dumped_with_python_spacing_and_ascii_escapes(
 }
 
 #[test]
+fn a_call_without_args_dumps_an_empty_object() {
+    let mut names = ToolCallNames::default();
+    let events = transform(
+        &mut names,
+        r#"{"functionCalls": [{"id": "a", "name": "f"}]}"#,
+        ToolCallIds {
+            response_id: Some("resp"),
+            output_item_id: Some("item"),
+        },
+    );
+    assert_eq!(events[0].arguments, "{}");
+}
+
+#[test]
 fn no_function_calls_emit_no_events_and_remember_nothing() {
     let mut names = ToolCallNames::default();
     let events = transform(&mut names, "{}", ToolCallIds::default());
