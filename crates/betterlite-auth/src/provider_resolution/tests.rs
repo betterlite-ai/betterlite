@@ -24,14 +24,8 @@ struct FakeNative {
 impl FakeNative {
     fn new(entries: &[(&'static str, &'static str, &'static str)]) -> Self {
         let mut answers = BTreeMap::new();
-        for (model, resolved, provider) in entries {
-            answers.insert(
-                *model,
-                NativeAnswer {
-                    resolved: *resolved,
-                    provider: *provider,
-                },
-            );
+        for &(model, resolved, provider) in entries {
+            answers.insert(model, NativeAnswer { resolved, provider });
         }
         Self {
             answers,
