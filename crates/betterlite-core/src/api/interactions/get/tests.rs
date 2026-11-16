@@ -337,6 +337,14 @@ fn get_maps_a_provider_status_to_its_error_class() {
     assert_eq!(details.status.0, 404);
     assert_eq!(details.model.as_deref(), Some(""));
     assert_eq!(details.provider.as_deref(), Some("gemini"));
+    assert_eq!(
+        harness.state.optional_params.get("interaction_id"),
+        Some(&text("int_1"))
+    );
+    assert_eq!(
+        harness.state.model_call_details.get("custom_llm_provider"),
+        Some(&text("gemini"))
+    );
     drop(head_of(serving));
 }
 
@@ -451,5 +459,13 @@ async fn aget_reports_a_provider_status_to_its_error_class() {
         panic!("expected an internal server error, got {:?}", error.class);
     };
     assert_eq!(context.provider.as_deref(), Some("gemini"));
+    assert_eq!(
+        harness.state.optional_params.get("interaction_id"),
+        Some(&text("int_1"))
+    );
+    assert_eq!(
+        harness.state.model_call_details.get("custom_llm_provider"),
+        Some(&text("gemini"))
+    );
     drop(head_of(serving));
 }

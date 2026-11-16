@@ -82,7 +82,9 @@ where
                 )
             }
         },
-        rejected => dispatch(
+        rejected @ (InteractionGetError::Unsupported { .. }
+        | InteractionGetError::Logging(_)
+        | InteractionGetError::Transport(_)) => dispatch(
             &DispatchInput::Raw(Box::new(rejected_exception(rejected, provider))),
             redactor,
         ),
