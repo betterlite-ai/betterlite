@@ -1,0 +1,11 @@
+kind: helper
+name: router-runtime-settings-int-string-trimmed
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["num_retries", " 7 "]
+      - ["cooldown_time", "12"]
+env: {}
+compare: {ignore: []}
