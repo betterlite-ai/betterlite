@@ -1,0 +1,12 @@
+task: B3813
+deviations:
+  - what: >-
+      A streamed response is buffered up to 10,000 chunks by default. The chunk that would exceed the
+      limit is refused with a GuardrailRaisedException (status 400, blocked_content false), so the
+      stream fails instead of being relayed unchecked.
+    why: >-
+      LiteLLM appends every chunk to a list with no bound. A public gateway that buffers a provider
+      stream on behalf of a client needs a ceiling on untrusted input, so betterlite refuses past it.
+      The limit lives in StreamBufferLimits and the caller of the hook can lower it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L912-L915
+kept_bugs: []

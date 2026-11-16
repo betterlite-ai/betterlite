@@ -5,7 +5,6 @@ use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::{Object, StreamItem};
 use crate::tool_permission::ToolPermissionGuardrail;
 
-use super::anthropic_rewrite::rewrite_anthropic_responses;
 use super::buffer_overflow::{StreamBufferLimits, buffer_overflow_failure};
 use super::error::ResponseToolError;
 use super::evaluate::{DeniedToolCall, evaluate_tool_calls};
@@ -53,7 +52,9 @@ pub async fn post_call_streaming_iterator_hook(
     if denied.is_empty() {
         return relay(&output, chunks).await;
     }
-    rewrite_anthropic_responses(&mut response, &denied);
+    // The assembled Anthropic stream is an OpenAI-shaped response, so LiteLLM rewrites it with the OpenAI rewrite
+    // before translating it back to Anthropic SSE.
+    rewrite_openai_responses(&mut response, &denied);
     let frames = super::anthropic_reencode::encode_anthropic_stream(&response)?;
     relay(&output, frames.into_iter().map(StreamItem::Bytes).collect()).await
 }

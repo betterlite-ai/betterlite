@@ -195,6 +195,87 @@ fn check_assembled_stream_returns_nothing_without_tool_calls() {
     );
 }
 
+fn anthropic_tool_stream(tool_name: &str) -> String {
+    let frames = [
+        r#"{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-test","usage":{"input_tokens":10,"output_tokens":1}}}"#.to_owned(),
+        format!(
+            r#"{{"type":"content_block_start","index":0,"content_block":{{"type":"tool_use","id":"toolu_1","name":"{tool_name}","input":{{}}}}}}"#
+        ),
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"cmd\":\"ls\"}"}}"#.to_owned(),
+        r#"{"type":"content_block_stop","index":0}"#.to_owned(),
+        r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}"#.to_owned(),
+        r#"{"type":"message_stop"}"#.to_owned(),
+    ];
+    frames
+        .iter()
+        .map(|data| format!("data: {data}\n\n"))
+        .collect()
+}
+
+async fn run_anthropic(
+    guardrail: &crate::tool_permission::ToolPermissionGuardrail,
+    stream: String,
+) -> Vec<StreamItem> {
+    let (sender, receiver) = mpsc::channel(4);
+    sender
+        .send(StreamItem::Bytes(stream.into_bytes()))
+        .await
+        .expect("send");
+    drop(sender);
+    let (output, mut output_receiver) = mpsc::channel(64);
+    post_call_streaming_iterator_hook(
+        guardrail,
+        StreamBufferLimits::default(),
+        &services(),
+        receiver,
+        output,
+    )
+    .await
+    .expect("the stream checks");
+    let mut items = Vec::new();
+    while let Some(item) = output_receiver.recv().await {
+        items.push(item);
+    }
+    items
+}
+
+fn emitted_text(items: &[StreamItem]) -> String {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            StreamItem::Bytes(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
+            StreamItem::Json(_) => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn post_call_streaming_iterator_hook_rewrites_a_denied_anthropic_stream() {
+    let stream = anthropic_tool_stream("shell");
+    let items = run_anthropic(
+        &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
+        stream,
+    )
+    .await;
+    let text = emitted_text(&items);
+    assert!(text.contains(
+        "Permission denied: Tool 'shell' denied by rule 'block-shell' (Rule: block-shell)"
+    ));
+    assert!(text.contains(r#""stop_reason":"end_turn""#));
+    assert!(!text.contains(r#""type":"tool_use""#));
+}
+
+#[tokio::test]
+async fn post_call_streaming_iterator_hook_passes_an_allowed_anthropic_stream_through() {
+    let stream = anthropic_tool_stream("read");
+    let items = run_anthropic(
+        &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
+        stream.clone(),
+    )
+    .await;
+    assert_eq!(items, vec![StreamItem::Bytes(stream.into_bytes())]);
+}
+
 #[tokio::test]
 async fn relay_stops_when_the_receiver_is_gone() {
     let (output, receiver) = mpsc::channel(1);
