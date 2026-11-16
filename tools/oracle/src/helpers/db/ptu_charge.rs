@@ -95,13 +95,13 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let mut answers: BTreeMap<String, Value> = BTreeMap::new();
         for (name, step) in &input.steps {
-            answers.insert(name.clone(), answer(step)?);
+            answers.insert(name.clone(), step_answer(step)?);
         }
         Ok(serde_json::to_value(answers)?)
     }
 }
 
-fn answer(step: &Step) -> Result<Value, Box<HelperError>> {
+fn step_answer(step: &Step) -> Result<Value, Box<HelperError>> {
     match step {
         Step::Decode { raw } => decode_answer(raw),
         Step::Parse {
