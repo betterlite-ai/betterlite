@@ -125,7 +125,7 @@ pub fn event_hook_from_mode(
     match mode {
         LitellmParamsMode::Tagged(_) => {}
         LitellmParamsMode::Many(names) => {
-            names.iter().try_for_each(|name| check_event_hook(name))?
+            names.iter().try_for_each(|name| check_event_hook(name))?;
         }
         LitellmParamsMode::One(name) => check_event_hook(name)?,
     }

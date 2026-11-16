@@ -3,7 +3,6 @@ import os
 from typing import Final, Literal, Protocol, TypedDict, cast
 
 import httpx
-from fastapi import HTTPException
 from litellm.caching.dual_cache import DualCache
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.proxy._types import UserAPIKeyAuth
@@ -12,6 +11,7 @@ from litellm.proxy.guardrails.guardrail_hooks.repelloai.repelloai import Repello
 from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.utils import CallTypesLiteral
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 
 BODY_ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 

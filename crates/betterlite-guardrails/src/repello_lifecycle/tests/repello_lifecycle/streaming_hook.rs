@@ -3,7 +3,9 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
-use betterlite_guardrails::repello_lifecycle::{BLOCKED_MESSAGE, UNREACHABLE_MESSAGE};
+use betterlite_guardrails::repello_lifecycle::{
+    BLOCKED_MESSAGE, RepelloAILifecycle, UNREACHABLE_MESSAGE,
+};
 use rstest::rstest;
 use tracing::subscriber::set_default;
 
@@ -13,10 +15,7 @@ use crate::support::{
     request_count, run_stream, settings, text_chunks, text_field, value,
 };
 
-fn guarding(
-    base: &str,
-    mode: &str,
-) -> betterlite_guardrails::repello_lifecycle::RepelloAILifecycle {
+fn guarding(base: &str, mode: &str) -> RepelloAILifecycle {
     let mut configured = params();
     configured.mode = LitellmParamsMode::One(mode.to_owned());
     guardrail_with(&configured, settings(base))

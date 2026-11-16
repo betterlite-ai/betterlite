@@ -1,9 +1,11 @@
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
+use betterlite_guardrails::repello_lifecycle::hooks::HookTarget;
 use betterlite_guardrails::repello_lifecycle::{
     API_KEY_HEADER, Data, FAILED_MESSAGE, INVALID_JSON_ERROR_TYPE, INVALID_JSON_MESSAGE,
     PROMPT_STAGE, RESPONSE_STAGE, UNREACHABLE_ERROR_TYPE, UNREACHABLE_MESSAGE,
@@ -15,7 +17,7 @@ use tracing::subscriber::set_default;
 use crate::support::{
     API_KEY, CapturedLog, PASSED_REPLY, captured_body, captured_headers, captured_path, field,
     guardrail, mock_repello, mock_repello_after, prompt_data, records, request_count,
-    response_data, run_post_call, run_pre_call, settings, text_field,
+    response_data, run_hook, settings, text_field,
 };
 
 fn scan_text(body: &Data, stage: &str) -> Option<String> {
@@ -25,7 +27,13 @@ fn scan_text(body: &Data, stage: &str) -> Option<String> {
 #[tokio::test]
 async fn a_prompt_scan_posts_the_asset_and_the_prompt_text() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
-    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     assert!(run.result.is_ok());
     assert_eq!(captured_path(&mock), "/analyze/prompt");
     let headers = captured_headers(&mock);
@@ -53,10 +61,11 @@ async fn a_prompt_scan_posts_the_asset_and_the_prompt_text() {
 #[tokio::test]
 async fn a_response_scan_posts_the_response_text() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
-    let run = run_post_call(
+    let run = run_hook(
         &guardrail(settings(&mock.base)),
         prompt_data(),
-        &response_data(),
+        HookTarget::Response(&response_data()),
+        &BTreeSet::new(),
     )
     .await;
     assert!(run.result.is_ok());
@@ -69,7 +78,13 @@ async fn a_response_scan_posts_the_response_text() {
 #[tokio::test]
 async fn a_passed_scan_allows_the_request_and_records_it() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
-    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     assert!(run.result.is_ok());
     let recorded = records(&run.data);
     assert_eq!(recorded.len(), 1);
@@ -89,7 +104,13 @@ async fn a_passed_scan_allows_the_request_and_records_it() {
 #[tokio::test]
 async fn the_record_carries_the_scan_timestamps() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
-    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     let recorded = records(&run.data);
     let scan = &recorded[0];
     assert_eq!(
@@ -111,7 +132,13 @@ async fn the_record_carries_the_scan_timestamps() {
 #[tokio::test]
 async fn an_answer_that_is_not_an_analyze_response_is_a_500(#[case] reply: &str) {
     let mock = mock_repello(StatusCode::OK, reply).await;
-    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     let Err(GuardrailFailure::HttpObject { status, detail }) = run.result else {
         panic!("expected an invalid JSON failure");
     };
@@ -135,7 +162,13 @@ async fn a_request_timeout_is_an_unreachable_api() {
     let mock = mock_repello_after(Duration::from_secs(5), StatusCode::OK, PASSED_REPLY).await;
     let mut configured = settings(&mock.base);
     configured.request_timeout = Duration::from_millis(50);
-    let run = run_pre_call(&guardrail(configured), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(configured),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     let Err(GuardrailFailure::HttpObject { status, detail }) = run.result else {
         panic!("expected a timeout failure");
     };
@@ -161,7 +194,13 @@ async fn a_timed_out_scan_passes_under_fail_open() {
     let mut configured = settings(&mock.base);
     configured.request_timeout = Duration::from_millis(50);
     configured.unreachable_fallback = UnreachableFallback::FailOpen;
-    let run = run_pre_call(&guardrail(configured), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(configured),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     assert!(run.result.is_ok());
     let recorded = records(&run.data);
     assert_eq!(
@@ -176,7 +215,13 @@ async fn a_key_that_cannot_be_a_header_value_is_the_generic_failure_even_under_f
     let mut configured = settings(&mock.base);
     configured.api_key = SecretString::from(String::from("ключ"));
     configured.unreachable_fallback = UnreachableFallback::FailOpen;
-    let run = run_pre_call(&guardrail(configured), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(configured),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     let Err(GuardrailFailure::HttpObject { status, detail }) = run.result else {
         panic!("expected the generic failure");
     };
@@ -199,7 +244,13 @@ async fn an_answer_with_a_large_policy_list_is_read_whole() {
     let filler = "x".repeat(3_000);
     let reply = format!(r#"{{"verdict": "passed", "request_id": "{filler}"}}"#);
     let mock = mock_repello(StatusCode::OK, &reply).await;
-    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     assert!(run.result.is_ok());
 }
 
@@ -208,7 +259,13 @@ async fn an_answer_over_the_response_cap_is_the_generic_failure() {
     let filler = "x".repeat(1024 * 1024);
     let reply = format!(r#"{{"verdict": "passed", "request_id": "{filler}"}}"#);
     let mock = mock_repello(StatusCode::OK, &reply).await;
-    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     let Err(GuardrailFailure::HttpObject { status, detail }) = run.result else {
         panic!("expected the generic failure");
     };
@@ -223,7 +280,13 @@ async fn an_answer_over_the_response_cap_is_the_generic_failure() {
 #[tokio::test]
 async fn an_empty_reply_is_invalid_json() {
     let mock = mock_repello(StatusCode::OK, "").await;
-    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     assert!(matches!(
         run.result,
         Err(GuardrailFailure::HttpObject { status: 500, .. })
@@ -236,7 +299,13 @@ async fn the_scanned_text_never_reaches_the_log() {
     let captured = CapturedLog::default();
     let _guard = set_default(captured.subscriber(tracing::Level::TRACE));
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
-    let _run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let _run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     let log = captured.text();
     assert!(!log.contains("hello"), "{log}");
     assert!(!log.contains("passed"), "{log}");

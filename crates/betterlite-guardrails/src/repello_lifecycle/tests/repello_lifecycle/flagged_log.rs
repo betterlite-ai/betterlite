@@ -1,12 +1,15 @@
+use std::collections::BTreeSet;
+
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_guardrails::repello_lifecycle::hooks::HookTarget;
 use betterlite_guardrails::repello_lifecycle::verdict::log_flagged_verdict;
 use rstest::rstest;
 use tracing::subscriber::set_default;
 
 use crate::support::{
-    CapturedLog, FLAGGED_REPLY, applied, guardrail, mock_repello, parsed, prompt_data,
-    run_pre_call, settings,
+    CapturedLog, FLAGGED_REPLY, applied, guardrail, mock_repello, parsed, prompt_data, run_hook,
+    settings,
 };
 
 #[rstest]
@@ -40,7 +43,13 @@ async fn a_flagged_scan_allows_the_request_logs_it_and_records_success() {
     let captured = CapturedLog::default();
     let _guard = set_default(captured.subscriber(tracing::Level::WARN));
     let mock = mock_repello(StatusCode::OK, FLAGGED_REPLY).await;
-    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     assert!(run.result.is_ok());
     let log = captured.text();
     assert!(

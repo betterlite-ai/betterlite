@@ -21,60 +21,54 @@ use super::{BLOCKED_MESSAGE, Data, PROMPT_STAGE, RESPONSE_STAGE};
 pub struct HookContext<'context> {
     pub suppressed: &'context BTreeSet<String>,
     pub invocation: &'context mut GuardrailInvocation,
-    pub sink: &'context dyn GuardrailSpanSink,
+    pub sink: &'context (dyn GuardrailSpanSink + Sync),
     pub log_target: Option<&'context mut GuardrailLogTarget>,
 }
 
-// LiteLLM's async_pre_call_hook
-pub async fn pre_call_hook(
-    guardrail: &RepelloAILifecycle,
-    data: &mut Data,
-    context: &mut HookContext<'_>,
-) -> Result<(), GuardrailFailure> {
-    tracing::debug!("RepelloAI Argus: pre_call_hook");
-    let event_type = GuardrailEventHooks::PreCall;
-    if !guardrail
-        .base
-        .should_run_guardrail(data, event_type, context.suppressed)?
-    {
-        return Ok(());
-    }
-    let Some(text) = extract_prompt_text(data).filter(|text| !text.is_empty()) else {
-        tracing::warn!("RepelloAI Argus: no inspectable prompt text in data - skipping.");
-        return Ok(());
-    };
-    let scanned = guardrail
-        .call_analyze(&text, PROMPT_STAGE, event_type, data, context)
-        .await?;
-    raise_if_blocked(scanned.as_ref())?;
-    record_applied(guardrail, data);
-    Ok(())
+// The text a non-streamed hook scans: the request's prompt, or the model's response body.
+#[derive(Debug, Clone, Copy)]
+pub enum HookTarget<'response> {
+    Prompt,
+    Response(&'response Data),
 }
 
-// LiteLLM's async_post_call_success_hook
-pub async fn post_call_success_hook(
+// LiteLLM's async_pre_call_hook for the prompt and async_post_call_success_hook for the response
+pub async fn scan_hook(
     guardrail: &RepelloAILifecycle,
     data: &mut Data,
-    response: &Data,
+    target: HookTarget<'_>,
     context: &mut HookContext<'_>,
 ) -> Result<(), GuardrailFailure> {
-    tracing::debug!("RepelloAI Argus: post_call_success_hook");
-    let event_type = GuardrailEventHooks::PostCall;
+    let (hook, event_type, stage, skipped) = match target {
+        HookTarget::Prompt => (
+            "pre_call_hook",
+            GuardrailEventHooks::PreCall,
+            PROMPT_STAGE,
+            "no inspectable prompt text in data",
+        ),
+        HookTarget::Response(_) => (
+            "post_call_success_hook",
+            GuardrailEventHooks::PostCall,
+            RESPONSE_STAGE,
+            "no inspectable response text",
+        ),
+    };
+    tracing::debug!("RepelloAI Argus: {hook}");
     if !guardrail
         .base
         .should_run_guardrail(data, event_type, context.suppressed)?
     {
         return Ok(());
     }
-    let Some(text) =
-        extract_response_text(&ResponseSource::Body(response)).filter(|text| !text.is_empty())
-    else {
-        tracing::warn!("RepelloAI Argus: no inspectable response text - skipping.");
+    let extracted = match target {
+        HookTarget::Prompt => extract_prompt_text(data),
+        HookTarget::Response(response) => extract_response_text(&ResponseSource::Body(response)),
+    };
+    let Some(text) = extracted.filter(|text| !text.is_empty()) else {
+        tracing::warn!("RepelloAI Argus: {skipped} - skipping.");
         return Ok(());
     };
-    let scanned = guardrail
-        .call_analyze(&text, RESPONSE_STAGE, event_type, data, context)
-        .await?;
+    let scanned = guardrail.call_analyze(&text, stage, data, context).await?;
     raise_if_blocked(scanned.as_ref())?;
     record_applied(guardrail, data);
     Ok(())
@@ -88,11 +82,11 @@ pub async fn streaming_iterator_hook(
     response: mpsc::Receiver<GuardrailValue>,
     output: mpsc::Sender<GuardrailValue>,
 ) -> Result<(), GuardrailFailure> {
-    let event_type = GuardrailEventHooks::PostCall;
-    if !guardrail
-        .base
-        .should_run_guardrail(data, event_type, context.suppressed)?
-    {
+    if !guardrail.base.should_run_guardrail(
+        data,
+        GuardrailEventHooks::PostCall,
+        context.suppressed,
+    )? {
         relay(response, output).await;
         return Ok(());
     }
@@ -109,10 +103,10 @@ pub async fn streaming_iterator_hook(
         return Ok(());
     };
     let scanned = guardrail
-        .call_analyze(&text, RESPONSE_STAGE, event_type, data, context)
+        .call_analyze(&text, RESPONSE_STAGE, data, context)
         .await?;
-    if let Some(scanned) = scanned.as_ref() {
-        log_flagged_verdict(scanned);
+    if let Some(response) = scanned.as_ref() {
+        log_flagged_verdict(response);
     }
     if verdict_blocks(scanned.as_ref()) {
         return Err(GuardrailFailure::Other(BLOCKED_MESSAGE.to_owned()));

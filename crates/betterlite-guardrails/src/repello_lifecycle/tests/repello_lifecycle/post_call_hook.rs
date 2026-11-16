@@ -1,15 +1,18 @@
+use std::collections::BTreeSet;
+
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::repello_lifecycle::RepelloAILifecycle;
+use betterlite_guardrails::repello_lifecycle::hooks::HookTarget;
 use rstest::rstest;
 use tracing::subscriber::set_default;
 
 use crate::support::{
     BLOCKED_REPLY, CapturedLog, FLAGGED_REPLY, PASSED_REPLY, applied, captured_path, data,
     guardrail_with, mock_repello, params, prompt_data, records, request_count, response_data,
-    run_post_call, settings, text_field,
+    run_hook, settings, text_field,
 };
 
 fn guarding(base: &str, mode: &str) -> RepelloAILifecycle {
@@ -21,10 +24,11 @@ fn guarding(base: &str, mode: &str) -> RepelloAILifecycle {
 #[tokio::test]
 async fn the_response_text_is_scanned_and_the_guardrail_is_recorded() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
-    let run = run_post_call(
+    let run = run_hook(
         &guarding(&mock.base, "post_call"),
         prompt_data(),
-        &response_data(),
+        HookTarget::Response(&response_data()),
+        &BTreeSet::new(),
     )
     .await;
     assert!(run.result.is_ok());
@@ -36,6 +40,10 @@ async fn the_response_text_is_scanned_and_the_guardrail_is_recorded() {
     assert_eq!(
         text_field(&records(&run.data)[0], "guardrail_status").as_deref(),
         Some("success")
+    );
+    assert_eq!(
+        text_field(&records(&run.data)[0], "guardrail_mode").as_deref(),
+        Some("post_call")
     );
 }
 
@@ -51,7 +59,13 @@ async fn a_response_without_text_warns_and_skips(#[case] payload: &str) {
     let _guard = set_default(captured.subscriber(tracing::Level::WARN));
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
     let guardrail = guarding(&mock.base, "post_call");
-    let run = run_post_call(&guardrail, prompt_data(), &data(payload)).await;
+    let run = run_hook(
+        &guardrail,
+        prompt_data(),
+        HookTarget::Response(&data(payload)),
+        &BTreeSet::new(),
+    )
+    .await;
     assert!(run.result.is_ok());
     assert_eq!(request_count(&mock), 0);
     assert!(records(&run.data).is_empty());
@@ -67,10 +81,11 @@ async fn a_response_without_text_warns_and_skips(#[case] payload: &str) {
 #[tokio::test]
 async fn a_blocked_response_is_a_400() {
     let mock = mock_repello(StatusCode::OK, BLOCKED_REPLY).await;
-    let run = run_post_call(
+    let run = run_hook(
         &guarding(&mock.base, "post_call"),
         prompt_data(),
-        &response_data(),
+        HookTarget::Response(&response_data()),
+        &BTreeSet::new(),
     )
     .await;
     let Err(error) = run.result else {
@@ -85,10 +100,11 @@ async fn a_flagged_response_is_allowed_and_logged() {
     let captured = CapturedLog::default();
     let _guard = set_default(captured.subscriber(tracing::Level::WARN));
     let mock = mock_repello(StatusCode::OK, FLAGGED_REPLY).await;
-    let run = run_post_call(
+    let run = run_hook(
         &guarding(&mock.base, "post_call"),
         prompt_data(),
-        &response_data(),
+        HookTarget::Response(&response_data()),
+        &BTreeSet::new(),
     )
     .await;
     assert!(run.result.is_ok());
@@ -105,10 +121,11 @@ async fn a_flagged_response_is_allowed_and_logged() {
 #[tokio::test]
 async fn a_pre_call_only_mode_skips_the_response_scan() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
-    let run = run_post_call(
+    let run = run_hook(
         &guarding(&mock.base, "pre_call"),
         prompt_data(),
-        &response_data(),
+        HookTarget::Response(&response_data()),
+        &BTreeSet::new(),
     )
     .await;
     assert!(run.result.is_ok());

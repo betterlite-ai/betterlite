@@ -1,5 +1,5 @@
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
-use betterlite_guardrails::repello_lifecycle::config::RepelloAIParams;
+use betterlite_guardrails::repello_lifecycle::config::{RepelloAIParams, RepelloAISettings};
 use rstest::rstest;
 
 use crate::support::{empty_env, lookup, params};
@@ -16,11 +16,7 @@ fn params_with_fallback(fallback: UnreachableFallback, default_on: bool) -> Repe
 #[case::fail_open(UnreachableFallback::FailOpen)]
 fn every_fallback_mode_reaches_the_settings(#[case] fallback: UnreachableFallback) {
     let env = lookup(&[("ARGUS_API_KEY", "env-key")]);
-    let settings = betterlite_guardrails::repello_lifecycle::config::RepelloAISettings::resolve(
-        &params_with_fallback(fallback, true),
-        &env,
-    )
-    .unwrap();
+    let settings = RepelloAISettings::resolve(&params_with_fallback(fallback, true), &env).unwrap();
     assert_eq!(settings.unreachable_fallback, fallback);
 }
 

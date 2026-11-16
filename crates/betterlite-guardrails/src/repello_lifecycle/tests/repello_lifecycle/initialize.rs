@@ -2,10 +2,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
+use betterlite_config::sections::guardrail_params::decode::decode_litellm_params;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
-use secrecy::ExposeSecret as _;
+use betterlite_guardrails::repello_lifecycle::config::{RepelloAIParams, RepelloLifecycleError};
+use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::support::{empty_env, initialize, lookup, params};
+use crate::support::{decoded_params, empty_env, initialize, lookup, params};
 
 #[test]
 fn initialization_registers_the_guardrail_callback() {
@@ -19,7 +21,7 @@ fn initialization_registers_the_guardrail_callback() {
 
 #[test]
 fn initialization_reads_every_litellm_parameter() {
-    let configured = crate::support::decoded_params(
+    let configured = decoded_params(
         r#"{"guardrail": "repello", "mode": "post_call", "asset_id": "asset-9", "api_key": "param-key", "api_base": "http://example.test", "unreachable_fallback": "fail_open", "default_on": true, "timeout": 5.0}"#,
     );
     let (result, _registry) = initialize(&configured, &empty_env());
@@ -46,7 +48,7 @@ fn initialization_reads_every_litellm_parameter() {
 #[test]
 fn initialization_reports_a_missing_asset_id() {
     let mut configured = params();
-    configured.api_key = Some(secrecy::SecretString::from(String::from("explicit")));
+    configured.api_key = Some(SecretString::from(String::from("explicit")));
     configured.asset_id = None;
     let (result, registry) = initialize(&configured, &empty_env());
     let Err(error) = result else {
@@ -77,20 +79,10 @@ fn an_invalid_event_hook_is_reported_before_the_missing_key() {
 #[test]
 fn a_non_string_asset_id_is_a_configuration_error() {
     let body = r#"{"guardrail": "repello", "mode": "pre_call", "asset_id": 5}"#;
-    let decoded = betterlite_config::sections::guardrail_params::decode::decode_litellm_params(
-        body.as_bytes(),
-    )
-    .unwrap();
-    let error = betterlite_guardrails::repello_lifecycle::config::RepelloAIParams::from_litellm(
-        &decoded,
-        "repello-test",
-        true,
-    )
-    .unwrap_err();
+    let decoded = decode_litellm_params(body.as_bytes()).unwrap();
+    let error = RepelloAIParams::from_litellm(&decoded, "repello-test", true).unwrap_err();
     assert!(matches!(
         error,
-        betterlite_guardrails::repello_lifecycle::config::RepelloLifecycleError::InvalidParam {
-            field: "asset_id"
-        }
+        RepelloLifecycleError::InvalidParam { field: "asset_id" }
     ));
 }

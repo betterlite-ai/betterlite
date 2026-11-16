@@ -10,8 +10,8 @@ use super::{
 
 // LiteLLM's _verdict_blocks: no response never blocks, and a missing or unknown verdict blocks.
 #[must_use]
-pub fn verdict_blocks(response: Option<&RepelloAIAnalyzeResponse>) -> bool {
-    let Some(response) = response else {
+pub fn verdict_blocks(scanned: Option<&RepelloAIAnalyzeResponse>) -> bool {
+    let Some(response) = scanned else {
         return false;
     };
     match response.verdict.as_deref() {
@@ -48,12 +48,15 @@ fn format_policy(policy: &RepelloAIViolatedPolicy) -> String {
         .details
         .as_ref()
         .and_then(|details| details.get("score"))
-        .map(|score| match score {
-            GuardrailValue::Text(text) => format!("score: {text}"),
-            other => format!(
-                "score: {}",
-                serde_json::to_string(other).unwrap_or_default()
-            ),
+        .map(|score| {
+            if let GuardrailValue::Text(text) = score {
+                format!("score: {text}")
+            } else {
+                format!(
+                    "score: {}",
+                    serde_json::to_string(score).unwrap_or_default()
+                )
+            }
         });
     let parts: Vec<String> = action.into_iter().chain(score).collect();
     if parts.is_empty() {
@@ -64,9 +67,9 @@ fn format_policy(policy: &RepelloAIViolatedPolicy) -> String {
 
 // LiteLLM's _raise_if_blocked: a block raises the 400 with the formatted detail, a flag is only logged.
 pub fn raise_if_blocked(
-    response: Option<&RepelloAIAnalyzeResponse>,
+    scanned: Option<&RepelloAIAnalyzeResponse>,
 ) -> Result<(), GuardrailFailure> {
-    let Some(response) = response else {
+    let Some(response) = scanned else {
         return Ok(());
     };
     if verdict_blocks(Some(response)) {
@@ -90,7 +93,7 @@ pub fn log_flagged_verdict(response: &RepelloAIAnalyzeResponse) {
     match serde_json::to_string(policies) {
         Ok(text) => tracing::warn!("RepelloAI Argus flagged content (allowed): {text}"),
         Err(error) => {
-            tracing::warn!("RepelloAI Argus flagged policies could not be logged: {error}")
+            tracing::warn!("RepelloAI Argus flagged policies could not be logged: {error}");
         }
     }
 }

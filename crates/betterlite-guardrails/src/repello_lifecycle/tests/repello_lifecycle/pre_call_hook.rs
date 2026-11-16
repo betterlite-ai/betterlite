@@ -1,16 +1,17 @@
 use std::collections::BTreeSet;
 
 use axum::http::StatusCode;
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::repello_lifecycle::RepelloAILifecycle;
+use betterlite_guardrails::repello_lifecycle::hooks::HookTarget;
 use rstest::rstest;
 use tracing::subscriber::set_default;
 
 use crate::support::{
     BLOCKED_REPLY, CapturedLog, GUARDRAIL_NAME, PASSED_REPLY, applied, data, guardrail_with,
-    mock_repello, params, prompt_data, records, request_count, run_pre_call,
-    run_pre_call_suppressed, settings, text_field,
+    mock_repello, params, prompt_data, records, request_count, run_hook, settings, text_field,
 };
 
 fn guarding(base: &str, mode: &str) -> RepelloAILifecycle {
@@ -22,18 +23,24 @@ fn guarding(base: &str, mode: &str) -> RepelloAILifecycle {
 #[tokio::test]
 async fn the_configured_event_scans_the_prompt_and_records_the_guardrail() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
-    let run = run_pre_call(&guarding(&mock.base, "pre_call"), prompt_data()).await;
+    let run = run_hook(
+        &guarding(&mock.base, "pre_call"),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     assert!(run.result.is_ok());
     assert_eq!(request_count(&mock), 1);
     assert_eq!(
         applied(&run.data),
-        vec![
-            betterlite_config::sections::guardrail_identity::item::GuardrailValue::Text(
-                String::from(GUARDRAIL_NAME)
-            )
-        ]
+        vec![GuardrailValue::Text(String::from(GUARDRAIL_NAME))]
     );
     assert_eq!(records(&run.data).len(), 1);
+    assert_eq!(
+        text_field(&records(&run.data)[0], "guardrail_mode").as_deref(),
+        Some("pre_call")
+    );
 }
 
 #[rstest]
@@ -42,7 +49,13 @@ async fn the_configured_event_scans_the_prompt_and_records_the_guardrail() {
 #[tokio::test]
 async fn another_event_hook_skips_the_scan(#[case] mode: &str) {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
-    let run = run_pre_call(&guarding(&mock.base, mode), prompt_data()).await;
+    let run = run_hook(
+        &guarding(&mock.base, mode),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     assert!(run.result.is_ok());
     assert_eq!(request_count(&mock), 0);
     assert!(records(&run.data).is_empty());
@@ -54,9 +67,10 @@ async fn a_suppressed_guardrail_skips_the_scan() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
     let mut suppressed = BTreeSet::new();
     suppressed.insert(String::from(GUARDRAIL_NAME));
-    let run = run_pre_call_suppressed(
+    let run = run_hook(
         &guarding(&mock.base, "pre_call"),
         prompt_data(),
+        HookTarget::Prompt,
         &suppressed,
     )
     .await;
@@ -75,7 +89,13 @@ async fn a_request_without_prompt_text_warns_and_skips(#[case] payload: &str) {
     let _guard = set_default(captured.subscriber(tracing::Level::WARN));
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
     let guardrail = guarding(&mock.base, "pre_call");
-    let run = run_pre_call(&guardrail, data(payload)).await;
+    let run = run_hook(
+        &guardrail,
+        data(payload),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     assert!(run.result.is_ok());
     assert_eq!(request_count(&mock), 0);
     assert!(records(&run.data).is_empty());
@@ -91,7 +111,13 @@ async fn a_request_without_prompt_text_warns_and_skips(#[case] payload: &str) {
 #[tokio::test]
 async fn a_blocked_prompt_is_a_400_before_the_guardrail_is_recorded_as_applied() {
     let mock = mock_repello(StatusCode::OK, BLOCKED_REPLY).await;
-    let run = run_pre_call(&guarding(&mock.base, "pre_call"), prompt_data()).await;
+    let run = run_hook(
+        &guarding(&mock.base, "pre_call"),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     let Err(GuardrailFailure::Http { status, detail }) = run.result else {
         panic!("a blocked verdict must fail the request");
     };

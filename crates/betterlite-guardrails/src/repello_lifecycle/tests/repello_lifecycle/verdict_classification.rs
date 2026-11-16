@@ -1,11 +1,14 @@
+use std::collections::BTreeSet;
+
 use axum::http::StatusCode;
+use betterlite_guardrails::repello_lifecycle::hooks::HookTarget;
 use betterlite_guardrails::repello_lifecycle::verdict::verdict_blocks;
 use rstest::rstest;
 use tracing::subscriber::set_default;
 
 use crate::support::{
     BLOCKED_REPLY, CapturedLog, FLAGGED_REPLY, PASSED_REPLY, guardrail, mock_repello, parsed,
-    prompt_data, records, run_pre_call, settings, text_field,
+    prompt_data, records, run_hook, settings, text_field,
 };
 
 #[rstest]
@@ -54,7 +57,13 @@ async fn the_scan_records_the_verdict_status(
     #[case] allowed: bool,
 ) {
     let mock = mock_repello(StatusCode::OK, reply).await;
-    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     assert_eq!(run.result.is_ok(), allowed);
     let recorded = records(&run.data);
     assert_eq!(recorded.len(), 1);
@@ -67,7 +76,13 @@ async fn the_scan_records_the_verdict_status(
 #[tokio::test]
 async fn an_unknown_verdict_blocks_the_request() {
     let mock = mock_repello(StatusCode::OK, r#"{"verdict": "quarantined"}"#).await;
-    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     let Err(error) = run.result else {
         panic!("an unknown verdict must block");
     };

@@ -16,7 +16,7 @@ use betterlite_guardrails::guardrail_records::record::{
 };
 use betterlite_guardrails::repello_lifecycle::RepelloAILifecycle;
 use betterlite_guardrails::repello_lifecycle::config::{RepelloAIParams, RepelloAISettings};
-use betterlite_guardrails::repello_lifecycle::hooks::{HookContext, pre_call_hook};
+use betterlite_guardrails::repello_lifecycle::hooks::{HookContext, HookTarget, scan_hook};
 use betterlite_guardrails::repello_lifecycle::{CallbackRegistry, Data, initialize_guardrail};
 use betterlite_http::proxy::base_builder;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -208,7 +208,7 @@ async fn run_pre_call(
         sink: &sink,
         log_target: None,
     };
-    let result = pre_call_hook(guardrail, &mut data, &mut context).await;
+    let result = scan_hook(guardrail, &mut data, HookTarget::Prompt, &mut context).await;
     Ok((result, data))
 }
 

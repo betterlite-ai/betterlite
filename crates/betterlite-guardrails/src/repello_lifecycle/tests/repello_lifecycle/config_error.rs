@@ -1,18 +1,20 @@
+use std::collections::BTreeSet;
+
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
-use betterlite_guardrails::repello_lifecycle::{MISCONFIGURED_ERROR_TYPE, MISCONFIGURED_MESSAGE};
+use betterlite_guardrails::repello_lifecycle::hooks::HookTarget;
+use betterlite_guardrails::repello_lifecycle::{
+    MISCONFIGURED_ERROR_TYPE, MISCONFIGURED_MESSAGE, RepelloAILifecycle,
+};
 use rstest::rstest;
 
 use crate::support::{
-    field, guardrail, mock_repello, prompt_data, records, run_pre_call, settings, text_field,
+    field, guardrail, mock_repello, prompt_data, records, run_hook, settings, text_field,
 };
 
-fn guarding(
-    base: &str,
-    fallback: UnreachableFallback,
-) -> betterlite_guardrails::repello_lifecycle::RepelloAILifecycle {
+fn guarding(base: &str, fallback: UnreachableFallback) -> RepelloAILifecycle {
     let mut configured = settings(base);
     configured.unreachable_fallback = fallback;
     guardrail(configured)
@@ -30,9 +32,11 @@ async fn every_configuration_status_is_a_permanent_500_even_under_fail_open(
     #[case] reported: u64,
 ) {
     let mock = mock_repello(status, r#"{"error": "bad key"}"#).await;
-    let run = run_pre_call(
+    let run = run_hook(
         &guarding(&mock.base, UnreachableFallback::FailOpen),
         prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
     )
     .await;
     let Err(GuardrailFailure::HttpObject { status, detail }) = run.result else {
@@ -63,7 +67,13 @@ async fn a_misconfigured_scan_records_the_failure_and_its_status(
     #[case] fallback: UnreachableFallback,
 ) {
     let mock = mock_repello(StatusCode::UNAUTHORIZED, r#"{"error": "bad key"}"#).await;
-    let run = run_pre_call(&guarding(&mock.base, fallback), prompt_data()).await;
+    let run = run_hook(
+        &guarding(&mock.base, fallback),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
     assert!(run.result.is_err());
     let recorded = records(&run.data);
     assert_eq!(recorded.len(), 1);
@@ -89,9 +99,11 @@ async fn a_misconfigured_scan_records_the_failure_and_its_status(
 #[tokio::test]
 async fn a_status_outside_the_configuration_set_is_transient(#[case] status: StatusCode) {
     let mock = mock_repello(status, "{}").await;
-    let run = run_pre_call(
+    let run = run_hook(
         &guarding(&mock.base, UnreachableFallback::FailOpen),
         prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
     )
     .await;
     assert!(run.result.is_ok());

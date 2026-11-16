@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use betterlite_config::sections::guardrail_params::decode::decode_litellm_params;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::repello_lifecycle::config::{
@@ -81,10 +82,5 @@ fn the_parent_settings_carry_the_timeout_and_default_on() {
 fn a_non_numeric_timeout_fails_to_decode() {
     let body =
         r#"{"guardrail": "repello", "mode": "pre_call", "asset_id": "asset-1", "timeout": "fast"}"#;
-    assert!(
-        betterlite_config::sections::guardrail_params::decode::decode_litellm_params(
-            body.as_bytes()
-        )
-        .is_err()
-    );
+    assert!(decode_litellm_params(body.as_bytes()).is_err());
 }

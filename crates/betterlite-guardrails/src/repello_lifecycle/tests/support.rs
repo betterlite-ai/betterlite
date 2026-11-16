@@ -10,6 +10,7 @@ use axum::body::Bytes;
 use axum::http::{HeaderMap, StatusCode, Uri};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
+use betterlite_config::sections::guardrail_params::decode::decode_litellm_params;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
@@ -20,15 +21,20 @@ use betterlite_guardrails::guardrail_records::invocation::{
 use betterlite_guardrails::guardrail_records::record::{
     GuardrailInvocationRecord, GuardrailSpanSink,
 };
+use betterlite_guardrails::repello_content::wire::RepelloAIAnalyzeResponse;
 use betterlite_guardrails::repello_lifecycle::RepelloAILifecycle;
 use betterlite_guardrails::repello_lifecycle::config::{RepelloAIParams, RepelloAISettings};
 use betterlite_guardrails::repello_lifecycle::hooks::{
-    HookContext, post_call_success_hook, pre_call_hook, streaming_iterator_hook,
+    HookContext, HookTarget, scan_hook, streaming_iterator_hook,
 };
+use betterlite_guardrails::repello_lifecycle::stream::{SilentConsole, SilentLogger};
 use betterlite_guardrails::repello_lifecycle::{
     CallbackRegistry, DEFAULT_REQUEST_TIMEOUT, Data, guardrail_settings, initialize_guardrail,
 };
 use betterlite_http::proxy::base_builder;
+use betterlite_logging::verbose_hooks::VerboseHooks;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_redact::structured::Payload;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -178,10 +184,7 @@ pub(crate) fn guardrail_with(
     configured: &RepelloAIParams,
     settings: RepelloAISettings,
 ) -> RepelloAILifecycle {
-    let redactor = betterlite_redact::secret::Redactor::new(
-        betterlite_redact::secret::MINIMUM_CUSTOM_KEY_LENGTH,
-    )
-    .unwrap();
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     RepelloAILifecycle {
         base: GuardrailBase::new(
             guardrail_settings(configured, configured.mode.clone()),
@@ -191,10 +194,10 @@ pub(crate) fn guardrail_with(
         settings,
         client: base_builder().build().unwrap(),
         clock: fixed_now,
-        hooks: betterlite_logging::verbose_hooks::VerboseHooks {
-            logger: betterlite_guardrails::repello_lifecycle::stream::SilentLogger,
-            console: betterlite_guardrails::repello_lifecycle::stream::SilentConsole,
-            set_verbose: betterlite_redact::structured::Payload::Bool(false),
+        hooks: VerboseHooks {
+            logger: SilentLogger,
+            console: SilentConsole,
+            set_verbose: Payload::Bool(false),
             redactor: Arc::new(redactor),
         },
     }
@@ -220,26 +223,25 @@ pub(crate) struct HookRun {
 }
 
 pub(crate) fn decoded_params(body: &str) -> RepelloAIParams {
-    let params = betterlite_config::sections::guardrail_params::decode::decode_litellm_params(
-        body.as_bytes(),
-    )
-    .unwrap();
+    let params = decode_litellm_params(body.as_bytes()).unwrap();
     RepelloAIParams::from_litellm(&params, GUARDRAIL_NAME, true).unwrap()
 }
 
-pub(crate) fn parsed(
-    text: &str,
-) -> betterlite_guardrails::repello_content::wire::RepelloAIAnalyzeResponse {
+pub(crate) fn parsed(text: &str) -> RepelloAIAnalyzeResponse {
     serde_json::from_str(text).unwrap()
 }
 
-pub(crate) async fn run_pre_call_suppressed(
+pub(crate) async fn run_hook(
     guardrail: &RepelloAILifecycle,
     mut data: Data,
+    target: HookTarget<'_>,
     suppressed: &BTreeSet<String>,
 ) -> HookRun {
-    let mut invocation =
-        GuardrailInvocation::begin(GuardrailHookName::PreCall, &data, None, fixed_now()).unwrap();
+    let hook = match target {
+        HookTarget::Prompt => GuardrailHookName::PreCall,
+        HookTarget::Response(_) => GuardrailHookName::PostCallSuccess,
+    };
+    let mut invocation = GuardrailInvocation::begin(hook, &data, None, fixed_now()).unwrap();
     let sink = NoSink;
     let mut context = HookContext {
         suppressed,
@@ -247,42 +249,7 @@ pub(crate) async fn run_pre_call_suppressed(
         sink: &sink,
         log_target: None,
     };
-    let result = pre_call_hook(guardrail, &mut data, &mut context).await;
-    HookRun { result, data }
-}
-
-pub(crate) async fn run_pre_call(guardrail: &RepelloAILifecycle, mut data: Data) -> HookRun {
-    let mut invocation =
-        GuardrailInvocation::begin(GuardrailHookName::PreCall, &data, None, fixed_now()).unwrap();
-    let suppressed = BTreeSet::new();
-    let sink = NoSink;
-    let mut context = HookContext {
-        suppressed: &suppressed,
-        invocation: &mut invocation,
-        sink: &sink,
-        log_target: None,
-    };
-    let result = pre_call_hook(guardrail, &mut data, &mut context).await;
-    HookRun { result, data }
-}
-
-pub(crate) async fn run_post_call(
-    guardrail: &RepelloAILifecycle,
-    mut data: Data,
-    response: &Data,
-) -> HookRun {
-    let mut invocation =
-        GuardrailInvocation::begin(GuardrailHookName::PostCallSuccess, &data, None, fixed_now())
-            .unwrap();
-    let suppressed = BTreeSet::new();
-    let sink = NoSink;
-    let mut context = HookContext {
-        suppressed: &suppressed,
-        invocation: &mut invocation,
-        sink: &sink,
-        log_target: None,
-    };
-    let result = post_call_success_hook(guardrail, &mut data, response, &mut context).await;
+    let result = scan_hook(guardrail, &mut data, target, &mut context).await;
     HookRun { result, data }
 }
 
@@ -343,31 +310,27 @@ pub(crate) fn text_chunks() -> Vec<&'static str> {
     vec![r#"{"choices": [{"index": 0, "text": "Solo"}]}"#]
 }
 
-pub(crate) fn records(data: &Data) -> Vec<GuardrailValue> {
+// The metadata a hook writes to, picked the way LiteLLM's proxy picks it.
+fn metadata(data: &Data) -> Option<&BTreeMap<String, GuardrailValue>> {
     let bucket = data
         .get("litellm_metadata")
         .filter(|value| !matches!(value, GuardrailValue::Null))
         .or_else(|| data.get("metadata"));
-    let Some(GuardrailValue::Object(fields)) = bucket else {
-        return Vec::new();
-    };
-    if let Some(GuardrailValue::Array(records)) =
-        fields.get("standard_logging_guardrail_information")
-    {
-        return records.clone();
+    match bucket {
+        Some(GuardrailValue::Object(fields)) => Some(fields),
+        _ => None,
     }
-    Vec::new()
+}
+
+pub(crate) fn records(data: &Data) -> Vec<GuardrailValue> {
+    match metadata(data).and_then(|fields| fields.get("standard_logging_guardrail_information")) {
+        Some(GuardrailValue::Array(records)) => records.clone(),
+        _ => Vec::new(),
+    }
 }
 
 pub(crate) fn applied(data: &Data) -> Vec<GuardrailValue> {
-    let bucket = data
-        .get("litellm_metadata")
-        .filter(|value| !matches!(value, GuardrailValue::Null))
-        .or_else(|| data.get("metadata"));
-    let Some(GuardrailValue::Object(fields)) = bucket else {
-        return Vec::new();
-    };
-    match fields.get("applied_guardrails") {
+    match metadata(data).and_then(|fields| fields.get("applied_guardrails")) {
         Some(GuardrailValue::Array(names)) => names.clone(),
         _ => Vec::new(),
     }

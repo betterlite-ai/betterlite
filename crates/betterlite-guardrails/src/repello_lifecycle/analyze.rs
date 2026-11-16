@@ -46,10 +46,15 @@ impl RepelloAILifecycle {
         &self,
         text: &str,
         stage: &'static str,
-        event_type: GuardrailEventHooks,
         request_data: &mut Data,
         context: &mut HookContext<'_>,
     ) -> Result<Option<RepelloAIAnalyzeResponse>, GuardrailFailure> {
+        // LiteLLM scans the prompt in the pre_call hook and the response in both post_call hooks.
+        let event_type = if stage == PROMPT_STAGE {
+            GuardrailEventHooks::PreCall
+        } else {
+            GuardrailEventHooks::PostCall
+        };
         let started = (self.clock)();
         let (result, response, status) = self.analyze(text, stage).await;
         let finished = (self.clock)();
@@ -112,20 +117,14 @@ impl RepelloAILifecycle {
 
     fn unreachable(&self, reason: String) -> Outcome {
         tracing::warn!("RepelloAI Argus unreachable: {reason}");
-        if self.settings.unreachable_fallback == UnreachableFallback::FailOpen {
-            return (
-                Ok(None),
-                GuardrailValue::Text(reason),
-                GuardrailStatus::GuardrailFailedToRespond,
-            );
-        }
-        let failure = http_object(detail(
-            UNREACHABLE_MESSAGE,
-            None,
-            Some(UNREACHABLE_ERROR_TYPE),
-        ));
+        let result = if self.settings.unreachable_fallback == UnreachableFallback::FailOpen {
+            Ok(None)
+        } else {
+            let failure = detail(UNREACHABLE_MESSAGE, None, Some(UNREACHABLE_ERROR_TYPE));
+            Err(http_object(failure))
+        };
         (
-            Err(failure),
+            result,
             GuardrailValue::Text(reason),
             GuardrailStatus::GuardrailFailedToRespond,
         )
@@ -136,7 +135,13 @@ impl RepelloAILifecycle {
         text: &str,
         stage: &'static str,
     ) -> Result<RepelloAIAnalyzeResponse, PostError> {
-        let request = self.scan_request(text, stage);
+        let request = RepelloAIAnalyzeRequest {
+            asset_id: self.settings.asset_id.clone(),
+            scan_data: RepelloAIScanData {
+                prompt: (stage == PROMPT_STAGE).then(|| text.to_owned()),
+                response: (stage == RESPONSE_STAGE).then(|| text.to_owned()),
+            },
+        };
         let mut key =
             HeaderValue::from_str(self.settings.api_key.expose_secret()).map_err(|source| {
                 PostError::Unexpected {
@@ -144,7 +149,7 @@ impl RepelloAILifecycle {
                 }
             })?;
         key.set_sensitive(true);
-        let mut response = self
+        let response = self
             .client
             .post(format!("{}/analyze/{stage}", self.settings.api_base))
             .header(API_KEY_HEADER, key)
@@ -155,31 +160,26 @@ impl RepelloAILifecycle {
             .map_err(|error| PostError::Transient {
                 reason: error.to_string(),
             })?;
-        let status = response.status();
-        let code = status.as_u16();
-        if CONFIG_ERROR_STATUS_CODES.contains(&code) {
-            return Err(PostError::Config { status: code });
-        }
-        if !status.is_success() {
-            return Err(PostError::Transient {
-                reason: format!("the RepelloAI Argus API answered {status}"),
-            });
-        }
-        let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
-            .await
-            .map_err(read_error)?;
-        serde_json::from_slice(&body).map_err(|_decode| PostError::InvalidJson { status: code })
+        decode(response).await
     }
+}
 
-    fn scan_request(&self, text: &str, stage: &'static str) -> RepelloAIAnalyzeRequest {
-        RepelloAIAnalyzeRequest {
-            asset_id: self.settings.asset_id.clone(),
-            scan_data: RepelloAIScanData {
-                prompt: (stage == PROMPT_STAGE).then(|| text.to_owned()),
-                response: (stage == RESPONSE_STAGE).then(|| text.to_owned()),
-            },
-        }
+// LiteLLM's _raise_for_config_error runs before the status check, so a permanent answer is never transient.
+async fn decode(mut response: reqwest::Response) -> Result<RepelloAIAnalyzeResponse, PostError> {
+    let status = response.status();
+    let code = status.as_u16();
+    if CONFIG_ERROR_STATUS_CODES.contains(&code) {
+        return Err(PostError::Config { status: code });
     }
+    if !status.is_success() {
+        return Err(PostError::Transient {
+            reason: format!("the RepelloAI Argus API answered {status}"),
+        });
+    }
+    let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
+        .await
+        .map_err(read_error)?;
+    serde_json::from_slice(&body).map_err(|_malformed| PostError::InvalidJson { status: code })
 }
 
 // A failed scan records the detail object, which is what LiteLLM keeps as guardrail_json_response.
