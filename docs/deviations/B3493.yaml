@@ -1,0 +1,15 @@
+task: B3493
+deviations:
+  - what: Sync and async creation are separate functions, create_interaction and async_create_interaction, and the two streaming iterator factories are separate config methods, with no _is_async parameter that returns a coroutine for the caller to await.
+    why: LiteLLM's create_interaction takes _is_async and returns the coroutine from async_create_interaction without awaiting it, a dispatcher Python callers need; a Rust caller picks the function it needs and the compiler checks that it is awaited.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L115-L129
+  - what: The pre-call log carries the input as a string (the bare text of a text input, the JSON of a structured input, and "" when the caller sent none) and keeps complete_input_dict in model_call_details as a JSON object next to the typed PreCall, where LiteLLM copies the caller's input object under "input" and the request body under additional_args["complete_input_dict"].
+    why: betterlite's logging pipeline owns typed fields and masks secret headers, and a Rust log event cannot carry an untyped caller object; the empty api key is still recorded, because the provider key travels in the validated headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L163-L171
+  - what: A sync stream request reads the whole response body, up to the shared 16 MiB cap, before the iterator is built, so the iterator yields from memory and a stream larger than the cap fails; the async request hands the body to its iterator unread, as LiteLLM does.
+    why: B3491's sync iterator consumes a buffered body, because a blocking response cannot be handed to code that outlives the call, while LiteLLM passes the open httpx response to SyncInteractionsAPIStreamingIterator and reads it as it arrives.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L182-L187
+  - what: The caller's timeout, or litellm.request_timeout when the caller names none, is one reqwest request deadline covering connect, send and the whole body read, so a stream that runs longer in total fails here; LiteLLM passes the value to httpx, which applies it to connect, read, write and pool separately, so a stream there succeeds as long as each chunk arrives in time.
+    why: reqwest has one total request timeout while httpx's Timeout applies per operation; the same difference between the two clients is recorded under B8211.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L172-L195
+kept_bugs: []
