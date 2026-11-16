@@ -1,0 +1,76 @@
+task: B981
+deviations:
+  - what: >-
+      Provider bytes drained while the client reads are bounded by ApiLimits, so more than 16 MiB of
+      collected SSE bytes, or a tool input partial above the same JSON boundary, fails with the
+      ApiLimitError instead of growing the buffer.
+    why: >-
+      LiteLLM appends every drained chunk to _collected_bytes and parses the partial with no size
+      limit, so a long-held-back stream grows without bound; B1087's limits bound the same bytes and
+      the task records the deviation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py#L250-L255
+  - what: >-
+      The held-back drain advances only inside the next client read, racing the inner read against
+      one keepalive interval, so no upstream read happens between two client reads.
+    why: >-
+      LiteLLM runs _drain_upstream as a background asyncio task that keeps reading while the client
+      is idle; betterlite owns no task and advances the drain on the client's own read, which keeps
+      the yielded bytes, pings and ordering the same without a detached task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py#L264-L298
+  - what: >-
+      The collected bytes must be valid UTF-8; a collected chunk that is not fails with the Utf8
+      error, where LiteLLM decodes with errors="replace".
+    why: >-
+      The boundary decoder reads the collected bytes as UTF-8 and reports invalid input instead of
+      silently replacing code points with U+FFFD, which would change a tool input or a text block
+      the hook sees.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py#L58
+  - what: >-
+      A data: payload that is valid JSON but not an object is ignored, and a content block index
+      that is not a non-negative integer is a typed shape error that skips the hooks, where LiteLLM
+      raises AttributeError or TypeError from the handler.
+    why: >-
+      Python's dict access decides the shape at runtime and its error text names no field;
+      betterlite reads the declared shape and reports which field is wrong, keeping LiteLLM's level
+      and fallback, the hook processing logs and the buffer replays or the leak error fires.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py#L75
+  - what: >-
+      A data: payload with the non-standard JSON constants NaN or Infinity fails to decode and is
+      skipped, where Python's json.loads accepts them.
+    why: >-
+      The boundary decoder uses serde_json, which follows RFC 8259; a payload no JSON parser reads
+      consistently is skipped like any other unparsable data line instead of becoming a float
+      LiteLLM would hand the hooks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py#L72
+  - what: >-
+      A hook failure is logged as callback <name> failed: <message> from the AgenticHookError,
+      without Python's traceback text.
+    why: >-
+      An interceptor reports a typed AgenticHookError instead of raising a Python exception, so
+      verbose_logger.exception's str(e) has no counterpart; the error level, the call_id and model
+      prefix and the fallback that skips the follow-up stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py#L396-L402
+  - what: >-
+      A read after aclose returns the end of the stream, where LiteLLM leaves the cancelled drain
+      task in place and a further __anext__ awaits it.
+    why: >-
+      aclose settles the owned work and marks the iterator closed; reading an iterator that has been
+      closed is not a use LiteLLM defines, and its behaviour there raises CancelledError out of the
+      generator.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py#L338-L347
+kept_bugs:
+  - what: >-
+      A tool_use whose accumulated partial JSON does not parse ends with the input {"_raw": <partial
+      text>} rather than failing the turn.
+    why: >-
+      A hook consumer reads the raw partial from _raw, so a working setup relies on seeing the tool
+      call instead of losing it; betterlite keeps the same block.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py#L139-L148
+  - what: >-
+      A data: line that fails to parse keeps the pending event: name, so the next parsable data line
+      is typed by an event name that belonged to the dropped line.
+    why: >-
+      LiteLLM's continue leaves current_event_type set, and a stream that mixes a broken line into
+      an event block still rebuilds for setups that depend on the following payload being handled;
+      betterlite copies it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py#L68-L75
