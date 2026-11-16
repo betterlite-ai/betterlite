@@ -1,0 +1,21 @@
+task: B8293
+deviations:
+  - what: A bad prompt entry stops startup with a typed error that names the entry index. LiteLLM lets the pydantic ValidationError escape from the config load.
+    why: Same outcome, the proxy does not start, and the error names the entry without quoting its value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/init_prompts.py#L10-L28
+  - what: An initialize_prompt failure stops startup with a typed error that names the prompt id. LiteLLM lets the exception from initialize_prompt escape init_prompts.
+    why: Same outcome, the proxy does not start, and the error names the prompt instead of only the traceback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/init_prompts.py#L20-L25
+  - what: config_file_path is passed on to initialize_prompt and not read here.
+    why: LiteLLM's initialize_prompt does not read it either at the pin.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L185-L215
+  - what: A prompts value that is not a list, or an entry that is not a mapping, is a config error naming the key. LiteLLM fails later with a TypeError or a validation error.
+    why: A 4xx-style startup refusal that names the key replaces an unhandled exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7027-L7034
+  - what: The os.environ walk over prompt entries stops at a fixed 100 levels, ignores DEFAULT_MAX_RECURSE_DEPTH and logs no warning when it stops.
+    why: B3662's guardrail walk fixed the same cap without a warning, and no working prompt config nests anywhere near it; the cap only guards against a runaway config.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85
+  - what: An unset or empty variable behind ignore_prompt_manager_model or ignore_prompt_manager_optional_params reads as false and not as null.
+    why: LiteLLM's get_secret gives None and the field is `bool | None = False`, where None acts as false. B4050's bool field refuses null, so the section writes the same effect as false.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/prompts/init_prompts.py#L34-L35
+kept_bugs: []
