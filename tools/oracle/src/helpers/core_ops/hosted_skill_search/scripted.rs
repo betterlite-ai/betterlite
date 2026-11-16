@@ -7,12 +7,12 @@ use betterlite_core::skills::store::SkillPage;
 use betterlite_core::skills::store::repository::{SkillRepository, SkillWrite};
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::managed_resource_rows::skills::SkillTable;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_semantic::{EmbedError, Embedder, Vector};
 use serde_json::{Value, json};
 
 use super::input::Input;
 use super::values::{invalid_input, skill_rows};
-use crate::helpers::HelperError;
 
 pub(super) const TEST_SKILL_ID: &str = "litellm_skill_test";
 pub(super) const CACHE_CLOCK: f64 = 1000.0;

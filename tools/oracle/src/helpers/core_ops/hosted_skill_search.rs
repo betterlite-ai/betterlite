@@ -3,9 +3,9 @@ mod input;
 mod scripted;
 mod values;
 
-use input::Input;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
-use crate::helpers::{Helper, HelperResult};
+use input::Input;
 
 pub(crate) struct Op;
 

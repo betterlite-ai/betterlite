@@ -6,6 +6,8 @@ use betterlite_core::skills::search::{
     SkillSearchRuntime, search_hosted_skills, search_skills, skill_search_text,
 };
 use betterlite_core::skills::store::{HostedSkillStore, SkillIdSource};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_semantic::Embedder;
 use serde_json::json;
 
@@ -15,7 +17,6 @@ use super::values::{
     hosted_error, http_error, invalid_input, outcome_value, principal_of, skill_row, skill_rows,
     store_error,
 };
-use crate::helpers::{HelperError, HelperResult};
 
 fn embedding_model(input: &Input) -> Result<&str, Box<HelperError>> {
     input

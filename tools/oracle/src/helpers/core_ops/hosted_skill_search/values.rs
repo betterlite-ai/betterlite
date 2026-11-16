@@ -4,10 +4,10 @@ use betterlite_core::skills::search::{
 };
 use betterlite_core::skills::store::StoreError;
 use betterlite_db::managed_resource_rows::skills::SkillTable;
+use betterlite_oracle_helper_api::error::HelperError;
 use serde_json::{Value, json};
 
 use super::input::{PrincipalFields, RowFields};
-use crate::helpers::HelperError;
 
 pub(super) fn invalid_input(message: String) -> Box<HelperError> {
     Box::new(HelperError {
