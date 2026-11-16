@@ -1,0 +1,21 @@
+task: B565
+deviations:
+  - what: "A count response whose input_tokens is a numeric string, such as \"5\", counts 5 tokens in LiteLLM and becomes a 500 error record with error_message generic here."
+    why: "LiteLLM hands the decoded JSON value to TokenCountResponse.total_tokens, whose pydantic int field coerces a numeric string in lax mode; betterlite treats a value of the wrong type as an error, as docs/compatibility.md says, and the oracle case count-error-warnings sends null and a list to pin the shared side of the rule."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/token_counter.py#L90
+  - what: "The detail after \"CountTokens processing error: \" and after \"Error calling Azure AI Anthropic CountTokens API: \" is betterlite's own error text, so an unparsable reply names the Rust decode failure instead of Python's \"Expecting value\" message."
+    why: "The subject, the status code and every record field match, but the underlying message comes from the language runtime; the oracle folds the 500 detail to processing or generic and compares the stable prefix only."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/handler.py#L126
+  - what: "A non-200 response body that is not UTF-8 reports \"<n> bytes that are not UTF-8\" in error_message here, while LiteLLM keeps httpx's replacement-character decoding of the same bytes."
+    why: "A Rust string is UTF-8, so the raw bytes cannot be carried as text; the status code, the error flag and the original_response of the record are unchanged."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/handler.py#L98
+  - what: "An api_base that is not an absolute URL fails before the transport here, so no request is recorded and the error names the parse failure, while LiteLLM's httpx client sends the relative target and fails later while it extracts cookies, so its error carries httpx's ValueError text."
+    why: "betterlite parses the composed endpoint with the url crate before sending, where httpx accepts a relative reference and fails inside its response handling; an Azure endpoint from configuration is an absolute URL, so no working setup sends a relative one."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/handler.py#L88-L93
+kept_bugs:
+  - what: "A base that already ends in /v1/messages/count_tokens gets the /anthropic segment and the count path appended again, so the request goes to https://host/v1/messages/count_tokens/anthropic/v1/messages/count_tokens."
+    why: "LiteLLM only skips /anthropic when the base contains it and then appends the count path unconditionally, so a base that spells out the whole endpoint produces a URL no server serves; the endpoint rule is the documented contract, and count-tokens-endpoint pins the duplicated string."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/transformation.py#L80-L88
+  - what: "With no litellm_params.api_key and no AZURE_AI_API_KEY, token counting returns None and logs the missing-key warning even when azure_ad_token or Entra credentials are configured."
+    why: "LiteLLM resolves the counter's key from the deployment and AZURE_AI_API_KEY before it reaches the handler, so an Entra-only deployment never counts; a setup that watches the warning or relies on the skip can depend on it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/token_counter.py#L60-L73
