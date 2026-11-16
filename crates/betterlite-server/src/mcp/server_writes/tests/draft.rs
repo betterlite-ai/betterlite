@@ -181,6 +181,23 @@ async fn prune_skips_a_draft_without_a_timestamp() {
     assert_eq!(store.rows().len(), 1);
 }
 
+// Without a session id the draft keeps the id the request itself carries.
+#[tokio::test]
+async fn create_draft_falls_back_to_the_request_server_id() {
+    let store = FakeStore::new(Vec::new());
+    let created = create_draft_mcp_server(
+        &store,
+        &cipher(SALT),
+        &request(r#"{"server_id": "from-request", "server_name": "flow"}"#),
+        &options(300, None),
+        &RecordingInvalidation::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(created.server_id, "from-request");
+    assert_eq!(created.approval_status.as_deref(), Some("draft"));
+}
+
 // A TTL too large to subtract from now leaves every draft live instead of sweeping it.
 #[tokio::test]
 async fn prune_keeps_every_draft_when_the_ttl_overflows() {
