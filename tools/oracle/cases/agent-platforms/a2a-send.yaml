@@ -24,4 +24,7 @@ call:
       status: 200
       body: '{"jsonrpc": "2.0", "id": "req-1", "result": {"kind": "message", "role": "agent", "parts": [{"kind": "text", "text": "hello from the agent"}], "messageId": "msg-1"}}'
 env: {}
-compare: {ignore: [/value/request/body/id, /value/request/body/params/message/messageId]}
+compare:
+  ignore:
+    - {pointer: /value/request/body/id, why: "LiteLLM draws the JSON-RPC request id from a fresh uuid"}
+    - {pointer: /value/request/body/params/message/messageId, why: "LiteLLM draws the A2A message id from a fresh uuid"}
