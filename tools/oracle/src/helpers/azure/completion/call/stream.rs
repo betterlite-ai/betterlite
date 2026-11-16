@@ -9,7 +9,7 @@ use super::super::hooks::Recorder;
 use super::{Fixed, Secrets, block_on, build_call, error_report, runtime, source, stream_report};
 
 // the direct streaming helpers take the request data the public call already built
-pub(super) fn direct_stream(case: &CallCase) -> Result<Json, Box<HelperError>> {
+pub(crate) fn direct_stream(case: &CallCase) -> Result<Json, Box<HelperError>> {
     let source = source(case);
     let secrets = Secrets::of(case);
     let mut params = case.optional_params.clone();
