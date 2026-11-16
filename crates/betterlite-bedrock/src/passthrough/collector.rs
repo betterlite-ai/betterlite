@@ -10,7 +10,9 @@ use crate::invoke_events::{
     DecoderClock, DecoderOptions, InvokeStreamDecoder, bedrock_event_stream_decoder,
 };
 use betterlite_models::decisions::Json;
-use betterlite_openai::passthrough::transformation::types::PassthroughError;
+use betterlite_openai::passthrough::transformation::types::{
+    MAX_COLLECTED_BYTES, PassthroughError,
+};
 use betterlite_openai::passthrough::transformation::{
     PassthroughStreamCollector, types::PassthroughLogging,
 };
@@ -90,6 +92,7 @@ pub struct BedrockEventStreamCollector<'plan> {
     clock: CollectorClock,
     shape: ResponseStreamShape,
     buffer: BytesMut,
+    fed_bytes: usize,
     chunks: CoalescedChunks,
     failure: Option<StreamLogError>,
 }
@@ -106,6 +109,7 @@ impl<'plan> BedrockEventStreamCollector<'plan> {
             clock,
             shape: ResponseStreamShape::bedrock_runtime(),
             buffer: BytesMut::new(),
+            fed_bytes: 0,
             chunks: CoalescedChunks::default(),
             failure: None,
         }
@@ -114,6 +118,17 @@ impl<'plan> BedrockEventStreamCollector<'plan> {
         let Some(decoder) = self.decoder.as_mut() else {
             return Ok(());
         };
+        let Some(total) = self
+            .fed_bytes
+            .checked_add(chunk.len())
+            .filter(|total| *total <= MAX_COLLECTED_BYTES)
+        else {
+            self.decoder = None;
+            self.chunks = CoalescedChunks::default();
+            self.buffer.clear();
+            return Err(StreamLogError::TooLarge);
+        };
+        self.fed_bytes = total;
         self.buffer.extend_from_slice(chunk);
         loop {
             let Some(event) = decode_aws_event_frame(&mut self.buffer)? else {

@@ -1,9 +1,9 @@
 use betterlite_streaming::stream_chunk_shaping::records::{
-    JsonObject, StreamChoice, StreamChunk, StreamDelta,
+    JsonObject, JsonValue, StreamChoice, StreamChunk, StreamDelta,
 };
 
 use super::super::chunks::{CoalescedChunks, plain_text_delta};
-use super::{fixture_now, json};
+use super::fixture_now;
 
 const TEXT_RULES: [(&str, Option<&str>); 17] = [
     (
@@ -160,7 +160,7 @@ fn nontext_events_seal_in_order() {
     mixed.add(text_chunk("t", "m", "a", None));
     mixed.add(text_chunk("t2", "m", "b", None));
     let mut tool = text_chunk("tool", "m", "x", None);
-    tool.choices[0].delta.tool_calls = Some(json(r#"[{"index":0}]"#));
+    tool.choices[0].delta.tool_calls = Some(JsonValue::Array(Vec::new()));
     mixed.add(tool);
     mixed.add(text_chunk("f", "m", "", None));
     let mut finished = text_chunk("finish", "m", "", None);

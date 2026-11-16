@@ -724,6 +724,7 @@ fn invoke_provider_selection() {
         r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"#;
     let chunk = decode_chunk(&mut decoder, event);
     assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("hi"));
+    assert_eq!(chunk.model, "");
     let missing = decoder_selection("mystery.v9", "model/x/invoke", clock());
     let DecoderChoice::Disabled { warning } = missing else {
         panic!("expected a disabled decoder");

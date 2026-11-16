@@ -27,6 +27,8 @@ pub enum StreamLogError {
     Encode(#[source] serde_json::Error),
     #[error("the passthrough log chunk could not be decoded")]
     Decode(#[source] serde_json::Error),
+    #[error("the passthrough stream is larger than the collection bound")]
+    TooLarge,
     #[error("the stream decoder failed: {message}")]
     Decoder { message: String },
 }
@@ -52,6 +54,13 @@ fn extra_object(extra: &Extra) -> Result<Option<JsonObject>, StreamLogError> {
     }
     convert(extra).map(Some)
 }
+fn with_model<T: Serialize>(value: &T) -> Result<StreamChunk, StreamLogError> {
+    let mut object: JsonObject = convert(value)?;
+    if matches!(object.get("model"), Some(JsonValue::Null)) {
+        object.insert("model".to_owned(), JsonValue::String(String::new()));
+    }
+    convert(&object)
+}
 impl EventChunkDecoder for InvokeStreamDecoder {
     fn decode(
         &mut self,
@@ -65,9 +74,9 @@ impl EventChunkDecoder for InvokeStreamDecoder {
                 ))),
                 ChunkProjection::Generic(generic) => Ok(DecodedChunk::Generic(convert(&generic)?)),
             },
-            InvokeChunk::Anthropic(event) => Ok(DecodedChunk::Chunk(convert(&event)?)),
+            InvokeChunk::Anthropic(event) => Ok(DecodedChunk::Chunk(Box::new(with_model(&event)?))),
             InvokeChunk::DeepSeek(reply) | InvokeChunk::OpenAiCompatible(reply) => {
-                Ok(DecodedChunk::Chunk(convert(&reply)?))
+                Ok(DecodedChunk::Chunk(Box::new(with_model(&reply)?)))
             }
         }
     }

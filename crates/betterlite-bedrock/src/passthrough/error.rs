@@ -1,5 +1,4 @@
 use crate::aws_endpoints::error::AwsEndpointError;
-use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput};
 use crate::signing::error::SigningError;
 use betterlite_context::chat_config_selection::selection::ChatConfigError;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
@@ -48,32 +47,18 @@ impl From<ProviderError> for PassthroughFailure {
 }
 #[must_use]
 pub fn bedrock_provider_error(message: &str, status_code: u16, headers: &Headers) -> ProviderError {
-    let input = ErrorInput {
+    ProviderError::from(ProviderErrorParts {
         status_code,
         message: message.to_owned(),
+        headers: (!headers.is_empty()).then(|| {
+            headers
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect()
+        }),
         request: None,
+        response: None,
         body: None,
         status_code_is_synthesized: false,
-        headers: (!headers.is_empty()).then(|| {
-            ErrorHeaders::Http(
-                headers
-                    .iter()
-                    .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect(),
-            )
-        }),
-        response: None,
-    };
-    match BedrockError::try_from(input) {
-        Ok(error) => error.error,
-        Err(_source) => ProviderError::from(ProviderErrorParts {
-            status_code,
-            message: message.to_owned(),
-            headers: None,
-            request: None,
-            response: None,
-            body: None,
-            status_code_is_synthesized: false,
-        }),
-    }
+    })
 }

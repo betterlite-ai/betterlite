@@ -12,7 +12,17 @@ API_BASE: Final = "https://bedrock-runtime.us-east-1.amazonaws.com"
 SPEND_WARNING: Final = "Bedrock passthrough spend tracking skipped:"
 
 
-class Signer(Protocol):
+class Typed(Protocol):
+    def get_complete_url(
+        self,
+        api_base: str | None,
+        api_key: str | None,
+        model: str,
+        endpoint: str,
+        request_query_params: dict[str, str] | None,
+        litellm_params: dict[str, JsonValue],
+    ) -> tuple[httpx.URL, str]: ...
+
     def sign_request(
         self,
         headers: dict[str, str],
@@ -24,7 +34,7 @@ class Signer(Protocol):
 
 
 CONFIG: Final[BedrockPassthroughConfig] = BedrockPassthroughConfig()
-SIGNER: Signer = CONFIG
+SIGNER: Typed = CONFIG
 
 
 class UrlRun(TypedDict):
@@ -141,7 +151,7 @@ def params_of(
 
 def url_run(run: UrlRun) -> JsonValue:
     request_data: dict[str, JsonValue] = {}
-    url, endpoint_url = CONFIG.get_complete_url(
+    url, endpoint_url = SIGNER.get_complete_url(
         api_base=run.get("api_base"),
         api_key=None,
         model=run["model"],

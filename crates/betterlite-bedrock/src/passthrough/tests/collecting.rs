@@ -1,7 +1,9 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
-use betterlite_openai::passthrough::transformation::types::PassthroughTarget;
+use betterlite_openai::passthrough::transformation::types::{
+    MAX_COLLECTED_BYTES, PassthroughTarget,
+};
 use betterlite_openai::passthrough::transformation::{
     BasePassthroughConfig as _, PassthroughStreamCollector,
 };
@@ -186,10 +188,25 @@ fn plan_builds_the_collector_for_its_endpoint() {
     assert_eq!(skipped, None);
 }
 
+fn oversized_streams_stop_collecting() {
+    let (_, _, assembler) = fixtures();
+    let big = vec![0_u8; MAX_COLLECTED_BYTES.saturating_add(1)];
+    let mut fed = collector(Some(Box::new(FixtureDecoder)), &assembler);
+    let error = fed.feed(&big).unwrap_err();
+    assert!(matches!(error, StreamLogError::TooLarge));
+    let mut stream = collector(Some(Box::new(FixtureDecoder)), &assembler);
+    stream.add(&big);
+    stream.add(&hello_frame());
+    let skipped = stream.build_logged_response(&mut TestLogging).unwrap();
+    assert_eq!(skipped, None);
+    assert_eq!(*assembler.calls.lock().unwrap(), 0);
+}
+
 pub(super) fn event_stream_collector() {
     fragments_and_generic_records();
     disabled_and_empty_collectors();
     decoder_and_frame_errors_propagate();
     trait_collector_keeps_the_failure();
     plan_builds_the_collector_for_its_endpoint();
+    oversized_streams_stop_collecting();
 }

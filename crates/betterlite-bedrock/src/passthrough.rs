@@ -110,7 +110,7 @@ fn signing_region(
     if bearer {
         return Ok(String::new());
     }
-    let explicit = self::url::optional_text(context.litellm_params, "aws_region_name")?;
+    let explicit = url::optional_text(context.litellm_params, "aws_region_name")?;
     llm_region_name(LlmRegion {
         explicit: explicit.as_deref(),
         model: context.model,
@@ -131,7 +131,7 @@ impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
         &self,
         request: &PassthroughUrlRequest<'_>,
     ) -> Result<(Url, String), Self::Error> {
-        self::url::complete_url(self, request)
+        url::complete_url(self, request)
     }
     fn sign_request(
         &self,
