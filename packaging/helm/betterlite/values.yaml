@@ -1,0 +1,342 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+
+# One Ingress routes the three component Services behind a single entrypoint.
+ingress:
+  enabled: false
+  className: ""
+  # Which ingress controller serves the Ingress: alb or nginx. It picks the
+  # pathType of the dotted paths and whether the /*.txt wildcard is rendered.
+  controller: alb
+  annotations: {}
+  host: ""
+  tls: []
+  extraPaths: []
+
+# Per-component ServiceAccounts. With create true the chart makes the account
+# (and can carry cloud identity annotations); create false binds an existing
+# name, or the namespace default account when no name is set.
+serviceAccounts:
+  gateway:
+    create: false
+    automount: true
+    annotations: {}
+    name: ""
+  backend:
+    create: false
+    automount: true
+    annotations: {}
+    name: ""
+  # The ui container never calls the Kubernetes API, so it carries no token.
+  ui:
+    create: false
+    automount: false
+    annotations: {}
+    name: ""
+
+# Pre-install / pre-upgrade hook that creates the database schema before the
+# pods start. Disable it when another pipeline runs the migrations.
+migrationJob:
+  enabled: true
+  hooks:
+    helm:
+      enabled: true
+      weight: "0"
+    argocd:
+      enabled: false
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 120
+  # Wall-clock budget for the whole Job, shared across every retry. null removes it.
+  activeDeadlineSeconds: 1800
+  resources: {}
+  # The Job runs before the chart's other resources exist, so a created
+  # ServiceAccount is not available to it; an empty name falls back to default.
+  serviceAccountName: ""
+  automountServiceAccountToken: false
+  podSecurityContext: {}
+  securityContext: {}
+  podLabels: {}
+  volumes: []
+  volumeMounts: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  image:
+    repository: ghcr.io/betterlite-ai/betterlite-backend
+    tag: ""
+    pullPolicy: IfNotPresent
+  extraEnv: []
+
+# Required: the Secret holding the master key the gateway and backend share.
+masterKey:
+  secretName: litellm-master-key-secret
+  secretKey: master-key
+
+database:
+  writer:
+    host: ""
+    port: 5432
+    dbname: ""
+    schema: ""
+    useIAMAuth: false
+    # Azure Database for PostgreSQL with a Microsoft Entra ID token; mutually exclusive with useIAMAuth
+    useAzureEntraAuth: false
+    passwordSecret:
+      name: litellm-writer-secret
+      usernameKey: username
+      passwordKey: password
+    # libpq sslmode / sslrootcert for the writer and reader URLs
+    sslMode: ""
+    sslRootCert: ""
+  # Reads go to the reader only when reader.host is set; writes stay on the writer.
+  reader:
+    host: ""
+    port: 5432
+    dbname: ""
+    schema: ""
+    useIAMAuth: false
+    useAzureEntraAuth: false
+    passwordSecret:
+      name: litellm-reader-secret
+      usernameKey: username
+      passwordKey: password
+  # In-container connection pool shared by every gateway worker in the pod.
+  connectionPool:
+    enabled: false
+    maxDbConnections: 20
+    maxClientConn: 1000
+
+# Coordination Redis: cross-pod rate limits, spend tracking and the pod lock
+# manager. Leave host empty to disable.
+redis:
+  cluster: false
+  host: ""
+  port: 6379
+  passwordSecret:
+    name: ""
+    passwordKey: password
+
+# The gateway is the LLM data plane.
+gateway:
+  enabled: true
+  logLevel: INFO
+  # Worker processes per pod, consumed by the gateway image entrypoint.
+  numWorkers: 1
+  extraEnv: []
+  envConfigMaps: []
+  envSecrets: []
+  volumes: []
+  volumeMounts: []
+  config:
+    create: true
+    proxy_config: {}
+  # Metrics server sidecar that aggregates the workers' Prometheus samples.
+  metricsServer:
+    enabled: false
+    port: 4001
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+    # Empty builds ["betterlite", "metrics-server", "--port", <port>].
+    command: []
+  serviceMonitor:
+    enabled: false
+    labels: {}
+    interval: 15s
+    scrapeTimeout: 10s
+  # Collector sidecar that runs the post-response spend pipeline.
+  collector:
+    enabled: false
+    # unix:///<dir>/<file>.sock or tcp://127.0.0.1:<port>
+    address: unix:///var/run/litellm/collector.sock
+    bufferSize: 1000
+    # fallback runs the pipeline in the worker, drop counts and discards the event
+    onUnavailable: fallback
+    drainTimeoutSeconds: 10
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    scaleOnGatewayContainerCpu: true
+    command:
+      - betterlite
+      - collector
+  image:
+    repository: ghcr.io/betterlite-ai/betterlite-gateway
+    tag: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 4000
+  resources:
+    requests:
+      cpu: "1"
+      memory: 4Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  livenessProbe:
+    httpGet: { path: /health/liveliness, port: http }
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    timeoutSeconds: 10
+    failureThreshold: 6
+  readinessProbe:
+    httpGet: { path: /health/readiness, port: http }
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 10
+  strategy: {}
+  startupProbe: {}
+  replicaCount:
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    behavior: {}
+    # Per-pod workload targets, served by a Prometheus Adapter on custom.metrics.k8s.io
+    targetRequestsPerSecond: ""
+    targetTokensPerSecond: ""
+  pdb:
+    enabled: false
+    minAvailable: ""
+    maxUnavailable: ""
+  podAnnotations: {}
+  # Extra pod labels, merged over the selector labels. The selector keys are rejected.
+  podLabels: {}
+  podSecurityContext: {}
+  securityContext: {}
+  extraContainers: []
+  lifecycle: {}
+  terminationGracePeriodSeconds: ""
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+# The backend serves the management API.
+backend:
+  enabled: true
+  logLevel: INFO
+  extraEnv: []
+  envConfigMaps: []
+  envSecrets: []
+  volumes: []
+  volumeMounts: []
+  image:
+    repository: ghcr.io/betterlite-ai/betterlite-backend
+    tag: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 4001
+  resources:
+    requests:
+      cpu: "1"
+      memory: 4Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  livenessProbe:
+    httpGet: { path: /health/liveliness, port: http }
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    timeoutSeconds: 10
+    failureThreshold: 6
+  readinessProbe:
+    httpGet: { path: /health/readiness, port: http }
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 10
+  strategy: {}
+  startupProbe: {}
+  replicaCount:
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+    behavior: {}
+  pdb:
+    enabled: false
+    minAvailable: ""
+    maxUnavailable: ""
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext: {}
+  securityContext: {}
+  extraContainers: []
+  lifecycle: {}
+  terminationGracePeriodSeconds: ""
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+# The ui is the static dashboard served by nginx.
+ui:
+  enabled: true
+  logLevel: INFO
+  extraEnv: []
+  envConfigMaps: []
+  envSecrets: []
+  volumes: []
+  volumeMounts: []
+  image:
+    repository: ghcr.io/betterlite-ai/betterlite-ui
+    tag: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+  # Externally routable URL of the management API the dashboard calls.
+  backendUrl: ""
+  resources:
+    requests:
+      cpu: 500m
+      memory: 500Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  livenessProbe:
+    httpGet: { path: /, port: http }
+    initialDelaySeconds: 5
+    periodSeconds: 20
+  readinessProbe:
+    httpGet: { path: /, port: http }
+    initialDelaySeconds: 2
+    periodSeconds: 10
+  strategy: {}
+  startupProbe: {}
+  replicaCount:
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+    behavior: {}
+  pdb:
+    enabled: false
+    minAvailable: ""
+    maxUnavailable: ""
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext: {}
+  securityContext: {}
+  extraContainers: []
+  lifecycle: {}
+  terminationGracePeriodSeconds: ""
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
