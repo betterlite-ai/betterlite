@@ -300,9 +300,11 @@ def flow_outcome(flow: FlowCall) -> dict[str, JsonValue]:
     except ValueError:
         failure = failure_outcome(state, "ValueError", None)
     except Exception as error:
-        if str(error) not in (NONE_IMAGE_MESSAGE, NONE_TEXT_MESSAGE):
-            raise
-        failure = failure_outcome(state, "Exception", None)
+        if str(error) in (NONE_IMAGE_MESSAGE, NONE_TEXT_MESSAGE):
+            failure = failure_outcome(state, "Exception", None)
+        else:
+            status: int = error.status_code  # type: ignore[attr-defined]  # noqa: E501  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L608-L617
+            failure = failure_outcome(state, "Exception", status)
     else:
         return answer_outcome(state, response)
     return failure

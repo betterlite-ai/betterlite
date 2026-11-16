@@ -4,18 +4,11 @@ use betterlite_models::decisions::Json;
 use crate::embeddings::error::FoundryEmbeddingError;
 use crate::embeddings::reply::FoundryEmbeddingResponse;
 
-const NUM_TOKENS_HEADER: &str = "llm_provider-num_tokens";
-const MODEL_GROUP_HEADER: &str = "llm_provider-azureml-model-group";
-const MULTILINGUAL_GROUP: &str = "offer-cohere-embed-multili-paygo";
-const MULTILINGUAL_MODEL: &str = "Cohere-embed-v3-multilingual";
-const ENGLISH_GROUP: &str = "offer-cohere-embed-english-paygo";
-const ENGLISH_MODEL: &str = "Cohere-embed-v3-english";
-
 #[must_use]
 pub fn map_azure_model_group(model: &str) -> &str {
     match model {
-        MULTILINGUAL_GROUP => MULTILINGUAL_MODEL,
-        ENGLISH_GROUP => ENGLISH_MODEL,
+        "offer-cohere-embed-multili-paygo" => "Cohere-embed-v3-multilingual",
+        "offer-cohere-embed-english-paygo" => "Cohere-embed-v3-english",
         _ => model,
     }
 }
@@ -24,13 +17,16 @@ pub fn map_azure_model_group(model: &str) -> &str {
 pub fn transform_response(
     response: &mut FoundryEmbeddingResponse,
 ) -> Result<(), FoundryEmbeddingError> {
-    let tokens = header_text(&response.additional_headers, NUM_TOKENS_HEADER)
+    let tokens = header_text(&response.additional_headers, "llm_provider-num_tokens")
         .filter(|text| !text.is_empty());
     if let Some(tokens) = tokens {
         response.usage.prompt_tokens = token_count(tokens)?;
     }
-    let group = header_text(&response.additional_headers, MODEL_GROUP_HEADER)
-        .filter(|text| !text.is_empty());
+    let group = header_text(
+        &response.additional_headers,
+        "llm_provider-azureml-model-group",
+    )
+    .filter(|text| !text.is_empty());
     if let Some(group) = group {
         response.model = Some(map_azure_model_group(group).to_owned());
     }

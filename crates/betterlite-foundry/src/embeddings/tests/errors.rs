@@ -13,6 +13,7 @@ pub(super) fn embedding_error() {
     data_absent();
     transport_failure();
     answered_status();
+    meaningful_error_in_reply();
     malformed_replies();
     conversion_failure();
     short_result_lists();
@@ -96,6 +97,35 @@ fn answered_status() {
         FoundryEmbeddingError::Provider { status: 503 }
     ));
     assert_eq!(error.to_string(), "the provider answered with status 503");
+}
+
+fn meaningful_error_in_reply() {
+    let input = strings(&[IMAGE_URI]);
+    let secret = key("case-key");
+    let call = keyed(&input, &secret);
+    let entry = r#"[{"object":"embedding","index":0,"embedding":[0.1]}]"#;
+    let quota = format!(r#"{{"error":{{"message":"quota","code":429}},"data":{entry}}}"#);
+    let factory = Factory::new(Answer::json(&quota));
+    let error = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap_err();
+    assert!(matches!(
+        error,
+        FoundryEmbeddingError::ReplyError { status: 429 }
+    ));
+    let boom = format!(r#"{{"error":"boom","data":{entry}}}"#);
+    let factory = Factory::new(Answer::json(&boom));
+    let error = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap_err();
+    assert!(matches!(
+        error,
+        FoundryEmbeddingError::ReplyError { status: 422 }
+    ));
+    let blank = format!(r#"{{"error":"","data":{entry}}}"#);
+    let factory = Factory::new(Answer::json(&blank));
+    let response = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap();
+    assert_eq!(response.data.len(), 1);
+    let quiet = format!(r#"{{"error":{{"message":"","code":null}},"data":{entry}}}"#);
+    let factory = Factory::new(Answer::json(&quiet));
+    let response = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap();
+    assert_eq!(response.data.len(), 1);
 }
 
 fn malformed_replies() {

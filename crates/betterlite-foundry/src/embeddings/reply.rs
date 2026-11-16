@@ -1,5 +1,6 @@
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingUsage};
+use betterlite_prompts::arguments::json::Json as ReplyJson;
 use serde::Deserialize;
 
 use crate::embeddings::error::FoundryEmbeddingError;
@@ -26,6 +27,8 @@ pub struct FoundryEmbeddingResponse {
 
 #[derive(Debug, Deserialize)]
 struct RawReply {
+    #[serde(default)]
+    error: Option<ReplyJson>,
     #[serde(
         default,
         deserialize_with = "serde_with::rust::double_option::deserialize"
@@ -97,6 +100,11 @@ impl FoundryEmbeddingResponse {
 pub fn decode_foundry_embedding(body: &[u8]) -> Result<EmbeddingReply, FoundryEmbeddingError> {
     let raw: RawReply =
         serde_json::from_slice(body).map_err(|source| FoundryEmbeddingError::Json { source })?;
+    if let Some(value) = raw.error.as_ref()
+        && let Some(failure) = reply_error(value)
+    {
+        return Err(failure);
+    }
     if matches!(raw.object, Some(None)) {
         return Err(FoundryEmbeddingError::FieldType {
             field: "object",
@@ -116,6 +124,27 @@ pub fn decode_foundry_embedding(body: &[u8]) -> Result<EmbeddingReply, FoundryEm
         }),
         additional_headers: AdditionalHeaders::default(),
     })
+}
+
+// LiteLLM raises for a meaningful error object inside an otherwise successful reply
+fn reply_error(value: &ReplyJson) -> Option<FoundryEmbeddingError> {
+    let ReplyJson::Object(fields) = value else {
+        let blank = matches!(value, ReplyJson::Text(text) if text.is_empty());
+        return (!blank).then_some(FoundryEmbeddingError::ReplyError { status: 422 });
+    };
+    let message = fields.get("message");
+    let code = fields.get("code");
+    if !message.is_some_and(ReplyJson::is_truthy) && matches!(code, None | Some(ReplyJson::Null)) {
+        return None;
+    }
+    let status = match code {
+        Some(ReplyJson::Number(number)) => number
+            .as_u64()
+            .and_then(|code| u16::try_from(code).ok())
+            .unwrap_or(422),
+        _ => 422,
+    };
+    Some(FoundryEmbeddingError::ReplyError { status })
 }
 
 // LiteLLM fills the answer by original input position, taking each performed call's entries in order

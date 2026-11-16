@@ -32,39 +32,15 @@ struct Trail {
     constructed: Vec<Value>,
 }
 
-#[derive(Default)]
-struct State {
-    trail: Mutex<Trail>,
-}
+type Shared = Arc<Mutex<Trail>>;
 
-type Shared = Arc<State>;
-
-#[derive(Clone)]
-struct Reply {
-    status: u16,
-    headers: Vec<(String, String)>,
-    body: String,
-}
-
-impl Reply {
-    fn from_call(call: &ReplyCall) -> Self {
-        Self {
-            status: call.status,
-            headers: call
-                .headers
-                .iter()
-                .map(|header| (header.name.clone(), header.value.clone()))
-                .collect(),
-            body: call.body.clone(),
-        }
-    }
-
+impl ReplyCall {
     fn image_reply(&self) -> ImageReply {
         let mut headers = HeaderMap::new();
-        for (name, value) in &self.headers {
+        for header in &self.headers {
             if let (Ok(name), Ok(value)) = (
-                HeaderName::from_bytes(name.as_bytes()),
-                HeaderValue::from_str(value),
+                HeaderName::from_bytes(header.name.as_bytes()),
+                HeaderValue::from_str(&header.value),
             ) {
                 headers.insert(name, value);
             }
@@ -87,7 +63,7 @@ impl Reply {
 #[derive(Clone)]
 struct Recorder {
     state: Shared,
-    reply: Reply,
+    reply: ReplyCall,
 }
 
 impl ImageTransport for Recorder {
@@ -102,7 +78,6 @@ impl ImageTransport for Recorder {
             .map(str::to_owned);
         let body = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
         self.state
-            .trail
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .calls
@@ -119,13 +94,12 @@ impl ImageTransport for Recorder {
 
 struct Factory {
     state: Shared,
-    reply: Reply,
+    reply: ReplyCall,
 }
 
 impl Factory {
     fn build(&self, kind: &str, timeout: Duration) -> Recorder {
         self.state
-            .trail
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .constructed
@@ -156,7 +130,6 @@ impl TextEmbedding for Recorder {
     ) -> impl Future<Output = Result<EmbeddingReply, FoundryEmbeddingError>> + Send {
         let options = serde_json::to_value(call.options);
         self.state
-            .trail
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .calls
@@ -180,6 +153,7 @@ impl TextEmbedding for Recorder {
 enum Failure {
     Class(&'static str),
     Status(u16),
+    Reply(u16),
 }
 
 fn failure(error: &FoundryEmbeddingError) -> Option<Failure> {
@@ -191,6 +165,7 @@ fn failure(error: &FoundryEmbeddingError) -> Option<Failure> {
             Some(Failure::Class("Exception"))
         }
         FoundryEmbeddingError::Provider { status } => Some(Failure::Status(*status)),
+        FoundryEmbeddingError::ReplyError { status } => Some(Failure::Reply(*status)),
         FoundryEmbeddingError::Json { source } if source.is_data() => {
             Some(Failure::Class("ResponseValidationError"))
         }
@@ -198,8 +173,7 @@ fn failure(error: &FoundryEmbeddingError) -> Option<Failure> {
         FoundryEmbeddingError::DataMissing => Some(Failure::Class("KeyError")),
         FoundryEmbeddingError::TooFewEntries { .. } => Some(Failure::Class("IndexError")),
         FoundryEmbeddingError::Transport { .. } => Some(Failure::Class("TransportError")),
-        FoundryEmbeddingError::NotAnObject
-        | FoundryEmbeddingError::FieldType { .. }
+        FoundryEmbeddingError::FieldType { .. }
         | FoundryEmbeddingError::Encode { .. }
         | FoundryEmbeddingError::Header { .. }
         | FoundryEmbeddingError::Text(_) => None,
@@ -217,88 +191,73 @@ fn helper_error(class: &str, message: String) -> Box<HelperError> {
     })
 }
 
-fn response_value(response: &FoundryEmbeddingResponse) -> Value {
-    json!({
-        "object": &response.object,
-        "model": &response.model,
-        "data": &response.data,
-        "usage": {
-            "prompt_tokens": response.usage.prompt_tokens,
-            "completion_tokens": response.usage.completion_tokens,
-            "total_tokens": response.usage.total_tokens,
-        },
-        "additional_headers": &response.additional_headers,
-    })
-}
-
-fn flow_answer(calls: Vec<Value>, constructed: Vec<Value>, response: Value) -> Value {
+fn flow_answer(
+    calls: Vec<Value>,
+    constructed: Vec<Value>,
+    response: &FoundryEmbeddingResponse,
+) -> Value {
     json!({
         "calls": calls,
         "constructed": constructed,
-        "response": response,
+        "response": {
+            "object": &response.object,
+            "model": &response.model,
+            "data": &response.data,
+            "usage": {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            },
+            "additional_headers": &response.additional_headers,
+        },
         "error": null,
     })
 }
 
-fn flow_failure(calls: Vec<Value>, constructed: Vec<Value>, failure: &Failure) -> Value {
-    let (kind, status) = match *failure {
-        Failure::Class(kind) => (kind, Value::Null),
-        Failure::Status(status) => ("HTTPStatusError", json!(status)),
-    };
-    json!({
-        "calls": calls,
-        "constructed": constructed,
-        "response": null,
-        "error": {"kind": kind, "status": status},
-    })
-}
-
-fn flow_error(
+fn flow_failure(
     calls: Vec<Value>,
     constructed: Vec<Value>,
     error: &FoundryEmbeddingError,
 ) -> Result<Value, Box<HelperError>> {
-    let Some(failure) = failure(error) else {
+    let Some(mapped) = failure(error) else {
         return Err(helper_error("EmbeddingError", error.to_string()));
     };
-    Ok(flow_failure(calls, constructed, &failure))
+    let (kind, status) = match mapped {
+        Failure::Class(kind) => (kind, Value::Null),
+        Failure::Status(status) => ("HTTPStatusError", json!(status)),
+        Failure::Reply(status) => ("Exception", json!(status)),
+    };
+    Ok(json!({
+        "calls": calls,
+        "constructed": constructed,
+        "response": null,
+        "error": {"kind": kind, "status": status},
+    }))
 }
 
 // the caller's client, when it hands the route one, answers the image call and records it
-struct Fixtures {
-    state: Shared,
-    held: Option<Recorder>,
-    factory: Factory,
-}
-
-fn fixtures(flow: &FlowCall) -> Fixtures {
+fn fixtures(flow: &FlowCall) -> (Shared, Option<Recorder>, Factory) {
     let state = Shared::default();
+    let reply = flow.image_reply.clone();
     let held = matches!(flow.client, ClientName::Handler).then(|| Recorder {
         state: Arc::clone(&state),
-        reply: Reply::from_call(&flow.image_reply),
+        reply: reply.clone(),
     });
-    Fixtures {
-        held,
-        factory: Factory {
-            state: Arc::clone(&state),
-            reply: Reply::from_call(&flow.image_reply),
-        },
-        state,
-    }
+    let factory = Factory {
+        state: Arc::clone(&state),
+        reply,
+    };
+    (state, held, factory)
 }
 
 fn flow_outcome(
     flow: &FlowCall,
     runtime: &tokio::runtime::Runtime,
 ) -> Result<Value, Box<HelperError>> {
-    let Fixtures {
-        state,
-        held,
-        factory,
-    } = fixtures(flow);
+    let (state, held, factory) = fixtures(flow);
     let text = Recorder {
         state: Arc::clone(&state),
-        reply: Reply::from_call(&flow.text_reply),
+        reply: flow.text_reply.clone(),
     };
     let key = flow.api_key.as_deref().map(SecretString::from);
     let supplied = held.as_ref().map(|client| SuppliedClient {
@@ -316,12 +275,12 @@ fn flow_outcome(
     };
     let outcome = runtime.block_on(embedding(&request, supplied, &factory, &text));
     let (calls, constructed) = {
-        let mut trail = state.trail.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut trail = state.lock().unwrap_or_else(PoisonError::into_inner);
         (take(&mut trail.calls), take(&mut trail.constructed))
     };
     match outcome {
-        Ok(response) => Ok(flow_answer(calls, constructed, response_value(&response))),
-        Err(error) => flow_error(calls, constructed, &error),
+        Ok(response) => Ok(flow_answer(calls, constructed, &response)),
+        Err(error) => flow_failure(calls, constructed, &error),
     }
 }
 

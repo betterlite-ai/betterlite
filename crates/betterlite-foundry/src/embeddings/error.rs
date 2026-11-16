@@ -21,10 +21,10 @@ pub enum FoundryEmbeddingError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the provider answer is not a JSON object")]
-    NotAnObject,
     #[error("the provider answer has no data field")]
     DataMissing,
+    #[error("the provider reply carries an error with status {status}")]
+    ReplyError { status: u16 },
     #[error("the provider answer field {field} must be {expected}")]
     FieldType {
         field: &'static str,

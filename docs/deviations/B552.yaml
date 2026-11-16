@@ -21,6 +21,9 @@ deviations:
   - what: 'An llm_provider-num_tokens value that Python''s int() accepts but a plain decimal count does not, such as "9_0", "-3", a unicode digit string or a count above u32, is a typed TokenCount error naming the value.'
     why: "docs/compatibility.md reads a string into the field's type and refuses what does not fit instead of porting int()'s underscore, negative-value and unicode-digit parsing."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/cohere_transformation.py#L74-L79
+  - what: 'A meaningful error object inside a reply raises ReplyError with a u16 status taken from a numeric code, and 422 when the code is absent, null or not a whole number in u16 range; LiteLLM sets status_code to the raw code value, so a runner sees "quota" or None there instead.'
+    why: "docs/compatibility.md reads a value into the type its field declares, and a status code in betterlite is a u16, so the reply cannot carry Python's untyped status_code."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L603-L607
 kept_bugs:
   - what: 'The filtered text input is built and then only tested for emptiness; the inherited OpenAI embedding call receives the original input, image data URIs included.'
     why: 'A working setup embeds the image strings as text today, so the answer would change if betterlite sent only the filtered list.'
