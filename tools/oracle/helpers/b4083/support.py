@@ -180,11 +180,7 @@ def mock_reply(content: str) -> ModelResponse:
     return ModelResponse(model=SHADOW_MODEL, choices=choices, usage=usage)
 
 
-def deployment(
-    model_name: str,
-    reply: ModelResponse | Exception,
-    price: Price,
-) -> Deployment:
+def deployment(model_name: str, reply: ModelResponse | Exception, price: Price) -> Deployment:
     params: MockParams = {"model": f"openai/{SHADOW_MODEL}", "mock_response": reply}
     model_info: dict[str, float] = {
         "input_cost_per_token": price["input_cost_per_token"],
