@@ -1,20 +1,11 @@
 mod doubles;
 
-use std::convert::Infallible;
 use std::fmt::Display;
-use std::future::{Future, ready};
-use std::sync::{Mutex, PoisonError};
+use std::sync::Mutex;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::passthrough_guardrail::PassThroughEndpointHandler;
-use betterlite_core::passthrough_guardrail::settings::{
-    PassThroughGuardrailSettings, PassthroughGuardrailInputs, PassthroughInputType, RequestData,
-    ResponseCall,
-};
-use betterlite_core::passthrough_guardrail::traits::{
-    PassthroughGuardrail, PassthroughLogging, PassthroughPolicy,
-};
-use betterlite_guardrails::{guardrail_translation, passthrough_policy};
+use betterlite_core::passthrough_guardrail::settings::{RequestData, ResponseCall};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
