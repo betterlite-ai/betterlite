@@ -123,10 +123,10 @@ impl<S> StreamState<S> {
         if self.holding_stop_reason_chunk.is_none() {
             return Ok(false);
         }
-        let Some(usage) = usage else {
+        let Some(carried_usage) = usage else {
             return Ok(false);
         };
-        let merged = self.merge_usage_into_held_stop(usage)?;
+        let merged = self.merge_usage_into_held_stop(carried_usage)?;
         self.chunk_queue.push_back(merged);
         self.queued_usage_chunk = true;
         self.holding_stop_reason_chunk = None;
