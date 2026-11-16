@@ -41,6 +41,7 @@ run "master_key_secret_always_exists" {
       length(google_secret_manager_secret.license) == 0,
       length(google_secret_manager_secret_version.license) == 0,
       length(google_secret_manager_secret_iam_member.license) == 0,
+      length(google_secret_manager_secret_iam_member.extra_secrets) == 0,
       local.ui_password_set == false,
       length(google_secret_manager_secret.ui_password) == 0,
       length(google_secret_manager_secret_version.ui_password) == 0,
@@ -181,6 +182,23 @@ run "runtime_account_id_is_cut_for_long_names" {
   }
 }
 
+run "runtime_account_id_can_reach_thirty_characters" {
+  command = plan
+
+  variables {
+    tenant = "abcdefghijklmnopqrst"
+    env    = "abc"
+  }
+
+  assert {
+    condition = alltrue([
+      google_service_account.runtime.account_id == "abcdefghijklmnopqrst-a-runtime",
+      length(google_service_account.runtime.account_id) == 30,
+    ])
+    error_message = "A shared name whose 22-character cut lands mid-word must keep every character and still fit the 30-character account id limit exactly."
+  }
+}
+
 run "data_bucket_is_locked_down" {
   command = plan
 
@@ -192,6 +210,7 @@ run "data_bucket_is_locked_down" {
       google_storage_bucket.data.public_access_prevention == "enforced",
       google_storage_bucket.data.force_destroy == false,
       google_storage_bucket.data.versioning[0].enabled == true,
+      google_storage_bucket.data.labels["managed_by"] == "terraform",
       try(length(google_storage_bucket.data.lifecycle_rule), 0) == 0,
       google_storage_bucket_iam_member.data_runtime.bucket == google_storage_bucket.data.name,
       google_storage_bucket_iam_member.data_runtime.role == "roles/storage.objectAdmin",
@@ -229,6 +248,7 @@ run "config_bucket_and_object_exist_with_a_proxy_config" {
       google_storage_bucket.config[0].public_access_prevention == "enforced",
       google_storage_bucket.config[0].force_destroy == false,
       google_storage_bucket.config[0].versioning[0].enabled == true,
+      google_storage_bucket.config[0].labels["managed_by"] == "terraform",
       length(google_storage_bucket_object.config) == 1,
       google_storage_bucket_object.config[0].name == "config.yaml",
       google_storage_bucket_object.config[0].bucket == google_storage_bucket.config[0].name,
