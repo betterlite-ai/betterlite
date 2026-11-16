@@ -17,6 +17,11 @@ const EXACT: CaseOptions = CaseOptions {
     fallback: None,
     image_default_count: 250,
 };
+const DEFAULT: CaseOptions = CaseOptions {
+    counting: ImageCounting::DefaultCount,
+    fallback: None,
+    image_default_count: 250,
+};
 
 #[derive(Clone, Copy)]
 enum Layout {
@@ -113,5 +118,27 @@ async fn low_detail_never_counts() {
         .unwrap();
     // 300 low-detail images count the 85 base tokens each and are never fetched
     assert_eq!(counted.tokens, 25_500);
+    assert_eq!(fetcher.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn default_count_never_reaches_the_cap() {
+    let urls = distinct_urls(300);
+    let fetcher = MappingFetcher {
+        urls: mapping(&urls),
+        calls: AtomicUsize::new(0),
+    };
+    let fixture = support::words_fixture();
+    let settings = support::settings(&DEFAULT);
+    let counted = support::count(
+        &fixture,
+        &image_content(&urls, Layout::Flat),
+        &settings,
+        &fetcher,
+    )
+    .await
+    .unwrap();
+    // 300 default-count images count the 250 configured tokens each and are never fetched
+    assert_eq!(counted.tokens, 75_000);
     assert_eq!(fetcher.calls.load(Ordering::SeqCst), 0);
 }
