@@ -3,9 +3,10 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 
-use super::{BaseCall, invoke};
+use super::{BaseCall, invoke_base_call};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 #[test]
 fn hidden_params_call_reports_the_projection_and_the_attached_map() {
@@ -14,14 +15,14 @@ fn hidden_params_call_reports_the_projection_and_the_attached_map() {
     )
     .unwrap();
     assert_eq!(
-        invoke(&call).unwrap().to_string(),
+        invoke_base_call(&call).unwrap().to_string(),
         r#"[{"id":"m"},{"id":"m"}]"#
     );
 }
 
 #[test]
 fn helper_seeds_select_provider_base_helpers() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())

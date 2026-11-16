@@ -13,16 +13,18 @@ use betterlite_logging::otel::model::payloads::{
     usage::LLMUsage,
 };
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::Input;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let result = match input {
             Input::RequestParams { value } => json!(LLMRequestParams::from_model_parameters(value)),
             Input::Cost { value } => json!(LLMCost::from_breakdown(value)),
@@ -75,7 +77,7 @@ fn service_type(name: &str) -> Option<ServiceType> {
     })
 }
 
-fn run_service(value: &Value) -> crate::helpers::HelperResult {
+fn run_service(value: &Value) -> HelperResult {
     let raw = value
         .as_object()
         .ok_or_else(|| invalid("service payload must be an object"))?;
@@ -105,7 +107,7 @@ fn parse_fields(
     input: &Value,
     field: &str,
     error_message: &str,
-) -> Result<BTreeMap<String, OtelModelValue>, Box<crate::helpers::HelperError>> {
+) -> Result<BTreeMap<String, OtelModelValue>, Box<HelperError>> {
     let raw_fields = input
         .get(field)
         .and_then(Value::as_object)
@@ -116,15 +118,15 @@ fn parse_fields(
         .collect()
 }
 
-fn parse_model_value(value: &Value) -> Result<OtelModelValue, Box<crate::helpers::HelperError>> {
+fn parse_model_value(value: &Value) -> Result<OtelModelValue, Box<HelperError>> {
     match serde_json::from_value(value.clone()) {
         Ok(parsed) => Ok(parsed),
         Err(error) => Err(invalid(&error.to_string())),
     }
 }
 
-fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,

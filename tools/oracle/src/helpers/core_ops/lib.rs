@@ -1,9 +1,7 @@
 #![expect(
-    clippy::absolute_paths,
     clippy::disallowed_methods,
     clippy::disallowed_types,
-    clippy::pub_use,
-    reason = "The operation files name crate::helpers paths, build provider JSON with serde_json::json!, and reach the trait through the re-export the shared macro generates."
+    reason = "Helper operations take and return arbitrary provider JSON as serde_json::Value and build it with serde_json::json!."
 )]
 
 betterlite_oracle_helper_api::helper_group! {
@@ -31,7 +29,8 @@ betterlite_oracle_helper_api::helper_group! {
     "b5366" => b5366, "b5651" => b5651, "b6414" => b6414, "b8020" => b8020, "b8021" => b8021,
     "b8022" => b8022, "b8023" => b8023, "b8024" => b8024, "b8025" => b8025, "b8580" => b8580,
     "b916" => b916, "b921" => b921, "b924" => b924, "b927" => b927, "b932" => b932, "b933" => b933,
-    "b934" => b934, "b977" => b977, "b979" => b979, "b9840" => b9840, "b998" => b998,
+    "b934" => b934, "b977" => b977, "b979" => b979, "b9840" => b9840, "b9966" => b9966,
+    "b998" => b998,
     "b999" => b999,
     "batch_calls" => batch_calls, "batch_cost_finalize" => batch_cost_finalize,
     "batch_enqueued_refund" => batch_enqueued_refund,

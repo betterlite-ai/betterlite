@@ -5,6 +5,7 @@ use betterlite_guardrails::content_inspection::{
     NON_CONVERSATIONAL_CALL_TYPES, TEXT_CONTENT_CALL_TYPES, apply_redacted_messages_back,
     build_inspection_messages, has_non_string_content, is_string_batch_input, iter_message_text,
 };
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -36,10 +37,10 @@ pub(crate) enum Function {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Function;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Function::IterMessageText { data } => Ok(json!({"result": iter_message_text(data)})),
             Function::BuildInspectionMessages { data } => {

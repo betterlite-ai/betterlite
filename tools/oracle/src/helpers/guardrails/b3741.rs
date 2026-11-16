@@ -1,9 +1,93 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use serde::Deserialize;
+use serde_json::Value;
+
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
+mod outcome;
+mod payload;
+mod poster;
+
+const FIXED_NOW_SECONDS: u64 = 1_000_000;
+const UUID_MARKER: &str = "<uuid4>";
+
+type Data = BTreeMap<String, GuardrailValue>;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScriptedReply {
+    status: u16,
+    body: Value,
+    raw: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum Step {
+    Token {
+        assertion: String,
+    },
+    TokenRange {
+        prefix: String,
+        count: usize,
+    },
+    Post {
+        url: String,
+        headers: BTreeMap<String, String>,
+        data: BTreeMap<String, String>,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TokenExchangeArgs {
+    replies: Vec<ScriptedReply>,
+    repeat_last_reply: bool,
+    steps: Vec<Step>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct AssertionArgs {
+    values: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PayloadAssemblyArgs {
+    key_alias: Option<String>,
+    mcp_session_id: Option<String>,
+    litellm_call_id: String,
+    metadata: Option<Data>,
+    litellm_metadata: Option<Data>,
+    mcp_tool_name: Option<String>,
+    mcp_server_name: Option<String>,
+    mcp_arguments: Option<Data>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "function")]
+pub(crate) enum Input {
+    #[serde(rename = "agent_365_token_exchange")]
+    TokenExchange(Box<TokenExchangeArgs>),
+    #[serde(rename = "agent_365_assertion")]
+    Assertion(AssertionArgs),
+    #[serde(rename = "agent_365_payload_assembly")]
+    PayloadAssembly(Box<PayloadAssemblyArgs>),
+}
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+impl Helper for Op {
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("b3741")
+    fn run(input: &Self::Input) -> HelperResult {
+        match input {
+            Input::TokenExchange(args) => outcome::exchange_result(args),
+            Input::Assertion(args) => Ok(outcome::assertion_result(&args.values)),
+            Input::PayloadAssembly(args) => payload::payload_result(args),
+        }
     }
 }

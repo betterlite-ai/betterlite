@@ -4,7 +4,8 @@ use betterlite_openai::response_input::{ResponsesInput, transform_responses_requ
 use betterlite_prompts::arguments::json::Object;
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 

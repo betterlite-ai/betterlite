@@ -12,7 +12,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use super::input::{Input, ModelInfoQuery, OriginQuery, Reply};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 pub(crate) fn run(input: &Input) -> HelperResult {
     match input {
@@ -74,7 +76,7 @@ fn model_info_answer(query: &ModelInfoQuery) -> Result<Value, Box<HelperError>> 
         api_base: query.api_base.as_deref(),
         api_key: explicit_key.as_ref(),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| Box::new(failure(error.to_string())))?;
@@ -157,6 +159,10 @@ impl ModelInfoClient for FixtureClient<'_> {
     }
 }
 
+#[expect(
+    clippy::map_err_ignore,
+    reason = "a scripted body that cannot be encoded is a broken fixture, and FixtureError carries no detail"
+)]
 fn scripted_reply(reply: Option<&Reply>) -> Result<FetchResponse, FixtureError> {
     let Some(scripted) = reply else {
         return Err(FixtureError);

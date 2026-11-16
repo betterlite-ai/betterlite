@@ -8,7 +8,8 @@ use betterlite_mcp::client::tools::listing::list_tools;
 use betterlite_mcp::client::tools::result::{ContentBlock, ToolCallResult};
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::fixtures::{
     BrokenResourceError, CallMode, RecordingHost, Script, Simulated, SimulatedError, build_client,

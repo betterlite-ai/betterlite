@@ -139,7 +139,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_identity_binding::enforce::tests::/)'
     - id: helper-tests
       why: the helper adapter does not reach the production functions
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mcp::b4659::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-oracle-mcp --no-tests=fail -E 'test(/^b4659::/) - test(/replays_the_/)'
     - id: helper-oracle
       why: the helper cases are missing or differ from LiteLLM
       run: >-

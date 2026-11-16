@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use super::support::{
     error_json, int_index, int_pairs, reason_index, text_index, text_pairs, to_json,
 };
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

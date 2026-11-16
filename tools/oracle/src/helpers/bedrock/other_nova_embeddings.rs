@@ -5,13 +5,14 @@ use betterlite_bedrock::nova_embeddings::request::{
     SUPPORTED_OPENAI_PARAMS, map_openai_params, transform_request,
 };
 use betterlite_bedrock::nova_embeddings::response::{
-    transform_invoke_response, transform_response,
+    NovaEmbeddingResponse, transform_invoke_response, transform_response,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use thiserror::Error;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod calls;
 
@@ -125,9 +126,7 @@ fn nova_invocation_arn(call: &InvocationArnCall) -> Result<Value, Failure> {
     embedding_response_json(&result)
 }
 
-fn embedding_response_json(
-    result: &betterlite_bedrock::nova_embeddings::response::NovaEmbeddingResponse,
-) -> Result<Value, Failure> {
+fn embedding_response_json(result: &NovaEmbeddingResponse) -> Result<Value, Failure> {
     let data = result
         .data
         .iter()

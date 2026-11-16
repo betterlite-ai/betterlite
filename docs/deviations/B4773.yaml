@@ -1,0 +1,53 @@
+task: B4773
+deviations:
+  - what: >-
+      The binding cache key is agent_identity: followed by an array the code writes itself from two serde_json string encodings joined with ", ", matching Python's json.dumps of the (tenant_id, client_id) tuple for ASCII identifiers; an identifier with non-ASCII characters is escaped differently, because json.dumps defaults to ensure_ascii=True while serde_json writes the characters as UTF-8.
+    why: >-
+      Rust has no json.dumps, and the tuple shape, the quoted strings and the ", " separator reproduce its output. Only this store writes and reads the key, so the remaining non-ASCII escaping difference cannot change which binding a lookup finds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L94
+  - what: >-
+      Repository calls return Result<Option<Row>, AgentStoreError> and every error is mapped to LiteLLM's typed AgentIdentityFailure with the same code and message at the store method, where LiteLLM catches a bare Exception and returns the same failure value.
+    why: >-
+      Rust returns errors instead of raising them. The failure code, the message and the status the wrapper derives from it are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L67-L79
+  - what: >-
+      unbound_client takes tenant_id and client_id and always looks up provider="microsoft_entra", where LiteLLM passes the whole provider_tenant_id_client_id unique input its only caller built.
+    why: >-
+      The binding lookup is the only caller and always uses that provider, so the narrower signature cannot reach a different row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L81-L91
+  - what: >-
+      The verified-subject upsert is INSERT ... ON CONFLICT (issuer, tenant_id, oid) DO UPDATE SET user_id = the column itself RETURNING the row, standing in for Prisma's upsert with an empty update dict.
+    why: >-
+      PostgreSQL only returns the existing row from ON CONFLICT when a DO UPDATE clause runs, and assigning the column to itself leaves every stored field, verified_at included, unchanged as Prisma's empty update does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L228-L229
+  - what: >-
+      subject_id is generated in Rust as a version 4 UUID where Prisma generates it in the client from @default(uuid()).
+    why: >-
+      The column has no database-side default, so the insert must supply the value Prisma would generate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L130
+  - what: >-
+      The authentication timestamp comes from a clock held on the store that defaults to Utc::now and is written as a naive UTC timestamp into TIMESTAMP(3), where LiteLLM calls datetime.now(timezone.utc) at the update.
+    why: >-
+      The clock is injectable so tests pin the written instant; production reads the same wall clock LiteLLM does, and Prisma writes its UTC DateTime into the same timestamp(3) column.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L202-L204
+kept_bugs:
+  - what: >-
+      A missing agent row reports "Agent is disabled or no longer bound to an identity", the same failure a disabled, non-identity-managed or unbound agent produces, so the three cases cannot be told apart by the message.
+    why: >-
+      Callers and operators can match that message today, and the distinction is not security-relevant because every case is denied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L131-L138
+  - what: >-
+      record_authentication reports "Agent identity changed during authentication; retry" for any update_many count other than one, so a disabled or non-identity-managed agent, which the where clause's nested agent filter excludes, gets the same retry message as a genuine revision race.
+    why: >-
+      The count is the only signal LiteLLM reads, and a setup may retry on this message; the cause cannot be recovered from the count in either implementation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L196-L207
+  - what: >-
+      Enrollment reports "Microsoft subject is already bound to another local identity" also when the stored row's user_id is null or its kind is not human, where no other local identity owns the subject.
+    why: >-
+      The message is part of the enrollment contract and a correct outcome is still a denial; the wording is kept rather than split into new messages.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L230-L231
+  - what: >-
+      The binding cache has no invalidation on identity changes anywhere, so after a rotation or retirement of the binding at a (tenant_id, client_id) key the old agent_id keeps resolving until the management TTL expires.
+    why: >-
+      This matches LiteLLM, where nothing deletes or rewrites the agent_identity key and freshness is TTL-only; whether a setup depends on that staleness cannot be ruled out, so it is kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L94-L115

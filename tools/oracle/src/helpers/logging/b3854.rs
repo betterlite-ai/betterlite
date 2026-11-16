@@ -18,7 +18,7 @@ use betterlite_logging::otel::legacy_policy::span_time::{SpanTime, span_name, to
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::inputs::{Call, ConfigInput, ModelMap, NameInput, TeamInput, TimeInput};
 use self::support::{config_json, invalid, metadata_keys, normalized, record};
@@ -53,7 +53,7 @@ pub(crate) struct Input {
     call_types: Vec<Option<String>>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

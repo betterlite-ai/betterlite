@@ -2,6 +2,8 @@ use betterlite_db::budget_permission_rows::{
     JsonData, LiteLLMBudgetTable, LiteLLMBudgetTableFull, LiteLLMObjectPermissionTable,
     OrganizationMembership,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use rust_decimal::prelude::ToPrimitive as _;
 
 pub(crate) struct Op;
@@ -38,7 +40,7 @@ pub(crate) enum Validated<T> {
 }
 
 impl<T> Validated<T> {
-    fn get(&self) -> Result<&T, Box<crate::helpers::HelperError>> {
+    fn get(&self) -> Result<&T, Box<HelperError>> {
         match self {
             Self::Valid(value) => Ok(value),
             Self::Invalid(value) => Err(helper_error(
@@ -49,10 +51,10 @@ impl<T> Validated<T> {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Budget { row } => serde_json::to_value(row.get()?)
                 .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
@@ -85,8 +87,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn helper_error(class: &str, message: &str) -> Box<crate::helpers::HelperError> {
-    let error = crate::helpers::HelperError {
+fn helper_error(class: &str, message: &str) -> Box<HelperError> {
+    let error = HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,

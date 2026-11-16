@@ -1,0 +1,32 @@
+kind: helper
+name: messages-chat-output-cache-creation-token-precedence
+call:
+  messages_chat_output:
+    operation: response
+    response:
+      id: msg_cache
+      model: claude-sonnet-4-5
+      choices:
+      - finish_reason: stop
+        message:
+          content: cached
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+      usage:
+        prompt_tokens: 100
+        completion_tokens: 7
+        prompt_tokens_details:
+          cache_write_tokens: 30
+        server_tool_use: null
+        cache_read_input_tokens: 20
+        cache_creation_input_tokens: null
+        _cache_read_input_tokens: null
+        _cache_creation_input_tokens: null
+    tool_name_mapping: null
+    polyfill_result: null
+env: {}
+compare:
+  ignore: []

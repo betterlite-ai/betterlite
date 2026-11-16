@@ -11,8 +11,8 @@ use super::error::ScenarioError;
 use super::model::{HttpScenario, POLLING_KEY_PREFIX, POLLING_TTL_SECONDS};
 use super::run::PeerTranscript;
 use crate::http::Response;
-use crate::mock::ProviderRequest;
 use crate::paths::{safe_name, unique_id};
+use betterlite_oracle_runner::mock::ProviderRequest;
 
 #[derive(Clone, Copy)]
 pub(crate) struct ArtifactInput<'input> {

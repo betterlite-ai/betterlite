@@ -10,16 +10,17 @@ use betterlite_logging::logging_success::recognized::is_recognized_call_type;
 use betterlite_logging::logging_success::types::SuccessRequest;
 use betterlite_models::decisions::Json;
 use serde_json::{Value, json};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
-use crate::compare::helper::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::input::{AssembledProbe, ContextSpec, DispatchProbe, Input, Operation, RecognizedProbe};
 use super::scenario::{self, Scenario, ScenarioSpec};
 use super::state::{self, StateSpec};
 use super::{handler, output};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
-pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
+pub(crate) fn run(input: &Input) -> HelperResult {
     let mut outputs = Vec::with_capacity(input.operations.len());
     for operation in &input.operations {
         outputs.push(operation_value(operation)?);
@@ -91,7 +92,7 @@ fn recognized_probe(probe: &RecognizedProbe) -> Result<bool, Box<HelperError>> {
 }
 
 fn dispatch(probes: &[DispatchProbe]) -> Result<Value, Box<HelperError>> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|failure| super::value_error(&failure))?;

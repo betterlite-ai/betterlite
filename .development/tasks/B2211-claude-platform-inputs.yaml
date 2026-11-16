@@ -276,7 +276,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/claude_platform_inputs*")"
       && grep -lq 'claude_platform_inputs' tools/oracle/fuzz/corpus/helper_case/claude_platform_inputs* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_claude_platform_inputs$/)'
+      nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_claude_platform_inputs$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-anthropic-aws-workspace-id
     why: The ANTHROPIC_AWS_WORKSPACE_ID setting is not loaded with its required defaults and precedence.

@@ -13,6 +13,8 @@ use betterlite_logging::otel::model::payloads::usage::LLMUsage;
 use betterlite_logging::otel::model::trace_controls::TraceControls;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::span_attributes::primitive_value;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use opentelemetry::Value as OtelValue;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
@@ -54,10 +56,10 @@ pub(crate) enum Input {
     },
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let value = match input {
             Input::PrimitiveValue { value } => primitive_record(value),
             Input::Tools { value } => json!(extract_tools(value)),
@@ -98,7 +100,7 @@ fn llm_call(
     time_to_first_chunk_seconds: Option<Decimal>,
     request_route: Option<&str>,
     session_id: Option<&str>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<HelperError>> {
     let span = LLMCallSpanData::from_standard_logging_payload(
         payload,
         LLMCallOptions {
@@ -113,8 +115,8 @@ fn llm_call(
     Ok(llm_call_record(&span))
 }
 
-fn metadata_error(error: &MetadataError) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn metadata_error(error: &MetadataError) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "MetadataError".to_owned(),
         status: None,
         error_type: None,

@@ -15,7 +15,8 @@ use serde_json::{Map, Value, json};
 
 use super::Input;
 use super::input::{FileSpec, Probe};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const NOW: i64 = 1_700_000_000;
 

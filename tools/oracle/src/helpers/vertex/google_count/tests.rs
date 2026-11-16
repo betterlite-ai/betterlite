@@ -5,12 +5,13 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/google-count")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -19,7 +20,7 @@ fn run_case(file: &str) -> Value {
 
 #[test]
 fn helper_seeds_select_google_count() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -40,7 +41,7 @@ fn helper_seeds_select_google_count() {
 
 #[test]
 fn oracle_function_response_id_is_removed() {
-    let result = run_case("function-response-id.yaml");
+    let result = run_case_file("function-response-id.yaml");
     let call = &result["calls"][0];
     assert_eq!(
         call["contents"],
@@ -69,7 +70,7 @@ fn oracle_function_response_id_is_removed() {
 
 #[test]
 fn oracle_none_contents_are_preserved() {
-    let result = run_case("none-contents.yaml");
+    let result = run_case_file("none-contents.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(calls[0]["contents"], Value::Null);
     assert_eq!(calls[0]["original"], Value::Null);
@@ -79,7 +80,7 @@ fn oracle_none_contents_are_preserved() {
 
 #[test]
 fn oracle_original_is_not_mutated() {
-    let result = run_case("original-not-mutated.yaml");
+    let result = run_case_file("original-not-mutated.yaml");
     let call = &result["calls"][0];
     assert_eq!(
         call["contents"][0]["parts"][0]["functionResponse"],
@@ -97,7 +98,7 @@ fn oracle_original_is_not_mutated() {
 
 #[test]
 fn oracle_scheduling_is_canonicalized() {
-    let result = run_case("scheduling.yaml");
+    let result = run_case_file("scheduling.yaml");
     let call = &result["calls"][0];
     assert_eq!(
         call["contents"][0]["parts"][0]["functionResponse"],
@@ -120,7 +121,7 @@ fn oracle_scheduling_is_canonicalized() {
 
 #[test]
 fn oracle_studio_base_suffix_is_concatenated() {
-    let result = run_case("studio-base-suffix.yaml");
+    let result = run_case_file("studio-base-suffix.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["url"],

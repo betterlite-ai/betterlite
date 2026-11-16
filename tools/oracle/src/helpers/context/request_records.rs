@@ -1,5 +1,9 @@
 use betterlite_context::request_records::record::RequestRecord;
-use betterlite_context::request_records::{GatewayCacheAttribution, RequestRecordProjection};
+use betterlite_context::request_records::{
+    GatewayCacheAttribution, RequestRecordError, RequestRecordProjection,
+};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::json;
 use std::collections::BTreeSet;
 
@@ -30,10 +34,10 @@ fn run_gateway(record: &RequestRecord, steps: &[GatewayStep]) -> RequestRecord {
     changed
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let result = match input {
             Input::SafeCopy {
                 record,
@@ -43,11 +47,11 @@ impl crate::helpers::Helper for Op {
                 RequestRecordProjection::safe_copy(&mut changed, *safe_memory_mode)
                     .map_err(|error| {
                         let class = match &error {
-                            betterlite_context::request_records::RequestRecordError::MetadataMembership { .. }
-                            | betterlite_context::request_records::RequestRecordError::MetadataRemoval { .. } => "TypeError",
-                            betterlite_context::request_records::RequestRecordError::MetadataMutation { .. } => "AttributeError",
+                            RequestRecordError::MetadataMembership { .. }
+                            | RequestRecordError::MetadataRemoval { .. } => "TypeError",
+                            RequestRecordError::MetadataMutation { .. } => "AttributeError",
                         };
-                        Box::new(crate::helpers::HelperError {
+                        Box::new(HelperError {
                             class: class.to_owned(),
                             status: None,
                             error_type: None,

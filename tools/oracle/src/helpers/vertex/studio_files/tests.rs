@@ -5,13 +5,13 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/studio-files")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -20,7 +20,7 @@ fn run_case(file: &str) -> Value {
 
 #[test]
 fn helper_seeds_select_studio_files() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -41,7 +41,7 @@ fn helper_seeds_select_studio_files() {
 
 #[test]
 fn oracle_extracted_headers_override_the_start_headers() {
-    let result = run_case("start-header-override.yaml");
+    let result = run_case_file("start-header-override.yaml");
     let call = &result["calls"][0];
     assert_eq!(call["headers"]["X-Goog-Upload-Command"], "custom");
     assert_eq!(call["headers"]["Content-Type"], "application/custom");
@@ -66,7 +66,7 @@ fn oracle_extracted_headers_override_the_start_headers() {
 
 #[test]
 fn oracle_display_name_falls_back_to_the_clock() {
-    let result = run_case("clock-display-name.yaml");
+    let result = run_case_file("clock-display-name.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["data"],
@@ -80,7 +80,7 @@ fn oracle_display_name_falls_back_to_the_clock() {
 
 #[test]
 fn oracle_file_ids_never_select_their_own_host() {
-    let result = run_case("foreign-host-identifier.yaml");
+    let result = run_case_file("foreign-host-identifier.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["targets"][0]["url"],
@@ -104,7 +104,7 @@ fn oracle_file_ids_never_select_their_own_host() {
 
 #[test]
 fn oracle_file_ids_are_slash_trimmed_and_encoded() {
-    let result = run_case("slash-encoded-id.yaml");
+    let result = run_case_file("slash-encoded-id.yaml");
     let targets = result["calls"][0]["targets"].as_array().unwrap();
     let urls: Vec<&str> = targets
         .iter()
@@ -125,7 +125,7 @@ fn oracle_file_ids_are_slash_trimmed_and_encoded() {
 
 #[test]
 fn oracle_create_reply_uses_the_uri_and_the_supplied_timezone() {
-    let result = run_case("create-uri-id.yaml");
+    let result = run_case_file("create-uri-id.yaml");
     let files = result["calls"][0]["files"].as_array().unwrap();
     assert_eq!(
         files[0]["id"],
@@ -143,7 +143,7 @@ fn oracle_create_reply_uses_the_uri_and_the_supplied_timezone() {
 
 #[test]
 fn oracle_retrieve_reply_maps_states_and_renders_details() {
-    let result = run_case("failed-status-details.yaml");
+    let result = run_case_file("failed-status-details.yaml");
     let files = result["calls"][0]["files"].as_array().unwrap();
     assert_eq!(files[0]["status"], "processed");
     assert_eq!(files[0]["status_details"], Value::Null);
@@ -160,7 +160,7 @@ fn oracle_retrieve_reply_maps_states_and_renders_details() {
 
 #[test]
 fn oracle_delete_reply_reads_the_id_from_the_request_url() {
-    let result = run_case("delete-id-from-url.yaml");
+    let result = run_case_file("delete-id-from-url.yaml");
     let replies = result["calls"][0]["replies"].as_array().unwrap();
     assert_eq!(replies[0]["id"], "files/abc123");
     assert_eq!(replies[1]["id"], "files/abc");

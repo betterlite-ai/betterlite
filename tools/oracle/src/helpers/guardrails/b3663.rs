@@ -2,7 +2,7 @@ use betterlite_server::guardrail_message_scope::assistant_text::assistant_text_f
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod failures;
 mod scope;

@@ -15,8 +15,11 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use error::failure;
+use tokio::runtime::Builder;
+use tracing::subscriber;
 
 mod capture;
 mod error;
@@ -96,7 +99,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| failure(error.to_string()))?;
@@ -118,7 +121,7 @@ impl Helper for Op {
             settings: BatchEnqueuedTokenSettings::default(),
             limits: ApiLimits::default(),
         };
-        let guard = tracing::subscriber::set_default(
+        let guard = subscriber::set_default(
             tracing_subscriber::registry().with(capture::CaptureLayer(Arc::clone(&events))),
         );
         let result = runtime

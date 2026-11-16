@@ -7,7 +7,9 @@ use betterlite_core::rag::document::splitter::{RecursiveCharacterTextSplitter, T
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
@@ -74,7 +76,7 @@ fn extract_pdf(pdf_base64: &str) -> HelperResult {
     Ok(serde_json::json!({ "text": text }))
 }
 
-fn value_error(error: &dyn std::fmt::Display) -> Box<HelperError> {
+fn value_error(error: &dyn Display) -> Box<HelperError> {
     let message = error.to_string();
     Box::new(HelperError {
         class: "ValueError".to_owned(),

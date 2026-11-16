@@ -7,6 +7,7 @@ use betterlite_core::api::anthropic_beta_filter::native_injection::{
     NativeRequest, inject_native_betas,
 };
 use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -38,10 +39,10 @@ enum Call {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let BetaNode::Map(entries) = &input.matrix else {
             return Err(failure(
                 "the beta headers matrix is not an object".to_owned(),

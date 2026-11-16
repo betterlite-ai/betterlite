@@ -165,7 +165,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/provider_message_primitives*")"
       && grep -lq 'provider_message_primitives' tools/oracle/fuzz/corpus/helper_case/provider_message_primitives*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_provider_message_primitives$/)'
+      && cargo nextest run --locked -p betterlite-oracle-context --no-tests=fail -E 'test(/::helper_seeds_select_provider_message_primitives$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-response-format-native
     why: When is_response_format_supported, assign response_format unchanged even when schema is absent/empty; response_schema

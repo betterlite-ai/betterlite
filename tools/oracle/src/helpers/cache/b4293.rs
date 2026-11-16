@@ -2,7 +2,9 @@ mod input;
 mod scenario;
 mod server;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -11,7 +13,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         // the sync cache calls block their thread, so the fake Redis needs a worker of its own
-        let runtime = tokio::runtime::Builder::new_multi_thread()
+        let runtime = Builder::new_multi_thread()
             .enable_all()
             .build()
             .or_value_error()?;

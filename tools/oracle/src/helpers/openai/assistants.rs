@@ -1,4 +1,3 @@
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -6,6 +5,8 @@ use betterlite_openai::assistants::client::{ClientKind, ClientOptions, SdkClient
 use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::assistants::operations::AssistantsApi;
 use betterlite_openai::assistants::transport::AssistantsTransport;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::{AssistantsCall, ClientFields, KindName, OptionFields, Reply};
 use reqwest::header::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -14,6 +15,7 @@ use serde_json::{Value, json};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
+use tokio::runtime::Builder;
 
 const PAGE: &str = r#"{"object":"list","data":[],"first_id":null,"last_id":null,"has_more":false}"#;
 const ASSISTANT: &str = r#"{"id":"asst_1","object":"assistant","created_at":1,"model":"gpt-4o","tools":[],"tool_resources":null}"#;
@@ -221,8 +223,8 @@ fn client_arguments(fields: &ClientFields) -> HelperResult {
     Ok(json!({ "client": shown(&client) }))
 }
 
-fn invoke(input: &AssistantsCall) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+fn invoke_assistants_call(input: &AssistantsCall) -> HelperResult {
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| invalid_input(error.to_string()))?;
     let async_request = input.async_request();
@@ -265,11 +267,11 @@ fn invoke(input: &AssistantsCall) -> HelperResult {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = AssistantsCall;
 
     fn run(input: &Self::Input) -> HelperResult {
-        invoke(input)
+        invoke_assistants_call(input)
     }
 }
 

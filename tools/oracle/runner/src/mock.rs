@@ -1,0 +1,283 @@
+use axum::http::StatusCode;
+use axum::http::request::Parts;
+use std::collections::BTreeMap;
+use std::future::IntoFuture as _;
+use std::io::{Error, Write as _};
+use std::mem;
+use std::net::TcpListener;
+use std::str;
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
+use tokio::{net, runtime, time};
+
+use axum::Router;
+use axum::body::{Body, to_bytes};
+use axum::extract::{Request, State};
+use axum::http::Response;
+use futures_util::future::{Either, select};
+use futures_util::stream;
+use serde::Serialize;
+use serde_json::Value;
+use tokio::sync::oneshot;
+
+use crate::case::UpstreamAnswer;
+use crate::error::HelperRunError;
+
+use crate::multipart_oracle::request::encode_answer_body;
+use crate::routing_mock_scripts::run::{CallGuard, Recording, Ticket};
+use crate::routing_mock_scripts::{
+    CallOutcome, MockScript, Outcome, ProviderCall, redact_credentials,
+};
+
+pub const MAX_BODY: usize = 16 * 1024 * 1024;
+
+pub mod mcp_reply;
+mod upstream_address;
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct ProviderRequest {
+    pub method: String,
+    pub path: String,
+    pub headers: BTreeMap<String, String>,
+    pub body: Value,
+}
+
+pub struct MockProvider {
+    pub base_url: String,
+    pub recording: Arc<Mutex<Recording>>,
+    pub stop: Option<oneshot::Sender<()>>,
+    pub thread: Option<JoinHandle<Result<(), Error>>>,
+}
+
+// a scripted reply can still be held when the client stops, so shutdown drops the connection instead of waiting it out
+async fn serve_until_stopped(
+    listener: TcpListener,
+    router: Router,
+    stopped: oneshot::Receiver<()>,
+) -> Result<(), Error> {
+    let socket = net::TcpListener::from_std(listener)?;
+    let closing = async move {
+        let _stopped = stopped.await;
+    };
+    let served = Box::pin(axum::serve(socket, router).into_future());
+    let stopping = Box::pin(closing);
+    match select(served, stopping).await {
+        Either::Left((finished, _)) => finished,
+        Either::Right(((), _)) => Ok(()),
+    }
+}
+
+impl MockProvider {
+    pub fn start(mut script: MockScript) -> Result<Self, HelperRunError> {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(HelperRunError::MockIo)?;
+        listener
+            .set_nonblocking(true)
+            .map_err(HelperRunError::MockIo)?;
+        let address = listener.local_addr().map_err(HelperRunError::MockIo)?;
+        let base_url = format!("http://{address}");
+        for reply in &mut script.replies {
+            if let Outcome::Answer(answer) = &mut reply.then {
+                upstream_address::fill(answer, &base_url);
+            }
+        }
+        let runtime = runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(HelperRunError::MockIo)?;
+        let recording = Arc::new(Mutex::new(Recording {
+            script,
+            run: 0,
+            barriers: BTreeMap::new(),
+            trace: Vec::new(),
+            failure: None,
+        }));
+        let router = Router::new()
+            .fallback(handle)
+            .with_state(Arc::clone(&recording));
+        let (stop, stopped) = oneshot::channel();
+        let thread = thread::Builder::new()
+            .spawn(move || runtime.block_on(serve_until_stopped(listener, router, stopped)))
+            .map_err(HelperRunError::MockIo)?;
+        Ok(Self {
+            base_url,
+            recording,
+            stop: Some(stop),
+            thread: Some(thread),
+        })
+    }
+
+    pub fn finish_run(&self) -> Result<Vec<ProviderCall>, HelperRunError> {
+        let mut recorded = self
+            .recording
+            .lock()
+            .map_err(|error| HelperRunError::MockIo(Error::other(error.to_string())))?;
+        recorded.finish_run().map_err(HelperRunError::MockIo)
+    }
+
+    pub fn finish(mut self) -> Result<Vec<ProviderCall>, HelperRunError> {
+        self.shutdown()?;
+        self.finish_run()
+    }
+
+    pub fn finish_recording(
+        mut self,
+    ) -> Result<(Vec<ProviderCall>, Option<Error>), HelperRunError> {
+        self.shutdown()?;
+        let mut recorded = self
+            .recording
+            .lock()
+            .map_err(|error| HelperRunError::MockIo(Error::other(error.to_string())))?;
+        let failure = recorded.failure.take();
+        Ok((mem::take(&mut recorded.trace), failure))
+    }
+
+    fn shutdown(&mut self) -> Result<(), HelperRunError> {
+        if let Some(stop) = self.stop.take() {
+            let _sent = stop.send(());
+        }
+        if let Some(thread) = self.thread.take() {
+            thread
+                .join()
+                .map_err(|_source| HelperRunError::MockJoin)?
+                .map_err(HelperRunError::MockIo)?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for MockProvider {
+    fn drop(&mut self) {
+        let _shutdown = self.shutdown();
+    }
+}
+
+async fn handle(
+    State(state): State<Arc<Mutex<Recording>>>,
+    request: Request,
+) -> Result<Response<Body>, StatusCode> {
+    let (parts, body) = request.into_parts();
+    if parts.method == "GET" && parts.uri.path() == "/v1/models" {
+        return Ok(Response::new(Body::from(r#"{"object":"list","data":[]}"#)));
+    }
+    let bytes = read_body(&state, body).await?;
+    let captured = capture_request(&parts, &bytes)?;
+    let admitted = state
+        .lock()
+        .map_err(|_source| StatusCode::INTERNAL_SERVER_ERROR)?
+        .admit(captured);
+    let ticket = admitted.map_err(|error| fail(&state, error))?;
+    play(state, ticket).await
+}
+
+async fn read_body(state: &Arc<Mutex<Recording>>, body: Body) -> Result<Vec<u8>, StatusCode> {
+    let bytes = time::timeout(
+        Duration::from_secs(30),
+        to_bytes(body, MAX_BODY.saturating_add(1)),
+    )
+    .await
+    .map_err(|_source| StatusCode::REQUEST_TIMEOUT)?
+    .map_err(|_source| StatusCode::PAYLOAD_TOO_LARGE)?;
+    if bytes.len() > MAX_BODY {
+        return Err(fail(
+            state,
+            Error::other("captured body exceeds 16777216 bytes"),
+        ));
+    }
+    Ok(bytes.to_vec())
+}
+
+fn capture_request(parts: &Parts, bytes: &[u8]) -> Result<ProviderRequest, StatusCode> {
+    let mut headers = parts
+        .headers
+        .iter()
+        .map(|(name, value)| {
+            Ok((
+                name.to_string(),
+                str::from_utf8(value.as_bytes())?.to_owned(),
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, str::Utf8Error>>()
+        .map_err(|_source| StatusCode::BAD_REQUEST)?;
+    redact_credentials(&mut headers);
+    let raw_body = headers.get("content-type").is_some_and(|value| {
+        value.starts_with("multipart/form-data") || value.starts_with("application/octet-stream")
+    });
+    let body = if raw_body {
+        Value::Array(bytes.iter().map(|byte| Value::from(*byte)).collect())
+    } else {
+        let text = str::from_utf8(bytes).map_err(|_source| StatusCode::BAD_REQUEST)?;
+        serde_json::from_str(text).unwrap_or_else(|_source| Value::String(text.to_owned()))
+    };
+    Ok(ProviderRequest {
+        method: parts.method.to_string(),
+        path: parts.uri.to_string(),
+        headers,
+        body,
+    })
+}
+
+async fn play(state: Arc<Mutex<Recording>>, ticket: Ticket) -> Result<Response<Body>, StatusCode> {
+    let mut guard = CallGuard {
+        state,
+        run: ticket.run,
+        index: ticket.index,
+        outcome: CallOutcome::Cancelled,
+    };
+    let scripted = match (ticket.wait().await, ticket.then) {
+        (false, _) => {
+            guard.outcome = CallOutcome::DeadlineExceeded;
+            None
+        }
+        (true, Outcome::Close) => {
+            guard.outcome = CallOutcome::Closed;
+            None
+        }
+        (true, Outcome::Answer(answer)) => {
+            guard.outcome = CallOutcome::Answered {
+                status: answer.status,
+            };
+            Some(answer)
+        }
+    };
+    // a body that fails before its first frame makes hyper drop the connection without a status line
+    let Some(answer) = scripted else {
+        return Ok(Response::new(Body::from_stream(stream::iter([Err::<
+            Vec<u8>,
+            Error,
+        >(
+            Error::other("scripted connection close"),
+        )]))));
+    };
+    reply(answer).map_err(|error| fail(&guard.state, error))
+}
+
+fn fail(state: &Mutex<Recording>, error: Error) -> StatusCode {
+    if let Ok(mut recorded) = state.lock() {
+        recorded.failure = Some(error);
+    }
+    StatusCode::INTERNAL_SERVER_ERROR
+}
+
+fn reply(mut answer: UpstreamAnswer) -> Result<Response<Body>, Error> {
+    let body =
+        if let Some((content_type, bytes)) = encode_answer_body(&answer).map_err(Error::other)? {
+            answer
+                .headers
+                .insert("content-type".to_owned(), content_type);
+            bytes
+        } else if let Some(json) = answer.body {
+            serde_json::to_vec(&json).map_err(Error::other)?
+        } else {
+            let mut bytes = Vec::new();
+            for event in answer.events.unwrap_or_default() {
+                writeln!(bytes, "data: {event}\n")?;
+            }
+            bytes
+        };
+    let mut response = Response::builder().status(answer.status);
+    for (name, value) in answer.headers {
+        response = response.header(name, value);
+    }
+    response.body(Body::from(body)).map_err(Error::other)
+}

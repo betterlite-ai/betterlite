@@ -15,6 +15,7 @@ use reqwest::header::HeaderMap;
 use secrecy::SecretString;
 
 use super::{Settings, failure};
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) struct Recorded {
     pub(super) url: String,
@@ -119,7 +120,7 @@ pub(super) fn build(
     answer: &GuardrailValue,
     status: u16,
     frames: &[GuardrailValue],
-) -> Result<Built, Box<crate::helpers::HelperError>> {
+) -> Result<Built, Box<HelperError>> {
     let body =
         serde_json::to_vec(answer).map_err(|error| failure("ValueError", error.to_string()))?;
     let incoming = frames
@@ -158,7 +159,7 @@ pub(super) fn build(
     Ok(Built { guardrail, state })
 }
 
-fn construction_failure(error: &AimError) -> Box<crate::helpers::HelperError> {
+fn construction_failure(error: &AimError) -> Box<HelperError> {
     if matches!(error, AimError::MissingSecrets) {
         return failure("AimMissingSecrets", error.to_string());
     }

@@ -2,7 +2,8 @@ use betterlite_error::azure_openrouter::azure::{self, AzureExceptionInput};
 use betterlite_error::azure_openrouter::openrouter::{self, OpenrouterExceptionInput};
 use serde_json::to_value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "provider", rename_all = "snake_case", deny_unknown_fields)]

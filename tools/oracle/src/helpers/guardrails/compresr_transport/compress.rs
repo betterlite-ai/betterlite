@@ -18,7 +18,8 @@ use tracing_subscriber::layer::SubscriberExt as _;
 
 use super::Settings;
 use super::logs::Logs;
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const API_KEY: &str = "test-key";

@@ -7,6 +7,8 @@ use betterlite_context::agentic_loop_plan::{FollowupMessage, JsonMap};
 use betterlite_error::error::details::RateLimitDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_error::rate_limit::RateLimitCategory;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_websearch::anthropic_followup::patch::FollowupLogging;
 use betterlite_websearch::anthropic_followup::plan::{AnthropicFollowup, AnthropicPlanRequest};
 use betterlite_websearch::call_transformation::outcome::{SearchFailure, SearchResult};
@@ -20,6 +22,8 @@ use betterlite_websearch::loop_eligibility::ToolsDict;
 use betterlite_websearch::records::RichWebSearchInput;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::fmt::Display;
+use std::future::Future;
 use tokio::runtime::Builder;
 
 pub(crate) struct Op;
@@ -166,20 +170,20 @@ impl ToolCall {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let results = input
             .cases
             .iter()
-            .map(run_case)
-            .collect::<Result<Vec<Value>, Box<crate::helpers::HelperError>>>()?;
+            .map(run_search_case)
+            .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
         Ok(json!({"results": results}))
     }
 }
 
-fn run_case(case: &Case) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn run_search_case(case: &Case) -> Result<Value, Box<HelperError>> {
     let (executor, logging) = searches(case);
     let tools = tools_dict(case);
     let search: Arc<dyn SearchExecutor> = Arc::<ScriptedSearch>::clone(&executor);
@@ -221,9 +225,9 @@ fn searches(case: &Case) -> (Arc<ScriptedSearch>, Option<FollowupLogging<'_>>) {
     (executor, logging)
 }
 
-fn block_on<Future>(future: Future) -> Result<Future::Output, Box<crate::helpers::HelperError>>
+fn block_on<Task>(future: Task) -> Result<Task::Output, Box<HelperError>>
 where
-    Future: std::future::Future,
+    Task: Future,
 {
     Ok(Builder::new_current_thread()
         .build()
@@ -252,12 +256,12 @@ fn rate_limit(message: &str) -> SearchFailure {
     }
 }
 
-fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     let message = error.to_string();
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "AnthropicFollowupError".to_owned(),
         status: None,
         error_type: None,

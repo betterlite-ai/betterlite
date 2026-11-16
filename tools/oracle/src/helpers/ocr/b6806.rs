@@ -20,17 +20,20 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::super::HelperError;
-use crate::multipart_oracle::Part;
-use crate::multipart_oracle::capture::decode_multipart_capture;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::multipart_oracle::Part;
+use betterlite_oracle_runner::multipart_oracle::capture::decode_multipart_capture;
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| failure(&error))?;
@@ -72,7 +75,7 @@ impl CallHooks for NoHooks {
     }
 }
 
-async fn execute(input: &Input) -> crate::helpers::HelperResult {
+async fn execute(input: &Input) -> HelperResult {
     let (provider, model) = input
         .model
         .split_once('/')
@@ -245,7 +248,7 @@ fn ocr_failure(error: &OcrError) -> Box<HelperError> {
 
 pub(super) fn failure<Message>(message: Message) -> Box<HelperError>
 where
-    Message: std::fmt::Display,
+    Message: Display,
 {
     Box::new(HelperError {
         class: "B6806Oracle".to_owned(),

@@ -246,7 +246,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_settings*")"
       && grep -lq 'bedrock_settings' tools/oracle/fuzz/corpus/helper_case/bedrock_settings* && cargo nextest run
-      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_settings$/)' && cargo
+      --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_settings$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-aws-access-key-id
     why: The AWS_ACCESS_KEY_ID setting is not loaded with its required defaults and precedence.

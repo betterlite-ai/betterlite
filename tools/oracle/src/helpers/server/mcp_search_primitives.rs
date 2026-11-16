@@ -1,3 +1,5 @@
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::mcp::catalog_guard::types::MCPTool;
 use betterlite_server::mcp::tool_search::identity::{
     MCPProxySchemaResult, MCPProxySearchResult, proxy_schema_result, proxy_search_result,
@@ -11,6 +13,8 @@ use betterlite_server::mcp::tool_search::{
     MCPToolSearchHit, search_mcp_tools, split_core_tools, top_hits,
 };
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -64,10 +68,10 @@ struct ScoredName {
     score: f64,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::Keyword {
                 query,
@@ -98,11 +102,11 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn helper_error<E>(error: E) -> Box<crate::helpers::HelperError>
+fn helper_error<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,
@@ -112,7 +116,7 @@ where
     })
 }
 
-fn identity(tool: &MCPTool, server_id: &str) -> crate::helpers::HelperResult {
+fn identity(tool: &MCPTool, server_id: &str) -> HelperResult {
     let identified = with_mcp_proxy_identity(tool, server_id);
     let output = IdentityOutput {
         schema: proxy_schema_result(&identified).map_err(helper_error)?,
@@ -125,7 +129,7 @@ fn identity(tool: &MCPTool, server_id: &str) -> crate::helpers::HelperResult {
     serde_json::to_value(output).map_err(helper_error)
 }
 
-fn core_names(tools: &[MCPTool], names: &[String]) -> crate::helpers::HelperResult {
+fn core_names(tools: &[MCPTool], names: &[String]) -> HelperResult {
     let (core, rest) = split_core_tools(tools, names);
     serde_json::to_value(CoreNames {
         core: core.iter().map(|tool| tool.name.as_str()).collect(),
@@ -134,12 +138,7 @@ fn core_names(tools: &[MCPTool], names: &[String]) -> crate::helpers::HelperResu
     .map_err(helper_error)
 }
 
-fn ranked(
-    tools: &[MCPTool],
-    scores: &[f64],
-    threshold: f64,
-    top_k: i64,
-) -> crate::helpers::HelperResult {
+fn ranked(tools: &[MCPTool], scores: &[f64], threshold: f64, top_k: i64) -> HelperResult {
     let hits = top_hits(tools, scores, threshold, top_k).map_err(helper_error)?;
     let names: Vec<ScoredName> = hits
         .into_iter()
@@ -156,8 +155,8 @@ fn keyword_results(
     tools: &[MCPTool],
     top_k: i64,
     core_tools: &[String],
-) -> crate::helpers::HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+) -> HelperResult {
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(helper_error)?;
     let mut settings = MCPToolSearchSettings::default();

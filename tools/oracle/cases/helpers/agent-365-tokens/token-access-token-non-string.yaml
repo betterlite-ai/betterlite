@@ -1,0 +1,14 @@
+kind: helper
+name: token-access-token-non-string
+call:
+  b3741:
+    function: agent_365_token_exchange
+    replies:
+      - {status: 200, body: {access_token: 123}, raw: null}
+      - {status: 200, body: {access_token: ""}, raw: null}
+    repeat_last_reply: false
+    steps:
+      - {kind: token, assertion: one.assertion.value}
+      - {kind: token, assertion: two.assertion.value}
+env: {}
+compare: {ignore: []}

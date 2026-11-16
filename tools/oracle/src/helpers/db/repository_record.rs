@@ -1,3 +1,5 @@
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -29,9 +31,9 @@ struct Record {
     mapping: BTreeMap<String, i64>,
     pairs: Option<Vec<(String, i64)>>,
 }
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut output = BTreeMap::new();
         for (name, case) in &input.cases {
             let mut records = Vec::new();
@@ -58,7 +60,7 @@ impl crate::helpers::Helper for Op {
             output.insert(name, if invalid { None } else { Some(records) });
         }
         serde_json::to_value(output).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,

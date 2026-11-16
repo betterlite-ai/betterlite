@@ -8,7 +8,8 @@ use betterlite_foundry::vector_stores::search::{
 };
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::Input;
 use super::fixtures::{CallRecord, FixtureExecutor};
@@ -16,6 +17,7 @@ use super::scenarios::{
     AzureSearchEndpointInput, EmbeddedSearchScenario, EndpointScenario, SearchQueryFieldsInput,
     SearchScenario, StoreTypeEndpointsInput, VectorQueryWithEmbeddingInput,
 };
+use tokio::runtime::Builder;
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
@@ -129,7 +131,7 @@ fn embedded_outcome(scenario: &EmbeddedSearchScenario) -> Result<Value, Box<Help
     let executor = FixtureExecutor::new(vec![scenario.embedding.clone()]);
     let mut logging = SearchLogging::default();
     let outcome = if scenario.asynchronous {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| runtime_error(error.to_string()))?;
         runtime.block_on(asearch_request(AzureSearchStoreRequest {

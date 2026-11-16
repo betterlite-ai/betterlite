@@ -22,7 +22,9 @@ use serde_json::{Value, json};
 
 use super::values::{error_status, event_value, reply_usage};
 use super::{OauthFixture, Silent, Step, oauth_base};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 const INIT: &str = r#"{"model":"grok-4","call_type":"responses","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const NOW: &str = "2026-01-01T00:05:00+00:00";
@@ -88,7 +90,7 @@ fn auth_step(
 ) -> HelperResult {
     let key = api_key.map(SecretString::from);
     let mut fixture = OauthFixture;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| failure(error.to_string(), None))?;
     let validated = runtime.block_on(validate_environment(Environment {

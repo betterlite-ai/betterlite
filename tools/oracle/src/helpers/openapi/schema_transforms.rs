@@ -3,6 +3,8 @@ use betterlite_openapi::schema_transforms::tree::JsonObject;
 use betterlite_openapi::schema_transforms::{
     add_request_body_to_paths, add_request_schema, add_schema_to_components,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -31,17 +33,17 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         // LiteLLM indexes the definitions map, so a missing one surfaces as KeyError
         let (class, message) = match transform(input.clone()).map(serde_json::to_value) {
             Ok(Ok(value)) => return Ok(value),
             Ok(Err(error)) => ("SerializationError", error.to_string()),
             Err(error) => ("KeyError", error.to_string()),
         };
-        Err(Box::new(crate::helpers::HelperError {
+        Err(Box::new(HelperError {
             class: class.to_owned(),
             status: None,
             error_type: None,

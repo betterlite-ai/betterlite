@@ -1,0 +1,113 @@
+id: B9970
+title: Spend models route answers 422 for a negative limit
+description: >-
+  Fix the R2 finding on B1724's spend totals routes. GET /global/spend/models hands its limit to the store as it
+  is, so limit=-5 reaches Postgres as LIMIT -5, Postgres rejects it ("LIMIT must not be negative") and the route
+  answers 500. LiteLLM does the same by accident: global_spend_models passes int(limit) straight to _query_raw
+  (spend_management_endpoints.py L4304), and global_spend_models_internal_user puts it into LIMIT $2. The value
+  is client input, so the answer belongs to a 4xx. GET /global/spend/keys already answers this case with 422 and
+  the body {"detail":{"error":"Invalid limit: <n>, error: Limit must be greater than 0"}} (LiteLLM L4057-L4064),
+  and betterlite builds that body with responses::invalid_limit in crates/betterlite-server/src/spend/totals/responses.rs.
+
+
+  Rust change. In global_spend_models in crates/betterlite-server/src/spend/totals/handlers.rs, a limit below 0
+  answers responses::invalid_limit(limit) for both callers, the global viewer and the internal viewer, before any
+  store call. Keep the order the keys route uses: an unauthenticated caller and a missing database answer as they
+  do today, and only then is the limit checked, so no-database still answers "No db connected" for limit=-5.
+  limit=0 stays as it is: Postgres accepts LIMIT 0 and LiteLLM answers an empty list, so 0 still reaches the store.
+  Reuse invalid_limit; no new response builder and no new error type.
+
+
+  Tests. Add crates/betterlite-server/src/spend/totals/tests/models_limit.rs and declare it with mod models_limit;
+  in crates/betterlite-server/src/spend/totals/tests.rs, using the helpers support.rs already has (call, admin,
+  internal, state, store_with, spend_store, decode, DetailMessageEnvelope). models_reject_a_negative_limit is an
+  #[rstest] #[tokio::test] with cases global_viewer (admin()) and internal_viewer (internal("u1")): each calls
+  /global/spend/models?limit=-5 with a store, asserts 422, asserts detail.error is
+  "Invalid limit: -5, error: Limit must be greater than 0", and asserts store.calls() is empty.
+  models_report_no_database_before_a_negative_limit calls the same URI as admin() with no store and asserts the
+  no-database answer the route gives today. In tests/routes.rs, models_pass_the_limit_through_without_a_positivity_check
+  loses its case::negative and gains case::zero("/global/spend/models?limit=0", "models_by_spend(0)"); rename it
+  models_pass_a_zero_or_positive_limit_through. Both new cases fail on the unfixed route, which answers 200 and
+  calls models_by_spend(-5) on the fake store.
+
+
+  Deviations. Write docs/deviations/B9970.yaml with the row under deviations below. Delete the kept_bugs row in
+  docs/deviations/B1724.yaml that says /global/spend/models passes a zero or negative limit to Postgres and
+  answers 500; it is wrong about zero, and this task fixes the negative case. Leave B1724's other rows alone.
+scope:
+  paths:
+  - crates/betterlite-server/src/spend/totals/handlers.rs
+  - crates/betterlite-server/src/spend/totals/tests.rs
+  - crates/betterlite-server/src/spend/totals/tests/**
+  - docs/deviations/B1724.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4275-L4306
+  why: global_spend_models passes int(limit) to "Last30dModelsBySpend" LIMIT $1 with no check, so a negative limit makes Postgres raise and the route answer 500.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4243-L4270
+  why: global_spend_models_internal_user puts the same limit into LIMIT $2 for an internal viewer.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4054-L4066
+  why: 'global_spend_keys answers 422 with the error "Invalid limit: <n>, error: Limit must be greater than 0" for a limit below 1, and the models fix reuses that body.'
+dod:
+- text: >-
+    GET /global/spend/models?limit=-5 answers 422 with detail.error "Invalid limit: -5, error: Limit must be
+    greater than 0" for a global viewer and an internal viewer, and the store is never called.
+  proof: [negative-limit]
+- text: >-
+    A missing database still answers the no-database error for a negative limit, and limit=0 still reaches the
+    store as models_by_spend(0).
+  proof: [order-and-zero]
+- text: >-
+    The other spend totals route tests still pass.
+  proof: [totals-tests]
+- text: >-
+    docs/deviations/B9970.yaml lists the 422 with the pinned LiteLLM link, and docs/deviations/B1724.yaml no
+    longer keeps the models limit row.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: negative-limit
+    why: A negative models limit still reaches the store or answers anything but the keys route's 422 body.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/src/spend/totals/tests/models_limit.rs)"
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::totals::tests::models_limit::models_reject_a_negative_limit::case_/)'
+  - id: order-and-zero
+    why: The limit check moved before the database check, or limit=0 no longer reaches the store.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::totals::tests::models_limit::models_report_no_database_before_a_negative_limit$/)
+      | test(/^spend::totals::tests::routes::models_pass_a_zero_or_positive_limit_through::case_.*zero$/)'
+  - id: totals-tests
+    why: The fix broke another spend totals route.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::totals::tests::(routes|models_limit|teams|query)::/)'
+  - id: deviation-row
+    why: The new deviation misses the 422 or its pinned link, or B1724 still keeps the models limit row.
+    run: >-
+      grep -q -F '422' docs/deviations/B9970.yaml && grep -q -F 'spend_management_endpoints.py#L4304' docs/deviations/B9970.yaml
+      && ! grep -q -F '/global/spend/models passes a zero or negative limit' docs/deviations/B1724.yaml
+oracle_cases: []
+deviations:
+- what: >-
+    GET /global/spend/models answers 422 with {"detail":{"error":"Invalid limit: <n>, error: Limit must be greater
+    than 0"}} for a negative limit, for global and internal viewers alike, the body /global/spend/keys gives. A
+    zero limit still returns an empty list.
+  why: >-
+    LiteLLM passes the negative limit to Postgres, which rejects LIMIT with a negative value, and the route answers
+    500 for input the client sent wrong. No working setup relies on that 500.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4304
+out_of_scope:
+- The keys route's limit handling; it already answers 422 for a limit below 1.
+- A zero models limit; Postgres accepts LIMIT 0 and LiteLLM answers an empty list, so it stays as it is.
+- B1724's other deviation and kept_bugs rows.
+pitfalls:
+- 'Reuse responses::invalid_limit for the body; do not build a second "Invalid limit" message in handlers.rs.'
+- 'The check is "below 0", not "below 1" as on the keys route: limit=0 must keep reaching the store.'
+- 'Both branches need the check, since the internal viewer''s user aggregation also takes the limit; put it after each branch''s database answer and before its store call.'
+- 'tests/routes.rs is long already; the new tests go into tests/models_limit.rs, and routes.rs only changes the pass-through cases and the test name.'
+- 'Do not add an oracle case for a negative limit: LiteLLM answers 500 there.'
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

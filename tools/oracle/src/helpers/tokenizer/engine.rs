@@ -1,10 +1,12 @@
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_tokenizer::engine::Engine;
 use betterlite_tokenizer::engine::assets;
 use betterlite_tokenizer::engine::error::EngineError;
 use betterlite_tokenizer::engine::huggingface::HuggingFaceEngine;
 use betterlite_tokenizer::engine::tiktoken::{Encoding, TiktokenEngine};
 use std::sync::Arc;
-type Failure = Box<crate::helpers::HelperError>;
+type Failure = Box<HelperError>;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(crate) struct Input {
     operation: Operation,
@@ -32,9 +34,9 @@ enum EngineName {
     Custom,
 }
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let engine = build(input)?;
         match input.operation {
             Operation::Encode => json(
@@ -94,7 +96,7 @@ fn tokens(input: &Input) -> Result<Vec<u32>, Failure> {
         .clone()
         .ok_or_else(|| failure("tokens are required".to_owned()))
 }
-fn json<T>(payload: T) -> crate::helpers::HelperResult
+fn json<T>(payload: T) -> HelperResult
 where
     T: serde::Serialize,
 {
@@ -104,7 +106,7 @@ where
     }
 }
 fn failure(message: String) -> Failure {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

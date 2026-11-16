@@ -69,7 +69,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim::/)'
     - id: scim-composition-corpora
       why: Group PATCH and assembled SCIM routes have no newly committed decoder seeds.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/scim_resource/group-patch-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/scim-composition-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_scim_resource_corpus) | test(replays_the_http_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/scim_resource/group-patch-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/scim-composition-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle -p betterlite-oracle-server --no-tests=fail -E 'test(replays_the_scim_resource_corpus) | test(replays_the_http_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/management/scim-group-patch/replace-then-add-defines-final-target.yaml
   - tools/oracle/cases/management/scim-group-patch/remove-by-escaped-subject-filter.yaml

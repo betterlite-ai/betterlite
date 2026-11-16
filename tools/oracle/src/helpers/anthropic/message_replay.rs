@@ -6,6 +6,8 @@ use betterlite_anthropic::message_replay::{
     BlockStrip, EmptyKind, is_empty_block, is_empty_unsigned_thinking, is_invalid_thinking_error,
     strip_blocks, strip_thinking_from_request,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
 
@@ -43,10 +45,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let value = match input {
             Input::Advisor {
                 messages,
@@ -115,9 +117,9 @@ fn empty_predicates(blocks: &[Json]) -> Json {
     ]))
 }
 
-fn encode(value: Json) -> crate::helpers::HelperResult {
+fn encode(value: Json) -> HelperResult {
     serde_json::to_value(value).map_err(|failure| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "SerializationError".to_owned(),
             status: None,
             error_type: None,

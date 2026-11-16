@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, Ready, ready};
-use std::io;
 use std::path::Path;
 use std::time::Duration;
+use std::{fs, io};
 
-use betterlite_config::loader::ConfigLoader;
+use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_openai::copilot::api_key::clock::Clock;
 use betterlite_openai::copilot::api_key::transport::{ApiKeyTransport, Get};
 use betterlite_openai::copilot::device_auth::Authenticator;
@@ -16,11 +16,12 @@ use betterlite_openai::copilot::device_auth::transport::{
     Post, Reply, Transport, TransportFailure,
 };
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
-
-use crate::helpers::{Helper, HelperError, HelperResult};
+use tokio::runtime::Builder;
 
 mod tests;
 
@@ -56,7 +57,7 @@ enum FixtureError {
     #[error("fixture IO failed")]
     Io(#[from] io::Error),
     #[error("fixture config failed")]
-    Config(#[from] betterlite_config::loader::ConfigError),
+    Config(#[from] ConfigError),
     #[error("fixture authenticator failed")]
     Auth(#[from] DeviceAuthError),
 }
@@ -230,10 +231,10 @@ fn fixture(input: &Input, directory: &Path) -> Result<Fixture, FixtureError> {
         settings.api_key_file = String::from("persist/api-key.json");
     }
     if let Some(content) = &input.access_token_file {
-        std::fs::write(directory.join(&settings.access_token_file), content)?;
+        fs::write(directory.join(&settings.access_token_file), content)?;
     }
     if let Some(content) = &input.api_key_file {
-        std::fs::write(directory.join("api-key.json"), content)?;
+        fs::write(directory.join("api-key.json"), content)?;
     }
     let transport = Scripted {
         replies: input.api_replies.iter().cloned().collect(),
@@ -262,7 +263,7 @@ fn normalize_record(record: &mut Value) {
 }
 
 fn read_record(directory: &Path) -> Value {
-    let Ok(bytes) = std::fs::read(directory.join("api-key.json")) else {
+    let Ok(bytes) = fs::read(directory.join("api-key.json")) else {
         return Value::Null;
     };
     let mut record = serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null);
@@ -273,7 +274,7 @@ fn read_record(directory: &Path) -> Value {
 fn run_fixture(input: &Input) -> Result<Value, FixtureError> {
     let directory = tempfile::tempdir()?;
     let mut authenticator = fixture(input, directory.path())?;
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let (result, error_status) = match input.action {
         Action::GetApiKey => match runtime.block_on(authenticator.get_api_key()) {
             Ok(token) => (

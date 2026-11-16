@@ -26,9 +26,13 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
+use betterlite_ocr::response::OCRResponse;
 use server::{Captured, Server};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -84,7 +88,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         if let Some(call) = &input.call {
-            let runtime = tokio::runtime::Builder::new_current_thread()
+            let runtime = Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .map_err(|error| failure(&error))?;
@@ -182,7 +186,7 @@ async fn run_call(call: &Call) -> HelperResult {
     observed(&captured, &response)
 }
 
-fn observed(captured: &Captured, response: &betterlite_ocr::response::OCRResponse) -> HelperResult {
+fn observed(captured: &Captured, response: &OCRResponse) -> HelperResult {
     let body: Value = serde_json::from_slice(&captured.body).map_err(|error| failure(&error))?;
     let response_json = serde_json::to_value(response).map_err(|error| failure(&error))?;
     Ok(json!({
@@ -237,7 +241,7 @@ fn ocr_failure(error: &OcrError) -> Box<HelperError> {
 
 pub(super) fn failure<Message>(message: Message) -> Box<HelperError>
 where
-    Message: std::fmt::Display,
+    Message: Display,
 {
     Box::new(HelperError {
         class: "B6809Oracle".to_owned(),

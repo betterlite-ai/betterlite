@@ -7,6 +7,8 @@ use betterlite_db::daily_spend_sql::{
     entities::{DailySpendEntity, DailySpendEntityPayload, SpendRow, daily_spend_entity_ids},
     merge::merge_by_conflict_key,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -32,9 +34,9 @@ enum Step {
         transaction: Box<AutoRouterTurnTransaction>,
     },
 }
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         let mut output = BTreeMap::new();
         for (name, step) in &input.steps {
             let value = match step {
@@ -64,10 +66,7 @@ impl crate::helpers::Helper for Op {
         serde_json::to_value(output).map_err(failure)
     }
 }
-fn daily(
-    entity: DailySpendEntity,
-    rows: &[SpendRow],
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn daily(entity: DailySpendEntity, rows: &[SpendRow]) -> Result<Value, Box<HelperError>> {
     let table = entity.table();
     let groups = merge_by_conflict_key(&table, rows).map_err(failure)?;
     let (sql, params) = build_bulk_upsert(&table, &groups, uuid::Uuid::nil).map_err(failure)?;
@@ -75,11 +74,11 @@ fn daily(
         serde_json::json!({"groups": groups, "sql": sql.split_whitespace().collect::<Vec<_>>().join(" "), "params": params}),
     )
 }
-fn failure<E>(error: E) -> Box<crate::helpers::HelperError>
+fn failure<E>(error: E) -> Box<HelperError>
 where
     E: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

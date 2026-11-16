@@ -10,7 +10,8 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fakes::{CatalogLookup, RecordingRouter};
 
 mod fakes;
@@ -84,7 +85,7 @@ fn dispatch_call(
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

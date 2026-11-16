@@ -1,4 +1,5 @@
 use chrono::{NaiveDate, NaiveTime};
+use std::mem;
 
 const MONTHNAMES: [&str; 24] = [
     "jan",
@@ -214,7 +215,7 @@ fn resolve_month(day: &mut String, month: &mut String) -> Option<u32> {
     if MONTHNAMES.contains(&lowered.as_str()) {
         lowered.clone_into(month);
     } else {
-        std::mem::swap(month, day);
+        mem::swap(month, day);
         *month = month.to_lowercase();
         if !MONTHNAMES.contains(&month.as_str()) {
             return None;
@@ -236,7 +237,7 @@ fn month_number_from_name(name: &str) -> Option<u32> {
 
 fn reorder_year_time_zone(year: &mut String, time: &mut String, zone: &mut String) -> Option<()> {
     if year.find(':').is_some_and(|position| position > 0) {
-        std::mem::swap(year, time);
+        mem::swap(year, time);
     }
     if let Some(stripped) = year.strip_suffix(',') {
         if stripped.is_empty() {
@@ -245,7 +246,7 @@ fn reorder_year_time_zone(year: &mut String, time: &mut String, zone: &mut Strin
         stripped.to_owned().clone_into(year);
     }
     if !year.starts_with(|character: char| character.is_ascii_digit()) {
-        std::mem::swap(year, zone);
+        mem::swap(year, zone);
     }
     Some(())
 }

@@ -74,7 +74,7 @@ checks:
       run: test -f tools/oracle/helpers/compatible_chat_plan.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The fixture send seam must capture actual source preparation without reimplementing its body merge.
     - id: compatible-plan-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_chat_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::provider::compatible_chat_plan::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_chat_plan*')" && cargo nextest run --locked -p betterlite-oracle-provider --no-tests=fail -E 'test(/^compatible_chat_plan::/)'
       why: Added plan seeds must parse to compatible_chat_plan and cannot be an empty set.
 oracle_cases:
   - tools/oracle/cases/helpers/compatible-chat-plan/custom-endpoint-short-circuit.yaml

@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use super::Op;
-use crate::case::HelperCase;
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::HelperCase;
 
 #[test]
 fn response_auth_survives_helper() {

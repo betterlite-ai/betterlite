@@ -1,11 +1,12 @@
 use super::failure;
-use crate::helpers::HelperResult;
 use betterlite_core::api::realtime_contracts::decode::{
     RealtimeContract, RealtimeContractKind, RealtimeDecodeLimits, decode_realtime_contract,
 };
 use betterlite_core::api::realtime_contracts::events::{
     AudioTranscriptionUsage, DurationUsage, InputTokenDetails, TokenUsage,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use serde::Deserialize;
 use serde_json::{Number, Value, json};
 const LIMITS: RealtimeDecodeLimits = RealtimeDecodeLimits { max_bytes: 1 << 20 };
@@ -86,7 +87,7 @@ pub(super) fn records(input: &RecordsInput) -> HelperResult {
     }
     Ok(json!({"records": rendered, "resolved_models": resolved}))
 }
-fn usage_value(document: &UsageDocument) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn usage_value(document: &UsageDocument) -> Result<Value, Box<HelperError>> {
     let usage = match document.usage_type {
         UsageKind::Tokens => AudioTranscriptionUsage::Tokens(Box::new(TokenUsage {
             input_tokens: document.input_tokens,

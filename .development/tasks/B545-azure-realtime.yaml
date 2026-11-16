@@ -243,7 +243,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_realtime*")"
       && grep -lq 'azure_realtime' tools/oracle/fuzz/corpus/helper_case/azure_realtime* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_realtime$/)' && cargo nextest run
+      -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_realtime$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-unknown-key
     why: The extension silently accepts unrelated unsupported configuration.

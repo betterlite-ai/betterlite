@@ -8,7 +8,8 @@ use betterlite_auth::spend_counter_batch::keys::{
 use betterlite_db::budget_permission_rows::JsonData;
 use serde::Deserialize;
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
@@ -42,7 +43,7 @@ pub(crate) struct PostCallFields {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

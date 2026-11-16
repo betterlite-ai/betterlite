@@ -25,6 +25,7 @@ use rust_decimal::Decimal;
 use super::adapters::{Counter, SearchPricing, failure};
 use super::input::Input;
 use super::input::values;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) struct Stage {
     lookup: CatalogLookup,
@@ -36,7 +37,7 @@ pub(super) struct Stage {
     search_rates: BTreeMap<String, Decimal>,
 }
 
-pub(super) fn build_stage(input: &Input) -> Result<Stage, Box<crate::helpers::HelperError>> {
+pub(super) fn build_stage(input: &Input) -> Result<Stage, Box<HelperError>> {
     let catalog_bytes = serde_json::to_vec(&input.catalog)
         .map_err(|error| failure("CatalogError", error.to_string()))?;
     let lookup = CatalogLookup::new(

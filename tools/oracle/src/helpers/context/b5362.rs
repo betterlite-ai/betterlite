@@ -7,7 +7,8 @@ use betterlite_models::controls::json_value::JsonValue;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod calls;
 
@@ -141,10 +142,10 @@ fn required<T>(value: Option<T>, name: &str) -> Result<T, Failure> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = BatchInput;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut results = Vec::with_capacity(input.calls.len());
         for call in &input.calls {
             match calls::run(call) {

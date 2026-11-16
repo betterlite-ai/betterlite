@@ -8,7 +8,8 @@ use tokio::runtime::{Builder, Runtime};
 use self::harness::{
     Harness, answer, data_source_params, location_constraint, polls, request_params, take_sent,
 };
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod harness;
 

@@ -4,8 +4,8 @@ use std::path::Path;
 
 use rstest::rstest;
 
-use crate::case::{LoadedCase, load_cases};
-use crate::helpers::{HelperRun, run_case};
+use betterlite_oracle_runner::case::load_helper_cases;
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 
 #[rstest]
 #[case::config_extract_cp4d("config-extract-cp4d")]
@@ -31,11 +31,11 @@ use crate::helpers::{HelperRun, run_case};
 #[case::fake_streaming_delays("fake-streaming-delays")]
 #[case::fake_streaming_multibyte_text("fake-streaming-multibyte-text")]
 fn watsonx_orchestrate(#[case] name: &str) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("cases/watsonx-orchestrate/{name}.yaml"));
-    let cases = load_cases(&[path]).unwrap();
-    let LoadedCase::Helper(case) = &cases[0] else {
-        panic!("expected helper");
-    };
-    assert!(matches!(run_case(case, false).unwrap(), HelperRun::Match));
+    let path = Path::new(ORACLE_DIR).join(format!("cases/watsonx-orchestrate/{name}.yaml"));
+    let cases = load_helper_cases(&[path]).unwrap();
+    let case = &cases[0];
+    assert!(matches!(
+        run_case(&[crate::GROUP], case, false).unwrap(),
+        HelperRun::Match
+    ));
 }

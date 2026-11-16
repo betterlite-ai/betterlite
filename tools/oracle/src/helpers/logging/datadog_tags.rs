@@ -3,6 +3,8 @@ use std::sync::Mutex;
 
 use betterlite_logging::datadog::apm::{self, Span, TraceContext, Tracer};
 use betterlite_logging::datadog::tagging::{self, Environment, RequestTagValue, TeamMetadata};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::json;
 
 #[derive(Debug, serde::Deserialize)]
@@ -95,9 +97,9 @@ impl Tracer for InputTracer<'_> {
 
 pub(crate) struct Op;
 
-fn environment_tags(case: &EnvironmentInput) -> crate::helpers::HelperResult {
+fn environment_tags(case: &EnvironmentInput) -> HelperResult {
     let environment = Environment::from_lookup(&case.env).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "ValueError".to_owned(),
             status: None,
             error_type: None,
@@ -131,10 +133,10 @@ fn span_tags(case: &SpansInput) -> serde_json::Value {
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Normalize { values } => Ok(values
                 .iter()

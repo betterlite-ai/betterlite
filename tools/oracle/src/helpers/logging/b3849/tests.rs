@@ -7,9 +7,8 @@ use rstest::rstest;
 use serde_json::{Value, json};
 
 use super::Op;
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 
 fn run(input: Value) -> Value {
     let decoded: super::Input = serde_json::from_value(input).expect("the helper input decodes");
@@ -57,7 +56,9 @@ fn sink_key_records_the_account(#[case] endpoint: &str, #[case] normalized: &str
 
 #[rstest]
 fn replays_the_otel_fanout_helper_corpus(
-    #[files("fuzz/corpus/helper_case/otel-fanout*")] path: PathBuf,
+    #[base_dir = "../../.."]
+    #[files("fuzz/corpus/helper_case/otel-fanout*")]
+    path: PathBuf,
 ) {
     let case: HelperCase =
         serde_saphyr::from_str(&fs::read_to_string(&path).expect("a corpus case"))
