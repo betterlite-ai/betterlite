@@ -22,6 +22,7 @@ call:
         - {resource: container, headers: {}, module: {azure_key: azure-module}, environment: {}}
         - {resource: container, headers: {}, module: {}, environment: {AZURE_AD_TOKEN: env-token}}
         - {resource: container, headers: {}, api_key: "k1", params: {api_key: own, azure_ad_token: ignored}, module: {}, environment: {}}
+        - {resource: container, headers: {}, params: {azure_ad_token: tok}, module: {}, environment: {}}
         - {resource: video, headers: {}, api_key: "pos", module: {}, environment: {}}
         - {resource: video, headers: {}, api_key: "pos", params: {api_key: own}, module: {}, environment: {}}
         - {resource: video, headers: {}, api_key: "pos", params: {api_key: ""}, module: {}, environment: {}}
