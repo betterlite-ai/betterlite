@@ -1,0 +1,15 @@
+task: B8141
+deviations:
+  - what: One extra_secrets map replaces gateway_extra_secrets and backend_extra_secrets, and there is no separate ui task role.
+    why: betterlite is one service, so one set of secrets and one runtime role.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/iam.tf#L22-L40
+  - what: The module has no billing metrics secrets (client certificate, key and CA certificate), and the secrets policy lists no such ARNs.
+    why: The three secrets only feed the enterprise metering variables, which betterlite does not run; the module has no billing metrics endpoint to point at.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/secrets.tf
+  - what: The proxy config object key is config/config.yaml, not config/litellm-config.yaml.
+    why: The file is read by betterlite, so it does not carry LiteLLM's name; the key reaches the service as LITELLM_CONFIG_BUCKET_OBJECT_KEY (B8142), so nothing else depends on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/s3.tf#L90-L103
+  - what: One betterlite log group replaces the gateway, backend and ui log groups; the migrations and bootstrap-db groups keep LiteLLM's names.
+    why: betterlite serves the API, the management routes and the admin UI from one process, so there is one service and one log stream to read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/ecs.tf#L12-L36
+kept_bugs: []
