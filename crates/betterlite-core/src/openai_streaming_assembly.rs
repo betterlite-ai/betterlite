@@ -82,15 +82,14 @@ pub fn count_relayed_prompt_tokens(
         remote_images = remote_images.saturating_add(remote);
     }
     let counted = counter.count_messages(model, &local)?;
-    if remote_images == 0 {
-        return Ok(counted);
-    }
     let bound = high_detail_upper_bound(DEFAULT_BASE_TOKENS, &Settings::default())?;
     let per_image = i64::try_from(bound).map_err(|_error| CountError::Overflow)?;
     let images = i64::try_from(remote_images).map_err(|_error| CountError::Overflow)?;
-    per_image
+    let remote_tokens = per_image
         .checked_mul(images)
-        .and_then(|remote_tokens| counted.checked_add(remote_tokens))
+        .ok_or_else(|| RelayedCountError::Counter(CountError::Overflow))?;
+    counted
+        .checked_add(remote_tokens)
         .ok_or_else(|| RelayedCountError::Counter(CountError::Overflow))
 }
 
@@ -210,11 +209,8 @@ fn relay_chunk(raw: &Value, reply: &StreamReply) -> Option<Chunk> {
     let Value::Object(fields) = &mut value else {
         return None;
     };
-    // The parsed reply keeps no system_fingerprint, while LiteLLM's chunk record carries it.
-    if let Some(fingerprint) = raw
-        .get("system_fingerprint")
-        .filter(|value| !value.is_null())
-    {
+    // The parsed reply keeps no system_fingerprint, while LiteLLM's chunk record carries it; a null reads back as absent.
+    if let Some(fingerprint) = raw.get("system_fingerprint") {
         fields.insert("system_fingerprint".to_owned(), fingerprint.clone());
     }
     serde_json::from_value(value).ok()
