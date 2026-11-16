@@ -230,11 +230,12 @@ def prune_record(date_str: str, cutoff: datetime, chunk: tuple[str, ...]) -> dic
     }
     if dict(predicate) != expected:
         raise ValueError("the prune predicate no longer matches the sentinel delete")
+    chunk_ids: list[JsonValue] = [*chunk]
     return {
         "date": date_str,
         "cutoff_micros": instant_micros(cutoff),
         "api_key": PTU_SENTINEL_API_KEY,
-        "models": [*chunk],
+        "models": chunk_ids,
     }
 
 
