@@ -163,9 +163,11 @@ fn exempt_origin(request_metadata: &MetadataMap) -> Result<bool, ReconciliationE
     match origin {
         Json::Null => Ok(false),
         Json::Text(text) => Ok(!text.is_empty() && text.as_str() != COMPACTION_ORIGIN),
-        _ => Err(ReconciliationError::MetadataField {
-            field: INTERNAL_CALL_ORIGIN,
-        }),
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Err(ReconciliationError::MetadataField {
+                field: INTERNAL_CALL_ORIGIN,
+            })
+        }
     }
 }
 

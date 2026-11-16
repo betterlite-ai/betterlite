@@ -46,7 +46,8 @@ fn identity_targets(metadata: &ScopeMetadata, request_user: Option<&str>) -> Vec
     if let (Some(team), Some(user)) = (team_id, user_id) {
         targets.push(("team_member".to_owned(), format!("{team}:{user}")));
     }
-    let end_user = present(request_user).or(present(metadata.user_api_key_end_user_id.as_deref()));
+    let end_user =
+        present(request_user).or_else(|| present(metadata.user_api_key_end_user_id.as_deref()));
     push_target(&mut targets, "end_user", end_user);
     push_target(
         &mut targets,
@@ -88,7 +89,7 @@ fn agent_targets(targets: &mut Vec<(String, String)>, metadata: &ScopeMetadata) 
     };
     targets.push(("agent".to_owned(), agent.to_owned()));
     let session_id =
-        present(metadata.session_id.as_deref()).or(present(metadata.trace_id.as_deref()));
+        present(metadata.session_id.as_deref()).or_else(|| present(metadata.trace_id.as_deref()));
     if let Some(session) = session_id {
         targets.push(("agent_session".to_owned(), format!("{agent}:{session}")));
     }
