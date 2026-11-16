@@ -135,10 +135,10 @@ async fn a_non_map_extra_body_is_dropped() {
 
 #[tokio::test]
 async fn every_stripped_key_leaves_the_body() {
-    let mut body = Map::new();
-    for key in STRIP_PARAMS {
-        body.insert(String::from(key), json!(1));
-    }
+    let mut body: Map<String, Value> = STRIP_PARAMS
+        .iter()
+        .map(|key| (String::from(*key), json!(1)))
+        .collect();
     body.insert(String::from("custom"), json!("kept"));
     let mut optional = Map::new();
     optional.insert(String::from("extra_body"), Value::Object(body));

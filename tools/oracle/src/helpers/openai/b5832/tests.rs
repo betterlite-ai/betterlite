@@ -721,8 +721,11 @@ fn the_deleted_id_is_the_decoded_last_path_segment() {
             json!(""),
         ]
     );
-    for answer in answers.as_array().unwrap() {
-        assert_eq!(answer["object"], "response");
-        assert_eq!(answer["deleted"], json!(true));
-    }
+    let results: Vec<(Value, Value)> = answers
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|answer| (answer["object"].clone(), answer["deleted"].clone()))
+        .collect();
+    assert_eq!(results, vec![(json!("response"), json!(true)); 15]);
 }
