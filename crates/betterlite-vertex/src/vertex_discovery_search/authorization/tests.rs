@@ -238,12 +238,7 @@ fn an_api_base_is_only_trimmed() {
     )
     .unwrap();
     assert_eq!(url, "https://host/v1");
-}
-
-#[test]
-fn an_empty_api_base_falls_through_to_the_discovery_engine_host() {
-    let settings = settings(None, None);
-    let url = get_complete_url(
+    let empty = get_complete_url(
         Some(""),
         params(Some("proj"), Some("us-central1")),
         &settings,
@@ -251,7 +246,7 @@ fn an_empty_api_base_falls_through_to_the_discovery_engine_host() {
     )
     .unwrap();
     assert_eq!(
-        url,
+        empty,
         "https://discoveryengine.googleapis.com/v1/projects/proj/locations/us-central1/collections/collection/dataStores/store/servingConfigs/default_config"
     );
 }
