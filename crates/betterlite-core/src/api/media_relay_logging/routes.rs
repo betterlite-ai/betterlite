@@ -16,6 +16,7 @@ pub fn is_deepgram_listen_route(url_route: &str) -> bool {
 
 // The route is in the signature so the dispatcher mirrors the source; only the provider decides here.
 #[must_use]
+// ast-grep-ignore: no-one-line-functions
 pub fn is_fal_ai_route(_url_route: &str, custom_llm_provider: Option<&str>) -> bool {
-    custom_llm_provider.is_some_and(|provider| provider == PROVIDER)
+    custom_llm_provider == Some(PROVIDER)
 }

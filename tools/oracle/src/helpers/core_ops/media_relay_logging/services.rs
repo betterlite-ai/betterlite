@@ -49,10 +49,11 @@ impl PriceLookup for CaseLookup {
     }
 
     fn effective_priced_model(&self, model: &str, provider: Option<&str>) -> Option<PricedModel> {
-        let record = self.effective_model_info(model, provider)?;
         Some(PricedModel {
-            record,
-            ..PricedModel::default()
+            record: self.effective_model_info(model, provider)?,
+            tiered_pricing: Vec::new(),
+            off_peak_pricing: None,
+            off_peak_cache_read_present: false,
         })
     }
 }
