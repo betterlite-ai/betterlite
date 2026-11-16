@@ -81,7 +81,7 @@ fn prepare_logs_the_resolved_provider_and_the_path_params() {
     assert_eq!(state.litellm_params, litellm_params);
     assert_eq!(state.model, "");
     assert_eq!(state.custom_llm_provider.as_deref(), Some("azure"));
-    assert_eq!(state.call_type, "container_file_call");
+    assert_eq!(state.call_type, "fixture_call_type");
 }
 
 #[test]

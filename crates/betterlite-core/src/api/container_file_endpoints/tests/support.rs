@@ -49,7 +49,7 @@ pub(super) fn logging() -> Mutex<LoggingState> {
 
 fn logging_state() -> LoggingState {
     let init: LoggingInit = serde_json::from_str(
-        r#"{"model":"container","call_type":"container_file_call","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
+        r#"{"model":"container","call_type":"fixture_call_type","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
     )
     .unwrap();
     LoggingState::new(
