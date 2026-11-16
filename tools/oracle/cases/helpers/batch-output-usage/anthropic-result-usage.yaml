@@ -1,0 +1,23 @@
+kind: helper
+name: anthropic_result_usage
+call:
+  batch_output_usage:
+    kind: output_usage
+    provider: anthropic
+    model_name: claude-3-5-sonnet-20241022
+    model_info:
+      input_cost_per_token: 3.0
+      input_cost_per_token_batches: 0.5
+      output_cost_per_token: 6.0
+      output_cost_per_token_batches: 0.25
+    content:
+      kind: lines
+      lines:
+        - custom_id: anthropic-1
+          result:
+            type: succeeded
+            message:
+              model: claude-3-5-sonnet-20241022
+              usage: {input_tokens: 100, output_tokens: 20}
+env: {}
+compare: {ignore: []}
