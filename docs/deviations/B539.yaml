@@ -1,0 +1,81 @@
+task: B539
+deviations:
+  - what: >-
+      The async branch's failure log names the audio file, a.wav, where LiteLLM logs the value of Python's
+      builtin input function because its except block passes the bare name input.
+    why: >-
+      A builtin function's repr carries no request meaning, so betterlite logs the audio file name it
+      already tracks for the call; the async-version oracle case ignores only that field on the failure
+      record.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcriptions.py#L198-L204"
+  - what: >-
+      A native reply that is not JSON, not a JSON object, or carries a mistyped DisplayText, NBest or
+      language value raises a typed NativeError (Json, NotObject or Field); LiteLLM lets JSONDecodeError,
+      AttributeError or TypeError escape from the config.
+    why: >-
+      Those Python exceptions are accidents of the implementation rather than a declared error contract,
+      so betterlite names the failing field and returns an error class the caller can match.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcription/transformation.py#L125-L141"
+  - what: >-
+      AZURE_SPEECH_API_KEY and AZURE_SPEECH_API_BASE are read once into the config section and passed to
+      the native config as typed values; LiteLLM calls get_secret_str inside validate_environment and
+      get_complete_url on every request.
+    why: >-
+      betterlite resolves environment variables at startup through its config sections, so an unset
+      variable stays unset and a value of the wrong type fails at startup rather than mid-call.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcription/transformation.py#L60-L109"
+  - what: >-
+      A base URL that already carries a query keeps its pairs merged with api-version; the OpenAI SDK
+      concatenates the base raw path with the endpoint path, so a query on the base is swallowed into the
+      path and mangled.
+    why: >-
+      The SDK's result is an accident of httpx raw_path concatenation that no working base URL can rely
+      on, so betterlite keeps every query pair and lets api-version win when both name it.
+    link: "https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_base_client.py#L496-L507"
+  - what: >-
+      An optional param named file, or any name the OpenAI SDK's create signature does not take, is
+      rejected with a typed Field error; LiteLLM's dict spread lets file replace the audio argument and
+      passes every other name to create.
+    why: >-
+      The dict spread is not a request contract; a caller cannot rely on replacing the file argument and
+      the SDK rejects unknown names, so betterlite names the offending field once instead.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcriptions.py#L42-L42"
+  - what: >-
+      An api_base that cannot be parsed as a URL is a typed Url error; LiteLLM passes the raw string
+      through urlparse and returns it unchanged when no host is found.
+    why: >-
+      The base must become an outbound request target, so a value that cannot be parsed fails at the URL
+      boundary with its own error instead of being carried into a request that cannot be sent.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcription/transformation.py#L150-L153"
+  - what: >-
+      The OpenAI SDK's implicit retries of 408, 409, 429 and 5xx replies are not repeated; a failed create
+      returns the first status error, and max_retries is carried on the client but not acted on here.
+    why: >-
+      Retry and backoff policy belongs to the shared transport task B173, so this module sends each
+      request once and leaves retry planning to that layer.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcriptions.py#L87-L90"
+kept_bugs:
+  - what: >-
+      The atranscription branch drops api_version before the async helper resolves its client, so an
+      async call that asks for v1 silently uses the default preview version while the sync branch rejects
+      v1 with a 500.
+    why: >-
+      LiteLLM's call site omits api_version from the async helper invocation, so a working async setup
+      that passes v1 succeeds today; betterlite keeps the asymmetry and the async-version oracle case
+      pins it.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcriptions.py#L44-L58"
+  - what: >-
+      A failed RecognitionStatus keeps the HTTP status of the reply, so a 200 response whose body names
+      InitialSilenceTimeout surfaces as an error carrying status 200.
+    why: >-
+      The exception is built with status_code=raw_response.status_code, and a working setup that reads
+      the status of a failed transcript sees 200, so betterlite keeps the raw status.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcription/transformation.py#L131-L136"
+  - what: >-
+      A native reply is judged only by its body: a non-2xx response that carries a passing
+      RecognitionStatus and DisplayText is returned as a successful transcript.
+    why: >-
+      transform_audio_transcription_response never reads raw_response.status_code on the success path;
+      betterlite copies that so the native transformation matches LiteLLM's answer, and both the
+      native-json-text-extraction oracle case and a Rust test pin it.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcription/transformation.py#L129-L141"
