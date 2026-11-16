@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{Result as IoResult, Write};
 use std::path::PathBuf;
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex};
 
 use betterlite_secrets::error::SecretError;
@@ -47,9 +48,9 @@ impl CapturedLogs {
 }
 
 impl Write for CapturedLogs {
-    fn write(&mut self, buffer: &[u8]) -> IoResult<usize> {
-        lock(&self.0).extend_from_slice(buffer);
-        Ok(buffer.len())
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        lock(&self.0).extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> IoResult<()> {
@@ -97,7 +98,7 @@ fn secrets<const N: usize>(entries: [(&str, &str); N]) -> UserEnvVars {
 }
 
 fn names(entries: &[&str]) -> BTreeSet<String> {
-    entries.iter().map(|name| name.to_string()).collect()
+    entries.iter().map(ToString::to_string).collect()
 }
 
 // reads a sealed column straight back, to prove what the merge wrote rather than what it returns
@@ -595,7 +596,7 @@ async fn delete_propagates_a_database_error() {
 #[rstest]
 fn replays_the_mcp_user_env_vars_corpus(#[files("fuzz/corpus/mcp_user_env_vars/*")] path: PathBuf) {
     let bytes = fs::read(path).expect("the corpus entry reads");
-    if let Ok(text) = std::str::from_utf8(&bytes) {
+    if let Ok(text) = from_utf8(&bytes) {
         drop(parse_user_env_vars(text));
     }
 }

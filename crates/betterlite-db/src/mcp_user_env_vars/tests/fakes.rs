@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::future::ready;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use betterlite_secrets::error::SecretError;
@@ -164,30 +166,38 @@ impl FakeTable {
 }
 
 impl UserEnvVarTable for FakeTable {
-    async fn find_unique(
+    fn find_unique(
         &self,
         user_id: &str,
         server_id: &str,
-    ) -> Result<Option<JsonData>, UserEnvVarsError> {
-        let state = self.recording("find_unique")?;
-        Ok(state.find_row(user_id, server_id))
+    ) -> impl Future<Output = Result<Option<JsonData>, UserEnvVarsError>> + Send {
+        ready(
+            self.recording("find_unique")
+                .map(|state| state.find_row(user_id, server_id)),
+        )
     }
 
-    async fn find_many(
+    fn find_many(
         &self,
         user_id: &str,
         server_ids: &[String],
-    ) -> Result<Vec<JsonData>, UserEnvVarsError> {
-        Ok(self.recording("find_many")?.select(user_id, server_ids))
+    ) -> impl Future<Output = Result<Vec<JsonData>, UserEnvVarsError>> + Send {
+        ready(
+            self.recording("find_many")
+                .map(|state| state.select(user_id, server_ids)),
+        )
     }
 
-    async fn delete_many(&self, user_id: &str, server_id: &str) -> Result<(), UserEnvVarsError> {
-        let mut state = self.recording("delete_many")?;
-        state
-            .rows
-            .retain(|row| row.user_id != user_id || row.server_id != server_id);
-        drop(state);
-        Ok(())
+    fn delete_many(
+        &self,
+        user_id: &str,
+        server_id: &str,
+    ) -> impl Future<Output = Result<(), UserEnvVarsError>> + Send {
+        ready(self.recording("delete_many").map(|mut state| {
+            state
+                .rows
+                .retain(|row| row.user_id != user_id || row.server_id != server_id);
+        }))
     }
 }
 

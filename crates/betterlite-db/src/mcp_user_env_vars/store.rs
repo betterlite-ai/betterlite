@@ -95,7 +95,9 @@ fn decoded_row<N, D>(
 where
     D: SecretDiagnostics,
 {
-    let stored = text_field(row, "values_b64").ok_or(UserEnvVarsError::MissingValues)?;
+    let Some(stored) = text_field(row, "values_b64") else {
+        return Err(UserEnvVarsError::MissingValues);
+    };
     Ok(decode_user_env_vars(stored, cipher))
 }
 
