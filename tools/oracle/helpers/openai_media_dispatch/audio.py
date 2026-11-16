@@ -18,7 +18,7 @@ from .support import BYTES, OBJECT, OBJECTS, SPEECH_MAX_RETRIES, TEXT, TIMEOUT
 litellm.suppress_debug_info = True
 
 
-def speech_request(case: SpeechCase) -> SpeechRequest:
+def speech(case: SpeechCase) -> JsonValue:
     options = case["options"]
     request: SpeechRequest = {
         "model": case["model"],
@@ -33,10 +33,6 @@ def speech_request(case: SpeechCase) -> SpeechRequest:
         request["instructions"] = options["instructions"]
     if "extra_headers" in options:
         request["extra_headers"] = OBJECT.validate_python(options["extra_headers"])
-    return request
-
-
-def speech(case: SpeechCase) -> JsonValue:
     headers: list[list[str]] = []
     content_type = case["content_type"]
     if content_type is not None:
@@ -49,10 +45,10 @@ def speech(case: SpeechCase) -> JsonValue:
         "aspeech": False,
     }
     reply: SpeechReply = {"status": case["status"], "headers": headers, "text": case["body"]}
-    probe: SpeechInput = {"client": client, "request": speech_request(case), "reply": reply}
+    probe: SpeechInput = {"client": client, "request": request, "reply": reply}
     outcome = OBJECT.validate_python(speech_outcome(probe))
     sent = OBJECT.validate_python(outcome["request"])
-    request: dict[str, JsonValue] = {
+    sent_view: dict[str, JsonValue] = {
         "method": sent["method"],
         "url": sent["url"],
         "accept": sent["accept"],
@@ -65,7 +61,7 @@ def speech(case: SpeechCase) -> JsonValue:
     if raised is not None:
         error = OBJECT.validate_python(raised)
         return {
-            "request": request,
+            "request": sent_view,
             "status": None,
             "content_type": None,
             "body": None,
@@ -78,7 +74,7 @@ def speech(case: SpeechCase) -> JsonValue:
         }
     content = BYTES.validate_python(result["body"])
     return {
-        "request": request,
+        "request": sent_view,
         "status": result["status"],
         "content_type": result["content_type"],
         "body": content.decode(),

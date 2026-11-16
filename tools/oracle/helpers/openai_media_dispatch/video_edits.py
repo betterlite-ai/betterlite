@@ -46,9 +46,7 @@ def video_edit_cases(case: VideoExtendedCase) -> JsonValue:
 def video_fixture(given: str | None) -> Fixture | None:
     if given is None:
         return None
-    return BytesFixture(
-        kind="bytes", data_base64=base64.b64encode(given.encode()).decode("ascii")
-    )
+    return BytesFixture(kind="bytes", data_base64=base64.b64encode(given.encode()).decode("ascii"))
 
 
 def extended_edit(case: VideoExtendedCase, base: str) -> JsonValue:

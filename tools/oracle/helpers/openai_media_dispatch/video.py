@@ -145,9 +145,7 @@ def lifecycle_answer(
             answer: JsonValue = {
                 "body": base64.b64decode(TEXT.validate_python(content["body_base64"])).decode()
             }
-        case (
-            "list_response" | "status_response" | "delete_response" | "remix_response"
-        ):
+        case ("list_response" | "status_response" | "delete_response" | "remix_response"):
             answer = reply_ops(reply)
     return {
         "request": {

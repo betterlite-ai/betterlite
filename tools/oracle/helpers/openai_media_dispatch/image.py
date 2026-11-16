@@ -44,16 +44,12 @@ def image_reply(value: JsonValue) -> JsonValue:
     }
 
 
-def image_error(value: JsonValue) -> JsonValue:
-    fields = OBJECT.validate_python(value)
-    return {"mapped": fields["mapped"], "status": fields["status"]}
-
-
 def image_answer(outcome: dict[str, JsonValue], request: dict[str, JsonValue]) -> JsonValue:
     error = outcome["error"]
     if error is None:
         return {"request": request, "reply": image_reply(outcome["result"]), "error": None}
-    return {"request": request, "reply": None, "error": image_error(error)}
+    raised = OBJECT.validate_python(error)
+    return {"request": request, "reply": None, "error": {"mapped": raised["mapped"], "status": raised["status"]}}
 
 
 def file_specs(files: list[ImageFile]) -> list[FileSpec | None]:
