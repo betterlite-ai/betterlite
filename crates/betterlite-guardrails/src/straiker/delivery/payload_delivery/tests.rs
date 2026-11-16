@@ -546,8 +546,8 @@ async fn an_unusable_header_is_an_unreachable_failure(#[case] name: &str, #[case
 }
 
 #[rstest]
-#[case::name("X-Ünicode", "value")]
-#[case::value("X-Ok", "välue")]
+#[case::name("X-\u{dc}nicode", "value")]
+#[case::value("X-Ok", "v\u{e4}lue")]
 #[tokio::test]
 async fn a_non_ascii_header_is_a_permanent_failure(#[case] name: &str, #[case] value: &str) {
     let post = pooled();
@@ -576,7 +576,7 @@ async fn a_non_ascii_header_is_a_permanent_failure(#[case] name: &str, #[case] v
 async fn a_non_ascii_authorization_is_a_permanent_failure() {
     let post = pooled();
     let headers = WebhookHeaders {
-        authorization: SecretString::from("Bearer këy"),
+        authorization: SecretString::from("Bearer k\u{eb}y"),
         values: BTreeMap::new(),
     };
     let failure = post
@@ -673,7 +673,7 @@ async fn serve_requests(listener: TcpListener, reply: &'static [u8], count: usiz
             let read = stream.read(&mut chunk).await.unwrap();
             assert_ne!(read, 0, "the client closed before the request arrived");
             received.extend_from_slice(&chunk[..read]);
-            let text = String::from_utf8_lossy(&received).to_lowercase();
+            let text = str::from_utf8(&received).unwrap().to_lowercase();
             let Some((head, body)) = text.split_once("\r\n\r\n") else {
                 continue;
             };
@@ -686,7 +686,7 @@ async fn serve_requests(listener: TcpListener, reply: &'static [u8], count: usiz
             }
         }
         stream.write_all(reply).await.unwrap();
-        requests.push(String::from_utf8_lossy(&received).into_owned());
+        requests.push(str::from_utf8(&received).unwrap().to_owned());
     }
     requests
 }

@@ -5,9 +5,11 @@ use thiserror::Error;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
-use crate::straiker::delivery::attempts::{PayloadError, RetryDelay, encode};
+use crate::straiker::delivery::attempts::{
+    PayloadError, RetryDelay, encode, log_replay, log_response, post,
+};
 use crate::straiker::delivery::envelope::{self, DeliveryError, build, json_object};
-use crate::straiker::delivery::failure_policy::record_verdict;
+use crate::straiker::delivery::failure_policy::{block, fail, record_verdict};
 use crate::straiker::delivery::responses::{self, Verdict, VerdictAction};
 use crate::straiker::delivery::settings::ApiVersion;
 use crate::straiker::delivery::transport::WebhookPost;
@@ -42,34 +44,46 @@ where
         &self,
         request: &mut ApplyRequest<'_>,
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
+        let settings = &self.settings;
         let object = match json_object(request.request_data) {
             Ok(object) => object,
-            Err(error) => return self.fail(request, &error, false),
+            Err(error) => return fail(settings, request, &error, false),
         };
         let prepared = match self.prepare(request, &object) {
             Ok(prepared) => prepared,
-            Err(error) => return self.fail(request, &error, false),
+            Err(error) => return fail(settings, request, &error, false),
         };
         let replayed = match self
             .blocked_turns
             .replayed(&prepared.scope, &prepared.prefixes)
         {
             Ok(replayed) => replayed,
-            Err(error) => return self.fail(request, &error, false),
+            Err(error) => return fail(settings, request, &error, false),
         };
         if let Some((prefix, message)) = replayed {
-            self.log_replay(&prepared.scope, &prefix);
-            return Err(self.block(request, &message, true));
+            log_replay(settings, &prepared.scope, &prefix);
+            return Err(block(settings, request, &message, true));
         }
-        let reply = match self.post(&prepared.body, &prepared.extra).await {
+        let reply = match post(self, &prepared.body, &prepared.extra).await {
             Ok(reply) => reply,
-            Err(failure) => return self.fail(request, &failure.message, failure.is_unreachable),
+            Err(outage) => return fail(settings, request, &outage.message, outage.is_unreachable),
         };
-        let verdict = match responses::parse(self.settings.api_version, &reply.body) {
+        let verdict = match responses::parse(settings.api_version, &reply.body) {
             Ok(verdict) => verdict,
-            Err(failure) => return self.fail(request, &failure.message, false),
+            Err(unreadable) => return fail(settings, request, &unreadable.message, false),
         };
-        self.log_response(&reply);
+        log_response(settings, &reply);
+        self.decide(request, &object, &prepared, verdict)
+    }
+
+    // Records the verdict when verbose, then hands it to the v1 or v3 enforcement.
+    fn decide(
+        &self,
+        request: &mut ApplyRequest<'_>,
+        object: &Object,
+        prepared: &Prepared,
+        verdict: Verdict,
+    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
         if self.settings.verbose {
             let action = verdict.action.wire_name();
             record_verdict(request.request_data, action, verdict.turn_id.as_deref());
@@ -79,10 +93,10 @@ where
             .clone()
             .unwrap_or_else(|| DEFAULT_BLOCK_MESSAGE.to_owned());
         if self.settings.api_version != ApiVersion::V1 {
-            return self.enforce_v3(request, &prepared, &verdict, &message);
+            return self.enforce_v3(request, prepared, &verdict, &message);
         }
         warn_drift(&verdict);
-        self.enforce_v1(request, &object, verdict, &message)
+        self.enforce_v1(request, object, verdict, &message)
     }
 
     fn prepare(&self, request: &ApplyRequest<'_>, object: &Object) -> Result<Prepared, PlanError> {
@@ -113,12 +127,12 @@ where
         message: &str,
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
         match verdict.action {
-            VerdictAction::Blocked => Err(self.block(request, message, true)),
+            VerdictAction::Blocked => Err(block(&self.settings, request, message, true)),
             VerdictAction::Intervened => {
                 let streamed = request.input_type == GuardrailInputType::Response
                     && request_is_streamed(object);
                 let Some(texts) = verdict.texts.filter(|_| !streamed) else {
-                    return Err(self.block(request, message, true));
+                    return Err(block(&self.settings, request, message, true));
                 };
                 let mut inputs = request.inputs.clone();
                 inputs.texts = Some(texts);
@@ -147,9 +161,9 @@ where
                 .blocked_turns
                 .remember(&prepared.scope, prefix, message)
         {
-            return self.fail(request, &error, false);
+            return fail(&self.settings, request, &error, false);
         }
-        Err(self.block(request, message, true))
+        Err(block(&self.settings, request, message, true))
     }
 }
 

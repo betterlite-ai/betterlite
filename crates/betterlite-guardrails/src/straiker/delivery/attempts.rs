@@ -10,6 +10,7 @@ use thiserror::Error;
 use tokio::time::sleep;
 
 use crate::straiker::delivery::StraikerDelivery;
+use crate::straiker::delivery::settings::StraikerSettings;
 use crate::straiker::delivery::transport::{self, WebhookPost, WebhookReply, WebhookRequest};
 use crate::straiker_webhook::failure::{WebhookFailure, status_failure};
 
@@ -80,80 +81,75 @@ pub fn backoff_cap(initial_backoff: f64, max_backoff: f64, attempt: i64) -> Dura
     Duration::try_from_secs_f64(seconds).unwrap_or_default()
 }
 
-impl<Post, Delay> StraikerDelivery<Post, Delay>
+pub(super) async fn post<Post, Delay>(
+    delivery: &StraikerDelivery<Post, Delay>,
+    body: &str,
+    extra: &IndexMap<&'static str, String>,
+) -> Result<WebhookReply, WebhookFailure>
 where
     Post: WebhookPost,
     Delay: RetryDelay,
 {
-    pub(super) async fn post(
-        &self,
-        body: &str,
-        extra: &IndexMap<&'static str, String>,
-    ) -> Result<WebhookReply, WebhookFailure> {
-        let url = self.settings.webhook_url();
-        self.log_request(&url, body);
-        let headers = transport::compose(&self.settings, extra);
-        let attempts = self.settings.max_retries.saturating_add(1);
-        let mut attempt = 0_i64;
-        loop {
-            let request = WebhookRequest {
-                url: &url,
-                body,
-                headers: &headers,
-                timeout: self.settings.timeout,
-            };
-            let failure = match self.transport.post(request).await {
-                Ok(reply) if reply.status == 200 => return Ok(reply),
-                Ok(reply) => status_failure(reply.status, &reply.body),
-                Err(failure) => failure,
-            };
-            if !failure.retryable || attempt.saturating_add(1) >= attempts {
-                return Err(failure);
-            }
-            let cap = backoff_cap(
-                self.settings.initial_backoff,
-                self.settings.max_backoff,
-                attempt,
-            );
-            sleep(self.delay.delay(cap)).await;
-            attempt = attempt.saturating_add(1);
+    let settings = &delivery.settings;
+    let url = settings.webhook_url();
+    log_request(settings, &url, body);
+    let headers = transport::compose(settings, extra);
+    let attempts = settings.max_retries.saturating_add(1);
+    let mut attempt = 0_i64;
+    loop {
+        let request = WebhookRequest {
+            url: &url,
+            body,
+            headers: &headers,
+            timeout: settings.timeout,
+        };
+        let failure = match delivery.transport.post(request).await {
+            Ok(reply) if reply.status == 200 => return Ok(reply),
+            Ok(reply) => status_failure(reply.status, &reply.body),
+            Err(failure) => failure,
+        };
+        if !failure.retryable || attempt.saturating_add(1) >= attempts {
+            return Err(failure);
         }
+        let cap = backoff_cap(settings.initial_backoff, settings.max_backoff, attempt);
+        sleep(delivery.delay.delay(cap)).await;
+        attempt = attempt.saturating_add(1);
     }
+}
 
-    fn log_request(&self, url: &str, body: &str) {
-        if !self.settings.verbose {
-            return;
-        }
-        tracing::info!(
-            event = "straiker.webhook_request",
-            url = %url,
-            bytes = body.len(),
-            payload = %body,
-            "straiker.webhook_request"
-        );
+fn log_request(settings: &StraikerSettings, url: &str, body: &str) {
+    if !settings.verbose {
+        return;
     }
+    tracing::info!(
+        event = "straiker.webhook_request",
+        url = %url,
+        bytes = body.len(),
+        payload = %body,
+        "straiker.webhook_request"
+    );
+}
 
-    pub(super) fn log_response(&self, reply: &WebhookReply) {
-        if !self.settings.verbose {
-            return;
-        }
-        tracing::info!(
-            event = "straiker.webhook_response",
-            status_code = reply.status,
-            body = %reply.body,
-            "straiker.webhook_response"
-        );
+pub(super) fn log_response(settings: &StraikerSettings, reply: &WebhookReply) {
+    if !settings.verbose {
+        return;
     }
+    tracing::info!(
+        event = "straiker.webhook_response",
+        status_code = reply.status,
+        body = %reply.body,
+        "straiker.webhook_response"
+    );
+}
 
-    pub(super) fn log_replay(&self, scope: &str, prefix: &str) {
-        if !self.settings.verbose {
-            return;
-        }
-        tracing::info!(
-            event = "straiker.replay_blocked",
-            scope = %scope,
-            prefix = %prefix,
-            "straiker.replay_blocked"
-        );
+pub(super) fn log_replay(settings: &StraikerSettings, scope: &str, prefix: &str) {
+    if !settings.verbose {
+        return;
     }
+    tracing::info!(
+        event = "straiker.replay_blocked",
+        scope = %scope,
+        prefix = %prefix,
+        "straiker.replay_blocked"
+    );
 }

@@ -51,12 +51,12 @@ impl BlockedTurns {
     ) -> Result<Option<(String, String)>, CacheError> {
         for prefix in prefixes {
             let key = format!("{scope}\0{prefix}");
-            let value = self
+            let cached = self
                 .cache
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .get(&key)?;
-            let Some(value) = value else {
+            let Some(value) = cached else {
                 continue;
             };
             if let Some(message) = replay_message(&value) {
@@ -72,7 +72,13 @@ fn replay_message(value: &CacheValue) -> Option<String> {
     match value {
         CacheValue::Null => None,
         CacheValue::Text(message) => Some(message.clone()),
-        other => serde_json::to_string(other).ok(),
+        CacheValue::Credential(_)
+        | CacheValue::Bytes(_)
+        | CacheValue::Boolean(_)
+        | CacheValue::Integer(_)
+        | CacheValue::Float(_)
+        | CacheValue::Array(_)
+        | CacheValue::Object(_) => serde_json::to_string(value).ok(),
     }
 }
 

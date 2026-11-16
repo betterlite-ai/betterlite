@@ -115,8 +115,8 @@ async fn every_attempt_carries_the_configured_timeout(
 fn the_random_delay_stays_within_the_cap() {
     let delay = RandomDelay::try_new().unwrap();
     let cap = Duration::from_millis(10);
-    assert!((0_i32..1000).all(|_| delay.delay(cap) <= cap));
-    assert!((0_i32..1000).any(|_| delay.delay(cap) > Duration::ZERO));
+    assert!((0_i32..1_000_i32).all(|_| delay.delay(cap) <= cap));
+    assert!((0_i32..1_000_i32).any(|_| delay.delay(cap) > Duration::ZERO));
 }
 
 #[test]
