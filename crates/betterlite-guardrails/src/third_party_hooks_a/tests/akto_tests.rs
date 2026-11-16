@@ -11,7 +11,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 
-use super::support::{list, message, object, serve, text};
+use super::support::{Call, list, message, object, serve, text};
 use crate::akto::AktoMirroring;
 use crate::akto::error::AktoError;
 use crate::akto::payload::AktoInputs;
@@ -87,6 +87,29 @@ async fn unreachable_base() -> String {
     format!("http://{address}")
 }
 
+// runs one hook mode over one input type and returns how many mirror calls it made
+async fn run_mode(mode: &LitellmParamsMode, input_type: GuardrailInputType) -> usize {
+    let answers = vec![
+        (StatusCode::OK, allowed_answer()),
+        (StatusCode::OK, allowed_answer()),
+    ];
+    let (base, _server, captured) = serve("/api/http-proxy", answers).await;
+    let guardrail = akto_guardrail(&base, AktoFallback::FailClosed);
+    let returned = akto::apply_guardrail(
+        &guardrail,
+        akto_inputs(),
+        &akto_request_data(),
+        input_type,
+        mode,
+    )
+    .await
+    .expect("mirrored");
+    assert_eq!(returned, akto_inputs());
+    guardrail.tasks.close();
+    guardrail.tasks.wait().await;
+    captured.lock().expect("captured").len()
+}
+
 #[tokio::test]
 async fn akto_request_allowed_mirrors_with_guardrails_only() {
     let (base, _server, captured) =
@@ -134,9 +157,13 @@ async fn akto_request_blocked_answers_403_and_mirrors_the_marker() {
     guardrail.tasks.wait().await;
     let calls = captured.lock().expect("captured");
     assert_eq!(calls.len(), 2);
-    assert!(calls[1].path.contains("ingest_data=true"));
-    assert!(!calls[1].path.contains("guardrails=true"));
-    let payload: CapturedPayload = serde_json::from_str(&calls[1].body).expect("payload");
+    assert_blocked_ingest(&calls[1]);
+}
+
+fn assert_blocked_ingest(call: &Call) {
+    assert!(call.path.contains("ingest_data=true"));
+    assert!(!call.path.contains("guardrails=true"));
+    let payload: CapturedPayload = serde_json::from_str(&call.body).expect("payload");
     assert_eq!(payload.status_code, "403");
     let wrapper =
         serde_json::from_str::<GuardrailValue>(&payload.response_payload).expect("wrapper");
@@ -250,6 +277,20 @@ async fn akto_skips_an_input_type_its_single_hook_mode_does_not_handle() {
     let calls = captured.lock().expect("captured");
     assert_eq!(calls.len(), 1);
     assert!(calls[0].path.contains("guardrails=true"));
+}
+
+#[tokio::test]
+async fn akto_mode_maps_only_the_two_hook_names() {
+    let pre = LitellmParamsMode::One("pre_call".to_owned());
+    let post = LitellmParamsMode::One("post_call".to_owned());
+    let during = LitellmParamsMode::One("during_call".to_owned());
+    // post_call handles the response side only, so a request under it is skipped
+    assert_eq!(run_mode(&post, GuardrailInputType::Response).await, 1);
+    assert_eq!(run_mode(&post, GuardrailInputType::Request).await, 0);
+    assert_eq!(run_mode(&pre, GuardrailInputType::Response).await, 0);
+    // any other single name maps to neither input type, so both sides run
+    assert_eq!(run_mode(&during, GuardrailInputType::Request).await, 1);
+    assert_eq!(run_mode(&during, GuardrailInputType::Response).await, 1);
 }
 
 #[tokio::test]

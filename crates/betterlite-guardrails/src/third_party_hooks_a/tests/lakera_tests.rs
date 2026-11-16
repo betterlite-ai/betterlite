@@ -31,6 +31,23 @@ fn fake_gate(proceed: bool) -> FakeGate {
     }
 }
 
+fn dynamic_gate() -> FakeGate {
+    FakeGate {
+        proceed: true,
+        dynamic: BTreeMap::from([("metadata".to_owned(), object(&[("trace", text("t"))]))]),
+    }
+}
+
+fn tool_call(id: &str, name: &str, arguments: &str) -> GuardrailValue {
+    object(&[
+        ("id", text(id)),
+        (
+            "function",
+            object(&[("name", text(name)), ("arguments", text(arguments))]),
+        ),
+    ])
+}
+
 impl GuardrailSelection for FakeGate {
     fn should_run_guardrail(
         &self,
@@ -115,6 +132,7 @@ async fn lakera_legacy_in_parallel_skips_only_the_pre_call_hook() {
         .pre_call(&data, lakera::LakeraGate::Legacy, &selection)
         .await
         .expect("skip");
+    assert!(captured.lock().expect("captured").is_empty());
     hooks
         .moderation(&data, lakera::LakeraGate::Legacy, &selection)
         .await
@@ -140,6 +158,7 @@ async fn lakera_legacy_pre_call_skips_only_the_moderation_hook() {
         .moderation(&data, lakera::LakeraGate::Legacy, &selection)
         .await
         .expect("skip");
+    assert!(captured.lock().expect("captured").is_empty());
     hooks
         .pre_call(&data, lakera::LakeraGate::Legacy, &selection)
         .await
@@ -193,11 +212,12 @@ async fn lakera_posts_system_user_assistant_in_that_order() {
     )
     .await;
     let hooks = lakera_hooks(&base, ModerationCheck::InParallel, None, false);
-    let data = chat_data(&[
-        message("assistant", "a"),
-        message("user", "u"),
-        message("system", "s"),
+    let assistant = object(&[
+        ("role", text("assistant")),
+        ("content", text("a")),
+        ("tool_calls", GuardrailValue::Null),
     ]);
+    let data = chat_data(&[assistant, message("user", "u"), message("system", "s")]);
     let fake = fake_gate(true);
     let selection = lakera::LakeraSelection {
         should_proceed: fake.proceed,
@@ -238,20 +258,8 @@ async fn lakera_joins_tool_call_arguments_into_the_system_message() {
         (
             "tool_calls",
             list(&[
-                object(&[
-                    ("id", text("1")),
-                    (
-                        "function",
-                        object(&[("name", text("f")), ("arguments", text("{\"a\": 1}"))]),
-                    ),
-                ]),
-                object(&[
-                    ("id", text("2")),
-                    (
-                        "function",
-                        object(&[("name", text("g")), ("arguments", text("{\"b\": 2}"))]),
-                    ),
-                ]),
+                tool_call("1", "f", "{\"a\": 1}"),
+                tool_call("2", "g", "{\"b\": 2}"),
             ]),
         ),
     ]);
@@ -367,33 +375,23 @@ async fn lakera_joins_an_input_list_with_newlines() {
 }
 
 #[tokio::test]
-async fn lakera_merges_dynamic_request_body_params_into_every_body() {
+async fn lakera_merges_dynamic_request_body_params_into_the_messages_body() {
     let (base, _server, captured) = serve(
         "/v1/prompt_injection",
-        vec![
-            (StatusCode::OK, LAKERA_OK.to_owned()),
-            (StatusCode::OK, LAKERA_OK.to_owned()),
-        ],
+        vec![(StatusCode::OK, LAKERA_OK.to_owned())],
     )
     .await;
     let hooks = lakera_hooks(&base, ModerationCheck::InParallel, None, false);
-    let fake = FakeGate {
-        proceed: true,
-        dynamic: BTreeMap::from([("metadata".to_owned(), object(&[("trace", text("t"))]))]),
-    };
+    let fake = dynamic_gate();
     let selection = lakera::LakeraSelection {
         should_proceed: fake.proceed,
         dynamic_params: &fake,
     };
-    let messages = chat_data(&[message("user", "u")]);
     hooks
-        .check(&messages, &selection)
+        .check(&chat_data(&[message("user", "u")]), &selection)
         .await
         .expect("messages body");
-    let input = BTreeMap::from([("input".to_owned(), text("hello"))]);
-    hooks.check(&input, &selection).await.expect("input body");
     let calls = captured.lock().expect("captured");
-    assert_eq!(calls.len(), 2);
     assert_eq!(
         captured_body(&calls, 0),
         object(&[
@@ -401,8 +399,26 @@ async fn lakera_merges_dynamic_request_body_params_into_every_body() {
             ("metadata", object(&[("trace", text("t"))]))
         ])
     );
+}
+
+#[tokio::test]
+async fn lakera_merges_dynamic_request_body_params_into_the_input_body() {
+    let (base, _server, captured) = serve(
+        "/v1/prompt_injection",
+        vec![(StatusCode::OK, LAKERA_OK.to_owned())],
+    )
+    .await;
+    let hooks = lakera_hooks(&base, ModerationCheck::InParallel, None, false);
+    let fake = dynamic_gate();
+    let selection = lakera::LakeraSelection {
+        should_proceed: fake.proceed,
+        dynamic_params: &fake,
+    };
+    let input = BTreeMap::from([("input".to_owned(), text("hello"))]);
+    hooks.check(&input, &selection).await.expect("input body");
+    let calls = captured.lock().expect("captured");
     assert_eq!(
-        captured_body(&calls, 1),
+        captured_body(&calls, 0),
         object(&[
             ("input", text("hello")),
             ("metadata", object(&[("trace", text("t"))]))

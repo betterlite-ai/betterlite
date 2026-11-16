@@ -183,49 +183,52 @@ async fn handle_aim(
 ) -> (StatusCode, String) {
     record(&state.captured, &uri, &headers, &body);
     let request: AimRequest = serde_json::from_str(&body).expect("aim request body");
-    let action = |action_type: &str, detection_message: Option<&str>| AimAction {
-        action_type: action_type.to_owned(),
-        detection_message: detection_message.map(str::to_owned),
-    };
     let answer = match state.mode {
-        AimMode::Monitor => AimAnswer {
-            required_action: Some(action("monitor_action", None)),
-            redacted_chat: None,
-        },
-        AimMode::Block => AimAnswer {
-            required_action: Some(action("block_action", Some("AIM says no"))),
-            redacted_chat: None,
-        },
-        AimMode::BlockSilently => AimAnswer {
-            required_action: Some(action("block_action", None)),
-            redacted_chat: None,
-        },
-        AimMode::Redact => {
-            let redacted = request
-                .messages
-                .iter()
-                .enumerate()
-                .map(|(index, message)| MessageRow {
-                    role: message.role.clone(),
-                    content: if index + 1 == request.messages.len() {
-                        format!("redacted:{}", message.content)
-                    } else {
-                        message.content.clone()
-                    },
-                })
-                .collect();
-            AimAnswer {
-                required_action: Some(action("anonymize_action", None)),
-                redacted_chat: Some(RedactedChat {
-                    all_redacted_messages: redacted,
-                }),
-            }
-        }
+        AimMode::Monitor => plain_answer("monitor_action", None),
+        AimMode::Block => plain_answer("block_action", Some("AIM says no")),
+        AimMode::BlockSilently => plain_answer("block_action", None),
+        AimMode::Redact => redacted_answer(&request.messages),
     };
     (
         StatusCode::OK,
         serde_json::to_string(&answer).expect("aim answer"),
     )
+}
+
+fn aim_action(action_type: &str, detection_message: Option<&str>) -> AimAction {
+    AimAction {
+        action_type: action_type.to_owned(),
+        detection_message: detection_message.map(str::to_owned),
+    }
+}
+
+fn plain_answer(action_type: &str, detection_message: Option<&str>) -> AimAnswer {
+    AimAnswer {
+        required_action: Some(aim_action(action_type, detection_message)),
+        redacted_chat: None,
+    }
+}
+
+// the mock redacts the last inspected message, so one choice's output comes back rewritten
+fn redacted_answer(messages: &[MessageRow]) -> AimAnswer {
+    let redacted = messages
+        .iter()
+        .enumerate()
+        .map(|(index, message)| MessageRow {
+            role: message.role.clone(),
+            content: if index + 1 == messages.len() {
+                format!("redacted:{}", message.content)
+            } else {
+                message.content.clone()
+            },
+        })
+        .collect();
+    AimAnswer {
+        required_action: Some(aim_action("anonymize_action", None)),
+        redacted_chat: Some(RedactedChat {
+            all_redacted_messages: redacted,
+        }),
+    }
 }
 
 pub(super) fn aim_guardrail(base: &str, inspect_embeddings: bool) -> AimGuardrail {
