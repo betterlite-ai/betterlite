@@ -226,7 +226,11 @@ fn caught(result: &Result<(), GuardrailFailure>) -> Option<Caught> {
             Some(*status),
             serde_json::to_value(detail).unwrap_or(Value::Null),
         ),
-        other => (None, Value::String(other.to_string())),
+        GuardrailFailure::ModifyResponse(_)
+        | GuardrailFailure::GuardrailRaised { .. }
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::Other(_) => (None, Value::String(failure.to_string())),
     };
     Some(Caught { status, detail })
 }
