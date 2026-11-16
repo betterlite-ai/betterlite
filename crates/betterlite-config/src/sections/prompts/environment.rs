@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use serde_json::Number;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 
@@ -7,8 +8,6 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 const MAX_DEPTH: usize = 100;
 // the config root and the prompts list item each add one level
 const ENTRY_DEPTH: usize = 1;
-// the litellm_params mapping adds one more
-const PARAMS_DEPTH: usize = ENTRY_DEPTH + 1;
 const ENV_PREFIX: &str = "os.environ/";
 const VERSION_KEY: &str = "version";
 const PARAMS_KEY: &str = "litellm_params";
@@ -20,74 +19,50 @@ const FLAG_KEYS: [&str; 2] = [
 
 // LiteLLM resolves the whole config before it reads prompts, so this section resolves each entry itself
 pub(super) fn resolve_entry<L>(
-    entry: IndexMap<String, Json>,
+    mut entry: IndexMap<String, Json>,
     lookup: &L,
 ) -> Result<IndexMap<String, Json>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let mut resolved = IndexMap::with_capacity(entry.len());
-    for (key, value) in entry {
-        let value = match key.as_str() {
-            VERSION_KEY => resolve_typed(&key, value, ENTRY_DEPTH, lookup)?,
-            PARAMS_KEY => match value {
-                Json::Object(params) => Json::Object(resolve_params(params, lookup)?),
-                other => resolve_value(other, ENTRY_DEPTH, lookup),
-            },
-            _ => resolve_value(value, ENTRY_DEPTH, lookup),
-        };
-        resolved.insert(key, value);
+    if let Some(version) = entry.get_mut(VERSION_KEY) {
+        resolve_typed(VERSION_KEY, version, lookup)?;
     }
-    Ok(resolved)
+    if let Some(Json::Object(params)) = entry.get_mut(PARAMS_KEY) {
+        for key in FLAG_KEYS {
+            if let Some(flag) = params.get_mut(key) {
+                resolve_typed(key, flag, lookup)?;
+            }
+        }
+    }
+    Ok(resolve_mapping(entry, ENTRY_DEPTH, lookup))
 }
 
-fn resolve_params<L>(
-    params: IndexMap<String, Json>,
-    lookup: &L,
-) -> Result<IndexMap<String, Json>, ConfigError>
+// get_secret and pydantic type these references, so a bad value is a load error that names its variable
+fn resolve_typed<L>(key: &str, field: &mut Json, lookup: &L) -> Result<(), ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let mut resolved = IndexMap::with_capacity(params.len());
-    for (key, value) in params {
-        let value = if FLAG_KEYS.contains(&key.as_str()) {
-            resolve_typed(&key, value, PARAMS_DEPTH, lookup)?
-        } else {
-            resolve_value(value, PARAMS_DEPTH, lookup)
-        };
-        resolved.insert(key, value);
-    }
-    Ok(resolved)
-}
-
-// get_secret turns true and false into a bool and pydantic reads a number string into the int field, so a
-// reference on a typed key goes through the shared env parser, and a bad value names its variable.
-// The flag fields are `bool | None = False` and PromptLiteLLMParams refuses a null, so an unset or empty
-// variable reads as false, which is how LiteLLM's None behaves. Pydantic's lax bool also takes t, f, y and n.
-fn resolve_typed<L>(key: &str, value: Json, depth: usize, lookup: &L) -> Result<Json, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let text = match value {
-        Json::Text(text) => text,
-        other => return Ok(resolve_value(other, depth, lookup)),
+    let Json::Text(text) = &*field else {
+        return Ok(());
     };
     let Some(name) = text.strip_prefix(ENV_PREFIX) else {
-        return Ok(Json::Text(text));
+        return Ok(());
     };
     let variable = lookup.lookup(name).unwrap_or_default();
-    if key == VERSION_KEY {
+    let typed = if key == VERSION_KEY {
         let version = betterlite_env::number::<i64>(name, &variable)?;
-        return Ok(version.map_or(Json::Null, |number| Json::Number(number.into())));
-    }
-    match variable.trim().to_ascii_lowercase().as_str() {
-        "t" | "y" => return Ok(Json::Bool(true)),
-        "f" | "n" => return Ok(Json::Bool(false)),
-        _ => {}
-    }
-    Ok(Json::Bool(
-        betterlite_env::flag(name, &variable)?.unwrap_or(false),
-    ))
+        version.map_or(Json::Null, |number| Json::Number(Number::from(number)))
+    } else {
+        // a flag field is `bool | None = False` and PromptLiteLLMParams refuses null, so unset reads as false
+        match variable.trim().to_ascii_lowercase().as_str() {
+            "t" | "y" => Json::Bool(true),
+            "f" | "n" => Json::Bool(false),
+            _ => Json::Bool(betterlite_env::flag(name, &variable)?.unwrap_or(false)),
+        }
+    };
+    *field = typed;
+    Ok(())
 }
 
 fn resolve_mapping<L>(
@@ -121,7 +96,11 @@ where
                 .into_iter()
                 .map(|item| match item {
                     Json::Object(mapping) => Json::Object(resolve_mapping(mapping, nested, lookup)),
-                    other => other,
+                    other @ (Json::Null
+                    | Json::Bool(_)
+                    | Json::Number(_)
+                    | Json::Text(_)
+                    | Json::List(_)) => other,
                 })
                 .collect(),
         ),

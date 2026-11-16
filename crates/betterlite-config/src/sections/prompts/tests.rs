@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
+use serde_json::Number;
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::Section;
@@ -60,7 +61,10 @@ fn converted(entry: IndexMap<String, Json>, environment: &[(&str, &str)]) -> Set
 }
 
 fn entry_leaf(settings: &Settings) -> &Json {
-    let mut current = &settings.prompts[0]["litellm_params"]["extra"];
+    let Some(Json::Object(params)) = settings.prompts[0].get("litellm_params") else {
+        panic!("litellm_params is a mapping");
+    };
+    let mut current = &params["extra"];
     while let Json::Object(mapping) = current {
         let Some((_key, inner)) = mapping.first() else {
             panic!("the fixture holds a leaf");
@@ -232,8 +236,8 @@ fn a_flag_variable_that_is_not_a_bool_is_a_load_error_naming_it() {
 }
 
 #[rstest]
-#[case::two("2", Json::Number(2.into()))]
-#[case::negative("-3", Json::Number((-3).into()))]
+#[case::two("2", Json::Number(Number::from(2)))]
+#[case::negative("-3", Json::Number(Number::from(-3)))]
 #[case::empty("", Json::Null)]
 fn a_version_reference_reads_as_a_number(#[case] value: &str, #[case] expected: Json) {
     let source = "prompts:\n  - prompt_id: greeting\n    version: os.environ/PROMPT_VERSION\n";
