@@ -216,15 +216,18 @@ async fn plan_case(
     }}))
 }
 
-async fn execute(input: &Input) -> HelperResult {
-    let environment = watsonx_environment(&input.env);
-    let provider_environment = ProviderEnvironment {
-        api_base: input.env.get("HOSTED_VLLM_API_BASE").cloned(),
-        api_key: input
-            .env
+fn vllm_environment(values: &BTreeMap<String, String>) -> ProviderEnvironment {
+    ProviderEnvironment {
+        api_base: values.get("HOSTED_VLLM_API_BASE").cloned(),
+        api_key: values
             .get("HOSTED_VLLM_API_KEY")
             .map(|value| SecretString::from(value.clone())),
-    };
+    }
+}
+
+async fn execute(input: &Input) -> HelperResult {
+    let environment = watsonx_environment(&input.env);
+    let provider_environment = vllm_environment(&input.env);
     let auth = WatsonxAuth::new(
         watsonx_environment(&input.env),
         ClosedTransport,
