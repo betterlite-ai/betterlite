@@ -1,0 +1,24 @@
+# DEFAULT_MAX_RECURSE_DEPTH bounds the model alias walk in the auth model pattern check.
+# The proxy reads it from the process environment when this config loads, the same way the
+# pinned constants.py reads it at import, so environment_variables below cannot set it.
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      access_groups: [team-models]
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+router_settings:
+  model_group_alias:
+    gpt-fast: gpt-4o
+    gpt-cheap:
+      model: gpt-4o-mini
+      hidden: true
+environment_variables:
+  DEFAULT_MAX_RECURSE_DEPTH: os.environ/DEFAULT_MAX_RECURSE_DEPTH
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

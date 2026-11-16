@@ -1,0 +1,23 @@
+{
+  "api_base": {
+    "description": "The API base for the Guardrails AI guardrail. Defaults to http://0.0.0.0:8000, the `GUARDRAILS_AI_API_BASE` environment variable is checked.",
+    "required": false,
+    "type": "string"
+  },
+  "guard_name": {
+    "description": "The name of the Guardrails AI guardrail. Required for the Guardrails AI guardrail.",
+    "required": false,
+    "type": "string"
+  },
+  "guardrails_ai_api_input_format": {
+    "default_value": "llmOutput",
+    "description": "The format of the input to the Guardrails AI API. Defaults to 'llmOutput'.",
+    "options": [
+      "inputs",
+      "llmOutput"
+    ],
+    "required": false,
+    "type": "select"
+  },
+  "ui_friendly_name": "Guardrails AI"
+}
