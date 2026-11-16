@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-// CredentialLiteLLMParams.model_fields: the only keys hydration may fill, in the class's declared order.
+// CredentialLiteLLMParams.model_fields, in declared order; the same table as betterlite-router's deployment_clients::lookup.
 #[rustfmt::skip]
 pub const CREDENTIAL_FIELDS: [&str; 40] = [
     "api_key", "api_base", "api_version", "azure_ad_token", "tenant_id", "client_id",
@@ -13,9 +13,9 @@ pub const CREDENTIAL_FIELDS: [&str; 40] = [
     "s3_access_key_id", "s3_secret_access_key", "s3_encryption_key_id", "s3_bucket_owner",
     "aws_batch_role_arn", "s3_output_bucket_name", "bedrock_tags", "watsonx_region_name",
 ];
-// The three CredentialLiteLLMParams fields pydantic declares as a mapping or a sequence, not text.
-const STRUCTURED_CREDENTIAL_FIELDS: [&str; 3] =
-    ["aws_session_tags", "bedrock_tags", "vertex_credentials"];
+// pydantic declares vertex_credentials str | dict and the two tag fields a list, never text.
+const TEXT_OR_OBJECT_FIELDS: [&str; 1] = ["vertex_credentials"];
+const LIST_ONLY_FIELDS: [&str; 2] = ["aws_session_tags", "bedrock_tags"];
 const MODEL_FIELD: &str = "model";
 const CREDENTIAL_NAME_FIELD: &str = "litellm_credential_name";
 #[derive(Debug, thiserror::Error)]
@@ -39,7 +39,7 @@ impl ModelParameters {
             let Some(value) = fields.get(field) else {
                 continue;
             };
-            if allowed_credential_value(value, STRUCTURED_CREDENTIAL_FIELDS.contains(&field)) {
+            if allowed_credential_value(field, value) {
                 continue;
             }
             return Err(ParameterError::Field { field });
@@ -95,10 +95,12 @@ impl ModelParameters {
             .insert(CREDENTIAL_NAME_FIELD.to_owned(), Json::Null);
     }
 }
-fn allowed_credential_value(value: &Json, structured: bool) -> bool {
+fn allowed_credential_value(field: &str, value: &Json) -> bool {
     match value {
-        Json::Null | Json::Text(_) => true,
-        Json::List(_) | Json::Object(_) => structured,
+        Json::Null => true,
+        Json::Text(_) => !LIST_ONLY_FIELDS.contains(&field),
+        Json::Object(_) => TEXT_OR_OBJECT_FIELDS.contains(&field),
+        Json::List(_) => LIST_ONLY_FIELDS.contains(&field),
         Json::Bool(_) | Json::Number(_) => false,
     }
 }

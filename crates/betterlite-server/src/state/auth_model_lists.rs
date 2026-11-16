@@ -115,10 +115,10 @@ fn environment_variables(config: &Config) -> BTreeMap<String, String> {
         .environment_variables
         .iter()
         .map(|(name, value)| {
-            let value = value
+            let text = value
                 .as_ref()
                 .map_or_else(String::new, |secret| secret.expose_secret().to_owned());
-            (name.clone(), value)
+            (name.clone(), text)
         })
         .collect()
 }

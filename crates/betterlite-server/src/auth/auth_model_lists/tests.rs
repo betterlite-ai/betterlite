@@ -7,8 +7,11 @@ use std::sync::atomic::AtomicBool;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
+use betterlite_auth::auth_model_lists::access_groups::AccessGroupScope;
 use betterlite_auth::auth_model_lists::complete_list::{ListingFlags, ListingRequest};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::provider_model_sets::ProviderModelSets;
 use indexmap::IndexMap;
 use tower::ServiceExt as _;
 
@@ -28,32 +31,60 @@ const LISTED: &str = concat!(
     r#"{"id":"oracle-bare","object":"model","created":1677610602,"owned_by":"openai"}],"object":"list"}"#
 );
 
-fn config() -> betterlite_config::types::Config {
+const WILDCARD_CONFIG: &str = "model_list:
+  - {model_name: wildcard-grant, litellm_params: {model: openai/oracle-first}}
+environment_variables:
+  OPENAI_API_KEY: test-openai-key
+";
+
+const ENDPOINT_CONFIG: &str = "model_list:
+  - {model_name: endpoint-grant, litellm_params: {model: openai/oracle-first}}
+litellm_settings:
+  check_provider_endpoint: true
+";
+
+fn loaded(source: &str) -> betterlite_config::types::Config {
     ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
-    .load(CONFIG)
+    .load(source)
     .expect("the test config loads")
+}
+
+fn catalog_openai_models() -> Vec<String> {
+    let mut sets = ProviderModelSets::default();
+    let mut bundled = BundledCatalog::default();
+    sets.add_known_models(&bundled.get());
+    sets.models_by_provider
+        .get("openai")
+        .expect("the bundled catalog lists openai models")
+        .iter()
+        .cloned()
+        .collect()
 }
 
 fn strings(models: &[&str]) -> Vec<String> {
     models.iter().map(|model| (*model).to_owned()).collect()
 }
 
-fn request<'request>(groups: &'request IndexMap<String, Vec<String>>) -> ListingRequest<'request> {
+fn listing_request<'request>(
+    key_models: &'request [String],
+    groups: &'request IndexMap<String, Vec<String>>,
+    flags: ListingFlags,
+) -> ListingRequest<'request> {
     ListingRequest {
-        key_models: &[],
+        key_models,
         team_models: &[],
         user_model: None,
         team_id: None,
         model_access_groups: groups,
-        flags: ListingFlags::default(),
+        flags,
     }
 }
 
 #[test]
 fn listing_service_is_registered() {
-    let document = config();
+    let document = loaded(CONFIG);
     let state = state_for(&document);
     assert_eq!(
         state.auth_model_lists.service.proxy_model_list(),
@@ -69,11 +100,11 @@ fn listing_service_is_registered() {
 
 #[tokio::test]
 async fn listing_reads_authorized_models() {
-    let state = state_for(&config());
+    let state = state_for(&loaded(CONFIG));
     let groups = IndexMap::new();
     let authorized = state
         .auth_model_lists
-        .authorized_models(&request(&groups))
+        .authorized_models(&listing_request(&[], &groups, ListingFlags::default()))
         .expect("a wildcard-free config always lists");
     assert_eq!(
         authorized,
@@ -102,5 +133,92 @@ async fn listing_reads_authorized_models() {
     assert_eq!(
         body, LISTED,
         "the model-list route lists the same names in the order the listing service returns"
+    );
+}
+
+#[test]
+fn listing_expands_catalog_wildcards() {
+    let state = state_for(&loaded(WILDCARD_CONFIG));
+    let groups = IndexMap::new();
+    let catalog_models = catalog_openai_models();
+    assert!(
+        !catalog_models.is_empty(),
+        "the bundled catalog lists openai models"
+    );
+
+    let provider_wildcard = strings(&["openai/*"]);
+    let expanded = state
+        .auth_model_lists
+        .authorized_models(&listing_request(
+            &provider_wildcard,
+            &groups,
+            ListingFlags::default(),
+        ))
+        .expect("a catalog provider wildcard always lists");
+    let expected: Vec<String> = catalog_models
+        .iter()
+        .map(|model| {
+            if model.starts_with("openai") {
+                model.clone()
+            } else {
+                format!("openai/{model}")
+            }
+        })
+        .collect();
+    assert_eq!(
+        expanded, expected,
+        "the wildcard expands every model the catalog holds for its provider"
+    );
+
+    let bare_wildcard = strings(&["*"]);
+    assert!(
+        state
+            .auth_model_lists
+            .authorized_models(&listing_request(
+                &bare_wildcard,
+                &groups,
+                ListingFlags::default()
+            ))
+            .expect("a bare wildcard without deployment rows lists nothing")
+            .is_empty(),
+        "a bare wildcard has no provider segment to expand"
+    );
+
+    let inferred = state
+        .auth_model_lists
+        .authorized_models(&listing_request(
+            &[],
+            &groups,
+            ListingFlags {
+                infer_model_from_keys: true,
+                return_wildcard_routes: false,
+                groups: AccessGroupScope::default(),
+            },
+        ))
+        .expect("inference always lists");
+    let mut inferred_expected = strings(&["wildcard-grant"]);
+    inferred_expected.extend(catalog_models);
+    assert_eq!(
+        inferred, inferred_expected,
+        "inference reads the provider list and the environment variable the config sets"
+    );
+}
+
+#[test]
+fn listing_provider_endpoint_check_lists_nothing() {
+    let state = state_for(&loaded(ENDPOINT_CONFIG));
+    let groups = IndexMap::new();
+    let provider_wildcard = strings(&["openai/*"]);
+    let expanded = state
+        .auth_model_lists
+        .authorized_models(&listing_request(
+            &provider_wildcard,
+            &groups,
+            ListingFlags::default(),
+        ))
+        .expect("an endpoint-checked wildcard always lists");
+    assert!(
+        expanded.is_empty(),
+        "no provider endpoint catalogue is built, so an endpoint check lists no models"
     );
 }

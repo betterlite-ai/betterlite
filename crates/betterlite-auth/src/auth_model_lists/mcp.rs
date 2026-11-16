@@ -17,13 +17,13 @@ pub async fn get_mcp_server_ids(
     permissions: Option<&dyn ObjectPermissions>,
     object_permission_id: Option<&str>,
 ) -> Vec<String> {
-    let Some(permissions) = permissions else {
+    let Some(store) = permissions else {
         return Vec::new();
     };
-    let Some(object_permission_id) = object_permission_id else {
+    let Some(permission_id) = object_permission_id else {
         return Vec::new();
     };
-    match permissions.mcp_servers(object_permission_id).await {
+    match store.mcp_servers(permission_id).await {
         Ok(Some(servers)) => servers,
         Ok(None) | Err(_failure) => Vec::new(),
     }

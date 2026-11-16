@@ -2,8 +2,8 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::auth_model_lists::parameters::ModelParameters;
-use crate::auth_model_lists::providers::is_wildcard;
 use crate::auth_model_lists::wildcard::{ExpansionContext, get_known_models_from_wildcard};
+use crate::auth_model_patterns::pattern::is_wildcard_pattern;
 const MODEL_NAME_FIELD: &str = "model_name";
 const LITELLM_PARAMS_FIELD: &str = "litellm_params";
 const MODEL_FIELD: &str = "model";
@@ -20,11 +20,11 @@ pub fn expand_wildcard_deployments(
             _ => JsonObject::new(),
         };
         let litellm_model = text_field(&parameters_object, MODEL_FIELD);
-        let wildcard_pattern = if is_wildcard(&model_name) && model_name.contains('/') {
+        let wildcard_pattern = if is_wildcard_pattern(&model_name) && model_name.contains('/') {
             model_name
-        } else if is_wildcard(&model_name) && is_wildcard(&litellm_model) {
+        } else if is_wildcard_pattern(&model_name) && is_wildcard_pattern(&litellm_model) {
             litellm_model
-        } else if is_wildcard(&model_name) {
+        } else if is_wildcard_pattern(&model_name) {
             model_name
         } else {
             expanded.push(deployment.clone());

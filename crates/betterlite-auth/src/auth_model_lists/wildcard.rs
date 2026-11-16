@@ -3,8 +3,9 @@ use std::collections::BTreeSet;
 use crate::auth_model_lists::credential::{CredentialSnapshot, hydrate_credential_name};
 use crate::auth_model_lists::parameters::{ModelParameters, ParameterError};
 use crate::auth_model_lists::providers::{
-    ProviderModels, get_provider_models, is_declared_provider, is_wildcard,
+    ProviderModels, get_provider_models, is_declared_provider,
 };
+use crate::auth_model_patterns::pattern::is_wildcard_pattern;
 // B302's router facts: the deployments that answer a model name, parsed into their litellm_params.
 pub trait DeploymentLookup: Send + Sync {
     fn model_rows(
@@ -55,7 +56,7 @@ pub fn wildcard_models(
     let mut models_to_remove: BTreeSet<String> = BTreeSet::new();
     let mut all_wildcard_models: Vec<String> = Vec::new();
     for model in unique_models.iter() {
-        if !is_wildcard(model) {
+        if !is_wildcard_pattern(model) {
             continue;
         }
         if return_wildcard_routes {
@@ -89,7 +90,7 @@ fn wildcard_to_expand<'model>(
     match parameters {
         Some(found)
             if wildcard_model == "*"
-                && is_wildcard(found.model())
+                && is_wildcard_pattern(found.model())
                 && found.model().contains('/') =>
         {
             found.model()

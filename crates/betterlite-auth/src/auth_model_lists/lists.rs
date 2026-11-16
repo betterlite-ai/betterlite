@@ -1,7 +1,5 @@
 use std::collections::BTreeSet;
-// SpecialModelNames: the three sentinels a key or team grant may carry instead of a model name.
-pub const ALL_TEAM_MODELS: &str = "all-team-models";
-pub const ALL_PROXY_MODELS: &str = "all-proxy-models";
+// SpecialModelNames.no_default_models; the two grant sentinels already live in auth_model_patterns.
 pub const NO_DEFAULT_MODELS: &str = "no-default-models";
 // `list(dict.fromkeys(...))`: the first occurrence keeps its place, later ones disappear.
 pub fn dedup_first(models: Vec<String>) -> Vec<String> {

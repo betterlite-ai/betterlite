@@ -38,15 +38,15 @@ pub fn hydrate_credential_name(
     parameters: Option<&ModelParameters>,
     credentials: &CredentialSnapshot,
 ) -> Option<ModelParameters> {
-    let parameters = parameters?;
-    let Some(credential_name) = parameters.credential_name() else {
-        return Some(parameters.clone());
+    let configured = parameters?;
+    let Some(credential_name) = configured.credential_name() else {
+        return Some(configured.clone());
     };
     let values = credentials.values(credential_name);
     if values.is_empty() {
-        return Some(parameters.clone());
+        return Some(configured.clone());
     }
-    let mut hydrated = parameters.clone();
+    let mut hydrated = configured.clone();
     for field in CREDENTIAL_FIELDS {
         if let Some(value) = values.get(field) {
             hydrated.fill_null(field, value);

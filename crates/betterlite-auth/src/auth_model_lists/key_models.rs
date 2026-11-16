@@ -1,7 +1,8 @@
 use indexmap::IndexMap;
 
 use crate::auth_model_lists::access_groups::{AccessGroupScope, models_from_access_groups};
-use crate::auth_model_lists::lists::{ALL_PROXY_MODELS, ALL_TEAM_MODELS, dedup_first};
+use crate::auth_model_lists::lists::dedup_first;
+use crate::auth_model_patterns::{ALL_PROXY_MODELS, ALL_TEAM_MODELS};
 #[must_use]
 pub fn get_key_models(
     key_models: &[String],

@@ -24,13 +24,13 @@ pub fn get_all_fallbacks(
     settings: Option<&Settings>,
     groups: &dyn FallbackGroups,
 ) -> Vec<String> {
-    let Some(settings) = settings else {
+    let Some(configured) = settings else {
         return Vec::new();
     };
     let chain = match fallback_type {
-        GENERAL_FALLBACK_TYPE => &settings.fallbacks,
-        CONTEXT_WINDOW_FALLBACK_TYPE => &settings.context_window_fallbacks,
-        CONTENT_POLICY_FALLBACK_TYPE => &settings.content_policy_fallbacks,
+        GENERAL_FALLBACK_TYPE => &configured.fallbacks,
+        CONTEXT_WINDOW_FALLBACK_TYPE => &configured.context_window_fallbacks,
+        CONTENT_POLICY_FALLBACK_TYPE => &configured.content_policy_fallbacks,
         unknown => {
             tracing::warn!("Unknown fallback_type: {unknown}");
             return Vec::new();

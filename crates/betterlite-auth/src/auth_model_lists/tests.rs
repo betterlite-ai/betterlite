@@ -20,15 +20,17 @@ use super::complete_list::{ListingFlags, ListingRequest, get_complete_model_list
 use super::credential::{CredentialEntry, CredentialSnapshot, hydrate_credential_name};
 use super::fallbacks::{FallbackError, FallbackGroups, get_all_fallbacks};
 use super::key_models::get_key_models;
-use super::lists::{ALL_PROXY_MODELS, ALL_TEAM_MODELS, NO_DEFAULT_MODELS};
+use super::lists::NO_DEFAULT_MODELS;
 use super::mcp::{ObjectPermissions, PermissionLookupError, get_mcp_server_ids};
 use super::model_info::expand_wildcard_deployments;
 use super::parameters::{ModelParameters, ParameterError};
-use super::providers::{ProviderModels, get_provider_models, is_declared_provider, is_wildcard};
+use super::providers::{ProviderModels, get_provider_models, is_declared_provider};
 use super::team_models::get_team_models;
 use super::wildcard::{
     DeploymentLookup, ExpansionContext, WildcardError, get_known_models_from_wildcard,
 };
+use crate::auth_model_patterns::pattern::is_wildcard_pattern;
+use crate::auth_model_patterns::{ALL_PROXY_MODELS, ALL_TEAM_MODELS};
 
 fn strings(models: &[&str]) -> Vec<String> {
     models.iter().map(|model| (*model).to_owned()).collect()
@@ -283,7 +285,7 @@ fn captured<T, F: FnOnce() -> T>(run: F) -> (T, usize, usize) {
 #[case::plain("gpt-4o", false)]
 #[case::empty("", false)]
 fn wildcard_any_asterisk_and_provider_lookup(#[case] model: &str, #[case] wildcard: bool) {
-    assert_eq!(is_wildcard(model), wildcard);
+    assert_eq!(is_wildcard_pattern(model), wildcard);
     let providers = FakeProviders::new(
         &["environment-model"],
         &[("openai", &["gpt-4o"]), ("anthropic", &["claude"])],
@@ -994,3 +996,5 @@ fn fallback_resolver_error_logs_and_returns_empty() {
     assert_eq!((warnings, errors), (0, 1));
     assert_eq!(failing.seen_chains(), 1);
 }
+
+mod shapes;

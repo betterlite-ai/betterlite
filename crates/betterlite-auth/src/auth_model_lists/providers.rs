@@ -2,7 +2,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 use strum::VariantArray as _;
 
 use crate::auth_model_lists::parameters::ModelParameters;
-// providers.json registers these slugs, but litellm.types.utils.LlmProviders does not, so provider_list lacks them.
+// providers.json registers these slugs but litellm.types.utils.LlmProviders does not; betterlite-core's cost::context and betterlite-router's fallback_plans::chains hold the same table.
 #[rustfmt::skip]
 const REGISTRY_ONLY_PROVIDERS: [ProviderId; 8] = [
     ProviderId::Abliteration, ProviderId::Aihubmix, ProviderId::Crusoe, ProviderId::Empiriolabs,
@@ -14,11 +14,6 @@ pub trait ProviderModels: Send + Sync {
         provider: Option<&str>,
         parameters: Option<&ModelParameters>,
     ) -> Option<Vec<String>>;
-}
-#[must_use]
-// ast-grep-ignore: no-one-line-functions
-pub fn is_wildcard(model: &str) -> bool {
-    model.contains('*')
 }
 #[must_use]
 pub fn get_provider_models(
