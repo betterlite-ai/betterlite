@@ -1,0 +1,15 @@
+kind: helper
+name: spend-event-decode-seed
+call:
+  spend_event_projection:
+    function: decode
+    line: '{"version":2}'
+calls:
+  - spend_event_projection:
+      function: restore
+      line: '{"version":1}'
+  - spend_event_projection:
+      function: offloadable
+      kind: batch
+env: {}
+compare: {ignore: []}
