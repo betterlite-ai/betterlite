@@ -1,6 +1,9 @@
 use std::thread;
 
 use crate::cli::tests::support::{Answer, FakeEnvironment, Harness, serve, unused_base_url};
+use crate::cli::version::print_version;
+use crate::cli_context::CliContext;
+use crate::commands::Client;
 
 const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -95,4 +98,15 @@ fn missing_server_version_prints_unavailable() {
                 .contains("betterlite Proxy Server Version: (unavailable)")
         );
     });
+}
+
+#[test]
+fn the_version_line_omits_an_empty_server_url() {
+    let context = CliContext::default();
+    let client = Client::new(&context, &FakeEnvironment::default()).unwrap();
+    let mut out = Vec::new();
+    print_version(&context, &client, &mut out).unwrap();
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.starts_with("betterlite Proxy CLI Version: "));
+    assert!(!text.contains("Server URL"), "{text}");
 }

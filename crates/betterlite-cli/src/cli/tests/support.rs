@@ -66,6 +66,30 @@ impl SecretVault for FakeVault {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct WorkingVault {
+    blob: Option<SecretString>,
+}
+
+impl SecretVault for WorkingVault {
+    fn read(&self) -> SecretRead {
+        Ok(match &self.blob {
+            Some(secret) => Read::SecretFound(secret.clone()),
+            None => Read::SecretMissing,
+        })
+    }
+
+    fn write(&mut self, blob: &SecretString) -> SecretWrite {
+        self.blob = Some(blob.clone());
+        Ok(VaultWrite::SecretStored)
+    }
+
+    fn erase(&mut self) -> SecretErase {
+        self.blob = None;
+        Ok(Erase::SecretErased)
+    }
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct Captured(Arc<Mutex<Vec<u8>>>);
 

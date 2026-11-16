@@ -56,9 +56,8 @@ fn agent_forwarded_arguments_parse() {
         .unwrap();
     let (name, sub) = matches.subcommand().unwrap();
     assert_eq!(name, "codex");
-    let forwarded: Vec<String> = sub
-        .get_many::<String>("args")
-        .map(|values| values.cloned().collect())
-        .unwrap_or_default();
-    assert_eq!(forwarded, [String::from("exec"), String::from("hello")]);
+    assert_eq!(
+        crate::cli::dispatch::forwarded_args(sub),
+        [String::from("exec"), String::from("hello")]
+    );
 }

@@ -2,13 +2,20 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use betterlite_logging::private_json::files::PrivateFiles;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::Builder;
 
 use crate::cli::Failure;
 use crate::cli::context::{self, GlobalArgs, Request};
 use crate::cli::session::CliClock;
-use crate::cli::tests::support::{Captured, FakeEnvironment, FakeVault, channel};
+use crate::cli::tests::support::{Captured, FakeEnvironment, FakeVault, WorkingVault, channel};
 use crate::cli_context::CliContext;
+use crate::credential_lifecycle::files::ManagedTokenFile;
+use crate::credential_lifecycle::outcome::SecretSave;
+use crate::credential_lifecycle::save::save_cli_token;
+use crate::token_records::file::token_file_path;
+use crate::token_records::record::CliTokenRecord;
 
 fn write_config(home: &Path, contents: &str) {
     let directory = home.join(".litellm");
@@ -182,4 +189,59 @@ fn missing_home_skips_the_stored_token_lookup() {
     .unwrap();
     assert!(context.api_key_from_token_file);
     assert!(context.api_key.is_none());
+}
+
+const STORED_PROXY: &str = "https://gateway.example";
+
+fn token_record() -> CliTokenRecord {
+    CliTokenRecord {
+        base_url: String::from(STORED_PROXY),
+        key: Some(SecretString::from("sk-secret")),
+        user_id: String::from("user-1"),
+        user_email: String::from("user@example.com"),
+        user_role: String::from("cli"),
+        auth_header_name: String::from("Authorization"),
+        jwt_token: SecretString::default(),
+        timestamp: 1_000.0,
+        expires_at: None,
+        refresh_token: None,
+        client_id: None,
+        token_endpoint: None,
+        revocation_endpoint: None,
+        resource: None,
+        team_id: None,
+    }
+}
+
+#[test]
+fn a_stored_login_supplies_the_api_key() {
+    let home = tempfile::tempdir().unwrap();
+    store_base_url(home.path(), STORED_PROXY);
+    let token_path = token_file_path(home.path());
+    let files = ManagedTokenFile {
+        files: PrivateFiles::default(),
+        path: token_path.clone(),
+    };
+    let mut vault = WorkingVault::default();
+    let outcome = {
+        let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(save_cli_token(&files, &mut vault, token_record()))
+    };
+    assert!(matches!(outcome, SecretSave::SecretStored));
+    let environment = FakeEnvironment::with_home(home.path().to_path_buf());
+    let stderr = Captured::default();
+    let context = context::resolve_for_run(Request {
+        environment: &environment,
+        globals: flags(None, None),
+        subcommand: Some("models"),
+        vault: &mut vault,
+        clock: Arc::new(CliClock),
+        token_path: Some(&token_path),
+        stderr: channel(Box::new(stderr)),
+    })
+    .unwrap();
+    assert_eq!(
+        context.api_key.as_ref().map(|key| key.expose_secret()),
+        Some("sk-secret")
+    );
 }

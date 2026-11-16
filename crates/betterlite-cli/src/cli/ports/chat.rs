@@ -5,6 +5,7 @@ use crate::commands::chat::{
 use super::super::Failure;
 use super::super::session::Session;
 
+#[cfg_attr(test, mutants::skip)]
 pub(crate) fn run(session: &mut Session<'_>, args: &ChatArgs) -> Result<(), Failure> {
     Ok(run_chat_command(
         args,

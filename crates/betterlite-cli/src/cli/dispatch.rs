@@ -1,7 +1,6 @@
 use clap::ArgMatches;
 
 use crate::agent_dispatch::{AgentCommandArgs, SKIP_VERIFY};
-use crate::agent_launch::KNOWN_AGENTS;
 
 use super::Failure;
 use super::ports;
@@ -23,9 +22,8 @@ pub(crate) fn run(session: &mut Session<'_>, matches: &ArgMatches) -> Result<u8,
         | "config" => management::run(session, name, sub),
         "configure" | "reconfigure" | "unconfigure" | "autoroute" | "chat" | "http" | "debug"
         | "statusline" | "version" => tools::run(session, name, sub),
-        agent if is_agent(agent) => agent_command(session, agent, sub),
-        // clap rejects any other name before dispatch gets the matches
-        _unknown => Ok(0),
+        // clap rejects every name outside the agent catalog before dispatch gets the matches
+        agent => agent_command(session, agent, sub),
     }
 }
 
@@ -40,15 +38,9 @@ fn agent_command(session: &mut Session<'_>, binary: &str, sub: &ArgMatches) -> R
     )
 }
 
-fn forwarded_args(matches: &ArgMatches) -> Vec<String> {
+pub(crate) fn forwarded_args(matches: &ArgMatches) -> Vec<String> {
     matches
         .get_many::<String>(FORWARDED_ARGS)
         .map(|values| values.cloned().collect())
         .unwrap_or_default()
-}
-
-fn is_agent(name: &str) -> bool {
-    KNOWN_AGENTS
-        .iter()
-        .any(|(binary, _name, _profiles, _hidden)| *binary == name)
 }
