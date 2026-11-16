@@ -1,0 +1,13 @@
+kind: helper
+name: mcp-user-env-vars-decode-object
+call:
+  b4714:
+    function: get
+    salt_key: b4714-salt
+    user_id: user-1
+    server_id: srv-1
+    rows:
+      - {user_id: user-1, server_id: srv-1, values_b64: 'F79vrGjHN3nZ5VZwOO0kIox-wuXgS7I0mPFk6uiP2RtFJ9qenc8kOCY2Bg8Yfd1thhRxiEAJWd_zY4_PJIeUuBr60AWAFZS3B4GA4pg82cKVLnxKdg=='}
+env:
+  LITELLM_SALT_KEY: b4714-salt
+compare: {ignore: []}

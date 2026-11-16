@@ -1,0 +1,19 @@
+kind: helper
+name: a2a-no-api-base
+call:
+  b050:
+    op: dispatch
+    platform: a2a
+    model: unknown-agent
+    messages: [{role: user, content: hi}]
+    stream: null
+    api_base: null
+    api_key: null
+    headers: null
+    optionals: {}
+    globals: {api_base: null, api_key: null, headers: null}
+    environment: {}
+    registry: []
+    upstream: {status: 200, body: '{}'}
+env: {}
+compare: {ignore: []}

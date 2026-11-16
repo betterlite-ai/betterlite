@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-server-env-var-encryption
+call:
+  b4712:
+    function: create
+    salt_key: b4712-salt
+    touched_by: admin
+    payload:
+      server_id: srv-env
+      server_name: Env
+      url: https://env.test/mcp
+      env_vars:
+        - {name: API_KEY, value: global-secret, scope: global, description: shared key}
+        - {name: USER_TOKEN, value: placeholder, scope: user}
+    rows: []
+    server_id: ''
+    ttl_seconds: 0
+    users: []
+env:
+  LITELLM_SALT_KEY: b4712-salt
+compare: {ignore: []}
