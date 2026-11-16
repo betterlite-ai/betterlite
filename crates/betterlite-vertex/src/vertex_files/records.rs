@@ -5,7 +5,7 @@ use betterlite_openai::files::records::{
 };
 use percent_encoding::percent_decode_str;
 use serde::Deserialize;
-use serde::de::IgnoredAny;
+use serde_json::value::RawValue;
 use serde_with::{DefaultOnNull, serde_as};
 
 use crate::provider_metadata::timestamp::{LocalTimeContext, decode_vertex_timestamp};
@@ -61,7 +61,7 @@ pub fn decode_vertex_file_metadata(
     }
     // a struct derive reads a JSON array positionally; a map rejects every non-object reply up front
     let mut shape_decoder = serde_json::Deserializer::from_slice(bytes);
-    let _object: BTreeMap<String, IgnoredAny> =
+    let _object: BTreeMap<String, Box<RawValue>> =
         serde_path_to_error::deserialize(&mut shape_decoder).map_err(VertexFilesError::Record)?;
     let mut decoder = serde_json::Deserializer::from_slice(bytes);
     let record: MetadataRecord =
