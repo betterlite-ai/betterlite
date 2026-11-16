@@ -1,0 +1,110 @@
+kind: helper
+name: foundry-models-embeddings-route
+call:
+  foundry_embeddings:
+    flows:
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: sk-route-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.2]}],"model":"text-model","usage":{"prompt_tokens":3,"completion_tokens":0,"total_tokens":3}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1/models
+        api_key: sk-route-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/openai/deployments/deployment
+        api_key: sk-route-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://example.com/v1
+        api_key: sk-route-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: 'HTTPS://acct.services.ai.azure.com/v1?api-version=2024-05-01#frag'
+        api_key: sk-route-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1/models/
+        api_key: sk-route-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: null
+        api_key: sk-route-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: null
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: async
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: sk-async-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: async
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: null
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+env: {}
+compare:
+  ignore:
+    - pointer: /value/flows/9/calls/0/authorization
+      why: LiteLLM formats a missing key into the header with Python str(None) as Bearer None, betterlite sends an empty bearer for an absent key.

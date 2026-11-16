@@ -1,0 +1,5 @@
+kind: helper
+name: azure_native_speech-speed_rate_boundaries-seed
+call: {azure_native_speech: {speed_rate_boundaries: {speeds: [null, 2.0, 0.5]}}}
+env: {}
+compare: {ignore: []}

@@ -149,7 +149,7 @@ checks:
     why: the new external enum tag has no added seed or the shared parser rejects it
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_file_search_loop-*)"
       && grep -qE "^[[:space:]]+responses_file_search_loop:" tools/oracle/fuzz/corpus/helper_case/responses_file_search_loop-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-oracle-cases
     why: no new domain case exists on this branch
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-file-search-loop)"

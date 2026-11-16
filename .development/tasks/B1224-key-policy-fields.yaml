@@ -224,7 +224,7 @@ checks:
       why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/key-policy-fields-*")"
         && grep -rlq "key_policy_fields" tools/oracle/fuzz/corpus/helper_case/key-policy-fields-* && cargo
-        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::key_policy_fields::tests::/)

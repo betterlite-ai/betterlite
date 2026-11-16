@@ -1,0 +1,24 @@
+kind: helper
+name: foundry-chat-azure-openai-model-redirect
+call:
+  foundry_chat:
+    model_cost: {}
+    chat_models: [gpt-4o]
+    text_models: [text-davinci-003]
+    # litellm.open_ai_embedding_models is a Final set the adapter cannot replace, so the seed mirrors its one entry
+    embedding_models: [text-embedding-ada-002]
+    providers:
+      - {model: gpt-4o, api_base: "https://my.openai.azure.com", api_key: explicit-key, environment: {}}
+      - {model: azure_ai/gpt-4o, api_base: "https://my.openai.azure.com", api_key: explicit-key, environment: {}}
+      - {model: openai/gpt-4o, api_base: "https://my.openai.azure.com", api_key: explicit-key, environment: {}}
+      - {model: gpt-4o, api_base: "https://litellm8397336933.services.ai.azure.com", api_key: explicit-key, environment: {}}
+      - {model: gpt-4o, api_base: "https://litellm8397336933.services.ai.azure.com/openai/deployments/d", api_key: explicit-key, environment: {}}
+      - {model: text-davinci-003, api_base: "https://my.openai.azure.com", api_key: explicit-key, environment: {}}
+      - {model: text-embedding-ada-002, api_base: "https://my.openai.azure.com", api_key: explicit-key, environment: {}}
+      - {model: gpt-4o, api_base: null, api_key: explicit-key, environment: {AZURE_AI_API_BASE: "https://env.openai.azure.com", AZURE_AI_API_KEY: env-key}}
+      - {model: gpt-4o, api_base: null, api_key: null, environment: {AZURE_AI_API_BASE: "https://env.openai.azure.com"}}
+      - {model: unknown-model, api_base: "https://my.openai.azure.com", api_key: explicit-key, environment: {}}
+      - {model: gpt-4o, api_base: null, api_key: explicit-key, environment: {}}
+      - {model: gpt-4o, api_base: "https://studio.example.test/", api_key: explicit-key, environment: {}}
+env: {}
+compare: {ignore: []}
