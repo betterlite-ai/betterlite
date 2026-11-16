@@ -1,7 +1,12 @@
+use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
+use betterlite_prompts::media::inline::RemoteMediaFetcher;
+use betterlite_prompts::media_fetch::error::ImageFetchError;
 
 use crate::count::settings::Settings as CountSettings;
 use crate::count::text::{Counted, Texter};
@@ -78,13 +83,91 @@ pub(crate) fn cl100k_fixture() -> Fixture {
     )
 }
 
-pub(crate) async fn count(
+// a fetch would be a bug on the paths that must not fetch, so the refusal doubles as the guard
+pub(crate) struct RefusingFetcher {
+    pub(crate) calls: AtomicUsize,
+}
+
+impl RemoteMediaFetcher for RefusingFetcher {
+    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        ready(Err(ImageFetchError::Disabled {
+            url: url.to_owned(),
+        }))
+    }
+
+    fn convert_urls(
+        &self,
+        urls: &[String],
+    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
+        self.calls.fetch_add(urls.len(), Ordering::SeqCst);
+        let url = urls.first().cloned().unwrap_or_default();
+        ready(Err(ImageFetchError::Disabled { url }))
+    }
+}
+
+pub(crate) struct MappingFetcher {
+    pub(crate) urls: BTreeMap<String, String>,
+    pub(crate) calls: AtomicUsize,
+}
+
+impl RemoteMediaFetcher for MappingFetcher {
+    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        ready(
+            self.urls
+                .get(url)
+                .cloned()
+                .ok_or_else(|| ImageFetchError::Attempts {
+                    url: url.to_owned(),
+                }),
+        )
+    }
+
+    async fn convert_urls(&self, urls: &[String]) -> Result<Vec<String>, ImageFetchError> {
+        let mut converted = Vec::with_capacity(urls.len());
+        for url in urls {
+            converted.push(self.convert_url(url).await?);
+        }
+        Ok(converted)
+    }
+}
+
+pub(crate) async fn count<Fetcher>(
     fixture: &Fixture,
     input: &str,
     settings: &Settings,
-) -> Result<MediaCounted, MediaError> {
+    fetcher: &Fetcher,
+) -> Result<MediaCounted, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
     let media = TokenMedia::try_from(input.as_bytes())?;
-    count::count_token_media(&fixture.texter(), &media, settings).await
+    count::count_token_media(&fixture.texter(), &media, settings, fetcher).await
+}
+
+pub(crate) fn plain(inner: &str) -> String {
+    format!(r#"{{"content":[{inner}]}}"#)
+}
+
+pub(crate) fn image_url(url: &str, detail: &str) -> String {
+    format!(
+        r#"{{"content":[{{"type":"image_url","image_url":{{"url":"{url}","detail":"{detail}"}}}}]}}"#
+    )
+}
+
+pub(crate) fn image_url_string(url: &str) -> String {
+    format!(r#"{{"content":[{{"type":"image_url","image_url":"{url}"}}]}}"#)
+}
+
+pub(crate) fn document(source: &str, title: &str) -> String {
+    format!(r#"{{"content":[{{"type":"document","title":"{title}","source":{source}}}]}}"#)
+}
+
+pub(crate) fn file(filename: &str, file_data: &str) -> String {
+    format!(
+        r#"{{"content":[{{"type":"file","file":{{"filename":"{filename}","file_data":"{file_data}"}}}}]}}"#
+    )
 }
 
 pub(crate) fn nested_documents(depth: usize) -> String {

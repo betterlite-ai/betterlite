@@ -1,0 +1,30 @@
+kind: helper
+name: vertex-gemini-edit-empty-inline-data
+call:
+  vertex_gemini_edit:
+    model: gemini-2.5-flash-image
+    prompt: null
+    image: [{kind: bytes, data_base64: iVBORw0KGgo=}]
+    optional_params: {}
+    target: null
+    response:
+      candidates:
+        - content:
+            parts:
+              - {inlineData: {data: ""}}
+              - {text: ignored}
+        - content:
+            parts:
+              - {inlineData: {data: AAA}, thoughtSignature: sig}
+        - finishReason: STOP
+      usageMetadata: {totalTokenCount: 9}
+calls:
+  - vertex_gemini_edit:
+      model: gemini-2.5-flash-image
+      prompt: null
+      image: [{kind: seekable, data_base64: MDEyMzQ1Njc4OWFiY2RlZg==, position: 0}]
+      optional_params: {}
+      target: null
+      response: {candidates: []}
+env: {}
+compare: {ignore: []}

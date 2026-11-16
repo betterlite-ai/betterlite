@@ -79,7 +79,7 @@ checks:
     run: test -f crates/betterlite-server/fuzz/fuzz_targets/management_json.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/management_json)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_management_boundaries::tests::replays_corpus$/)'
   - id: helper-corpus
     why: new management projection inputs have no external-tag parser seed
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector-management-projection-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector-management-projection-*)" && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/vector-management-projection/ownership-projection.yaml
 - tools/oracle/cases/helpers/vector-management-projection/redact-vector-credentials.yaml

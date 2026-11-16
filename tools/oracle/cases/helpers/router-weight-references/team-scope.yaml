@@ -1,0 +1,33 @@
+kind: helper
+name: other-team-hidden
+call:
+  router_weight_references:
+    model_group: gpt-4o
+    deployment_id: dep-1
+    team_id: team-a
+    stored:
+      model_name: gpt-4o
+      model_info:
+        team_id: team-b
+    configured: null
+calls:
+  - router_weight_references:
+      model_group: public-model
+      deployment_id: dep-2
+      team_id: team-a
+      stored:
+        model_name: team-internal
+        model_info:
+          team_id: team-a
+          team_public_model_name: public-model
+      configured: null
+  - router_weight_references:
+      model_group: gpt-4o
+      deployment_id: dep-3
+      team_id: team-a
+      stored:
+        model_name: gpt-4o
+        model_info: {}
+      configured: null
+env: {}
+compare: {ignore: []}

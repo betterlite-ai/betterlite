@@ -1,0 +1,38 @@
+kind: helper
+name: guardrail-usage-field-extraction
+call:
+  b3689:
+    function: guardrail_overview
+    cases:
+      - records:
+          - {guardrail_id: a, guardrail_name: Alpha, litellm_params: {guardrail: lakera}, guardrail_info: {type: pii}}
+          - {guardrail_id: b, guardrail_name: null}
+          - {guardrail_id: c, guardrail_name: "", litellm_params: {}, guardrail_info: {}}
+          - {guardrail_id: d, guardrail_name: Delta, litellm_params: {guardrail: ""}, guardrail_info: {type: ""}}
+          - {guardrail_id: e, guardrail_name: Echo, litellm_params: {guardrail: custom-x, other: 1}, guardrail_info: {type: content-filter, model: m}}
+          - {guardrail_id: f, guardrail_name: Foxtrot, guardrail_info: {type: 7}}
+          - {guardrail_id: g, guardrail_name: Golf, guardrail_info: {type: 1.5}}
+          - {guardrail_id: h, guardrail_name: Hotel, guardrail_info: {type: 2.0}}
+        aggregates:
+          metrics: {}
+          previous_rates: {}
+          units: {}
+          costs: {}
+          untracked: {}
+calls:
+  - b3689:
+      function: guardrail_overview
+      cases:
+        - records:
+            - {guardrail_id: id-8, guardrail_name: ""}
+          aggregates:
+            metrics:
+              id-8: {requests: 10, passed: 5, blocked: 5, flagged: 0}
+            previous_rates: {id-8: 10.0}
+            units:
+              id-8: {requests: 10}
+            costs: {id-8: 0.25}
+            untracked:
+              id-8: {requests: 5}
+env: {}
+compare: {ignore: []}

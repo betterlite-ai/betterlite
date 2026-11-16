@@ -1,0 +1,45 @@
+kind: helper
+name: guardrail-usage-policy-overview-rows
+call:
+  b3689:
+    function: policy_overview
+    cases:
+      - records:
+          - {policy_id: pol-1, policy_name: PII policy}
+          - {policy_id: pol-2, policy_name: null}
+          - {policy_id: pol-3, policy_name: ""}
+        aggregates:
+          metrics:
+            pol-1: {requests: 20, passed: 18, blocked: 2, flagged: 0}
+          previous_rates: {pol-1: 10.0}
+          units:
+            pol-1: {requests: 20}
+          costs: {pol-1: 0.5}
+          untracked:
+            pol-1: {requests: 2}
+calls:
+  - b3689:
+      function: policy_overview
+      cases:
+        - records: []
+          aggregates:
+            metrics: {}
+            previous_rates: {}
+            units: {}
+            costs: {}
+            untracked: {}
+  - b3689:
+      function: policy_overview
+      cases:
+        - records:
+            - {policy_id: pol-9, policy_name: Ninth}
+            - {policy_id: pol-9, policy_name: Ninth again}
+          aggregates:
+            metrics:
+              pol-9: {requests: 4, passed: 1, blocked: 3, flagged: 0}
+            previous_rates: {pol-9: 100.0}
+            units: {}
+            costs: {}
+            untracked: {}
+env: {}
+compare: {ignore: []}

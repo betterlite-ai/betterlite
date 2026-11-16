@@ -1,3 +1,4 @@
+use betterlite_prompts::media_fetch::error::ImageFetchError;
 use thiserror::Error;
 
 use crate::count::error::CountError;
@@ -22,8 +23,8 @@ pub enum MediaError {
     EmptyImageUrl,
     #[error("the {kind} source is not counted")]
     UnsupportedSource { kind: &'static str },
-    #[error("an image needs its exact dimensions and no local bytes were given")]
-    RemoteNeedsDefaultCount,
+    #[error(transparent)]
+    Fetch(#[from] ImageFetchError),
     #[error("the content nesting exceeds {limit} levels")]
     TooDeep { limit: usize },
     #[error("the token count does not fit in a machine word")]

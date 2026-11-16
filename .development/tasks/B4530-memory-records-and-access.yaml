@@ -127,7 +127,7 @@ checks:
       run: test -f tools/oracle/helpers/b4530.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
       why: New memory_records seeds must reach the shared typed helper envelope corpus.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/memory-records-*")" && grep -rlq memory_records tools/oracle/fuzz/corpus/helper_case/memory-records-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/memory-records-*")" && grep -rlq memory_records tools/oracle/fuzz/corpus/helper_case/memory-records-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/memory-records/models-and-defaults.yaml
   - tools/oracle/cases/helpers/memory-records/visibility-and-ownership.yaml

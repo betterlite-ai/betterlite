@@ -7,6 +7,8 @@ description: >-
   This task completes the interaction HTTP foundation (B3492 owns retrieval, B3494 owns deletion/cancellation) and supplies the POST transport for public creation (B3495 retrieves, B3499 creates).
 scope:
   paths:
+    - "crates/betterlite-http/src/interactions/lifecycle/synchronous.rs"
+    - "crates/betterlite-http/src/interactions/lifecycle.rs"
     - crates/betterlite-http/src/interactions/create.rs
     - crates/betterlite-http/src/interactions/streaming.rs
     - crates/betterlite-http/src/interactions/create/**
