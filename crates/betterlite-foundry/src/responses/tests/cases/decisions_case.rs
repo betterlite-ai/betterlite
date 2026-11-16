@@ -1,6 +1,8 @@
+use std::hint::black_box;
+
 use betterlite_models::decisions::ir;
 use betterlite_models::decisions::{DecisionsJson, Extra};
-use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
+use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 use betterlite_openai::decisions::transformation::wire::ProviderRequestWire;
 
 use crate::responses::decisions::AzureAiDecisionsConfig;
@@ -32,7 +34,7 @@ fn metadata() {
         AzureAiDecisionsConfig::API_BASE_ENV,
         ["AZURE_AI_API_BASE"].as_slice()
     );
-    assert!(AzureAiDecisionsConfig::API_KEY_REQUIRED);
+    assert!(black_box(AzureAiDecisionsConfig::API_KEY_REQUIRED));
 }
 
 fn url(api_base: &str) -> String {

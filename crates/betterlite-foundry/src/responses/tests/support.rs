@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
 use betterlite_azure::credentials::source::{
@@ -50,7 +50,10 @@ impl CredentialSources for FixtureSources {
             record.client_secret.expose_secret(),
             record.scope.as_str(),
         );
-        self.calls.lock().unwrap().push(token.clone());
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(token.clone());
         Ok(Arc::new(EchoProvider { token }))
     }
 

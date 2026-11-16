@@ -68,7 +68,7 @@ fn entra_identities() {
         "client-first",
         "secret-first",
     );
-    let first_token = first.get("Authorization").unwrap();
+    let first_token = &first["Authorization"];
     assert!(first_token.contains("tenant=tenant-first"), "{first_token}");
     assert!(!first_token.contains("secret-second"), "{first_token}");
     assert_single_call(&first_sources, "secret-first", "client-second");
@@ -79,7 +79,7 @@ fn entra_identities() {
         "client-second",
         "secret-second",
     );
-    let second_token = second.get("Authorization").unwrap();
+    let second_token = &second["Authorization"];
     assert!(
         second_token.contains("client=client-second"),
         "{second_token}"

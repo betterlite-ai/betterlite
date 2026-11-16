@@ -2,7 +2,6 @@ import os
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
-from unittest import mock
 
 import httpx
 import litellm
@@ -136,8 +135,22 @@ def step_environment(step: UrlStep | AuthStep) -> dict[str, str]:
     return {} if values is None else values
 
 
+@contextmanager
+def environment_overrides(values: dict[str, str]) -> Generator[None]:
+    saved = {name: os.environ[name] for name in values if name in os.environ}
+    os.environ.update(values)
+    try:
+        yield
+    finally:
+        for name in values:
+            if name in saved:
+                os.environ[name] = saved[name]
+            else:
+                os.environ.pop(name, None)
+
+
 def url_answer(step: UrlStep) -> Object:
-    with mock.patch.dict(os.environ, step_environment(step)), global_settings(
+    with environment_overrides(step_environment(step)), global_settings(
         step.get("global_api_base"), None
     ):
         try:
@@ -148,7 +161,8 @@ def url_answer(step: UrlStep) -> Object:
 
 
 def auth_params(step: AuthStep) -> GenericLiteLLMParams:
-    params: EntraParams = step.get("params", {})
+    given = step.get("params")
+    params: EntraParams = {} if given is None else given
     return GenericLiteLLMParams(
         **params, api_key=step.get("api_key"), api_base=step.get("api_base")
     )
@@ -157,7 +171,7 @@ def auth_params(step: AuthStep) -> GenericLiteLLMParams:
 def auth_answer(step: AuthStep) -> Object:
     given = step.get("headers")
     with (
-        mock.patch.dict(os.environ, step_environment(step)),
+        environment_overrides(step_environment(step)),
         global_settings(step.get("global_api_base"), step.get("global_api_key")),
         grant_overrides(),
     ):

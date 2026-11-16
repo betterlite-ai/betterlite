@@ -4,7 +4,7 @@ use betterlite_foundry::responses::auth::{EnvironmentRequest, validate_environme
 use betterlite_foundry::responses::decisions::AzureAiDecisionsConfig;
 use betterlite_foundry::responses::url::complete_url;
 use betterlite_foundry::responses::{PROVIDER, SUPPORTS_NATIVE_WEBSOCKET};
-use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
+use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
