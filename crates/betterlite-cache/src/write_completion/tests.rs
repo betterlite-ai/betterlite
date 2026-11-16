@@ -512,7 +512,7 @@ async fn stream_chunks_wait_for_final_chunk() {
         calls: Mutex::new(Vec::new()),
     };
     add_streaming_response_to_cache(
-        &chunk("hel", None),
+        &chunk("hello", None),
         &mut handler,
         &assembler,
         1.25,

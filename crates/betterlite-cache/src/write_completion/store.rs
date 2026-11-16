@@ -89,7 +89,15 @@ where
         CacheableResult::Embedding(response)
             if cache.key_settings.cache_type != LiteLlmCacheType::S3 =>
         {
-            start_pipeline_write(cache, &context.tracker, dual_cache, &prepared, response);
+            start_write(
+                cache,
+                &context.tracker,
+                &prepared,
+                WriteTarget::Embedding {
+                    result: response.clone(),
+                    dual: dual_cache.map(SharedDualCache::shared),
+                },
+            );
         }
         CacheableResult::Chat(_)
         | CacheableResult::Embedding(_)
@@ -100,14 +108,17 @@ where
             start_write(
                 cache,
                 &context.tracker,
-                dual_cache,
                 &prepared,
-                CacheValue::Text(text),
+                WriteTarget::Response {
+                    value: CacheValue::Text(text),
+                    dual: dual_cache.map(SharedDualCache::shared),
+                },
             );
         }
         CacheableResult::Other(response) => {
             let value = to_cache_value(response).ok_or(StoreError::Unrepresentable)?;
-            start_write(cache, &context.tracker, None, &prepared, value);
+            let target: WriteTarget<Memory> = WriteTarget::Response { value, dual: None };
+            start_write(cache, &context.tracker, &prepared, target);
         }
     }
     Ok(())
@@ -156,66 +167,51 @@ fn cache_value(result: &CacheableResult) -> Result<CacheValue, StoreError> {
     to_cache_value(&json).ok_or(StoreError::Unrepresentable)
 }
 
-// The write factory runs at least twice when the event loop shuts down, so its captured request and value stay cloneable.
+enum WriteTarget<Memory: MemoryCacheOps> {
+    Response {
+        value: CacheValue,
+        dual: Option<SharedDualCache<Memory>>,
+    },
+    Embedding {
+        result: EmbeddingResponse,
+        dual: Option<SharedDualCache<Memory>>,
+    },
+}
+
+// The write factory can run a second time when the event loop shuts down, so it captures owned copies of everything.
 fn start_write<L, C, Memory>(
     cache: &Arc<ResponseCache<L, C>>,
     tracker: &Arc<CacheWriteTracker>,
-    dual_cache: Option<&DualCache<Memory>>,
     request: &CacheWriteRequest,
-    value: CacheValue,
+    target: WriteTarget<Memory>,
 ) where
     L: LoggerSink + Send + Sync + 'static,
     C: ConsoleSink + Send + Sync + 'static,
     Memory: MemoryCacheOps + 'static,
 {
     let cache = Arc::clone(cache);
-    let dual = dual_cache.map(SharedDualCache::shared);
     let request = request.clone();
-    let factory = move || {
+    let target = Arc::new(target);
+    let factory = move || -> CacheWriteFuture {
         let cache = Arc::clone(&cache);
-        let dual = dual.clone();
         let request = request.clone();
-        let value = value.clone();
-        let future: CacheWriteFuture = Box::pin(async move {
+        let target = Arc::clone(&target);
+        Box::pin(async move {
             let mut envelope = request.envelope();
-            let dynamic: Option<&dyn EnvelopeBackend> =
-                dual.as_ref().map(|store| store as &dyn EnvelopeBackend);
-            cache.async_add_cache(dynamic, &mut envelope, &value).await;
+            match target.as_ref() {
+                WriteTarget::Response { value, dual } => {
+                    let dynamic: Option<&dyn EnvelopeBackend> =
+                        dual.as_ref().map(|store| store as &dyn EnvelopeBackend);
+                    cache.async_add_cache(dynamic, &mut envelope, value).await;
+                }
+                WriteTarget::Embedding { result, dual } => {
+                    let dynamic: Option<&dyn CacheBackend> =
+                        dual.as_ref().map(|store| store as &dyn CacheBackend);
+                    async_add_cache_pipeline(&cache, dynamic, None, &mut envelope, result).await;
+                }
+            }
             Ok(())
-        });
-        future
-    };
-    let _write = tracker.spawn(factory);
-}
-
-fn start_pipeline_write<L, C, Memory>(
-    cache: &Arc<ResponseCache<L, C>>,
-    tracker: &Arc<CacheWriteTracker>,
-    dual_cache: Option<&DualCache<Memory>>,
-    request: &CacheWriteRequest,
-    result: &EmbeddingResponse,
-) where
-    L: LoggerSink + Send + Sync + 'static,
-    C: ConsoleSink + Send + Sync + 'static,
-    Memory: MemoryCacheOps + 'static,
-{
-    let cache = Arc::clone(cache);
-    let dual = dual_cache.map(SharedDualCache::shared);
-    let request = request.clone();
-    let result = result.clone();
-    let factory = move || {
-        let cache = Arc::clone(&cache);
-        let dual = dual.clone();
-        let request = request.clone();
-        let result = result.clone();
-        let future: CacheWriteFuture = Box::pin(async move {
-            let mut envelope = request.envelope();
-            let dynamic: Option<&dyn CacheBackend> =
-                dual.as_ref().map(|store| store as &dyn CacheBackend);
-            async_add_cache_pipeline(&cache, dynamic, None, &mut envelope, &result).await;
-            Ok(())
-        });
-        future
+        })
     };
     let _write = tracker.spawn(factory);
 }

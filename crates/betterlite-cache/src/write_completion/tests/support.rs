@@ -308,19 +308,14 @@ pub(crate) fn memory() -> Arc<LocalMemoryOps> {
 }
 
 pub(crate) fn handler(kwargs: KeyObject) -> CachingHandler {
-    CachingHandler::new(
-        HandlerDependencies {
-            original_function: OriginalFunction {
-                name: "acompletion".to_owned(),
-                parameters: vec!["model".to_owned(), "messages".to_owned()],
-            },
-            start_time: 0.0,
-            redis_cache: None,
-            in_memory_cache: memory(),
-            dual_settings: dual_settings(),
-        },
-        kwargs,
-    )
+    let dependencies = HandlerDependencies {
+        original_function: original("acompletion", &["model", "messages"]),
+        start_time: 0.0,
+        redis_cache: None,
+        in_memory_cache: memory(),
+        dual_settings: dual_settings(),
+    };
+    CachingHandler::new(dependencies, kwargs)
 }
 
 pub(crate) fn original(name: &str, parameters: &[&str]) -> OriginalFunction {

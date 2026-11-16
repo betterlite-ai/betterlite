@@ -36,7 +36,34 @@ struct CacheStreamChunks<'a> {
     is_async: bool,
 }
 
-// LiteLLM's _add_streaming_response_to_cache: the buffer grows until the chunk with a finish reason, and only its assembly is stored.
+// One finished chunk: buffered while it has no finish reason, and assembled into the response to store once it has one.
+fn finish_stream(
+    result: &SuccessResult,
+    handler: &mut CachingHandler,
+    assembler: &dyn CacheStreamAssembler,
+    now: f64,
+    is_async: bool,
+) -> Result<Option<Json>, StoreError> {
+    let chunks = if is_async {
+        &mut handler.async_streaming_chunks
+    } else {
+        &mut handler.sync_streaming_chunks
+    };
+    let mut buffer = CacheStreamChunks {
+        chunks,
+        assembler,
+        start_time: handler.start_time,
+        end_time: now,
+        request_kwargs: &handler.request_kwargs,
+        is_async,
+    };
+    let Some(chunk) = to_cache_value(result.response()) else {
+        return Err(StoreError::Unrepresentable);
+    };
+    Ok(assemble_complete_stream(result, &chunk, &mut buffer))
+}
+
+// ast-grep-ignore: no-long-names - LiteLLM's _add_streaming_response_to_cache: only the assembled final chunk is stored.
 pub fn add_streaming_response_to_cache<L, C>(
     result: &SuccessResult,
     handler: &mut CachingHandler,
@@ -48,28 +75,17 @@ where
     L: LoggerSink + Send + Sync + 'static,
     C: ConsoleSink + Send + Sync + 'static,
 {
-    let mut chunks = CacheStreamChunks {
-        chunks: &mut handler.async_streaming_chunks,
-        assembler,
-        start_time: handler.start_time,
-        end_time: now,
-        request_kwargs: &handler.request_kwargs,
-        is_async: true,
-    };
-    let chunk = to_cache_value(result.response()).ok_or(StoreError::Unrepresentable)?;
-    let Some(complete) = assemble_complete_stream(result, &chunk, &mut chunks) else {
+    let Some(complete) = finish_stream(result, handler, assembler, now, true)? else {
         return Ok(());
     };
-    store_response(
-        context,
-        handler.dual_cache.as_ref(),
-        &StoreRequest {
-            result: &CacheableResult::Chat(complete),
-            original_function: &handler.original_function,
-            kwargs: &handler.request_kwargs,
-            args: &[],
-        },
-    )
+    let stored = CacheableResult::Chat(complete);
+    let request = StoreRequest {
+        result: &stored,
+        original_function: &handler.original_function,
+        kwargs: &handler.request_kwargs,
+        args: &[],
+    };
+    store_response(context, handler.dual_cache.as_ref(), &request)
 }
 
 pub fn add_sync_streaming_to_cache<L, C>(
@@ -83,27 +99,21 @@ where
     L: LoggerSink + Send + Sync,
     C: ConsoleSink + Send + Sync,
 {
-    let mut chunks = CacheStreamChunks {
-        chunks: &mut handler.sync_streaming_chunks,
-        assembler,
-        start_time: handler.start_time,
-        end_time: now,
-        request_kwargs: &handler.request_kwargs,
-        is_async: false,
-    };
-    let chunk = to_cache_value(result.response()).ok_or(StoreError::Unrepresentable)?;
-    let Some(complete) = assemble_complete_stream(result, &chunk, &mut chunks) else {
-        return Ok(());
-    };
-    store_response_sync(
-        context,
-        &StoreRequest {
-            result: &CacheableResult::Chat(complete),
-            original_function: &handler.original_function,
-            kwargs: &handler.request_kwargs,
-            args: &[],
-        },
-    )
+    match finish_stream(result, handler, assembler, now, false)? {
+        Some(complete) => {
+            let stored = CacheableResult::Chat(complete);
+            store_response_sync(
+                context,
+                &StoreRequest {
+                    result: &stored,
+                    original_function: &handler.original_function,
+                    kwargs: &handler.request_kwargs,
+                    args: &[],
+                },
+            )
+        }
+        None => Ok(()),
+    }
 }
 
 impl StreamChunks<CacheValue> for CacheStreamChunks<'_> {

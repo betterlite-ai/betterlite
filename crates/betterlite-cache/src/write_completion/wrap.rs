@@ -26,9 +26,8 @@ pub struct StreamCacheHandler<'a> {
     pub request_kwargs: &'a KeyObject,
 }
 
-// LiteLLM's wrap_streaming_result_for_cache: only an Anthropic Messages async stream that would be stored gets a writer.
+// ast-grep-ignore: no-long-names - LiteLLM's wrap_streaming_result_for_cache: only an Anthropic Messages async stream that would be stored gets a writer.
 pub fn wrap_streaming_result_for_cache(
-    // ast-grep-ignore: no-long-names
     result_kind: ResultKind,
     call_type: CachingSupportedCallType,
     handler: &StreamCacheHandler<'_>,
