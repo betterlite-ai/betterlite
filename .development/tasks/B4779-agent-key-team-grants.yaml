@@ -99,7 +99,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_permission_handler::(.*strict|.*warning)/)'
     - id: oracle-cases
       why: oracle cases do not run, fail or mismatch LiteLLM's behavior
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::auth::b4779::/)'
+      run: cargo nextest run --locked -p betterlite-oracle-auth --no-tests=fail -E 'test(/^b4779::/)'
 oracle_cases:
   - tools/oracle/cases/agent_grants/key_only.yaml
   - tools/oracle/cases/agent_grants/team_only.yaml

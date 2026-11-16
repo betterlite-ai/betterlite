@@ -19,7 +19,8 @@ use tokio::runtime::{Builder, Runtime};
 use super::input::{Input, Operation};
 use super::invalid;
 use super::scripting::{ScriptedClient, ScriptedJitter, ScriptedSleeper};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const MODEL_LIMIT: usize = 50;
 

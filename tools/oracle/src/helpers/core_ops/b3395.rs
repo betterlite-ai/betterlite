@@ -17,10 +17,13 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tracing::field::{Field, Visit};
-use tracing::{Event, Level, Subscriber};
+use tracing::{Event, Level, Subscriber, subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::convert::Infallible;
+use tokio::runtime::Builder;
 
 // What LiteLLM's SkillsSandboxExecutor answers when llm-sandbox is not installed, as in the oracle's Python
 const SANDBOX_MISSING: &str = "llm-sandbox not installed. Install `llm-sandbox`.";
@@ -62,7 +65,7 @@ struct ScriptFailure {
 struct MissingSandbox;
 
 impl SkillsSandbox for MissingSandbox {
-    type Error = std::convert::Infallible;
+    type Error = Infallible;
 
     fn execute(
         &self,
@@ -216,7 +219,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| failure("RuntimeError", error.to_string()))?;
@@ -233,8 +236,7 @@ impl Helper for Op {
             calls: Mutex::new(Vec::new()),
         };
         let lines = Lines::default();
-        let guard =
-            tracing::subscriber::set_default(tracing_subscriber::registry().with(lines.clone()));
+        let guard = subscriber::set_default(tracing_subscriber::registry().with(lines.clone()));
         let outcome = runtime.block_on(hook.post_call_success(
             &request_data(input),
             HookResponse::Dict(input.response.clone()),

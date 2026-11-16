@@ -10,7 +10,7 @@ use betterlite_azure::endpoints::projection::{LiteLlmParams, SessionKind};
 use secrecy::SecretString;
 use serde::Deserialize;
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) use fixture::{Script, SourceScripts};
 
@@ -159,7 +159,7 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

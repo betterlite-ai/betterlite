@@ -3,7 +3,8 @@ use betterlite_error::error::ErrorClass;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::to_value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 // exception_type()'s native-family elif chain and its catchall, reached by neither an already-mapped identity nor an openai-family provider
 #[derive(Debug, serde::Deserialize)]

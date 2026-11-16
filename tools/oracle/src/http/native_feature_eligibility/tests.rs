@@ -10,13 +10,15 @@ use betterlite_postgres_fixture::connection::RandomDatabaseName;
 use serde_json::Value;
 
 use crate::OracleError;
-use crate::case::{BodyKind, Case, Request, decode_case, validate};
+use crate::case::{Case, Request, decode_case, validate};
 use crate::cli::Options;
 use crate::gateway::{self, GatewayInput};
-use crate::http::{self, Response, client};
+use crate::http;
+use crate::http::{Response, client};
 use crate::paths::unique_id;
 use crate::process::Gateway;
 use crate::runner::run_group_with_url;
+use betterlite_oracle_runner::case::BodyKind;
 
 fn case(extra: &str) -> String {
     let body = "name: scim\nconfig: |\n  general_settings: {}\n";

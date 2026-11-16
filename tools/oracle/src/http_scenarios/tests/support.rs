@@ -12,7 +12,7 @@ use betterlite_postgres_fixture::fixtures::http_scenarios::{
 use secrecy::SecretString;
 use serde_json::Value;
 
-use crate::case::{BodyKind, Request};
+use crate::case::Request;
 use crate::http::Response;
 use crate::http_scenarios::decode_http_scenario;
 use crate::http_scenarios::error::ScenarioError;
@@ -21,7 +21,8 @@ use crate::http_scenarios::run::{
     Clock, FixtureRepository, Peer, PeerFactory, PeerFixture, PeerStart, PhysicalNames,
     PollingTransport, ScenarioDependencies, StepCapture, run,
 };
-use crate::mock::ProviderRequest;
+use betterlite_oracle_runner::case::BodyKind;
+use betterlite_oracle_runner::mock::ProviderRequest;
 
 #[derive(Clone)]
 pub(crate) struct FakeClock {

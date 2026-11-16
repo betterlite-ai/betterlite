@@ -9,7 +9,8 @@ use betterlite_context::resource_config_selection::{
 use serde_json::{Value, json};
 
 use super::{BatchInput, Call, catalog, facts_of, invalid, model_of, provider_of};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use std::fmt::Debug;
 
 pub(crate) type CallResult = Result<Value, Box<HelperError>>;
 
@@ -32,7 +33,7 @@ where
 
 fn unit_report<T>(selected: Option<T>, suffix: &str) -> Value
 where
-    T: std::fmt::Debug,
+    T: Debug,
 {
     selected.map_or_else(
         || Value::Null,

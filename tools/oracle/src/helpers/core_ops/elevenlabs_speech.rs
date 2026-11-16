@@ -7,6 +7,7 @@ use betterlite_core::api::elevenlabs::speech::mapping::map_openai_params;
 use betterlite_core::api::elevenlabs::speech::request::transform_request;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::openai_base_config::Object;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -48,10 +49,10 @@ enum Call {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let answers = input.calls.iter().map(answer).collect();
         Ok(json!({ "calls": Value::Array(answers) }))
     }

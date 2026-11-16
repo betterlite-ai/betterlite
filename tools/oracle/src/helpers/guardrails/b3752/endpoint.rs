@@ -12,7 +12,7 @@ use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::{AliceApplyArgs, FailureKind, ScriptedAnswer};
 
