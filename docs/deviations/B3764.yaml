@@ -1,0 +1,12 @@
+task: B3764
+deviations:
+  - what: A lone UTF-16 surrogate in content (a JSON \ud800 escape with no pair) is never hashed or stored, because betterlite's JSON parser refuses it before the guardrail runs. LiteLLM hashes and stores such content with surrogatepass.
+    why: A Rust string holds only valid UTF-8, so there is no lone surrogate to hash. Every string that can reach the store hashes and measures exactly as LiteLLM does, since a valid string encodes the same under surrogatepass and strict UTF-8.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L249-L257
+  - what: A max_tokens below zero, or above what a u64 holds, is rejected with an error that names the field, where LiteLLM puts any Python int into the follow-up patch.
+    why: betterlite's follow-up patch carries max_tokens as u64 because a negative or unbounded token budget is not a value any provider accepts. A provider would reject the follow-up LiteLLM sends, so the error surfaces at the plan instead of one round trip later.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L1104-L1105
+  - what: The caller scope is read from the serialized user_api_key_auth object under the request kwargs' litellm_params or metadata, so an object a client put in an earlier-scanned metadata bag is trusted when no proxy-set carrier exists. LiteLLM trusts only a live UserAPIKeyAuth instance, which a JSON request body cannot carry.
+    why: betterlite's request data is JSON end to end, so the object the proxy sets and one a client sends have the same shape. The proxy-written litellm_params carrier is scanned first, which is the bag the proxy fills, so authenticated traffic keeps its tenant boundary; traffic that reaches the hook without that carrier runs in a single trust domain, the same case LiteLLM returns an empty scope for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L343-L370
+kept_bugs: []

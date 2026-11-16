@@ -66,6 +66,7 @@ out_of_scope:
   - "Mounting the routes, their HTTP oracle cases and the listing filter call from /v1/models (B007): B8635. /model/info (B851) calls the filters itself."
   - "Tokenizer selection B195, token counting B196, supported params B175, model info B2219, body safety B884, raw request B5368, the hidden_by_listing_callbacks hook B8399."
 pitfalls:
+  - LiteLLM's token counter fetches remote images to size them, so local content counting goes through betterlite-tokenizer's count_token_media with B5083's Fetcher built from the resolved client, UserUrlFetcher and MAX_IMAGE_URL_DOWNLOAD_SIZE_MB (B9963).
   - Only the part after the first "/" of the deployment model is counted, so "azure/gpt-4o" counts as gpt-4o.
   - call_endpoint defaults to false, so the provider counter is used only when the caller asks for it.
   - A provider error result falls back to local counting unless disable_token_counter is true.

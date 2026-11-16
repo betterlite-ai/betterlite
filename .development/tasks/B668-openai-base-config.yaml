@@ -297,7 +297,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_base_config*")"
       && grep -lq 'openai_base_config' tools/oracle/fuzz/corpus/helper_case/openai_base_config* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_base_config$/)' &&
+      run --locked -p betterlite-oracle-openai --no-tests=fail -E 'test(/::helper_seeds_select_openai_base_config$/)' &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-base-parameter-allowlist
     why: Preserve frequency_penalty, logit_bias, logprobs, top_logprobs, max_tokens, max_completion_tokens, modalities,

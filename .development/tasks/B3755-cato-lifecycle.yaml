@@ -27,6 +27,8 @@ scope:
     - tools/oracle/helpers/b3755/**
     - tools/oracle/src/helpers/guardrails/b3755.rs
     - tools/oracle/src/helpers/guardrails/b3755/**
+    - crates/betterlite-http/src/tls.rs
+    - crates/betterlite-http/src/tls/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/__init__.py#L11-L29
