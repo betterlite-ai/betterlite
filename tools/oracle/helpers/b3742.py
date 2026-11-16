@@ -1,5 +1,4 @@
 import asyncio
-import json
 import time
 import urllib.parse
 from functools import partial
@@ -54,10 +53,6 @@ class Captured(TypedDict):
     body: JsonValue
 
 
-class Bucket(TypedDict, total=False):
-    standard_logging_guardrail_information: list[JsonValue]
-
-
 class PreCallHook(Protocol):
     async def async_pre_call_hook(
         self,
@@ -66,9 +61,6 @@ class PreCallHook(Protocol):
         data: dict[str, JsonValue],
         call_type: str,
     ) -> Exception | str | dict[str, JsonValue] | None: ...
-
-
-BUCKETS: Final = TypeAdapter(Bucket)
 
 
 class ScriptedReplies:
@@ -114,10 +106,12 @@ def records_of(data: dict[str, JsonValue]) -> list[JsonValue]:
     metadata = data.get("metadata")
     if metadata is None:
         return []
-    bucket = BUCKETS.validate_json(json.dumps(metadata))
+    bucket = TypeAdapter(dict[str, JsonValue]).validate_python(metadata)
     if "standard_logging_guardrail_information" not in bucket:
         return []
-    return bucket["standard_logging_guardrail_information"]
+    return TypeAdapter(list[JsonValue]).validate_python(
+        bucket["standard_logging_guardrail_information"]
+    )
 
 
 async def call_hook(
