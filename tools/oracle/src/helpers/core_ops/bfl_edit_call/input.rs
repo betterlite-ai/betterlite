@@ -46,9 +46,12 @@ pub(super) struct Configured {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ClockSettings {
-    pub(super) start_millis: u64,
-    pub(super) tick_millis: u64,
-    pub(super) sleep_advance_millis: u64,
+    #[serde(rename = "start_millis")]
+    pub(super) start: u64,
+    #[serde(rename = "tick_millis")]
+    pub(super) tick: u64,
+    #[serde(rename = "sleep_advance_millis")]
+    pub(super) sleep_advance: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]

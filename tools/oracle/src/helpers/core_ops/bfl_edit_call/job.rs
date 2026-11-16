@@ -36,33 +36,45 @@ pub(super) fn run_job(job: &Job, runtime: &Runtime) -> HelperResult {
     };
     let env = logging_env(&redactor, &sink, &logger)?;
     let mut image = media_from(&job.image)?;
-    let params = job.params().map_err(|error| failure(&error))?;
-    let extra_headers = job.extra_headers();
-    let configured_key = job.configured.api_key.as_deref().map(SecretString::from);
-    let mut call = edit_call(
+    let result = run_call(
         job,
-        params,
-        &extra_headers,
-        configured_key.as_ref(),
-        &mut image,
-    )?;
-    let prepared = prepare_call(
-        &mut call,
+        &wire,
         &mut LogContext {
             state: &mut state,
             env: &env,
         },
-    )
-    .map_err(|error| failure(&error))?;
-    let executor = EditExecutor {
-        provider: &wire,
-        clock: &wire,
-        sleeper: &wire,
-    };
-    let supplied: Option<SuppliedTransport<'_, Wire<'_>>> = None;
-    let result = runtime.block_on(executor.image_edit(&call, &prepared, supplied));
+        &mut image,
+        runtime,
+    )?;
     let recorded = take(&mut *wire.effects.lock().unwrap_or_else(PoisonError::into_inner));
     Ok(json!({"effects": recorded, "outcome": outcome(result)}))
+}
+
+// a params or prepare failure answers through the job's own outcome, as LiteLLM's pre-request errors do
+fn run_call(
+    job: &Job,
+    wire: &Wire<'_>,
+    log: &mut LogContext<'_, '_>,
+    image: &mut SuppliedMedia,
+    runtime: &Runtime,
+) -> Result<Result<BflImageResponse, EditCallError>, Box<HelperError>> {
+    let extra_headers = job.extra_headers();
+    let configured_key = job.configured.api_key.as_deref().map(SecretString::from);
+    let mut call = match job.params() {
+        Ok(params) => edit_call(job, params, &extra_headers, configured_key.as_ref(), image)?,
+        Err(error) => return Ok(Err(EditCallError::Params(error))),
+    };
+    let prepared = match prepare_call(&mut call, log) {
+        Ok(prepared) => prepared,
+        Err(error) => return Ok(Err(error)),
+    };
+    let executor = EditExecutor {
+        provider: wire,
+        clock: wire,
+        sleeper: wire,
+    };
+    let supplied: Option<SuppliedTransport<'_, Wire<'_>>> = None;
+    Ok(runtime.block_on(executor.image_edit(&call, &prepared, supplied)))
 }
 
 fn edit_call<'borrow>(

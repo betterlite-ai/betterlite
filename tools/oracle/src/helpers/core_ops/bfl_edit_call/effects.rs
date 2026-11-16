@@ -44,9 +44,9 @@ impl<'job> Wire<'job> {
             polls: Mutex::new(VecDeque::from(job.polls.clone())),
             effects: Mutex::default(),
             index: AtomicUsize::new(0),
-            millis: AtomicU64::new(job.clock.start_millis),
-            tick: job.clock.tick_millis,
-            advance: job.clock.sleep_advance_millis,
+            millis: AtomicU64::new(job.clock.start),
+            tick: job.clock.tick,
+            advance: job.clock.sleep_advance,
         }
     }
 
