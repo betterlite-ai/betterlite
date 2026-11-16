@@ -9,7 +9,7 @@ use crate::websocket_oracle::{
     OracleLimits,
     decode::{FilesystemFixtures, decode_ws_case},
 };
-use betterlite_oracle_runner::case::helper::parse_checked_helper_case;
+use betterlite_oracle_runner::case::helper::{check_helper_calls, parse_helper_case};
 use betterlite_oracle_runner::case::{
     BodyKind, Ignore, RequestBody, UpstreamAnswer, validate_ignores,
 };
@@ -166,9 +166,9 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
         return Ok(LoadedCase::WebSocket(Box::new(case)));
     }
     if probe.kind.is_some() {
-        return Ok(LoadedCase::Helper(parse_checked_helper_case(
-            path, text, &GROUPS,
-        )?));
+        let case = parse_helper_case(path, text)?;
+        check_helper_calls(path, &case, &GROUPS)?;
+        return Ok(LoadedCase::Helper(case));
     }
     if probe.scenario.is_some() {
         let case: ScenarioCase = serde_saphyr::from_str(text).map_err(parse_error)?;

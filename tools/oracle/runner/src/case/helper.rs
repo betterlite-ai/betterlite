@@ -59,12 +59,11 @@ pub fn parse_helper_case(path: &Path, text: &str) -> Result<HelperCase, HelperRu
 }
 
 // a crate knows only the groups it was built with, so the caller names them
-pub fn parse_checked_helper_case(
+pub fn check_helper_calls(
     path: &Path,
-    text: &str,
+    case: &HelperCase,
     groups: &[Group],
-) -> Result<HelperCase, HelperRunError> {
-    let case = parse_helper_case(path, text)?;
+) -> Result<(), HelperRunError> {
     for call in iter::once(&case.call).chain(&case.calls) {
         call.check(groups)
             .map_err(|message| HelperRunError::CaseInvalid {
@@ -72,5 +71,5 @@ pub fn parse_checked_helper_case(
                 message,
             })?;
     }
-    Ok(case)
+    Ok(())
 }
