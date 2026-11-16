@@ -67,32 +67,30 @@ fn new_content(
     ids: &mut dyn ContentIds,
 ) -> Result<(String, Option<String>, Vec<ContentEvent>), ContentError> {
     let existing_item = state.output_item_id.as_deref().filter(|id| !id.is_empty());
-    match existing_item {
-        Some(item_id) => Ok((
-            item_id.to_owned(),
-            state.conversation_id.clone(),
-            Vec::new(),
-        )),
-        None => {
-            let item_id = format!("item_{}", ids.next_id());
-            let conversation_id = state
-                .conversation_id
-                .as_deref()
-                .filter(|id| !id.is_empty())
-                .map_or_else(|| format!("conv_{}", ids.next_id()), str::to_owned);
-            let events = start_content_events(
-                &StartContent {
-                    setup_request,
-                    response_id,
-                    output_item_id: &item_id,
-                    conversation_id: &conversation_id,
-                    delta_type,
-                },
-                ids,
-            )?;
-            Ok((item_id, Some(conversation_id), events))
-        }
-    }
+    let Some(item_id) = existing_item else {
+        let generated_item = format!("item_{}", ids.next_id());
+        let conversation_id = state
+            .conversation_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .map_or_else(|| format!("conv_{}", ids.next_id()), str::to_owned);
+        let events = start_content_events(
+            &StartContent {
+                setup_request,
+                response_id,
+                output_item_id: &generated_item,
+                conversation_id: &conversation_id,
+                delta_type,
+            },
+            ids,
+        )?;
+        return Ok((generated_item, Some(conversation_id), events));
+    };
+    Ok((
+        item_id.to_owned(),
+        state.conversation_id.clone(),
+        Vec::new(),
+    ))
 }
 
 fn done_events(

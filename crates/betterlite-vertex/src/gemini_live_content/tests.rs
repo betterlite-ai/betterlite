@@ -2,6 +2,9 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::cognitive_complexity,
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
         clippy::disallowed_types,
         clippy::too_many_lines,
         reason = "the fixtures state the exact event JSON the transforms emit, field for field, and each test reads as one scenario"
@@ -45,8 +48,8 @@ const fn ids() -> FixedIds {
     FixedIds { next: 0 }
 }
 
-fn uuid(n: u64) -> String {
-    format!("00000000-0000-4000-8000-{n:012x}")
+fn uuid(number: u64) -> String {
+    format!("00000000-0000-4000-8000-{number:012x}")
 }
 
 fn value(text: &str) -> Json {
