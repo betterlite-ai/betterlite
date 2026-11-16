@@ -87,10 +87,8 @@ fn base_fields(sanitized: String, entry: &ConnectorEntry) -> Object {
     if let Some(description) = &entry.description {
         fields.insert("description".to_owned(), Json::Text(description.clone()));
     }
-    fields.insert(
-        "approval_status".to_owned(),
-        Json::Text("active".to_owned()),
-    );
+    let active = Json::Text("active".to_owned());
+    fields.insert("approval_status".to_owned(), active);
     fields
 }
 fn add_stdio_fields(fields: &mut Object, program: &str, entry: &ConnectorEntry) {

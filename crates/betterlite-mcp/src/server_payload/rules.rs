@@ -114,8 +114,7 @@ pub fn warn_if_id_jag_server_outruns_sso(
 #[must_use]
 pub fn does_mcp_server_exist<I>(server_ids: I, id: &str) -> bool
 where
-    I: IntoIterator,
-    I::Item: AsRef<str>,
+    I: IntoIterator<Item: AsRef<str>>,
 {
     for candidate in server_ids {
         if candidate.as_ref() == id {
