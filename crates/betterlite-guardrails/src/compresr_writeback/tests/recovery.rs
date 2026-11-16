@@ -230,3 +230,25 @@ async fn later_turns_add_to_the_same_call_recovery() {
         assert_eq!(found, Some(original.to_owned()));
     }
 }
+
+#[tokio::test]
+async fn an_empty_call_id_falls_through_to_the_next_recovery() {
+    let server = serve(200, &reply(&[("short", 10, 4)])).await;
+    let guardrail = guardrail(&server.base, "");
+    let mut target = log_target(SCOPE, CALL_ID);
+    target.model_call_params = Some(BTreeMap::from([("litellm_call_id".to_owned(), text(""))]));
+    target
+        .litellm_params
+        .get_or_insert_with(BTreeMap::new)
+        .insert("litellm_call_id".to_owned(), text(CALL_ID));
+    let output = guardrail
+        .apply(
+            conversation(TOOL_CONVERSATION, ""),
+            &mut BTreeMap::new(),
+            GuardrailInputType::Request,
+            Some(&mut target),
+        )
+        .await
+        .unwrap();
+    assert_eq!(content_of(&output, 2), marked("short"));
+}
