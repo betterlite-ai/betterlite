@@ -93,16 +93,6 @@ pub(super) fn run(input: &Input) -> HelperResult {
     }
 }
 
-fn request<'file>(call: &'file NameCall, data: &'file FileData) -> FileRequest<'file> {
-    FileRequest {
-        file: data,
-        purpose: call.purpose,
-        deployment_model: call.deployment_model.as_deref(),
-        passthrough: call.passthrough,
-        custom_endpoint: call.custom_endpoint,
-    }
-}
-
 // the two preparation calls read the same body and the same fixed id, and answer with one string
 #[derive(Clone, Copy)]
 enum Answer {
@@ -112,7 +102,13 @@ enum Answer {
 
 fn prepared(call: &NameCall, answer: Answer) -> HelperResult {
     let data = file_data(&call.file);
-    let file_request = request(call, &data);
+    let file_request = FileRequest {
+        file: &data,
+        purpose: call.purpose,
+        deployment_model: call.deployment_model.as_deref(),
+        passthrough: call.passthrough,
+        custom_endpoint: call.custom_endpoint,
+    };
     let id = Uuid::from_u128(u128::from(call.uuid));
     match answer {
         Answer::Name => {
