@@ -1,5 +1,5 @@
 locals {
-  # a count cannot come from a sensitive value, so only the emptiness test is unwrapped
+  # nonsensitive() wraps only the emptiness test, so a supplied secret stays redacted in plans
   license_set     = nonsensitive(var.litellm_license != "")
   ui_password_set = nonsensitive(var.ui_password != "")
 }
