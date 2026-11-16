@@ -1781,6 +1781,7 @@ dependencies = [
  "betterlite-secrets",
  "libfuzzer-sys",
  "secrecy",
+ "serde_json",
  "uuid",
 ]
 
