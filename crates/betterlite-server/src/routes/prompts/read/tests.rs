@@ -423,6 +423,15 @@ async fn oneshot_info_metadata_key_cannot_read_another_prompt() {
 }
 
 #[tokio::test]
+async fn oneshot_info_allowlist_mismatch_beats_the_admin_check() {
+    let prompts = registry(vec![config_prompt("alpha", "development")]);
+    let key = key_context(r#"{"metadata": {"prompts": ["beta"]}}"#);
+    let (status, body) = call(state(prompts, None), "/prompts/alpha/info", key).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["detail"], "Prompt alpha not found");
+}
+
+#[tokio::test]
 async fn oneshot_info_allowlist_covering_the_prompt_is_served() {
     let prompts = registry(vec![config_prompt("alpha", "development")]);
     let key =
