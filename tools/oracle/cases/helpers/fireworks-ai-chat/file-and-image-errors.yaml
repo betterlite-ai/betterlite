@@ -1,0 +1,83 @@
+kind: helper
+name: fireworks-ai-chat-file-and-image-errors
+call:
+  b6072:
+    catalog:
+      - {key: "fireworks_ai/vision-model", model_info: {litellm_provider: fireworks_ai, supports_vision: true}}
+      - {key: "fireworks_ai/text-model", model_info: {litellm_provider: fireworks_ai, supports_vision: false}}
+    headers: []
+    keys: []
+    requests:
+      - model: vision-model
+        messages:
+          - role: user
+            content:
+              - type: image_url
+                image_url: {url: "https://example.com/cat.png", detail: high}
+        optional_params: {}
+      - model: unlisted-model
+        messages:
+          - role: user
+            content:
+              - type: image_url
+                image_url: {url: "https://example.com/dog.png"}
+        optional_params: {}
+      - model: text-model
+        messages:
+          - role: assistant
+            content:
+              - type: image_url
+                image_url: {url: "https://example.com/bird.png"}
+        optional_params: {}
+      - model: vision-model
+        messages:
+          - role: user
+            content: plain text
+        optional_params: {}
+      - model: vision-model
+        messages:
+          - role: user
+            content:
+              - type: text
+                text: caption this
+              - type: image_url
+                image_url: {url: "https://example.com/fish.png"}
+        optional_params: {}
+    replies: []
+    chunks: []
+    models: []
+calls:
+  - b6072:
+      catalog:
+        - {key: "fireworks_ai/vision-model", model_info: {litellm_provider: fireworks_ai, supports_vision: true}}
+      headers: []
+      keys: []
+      requests:
+        - model: vision-model
+          messages:
+            - role: user
+              content:
+                - type: file
+                  file: {file_id: file-1}
+          optional_params: {}
+      replies: []
+      chunks: []
+      models: []
+  - b6072:
+      catalog:
+        - {key: "fireworks_ai/text-model", model_info: {litellm_provider: fireworks_ai, supports_vision: false}}
+      headers: []
+      keys: []
+      requests:
+        - model: text-model
+          messages:
+            - role: user
+              content:
+                - type: image_url
+                  image_url: {url: "https://example.com/blocked.png"}
+          optional_params: {}
+      replies: []
+      chunks: []
+      models: []
+env: {}
+compare: {ignore: []}

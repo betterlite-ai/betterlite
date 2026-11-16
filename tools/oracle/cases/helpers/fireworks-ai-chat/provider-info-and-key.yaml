@@ -1,0 +1,126 @@
+kind: helper
+name: fireworks-ai-chat-provider-info-and-key
+call:
+  b6072:
+    catalog: []
+    headers: []
+    keys:
+      - {api_key: arg, environment: {}}
+      - {api_key: null, environment: {FIREWORKS_API_KEY: one, FIREWORKS_AI_API_KEY: two, FIREWORKSAI_API_KEY: three, FIREWORKS_AI_TOKEN: four}}
+      - {api_key: null, environment: {FIREWORKS_AI_TOKEN: four}}
+      - {api_key: "", environment: {FIREWORKS_API_KEY: one}}
+      - {api_key: null, environment: {FIREWORKS_API_KEY: "", FIREWORKS_AI_API_KEY: two}}
+      - {api_key: null, environment: {FIREWORKS_AI_API_KEY: two, FIREWORKSAI_API_KEY: three}}
+      - {api_key: arg, environment: {FIREWORKS_API_KEY: one}}
+    requests: []
+    replies: []
+    chunks: []
+    models:
+      - api_base: null
+        api_key: key
+        environment: {FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: null
+        api_key: null
+        environment: {FIREWORKS_API_KEY: env-key, FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: "https://custom/v1"
+        api_key: key
+        environment: {FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: "https://custom/v1/"
+        api_key: key
+        environment: {FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: "https://custom/"
+        api_key: key
+        environment: {FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: "https://custom/v1/v1"
+        api_key: key
+        environment: {FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: null
+        api_key: arg-key
+        environment: {FIREWORKS_API_BASE: "https://env/v1", FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: "https://arg/v1"
+        api_key: arg-key
+        environment: {FIREWORKS_API_BASE: "https://env/v1", FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+calls:
+  - b6072:
+      catalog: []
+      headers: []
+      keys: []
+      requests: []
+      replies: []
+      chunks: []
+      models:
+        - api_base: null
+          api_key: null
+          environment: {FIREWORKS_ACCOUNT_ID: acct}
+          status: 200
+          body: '{"models":[]}'
+  - b6072:
+      catalog: []
+      headers: []
+      keys: []
+      requests: []
+      replies: []
+      chunks: []
+      models:
+        - api_base: null
+          api_key: key
+          environment: {}
+          status: 200
+          body: '{"models":[]}'
+  - b6072:
+      catalog: []
+      headers: []
+      keys: []
+      requests: []
+      replies: []
+      chunks: []
+      models:
+        - api_base: null
+          api_key: key
+          environment: {FIREWORKS_ACCOUNT_ID: acct}
+          status: 503
+          body: '{"error":"down"}'
+  - b6072:
+      catalog: []
+      headers: []
+      keys: []
+      requests: []
+      replies: []
+      chunks: []
+      models:
+        - api_base: null
+          api_key: key
+          environment: {FIREWORKS_ACCOUNT_ID: acct}
+          status: 200
+          body: nope
+  - b6072:
+      catalog: []
+      headers: []
+      keys: []
+      requests: []
+      replies: []
+      chunks: []
+      models:
+        - api_base: null
+          api_key: key
+          environment: {FIREWORKS_ACCOUNT_ID: acct}
+          status: 200
+          body: '{"data":[]}'
+env: {}
+compare: {ignore: []}

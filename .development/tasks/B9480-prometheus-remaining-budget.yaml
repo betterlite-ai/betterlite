@@ -78,7 +78,7 @@ checks:
       run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b9480)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b9480 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b9480/pyrightconfig.json
     - id: helper-case-corpus
       why: b9480 needs fresh seeds that replay
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/prometheus-remaining-budget-*")" && grep -lE '^[[:space:]]+b9480:' tools/oracle/fuzz/corpus/helper_case/prometheus-remaining-budget-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/prometheus-remaining-budget-*")" && grep -lE '^[[:space:]]+b9480:' tools/oracle/fuzz/corpus/helper_case/prometheus-remaining-budget-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/prometheus-remaining-budget
 deviations:

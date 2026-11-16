@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-invoke-templates-deepseek-fetched-template
+call:
+  b9962:
+    cases:
+      - model: deepseek_r1/deepseek.r1-v1:0
+        messages: [{role: user, content: hi}]
+        provider: deepseek_r1
+        hf_model: deepseek-r1/deepseek-r1-7b-instruct
+        tokenizer_config:
+          chat_template: "{{ bos_token }}{% for message in messages %}{{ message['role'] }}: {{ message['content'] }}\n{% endfor %}{{ eos_token }}"
+          bos_token: '<|begin|>'
+          eos_token: '<|end|>'
+env: {}
+compare: {ignore: []}

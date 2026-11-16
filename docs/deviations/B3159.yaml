@@ -1,0 +1,18 @@
+task: B3159
+deviations:
+  - what: A caller that is not admin-view and has no key token gets an empty run list from GET /v1/workflows/runs, where LiteLLM adds no owner filter for it and returns every run.
+    why: Rule owned-behavior-is-built asks for a missing auth check to be fixed. The `if caller:` guard skips the created_by filter when the token is missing or empty, so a keyless non-admin caller reads other keys' runs, while get and patch already answer 404 for that caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L256-L261
+  - what: A store failure answers 500 with the detail "Internal server error" and logs the cause, where LiteLLM puts str(e) of the database exception in the detail.
+    why: The database error text can carry connection strings, table names and row values, and the message is betterlite's own under rule errors-match-litellm. The status stays 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L225-L226
+  - what: An input, output or metadata object that repeats a key is rejected with a 422 that names the field, where Python's JSON parser keeps the last value.
+    why: Rule no-silent-drops, and the same duplicate-key rejection JsonData applies to every JSON object betterlite stores.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L83-L86
+kept_bugs:
+  - what: PATCH uses the raw caller, so a view-only admin must own the run to update it, while GET and list let the same caller read every run. A key without a grant for the route is refused earlier by route auth.
+    why: A setup that gives a view-only role write access to foreign runs would fail today too, and the split is the documented behavior the task text spells out. Writes skip the ownership check only for a full PROXY_ADMIN.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L58-L64
+  - what: An empty workflow_type or status query parameter means no filter, and a status list keeps empty items ("running," filters on running and the empty string).
+    why: Dashboards send the parameter empty for "all", and a setup that does so works today, so the guard `if workflow_type:` and the unfiltered split are copied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L250-L255

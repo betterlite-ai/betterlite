@@ -1,0 +1,62 @@
+kind: helper
+name: fireworks-ai-chat-stream-chunk-fields
+call:
+  b6072:
+    catalog: []
+    headers: []
+    keys: []
+    requests: []
+    replies: []
+    chunks:
+      - chunk:
+          id: chatcmpl-1
+          object: chat.completion.chunk
+          created: 1700000000
+          model: llama-v3
+          perf_metrics: {request_id: r1}
+          prompt_token_ids: [1, 2]
+          choices:
+            - index: 0
+              delta: {role: assistant, content: hi}
+              finish_reason: null
+              raw_output: {seen: 1}
+      - chunk:
+          id: chatcmpl-2
+          created: 1700000000
+          model: llama-v3
+          choices:
+            - index: 0
+              delta: {content: more}
+              token_ids: [4, 5]
+      - chunk:
+          id: chatcmpl-3
+          created: 1700000000
+          model: llama-v3
+          choices:
+            - index: 0
+              delta: {content: plain}
+      - chunk:
+          id: chatcmpl-4
+          created: 1700000000
+          perf_metrics: null
+          choices: []
+      - chunk:
+          choices:
+            - index: 0
+              delta: {content: defaulted}
+      - chunk:
+          id: chatcmpl-6
+          created: 1700000000
+          model: llama-v3
+          choices:
+            - index: 0
+              delta: {}
+              finish_reason: max_tokens
+      - chunk:
+          id: chatcmpl-7
+          created: 1700000000
+          model: llama-v3
+          choices: []
+    models: []
+env: {}
+compare: {ignore: []}

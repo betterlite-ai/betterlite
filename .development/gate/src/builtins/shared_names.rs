@@ -43,7 +43,7 @@ fn rust_files(root: &Path, folder: &str) -> Result<Vec<PathBuf>, GateError> {
     Ok(files)
 }
 
-fn parse(file: &Path) -> Result<Vec<Item>, GateError> {
+pub(super) fn parse(file: &Path) -> Result<Vec<Item>, GateError> {
     let text = fs::read_to_string(file).map_err(|source| GateError::Read {
         path: file.to_owned(),
         source,

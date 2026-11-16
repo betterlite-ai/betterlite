@@ -86,7 +86,7 @@ checks:
     run: test -f tools/oracle/helpers/summary_model_limits.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
     why: summary limit inputs cannot enter the shared helper protocol
-    run: grep -qE '^[[:space:]]+summary_model_limits:' tools/oracle/fuzz/corpus/helper_case/summary_model_limits-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    run: grep -qE '^[[:space:]]+summary_model_limits:' tools/oracle/fuzz/corpus/helper_case/summary_model_limits-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-cases
     why: no independent read-only limit scenarios were added
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/summary-model-limits)"
