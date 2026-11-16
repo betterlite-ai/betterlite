@@ -1,0 +1,14 @@
+kind: helper
+name: extract-create-parameters
+call:
+  b3361:
+    function: create_optional_params
+    passed_params:
+      name: "n"
+      expires_after: {anchor: last_active_at, minutes: 30}
+      file_ids: ["file_1"]
+      extra_headers: {X-A: "b"}
+      extra_body: {k: "v"}
+      timeout: 5
+env: {}
+compare: {ignore: []}
