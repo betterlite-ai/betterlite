@@ -5,10 +5,10 @@ use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults, Provid
 use betterlite_openai::text_completion_execution::catalog::{
     CompletionCatalog, CompletionRoute, route_for,
 };
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::SecretString;
 use serde::Deserialize;
-
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -56,7 +56,7 @@ fn deployment(model: &str) -> Result<ChatDeployment, Box<HelperError>> {
     Ok(deployment)
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
