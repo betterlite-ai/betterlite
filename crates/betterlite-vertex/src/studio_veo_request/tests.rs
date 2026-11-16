@@ -9,7 +9,7 @@ use betterlite_config::sections::studio_identity::{DEFAULT_API_BASE, Settings};
 use betterlite_openai::openai_video_identifiers::multipart::ReadSeek;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::vertex_veo_request::image::{B1120Mime, ImageInput, MimeReader};
 
@@ -438,7 +438,7 @@ fn key_of(
     let headers = headers_for(caller, api_key, params_api_key, settings).expect("a key is found");
     headers
         .get("x-goog-api-key")
-        .map(|value| value.expose_secret().clone())
+        .map(|value| value.expose_secret().to_owned())
 }
 
 #[test]
@@ -449,7 +449,7 @@ fn the_explicit_key_beats_every_other_source() {
 }
 
 #[rstest]
-#[case::empty_explicit("", "p")]
+#[case::empty_explicit(Some(""), "p")]
 #[case::absent_explicit(None, "p")]
 fn params_api_key_follows_the_explicit_key(#[case] api_key: Option<&str>, #[case] expected: &str) {
     let settings = settings([Some("g"), Some("G")], Some("m"));
@@ -507,11 +507,7 @@ fn the_chosen_key_and_json_type_override_the_caller_headers() {
         ("x-goog-api-key".to_owned(), "caller".to_owned()),
     ]);
     let headers = headers_for(&caller, None, None, &settings).expect("a key is found");
-    let shown = |name: &str| {
-        headers
-            .get(name)
-            .map(|value| value.expose_secret().as_str())
-    };
+    let shown = |name: &str| headers.get(name).map(ExposeSecret::expose_secret);
     assert_eq!(shown("x-goog-api-key"), Some("google"));
     assert_eq!(shown("Content-Type"), Some("application/json"));
     assert_eq!(shown("content-type"), Some("text/plain"));

@@ -28,35 +28,22 @@ pub struct MappedParams<'media> {
 
 // map_openai_params: four sizes fill aspectRatio and a 720p/1080p resolution, any other size fills 16:9 only
 #[must_use]
-pub fn map_openai_params<'media>(input: MapInput<'media>) -> MappedParams<'media> {
-    let MapInput {
-        input_reference,
-        image: image_option,
-        size,
-        seconds,
-        resolution,
-        options: provider,
-    } = input;
-    let image = match input_reference {
+pub fn map_openai_params(input: MapInput<'_>) -> MappedParams<'_> {
+    let image = match input.input_reference {
         Reference::Image(chosen) => Some(chosen),
         Reference::Null => None,
-        Reference::Absent => image_option,
+        Reference::Absent => input.image,
     };
     let mut options = Object::new();
-    let aspect_ratio = size.as_deref().and_then(size_aspect_ratio);
-    let inferable = !resolution_set(resolution.as_ref());
-    let inferred = if inferable {
-        size.as_deref().and_then(size_resolution)
-    } else {
-        None
-    };
-    if let Some(ratio) = aspect_ratio {
+    if let Some(ratio) = input.size.as_deref().and_then(size_aspect_ratio) {
         options.insert("aspectRatio".to_owned(), Json::Text(ratio.to_owned()));
     }
-    if let Some(preset) = inferred {
+    if !resolution_set(input.resolution.as_ref())
+        && let Some(preset) = input.size.as_deref().and_then(size_resolution)
+    {
         options.insert("resolution".to_owned(), Json::Text(preset.to_owned()));
     }
-    if let Some(requested) = seconds.as_deref()
+    if let Some(requested) = input.seconds.as_deref()
         && let Ok(duration) = parse_python_int(requested)
     {
         options.insert(
@@ -64,12 +51,12 @@ pub fn map_openai_params<'media>(input: MapInput<'media>) -> MappedParams<'media
             Json::Number(Number::from(duration)),
         );
     }
-    if !options.contains_key("resolution")
-        && let Some(given) = resolution
+    if let Some(given) = input.resolution
+        && !options.contains_key("resolution")
     {
         options.insert("resolution".to_owned(), given);
     }
-    for (name, value) in provider {
+    for (name, value) in input.options {
         if !options.contains_key(&name) {
             options.insert(name, value);
         }
@@ -78,7 +65,7 @@ pub fn map_openai_params<'media>(input: MapInput<'media>) -> MappedParams<'media
 }
 
 // `if not video_create_optional_params.get("resolution")`: absent, null and an empty string all allow inference
-fn resolution_set(resolution: Option<&Json>) -> bool {
+const fn resolution_set(resolution: Option<&Json>) -> bool {
     match resolution {
         Some(Json::Text(text)) => !text.is_empty(),
         None | Some(Json::Null) => false,
