@@ -221,7 +221,7 @@ fn text_option(options: &mut Object, name: &str) -> Result<Option<String>, Box<H
     }
 }
 
-fn chosen_position(
+const fn chosen_position(
     request: &Request,
     reference: Option<&PreparedImage>,
     image: Option<&PreparedImage>,
