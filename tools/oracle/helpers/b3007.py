@@ -115,7 +115,6 @@ class Handler(Protocol):
 
 class RateLimitFields(BaseModel):
     status_code: int
-    detail: JsonValue
     category: str
     rate_limit_type: str | None
     model: str
@@ -224,7 +223,6 @@ def exceeded_outcome(fields: RateLimitFields) -> JsonValue:
             "kind": "pre_call",
             "outcome": "exceeded",
             "status_code": fields.status_code,
-            "detail": fields.detail,
             "category": fields.category,
             "rate_limit_type": fields.rate_limit_type,
             "model": fields.model,

@@ -3,6 +3,7 @@ pub(crate) mod input;
 
 use std::fmt::Display;
 
+use axum::response::IntoResponse as _;
 use betterlite_auth::agent_registry::AgentRegistry;
 use betterlite_auth::agent_registry::AgentRegistryApi as _;
 use betterlite_auth::model_budget_values::amount_text::amount_from_text;
@@ -111,16 +112,19 @@ async fn pre_call_outcome(
         .await;
     match outcome {
         Ok(()) => json!({"kind": "pre_call", "outcome": "admitted"}),
-        Err(SessionBudgetError::Exceeded(error)) => json!({
-            "kind": "pre_call",
-            "outcome": "exceeded",
-            "status_code": 429,
-            "detail": error.detail,
-            "category": error.category,
-            "rate_limit_type": error.rate_limit_type,
-            "model": error.model,
-            "llm_provider": error.llm_provider,
-        }),
+        Err(SessionBudgetError::Exceeded(error)) => {
+            let error = *error;
+            let status_code = error.clone().into_response().status().as_u16();
+            json!({
+                "kind": "pre_call",
+                "outcome": "exceeded",
+                "status_code": status_code,
+                "category": error.category,
+                "rate_limit_type": error.rate_limit_type,
+                "model": error.model,
+                "llm_provider": error.llm_provider,
+            })
+        }
         Err(other) => json!({"kind": "pre_call", "outcome": "error", "message": other.to_string()}),
     }
 }
