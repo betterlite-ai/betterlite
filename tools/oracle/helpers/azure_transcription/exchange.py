@@ -8,14 +8,13 @@ import openai
 from litellm.caching.llm_caching_handler import LLMClientCache
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
 from litellm.llms.azure.audio_transcriptions import AzureAudioTranscription
-from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.types.utils import FileTypes, TranscriptionResponse
 from pydantic import JsonValue as Json
 from typing_extensions import override
 
 from openai_transcription.exchange import PRIVATE, Upstream, data_view, multipart_view
 
-from .probe import FILE, Probe
+from .probe import FILE, PROVIDER_ERROR, Probe
 
 litellm.suppress_debug_info = True
 
@@ -175,11 +174,16 @@ def request_view(upstream: Upstream) -> Json:
     if not upstream.seen:
         return None
     sent = upstream.seen[0]
+    present = {
+        name: sent.headers[name]
+        for name in ("api-key", "authorization", "accept")
+        if name in sent.headers
+    }
     return {
         "url": str(sent.url),
-        "api_key": sent.headers.get("api-key"),
-        "authorization": sent.headers.get("authorization"),
-        "accept": sent.headers.get("accept"),
+        "api_key": present.get("api-key"),
+        "authorization": present.get("authorization"),
+        "accept": present.get("accept"),
         "parts": multipart_view(sent),
     }
 
@@ -196,7 +200,7 @@ def outcome(probe: Probe, recorder: Recorder) -> tuple[Json, Json]:
         }
         return None, status
     except (
-        BaseLLMException,
+        PROVIDER_ERROR,
         openai.OpenAIError,
         httpx.HTTPError,
         ValueError,

@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Final
 
 import litellm
+from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
 
@@ -10,6 +11,7 @@ from openai_transcription.probe import Answer
 litellm.suppress_debug_info = True
 
 FILE: Final = ("a.wav", b"abc", "audio/wav")
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 
 @dataclass

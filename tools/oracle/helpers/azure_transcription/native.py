@@ -1,6 +1,6 @@
 import base64
 import os
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from typing import Final, Protocol
 
@@ -11,13 +11,14 @@ from litellm.llms.base_llm.audio_transcription.transformation import (
 )
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.types.llms.openai import AllMessageValues
-from litellm.types.utils import LlmProviders
+from litellm.types.utils import FileTypes, LlmProviders
 from litellm.utils import ProviderConfigManager
+from pydantic import BaseModel
 from pydantic import JsonValue as Json
 
 from openai_transcription.exchange import PRIVATE
 
-from .probe import Probe
+from .probe import PROVIDER_ERROR, Probe
 
 litellm.suppress_debug_info = True
 
@@ -26,6 +27,18 @@ UNKNOWN_MODEL: Final = "speech/azure-stt"
 
 class NoMessages(list[AllMessageValues]):
     pass
+
+
+class ErrorStatus(BaseModel):
+    status_code: int
+
+
+class RequestView(Protocol):
+    @property
+    def data(self) -> dict[str, Json] | bytes: ...
+
+    @property
+    def content_type(self) -> str | None: ...
 
 
 class ConfigView(Protocol):
@@ -61,6 +74,16 @@ class ConfigView(Protocol):
         litellm_params: dict[str, Json],
     ) -> str: ...
 
+    # ast-grep-ignore: no-long-names
+    def transform_audio_transcription_request(
+        self,
+        _model: str,
+        _audio_file: FileTypes,
+        _optional_params: dict[str, Json],
+        _litellm_params: dict[str, Json],
+        /,
+    ) -> RequestView: ...
+
     def get_error_class(
         self, error_message: str, status_code: int, headers: dict[str, str]
     ) -> BaseLLMException: ...
@@ -76,7 +99,7 @@ def native_audio_config() -> BaseAudioTranscriptionConfig:
 
 
 @contextmanager
-def environment(name: str, value: str | None) -> Iterator[None]:
+def environment(name: str, value: str | None) -> Generator[None]:
     previous = os.environ.get(name)
     if value is None:
         os.environ.pop(name, None)
@@ -98,8 +121,9 @@ def checked_headers(config: ConfigView, probe: Probe) -> Json:
             validated = config.validate_environment(
                 dict(probe.headers), probe.model, NoMessages(), empty, empty, probe.api_key
             )
-    except BaseLLMException as failure:
-        return {"ok": False, "status": failure.status_code}
+    except PROVIDER_ERROR as failure:
+        status = ErrorStatus.model_validate(failure, from_attributes=True).status_code
+        return {"ok": False, "status": status}
     return {"ok": True, "value": validated}
 
 
@@ -116,8 +140,9 @@ def checked_urls(config: ConfigView, probe: Probe) -> list[Json]:
                     optional_params=dict(probe.optional_params),
                     litellm_params=empty,
                 )
-        except BaseLLMException as failure:
-            urls.append({"ok": False, "status": failure.status_code})
+        except PROVIDER_ERROR as failure:
+            status = ErrorStatus.model_validate(failure, from_attributes=True).status_code
+            urls.append({"ok": False, "status": status})
         else:
             urls.append({"ok": True, "url": url})
     return urls
@@ -147,15 +172,17 @@ def native_response(config: BaseAudioTranscriptionConfig, probe: Probe) -> Json:
         raw = httpx.Response(item.status, headers=dict(probe.headers), content=item.body.encode())
         try:
             response = config.transform_audio_transcription_response(raw)
-        except BaseLLMException as failure:
-            results.append({"ok": False, "status": failure.status_code})
+        except PROVIDER_ERROR as failure:
+            status = ErrorStatus.model_validate(failure, from_attributes=True).status_code
+            results.append({"ok": False, "status": status})
         else:
-            hidden = PRIVATE.validate_python(response.__pydantic_private__)["_hidden_params"]
+            private: dict[str, Json] | None = response.__pydantic_private__
+            hidden = PRIVATE.validate_python(private)["_hidden_params"]
             results.append({"ok": True, "text": response.text, "hidden": hidden})
     return {"results": results}
 
 
-def native_request(config: BaseAudioTranscriptionConfig, probe: Probe) -> Json:
+def native_request(config: ConfigView, probe: Probe) -> Json:
     empty: dict[str, Json] = {}
     request = config.transform_audio_transcription_request(
         probe.model, (probe.audio, probe.audio.encode(), "audio/wav"), empty, empty
@@ -167,4 +194,6 @@ def native_request(config: BaseAudioTranscriptionConfig, probe: Probe) -> Json:
                 "body": base64.b64encode(content).decode(),
                 "content_type": request.content_type,
             }
+        case dict():
+            pass
     raise TypeError("the native request data is not bytes")
