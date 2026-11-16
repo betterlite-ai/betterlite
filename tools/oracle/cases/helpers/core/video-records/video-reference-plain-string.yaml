@@ -1,0 +1,11 @@
+kind: helper
+name: b3330-video-reference-plain-string
+call:
+  b3330: {function: video_reference, value: video_123}
+calls:
+  - b3330: {function: video_reference, value: ""}
+  - b3330: {function: video_reference, value: "  spaced id  "}
+  - b3330: {function: video_reference, value: "true"}
+  - b3330: {function: video_reference, value: "3.5"}
+env: {}
+compare: {ignore: []}

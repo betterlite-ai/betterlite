@@ -1,0 +1,9 @@
+kind: helper
+name: b3330-provider-from-data-direct
+call:
+  b3330: {function: custom_provider, value: {custom_llm_provider: openai}}
+calls:
+  - b3330: {function: custom_provider, value: {custom_llm_provider: openai, extra_body: {custom_llm_provider: vertex_ai}}}
+  - b3330: {function: custom_provider, value: {extra_body: {custom_llm_provider: vertex_ai}, custom_llm_provider: anthropic}}
+env: {}
+compare: {ignore: []}
