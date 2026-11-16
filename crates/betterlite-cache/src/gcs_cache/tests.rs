@@ -340,6 +340,8 @@ async fn write_swallows_transport_error() {
     .unwrap();
     assert!(log.contains("DEBUG"), "{log}");
     assert!(log.contains("GCS cache write failed"), "{log}");
+    assert!(!log.contains(SERVICE_ACCOUNT), "{log}");
+    assert!(!log.contains(TOKEN), "{log}");
 }
 
 #[tokio::test]
@@ -355,6 +357,8 @@ async fn write_swallows_header_failure() {
     .unwrap();
     assert!(log.contains("DEBUG"), "{log}");
     assert!(log.contains("GCS cache write failed"), "{log}");
+    assert!(!log.contains(SERVICE_ACCOUNT), "{log}");
+    assert!(!log.contains(TOKEN), "{log}");
     timeout(Duration::from_millis(50), listener.accept())
         .await
         .unwrap_err();
@@ -436,6 +440,8 @@ async fn read_miss_on_header_failure() {
     assert!(value.is_none());
     assert!(log.contains("ERROR"), "{log}");
     assert!(log.contains("GCS cache read failed"), "{log}");
+    assert!(!log.contains(SERVICE_ACCOUNT), "{log}");
+    assert!(!log.contains(TOKEN), "{log}");
     timeout(Duration::from_millis(50), listener.accept())
         .await
         .unwrap_err();
