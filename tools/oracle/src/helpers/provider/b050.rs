@@ -1,11 +1,26 @@
+use serde::Deserialize;
+
+use self::script::DispatchCase;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
+mod fixture;
+mod ops;
+mod script;
+
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub(crate) enum Input {
+    Dispatch(DispatchCase),
+}
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("b050")
+    fn run(input: &Self::Input) -> HelperResult {
+        match input {
+            Input::Dispatch(case) => ops::dispatch_case(case),
+        }
     }
 }
