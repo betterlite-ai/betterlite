@@ -21,7 +21,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::state::shared::Shared;
 pub struct Slot {
-    pub service: ListingService,
+    pub(crate) service: ListingService,
     providers: CatalogModels,
 }
 impl Slot {
@@ -93,7 +93,7 @@ impl ProviderModels for CatalogModels {
             environment: &self.environment,
         };
         // the cache lives for one enumeration, so the clock never has to advance for an entry to live
-        let mut cache = AvailableModelsCache::with_clock(Arc::new(|| 0.0));
+        let mut cache = AvailableModelsCache::with_clock(Arc::new(|| 0.0_f64));
         let enumeration = get_valid_models(&request, &mut cache, &ProviderEndpointListing);
         Some(enumeration.models)
     }

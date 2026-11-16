@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::slice;
 use std::sync::Mutex;
+use std::sync::PoisonError;
 
 use betterlite_config::sections::fallback_plans::Settings;
 use betterlite_config::sections::fallback_plans::chains::{FallbackChainEntry, FallbackTarget};
@@ -214,7 +216,7 @@ impl FallbackGroups for FakeFallbacks {
             .collect();
         self.seen
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .push(names);
         if self.fails {
             return Err(FallbackError::Unresolvable);
@@ -806,7 +808,7 @@ fn expanded_rows_deep_copy_and_params_model() {
             Json::Object(object(&[("id", text("deployment-id"))])),
         ),
     ]);
-    let expanded = expand_wildcard_deployments(std::slice::from_ref(&deployment), &context);
+    let expanded = expand_wildcard_deployments(slice::from_ref(&deployment), &context);
     assert_eq!(expanded.len(), 2);
     assert_expanded_row(&expanded[0], "openai/gpt-4o");
     assert_expanded_row(&expanded[1], "openai/gpt-4o-mini");

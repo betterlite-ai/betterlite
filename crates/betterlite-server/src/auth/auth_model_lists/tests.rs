@@ -10,6 +10,7 @@ use axum::http::{Request, StatusCode};
 use betterlite_auth::auth_model_lists::access_groups::AccessGroupScope;
 use betterlite_auth::auth_model_lists::complete_list::{ListingFlags, ListingRequest};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::types::Config;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::provider_model_sets::ProviderModelSets;
 use indexmap::IndexMap;
@@ -17,6 +18,8 @@ use tower::ServiceExt as _;
 
 use crate::routes;
 use crate::routes::tests::state_for;
+use crate::state::auth_model_lists::Slot;
+use crate::state::shared::Shared;
 
 const CONFIG: &str = "model_list:
   - {model_name: oracle-shared, litellm_params: {model: openai/oracle-first}}
@@ -47,7 +50,7 @@ const REDIRECT_CONFIG: &str = "model_list:
   - {model_name: '*', litellm_params: {model: 'openai/*'}}
 ";
 
-fn loaded(source: &str) -> betterlite_config::types::Config {
+fn loaded(source: &str) -> Config {
     ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
@@ -133,9 +136,9 @@ async fn listing_reads_authorized_models() {
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("the body reads");
-    let body = String::from_utf8(body.to_vec()).expect("the body is UTF-8");
+    let payload = String::from_utf8(body.to_vec()).expect("the body is UTF-8");
     assert_eq!(
-        body, LISTED,
+        payload, LISTED,
         "the model-list route lists the same names in the order the listing service returns"
     );
 }
@@ -230,7 +233,7 @@ fn listing_provider_endpoint_check_lists_nothing() {
 #[test]
 fn listing_has_no_deployment_rows() {
     let config = loaded(REDIRECT_CONFIG);
-    let slot = crate::state::auth_model_lists::Slot::new(&config, &crate::state::shared::Shared);
+    let slot = Slot::new(&config, &Shared);
     let groups = IndexMap::new();
     let granted_wildcard = strings(&["*"]);
     let expanded = slot
