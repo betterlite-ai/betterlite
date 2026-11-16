@@ -15,7 +15,7 @@ pub enum RouterWeightValueError {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
 #[serde(try_from = "String")]
-pub struct RouterWeightIdentifier(String);
+pub struct RouterWeightIdentifier(pub String);
 
 impl TryFrom<String> for RouterWeightIdentifier {
     type Error = RouterWeightValueError;
@@ -28,13 +28,6 @@ impl TryFrom<String> for RouterWeightIdentifier {
     }
 }
 
-impl RouterWeightIdentifier {
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
 impl Borrow<str> for RouterWeightIdentifier {
     fn borrow(&self) -> &str {
         &self.0
@@ -43,7 +36,7 @@ impl Borrow<str> for RouterWeightIdentifier {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(try_from = "Number")]
-pub struct RouterWeight(f64);
+pub struct RouterWeight(pub f64);
 
 impl TryFrom<Number> for RouterWeight {
     type Error = RouterWeightValueError;
@@ -56,13 +49,6 @@ impl TryFrom<Number> for RouterWeight {
     }
 }
 
-impl RouterWeight {
-    #[must_use]
-    pub const fn get(self) -> f64 {
-        self.0
-    }
-}
-
 pub type RouterWeights =
     IndexMap<RouterWeightIdentifier, IndexMap<RouterWeightIdentifier, RouterWeight>>;
 
@@ -70,8 +56,8 @@ pub type RouterWeights =
 pub enum RouterWeightsError {
     #[error("router_settings must be an object")]
     SettingsNotAnObject,
-    #[error("router_settings.weights is invalid: {0}")]
-    Decode(serde_json::Error),
+    #[error("router_settings.weights is invalid")]
+    Decode(#[source] serde_json::Error),
     #[error("Each nonempty weights group must contain at least one positive weight")]
     NoPositiveWeight,
 }
@@ -99,7 +85,7 @@ pub fn decode_router_weights(settings: &Json) -> Result<Option<RouterWeights>, R
     };
     let without_positive = weights
         .values()
-        .any(|group| !group.is_empty() && group.values().all(|weight| weight.get() <= 0.0));
+        .any(|group| !group.is_empty() && group.values().all(|weight| weight.0 <= 0.0));
     if without_positive {
         return Err(RouterWeightsError::NoPositiveWeight);
     }

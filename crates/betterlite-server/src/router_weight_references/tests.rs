@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::error::Error as _;
+
 use axum::http::StatusCode;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -10,7 +12,7 @@ use super::error::RouterWeightError;
 use super::model_info::{RouterWeightModelInfo, RouterWeightModelInfoError};
 use super::reference::{RouterWeightDeployment, validate_weight_reference};
 use super::settings::validate_settings_weights;
-use super::weights::{RouterWeightIdentifier, RouterWeightsError, decode_router_weights};
+use super::weights::{RouterWeightsError, decode_router_weights};
 
 mod support;
 
@@ -104,7 +106,8 @@ fn assert_invalid_settings(error: &RouterWeightError) {
 fn assert_weight_decode_error(settings: &str, message: &str) {
     let error = decode_router_weights(&json(settings)).unwrap_err();
     assert!(matches!(error, RouterWeightsError::Decode(_)), "{settings}");
-    assert!(error.to_string().contains(message), "{error}");
+    let cause = error.source().unwrap().to_string();
+    assert!(cause.contains(message), "{cause}");
 }
 
 fn assert_falsey_model_info_defaults(values: &[&str]) {
@@ -381,8 +384,8 @@ fn weights_accept_integer_and_zero() {
     let decoded = decode_router_weights(&json(r#"{"weights": {"gpt-4": {"a": 1, "b": 0}}}"#))
         .unwrap()
         .unwrap();
-    assert_eq!(decoded["gpt-4"]["a"].get().to_bits(), 1.0_f64.to_bits());
-    assert_eq!(decoded["gpt-4"]["b"].get().to_bits(), 0.0_f64.to_bits());
+    assert_eq!(decoded["gpt-4"]["a"].0.to_bits(), 1.0_f64.to_bits());
+    assert_eq!(decoded["gpt-4"]["b"].0.to_bits(), 0.0_f64.to_bits());
 }
 
 #[test]
@@ -445,11 +448,11 @@ fn weights_keep_group_and_deployment_order() {
     ))
     .unwrap()
     .unwrap();
-    let groups: Vec<&str> = decoded.keys().map(RouterWeightIdentifier::as_str).collect();
+    let groups: Vec<&str> = decoded.keys().map(|group| group.0.as_str()).collect();
     assert_eq!(groups, ["z-group", "a-group"]);
     let deployments: Vec<&str> = decoded["z-group"]
         .keys()
-        .map(RouterWeightIdentifier::as_str)
+        .map(|deployment_id| deployment_id.0.as_str())
         .collect();
     assert_eq!(deployments, ["b", "a"]);
 }

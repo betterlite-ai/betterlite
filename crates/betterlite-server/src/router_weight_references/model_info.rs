@@ -17,8 +17,8 @@ pub struct RouterWeightModelInfo {
 pub enum RouterWeightModelInfoError {
     #[error("model_info must be a JSON object")]
     NotAnObject,
-    #[error("model_info is not valid: {0}")]
-    Json(serde_json::Error),
+    #[error("model_info is not valid")]
+    Json(#[source] serde_json::Error),
 }
 
 impl RouterWeightModelInfo {
