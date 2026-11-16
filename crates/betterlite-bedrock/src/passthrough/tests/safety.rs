@@ -104,6 +104,7 @@ fn provider_failure_hides_the_message() {
     });
     let hidden = PassthroughFailure::from(provider);
     assert!(!format!("{hidden:?}").contains("FIXTURE-SECRET"));
+    assert!(format!("{hidden:?}").contains("REDACTED"));
     assert_eq!(hidden.to_string(), "the provider request failed");
 }
 
