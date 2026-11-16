@@ -5,8 +5,8 @@ use serde::Deserialize;
 
 use super::error::ScenarioError;
 use super::model::{HttpScenario, Limits, Segment, Step, segments};
-use crate::case::Ignore;
-use crate::multipart_oracle::request::request_body;
+use betterlite_oracle_runner::case::Ignore;
+use betterlite_oracle_runner::multipart_oracle::request::decode_request_body;
 
 const ROOT_FIELDS: [&str; 6] = ["kind", "name", "config", "env", "setup", "steps"];
 const RESERVED_ENV: [&str; 2] = ["LITELLM_LOCAL_MODEL_COST_MAP", "LITELLM_MASTER_KEY"];
@@ -181,16 +181,16 @@ fn validate_step(index: usize, step: &Step) -> Result<(), ScenarioError> {
     if let Some((field, _)) = empty.iter().find(|(_, missing)| *missing) {
         return Err(ScenarioError::StepField { index, field });
     }
-    request_body(&step.request.body, step.request.body_kind)
+    decode_request_body(&step.request.body, step.request.body_kind)
         .map_err(|source| ScenarioError::Body { index, source })?;
     segments(&step.request.path, index)?;
     for value in step.request.headers.values() {
         segments(value, index)?;
     }
-    validate_ignores(index, &step.compare.ignore)
+    validate_scenario_ignores(index, &step.compare.ignore)
 }
 
-fn validate_ignores(index: usize, ignores: &[Ignore]) -> Result<(), ScenarioError> {
+fn validate_scenario_ignores(index: usize, ignores: &[Ignore]) -> Result<(), ScenarioError> {
     ignores.iter().try_for_each(|ignored| {
         let problem = if !ignored.pointer.is_empty() && !ignored.pointer.starts_with('/') {
             "pointers must be JSON pointers"

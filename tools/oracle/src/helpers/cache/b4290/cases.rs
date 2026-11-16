@@ -9,7 +9,7 @@ use serde_json::json;
 use std::sync::PoisonError;
 
 use super::{BaseContract, IncrementInput, OldestEntryInput, failure, memory, runtime};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const OLDEST_KEYS_LIMIT: usize = 10;
 

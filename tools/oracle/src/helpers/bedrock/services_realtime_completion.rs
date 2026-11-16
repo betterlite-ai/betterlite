@@ -14,7 +14,8 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::services_realtime_session::FixedIds;
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 

@@ -29,7 +29,10 @@ use serde_json::Value;
 use serde_json::json;
 use serde_json::value::RawValue;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -81,7 +84,7 @@ impl ModelInfoClient for NoHfTransport {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -168,7 +171,7 @@ where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
 {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|source| HelperError {
@@ -256,7 +259,7 @@ fn unknown_function(function: &str) -> Box<HelperError> {
 
 fn serialization<Source>(source: &Source) -> Box<HelperError>
 where
-    Source: std::fmt::Display,
+    Source: Display,
 {
     Box::new(HelperError {
         class: String::from("SerializationError"),

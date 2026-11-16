@@ -6,9 +6,11 @@ use serde_json::Value;
 use super::model::{Step, StepCompare};
 use super::run::StepCapture;
 use crate::case::Compare;
-use crate::compare::{self, Difference as ResponseDifference, remove_pointer};
+use crate::compare;
 use crate::http::Response;
-use crate::mock::ProviderRequest;
+use betterlite_oracle_runner::compare::Difference as ResponseDifference;
+use betterlite_oracle_runner::compare::value::remove_pointer;
+use betterlite_oracle_runner::mock::ProviderRequest;
 
 #[derive(Debug, Serialize)]
 pub(crate) struct Difference {

@@ -12,10 +12,12 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use encoder::RecordingEncoder;
 use journal::Journal;
+use tokio::runtime::Builder;
 use transport::{RecordingSleep, ScriptedTransport};
 
 mod encoder;
@@ -63,7 +65,7 @@ impl Helper for Op {
             .iter()
             .map(spans::span)
             .collect::<Result<_, Box<HelperError>>>()?;
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| failure("RuntimeError", &error.to_string()))?;
         if input.mock_mode {

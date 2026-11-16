@@ -13,7 +13,8 @@ use chrono::{DateTime, TimeDelta, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use tokio::runtime::{Builder, Runtime};
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -72,8 +73,8 @@ pub(super) fn epoch(now_ms: i64) -> Result<DateTime<Utc>, Box<HelperError>> {
         .ok_or_else(|| value_error(format!("invalid now_ms: {now_ms}")))
 }
 
-pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| value_error(error.to_string()))

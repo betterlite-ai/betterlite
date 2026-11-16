@@ -4,14 +4,16 @@ use std::sync::Arc;
 
 use reqwest::blocking::Client;
 
+use crate::OracleError;
 use crate::case::Request;
 use crate::cli::Options;
 use crate::gateway::{self, GatewayInput};
-use crate::http::{self, Response};
+use crate::http;
+use crate::http::Response;
 use crate::http_scenarios::error::ScenarioError;
 use crate::http_scenarios::run::{Peer, PeerFactory, PeerStart, ProviderSplit};
-use crate::mock::{MockProvider, ProviderRequest};
 use crate::process::Gateway;
+use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
 
 pub(super) struct GatewayPeerFactory<'input> {
     pub(super) options: &'input Options,
@@ -68,7 +70,7 @@ impl Peer for GatewayPeer {
         let calls = self
             .provider
             .finish_run()
-            .map_err(|source| ScenarioError::Request(Box::new(source)))?;
+            .map_err(|source| ScenarioError::Request(Box::new(OracleError::HelperRun(source))))?;
         let trace = calls
             .into_iter()
             .map(|call| call.request)

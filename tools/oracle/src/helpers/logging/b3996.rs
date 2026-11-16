@@ -13,7 +13,8 @@ use betterlite_logging::gcs_mock::settings::should_use_gcs_mock;
 use secrecy::ExposeSecret as _;
 use serde_json::{Map, Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod input;
 mod recording;
@@ -21,6 +22,7 @@ mod tests;
 
 use input::{AuthInput, Input, RequestInput};
 use recording::{FakeAuth, RecordingClient, last_recorded, observed_body, observed_request};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -28,7 +30,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .start_paused(true)
             .build()

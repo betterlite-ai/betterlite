@@ -12,7 +12,7 @@ use betterlite_vertex::provider_metadata::timestamp::{LocalTimeContext, decode_v
 use jiff::tz::TimeZone;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use capability::capabilities;
 use lyria::lyria;

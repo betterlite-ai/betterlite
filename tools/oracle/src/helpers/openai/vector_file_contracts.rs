@@ -9,6 +9,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use minimal_config::MinimalConfig;
 
 mod minimal_config;
@@ -95,7 +97,7 @@ fn filtered(kind: FileParamsKind, params: &[Object]) -> Value {
     )
 }
 
-fn decode_record(entry: &RecordEntry) -> crate::helpers::HelperResult {
+fn decode_record(entry: &RecordEntry) -> HelperResult {
     let kind = match entry.kind {
         RecordName::FileObject => VectorFileRecordKind::FileObject,
         RecordName::CreateRequest => VectorFileRecordKind::CreateRequest,
@@ -186,8 +188,8 @@ fn provider_defaults(input: &DefaultsInput) -> Value {
     })
 }
 
-fn validation_error(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn validation_error(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: String::from("ValidationError"),
         status: None,
         error_type: None,
@@ -197,10 +199,10 @@ fn validation_error(message: String) -> Box<crate::helpers::HelperError> {
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::AttachmentParameterFilters { create, update } => Ok(json!({
                 "create": filtered(FileParamsKind::Create, create),

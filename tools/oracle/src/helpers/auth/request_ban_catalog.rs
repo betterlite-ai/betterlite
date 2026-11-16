@@ -1,4 +1,6 @@
 use betterlite_auth::request_ban_catalog::{RequestBanCatalog, observability};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -16,10 +18,10 @@ struct Catalog {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::Catalog => {
                 let pinned = RequestBanCatalog::pinned();
@@ -32,7 +34,7 @@ impl crate::helpers::Helper for Op {
             Input::Observability => serde_json::to_value(observability::banned_fields()),
         };
         output.map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "SerializationError".to_owned(),
                 status: None,
                 error_type: None,

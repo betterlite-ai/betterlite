@@ -7,7 +7,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

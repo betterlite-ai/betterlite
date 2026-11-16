@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::structured::{
     Payload, SensitiveDataMasker, mask_credentials_in_payload, mask_sensitive_structure,
     parse::parse_payload,
@@ -50,10 +52,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let masker = SensitiveDataMasker::default();
         let result = match input {
             Input::MaskSensitiveStructure { data } => mask_sensitive_structure(data),
@@ -97,8 +99,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn invalid_mapping() -> Box<crate::helpers::HelperError> {
-    let error = crate::helpers::HelperError {
+fn invalid_mapping() -> Box<HelperError> {
+    let error = HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

@@ -11,7 +11,9 @@ use betterlite_server::bucket_config::source::{BucketConfigSource, BucketType};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -40,7 +42,7 @@ fn block_on<F>(future: F) -> Result<F::Output, Box<HelperError>>
 where
     F: Future,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .start_paused(true)
         .build()

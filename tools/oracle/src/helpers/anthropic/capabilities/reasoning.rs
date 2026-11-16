@@ -3,7 +3,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::adapter::{Adapter, Environment};
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 #[derive(Debug, Deserialize)]
 pub(super) struct MapStep {

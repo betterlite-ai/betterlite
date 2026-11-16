@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 use rstest::rstest;
 use serde_json::json;
 
-use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::{Helper as _, HelperRun, run_case};
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperRun, run_case};
 
 use super::Op;
 
@@ -18,18 +19,22 @@ fn parse_case(path: &Path) -> HelperCase {
 
 #[rstest]
 fn replays_every_request_context_case_against_litellm(
-    #[files("cases/helpers/mcp-request-context/*.yaml")] path: PathBuf,
+    #[base_dir = "../../.."]
+    #[files("cases/helpers/mcp-request-context/*.yaml")]
+    path: PathBuf,
 ) {
     let case = parse_case(&path);
     validate_helper(&path, &case).expect("case should validate");
     assert_eq!(case.call.operation, "b8191");
-    let run = run_case(&case, false).expect("case should run");
+    let run = run_case(&[crate::GROUP], &case, false).expect("case should run");
     assert!(matches!(run, HelperRun::Match), "{}", path.display());
 }
 
 #[rstest]
 fn helper_seeds_select_b8191(
-    #[files("fuzz/corpus/helper_case/mcp-request-context-*.yaml")] path: PathBuf,
+    #[base_dir = "../../.."]
+    #[files("fuzz/corpus/helper_case/mcp-request-context-*.yaml")]
+    path: PathBuf,
 ) {
     let case = parse_case(&path);
     validate_helper(&path, &case).expect("seed should validate");

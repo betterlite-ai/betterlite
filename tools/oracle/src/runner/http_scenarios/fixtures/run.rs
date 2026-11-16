@@ -9,16 +9,16 @@ use super::adapters::PostgresRepository;
 use super::adapters::SystemClock;
 use super::gateway::GatewayPeerFactory;
 use crate::OracleError;
-use crate::case::UpstreamAnswer;
 use crate::cli::Options;
 use crate::http;
 use crate::http_scenarios::error::ScenarioError;
 use crate::http_scenarios::model::HttpScenario;
 use crate::http_scenarios::run::{PeerFixture, ScenarioDependencies, run};
-use crate::mock::MockProvider;
 use crate::paths::unique_id;
-use crate::routing_mock_scripts::MockScript;
 use crate::runner::DatabaseEnvironment;
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::MockScript;
 
 #[path = "run/polling.rs"]
 mod polling;
@@ -65,7 +65,7 @@ impl ScenarioEnvironment {
     }
 }
 
-pub(crate) fn run_case(
+pub(crate) fn run_fixture_case(
     options: &Options,
     root: &Path,
     scenario: &HttpScenario,

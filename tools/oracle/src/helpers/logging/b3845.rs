@@ -19,6 +19,8 @@ use betterlite_logging::otel::model::payloads::service::ServiceSpanData;
 use betterlite_logging::otel::model::trace_controls::TraceControls;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::transforms::{transform_messages, transform_responses_output};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -115,10 +117,10 @@ pub(crate) struct ResponsesInput {
     output: Vec<OtelModelValue>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let value = match input {
             Input::GenaiLlmCall(call) => llm_call_record(call, Vocabulary::Genai)?,
             Input::GenaiGuardrail(guardrail) => {
@@ -146,7 +148,7 @@ const fn default_tool_attr_budget() -> usize {
 fn llm_call_span(
     payload: &Payload,
     options: LLMCallOptions,
-) -> Result<LLMCallSpanData, Box<crate::helpers::HelperError>> {
+) -> Result<LLMCallSpanData, Box<HelperError>> {
     LLMCallSpanData::from_standard_logging_payload(payload, options)
         .map_err(|error| helper_error("MetadataError", error.to_string()))
 }
@@ -163,7 +165,7 @@ impl Vocabulary {
 fn llm_call_record(
     input: &LlmCallInput,
     vocabulary: Vocabulary,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<HelperError>> {
     let options = LLMCallOptions {
         capture_content: input.capture_content,
         time_to_first_chunk_seconds: input.time_to_first_chunk_seconds,
@@ -183,16 +185,13 @@ fn genai_record(data: &SpanData<'_>, environment: &BTreeMap<String, String>) -> 
     attributes_record(&mapper.map(data, environment))
 }
 
-fn service_record(input: &ServiceInput) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn service_record(input: &ServiceInput) -> Result<Value, Box<HelperError>> {
     let payload = service_payload(input)?;
     let span = ServiceSpanData::from_payload(&payload, &input.event_metadata);
     Ok(genai_record(&SpanData::Service(&span), &input.environment))
 }
 
-fn mcp_record(
-    input: &McpInput,
-    method: McpMethod,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn mcp_record(input: &McpInput, method: McpMethod) -> Result<Value, Box<HelperError>> {
     match method {
         McpMethod::ToolCall => {
             let span = MCPToolCallSpanData::from_standard_logging_payload(
@@ -216,7 +215,7 @@ fn mcp_record(
     }
 }
 
-fn budget_record(input: &BudgetInput) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn budget_record(input: &BudgetInput) -> Result<Value, Box<HelperError>> {
     let span = llm_call_span(&input.payload, LLMCallOptions::default())?;
     let share = tool_attr_budget(input.vocabularies);
     let genai = GenAIMapper {

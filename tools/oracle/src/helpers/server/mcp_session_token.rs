@@ -1,5 +1,6 @@
 #[rustfmt::skip]
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 #[rustfmt::skip]
 use betterlite_mcp::errors::{SessionKeyError as KeyError, SessionMintError::TooLarge, SessionOpenError};
 #[rustfmt::skip]
@@ -71,7 +72,7 @@ struct Output { mint: Option<MintOutput>, open: Option<OpenOutput> }
 #[rustfmt::skip]
 pub(crate) struct Op;
 #[rustfmt::skip]
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
     fn run(input: &Self::Input) -> HelperResult {
         let minted = input.mint.as_ref().map(mint).transpose()?;

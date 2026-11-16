@@ -15,7 +15,7 @@ use super::responses::{
     DecodeShape, decode_responses, option_mapping, retrieval_configuration, unsupported_create,
 };
 use super::{Input, Operation, UrlScenario};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn run(input: &Input) -> Value {
     match input.operation {

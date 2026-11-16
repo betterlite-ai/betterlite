@@ -13,10 +13,12 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::capture::{Answer, Capture, FixedClock};
 use self::init::{athina_init, greenscale_init, promptlayer_init};
+use tokio::runtime::Builder;
 
 mod capture;
 mod init;
@@ -88,7 +90,7 @@ fn init_json(scenario: &InitScenario) -> serde_json::Value {
 }
 
 fn run_logs(scenarios: &[LogScenario]) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
     let mut results = Vec::with_capacity(scenarios.len());

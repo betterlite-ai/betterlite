@@ -23,7 +23,8 @@ use serde_json::{Value, json};
 
 use super::fixtures::{self, ResolutionFixture};
 use super::{Input, Operation, WireValue};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input.operation {

@@ -3,8 +3,8 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::HelperCase;
-use crate::helpers::{HelperRun, run_case};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 
 #[rstest::rstest]
 #[case::bedrock_checks_validator("bedrock-checks-validator")]
@@ -18,18 +18,18 @@ use crate::helpers::{HelperRun, run_case};
 #[case::noma_block_failures("noma-block-failures")]
 #[case::zscaler_user_api_key_fields("zscaler-user-api-key-fields")]
 fn cases_match_litellm(#[case] name: &str) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/guardrail-provider-options")
         .join(format!("{name}.yaml"));
     let source = fs::read_to_string(path).unwrap();
     let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-    let result = run_case(&case, false).unwrap();
+    let result = run_case(&[crate::GROUP], &case, false).unwrap();
     assert!(matches!(result, HelperRun::Match));
 }
 
 #[test]
 fn replays_the_guardrail_provider_options_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let replayed = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -41,7 +41,7 @@ fn replays_the_guardrail_provider_options_corpus() {
         .map(|path| {
             let source = fs::read_to_string(&path).unwrap();
             let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-            crate::case::helper::validate_helper(&path, &case).unwrap();
+            validate_helper(&path, &case).unwrap();
         })
         .count();
     assert!(replayed >= 1);

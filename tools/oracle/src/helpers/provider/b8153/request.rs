@@ -9,7 +9,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::{FIXED_NOW, petals_config, prompts, runtime};
 

@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use betterlite_logging::otel::legacy_policy::config::{
     Exporter, MetadataKeys, OpenTelemetryConfig, normalize_metadata_keys,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use opentelemetry::KeyValue;
 use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, Span, SpanData};
@@ -56,7 +58,7 @@ pub(super) fn metadata_keys(value: &Value) -> Vec<String> {
     }
 }
 
-pub(super) fn record<F>(write: F) -> crate::helpers::HelperResult
+pub(super) fn record<F>(write: F) -> HelperResult
 where
     F: FnOnce(&mut Span),
 {
@@ -101,8 +103,8 @@ fn events_json(span: &SpanData) -> Value {
     )
 }
 
-pub(super) fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+pub(super) fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,

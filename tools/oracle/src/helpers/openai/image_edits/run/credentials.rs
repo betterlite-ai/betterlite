@@ -7,7 +7,7 @@ use secrecy::SecretString;
 
 use super::super::input::Probe;
 use super::invalid;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn resolve(probe: &Probe) -> Result<OpenAiCredentials, Box<HelperError>> {
     let settings = openai_credentials::Raw::default()

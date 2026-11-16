@@ -1,10 +1,10 @@
 use super::failure;
 use super::hooks::ErrorInput;
-use crate::helpers::HelperResult;
 use betterlite_core::api::realtime_contracts::close::{
     BackendClose, CloseFrame, ConnectionClosed, backend_close_from, client_close_code,
     realtime_error_event, upstream_handshake_close_code, websocket_close_reason,
 };
+use betterlite_oracle_helper_api::helper::HelperResult;
 use serde::Deserialize;
 use serde_json::{Value, json};
 #[derive(Debug, Deserialize)]

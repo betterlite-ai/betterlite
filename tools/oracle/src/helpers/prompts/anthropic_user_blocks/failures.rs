@@ -7,7 +7,7 @@ use betterlite_prompts::anthropic_results::tool_result::ToolResultError;
 use betterlite_prompts::anthropic_user_blocks::error::UserBlocksError;
 use betterlite_prompts::anthropic_user_blocks::prelude::PrepareError;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(crate) fn failure(status: Option<u16>, error: &dyn Display) -> Box<HelperError> {
     Box::new(HelperError {

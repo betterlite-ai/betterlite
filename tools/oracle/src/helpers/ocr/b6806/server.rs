@@ -8,6 +8,7 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 use super::failure;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) struct Reply {
     pub(super) status: u16,
@@ -27,9 +28,7 @@ pub(super) struct Server {
 }
 
 impl Server {
-    pub(super) async fn start(
-        replies: Vec<Reply>,
-    ) -> Result<Self, Box<crate::helpers::HelperError>> {
+    pub(super) async fn start(replies: Vec<Reply>) -> Result<Self, Box<HelperError>> {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .map_err(|error| failure(&error))?;
@@ -41,7 +40,7 @@ impl Server {
         })
     }
 
-    pub(super) async fn finish(self) -> Result<Vec<Captured>, Box<crate::helpers::HelperError>> {
+    pub(super) async fn finish(self) -> Result<Vec<Captured>, Box<HelperError>> {
         let joined = timeout(Duration::from_secs(10), self.task)
             .await
             .map_err(|_elapsed| failure("the provider saw fewer requests than expected"))?;

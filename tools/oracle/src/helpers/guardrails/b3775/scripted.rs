@@ -9,7 +9,7 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 const POLL: Duration = Duration::from_millis(5);
 const TIMEOUT_MILLIS: u64 = 300;

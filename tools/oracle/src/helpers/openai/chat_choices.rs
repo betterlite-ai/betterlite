@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
 
 mod choices;
 mod endpoint;
@@ -16,7 +18,7 @@ pub(crate) type Object = Map<String, Value>;
 
 pub(crate) fn failure<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     Box::new(HelperError {
         class: String::from("ValueError"),
@@ -121,7 +123,7 @@ pub(crate) enum ChatChoicesCall {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = ChatChoicesCall;
 
     fn run(input: &Self::Input) -> HelperResult {

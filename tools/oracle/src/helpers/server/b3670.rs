@@ -17,7 +17,9 @@ use betterlite_server::guardrails::tool_call_identity::{
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::slice;
 
 pub(crate) struct Op;
 
@@ -171,10 +173,7 @@ fn shapes_value(shapes: &[ToolCallShape]) -> Value {
 }
 
 fn single_shape(call: &Value) -> ToolCallShape {
-    let Some(shape) = tool_call_shapes(std::slice::from_ref(call))
-        .into_iter()
-        .next()
-    else {
+    let Some(shape) = tool_call_shapes(slice::from_ref(call)).into_iter().next() else {
         return ToolCallShape {
             name: None,
             arguments: String::new(),

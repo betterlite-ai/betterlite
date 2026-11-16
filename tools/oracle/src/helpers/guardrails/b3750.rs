@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::Deserialize;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 mod fakes;
 mod operations;

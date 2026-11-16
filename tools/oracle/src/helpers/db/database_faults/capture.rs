@@ -1,7 +1,7 @@
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
@@ -42,7 +42,7 @@ impl<S: Subscriber> Layer<S> for Capture {
             event.record(&mut fields);
             self.0
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .unwrap_or_else(PoisonError::into_inner)
                 .push(Effect::Warning { fields: fields.0 });
         }
     }

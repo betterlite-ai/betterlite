@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde::de::Error as _;
 use serde_json::Value;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 // an internally tagged enum buffers the payload, where a RawValue response cannot be read
 #[derive(Deserialize)]

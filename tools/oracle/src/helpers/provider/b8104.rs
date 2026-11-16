@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_provider::api::responses_provider_contract::records::Params;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod fixture;
 mod ops;

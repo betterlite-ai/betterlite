@@ -5,14 +5,16 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 
-use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 
 use super::Op;
 
 #[rstest]
 fn helper_seeds_select_vertex_credentials(
-    #[files("fuzz/corpus/helper_case/vertex_credentials*.yaml")] path: PathBuf,
+    #[base_dir = "../../.."]
+    #[files("fuzz/corpus/helper_case/vertex_credentials*.yaml")]
+    path: PathBuf,
 ) {
     let source = fs::read_to_string(&path).unwrap();
     let case: HelperCase = serde_saphyr::from_str(&source).unwrap();

@@ -24,7 +24,7 @@ use betterlite_redis::list_operations::results::{LpopPipelineEntry, LpopResult};
 use super::fake_server::FakeServer;
 use super::helper_error;
 use super::input::{Call, ListValue, Operation, PipelineOperation};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 const DEFAULT_MAJOR_VERSION: u32 = 7;
 

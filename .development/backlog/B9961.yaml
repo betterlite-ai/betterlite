@@ -1,0 +1,13 @@
+id: B9961
+milestone: R2 bug fixes
+title: Gemini media resolves GCS object content types
+status: todo
+depends_on: [B1311, B1321, B1325, B5083, B183, B9965]
+file: null
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

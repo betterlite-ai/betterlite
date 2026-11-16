@@ -8,10 +8,13 @@ use betterlite_core::budget_reset::{
 };
 use betterlite_core::duration::error::{DurationError, DurationWarning};
 use betterlite_core::duration::seconds::duration_in_seconds;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::fmt::Display;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -87,10 +90,10 @@ struct RunContext<'run> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let database = TimeZoneDatabase::from_env();
         let context = RunContext {
             clocks: ResetClocks {
@@ -220,7 +223,7 @@ fn persistent_diagnostic(
     })
 }
 
-fn moment(text: &str) -> Result<DateTime<Utc>, Box<crate::helpers::HelperError>> {
+fn moment(text: &str) -> Result<DateTime<Utc>, Box<HelperError>> {
     DateTime::parse_from_rfc3339(text)
         .map(|parsed| parsed.with_timezone(&Utc))
         .map_err(failure)
@@ -268,11 +271,11 @@ const fn settings_error_category(error: &BudgetResetSettingsError) -> &'static s
     }
 }
 
-fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "BudgetResetInput".to_owned(),
         message: error.to_string(),
         status: None,

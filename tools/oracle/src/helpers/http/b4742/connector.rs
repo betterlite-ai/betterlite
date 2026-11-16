@@ -7,6 +7,7 @@ use aws_smithy_runtime_api::client::result::ConnectorError;
 use aws_smithy_runtime_api::http::StatusCode;
 use aws_smithy_types::body::SdkBody;
 use serde_json::{Value, json};
+use url::form_urlencoded;
 
 const ASSUMED_CREDENTIALS: &str = "<AssumeRoleResponse><AssumeRoleResult><Credentials><AccessKeyId>ASIATEMPORARY</AccessKeyId><SecretAccessKey>temporarysecret</SecretAccessKey><SessionToken>temporarytoken</SessionToken><Expiration>2999-01-01T00:00:00Z</Expiration></Credentials></AssumeRoleResult></AssumeRoleResponse>";
 
@@ -28,7 +29,7 @@ pub(super) struct Sts(pub(super) Recorder);
 impl HttpConnector for Sts {
     fn call(&self, request: HttpRequest) -> HttpConnectorFuture {
         let body = request.body().bytes().unwrap_or_default();
-        let form: Vec<(String, String)> = url::form_urlencoded::parse(body)
+        let form: Vec<(String, String)> = form_urlencoded::parse(body)
             .map(|(name, value)| (name.into_owned(), value.into_owned()))
             .collect();
         let field = |wanted: &str| {

@@ -4,7 +4,9 @@ use betterlite_models::catalog_generalizations::{
 use betterlite_models::error::ModelsError;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use serde_json::value::RawValue;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
@@ -24,10 +26,10 @@ pub(crate) struct FillMissingProbe {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         let rules =
             decode_generalization_rules(input.rules.to_string().as_bytes()).map_err(|error| {
                 Box::new(HelperError {
@@ -43,7 +45,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn report(input: &Input, rules: Vec<Box<serde_json::value::RawValue>>) -> Value {
+fn report(input: &Input, rules: Vec<Box<RawValue>>) -> Value {
     let (installed, warnings) = CatalogGeneralizations::install(rules);
     let fill_missing = input
         .fill_missing

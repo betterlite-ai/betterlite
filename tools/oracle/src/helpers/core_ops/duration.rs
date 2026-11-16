@@ -1,8 +1,11 @@
 use betterlite_core::duration::reset::next_standardized_reset_time;
 use betterlite_core::duration::seconds::duration_in_seconds;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::{DateTime, NaiveTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -38,10 +41,10 @@ struct Outcome {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let database = TimeZoneDatabase::from_env();
         let outcomes = input
             .calls
@@ -52,10 +55,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn run_call(
-    call: &Call,
-    database: &TimeZoneDatabase,
-) -> Result<Outcome, Box<crate::helpers::HelperError>> {
+fn run_call(call: &Call, database: &TimeZoneDatabase) -> Result<Outcome, Box<HelperError>> {
     let parsed_now = DateTime::parse_from_rfc3339(&call.now).map_err(failure)?;
     let now = parsed_now.with_timezone(&Utc);
     let time_of_day =
@@ -86,11 +86,11 @@ fn run_call(
     ))
 }
 
-fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "DurationInput".to_owned(),
         message: error.to_string(),
         status: None,

@@ -19,15 +19,17 @@ use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::{Input, LlmCallInput, TraceInput};
 use values::{attributes_record, helper_error, recorded_span};
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let value = match input {
             Input::LangfuseLlmCall(call) => plain_record(call, Vocabulary::Langfuse)?,
             Input::LangtraceLlmCall(call) => plain_record(call, Vocabulary::Langtrace)?,
@@ -62,10 +64,7 @@ enum Vocabulary {
     Weave,
 }
 
-fn plain_record(
-    call: &LlmCallInput,
-    vocabulary: Vocabulary,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn plain_record(call: &LlmCallInput, vocabulary: Vocabulary) -> Result<Value, Box<HelperError>> {
     let span = llm_call_span(call)?;
     let data = SpanData::LLMCall(&span);
     let mapped = match vocabulary {
@@ -76,9 +75,7 @@ fn plain_record(
     Ok(attributes_record(&mapped))
 }
 
-fn open_inference_attributes(
-    call: &LlmCallInput,
-) -> Result<AttributeMap, Box<crate::helpers::HelperError>> {
+fn open_inference_attributes(call: &LlmCallInput) -> Result<AttributeMap, Box<HelperError>> {
     let span = llm_call_span(call)?;
     let mapper = OpenInferenceMapper {
         tool_attr_budget: call.tool_attr_budget,
@@ -86,7 +83,7 @@ fn open_inference_attributes(
     Ok(mapper.map(&SpanData::LLMCall(&span), &BTreeMap::new()))
 }
 
-fn registry_record(names: &[String]) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn registry_record(names: &[String]) -> Result<Value, Box<HelperError>> {
     let mappers =
         resolve_mappers(names).map_err(|error| helper_error("MapperError", error.to_string()))?;
     let entries: Vec<Value> = mappers
@@ -101,7 +98,7 @@ fn registry_record(names: &[String]) -> Result<Value, Box<crate::helpers::Helper
 fn integration_record(
     kwargs: &MetadataMap,
     response: &MetadataMap,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<HelperError>> {
     let (attributes, events) = recorded_span(|span| {
         LangtraceAttributes::set_langtrace_attributes(span, kwargs, response);
     })?;
@@ -115,14 +112,14 @@ fn integration_record(
 fn tool_attributes_record(
     optional_tools: Option<&[OtelModelValue]>,
     metadata_tools: Option<&[OtelModelValue]>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<HelperError>> {
     let (attributes, _events) = recorded_span(|span| {
         set_tool_attributes(span, optional_tools, metadata_tools);
     })?;
     Ok(attributes_record(&attributes))
 }
 
-fn llm_call_span(call: &LlmCallInput) -> Result<LLMCallSpanData, Box<crate::helpers::HelperError>> {
+fn llm_call_span(call: &LlmCallInput) -> Result<LLMCallSpanData, Box<HelperError>> {
     LLMCallSpanData::from_standard_logging_payload(
         &call.payload,
         LLMCallOptions {

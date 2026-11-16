@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use super::fixture::{FixtureClock, FixtureResolver, FixtureTransport, NOW, failure, request_json};
 use super::steps::Step;
 use super::{load_settings, provider_for};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 fn configured_json(configured: Option<&ConfiguredRegion>) -> Value {
     match configured {

@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 use betterlite_streaming::stream_usage_assembly::UsageTokenCounter;
@@ -158,8 +159,7 @@ impl ConsoleSink for FixtureConsole {
     }
 }
 
-pub(crate) fn hooks()
--> Result<VerboseHooks<FixtureLogger, FixtureConsole>, Box<crate::helpers::HelperError>> {
+pub(crate) fn hooks() -> Result<VerboseHooks<FixtureLogger, FixtureConsole>, Box<HelperError>> {
     let redactor =
         Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| failure(error.to_string()))?;
     Ok(VerboseHooks {
@@ -170,8 +170,8 @@ pub(crate) fn hooks()
     })
 }
 
-pub(crate) fn failure(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+pub(crate) fn failure(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

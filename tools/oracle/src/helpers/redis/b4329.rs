@@ -12,7 +12,8 @@ use tokio::runtime::Builder;
 use self::fake_server::FakeServer;
 use self::input::{Call, ListValue};
 use self::operations::{RecordingHooks, build, events, lists, run};
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -24,11 +25,11 @@ impl Helper for Op {
             .enable_all()
             .build()
             .map_err(|error| helper_error("RuntimeError", error))?;
-        runtime.block_on(run_case(input))
+        runtime.block_on(run_call(input))
     }
 }
 
-async fn run_case(call: &Call) -> HelperResult {
+async fn run_call(call: &Call) -> HelperResult {
     let initial: BTreeMap<String, Vec<Vec<u8>>> = call
         .lists
         .iter()

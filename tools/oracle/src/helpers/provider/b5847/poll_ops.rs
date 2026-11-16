@@ -18,7 +18,9 @@ use super::script::{
     StandInCounter, factory, header_map, runtime,
 };
 use super::{Policy, PollCase, StreamCase};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Runtime;
 
 fn append_script(
     output: &mut Value,
@@ -112,7 +114,7 @@ fn completion_value(result: Result<ReplicateCompletion, ReplicateFailure>) -> Va
 }
 
 fn poll_outcome(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
     fixture: &Fixture,
     case: &PollCase,
 ) -> Result<Value, Box<HelperError>> {
@@ -148,10 +150,7 @@ pub(super) fn poll(cases: &[PollCase]) -> HelperResult {
     Ok(json!({"requests": results}))
 }
 
-fn collect_stream(
-    runtime: &tokio::runtime::Runtime,
-    mut stream: ReplicateStream,
-) -> (Vec<Value>, Value) {
+fn collect_stream(runtime: &Runtime, mut stream: ReplicateStream) -> (Vec<Value>, Value) {
     let mut chunks = Vec::new();
     let mut error = Value::Null;
     while let Some(item) = runtime.block_on(stream.next()) {
@@ -199,7 +198,7 @@ fn stream_report(
 }
 
 fn stream_outcome(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
     fixture: &Fixture,
     case: &StreamCase,
 ) -> Result<Value, Box<HelperError>> {

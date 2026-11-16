@@ -6,8 +6,8 @@ use betterlite_config::sections::guardrail_params::decode::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::OrHelperError as _;
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

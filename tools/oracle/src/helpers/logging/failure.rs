@@ -21,12 +21,13 @@ use betterlite_logging::logging_state::correlation::{CorrelationContext, Correla
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::{Value, json};
 
-use crate::compare::helper::HelperError;
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::fixtures::{Fakes, lock};
 use self::input::{Input, Instance, Operation, Step};
 use self::snapshot::{context as context_snapshot, details};
+use tokio::runtime::Builder;
 
 mod fixtures;
 mod input;
@@ -59,7 +60,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| failure("RuntimeError", error.to_string()))?;

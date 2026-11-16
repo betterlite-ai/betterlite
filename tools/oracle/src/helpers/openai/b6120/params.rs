@@ -2,6 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use betterlite_openai::perplexity_chat::{CapabilityLookup, supported_openai_params};
+use std::io;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -31,7 +32,7 @@ struct Fixture {
 }
 
 impl CapabilityLookup for Fixture {
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     fn supports_reasoning(&self, _model: &str) -> Result<bool, Self::Error> {
         answer(self.reasoning, "reasoning")
@@ -42,11 +43,11 @@ impl CapabilityLookup for Fixture {
     }
 }
 
-fn answer(lookup: Lookup, name: &str) -> Result<bool, std::io::Error> {
+fn answer(lookup: Lookup, name: &str) -> Result<bool, io::Error> {
     match lookup {
         Lookup::True => Ok(true),
         Lookup::False => Ok(false),
-        Lookup::Error => Err(std::io::Error::other(format!(
+        Lookup::Error => Err(io::Error::other(format!(
             "the {name} capability lookup failed"
         ))),
     }

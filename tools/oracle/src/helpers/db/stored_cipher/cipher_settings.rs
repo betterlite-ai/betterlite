@@ -4,7 +4,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_secrets::secret_codec::CipherSettings;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) struct KeySource<'input> {
     pub(super) salt_key: Option<&'input str>,

@@ -14,7 +14,8 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod input;
 mod tests;

@@ -1,4 +1,5 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::message_content::Message;
 use betterlite_prompts::system_placement::anthropic_system::anthropic_system_messages;
 use betterlite_prompts::system_placement::text_parts::system_message_as_user;

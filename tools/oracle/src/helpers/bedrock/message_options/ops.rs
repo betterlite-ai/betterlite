@@ -16,7 +16,8 @@ use tokio::runtime::{Builder, Runtime};
 
 use super::fixture::{CostLookup, Fixture, NoHfTransport};
 use super::input::{ClampCase, EnsureCase, Input, TtlCase};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 fn failure<E>(error: E) -> Box<HelperError>
 where

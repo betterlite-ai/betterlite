@@ -6,6 +6,8 @@ use betterlite_core::api::response_chat_history::reasoning::{
     reasoning_records,
 };
 use betterlite_core::api::response_chat_history::tool_fields::output_tool_fields;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -60,10 +62,10 @@ pub(crate) struct MetadataResponse {
 }
 
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::LeadingSystemInstructions { histories }
             | Input::AssistantCallHistory { histories }
@@ -86,9 +88,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn history_output(
-    histories: &[Vec<HistoryMessage>],
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn history_output(histories: &[Vec<HistoryMessage>]) -> Result<Value, Box<HelperError>> {
     let mut converted = Vec::new();
     for messages in histories {
         let history = convert_history(messages).map_err(|error| failure(&error))?;
@@ -103,7 +103,7 @@ fn history_output(
 fn reasoning_output(
     messages: &[HistoryMessage],
     output_item_groups: &[Vec<ReasoningOutputItem>],
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<HelperError>> {
     let mut ids = ReasoningIds::default();
     let mut projected = Vec::new();
     for message in messages {
@@ -118,7 +118,7 @@ fn reasoning_output(
     Ok(json!({"reasoning_input": projected, "groups": groups}))
 }
 
-fn tool_field_case(case: &ToolFieldCase) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn tool_field_case(case: &ToolFieldCase) -> Result<Value, Box<HelperError>> {
     let mut item = case.item.clone();
     let provider = match &case.provider_specific_fields {
         Some(ProviderFields::Dict { value }) => Some(Value::Object(value.clone())),
@@ -151,8 +151,8 @@ fn metadata_output(responses: &[MetadataResponse]) -> Vec<Value> {
     projections
 }
 
-fn failure(error: &HistoryError) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn failure(error: &HistoryError) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

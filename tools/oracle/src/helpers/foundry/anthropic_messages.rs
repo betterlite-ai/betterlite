@@ -18,7 +18,8 @@ use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod input;
 mod sources;

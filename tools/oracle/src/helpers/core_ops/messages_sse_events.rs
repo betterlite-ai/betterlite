@@ -9,7 +9,8 @@ use betterlite_core::api::messages_sse_events::{
 use betterlite_models::decisions::Json;
 use serde_json::json;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,10 +39,10 @@ enum Action {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.action {
             Action::RawChunkClassifiers => {
                 let chunk = decode(input)?;
@@ -75,7 +76,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn extract(input: &Input, chunk: &DecodedMessagesChunk) -> crate::helpers::HelperResult {
+fn extract(input: &Input, chunk: &DecodedMessagesChunk) -> HelperResult {
     let event = input
         .event
         .as_deref()
@@ -84,7 +85,7 @@ fn extract(input: &Input, chunk: &DecodedMessagesChunk) -> crate::helpers::Helpe
         .map_err(|error| helper_error("ValueError", error.to_string()))
 }
 
-fn render(input: &Input) -> crate::helpers::HelperResult {
+fn render(input: &Input) -> HelperResult {
     let response = input
         .response
         .as_ref()
@@ -102,7 +103,7 @@ fn render(input: &Input) -> crate::helpers::HelperResult {
     Ok(json!(encoded))
 }
 
-fn literal() -> crate::helpers::HelperResult {
+fn literal() -> HelperResult {
     let frame = incomplete_error_sse_event();
     let literal = str::from_utf8(&frame)
         .map_err(|error| helper_error("UnicodeDecodeError", error.to_string()))?;

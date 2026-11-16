@@ -16,7 +16,9 @@ use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::sync::PoisonError;
 
 #[derive(Deserialize)]
 pub(crate) struct Input {
@@ -152,7 +154,7 @@ fn token_step(step: &TokenStep) -> Result<serde_json::Value, Failure> {
     let requests = transport
         .requests
         .into_inner()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+        .unwrap_or_else(PoisonError::into_inner);
     Ok(json!({"requests": requests, "outcome": outcome}))
 }
 
@@ -179,10 +181,10 @@ fn select_step(
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let steps = input
             .steps
             .iter()

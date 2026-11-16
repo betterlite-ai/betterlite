@@ -4,16 +4,11 @@ use libfuzzer_sys::fuzz_target;
 use std::str;
 
 #[path = "../../src/helpers/server/blog_feed/date_parse.rs"]
-#[expect(
-    clippy::absolute_paths,
-    reason = "The oracle's lib.rs expects the same lint for this included helper file."
-)]
 mod date_parse;
 #[path = "../../src/helpers/server/blog_feed/parser.rs"]
 #[expect(
     clippy::disallowed_methods,
-    clippy::absolute_paths,
-    reason = "The oracle's lib.rs expects the same lints for this included helper file."
+    reason = "The server group's lib.rs expects the same lint for this included helper file."
 )]
 mod parser;
 

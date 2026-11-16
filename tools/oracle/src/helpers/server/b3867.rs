@@ -19,9 +19,13 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::runtime::ScriptedRuntime;
+use betterlite_server::tracing_routes::receiver::TraceRuntime;
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 const INGEST_PATH: &str = "/v1/traces";
 
@@ -85,7 +89,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(failure)?;
@@ -94,10 +98,9 @@ impl Helper for Op {
 }
 
 async fn answer(input: &Input) -> HelperResult {
-    let erased: Arc<dyn betterlite_server::tracing_routes::receiver::TraceRuntime> =
-        Arc::new(ScriptedRuntime {
-            script: input.script.clone(),
-        });
+    let erased: Arc<dyn TraceRuntime> = Arc::new(ScriptedRuntime {
+        script: input.script.clone(),
+    });
     let state = TraceRoutesState {
         receiver: input.tracing.then_some(erased),
         master_key: input.master_key.clone().map(SecretString::from),
@@ -219,7 +222,7 @@ fn principal(auth: &AuthInput) -> Result<Principal, Box<HelperError>> {
 
 fn failure<Message>(message: Message) -> Box<HelperError>
 where
-    Message: std::fmt::Display,
+    Message: Display,
 {
     Box::new(HelperError {
         class: "RuntimeError".to_owned(),
