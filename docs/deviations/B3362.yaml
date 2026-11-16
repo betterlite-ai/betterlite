@@ -1,0 +1,63 @@
+task: B3362
+deviations:
+  - what: >-
+      Pagination fetches upstream pages one at a time; betterlite awaits the fetch callback per page and never
+      issues two page reads at once.
+    why: >-
+      The Python collector recurses with an awaited fetch per page, so the cursor can never race itself. Keeping
+      the sequential order matches it and keeps the fetch callback free of concurrent state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L405-L430
+  - what: >-
+      An ownership write and the cache updates that follow it are not one transaction. Each row write autocommits,
+      the owner and stored-id entries are set only after it returns, and a failure between the write and those
+      sets leaves the caller's allowed-set entry stale until the 60 second TTL expires.
+    why: >-
+      LiteLLM's Prisma create and update are single awaited calls with no enclosing transaction, and its cache
+      writes follow them in plain Python statements. A transaction would be a behavior LiteLLM does not have, and
+      the TTL already bounds the stale window.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L240-L248
+  - what: >-
+      Stored-ID recovery decodes the unified_object_id on the row without checking that it matches what the
+      container ID encoder would produce for that container today.
+    why: >-
+      LiteLLM stores the ID it received at create time and decodes it again on recovery, so a row written under
+      older encoding rules keeps decoding with those rules until it is rewritten. No caller-visible field carries
+      the encoder's current output to compare against.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L282-L314
+  - what: >-
+      A negative limit fails the container list with a 400 InvalidLimit error before any upstream page is fetched,
+      where LiteLLM slices the collected list with owned[:page_limit] and a negative value keeps every item except
+      the last ones.
+    why: >-
+      The negative slice silently drops items from the end of a page instead of reporting a bad request, and no
+      setup can rely on a count it never reads. The route takes the trimmed limit from the query string, so a
+      negative value is caller error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L451-L455
+  - what: >-
+      The upstream page is decoded into a typed ContainerListPage: data must be a JSON array and has_more a JSON
+      boolean, and a page of any other shape fails the list with the fetch failure. LiteLLM reads data with
+      _get_container_list_data, which treats a non-list data as no items, and _get_has_more, which treats anything
+      but true as false, and returns a non-dict, non-model response unchanged from _with_container_list_page.
+    why: >-
+      The fetch callback is injected as a typed Rust function, so its answer has one declared shape. Returning the
+      raw upstream object for an untyped page would leave the list without filtered data at all, which is the
+      behavior no working upstream exercises.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L337-L364
+  - what: >-
+      A _hidden_params value that is not a mapping reads as absent, so the provider falls back to openai, where
+      LiteLLM calls .get on it and raises AttributeError.
+    why: >-
+      LiteLLM's hidden_params.get only runs after the dict check, so a list or string value there is a 500 from an
+      input the declared response type never produces. betterlite's typed lookup has no such call to fail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L130-L143
+  - what: >-
+      The owner and stored-id caches store their text through B2226's LocalTtlCache, whose get decodes a stored
+      text as JSON. An owner or stored ID that is itself a JSON scalar literal, such as 42, true or null, reads
+      back as a non-text value and is treated as a cache miss, so that lookup reads the row again; the answer is
+      the same.
+    why: >-
+      LiteLLM's InMemoryCache hands back the Python object it stored, so a numeric-looking scope stays a string.
+      The sentinel values in both caches are not valid JSON, so they keep round-tripping as text, which is what
+      the untracked answer relies on. The extra row read only costs a query.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L255-L279
+kept_bugs: []
