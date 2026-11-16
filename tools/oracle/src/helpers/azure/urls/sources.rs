@@ -7,7 +7,7 @@ use betterlite_azure::credentials::source::{
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use secrecy::SecretString;
 
-pub(super) struct NoSources;
+pub(crate) struct NoSources;
 
 fn unavailable(kind: &str) -> SourceFailure {
     SourceFailure {
