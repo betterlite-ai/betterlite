@@ -304,6 +304,8 @@ jobs:
               # a shard that stops at its first failure hides the rest: on 11-13 shard 3 ran 30 of 22702 tests in run 43451345497
               UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --max-fail 20 "${packages[@]}" ;;
             cache)
+              # every other part builds the gate first, and without its dependencies in this cache each job spent about 110 s on them (run 43847942706)
+              cargo build --locked --quiet --manifest-path .development/gate/Cargo.toml || exit 1
               export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"
               exec cargo test --locked --no-run --workspace ;;
             task)

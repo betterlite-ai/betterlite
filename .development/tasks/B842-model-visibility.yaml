@@ -153,7 +153,7 @@ checks:
       why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model-visibility-*")"
         && grep -rlq "model_visibility" tools/oracle/fuzz/corpus/helper_case/model-visibility-* && cargo
-        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: Require production acceptance and normalization of model_list_healthy_only.
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::model_visibility::tests::/) - test(/replays_the_/)'

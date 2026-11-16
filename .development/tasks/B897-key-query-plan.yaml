@@ -146,7 +146,7 @@ checks:
       why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/key-query-plan-*")"
         && grep -rlq "key_query_plan" tools/oracle/fuzz/corpus/helper_case/key-query-plan-* && cargo nextest
-        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/key-query-plan/status-expired.yaml
   - tools/oracle/cases/helpers/key-query-plan/blocked-versus-active.yaml

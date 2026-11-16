@@ -1,0 +1,11 @@
+kind: helper
+name: foundry-agent-requests-agent-stream-flags
+call:
+  foundry_agent_requests:
+    flags:
+      - {model: azure_ai/agents/a, stream: true}
+      - {model: azure_ai/agents/a, stream: false}
+      - {model: plain-model, stream: true}
+      - {model: plain-model, stream: false}
+env: {}
+compare: {ignore: []}

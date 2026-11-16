@@ -1,0 +1,28 @@
+kind: helper
+name: foundry-agent-requests-default-api-version
+call:
+  foundry_agent_requests:
+    provider_infos:
+      - {api_base: "https://explicit.example", api_key: explicit-key, environment: {AZURE_AI_API_BASE: "https://env.example", AZURE_AI_API_KEY: env-key}}
+      - {api_base: null, api_key: null, environment: {AZURE_AI_API_BASE: "https://env.example", AZURE_AI_API_KEY: env-key}}
+      - {api_base: "", api_key: "", environment: {AZURE_AI_API_BASE: "https://env.example", AZURE_AI_API_KEY: env-key}}
+      - {api_base: null, api_key: null, environment: {AZURE_AI_API_BASE: "TRUE"}}
+      - {api_base: null, api_key: null, environment: {AZURE_AI_API_KEY: ""}}
+      - {api_base: null, api_key: null, environment: {}}
+      - {api_base: "https://explicit.example", api_key: "", environment: {}}
+calls:
+  - foundry_agent_requests:
+      complete_urls:
+        - {api_base: null}
+        - {api_base: ""}
+        - {api_base: "https://base.example/"}
+        - {api_base: "https://base.example///"}
+  - foundry_agent_requests:
+      requests:
+        - {model: azure_ai/agents/a, messages: [], optional_params: {}}
+        - {model: azure_ai/agents/a, messages: [], optional_params: {api_version: null}}
+        - {model: azure_ai/agents/a, messages: [], optional_params: {api_version: ""}}
+        - {model: azure_ai/agents/a, messages: [], optional_params: {api_version: "2025-05-15-preview"}}
+        - {model: azure_ai/agents/a, messages: [], optional_params: {api_version: 2025}}
+env: {}
+compare: {ignore: []}
