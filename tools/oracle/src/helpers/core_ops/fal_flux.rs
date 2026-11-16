@@ -13,7 +13,7 @@ use betterlite_openai::api::image_contracts::records::{ImageHeaders, ImageParams
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 type Environment = BTreeMap<String, String>;
 
