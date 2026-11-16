@@ -178,7 +178,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/full_model_metadata*")"
       && grep -lq 'full_model_metadata' tools/oracle/fuzz/corpus/helper_case/full_model_metadata* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_full_model_metadata$/)'
+      run --locked -p betterlite-oracle-models --no-tests=fail -E 'test(/::helper_seeds_select_full_model_metadata$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-full-query-order
     why: Call B175 get_supported_openai_params(model, provider) first, then B2219 _get_model_info_helper with model/provider/base/key,
