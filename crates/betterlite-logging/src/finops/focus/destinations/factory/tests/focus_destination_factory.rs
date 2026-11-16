@@ -1,3 +1,8 @@
+use std::io::Read as _;
+use std::sync::atomic::Ordering;
+
+use flate2::read::GzDecoder;
+use http::Method as HttpMethod;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::finops::focus::destinations::factory::DestinationProvider;
@@ -5,14 +10,18 @@ use crate::finops::focus::destinations::factory::destination::DeliveryError;
 use crate::finops::focus::destinations::factory::error::FactoryError;
 use crate::finops::focus::destinations::factory::resolve::{self, DestinationOverrides};
 use crate::finops::focus::destinations::focus_gcs_destination::GcsDeliveryError;
+use crate::finops::focus::destinations::focus_s3_destination::S3DeliveryError;
+use crate::finops::vantage::error::DeliveryError as VantageDeliveryError;
 use crate::finops::vantage::settings::DEFAULT_BASE_URL;
 use crate::focus_records::destinations::FocusDestination;
+use crate::mavvrik_delivery::error::MavvrikDeliveryError;
+use crate::mavvrik_delivery::transport::Method as MavvrikMethod;
 use crate::mavvrik_delivery::validation::ValidationError;
 
 use super::support::{
     ACCESS_KEY, BUCKET, MAVVRIK_CONNECTION, MAVVRIK_ENDPOINT, MAVVRIK_KEY, PREFIX, SECRET_KEY,
-    SERVICE_ACCOUNT, VANTAGE_KEY, VANTAGE_TOKEN, destination_overrides, environment, factory,
-    factory_with_gcs_status, time_window,
+    SERVICE_ACCOUNT, SESSION_URI, SIGNED_URL, VANTAGE_KEY, VANTAGE_TOKEN, destination_overrides,
+    environment, factory, factory_with_gcs_status, mavvrik_reply, recording_factory, time_window,
 };
 
 fn configured_secret(value: &Option<SecretString>) -> Option<&str> {
@@ -47,6 +56,183 @@ async fn delivery_reports_a_refused_gcs_upload() {
     assert!(matches!(
         error,
         DeliveryError::Gcs(GcsDeliveryError::Status { status: 500, .. })
+    ));
+}
+
+#[tokio::test]
+async fn delivery_reaches_the_s3_destination() {
+    let (subject, recording) = recording_factory(&[
+        ("FOCUS_S3_BUCKET_NAME", BUCKET),
+        ("FOCUS_S3_ACCESS_KEY", ACCESS_KEY),
+        ("FOCUS_S3_SECRET_KEY", SECRET_KEY),
+    ]);
+    let destination = subject
+        .create("s3", PREFIX, &DestinationOverrides::default())
+        .expect("the s3 provider is supported");
+    destination
+        .deliver(
+            b"ChargePeriodStart\n2026-01-02\n",
+            &time_window(),
+            "usage.csv",
+        )
+        .await
+        .expect("the fake S3 upload answers 200");
+    let requests = recording.s3_requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, HttpMethod::PUT);
+    assert!(requests[0].url.contains("/exports/"));
+    assert!(requests[0].url.ends_with("/usage.csv"));
+    assert_eq!(requests[0].body, b"ChargePeriodStart\n2026-01-02\n");
+}
+
+#[tokio::test]
+async fn delivery_reports_a_refused_s3_upload() {
+    let (subject, recording) = recording_factory(&[
+        ("FOCUS_S3_BUCKET_NAME", BUCKET),
+        ("FOCUS_S3_ACCESS_KEY", ACCESS_KEY),
+        ("FOCUS_S3_SECRET_KEY", SECRET_KEY),
+    ]);
+    recording.s3_status.store(503, Ordering::SeqCst);
+    let destination = subject
+        .create("s3", PREFIX, &DestinationOverrides::default())
+        .expect("the s3 provider is supported");
+    let error = destination
+        .deliver(
+            b"ChargePeriodStart\n2026-01-02\n",
+            &time_window(),
+            "usage.csv",
+        )
+        .await
+        .err()
+        .expect("the refused upload is reported");
+    assert!(matches!(
+        error,
+        DeliveryError::S3(S3DeliveryError::Status { status: 503, .. })
+    ));
+    assert_eq!(recording.s3_requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn delivery_reaches_the_vantage_destination() {
+    let (subject, recording) = recording_factory(&[
+        ("VANTAGE_API_KEY", VANTAGE_KEY),
+        ("VANTAGE_INTEGRATION_TOKEN", VANTAGE_TOKEN),
+    ]);
+    let destination = subject
+        .create("vantage", PREFIX, &DestinationOverrides::default())
+        .expect("the vantage provider is supported");
+    destination
+        .deliver(b"ServiceName\nfoo\n", &time_window(), "usage.csv")
+        .await
+        .expect("the fake Vantage upload answers 200");
+    let posts = recording.vantage_posts.lock().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0].filename.as_deref(), Some("usage.csv"));
+    assert_eq!(posts[0].data, b"ServiceName\nfoo\n");
+    assert!(posts[0].url.contains(VANTAGE_TOKEN));
+}
+
+#[tokio::test]
+async fn delivery_reports_a_refused_vantage_upload() {
+    let (subject, recording) = recording_factory(&[
+        ("VANTAGE_API_KEY", VANTAGE_KEY),
+        ("VANTAGE_INTEGRATION_TOKEN", VANTAGE_TOKEN),
+    ]);
+    recording.vantage_status.store(500, Ordering::SeqCst);
+    let destination = subject
+        .create("vantage", PREFIX, &DestinationOverrides::default())
+        .expect("the vantage provider is supported");
+    let error = destination
+        .deliver(b"ServiceName\nfoo\n", &time_window(), "usage.csv")
+        .await
+        .err()
+        .expect("the refused upload is reported");
+    assert!(matches!(
+        error,
+        DeliveryError::Vantage(VantageDeliveryError::Status { status: 500 })
+    ));
+}
+
+#[tokio::test]
+async fn delivery_reaches_the_mavvrik_destination() {
+    let (subject, recording) = recording_factory(&[
+        ("MAVVRIK_API_KEY", MAVVRIK_KEY),
+        ("MAVVRIK_API_ENDPOINT", MAVVRIK_ENDPOINT),
+        ("MAVVRIK_CONNECTION_ID", MAVVRIK_CONNECTION),
+    ]);
+    {
+        let mut replies = recording.mavvrik_replies.lock().unwrap();
+        replies.push_back(mavvrik_reply(
+            200,
+            r#"{"metricsMarker": 1700000000}"#,
+            Vec::new(),
+        ));
+        replies.push_back(mavvrik_reply(
+            200,
+            &format!(r#"{{"url": "{SIGNED_URL}"}}"#),
+            Vec::new(),
+        ));
+        replies.push_back(mavvrik_reply(
+            201,
+            "",
+            vec![("location".to_owned(), SESSION_URI.to_owned())],
+        ));
+        replies.push_back(mavvrik_reply(201, "", Vec::new()));
+        replies.push_back(mavvrik_reply(200, "", Vec::new()));
+    }
+    let destination = subject
+        .create("mavvrik", PREFIX, &DestinationOverrides::default())
+        .expect("the mavvrik provider is supported");
+    destination
+        .deliver(
+            b"ChargePeriodStart\n2026-01-02\n",
+            &time_window(),
+            "usage.csv",
+        )
+        .await
+        .expect("the scripted Mavvrik delivery succeeds");
+    let requests = recording.mavvrik_requests.lock().unwrap();
+    assert_eq!(requests.len(), 5);
+    assert_eq!(requests[0].method, MavvrikMethod::Post);
+    assert_eq!(requests[1].method, MavvrikMethod::Get);
+    assert_eq!(requests[2].method, MavvrikMethod::Post);
+    assert_eq!(requests[3].method, MavvrikMethod::Put);
+    assert_eq!(requests[3].url, SESSION_URI);
+    assert_eq!(requests[4].method, MavvrikMethod::Patch);
+    let mut uploaded = Vec::new();
+    GzDecoder::new(requests[3].body.as_slice())
+        .read_to_end(&mut uploaded)
+        .expect("the upload body is gzip");
+    assert_eq!(uploaded, b"ChargePeriodStart\n2026-01-02\n");
+}
+
+#[tokio::test]
+async fn delivery_reports_a_refused_mavvrik_registration() {
+    let (subject, recording) = recording_factory(&[
+        ("MAVVRIK_API_KEY", MAVVRIK_KEY),
+        ("MAVVRIK_API_ENDPOINT", MAVVRIK_ENDPOINT),
+        ("MAVVRIK_CONNECTION_ID", MAVVRIK_CONNECTION),
+    ]);
+    recording
+        .mavvrik_replies
+        .lock()
+        .unwrap()
+        .push_back(mavvrik_reply(400, "the key is refused", Vec::new()));
+    let destination = subject
+        .create("mavvrik", PREFIX, &DestinationOverrides::default())
+        .expect("the mavvrik provider is supported");
+    let error = destination
+        .deliver(
+            b"ChargePeriodStart\n2026-01-02\n",
+            &time_window(),
+            "usage.csv",
+        )
+        .await
+        .err()
+        .expect("the refused registration is reported");
+    assert!(matches!(
+        error,
+        DeliveryError::Mavvrik(MavvrikDeliveryError::RegisterFailed { status: 400, .. })
     ));
 }
 

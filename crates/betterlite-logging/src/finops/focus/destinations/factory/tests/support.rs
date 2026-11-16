@@ -1,14 +1,15 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use betterlite_config::loader::EnvironmentLookup;
 use chrono::{DateTime, Utc};
 use http::HeaderMap;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::finops::focus::destinations::factory::FocusDestinationFactory;
 use crate::finops::focus::destinations::factory::resolve::DestinationOverrides;
@@ -21,7 +22,7 @@ use crate::gcs_mock::auth::{
 };
 use crate::gcs_mock::client::{GcsHttpClient, GcsHttpResponse};
 use crate::gcs_mock::request::GcsRequest;
-use crate::mavvrik_delivery::transport::{Transport, TransportRequest, TransportResponse};
+use crate::mavvrik_delivery::transport::{Method, Transport, TransportRequest, TransportResponse};
 use crate::s3_transport::error::S3TransportError;
 use crate::s3_transport::signing::Clock;
 use crate::s3_transport::transport::{S3HttpClient, S3Request, S3Response};
@@ -36,6 +37,9 @@ pub(super) const SERVICE_ACCOUNT: &str = "/secrets/focus-service-account.json";
 pub(super) const MAVVRIK_ENDPOINT: &str = "https://api.mavvrik.dev/tenant";
 pub(super) const MAVVRIK_CONNECTION: &str = "connection-1";
 pub(super) const MAVVRIK_KEY: &str = "mavvrik-key";
+pub(super) const SIGNED_URL: &str =
+    "https://storage.googleapis.com/bucket/object?X-Goog-Signature=abc";
+pub(super) const SESSION_URI: &str = "https://storage.googleapis.com/upload/session-1";
 
 pub(super) type TestFactory =
     FocusDestinationFactory<FakeGcsAuth, FakeGcsHttp, FakeCsvSender, FakeMavvrikTransport>;
@@ -69,8 +73,25 @@ pub(super) fn destination_overrides() -> DestinationOverrides {
 }
 
 pub(super) fn factory_with_gcs_status(variables: &[(&str, &str)], gcs_status: u16) -> TestFactory {
+    build_factory(variables, gcs_status, &Recording::default())
+}
+
+pub(super) fn recording_factory(variables: &[(&str, &str)]) -> (TestFactory, Recording) {
+    let recording = Recording::default();
+    let factory = build_factory(variables, 200, &recording);
+    (factory, recording)
+}
+
+fn build_factory(
+    variables: &[(&str, &str)],
+    gcs_status: u16,
+    recording: &Recording,
+) -> TestFactory {
     let lookup: Arc<dyn EnvironmentLookup + Send + Sync> = Arc::new(environment(variables));
-    let http: Arc<dyn S3HttpClient> = Arc::new(FakeS3Http);
+    let http: Arc<dyn S3HttpClient> = Arc::new(FakeS3Http {
+        status: Arc::clone(&recording.s3_status),
+        requests: Arc::clone(&recording.s3_requests),
+    });
     let clock: Arc<dyn Clock> = Arc::new(FakeS3Clock);
     let source: Arc<dyn EnvironmentSource> = Arc::new(environment(variables));
     let gcs = initialize(
@@ -85,8 +106,14 @@ pub(super) fn factory_with_gcs_status(variables: &[(&str, &str)], gcs_status: u1
         s3_http: http,
         s3_clock: clock,
         gcs,
-        vantage: FakeCsvSender,
-        mavvrik: FakeMavvrikTransport,
+        vantage: FakeCsvSender {
+            status: Arc::clone(&recording.vantage_status),
+            posts: Arc::clone(&recording.vantage_posts),
+        },
+        mavvrik: FakeMavvrikTransport {
+            replies: Arc::clone(&recording.mavvrik_replies),
+            requests: Arc::clone(&recording.mavvrik_requests),
+        },
     }
 }
 
@@ -104,17 +131,70 @@ fn timestamp(value: &str) -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
+pub(super) fn mavvrik_reply(
+    status: u16,
+    body: &str,
+    headers: Vec<(String, String)>,
+) -> TransportResponse {
+    TransportResponse {
+        status,
+        headers,
+        body: body.as_bytes().to_vec(),
+    }
+}
+
+pub(super) struct Recording {
+    pub(super) s3_requests: Arc<Mutex<Vec<S3Request>>>,
+    pub(super) s3_status: Arc<AtomicU16>,
+    pub(super) vantage_posts: Arc<Mutex<Vec<RecordedPost>>>,
+    pub(super) vantage_status: Arc<AtomicU16>,
+    pub(super) mavvrik_requests: Arc<Mutex<Vec<RecordedMavvrikRequest>>>,
+    pub(super) mavvrik_replies: Arc<Mutex<VecDeque<TransportResponse>>>,
+}
+
+impl Default for Recording {
+    fn default() -> Self {
+        Self {
+            s3_requests: Arc::default(),
+            s3_status: Arc::new(AtomicU16::new(200)),
+            vantage_posts: Arc::default(),
+            vantage_status: Arc::new(AtomicU16::new(200)),
+            mavvrik_requests: Arc::default(),
+            mavvrik_replies: Arc::default(),
+        }
+    }
+}
+
 #[derive(Debug)]
-pub(super) struct FakeS3Http;
+pub(super) struct RecordedPost {
+    pub(super) url: String,
+    pub(super) filename: Option<String>,
+    pub(super) data: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub(super) struct RecordedMavvrikRequest {
+    pub(super) method: Method,
+    pub(super) url: String,
+    pub(super) body: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct FakeS3Http {
+    pub(super) status: Arc<AtomicU16>,
+    pub(super) requests: Arc<Mutex<Vec<S3Request>>>,
+}
 
 impl S3HttpClient for FakeS3Http {
     fn send(
         &self,
-        _request: S3Request,
+        request: S3Request,
     ) -> Pin<Box<dyn Future<Output = Result<S3Response, S3TransportError>> + Send + '_>> {
-        Box::pin(async {
+        self.requests.lock().unwrap().push(request);
+        let status = self.status.load(Ordering::SeqCst);
+        Box::pin(async move {
             Ok(S3Response {
-                status: 200,
+                status,
                 body: Vec::new(),
             })
         })
@@ -127,6 +207,8 @@ pub(super) struct FakeS3Clock;
 impl Clock for FakeS3Clock {
     fn now(&self) -> SystemTime {
         UNIX_EPOCH
+            .checked_add(Duration::from_secs(1_767_323_045))
+            .expect("the fixed signing time is representable")
     }
 }
 
@@ -196,8 +278,11 @@ impl GcsHttpClient for FakeGcsHttp {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub(super) struct FakeCsvSender;
+#[derive(Clone, Debug)]
+pub(super) struct FakeCsvSender {
+    pub(super) status: Arc<AtomicU16>,
+    pub(super) posts: Arc<Mutex<Vec<RecordedPost>>>,
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("the fake CSV sender failed")]
@@ -208,14 +293,23 @@ impl CsvSender for FakeCsvSender {
 
     fn post_multipart(
         &self,
-        _post: MultipartPost,
+        post: MultipartPost,
     ) -> impl Future<Output = Result<u16, CsvSendFailed>> + Send {
-        ready(Ok(200))
+        self.posts.lock().unwrap().push(RecordedPost {
+            url: post.url.expose_secret().to_owned(),
+            filename: post.file.file_name,
+            data: post.file.data,
+        });
+        let status = self.status.load(Ordering::SeqCst);
+        ready(Ok(status))
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub(super) struct FakeMavvrikTransport;
+#[derive(Clone, Debug)]
+pub(super) struct FakeMavvrikTransport {
+    pub(super) replies: Arc<Mutex<VecDeque<TransportResponse>>>,
+    pub(super) requests: Arc<Mutex<Vec<RecordedMavvrikRequest>>>,
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("the fake Mavvrik transport failed")]
@@ -226,12 +320,19 @@ impl Transport for FakeMavvrikTransport {
 
     fn send(
         &self,
-        _request: TransportRequest,
+        request: TransportRequest,
     ) -> impl Future<Output = Result<TransportResponse, MavvrikSendFailed>> + Send {
-        ready(Ok(TransportResponse {
-            status: 200,
-            headers: Vec::new(),
-            body: Vec::new(),
-        }))
+        self.requests.lock().unwrap().push(RecordedMavvrikRequest {
+            method: request.method,
+            url: request.url,
+            body: request.body,
+        });
+        let reply = self
+            .replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("the fake Mavvrik transport has a scripted reply");
+        ready(Ok(reply))
     }
 }
