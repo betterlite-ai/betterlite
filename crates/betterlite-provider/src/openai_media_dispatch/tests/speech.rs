@@ -4,7 +4,7 @@ use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_openai::speech::client::SpeechConnection;
 use betterlite_openai::speech::error::SpeechError;
 use betterlite_openai::speech::request::{SpeechFormat, SpeechOptions};
-use http::Method;
+use http::{HeaderMap, HeaderValue, Method};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
@@ -65,7 +65,9 @@ pub(super) async fn check() {
 }
 
 async fn binary_reply() {
-    let fixture = Fixture::new(200, SPEECH_BYTES);
+    let mut headers = HeaderMap::new();
+    headers.insert("content-type", HeaderValue::from_static("audio/wav"));
+    let fixture = Fixture::with_headers(200, SPEECH_BYTES, headers);
     let result = media_result(run(operation(Some("sk-speech")), &fixture).await);
     let OpenAiMediaResult::Speech(response) = result else {
         panic!("the speech reply stays binary");
@@ -75,11 +77,13 @@ async fn binary_reply() {
         .expect("one dispatch sends one request");
     speech_request(&sent);
     let status = response.status;
+    let content_type = response.content_type.clone();
     let bytes = response
         .content(1024)
         .await
         .expect("the speech bytes are read");
     assert_eq!(status, 200);
+    assert_eq!(content_type.as_deref(), Some("audio/wav"));
     assert_eq!(bytes, SPEECH_BYTES.to_vec());
 }
 
