@@ -1,7 +1,7 @@
 use std::mem;
 use std::sync::PoisonError;
 
-use betterlite_anthropic::anthropic_http_stream::call::{OpenedStream, StreamBuild, StreamClients};
+use betterlite_anthropic::anthropic_http_stream::call::OpenedStream;
 use betterlite_anthropic::anthropic_http_stream::completion::{
     CompletionStream, acompletion_stream_function,
 };
@@ -12,10 +12,10 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
-use super::calls::{Outcome, TIMEOUT, attempt, transport};
-use super::fixture::{FixedCounter, FixedIds, HelperFailure, SilentLogger};
+use super::Input;
+use super::calls::{Outcome, TIMEOUT, attempt, fixture_build, fixture_clients, transport};
+use super::fixture::{FixedCounter, HelperFailure, SilentLogger};
 use super::support::{HelperValue, header_map, options_value, post_value, selected};
-use super::{Input, MAX_EVENT_BYTES};
 
 struct Replied {
     post: Value,
@@ -111,22 +111,10 @@ fn error_value(input: &Input, synchronous: bool, outcome: Outcome) -> HelperValu
 pub(super) fn stream_flag_and_context(input: &Input) -> HelperResult {
     let client = transport(input, Outcome::Reply)?;
     let logger = SilentLogger;
-    let clients = StreamClients {
-        supplied: Some(&client),
-        module_level_aclient: &client,
-        module_level_client: &client,
-        logger: &logger,
-    };
-    let build = StreamBuild {
-        ids: &FixedIds,
-        counter: FixedCounter,
-        max_event_bytes: MAX_EVENT_BYTES,
-        max_error_body_bytes: MAX_EVENT_BYTES,
-    };
     let runtime = Builder::new_current_thread().build().or_value_error()?;
     let wrapper = runtime
         .block_on(acompletion_stream_function(
-            clients,
+            fixture_clients(&client, &logger),
             CompletionStream {
                 model: &input.model,
                 api_base: &input.api_base,
@@ -138,7 +126,7 @@ pub(super) fn stream_flag_and_context(input: &Input) -> HelperResult {
                 optional_params: &input.optional_params,
                 litellm_params: &input.litellm_params,
             },
-            build,
+            fixture_build(),
         ))
         .or_value_error()?;
     let posts = mem::take(&mut *client.posts.lock().unwrap_or_else(PoisonError::into_inner));

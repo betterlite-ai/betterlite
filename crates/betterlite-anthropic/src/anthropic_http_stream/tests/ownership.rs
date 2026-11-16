@@ -315,17 +315,7 @@ async fn anthropic_http_stream_total_deadline_ends_a_trickle() {
     let mut opened = open_with(&api_base, &client, SHORT_TIMEOUT)
         .await
         .expect("the local server answers 200");
-    let mut received = 0_usize;
-    let ended = loop {
-        let item = timeout(Duration::from_secs(10), opened.completion_stream.next())
-            .await
-            .expect("the deadline ends the stream instead of waiting for the last frame")
-            .expect("the stream reports the deadline instead of ending cleanly");
-        match item {
-            Ok(_chunk) => received = received.saturating_add(1),
-            Err(error) => break error,
-        }
-    };
+    let (received, ended) = read_until_error(&mut opened).await;
     assert!(
         received < TRICKLE_FRAMES,
         "the stream stopped while the server still had frames to send"
@@ -347,6 +337,22 @@ async fn anthropic_http_stream_total_deadline_ends_a_trickle() {
         .expect("the upstream server ends after the deadline")
         .unwrap()
         .unwrap();
+}
+
+async fn read_until_error(
+    opened: &mut OpenedStream<StreamFailure, FixedCounter>,
+) -> (usize, DecodeError<StreamFailure>) {
+    let mut received = 0_usize;
+    loop {
+        let item = timeout(Duration::from_secs(10), opened.completion_stream.next())
+            .await
+            .expect("the deadline ends the stream instead of waiting for the last frame")
+            .expect("the stream reports the deadline instead of ending cleanly");
+        match item {
+            Ok(_chunk) => received = received.saturating_add(1),
+            Err(error) => return (received, error),
+        }
+    }
 }
 
 async fn open_with(

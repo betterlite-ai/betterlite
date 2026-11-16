@@ -67,6 +67,27 @@ pub(crate) fn transport(
     }
 }
 
+pub(crate) const fn fixture_clients<'fixture>(
+    client: &'fixture FixtureTransport,
+    logger: &'fixture SilentLogger,
+) -> StreamClients<'fixture, FixtureTransport> {
+    StreamClients {
+        supplied: Some(client),
+        module_level_aclient: client,
+        module_level_client: client,
+        logger,
+    }
+}
+
+pub(crate) const fn fixture_build() -> StreamBuild<'static, FixedCounter> {
+    StreamBuild {
+        ids: &FixedIds,
+        counter: FixedCounter,
+        max_event_bytes: MAX_EVENT_BYTES,
+        max_error_body_bytes: MAX_EVENT_BYTES,
+    }
+}
+
 pub(crate) fn attempt(
     input: &Input,
     synchronous: bool,
@@ -74,12 +95,6 @@ pub(crate) fn attempt(
 ) -> Result<Attempt, Box<HelperError>> {
     let client = transport(input, outcome)?;
     let logger = SilentLogger;
-    let clients = StreamClients {
-        supplied: Some(&client),
-        module_level_aclient: &client,
-        module_level_client: &client,
-        logger: &logger,
-    };
     let call = StreamCall {
         api_base: &input.api_base,
         headers: header_map(&input.headers)?,
@@ -91,29 +106,16 @@ pub(crate) fn attempt(
         tool_name_reverse_map: &input.reverse_map,
     };
     let runtime = Builder::new_current_thread().build().or_value_error()?;
-    let build = StreamBuild {
-        ids: &FixedIds,
-        counter: FixedCounter,
-        max_event_bytes: MAX_EVENT_BYTES,
-        max_error_body_bytes: MAX_EVENT_BYTES,
+    let opening = StreamOpening {
+        clients: fixture_clients(&client, &logger),
+        call: &call,
+        build: fixture_build(),
     };
     let result = runtime.block_on(async move {
         if synchronous {
-            StreamOpening {
-                clients,
-                call: &call,
-                build,
-            }
-            .make_sync_call()
-            .await
+            opening.make_sync_call().await
         } else {
-            StreamOpening {
-                clients,
-                call: &call,
-                build,
-            }
-            .make_call()
-            .await
+            opening.make_call().await
         }
     });
     Ok(Attempt {

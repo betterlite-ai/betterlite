@@ -63,10 +63,10 @@ pub struct StreamBuild<'ids, Counter> {
 }
 
 // make_call and make_sync_call take the same three arguments, so one value carries them
-pub struct StreamOpening<'a, Client, Counter> {
-    pub clients: StreamClients<'a, Client>,
-    pub call: &'a StreamCall<'a>,
-    pub build: StreamBuild<'a, Counter>,
+pub struct StreamOpening<'open, Client, Counter> {
+    pub clients: StreamClients<'open, Client>,
+    pub call: &'open StreamCall<'open>,
+    pub build: StreamBuild<'open, Counter>,
 }
 
 pub type Opened<Client, Counter> = Result<

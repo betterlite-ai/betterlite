@@ -263,38 +263,38 @@ where
 }
 
 async fn non_http_error_500() {
-    let unknown_async = failed_call(PostFailure::Unknown(FixtureFailure::Unknown), false).await;
+    let async_500 = failed_call(PostFailure::Unknown(FixtureFailure::Unknown), false).await;
     let StreamOpenError::Unknown {
-        source: unknown_source,
-    } = unknown_async
+        source: async_source,
+    } = async_500
     else {
         panic!("an unrecognized exception becomes AnthropicError(500)")
     };
-    assert_eq!(unknown_source.to_string(), "the transport exploded");
-    let unknown_sync = failed_call(PostFailure::Unknown(FixtureFailure::Unknown), true).await;
+    assert_eq!(async_source.to_string(), "the transport exploded");
+    let blocking_500 = failed_call(PostFailure::Unknown(FixtureFailure::Unknown), true).await;
     let StreamOpenError::Unknown {
-        source: sync_source,
-    } = unknown_sync
+        source: blocking_source,
+    } = blocking_500
     else {
         panic!("an unrecognized exception becomes AnthropicError(500)")
     };
-    assert_eq!(sync_source.to_string(), "the transport exploded");
-    let timeout_async = failed_call(PostFailure::Known(FixtureFailure::Timeout), false).await;
+    assert_eq!(blocking_source.to_string(), "the transport exploded");
+    let async_reraised = failed_call(PostFailure::Known(FixtureFailure::Timeout), false).await;
     let StreamOpenError::Reraised {
-        source: timeout_source,
-    } = timeout_async
+        source: async_timeout,
+    } = async_reraised
     else {
         panic!("a LITELLM_EXCEPTION_TYPES member is re-raised")
     };
-    assert!(matches!(timeout_source, FixtureFailure::Timeout));
-    let timeout_sync = failed_call(PostFailure::Known(FixtureFailure::Timeout), true).await;
+    assert!(matches!(async_timeout, FixtureFailure::Timeout));
+    let blocking_reraised = failed_call(PostFailure::Known(FixtureFailure::Timeout), true).await;
     let StreamOpenError::Reraised {
-        source: sync_timeout,
-    } = timeout_sync
+        source: blocking_timeout,
+    } = blocking_reraised
     else {
         panic!("a LITELLM_EXCEPTION_TYPES member is re-raised")
     };
-    assert!(matches!(sync_timeout, FixtureFailure::Timeout));
+    assert!(matches!(blocking_timeout, FixtureFailure::Timeout));
 }
 
 async fn failed_call(
@@ -489,10 +489,17 @@ async fn response_headers_case() {
         header(&opened.headers, "anthropic-ratelimit-requests-limit"),
         Some("100")
     );
-    let wrapper_transport = FixtureTransport::reply(200, response_headers(), &[FRAME]);
+    projected_headers().await;
+}
+
+async fn projected_headers() {
+    let messages = messages();
+    let reverse = reverse_map();
+    let transport = FixtureTransport::reply(200, response_headers(), &[FRAME]);
+    let logger = RecordingLogger::new(&messages);
     let optional = optional_params();
     let params = litellm_params(&reverse);
-    let wrapper = open_wrapper(&wrapper_transport, &logger, &messages, &optional, &params).await;
+    let wrapper = open_wrapper(&transport, &logger, &messages, &optional, &params).await;
     let projected = &wrapper.response_headers;
     assert_eq!(
         projected

@@ -196,18 +196,11 @@ pub(crate) fn redactor() -> Redactor {
 }
 
 pub(crate) fn logging_state(messages: &Json) -> LoggingState {
-    let init = serde_json::from_value(serde_json::json!({
-        "model": "claude-3-5-sonnet",
-        "call_type": "completion",
-        "start_time": "2026-01-01T00:00:00+00:00",
-        "litellm_call_id": "call-1",
-        "function_id": "fn-1",
-        "litellm_trace_id": "trace-1",
-        "messages": messages,
-        "litellm_params": {},
-        "request_logging": {}
-    }))
-    .expect("the logging fixture parses");
+    let text = format!(
+        r#"{{"model": "claude-3-5-sonnet", "call_type": "completion", "start_time": "2026-01-01T00:00:00+00:00", "litellm_call_id": "call-1", "function_id": "fn-1", "litellm_trace_id": "trace-1", "messages": {}, "litellm_params": {{}}, "request_logging": {{}}}}"#,
+        python_json::dumps(messages)
+    );
+    let init = serde_json::from_str(&text).expect("the logging fixture parses");
     LoggingState::new(
         init,
         CorrelationSetup {

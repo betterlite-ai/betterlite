@@ -49,13 +49,16 @@ def _logging(messages: list[dict[str, JsonValue]]) -> Logging:
         function_id="fn-1",
     )
 
+def _picked(headers: httpx.Headers, names: list[str]) -> JsonValue:
+    picked: dict[str, str | None] = {name: headers.get(name) for name in names}
+    return JSON.validate_python(picked)
+
+
 def _request_value(request: httpx.Request, names: list[str]) -> dict[str, JsonValue]:
     return {
         "url": str(request.url),
         "body": _text(request.content),
-        "request_headers": JSON.validate_python(
-            {name: request.headers.get(name) for name in names}
-        ),
+        "request_headers": _picked(request.headers, names),
     }
 
 def _options(iterator: ModelResponseIterator) -> dict[str, JsonValue]:
@@ -69,8 +72,7 @@ def _options(iterator: ModelResponseIterator) -> dict[str, JsonValue]:
 def _opened_value(
     input_value: Input, request: httpx.Request, opened: Opened
 ) -> dict[str, JsonValue]:
-    names = input_value["response_header_names"]
-    picked = JSON.validate_python({name: opened[1].get(name) for name in names})
+    picked = _picked(opened[1], input_value["response_header_names"])
     post = _request_value(request, input_value["request_header_names"])
     return {"post": post, "stream_options": _options(opened[0]), "response_headers": picked}
 
@@ -121,9 +123,7 @@ def _error(input_value: Input, failure: BaseException, *, status: bool) -> dict[
     return {
         "status": view.status_code,
         "message": message,
-        "headers": JSON.validate_python(
-            {name: headers.get(name) for name in input_value["response_header_names"]}
-        ),
+        "headers": _picked(headers, input_value["response_header_names"]),
     }
 
 def _status_call(input_value: Input, upstream: Upstream, *, synchronous: bool) -> Awaitable[Opened]:
@@ -236,9 +236,7 @@ def _response_headers(input_value: Input) -> dict[str, JsonValue]:
     _iterator, headers = asyncio.run(_async_call(input_value, client))
     return {
         "post": _request_value(upstream.requests[0], input_value["request_header_names"]),
-        "raw": JSON.validate_python(
-            {name: headers.get(name) for name in input_value["response_header_names"]}
-        ),
+        "raw": _picked(headers, input_value["response_header_names"]),
         "projected": JSON.validate_python(HANDLER.process_anthropic_headers(headers)),
     }
 

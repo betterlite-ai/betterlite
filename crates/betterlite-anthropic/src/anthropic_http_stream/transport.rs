@@ -105,7 +105,7 @@ async fn error_status(response: StreamResponse, limit: usize) -> StatusFailure {
 }
 
 // The handler turns a timeout into litellm.Timeout, which make_call re-raises; any other send error becomes a 500
-fn post_failure(source: TransportError) -> PostFailure<StreamFailure> {
+const fn post_failure(source: TransportError) -> PostFailure<StreamFailure> {
     let timed = matches!(
         source,
         TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
