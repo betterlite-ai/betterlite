@@ -1,0 +1,11 @@
+kind: helper
+name: foundry-model-router-catalog-model-list
+call:
+  foundry_model_router:
+    catalog:
+      - {api_key: null, api_base: null}
+      - {api_key: explicit-key, api_base: "https://resource.services.ai.azure.com"}
+      - {api_key: null, api_base: "https://resource.services.ai.azure.com"}
+      - {api_key: "", api_base: ""}
+env: {}
+compare: {ignore: []}
