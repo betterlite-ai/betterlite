@@ -817,11 +817,12 @@ impl Catalog {
         }
     }
 
-    fn note(&self, model: &str, custom_llm_provider: Option<&str>) {
+    fn note(&self, model: &str, custom_llm_provider: Option<&str>) -> Option<PriceRecord> {
         self.seen
             .lock()
             .unwrap()
             .push((model.to_owned(), custom_llm_provider.map(str::to_owned)));
+        self.entries.get(model).cloned()
     }
 }
 
@@ -831,8 +832,7 @@ impl PriceLookup for Catalog {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        self.note(model, custom_llm_provider);
-        self.entries.get(model).cloned()
+        self.note(model, custom_llm_provider)
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
@@ -844,8 +844,7 @@ impl PriceLookup for Catalog {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        self.note(model, custom_llm_provider);
-        let record = self.entries.get(model)?.clone();
+        let record = self.note(model, custom_llm_provider)?;
         Some(PricedModel {
             record,
             tiered_pricing: Vec::new(),
