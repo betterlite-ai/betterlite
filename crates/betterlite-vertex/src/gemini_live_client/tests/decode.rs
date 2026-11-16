@@ -213,3 +213,13 @@ fn an_oversized_event_is_refused_before_it_is_parsed() {
         Err(LiveClientError::TooLarge { limit: 4 })
     ));
 }
+
+#[test]
+fn a_tool_output_nested_past_the_json_depth_limit_is_refused() {
+    let nested = format!("{}{}", "[".repeat(200), "]".repeat(200));
+    let body = format!(r#","call_id":"call_1","output":{{"a":{nested}}}"#);
+    assert!(matches!(
+        decode_bytes(tool_item(&body).as_bytes(), usize::MAX),
+        Err(LiveClientError::InvalidField { path: "item", .. })
+    ));
+}

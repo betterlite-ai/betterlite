@@ -12,6 +12,9 @@ deviations:
   - what: 'Event bytes that are not UTF-8 fail with an InvalidJson error whose message reads "the event is not UTF-8: ...", where LiteLLM decodes the bytes with errors="replace" and quotes the replaced text in its ValueError message.'
     why: betterlite reads the event as bytes and refuses to replace invalid sequences, so the error names the real failure instead of a mangled message; valid UTF-8 invalid JSON keeps LiteLLM's exact message text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L599-L604
+  - what: A tool output that nests past serde_json's 128-level recursion limit is refused at the item field, and a text output holding that JSON is kept whole as the result string, where LiteLLM's json.loads accepts about a thousand levels before Python's recursion limit.
+    why: Rule bounded-inputs gives the decoder serde_json's default depth cap so a client frame cannot exhaust the stack, and a real tool result nests a handful of levels.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L542-L551
 kept_bugs:
   - what: The SDK encoder's list branch runs two independent if statements, so an all-bytes list has its base64 conversion overwritten by the element-wise copy and the bytes survive into json.dumps, while an all-datetime list is converted to ISO text.
     why: Working callers build payloads the same way and the task pins this behavior, so betterlite keeps the overwrite rather than encode bytes lists that LiteLLM leaves unserializable.

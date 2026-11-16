@@ -247,6 +247,18 @@ fn a_tool_output_is_parsed_or_wrapped_as_a_result(#[case] output: &str, #[case] 
 }
 
 #[test]
+fn a_text_tool_output_nested_past_the_json_depth_limit_keeps_the_text() {
+    let nested = format!("{}{}", "[".repeat(200), "]".repeat(200));
+    let mut session = Session::new();
+    session.register("call_1", "get_weather");
+    let messages = session.send(&tool_reply("call_1", &format!("\"{nested}\"")));
+    let expected = format!(
+        r#"{{"toolResponse":{{"functionResponses":[{{"response":{{"result":"{nested}"}},"id":"call_1","name":"get_weather"}}]}}}}"#
+    );
+    assert_messages(&messages, &[expected.as_str()]);
+}
+
+#[test]
 fn a_tool_reply_without_an_output_has_an_empty_response() {
     let mut session = Session::new();
     session.register("call_1", "get_weather");
