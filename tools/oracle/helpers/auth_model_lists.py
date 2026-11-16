@@ -90,6 +90,7 @@ class Catalog:
 
     def __call__(
         self,
+        *,
         check_provider_endpoint: bool | None = None,
         custom_llm_provider: str | None = None,
         litellm_params: LiteLLM_Params | None = None,
@@ -156,15 +157,16 @@ def grants(call: GrantsInput) -> list[str]:
 
 
 def complete_model_list(call: CompleteModelListInput) -> list[str]:
-    model_checks.get_valid_models = Catalog(call["catalog"])
-    litellm.credential_list = [
-        CredentialItem(
-            credential_name=entry["credential_name"],
-            credential_info={},
-            credential_values=dict(entry["credential_values"]),
-        )
-        for entry in call["credentials"]
-    ]
+    model_checks.get_valid_models = Catalog(call["catalog"])  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L16
+    credentials: list[CredentialItem] = []
+    for entry in call["credentials"]:
+        row: dict[str, JsonValue] = {
+            "credential_name": entry["credential_name"],
+            "credential_info": {},
+            "credential_values": dict(entry["credential_values"]),
+        }
+        credentials.append(CredentialItem.model_validate(row))
+    litellm.credential_list = credentials
     return get_complete_model_list(
         key_models=call["key_models"],
         team_models=call["team_models"],
