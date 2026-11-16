@@ -158,9 +158,11 @@ def file_value(file: FileInput) -> FileValue:
 
 def file_and_purpose(call: Call) -> tuple[FileInput, Purpose]:
     file = call.get("file")
+    if file is None:
+        raise ValueError("file is required")
     purpose = call.get("purpose")
-    if file is None or purpose is None:
-        raise ValueError("the call needs `file` and `purpose`")
+    if purpose is None:
+        raise ValueError("purpose is required")
     return file, purpose
 
 
