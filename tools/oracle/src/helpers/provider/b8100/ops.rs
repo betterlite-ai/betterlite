@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 use super::script::{
     AgentCase, ProbeCase, RequestCase, ResponseCase, StreamCase, helper_error, runtime,
 };
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 struct StoredToken;
 

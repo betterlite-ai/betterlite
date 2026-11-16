@@ -4,7 +4,7 @@ use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
 use serde::Deserialize;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Deserialize)]
 pub(super) struct AgentCase {

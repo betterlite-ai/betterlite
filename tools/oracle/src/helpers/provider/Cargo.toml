@@ -14,6 +14,7 @@ betterlite-anthropic = { path = "../../../../../crates/betterlite-anthropic" }
 betterlite-bedrock = { path = "../../../../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }
+betterlite-foundry = { path = "../../../../../crates/betterlite-foundry" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-openai = { path = "../../../../../crates/betterlite-openai" }

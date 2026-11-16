@@ -3317,6 +3317,7 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-core",
+ "betterlite-foundry",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
