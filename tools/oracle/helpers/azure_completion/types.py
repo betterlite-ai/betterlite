@@ -84,14 +84,14 @@ Input = CompletionInput | StreamInput | AuthInput | ConfigInput
 
 
 class ConfigView(Protocol):
-    frequency_penalty: int | None
-    logit_bias: dict[str, int] | None
-    max_tokens: int | None
-    n: int | None
-    presence_penalty: int | None
-    stop: str | list[str] | None
-    temperature: int | None
-    top_p: int | None
+    frequency_penalty: JsonValue
+    logit_bias: JsonValue
+    max_tokens: JsonValue
+    n: JsonValue
+    presence_penalty: JsonValue
+    stop: JsonValue
+    temperature: JsonValue
+    top_p: JsonValue
 
 
 class PreArgs(BaseModel):

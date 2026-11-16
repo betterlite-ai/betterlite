@@ -11,6 +11,7 @@ from .types import (
     AsyncStream,
     ChunkView,
     ErrorView,
+    JsonDump,
     ReplyChoiceView,
     ReplyView,
     SyncStream,
@@ -58,10 +59,13 @@ def usage_reasoning(usage: UsageView) -> JsonValue:
 def usage_view(usage: UsageView | None) -> JsonValue:
     if usage is None:
         return None
+    prompt = usage["prompt_tokens"] if "prompt_tokens" in usage else 0
+    completion = usage["completion_tokens"] if "completion_tokens" in usage else 0
+    total = usage["total_tokens"] if "total_tokens" in usage else 0
     return {
-        "prompt_tokens": usage.get("prompt_tokens", 0),
-        "completion_tokens": usage.get("completion_tokens", 0),
-        "total_tokens": usage.get("total_tokens", 0),
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": total,
         "reasoning_tokens": usage_reasoning(usage),
         "queue_time": usage.get("queue_time"),
         "details": usage.get("completion_tokens_details") is not None,
@@ -102,15 +106,9 @@ def chunk_view(view: ChunkView) -> JsonValue:
     }
 
 
-def sync_chunks(stream: SyncStream) -> list[JsonValue]:
-    return [chunk_view(CHUNK.validate_json(chunk.model_dump_json())) for chunk in stream]
-
-
-async def async_chunks(stream: AsyncStream) -> list[JsonValue]:
-    return [chunk_view(CHUNK.validate_json(chunk.model_dump_json())) async for chunk in stream]
-
-
-async def stream_chunks(result: object, *, asynchronous: bool) -> list[JsonValue]:
+async def stream_chunks(
+    result: AsyncStream | JsonDump | SyncStream, *, asynchronous: bool
+) -> list[JsonValue]:
     if asynchronous:
-        return await async_chunks(cast(AsyncStream, result))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L85-L98
-    return sync_chunks(cast(SyncStream, result))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L114-L125
+        return [chunk_view(CHUNK.validate_json(chunk.model_dump_json())) async for chunk in cast(AsyncStream, result)]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L85-L98
+    return [chunk_view(CHUNK.validate_json(chunk.model_dump_json())) for chunk in cast(SyncStream, result)]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L114-L125

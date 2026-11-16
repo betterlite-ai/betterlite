@@ -4,7 +4,7 @@ use betterlite_openai::text_completion_transport::sdk::ParsedCompletion;
 use crate::endpoints::projection::ClientKind;
 
 use super::super::arguments::{CompletionCall, Runtime, SentCall};
-use super::super::client::{ClientSource, CompletionsTransport};
+use super::super::client::{ClientSource, CompletionsTransport as _};
 use super::super::error::{
     ASYNC_CLIENT, AzureTextError, MAX_RETRIES_TYPE, STREAM_ANSWER, SYNC_CLIENT,
 };

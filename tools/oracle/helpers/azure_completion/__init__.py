@@ -14,7 +14,17 @@ from .handler import (
     completion_kwargs,
     stream_kwargs,
 )
-from .types import JSON, REPLY, AuthCase, CallCase, ConfigView, Input, JsonDump
+from .types import (
+    JSON,
+    REPLY,
+    AsyncStream,
+    AuthCase,
+    CallCase,
+    ConfigView,
+    Input,
+    JsonDump,
+    SyncStream,
+)
 from .views import error_view, reply_view, report, stream_chunks
 
 litellm.suppress_debug_info = True
@@ -27,7 +37,7 @@ async def completion_call(case: CallCase) -> JsonValue:
     asynchronous = kwargs["acompletion"]
     flag = kwargs["optional_params"].get("stream")
     try:
-        result: object = (
+        result: AsyncStream | JsonDump | SyncStream = (
             await ASYNC_HANDLER.completion(**kwargs)
             if asynchronous
             else SYNC_HANDLER.completion(**kwargs)
@@ -48,7 +58,7 @@ async def stream_call(case: CallCase) -> JsonValue:
     kwargs = stream_kwargs(case, recorder, client_for(case, fixture))
     asynchronous = bool(case.get("acompletion"))
     try:
-        result: object = (
+        result: AsyncStream | SyncStream = (
             await ASYNC_HANDLER.async_streaming(**kwargs)
             if asynchronous
             else SYNC_HANDLER.streaming(**kwargs)
@@ -68,18 +78,17 @@ def auth_case(case: AuthCase) -> JsonValue:
 
 def config_fields(config: AzureOpenAITextConfig) -> JsonValue:
     view = cast(ConfigView, config)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/transformation.py#L31-L51
-    return JSON.validate_python(
-        {
-            "frequency_penalty": view.frequency_penalty,
-            "logit_bias": view.logit_bias,
-            "max_tokens": view.max_tokens,
-            "n": view.n,
-            "presence_penalty": view.presence_penalty,
-            "stop": view.stop,
-            "temperature": view.temperature,
-            "top_p": view.top_p,
-        }
-    )
+    fields: dict[str, JsonValue] = {
+        "frequency_penalty": view.frequency_penalty,
+        "logit_bias": view.logit_bias,
+        "max_tokens": view.max_tokens,
+        "n": view.n,
+        "presence_penalty": view.presence_penalty,
+        "stop": view.stop,
+        "temperature": view.temperature,
+        "top_p": view.top_p,
+    }
+    return fields
 
 
 def run(input_value: Input) -> JsonValue:

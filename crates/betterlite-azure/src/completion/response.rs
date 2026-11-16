@@ -17,7 +17,7 @@ pub enum ProjectionError {
 }
 
 // the ModelResponse the conversion mutates, as its own model_dump reads it
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatReply {
     pub id: Json,
     pub object: Json,

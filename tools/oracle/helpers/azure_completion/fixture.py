@@ -64,7 +64,9 @@ def post_view(params: dict[str, JsonValue]) -> JsonValue:
     additional = POST_ARGS.validate_python(params.get("additional_args"))
     original = ORIGINAL.validate_python(params.get("original_response"))
     origin: dict[str, JsonValue] = {"original_id": original["id"]}
-    return call_view(params, additional.headers, additional.api_base, additional.api_version, origin)
+    return call_view(
+        params, additional.headers, additional.api_base, additional.api_version, origin
+    )
 
 
 class Recorder(Logging):

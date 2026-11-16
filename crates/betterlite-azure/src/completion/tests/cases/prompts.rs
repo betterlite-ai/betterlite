@@ -3,8 +3,11 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 
+use crate::completion::tests::fixture::ScriptedSource;
+use crate::endpoints::projection::ClientKind;
+
 use super::support::{
-    API_BASE, MODEL, Run, async_buffered, field, float, nested, number, parts_messages,
+    API_BASE, MODEL, Run, async_buffered, buffered, field, float, nested, number, parts_messages,
     sync_buffered, text,
 };
 
@@ -81,7 +84,35 @@ pub(super) fn azure_text_prompt_every_call() {
     assert!(async_run.hooks.post.is_empty());
 }
 
+fn gateway_with_async_client() {
+    let gateway = "https://gateway.ai.cloudflare.com/v1/account/gw/resource";
+    let mut scenario = async_buffered("{}");
+    scenario.parts.api_base = Some(gateway.to_owned());
+    let run = scenario.execute();
+    assert!(run.reply.is_some());
+    let gateways = run.source.gateways();
+    assert_eq!(gateways.len(), 1);
+    assert_eq!(field(&gateways[0], "acompletion"), Json::Bool(true));
+    assert!(run.source.gets().is_empty());
+}
+
+fn gateway_keeps_a_supplied_client() {
+    let gateway = "https://gateway.ai.cloudflare.com/v1/account/gw/resource";
+    let supplied = ScriptedSource::new(ClientKind::AzureOpenAi, buffered());
+    let mut scenario = sync_buffered("{}");
+    scenario.parts.api_base = Some(gateway.to_owned());
+    scenario.parts.supplied = Some(supplied.handle());
+    let run = scenario.execute();
+    assert!(run.reply.is_some());
+    assert!(run.source.gateways().is_empty());
+    assert!(run.source.gets().is_empty());
+    assert!(run.source.creates().is_empty());
+    assert_eq!(supplied.creates().len(), 1);
+}
+
 pub(super) fn cloudflare_model_null() {
+    gateway_with_async_client();
+    gateway_keeps_a_supplied_client();
     let gateway = "https://gateway.ai.cloudflare.com/v1/account/gw/resource";
     let mut scenario = sync_buffered("{}");
     scenario.parts.api_base = Some(gateway.to_owned());
@@ -92,6 +123,7 @@ pub(super) fn cloudflare_model_null() {
     assert_eq!(text(&field(record, "model")), MODEL);
     assert_eq!(text(&field(record, "api_base")), gateway);
     assert_eq!(number(&field(record, "max_retries")), 2);
+    assert_eq!(field(record, "acompletion"), Json::Bool(false));
     assert!(run.source.gets().is_empty());
     assert_eq!(run.create("model"), Json::Null);
     assert_eq!(text(&run.create("prompt")), "Hello");

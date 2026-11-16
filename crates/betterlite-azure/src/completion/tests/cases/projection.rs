@@ -1,4 +1,4 @@
-use betterlite_models::decisions::Json;
+use betterlite_models::decisions::{Extra, Json};
 
 use crate::completion::config::AzureOpenAITextConfig;
 use crate::completion::error::STREAM_ANSWER;
@@ -16,9 +16,14 @@ fn projected(kind: ClientKind, body: &str) -> Json {
     Scenario::new(kind, answer, "{}").execute().reply_json()
 }
 
+fn settings_json(config: &AzureOpenAITextConfig) -> Json {
+    let value = serde_json::to_value(config.settings().unwrap()).unwrap();
+    serde_json::from_value(value).unwrap()
+}
+
 fn config_forwards_its_eight_parameters() {
-    let none = AzureOpenAITextConfig::default().settings().unwrap();
-    assert_eq!(serde_json::to_value(none).unwrap(), serde_json::json!({}));
+    let none = settings_json(&AzureOpenAITextConfig::default());
+    assert_eq!(none, Json::Object(Extra::new()));
     let config = AzureOpenAITextConfig {
         frequency_penalty: Some(count(1)),
         logit_bias: Some(count(2)),
@@ -29,18 +34,17 @@ fn config_forwards_its_eight_parameters() {
         temperature: Some(count(6)),
         top_p: Some(count(7)),
     };
-    let settings = serde_json::to_value(config.settings().unwrap()).unwrap();
-    let expected = serde_json::json!({
-        "frequency_penalty": 1,
-        "logit_bias": 2,
-        "max_tokens": 3,
-        "n": 4,
-        "presence_penalty": 5,
-        "stop": "END",
-        "temperature": 6,
-        "top_p": 7,
-    });
-    assert_eq!(settings, expected);
+    let expected = Extra::from_iter([
+        ("frequency_penalty".to_owned(), count(1)),
+        ("logit_bias".to_owned(), count(2)),
+        ("max_tokens".to_owned(), count(3)),
+        ("n".to_owned(), count(4)),
+        ("presence_penalty".to_owned(), count(5)),
+        ("stop".to_owned(), Json::Text("END".to_owned())),
+        ("temperature".to_owned(), count(6)),
+        ("top_p".to_owned(), count(7)),
+    ]);
+    assert_eq!(settings_json(&config), Json::Object(expected));
 }
 
 fn sync_choices() {
@@ -54,19 +58,23 @@ fn sync_choices() {
         panic!("a list of choices");
     };
     assert_eq!(choices.len(), 2);
-    assert_eq!(text(&at(&reply, "choices.0.message.content")), "A");
-    assert_eq!(text(&at(&reply, "choices.0.message.role")), "assistant");
-    assert_eq!(at(&reply, "choices.0.message.tool_calls"), Json::Null);
-    assert_eq!(at(&reply, "choices.0.message.function_call"), Json::Null);
-    assert_eq!(text(&at(&reply, "choices.0.finish_reason")), "length");
-    assert_eq!(number(&at(&reply, "choices.0.index")), 0);
-    let Json::Object(first) = at(&reply, "choices.0") else {
+    sync_choice_entries(&reply);
+}
+
+fn sync_choice_entries(reply: &Json) {
+    assert_eq!(text(&at(reply, "choices.0.message.content")), "A");
+    assert_eq!(text(&at(reply, "choices.0.message.role")), "assistant");
+    assert_eq!(at(reply, "choices.0.message.tool_calls"), Json::Null);
+    assert_eq!(at(reply, "choices.0.message.function_call"), Json::Null);
+    assert_eq!(text(&at(reply, "choices.0.finish_reason")), "length");
+    assert_eq!(number(&at(reply, "choices.0.index")), 0);
+    let Json::Object(first) = at(reply, "choices.0") else {
         panic!("a choice object");
     };
     assert!(!first.contains_key("logprobs"));
-    assert_eq!(text(&at(&reply, "choices.1.message.content")), "B");
-    assert_eq!(text(&at(&reply, "choices.1.finish_reason")), "stop");
-    assert_eq!(number(&at(&reply, "choices.1.index")), 1);
+    assert_eq!(text(&at(reply, "choices.1.message.content")), "B");
+    assert_eq!(text(&at(reply, "choices.1.finish_reason")), "stop");
+    assert_eq!(number(&at(reply, "choices.1.index")), 1);
 }
 
 fn sync_usage_and_original() {

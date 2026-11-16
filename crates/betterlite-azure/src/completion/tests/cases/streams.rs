@@ -51,6 +51,21 @@ pub(super) fn stream_text_choices() {
     assert_eq!(run.pre(&sent), Json::Bool(true));
     assert!(run.hooks.post.is_empty());
     stream_options_from_data();
+    stream_usage_chunk();
+}
+
+fn stream_usage_chunk() {
+    let base = sync_stream(r#"{"stream":true}"#).execute();
+    let params = r#"{"stream":true,"stream_options":{"include_usage":true}}"#;
+    let with_usage = sync_stream(params).execute();
+    assert_eq!(with_usage.chunks.len(), base.chunks.len().saturating_add(1));
+    assert!(base.chunks.last().unwrap().usage.is_none());
+    let usage = with_usage.chunks.last().unwrap().usage.as_ref().unwrap();
+    assert_eq!(
+        usage.total_tokens,
+        usage.prompt_tokens.saturating_add(usage.completion_tokens)
+    );
+    assert!(usage.completion_tokens > 0);
 }
 
 fn seven_retries() -> LiteLlmParams {
@@ -62,24 +77,27 @@ fn seven_retries() -> LiteLlmParams {
     }
 }
 
-fn client_retries(run: &Run) -> Json {
-    field(&run.source.gets()[0], "max_retries")
+fn client_field(run: &Run, name: &str) -> Json {
+    field(&run.source.gets()[0], name)
 }
 
 fn litellm_params_follow_the_branch() {
     let mut sync_streaming = sync_stream(r#"{"stream":true}"#);
     sync_streaming.parts.litellm_params = seven_retries();
     let run = sync_streaming.execute();
-    assert_eq!(client_retries(&run), Json::Null);
+    assert_eq!(client_field(&run, "max_retries"), Json::Null);
+    assert_eq!(client_field(&run, "is_async"), Json::Bool(false));
     assert_eq!(run.create("max_retries"), Json::Null);
     let scenarios = [
-        sync_buffered("{}"),
-        async_buffered("{}"),
-        async_stream(r#"{"stream":true}"#),
+        (sync_buffered("{}"), false),
+        (async_buffered("{}"), true),
+        (async_stream(r#"{"stream":true}"#), true),
     ];
-    for mut scenario in scenarios {
+    for (mut scenario, asynchronous) in scenarios {
         scenario.parts.litellm_params = seven_retries();
-        assert_eq!(client_retries(&scenario.execute()), count(7));
+        let asked = scenario.execute();
+        assert_eq!(client_field(&asked, "max_retries"), count(7));
+        assert_eq!(client_field(&asked, "is_async"), Json::Bool(asynchronous));
     }
 }
 
@@ -95,7 +113,7 @@ fn only_a_literal_true_streams() {
         assert!(async_buffered(params).execute().reply.is_some());
     }
     let streamed = async_stream(r#"{"stream":true}"#).execute();
-    assert_eq!(streamed.chunks.len(), 2);
+    assert_eq!(streamed.contents(), ["Hi ", "there"]);
     assert!(streamed.hooks.post.is_empty());
     let sent = ["additional_args", "complete_input_dict", "stream"];
     assert_eq!(streamed.pre(&sent), Json::Bool(true));

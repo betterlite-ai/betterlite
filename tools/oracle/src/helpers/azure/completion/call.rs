@@ -98,7 +98,7 @@ pub(super) fn source(case: &CallCase) -> ScriptedSource {
     let asynchronous = match case.client.as_deref() {
         Some("sync") => false,
         Some("async") => true,
-        Some(_other) | None => case.acompletion,
+        Some(_) | None => case.acompletion,
     };
     let kind = if asynchronous {
         ClientKind::AsyncAzureOpenAi
