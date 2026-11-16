@@ -4,7 +4,9 @@ use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::error::FireworksResponsesError;
 use super::instructions::{developer_as_system, fold_instructions};
-use crate::response_input::{ResponsesInput, transform_responses_request as openai_request};
+use crate::response_input::{
+    ResponsesInput, ResponsesItem, transform_responses_request as openai_request,
+};
 
 // LiteLLM's transform_responses_api_request: fold the instruction items, then let the OpenAI Responses transform build the body.
 pub fn transform_responses_request(

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use betterlite_prompts::arguments::json::{Json, Object};
 
 use crate::response_input::{ResponsesInput, ResponsesItem};
@@ -24,10 +26,11 @@ pub fn fold_instructions(
         })
         .collect();
     let folded = folded_texts(items, &roles);
+    let folded_indices: HashSet<usize> = folded.iter().map(|(index, _)| *index).collect();
     let kept = items
         .iter()
         .enumerate()
-        .filter(|(index, _)| !folded.iter().any(|(seen, _)| seen == index))
+        .filter(|(index, _)| !folded_indices.contains(index))
         .map(|(_, item)| ResponsesItem(developer_as_system(&item.0)))
         .collect();
     (
