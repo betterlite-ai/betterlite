@@ -105,6 +105,7 @@ impl StatusReporter {
                 status.finished_at = Some(isoformat(now));
             }
             StatusChange::FinishedComputed => {
+                status.running = false;
                 let finished = timed_status(status.clone(), now);
                 *status = finished;
                 status.finished_at = Some(isoformat(now));
