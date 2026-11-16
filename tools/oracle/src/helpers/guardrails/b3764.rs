@@ -8,7 +8,8 @@ use serde::Deserialize;
 use serde_json::json;
 use serde_json::value::{RawValue, to_raw_value};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 // the marker LiteLLM would draw a per-process token for, standing in for the guardrail's own
 const OWN_MARKER: &str = "$OWN";
