@@ -34,9 +34,7 @@ use crate::usage_ai_chat::flow::stream_usage_ai_chat;
 use crate::usage_ai_chat::messages::ChatMessage;
 use crate::usage_ai_chat::model::{ModelReply, ModelRequest, ModelToolCall, UsageChatModel};
 use crate::usage_ai_chat::parts::{UsageChatParts, UsageChatRequest};
-use crate::usage_ai_chat::source::{
-    DailyActivityUsageData, UsageActivityRepository, UsageDataSource,
-};
+use crate::usage_ai_chat::source::{UsageActivityRepository, UsageDataSource};
 use crate::usage_ai_chat::tools::ToolDefinition;
 
 pub(crate) fn money(text: &str) -> Decimal {

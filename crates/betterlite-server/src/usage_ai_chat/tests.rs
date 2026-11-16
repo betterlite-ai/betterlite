@@ -33,7 +33,7 @@ use crate::usage_ai_chat::flow::stream_usage_ai_chat;
 use crate::usage_ai_chat::messages::ChatMessage;
 use crate::usage_ai_chat::model::{ModelReply, ModelToolCall};
 use crate::usage_ai_chat::prompt::{SYSTEM_PROMPT_BASE, build_system_prompt};
-use crate::usage_ai_chat::source::DailyActivityUsageData;
+use crate::usage_ai_chat::source::{DailyActivityUsageData, UsageDataSource};
 use crate::usage_ai_chat::sse::{SseEvent, ToolCallStatus, sse_frame};
 use crate::usage_ai_chat::summary::{EntityLabel, summarise_entity_data, summarise_usage_data};
 use crate::usage_ai_chat::tools::{SchemaKind, ToolKind, UsageTool, tools_for_role};

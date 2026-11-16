@@ -328,7 +328,7 @@ async fn flow_ends_with_a_generic_error_when_the_stream_fails() {
 
 #[tokio::test]
 async fn flow_keeps_only_the_last_twenty_messages() {
-    let messages: Vec<ChatMessage> = (0..25)
+    let messages: Vec<ChatMessage> = (0..25_usize)
         .map(|index| ChatMessage::User {
             content: format!("message {index}"),
         })

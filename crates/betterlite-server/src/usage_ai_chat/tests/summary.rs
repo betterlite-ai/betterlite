@@ -71,13 +71,15 @@ fn summary_usage_keeps_first_seen_order_on_a_spend_tie() {
 
 #[test]
 fn summary_usage_cuts_the_lists_to_fifteen_and_ten() {
-    let model_names: Vec<String> = (0..16).map(|index| format!("model-{index:02}")).collect();
+    let model_names: Vec<String> = (0..16_usize)
+        .map(|index| format!("model-{index:02}"))
+        .collect();
     let models: Vec<(&str, MetricWithMetadata)> = model_names
         .iter()
         .enumerate()
         .map(|(index, name)| (name.as_str(), entry(&spend_of(index), 0, 0)))
         .collect();
-    let provider_names: Vec<String> = (0..11)
+    let provider_names: Vec<String> = (0..11_usize)
         .map(|index| format!("provider-{index:02}"))
         .collect();
     let providers: Vec<(&str, MetricWithMetadata)> = provider_names
