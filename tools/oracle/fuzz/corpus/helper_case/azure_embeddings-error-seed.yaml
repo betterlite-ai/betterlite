@@ -1,0 +1,14 @@
+kind: helper
+name: azure-embeddings-error-seed
+call:
+  azure_embeddings:
+    steps:
+      - input: ["a"]
+        client: azure_open_ai
+        answer: {reply: {status: 429, headers: {content-type: "text/plain"}, body: "slow down"}}
+      - input: ["a"]
+        client: async_azure_open_ai
+        answer: {connection: {}}
+        aembedding: true
+env: {}
+compare: {ignore: []}

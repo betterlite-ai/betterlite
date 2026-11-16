@@ -1,0 +1,18 @@
+task: B534
+deviations:
+  - what: A 2xx answer that is valid JSON but not an embeddings response (no data, model or usage) fails as a shape error. The sync path wraps it in AzureOpenAIError 500 and the async path raises it unwrapped.
+    why: The OpenAI SDK builds a partial object from any JSON and LiteLLM fails later inside convert_to_model_response_object with a generic Exception whose message is a traceback. betterlite decodes into the typed response once and names the failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L825
+  - what: The logged original_response and the converted data keep only the fields of the typed embeddings response. An unknown field on the answer or on a data record is dropped.
+    why: LiteLLM dumps the SDK object, which keeps unknown fields. The typed wire records of B006 do not, and the dropped fields are not part of the embeddings contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L714
+kept_bugs:
+  - what: The async path logs str(error) and raises the original SDK error, so a caller sees an SDK status error where the sync path raises AzureOpenAIError.
+    why: A router that already handles both classes relies on the status attribute of either, and wrapping the async path would change what its callers catch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L736
+  - what: Truthy headers replace optional_params.extra_headers as a whole instead of merging with it.
+    why: A setup that sends both gets the call headers only, and merging would send headers it never sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L763
+  - what: The sync catch-all reports response.text as the message once the headers came from the response, and str(error) otherwise.
+    why: Callers read the provider's own error body from the message of a sync failure, and the SDK status errors carry no headers attribute, so every status error takes this branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L836

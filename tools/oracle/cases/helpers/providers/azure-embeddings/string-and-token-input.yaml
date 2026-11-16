@@ -1,0 +1,22 @@
+kind: helper
+name: string-and-token-input
+call:
+  azure_embeddings:
+    steps:
+      - input: ["hello"]
+        client: azure_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+      - input: [1, 2, 3]
+        client: azure_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+      - input: [[1, 2], [3]]
+        client: async_azure_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        aembedding: true
+      - input: ["hello"]
+        client: async_azure_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        aembedding: true
+        timeout: 7.5
+env: {}
+compare: {ignore: []}

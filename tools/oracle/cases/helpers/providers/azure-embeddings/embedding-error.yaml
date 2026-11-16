@@ -1,0 +1,31 @@
+kind: helper
+name: embedding-error
+call:
+  azure_embeddings:
+    steps:
+      - input: ["a"]
+        client: azure_open_ai
+        answer: {reply: {status: 429, headers: {content-type: "text/plain", retry-after: "3"}, body: "slow down"}}
+      - input: ["a"]
+        client: async_azure_open_ai
+        answer: {reply: {status: 429, headers: {content-type: "text/plain", retry-after: "3"}, body: "slow down"}}
+        aembedding: true
+      - input: ["a"]
+        client: azure_open_ai
+        answer: {reply: {status: 400, headers: {content-type: "application/json"}, body: "{\"error\":{\"message\":\"bad input\",\"code\":\"BadRequest\"}}"}}
+      - input: ["a"]
+        client: async_azure_open_ai
+        answer: {reply: {status: 400, headers: {content-type: "application/json"}, body: "{\"error\":{\"message\":\"bad input\",\"code\":\"BadRequest\"}}"}}
+        aembedding: true
+      - input: ["a"]
+        client: azure_open_ai
+        answer: {connection: {}}
+      - input: ["a"]
+        client: async_azure_open_ai
+        answer: {connection: {}}
+        aembedding: true
+      - input: ["a"]
+        client: open_ai
+        answer: {reply: {status: 503, headers: {content-type: "text/plain"}, body: "unavailable"}}
+env: {}
+compare: {ignore: []}

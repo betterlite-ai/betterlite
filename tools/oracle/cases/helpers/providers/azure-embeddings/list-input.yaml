@@ -1,0 +1,24 @@
+kind: helper
+name: list-input
+call:
+  azure_embeddings:
+    steps:
+      - input: ["first", "second"]
+        client: azure_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0},{\"object\":\"embedding\",\"embedding\":[0.125,1.0],\"index\":1}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}"}}
+      - input: ["first", "second"]
+        client: async_azure_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0},{\"object\":\"embedding\",\"embedding\":[0.125,1.0],\"index\":1}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}"}}
+        aembedding: true
+      - input: ["first", "second"]
+        client: open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0},{\"object\":\"embedding\",\"embedding\":[0.125,1.0],\"index\":1}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}"}}
+      - input: ["first", "second"]
+        client: async_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0},{\"object\":\"embedding\",\"embedding\":[0.125,1.0],\"index\":1}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}"}}
+        aembedding: true
+      - input: [[1, 2], [3, 4]]
+        client: azure_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0},{\"object\":\"embedding\",\"embedding\":[0.125,1.0],\"index\":1}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}"}}
+env: {}
+compare: {ignore: []}

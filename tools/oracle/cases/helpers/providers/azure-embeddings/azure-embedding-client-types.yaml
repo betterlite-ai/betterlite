@@ -1,0 +1,35 @@
+kind: helper
+name: azure-embedding-client-types
+call:
+  azure_embeddings:
+    steps:
+      - input: ["a"]
+        client: azure_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+      - input: ["a"]
+        client: open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+      - input: ["a"]
+        client: async_azure_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+      - input: ["a"]
+        client: async_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+      - input: ["a"]
+        client: async_azure_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        aembedding: true
+      - input: ["a"]
+        client: async_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        aembedding: true
+      - input: ["a"]
+        client: azure_open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        aembedding: true
+      - input: ["a"]
+        client: open_ai
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        aembedding: true
+env: {}
+compare: {ignore: []}
