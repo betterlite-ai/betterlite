@@ -292,35 +292,26 @@ fn get_settings_names_every_updatable_setting_once() {
     );
 }
 
-#[test]
-fn get_settings_stores_the_other_names_as_given() {
+#[rstest]
+#[case::fallbacks("fallbacks", json!([object(vec![("a", json!(["b"]))])]))]
+#[case::context_window_fallbacks(
+    "context_window_fallbacks",
+    json!([object(vec![("c", json!(["d"]))])])
+)]
+#[case::model_group_retry_policy(
+    "model_group_retry_policy",
+    object(vec![("gpt", object(vec![("DefaultRetries", json!(2_i64))]))])
+)]
+#[case::model_group_alias("model_group_alias", object(vec![("x", json!(["y"]))]))]
+#[case::enable_weighted_failover("enable_weighted_failover", json!(true))]
+#[case::enable_tag_filtering("enable_tag_filtering", json!(true))]
+#[case::tag_routing_prefix("tag_routing_prefix", json!("tag:"))]
+#[case::max_retries("max_retries", json!(3.5_f64))]
+fn get_settings_stores_the_other_names_as_given(#[case] name: &str, #[case] value: JsonValue) {
     let mut settings = router(full_values());
-    let stored = vec![
-        ("fallbacks", json!([object(vec![("a", json!(["b"]))])])),
-        (
-            "context_window_fallbacks",
-            json!([object(vec![("c", json!(["d"]))])]),
-        ),
-        (
-            "model_group_retry_policy",
-            object(vec![(
-                "gpt",
-                object(vec![("DefaultRetries", json!(2_i64))]),
-            )]),
-        ),
-        ("model_group_alias", object(vec![("x", json!(["y"]))])),
-        ("enable_weighted_failover", json!(true)),
-        ("enable_tag_filtering", json!(true)),
-        ("tag_routing_prefix", json!("tag:")),
-        ("max_retries", json!(3.5_f64)),
-    ];
+    update(&mut settings, vec![(name, value.clone())]);
 
-    update(&mut settings, stored.clone());
-
-    let view = shown(&settings);
-    for (name, value) in stored {
-        assert_eq!(view[name], value, "{name}");
-    }
+    assert_eq!(shown(&settings)[name], value);
 }
 
 #[rstest]
