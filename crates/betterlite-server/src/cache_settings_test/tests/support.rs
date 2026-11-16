@@ -252,7 +252,7 @@ impl FakeRedis {
         self.address.ip().to_string()
     }
 
-    pub(crate) fn port(&self) -> u16 {
+    pub(crate) const fn port(&self) -> u16 {
         self.address.port()
     }
 
@@ -315,8 +315,8 @@ async fn serve_connection(stream: TcpStream, commands: Arc<Mutex<Vec<Recorded>>>
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(Recorded {
-                name: command.name.clone(),
-                arguments: command.arguments.clone(),
+                name: command.name,
+                arguments: command.arguments,
             });
         if write_half.write_all(&reply).await.is_err() {
             return;
