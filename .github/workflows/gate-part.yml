@@ -19,6 +19,11 @@ on:
         type: string
         required: false
         default: ""
+      all-tests:
+        description: true when every package is tested and linted, not only the ones the change affects
+        type: string
+        required: false
+        default: ""
 
 permissions: {}
 
@@ -84,7 +89,7 @@ jobs:
       # names every version the two install steps pin, so a bump misses the cache and installs fresh; layout2 skips the cache saved without shellcheck and shfmt
       TOOLS_KEY: tools-layout2-nextest-0.9.140-deny-0.20.2-llvm-cov-0.8.7-mutants-27.1.0-typos-1.48.0-prek-0.4.9-zizmor-1.26.1-shellcheck-0.11.0-shfmt-3.14.1-actionlint-1.7.12-uv-0.11.14-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0-similarity-py-0.5.0
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
-      BETTERLITE_ORACLE_CACHE: ${{ github.event_name == 'push' && 'shared' || 'own' }}
+      BETTERLITE_ORACLE_CACHE: ${{ (github.event_name == 'push' || github.event_name == 'schedule') && 'shared' || 'own' }}
     steps:
       # a test build filled the disk on runner image 20261018.96; emptying the 14 GiB Android SDK takes 30 to 270 s, so it waits for a runner with less than 60 GiB free
       - name: Free the runner's disk
@@ -257,7 +262,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           GATE_BASE: ${{ inputs.base }}
-          GATE_ALL_TESTS: ${{ github.event_name == 'push' && 'true' || '' }}
+          GATE_ALL_TESTS: ${{ inputs.all-tests }}
           PART: ${{ matrix.part }}
           PARTS: ${{ inputs.all-parts }}
           TASK: ${{ inputs.task }}
