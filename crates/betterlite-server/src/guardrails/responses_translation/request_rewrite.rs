@@ -145,14 +145,26 @@ impl Collected {
                 self.texts.push(text.clone());
                 self.task_mappings.push((message_index, None));
             }
-            Some(GuardrailValue::Array(entries)) => {
-                for (content_index, entry) in entries.iter().enumerate() {
-                    if let GuardrailValue::Object(fields) = entry {
-                        self.collect_entry(fields, message_index, content_index);
-                    }
-                }
-            }
+            Some(GuardrailValue::Array(entries)) => self.collect_entries(entries, message_index),
             Some(_) | None => {}
+        }
+    }
+
+    fn collect_entries(&mut self, entries: &[GuardrailValue], message_index: usize) {
+        for (content_index, entry) in entries.iter().enumerate() {
+            if let GuardrailValue::Object(fields) = entry {
+                self.collect_entry(fields, message_index, content_index);
+            }
+        }
+    }
+
+    fn collect_items(&mut self, items: &[GuardrailValue], flags: &ScopeFlags) {
+        for (index, item) in items.iter().enumerate() {
+            if let GuardrailValue::Object(message) = item
+                && !role_out_of_guardrail_scope(&message_role(item), flags)
+            {
+                self.collect_message(message, index);
+            }
         }
     }
 
@@ -164,15 +176,7 @@ impl Collected {
         };
         match input_data {
             GuardrailValue::Text(text) => self.texts.push(text.clone()),
-            GuardrailValue::Array(items) => {
-                for (index, item) in items.iter().enumerate() {
-                    if let GuardrailValue::Object(message) = item
-                        && !role_out_of_guardrail_scope(&message_role(item), &flags)
-                    {
-                        self.collect_message(message, index);
-                    }
-                }
-            }
+            GuardrailValue::Array(items) => self.collect_items(items, &flags),
             GuardrailValue::Null
             | GuardrailValue::Boolean(_)
             | GuardrailValue::SignedInteger(_)

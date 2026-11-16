@@ -12,7 +12,7 @@ use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, Guardrai
 use betterlite_guardrails::guardrail_message_scope::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_server::guardrails::responses_translation::output_rewrite::{
-    OutputContext, process_output_response,
+    OutputContext, apply_texts_to_output, process_output_response,
 };
 use betterlite_server::guardrails::responses_translation::request_rewrite::error::RequestRewriteError;
 use betterlite_server::guardrails::responses_translation::request_rewrite::{
@@ -43,11 +43,19 @@ pub(crate) struct OutputScenario {
 }
 
 #[derive(Deserialize)]
+pub(crate) struct ApplyScenario {
+    response: Value,
+    responses: Vec<String>,
+    task_mappings: Vec<(usize, usize)>,
+}
+
+#[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Request {
     RequestView { scenarios: Vec<DataScenario> },
     Input { scenarios: Vec<DataScenario> },
     Output { scenarios: Vec<OutputScenario> },
+    ApplyOutput { scenarios: Vec<ApplyScenario> },
 }
 
 struct ScriptedGuardrail {
@@ -180,6 +188,13 @@ fn request_view_answer(cache: &DualLocalCache, scenario: &DataScenario) -> Helpe
     Ok(json!({"messages": messages, "instructions": instructions}))
 }
 
+fn apply_answer(scenario: &ApplyScenario) -> HelperResult {
+    let mut response = scenario.response.clone();
+    apply_texts_to_output(&mut response, &scenario.responses, &scenario.task_mappings)
+        .or_value_error()?;
+    Ok(response)
+}
+
 impl Helper for Op {
     type Input = Request;
 
@@ -199,6 +214,7 @@ impl Helper for Op {
                 .iter()
                 .map(|scenario| output_answer(&runtime, scenario))
                 .collect(),
+            Request::ApplyOutput { scenarios } => scenarios.iter().map(apply_answer).collect(),
         };
         answers.map(Value::Array)
     }

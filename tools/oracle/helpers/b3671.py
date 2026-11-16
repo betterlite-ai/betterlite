@@ -32,6 +32,13 @@ class HandlerView(Protocol[Result_co]):
         request_data: dict[str, JsonValue] | None = None,
     ) -> Result_co: ...
 
+    async def _apply_guardrail_responses_to_output(  # ast-grep-ignore: no-long-names
+        self,
+        response: ResponseOutputEnvelope,
+        responses: list[str],
+        task_mappings: list[tuple[int, int]],
+    ) -> Result_co: ...
+
 
 class Inputs(TypedDict, total=False):
     texts: list[JsonValue]
@@ -60,6 +67,12 @@ class OutputScenario(TypedDict):
     reply: Inputs | None
 
 
+class ApplyScenario(TypedDict):
+    response: ResponseOutputEnvelope
+    responses: list[str]
+    task_mappings: list[tuple[int, int]]
+
+
 class DataCall(TypedDict):
     function: Literal["request_view", "input"]
     scenarios: list[DataScenario]
@@ -70,7 +83,12 @@ class OutputCall(TypedDict):
     scenarios: list[OutputScenario]
 
 
-Input = DataCall | OutputCall
+class ApplyCall(TypedDict):
+    function: Literal["apply_output"]
+    scenarios: list[ApplyScenario]
+
+
+Input = DataCall | OutputCall | ApplyCall
 
 
 async def recording_apply(
@@ -80,15 +98,14 @@ async def recording_apply(
     input_type: str,
     **_call: JsonValue,
 ) -> Inputs:
-    self.calls.append(
-        JSON.validate_python(
-            {
-                "input_type": input_type,
-                "inputs": inputs,
-                "request_keys": sorted(request_data),
-            }
-        )
-    )
+    request_keys: list[JsonValue] = []
+    request_keys.extend(sorted(request_data))
+    entry: dict[str, JsonValue] = {
+        "input_type": input_type,
+        "inputs": JSON.validate_python(inputs),
+        "request_keys": request_keys,
+    }
+    self.calls.append(entry)
     if self.reply is None:
         return inputs
     return self.reply
@@ -144,22 +161,31 @@ async def output_answer(handler: HandlerView, scenario: OutputScenario) -> JsonV
     return {"response": JSON.validate_python(response), "calls": calls}
 
 
+async def apply_answer(handler: HandlerView, scenario: ApplyScenario) -> JsonValue:
+    apply = handler._apply_guardrail_responses_to_output  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1509
+    response = scenario["response"]
+    await apply(response, scenario["responses"], scenario["task_mappings"])
+    return JSON.validate_python(response)
+
+
+def view_answer(handler: HandlerView, scenario: DataScenario) -> JsonValue:
+    messages = handler.get_structured_messages(scenario["data"])
+    return {
+        "messages": JSON.validate_python(messages),
+        "instructions": scannable_instructions(
+            scenario["data"], skip_system=scenario["skip_system"]
+        ),
+    }
+
+
 async def answer(call: Input) -> list[JsonValue]:
     handler: HandlerView = OpenAIResponsesHandler()
+    if call["function"] == "apply_output":
+        return [await apply_answer(handler, item) for item in call["scenarios"]]
     if call["function"] == "output":
         return [await output_answer(handler, item) for item in call["scenarios"]]
     if call["function"] == "request_view":
-        return [
-            {
-                "messages": JSON.validate_python(
-                    handler.get_structured_messages(item["data"])
-                ),
-                "instructions": scannable_instructions(
-                    item["data"], skip_system=item["skip_system"]
-                ),
-            }
-            for item in call["scenarios"]
-        ]
+        return [view_answer(handler, item) for item in call["scenarios"]]
     return [await input_answer(handler, item) for item in call["scenarios"]]
 
 
