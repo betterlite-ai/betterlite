@@ -40,6 +40,11 @@ scope:
   - "crates/betterlite-config/src/**"
   - crates/betterlite-config/src/loader.rs
   - crates/betterlite-config/src/sections/claude_gateway_policy/tests.rs
+  - crates/betterlite/src/diagnostic_commands.rs
+  - tools/oracle/src/helpers/guardrails/b3762/support.rs
+  - tools/oracle/src/helpers/guardrails/b3767.rs
+  - tools/oracle/src/helpers/guardrails/b3769.rs
+  - tools/oracle/src/helpers/guardrails/b3778.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5475-L5493
