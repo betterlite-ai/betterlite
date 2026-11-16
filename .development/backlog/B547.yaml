@@ -1,7 +1,7 @@
 id: B547
 milestone: M3 providers
 title: Azure container video and vector-store endpoints
-status: todo
+status: done
 depends_on: [B522, B525, B527, B171, B2200]
 file: tasks/B547-azure-resource-urls.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/azure/vector_stores/transformation.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2118

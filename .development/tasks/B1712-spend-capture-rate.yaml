@@ -84,7 +84,7 @@ checks:
       run: test -f tools/oracle/helpers/capture_rate.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: capture-helper-corpus
       why: No capture-rate helper seed exercises the typed operation.
-      run: grep -rlq 'capture_rate:' tools/oracle/fuzz/corpus/helper_case/capture-rate-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: grep -rlq 'capture_rate:' tools/oracle/fuzz/corpus/helper_case/capture-rate-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-provider --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: capture-byte-corpora
       why: Billing-page or settings byte decoding lacks a new corpus replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/openai_costs_page)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/capture_rate_settings)" && cargo nextest run --locked -p betterlite-provider -p betterlite-config --no-tests=fail -E 'test(replays_the_openai_costs_page_corpus) + test(replays_the_capture_rate_settings_corpus)'

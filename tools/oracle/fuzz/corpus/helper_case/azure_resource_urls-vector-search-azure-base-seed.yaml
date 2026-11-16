@@ -1,0 +1,11 @@
+kind: helper
+name: azure-resource-urls-vector_search_azure_base-seed
+call:
+  azure_resource_urls:
+    vector_search_azure_base:
+      urls:
+        - {api_base: "https://r.example", api_version: "2025-01-01", module: {}, environment: {}}
+      auth:
+        - {resource: vector_store, headers: {}, params: {api_key: own}, module: {}, environment: {}}
+env: {}
+compare: {ignore: []}

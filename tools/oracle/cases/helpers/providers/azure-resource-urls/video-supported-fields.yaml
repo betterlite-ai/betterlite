@@ -1,0 +1,11 @@
+kind: helper
+name: video-supported-fields
+call:
+  azure_resource_urls:
+    video_supported_fields:
+      - {options: {seconds: '5', size: 720x1280, user: u-1, characters: [{id: char-1}], input_reference: ref, extra_headers: {x-one: '1'}, model: option-model}, drop_params: false}
+      - {options: {seconds: '5', size: 720x1280, user: u-1, characters: [{id: char-1}], input_reference: ref, extra_headers: {x-one: '1'}, model: option-model}, drop_params: true}
+      - {options: {prompt: option-prompt, resolution: 720p, parameters: {quality: high}, extra_body: {a: b}}, drop_params: true}
+      - {options: {}, drop_params: false}
+env: {}
+compare: {ignore: []}

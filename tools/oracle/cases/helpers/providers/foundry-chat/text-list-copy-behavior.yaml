@@ -1,0 +1,44 @@
+kind: helper
+name: foundry-chat-text-list-copy-behavior
+call:
+  foundry_chat:
+    model_cost: {}
+    chat_models: []
+    text_models: []
+    requests:
+      - model: mistral-large
+        optional: {}
+        messages:
+          - {role: user, content: []}
+      - model: mistral-large
+        optional: {}
+        messages:
+          - role: user
+            content:
+              - {type: text, text: ""}
+      - model: mistral-large
+        optional: {}
+        messages:
+          - {role: user, content: hi}
+      - model: mistral-large
+        optional: {}
+        messages:
+          - role: user
+            content:
+              - {type: text, text: a}
+              - {type: text, text: b}
+      - model: mistral-large
+        optional: {}
+        messages:
+          - role: user
+            content:
+              - {type: image_url, image_url: {url: "https://x/y.png"}}
+              - {type: text, text: look}
+      - model: mistral-large
+        optional: {}
+        messages:
+          - role: user
+            content:
+              - {type: input_audio, input_audio: {data: AAA, format: wav}}
+env: {}
+compare: {ignore: []}

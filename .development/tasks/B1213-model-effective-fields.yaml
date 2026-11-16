@@ -199,7 +199,7 @@ checks:
       why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model-effective-fields-*")"
         && grep -rlq "model_effective_fields" tools/oracle/fuzz/corpus/helper_case/model-effective-fields-*
-        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::model_effective_fields::tests::/)

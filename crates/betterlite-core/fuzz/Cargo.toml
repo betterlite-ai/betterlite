@@ -375,6 +375,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "messages_agentic_stream"
+path = "fuzz_targets/messages_agentic_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "video_reference_to_id"
 path = "fuzz_targets/video_reference_to_id.rs"
 test = false

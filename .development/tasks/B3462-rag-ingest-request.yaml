@@ -106,7 +106,7 @@ checks:
         replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/ingest-request-*")"
         && grep -rlq "parse_rag_ingest_request\|ingest_request" tools/oracle/fuzz/corpus/helper_case/ingest-request-*
-        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: content-fuzz-corpus
       why: The RAG JSON decoder has no fuzz corpus or the corpus does not replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-core/fuzz/corpus/rag_json_decoder/")"
