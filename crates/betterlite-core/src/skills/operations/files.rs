@@ -21,7 +21,7 @@ pub(super) fn selected_file<'request>(
         name: file_name,
         file_type,
     };
-    let bytes_missing = file_content.map_or(true, <[u8]>::is_empty);
+    let bytes_missing = file_content.is_none_or(<[u8]>::is_empty);
     let Some(uploads) = files.filter(|uploads| !uploads.is_empty() && bytes_missing) else {
         return selected;
     };

@@ -16,7 +16,7 @@ use crate::skills::store::repository::SkillRepository;
 use crate::skills::store::{HostedSkillStore, NewSkill, SkillPage, StoreError};
 
 use files::selected_file;
-use logging::{log_create, log_list, log_skill};
+use logging::{SkillLog, log_skill_call};
 use projection::db_skill_to_response;
 
 #[derive(Debug, Error)]
@@ -45,6 +45,14 @@ pub struct HostedSkillCreation<'request> {
     pub litellm_call_id: Option<&'request str>,
 }
 
+// The single-skill call get and delete share: the row's id, the caller scope, the call id, and the logging state
+pub struct SkillTarget<'request> {
+    pub logging: &'request mut LoggingState,
+    pub id: &'request str,
+    pub principal: Option<&'request Principal>,
+    pub call_id: Option<&'request str>,
+}
+
 // One uploaded tuple; a two-element tuple names no MIME type and falls back to application/zip
 pub struct SkillUpload<'request> {
     pub file_name: &'request str,
@@ -69,7 +77,6 @@ impl<R: SkillRepository> HostedSkillOps<R> {
         logging: &mut LoggingState,
         request: HostedSkillCreation<'_>,
     ) -> Result<Skill, HostedSkillOpsError> {
-        log_create(logging, request.display_title, request.litellm_call_id)?;
         let chosen = selected_file(
             request.files,
             request.file_content,
@@ -85,6 +92,11 @@ impl<R: SkillRepository> HostedSkillOps<R> {
             file_name: chosen.name.map(str::to_owned),
             file_type: chosen.file_type.map(str::to_owned),
         };
+        log_skill_call(
+            logging,
+            SkillLog::Create(request.display_title),
+            request.litellm_call_id,
+        )?;
         let row = self
             .store
             .create_skill(&data, request.user_id, request.principal)
@@ -99,7 +111,7 @@ impl<R: SkillRepository> HostedSkillOps<R> {
         principal: Option<&Principal>,
         litellm_call_id: Option<&str>,
     ) -> Result<ListSkillsResponse, HostedSkillOpsError> {
-        log_list(logging, page, litellm_call_id)?;
+        log_skill_call(logging, SkillLog::List(page), litellm_call_id)?;
         let rows = self.store.list_skills(page, principal).await?;
         let data = rows
             .iter()
@@ -114,26 +126,16 @@ impl<R: SkillRepository> HostedSkillOps<R> {
         })
     }
 
-    pub async fn get_skill(
-        &self,
-        logging: &mut LoggingState,
-        skill_id: &str,
-        principal: Option<&Principal>,
-        litellm_call_id: Option<&str>,
-    ) -> Result<Skill, HostedSkillOpsError> {
-        log_skill(logging, skill_id, litellm_call_id)?;
-        let row = self.store.get_skill(skill_id, principal).await?;
-        db_skill_to_response(&row)
+    pub async fn get_skill(&self, target: SkillTarget<'_>) -> Result<Skill, HostedSkillOpsError> {
+        log_skill_call(target.logging, SkillLog::Skill(target.id), target.call_id)?;
+        db_skill_to_response(&self.store.get_skill(target.id, target.principal).await?)
     }
 
     pub async fn delete_skill(
         &self,
-        logging: &mut LoggingState,
-        skill_id: &str,
-        principal: Option<&Principal>,
-        litellm_call_id: Option<&str>,
+        target: SkillTarget<'_>,
     ) -> Result<DeleteSkillResponse, HostedSkillOpsError> {
-        log_skill(logging, skill_id, litellm_call_id)?;
-        Ok(self.store.delete_skill(skill_id, principal).await?)
+        log_skill_call(target.logging, SkillLog::Skill(target.id), target.call_id)?;
+        Ok(self.store.delete_skill(target.id, target.principal).await?)
     }
 }

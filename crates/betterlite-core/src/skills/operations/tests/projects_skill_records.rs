@@ -17,19 +17,14 @@ fn page_of(repository: &ScriptedRepository, rows: Vec<SkillTable>) {
 #[test]
 fn projects_skill_records_with_empty_dates_for_missing_ones() {
     support::runtime().block_on(async {
-        let repository = ScriptedRepository::with_row(support::stored_row("alice"));
-        repository.update(|state| {
-            for row in state.rows.values_mut() {
-                row.created_at = None;
-                row.updated_at = None;
-            }
-        });
+        let mut row = support::stored_row("alice");
+        row.created_at = None;
+        row.updated_at = None;
+        let repository = ScriptedRepository::with_row(row);
         let ops = support::ops(repository);
         let mut logging = support::logging_state();
-        let skill = ops
-            .get_skill(&mut logging, support::SKILL_ID, None, None)
-            .await
-            .unwrap();
+        let target = support::target(&mut logging, support::SKILL_ID);
+        let skill = ops.get_skill(target).await.unwrap();
         assert_eq!(skill.created_at, "");
         assert_eq!(skill.updated_at, "");
     });
@@ -43,10 +38,8 @@ fn projects_skill_records_with_iso_dates_padded_to_microseconds() {
         row.updated_at = Some(support::timestamped("2026-01-01T00:00:00"));
         let ops = support::ops(ScriptedRepository::with_row(row));
         let mut logging = support::logging_state();
-        let skill = ops
-            .get_skill(&mut logging, support::SKILL_ID, None, None)
-            .await
-            .unwrap();
+        let target = support::target(&mut logging, support::SKILL_ID);
+        let skill = ops.get_skill(target).await.unwrap();
         assert_eq!(skill.created_at, "2026-01-01T00:00:00.123000");
         assert_eq!(skill.updated_at, "2026-01-01T00:00:00");
     });
@@ -59,10 +52,8 @@ fn projects_skill_records_with_a_custom_source_when_the_row_has_none() {
         row.source = String::new();
         let ops = support::ops(ScriptedRepository::with_row(row));
         let mut logging = support::logging_state();
-        let skill = ops
-            .get_skill(&mut logging, support::SKILL_ID, None, None)
-            .await
-            .unwrap();
+        let target = support::target(&mut logging, support::SKILL_ID);
+        let skill = ops.get_skill(target).await.unwrap();
         assert_eq!(skill.source, "custom");
     });
 }
@@ -74,10 +65,8 @@ fn projects_skill_records_with_the_row_source_when_it_is_set() {
         row.source = "anthropic".to_owned();
         let ops = support::ops(ScriptedRepository::with_row(row));
         let mut logging = support::logging_state();
-        let skill = ops
-            .get_skill(&mut logging, support::SKILL_ID, None, None)
-            .await
-            .unwrap();
+        let target = support::target(&mut logging, support::SKILL_ID);
+        let skill = ops.get_skill(target).await.unwrap();
         assert_eq!(skill.source, "anthropic");
     });
 }
@@ -91,10 +80,8 @@ fn projects_skill_records_keeping_title_version_and_description() {
         row.description = Some("Desc".to_owned());
         let ops = support::ops(ScriptedRepository::with_row(row));
         let mut logging = support::logging_state();
-        let skill = ops
-            .get_skill(&mut logging, support::SKILL_ID, None, None)
-            .await
-            .unwrap();
+        let target = support::target(&mut logging, support::SKILL_ID);
+        let skill = ops.get_skill(target).await.unwrap();
         assert_eq!(skill.id, support::stored_row("alice").skill_id);
         assert_eq!(skill.display_title.as_deref(), Some("Title"));
         assert_eq!(skill.latest_version.as_deref(), Some("2"));
@@ -239,10 +226,8 @@ fn projects_skill_records_deleted_with_the_default_type() {
         let ops = support::ops(repository);
         let mut logging = support::logging_state();
         let skill_id = support::stored_row("alice").skill_id;
-        let deleted = ops
-            .delete_skill(&mut logging, &skill_id, None, None)
-            .await
-            .unwrap();
+        let target = support::target(&mut logging, &skill_id);
+        let deleted = ops.delete_skill(target).await.unwrap();
         assert_eq!(deleted.id, skill_id);
         assert_eq!(deleted.r#type, "skill_deleted");
     });

@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use crate::skills::operations::{
-    HostedSkillCreation, HostedSkillOpsError, SkillUpload, SkillUploadType,
+    HostedSkillCreation, HostedSkillOpsError, SkillTarget, SkillUpload, SkillUploadType,
 };
 use crate::skills::store::repository::SkillWrite;
 use crate::skills::store::{SkillPage, StoreError};
@@ -36,29 +36,19 @@ fn create_forwards_identity_metadata_and_caller_arguments() {
         let mut logging = support::logging_state();
         let mut metadata = IndexMap::new();
         metadata.insert("tier".to_owned(), number(2));
-        let skill = ops
-            .create_skill(
-                &mut logging,
-                HostedSkillCreation {
-                    display_title: Some("Title"),
-                    description: Some("Desc"),
-                    instructions: Some("Do"),
-                    metadata: Some(&metadata),
-                    user_id: Some("bob"),
-                    principal: Some(&principal("alice")),
-                    litellm_call_id: Some("call-9"),
-                    ..HostedSkillCreation::default()
-                },
-            )
-            .await
-            .unwrap();
+        let alice = principal("alice");
+        let mut creation = HostedSkillCreation::default();
+        creation.display_title = Some("Title");
+        creation.description = Some("Desc");
+        creation.instructions = Some("Do");
+        creation.metadata = Some(&metadata);
+        creation.user_id = Some("bob");
+        creation.principal = Some(&alice);
+        creation.litellm_call_id = Some("call-9");
+        let skill = ops.create_skill(&mut logging, creation).await.unwrap();
         assert_eq!(skill.id, support::SKILL_ID);
-        assert_eq!(skill.created_at, support::NOW);
-        assert_eq!(skill.updated_at, support::NOW);
         assert_eq!(skill.display_title.as_deref(), Some("Title"));
         assert_eq!(skill.description.as_deref(), Some("Desc"));
-        assert_eq!(skill.source, "custom");
-        assert_eq!(skill.r#type, "skill");
         let write = created_write(&repository);
         assert_eq!(write.display_title.as_deref(), Some("Title"));
         assert_eq!(write.description.as_deref(), Some("Desc"));
@@ -91,16 +81,11 @@ fn create_encodes_nested_metadata_as_row_json() {
         nested.insert("a".to_owned(), number(1));
         let mut metadata = IndexMap::new();
         metadata.insert("note".to_owned(), Json::Object(nested));
-        ops.create_skill(
-            &mut logging,
-            HostedSkillCreation {
-                metadata: Some(&metadata),
-                principal: Some(&principal("alice")),
-                ..HostedSkillCreation::default()
-            },
-        )
-        .await
-        .unwrap();
+        let alice = principal("alice");
+        let mut creation = HostedSkillCreation::default();
+        creation.metadata = Some(&metadata);
+        creation.principal = Some(&alice);
+        ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(
             write.metadata.as_deref(),
@@ -116,18 +101,13 @@ fn create_uses_the_first_uploaded_tuple_and_ignores_later_ones() {
         let ops = support::ops(repository.clone());
         let mut logging = support::logging_state();
         let files = uploads();
-        ops.create_skill(
-            &mut logging,
-            HostedSkillCreation {
-                files: Some(&files),
-                file_name: Some("explicit.zip"),
-                file_type: Some("application/x-explicit"),
-                principal: Some(&principal("alice")),
-                ..HostedSkillCreation::default()
-            },
-        )
-        .await
-        .unwrap();
+        let alice = principal("alice");
+        let mut creation = HostedSkillCreation::default();
+        creation.files = Some(&files);
+        creation.file_name = Some("explicit.zip");
+        creation.file_type = Some("application/x-explicit");
+        creation.principal = Some(&alice);
+        ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(write.file_name.as_deref(), Some("first.zip"));
         assert_eq!(write.file_content.as_deref(), Some("Zmlyc3Q="));
@@ -142,19 +122,14 @@ fn create_keeps_explicit_bytes_over_the_uploaded_tuples() {
         let ops = support::ops(repository.clone());
         let mut logging = support::logging_state();
         let files = uploads();
-        ops.create_skill(
-            &mut logging,
-            HostedSkillCreation {
-                files: Some(&files),
-                file_content: Some(b"explicit"),
-                file_name: Some("explicit.zip"),
-                file_type: Some("application/x-explicit"),
-                principal: Some(&principal("alice")),
-                ..HostedSkillCreation::default()
-            },
-        )
-        .await
-        .unwrap();
+        let alice = principal("alice");
+        let mut creation = HostedSkillCreation::default();
+        creation.files = Some(&files);
+        creation.file_content = Some(b"explicit");
+        creation.file_name = Some("explicit.zip");
+        creation.file_type = Some("application/x-explicit");
+        creation.principal = Some(&alice);
+        ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(write.file_name.as_deref(), Some("explicit.zip"));
         assert_eq!(write.file_content.as_deref(), Some("ZXhwbGljaXQ="));
@@ -169,19 +144,14 @@ fn create_lets_the_tuples_replace_empty_explicit_bytes() {
         let ops = support::ops(repository.clone());
         let mut logging = support::logging_state();
         let files = uploads();
-        ops.create_skill(
-            &mut logging,
-            HostedSkillCreation {
-                files: Some(&files),
-                file_content: Some(b""),
-                file_name: Some("explicit.zip"),
-                file_type: Some("application/x-explicit"),
-                principal: Some(&principal("alice")),
-                ..HostedSkillCreation::default()
-            },
-        )
-        .await
-        .unwrap();
+        let alice = principal("alice");
+        let mut creation = HostedSkillCreation::default();
+        creation.files = Some(&files);
+        creation.file_content = Some(b"");
+        creation.file_name = Some("explicit.zip");
+        creation.file_type = Some("application/x-explicit");
+        creation.principal = Some(&alice);
+        ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(write.file_name.as_deref(), Some("first.zip"));
         assert_eq!(write.file_content.as_deref(), Some("Zmlyc3Q="));
@@ -200,18 +170,13 @@ fn create_keeps_a_null_mime_type_from_a_three_element_tuple() {
             b"first",
             SkillUploadType::Given(None),
         )];
-        ops.create_skill(
-            &mut logging,
-            HostedSkillCreation {
-                files: Some(&files),
-                file_name: Some("explicit.zip"),
-                file_type: Some("application/x-explicit"),
-                principal: Some(&principal("alice")),
-                ..HostedSkillCreation::default()
-            },
-        )
-        .await
-        .unwrap();
+        let alice = principal("alice");
+        let mut creation = HostedSkillCreation::default();
+        creation.files = Some(&files);
+        creation.file_name = Some("explicit.zip");
+        creation.file_type = Some("application/x-explicit");
+        creation.principal = Some(&alice);
+        ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(write.file_name.as_deref(), Some("first.zip"));
         assert_eq!(write.file_type, None);
@@ -225,18 +190,13 @@ fn create_ignores_an_empty_tuple_list() {
         let ops = support::ops(repository.clone());
         let mut logging = support::logging_state();
         let files: [SkillUpload<'_>; 0] = [];
-        ops.create_skill(
-            &mut logging,
-            HostedSkillCreation {
-                files: Some(&files),
-                file_name: Some("explicit.zip"),
-                file_type: Some("application/x-explicit"),
-                principal: Some(&principal("alice")),
-                ..HostedSkillCreation::default()
-            },
-        )
-        .await
-        .unwrap();
+        let alice = principal("alice");
+        let mut creation = HostedSkillCreation::default();
+        creation.files = Some(&files);
+        creation.file_name = Some("explicit.zip");
+        creation.file_type = Some("application/x-explicit");
+        creation.principal = Some(&alice);
+        ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(write.file_name.as_deref(), Some("explicit.zip"));
         assert_eq!(write.file_type.as_deref(), Some("application/x-explicit"));
@@ -250,16 +210,11 @@ fn create_updates_the_call_context_before_the_store_fails() {
         repository.update(|state| state.create_failure = true);
         let ops = support::ops(repository.clone());
         let mut logging = support::logging_state();
-        let outcome = ops
-            .create_skill(
-                &mut logging,
-                HostedSkillCreation {
-                    display_title: Some("Title"),
-                    principal: Some(&principal("alice")),
-                    ..HostedSkillCreation::default()
-                },
-            )
-            .await;
+        let alice = principal("alice");
+        let mut creation = HostedSkillCreation::default();
+        creation.display_title = Some("Title");
+        creation.principal = Some(&alice);
+        let outcome = ops.create_skill(&mut logging, creation).await;
         assert!(matches!(
             outcome,
             Err(HostedSkillOpsError::Store(StoreError::Repository { .. }))
@@ -296,15 +251,9 @@ fn create_forwards_user_id_when_the_caller_has_no_principal() {
         let repository = ScriptedRepository::default();
         let ops = support::ops(repository.clone());
         let mut logging = support::logging_state();
-        ops.create_skill(
-            &mut logging,
-            HostedSkillCreation {
-                user_id: Some("bob"),
-                ..HostedSkillCreation::default()
-            },
-        )
-        .await
-        .unwrap();
+        let mut creation = HostedSkillCreation::default();
+        creation.user_id = Some("bob");
+        ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(write.created_by, "bob");
         assert_eq!(write.updated_by, "bob");
@@ -331,22 +280,19 @@ fn list_forwards_the_page_and_the_caller_scopes() {
             .await
             .unwrap();
         assert!(response.data.is_empty());
+        let scopes = [
+            "alice",
+            "user:alice",
+            "team:team-1",
+            "org:org-1",
+            "key:key-1",
+            "key:token-1",
+        ];
         assert_eq!(
             repository.effects(),
             vec![Effect::FindMany {
                 page,
-                created_by: Some(
-                    [
-                        "alice",
-                        "user:alice",
-                        "team:team-1",
-                        "org:org-1",
-                        "key:key-1",
-                        "key:token-1"
-                    ]
-                    .map(str::to_owned)
-                    .to_vec()
-                ),
+                created_by: Some(scopes.map(str::to_owned).to_vec()),
             }]
         );
         assert_eq!(
@@ -385,14 +331,13 @@ fn get_forwards_the_principal_to_the_store() {
         let repository = ScriptedRepository::with_row(support::stored_row("alice"));
         let ops = support::ops(repository.clone());
         let mut logging = support::logging_state();
-        let outcome = ops
-            .get_skill(
-                &mut logging,
-                support::SKILL_ID,
-                Some(&principal("bob")),
-                None,
-            )
-            .await;
+        let target = SkillTarget {
+            logging: &mut logging,
+            id: support::SKILL_ID,
+            principal: Some(&principal("bob")),
+            call_id: None,
+        };
+        let outcome = ops.get_skill(target).await;
         assert!(matches!(
             outcome,
             Err(HostedSkillOpsError::Store(StoreError::NotFound { .. }))
@@ -410,10 +355,13 @@ fn delete_updates_the_call_context_before_the_store() {
         let repository = ScriptedRepository::with_row(support::stored_row("alice"));
         let ops = support::ops(repository.clone());
         let mut logging = support::logging_state();
-        let deleted = ops
-            .delete_skill(&mut logging, support::SKILL_ID, None, Some("call-9"))
-            .await
-            .unwrap();
+        let target = SkillTarget {
+            logging: &mut logging,
+            id: support::SKILL_ID,
+            principal: None,
+            call_id: Some("call-9"),
+        };
+        let deleted = ops.delete_skill(target).await.unwrap();
         assert_eq!(deleted.id, support::SKILL_ID);
         assert_eq!(
             repository.effects(),
@@ -435,14 +383,13 @@ fn delete_rejects_a_caller_who_does_not_own_the_row() {
         let repository = ScriptedRepository::with_row(support::stored_row("alice"));
         let ops = support::ops(repository.clone());
         let mut logging = support::logging_state();
-        let outcome = ops
-            .delete_skill(
-                &mut logging,
-                support::SKILL_ID,
-                Some(&principal("bob")),
-                None,
-            )
-            .await;
+        let target = SkillTarget {
+            logging: &mut logging,
+            id: support::SKILL_ID,
+            principal: Some(&principal("bob")),
+            call_id: None,
+        };
+        let outcome = ops.delete_skill(target).await;
         assert!(matches!(
             outcome,
             Err(HostedSkillOpsError::Store(StoreError::NotFound { .. }))

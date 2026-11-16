@@ -23,15 +23,15 @@ pub(super) fn db_skill_to_response(row: &SkillTable) -> Result<Skill, HostedSkil
 }
 
 // LiteLLM's `db_skill.source or "custom"` also falls back on an empty source
-fn source_name(source: &str) -> &str {
+const fn source_name(source: &str) -> &str {
     if source.is_empty() {
         return DEFAULT_SOURCE;
     }
     source
 }
 
-fn iso_datetime(stamp: Option<&RowTimestamp>) -> Result<String, HostedSkillOpsError> {
-    let Some(stamp) = stamp else {
+fn iso_datetime(timestamp: Option<&RowTimestamp>) -> Result<String, HostedSkillOpsError> {
+    let Some(stamp) = timestamp else {
         return Ok(String::new());
     };
     let encoded = serde_json::to_value(stamp).map_err(HostedSkillOpsError::Timestamp)?;

@@ -9,37 +9,34 @@ use serde_json::Number;
 use crate::api::skills::get_delete::call::LITELLM_PROXY_PROVIDER;
 use crate::skills::store::SkillPage;
 
-pub(super) fn log_create(
-    logging: &mut LoggingState,
-    display_title: Option<&str>,
-    litellm_call_id: Option<&str>,
-) -> Result<(), LoggingStateError> {
-    let mut optional_params = IndexMap::new();
-    optional_params.insert(
-        "display_title".to_owned(),
-        display_title.map_or(Json::Null, |title| Json::Text(title.to_owned())),
-    );
-    log_update(logging, optional_params, litellm_call_id)
+// The arguments each hosted skill call records before it reaches the store
+pub(super) enum SkillLog<'request> {
+    Create(Option<&'request str>),
+    List(SkillPage),
+    Skill(&'request str),
 }
 
-pub(super) fn log_list(
+pub(super) fn log_skill_call(
     logging: &mut LoggingState,
-    page: SkillPage,
+    entry: SkillLog<'_>,
     litellm_call_id: Option<&str>,
 ) -> Result<(), LoggingStateError> {
     let mut optional_params = IndexMap::new();
-    optional_params.insert("limit".to_owned(), Json::Number(Number::from(page.limit)));
-    optional_params.insert("offset".to_owned(), Json::Number(Number::from(page.offset)));
-    log_update(logging, optional_params, litellm_call_id)
-}
-
-pub(super) fn log_skill(
-    logging: &mut LoggingState,
-    skill_id: &str,
-    litellm_call_id: Option<&str>,
-) -> Result<(), LoggingStateError> {
-    let mut optional_params = IndexMap::new();
-    optional_params.insert("skill_id".to_owned(), Json::Text(skill_id.to_owned()));
+    match entry {
+        SkillLog::Create(display_title) => {
+            let title = display_title.map_or(Json::Null, |title| Json::Text(title.to_owned()));
+            optional_params.insert("display_title".to_owned(), title);
+        }
+        SkillLog::List(page) => {
+            let limit = Json::Number(Number::from(page.limit));
+            optional_params.insert("limit".to_owned(), limit);
+            let offset = Json::Number(Number::from(page.offset));
+            optional_params.insert("offset".to_owned(), offset);
+        }
+        SkillLog::Skill(skill_id) => {
+            optional_params.insert("skill_id".to_owned(), Json::Text(skill_id.to_owned()));
+        }
+    }
     log_update(logging, optional_params, litellm_call_id)
 }
 

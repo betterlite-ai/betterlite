@@ -24,7 +24,7 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use tokio::runtime::{Builder, Runtime};
 
-use crate::skills::operations::{HostedSkillOps, SkillUpload, SkillUploadType};
+use crate::skills::operations::{HostedSkillOps, SkillTarget, SkillUpload, SkillUploadType};
 use crate::skills::store::repository::{SkillRepository, SkillWrite};
 use crate::skills::store::{HostedSkillStore, SkillPage};
 
@@ -60,6 +60,18 @@ fn fixed_clock() -> Clock {
 pub(crate) fn ops(repository: ScriptedRepository) -> HostedSkillOps<ScriptedRepository> {
     let store = HostedSkillStore::new(repository, fixed_ids(), fixed_clock()).unwrap();
     HostedSkillOps { store }
+}
+
+pub(crate) fn target<'request>(
+    logging: &'request mut LoggingState,
+    skill_id: &'request str,
+) -> SkillTarget<'request> {
+    SkillTarget {
+        logging,
+        id: skill_id,
+        principal: None,
+        call_id: None,
+    }
 }
 
 pub(crate) fn logging_state() -> LoggingState {
