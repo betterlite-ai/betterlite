@@ -22,30 +22,20 @@ use serde_json::{Value, json};
 mod input;
 mod tests;
 
-use input::{FlowCall, Input, ReplyCall};
+use input::{ClientName, FlowCall, Input, ReplyCall};
+
+#[derive(Default)]
+struct Trail {
+    calls: Vec<Value>,
+    constructed: Vec<Value>,
+}
 
 #[derive(Default)]
 struct State {
-    calls: Mutex<Vec<Value>>,
-    constructed: Mutex<Vec<Value>>,
+    trail: Mutex<Trail>,
 }
 
 type Shared = Arc<State>;
-
-fn record(records: &Mutex<Vec<Value>>, value: Value) {
-    let mut held = records.lock().unwrap_or_else(PoisonError::into_inner);
-    held.push(value);
-}
-
-fn drain(records: &Mutex<Vec<Value>>) -> Vec<Value> {
-    let mut held = records.lock().unwrap_or_else(PoisonError::into_inner);
-    take(&mut *held)
-}
-
-fn parsed_object(bytes: &[u8]) -> Value {
-    let parsed = serde_json::from_slice(bytes);
-    parsed.unwrap_or(Value::Null)
-}
 
 #[derive(Clone)]
 struct Reply {
@@ -106,16 +96,18 @@ impl ImageTransport for Fixture {
             .get(AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
-        let body = parsed_object(&request.body);
-        record(
-            &self.state.calls,
-            json!({
+        let body = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
+        self.state
+            .trail
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .calls
+            .push(json!({
                 "kind": "image",
                 "url": request.url,
                 "authorization": authorization,
                 "body": body,
-            }),
-        );
+            }));
         ready(Ok(self.reply.image_reply()))
     }
 }
@@ -127,10 +119,12 @@ struct Factory {
 
 impl Factory {
     fn build(&self, kind: &str, timeout: Duration) -> Fixture {
-        record(
-            &self.state.constructed,
-            json!({"kind": kind, "timeout": timeout.as_secs_f64()}),
-        );
+        self.state
+            .trail
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .constructed
+            .push(json!({"kind": kind, "timeout": timeout.as_secs_f64()}));
         Fixture {
             state: Arc::clone(&self.state),
             reply: self.reply.clone(),
@@ -162,15 +156,17 @@ impl TextEmbedding for TextFake {
         call: TextEmbeddingCall<'_>,
     ) -> impl Future<Output = Result<EmbeddingReply, FoundryEmbeddingError>> + Send {
         let options = serde_json::to_value(call.options);
-        record(
-            &self.state.calls,
-            json!({
+        self.state
+            .trail
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .calls
+            .push(json!({
                 "kind": "text",
                 "model": call.model,
                 "input": call.input,
                 "options": options.unwrap_or(Value::Null),
-            }),
-        );
+            }));
         let decoded = decode_foundry_embedding(self.reply.body.as_bytes());
         let mut reply = match decoded {
             Ok(reply) => reply,
@@ -277,7 +273,7 @@ struct Fixtures {
 
 fn fixtures(flow: &FlowCall) -> Fixtures {
     let state = Shared::default();
-    let held = flow.client.hands_a_handler().then(|| Fixture {
+    let held = matches!(flow.client, ClientName::Handler).then(|| Fixture {
         state: Arc::clone(&state),
         reply: Reply::from_call(&flow.image_reply),
     });
@@ -319,8 +315,10 @@ fn flow_outcome(
         mode: flow.mode.mode(),
     };
     let outcome = runtime.block_on(embedding(&request, supplied, &factory, &text));
-    let calls = drain(&state.calls);
-    let constructed = drain(&state.constructed);
+    let (calls, constructed) = {
+        let mut trail = state.trail.lock().unwrap_or_else(PoisonError::into_inner);
+        (take(&mut trail.calls), take(&mut trail.constructed))
+    };
     match outcome {
         Ok(response) => Ok(flow_answer(calls, constructed, response_value(&response))),
         Err(error) => flow_error(calls, constructed, &error),

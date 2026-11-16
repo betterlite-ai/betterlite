@@ -54,12 +54,6 @@ pub(super) enum ClientName {
     Handler,
 }
 
-impl ClientName {
-    pub(super) const fn hands_a_handler(self) -> bool {
-        matches!(self, Self::Handler)
-    }
-}
-
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct OptionsCall {
     pub(super) input_type: Option<String>,
@@ -81,7 +75,7 @@ impl OptionsCall {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ReplyCall {
-    #[serde(default = "success_status")]
+    #[serde(default = "default_status")]
     pub(super) status: u16,
     #[serde(default)]
     pub(super) headers: Vec<HeaderCall>,
@@ -99,6 +93,6 @@ const fn default_timeout() -> u64 {
     5
 }
 
-const fn success_status() -> u16 {
+const fn default_status() -> u16 {
     200
 }
