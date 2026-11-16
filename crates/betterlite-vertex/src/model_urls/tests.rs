@@ -2,10 +2,11 @@
 
 use std::sync::Arc;
 
+use betterlite_core::api::vertex_location::VertexLocationError;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use rstest::rstest;
 
-use crate::model_urls::base_url::{get_vertex_base_url, validate_vertex_location};
+use crate::model_urls::base_url::get_vertex_base_url;
 use crate::model_urls::embedding::{EmbeddingUrlInput, get_embedding_url};
 use crate::model_urls::error::VertexUrlError;
 use crate::model_urls::gemini::{GeminiUrlInput, get_gemini_url};
@@ -524,78 +525,26 @@ fn fine_tuned_urls() {
     assert_eq!(digits.endpoint, Endpoint::StreamGenerateContent);
 }
 
+// the matrix of accepted and rejected locations lives with the shared validator in betterlite-core
 fn invalid_location() {
-    missing_location();
-    malformed_locations();
-    accepted_locations();
-}
-
-fn missing_location() {
-    assert!(matches!(
-        validate_vertex_location(None),
-        Err(VertexUrlError::LocationRequired)
-    ));
     assert!(matches!(
         get_vertex_base_url(None),
         Err(VertexUrlError::LocationRequired)
-    ));
-}
-
-fn malformed_locations() {
-    malformed_hosts();
-    malformed_first_characters();
-}
-
-fn malformed_hosts() {
-    assert!(matches!(
-        validate_vertex_location(Some("attacker.example/")),
-        Err(VertexUrlError::InvalidLocation)
-    ));
-    // Python's $ anchor accepts a trailing newline; the location must not carry one into the host
-    assert!(matches!(
-        validate_vertex_location(Some("us\n")),
-        Err(VertexUrlError::InvalidLocation)
-    ));
-    assert!(matches!(
-        validate_vertex_location(Some("evil.com#")),
-        Err(VertexUrlError::InvalidLocation)
-    ));
-    assert!(matches!(
-        validate_vertex_location(Some("US")),
-        Err(VertexUrlError::InvalidLocation)
-    ));
-    assert!(matches!(
-        validate_vertex_location(Some("us_central1")),
-        Err(VertexUrlError::InvalidLocation)
-    ));
-    assert!(matches!(
-        validate_vertex_location(Some("")),
-        Err(VertexUrlError::InvalidLocation)
     ));
     assert!(matches!(
         get_vertex_base_url(Some("evil.com#")),
         Err(VertexUrlError::InvalidLocation)
     ));
-}
-
-// the first character must be a lowercase letter, so a digit or hyphen cannot start a host
-fn malformed_first_characters() {
+    let project = VertexUrlError::from(VertexLocationError::Project {
+        project: "a/b".to_owned(),
+    });
     assert!(matches!(
-        validate_vertex_location(Some("1us")),
-        Err(VertexUrlError::InvalidLocation)
+        project,
+        VertexUrlError::Target(VertexLocationError::Project { .. })
     ));
-    assert!(matches!(
-        validate_vertex_location(Some("-us")),
-        Err(VertexUrlError::InvalidLocation)
-    ));
-}
-
-fn accepted_locations() {
-    assert_eq!(validate_vertex_location(Some("global")).unwrap(), "global");
-    assert_eq!(validate_vertex_location(Some("us")).unwrap(), "us");
     assert_eq!(
-        validate_vertex_location(Some("us-central1")).unwrap(),
-        "us-central1"
+        project.to_string(),
+        "the vertex_project 'a/b' cannot be used in a URL"
     );
 }
 

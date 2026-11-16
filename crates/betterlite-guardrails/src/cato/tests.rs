@@ -5,9 +5,11 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 mod actions;
+mod cato_lifecycle;
 mod constructor;
 mod inspection;
 mod redaction;
+mod support;
 mod wire;
 
 pub(super) fn text(value: &str) -> GuardrailValue {

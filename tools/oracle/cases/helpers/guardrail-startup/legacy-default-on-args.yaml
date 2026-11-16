@@ -1,0 +1,17 @@
+kind: helper
+name: legacy-default-on-args
+call:
+  b3683:
+    function: legacy_plan
+    guardrails:
+      - pii:
+          callbacks: [presidio, lakera_prompt_injection]
+          default_on: true
+          enabled_roles: [user]
+          callback_args:
+            presidio:
+              language: en
+    started: []
+env: {}
+compare:
+  ignore: []

@@ -205,7 +205,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_image_edits*")"
       && grep -lq 'openai_image_edits' tools/oracle/fuzz/corpus/helper_case/openai_image_edits* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_image_edits$/)' &&
+      run --locked -p betterlite-oracle-openai --no-tests=fail -E 'test(/::helper_seeds_select_openai_image_edits$/)' &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-edit-auth-and-endpoint
     why: Overwrite Authorization from explicit api_key, litellm.api_key,litellm.openai_key,OPENAI_API_KEY (Bearer

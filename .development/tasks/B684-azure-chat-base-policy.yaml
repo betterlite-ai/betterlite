@@ -264,7 +264,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_chat_base_policy*")"
       && grep -lq 'azure_chat_base_policy' tools/oracle/fuzz/corpus/helper_case/azure_chat_base_policy* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_chat_base_policy$/)'
+      nextest run --locked -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_chat_base_policy$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-azure-tool-choice-date-gate
     why: 'For a date with at least three components, compare year/month/day as STRINGS: before 2023-12-01 tool_choice

@@ -36,6 +36,14 @@ pub struct AnalysisResult {
     pub policy_drill_down: Option<BTreeMap<String, GuardrailValue>>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct StreamMessage {
+    pub verified_chunk: Option<BTreeMap<String, GuardrailValue>>,
+    pub done: Option<bool>,
+    pub blocking_message: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct RedactedMessage {
