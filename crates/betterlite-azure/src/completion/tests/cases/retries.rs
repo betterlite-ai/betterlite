@@ -64,6 +64,17 @@ pub(super) fn max_retries_default_two() {
         &mut hooks,
     )
     .unwrap();
+    // a negative and an unsigned-only integer are ints too
+    for count in ["-1", "18446744073709551615"] {
+        let mut params = object(&format!(r#"{{"max_retries":{count}}}"#));
+        completion(
+            ScriptedSource::new(ClientKind::AzureOpenAi, buffered()),
+            parts.call(Some(&messages), &mut params, false),
+            &fixed,
+            &mut hooks,
+        )
+        .unwrap();
+    }
     let mut params = object(r#"{"max_retries":1.5}"#);
     let error = completion(
         ScriptedSource::new(ClientKind::AzureOpenAi, buffered()),
