@@ -1,6 +1,6 @@
 mod chat;
 mod embed;
-mod fixture;
+mod fixtures;
 mod input;
 mod stream;
 mod wire;

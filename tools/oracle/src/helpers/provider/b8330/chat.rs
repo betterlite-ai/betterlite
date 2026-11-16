@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 
+use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -10,12 +10,12 @@ use betterlite_prompts::message_content::Message;
 use betterlite_provider::data_cloud_dispatch::call::CompletionCall;
 use betterlite_provider::data_cloud_dispatch::chat::dispatch;
 use betterlite_provider::data_cloud_dispatch::context::{
-    CallLogging, DispatchContext, DispatchGlobals, databricks_environment, oci_environment,
-    oci_explicit_params,
+    CallLogging, DispatchContext, DispatchGlobals, EnvironmentSource, oci_explicit_params,
 };
+use betterlite_provider::data_cloud_dispatch::embed::databricks_environment;
+use betterlite_provider::data_cloud_dispatch::error::DispatchError;
 use betterlite_provider::data_cloud_dispatch::handler::{ChatCompletionHandler, HandlerError};
 use betterlite_provider::data_cloud_dispatch::oauth::OauthM2m;
-use betterlite_provider::databricks_auth::environment::DatabricksEnv;
 use betterlite_provider::databricks_auth::oauth::OauthTokenSource;
 use betterlite_provider::databricks_chat::request::{
     EnvironmentRequest, get_complete_url as databricks_url,
@@ -24,24 +24,71 @@ use betterlite_provider::databricks_chat::request::{
 use betterlite_provider::oci_chat::config::{
     get_complete_url as oci_url, validate_environment as oci_headers,
 };
-use betterlite_provider::oci_common::credentials::resolve_oci_credentials;
+use betterlite_provider::oci_common::credentials::{OciCredentials, resolve_oci_credentials};
 use betterlite_provider::oci_common::environment::OciEnvironment;
 use betterlite_provider::snowflake::config::{
     Endpoint as SnowflakeEndpoint, get_complete_url as snowflake_url,
     validate_environment as snowflake_headers,
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use betterlite_secret_managers::secret_lookup::SecretLookup;
 use http::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 use tokio::runtime::Runtime;
 
-use super::fixture::{ORACLE_UPSTREAM, Scripted, environment, logging, secrets};
+use super::fixtures::{ORACLE_UPSTREAM, Scripted, environment, logging, secrets};
 use super::input::{Case, Provider};
-use super::wire::{error_or_null, header_map, kept_headers};
+use super::wire::{error_or_null, header_map, request_view};
 
 const ORACLE_TOKEN: &str = "oracle-token";
+
+// the case values the dispatch reads, owned so the context can borrow them
+struct CallSetup {
+    optional_params: Object,
+    litellm_params: Object,
+    api_key: Option<SecretString>,
+    api_base: Option<String>,
+}
+
+impl CallSetup {
+    fn new(case: &Case) -> Result<Self, Box<HelperError>> {
+        Ok(Self {
+            optional_params: case.optional_params()?,
+            litellm_params: Object::new(),
+            api_key: case
+                .api_key
+                .as_ref()
+                .map(|value| SecretString::from(value.clone())),
+            api_base: case
+                .api_base
+                .as_deref()
+                .map(|value| value.replace("{{upstream}}", ORACLE_UPSTREAM)),
+        })
+    }
+
+    fn context<'setup>(
+        &'setup self,
+        case: &'setup Case,
+        source: EnvironmentSource<'setup>,
+    ) -> DispatchContext<'setup> {
+        DispatchContext {
+            acompletion: false,
+            api_base: self.api_base.as_deref(),
+            api_key: self.api_key.as_ref(),
+            custom_llm_provider: case.provider.slug(),
+            headers: case.headers.as_ref(),
+            litellm_params: &self.litellm_params,
+            messages: &case.messages,
+            model: &case.model,
+            optional_params: &self.optional_params,
+            provider_config: None,
+            stream: case.stream,
+            timeout: None,
+            globals: DispatchGlobals::default(),
+            env: source,
+        }
+    }
+}
 
 struct Recorder {
     calls: Mutex<Vec<CompletionCall>>,
@@ -50,12 +97,13 @@ struct Recorder {
 
 impl Recorder {
     fn first(&self) -> Result<CompletionCall, Box<HelperError>> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .first()
-            .cloned()
-            .ok_or_else(|| super::input_failure(String::from("the chat arm called no handler")))
+        let recorded = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        match recorded.first() {
+            Some(call) => Ok(call.clone()),
+            None => Err(super::input_failure(String::from(
+                "the chat arm called no handler",
+            ))),
+        }
     }
 }
 
@@ -71,6 +119,18 @@ impl ChatCompletionHandler for Recorder {
             None => Ok(String::from("reply")),
             Some(status_code) => Err(HandlerError::Upstream { status_code }),
         }
+    }
+}
+
+fn recorder(case: &Case) -> Recorder {
+    Recorder {
+        calls: Mutex::new(Vec::new()),
+        // litellm's handler succeeds on a 2xx answer and raises on any other status
+        failure: case
+            .answer
+            .as_ref()
+            .map(|answer| answer.status)
+            .filter(|status| !(200..300).contains(status)),
     }
 }
 
@@ -92,102 +152,71 @@ pub(super) fn chat_messages(messages: &[Message]) -> Result<Vec<ChatMessage>, Bo
     Ok(converted)
 }
 
+fn dispatched(
+    tag: ChatConfigTag,
+    context: &DispatchContext<'_>,
+    handler: &Recorder,
+    log: &mut CallLogging<'_, '_>,
+) -> Result<(Result<String, DispatchError>, CompletionCall), Box<HelperError>> {
+    let outcome = dispatch(tag, context, handler, log)
+        .ok_or_else(|| super::input_failure(String::from("the chat table has no arm")))?;
+    let call = handler.first()?;
+    Ok((outcome, call))
+}
+
 pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
     let env = environment(case);
     let secrets = secrets();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
     let (mut state, prepost) = logging(&redactor)?;
+    let source = EnvironmentSource {
+        secrets: &secrets,
+        environment: &env,
+    };
+    let setup = CallSetup::new(case)?;
     let token_transport = Scripted::with_replies(vec![token_reply(ORACLE_TOKEN)]);
     let tokens = OauthM2m {
         transport: &token_transport,
     };
-    let databricks_env = databricks_environment(&secrets, &env).or_value_error()?;
-    let optional_params = case.optional_params()?;
-    let litellm_params = Object::new();
-    let api_key = case
-        .api_key
-        .as_ref()
-        .map(|value| SecretString::from(value.clone()));
-    let api_base = case
-        .api_base
-        .as_deref()
-        .map(|value| value.replace("{{upstream}}", ORACLE_UPSTREAM));
-    let context = DispatchContext {
-        acompletion: false,
-        api_base: api_base.as_deref(),
-        api_key: api_key.as_ref(),
-        custom_llm_provider: case.provider.slug(),
-        headers: case.headers.as_ref(),
-        litellm_params: &litellm_params,
-        messages: &case.messages,
-        model: &case.model,
-        optional_params: &optional_params,
-        provider_config: None,
-        stream: case.stream,
-        timeout: None,
-        globals: DispatchGlobals::default(),
-        secrets: &secrets,
-        environment: &env,
-    };
-    let handler = Recorder {
-        calls: Mutex::new(Vec::new()),
-        // litellm's handler succeeds on a 2xx answer and raises on any other status
-        failure: case
-            .answer
-            .as_ref()
-            .map(|answer| answer.status)
-            .filter(|status| !(200..300).contains(status)),
-    };
+    let handler = recorder(case);
+    let context = setup.context(case, source);
     let mut log = CallLogging {
         state: &mut state,
         env: &prepost,
     };
-    let outcome = dispatch(case.provider.chat_tag(), &context, &handler, &mut log)
-        .ok_or_else(|| super::input_failure(String::from("the chat table has no arm")))?;
-    let call = handler.first()?;
+    let (outcome, call) = dispatched(case.provider.chat_tag(), &context, &handler, &mut log)?;
     let (url, headers) = runtime.block_on(request_for(
         case,
         &call,
-        &env,
-        &databricks_env,
-        &secrets,
+        source,
         &tokens,
-        &optional_params,
+        &setup.optional_params,
     ))?;
-    let request = json!({
-        "url": url,
-        "headers": kept_headers(&headers, case.provider.kept_headers()),
-    });
-    Ok(json!({
-        "request": request,
-        "error": error_or_null(&outcome),
-    }))
+    let request = request_view(&url, &headers, case.provider.kept_headers(), None);
+    Ok(json!({"request": request, "error": error_or_null(&outcome)}))
 }
 
 async fn request_for(
     case: &Case,
     call: &CompletionCall,
-    env: &BTreeMap<String, String>,
-    databricks_env: &DatabricksEnv,
-    secrets: &SecretLookup,
+    source: EnvironmentSource<'_>,
     tokens: &dyn OauthTokenSource,
     optional_params: &Object,
 ) -> Result<(String, HeaderMap), Box<HelperError>> {
     match case.provider {
-        Provider::Databricks => {
-            databricks_request(call, databricks_env, tokens, optional_params).await
-        }
-        Provider::Snowflake => snowflake_request(call, env, optional_params),
-        Provider::Oci => oci_request(case, call, env, secrets, optional_params),
+        Provider::Databricks => databricks_request(call, source, tokens, optional_params).await,
+        Provider::Snowflake => snowflake_request(call, source, optional_params),
+        Provider::Oci => oci_request(call, &case.messages, source, optional_params),
     }
 }
 
 async fn databricks_request(
     call: &CompletionCall,
-    databricks_env: &DatabricksEnv,
+    source: EnvironmentSource<'_>,
     tokens: &dyn OauthTokenSource,
     optional_params: &Object,
 ) -> Result<(String, HeaderMap), Box<HelperError>> {
+    let databricks = databricks_environment(&source).or_value_error()?;
     let mut params = optional_params.clone();
     let resolved = databricks_headers(
         EnvironmentRequest {
@@ -198,7 +227,7 @@ async fn databricks_request(
             env_user_agent: None,
         },
         &mut params,
-        databricks_env,
+        &databricks,
         tokens,
     )
     .await
@@ -209,46 +238,52 @@ async fn databricks_request(
 
 fn snowflake_request(
     call: &CompletionCall,
-    env: &BTreeMap<String, String>,
+    source: EnvironmentSource<'_>,
     optional_params: &Object,
 ) -> Result<(String, HeaderMap), Box<HelperError>> {
     let mut params = optional_params.clone();
-    let account_id = env.get("SNOWFLAKE_ACCOUNT_ID").map(String::as_str);
-    let url = snowflake_url(
-        call.api_base.as_deref(),
-        &SnowflakeEndpoint::Chat(&call.model),
-        &mut params,
-        account_id,
-    )
-    .or_value_error()?;
-    let mut headers = call.headers.clone().unwrap_or_default();
+    let account_id = source
+        .environment
+        .get("SNOWFLAKE_ACCOUNT_ID")
+        .map(String::as_str);
+    let endpoint = SnowflakeEndpoint::Chat(&call.model);
+    let url = snowflake_url(call.api_base.as_deref(), &endpoint, &mut params, account_id)
+        .or_value_error()?;
     let key = call.api_key.as_ref().map(|value| value.expose_secret());
+    let mut headers = call.headers.clone().unwrap_or_default();
     snowflake_headers(&mut headers, &call.model, key).or_value_error()?;
     Ok((url, header_map(&headers)))
 }
 
 fn oci_request(
-    case: &Case,
     call: &CompletionCall,
-    env: &BTreeMap<String, String>,
-    secrets: &SecretLookup,
+    messages: &[Message],
+    source: EnvironmentSource<'_>,
     optional_params: &Object,
 ) -> Result<(String, HeaderMap), Box<HelperError>> {
+    let (credentials, headers) = oci_prepared(call, messages, source, optional_params)?;
+    oci_url(&credentials, call.api_base.as_deref())
+        .or_value_error()
+        .map(|url| (url, headers))
+}
+
+// the OCI chat config signs the converted messages, so the credentials and headers come out together
+fn oci_prepared(
+    call: &CompletionCall,
+    messages: &[Message],
+    source: EnvironmentSource<'_>,
+    optional_params: &Object,
+) -> Result<(OciCredentials, HeaderMap), Box<HelperError>> {
+    let mut headers = call.headers.as_ref().map(header_map).unwrap_or_default();
     let explicit = oci_explicit_params(optional_params).or_value_error()?;
-    let oci_env = oci_environment(secrets, env).or_value_error()?;
-    let credentials = resolve_oci_credentials(&explicit, &oci_env);
-    let mut headers = match &call.headers {
-        Some(headers) => header_map(headers),
-        None => HeaderMap::new(),
-    };
-    let messages = chat_messages(&case.messages)?;
+    let oci_environment = source.oci().or_value_error()?;
+    let credentials = resolve_oci_credentials(&explicit, &oci_environment);
     oci_headers(
         &mut headers,
-        &messages,
+        &chat_messages(messages)?,
         &credentials,
         &OciEnvironment::default(),
     )
     .or_value_error()?;
-    let url = oci_url(&credentials, call.api_base.as_deref()).or_value_error()?;
-    Ok((url, headers))
+    Ok((credentials, headers))
 }

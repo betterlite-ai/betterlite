@@ -115,13 +115,9 @@ impl Case {
     pub(super) fn optional_params(&self) -> Result<Object, Box<HelperError>> {
         match &self.optional_params {
             None | Some(Json::Null) => Ok(Object::new()),
-            Some(value) => object(value),
+            Some(value) => Ok(serde_json::from_value::<Object>(serde_json::to_value(
+                value,
+            )?)?),
         }
     }
-}
-
-pub(super) fn object(value: &Json) -> Result<Object, Box<HelperError>> {
-    Ok(serde_json::from_value::<Object>(serde_json::to_value(
-        value,
-    )?)?)
 }

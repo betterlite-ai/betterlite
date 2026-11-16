@@ -183,24 +183,24 @@ fn no_reply() -> DispatchError {
     }
 }
 
+fn take<T>(queue: &Mutex<VecDeque<T>>) -> Result<T, DispatchError> {
+    queue
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .pop_front()
+        .ok_or_else(no_reply)
+}
+
 #[async_trait]
 impl PostTransport for Scripted {
     async fn post(&self, request: &WireRequest<'_>) -> Result<UpstreamResponse, DispatchError> {
         Sent::record(&self.recorded, request);
-        self.replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .ok_or_else(no_reply)
+        take(&self.replies)
     }
 
     async fn post_stream(&self, request: &WireRequest<'_>) -> Result<StreamHead, DispatchError> {
         Sent::record(&self.recorded, request);
-        self.streams
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .ok_or_else(no_reply)
+        take(&self.streams)
     }
 }
 
