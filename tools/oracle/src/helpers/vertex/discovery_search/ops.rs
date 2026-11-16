@@ -33,8 +33,9 @@ pub(crate) struct Input {
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 enum Call {
-    Target(TargetCall),
-    Search(SearchCall),
+    // boxed so both payload variants carry a pointer, well within the 3x variant_size_differences enforces
+    Target(Box<TargetCall>),
+    Search(Box<SearchCall>),
     Cost,
 }
 
@@ -184,7 +185,8 @@ fn text<'params>(params: &'params BTreeMap<String, Json>, name: &str) -> Option<
 }
 
 fn helper_error(error: VertexDiscoverySearchError) -> Box<HelperError> {
-    let (class, status) = match &error {
+    let message = error.to_string();
+    let (class, status) = match error {
         VertexDiscoverySearchError::TargetSelecting { .. }
         | VertexDiscoverySearchError::UnsupportedFields { .. } => ("BadRequestError", Some(400)),
         VertexDiscoverySearchError::CreateUnsupported => ("NotImplementedError", Some(500)),
@@ -205,6 +207,6 @@ fn helper_error(error: VertexDiscoverySearchError) -> Box<HelperError> {
         error_type: Some(None),
         param: Some(None),
         code: Some(None),
-        message: error.to_string(),
+        message,
     })
 }
