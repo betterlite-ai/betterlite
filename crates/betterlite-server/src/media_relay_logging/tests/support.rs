@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::io;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -22,6 +23,8 @@ use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use betterlite_redact::secret::Redactor;
 use chrono::DateTime;
 use indexmap::IndexMap;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::{MakeWriter, fmt};
 
 // The case catalog stands in for litellm.model_cost: a raw lookup is the key, an effective one provider-qualified.
 pub(super) struct CaseLookup {
@@ -205,4 +208,49 @@ pub(super) fn logged_model(logging_obj: &StreamLoggingObject) -> String {
     logging_obj
         .read(&mut |state| state.model.clone())
         .expect("the logging state is present")
+}
+
+#[derive(Clone, Default)]
+pub(super) struct LogBuffer(Arc<Mutex<Vec<u8>>>);
+
+impl LogBuffer {
+    pub(super) fn contents(&self) -> String {
+        let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+}
+
+impl io::Write for LogBuffer {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl MakeWriter<'_> for LogBuffer {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self {
+        self.clone()
+    }
+}
+
+// The handler's log lines, captured on the calling thread at the given level.
+pub(super) fn capture_logs(level: tracing::Level) -> (LogBuffer, DefaultGuard) {
+    let buffer = LogBuffer::default();
+    let subscriber = fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_max_level(level)
+        .with_writer(buffer.clone())
+        .finish();
+    (buffer, set_default(subscriber))
 }

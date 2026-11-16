@@ -11,8 +11,8 @@ use rstest::rstest;
 
 use super::fal::fal_ai_passthrough_handler;
 use super::support::{
-    Registry, json, kwargs, logged_model, logging_object, lookup, object, registry, spend,
-    spend_cost, spend_row,
+    Registry, capture_logs, json, kwargs, logged_model, logging_object, lookup, object, registry,
+    spend, spend_cost, spend_row,
 };
 
 const CATALOG: &[(&str, &str)] = &[(
@@ -78,6 +78,28 @@ fn fal_ai_passthrough_bills_the_submission() {
         )
     );
     assert_eq!(caller.entries.len(), 1);
+}
+
+#[test]
+fn fal_ai_passthrough_debug_reports_the_model_and_cost() {
+    let (logs, _guard) = capture_logs(tracing::Level::DEBUG);
+    let registry = registry(CATALOG);
+    let logging_obj = logging_object();
+    let body = json(r#"{"images": []}"#);
+    let request_body = object(&[]);
+
+    run(
+        &registry,
+        &logging_obj,
+        "https://queue.fal.run/fal-ai/flux/dev",
+        &body,
+        &request_body,
+    );
+
+    let contents = logs.contents();
+    assert!(contents.contains("fal ai passthrough cost tracking"));
+    assert!(contents.contains("model=fal-ai/flux/dev"));
+    assert!(contents.contains("response_cost=Some(0.025)"));
 }
 
 #[test]

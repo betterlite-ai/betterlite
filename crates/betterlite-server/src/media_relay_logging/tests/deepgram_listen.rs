@@ -7,8 +7,8 @@ use betterlite_models::decisions::Json;
 
 use super::deepgram::deepgram_listen_passthrough_handler;
 use super::support::{
-    Registry, json, kwargs, logged_model, logging_object, lookup, messages, registry, spend,
-    spend_cost, spend_row,
+    Registry, capture_logs, json, kwargs, logged_model, logging_object, lookup, messages, registry,
+    spend, spend_cost, spend_row,
 };
 
 const CATALOG: &[(&str, &str)] = &[
@@ -90,6 +90,27 @@ fn deepgram_listen_bills_the_base_and_each_priced_addon() {
         )
     );
     assert_eq!(caller.entries.len(), 3);
+}
+
+#[test]
+fn deepgram_listen_debug_reports_the_billed_duration() {
+    let (logs, _guard) = capture_logs(tracing::Level::DEBUG);
+    let registry = registry(CATALOG);
+    let logging_obj = logging_object();
+    let frames = messages(TWO_CHANNEL);
+    let caller = kwargs(&[]);
+    let url = "https://api.deepgram.com/v1/listen?model=nova-3";
+
+    deepgram_listen_passthrough_handler(&logging_obj, &request(&registry, url, &frames, &caller))
+        .expect("the handler runs");
+
+    let contents = logs.contents();
+    assert!(contents.contains("deepgram listen passthrough cost tracking"));
+    assert!(contents.contains("model=nova-3"));
+    assert!(contents.contains("audio_seconds=2"));
+    assert!(contents.contains("channels=2"));
+    assert!(contents.contains("billed_seconds=4"));
+    assert!(contents.contains("response_cost=Some(0.00032)"));
 }
 
 #[test]
