@@ -134,7 +134,7 @@ metricsServer:
   enabled: false
   port: 4001
 
-# Opt-in sidecar that runs the post-response spend pipeline, so the proxy workers only serialise
+# Opt-in sidecar that runs the post-response spend pipeline, so the proxy workers only serialize
 # a compact event and go back to serving inference. It reuses the pod's in-container pgbouncer and
 # the same Redis spend transaction buffer, so the per-pod database connection budget is unchanged.
 collector:
@@ -333,7 +333,7 @@ migrationJob:
   backoffLimit: 4 # Backoff limit for Job restarts
   # Wall-clock budget for the whole Job, shared across every retry rather than granted per attempt.
   # Without it a migration that blocks on the database never fails, and a Helm hook release waits
-  # on it forever. Set to null to opt out and restore the unbounded behaviour.
+  # on it forever. Set to null to opt out and restore the unbounded behavior.
   activeDeadlineSeconds: 1800
   disableSchemaUpdate: false # Skip schema migrations for specific environments. When true, the job exits with code 0.
   # Optional service account for the migration job.
