@@ -272,7 +272,7 @@ async fn input_messages_replace_the_request_tools_with_the_returned_ones() {
 #[tokio::test]
 async fn input_messages_add_only_new_tools_when_only_tool_results_are_scanned() {
     let guardrail = FakeGuardrail::answering(Box::new(|inputs| GuardrailApiInputs {
-        tools: Some(vec![tool("f"), tool("extra")]),
+        tools: Some(vec![tool("extra"), tool("f")]),
         ..inputs
     }));
     let (result, data) = run(TOOL_RESULT_REQUEST, &guardrail, TOOL_RESULTS_ONLY).await;

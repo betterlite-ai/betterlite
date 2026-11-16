@@ -73,6 +73,17 @@ fn write_tool_rewrites_do_nothing_when_the_calls_are_unchanged() {
 }
 
 #[test]
+fn write_tool_rewrites_accept_unchanged_calls_on_a_multi_choice_stream() {
+    let two_choices = STREAM.replace(
+        r#"{"index": 0, "delta": {}, "finish_reason": "tool_calls"}"#,
+        r#"{"index": 1, "delta": {}}"#,
+    );
+    let mut stream = chunks(&two_choices);
+    write_ended_tool_rewrites(&mut stream, &response(REBUILT), &shapes_of(REBUILT), "pii").unwrap();
+    assert_eq!(stream, chunks(&two_choices));
+}
+
+#[test]
 fn write_tool_rewrites_set_a_null_name_when_the_guardrail_removed_it() {
     let mut stream = chunks(STREAM);
     let guardrailed = response(&REBUILT.replace(r#""name": "g""#, r#""name": null"#));

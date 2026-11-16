@@ -19,6 +19,8 @@ const TWO_CHOICES: &str = r#"{"model": "gpt-4o", "choices": [
     {"index": 1, "message": {"content": [
         {"type": "text", "text": "part one"},
         {"type": "image_url", "image_url": {"url": "https://img/1.png"}},
+        {"type": "image_url", "image_url": {"url": ""}},
+        {"type": "file", "image_url": {"url": "https://not-an-image/"}},
         {"type": "text", "text": ""}]}}]}"#;
 
 fn upper_cased(inputs: GuardrailApiInputs) -> GuardrailApiInputs {
@@ -222,8 +224,10 @@ async fn process_output_response_rewrites_the_tool_call_function() {
 
 #[tokio::test]
 async fn process_output_response_ignores_a_tool_call_list_of_another_length() {
-    let guardrail = FakeGuardrail::answering(Box::new(|inputs| GuardrailApiInputs {
-        tool_calls: Some(Vec::new()),
+    let renamed = GuardrailValue::Object(object(r#"{"function": {"name": "renamed"}}"#));
+    let returned = vec![renamed.clone(), renamed];
+    let guardrail = FakeGuardrail::answering(Box::new(move |inputs| GuardrailApiInputs {
+        tool_calls: Some(returned.clone()),
         ..inputs
     }));
     let mut subject = response(TWO_CHOICES);
@@ -231,6 +235,20 @@ async fn process_output_response_ignores_a_tool_call_list_of_another_length() {
         .await
         .unwrap();
     assert_eq!(subject, response(TWO_CHOICES));
+}
+
+#[tokio::test]
+async fn process_output_response_ignores_returned_texts_when_it_sent_none() {
+    let guardrail = FakeGuardrail::answering(Box::new(|inputs| GuardrailApiInputs {
+        texts: Some(vec!["unasked".to_owned()]),
+        ..inputs
+    }));
+    let source = r#"{"choices": [{"message": {"tool_calls": [{"id": "a", "function": {"name": "f", "arguments": "{}"}}]}}]}"#;
+    let mut subject = response(source);
+    process_output_response(&mut subject, &guardrail, &principal())
+        .await
+        .unwrap();
+    assert_eq!(subject, response(source));
 }
 
 #[tokio::test]
@@ -243,7 +261,8 @@ async fn process_output_response_refuses_a_returned_tool_call_that_is_not_an_obj
     let failure = process_output_response(&mut subject, &guardrail, &principal())
         .await
         .unwrap_err();
-    assert!(matches!(failure, GuardrailFailure::Other(_)));
+    let message = "the guardrail returned tool call 0, which is not an object";
+    assert_eq!(failure, GuardrailFailure::Other(message.to_owned()));
     assert_eq!(subject, response(TWO_CHOICES));
 }
 
