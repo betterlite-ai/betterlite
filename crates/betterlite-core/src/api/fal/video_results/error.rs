@@ -13,7 +13,10 @@ pub enum VideoResultsError {
     #[error("the fal.ai result probe URL is not a URL")]
     ProbeUrl(#[source] url::ParseError),
     #[error("the fal.ai result probe failed")]
-    ProbeTransport(#[source] TransportError),
+    ProbeTransport {
+        #[source]
+        source: TransportError,
+    },
     #[error("the fal.ai video artifact URL is not a URL")]
     ArtifactUrl(#[source] url::ParseError),
     #[error("the original {name} header name cannot be sent to fal.ai")]

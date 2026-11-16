@@ -260,7 +260,7 @@ fn a_non_transient_probe_failure_fails_the_video(#[case] source: TransportError)
         provider: None,
     };
     let error = run_status(&transport, ClientKind::Sync, &call).expect_err("a failed probe");
-    assert!(matches!(error, VideoResultsError::ProbeTransport(_)));
+    assert!(matches!(error, VideoResultsError::ProbeTransport { .. }));
     assert_eq!(transport.recorded().len(), 1);
 }
 
