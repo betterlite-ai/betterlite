@@ -51,11 +51,11 @@ fn flag_marks_the_base_url_explicit() {
 }
 
 #[test]
-fn environment_only_leaves_the_base_url_implicit() {
+fn environment_marks_the_base_url_explicit() {
     let environment = FakeEnvironment::default()
         .with_variable("LITELLM_PROXY_URL", "https://environment.example");
     let context = resolve(&environment, None, Some("models"));
-    assert!(!context.base_url_explicit);
+    assert!(context.base_url_explicit);
 }
 
 #[test]
