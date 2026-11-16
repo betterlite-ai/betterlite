@@ -40,6 +40,13 @@ scope:
   - tools/oracle/helpers/logging_streams/**
   - tools/oracle/cases/helpers/logging-streams/**
   - "tools/oracle/fuzz/corpus/helper_case/logging_streams-*"
+  - crates/betterlite-streaming/src/stream_chunk_shaping/usage_totals.rs
+  - crates/betterlite-streaming/src/stream_chunk_shaping/tests.rs
+  - crates/betterlite-streaming/src/stream_chunk_shaping/tests/usage.rs
+  - tools/oracle/cases/helpers/stream-chunk-shaping/total-usage.yaml
+  - tools/oracle/src/helpers/streaming/b5652.rs
+  - tools/oracle/src/helpers/streaming/b5652/**
+  - tools/oracle/helpers/b5652/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4108-L4144

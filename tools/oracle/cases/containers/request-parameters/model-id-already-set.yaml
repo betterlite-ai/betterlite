@@ -1,0 +1,10 @@
+kind: helper
+name: model-id-already-set
+call:
+  b3361:
+    function: decode_managed_id
+    container_id: "cntr_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmF6dXJlO21vZGVsX2lkOmRlcF9hO2NvbnRhaW5lcl9pZDpjb250YWluZXJfMTIz"
+    custom_llm_provider: "openai"
+    litellm_params: {model_id: "preset"}
+env: {}
+compare: {ignore: []}

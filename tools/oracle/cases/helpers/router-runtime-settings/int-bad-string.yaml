@@ -1,0 +1,14 @@
+kind: helper
+name: router-runtime-settings-int-bad-string
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["num_retries", 4]
+      - ["cooldown_time", "soon"]
+      - ["allowed_fails", 9]
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/error/message, why: "Python raises its own exception text; betterlite writes its own message"}

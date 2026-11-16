@@ -157,7 +157,8 @@ fn rejects_schema_combinators(model: &str) -> bool {
         .any(|family| base_model.starts_with(family))
 }
 
-pub(crate) fn source_type_name(value: &Json) -> &'static str {
+#[must_use]
+pub fn source_type_name(value: &Json) -> &'static str {
     match value {
         Json::Null => "NoneType",
         Json::Bool(_) => "bool",
