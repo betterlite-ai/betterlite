@@ -28,7 +28,30 @@ class Recorder(Logging):
         pass
 
 
-class RenderConfig(Protocol):
+# LiteLLM types the request dicts bare, so this alias names what the call passes
+ReplyTransform: TypeAlias = Callable[
+    [
+        str,
+        httpx.Response,
+        ImageResponse,
+        Recorder,
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        None,
+    ],
+    ImageResponse,
+]
+
+
+class ReplyConfig(Protocol):
+    @property
+    def transform_image_generation_response(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> ReplyTransform: ...
+
+
+class RenderConfig(ReplyConfig, Protocol):
     def map_openai_params(
         self,
         non_default_params: dict[str, JsonValue],
@@ -55,29 +78,6 @@ class RenderConfig(Protocol):
         litellm_params: dict[str, JsonValue],
         headers: dict[str, JsonValue],
     ) -> dict[str, JsonValue]: ...
-
-
-# LiteLLM types the request dicts bare, so this alias names what the call passes
-ReplyTransform: TypeAlias = Callable[
-    [
-        str,
-        httpx.Response,
-        ImageResponse,
-        Recorder,
-        dict[str, JsonValue],
-        dict[str, JsonValue],
-        dict[str, JsonValue],
-        None,
-    ],
-    ImageResponse,
-]
-
-
-class ReplyConfig(Protocol):
-    @property
-    def transform_image_generation_response(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> ReplyTransform: ...
 
 
 class HiddenRecord(BaseModel):
@@ -126,8 +126,8 @@ class ReplyCases(TypedDict):
 
 Input: TypeAlias = SizeCases | CustomDiffusionPathInput | ReplyCases
 
-IDEOGRAM = FalAIIdeogramV3Config()
-DIFFUSION = FalAIStableDiffusionConfig()
+IDEOGRAM: RenderConfig = FalAIIdeogramV3Config()
+DIFFUSION: RenderConfig = FalAIStableDiffusionConfig()
 # the alias types the class itself, since the class object's constructor takes bare dicts
 REPLY_ERROR: type[BaseLLMException] = BaseLLMException
 
