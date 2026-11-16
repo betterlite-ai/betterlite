@@ -94,7 +94,7 @@ fn prepared_identities() {
     );
     assert_eq!(
         first.url,
-        "https://resource.services.ai.azure.com/models/chat/completions"
+        "https://resource.services.ai.azure.com/models/chat/completions?api-version=2024-05-01-preview"
     );
 }
 
@@ -123,7 +123,7 @@ fn prepared_with(key: &SecretString) -> PreparedChat {
 
 pub(super) fn secret_safe_failure() {
     token_failure_hides_secret();
-    debug_hides_keys();
+    failure_hides_keys();
 }
 
 fn token_failure_hides_secret() {
@@ -139,7 +139,7 @@ fn token_failure_hides_secret() {
     assert!(!format!("{error:?}").contains(SENTINEL_SECRET));
 }
 
-fn debug_hides_keys() {
+fn failure_hides_keys() {
     let key = SecretString::from(SENTINEL_KEY);
     let credentials = settings(None, None);
     let optional = object("{}");
@@ -156,22 +156,11 @@ fn debug_hides_keys() {
             credentials: &credentials,
             sources: &NoSources,
             refresh_enabled: false,
-            api_base: Some(FOUNDRY_BASE),
+            api_base: None,
         }
         .request(),
     };
-    let request_debug = format!("{:?}", options.environment);
-    assert!(!request_debug.contains(SENTINEL_KEY));
-    assert!(request_debug.contains("has_argument_key: true"));
-    let options_debug = format!("{options:?}");
-    assert!(!options_debug.contains(SENTINEL_KEY));
-    assert!(options_debug.contains("mistral-large"), "{options_debug}");
-    let prepared = options.prepare().expect("the fixture prepares");
-    let prepared_debug = format!("{prepared:?}");
-    assert!(!prepared_debug.contains(SENTINEL_KEY));
-    assert!(prepared_debug.contains("api-key"), "{prepared_debug}");
-    assert_eq!(
-        prepared.headers.get("api-key").map(String::as_str),
-        Some(SENTINEL_KEY)
-    );
+    let error = options.prepare().err().expect("a missing base is refused");
+    assert!(!error.to_string().contains(SENTINEL_KEY));
+    assert!(!format!("{error:?}").contains(SENTINEL_KEY));
 }

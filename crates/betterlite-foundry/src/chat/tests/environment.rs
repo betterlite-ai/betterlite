@@ -54,18 +54,24 @@ fn fallback_keys_and_tokens() {
         ("api-key", SENTINEL_KEY),
     ]);
     // an empty argument key falls through to the request key, then to the configured key
-    let keys = Keys {
+    let from_params = Keys {
         argument: Some(&empty),
         params: Some(&params_key),
         configured: None,
     };
-    assert_eq!(validate(keys, &credentials, Some(PLAIN_BASE)), api_key);
-    let keys = Keys {
+    assert_eq!(
+        validate(from_params, &credentials, Some(PLAIN_BASE)),
+        api_key
+    );
+    let from_configured = Keys {
         argument: Some(&empty),
         params: Some(&empty),
         configured: Some(&configured_key),
     };
-    assert_eq!(validate(keys, &credentials, Some(PLAIN_BASE)), api_key);
+    assert_eq!(
+        validate(from_configured, &credentials, Some(PLAIN_BASE)),
+        api_key
+    );
     let token_credentials = settings(Some(SENTINEL_TOKEN), None);
     let bearer = headers(&[
         ("Authorization", &format!("Bearer {SENTINEL_TOKEN}")),

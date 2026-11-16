@@ -1,11 +1,11 @@
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::model_capability_predicates::CapabilityRequest;
-use betterlite_openai::openai_base_config::Object;
-use betterlite_openai::reasoning_models::{DropParams, ReasoningCapabilities, ReasoningError};
+use betterlite_openai::openai_base_config::{CatalogCapabilities, Object};
+use betterlite_openai::reasoning_models::{DropParams, ReasoningCapabilities as _, ReasoningError};
 
 use crate::chat::capabilities::{CostMap, supports_stop_reason};
 
-use super::support::{capabilities, catalog, object, runtime};
+use super::support::{Fixture, capabilities, catalog, object, runtime};
 
 // The routing entry answers most lookups, while the bare entry holds the OpenAI catalog's answers
 const PREFERRED: &str = r#"{
@@ -119,14 +119,14 @@ fn routed_entry_wins() {
 fn bare_catalog_gate() {
     let plain = catalog(&[], &[]);
     let mut listed = capabilities(BARE_ONLY, &["gpt-5-mini"], &[]);
-    let params = listed.supported("gpt-5-mini", &plain);
-    assert!(params.contains(&"tool_choice"));
+    let listed_params = listed.supported("gpt-5-mini", &plain);
+    assert!(listed_params.contains(&"tool_choice"));
     for unsupported in ["logprobs", "top_logprobs", "top_p"] {
-        assert!(!params.contains(&unsupported));
+        assert!(!listed_params.contains(&unsupported));
     }
     let mut unlisted = capabilities(BARE_ONLY, &[], &[]);
-    let params = unlisted.supported("gpt-5-mini", &plain);
-    assert!(!params.contains(&"tool_choice"));
+    let unlisted_params = unlisted.supported("gpt-5-mini", &plain);
+    assert!(!unlisted_params.contains(&"tool_choice"));
 }
 
 fn declared_default_effort() {
@@ -163,7 +163,7 @@ fn declared_default_effort() {
 fn gpt5_mapping() {
     let plain = catalog(&[], &[]);
     let mut preferred = capabilities(PREFERRED, &["gpt-5"], &[]);
-    let optional = preferred
+    let renamed = preferred
         .mapped(
             "gpt-5",
             r#"{"max_tokens":64,"temperature":1,"reasoning_effort":{"effort":"none"}}"#,
@@ -172,19 +172,23 @@ fn gpt5_mapping() {
         )
         .expect("the gpt-5 request maps");
     assert_eq!(
-        optional,
+        renamed,
         object(r#"{"max_completion_tokens":64,"temperature":1,"reasoning_effort":"none"}"#)
     );
+    sampling_guards(&mut preferred, &plain);
+}
+
+fn sampling_guards(preferred: &mut Fixture, plain: &CatalogCapabilities) {
     let error = preferred
         .mapped(
             "gpt-5",
             r#"{"reasoning_effort":"low","logprobs":true}"#,
             DropParams::default(),
-            &plain,
+            plain,
         )
         .expect_err("sampling params need a none effort");
     assert!(matches!(error, ReasoningError::UnsupportedSampling { .. }));
-    let optional = preferred
+    let dropped = preferred
         .mapped(
             "gpt-5",
             r#"{"reasoning_effort":"low","logprobs":true}"#,
@@ -192,12 +196,12 @@ fn gpt5_mapping() {
                 global: false,
                 request: true,
             },
-            &plain,
+            plain,
         )
         .expect("drop_params discards the sampling params");
-    assert_eq!(optional, object(r#"{"reasoning_effort":"low"}"#));
+    assert_eq!(dropped, object(r#"{"reasoning_effort":"low"}"#));
     let mut bare = capabilities(BARE_ONLY, &["gpt-5-mini"], &[]);
-    let optional = bare
+    let globally_dropped = bare
         .mapped(
             "gpt-5-mini",
             r#"{"temperature":0.5,"logprobs":true}"#,
@@ -205,10 +209,10 @@ fn gpt5_mapping() {
                 global: true,
                 request: false,
             },
-            &plain,
+            plain,
         )
         .expect("the global drop discards both guards");
-    assert_eq!(optional, Object::new());
+    assert_eq!(globally_dropped, Object::new());
 }
 
 fn ordinary_model_filtering() {
@@ -248,11 +252,11 @@ fn stop_reason_delegation() {
     assert!(supports_stop_reason("gpt-4o"));
     let mut grok = capabilities(GROK, &["grok-4", "grok-3"], &[]);
     let grok_catalog = catalog(&["grok-4", "grok-3"], &[]);
-    let params = grok.supported("grok-4", &grok_catalog);
-    assert!(!params.contains(&"stop"));
-    assert!(params.contains(&"tool_choice"));
-    let params = grok.supported("grok-3", &grok_catalog);
-    assert!(params.contains(&"stop"));
+    let grok_four = grok.supported("grok-4", &grok_catalog);
+    assert!(!grok_four.contains(&"stop"));
+    assert!(grok_four.contains(&"tool_choice"));
+    let grok_three = grok.supported("grok-3", &grok_catalog);
+    assert!(grok_three.contains(&"stop"));
 }
 
 #[test]

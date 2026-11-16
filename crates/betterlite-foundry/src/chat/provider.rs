@@ -12,19 +12,15 @@ pub struct OpenAiModelLists<'data> {
     pub embedding: &'data BTreeSet<String>,
 }
 
-// AZURE_AI_API_BASE and AZURE_AI_API_KEY, read by the caller; an empty variable counts as unset
-#[derive(Debug, Clone, Copy)]
-pub struct ProviderEnvironment<'data> {
-    pub api_base: Option<&'data str>,
-    pub api_key: Option<&'data SecretString>,
-}
-
+// environment_base and environment_key are AZURE_AI_API_BASE and AZURE_AI_API_KEY, read by the
+// caller, where an empty variable counts as unset
 pub struct ProviderRequest<'data> {
     pub model: &'data str,
     pub api_base: Option<&'data str>,
     pub api_key: Option<&'data SecretString>,
     pub custom_llm_provider: ProviderId,
-    pub environment: ProviderEnvironment<'data>,
+    pub environment_base: Option<&'data str>,
+    pub environment_key: Option<&'data SecretString>,
     pub lists: OpenAiModelLists<'data>,
 }
 
@@ -57,9 +53,9 @@ pub fn is_azure_openai_model(
 pub fn provider_info(request: &ProviderRequest<'_>) -> ProviderInfo {
     let resolved_base = request
         .api_base
-        .or(request.environment.api_base)
+        .or(request.environment_base)
         .map(str::to_owned);
-    let resolved_key = request.api_key.or(request.environment.api_key).cloned();
+    let resolved_key = request.api_key.or(request.environment_key).cloned();
     let redirects = is_azure_openai_model(request.model, resolved_base.as_deref(), request.lists);
     ProviderInfo {
         api_base: resolved_base,

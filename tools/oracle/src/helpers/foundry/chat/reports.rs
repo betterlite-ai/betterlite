@@ -5,9 +5,7 @@ use betterlite_foundry::chat::capabilities::{RequestParams, map_params, supporte
 use betterlite_foundry::chat::environment::{
     EnvironmentRequest, TokenSource, validate_environment,
 };
-use betterlite_foundry::chat::provider::{
-    OpenAiModelLists, ProviderEnvironment, ProviderRequest, provider_info,
-};
+use betterlite_foundry::chat::provider::{OpenAiModelLists, ProviderRequest, provider_info};
 use betterlite_foundry::chat::request::transform_request;
 use betterlite_foundry::chat::response::transform_response;
 use betterlite_foundry::chat::url::get_complete_url;
@@ -26,10 +24,10 @@ use super::input::{AuthCall, MapCall, ProviderCall, RequestCall, ResponseCall, U
 use super::sources::Offline;
 
 pub(super) fn url_report(call: &UrlCall) -> Value {
-    match get_complete_url(call.api_base.as_deref(), call.api_version.as_deref()) {
-        Ok(url) => json!({"value": url}),
-        Err(_) => json!({"error": {"kind": "ValueError"}}),
-    }
+    let Ok(url) = get_complete_url(call.api_base.as_deref(), call.api_version.as_deref()) else {
+        return json!({"error": {"kind": "ValueError"}});
+    };
+    json!({"value": url})
 }
 
 pub(super) fn supported_report(runtime: &Runtime, installed: &mut Installed, model: &str) -> Value {
@@ -66,20 +64,20 @@ pub(super) fn map_report(runtime: &Runtime, installed: &mut Installed, call: &Ma
 }
 
 pub(super) fn request_report(call: &RequestCall) -> Value {
-    match transform_request(&call.model, &call.messages, &call.optional) {
-        Ok(body) => json!({"ok": true, "value": body}),
-        Err(_) => json!({"ok": false, "value": null}),
-    }
+    let Ok(body) = transform_request(&call.model, &call.messages, &call.optional) else {
+        return json!({"ok": false, "value": null});
+    };
+    json!({"ok": true, "value": body})
 }
 
 pub(super) fn response_report(call: &ResponseCall) -> Value {
     let Ok(body) = serde_json::from_str::<Json>(&call.body) else {
         return json!({"error": {"kind": "JSONDecodeError"}});
     };
-    match transform_response(&call.model, body) {
-        Ok(response) => project_response(&response),
-        Err(_) => json!({"error": {"kind": "ResponseError"}}),
-    }
+    let Ok(response) = transform_response(&call.model, body) else {
+        return json!({"error": {"kind": "ResponseError"}});
+    };
+    project_response(&response)
 }
 
 fn project_response(response: &ChatResponse) -> Value {
@@ -132,24 +130,18 @@ pub(super) fn provider_report(installed: &Installed, call: &ProviderCall) -> Val
         api_base: call.api_base.as_deref(),
         api_key: key.as_ref(),
         custom_llm_provider: ProviderId::AzureAi,
-        environment: ProviderEnvironment {
-            api_base: environment_base,
-            api_key: environment_key.as_ref(),
-        },
+        environment_base,
+        environment_key: environment_key.as_ref(),
         lists: OpenAiModelLists {
             chat: &installed.catalog.chat_models,
             text: &installed.catalog.text_models,
             embedding: &installed.embedding,
         },
     });
-    let exposed = info
-        .api_key
-        .as_ref()
-        .map(|value| value.expose_secret().to_owned());
     json!({
         "provider": info.custom_llm_provider.to_string(),
         "api_base": info.api_base,
-        "api_key": exposed,
+        "api_key": info.api_key.as_ref().map(|value| value.expose_secret().to_owned()),
     })
 }
 
@@ -161,7 +153,17 @@ pub(super) fn auth_report(call: &AuthCall) -> Result<Value, Box<HelperError>> {
         .get("api_key")
         .and_then(Value::as_str)
         .map(SecretString::from);
-    let configured = auth_configured_key(call)?;
+    let source = json!({
+        "litellm_settings": {"api_key": null, "azure_key": null},
+        "model_list": [{"litellm_params": {}}],
+    });
+    let raw: KeyRaw = serde_json::from_value(source).or_config_error()?;
+    let resolved = Section::convert(raw, &call.environment).or_config_error()?;
+    let configured = resolved
+        .deployments
+        .into_iter()
+        .next()
+        .and_then(|item| item.api_key);
     let credentials = DeploymentSettings {
         azure_ad_token: None,
         tenant_id: None,
@@ -184,22 +186,8 @@ pub(super) fn auth_report(call: &AuthCall) -> Result<Value, Box<HelperError>> {
         },
         api_base: call.api_base.as_deref(),
     });
-    Ok(match validated {
-        Ok(headers) => json!(headers),
-        Err(_) => json!({"error": {"kind": "EnvironmentError"}}),
-    })
-}
-
-fn auth_configured_key(call: &AuthCall) -> Result<Option<SecretString>, Box<HelperError>> {
-    let source = json!({
-        "litellm_settings": {"api_key": null, "azure_key": null},
-        "model_list": [{"litellm_params": {}}],
-    });
-    let raw: KeyRaw = serde_json::from_value(source).or_config_error()?;
-    let resolved = Section::convert(raw, &call.environment).or_config_error()?;
-    Ok(resolved
-        .deployments
-        .into_iter()
-        .next()
-        .and_then(|deployment| deployment.api_key))
+    let Ok(headers) = validated else {
+        return Ok(json!({"error": {"kind": "EnvironmentError"}}));
+    };
+    Ok(json!(headers))
 }

@@ -12,8 +12,6 @@ pub mod url_error;
 
 mod tests;
 
-use std::fmt::{self, Formatter};
-
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_prompts::message_content::Message;
 
@@ -40,29 +38,9 @@ impl FoundryChatOptions<'_> {
     }
 }
 
-impl fmt::Debug for FoundryChatOptions<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FoundryChatOptions")
-            .field("model", &self.model)
-            .field("api_version", &self.api_version)
-            .field("api_base", &self.environment.api_base)
-            .finish_non_exhaustive()
-    }
-}
-
+// The headers carry the resolved credential, so this type has no Debug impl
 pub struct PreparedChat {
     pub headers: Headers,
     pub url: String,
     pub body: Object,
-}
-
-// Headers carry the resolved credential, so Debug prints the names the caller set and no value.
-impl fmt::Debug for PreparedChat {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PreparedChat")
-            .field("headers", &self.headers.keys().collect::<Vec<_>>())
-            .field("url", &self.url)
-            .field("body", &self.body.keys().collect::<Vec<_>>())
-            .finish()
-    }
 }

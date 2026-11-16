@@ -16,6 +16,7 @@ use betterlite_openai::reasoning_models::{
 use betterlite_prompts::arguments::json::{Json, Object as JsonObject};
 use betterlite_prompts::message_content::Message;
 use secrecy::SecretString;
+use tokio::runtime::{Builder, Runtime};
 
 use crate::chat::capabilities::{
     CostMap, FoundryCapabilities, RequestParams, map_params, model_map_lookup_name,
@@ -148,13 +149,16 @@ impl Fixture {
 impl CapabilityFixture {
     fn field(&self, model: &str, key: &str) -> Option<&Json> {
         match model.split_once('/') {
-            Some((_, bare)) => self
-                .entries
-                .get(model)
-                .and_then(|entry| entry.get(key))
-                .or_else(|| self.entries.get(bare).and_then(|entry| entry.get(key))),
+            Some((_, bare)) => {
+                let own = self.entries.get(model).and_then(|entry| entry.get(key));
+                own.or_else(|| {
+                    let entry = self.entries.get(bare)?;
+                    entry.get(key)
+                })
+            }
             None if self.resolvable.contains(model) => {
-                self.entries.get(model).and_then(|entry| entry.get(key))
+                let entry = self.entries.get(model)?;
+                entry.get(key)
             }
             None => None,
         }
@@ -194,20 +198,18 @@ impl ReasoningCapabilities for CapabilityFixture {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        ready(matches!(
-            self.field(request.model, key),
-            Some(Json::Bool(false))
-        ))
+        ready(self.field(request.model, key) == Some(&Json::Bool(false)))
     }
 
     fn supports_response_schema(
         &mut self,
         request: &CapabilityRequest<'_>,
     ) -> impl Future<Output = bool> + Send {
-        ready(matches!(
-            self.field(request.model, "supports_response_schema"),
-            Some(Json::Bool(true))
-        ))
+        let Some(Json::Bool(declared)) = self.field(request.model, "supports_response_schema")
+        else {
+            return ready(false);
+        };
+        ready(*declared)
     }
 
     fn catalogue_declares_default(&mut self) -> bool {
@@ -306,8 +308,8 @@ impl<'data> EnvironmentFixture<'data> {
     }
 }
 
-pub(super) fn runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn runtime() -> Runtime {
+    Builder::new_current_thread()
         .build()
         .expect("a current-thread runtime")
 }

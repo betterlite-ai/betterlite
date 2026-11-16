@@ -63,8 +63,8 @@ impl ChatCapabilities {
         }
         let own = self.entries.get(model).and_then(|entry| entry.get(key));
         own.or_else(|| {
-            bare.and_then(|name| self.entries.get(name))
-                .and_then(|entry| entry.get(key))
+            let entry = bare.and_then(|name| self.entries.get(name))?;
+            entry.get(key)
         })
     }
 }
@@ -83,10 +83,11 @@ impl ReasoningCapabilities for ChatCapabilities {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = Option<String>> + Send {
-        let answer = self
-            .field(request.model, key)
-            .and_then(|value| value.as_str().map(str::to_owned));
-        ready(answer)
+        ready(
+            self.field(request.model, key)
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        )
     }
 
     fn is_explicitly_disabled_factory(

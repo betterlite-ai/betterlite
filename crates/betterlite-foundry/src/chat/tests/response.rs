@@ -1,3 +1,5 @@
+use betterlite_openai::chat::response::ChatUsage;
+
 use crate::chat::response::{ResponseError, transform_response};
 
 use super::support::body;
@@ -39,10 +41,7 @@ fn defaults_and_refusals() {
     let missing = transform_response("deployment", body(WITHOUT_MODEL))
         .expect("a body without a model keeps the assigned one");
     assert_eq!(missing.model, "azure_ai/deployment");
-    assert_eq!(
-        missing.usage,
-        betterlite_openai::chat::response::ChatUsage::default()
-    );
+    assert_eq!(missing.usage, ChatUsage::default());
     let null = transform_response(
         "deployment",
         body(

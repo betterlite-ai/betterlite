@@ -15,7 +15,6 @@ from .contracts import (
     RESPONSE,
     UNSUPPORTED,
     AuthCall,
-    Environment,
     Failure,
     JsonObject,
     MapCall,
@@ -26,7 +25,7 @@ from .contracts import (
 )
 
 
-def apply_environment(environment: Environment) -> None:
+def apply_environment(environment: dict[str, str]) -> None:
     for name in AZURE_NAMES:
         os.environ.pop(name, None)
     os.environ.update(environment)
@@ -85,7 +84,7 @@ def response_value(call: ResponseCall) -> JsonObject:
         json_mode=None,
     )
     record = RESPONSE.validate_json(response.model_dump_json())
-    usage = JSON.validate_python(record.get("usage"))
+    usage = JSON.validate_python(record["usage"])
     choices: list[JsonValue] = [
         {
             "index": choice["index"],

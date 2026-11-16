@@ -8,8 +8,6 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 mod fixture;
 mod input;
 mod reports;
-// the Anthropic messages helper already defines the offline token sources
-#[path = "anthropic_messages/sources.rs"]
 mod sources;
 mod tests;
 
@@ -55,14 +53,16 @@ impl Helper for Op {
     }
 }
 
-fn insert_section<T, Report: FnMut(&T) -> Value>(
+fn insert_section<T, Report>(
     answer: &mut Map<String, Value>,
     name: &str,
     calls: Option<&[T]>,
     report: Report,
-) {
-    if let Some(calls) = calls {
-        answer.insert(String::from(name), calls.iter().map(report).collect());
+) where
+    Report: FnMut(&T) -> Value,
+{
+    if let Some(found) = calls {
+        answer.insert(String::from(name), found.iter().map(report).collect());
     }
 }
 

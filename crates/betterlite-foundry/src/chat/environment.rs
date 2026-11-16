@@ -1,4 +1,3 @@
-use std::fmt::{self, Formatter};
 use std::sync::Arc;
 
 use betterlite_azure::azure_urls::{EnvironmentHeadersRequest, validate_azure_environment};
@@ -33,19 +32,6 @@ pub struct EnvironmentRequest<'data> {
     pub configured_key: Option<&'data SecretString>,
     pub token: TokenSource<'data>,
     pub api_base: Option<&'data str>,
-}
-
-// Debug prints which credentials the request carries, never their values.
-impl fmt::Debug for EnvironmentRequest<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EnvironmentRequest")
-            .field("headers", &self.headers.keys().collect::<Vec<_>>())
-            .field("has_argument_key", &self.argument_key.is_some())
-            .field("has_params_key", &self.params_key.is_some())
-            .field("has_configured_key", &self.configured_key.is_some())
-            .field("api_base", &self.api_base)
-            .finish_non_exhaustive()
-    }
 }
 
 pub fn validate_environment(request: EnvironmentRequest<'_>) -> Result<Headers, EnvironmentError> {
