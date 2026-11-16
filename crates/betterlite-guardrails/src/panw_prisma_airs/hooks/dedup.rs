@@ -6,7 +6,6 @@ use uuid::Uuid;
 use super::data::{CALL_ID, Data, LITELLM_METADATA};
 use super::error::HookDataError;
 
-// LiteLLM's _check_and_mark_scanned scan_type argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanType {
     Pre,
@@ -24,7 +23,6 @@ impl ScanType {
     }
 }
 
-// Mirrors LiteLLM's fn _check_and_mark_scanned; Ok(true) means this call was already scanned.
 pub fn check_and_mark_scanned(
     data: &mut Data,
     scan_type: ScanType,

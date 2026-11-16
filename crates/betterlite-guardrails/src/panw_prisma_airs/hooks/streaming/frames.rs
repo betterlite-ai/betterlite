@@ -46,7 +46,6 @@ struct GenericFrameBody<'frame> {
     guardrail: &'frame str,
 }
 
-// Mirrors LiteLLM's except blocks: an HTTPException becomes its own frame, anything else the generic one.
 #[must_use]
 pub fn error_item(guardrail_name: &str, error: StreamError) -> StreamItem {
     match error {

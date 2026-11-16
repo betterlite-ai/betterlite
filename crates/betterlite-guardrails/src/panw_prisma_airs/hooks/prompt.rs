@@ -4,7 +4,6 @@ use super::data::{Data, MESSAGES, PROMPT, parse_items};
 use super::error::HookDataError;
 use crate::prisma_airs_extraction::{Message, extract_text_from_messages};
 
-// Mirrors LiteLLM's fn _extract_prompt_from_request; an empty string means the hook passes through.
 pub fn extract_prompt_from_request(data: &Data) -> Result<String, HookDataError> {
     let prompt_text = match data.get(MESSAGES) {
         Some(GuardrailValue::Array(messages)) => {

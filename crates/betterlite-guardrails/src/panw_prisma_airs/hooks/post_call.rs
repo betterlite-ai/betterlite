@@ -20,7 +20,6 @@ use crate::panw_prisma_airs::verdict::{Action, ScanVerdict};
 use crate::prisma_airs_extraction::extract_response_text;
 use crate::prisma_airs_masking::{Response, get_masked_text, mask_response};
 
-// Mirrors LiteLLM's fn async_post_call_success_hook.
 pub async fn post_call_hook(
     guardrail: &PanwPrismaAirs,
     data: &mut Data,

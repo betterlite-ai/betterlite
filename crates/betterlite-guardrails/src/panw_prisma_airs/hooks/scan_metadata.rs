@@ -8,7 +8,6 @@ use crate::panw_prisma_airs::metadata::{RequestData, ScanMetadata, prepare_metad
 
 const REQUEST_KEYS: [&str; 4] = ["user", "model", "litellm_trace_id", "metadata"];
 
-// Only the keys _prepare_metadata_from_request reads are copied, so a large messages list is never re-encoded.
 pub fn scan_metadata(data: &Data) -> Result<ScanMetadata, HookDataError> {
     let mut relevant = BTreeMap::new();
     for key in REQUEST_KEYS {

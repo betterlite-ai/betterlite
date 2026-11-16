@@ -16,7 +16,6 @@ use crate::panw_prisma_airs::hooks::gate;
 
 use super::{StreamChunk, StreamError, StreamingResponse, assembly, frames, into_items, raw};
 
-// Mirrors LiteLLM's fn async_post_call_streaming_iterator_hook; errors are frames, not raised.
 pub async fn streaming_iterator_hook(
     guardrail: &PanwPrismaAirs,
     data: &mut Data,
@@ -47,7 +46,6 @@ pub async fn streaming_iterator_hook(
     }
 }
 
-// LiteLLM routes on the first chunk: raw bytes, /v1/responses events, or ModelResponse chunks.
 async fn scan_stream(
     guardrail: &PanwPrismaAirs,
     data: &Data,

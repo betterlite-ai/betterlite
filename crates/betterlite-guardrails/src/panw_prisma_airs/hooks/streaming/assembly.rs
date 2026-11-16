@@ -17,7 +17,6 @@ pub struct StreamScan {
     pub verdict: ScanVerdict,
 }
 
-// Mirrors LiteLLM's fn _scan_and_process_streaming_response; a scan failure returns its verdict to the caller.
 pub async fn scan_streaming_response(
     guardrail: &PanwPrismaAirs,
     data: &Data,

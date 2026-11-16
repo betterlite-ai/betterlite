@@ -5,7 +5,6 @@ use super::error::HookDataError;
 use crate::prisma_airs_extraction::select_last_eligible_index;
 use crate::prisma_airs_masking::{RequestMessage, mask_messages};
 
-// Mirrors LiteLLM's fn _apply_masking_to_messages: only the masked message's content changes, its other keys stay.
 pub fn apply_masking_to_messages(data: &mut Data, masked_text: &str) -> Result<(), HookDataError> {
     let Some(value) = data.get(MESSAGES) else {
         return Ok(());

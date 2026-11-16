@@ -21,7 +21,6 @@ use crate::panw_prisma_airs::scan::call_panw_api;
 use crate::panw_prisma_airs::verdict::{Action, ScanVerdict};
 use crate::prisma_airs_masking::get_masked_text;
 
-// Mirrors LiteLLM's fn async_pre_call_hook.
 pub async fn pre_call_hook(
     guardrail: &PanwPrismaAirs,
     data: &mut Data,
