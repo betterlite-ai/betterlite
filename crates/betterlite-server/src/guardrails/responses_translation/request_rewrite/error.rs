@@ -16,35 +16,17 @@ pub enum RequestRewriteError {
         source: Box<GuardrailFailure>,
     },
     #[error("the guardrail's rewrite cannot be applied to this request")]
-    Unappliable {
-        #[source]
-        source: UnappliableRequestRewrite,
-    },
+    Unappliable(#[from] UnappliableRequestRewrite),
     #[error("the Responses input could not be turned into chat messages")]
-    InputConversion {
-        #[source]
-        source: InputMessagesError,
-    },
+    InputConversion(#[from] InputMessagesError),
     #[error("the rewritten messages could not be turned back into Responses items")]
-    History {
-        #[source]
-        source: HistoryError,
-    },
+    History(#[from] HistoryError),
     #[error("the returned tools could not be merged into the request")]
-    ToolMerge {
-        #[source]
-        source: ToolMergeError,
-    },
+    ToolMerge(#[from] ToolMergeError),
     #[error("the raw input items could not be matched to the rewritten messages")]
-    Provenance {
-        #[source]
-        source: InputProvenanceError,
-    },
+    Provenance(#[from] InputProvenanceError),
     #[error("the request tools could not be read")]
-    Tools {
-        #[source]
-        source: NamespaceToolsError,
-    },
+    Tools(#[from] NamespaceToolsError),
     #[error("the {target} could not be converted")]
     Convert {
         target: &'static str,

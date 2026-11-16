@@ -9,7 +9,6 @@ use crate::guardrails::responses_translation::input_provenance::{
     InputProvenance, input_item_provenance, rewritten_input_item,
 };
 
-// Break means the rewritten instructions row is not text, so the caller converts everything
 fn instructions_after(
     changed: &[(usize, &Value)],
     offset: usize,
@@ -52,21 +51,15 @@ fn item_replacements(
         let Some(Value::Object(item)) = raw_items.get(*item_index) else {
             return Ok(None);
         };
-        let patched = rewritten_input_item(item, row)
-            .map_err(|source| RequestRewriteError::Provenance { source })?;
-        rewritten.insert(*item_index, patched);
+        rewritten.insert(*item_index, rewritten_input_item(item, row)?);
     }
     if rewritten.len() != targets.len() {
         return Ok(None);
     }
-    let mut replacements = BTreeMap::new();
-    for (item_index, patched) in rewritten {
-        let Some(item) = patched else {
-            return Ok(None);
-        };
-        replacements.insert(item_index, item);
-    }
-    Ok(Some(replacements))
+    Ok(rewritten
+        .into_iter()
+        .map(|(index, patched)| patched.map(|item| (index, item)))
+        .collect())
 }
 
 // Only the raw items whose message changed are rewritten, so the rest keep fields the chat form cannot hold
@@ -87,8 +80,7 @@ pub fn patched_request_fields(
         usize::from(matches!(raw_instructions, Some(Value::String(text)) if !text.is_empty()));
     let expected = original_messages.get(offset..).unwrap_or_default();
     let Some(provenance) =
-        input_item_provenance(raw_items, expected, context.limits, context.cache)
-            .map_err(|source| RequestRewriteError::Provenance { source })?
+        input_item_provenance(raw_items, expected, context.limits, context.cache)?
     else {
         return Ok(None);
     };
@@ -107,14 +99,15 @@ pub fn patched_request_fields(
     let Some(replacements) = item_replacements(raw_items, &changed, offset, &provenance)? else {
         return Ok(None);
     };
-    let mut input = Vec::with_capacity(raw_items.len());
-    for (index, item) in raw_items.iter().enumerate() {
-        input.push(
+    let input = raw_items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
             replacements
                 .get(&index)
-                .map_or_else(|| item.clone(), |patched| Value::Object(patched.clone())),
-        );
-    }
+                .map_or_else(|| item.clone(), |patched| Value::Object(patched.clone()))
+        })
+        .collect();
     Ok(Some(RequestFields {
         input,
         instructions,

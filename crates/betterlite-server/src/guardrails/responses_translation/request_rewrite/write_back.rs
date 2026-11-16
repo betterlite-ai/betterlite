@@ -8,7 +8,6 @@ use super::error::RequestRewriteError;
 use super::patch::patched_request_fields;
 use super::{RequestContext, RequestFields, ScopedRequest, serde_convert};
 
-// A patch that cannot be made falls back to converting the whole message list
 pub fn patch_or_convert_request_fields(
     raw_input: Option<&Value>,
     raw_instructions: Option<&Value>,
@@ -25,22 +24,17 @@ pub fn patch_or_convert_request_fields(
     )? {
         return Ok(patched);
     }
-    let mut history = Vec::with_capacity(merged_messages.len());
-    for message in merged_messages {
-        history.push(serde_convert::<_, HistoryMessage>(
-            message,
-            "rewritten message",
-        )?);
-    }
-    let converted =
-        convert_history(&history).map_err(|source| RequestRewriteError::History { source })?;
+    let history = merged_messages
+        .iter()
+        .map(|message| serde_convert::<_, HistoryMessage>(message, "rewritten message"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let converted = convert_history(&history)?;
     Ok(RequestFields {
         input: converted.input,
         instructions: converted.instructions,
     })
 }
 
-// None when the guardrail returned no messages or only the ones it was sent
 pub fn written_back_request_fields(
     data: &Object,
     scoped: &ScopedRequest,
@@ -67,17 +61,10 @@ pub fn written_back_request_fields(
             &returned_rows,
         )
     };
-    let raw_input: Option<Value> = data
-        .get("input")
-        .map(|input| serde_convert(input, "input"))
-        .transpose()?;
-    let raw_instructions: Option<Value> = data
-        .get("instructions")
-        .map(|instructions| serde_convert(instructions, "instructions"))
-        .transpose()?;
+    let request: Value = serde_convert(data, "request")?;
     patch_or_convert_request_fields(
-        raw_input.as_ref(),
-        raw_instructions.as_ref(),
+        request.get("input"),
+        request.get("instructions"),
         &scoped.structured_messages,
         &merged,
         context,

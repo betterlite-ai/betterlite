@@ -111,8 +111,7 @@ pub fn get_structured_messages(
         input: Some(serde_convert(input, "input")?),
         instructions,
     };
-    let messages = input_messages(&request, false, context.limits, context.cache)
-        .map_err(|source| RequestRewriteError::InputConversion { source })?;
+    let messages = input_messages(&request, false, context.limits, context.cache)?;
     Ok((!messages.is_empty()).then_some(messages))
 }
 

@@ -24,9 +24,9 @@ pub fn apply_guardrailed_texts(
         extracted.task_mappings.len()
     };
     if returned.len() != offset.saturating_add(expected) {
-        return Err(RequestRewriteError::Unappliable {
-            source: UnappliableRequestRewrite::new(guardrail_name),
-        });
+        return Err(RequestRewriteError::from(UnappliableRequestRewrite::new(
+            guardrail_name,
+        )));
     }
     if let Some(instructions) = returned.first().filter(|_| offset == 1) {
         data.insert(

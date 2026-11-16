@@ -12,10 +12,7 @@ pub enum OutputRewriteError {
     #[error("the guardrail returned text {index} but only {scanned} texts were scanned")]
     TooManyTexts { index: usize, scanned: usize },
     #[error("an output tool call item could not be read")]
-    ToolCallItem {
-        #[source]
-        source: HistoryError,
-    },
+    ToolCallItem(#[from] HistoryError),
     #[error("the {target} could not be converted")]
     Convert {
         target: &'static str,

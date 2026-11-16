@@ -1,0 +1,6 @@
+kind: helper
+name: responses-extract-inputs-mappings-and-images
+call:
+  b3671: {"function": "input", "scenarios": [{"data": {"model": "gpt-4o", "instructions": "sys text", "tools": [{"type": "function", "name": "f", "description": "d", "parameters": {"type": "object"}}], "input": [{"role": "user", "content": "hello"}, {"role": "user", "content": [{"type": "input_text", "text": "a"}, {"type": "image_url", "image_url": {"url": "https://x.test/i.png"}}, {"type": "image_url", "image_url": {"url": "https://x.test/j.png"}, "text": "b"}]}, {"role": "assistant", "content": null}]}, "skip_system": false, "covers_full": false, "reply": null}, {"data": {"model": "", "input": "plain"}, "skip_system": false, "covers_full": false, "reply": null}]}
+env: {}
+compare: {ignore: []}

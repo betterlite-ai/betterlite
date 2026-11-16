@@ -66,8 +66,7 @@ pub fn extract_output(output_items: &[Value]) -> Result<ExtractedOutput, OutputR
     };
     for (output_index, item) in output_items.iter().enumerate() {
         if let Some(call) = tool_call_output_item_mapping(item) {
-            let chunk = output_tool_fields(call, output_index)
-                .map_err(|source| OutputRewriteError::ToolCallItem { source })?;
+            let chunk = output_tool_fields(call, output_index)?;
             extracted
                 .tool_calls
                 .push(serde_convert(&chunk, "tool call")?);
@@ -164,7 +163,6 @@ pub fn write_tool_call_rewrites_to_output(
     }
 }
 
-// None when there is nothing in the response for the guardrail to scan
 fn scanned_output(response: &Value) -> Result<Option<ExtractedOutput>, OutputRewriteError> {
     let Some(fields) = response.as_object() else {
         tracing::debug!("OpenAI Responses API: No output found in response");

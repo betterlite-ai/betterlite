@@ -109,7 +109,7 @@ fn extract_output_turns_tool_call_items_into_chat_calls_without_text() {
 fn extract_output_rejects_a_tool_call_item_with_non_text_arguments() {
     let items = [json!({"type": "function_call", "name": "f", "arguments": 5})];
     let error = extract_output(&items).unwrap_err();
-    assert!(matches!(error, OutputRewriteError::ToolCallItem { .. }));
+    assert!(matches!(error, OutputRewriteError::ToolCallItem(_)));
 }
 
 #[test]

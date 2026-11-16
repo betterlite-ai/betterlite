@@ -63,7 +63,6 @@ fn scoped_request(
     })
 }
 
-// None when the request has nothing the guardrail could scan, so it is never called
 pub(super) fn scan_request(
     data: &Object,
     context: &RequestContext<'_>,

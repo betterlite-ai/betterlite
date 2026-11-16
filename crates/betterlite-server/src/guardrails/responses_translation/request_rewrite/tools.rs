@@ -27,19 +27,20 @@ pub fn flattened_tool_groups(
     original_tools: &[Fields],
 ) -> Result<Vec<Vec<Fields>>, RequestRewriteError> {
     let tools: Vec<Json> = original_tools.iter().cloned().map(Json::Object).collect();
-    check_collisions(&tools).map_err(|source| RequestRewriteError::Tools { source })?;
+    check_collisions(&tools)?;
     let mut groups = Vec::with_capacity(tools.len());
     for tool in &tools {
-        let conversion = responses_tools_to_chat(slice::from_ref(tool))
-            .map_err(|source| RequestRewriteError::Tools { source })?;
+        let conversion = responses_tools_to_chat(slice::from_ref(tool))?;
         for warning in &conversion.warnings {
             tracing::warn!("{warning}");
         }
-        let mut group = Vec::with_capacity(conversion.chat_tools.len());
-        for chat_tool in &conversion.chat_tools {
-            group.push(serde_convert(chat_tool, "chat tool")?);
-        }
-        groups.push(group);
+        groups.push(
+            conversion
+                .chat_tools
+                .iter()
+                .map(|chat_tool| serde_convert(chat_tool, "chat tool"))
+                .collect::<Result<Vec<Fields>, _>>()?,
+        );
     }
     Ok(groups)
 }
@@ -51,8 +52,7 @@ pub fn apply_guardrailed_tools_to_data(
     returned_tools: &[GuardrailToolParam],
 ) -> Result<(), RequestRewriteError> {
     let returned: Vec<Json> = serde_convert(returned_tools, "returned tools")?;
-    let merged = merge_guardrailed_tools(original_tools, flattened_tool_groups, &returned)
-        .map_err(|source| RequestRewriteError::ToolMerge { source })?;
+    let merged = merge_guardrailed_tools(original_tools, flattened_tool_groups, &returned)?;
     data.insert("tools".to_owned(), serde_convert(&merged, "merged tools")?);
     Ok(())
 }

@@ -1,0 +1,12 @@
+task: B3671
+deviations:
+  - what: A returned structured_messages list that equals the scoped list sent to the guardrail is treated as unchanged and the text path runs. LiteLLM treats it as unchanged only when it is the same Python object.
+    why: Rust has no object identity for the returned list. A guardrail that echoes its input gives the same result in both, and one that builds an equal copy takes the text path here instead of a no-op patch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L646
+  - what: A guardrail that returns more texts than were scanned in a response fails with the typed OutputRewriteError::TooManyTexts after the earlier texts were written.
+    why: LiteLLM raises IndexError at the first extra text after the same earlier writes, which becomes a 500. The typed error keeps that outcome with a name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1529
+  - what: The response entry that process_output_response puts in the request data is a copy taken before the rewrite. LiteLLM stores the response object itself, so later readers of the request data see the rewritten response.
+    why: A Rust map cannot hold a second mutable reference to the response. Nothing in the guardrail code after the call reads that entry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L824-L826
+kept_bugs: []

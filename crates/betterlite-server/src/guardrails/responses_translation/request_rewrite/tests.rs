@@ -276,7 +276,7 @@ fn texts_with_a_wrong_count_fail_before_any_write(#[case] data: Value, #[case] r
     let (result, after) = texts_outcome(data.clone(), reply);
     assert!(matches!(
         result,
-        Err(RequestRewriteError::Unappliable { source }) if source.guardrail_name == "guard"
+        Err(RequestRewriteError::Unappliable(source)) if source.guardrail_name == "guard"
     ));
     assert_eq!(after, data);
 }
@@ -722,10 +722,7 @@ async fn process_input_rejects_a_text_rewrite_it_cannot_place() {
     let guardrail = FakeGuardrail::replying(json!({"texts": ["only one"]}));
     let data = json!({"instructions": "sys", "input": "hi"});
     let (result, after) = process(data.clone(), &guardrail, false).await;
-    assert!(matches!(
-        result,
-        Err(RequestRewriteError::Unappliable { .. })
-    ));
+    assert!(matches!(result, Err(RequestRewriteError::Unappliable(_))));
     assert_eq!(after, data);
 }
 
