@@ -11,7 +11,7 @@ use super::{EmbeddingCalls, embedding_mocks_resolve};
 
 // a vertex_ai deployment reaches the installed Vertex call unless a configured mock answers first, as on every other provider
 struct VertexFirst {
-    vertex: Arc<dyn EmbeddingCall>,
+    installed: Arc<dyn EmbeddingCall>,
     plain: EmbeddingCalls,
 }
 
@@ -21,10 +21,7 @@ pub(super) fn calls(
 ) -> Arc<dyn EmbeddingCall> {
     let plain = EmbeddingCalls { executor };
     match vertex {
-        Some(installed) => Arc::new(VertexFirst {
-            vertex: installed,
-            plain,
-        }),
+        Some(installed) => Arc::new(VertexFirst { installed, plain }),
         None => Arc::new(plain),
     }
 }
@@ -40,7 +37,7 @@ impl EmbeddingCall for VertexFirst {
             && !embedding_mocks_resolve(executor, &call.deployment, call.request)
                 .map_err(EmbeddingFailure::Route)?
         {
-            return self.vertex.embed(call).await;
+            return self.installed.embed(call).await;
         }
         self.plain.embed(call).await
     }

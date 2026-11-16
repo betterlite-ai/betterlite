@@ -93,7 +93,6 @@ pub fn vertex_embedding_calls(
     })))
 }
 
-// each vertex_ai deployment's own options, keyed by model_id, read once at startup
 fn pinned_deployments(
     deployments: &[ChatDeployment],
     embedding: &EmbeddingSettings,

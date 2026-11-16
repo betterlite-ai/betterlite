@@ -108,13 +108,8 @@ def remaining(call: HandlerArguments) -> list[str]:
     return sorted(params)
 
 
-def seconds(timeout: float | None) -> int | None:
-    if timeout is None:
-        return None
-    return int(timeout)
-
-
 def view(arm: Arm, call: HandlerArguments) -> View:
+    timeout = call.get("timeout")
     return {
         "arm": arm,
         "project": call.get("vertex_project"),
@@ -124,7 +119,7 @@ def view(arm: Arm, call: HandlerArguments) -> View:
         "remaining": remaining(call),
         "extra_headers": call.get("extra_headers"),
         "api_key_set": call.get("api_key") is not None,
-        "timeout": seconds(call.get("timeout")),
+        "timeout": None if timeout is None else int(timeout),
         "litellm_params_set": call.get("litellm_params") is not None,
     }
 
