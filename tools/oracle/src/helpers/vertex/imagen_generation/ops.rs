@@ -33,6 +33,7 @@ use http::header::HeaderMap;
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -152,9 +153,7 @@ fn target_headers(
     };
     // the cases that reach this helper use a custom or empty base, so no token is ever minted here
     let cache = CredentialCache::new(Arc::new(FixedClock), Arc::new(NoCredentials));
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .or_config_error()?;
+    let runtime = Builder::new_current_thread().build().or_config_error()?;
     let headers = runtime
         .block_on(validate_environment(&cache, settings, &request))
         .or_value_error()?;
