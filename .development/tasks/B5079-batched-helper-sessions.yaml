@@ -140,7 +140,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::tests::session_/)'
   - id: cloud-storage-seeds
     why: the batched cloud_storage seed test stops matching any corpus case
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(helper_seeds_select_cloud_storage)'
+    run: cargo nextest run --locked -p betterlite-oracle-context --no-tests=fail -E 'test(helper_seeds_select_cloud_storage)'
   - id: session-cost-map
     why: a session lets a case override the local LiteLLM cost map
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(helper_case_cannot_disable_the_local_cost_map)'

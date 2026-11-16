@@ -195,7 +195,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/stream_usage_assembly*")"
       && grep -lq 'stream_usage_assembly' tools/oracle/fuzz/corpus/helper_case/stream_usage_assembly* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_stream_usage_assembly$/)'
+      run --locked -p betterlite-oracle-streaming --no-tests=fail -E 'test(/::helper_seeds_select_stream_usage_assembly$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-usage-source-and-counts
     why: Prefer non-None usage attribute, then usage key by presence, then hidden usage only for ModelResponse/Stream;
