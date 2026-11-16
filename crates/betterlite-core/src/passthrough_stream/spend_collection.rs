@@ -66,25 +66,13 @@ impl<'this, Logged: 'this> RefType<'this> for OwnedCollectorRef<Logged> {
     type Ref = Box<dyn PassthroughStreamCollector<Logged = Logged> + Send + 'this>;
 }
 
-// Owned so the background flush outlives the request borrow
-// The collector borrows the config it was built from, so both share one cell
+// Owned by the flush task; the collector and the config it borrows share this cell
 pub struct OwnedProviderSpend<C>
 where
     C: BasePassthroughConfig + 'static,
     C::Logged: 'static,
 {
     cell: SelfieMut<'static, Box<C>, OwnedCollectorRef<C::Logged>>,
-}
-
-fn provider_collector<'this, C>(
-    config: Pin<&'this mut C>,
-    target: &PassthroughTarget<'_>,
-) -> Box<dyn PassthroughStreamCollector<Logged = C::Logged> + Send + 'this>
-where
-    C: BasePassthroughConfig + Sync + Unpin,
-{
-    let config: &'this C = Pin::into_inner(config);
-    config.create_stream_collector(target)
 }
 
 impl<C> OwnedProviderSpend<C>
@@ -103,7 +91,7 @@ where
                     custom_llm_provider: &custom_llm_provider,
                     endpoint: &endpoint,
                 };
-                provider_collector(pinned, &spend_target)
+                Pin::into_inner(pinned).create_stream_collector(&spend_target)
             }),
         }
     }
