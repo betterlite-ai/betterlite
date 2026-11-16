@@ -7,9 +7,10 @@ use betterlite_azure::endpoints::projection::SessionKind;
 use betterlite_azure::fine_tuning::client::Connection;
 use betterlite_azure::fine_tuning::error::AzureFineTuneError;
 use betterlite_azure::fine_tuning::{
-    cancel_fine_tuning_job, create_fine_tuning_job, list_fine_tuning_jobs, retrieve_fine_tuning_job,
+    create_fine_tuning_job, list_fine_tuning_jobs, request_fine_tuning_job,
 };
 use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
+use betterlite_openai::fine_tuning::JobRequest;
 use betterlite_openai::fine_tuning::client::{ClientSettings, JobsApi};
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use serde::Deserialize;
@@ -61,7 +62,7 @@ struct Step {
 }
 
 fn perform(
-    step: Step,
+    step: &mut Step,
     mut connection: Connection<'_, '_, Materializer>,
 ) -> Result<Value, AzureFineTuneError> {
     let job_id = step.job_id.clone().unwrap_or_default();
@@ -70,15 +71,18 @@ fn perform(
             .get_openai_client()
             .map(|outcome| projection(&outcome)),
         Action::Create => {
-            let mut data = step.data.clone().unwrap_or_default();
-            create_fine_tuning_job(connection, &mut data).map(|job| json!(job))
+            let data = step.data.get_or_insert_default();
+            create_fine_tuning_job(connection, data).map(|job| json!(job))
         }
         Action::List => {
             let page = list_fine_tuning_jobs(connection, step.after.as_deref(), step.limit)?;
             serde_json::from_slice::<Value>(&page).map_err(AzureFineTuneError::from)
         }
-        Action::Retrieve => retrieve_fine_tuning_job(connection, &job_id).map(|job| json!(job)),
-        Action::Cancel => cancel_fine_tuning_job(connection, &job_id).map(|job| json!(job)),
+        Action::Retrieve => request_fine_tuning_job(connection, &JobRequest::Retrieve(&job_id))
+            .map(|job| json!(job)),
+        Action::Cancel => {
+            request_fine_tuning_job(connection, &JobRequest::Cancel(&job_id)).map(|job| json!(job))
+        }
     }
 }
 
@@ -119,11 +123,13 @@ fn run_step(mut step: Step) -> Value {
         refresh: &mut refresh,
         materializer: &materializer,
     };
-    let outcome = match perform(step, connection) {
+    let outcome = match perform(&mut step, connection) {
         Ok(value) => json!({ "returned": value }),
         Err(error) => raised(&error),
     };
+    // LiteLLM changes the caller's create data in place, even when the client never gets built
     json!({
+        "data": step.data,
         "outcome": outcome,
         "calls": lock(&calls),
         "supplied_calls": lock(&supplied_calls),

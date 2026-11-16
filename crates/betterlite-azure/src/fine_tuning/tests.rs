@@ -5,6 +5,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
+use betterlite_openai::fine_tuning::JobRequest;
 use betterlite_openai::fine_tuning::client::{BuildError, ClientSettings, JobsApi, SdkError};
 use betterlite_openai::fine_tuning::job::{FineTuneCreate, FineTuneJob};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -15,9 +16,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use super::client::{ClientMaterializer, Connection};
 use super::error::AzureFineTuneError;
-use super::{
-    cancel_fine_tuning_job, create_fine_tuning_job, list_fine_tuning_jobs, retrieve_fine_tuning_job,
-};
+use super::{create_fine_tuning_job, list_fine_tuning_jobs, request_fine_tuning_job};
 use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
 use crate::credentials::cache::RefreshProviderCache;
 use crate::credentials::source::{CallableTokenProvider, CredentialSources, SourceFailure};
@@ -534,25 +533,20 @@ fn projection(outcome: &ClientOutcome<'_>) -> Projection {
 
 fn dispatch(
     step: &Step,
+    data: &mut FineTuneCreate,
     mut connection: Connection<'_, '_, Materializer>,
 ) -> Result<Outcome, AzureFineTuneError> {
+    let job_id = step.job_id.as_deref().unwrap_or_default();
     match step.action {
         Action::Project => connection
             .get_openai_client()
             .map(|outcome| Outcome::Projection(projection(&outcome))),
-        Action::Create => {
-            let mut data = step.data.clone().unwrap_or_default();
-            create_fine_tuning_job(connection, &mut data)
-                .map(|job| Outcome::Job(serde_json::to_string(&job).expect("the job serializes")))
-        }
-        Action::Retrieve => {
-            retrieve_fine_tuning_job(connection, step.job_id.as_deref().unwrap_or_default())
-                .map(|job| Outcome::Job(serde_json::to_string(&job).expect("the job serializes")))
-        }
-        Action::Cancel => {
-            cancel_fine_tuning_job(connection, step.job_id.as_deref().unwrap_or_default())
-                .map(|job| Outcome::Job(serde_json::to_string(&job).expect("the job serializes")))
-        }
+        Action::Create => create_fine_tuning_job(connection, data)
+            .map(|job| Outcome::Job(serde_json::to_string(&job).expect("the job serializes"))),
+        Action::Retrieve => request_fine_tuning_job(connection, &JobRequest::Retrieve(job_id))
+            .map(|job| Outcome::Job(serde_json::to_string(&job).expect("the job serializes"))),
+        Action::Cancel => request_fine_tuning_job(connection, &JobRequest::Cancel(job_id))
+            .map(|job| Outcome::Job(serde_json::to_string(&job).expect("the job serializes"))),
         Action::List => list_fine_tuning_jobs(connection, step.after.as_deref(), step.limit)
             .map(|page| Outcome::Page(String::from_utf8(page).expect("the list reply is UTF-8"))),
     }
@@ -563,8 +557,9 @@ fn run(step: &Step) -> Observation {
     let supplied_calls = Calls::default();
     let reply = planned_reply(step.reply.as_ref());
     let (client, materializer) = fixtures(step, &reply, &calls, &supplied_calls);
+    let mut data = step.data.clone().unwrap_or_default();
     Observation {
-        outcome: connect(step, client, &materializer),
+        outcome: connect(step, &mut data, client, &materializer),
         calls: lock(&calls),
         supplied_calls: lock(&supplied_calls),
     }
@@ -591,7 +586,12 @@ fn fixtures(
     (client, materializer)
 }
 
-fn connect(step: &Step, client: Option<Box<dyn JobsApi>>, materializer: &Materializer) -> Outcome {
+fn connect(
+    step: &Step,
+    data: &mut FineTuneCreate,
+    client: Option<Box<dyn JobsApi>>,
+    materializer: &Materializer,
+) -> Outcome {
     let endpoints = EndpointSettings::default();
     let environment: BTreeMap<String, String> = BTreeMap::new();
     let sources = Sources;
@@ -610,7 +610,7 @@ fn connect(step: &Step, client: Option<Box<dyn JobsApi>>, materializer: &Materia
         refresh: &mut refresh,
         materializer,
     };
-    match dispatch(step, connection) {
+    match dispatch(step, data, connection) {
         Ok(outcome) => outcome,
         Err(error) => Outcome::Raised(raised(&error)),
     }

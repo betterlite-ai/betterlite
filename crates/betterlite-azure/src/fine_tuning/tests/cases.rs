@@ -42,28 +42,48 @@ fn training_type_default() {
 fn training_type_defaults_from_every_empty_extra_body() {
     let body = job_json("queued", ORG, "[]");
     let steps = [
-        r#"{"model":"m","training_file":"f","extra_body":null}"#,
-        r#"{"model":"m","training_file":"f","extra_body":{}}"#,
-        r#"{"model":"m","training_file":"f","extra_body":0}"#,
-        r#"{"model":"m","training_file":"f","extra_body":false}"#,
-        r#"{"model":"m","training_file":"f","extra_body":""}"#,
-        r#"{"model":"m","training_file":"f","extra_body":[]}"#,
-        r#"{"model":"m","training_file":"f","extra_body":"text"}"#,
-        r#"{"model":"m","training_file":"f","extra_body":{"prompt_loss_weight":0.1}}"#,
-        r#"{"model":"m","training_file":"f","extra_body":{"trainingType":null,"prompt_loss_weight":0.1}}"#,
+        (
+            r#"{"model":"m","training_file":"f","extra_body":null}"#,
+            DEFAULTED,
+        ),
+        (
+            r#"{"model":"m","training_file":"f","extra_body":{}}"#,
+            DEFAULTED,
+        ),
+        (
+            r#"{"model":"m","training_file":"f","extra_body":0}"#,
+            DEFAULTED,
+        ),
+        (
+            r#"{"model":"m","training_file":"f","extra_body":false}"#,
+            DEFAULTED,
+        ),
+        (
+            r#"{"model":"m","training_file":"f","extra_body":""}"#,
+            DEFAULTED,
+        ),
+        (
+            r#"{"model":"m","training_file":"f","extra_body":[]}"#,
+            DEFAULTED,
+        ),
+        (
+            r#"{"model":"m","training_file":"f","extra_body":"text"}"#,
+            DEFAULTED,
+        ),
+        (
+            r#"{"model":"m","training_file":"f","extra_body":{"prompt_loss_weight":0.1}}"#,
+            DEFAULTED_WITH_EXTRA,
+        ),
+        (
+            r#"{"model":"m","training_file":"f","extra_body":{"trainingType":null,"prompt_loss_weight":0.1}}"#,
+            DEFAULTED_WITH_EXTRA,
+        ),
     ];
-    for step in &steps {
-        let observation = run(&create(step, &body));
+    for (data, sent) in steps {
+        let observation = run(&create(data, &body));
         assert_eq!(observation.outcome, Outcome::Job(canonical_job(&body)));
+        assert_eq!(observation.calls, vec![canonical_create(sent)]);
     }
-    assert_eq!(
-        run(&create(steps[7], &body)).calls,
-        vec![canonical_create(DEFAULTED_WITH_EXTRA)]
-    );
-    assert_eq!(
-        run(&create(steps[8], &body)).calls,
-        vec![canonical_create(DEFAULTED_WITH_EXTRA)]
-    );
 }
 
 fn explicit_training_type() {
@@ -286,6 +306,21 @@ fn sdk_client_missing() {
     for step in &steps {
         assert_eq!(run(step), raised_value(MISSING));
     }
+    // LiteLLM defaults trainingType before it builds the client, so a failed create keeps the change
+    let mut data = create_data(NO_TRAINING_TYPE);
+    let unbuilt = Materializer {
+        mode: BuilderMode::None,
+        reply: Ok(Vec::new()),
+        calls: Calls::default(),
+    };
+    assert_eq!(
+        connect(&steps[0], &mut data, None, &unbuilt),
+        raised_value(MISSING).outcome
+    );
+    assert_eq!(
+        data.extra.get("extra_body"),
+        Some(&serde_json::json!({"trainingType": 1}))
+    );
 }
 
 fn sdk_client_wrong_async() {

@@ -1,16 +1,11 @@
 pub mod client;
 pub mod error;
 
+use betterlite_openai::fine_tuning::JobRequest;
 use betterlite_openai::fine_tuning::job::{FineTuneCreate, FineTuneJob, decode_fine_tune_job};
 
 use client::{ClientMaterializer, Connection};
 use error::AzureFineTuneError;
-
-pub enum JobRequest<'request> {
-    Create(&'request FineTuneCreate),
-    Retrieve(&'request str),
-    Cancel(&'request str),
-}
 
 // Azure needs a trainingType in extra_body and defaults to 1, supervised; an explicit value, even 0 or false, stays
 pub fn ensure_training_type(data: &mut FineTuneCreate) {
@@ -61,20 +56,6 @@ pub fn create_fine_tuning_job<M: ClientMaterializer>(
 ) -> Result<FineTuneJob, AzureFineTuneError> {
     ensure_training_type(data);
     request_fine_tuning_job(connection, &JobRequest::Create(data))
-}
-
-pub fn retrieve_fine_tuning_job<M: ClientMaterializer>(
-    connection: Connection<'_, '_, M>,
-    job_id: &str,
-) -> Result<FineTuneJob, AzureFineTuneError> {
-    request_fine_tuning_job(connection, &JobRequest::Retrieve(job_id))
-}
-
-pub fn cancel_fine_tuning_job<M: ClientMaterializer>(
-    connection: Connection<'_, '_, M>,
-    job_id: &str,
-) -> Result<FineTuneJob, AzureFineTuneError> {
-    request_fine_tuning_job(connection, &JobRequest::Cancel(job_id))
 }
 
 // the inherited list returns the SDK page as it is; only single job replies carry the Azure normalization

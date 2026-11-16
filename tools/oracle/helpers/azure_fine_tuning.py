@@ -292,7 +292,13 @@ def run_step(step: Step) -> JsonObject:
     STATE.mode_client = None if STATE.builder != "wrong_async" else mode_client()
     litellm.client_session = httpx.Client(transport=httpx.MockTransport(Record(STATE.calls)))
     litellm.aclient_session = httpx.AsyncClient(transport=httpx.MockTransport(Record(STATE.calls)))
-    return {"outcome": outcome(step), "calls": STATE.calls, "supplied_calls": STATE.supplied_calls}
+    reported = outcome(step)
+    return {
+        "data": step.get("data"),
+        "outcome": reported,
+        "calls": STATE.calls,
+        "supplied_calls": STATE.supplied_calls,
+    }
 
 
 def run(input_value: Input) -> JsonValue:
