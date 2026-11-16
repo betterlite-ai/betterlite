@@ -11,6 +11,7 @@ use betterlite_logging::gcs_mock::auth::{GcsMockAuth, VertexAuth};
 use betterlite_logging::gcs_mock::client::{GcsHttpClient as _, GcsMockClient};
 use betterlite_logging::gcs_mock::request::{GcsReadRequest, GcsRequest, GcsWriteRequest};
 use betterlite_logging::gcs_mock::settings::{DEFAULT_LATENCY, GcsMockSettings};
+use http::header::HeaderMap;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use secrecy::SecretString;
 use tokio::runtime::Handle;
@@ -26,7 +27,7 @@ mod tests;
 
 use self::body::decode_body;
 use self::error::GcsCacheError;
-use self::headers::build_headers;
+use self::headers::{HeaderError, build_headers};
 
 pub const DEFAULT_BASE_URL: &str = "https://storage.googleapis.com";
 
@@ -93,6 +94,15 @@ where
         }
     }
 
+    async fn request_headers(&self) -> Result<HeaderMap, HeaderError<Auth>> {
+        build_headers(
+            &self.base,
+            self.bucket_name.clone(),
+            self.service_account_path.clone(),
+        )
+        .await
+    }
+
     pub fn set_cache(&self, runtime: &Handle, key: &str, value: &CachedEntry) {
         if Handle::try_current().is_ok() {
             tracing::warn!(
@@ -112,13 +122,7 @@ where
                 return;
             }
         };
-        let headers = match build_headers(
-            &self.base,
-            self.bucket_name.clone(),
-            self.service_account_path.clone(),
-        )
-        .await
-        {
+        let headers = match self.request_headers().await {
             Ok(headers) => headers,
             Err(source) => {
                 tracing::debug!(key = %key, error = %source, "GCS cache write failed");
@@ -160,13 +164,7 @@ where
     }
 
     pub async fn async_get_cache(&self, key: &str) -> Option<CachedEntry> {
-        let headers = match build_headers(
-            &self.base,
-            self.bucket_name.clone(),
-            self.service_account_path.clone(),
-        )
-        .await
-        {
+        let headers = match self.request_headers().await {
             Ok(headers) => headers,
             Err(source) => return failed_read(key, &source),
         };

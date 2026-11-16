@@ -70,8 +70,20 @@ fn convert_params<L>(
 where
     L: EnvironmentLookup,
 {
-    let bucket_name = resolve_bucket_name(params.gcs_bucket_name, lookup)?;
-    let service_account_path = resolve_service_account(params.gcs_path_service_account, lookup)?;
+    let bucket_name =
+        resolve_setting(params.gcs_bucket_name, BUCKET_PATH, BUCKET_VARIABLE, lookup)?.ok_or_else(
+            || ConfigError::MissingEnvironment {
+                variable: BUCKET_VARIABLE.to_owned(),
+                path: BUCKET_PATH.to_owned(),
+            },
+        )?;
+    let service_account_path = resolve_setting(
+        params.gcs_path_service_account,
+        SERVICE_ACCOUNT_PATH,
+        SERVICE_ACCOUNT_VARIABLE,
+        lookup,
+    )?
+    .map(SecretString::from);
     let path = match params.gcs_path {
         Some(raw) => resolve_string(raw, PATH_PATH, lookup)?,
         None => String::new(),
@@ -83,44 +95,24 @@ where
     })
 }
 
-fn resolve_bucket_name<L>(raw: Option<String>, lookup: &L) -> Result<String, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let configured = match raw {
-        Some(value) => resolve_string(value, BUCKET_PATH, lookup)?,
-        None => String::new(),
-    };
-    if !configured.is_empty() {
-        return Ok(configured);
-    }
-    lookup
-        .lookup(BUCKET_VARIABLE)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| ConfigError::MissingEnvironment {
-            variable: BUCKET_VARIABLE.to_owned(),
-            path: BUCKET_PATH.to_owned(),
-        })
-}
-
-fn resolve_service_account<L>(
+// an absent or empty configured value falls back to the matching environment variable
+fn resolve_setting<L>(
     raw: Option<String>,
+    path: &str,
+    variable: &str,
     lookup: &L,
-) -> Result<Option<SecretString>, ConfigError>
+) -> Result<Option<String>, ConfigError>
 where
     L: EnvironmentLookup,
 {
     let configured = match raw {
-        Some(value) => resolve_string(value, SERVICE_ACCOUNT_PATH, lookup)?,
+        Some(value) => resolve_string(value, path, lookup)?,
         None => String::new(),
     };
     if !configured.is_empty() {
-        return Ok(Some(SecretString::from(configured)));
+        return Ok(Some(configured));
     }
-    Ok(lookup
-        .lookup(SERVICE_ACCOUNT_VARIABLE)
-        .filter(|value| !value.is_empty())
-        .map(SecretString::from))
+    Ok(lookup.lookup(variable).filter(|value| !value.is_empty()))
 }
 
 mod tests;
