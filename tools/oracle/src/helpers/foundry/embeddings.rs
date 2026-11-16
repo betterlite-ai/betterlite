@@ -44,7 +44,7 @@ impl ReplyCall {
                 HeaderName::from_bytes(header.name.as_bytes()),
                 HeaderValue::from_str(&header.value),
             ) {
-                headers.insert(name, value);
+                headers.append(name, value);
             }
         }
         // the Python fixture answers through httpx, which sets content-length on every reply

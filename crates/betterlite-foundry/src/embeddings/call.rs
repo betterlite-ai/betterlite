@@ -5,6 +5,7 @@ use betterlite_azure::image_transport::{ImageRequest, ImageTransport};
 use betterlite_models::call_helpers::headers::{AdditionalHeaders, OPENAI_RESPONSE_HEADERS};
 use betterlite_models::decisions::Json;
 use betterlite_openai::embedding::EmbeddingRecord;
+use betterlite_openai::files::stream::flatten_headers;
 use http::Method;
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -221,17 +222,13 @@ fn reply_data(
 #[must_use]
 pub fn projected_headers(headers: &HeaderMap) -> AdditionalHeaders {
     let mut pairs = AdditionalHeaders::new();
-    for (name, value) in headers {
-        let Ok(text) = value.to_str() else {
-            continue;
-        };
-        let name = name.as_str();
-        let text = Json::Text(text.to_owned());
-        if OPENAI_RESPONSE_HEADERS.contains(&name) && !name.contains("reset") {
-            pairs.insert(name.to_owned(), text.clone());
+    for (name, text) in flatten_headers(headers) {
+        let text = Json::Text(text);
+        if OPENAI_RESPONSE_HEADERS.contains(&name.as_str()) && !name.contains("reset") {
+            pairs.insert(name.clone(), text.clone());
         }
         let key = if name.contains("llm_provider") {
-            name.to_owned()
+            name
         } else {
             format!("llm_provider-{name}")
         };

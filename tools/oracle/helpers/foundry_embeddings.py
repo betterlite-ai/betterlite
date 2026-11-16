@@ -133,7 +133,7 @@ class FlowState:
 
 
 def reply_response(reply: ReplyCall, request: httpx.Request) -> httpx.Response:
-    headers = {header["name"]: header["value"] for header in reply["headers"]}
+    headers = [(header["name"], header["value"]) for header in reply["headers"]]
     return httpx.Response(
         reply["status"],
         headers=headers,

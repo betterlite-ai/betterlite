@@ -30,6 +30,9 @@ deviations:
   - what: 'The exception LiteLLM raises for a meaningful reply error carries a message, json.dumps of a dict message or str of anything else and "Error in response object" when absent; betterlite''s ReplyError carries the status and its text names only that status.'
     why: "docs/compatibility.md does not port Python's json.dumps or str rendering of a value, and the message is free text rather than a field betterlite can type."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L608-L614
+  - what: 'The hidden response headers decode each value on its own, as UTF-8 or else Latin-1; httpx picks one encoding for the whole reply, so when one value is not UTF-8 it reads every other non-ASCII value as Latin-1 too.'
+    why: 'Betterlite reuses the shared httpx header flattener the other providers use, and a reply mixing valid UTF-8 with invalid bytes has no working setup relying on the garbled text.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L134
 kept_bugs:
   - what: 'The filtered text input is built and then only tested for emptiness; the inherited OpenAI embedding call receives the original input, image data URIs included.'
     why: 'A working setup embeds the image strings as text today, so the answer would change if betterlite sent only the filtered list.'

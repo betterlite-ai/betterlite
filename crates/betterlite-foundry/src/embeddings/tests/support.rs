@@ -7,7 +7,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::embedding::EmbeddingRecord;
 use betterlite_prompts::arguments::json::Object;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::embeddings::call::{
     EmbeddingClientFactory, EmbeddingMode, FoundryEmbeddingRequest, SuppliedClient, TextEmbedding,
@@ -45,7 +45,7 @@ pub(super) fn header_map(headers: &[(String, String)]) -> HeaderMap {
             HeaderName::from_bytes(name.as_bytes()),
             HeaderValue::from_str(value),
         ) {
-            map.insert(name, value);
+            map.append(name, value);
         }
     }
     map
@@ -184,6 +184,7 @@ pub(super) struct TextSeen {
     pub(super) model: String,
     pub(super) input: Vec<String>,
     pub(super) api_base: Option<String>,
+    pub(super) api_key: Option<String>,
     pub(super) options: FoundryEmbeddingOptions,
     pub(super) timeout: Duration,
 }
@@ -224,6 +225,7 @@ impl TextEmbedding for Text {
             model: call.model.to_owned(),
             input: call.input.to_vec(),
             api_base: call.api_base.map(str::to_owned),
+            api_key: call.api_key.map(|secret| secret.expose_secret().to_owned()),
             options: call.options.clone(),
             timeout: call.timeout,
         });

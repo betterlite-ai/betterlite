@@ -2,6 +2,7 @@ use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json as HeaderJson;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::media::base64_string::is_base64_encoded;
+use http::header::HeaderValue;
 use indexmap::IndexMap;
 
 use crate::embeddings::call::projected_headers;
@@ -205,6 +206,7 @@ pub(super) fn response_model_index_usage() {
     usage_from_raw_header();
     usage_from_last_conversion();
     projection_keeps_llm_provider_names();
+    projection_joins_and_decodes();
     short_lists();
 }
 
@@ -310,6 +312,43 @@ fn projection_keeps_llm_provider_names() {
         ),
     ]);
     assert_eq!(projected_headers(&headers), expected);
+}
+
+// httpx joins a repeated header with ", " and reads bytes as UTF-8, or Latin-1 when they are not
+fn projection_joins_and_decodes() {
+    let repeated = header_map(&pairs(&[
+        ("vary", "Origin"),
+        ("x-ratelimit-limit-requests", "100"),
+        ("vary", "Accept"),
+        ("x-ratelimit-limit-requests", "200"),
+        ("x-region", "caf\u{e9}"),
+    ]));
+    let joined = AdditionalHeaders::from([
+        (
+            "llm_provider-vary".to_owned(),
+            HeaderJson::Text("Origin, Accept".to_owned()),
+        ),
+        (
+            "llm_provider-x-ratelimit-limit-requests".to_owned(),
+            HeaderJson::Text("100, 200".to_owned()),
+        ),
+        (
+            "x-ratelimit-limit-requests".to_owned(),
+            HeaderJson::Text("100, 200".to_owned()),
+        ),
+        (
+            "llm_provider-x-region".to_owned(),
+            HeaderJson::Text("caf\u{e9}".to_owned()),
+        ),
+    ]);
+    assert_eq!(projected_headers(&repeated), joined);
+    let mut latin = header_map(&[]);
+    latin.append("x-region", HeaderValue::from_bytes(b"caf\xe9").unwrap());
+    let decoded = AdditionalHeaders::from([(
+        "llm_provider-x-region".to_owned(),
+        HeaderJson::Text("caf\u{e9}".to_owned()),
+    )]);
+    assert_eq!(projected_headers(&latin), decoded);
 }
 
 fn usage_from_last_conversion() {
