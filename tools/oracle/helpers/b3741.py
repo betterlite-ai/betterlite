@@ -66,14 +66,14 @@ class AssertionCheck(TypedDict):
     values: list[str]
 
 
-class RequestPayload(TypedDict, total=False):
+class RequestPayload(TypedDict):
     litellm_logging_obj: Logging
     litellm_call_id: str
-    metadata: dict[str, JsonValue]
-    litellm_metadata: dict[str, JsonValue]
-    mcp_tool_name: str
-    mcp_server_name: str
-    mcp_arguments: dict[str, JsonValue]
+    metadata: dict[str, JsonValue] | None
+    litellm_metadata: dict[str, JsonValue] | None
+    mcp_tool_name: str | None
+    mcp_server_name: str | None
+    mcp_arguments: dict[str, JsonValue] | None
 
 
 class PayloadAssembly(TypedDict):
@@ -138,9 +138,9 @@ class Probe(Agent365Guardrail, metaclass=_ProbeMeta):
     ) -> httpx.Response:
         return await self._post_allowing_error_status(url=url, headers=headers, data=data)
 
-    def cache_items(self) -> list[tuple[str, str, float]]:
+    def cache_entries(self) -> list[list[JsonValue]]:
         return [
-            (key, token, expires_at)
+            [key, token, int(expires_at - FIXED_NOW)]
             for key, (token, expires_at) in self._obo_token_cache.items()
         ]
 
@@ -249,7 +249,7 @@ def exchange_result(args: TokenExchange) -> JsonValue:
     return {
         "requests": JSON.validate_python(handler.requests),
         "steps": JSON.validate_python(outcomes),
-        "cache": JSON.validate_python(cache_entries(guardrail)),
+        "cache": JSON.validate_python(guardrail.cache_entries()),
     }
 
 
@@ -267,25 +267,13 @@ def payload_request(args: PayloadAssembly) -> RequestPayload:
     if session is not None:
         details: LoggingDetails = logging_obj
         details.model_call_details["mcp_tool_call_metadata"] = {"mcp_session_id": session}
-    data: RequestPayload = {
-        "litellm_call_id": args["litellm_call_id"],
-        "litellm_logging_obj": logging_obj,
+    # LiteLLM reads each field with data.get, so a None value reads the same as an absent key
+    return {
+        "litellm_call_id": args["litellm_call_id"], "litellm_logging_obj": logging_obj,
+        "metadata": args["metadata"], "litellm_metadata": args["litellm_metadata"],
+        "mcp_tool_name": args["mcp_tool_name"], "mcp_server_name": args["mcp_server_name"],
+        "mcp_arguments": args["mcp_arguments"],
     }
-    if args["metadata"] is not None:
-        data["metadata"] = args["metadata"]
-    if args["litellm_metadata"] is not None:
-        data["litellm_metadata"] = args["litellm_metadata"]
-    if args["mcp_tool_name"] is not None:
-        data["mcp_tool_name"] = args["mcp_tool_name"]
-    if args["mcp_server_name"] is not None:
-        data["mcp_server_name"] = args["mcp_server_name"]
-    if args["mcp_arguments"] is not None:
-        data["mcp_arguments"] = args["mcp_arguments"]
-    return data
-
-
-def cache_entries(guardrail: Probe) -> list[list[JsonValue]]:
-    return [[key, token, int(expiry - FIXED_NOW)] for key, token, expiry in guardrail.cache_items()]
 
 
 def payload_result(args: PayloadAssembly) -> JsonValue:

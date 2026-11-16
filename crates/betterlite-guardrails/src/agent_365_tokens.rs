@@ -119,8 +119,11 @@ impl Agent365Guardrail {
             access_token: grant.access_token.clone(),
             expires_at,
         };
-        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        let _evicted = cache.push(cache_key, entry);
+        let _evicted = self
+            .cache
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(cache_key, entry);
         Ok(grant.access_token)
     }
 

@@ -46,12 +46,12 @@ type Scenario = fn() -> ScenarioFuture;
 struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .map_err(|_poisoned| io::Error::other("poisoned"))?
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
