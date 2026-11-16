@@ -23,6 +23,7 @@ const REPAIR_LOCK_TIMEOUT: &str = "30s";
 
 // The server and the offline db-admin command both run this assembly. It sits beside the settings it
 // reads because the admin tool may not depend on betterlite-server.
+#[derive(Debug, Clone)]
 pub struct StartupSettings {
     pub updates_enabled: bool,
     pub database_url: Option<SecretString>,
@@ -100,13 +101,12 @@ pub async fn setup_database(
         db_push_requested: settings.use_prisma_db_push,
     };
     setup_database_v2(&inputs, request).await?;
-    drop(repair_invalid_indexes(&settings.check(), REPAIR_LOCK_TIMEOUT).await);
-    drop(
-        replica_identity_if_requested(settings.set_replica_identity_full, || {
-            apply_identity(settings)
-        })
-        .await,
-    );
+    // both best-effort steps log their own failure and never fail the setup
+    let _repaired = repair_invalid_indexes(&settings.check(), REPAIR_LOCK_TIMEOUT).await;
+    let _identity = replica_identity_if_requested(settings.set_replica_identity_full, || {
+        apply_identity(settings)
+    })
+    .await;
     Ok(())
 }
 

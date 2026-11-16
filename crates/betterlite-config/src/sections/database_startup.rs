@@ -6,10 +6,12 @@ use betterlite_db::migration_ledger::timeouts::{
     prisma_migrate_deploy_timeout, timeout_from_env,
 };
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
+pub mod job;
 pub mod packaged;
 pub mod startup;
 
@@ -39,19 +41,10 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawGeneralSettings {
+    // proxy_cli reads general_settings.get(...), so an absent key and an explicit null are both None
+    // and fall back to the environment, unlike a present false
     #[serde(default, rename = "disable_prisma_schema_update")]
-    disable_prisma_schema_update: Entry<RawDisable>,
-}
-
-// An absent key and an explicit null both fall back to the environment, unlike a present false.
-#[derive(Debug, Default, Deserialize)]
-#[serde(untagged)]
-enum Entry<T> {
-    #[default]
-    #[serde(skip_deserializing)]
-    Absent,
-    Null(()),
-    Value(T),
+    disable_prisma_schema_update: Option<RawDisable>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -116,20 +109,20 @@ impl Section for Raw {
     }
 }
 
-fn disable_updates<L>(raw: Entry<RawDisable>, lookup: &L) -> Result<bool, ConfigError>
+fn disable_updates<L>(raw: Option<RawDisable>, lookup: &L) -> Result<bool, ConfigError>
 where
     L: EnvironmentLookup,
 {
     match raw {
         // the pinned default is the environment's "false" when nothing sets the key
-        Entry::Absent | Entry::Null(()) => environment_disable(lookup),
-        Entry::Value(RawDisable::Boolean(disable)) => Ok(disable),
+        None => environment_disable(lookup),
+        Some(RawDisable::Boolean(disable)) => Ok(disable),
         // LiteLLM's str_to_bool reads only true and false, and every other literal string enables updates
-        Entry::Value(RawDisable::Text(text)) => match text.strip_prefix(ENV_PREFIX) {
+        Some(RawDisable::Text(text)) => match text.strip_prefix(ENV_PREFIX) {
             Some(variable) => referenced_disable(variable, lookup),
             None => Ok(text.trim().eq_ignore_ascii_case("true")),
         },
-        Entry::Value(RawDisable::Other(_)) => Err(ConfigError::InvalidScalar {
+        Some(RawDisable::Other(_)) => Err(ConfigError::InvalidScalar {
             path: DISABLE_SCHEMA_UPDATE_PATH.to_owned(),
             value: false,
         }),
