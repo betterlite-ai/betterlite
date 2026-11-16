@@ -1,9 +1,11 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_roi::records::ROISyncPhase;
 use tokio::sync::Notify;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 use super::support::{
@@ -91,7 +93,8 @@ async fn start_refuses_a_second_run_while_one_is_stalled() {
     inputs.complete = stalled_caller(Arc::new(Notify::new()));
     assert!(manager.start(inputs.run()).await);
     drained().await;
-    assert!(!manager.start(inputs.run()).await);
+    let refused = timeout(Duration::from_secs(5), manager.start(inputs.run())).await;
+    assert_eq!(refused.ok(), Some(false));
     assert!(manager.status().running);
     assert!(manager.cancel().await);
 }

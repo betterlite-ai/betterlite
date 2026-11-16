@@ -4,13 +4,16 @@ use std::sync::Arc;
 
 use betterlite_roi::records::ROISyncPhase;
 use tokio::sync::Notify;
+use tokio::task::JoinSet;
 use tokio::time::advance;
+use tokio_util::sync::CancellationToken;
 
 use super::support::{
     FakeCoordinator, Lease, TestClock, drained, inputs, manager, settled, stalled_caller, until,
 };
 use crate::roi_cache::store::REPORT_PARAM;
 use crate::roi_sync::heartbeat::HEARTBEAT_INTERVAL;
+use crate::roi_sync::run::stop_monitor;
 
 #[tokio::test(start_paused = true)]
 async fn heartbeat_renews_the_lease_every_second() {
@@ -84,4 +87,16 @@ async fn heartbeat_stops_after_the_run_finishes() {
     advance(HEARTBEAT_INTERVAL.saturating_mul(10)).await;
     drained().await;
     assert_eq!(coordinator.beats().len(), beats);
+}
+
+#[tokio::test]
+async fn stop_monitor_joins_the_heartbeat_before_returning() {
+    let stop = CancellationToken::new();
+    let watched = stop.clone();
+    let mut monitor = JoinSet::new();
+    monitor.spawn(async move {
+        watched.cancelled().await;
+    });
+    stop_monitor(&mut monitor, &stop).await;
+    assert!(monitor.is_empty());
 }
