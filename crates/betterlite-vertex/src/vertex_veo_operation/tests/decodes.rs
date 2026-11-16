@@ -63,3 +63,12 @@ fn a_body_over_the_response_cap_is_rejected() {
         Err(VeoOperationError::ResponseTooLarge { .. })
     ));
 }
+
+#[test]
+fn a_body_at_the_response_cap_is_read_as_json() {
+    let body = vec![b' '; MAX_RESPONSE_BYTES];
+    assert!(matches!(
+        decode_vertex_veo_operation(&body),
+        Err(VeoOperationError::Json(_))
+    ));
+}
