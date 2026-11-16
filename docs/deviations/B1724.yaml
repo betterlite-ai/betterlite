@@ -1,14 +1,17 @@
 task: B1724
 deviations:
   - what: >-
-      A key without any platform role, the master key aside, reads only its own
-      per-user spend view on all five routes. LiteLLM sends every role other than
-      internal_user and internal_user_view_only down the global path, so a team or
-      customer key sees every team's spend.
+      A key whose only roles are org_viewer, team_admin or team_member, and a key
+      with no role at all, the master key aside, read only their own per-user spend
+      view on /global/spend/logs, /global/spend/keys and /global/spend/models.
+      LiteLLM scopes only internal_user and internal_user_view_only this way and
+      sends every other role down the global path, where a key reads every user's
+      spend.
     why: >-
-      That is a leak, and betterlite's role mapping already classifies those keys as
-      having no platform role. Treating them as internal can only narrow what a key
-      reads, so no working setup loses access it was meant to have.
+      LiteLLM has no org_viewer, team_admin or team_member role, and betterlite's
+      equivalents are scoped to an organization or a team, not to the platform.
+      Treating them as internal can only narrow what a key reads, so no working
+      setup loses access it was meant to have.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4044-L4048
   - what: >-
       A limit above i64::MAX or below i64::MIN is answered with the 422 int_parsing
