@@ -89,15 +89,8 @@ pub async fn run_with_listener(
         outbound: chat.client.clone(),
         tasks: TaskTracker::new(),
     };
-    let application = application(&config, chat, Arc::clone(&shutting_down), &background.tasks)?;
-    Box::pin(serve(
-        application,
-        shutting_down,
-        background,
-        host,
-        listener,
-    ))
-    .await
+    let app = application(&config, chat, Arc::clone(&shutting_down), &background.tasks)?;
+    Box::pin(serve(app, shutting_down, background, host, listener)).await
 }
 
 async fn bind(host: &str, port: u16) -> Result<TcpListener, ServerError> {

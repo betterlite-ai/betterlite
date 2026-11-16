@@ -5,6 +5,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use axum::{Json, Router};
+use betterlite_config::sections::mock_response::selection::resolve_mock;
 use betterlite_context::call_context::{CallContext as DispatchContext, CallInputs};
 use betterlite_core::dispatch::error::DispatchError;
 use betterlite_core::dispatch::log::TracingCallLog;
@@ -16,25 +17,26 @@ use betterlite_core::operation::embedding::{
     EmbeddingRequest as DispatchEmbeddingRequest, EmbeddingResult, EmbeddingRoute, route_error,
 };
 use betterlite_http::error::HttpError;
-use betterlite_openai::chat::deployment::{ChatDeployment, Provider as DeploymentProvider};
+use betterlite_openai::chat::client_mock;
+use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatExecutor;
-use betterlite_openai::embedding::{EmbeddingError, EmbeddingRequest};
+use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest, EmbeddingResponse};
 use betterlite_redact::secret::Redactor;
 use serde::Serialize;
 use std::str;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use uuid::Uuid;
 
 use crate::routing::simple_shuffle::pick_deployment;
 use crate::server::chat_setup::provider_call::CallError;
+use crate::server::chat_setup::provider_call::embedding::provider_embedding;
 
-use self::provider::{embed, embedding_mocks_resolve};
 use super::chat::MAX_CALL_ID_LENGTH;
 use super::chat::headers::{failure_headers, success_headers};
 
-mod provider;
 mod tests;
+mod vertex;
 
 #[derive(Serialize)]
 struct ErrorBody {
@@ -50,15 +52,11 @@ struct ErrorObject {
     code: String,
 }
 
-// a vertex_ai deployment reaches `vertex` when the config has one, and every other deployment keeps the provider path
 pub(crate) fn embedding_routes(
     executor: Arc<ChatExecutor>,
     vertex: Option<Arc<dyn EmbeddingCall>>,
 ) -> Router {
-    let calls: Arc<dyn EmbeddingCall> = Arc::new(EmbeddingCalls {
-        executor: Arc::clone(&executor),
-        vertex,
-    });
+    let calls = vertex::calls(Arc::clone(&executor), vertex);
     let log = Arc::new(TracingCallLog);
     let dispatch = Arc::new(Dispatch::new(
         executor.deployments.clone(),
@@ -87,7 +85,6 @@ struct EmbeddingState {
 // the existing embedding implementation, reached through the dispatch pipeline's port
 struct EmbeddingCalls {
     executor: Arc<ChatExecutor>,
-    vertex: Option<Arc<dyn EmbeddingCall>>,
 }
 
 fn embedding_port_failure(error: CallError<EmbeddingError>) -> EmbeddingFailure {
@@ -106,14 +103,6 @@ impl EmbeddingCall for EmbeddingCalls {
         &self,
         call: EmbeddingCallInput<'_>,
     ) -> Result<EmbeddingResult, EmbeddingFailure> {
-        // a configured mock answers before any upstream call, as on every other provider
-        if let Some(vertex) = &self.vertex
-            && matches!(&call.deployment.provider, DeploymentProvider::Unsupported { model } if model.starts_with("vertex_ai/"))
-            && !embedding_mocks_resolve(&self.executor, &call.deployment, call.request)
-                .map_err(EmbeddingFailure::Route)?
-        {
-            return vertex.embed(call).await;
-        }
         let (response, upstream_headers, upstream_time) =
             embed(&self.executor, &call.deployment, call.request)
                 .await
@@ -275,4 +264,37 @@ fn internal_message(
         call_id,
         deployment,
     )
+}
+
+async fn embed(
+    executor: &ChatExecutor,
+    deployment: &ChatDeployment,
+    request: &EmbeddingRequest,
+) -> Result<(EmbeddingResponse, HeaderMap, Duration), CallError<EmbeddingError>> {
+    if embedding_mocks_resolve(executor, deployment, request)? {
+        let outcome = embedding::send(executor, deployment, request).await?;
+        return Ok((
+            outcome.response,
+            outcome.upstream.headers,
+            outcome.upstream_time,
+        ));
+    }
+    provider_embedding(executor, deployment, request).await
+}
+
+fn embedding_mocks_resolve(
+    executor: &ChatExecutor,
+    deployment: &ChatDeployment,
+    request: &EmbeddingRequest,
+) -> Result<bool, EmbeddingError> {
+    let (client_response, client_tool_calls) =
+        client_mock(&request.passthrough, executor.mock.permission)
+            .map_err(|source| EmbeddingError::Body { source })?;
+    let resolved = resolve_mock(
+        executor.mock.responses.get(&deployment.model_id),
+        client_response.as_ref(),
+        client_tool_calls.as_deref(),
+        None,
+    );
+    Ok(resolved.and_then(|plan| plan.response).is_some())
 }
