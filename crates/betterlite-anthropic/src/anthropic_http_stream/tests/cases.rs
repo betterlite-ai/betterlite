@@ -7,7 +7,7 @@ use http::HeaderMap;
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use crate::anthropic_http_stream::call::{StreamCall, StreamClients, make_call, make_sync_call};
+use crate::anthropic_http_stream::call::{StreamCall, StreamClients, StreamOpening};
 use crate::anthropic_http_stream::completion::{
     CompletionStream, WrappedStream, acompletion_stream_function,
 };
@@ -36,7 +36,7 @@ async fn anthropic_http_stream_cases(#[case] case: u8) {
         2 => non_http_error_500().await,
         3 => sync_status_guard().await,
         4 => stream_flag_and_context().await,
-        _ => response_headers().await,
+        _ => response_headers_case().await,
     }
 }
 
@@ -52,19 +52,24 @@ async fn async_stream_post(supplied: bool) {
     let reverse = reverse_map();
     let supplied_client = FixtureTransport::reply(200, response_headers(), &[FRAME]);
     let module_async = FixtureTransport::reply(200, response_headers(), &[FRAME]);
-    let module_sync = FixtureTransport::reply(200, response_headers(), &[FRAME]);
+    let module_blocking = FixtureTransport::reply(200, response_headers(), &[FRAME]);
     let logger = RecordingLogger::new(&messages);
     let clients = StreamClients {
         supplied: supplied.then_some(&supplied_client),
         module_level_aclient: &module_async,
-        module_level_client: &module_sync,
+        module_level_client: &module_blocking,
         logger: &logger,
     };
     let call = stream_call(DATA, &messages, &reverse);
-    let opened = make_call(clients, &call, stream_build(&FixedIds))
-        .await
-        .expect("a 200 reply opens the stream");
-    assert_served(supplied, &supplied_client, &module_async, &module_sync);
+    let opened = StreamOpening {
+        clients,
+        call: &call,
+        build: stream_build(&FixedIds),
+    }
+    .make_call()
+    .await
+    .expect("a 200 reply opens the stream");
+    assert_served(supplied, &supplied_client, &module_async, &module_blocking);
     assert!(!opened.sync_stream);
     assert_eq!(header(&opened.headers, "x-request-id"), Some("req-1"));
     let stream = &opened.completion_stream;
@@ -82,19 +87,24 @@ async fn sync_stream_post(supplied: bool) {
     let reverse = reverse_map();
     let supplied_client = FixtureTransport::reply(200, response_headers(), &[FRAME]);
     let module_async = FixtureTransport::reply(200, response_headers(), &[FRAME]);
-    let module_sync = FixtureTransport::reply(200, response_headers(), &[FRAME]);
+    let module_blocking = FixtureTransport::reply(200, response_headers(), &[FRAME]);
     let logger = RecordingLogger::new(&messages);
     let clients = StreamClients {
         supplied: supplied.then_some(&supplied_client),
         module_level_aclient: &module_async,
-        module_level_client: &module_sync,
+        module_level_client: &module_blocking,
         logger: &logger,
     };
     let call = stream_call(DATA, &messages, &reverse);
-    let opened = make_sync_call(clients, &call, stream_build(&FixedIds))
-        .await
-        .expect("a 200 reply opens the stream");
-    assert_served(supplied, &supplied_client, &module_async, &module_sync);
+    let opened = StreamOpening {
+        clients,
+        call: &call,
+        build: stream_build(&FixedIds),
+    }
+    .make_sync_call()
+    .await
+    .expect("a 200 reply opens the stream");
+    assert_served(supplied, &supplied_client, &module_async, &module_blocking);
     assert!(opened.sync_stream);
     assert_eq!(
         &opened
@@ -116,7 +126,7 @@ fn assert_served(
     supplied: bool,
     supplied_client: &FixtureTransport,
     module_async: &FixtureTransport,
-    module_sync: &FixtureTransport,
+    module_blocking: &FixtureTransport,
 ) {
     let (served, untouched) = if supplied {
         (supplied_client.posts(), module_async.posts())
@@ -124,7 +134,7 @@ fn assert_served(
         (module_async.posts(), supplied_client.posts())
     };
     assert!(untouched.is_empty());
-    assert!(module_sync.posts().is_empty());
+    assert!(module_blocking.posts().is_empty());
     assert!(!supplied_client.polled());
     assert!(!module_async.polled());
     let post = served
@@ -142,33 +152,52 @@ fn assert_served(
 }
 
 async fn handshake_error() {
-    let error = async_handshake(None).await;
+    let response = FixtureTransport::status_bytes(
+        400,
+        ERROR_TEXT.as_bytes().to_vec(),
+        response_headers(),
+        None,
+    );
+    let error = handshake_result(response, false).await;
     let (status, body, headers) = anthropic_error(error);
     assert_eq!(status, 400);
     assert_eq!(body, ERROR_TEXT);
     assert_eq!(header(&headers, "x-request-id"), Some("req-1"));
     // getattr(e, "headers", None) wins over the response's headers when the exception carries its own
-    let error = async_handshake(Some(exception_headers())).await;
-    let (status, _, headers) = anthropic_error(error);
-    assert_eq!(status, 400);
-    assert_eq!(header(&headers, "x-request-id"), Some("req-2"));
-    let error = sync_handshake().await;
-    let (status, body, headers) = anthropic_error(error);
-    assert_eq!(status, 400);
-    assert_eq!(body, ERROR_TEXT);
-    assert_eq!(header(&headers, "x-request-id"), Some("req-1"));
+    let carried = FixtureTransport::status_bytes(
+        400,
+        ERROR_TEXT.as_bytes().to_vec(),
+        response_headers(),
+        Some(exception_headers()),
+    );
+    let carried_error = handshake_result(carried, false).await;
+    let (carried_status, _, carried_headers) = anthropic_error(carried_error);
+    assert_eq!(carried_status, 400);
+    assert_eq!(header(&carried_headers, "x-request-id"), Some("req-2"));
+    let sync_response = FixtureTransport::status_bytes(
+        400,
+        ERROR_TEXT.as_bytes().to_vec(),
+        response_headers(),
+        None,
+    );
+    let sync_error = handshake_result(sync_response, true).await;
+    let (sync_status, sync_body, sync_headers) = anthropic_error(sync_error);
+    assert_eq!(sync_status, 400);
+    assert_eq!(sync_body, ERROR_TEXT);
+    assert_eq!(header(&sync_headers, "x-request-id"), Some("req-1"));
     // a body that is not UTF-8 reads its byte count, the text a JSON record can carry
-    let error = undecodable_handshake().await;
-    let (status, body, _headers) = anthropic_error(error);
-    assert_eq!(status, 400);
-    assert_eq!(body, "2 bytes that are not text");
+    let bytes = FixtureTransport::status_bytes(400, vec![0xff, 0xfe], response_headers(), None);
+    let bytes_error = handshake_result(bytes, false).await;
+    let (_, bytes_body, _) = anthropic_error(bytes_error);
+    assert_eq!(bytes_body, "2 bytes that are not text");
 }
 
-async fn async_handshake(exception_headers: Option<HeaderMap>) -> StreamOpenError<FixtureFailure> {
+async fn handshake_result(
+    transport: FixtureTransport,
+    synchronous: bool,
+) -> StreamOpenError<FixtureFailure> {
     let messages = messages();
     let reverse = reverse_map();
-    let transport =
-        FixtureTransport::status(400, ERROR_TEXT, response_headers(), exception_headers);
     let logger = RecordingLogger::new(&messages);
     let clients = StreamClients {
         supplied: Some(&transport),
@@ -176,60 +205,24 @@ async fn async_handshake(exception_headers: Option<HeaderMap>) -> StreamOpenErro
         module_level_client: &transport,
         logger: &logger,
     };
-    let result = make_call(
-        clients,
-        &stream_call(DATA, &messages, &reverse),
-        stream_build(&FixedIds),
-    )
-    .await;
-    assert_no_post_call(&logger.state());
-    match result {
-        Ok(_) => panic!("a status error opens no stream"),
-        Err(error) => error,
-    }
-}
-
-async fn sync_handshake() -> StreamOpenError<FixtureFailure> {
-    let messages = messages();
-    let reverse = reverse_map();
-    let transport = FixtureTransport::status(400, ERROR_TEXT, response_headers(), None);
-    let logger = RecordingLogger::new(&messages);
-    let clients = StreamClients {
-        supplied: Some(&transport),
-        module_level_aclient: &transport,
-        module_level_client: &transport,
-        logger: &logger,
+    let call = stream_call(DATA, &messages, &reverse);
+    let result = if synchronous {
+        StreamOpening {
+            clients,
+            call: &call,
+            build: stream_build(&FixedIds),
+        }
+        .make_sync_call()
+        .await
+    } else {
+        StreamOpening {
+            clients,
+            call: &call,
+            build: stream_build(&FixedIds),
+        }
+        .make_call()
+        .await
     };
-    let result = make_sync_call(
-        clients,
-        &stream_call(DATA, &messages, &reverse),
-        stream_build(&FixedIds),
-    )
-    .await;
-    assert_no_post_call(&logger.state());
-    match result {
-        Ok(_) => panic!("a status error opens no stream"),
-        Err(error) => error,
-    }
-}
-
-async fn undecodable_handshake() -> StreamOpenError<FixtureFailure> {
-    let messages = messages();
-    let reverse = reverse_map();
-    let transport = FixtureTransport::status_bytes(400, vec![0xff, 0xfe], response_headers(), None);
-    let logger = RecordingLogger::new(&messages);
-    let clients = StreamClients {
-        supplied: Some(&transport),
-        module_level_aclient: &transport,
-        module_level_client: &transport,
-        logger: &logger,
-    };
-    let result = make_call(
-        clients,
-        &stream_call(DATA, &messages, &reverse),
-        stream_build(&FixedIds),
-    )
-    .await;
     assert_no_post_call(&logger.state());
     match result {
         Ok(_) => panic!("a status error opens no stream"),
@@ -260,26 +253,32 @@ where
 }
 
 async fn non_http_error_500() {
-    let error = failed_call(PostFailure::Unknown(FixtureFailure::Unknown), false).await;
-    let StreamOpenError::Unknown { source } = error else {
+    let unknown_async = failed_call(PostFailure::Unknown(FixtureFailure::Unknown), false).await;
+    let StreamOpenError::Unknown { source } = unknown_async else {
         panic!("an unrecognized exception becomes AnthropicError(500)")
     };
     assert_eq!(source.to_string(), "the transport exploded");
-    let error = failed_call(PostFailure::Unknown(FixtureFailure::Unknown), true).await;
-    let StreamOpenError::Unknown { source } = error else {
+    let unknown_sync = failed_call(PostFailure::Unknown(FixtureFailure::Unknown), true).await;
+    let StreamOpenError::Unknown {
+        source: sync_source,
+    } = unknown_sync
+    else {
         panic!("an unrecognized exception becomes AnthropicError(500)")
     };
-    assert_eq!(source.to_string(), "the transport exploded");
-    let error = failed_call(PostFailure::Known(FixtureFailure::Timeout), false).await;
-    let StreamOpenError::Reraised { source } = error else {
+    assert_eq!(sync_source.to_string(), "the transport exploded");
+    let timeout_async = failed_call(PostFailure::Known(FixtureFailure::Timeout), false).await;
+    let StreamOpenError::Reraised { source } = timeout_async else {
         panic!("a LITELLM_EXCEPTION_TYPES member is re-raised")
     };
     assert!(matches!(source, FixtureFailure::Timeout));
-    let error = failed_call(PostFailure::Known(FixtureFailure::Timeout), true).await;
-    let StreamOpenError::Reraised { source } = error else {
+    let timeout_sync = failed_call(PostFailure::Known(FixtureFailure::Timeout), true).await;
+    let StreamOpenError::Reraised {
+        source: sync_timeout,
+    } = timeout_sync
+    else {
         panic!("a LITELLM_EXCEPTION_TYPES member is re-raised")
     };
-    assert!(matches!(source, FixtureFailure::Timeout));
+    assert!(matches!(sync_timeout, FixtureFailure::Timeout));
 }
 
 async fn failed_call(
@@ -298,9 +297,21 @@ async fn failed_call(
     };
     let call = stream_call(DATA, &messages, &reverse);
     let result = if sync {
-        make_sync_call(clients, &call, stream_build(&FixedIds)).await
+        StreamOpening {
+            clients,
+            call: &call,
+            build: stream_build(&FixedIds),
+        }
+        .make_sync_call()
+        .await
     } else {
-        make_call(clients, &call, stream_build(&FixedIds)).await
+        StreamOpening {
+            clients,
+            call: &call,
+            build: stream_build(&FixedIds),
+        }
+        .make_call()
+        .await
     };
     assert_no_post_call(&logger.state());
     match result {
@@ -327,9 +338,14 @@ async fn async_status_opens() {
         logger: &logger,
     };
     let call = stream_call(DATA, &messages, &reverse);
-    let opened = make_call(clients, &call, stream_build(&FixedIds))
-        .await
-        .expect("the async helper opens the stream whatever the status");
+    let opened = StreamOpening {
+        clients,
+        call: &call,
+        build: stream_build(&FixedIds),
+    }
+    .make_call()
+    .await
+    .expect("the async helper opens the stream whatever the status");
     assert!(!opened.sync_stream);
     assert!(!transport.polled());
     assert_post_call(&logger.state(), &messages, "lines", DATA);
@@ -346,11 +362,12 @@ async fn sync_status_rejects() {
         module_level_client: &transport,
         logger: &logger,
     };
-    let error = match make_sync_call(
+    let error = match (StreamOpening {
         clients,
-        &stream_call(DATA, &messages, &reverse),
-        stream_build(&FixedIds),
-    )
+        call: &stream_call(DATA, &messages, &reverse),
+        build: stream_build(&FixedIds),
+    })
+    .make_sync_call()
     .await
     {
         Ok(_) => panic!("the sync helper rejects a returned status"),
@@ -390,11 +407,12 @@ async fn guard_message(messages: &Json, lines: &[&str], limit: usize) -> String 
         module_level_client: &transport,
         logger: &logger,
     };
-    let error = match make_sync_call(
+    let error = match (StreamOpening {
         clients,
-        &stream_call(DATA, messages, &reverse),
-        stream_build_with(&FixedIds, limit),
-    )
+        call: &stream_call(DATA, messages, &reverse),
+        build: stream_build_with(&FixedIds, limit),
+    })
+    .make_sync_call()
     .await
     {
         Ok(_) => panic!("the sync helper rejects a returned status"),
@@ -433,7 +451,7 @@ async fn stream_flag_and_context() {
     assert_post_call(&logger.state(), &messages, "lines", &body);
 }
 
-async fn response_headers() {
+async fn response_headers_case() {
     let messages = messages();
     let reverse = reverse_map();
     let transport = FixtureTransport::reply(200, response_headers(), &[FRAME]);
@@ -444,11 +462,12 @@ async fn response_headers() {
         module_level_client: &transport,
         logger: &logger,
     };
-    let opened = make_call(
+    let opened = StreamOpening {
         clients,
-        &stream_call(DATA, &messages, &reverse),
-        stream_build(&FixedIds),
-    )
+        call: &stream_call(DATA, &messages, &reverse),
+        build: stream_build(&FixedIds),
+    }
+    .make_call()
     .await
     .expect("a 200 reply opens the stream");
     assert_eq!(header(&opened.headers, "x-request-id"), Some("req-1"));
@@ -456,10 +475,10 @@ async fn response_headers() {
         header(&opened.headers, "anthropic-ratelimit-requests-limit"),
         Some("100")
     );
-    let transport = FixtureTransport::reply(200, response_headers(), &[FRAME]);
+    let wrapper_transport = FixtureTransport::reply(200, response_headers(), &[FRAME]);
     let optional = optional_params();
     let params = litellm_params(&reverse);
-    let wrapper = open_wrapper(&transport, &logger, &messages, &optional, &params).await;
+    let wrapper = open_wrapper(&wrapper_transport, &logger, &messages, &optional, &params).await;
     let projected = &wrapper.response_headers;
     assert_eq!(
         projected
@@ -572,7 +591,14 @@ async fn anthropic_http_stream_malformed_api_base() {
         module_level_client: &transport,
         logger: &logger,
     };
-    let error = match make_call(clients, &call, stream_build(&FixedIds)).await {
+    let error = match (StreamOpening {
+        clients,
+        call: &call,
+        build: stream_build(&FixedIds),
+    })
+    .make_call()
+    .await
+    {
         Ok(_) => panic!("a malformed api_base opens no stream"),
         Err(error) => error,
     };

@@ -63,63 +63,72 @@ pub struct StreamBuild<'ids, Counter> {
     pub max_error_body_bytes: usize,
 }
 
-pub async fn make_call<Client, Counter>(
-    clients: StreamClients<'_, Client>,
-    call: &StreamCall<'_>,
-    build: StreamBuild<'_, Counter>,
-) -> Result<OpenedStream<Client::Failure, Counter>, StreamOpenError<Client::Failure>>
-where
-    Client: StreamTransport,
-    Counter: ReasoningTokenCounter + Unpin + Send,
-{
-    let client = clients.supplied.unwrap_or(clients.module_level_aclient);
-    let reply = open(client, call).await?;
-    let opened = assemble(reply, call, build, false);
-    clients.logger.post_call(StreamPostCall {
-        input: call.messages,
-        original_response: STREAM_RESPONSE,
-        complete_input_dict: call.data,
-    });
-    Ok(opened)
+// make_call and make_sync_call take the same three arguments, so one value carries them
+pub struct StreamOpening<'a, Client, Counter> {
+    pub clients: StreamClients<'a, Client>,
+    pub call: &'a StreamCall<'a>,
+    pub build: StreamBuild<'a, Counter>,
 }
 
-pub async fn make_sync_call<Client, Counter>(
-    clients: StreamClients<'_, Client>,
-    call: &StreamCall<'_>,
-    build: StreamBuild<'_, Counter>,
-) -> Result<OpenedStream<Client::Failure, Counter>, StreamOpenError<Client::Failure>>
+pub type Opened<Client, Counter> = Result<
+    OpenedStream<<Client as StreamTransport>::Failure, Counter>,
+    StreamOpenError<<Client as StreamTransport>::Failure>,
+>;
+
+impl<Client, Counter> StreamOpening<'_, Client, Counter>
 where
     Client: StreamTransport,
     Counter: ReasoningTokenCounter + Unpin + Send,
 {
-    let client = clients.supplied.unwrap_or(clients.module_level_client);
-    let mut reply = open(client, call).await?;
-    if reply.status_code != 200 {
-        let message = drain_body(&mut reply.lines, build.max_error_body_bytes)
-            .await
-            .map_err(|source| StreamOpenError::Reraised { source })?;
-        return Err(StreamOpenError::Anthropic {
-            status_code: reply.status_code,
-            message,
-            headers: Some(reply.headers),
-        });
+    pub async fn make_call(self) -> Opened<Client, Counter> {
+        let reply = open(&self.clients, self.call, false).await?;
+        let opened = assemble(reply, self.call, self.build, false);
+        post_call(self.clients.logger, self.call, STREAM_RESPONSE);
+        Ok(opened)
     }
-    let opened = assemble(reply, call, build, true);
-    clients.logger.post_call(StreamPostCall {
+
+    pub async fn make_sync_call(self) -> Opened<Client, Counter> {
+        let mut reply = open(&self.clients, self.call, true).await?;
+        if reply.status_code != 200 {
+            let limit = self.build.max_error_body_bytes;
+            let message = drain_body(&mut reply.lines, limit)
+                .await
+                .map_err(|source| StreamOpenError::Reraised { source })?;
+            return Err(StreamOpenError::Anthropic {
+                status_code: reply.status_code,
+                message,
+                headers: Some(reply.headers),
+            });
+        }
+        let opened = assemble(reply, self.call, self.build, true);
+        post_call(self.clients.logger, self.call, SYNC_STREAM_RESPONSE);
+        Ok(opened)
+    }
+}
+
+// LiteLLM hands logging_obj.post_call the live iterator, and the record carries the text standing for it
+fn post_call(logger: &dyn StreamLogger, call: &StreamCall<'_>, original_response: &str) {
+    logger.post_call(StreamPostCall {
         input: call.messages,
-        original_response: SYNC_STREAM_RESPONSE,
+        original_response,
         complete_input_dict: call.data,
     });
-    Ok(opened)
 }
 
 async fn open<Client>(
-    client: &Client,
+    clients: &StreamClients<'_, Client>,
     call: &StreamCall<'_>,
+    sync_stream: bool,
 ) -> Result<StreamReply<Client::Failure>, StreamOpenError<Client::Failure>>
 where
     Client: StreamTransport,
 {
+    let module_level = if sync_stream {
+        clients.module_level_client
+    } else {
+        clients.module_level_aclient
+    };
+    let client = clients.supplied.unwrap_or(module_level);
     let url = Url::parse(call.api_base).map_err(|source| StreamOpenError::Endpoint { source })?;
     let reply = client
         .post(StreamPost {
@@ -136,8 +145,8 @@ where
             message: message_text(status.body),
             headers: status.exception_headers.or(status.response_headers),
         },
-        PostFailure::Known(failure) => StreamOpenError::Reraised { source: failure },
-        PostFailure::Unknown(failure) => StreamOpenError::Unknown { source: failure },
+        PostFailure::Known(source) => StreamOpenError::Reraised { source },
+        PostFailure::Unknown(source) => StreamOpenError::Unknown { source },
     })
 }
 
@@ -158,13 +167,8 @@ where
             }
         };
         // the transport bounds one line; this bounds a reply of many short lines, stopping at a whole line
-        let separator = usize::from(!text.is_empty());
-        if text
-            .len()
-            .saturating_add(separator)
-            .saturating_add(line.len())
-            > limit
-        {
+        let cost = line.len().saturating_add(usize::from(!text.is_empty()));
+        if text.len().saturating_add(cost) > limit {
             break;
         }
         if !text.is_empty() {

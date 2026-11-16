@@ -1,5 +1,4 @@
 use std::convert::Infallible;
-use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -61,57 +60,54 @@ impl FixtureTransport {
     }
 
     pub(crate) fn status(status_code: u16, body: &str, headers: HeaderMap) -> Self {
-        Self::new(Verdict::Failed(PostFailure::Status(StatusFailure {
+        Self::new(Verdict::Failed(PostFailure::Status(Box::new(StatusFailure {
             status_code,
             body: body.as_bytes().to_vec(),
             // the client raised on the response, so the headers come from the response itself
             exception_headers: None,
             response_headers: Some(headers),
-        })))
+        }))))
     }
 }
 
 impl StreamTransport for FixtureTransport {
     type Failure = HelperFailure;
 
-    fn post(
+    async fn post(
         &self,
         post: StreamPost,
-    ) -> impl Future<Output = Result<StreamReply<HelperFailure>, PostFailure<HelperFailure>>> + Send
-    {
-        async move {
-            self.posts
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(post);
-            let taken = self
-                .verdict
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .take();
-            let verdict = taken.ok_or(PostFailure::Unknown(HelperFailure::Exhausted))?;
-            let (status_code, headers, lines) = match verdict {
-                Verdict::Failed(failure) => return Err(failure),
-                Verdict::Reply {
-                    status_code,
-                    headers,
-                    lines,
-                } => (status_code, headers, lines),
-            };
-            let flag = Arc::clone(&self.polled);
-            let items = lines
-                .into_iter()
-                .map(|line| Ok(TransportChunk::Text(line)))
-                .collect::<Vec<Result<TransportChunk, ReceiveError<HelperFailure>>>>();
-            let lines = stream::iter(items)
-                .inspect(move |_item| flag.store(true, Ordering::SeqCst))
-                .boxed();
-            Ok(StreamReply {
+    ) -> Result<StreamReply<HelperFailure>, PostFailure<HelperFailure>> {
+        self.posts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(post);
+        let taken = self
+            .verdict
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        let verdict = taken.ok_or(PostFailure::Unknown(HelperFailure::Exhausted))?;
+        let (status_code, headers, lines) = match verdict {
+            Verdict::Failed(failure) => return Err(failure),
+            Verdict::Reply {
                 status_code,
                 headers,
                 lines,
-            })
-        }
+            } => (status_code, headers, lines),
+        };
+        let flag = Arc::clone(&self.polled);
+        let items = lines
+            .into_iter()
+            .map(|line| Ok(TransportChunk::Text(line)))
+            .collect::<Vec<Result<TransportChunk, ReceiveError<HelperFailure>>>>();
+        let lines = stream::iter(items)
+            .inspect(move |_item| flag.store(true, Ordering::SeqCst))
+            .boxed();
+        Ok(StreamReply {
+            status_code,
+            headers,
+            lines,
+        })
     }
 }
 

@@ -11,7 +11,7 @@ use betterlite_http::proxy::{ProxiedClient, base_builder};
 use futures_util::StreamExt as _;
 use indexmap::IndexMap;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
@@ -19,7 +19,7 @@ use tokio::time::timeout;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::aleph_alpha::error::AlephAlphaError;
 
-use crate::anthropic_http_stream::call::{OpenedStream, StreamCall, StreamClients, make_call};
+use crate::anthropic_http_stream::call::{OpenedStream, StreamCall, StreamClients, StreamOpening};
 use crate::anthropic_http_stream::error::{StreamFailure, StreamOpenError};
 use crate::stream_decode::DecodedChunk;
 use crate::stream_decode::error::DecodeError;
@@ -127,8 +127,8 @@ async fn anthropic_http_stream_proxied_status_error() {
     };
     assert_eq!(status_code, 400);
     assert_eq!(message, ERROR_TEXT);
-    let headers = headers.expect("the failure keeps the reply headers");
-    assert_eq!(header(&headers, "x-request-id"), Some("req-proxied"));
+    let carried = headers.expect("the failure keeps the reply headers");
+    assert_eq!(header(&carried, "x-request-id"), Some("req-proxied"));
     drain_client
         .drain(Duration::from_secs(10))
         .await
@@ -155,10 +155,10 @@ async fn anthropic_http_stream_proxied_open_timeout() {
     let StreamOpenError::Reraised { source } = error else {
         panic!("a send timeout is re-raised");
     };
-    let StreamFailure::Transport(source) = source else {
+    let StreamFailure::Transport(failure) = source else {
         panic!("the request failed in the transport");
     };
-    assert!(matches!(source, TransportError::Deadline(_)));
+    assert!(matches!(failure, TransportError::Deadline(_)));
     drain_client
         .drain(Duration::from_secs(10))
         .await
@@ -183,10 +183,10 @@ async fn anthropic_http_stream_proxied_connect_refused() {
     let StreamOpenError::Unknown { source } = error else {
         panic!("a refused connection becomes AnthropicError(500)");
     };
-    let StreamFailure::Transport(source) = source else {
+    let StreamFailure::Transport(failure) = source else {
         panic!("the request failed in the transport");
     };
-    assert!(matches!(source, TransportError::Connect(_)));
+    assert!(matches!(failure, TransportError::Connect(_)));
     client
         .drain(Duration::from_secs(10))
         .await
@@ -307,9 +307,9 @@ fn assert_status(error: StreamOpenError<StreamFailure>, expected: u16) {
         panic!("a status error keeps the upstream status");
     };
     assert_eq!(status_code, expected);
-    assert_eq!(message, "");
-    let headers = headers.expect("the failure keeps the reply headers");
-    assert_eq!(header(&headers, "x-request-id"), Some("req-proxied"));
+    assert!(message.is_empty());
+    let carried = headers.expect("the failure keeps the reply headers");
+    assert_eq!(header(&carried, "x-request-id"), Some("req-proxied"));
 }
 
 #[tokio::test]
@@ -341,10 +341,10 @@ async fn anthropic_http_stream_total_deadline_ends_a_trickle() {
     let DecodeError::Other { source } = ended else {
         panic!("the deadline ends the stream as a transport error");
     };
-    let StreamFailure::Lines(AlephAlphaError::Transport { source }) = source else {
+    let StreamFailure::Lines(AlephAlphaError::Transport { source: reason }) = source else {
         panic!("the body read fails in the transport");
     };
-    assert!(matches!(source, TransportError::Rejected(_)));
+    assert!(matches!(reason, TransportError::Rejected(_)));
     drop(opened);
     drain_client
         .drain(Duration::from_secs(10))
@@ -375,16 +375,17 @@ async fn open_with(
         tool_name_reverse_map: &reverse,
     };
     let logger = SilentLogger;
-    make_call(
-        StreamClients {
+    StreamOpening {
+        clients: StreamClients {
             supplied: Some(client),
             module_level_aclient: client,
             module_level_client: client,
             logger: &logger,
         },
-        &call,
-        stream_build(&FixedIds),
-    )
+        call: &call,
+        build: stream_build(&FixedIds),
+    }
+    .make_call()
     .await
 }
 
@@ -395,41 +396,43 @@ fn status_response(status: u16, body: &str) -> String {
     )
 }
 
-async fn serve_response(listener: TcpListener, response: String) {
+async fn accept_with_head(listener: TcpListener, head: &str) -> TcpStream {
     let (mut socket, _) = listener.accept().await.unwrap();
-    socket.write_all(response.as_bytes()).await.unwrap();
-    socket.shutdown().await.unwrap();
+    socket.write_all(head.as_bytes()).await.unwrap();
+    socket
+}
+
+async fn drain_socket(socket: &mut TcpStream) {
     let mut rest = Vec::new();
     let _closed = socket.read_to_end(&mut rest).await;
+}
+
+async fn serve_body(listener: TcpListener, head: &str, body: &str, close: bool) {
+    let mut socket = accept_with_head(listener, head).await;
+    socket.write_all(body.as_bytes()).await.unwrap();
+    if close {
+        socket.shutdown().await.unwrap();
+    }
+    drain_socket(&mut socket).await;
+}
+
+async fn serve_response(listener: TcpListener, response: String) {
+    serve_body(listener, &response, "", true).await;
 }
 
 async fn serve_silence(listener: TcpListener) {
-    let (mut socket, _) = listener.accept().await.unwrap();
-    let mut rest = Vec::new();
-    let _closed = socket.read_to_end(&mut rest).await;
+    let mut socket = accept_with_head(listener, "").await;
+    drain_socket(&mut socket).await;
 }
 
 async fn serve_stalled_body(listener: TcpListener, status: u16) {
-    let (mut socket, _) = listener.accept().await.unwrap();
-    socket
-        .write_all(stall_head(status).as_bytes())
-        .await
-        .unwrap();
-    socket.write_all(b"partial").await.unwrap();
-    let mut rest = Vec::new();
-    let _closed = socket.read_to_end(&mut rest).await;
+    let head = stall_head(status);
+    serve_body(listener, &head, "partial", false).await;
 }
 
 async fn serve_short_body(listener: TcpListener, status: u16) {
-    let (mut socket, _) = listener.accept().await.unwrap();
-    socket
-        .write_all(stall_head(status).as_bytes())
-        .await
-        .unwrap();
-    socket.write_all(b"partial").await.unwrap();
-    socket.shutdown().await.unwrap();
-    let mut rest = Vec::new();
-    let _closed = socket.read_to_end(&mut rest).await;
+    let head = stall_head(status);
+    serve_body(listener, &head, "partial", true).await;
 }
 
 fn stall_head(status: u16) -> String {
@@ -454,26 +457,13 @@ async fn serve_trickle(listener: TcpListener, frames: usize) {
 }
 
 async fn serve_truncated(listener: TcpListener) {
-    let (mut socket, _) = listener.accept().await.unwrap();
-    socket.write_all(TRUNCATED_HEAD.as_bytes()).await.unwrap();
-    socket
-        .write_all(format!("{FRAME}\n").as_bytes())
-        .await
-        .unwrap();
-    socket.shutdown().await.unwrap();
-    let mut rest = Vec::new();
-    let _closed = socket.read_to_end(&mut rest).await;
+    let line = format!("{FRAME}\n");
+    serve_body(listener, TRUNCATED_HEAD, &line, true).await;
 }
 
 async fn serve_until_closed(listener: TcpListener, closed: oneshot::Sender<()>) {
-    let (mut socket, _) = listener.accept().await.unwrap();
-    socket.write_all(TRUNCATED_HEAD.as_bytes()).await.unwrap();
-    socket
-        .write_all(format!("{FRAME}\n").as_bytes())
-        .await
-        .unwrap();
-    let mut rest = Vec::new();
-    socket.read_to_end(&mut rest).await.unwrap();
+    let line = format!("{FRAME}\n");
+    serve_body(listener, TRUNCATED_HEAD, &line, false).await;
     let _sent = closed.send(());
 }
 

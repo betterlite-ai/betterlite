@@ -4,11 +4,26 @@ call:
   anthropic_http_stream:
     scenario: handshake_error
     api_base: https://api.anthropic.com/v1/messages
+    messages:
+      - role: user
+        content: hi
     model: claude-3-5-sonnet
-    messages: [{role: user, content: hi}]
     json_mode: false
-    headers: {content-type: application/json}
-    upstream_status: 400
-    upstream_body: '{"type":"error","error":{"type":"invalid_request_error"}}'
+    headers:
+      content-type: application/json
+    request_header_names: []
+    response_header_names: [x-request-id]
+    data: '{"stream":true}'
+    request_data: {}
+    speed: null
+    reverse_map: {}
+    optional_params: {}
+    litellm_params: {}
+    upstream_status: 429
+    upstream_headers:
+      x-request-id: req-limited
+    upstream_lines: []
+    upstream_body: '{"type":"error","error":{"type":"rate_limit_error"}}'
+    failure_message: null
 env: {}
 compare: {ignore: []}

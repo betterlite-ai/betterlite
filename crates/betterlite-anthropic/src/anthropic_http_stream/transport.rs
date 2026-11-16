@@ -3,12 +3,14 @@ use std::future::Future;
 use std::time::Duration;
 
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::StreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::aleph_alpha::lines::decode_lines;
 use futures_util::StreamExt as _;
 use futures_util::stream::BoxStream;
 use http::{HeaderMap, Method};
+use tokio::time::timeout;
 use url::Url;
 
 use crate::stream_decode::TransportChunk;
@@ -48,66 +50,65 @@ const ERROR_BODY_READ: Duration = Duration::from_secs(5);
 impl StreamTransport for ProxiedClient {
     type Failure = StreamFailure;
 
-    fn post(
+    async fn post(
         &self,
         post: StreamPost,
-    ) -> impl Future<Output = Result<StreamReply<StreamFailure>, PostFailure<StreamFailure>>> + Send
-    {
-        async move {
-            let response = self
-                .send_following(OutboundRequest {
-                    method: Method::POST,
-                    url: post.url,
-                    query: Vec::new(),
-                    headers: post.headers,
-                    body: RequestBody::Json(post.body),
-                    deadline: post.deadline,
-                })
-                .await
-                .map_err(post_failure)?;
-            let status_code = response.response.status().as_u16();
-            let headers = response.response.headers().clone();
-            if !response.response.status().is_success() {
-                // LiteLLM's handler reads the error body under a five second cap and keeps the upstream
-                // status with an empty message when that read fails, so a rate limit stays a rate limit
-                let body = match tokio::time::timeout(
-                    ERROR_BODY_READ,
-                    response.buffered(self.limits.body_bytes),
-                )
-                .await
-                {
-                    Ok(Ok(reply)) => reply.body,
-                    Ok(Err(_)) | Err(_) => Vec::new(),
-                };
-                return Err(PostFailure::Status(StatusFailure {
-                    status_code,
-                    body,
-                    exception_headers: None,
-                    response_headers: Some(headers),
-                }));
-            }
-            let lines = decode_lines(response, self.limits.body_bytes)
-                .map(|line| match line {
-                    Ok(text) => Ok(TransportChunk::Text(text)),
-                    Err(source) => Err(ReceiveError::Other {
-                        source: StreamFailure::Lines(source),
-                    }),
-                })
-                .boxed();
-            Ok(StreamReply {
-                status_code,
-                headers,
-                lines,
+    ) -> Result<StreamReply<StreamFailure>, PostFailure<StreamFailure>> {
+        let response = self
+            .send_following(OutboundRequest {
+                method: Method::POST,
+                url: post.url,
+                query: Vec::new(),
+                headers: post.headers,
+                body: RequestBody::Json(post.body),
+                deadline: post.deadline,
             })
+            .await
+            .map_err(post_failure)?;
+        let status_code = response.response.status().as_u16();
+        let headers = response.response.headers().clone();
+        if !response.response.status().is_success() {
+            return Err(PostFailure::Status(Box::new(
+                error_status(response, self.limits.body_bytes).await,
+            )));
         }
+        let lines = decode_lines(response, self.limits.body_bytes)
+            .map(|line| match line {
+                Ok(text) => Ok(TransportChunk::Text(text)),
+                Err(source) => Err(ReceiveError::Other {
+                    source: StreamFailure::Lines(source),
+                }),
+            })
+            .boxed();
+        Ok(StreamReply {
+            status_code,
+            headers,
+            lines,
+        })
     }
 }
 
-fn is_timeout(source: &TransportError) -> bool {
+const fn is_timeout(source: &TransportError) -> bool {
     matches!(
         source,
         TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
     )
+}
+
+// LiteLLM reads an error body under a cap and keeps the upstream status with an empty message when the read fails
+async fn error_status(response: StreamResponse, limit: usize) -> StatusFailure {
+    let status_code = response.response.status().as_u16();
+    let response_headers = Some(response.response.headers().clone());
+    let body = match timeout(ERROR_BODY_READ, response.buffered(limit)).await {
+        Ok(Ok(reply)) => reply.body,
+        Ok(Err(_)) | Err(_) => Vec::new(),
+    };
+    StatusFailure {
+        status_code,
+        body,
+        exception_headers: None,
+        response_headers,
+    }
 }
 
 // The handler turns a timeout into litellm.Timeout, which make_call re-raises; any other send error becomes a 500

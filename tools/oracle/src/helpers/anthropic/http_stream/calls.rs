@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use betterlite_anthropic::anthropic_http_stream::call::{
-    OpenedStream, StreamBuild, StreamCall, StreamClients, make_call, make_sync_call,
+    OpenedStream, StreamBuild, StreamCall, StreamClients, StreamOpening,
 };
 use betterlite_anthropic::anthropic_http_stream::error::{PostFailure, StreamOpenError};
 use betterlite_anthropic::anthropic_http_stream::transport::StreamPost;
@@ -98,9 +98,21 @@ pub(crate) fn attempt(
     };
     let result = runtime.block_on(async move {
         if synchronous {
-            make_sync_call(clients, &call, build).await
+            StreamOpening {
+                clients,
+                call: &call,
+                build,
+            }
+            .make_sync_call()
+            .await
         } else {
-            make_call(clients, &call, build).await
+            StreamOpening {
+                clients,
+                call: &call,
+                build,
+            }
+            .make_call()
+            .await
         }
     });
     Ok(Attempt {

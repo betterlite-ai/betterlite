@@ -4,11 +4,28 @@ call:
   anthropic_http_stream:
     scenario: stream_post
     api_base: https://api.anthropic.com/v1/messages
+    messages:
+      - role: user
+        content: hi
     model: claude-3-5-sonnet
-    messages: [{role: user, content: hi}]
     json_mode: true
-    headers: {content-type: application/json, anthropic-version: "2023-06-01"}
-    upstream_headers: {content-type: text/event-stream}
-    upstream_lines: ['data: {"type":"ping"}']
+    headers:
+      content-type: application/json
+      anthropic-version: "2023-06-01"
+    request_header_names: [content-type]
+    response_header_names: [content-type]
+    data: '{"stream":true}'
+    request_data: {}
+    speed: null
+    reverse_map: {}
+    optional_params: {}
+    litellm_params: {}
+    upstream_status: null
+    upstream_headers:
+      content-type: text/event-stream
+    upstream_lines:
+      - 'data: {"type":"ping"}'
+    upstream_body: null
+    failure_message: null
 env: {}
 compare: {ignore: []}

@@ -12,7 +12,7 @@ use crate::stream_decode::ChunkStream;
 use crate::tool_names::REVERSE_MAP_KEY;
 use crate::usage::ReasoningTokenCounter;
 
-use super::call::{StreamBuild, StreamCall, StreamClients, make_call};
+use super::call::{StreamBuild, StreamCall, StreamClients, StreamOpening};
 use super::error::StreamOpenError;
 use super::transport::{LineChunks, StreamTransport};
 
@@ -78,7 +78,13 @@ where
         speed: speed.as_deref(),
         tool_name_reverse_map: &reverse_map,
     };
-    let opened = make_call(clients, &call, build).await?;
+    let opened = StreamOpening {
+        clients,
+        call: &call,
+        build,
+    }
+    .make_call()
+    .await?;
     Ok(WrappedStream {
         completion_stream: opened.completion_stream,
         model: stream.model.to_owned(),

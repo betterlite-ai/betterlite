@@ -16,7 +16,7 @@ pub struct StatusFailure {
 
 #[derive(Debug)]
 pub enum PostFailure<Failure> {
-    Status(StatusFailure),
+    Status(Box<StatusFailure>),
     Known(Failure),
     Unknown(Failure),
 }
