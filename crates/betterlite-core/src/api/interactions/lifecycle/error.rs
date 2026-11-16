@@ -12,7 +12,7 @@ use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
-pub use crate::api::agents::item::error::ProviderFailure;
+use crate::api::agents::item::error::ProviderFailure;
 
 #[derive(Debug, Error)]
 pub enum InteractionLifecycleError<Provider, Settlement = Infallible>
@@ -81,10 +81,6 @@ where
     Settlement: StdError + Send + Sync + 'static,
 {
     let class = match &error {
-        InteractionLifecycleError::Unsupported { .. } => dispatch(
-            &DispatchInput::Raw(Box::new(value_error(&error, provider))),
-            redactor,
-        ),
         InteractionLifecycleError::Client(carried) => match carried.as_ref() {
             ClientError::FieldType { field, expected } => {
                 field_type_class(field, expected, provider)
@@ -103,7 +99,8 @@ where
             })),
             redactor,
         ),
-        InteractionLifecycleError::Logging(_)
+        InteractionLifecycleError::Unsupported { .. }
+        | InteractionLifecycleError::Logging(_)
         | InteractionLifecycleError::Transport(_)
         | InteractionLifecycleError::Timeout { .. }
         | InteractionLifecycleError::Settlement(_) => dispatch(

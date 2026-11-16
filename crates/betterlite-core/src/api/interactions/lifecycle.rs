@@ -31,22 +31,48 @@ pub struct InteractionLifecycleDeps<'deps> {
     pub redactor: &'deps Redactor,
 }
 
-pub fn delete<Config>(
-    handler: &mut InteractionsHttpHandler<'_, Config, BlockingClient>,
-    deps: InteractionLifecycleDeps<'_>,
-    request: &InteractionLifecycleRequest<'_>,
-) -> Result<Config::DeleteOutput, InteractionLifecycleFailure<Config::Error>>
-where
-    Config: InteractionLifecycleConfig,
-    Config::Error: ProviderFailure,
-{
-    let InteractionLifecycleDeps { logging, redactor } = deps;
-    let prepared = prepare(request, Operation::Delete, logging, redactor)?;
-    let sent = http_request(request, &prepared);
-    handler
-        .delete_interaction(&sent)
-        .map_err(|carried| finish(carried, &prepared, redactor))
+// LiteLLM's delete, cancel and acancel prepare the request the same way and differ in the operation and the transport that sends it
+macro_rules! lifecycle_entries {
+    (sync $name:ident, $send:ident, $operation:ident, $output:ident) => {
+        pub fn $name<Config>(
+            handler: &mut InteractionsHttpHandler<'_, Config, BlockingClient>,
+            deps: InteractionLifecycleDeps<'_>,
+            request: &InteractionLifecycleRequest<'_>,
+        ) -> Result<Config::$output, InteractionLifecycleFailure<Config::Error>>
+        where
+            Config: InteractionLifecycleConfig,
+            Config::Error: ProviderFailure,
+        {
+            let InteractionLifecycleDeps { logging, redactor } = deps;
+            let prepared = prepare(request, Operation::$operation, logging, redactor)?;
+            let sent = http_request(request, &prepared);
+            handler
+                .$send(&sent)
+                .map_err(|carried| finish(carried, &prepared, redactor))
+        }
+    };
+    (async $name:ident, $send:ident, $operation:ident, $output:ident) => {
+        pub async fn $name<Config>(
+            handler: &mut InteractionsHttpHandler<'_, Config, Client>,
+            deps: InteractionLifecycleDeps<'_>,
+            request: &InteractionLifecycleRequest<'_>,
+        ) -> Result<Config::$output, InteractionLifecycleFailure<Config::Error>>
+        where
+            Config: InteractionLifecycleConfig,
+            Config::Error: ProviderFailure,
+        {
+            let InteractionLifecycleDeps { logging, redactor } = deps;
+            let prepared = prepare(request, Operation::$operation, logging, redactor)?;
+            let sent = http_request(request, &prepared);
+            handler
+                .$send(&sent)
+                .await
+                .map_err(|carried| finish(carried, &prepared, redactor))
+        }
+    };
 }
+
+lifecycle_entries!(sync delete, delete_interaction, Delete, DeleteOutput);
 
 pub async fn adelete<Config, Host, FetchError>(
     handler: &mut InteractionsHttpHandler<'_, Config, Client>,
@@ -83,40 +109,8 @@ where
         .map_err(|carried| finish(carried, &prepared, redactor))
 }
 
-pub fn cancel<Config>(
-    handler: &mut InteractionsHttpHandler<'_, Config, BlockingClient>,
-    deps: InteractionLifecycleDeps<'_>,
-    request: &InteractionLifecycleRequest<'_>,
-) -> Result<Config::CancelOutput, InteractionLifecycleFailure<Config::Error>>
-where
-    Config: InteractionLifecycleConfig,
-    Config::Error: ProviderFailure,
-{
-    let InteractionLifecycleDeps { logging, redactor } = deps;
-    let prepared = prepare(request, Operation::Cancel, logging, redactor)?;
-    let sent = http_request(request, &prepared);
-    handler
-        .cancel_interaction(&sent)
-        .map_err(|carried| finish(carried, &prepared, redactor))
-}
-
-pub async fn acancel<Config>(
-    handler: &mut InteractionsHttpHandler<'_, Config, Client>,
-    deps: InteractionLifecycleDeps<'_>,
-    request: &InteractionLifecycleRequest<'_>,
-) -> Result<Config::CancelOutput, InteractionLifecycleFailure<Config::Error>>
-where
-    Config: InteractionLifecycleConfig,
-    Config::Error: ProviderFailure,
-{
-    let InteractionLifecycleDeps { logging, redactor } = deps;
-    let prepared = prepare(request, Operation::Cancel, logging, redactor)?;
-    let sent = http_request(request, &prepared);
-    handler
-        .async_cancel_interaction(&sent)
-        .await
-        .map_err(|carried| finish(carried, &prepared, redactor))
-}
+lifecycle_entries!(sync cancel, cancel_interaction, Cancel, CancelOutput);
+lifecycle_entries!(async acancel, async_cancel_interaction, Cancel, CancelOutput);
 
 // LiteLLM's exception_type(model=None, custom_llm_provider=..., original_exception=...)
 fn finish<Provider, Settlement>(

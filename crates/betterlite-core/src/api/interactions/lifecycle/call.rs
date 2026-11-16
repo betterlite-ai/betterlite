@@ -11,10 +11,9 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 
-use super::error::{
-    InteractionLifecycleError, InteractionLifecycleFailure, ProviderFailure, failure,
-};
+use super::error::{InteractionLifecycleError, InteractionLifecycleFailure, failure};
 use super::request::InteractionLifecycleRequest;
+use crate::api::agents::item::error::ProviderFailure;
 use crate::api::interactions::utils::selection::{
     InteractionsProvider, select_interactions_provider,
 };
@@ -63,15 +62,13 @@ where
         .iter()
         .map(|(name, value)| (name.clone(), value_of(value)))
         .collect();
-    let provider = match select_interactions_provider(Some(provider_name.as_str())) {
-        Some(selected) => provider_id(selected),
-        None => {
-            let unsupported = InteractionLifecycleError::Unsupported {
-                provider: provider_name.clone(),
-            };
-            return Err(failure(unsupported, &provider_name, redactor));
-        }
+    let Some(selected) = select_interactions_provider(Some(provider_name.as_str())) else {
+        let unsupported = InteractionLifecycleError::Unsupported {
+            provider: provider_name.clone(),
+        };
+        return Err(failure(unsupported, &provider_name, redactor));
     };
+    let provider = provider_id(selected);
     record_call(logging, &kwargs, request.interaction_id, &provider_name).map_err(|error| {
         failure(
             InteractionLifecycleError::Logging(error),
@@ -105,19 +102,17 @@ where
     Provider: ProviderFailure,
     Settlement: StdError + Send + Sync + 'static,
 {
-    match request.timeout {
-        Some(given) => Ok(given),
-        None => {
-            let seconds = request.request_timeout.seconds;
-            Duration::try_from_secs_f64(seconds).map_err(|source| {
-                failure(
-                    InteractionLifecycleError::Timeout { seconds, source },
-                    provider,
-                    redactor,
-                )
-            })
-        }
+    if let Some(given) = request.timeout {
+        return Ok(given);
     }
+    let seconds = request.request_timeout.seconds;
+    Duration::try_from_secs_f64(seconds).map_err(|source| {
+        failure(
+            InteractionLifecycleError::Timeout { seconds, source },
+            provider,
+            redactor,
+        )
+    })
 }
 
 // the async client cache keys on the provider, and both Vertex AI names share one client configuration

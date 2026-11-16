@@ -55,9 +55,9 @@ fn delete_carries_every_json_shape_into_the_handler_parameters() {
     let call = Call::new("int-1")
         .at(serving.address)
         .kwarg("nothing", Json::Null)
-        .kwarg("count", Json::Number(Number::from(3)))
+        .kwarg("count", Json::Number(Number::from(3_i32)))
         .kwarg("names", Json::List(vec![Json::Text("a".to_owned())]))
-        .kwarg("object", Json::Object(object.clone()));
+        .kwarg("object", Json::Object(object));
     let mut handler = handler(&config);
     let mut logging = state("gemini-2.5-flash", "call-1");
     let redactor = redactor();
@@ -67,7 +67,7 @@ fn delete_carries_every_json_shape_into_the_handler_parameters() {
     assert_eq!(params.get("nothing"), Some(&JsonValue::Null));
     assert_eq!(
         params.get("count"),
-        Some(&JsonValue::Number(Number::from(3)))
+        Some(&JsonValue::Number(Number::from(3_i32)))
     );
     assert_eq!(
         params.get("names"),
@@ -111,8 +111,8 @@ fn delete_resolves_the_provider(#[case] provider: Option<&str>, #[case] expected
     let serving = serve(reply(200, "{}"));
     let config = fixture();
     let mut call = Call::new("int-1").at(serving.address);
-    if let Some(provider) = provider {
-        call = call.provider(provider);
+    if let Some(named) = provider {
+        call = call.provider(named);
     }
     let mut handler = handler(&config);
     let mut logging = state("gemini-2.5-flash", "call-1");
@@ -205,12 +205,16 @@ fn delete_rejects_a_fallback_timeout_it_cannot_turn_into_a_duration() {
         Some(&text("int-1"))
     );
     let serving = serve(reply(200, "{}"));
-    let call = Call::new("int-1")
+    let bounded = Call::new("int-1")
         .at(serving.address)
         .seconds(f64::NAN)
         .timeout(Duration::from_secs(5));
-    delete(&mut handler, deps(&mut logging, &redactor), &call.request())
-        .expect("the explicit timeout is usable");
+    delete(
+        &mut handler,
+        deps(&mut logging, &redactor),
+        &bounded.request(),
+    )
+    .expect("the explicit timeout is usable");
     drop(received(serving));
 }
 

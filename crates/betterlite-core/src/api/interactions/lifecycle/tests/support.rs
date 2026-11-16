@@ -25,7 +25,6 @@ use betterlite_interactions::polling::host::{
     FetchFuture, FetchInteraction, SettlementFuture, SettlementHost,
 };
 use betterlite_interactions::polling::registry::BackgroundPollRegistry;
-use betterlite_interactions::types::json::Object;
 use betterlite_interactions::types::response::{
     CancelInteractionResult, DeleteInteractionResult, InteractionsApiResponse,
 };
@@ -38,8 +37,8 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 
+use crate::api::agents::item::error::ProviderFailure;
 use crate::api::interactions::lifecycle::InteractionLifecycleDeps;
-use crate::api::interactions::lifecycle::error::ProviderFailure;
 use crate::api::interactions::lifecycle::request::InteractionLifecycleRequest;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -51,6 +50,15 @@ const RETRY: Duration = Duration::from_millis(10);
 pub(crate) struct FixtureError {
     pub(crate) status: u16,
     pub(crate) message: String,
+}
+
+impl From<serde_json::Error> for FixtureError {
+    fn from(error: serde_json::Error) -> Self {
+        Self {
+            status: 500,
+            message: error.to_string(),
+        }
+    }
 }
 
 impl ProviderFailure for FixtureError {
@@ -117,8 +125,9 @@ impl InteractionLifecycleConfig for Config {
         &self,
         request: &InteractionIdRequest<'_>,
     ) -> Result<PreparedRequest, FixtureError> {
+        let url = interaction_url(request, "");
         Ok(PreparedRequest {
-            url: interaction_url(request, ""),
+            url,
             params: Params::new(),
         })
     }
@@ -129,23 +138,18 @@ impl InteractionLifecycleConfig for Config {
         _logging: &mut Logging,
         interaction_id: &str,
     ) -> Result<DeleteInteractionResult, FixtureError> {
-        Ok(DeleteInteractionResult {
-            success: true,
-            id: Some(interaction_id.to_owned()),
-            extra: Object::new(),
-            hidden_params: Object::new(),
-        })
+        Ok(serde_json::from_str(&format!(
+            r#"{{"success":true,"id":"{interaction_id}"}}"#
+        ))?)
     }
 
     fn transform_cancel_request(
         &self,
         request: &InteractionIdRequest<'_>,
     ) -> Result<PreparedRequest, FixtureError> {
-        let mut params = Params::new();
-        params.insert("state".to_owned(), JsonValue::Text("cancelled".to_owned()));
         Ok(PreparedRequest {
             url: interaction_url(request, ":cancel"),
-            params,
+            params: Params::from([("state".to_owned(), JsonValue::Text("cancelled".to_owned()))]),
         })
     }
 
@@ -154,12 +158,9 @@ impl InteractionLifecycleConfig for Config {
         _response: &UpstreamResponse,
         _logging: &mut Logging,
     ) -> Result<CancelInteractionResult, FixtureError> {
-        Ok(CancelInteractionResult {
-            id: Some("int-1".to_owned()),
-            status: Some("cancelled".to_owned()),
-            extra: Object::new(),
-            hidden_params: Object::new(),
-        })
+        Ok(serde_json::from_str(
+            r#"{"id":"int-1","status":"cancelled"}"#,
+        )?)
     }
 }
 
@@ -335,10 +336,9 @@ pub(crate) fn serve_on(listener: TcpListener, answer: Vec<u8>) -> Serving {
         .spawn(move || {
             let mut stream = accept(&listener);
             stream.set_read_timeout(Some(TIMEOUT)).unwrap();
-            let head = read_head(&mut stream).unwrap();
-            let body = read_body(&mut stream, &head).unwrap();
+            let received = read_request(&mut stream).unwrap();
             stream.write_all(&answer).unwrap();
-            Received { head, body }
+            received
         })
         .unwrap();
     Serving { address, request }
@@ -369,26 +369,21 @@ fn accept(listener: &TcpListener) -> TcpStream {
     }
 }
 
-fn read_head<R>(stream: &mut R) -> IoResult<String>
+fn read_request<R>(stream: &mut R) -> IoResult<Received>
 where
     R: Read,
 {
-    let mut received = Vec::new();
-    while !received.ends_with(b"\r\n\r\n") {
+    let mut raw_head = Vec::new();
+    while !raw_head.ends_with(b"\r\n\r\n") {
         let mut byte = [0];
         stream.read_exact(&mut byte)?;
-        received.extend_from_slice(&byte);
+        raw_head.extend_from_slice(&byte);
     }
-    String::from_utf8(received).map_err(IoError::other)
-}
-
-fn read_body<R>(stream: &mut R, head: &str) -> IoResult<String>
-where
-    R: Read,
-{
-    let mut body = vec![0; content_length(head).unwrap_or(0)];
-    stream.read_exact(&mut body)?;
-    Ok(String::from_utf8(body).expect("the fixture body is UTF-8"))
+    let head = String::from_utf8(raw_head).map_err(IoError::other)?;
+    let mut raw_body = vec![0; content_length(&head).unwrap_or(0)];
+    stream.read_exact(&mut raw_body)?;
+    let body = String::from_utf8(raw_body).map_err(IoError::other)?;
+    Ok(Received { head, body })
 }
 
 fn content_length(head: &str) -> Option<usize> {
@@ -504,12 +499,12 @@ impl Script {
         let calls = Arc::clone(&self.calls);
         Arc::new(move |_context| -> FetchFuture<FakeError> {
             calls.fetch_add(1, Ordering::SeqCst);
-            let answer = answer
+            let scripted = answer
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .take()
                 .unwrap_or(Err(FakeError("no scripted answer")));
-            Box::pin(async move { answer })
+            Box::pin(async move { scripted })
         })
     }
 }

@@ -48,7 +48,7 @@ async fn acancel_posts_the_transformed_body_without_settling() {
     let config = fixture();
     let call = Call::new("interaction-1").at(serving.address);
     let settlement_host = host();
-    let registry = registry_with(settlement_host.clone());
+    let _registry = registry_with(settlement_host.clone());
     let script = Script::returning(answer());
     let mut handler = handler(&config);
     let mut logging = state("gemini-2.5-flash", "call-1");
