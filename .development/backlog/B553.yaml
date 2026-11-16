@@ -1,7 +1,7 @@
 id: B553
 milestone: M3 providers
 title: Foundry image model selection and Flux parameters
-status: todo
+status: done
 depends_on: [B549, B511, B171, B554]
 file: tasks/B553-foundry-image-generation.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/azure_ai/image_generation/flux_transformation.py"
 parent: B026
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2027
