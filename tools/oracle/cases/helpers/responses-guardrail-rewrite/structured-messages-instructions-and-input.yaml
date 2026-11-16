@@ -1,0 +1,6 @@
+kind: helper
+name: responses-structured-messages-instructions-and-input
+call:
+  b3671: {"function": "request_view", "scenarios": [{"data": {"input": "hi", "instructions": "be brief"}, "skip_system": false, "covers_full": false, "reply": null}, {"data": {"input": [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]}, "skip_system": false, "covers_full": false, "reply": null}, {"data": {"input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "x"}]}], "instructions": ""}, "skip_system": false, "covers_full": false, "reply": null}]}
+env: {}
+compare: {ignore: []}

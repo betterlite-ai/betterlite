@@ -1,0 +1,54 @@
+kind: helper
+name: stream-output-completion-event
+call:
+  b3857:
+    function: stream_output
+    chunks:
+    - type: completed
+      value:
+        type: response.completed
+        response:
+          id: resp-1
+          created_at: 1
+          model: gpt-4o
+          object: response
+          status: completed
+          output:
+          - type: message
+            id: msg-1
+            status: completed
+            role: assistant
+            content:
+            - type: output_text
+              text: hi
+              annotations: []
+          parallel_tool_calls: true
+          tool_choice: auto
+          tools: []
+    - type: other
+      value: {type: response.output_text.delta}
+    - type: completed
+      value:
+        type: response.completed
+        response:
+          id: resp-1
+          created_at: 1
+          model: gpt-4o
+          object: response
+          status: completed
+          output:
+          - type: message
+            id: msg-2
+            status: completed
+            role: assistant
+            content:
+            - type: output_text
+              text: hi
+              annotations: []
+          parallel_tool_calls: true
+          tool_choice: auto
+          tools: []
+    data: {}
+env: {}
+compare:
+  ignore: []

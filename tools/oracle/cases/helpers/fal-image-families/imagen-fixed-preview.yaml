@@ -1,0 +1,54 @@
+kind: helper
+name: fal-image-families-imagen-fixed-preview
+call:
+  fal_image_families:
+    operation: imagen_fixed_preview
+    prompt: "a cat"
+    models: ["fal-ai/imagen4/preview", "fal-ai/imagen4/preview/fast", "fal-ai/imagen4/preview/ultra", "imagen4"]
+    api_bases: [null, "https://fal.test/", "", "https://fal.test///"]
+    cases:
+      - non_default: {n: 2}
+        optional: {}
+        drop_params: false
+      - non_default: {n: 2}
+        optional: {num_images: 1}
+        drop_params: false
+      - non_default: {n: 2}
+        optional: {n: 5}
+        drop_params: false
+      - non_default: {response_format: "url"}
+        optional: {}
+        drop_params: false
+      - non_default: {response_format: "b64_json"}
+        optional: {response_format: "png"}
+        drop_params: false
+      - non_default: {size: "1792x1024"}
+        optional: {}
+        drop_params: false
+      - non_default: {size: "1792x1024"}
+        optional: {aspect_ratio: "9:16"}
+        drop_params: false
+      - non_default: {size: "1792x1024"}
+        optional: {size: "kept"}
+        drop_params: false
+      - non_default: {n: 2, num_images: 9}
+        optional: {}
+        drop_params: false
+      - non_default: {seed: 1}
+        optional: {}
+        drop_params: false
+      - non_default: {seed: 1}
+        optional: {}
+        drop_params: true
+      - non_default: {seed: 1}
+        optional: {seed: 7}
+        drop_params: false
+      - non_default: {n: 1, size: "1024x1024", response_format: "url"}
+        optional: {resolution: "2K", negative_prompt: "blur"}
+        drop_params: false
+      - non_default: {}
+        optional: {prompt: "a dog"}
+        drop_params: false
+env: {}
+compare:
+  ignore: []

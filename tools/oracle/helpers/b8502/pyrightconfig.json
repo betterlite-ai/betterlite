@@ -1,0 +1,6 @@
+{
+  "include": ["../b8502.py"],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}

@@ -35,8 +35,7 @@ use crate::stream_chunk_shaping::tokens::{
     mapped_finish_reason, raise_on_model_repetition,
 };
 use crate::stream_chunk_shaping::usage_totals::{
-    CacheCounter, backfill_cache_usage, cache_token_count, calculate_total_usage,
-    coerce_token_details, propagate_usage_cost, record_usage_only_chunk,
+    calculate_total_usage, coerce_token_details, propagate_usage_cost, record_usage_only_chunk,
     resolve_provider_reported_cost,
 };
 use crate::stream_chunk_shaping::{ChunkShaper, StreamShapeError};

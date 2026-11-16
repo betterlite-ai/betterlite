@@ -1,0 +1,7 @@
+kind: helper
+name: foundry-model-router-native-token-counter-selection
+call:
+  foundry_model_router:
+    token_models: [null, "", gpt-4o, claude-3-5-sonnet, CLAUDE-3-opus, my-claude-deployment]
+env: {}
+compare: {ignore: []}

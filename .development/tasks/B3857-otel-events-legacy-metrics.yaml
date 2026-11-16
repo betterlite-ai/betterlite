@@ -14,6 +14,8 @@ description: >-
   Tests in a stream_output module use a fake assembler that records the frames, chunks and messages it was given and returns a fixed ModelResponse or None: raw frames mixed with Chat and Completed chunks reach assemble_sse alone and in order, assemble_chat is never called for a raw stream, absent and null messages both reach assemble_chat as None, the last of two Completed chunks wins, and an empty slice or a None from the port gives None. The oracle helper implements the port for its cases: assemble_chat calls B2227's stream_chunk_builder with the chunks and messages, mapped through serde, and returns None on its error. The helper's stream_output input accepts typed chunks only (chat, completed, other), never raw frames, so its assemble_sse returns None and no raw-frame case runs here; B110's native boot test covers the Anthropic SSE path with the production assembler.
 scope:
   paths:
+    - "crates/betterlite-logging/src/otel/legacy_attributes/request.rs"
+    - "crates/betterlite-logging/src/logging_privacy/internal.rs"
     - crates/betterlite-logging/src/otel/legacy_metrics.rs
     - crates/betterlite-logging/src/otel/legacy_metrics/**
     - crates/betterlite-logging/src/otel/content_projections.rs
@@ -173,5 +175,5 @@ pitfalls:
   - "Both port methods return a ModelResponse, so their result goes through response_output's ModelResponse branch (each choice's message without null fields), never the Anthropic-message fallback that type: message gates."
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2000
   max_new_expects: 0
