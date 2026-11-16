@@ -4,13 +4,16 @@ use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_models::identity::provider_id::ProviderId;
+use reqwest::blocking::Response as BlockingResponse;
 use secrecy::SecretString;
 use thiserror::Error;
 
 use crate::interactions::base::clients::HttpClients;
+use crate::interactions::base::transport::response::{read_body, response_headers};
 use crate::interactions::base::{
-    CallFailure, ClientError, ErrorClasses, Logging, Params, PreCallArguments, PreparedRequest,
-    RequestFailure, RequestHeaders, ResponseHeaders, UpstreamResponse, api_base, handle_error,
+    CallFailure, ClientError, ErrorClasses, Logging, MAX_RESPONSE_BYTES, Params, PreCallArguments,
+    PreparedRequest, RequestFailure, RequestHeaders, ResponseHeaders, UpstreamResponse, api_base,
+    handle_error,
 };
 use crate::interactions::get::{EnvironmentRequest, InteractionIdRequest};
 
@@ -174,6 +177,14 @@ pub(crate) fn check_status(
         headers,
         body,
     })
+}
+
+// reads a blocking answer whole, up to the shared cap, and lets only a 2xx status through
+pub(crate) fn check_blocking(sent: BlockingResponse) -> Result<UpstreamResponse, RequestFailure> {
+    let status_code = sent.status().as_u16();
+    let headers = response_headers(sent.headers());
+    let body = read_body(sent, MAX_RESPONSE_BYTES)?;
+    check_status(status_code, headers, body)
 }
 
 // httpx's response.text: UTF-8 with errors="replace", so each invalid sequence reads as one U+FFFD

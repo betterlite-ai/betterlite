@@ -224,7 +224,10 @@ fn create_interaction_returns_a_stream_iterator_for_a_stream_request() {
 
 #[test]
 fn create_interaction_converts_a_failing_status_through_the_provider_error_class() {
-    let serving = serve_with_body(base::reply("404 Not Found", &[], "missing"), None);
+    let serving = serve_with_body(
+        base::reply("404 Not Found", &[("retry-after", "5")], "missing"),
+        None,
+    );
     let fixture = Fixture::new();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -244,7 +247,7 @@ fn create_interaction_converts_a_failing_status_through_the_provider_error_class
     ));
     let calls = fixture.calls();
     assert!(
-        calls.iter().any(|call| call == "error|404|missing|-"),
+        calls.iter().any(|call| call == "error|404|missing|5"),
         "{calls:?}"
     );
     assert!(calls.iter().all(|call| !call.starts_with("response|")));
@@ -253,7 +256,10 @@ fn create_interaction_converts_a_failing_status_through_the_provider_error_class
 
 #[test]
 fn create_interaction_converts_a_failing_status_for_a_stream_request() {
-    let serving = serve_with_body(base::reply("500 Internal Server Error", &[], "boom"), None);
+    let serving = serve_with_body(
+        base::reply("500 Internal Server Error", &[("retry-after", "5")], "boom"),
+        None,
+    );
     let fixture = Fixture::new();
     let mut call = Call::new(serving.address);
     call.stream = true;
@@ -269,7 +275,7 @@ fn create_interaction_converts_a_failing_status_for_a_stream_request() {
     ));
     let calls = fixture.calls();
     assert!(
-        calls.iter().any(|call| call == "error|500|boom|-"),
+        calls.iter().any(|call| call == "error|500|boom|5"),
         "{calls:?}"
     );
     assert!(calls.iter().all(|call| !call.starts_with("sync_stream|")));

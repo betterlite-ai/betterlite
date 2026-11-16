@@ -10,10 +10,9 @@ use super::{
     PreparedCreate, finish, handle_failure, prepare,
 };
 use crate::interactions::base::clients::HttpClients;
-use crate::interactions::base::transport::response::{read_body, response_headers};
 use crate::interactions::base::transport::{refuse_unusable_proxy, request_headers};
-use crate::interactions::base::{Logging, MAX_RESPONSE_BYTES, RequestFailure, UpstreamResponse};
-use crate::interactions::lifecycle::check_status;
+use crate::interactions::base::{Logging, RequestFailure};
+use crate::interactions::lifecycle::check_blocking;
 use crate::interactions::streaming::{StreamError, create_sync_iterator};
 
 pub fn create_interaction<C>(
@@ -36,7 +35,7 @@ where
     let sent = send_blocking(&client, proxy, &prepared, deadline)
         .map_err(|failure| handle_failure(config, failure))?;
     if !request.stream {
-        let response = buffer_blocking(sent).map_err(|failure| handle_failure(config, failure))?;
+        let response = check_blocking(sent).map_err(|failure| handle_failure(config, failure))?;
         return finish(config, logging, request.model, &response).map(CreateOutcome::Response);
     }
     match create_sync_iterator(sent, request.model, logging, config) {
@@ -63,11 +62,4 @@ fn send_blocking(
         .timeout(deadline)
         .send()
         .map_err(RequestFailure::Transport)
-}
-
-fn buffer_blocking(sent: BlockingResponse) -> Result<UpstreamResponse, RequestFailure> {
-    let status_code = sent.status().as_u16();
-    let headers = response_headers(sent.headers());
-    let body = read_body(sent, MAX_RESPONSE_BYTES)?;
-    check_status(status_code, headers, body)
 }

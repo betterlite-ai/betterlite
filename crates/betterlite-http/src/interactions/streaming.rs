@@ -5,11 +5,11 @@ use reqwest::{Client, Response};
 use thiserror::Error;
 use tokio_util::task::TaskTracker;
 
-use crate::interactions::base::transport::response::{read_body, response_headers};
+use crate::interactions::base::transport::response::response_headers;
 use crate::interactions::base::{
     ErrorClasses, Logging, MAX_RESPONSE_BYTES, RequestFailure, UpstreamResponse,
 };
-use crate::interactions::lifecycle::check_status;
+use crate::interactions::lifecycle::{check_blocking, check_status};
 use crate::proxy::StreamResponse;
 use crate::proxy::limits::read_bounded;
 use crate::proxy::stream::Lease;
@@ -58,10 +58,7 @@ pub fn create_sync_iterator<C>(
 where
     C: StreamingConfig,
 {
-    let status_code = response.status().as_u16();
-    let headers = response_headers(response.headers());
-    let body = read_body(response, MAX_RESPONSE_BYTES)?;
-    let buffered = check_status(status_code, headers, body)?;
+    let buffered = check_blocking(response)?;
     interactions_api_config
         .create_sync_stream_iterator(buffered, model, logging_obj)
         .map_err(StreamError::Provider)

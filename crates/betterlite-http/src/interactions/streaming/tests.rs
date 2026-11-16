@@ -143,7 +143,10 @@ fn create_sync_iterator_accepts_a_2xx_status(#[case] status: &str, #[case] body:
 #[case::redirect("300 Multiple Choices", 300)]
 #[case::missing("404 Not Found", 404)]
 fn create_sync_iterator_refuses_a_status_outside_2xx(#[case] status: &str, #[case] code: u16) {
-    let serving = base::serve_once(base::reply(status, &[], "missing"), None);
+    let serving = base::serve_once(
+        base::reply(status, &[("retry-after", "5")], "missing"),
+        None,
+    );
     let client = BlockingClientBuilder::new().build().unwrap();
     let response = client
         .get(format!("http://{}", serving.address))
@@ -158,10 +161,13 @@ fn create_sync_iterator_refuses_a_status_outside_2xx(#[case] status: &str, #[cas
 
     match error {
         StreamError::Read(RequestFailure::Status {
-            status_code, body, ..
+            status_code,
+            headers,
+            body,
         }) => {
             assert_eq!(status_code, code);
             assert_eq!(body, "missing");
+            assert_eq!(headers.get("retry-after").map(String::as_str), Some("5"));
         }
         other => panic!("expected a status failure, got {other:?}"),
     }
@@ -245,7 +251,10 @@ async fn create_async_iterator_refuses_a_status_outside_2xx(
     #[case] status: &str,
     #[case] code: u16,
 ) {
-    let serving = base::serve_once(base::reply(status, &[], "missing"), None);
+    let serving = base::serve_once(
+        base::reply(status, &[("retry-after", "5")], "missing"),
+        None,
+    );
     let client = base_builder().build().unwrap();
     let response = client
         .get(format!("http://{}", serving.address))
@@ -262,10 +271,13 @@ async fn create_async_iterator_refuses_a_status_outside_2xx(
 
     match error {
         StreamError::Read(RequestFailure::Status {
-            status_code, body, ..
+            status_code,
+            headers,
+            body,
         }) => {
             assert_eq!(status_code, code);
             assert_eq!(body, "missing");
+            assert_eq!(headers.get("retry-after").map(String::as_str), Some("5"));
         }
         other => panic!("expected a status failure, got {other:?}"),
     }

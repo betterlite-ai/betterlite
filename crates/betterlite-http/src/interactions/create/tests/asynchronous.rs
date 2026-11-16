@@ -22,7 +22,10 @@ fn posted(body: &str) -> JsonValue {
 
 #[tokio::test]
 async fn async_create_interaction_posts_the_transformed_request_and_returns_the_response() {
-    let serving = serve_with_body(base::reply("200 OK", &[], "{\"id\":\"int_1\"}"), None);
+    let serving = serve_with_body(
+        base::reply("200 OK", &[("x-request-id", "r1")], "{\"id\":\"int_1\"}"),
+        None,
+    );
     let fixture = Fixture {
         headers: api_key_header(),
         data: base::params(r#"{"model": "gemini-2.5-flash", "input": "hello"}"#),
@@ -45,6 +48,13 @@ async fn async_create_interaction_posts_the_transformed_request_and_returns_the_
         panic!("a non-stream request returns the response");
     };
     assert_eq!(body, "{\"id\":\"int_1\"}");
+    assert!(
+        fixture
+            .calls()
+            .contains(&"response|200|hello|r1".to_owned()),
+        "{:?}",
+        fixture.calls()
+    );
     let received = serving.request.join().unwrap();
     assert!(
         received
@@ -99,7 +109,10 @@ async fn async_create_interaction_returns_the_open_response_as_a_stream_iterator
 
 #[tokio::test]
 async fn async_create_interaction_converts_a_failing_status_through_the_provider_error_class() {
-    let serving = serve_with_body(base::reply("404 Not Found", &[], "missing"), None);
+    let serving = serve_with_body(
+        base::reply("404 Not Found", &[("retry-after", "5")], "missing"),
+        None,
+    );
     let fixture = Fixture::new();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -121,7 +134,7 @@ async fn async_create_interaction_converts_a_failing_status_through_the_provider
     ));
     let calls = fixture.calls();
     assert!(
-        calls.contains(&"error|404|missing|-".to_owned()),
+        calls.contains(&"error|404|missing|5".to_owned()),
         "{calls:?}"
     );
     assert!(calls.iter().all(|call| !call.starts_with("response|")));
@@ -130,7 +143,10 @@ async fn async_create_interaction_converts_a_failing_status_through_the_provider
 
 #[tokio::test]
 async fn async_create_interaction_converts_a_failing_status_for_a_stream_request() {
-    let serving = serve_with_body(base::reply("500 Internal Server Error", &[], "boom"), None);
+    let serving = serve_with_body(
+        base::reply("500 Internal Server Error", &[("retry-after", "5")], "boom"),
+        None,
+    );
     let fixture = Fixture::new();
     let mut call = Call::new(serving.address);
     call.stream = true;
@@ -148,7 +164,7 @@ async fn async_create_interaction_converts_a_failing_status_for_a_stream_request
         CreateInteractionError::Provider(FixtureError::Refused(500))
     ));
     let calls = fixture.calls();
-    assert!(calls.contains(&"error|500|boom|-".to_owned()), "{calls:?}");
+    assert!(calls.contains(&"error|500|boom|5".to_owned()), "{calls:?}");
     assert!(calls.iter().all(|call| !call.starts_with("async_stream|")));
     serving.request.join().unwrap();
 }
