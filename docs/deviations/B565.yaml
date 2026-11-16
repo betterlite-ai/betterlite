@@ -11,7 +11,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/token_counter.py#L90
   - what: >-
       The detail after "CountTokens processing error: " and after "Error calling Azure AI Anthropic
-      CountTokens API: " is betterlite's own error text, so an unparseable reply names the Rust
+      CountTokens API: " is betterlite's own error text, so an unparsable reply names the Rust
       decode failure instead of Python's "Expecting value" message.
     why: >-
       The subject, the status code and every record field match, but the underlying message comes

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -95,7 +97,7 @@ fn azure_auth_and_beta() {
     let beta = beta_version(&BTreeMap::new());
     assert_eq!(beta, DEFAULT_BETA_VERSION);
 
-    let plain = handle_headers(&Call::default());
+    let plain = handle_headers(&Call::standard());
     assert_eq!(plain["content-type"], "application/json");
     assert_eq!(plain["anthropic-version"], "2023-06-01");
     assert_eq!(plain["anthropic-beta"], beta.as_str());
@@ -104,14 +106,14 @@ fn azure_auth_and_beta() {
 
     let absent = handle_headers(&Call {
         params: Params::Absent,
-        ..Call::default()
+        ..Call::standard()
     });
     assert_eq!(absent["x-api-key"], ARGUMENT_KEY);
     assert_eq!(absent["api-key"], ARGUMENT_KEY);
 
     let other = Call {
         params: Params::Key(SecretString::from("other-params-key")),
-        ..Call::default()
+        ..Call::standard()
     };
     let different = handle_headers(&other);
     assert_eq!(different["x-api-key"], ARGUMENT_KEY);
@@ -120,7 +122,7 @@ fn azure_auth_and_beta() {
     let configured = Call {
         params: Params::Null,
         configured_key: Some(SecretString::from("configured-key")),
-        ..Call::default()
+        ..Call::standard()
     };
     let nulled = handle_headers(&configured);
     assert_eq!(nulled["x-api-key"], ARGUMENT_KEY);
@@ -129,7 +131,7 @@ fn azure_auth_and_beta() {
     let bearer = Call {
         params: Params::Null,
         token: Some("azure-token".to_owned()),
-        ..Call::default()
+        ..Call::standard()
     };
     let entranced = handle_headers(&bearer);
     assert_eq!(entranced["x-api-key"], ARGUMENT_KEY);
@@ -138,7 +140,7 @@ fn azure_auth_and_beta() {
 
     let typed = Call {
         params: Params::Typed(Some(SecretString::from("typed-key"))),
-        ..Call::default()
+        ..Call::standard()
     };
     let typed_headers = handle_headers(&typed);
     assert_eq!(typed_headers["x-api-key"], ARGUMENT_KEY);
@@ -146,7 +148,7 @@ fn azure_auth_and_beta() {
 
     let typed_empty = Call {
         params: Params::Typed(Some(SecretString::from(""))),
-        ..Call::default()
+        ..Call::standard()
     };
     let typed_empty_headers = handle_headers(&typed_empty);
     assert_eq!(typed_empty_headers["x-api-key"], ARGUMENT_KEY);
@@ -155,7 +157,7 @@ fn azure_auth_and_beta() {
     let empty_key_configured = Call {
         params: Params::Key(SecretString::from("")),
         configured_key: Some(SecretString::from("configured-key")),
-        ..Call::default()
+        ..Call::standard()
     };
     let empty_key_headers = handle_headers(&empty_key_configured);
     assert_eq!(empty_key_headers["x-api-key"], ARGUMENT_KEY);
@@ -163,7 +165,7 @@ fn azure_auth_and_beta() {
 }
 
 fn native_count_result() {
-    let success = run_counter(&Call::default());
+    let success = run_counter(&Call::standard());
     assert_eq!(success.selected, [true, false, false]);
     let result = success.result.expect("a token count");
     assert_eq!(result.total_tokens, 5);
@@ -182,19 +184,19 @@ fn native_count_result() {
 
     let missing = run_counter(&Call {
         reply: Some((200, "{}".to_owned())),
-        ..Call::default()
+        ..Call::standard()
     });
     assert_eq!(missing.result.expect("a token count").total_tokens, 0);
 
     let nulled = run_counter(&Call {
         reply: Some((200, "null".to_owned())),
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(nulled.result.is_none());
 
     let empty = run_counter(&Call {
         messages: Some(Json::List(Vec::new())),
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(empty.result.is_none());
     assert!(
@@ -204,7 +206,7 @@ fn native_count_result() {
 
     let absent = run_counter(&Call {
         messages: None,
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(absent.result.is_none());
     assert!(
@@ -212,12 +214,12 @@ fn native_count_result() {
         "contents never stands in for messages"
     );
 
-    for falsey_messages in [r#"null"#, r#"false"#, r#"0"#, r#""""#, r#"[]"#, r#"{}"#] {
+    for falsey_messages in ["null", "false", "0", "\"\"", "[]", "{}"] {
         let skipped = run_counter(&Call {
             messages: Some(
                 serde_json::from_str::<Json>(falsey_messages).expect("valid fixture JSON"),
             ),
-            ..Call::default()
+            ..Call::standard()
         });
         assert!(skipped.result.is_none(), "{falsey_messages}");
         assert!(skipped.seen.is_none(), "{falsey_messages}");
@@ -230,7 +232,7 @@ fn optional_native_selection() {
         api_base: None,
         environment_key: Some(SecretString::from("environment-key")),
         environment_base: Some("https://env.services.ai.azure.com".to_owned()),
-        ..Call::default()
+        ..Call::standard()
     });
     let environment_seen = from_environment.seen.expect("a request");
     assert_eq!(
@@ -239,7 +241,7 @@ fn optional_native_selection() {
     );
     assert_eq!(environment_seen.headers["x-api-key"], "environment-key");
 
-    let deployment = run_counter(&Call::default());
+    let deployment = run_counter(&Call::standard());
     let deployment_seen = deployment.seen.expect("a request");
     assert_eq!(
         deployment_seen.url,
@@ -249,7 +251,7 @@ fn optional_native_selection() {
 
     let no_key = run_counter(&Call {
         params: Params::Absent,
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(no_key.result.is_none());
     assert!(no_key.seen.is_none());
@@ -263,7 +265,7 @@ fn optional_native_selection() {
 
     let no_base = run_counter(&Call {
         api_base: None,
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(no_base.result.is_none());
     assert!(no_base.seen.is_none());
@@ -278,7 +280,7 @@ fn optional_native_selection() {
     let empty = run_counter(&Call {
         params: Params::Key(SecretString::from("")),
         environment_key: Some(SecretString::from("environment-key")),
-        ..Call::default()
+        ..Call::standard()
     });
     let empty_seen = empty.seen.expect("a request");
     assert_eq!(empty_seen.headers["x-api-key"], "environment-key");
@@ -286,7 +288,7 @@ fn optional_native_selection() {
     let empty_environment_key = run_counter(&Call {
         params: Params::Absent,
         environment_key: Some(SecretString::from("")),
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(empty_environment_key.result.is_none());
     assert!(empty_environment_key.seen.is_none());
@@ -301,7 +303,7 @@ fn optional_native_selection() {
     let empty_deployment_base = run_counter(&Call {
         api_base: Some(String::new()),
         environment_base: Some("https://env.services.ai.azure.com".to_owned()),
-        ..Call::default()
+        ..Call::standard()
     });
     let empty_deployment_seen = empty_deployment_base.seen.expect("a request");
     assert_eq!(
@@ -312,7 +314,7 @@ fn optional_native_selection() {
     let empty_environment_base = run_counter(&Call {
         api_base: None,
         environment_base: Some(String::new()),
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(empty_environment_base.result.is_none());
     assert!(empty_environment_base.seen.is_none());
@@ -327,7 +329,7 @@ fn optional_native_selection() {
     let credentials_only = run_counter(&Call {
         params: Params::Absent,
         token: Some("azure-token".to_owned()),
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(
         credentials_only.result.is_none(),
@@ -338,7 +340,7 @@ fn optional_native_selection() {
     let configured_only = run_counter(&Call {
         params: Params::Absent,
         configured_key: Some(SecretString::from("configured-key")),
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(
         configured_only.result.is_none(),
@@ -354,7 +356,7 @@ fn count_failure_error_result() {
 fn counter_error_records() {
     let rate_limited = run_counter(&Call {
         reply: Some((429, "rate limited".to_owned())),
-        ..Call::default()
+        ..Call::standard()
     });
     let limited_record = rate_limited.result.expect("an error record");
     assert!(limited_record.error);
@@ -369,7 +371,7 @@ fn counter_error_records() {
 
     let bad_request = run_counter(&Call {
         reply: Some((400, "{\"error\":\"bad\"}".to_owned())),
-        ..Call::default()
+        ..Call::standard()
     });
     let bad_record = bad_request.result.expect("an error record");
     assert_eq!(bad_record.status_code, Some(400));
@@ -380,7 +382,7 @@ fn counter_error_records() {
 
     let created = run_counter(&Call {
         reply: Some((201, "{\"input_tokens\":5}".to_owned())),
-        ..Call::default()
+        ..Call::standard()
     });
     let created_record = created.result.expect("an error record");
     assert_eq!(created_record.status_code, Some(201));
@@ -391,7 +393,7 @@ fn counter_error_records() {
 
     let not_json = run_counter(&Call {
         reply: Some((200, "not json".to_owned())),
-        ..Call::default()
+        ..Call::standard()
     });
     let decode_record = not_json.result.expect("an error record");
     assert_eq!(decode_record.status_code, Some(500));
@@ -404,7 +406,7 @@ fn counter_error_records() {
 
     let list = run_counter(&Call {
         reply: Some((200, "[]".to_owned())),
-        ..Call::default()
+        ..Call::standard()
     });
     let list_record = list.result.expect("an error record");
     assert_eq!(list_record.status_code, Some(500));
@@ -417,7 +419,7 @@ fn counter_error_records() {
 
     let null_tokens = run_counter(&Call {
         reply: Some((200, "{\"input_tokens\":null}".to_owned())),
-        ..Call::default()
+        ..Call::standard()
     });
     assert_eq!(
         null_tokens.result.expect("an error record").status_code,
@@ -426,7 +428,7 @@ fn counter_error_records() {
 
     let failed_transport = run_counter(&Call {
         reply: None,
-        ..Call::default()
+        ..Call::standard()
     });
     assert_eq!(
         failed_transport
@@ -438,7 +440,7 @@ fn counter_error_records() {
 }
 
 fn handler_failure_shapes() {
-    let sent = run_handle(&Call::default()).seen.expect("a request");
+    let sent = run_handle(&Call::standard()).seen.expect("a request");
     assert_eq!(
         sent.body,
         serde_json::from_str::<Json>(
@@ -450,13 +452,13 @@ fn handler_failure_shapes() {
 
     let zero = run_handle(&Call {
         timeout: Some(Duration::ZERO),
-        ..Call::default()
+        ..Call::standard()
     });
     assert_eq!(zero.seen.expect("a request").timeout, Duration::ZERO);
 
     let invalid_header = run_handle(&Call {
         api_key: SecretString::from("bad\nkey"),
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(matches!(
         invalid_header.result,
@@ -469,7 +471,7 @@ fn handler_failure_shapes() {
 
     let missing_model = run_handle(&Call {
         model: String::new(),
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(matches!(
         missing_model.result,
@@ -481,7 +483,7 @@ fn handler_failure_shapes() {
             "role".to_owned(),
             Json::Text("user".to_owned()),
         )]))),
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(matches!(
         not_a_list.result,
@@ -491,7 +493,7 @@ fn handler_failure_shapes() {
     let empty_messages_with_system = run_handle(&Call {
         messages: Some(Json::List(Vec::new())),
         system: Some(Json::Text("be brief".to_owned())),
-        ..Call::default()
+        ..Call::standard()
     });
     assert!(
         matches!(
@@ -506,7 +508,7 @@ fn handler_failure_shapes() {
 fn count_error_warnings() {
     let rate_limited = run_counter(&Call {
         reply: Some((429, "rate limited".to_owned())),
-        ..Call::default()
+        ..Call::standard()
     });
     assert_eq!(
         rate_limited.warnings,
@@ -522,7 +524,7 @@ fn count_error_warnings() {
 
     let not_json = run_counter(&Call {
         reply: Some((200, "not json".to_owned())),
-        ..Call::default()
+        ..Call::standard()
     });
     assert_eq!(
         not_json.warnings,
@@ -532,13 +534,13 @@ fn count_error_warnings() {
         }]
     );
 
-    let success = run_counter(&Call::default());
+    let success = run_counter(&Call::standard());
     assert!(success.warnings.is_empty());
     assert!(success.result.is_some_and(|record| !record.error));
 
     let missing_key = run_counter(&Call {
         params: Params::Absent,
-        ..Call::default()
+        ..Call::standard()
     });
     assert_eq!(
         missing_key.warnings,
@@ -555,12 +557,12 @@ fn anthropic_count_credential_identity_isolation() {
     let first = run_counter(&Call {
         params: Params::Key(SecretString::from("first-params-key")),
         environment_key: Some(SecretString::from("first-environment-key")),
-        ..Call::default()
+        ..Call::standard()
     });
     let second = run_counter(&Call {
         params: Params::Absent,
         environment_key: Some(SecretString::from("second-environment-key")),
-        ..Call::default()
+        ..Call::standard()
     });
     let first_seen = first.seen.expect("a request");
     let second_seen = second.seen.expect("a request");
@@ -572,12 +574,12 @@ fn anthropic_count_credential_identity_isolation() {
     let configured = run_handle(&Call {
         params: Params::Null,
         configured_key: Some(SecretString::from("first-configured-key")),
-        ..Call::default()
+        ..Call::standard()
     });
     let other_configured = run_handle(&Call {
         params: Params::Null,
         configured_key: Some(SecretString::from("second-configured-key")),
-        ..Call::default()
+        ..Call::standard()
     });
     let configured_seen = configured.seen.expect("a request");
     let other_seen = other_configured.seen.expect("a request");
@@ -592,7 +594,7 @@ fn anthropic_count_secret_safe_failure() {
 
     let invalid_header = run_handle(&Call {
         api_key: SecretString::from(format!("{SECRET}\n")),
-        ..Call::default()
+        ..Call::standard()
     });
     let failure = invalid_header
         .result
@@ -604,7 +606,7 @@ fn anthropic_count_secret_safe_failure() {
     let counted = run_counter(&Call {
         params: Params::Key(SecretString::from(SECRET)),
         reply: Some((500, "upstream failure".to_owned())),
-        ..Call::default()
+        ..Call::standard()
     });
     let record = counted.result.expect("an error record");
     assert!(!format!("{record:?}").contains(SECRET));

@@ -1,14 +1,13 @@
 use betterlite_anthropic::count_tokens::counter::{TokenCountResponse, TokenCounter};
 use betterlite_anthropic::count_tokens::error::CountTokensError;
+use betterlite_anthropic::count_tokens::handler::CountTokensTransport;
 use betterlite_anthropic::count_tokens::wire::{CountResponse, CountTokensBody};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::anthropic_count::error::ApiError;
-use crate::anthropic_count::handler::{
-    CountTokensRequest, CountTokensTransport, FoundryCountHandler,
-};
+use crate::anthropic_count::handler::{CountTokensRequest, FoundryCountHandler};
 use crate::anthropic_count::reply::FoundryCountReply;
 use crate::anthropic_messages::environment::{ParamsKey, TokenSource};
 

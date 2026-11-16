@@ -4,6 +4,7 @@ use std::time::Duration;
 use betterlite_anthropic::count_tokens::counter::{TokenCountResponse, TokenCounter as _};
 use betterlite_anthropic::count_tokens::wire::CountTokensBody;
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
+use betterlite_config::sections::foundry_credentials;
 use betterlite_foundry::anthropic_count::counter::{AzureAnthropicTokenCounter, CountTokensCall};
 use betterlite_foundry::anthropic_count::endpoint::get_count_tokens_endpoint;
 use betterlite_foundry::anthropic_count::error::ApiError;
@@ -26,8 +27,8 @@ mod sources;
 mod tests;
 
 use fixture::{
-    Logs, Script, Seen, beta_version, configured_key, credential_settings, foundry_settings,
-    key_shape, params_secret, request_json, request_timeout,
+    Logs, Script, Seen, beta_version, configured_key, credential_settings, key_shape,
+    params_secret, request_json, request_timeout,
 };
 use input::{CounterCase, Globals, HandleCase, Input, Reply, failure};
 use sources::Offline;
@@ -159,7 +160,7 @@ fn counter_call<'call>(
 fn counter_case(case: &CounterCase, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
     let credentials = credential_settings(&case.litellm_params, &case.environment)?;
     let source = token_source(&credentials);
-    let environment = foundry_settings(&case.environment);
+    let environment = foundry_credentials::Settings::resolve_environment(&case.environment);
     let counter = AzureAnthropicTokenCounter {
         handler: scripted_handler(
             case.reply.as_ref(),

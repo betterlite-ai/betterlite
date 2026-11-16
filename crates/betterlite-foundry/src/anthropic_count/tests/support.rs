@@ -40,7 +40,7 @@ pub(super) const ARGUMENT_KEY: &str = "argument-key";
 pub(super) const PARAMS_KEY: &str = "params-key";
 pub(super) const TOKENIZER_TYPE: &str = "azure_ai_anthropic_api";
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Seen {
     pub(super) url: String,
     pub(super) headers: BTreeMap<String, String>,
@@ -138,8 +138,8 @@ pub(super) struct Call {
     pub(super) reply: Option<(u16, String)>,
 }
 
-impl Default for Call {
-    fn default() -> Self {
+impl Call {
+    pub(super) fn standard() -> Self {
         Self {
             api_key: SecretString::from(ARGUMENT_KEY),
             api_base: Some(API_BASE.to_owned()),
@@ -197,12 +197,7 @@ impl From<&Call> for FoundryCountHandler<Script> {
 
 pub(super) fn run_counter(call: &Call) -> CounterOutcome {
     let credentials = credential_settings(call.token.as_deref());
-    let token = TokenSource {
-        credentials: &credentials,
-        refresh_enabled: false,
-        provider: None,
-        sources: &Offline,
-    };
+    let token = token_source(&credentials);
     let params_key = params_key(&call.params);
     let counter = AzureAnthropicTokenCounter {
         handler: FoundryCountHandler::from(call),
@@ -220,15 +215,7 @@ pub(super) fn run_counter(call: &Call) -> CounterOutcome {
         tools: call.tools.as_ref(),
         system: call.system.as_ref(),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("the test runtime");
-    let (result, warnings) = captured(|| runtime.block_on(counter.count_tokens(&data)));
-    let recorder = counter.handler.transport.seen.clone();
-    let requests = recorder
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
+    let (result, warnings) = captured(|| run_blocking(counter.count_tokens(&data)));
     CounterOutcome {
         selected: [
             counter.should_use_token_counting_api(Some("azure_ai")),
@@ -236,19 +223,14 @@ pub(super) fn run_counter(call: &Call) -> CounterOutcome {
             counter.should_use_token_counting_api(None),
         ],
         result,
-        seen: requests.into_iter().next(),
+        seen: first_request(&counter.handler.transport),
         warnings,
     }
 }
 
 pub(super) fn run_handle(call: &Call) -> HandleOutcome {
     let credentials = credential_settings(call.token.as_deref());
-    let token = TokenSource {
-        credentials: &credentials,
-        refresh_enabled: false,
-        provider: None,
-        sources: &Offline,
-    };
+    let token = token_source(&credentials);
     let params_key = params_key(&call.params);
     let messages = call.messages.clone().unwrap_or(Json::Null);
     let handler = FoundryCountHandler::from(call);
@@ -266,19 +248,36 @@ pub(super) fn run_handle(call: &Call) -> HandleOutcome {
         token: &token,
         timeout: call.timeout,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("the test runtime");
-    let outcome = runtime.block_on(handler.handle_count_tokens_request(&request));
-    let recorder = handler.transport.seen.clone();
-    let requests = recorder
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
+    let outcome = run_blocking(handler.handle_count_tokens_request(&request));
     HandleOutcome {
         result: outcome.map(|reply| reply.document),
-        seen: requests.into_iter().next(),
+        seen: first_request(&handler.transport),
     }
+}
+
+fn token_source(credentials: &DeploymentSettings) -> TokenSource<'_> {
+    TokenSource {
+        credentials,
+        refresh_enabled: false,
+        provider: None,
+        sources: &Offline,
+    }
+}
+
+fn run_blocking<F: Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("the test runtime")
+        .block_on(future)
+}
+
+fn first_request(transport: &Script) -> Option<Seen> {
+    transport
+        .seen
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .first()
+        .cloned()
 }
 
 const fn params_key(params: &Params) -> ParamsKey<'_> {
@@ -322,38 +321,34 @@ fn credential_settings(azure_ad_token: Option<&str>) -> DeploymentSettings {
 // The count path never reaches Azure, so every token source refuses
 struct Offline;
 
+fn refuse() -> SourceFailure {
+    SourceFailure {
+        class: "ValueError".to_owned(),
+        status: None,
+        message: "the count path must not reach a token source".to_owned(),
+    }
+}
+
 impl CredentialSources for Offline {
     fn client_secret<'source>(
         &'source self,
         _record: &ClientSecretRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: "ValueError".to_owned(),
-            status: None,
-            message: "the count path must not reach a token source".to_owned(),
-        })
+        Err(refuse())
     }
 
     fn username_password<'source>(
         &'source self,
         _record: &UsernamePasswordRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: "ValueError".to_owned(),
-            status: None,
-            message: "the count path must not reach a token source".to_owned(),
-        })
+        Err(refuse())
     }
 
     fn sdk_refresh<'source>(
         &'source self,
         _scope: &str,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: "ValueError".to_owned(),
-            status: None,
-            message: "the count path must not reach a token source".to_owned(),
-        })
+        Err(refuse())
     }
 
     fn default_credential<'source>(
@@ -364,11 +359,7 @@ impl CredentialSources for Offline {
     }
 
     fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        Err(SourceFailure {
-            class: "ValueError".to_owned(),
-            status: None,
-            message: "the count path must not reach a token source".to_owned(),
-        })
+        Err(refuse())
     }
 }
 
@@ -423,7 +414,10 @@ impl<Inner: Subscriber> Layer<Inner> for Logs {
     }
 }
 
-fn captured<R>(body: impl FnOnce() -> R) -> (R, Vec<Warning>) {
+fn captured<R, B>(body: B) -> (R, Vec<Warning>)
+where
+    B: FnOnce() -> R,
+{
     let logs = Logs::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());
     let outcome = with_default(subscriber, body);

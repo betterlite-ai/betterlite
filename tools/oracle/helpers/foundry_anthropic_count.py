@@ -2,12 +2,21 @@ import asyncio
 import logging
 import os
 from collections.abc import Awaitable
-from typing import Final, Literal, NotRequired, Protocol, TypedDict, TypeAlias, TypeVar, runtime_checkable
+from typing import (
+    Final,
+    Literal,
+    NotRequired,
+    Protocol,
+    TypeAlias,
+    TypedDict,
+    TypeVar,
+    runtime_checkable,
+)
 
 import httpx
 import litellm
 from litellm.caching.llm_caching_handler import LLMClientCache
-from litellm.constants import request_timeout as DEFAULT_TIMEOUT
+from litellm.constants import request_timeout as default_timeout
 from litellm.llms.anthropic.common_utils import AnthropicError
 from litellm.llms.azure_ai.anthropic.count_tokens.handler import (
     AzureAIAnthropicCountTokensHandler,
@@ -24,6 +33,7 @@ from pydantic import ConfigDict, JsonValue as Json, TypeAdapter
 from typing_extensions import override
 
 CLIENT_KEY: Final = "async_httpx_client"
+TIMEOUT_ATTRIBUTE: Final = "request_timeout"
 CACHE_KEY: Final = CLIENT_KEY + LlmProviders.AZURE_AI
 CACHE_TTL: Final = 600
 HEADERS: Final = (
@@ -43,7 +53,7 @@ Outcome = TypeVar("Outcome")
 
 Env: TypeAlias = dict[str, str]
 Params: TypeAlias = dict[str, Json]
-Messages: TypeAlias = list[dict[str, object]]  # ast-grep-ignore: no-loose-types
+Messages: TypeAlias = list[dict[str, object]]
 
 
 @runtime_checkable
@@ -122,7 +132,7 @@ class Sent:
     def handle(self, request: httpx.Request) -> httpx.Response:
         if self.first is None:
             headers = {name.lower(): value for name, value in request.headers.items()}
-            seconds = SECONDS.validate_python(request.extensions["timeout"])
+            seconds = SECONDS.validate_python(request.extensions["timeout"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/handler.py#L84-L93
             body: Json = None if not request.content else DECODER.validate_json(request.content)
             self.first = {
                 "url": str(request.url),
@@ -138,9 +148,6 @@ class Sent:
             content=self.reply["body"].encode(),
             request=request,
         )
-
-    def observed(self) -> Json:
-        return self.first
 
 
 class Warnings(logging.Filter):
@@ -188,12 +195,12 @@ def use_environment(values: Env) -> None:
 def prepare(case: HandleCase | CounterCase) -> None:
     environment = case.get("environment")
     use_environment({} if environment is None else environment)
-    globals = case.get("globals")
-    litellm.api_key = None if globals is None else globals.get("api_key")
-    litellm.azure_key = None if globals is None else globals.get("azure_key")
+    overrides = case.get("globals")
+    litellm.api_key = None if overrides is None else overrides.get("api_key")
+    litellm.azure_key = None if overrides is None else overrides.get("azure_key")
     litellm.enable_azure_ad_token_refresh = False
     seconds = case.get("request_timeout")
-    litellm.request_timeout = DEFAULT_TIMEOUT if seconds is None else seconds
+    setattr(litellm, TIMEOUT_ATTRIBUTE, default_timeout if seconds is None else seconds)
 
 
 def install(sent: Sent) -> None:
@@ -209,6 +216,20 @@ async def answered(sent: Sent, response: Awaitable[Outcome]) -> Outcome:
     return await response
 
 
+async def handled(sent: Sent, handler: AzureAIAnthropicCountTokensHandler, case: HandleCase) -> Json:
+    install(sent)
+    return DECODER.validate_python(await handler.handle_count_tokens_request(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/handler.py#L27-L127
+        model=case["model"],
+        messages=case["messages"],
+        api_key=case["api_key"],
+        api_base=case["api_base"],
+        litellm_params=case.get("litellm_params"),
+        timeout=case.get("timeout"),
+        tools=case.get("tools"),
+        system=case.get("system"),
+    ))
+
+
 def endpoint(call: EndpointCall) -> Json:
     config = AzureAIAnthropicCountTokensConfig()
     urls: list[Json] = [config.get_count_tokens_endpoint(base) for base in call["api_bases"]]
@@ -220,30 +241,15 @@ def handle_case(case: HandleCase) -> Json:
     sent = Sent(case.get("reply"))
     handler = AzureAIAnthropicCountTokensHandler()
     try:
-        value = asyncio.run(
-            answered(
-                sent,
-                handler.handle_count_tokens_request(
-                    model=case["model"],
-                    messages=case["messages"],
-                    api_key=case["api_key"],
-                    api_base=case["api_base"],
-                    litellm_params=case.get("litellm_params"),
-                    timeout=case.get("timeout"),
-                    tools=case.get("tools"),
-                    system=case.get("system"),
-                ),
-            )
-        )
-        response: Json = {"value": DECODER.validate_python(value)}
-    except AnthropicError as error:
+        response: Json = {"value": asyncio.run(handled(sent, handler, case))}
+    except AnthropicError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L309
         response = {
             "error": {
                 "status_code": error.status_code,
                 "processing": error.message.startswith(PROCESSING_PREFIX),
             }
         }
-    return {"request": sent.observed(), "response": response}
+    return {"request": sent.first, "response": response}
 
 
 def counter_case(case: CounterCase) -> Json:
@@ -279,7 +285,7 @@ def counter_case(case: CounterCase) -> Json:
     return {
         "selected": selected,
         "result": None if result is None else result_json(result),
-        "request": sent.observed(),
+        "request": sent.first,
         "warnings": warnings.entries,
     }
 

@@ -9,7 +9,6 @@ use betterlite_config::sections::Section;
 use betterlite_config::sections::anthropic_count_tokens::Raw as BetaRaw;
 use betterlite_config::sections::azure_credentials::{DeploymentSettings, Raw as CredentialRaw};
 use betterlite_config::sections::azure_url_policy::Raw as KeyRaw;
-use betterlite_config::sections::foundry_credentials;
 use betterlite_config::sections::routing_timeouts::Settings as TimeoutSettings;
 use betterlite_foundry::anthropic_messages::environment::ParamsKey;
 use betterlite_http::proxy::UpstreamResponse;
@@ -173,13 +172,6 @@ pub(crate) fn credential_settings(
         .ok_or_else(|| failure("no deployment resolved"))
 }
 
-// AZURE_AI_API_KEY and AZURE_AI_API_BASE, resolved by the shared foundry credential loader
-pub(crate) fn foundry_settings(
-    environment: &BTreeMap<String, String>,
-) -> foundry_credentials::Settings {
-    foundry_credentials::Settings::resolve_environment(environment)
-}
-
 // litellm.api_key, litellm.azure_key and the Azure key variables, through the production config section
 pub(crate) fn configured_key(
     globals: &Globals,
@@ -203,20 +195,17 @@ pub(crate) fn key_shape<'data>(
     litellm_params: &'data BTreeMap<String, Option<String>>,
     secret: Option<&'data SecretString>,
 ) -> ParamsKey<'data> {
-    match (litellm_params.get("api_key"), secret) {
-        (None, _) => ParamsKey::DictAbsent,
-        (Some(_), None) => ParamsKey::DictNull,
-        (Some(_), Some(value)) => ParamsKey::Dict(value),
+    match litellm_params.get("api_key") {
+        None => ParamsKey::DictAbsent,
+        Some(_) => secret.map_or(ParamsKey::DictNull, ParamsKey::Dict),
     }
 }
 
 pub(crate) fn params_secret(
     litellm_params: &BTreeMap<String, Option<String>>,
 ) -> Option<SecretString> {
-    litellm_params
-        .get("api_key")
-        .and_then(|entry| entry.as_deref())
-        .map(SecretString::from)
+    let entry = litellm_params.get("api_key")?;
+    entry.as_deref().map(SecretString::from)
 }
 
 #[derive(Clone, Default)]
