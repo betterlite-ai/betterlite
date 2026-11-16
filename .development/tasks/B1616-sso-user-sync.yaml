@@ -68,7 +68,7 @@ checks:
       run: test -f tools/oracle/helpers/sso_user_values.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: user-sync-corpora
       why: User-default configuration and the new pure projection call are absent from replay inputs.
-      run: grep -rlq 'sso_user_values:' tools/oracle/fuzz/corpus/helper_case/sso-user-values-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-user-sync-*')" && cargo nextest run --locked -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+      run: grep -rlq 'sso_user_values:' tools/oracle/fuzz/corpus/helper_case/sso-user-values-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-user-sync-*')" && cargo nextest run --locked -p betterlite-config -p betterlite-oracle -p betterlite-oracle-server --no-tests=fail -E 'test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/sso-user-values/established-alias-kept.yaml
   - tools/oracle/cases/helpers/sso-user-values/id-is-not-a-display-name.yaml

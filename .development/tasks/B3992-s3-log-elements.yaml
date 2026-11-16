@@ -51,7 +51,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_v2_params::/)'
     - id: s3-params-oracle
       why: Oracle cases verify parameter precedence and event structure match LiteLLM behavior.
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_s3_v2_params_case_corpus)'
+      run: cargo nextest run --locked -p betterlite-oracle-logging --no-tests=fail -E 'test(replays_the_s3_v2_params_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/logging/s3-v2-params/parameter-precedence-override-global.yaml
   - tools/oracle/cases/logging/s3-v2-params/queue-and-retry-defaults.yaml

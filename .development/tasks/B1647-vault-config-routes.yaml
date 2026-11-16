@@ -63,7 +63,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vault_config_routes::/)'
     - id: vault-route-corpora
       why: Vault mutation bodies and HTTP transcript envelopes lack committed parsing examples.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/config_override/vault-routes-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/vault-config-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_override_corpus) | test(replays_the_http_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/config_override/vault-routes-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/vault-config-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle -p betterlite-oracle-server --no-tests=fail -E 'test(replays_the_config_override_corpus) | test(replays_the_http_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/management/vault-config/omission-keeps-token-empty-clears.yaml
   - tools/oracle/cases/management/vault-config/null-row-falls-back-to-environment.yaml
