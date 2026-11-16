@@ -9,7 +9,9 @@ repos:
     hooks:
       - id: check-merge-conflict
       - id: check-toml
+      # Helm chart templates are Go templates, not YAML; helm lint and helm-unittest check them
       - id: check-yaml
+        exclude: ^packaging/helm/[^/]+/templates/
       - id: check-json
       - id: check-added-large-files
       # Codex keeps .codex/ and Claude keeps .claude/ read-only for their agents, and these two fixers open every file for writing
