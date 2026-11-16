@@ -22,7 +22,6 @@ call:
           title: r.pdf
       - type: tool_result
         tool_use_id: toolu_empty
-        content: null
     usage: null
 env: {}
 compare:
