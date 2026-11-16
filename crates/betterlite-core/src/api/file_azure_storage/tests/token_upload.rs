@@ -59,14 +59,15 @@ async fn token_upload_sequence() {
     assert_eq!(flush.header("content-length"), Some("0"));
 }
 
-// LiteLLM strips slashes off a prefix, so a slash-only prefix leaves one before the name
+// LiteLLM strips slashes off a prefix and then joins the empty result with a slash, so a
+// slash-only prefix leaves one extra before the name in both the request and the returned URL
 #[tokio::test]
 async fn token_upload_prefixes() {
     for (prefix, expected) in [
-        (Some("/"), "/a.txt"),
-        (Some("///"), "/a.txt"),
-        (Some(""), "/a.txt"),
-        (None, "a.txt"),
+        (Some("/"), "//a.txt"),
+        (Some("///"), "//a.txt"),
+        (Some(""), "//a.txt"),
+        (None, "/a.txt"),
     ] {
         let harness = Harness::new(settings(), &[(201, ""), (202, ""), (200, "")]);
         let url = harness

@@ -45,6 +45,15 @@ fn azure_filename_strategies() {
         "1000.TXT"
     );
     assert_eq!(uuid_name("dir/a b.TXT"), format!("{FIXED_ID}.TXT"));
+    assert_eq!(
+        generated_file_name(
+            "dir/a b.TXT",
+            naming_strategy("unknown"),
+            Duration::from_millis(TIMESTAMP_MILLIS),
+            &FixedIds::new(FIXED_ID),
+        ),
+        format!("{FIXED_ID}.TXT")
+    );
 }
 
 // Python's int(time.time() * 1000) truncates once, so 1.001 seconds counts as 1000 milliseconds
