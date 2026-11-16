@@ -1,0 +1,27 @@
+kind: helper
+name: response-output-chat-completion
+call:
+  b3857:
+    function: response_output
+    kind: model_response
+    response:
+      id: chatcmpl-1
+      model: gpt-4o
+      created: 1
+      object: chat.completion
+      choices:
+      - index: 0
+        finish_reason: stop
+        message: {role: assistant, content: hi}
+      - index: 1
+        finish_reason: tool_calls
+        message:
+          role: assistant
+          content: null
+          tool_calls:
+          - id: c
+            type: function
+            function: {name: f, arguments: '{}'}
+env: {}
+compare:
+  ignore: []
