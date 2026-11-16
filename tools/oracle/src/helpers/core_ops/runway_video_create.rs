@@ -105,12 +105,12 @@ fn create_call(model: &str, prompt: &str, call: &CreateCall) -> Value {
     })
 }
 
-fn create(input: &Create) -> HelperResult {
+fn create(input: &Create) -> Value {
     let mut results = Vec::with_capacity(input.calls.len());
     for call in &input.calls {
         results.push(create_call(&input.model, &input.prompt, call));
     }
-    Ok(json!({"results": results}))
+    json!({"results": results})
 }
 
 fn reply(input: &Reply) -> HelperResult {
@@ -135,7 +135,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Create(params) => create(params),
+            Input::Create(params) => Ok(create(params)),
             Input::Reply(params) => reply(params),
         }
     }
