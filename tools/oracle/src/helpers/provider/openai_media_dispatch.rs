@@ -36,8 +36,8 @@ pub(super) enum Input {
     Speech(SpeechCase),
     Transcription(TranscriptionCase),
     VideoCreate(VideoCreateCase),
-    VideoLifecycle(VideoLifecycleCase),
-    VideoExtendedOperations(VideoExtendedCase),
+    VideoLifecycle(VideoCase),
+    VideoExtendedOperations(VideoCase),
 }
 
 #[derive(Debug, Deserialize)]
@@ -127,31 +127,12 @@ pub(super) struct VideoCreateCase {
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum VideoLifecycleOp {
+pub(super) enum VideoOp {
     List,
     Status,
     Delete,
     Content,
     Remix,
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct VideoLifecycleCase {
-    pub(super) api_base: String,
-    pub(super) provider: Option<String>,
-    pub(super) op: VideoLifecycleOp,
-    pub(super) video_id: Option<String>,
-    pub(super) after: Option<String>,
-    pub(super) limit: Option<i64>,
-    pub(super) order: Option<String>,
-    pub(super) variant: Option<String>,
-    pub(super) prompt: Option<String>,
-    pub(super) reply: String,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum VideoExtendedOp {
     Edit,
     Extension,
     CreateCharacter,
@@ -159,13 +140,16 @@ pub(super) enum VideoExtendedOp {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct VideoExtendedCase {
+pub(super) struct VideoCase {
     pub(super) api_base: String,
     pub(super) provider: Option<String>,
-    pub(super) model: String,
-    pub(super) op: VideoExtendedOp,
+    pub(super) op: VideoOp,
     pub(super) prompt: Option<String>,
     pub(super) video_id: Option<String>,
+    pub(super) after: Option<String>,
+    pub(super) limit: Option<i64>,
+    pub(super) order: Option<String>,
+    pub(super) variant: Option<String>,
     pub(super) video_file: Option<String>,
     pub(super) extra_body: Option<IndexMap<String, Json>>,
     pub(super) seconds: Option<String>,
@@ -247,13 +231,14 @@ impl Helper for Op {
 
 async fn dispatch_input(input: &Input) -> HelperResult {
     match input {
-        Input::ImageGeneration(case) => image::image_generation(case).await,
+        Input::ImageGeneration(case) => image::image_leaf(image::ImageLeaf::Generation(case)).await,
         Input::ImageEdit(case) => image::image_edit(case).await,
-        Input::ImageVariation(case) => image::image_variation(case).await,
+        Input::ImageVariation(case) => image::image_leaf(image::ImageLeaf::Variation(case)).await,
         Input::Speech(case) => voice::speech(case).await,
         Input::Transcription(case) => voice::transcription(case).await,
         Input::VideoCreate(case) => video::video_create(case).await,
-        Input::VideoLifecycle(case) => video::video_lifecycle(case).await,
-        Input::VideoExtendedOperations(case) => video::video_extended(case).await,
+        Input::VideoLifecycle(case) | Input::VideoExtendedOperations(case) => {
+            video::video_case(case).await
+        }
     }
 }

@@ -23,46 +23,55 @@ use super::{
 const NOW: i64 = 1_700_000_000;
 const TIMEOUT: Duration = Duration::from_secs(60);
 
-pub(super) async fn image_generation(case: &ImageGenerationCase) -> HelperResult {
-    let call = ImageGenerationCall {
-        model: case.model.clone(),
-        prompt: case.prompt.clone(),
-        optional_params: case.options.clone(),
-        api_key: Some(SecretString::from("sk-media")),
-        api_base: Some(case.api_base.clone()),
-        organization: None,
-        headers: None,
-        timeout: TIMEOUT,
-        delegate_async: false,
-        now_seconds: NOW,
-    };
-    let reply_body =
-        serde_json::to_vec(&case.reply).map_err(|error| failure("Serialize", error))?;
-    let fixture = Fixture::new(case.status, &reply_body);
-    let result = run(
-        &fixture,
-        OpenAiMediaOperation::ImageGeneration(Box::new(call)),
-    )
-    .await;
-    let sent = fixtures::only_request(&fixture)?;
-    let request = serde_json::json!({
-        "method": sent.method.as_str(),
-        "url": sent.url.as_str(),
-        "body": fixtures::json_body(&sent)?,
-        "authorization": fixtures::header(&sent, "authorization"),
-    });
-    let (reply, raised) = match result {
-        Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::ImageGeneration(outcome))) => {
-            (image_reply(&outcome.reply), Value::Null)
-        }
-        Ok(_) => return Err(failure("Variant", OTHER_OUTCOME)),
-        Err(OpenAiMediaError::ImageGeneration(error)) => (
-            Value::Null,
-            serde_json::json!({"mapped": error.mapped(), "status": error.status()}),
+// The two image leaves take different calls and read different requests, so one case names which it runs.
+#[derive(Clone, Copy)]
+pub(super) enum ImageLeaf<'case> {
+    Generation(&'case ImageGenerationCase),
+    Variation(&'case ImageVariationCase),
+}
+
+pub(super) async fn image_leaf(leaf: ImageLeaf<'_>) -> HelperResult {
+    let (operation, status, reply) = match leaf {
+        ImageLeaf::Generation(case) => (
+            OpenAiMediaOperation::ImageGeneration(Box::new(ImageGenerationCall {
+                model: case.model.clone(),
+                prompt: case.prompt.clone(),
+                optional_params: case.options.clone(),
+                api_key: Some(SecretString::from("sk-media")),
+                api_base: Some(case.api_base.clone()),
+                organization: None,
+                headers: None,
+                timeout: TIMEOUT,
+                delegate_async: false,
+                now_seconds: NOW,
+            })),
+            case.status,
+            &case.reply,
         ),
-        Err(error) => return Err(leaf_failure(&error)),
+        ImageLeaf::Variation(case) => (
+            OpenAiMediaOperation::ImageVariation(Box::new(variation_request(case))),
+            case.status,
+            &case.reply,
+        ),
     };
-    Ok(serde_json::json!({"request": request, "reply": reply, "error": raised}))
+    let reply_body = serde_json::to_vec(reply).map_err(|error| failure("Serialize", error))?;
+    let fixture = Fixture::new(status, &reply_body);
+    let result = run(&fixture, operation).await;
+    let sent = fixtures::only_request(&fixture)?;
+    let request = match leaf {
+        ImageLeaf::Generation(_) => serde_json::json!({
+            "method": sent.method.as_str(),
+            "url": sent.url.as_str(),
+            "body": fixtures::json_body(&sent)?,
+            "authorization": fixtures::header(&sent, "authorization"),
+        }),
+        ImageLeaf::Variation(_) => serde_json::json!({
+            "url": sent.url.as_str(),
+            "authorization": fixtures::header(&sent, "authorization"),
+            "parts": fixtures::multipart_view(&sent)?,
+        }),
+    };
+    image_answer(request, result)
 }
 
 pub(super) async fn image_edit(case: &ImageEditCase) -> HelperResult {
@@ -94,27 +103,20 @@ pub(super) async fn image_edit(case: &ImageEditCase) -> HelperResult {
     }
 }
 
-pub(super) async fn image_variation(case: &ImageVariationCase) -> HelperResult {
-    let operation = variation_request(case);
-    let reply_body =
-        serde_json::to_vec(&case.reply).map_err(|error| failure("Serialize", error))?;
-    let fixture = Fixture::new(case.status, &reply_body);
-    let result = run(
-        &fixture,
-        OpenAiMediaOperation::ImageVariation(Box::new(operation)),
-    )
-    .await;
-    let sent = fixtures::only_request(&fixture)?;
-    let request = serde_json::json!({
-        "url": sent.url.as_str(),
-        "authorization": fixtures::header(&sent, "authorization"),
-        "parts": fixtures::multipart_view(&sent)?,
-    });
+// Both image leaves answer with the same envelope, so one match names the reply each outcome carries.
+fn image_answer(request: Value, result: Result<OperationResult, OpenAiMediaError>) -> HelperResult {
     let (reply, raised) = match result {
+        Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::ImageGeneration(outcome))) => {
+            (image_reply(&outcome.reply), Value::Null)
+        }
         Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::ImageVariation(outcome))) => {
             (image_reply(&outcome.reply), Value::Null)
         }
         Ok(_) => return Err(failure("Variant", OTHER_OUTCOME)),
+        Err(OpenAiMediaError::ImageGeneration(error)) => (
+            Value::Null,
+            serde_json::json!({"mapped": error.mapped(), "status": error.status()}),
+        ),
         Err(OpenAiMediaError::ImageVariation(error)) => (
             Value::Null,
             serde_json::json!({"mapped": true, "status": error.status_code}),

@@ -54,7 +54,7 @@ pub(super) async fn speech(case: &SpeechCase) -> HelperResult {
         "extra_headers": Value::Object(extra),
         "body": fixtures::json_body(&sent)?,
     });
-    speech_outcome(result, request).await
+    audio_outcome(result, request).await
 }
 
 fn speech_operation(case: &SpeechCase) -> SpeechOperation {
@@ -79,7 +79,8 @@ fn speech_operation(case: &SpeechCase) -> SpeechOperation {
     }
 }
 
-async fn speech_outcome(
+// Both audio leaves answer with the request they sent and the reply or the typed status error they got.
+async fn audio_outcome(
     result: Result<OperationResult, OpenAiMediaError>,
     request: Value,
 ) -> HelperResult {
@@ -99,7 +100,19 @@ async fn speech_outcome(
                 "error": Value::Null,
             }))
         }
-        Ok(_) => Err(failure("Variant", OTHER_OUTCOME)),
+        Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::Transcription(reply))) => {
+            Ok(serde_json::json!({
+                "request": request,
+                "reply": {
+                    "text": reply.response.text,
+                    "fields": Value::Object(reply.response.extra),
+                    "model": reply.model,
+                    "provider": reply.custom_llm_provider,
+                    "duration_recorded": matches!(reply.duration, StoredDuration::Known(_)),
+                },
+                "error": Value::Null,
+            }))
+        }
         Err(OpenAiMediaError::Speech(SpeechError::Status(raised))) => Ok(serde_json::json!({
             "request": request,
             "status": Value::Null,
@@ -107,11 +120,24 @@ async fn speech_outcome(
             "body": Value::Null,
             "error": {
                 "status": raised.status,
-                "type": raised.error_type.clone(),
-                "param": raised.param.clone(),
-                "code": raised.code.clone(),
+                "type": raised.error_type,
+                "param": raised.param,
+                "code": raised.code,
             },
         })),
+        Err(OpenAiMediaError::Transcription(TranscriptionError::Status(raised))) => {
+            Ok(serde_json::json!({
+                "request": request,
+                "reply": Value::Null,
+                "error": {
+                    "status": raised.status,
+                    "type": raised.error_type,
+                    "param": raised.param,
+                    "code": raised.code,
+                },
+            }))
+        }
+        Ok(_) => Err(failure("Variant", OTHER_OUTCOME)),
         Err(error) => Err(leaf_failure(&error)),
     }
 }
@@ -131,7 +157,7 @@ pub(super) async fn transcription(case: &TranscriptionCase) -> HelperResult {
         "accept": fixtures::header(&sent, "accept"),
         "parts": fixtures::multipart_view(&sent)?,
     });
-    transcription_outcome(result, request)
+    audio_outcome(result, request).await
 }
 
 fn transcription_operation(case: &TranscriptionCase) -> TranscriptionOperation {
@@ -160,34 +186,4 @@ fn transcription_operation(case: &TranscriptionCase) -> TranscriptionOperation {
         optional_params: case.options.clone(),
         atranscription: false,
     }
-}
-
-fn transcription_outcome(
-    result: Result<OperationResult, OpenAiMediaError>,
-    request: Value,
-) -> HelperResult {
-    let (reply, raised) = match result {
-        Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::Transcription(reply))) => (
-            serde_json::json!({
-                "text": reply.response.text.clone(),
-                "fields": Value::Object(reply.response.extra.clone()),
-                "model": reply.model.clone(),
-                "provider": reply.custom_llm_provider,
-                "duration_recorded": matches!(reply.duration, StoredDuration::Known(_)),
-            }),
-            Value::Null,
-        ),
-        Ok(_) => return Err(failure("Variant", OTHER_OUTCOME)),
-        Err(OpenAiMediaError::Transcription(TranscriptionError::Status(error))) => (
-            Value::Null,
-            serde_json::json!({
-                "status": error.status,
-                "type": error.error_type.clone(),
-                "param": error.param.clone(),
-                "code": error.code.clone(),
-            }),
-        ),
-        Err(error) => return Err(leaf_failure(&error)),
-    };
-    Ok(serde_json::json!({"request": request, "reply": reply, "error": raised}))
 }
