@@ -374,6 +374,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
   AmazonInvokeConfig.transform_response L281-L419 belong to B612.'
 pitfalls:
+- Build one PromptFactory with its cache seeded from builtin_entries() and Hub::Http over B173's shared client with base URL https://huggingface.co, share it across requests, and pass it to every convert_messages_to_prompt call, so a missing chat template downloads as LiteLLM's does (B9962).
 - 'The oracle helper for this task is pre-registered as bedrock_invoke_request in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/invoke_request.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_invoke_request.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A region prefix changes the command-r body shape because its test uses the original model string.
 - The unused AmazonCohereChatConfig mapper contains an unconditional seed assignment; the active Cohere mapper is

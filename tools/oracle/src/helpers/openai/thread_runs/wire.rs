@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 
 use super::Reply;
 use super::invalid_input;
+use betterlite_oracle_helper_api::error::HelperError;
 
 const NO_REPLY: &str = r#"{"error":{"message":"the fixture queues no reply"}}"#;
 pub(super) struct Wire {
@@ -22,7 +23,7 @@ pub(super) struct Wire {
     replies: Mutex<VecDeque<(u16, HeaderMap, Vec<u8>)>>,
 }
 impl Wire {
-    pub(super) fn new(replies: &[Reply]) -> Result<Arc<Self>, Box<crate::helpers::HelperError>> {
+    pub(super) fn new(replies: &[Reply]) -> Result<Arc<Self>, Box<HelperError>> {
         let mut queued = VecDeque::new();
         for reply in replies {
             let mut headers = HeaderMap::new();

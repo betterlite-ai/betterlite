@@ -1,3 +1,7 @@
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::hint;
+
 mod auth;
 mod database;
 mod jwt;
@@ -21,49 +25,49 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         run(input)
     }
 }
 
-pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
+pub(crate) fn run(input: &Input) -> HelperResult {
     match input {
         Input::Models(operation) => models::run(operation),
         Input::Auth(operation) => {
-            std::hint::black_box(auth::Operation::Reserved);
+            hint::black_box(auth::Operation::Reserved);
             match operation {
                 auth::Operation::Reserved => unbuilt("auth"),
             }
         }
         Input::Teams(operation) => {
-            std::hint::black_box(teams::Operation::Reserved);
+            hint::black_box(teams::Operation::Reserved);
             match operation {
                 teams::Operation::Reserved => unbuilt("teams"),
             }
         }
         Input::Users(operation) => {
-            std::hint::black_box(users::Operation::Reserved);
+            hint::black_box(users::Operation::Reserved);
             match operation {
                 users::Operation::Reserved => unbuilt("users"),
             }
         }
         Input::Keys(operation) => {
-            std::hint::black_box(keys::Operation::Reserved);
+            hint::black_box(keys::Operation::Reserved);
             match operation {
                 keys::Operation::Reserved => unbuilt("keys"),
             }
         }
         Input::Jwt(operation) => {
-            std::hint::black_box(jwt::Operation::Reserved);
+            hint::black_box(jwt::Operation::Reserved);
             match operation {
                 jwt::Operation::Reserved => unbuilt("jwt"),
             }
         }
         Input::Database(operation) => {
-            std::hint::black_box(database::Operation::Reserved);
+            hint::black_box(database::Operation::Reserved);
             match operation {
                 database::Operation::Reserved => unbuilt("database"),
             }
@@ -71,9 +75,9 @@ pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
     }
 }
 
-fn unbuilt(domain: &str) -> crate::helpers::HelperResult {
+fn unbuilt(domain: &str) -> HelperResult {
     let message = format!("the {domain} management domain is reserved for its task owner");
-    let error = crate::helpers::HelperError {
+    let error = HelperError {
         class: "NotBuilt".to_owned(),
         status: None,
         error_type: None,

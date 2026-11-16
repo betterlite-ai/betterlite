@@ -4,6 +4,8 @@ use serde_json::{Map, Value};
 use betterlite_auth::pass_through_registry::{
     PassThroughMetadata, PassThroughRegistry, PassThroughRouteType,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,10 +43,10 @@ struct Query {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let registrations = input.registrations.iter().map(to_registration).collect();
         let registry = PassThroughRegistry {
             root_path: input.root_path.clone(),
@@ -66,7 +68,7 @@ impl crate::helpers::Helper for Op {
             })
             .collect::<Vec<_>>();
         serde_json::to_value(answers).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "SerializationError".to_owned(),
                 status: None,
                 error_type: None,

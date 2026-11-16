@@ -7,14 +7,15 @@ use betterlite_logging::otel::legacy_attributes::raw_request::set_raw_request_at
 use betterlite_logging::otel::legacy_policy::config::OpenTelemetryConfig;
 use serde_json::Value;
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
+use betterlite_oracle_helper_api::error::HelperError;
 use input::{CallbackNames, Input};
 use support::{capture_mode, config, context, invalid, record};
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -53,7 +54,7 @@ fn named_record(
     input: &Input,
     settings: &OpenTelemetryConfig,
     name: Option<&str>,
-) -> Result<serde_json::Map<String, Value>, Box<crate::helpers::HelperError>> {
+) -> Result<serde_json::Map<String, Value>, Box<HelperError>> {
     let context = context(settings, name, capture_mode(input.capture_mode.as_deref()));
     let (attributes, result) =
         record(|span| set_attributes(span, &context, &input.kwargs, input.response.as_ref()))?;

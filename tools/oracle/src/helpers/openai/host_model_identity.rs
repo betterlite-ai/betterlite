@@ -19,6 +19,8 @@ use betterlite_openai::host_model_identity::{
     HostReply, HostReplyMode, ReplyDefaults, SUPPORTED_OPENAI_PARAMS, clarifai_base_model,
     clarifai_request_model, datarobot_api_base, process_host_response,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -92,10 +94,10 @@ impl LogSink for Silent {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         input
             .calls
             .iter()
@@ -109,13 +111,13 @@ impl crate::helpers::Helper for Op {
                 } => identity(host, api_base.as_deref(), api_key.as_deref(), env, models),
                 Call::Reply(fields) => reply(fields),
             })
-            .collect::<Result<Vec<Value>, Box<crate::helpers::HelperError>>>()
+            .collect::<Result<Vec<Value>, Box<HelperError>>>()
             .map(Value::Array)
     }
 }
 
-fn invalid(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: String::from("InvalidInput"),
         status: None,
         error_type: None,
@@ -131,7 +133,7 @@ fn identity(
     api_key: Option<&str>,
     env: &BTreeMap<String, String>,
     models: &[Option<String>],
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<HelperError>> {
     let settings = ConfigLoader {
         lookup: env.clone(),
     }
@@ -179,7 +181,7 @@ fn clarifai_model(model: Option<&str>) -> Value {
     }
 }
 
-fn with_log<T, A>(action: A) -> Result<(T, LoggingState), Box<crate::helpers::HelperError>>
+fn with_log<T, A>(action: A) -> Result<(T, LoggingState), Box<HelperError>>
 where
     A: FnOnce(&mut LoggingState, &PrePostEnv<'_>) -> T,
 {
@@ -215,7 +217,7 @@ where
     Ok((result, state))
 }
 
-fn reply(call: &ReplyCall) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn reply(call: &ReplyCall) -> Result<Value, Box<HelperError>> {
     let mode = match call.host {
         ReplyHost::Clarifai => HostReplyMode::Clarifai {
             request_model: &call.model,

@@ -1,0 +1,11 @@
+kind: helper
+name: tool-spend-framing-seed
+call:
+  tool_spend:
+    rows:
+      - {request_id: req-1, tool_name: search, start_time: "2026-01-02T00:00:00Z", refused: false}
+      - {request_id: req-2, tool_name: "wörld-界", start_time: "2026-01-02T00:00:00.500Z", refused: false}
+    max_bytes: 200
+    max_rows: 1
+env: {}
+compare: {ignore: []}

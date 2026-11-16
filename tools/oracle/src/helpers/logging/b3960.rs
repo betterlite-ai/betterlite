@@ -13,9 +13,11 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::scripted::{HookEffect, ScriptedHook, ScriptedRandom, ScriptedTransport};
+use tokio::runtime::Builder;
 
 mod scripted;
 
@@ -87,7 +89,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
         let mut results = Vec::with_capacity(input.scenarios.len());

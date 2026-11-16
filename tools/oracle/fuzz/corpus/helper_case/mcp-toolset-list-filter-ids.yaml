@@ -1,0 +1,15 @@
+kind: helper
+name: mcp_toolset_list_filter_ids
+call:
+  b4681:
+    operation: list
+    timestamp: '2026-01-02T03:04:05'
+    rows:
+      - {toolset_id: ts-1, toolset_name: alpha, tools: [{server_id: s1, tool_name: t1}]}
+      - {toolset_id: ts-2, toolset_name: beta}
+    toolset_ids: [ts-2]
+    use_writer: false
+    fail: false
+env: {}
+compare:
+  ignore: []

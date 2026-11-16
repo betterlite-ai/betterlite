@@ -140,7 +140,7 @@ oracle_cases:
 - tools/oracle/cases/api/batch-routes/cancellation-error-envelope.yaml
 deviations:
 - what: Executed batch cancellation returns 400 invalid_request_error/code="400" with the database-required message even when connected, because the MIT managed store hook is absent; no cancellation/refund runs.
-  why: Max must decide managed files and batches. Preserve the current no-hook behavior without imposing an enterprise license gate or inventing a store implementation.
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L89-L105
 out_of_scope:
 - B1112 owns endpoint support helpers L82-L215; B1050 create_batch L233-L524; B1051 retrieve_batch L542-L829; B1133 list_batches L847-L1014. Their route factories mount from their own route stubs.

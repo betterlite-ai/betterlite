@@ -20,6 +20,7 @@ use betterlite_ocr::ocr_settings::OcrSettings;
 use secrecy::SecretString;
 
 use super::failure;
+use betterlite_oracle_helper_api::error::HelperError;
 
 struct Unused;
 
@@ -56,7 +57,7 @@ impl VertexTokenSource for Unused {
     }
 }
 
-pub(super) fn ocr_client() -> Result<OcrClient, Box<crate::helpers::HelperError>> {
+pub(super) fn ocr_client() -> Result<OcrClient, Box<HelperError>> {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
             .map_err(|error| failure(&error))?,

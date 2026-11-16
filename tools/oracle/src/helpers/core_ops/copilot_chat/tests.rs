@@ -3,12 +3,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use betterlite_oracle::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{Input, Op};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
 
 #[derive(Deserialize)]
 struct Call {

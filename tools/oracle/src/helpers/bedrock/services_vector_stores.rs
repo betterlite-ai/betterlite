@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod operations;
 mod responses;
