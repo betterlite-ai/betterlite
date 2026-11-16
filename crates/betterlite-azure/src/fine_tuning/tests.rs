@@ -413,11 +413,11 @@ fn create_data(text: &str) -> FineTuneCreate {
 fn wire_body(data: &FineTuneCreate) -> String {
     let mut body = serde_json::to_value(data).expect("the create data serializes");
     if let Some(map) = body.as_object_mut() {
-        let extra_body = map
+        let merged = map
             .remove("extra_body")
             .and_then(|value| value.as_object().cloned());
-        if let Some(extra_body) = extra_body {
-            map.extend(extra_body);
+        if let Some(fields) = merged {
+            map.extend(fields);
         }
     }
     body.to_string()
@@ -543,11 +543,8 @@ fn projection(outcome: &ClientOutcome<'_>) -> Projection {
 
 // the SDK turns azure_endpoint into <endpoint>/openai and keeps a deployment base_url, always ending in a slash
 fn rebuilt(inputs: Option<&ClientInputs<'_>>) -> (Option<String>, Option<String>) {
-    let Some(inputs) = inputs else {
-        return (None, None);
-    };
     match inputs {
-        ClientInputs::Azure(azure) => {
+        Some(ClientInputs::Azure(azure)) => {
             let base_url = match (&azure.endpoint.azure_endpoint, &azure.endpoint.base_url) {
                 (Some(endpoint), _) => Some(format!("{}/openai/", endpoint.trim_end_matches('/'))),
                 (None, Some(path)) => Some(format!("{}/", path.trim_end_matches('/'))),
@@ -555,7 +552,8 @@ fn rebuilt(inputs: Option<&ClientInputs<'_>>) -> (Option<String>, Option<String>
             };
             (base_url, Some(azure.api_version.clone()))
         }
-        ClientInputs::OpenAiV1(v1) => (v1.base_url.clone(), None),
+        Some(ClientInputs::OpenAiV1(v1)) => (v1.base_url.clone(), None),
+        None => (None, None),
     }
 }
 

@@ -73,11 +73,11 @@ impl Recorded {
 fn wire_body(data: &FineTuneCreate) -> Value {
     let mut body = json!(data);
     if let Some(map) = body.as_object_mut() {
-        let extra = map
+        let merged = map
             .remove("extra_body")
             .and_then(|value| value.as_object().cloned());
-        if let Some(extra) = extra {
-            map.extend(extra);
+        if let Some(fields) = merged {
+            map.extend(fields);
         }
     }
     body

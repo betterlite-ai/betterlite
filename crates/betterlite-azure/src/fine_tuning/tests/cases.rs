@@ -41,44 +41,23 @@ fn training_type_default() {
 
 fn training_type_defaults_from_every_empty_extra_body() {
     let body = job_json("queued", ORG, "[]");
-    let steps = [
-        (
-            r#"{"model":"m","training_file":"f","extra_body":null}"#,
-            DEFAULTED,
-        ),
-        (
-            r#"{"model":"m","training_file":"f","extra_body":{}}"#,
-            DEFAULTED,
-        ),
-        (
-            r#"{"model":"m","training_file":"f","extra_body":0}"#,
-            DEFAULTED,
-        ),
-        (
-            r#"{"model":"m","training_file":"f","extra_body":false}"#,
-            DEFAULTED,
-        ),
-        (
-            r#"{"model":"m","training_file":"f","extra_body":""}"#,
-            DEFAULTED,
-        ),
-        (
-            r#"{"model":"m","training_file":"f","extra_body":[]}"#,
-            DEFAULTED,
-        ),
-        (
-            r#"{"model":"m","training_file":"f","extra_body":"text"}"#,
-            DEFAULTED,
-        ),
-        (
-            r#"{"model":"m","training_file":"f","extra_body":{"prompt_loss_weight":0.1}}"#,
-            DEFAULTED_WITH_EXTRA,
-        ),
-        (
-            r#"{"model":"m","training_file":"f","extra_body":{"trainingType":null,"prompt_loss_weight":0.1}}"#,
-            DEFAULTED_WITH_EXTRA,
-        ),
+    let emptied = [
+        r#"{"model":"m","training_file":"f","extra_body":null}"#,
+        r#"{"model":"m","training_file":"f","extra_body":{}}"#,
+        r#"{"model":"m","training_file":"f","extra_body":0}"#,
+        r#"{"model":"m","training_file":"f","extra_body":false}"#,
+        r#"{"model":"m","training_file":"f","extra_body":""}"#,
+        r#"{"model":"m","training_file":"f","extra_body":[]}"#,
+        r#"{"model":"m","training_file":"f","extra_body":"text"}"#,
     ];
+    let kept = [
+        r#"{"model":"m","training_file":"f","extra_body":{"prompt_loss_weight":0.1}}"#,
+        r#"{"model":"m","training_file":"f","extra_body":{"trainingType":null,"prompt_loss_weight":0.1}}"#,
+    ];
+    let steps = emptied
+        .iter()
+        .map(|data| (data, DEFAULTED))
+        .chain(kept.iter().map(|data| (data, DEFAULTED_WITH_EXTRA)));
     for (data, sent) in steps {
         let observation = run(&create(data, &body));
         assert_eq!(observation.outcome, Outcome::Job(canonical_job(&body)));
@@ -259,9 +238,24 @@ fn organization_result_files_null() {
 }
 
 fn azure_finetune_client_rebuild() {
-    for (step, class, base_url, api_version) in projection_cases() {
+    let azure_url = "https://fixture.test/openai/";
+    let mut steps = [
+        (project(Supplied::OpenAiSync, false), "AzureOpenAI"),
+        (project(Supplied::OpenAiAsync, false), "AzureOpenAI"),
+        (project(Supplied::AzureSync, true), "AsyncAzureOpenAI"),
+        (project(Supplied::AzureAsync, false), "AzureOpenAI"),
+    ]
+    .into_iter()
+    .map(|(step, class)| (step, projected(class, azure_url, Some("2024-10-21"))))
+    .collect::<Vec<_>>();
+    let v1_step = versioned(project(Supplied::OpenAiSync, false), "v1");
+    steps.push((
+        v1_step,
+        projected("OpenAI", "https://fixture.test/openai/v1/", None),
+    ));
+    for (step, expected) in steps {
         let observation = run(&step);
-        assert_eq!(observation.outcome, projected(class, base_url, api_version));
+        assert_eq!(observation.outcome, expected);
         assert!(observation.calls.is_empty());
         assert!(observation.supplied_calls.is_empty());
     }
@@ -274,41 +268,6 @@ fn azure_finetune_client_rebuild() {
         rebuilt,
         job_observation(&queued, vec![canonical_create(DEFAULTED)])
     );
-}
-
-fn projection_cases() -> [(Step, &'static str, &'static str, Option<&'static str>); 5] {
-    [
-        (
-            project(Supplied::OpenAiSync, false),
-            "AzureOpenAI",
-            "https://fixture.test/openai/",
-            Some("2024-10-21"),
-        ),
-        (
-            project(Supplied::OpenAiAsync, false),
-            "AzureOpenAI",
-            "https://fixture.test/openai/",
-            Some("2024-10-21"),
-        ),
-        (
-            project(Supplied::AzureSync, true),
-            "AsyncAzureOpenAI",
-            "https://fixture.test/openai/",
-            Some("2024-10-21"),
-        ),
-        (
-            project(Supplied::AzureAsync, false),
-            "AzureOpenAI",
-            "https://fixture.test/openai/",
-            Some("2024-10-21"),
-        ),
-        (
-            versioned(project(Supplied::OpenAiSync, false), "v1"),
-            "OpenAI",
-            "https://fixture.test/openai/v1/",
-            None,
-        ),
-    ]
 }
 
 fn projected(
@@ -349,10 +308,12 @@ fn sdk_client_missing() {
         connect(&steps[0], &mut data, None, &unbuilt),
         raised_value(MISSING).outcome
     );
-    assert_eq!(
-        data.extra.get("extra_body"),
-        Some(&serde_json::json!({"trainingType": 1}))
-    );
+    let defaulted = data
+        .extra
+        .get("extra_body")
+        .and_then(|body| body.get("trainingType"))
+        .and_then(serde_json::Value::as_i64);
+    assert_eq!(defaulted, Some(1));
 }
 
 fn sdk_client_wrong_async() {

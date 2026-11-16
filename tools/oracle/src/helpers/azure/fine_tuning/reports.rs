@@ -1,6 +1,6 @@
 use betterlite_azure::endpoints::projection::{ClientInputs, ClientKind, ClientOutcome, V1Key};
 use betterlite_azure::fine_tuning::error::AzureFineTuneError;
-use secrecy::ExposeSecret;
+use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 
 pub(crate) fn raised(error: &AzureFineTuneError) -> Value {
@@ -55,11 +55,8 @@ fn client_inputs(outcome: &ClientOutcome<'_>) -> (Option<String>, Option<i64>, O
 
 // the SDK turns azure_endpoint into <endpoint>/openai and keeps a deployment base_url, always ending in a slash
 fn rebuilt(inputs: Option<&ClientInputs<'_>>) -> (Option<String>, Option<String>) {
-    let Some(inputs) = inputs else {
-        return (None, None);
-    };
     match inputs {
-        ClientInputs::Azure(azure) => {
+        Some(ClientInputs::Azure(azure)) => {
             let base_url = match (&azure.endpoint.azure_endpoint, &azure.endpoint.base_url) {
                 (Some(endpoint), _) => Some(format!("{}/openai/", endpoint.trim_end_matches('/'))),
                 (None, Some(path)) => Some(format!("{}/", path.trim_end_matches('/'))),
@@ -67,7 +64,8 @@ fn rebuilt(inputs: Option<&ClientInputs<'_>>) -> (Option<String>, Option<String>
             };
             (base_url, Some(azure.api_version.clone()))
         }
-        ClientInputs::OpenAiV1(v1) => (v1.base_url.clone(), None),
+        Some(ClientInputs::OpenAiV1(v1)) => (v1.base_url.clone(), None),
+        None => (None, None),
     }
 }
 

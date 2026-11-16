@@ -94,7 +94,8 @@ def record_call(request: httpx.Request, log: list[JsonValue]) -> None:
 
 def response_for(reply: Reply | None) -> httpx.Response:
     if reply is None:
-        return httpx.Response(200, json=JSON.validate_python({}))
+        empty: JsonObject = {}
+        return httpx.Response(200, json=empty)
     return httpx.Response(reply["status"], json=reply["body"])
 
 
@@ -107,7 +108,7 @@ class Record:
         return response_for(STATE.reply)
 
 
-REAL_AZURE_CLIENT = BaseAzureLLM.get_azure_openai_client  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L480-L489
+REAL_AZURE_CLIENT = BaseAzureLLM.get_azure_openai_client  # type: ignore[misc]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L480-L489
 
 
 def build_client(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L480-L489
@@ -282,5 +283,5 @@ def run_step(step: Step) -> JsonObject:
 
 
 def run(input_value: Input) -> JsonValue:
-    steps = [run_step(step) for step in input_value["steps"]]
-    return JSON.validate_python({"steps": steps})
+    steps: list[JsonValue] = [run_step(step) for step in input_value["steps"]]
+    return {"steps": steps}
