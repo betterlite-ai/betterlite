@@ -3,8 +3,6 @@ use indexmap::IndexMap;
 
 use crate::loader::EnvironmentLookup;
 
-mod tests;
-
 // LiteLLM's DEFAULT_MAX_RECURSE_DEPTH
 const MAX_DEPTH: usize = 100;
 // the config root and the prompts list item each add one level
