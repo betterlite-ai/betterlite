@@ -3,12 +3,14 @@
 use std::convert::Infallible;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
+use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::correlation::{
@@ -25,7 +27,7 @@ use indexmap::IndexMap;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::anthropic_http_stream::call::{StreamBuild, StreamCall};
+use crate::anthropic_http_stream::call::{StreamBuild, StreamCall, StreamLogger, StreamPostCall};
 use crate::anthropic_http_stream::error::{PostFailure, StatusFailure};
 use crate::anthropic_http_stream::transport::{StreamPost, StreamReply, StreamTransport};
 use crate::stream_decode::TransportChunk;
@@ -41,6 +43,7 @@ pub(crate) const SECRET: &str = "sk-ant-secret";
 pub(crate) const TIMEOUT_MS: u64 = 1500;
 pub(crate) const TIMEOUT: Duration = Duration::from_millis(TIMEOUT_MS);
 pub(crate) const MAX_EVENT_BYTES: usize = 0x0010_0000;
+pub(crate) const BODY_BYTES: usize = 0x0100_0000;
 
 #[derive(Debug, Error)]
 pub(crate) enum FixtureFailure {
@@ -183,6 +186,12 @@ impl LogSink for Silent {
     fn emit(&self, _record: LogRecord) {}
 }
 
+pub(crate) struct SilentLogger;
+
+impl StreamLogger for SilentLogger {
+    fn post_call(&self, _call: StreamPostCall<'_>) {}
+}
+
 pub(crate) fn redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds")
 }
@@ -228,6 +237,51 @@ pub(crate) fn logging_env<'env>(redactor: &'env Redactor, sink: &'env Silent) ->
         logger_fn: None,
         now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
             .expect("the fixture clock parses"),
+    }
+}
+
+// A logger that runs the real post_call into a state the test reads afterwards
+pub(crate) struct RecordingLogger {
+    state: Mutex<LoggingState>,
+    redactor: Redactor,
+    sink: Silent,
+}
+
+impl RecordingLogger {
+    pub(crate) fn new(messages: &Json) -> Self {
+        Self {
+            state: Mutex::new(logging_state(messages)),
+            redactor: redactor(),
+            sink: Silent,
+        }
+    }
+
+    pub(crate) fn state(&self) -> MutexGuard<'_, LoggingState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl StreamLogger for RecordingLogger {
+    fn post_call(&self, call: StreamPostCall<'_>) {
+        let env = logging_env(&self.redactor, &self.sink);
+        let mut state = self.state();
+        // LiteLLM passes api_key="" and no headers, so the upstream credential never reaches a callback
+        post_call(
+            &mut state,
+            &PostCall {
+                original_response: Json::Text(call.original_response.to_owned()),
+                input: call.input.clone(),
+                additional_args: AdditionalArgs {
+                    api_base: None,
+                    headers: None,
+                    complete_input_dict: Some(RawBody::Text(call.complete_input_dict.to_owned())),
+                    request_str: None,
+                    openai_sdk: None,
+                    passthrough: IndexMap::new(),
+                },
+            },
+            &env,
+        );
     }
 }
 
@@ -292,11 +346,26 @@ pub(crate) fn stream_call<'call>(
 }
 
 pub(crate) fn stream_build(ids: &dyn IdSource) -> StreamBuild<'_, FixedCounter> {
+    stream_build_with(ids, BODY_BYTES)
+}
+
+pub(crate) fn stream_build_with(
+    ids: &dyn IdSource,
+    max_error_body_bytes: usize,
+) -> StreamBuild<'_, FixedCounter> {
     StreamBuild {
         ids,
         counter: FixedCounter,
         max_event_bytes: MAX_EVENT_BYTES,
+        max_error_body_bytes,
     }
+}
+
+pub(crate) fn assert_no_post_call(state: &LoggingState) {
+    assert!(
+        state.model_call_details.get("original_response").is_none(),
+        "a call that opens no stream leaves no post_call record"
+    );
 }
 
 pub(crate) fn assert_post_call(state: &LoggingState, messages: &Json, response: &str, data: &str) {

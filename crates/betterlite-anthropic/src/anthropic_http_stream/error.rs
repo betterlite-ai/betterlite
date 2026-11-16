@@ -25,6 +25,9 @@ pub enum PostFailure<Failure> {
 pub enum StreamFailure {
     #[error(transparent)]
     Transport(TransportError),
+    // LiteLLM reads the error body before it raises; a read that fails is that failure, not an empty message
+    #[error("the error response body could not be read")]
+    ErrorBody(#[source] TransportError),
     #[error(transparent)]
     Lines(AlephAlphaError),
 }

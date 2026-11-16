@@ -16,17 +16,26 @@ use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
+use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_openai::aleph_alpha::error::AlephAlphaError;
+
 use crate::anthropic_http_stream::call::{OpenedStream, StreamCall, StreamClients, make_call};
-use crate::anthropic_http_stream::error::StreamFailure;
+use crate::anthropic_http_stream::error::{StreamFailure, StreamOpenError};
 use crate::stream_decode::DecodedChunk;
 use crate::stream_decode::error::DecodeError;
 
 use super::fixture::{
-    DATA, FRAME, FixedCounter, FixedIds, messages, request_headers, stream_build,
+    DATA, ERROR_TEXT, FRAME, FixedCounter, FixedIds, SilentLogger, header, messages,
+    request_headers, stream_build,
 };
 
 const TRUNCATED_HEAD: &str =
     "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: 4096\r\n\r\n";
+const TRICKLE_HEAD: &str = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n";
+const STALLED_HEAD: &str = "HTTP/1.1 500 Internal Server Error\r\ncontent-length: 4096\r\n\r\n";
+const TRICKLE_FRAMES: usize = 20;
+const TRICKLE_STEP: Duration = Duration::from_millis(100);
+const SHORT_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[tokio::test]
 async fn anthropic_http_stream_partial_body_close() {
@@ -36,7 +45,9 @@ async fn anthropic_http_stream_partial_body_close() {
     tasks.spawn(serve_truncated(listener));
     let client = proxied_client();
     let drain_client = client.clone();
-    let mut opened = open(&api_base, &client).await;
+    let mut opened = open_with(&api_base, &client, Duration::from_secs(10))
+        .await
+        .expect("the local server answers 200");
     let first = timeout(Duration::from_secs(10), opened.completion_stream.next())
         .await
         .expect("the first frame arrives before the close")
@@ -69,7 +80,9 @@ async fn anthropic_http_stream_cancel_upstream() {
     tasks.spawn(serve_until_closed(listener, closed));
     let client = proxied_client();
     let drain_client = client.clone();
-    let mut opened = open(&api_base, &client).await;
+    let mut opened = open_with(&api_base, &client, Duration::from_secs(10))
+        .await
+        .expect("the local server answers 200");
     let first = timeout(Duration::from_secs(10), opened.completion_stream.next())
         .await
         .expect("the first frame arrives")
@@ -92,7 +105,204 @@ async fn anthropic_http_stream_cancel_upstream() {
         .unwrap();
 }
 
-async fn open(api_base: &str, client: &ProxiedClient) -> OpenedStream<StreamFailure, FixedCounter> {
+#[tokio::test]
+async fn anthropic_http_stream_proxied_status_error() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_response(listener, status_response(400, ERROR_TEXT)));
+    let client = proxied_client();
+    let drain_client = client.clone();
+    let error = match open_with(&api_base, &client, Duration::from_secs(10)).await {
+        Ok(_) => panic!("a 400 reply opens no stream"),
+        Err(error) => error,
+    };
+    let StreamOpenError::Anthropic {
+        status_code,
+        message,
+        headers,
+    } = error
+    else {
+        panic!("a 400 reply becomes AnthropicError");
+    };
+    assert_eq!(status_code, 400);
+    assert_eq!(message, ERROR_TEXT);
+    let headers = headers.expect("the failure keeps the reply headers");
+    assert_eq!(header(&headers, "x-request-id"), Some("req-proxied"));
+    drain_client
+        .drain(Duration::from_secs(10))
+        .await
+        .expect("the transport owner drains");
+    timeout(Duration::from_secs(10), tasks.join_next())
+        .await
+        .expect("the local server ends")
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn anthropic_http_stream_proxied_open_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_silence(listener));
+    let client = proxied_client();
+    let drain_client = client.clone();
+    let error = match open_with(&api_base, &client, SHORT_TIMEOUT).await {
+        Ok(_) => panic!("a server that never answers opens no stream"),
+        Err(error) => error,
+    };
+    let StreamOpenError::Reraised { source } = error else {
+        panic!("a send timeout is re-raised");
+    };
+    let StreamFailure::Transport(source) = source else {
+        panic!("the request failed in the transport");
+    };
+    assert!(matches!(source, TransportError::Deadline(_)));
+    drain_client
+        .drain(Duration::from_secs(10))
+        .await
+        .expect("the transport owner drains");
+    timeout(Duration::from_secs(10), tasks.join_next())
+        .await
+        .expect("the local server ends")
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn anthropic_http_stream_proxied_connect_refused() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
+    drop(listener);
+    let client = proxied_client();
+    let error = match open_with(&api_base, &client, SHORT_TIMEOUT).await {
+        Ok(_) => panic!("a refused connection opens no stream"),
+        Err(error) => error,
+    };
+    let StreamOpenError::Unknown { source } = error else {
+        panic!("a refused connection becomes AnthropicError(500)");
+    };
+    let StreamFailure::Transport(source) = source else {
+        panic!("the request failed in the transport");
+    };
+    assert!(matches!(source, TransportError::Connect(_)));
+    client
+        .drain(Duration::from_secs(10))
+        .await
+        .expect("the transport owner drains");
+}
+
+#[tokio::test]
+async fn anthropic_http_stream_proxied_error_body_stalls() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_stalled_body(listener));
+    let client = proxied_client();
+    let drain_client = client.clone();
+    let error = match open_with(&api_base, &client, SHORT_TIMEOUT).await {
+        Ok(_) => panic!("a 500 reply opens no stream"),
+        Err(error) => error,
+    };
+    let StreamOpenError::Reraised { source } = error else {
+        panic!("an error body read timeout is re-raised");
+    };
+    let StreamFailure::ErrorBody(source) = source else {
+        panic!("the failed read keeps its transport error");
+    };
+    assert!(matches!(source, TransportError::Deadline(_)));
+    drain_client
+        .drain(Duration::from_secs(10))
+        .await
+        .expect("the transport owner drains");
+    timeout(Duration::from_secs(10), tasks.join_next())
+        .await
+        .expect("the local server ends")
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn anthropic_http_stream_proxied_error_body_truncated() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_short_body(listener));
+    let client = proxied_client();
+    let drain_client = client.clone();
+    let error = match open_with(&api_base, &client, SHORT_TIMEOUT).await {
+        Ok(_) => panic!("a 500 reply opens no stream"),
+        Err(error) => error,
+    };
+    let StreamOpenError::Unknown { source } = error else {
+        panic!("an unreadable error body becomes AnthropicError(500)");
+    };
+    let StreamFailure::ErrorBody(source) = source else {
+        panic!("the failed read keeps its transport error");
+    };
+    assert!(matches!(source, TransportError::Body(_)));
+    drain_client
+        .drain(Duration::from_secs(10))
+        .await
+        .expect("the transport owner drains");
+    timeout(Duration::from_secs(10), tasks.join_next())
+        .await
+        .expect("the local server ends")
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn anthropic_http_stream_total_deadline_ends_a_trickle() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_trickle(listener, TRICKLE_FRAMES));
+    let client = proxied_client();
+    let drain_client = client.clone();
+    let mut opened = open_with(&api_base, &client, SHORT_TIMEOUT)
+        .await
+        .expect("the local server answers 200");
+    let mut received = 0_usize;
+    let ended = loop {
+        let item = timeout(Duration::from_secs(10), opened.completion_stream.next())
+            .await
+            .expect("the deadline ends the stream instead of waiting for the last frame")
+            .expect("the stream reports the deadline instead of ending cleanly");
+        match item {
+            Ok(_chunk) => received = received.saturating_add(1),
+            Err(error) => break error,
+        }
+    };
+    assert!(
+        received < TRICKLE_FRAMES,
+        "the stream stopped while the server still had frames to send"
+    );
+    let DecodeError::Other { source } = ended else {
+        panic!("the deadline ends the stream as a transport error");
+    };
+    let StreamFailure::Lines(AlephAlphaError::Transport { source }) = source else {
+        panic!("the body read fails in the transport");
+    };
+    assert!(matches!(source, TransportError::Rejected(_)));
+    drop(opened);
+    drain_client
+        .drain(Duration::from_secs(10))
+        .await
+        .expect("the transport owner drains after the deadline");
+    timeout(Duration::from_secs(10), tasks.join_next())
+        .await
+        .expect("the upstream server ends after the deadline")
+        .unwrap()
+        .unwrap();
+}
+
+async fn open_with(
+    api_base: &str,
+    client: &ProxiedClient,
+    timeout: Duration,
+) -> Result<OpenedStream<StreamFailure, FixedCounter>, StreamOpenError<StreamFailure>> {
     let messages = messages();
     let reverse = IndexMap::new();
     let call = StreamCall {
@@ -100,22 +310,76 @@ async fn open(api_base: &str, client: &ProxiedClient) -> OpenedStream<StreamFail
         headers: request_headers(),
         data: DATA,
         messages: &messages,
-        timeout: Duration::from_secs(10),
+        timeout,
         json_mode: false,
         speed: None,
         tool_name_reverse_map: &reverse,
     };
+    let logger = SilentLogger;
     make_call(
         StreamClients {
             supplied: Some(client),
             module_level_aclient: client,
             module_level_client: client,
+            logger: &logger,
         },
         &call,
         stream_build(&FixedIds),
     )
     .await
-    .expect("the local server answers 200")
+}
+
+fn status_response(status: u16, body: &str) -> String {
+    format!(
+        "HTTP/1.1 {status} Error\r\ncontent-type: application/json\r\nx-request-id: req-proxied\r\ncontent-length: {}\r\n\r\n{body}",
+        body.len()
+    )
+}
+
+async fn serve_response(listener: TcpListener, response: String) {
+    let (mut socket, _) = listener.accept().await.unwrap();
+    socket.write_all(response.as_bytes()).await.unwrap();
+    socket.shutdown().await.unwrap();
+    let mut rest = Vec::new();
+    let _closed = socket.read_to_end(&mut rest).await;
+}
+
+async fn serve_silence(listener: TcpListener) {
+    let (mut socket, _) = listener.accept().await.unwrap();
+    let mut rest = Vec::new();
+    let _closed = socket.read_to_end(&mut rest).await;
+}
+
+async fn serve_stalled_body(listener: TcpListener) {
+    let (mut socket, _) = listener.accept().await.unwrap();
+    socket.write_all(STALLED_HEAD.as_bytes()).await.unwrap();
+    socket.write_all(b"partial").await.unwrap();
+    let mut rest = Vec::new();
+    let _closed = socket.read_to_end(&mut rest).await;
+}
+
+async fn serve_short_body(listener: TcpListener) {
+    let (mut socket, _) = listener.accept().await.unwrap();
+    socket.write_all(STALLED_HEAD.as_bytes()).await.unwrap();
+    socket.write_all(b"partial").await.unwrap();
+    socket.shutdown().await.unwrap();
+    let mut rest = Vec::new();
+    let _closed = socket.read_to_end(&mut rest).await;
+}
+
+async fn serve_trickle(listener: TcpListener, frames: usize) {
+    let (mut socket, _) = listener.accept().await.unwrap();
+    socket.write_all(TRICKLE_HEAD.as_bytes()).await.unwrap();
+    for _frame in 0..frames {
+        if socket
+            .write_all(format!("{FRAME}\n").as_bytes())
+            .await
+            .is_err()
+        {
+            return;
+        }
+        tokio::time::sleep(TRICKLE_STEP).await;
+    }
 }
 
 async fn serve_truncated(listener: TcpListener) {
@@ -125,7 +389,9 @@ async fn serve_truncated(listener: TcpListener) {
         .write_all(format!("{FRAME}\n").as_bytes())
         .await
         .unwrap();
-    drop(socket);
+    socket.shutdown().await.unwrap();
+    let mut rest = Vec::new();
+    let _closed = socket.read_to_end(&mut rest).await;
 }
 
 async fn serve_until_closed(listener: TcpListener, closed: oneshot::Sender<()>) {

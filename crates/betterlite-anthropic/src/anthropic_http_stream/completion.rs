@@ -34,8 +34,6 @@ pub struct WrappedStream<Failure, Counter> {
     pub model: String,
     pub custom_llm_provider: &'static str,
     pub response_headers: IndexMap<String, String>,
-    // the json.dumps text make_call posts, kept so the caller can run post_call after the open
-    pub data: String,
 }
 
 #[derive(Debug, Error)]
@@ -86,7 +84,6 @@ where
         model: stream.model.to_owned(),
         custom_llm_provider: "anthropic",
         response_headers: process_anthropic_headers(&opened.headers),
-        data: body,
     })
 }
 

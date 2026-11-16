@@ -67,7 +67,7 @@ impl StreamTransport for ProxiedClient {
             if !response.response.status().is_success() {
                 let body = match response.buffered(self.limits.body_bytes).await {
                     Ok(reply) => reply.body,
-                    Err(_) => Vec::new(),
+                    Err(source) => return Err(body_failure(source)),
                 };
                 return Err(PostFailure::Status(StatusFailure {
                     status_code,
@@ -93,13 +93,28 @@ impl StreamTransport for ProxiedClient {
     }
 }
 
+fn is_timeout(source: &TransportError) -> bool {
+    matches!(
+        source,
+        TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
+    )
+}
+
 // The handler turns a timeout into litellm.Timeout, which make_call re-raises; any other send error becomes a 500
 fn post_failure(source: TransportError) -> PostFailure<StreamFailure> {
-    let timed = matches!(
-        &source,
-        TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
-    );
+    let timed = is_timeout(&source);
     let failure = StreamFailure::Transport(source);
+    if timed {
+        PostFailure::Known(failure)
+    } else {
+        PostFailure::Unknown(failure)
+    }
+}
+
+// The error body is read before LiteLLM raises, so a read timeout keeps the re-raise and any other read failure is the 500
+fn body_failure(source: TransportError) -> PostFailure<StreamFailure> {
+    let timed = is_timeout(&source);
+    let failure = StreamFailure::ErrorBody(source);
     if timed {
         PostFailure::Known(failure)
     } else {

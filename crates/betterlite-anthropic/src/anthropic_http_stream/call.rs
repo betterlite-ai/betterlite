@@ -1,10 +1,6 @@
 use std::error::Error as StdError;
 use std::time::Duration;
 
-use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use futures_util::StreamExt as _;
 use http::HeaderMap;
@@ -20,6 +16,10 @@ use crate::usage::ReasoningTokenCounter;
 use super::error::{PostFailure, StreamOpenError};
 use super::transport::{LineChunks, StreamPost, StreamReply, StreamTransport};
 
+// LiteLLM hands post_call the live iterator object; the record carries the text standing for it
+const STREAM_RESPONSE: &str = "lines";
+const SYNC_STREAM_RESPONSE: &str = "first stream response received";
+
 pub struct OpenedStream<Failure, Counter> {
     pub completion_stream: ChunkStream<LineChunks<Failure>, Counter>,
     pub headers: HeaderMap,
@@ -30,6 +30,19 @@ pub struct StreamClients<'clients, Client> {
     pub supplied: Option<&'clients Client>,
     pub module_level_aclient: &'clients Client,
     pub module_level_client: &'clients Client,
+    pub logger: &'clients dyn StreamLogger,
+}
+
+// what make_call hands logging_obj.post_call once the iterator is built
+pub struct StreamPostCall<'call> {
+    pub input: &'call Json,
+    pub original_response: &'call str,
+    pub complete_input_dict: &'call str,
+}
+
+// make_call runs the hook itself, and its future stays Send because the logger is Send + Sync
+pub trait StreamLogger: Send + Sync {
+    fn post_call(&self, call: StreamPostCall<'_>);
 }
 
 pub struct StreamCall<'call> {
@@ -43,15 +56,11 @@ pub struct StreamCall<'call> {
     pub tool_name_reverse_map: &'call IndexMap<String, String>,
 }
 
-pub struct StreamLog<'log, 'env> {
-    pub state: &'log mut LoggingState,
-    pub env: &'log PrePostEnv<'env>,
-}
-
 pub struct StreamBuild<'ids, Counter> {
     pub ids: &'ids dyn IdSource,
     pub counter: Counter,
     pub max_event_bytes: usize,
+    pub max_error_body_bytes: usize,
 }
 
 pub async fn make_call<Client, Counter>(
@@ -65,7 +74,13 @@ where
 {
     let client = clients.supplied.unwrap_or(clients.module_level_aclient);
     let reply = open(client, call).await?;
-    Ok(assemble(reply, call, build, false))
+    let opened = assemble(reply, call, build, false);
+    clients.logger.post_call(StreamPostCall {
+        input: call.messages,
+        original_response: STREAM_RESPONSE,
+        complete_input_dict: call.data,
+    });
+    Ok(opened)
 }
 
 pub async fn make_sync_call<Client, Counter>(
@@ -80,7 +95,7 @@ where
     let client = clients.supplied.unwrap_or(clients.module_level_client);
     let mut reply = open(client, call).await?;
     if reply.status_code != 200 {
-        let message = drain_body(&mut reply.lines)
+        let message = drain_body(&mut reply.lines, build.max_error_body_bytes)
             .await
             .map_err(|source| StreamOpenError::Reraised { source })?;
         return Err(StreamOpenError::Anthropic {
@@ -89,7 +104,13 @@ where
             headers: Some(reply.headers),
         });
     }
-    Ok(assemble(reply, call, build, true))
+    let opened = assemble(reply, call, build, true);
+    clients.logger.post_call(StreamPostCall {
+        input: call.messages,
+        original_response: SYNC_STREAM_RESPONSE,
+        complete_input_dict: call.data,
+    });
+    Ok(opened)
 }
 
 async fn open<Client>(
@@ -120,7 +141,10 @@ where
     })
 }
 
-async fn drain_body<Failure>(lines: &mut LineChunks<Failure>) -> Result<String, Failure>
+async fn drain_body<Failure>(
+    lines: &mut LineChunks<Failure>,
+    limit: usize,
+) -> Result<String, Failure>
 where
     Failure: StdError + Send + Sync + 'static,
 {
@@ -133,6 +157,16 @@ where
                 return Err(source);
             }
         };
+        // the transport bounds one line; this bounds a reply of many short lines, stopping at a whole line
+        let separator = usize::from(!text.is_empty());
+        if text
+            .len()
+            .saturating_add(separator)
+            .saturating_add(line.len())
+            > limit
+        {
+            break;
+        }
         if !text.is_empty() {
             text.push('\n');
         }
@@ -172,31 +206,6 @@ where
         headers: reply.headers,
         sync_stream,
     }
-}
-
-pub fn record_post_call(log: StreamLog<'_, '_>, messages: &Json, data: &str, sync: bool) {
-    let response = if sync {
-        "first stream response received"
-    } else {
-        "lines"
-    };
-    post_call(
-        log.state,
-        &PostCall {
-            original_response: Json::Text(response.to_owned()),
-            input: messages.clone(),
-            additional_args: AdditionalArgs {
-                api_base: None,
-                headers: None,
-                // litellm passes the outgoing JSON text and no headers, so the credential never reaches the callback
-                complete_input_dict: Some(RawBody::Text(data.to_owned())),
-                request_str: None,
-                openai_sdk: None,
-                passthrough: IndexMap::new(),
-            },
-        },
-        log.env,
-    );
 }
 
 fn message_text(body: Vec<u8>) -> String {
