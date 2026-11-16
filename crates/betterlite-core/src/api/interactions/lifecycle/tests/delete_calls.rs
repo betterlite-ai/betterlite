@@ -83,6 +83,26 @@ fn delete_carries_every_json_shape_into_the_handler_parameters() {
     drop(received(serving));
 }
 
+#[test]
+fn delete_logs_the_metadata_the_caller_sent() {
+    let serving = serve(reply(200, "{}"));
+    let config = fixture();
+    let metadata = IndexMap::from([("user_api_key".to_owned(), text("k"))]);
+    let call = Call::new("int-1")
+        .at(serving.address)
+        .kwarg("metadata", Json::Object(metadata.clone()));
+    let mut handler = handler(&config);
+    let mut logging = state("gemini-2.5-flash", "call-1");
+    let redactor = redactor();
+    delete(&mut handler, deps(&mut logging, &redactor), &call.request())
+        .expect("the fixture answers");
+    assert_eq!(
+        logging.litellm_params.get("metadata"),
+        Some(&Json::Object(metadata))
+    );
+    drop(received(serving));
+}
+
 #[rstest::rstest]
 #[case::absent(None, "gemini")]
 #[case::empty(Some(""), "gemini")]
