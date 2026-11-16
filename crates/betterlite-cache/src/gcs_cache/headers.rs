@@ -8,7 +8,6 @@ use betterlite_logging::gcs_client::gcs_storage_auth::error::GcsClientError;
 use betterlite_logging::gcs_client::gcs_storage_auth::sync_header_behaviors::sync_construct_request_headers;
 use betterlite_logging::gcs_logger::transport::PooledGcsClient;
 use betterlite_logging::gcs_mock::auth::VertexAuth;
-use betterlite_logging::gcs_mock::client::GcsHttpClient;
 use http::header::{HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::Handle;
@@ -63,10 +62,10 @@ pub(super) async fn build_headers<Auth>(
 where
     Auth: VertexAuth + Clone + Send + Sync + 'static,
 {
-    let base = Arc::clone(base);
+    let shared = Arc::clone(base);
     let runtime = Handle::current();
     let request = runtime.spawn_blocking(move || {
-        sync_construct_request_headers(&base, &bucket_name, service_account_path.as_ref())
+        sync_construct_request_headers(&shared, &bucket_name, service_account_path.as_ref())
     });
     let headers = request
         .await

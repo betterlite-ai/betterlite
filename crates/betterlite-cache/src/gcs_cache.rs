@@ -9,7 +9,7 @@ use betterlite_logging::gcs_client::gcs_storage_auth::GcsBucketBase;
 use betterlite_logging::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource;
 use betterlite_logging::gcs_logger::transport::PooledGcsClient;
 use betterlite_logging::gcs_mock::auth::{GcsMockAuth, VertexAuth};
-use betterlite_logging::gcs_mock::client::{GcsHttpClient, create_mock_gcs_client};
+use betterlite_logging::gcs_mock::client::{GcsHttpClient as _, create_mock_gcs_client};
 use betterlite_logging::gcs_mock::request::{GcsReadRequest, GcsRequest, GcsWriteRequest};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use secrecy::SecretString;

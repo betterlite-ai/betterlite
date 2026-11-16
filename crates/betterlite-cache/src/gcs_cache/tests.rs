@@ -15,7 +15,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::gcs_response_cache::GcsResponseCacheSettings;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_logging::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource;
+use betterlite_logging::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource as _;
 use betterlite_logging::gcs_mock::auth::{
     AccessToken, EnsureAccessToken, GetTokenAndUrl, TokenAndUrl, VertexAuth,
 };
@@ -237,8 +237,8 @@ fn spawn_serve(
     listener: &Arc<TcpListener>,
     response: Vec<u8>,
 ) -> JoinHandle<Vec<u8>> {
-    let listener = Arc::clone(listener);
-    runtime.spawn(async move { serve(&listener, &response).await })
+    let shared = Arc::clone(listener);
+    runtime.spawn(async move { serve(&shared, &response).await })
 }
 
 fn await_server(runtime: &Runtime, server: JoinHandle<Vec<u8>>) -> Vec<u8> {
@@ -325,7 +325,11 @@ async fn write_ignores_failure_status(#[case] status: &str) {
 
 #[tokio::test]
 async fn write_swallows_transport_error() {
-    let cache = cache_at("http://127.0.0.1:0", &settings(""), FixedAuth { fail: false });
+    let cache = cache_at(
+        "http://127.0.0.1:0",
+        &settings(""),
+        FixedAuth { fail: false },
+    );
     let value = decode_body(br#"{"value":true}"#).unwrap();
     let ((), log) = timeout(
         Duration::from_secs(5),
@@ -442,17 +446,17 @@ async fn headers_sent_on_read_and_write() {
     let cache = cache_on(&listener, "");
     let value = decode_body(br#"{"value":true}"#).unwrap();
     let operation = async {
-        let ((), write) = tokio::join!(
+        let ((), write_bytes) = tokio::join!(
             cache.async_set_cache("key", &value),
             serve(&listener, &response("200 OK", b""))
         );
-        let (read, get) = tokio::join!(
+        let (read, get_bytes) = tokio::join!(
             cache.async_get_cache("key"),
             serve(&listener, &response("200 OK", br#"{"value":true}"#))
         );
         assert!(read.is_some());
-        let write = String::from_utf8(write).unwrap().to_lowercase();
-        let get = String::from_utf8(get).unwrap().to_lowercase();
+        let write = String::from_utf8(write_bytes).unwrap().to_lowercase();
+        let get = String::from_utf8(get_bytes).unwrap().to_lowercase();
         let bearer = format!("authorization: bearer {TOKEN}\r\n");
         assert!(write.contains(&bearer), "{write}");
         assert!(get.contains(&bearer), "{get}");
@@ -476,20 +480,20 @@ fn async_matches_sync() {
     let listener = Arc::new(runtime.block_on(TcpListener::bind("127.0.0.1:0")).unwrap());
     let cache = cache_on(&listener, "cache");
     let value = decode_body(br#"{"value":true}"#).unwrap();
-    let server = spawn_serve(&runtime, &listener, response("200 OK", b""));
+    let write_server = spawn_serve(&runtime, &listener, response("200 OK", b""));
     cache.set_cache(&handle, "key", &value);
-    let sync_write = await_server(&runtime, server);
-    let server = spawn_serve(&runtime, &listener, response("200 OK", b""));
+    let sync_write = await_server(&runtime, write_server);
+    let async_write_server = spawn_serve(&runtime, &listener, response("200 OK", b""));
     runtime.block_on(cache.async_set_cache("key", &value));
-    let async_write = await_server(&runtime, server);
+    let async_write = await_server(&runtime, async_write_server);
     assert_eq!(sync_write, async_write);
     let body = br#"{"value":true}"#;
-    let server = spawn_serve(&runtime, &listener, response("200 OK", body));
+    let read_server = spawn_serve(&runtime, &listener, response("200 OK", body));
     let sync_read = cache.get_cache(&handle, "key");
-    let sync_get = await_server(&runtime, server);
-    let server = spawn_serve(&runtime, &listener, response("200 OK", body));
+    let sync_get = await_server(&runtime, read_server);
+    let async_read_server = spawn_serve(&runtime, &listener, response("200 OK", body));
     let async_read = runtime.block_on(cache.async_get_cache("key"));
-    let async_get = await_server(&runtime, server);
+    let async_get = await_server(&runtime, async_read_server);
     assert_eq!(sync_read, async_read);
     assert_eq!(sync_read, Some(value));
     assert_eq!(sync_get, async_get);
@@ -591,11 +595,11 @@ async fn async_hit_is_silent() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let cache = cache_on(&listener, "");
     let operation = async {
-        let ((value, _), _) = tokio::join!(
+        let (captured, _) = tokio::join!(
             capture_log(cache.async_get_cache("key")),
             serve(&listener, &response("200 OK", br#"{"value":true}"#))
         );
-        value
+        captured
     };
     let (value, log) = timeout(Duration::from_secs(5), operation).await.unwrap();
     assert!(value.is_some());
