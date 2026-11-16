@@ -60,7 +60,13 @@ fn flattened_tools() {
         &support::object(r#"{"tools":[{"function":"name"}]}"#),
         None,
     );
-    assert!(matches!(merged, Err(ResponsesError::InvalidToolFunction)));
+    assert!(matches!(
+        merged,
+        Err(ResponsesError::InvalidToolFunction {
+            index: 0,
+            found: "str"
+        })
+    ));
     // a tools value that is not a list is left to the shared request transform
     let unlisted = transform_request(
         "gpt-5",

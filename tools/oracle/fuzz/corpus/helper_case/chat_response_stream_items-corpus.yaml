@@ -1,0 +1,14 @@
+kind: helper
+name: chat-response-stream-items-corpus
+call:
+  chat_response_stream_items:
+    model: gpt-4o-mini
+    request_value: hi
+    responses_api_request: {}
+    custom_llm_provider: null
+    litellm_metadata: null
+    now: 10
+    uuid_ids: []
+    steps: []
+env: {}
+compare: {ignore: []}

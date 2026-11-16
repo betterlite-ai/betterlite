@@ -1,7 +1,6 @@
 pub mod a2a_translation;
 pub mod admin_mutations;
 pub mod admin_reads;
-pub mod anthropic_sse;
 pub mod anthropic_translation;
 pub mod bedrock_passthrough;
 pub mod callback_caps;
