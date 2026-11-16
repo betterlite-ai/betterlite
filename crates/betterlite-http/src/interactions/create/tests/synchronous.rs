@@ -19,7 +19,10 @@ use crate::interactions::create::synchronous::create_interaction;
 
 #[test]
 fn create_interaction_posts_the_provider_request_and_returns_the_transformed_response() {
-    let serving = serve_with_body(base::reply("200 OK", &[], "{\"id\":\"int_1\"}"), None);
+    let serving = serve_with_body(
+        base::reply("200 OK", &[("x-request-id", "r1")], "{\"id\":\"int_1\"}"),
+        None,
+    );
     let fixture = Fixture {
         headers: api_key_header(),
         data: base::params(r#"{"model": "m", "input": "hello"}"#),
@@ -49,7 +52,7 @@ fn create_interaction_posts_the_provider_request_and_returns_the_transformed_res
                 serving.address
             ),
             "create|gemini-2.5-flash|agent_1|true|2|1|1".to_owned(),
-            "response|200".to_owned(),
+            "response|200|r1".to_owned(),
             "model|gemini-2.5-flash".to_owned(),
         ]
     );

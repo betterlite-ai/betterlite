@@ -60,6 +60,11 @@ pub enum CreateOutcome<Response, Stream> {
     Stream(Stream),
 }
 
+pub type CreateResult<C, Stream> = Result<
+    CreateOutcome<<C as CreateInteractionConfig>::Output, Stream>,
+    CreateInteractionError<<C as ErrorClasses>::Error>,
+>;
+
 pub trait CreateInteractionConfig: SyncStreamingConfig + AsyncStreamingConfig {
     type Output;
 

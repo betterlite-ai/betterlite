@@ -7,7 +7,7 @@ use url::Url;
 
 use super::{
     CreateInteractionConfig, CreateInteractionError, CreateInteractionRequest, CreateOutcome,
-    PreparedCreate, finish, handle_failure, prepare,
+    CreateResult, PreparedCreate, finish, handle_failure, prepare,
 };
 use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::transport::{refuse_unusable_proxy, request_headers};
@@ -20,7 +20,7 @@ pub fn create_interaction<C>(
     logging: &mut Logging,
     supplied: Option<BlockingClient>,
     request: &CreateInteractionRequest<'_>,
-) -> Result<CreateOutcome<C::Output, C::SyncStream>, CreateInteractionError<C::Error>>
+) -> CreateResult<C, C::SyncStream>
 where
     C: CreateInteractionConfig,
 {

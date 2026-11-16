@@ -7,7 +7,7 @@ use url::Url;
 
 use super::{
     CreateInteractionConfig, CreateInteractionError, CreateInteractionRequest, CreateOutcome,
-    PreparedCreate, finish, handle_failure, prepare,
+    CreateResult, PreparedCreate, finish, handle_failure, prepare,
 };
 use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::clients::asynchronous::async_client_for;
@@ -24,7 +24,7 @@ pub async fn async_create_interaction<C>(
     logging: &mut Logging,
     supplied: Option<Client>,
     request: &CreateInteractionRequest<'_>,
-) -> Result<CreateOutcome<C::Output, C::AsyncStream>, CreateInteractionError<C::Error>>
+) -> CreateResult<C, C::AsyncStream>
 where
     C: CreateInteractionConfig,
 {

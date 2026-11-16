@@ -44,23 +44,26 @@ pub(crate) type SyncResult = Result<CreateOutcome<String, String>, Failure>;
 pub(crate) type AsyncResult = Result<CreateOutcome<String, StreamResponse>, Failure>;
 
 pub(crate) fn provider_error<Output>(result: Result<Output, Failure>) -> FixtureError {
-    match result.unwrap_err() {
-        Failure::Provider(error) => error,
-        other => panic!("expected a provider error, got {other:?}"),
+    match result {
+        Err(Failure::Provider(error)) => error,
+        Err(other) => panic!("expected a provider error, got {other:?}"),
+        Ok(_outcome) => panic!("expected a provider error, got a success"),
     }
 }
 
 pub(crate) fn transport_error<Output>(result: Result<Output, Failure>) -> RequestFailure {
-    match result.unwrap_err() {
-        Failure::Transport(failure) => failure,
-        other => panic!("expected a transport error, got {other:?}"),
+    match result {
+        Err(Failure::Transport(error)) => error,
+        Err(other) => panic!("expected a transport error, got {other:?}"),
+        Ok(_outcome) => panic!("expected a transport error, got a success"),
     }
 }
 
 pub(crate) fn client_error<Output>(result: Result<Output, Failure>) -> ClientError {
-    match result.unwrap_err() {
-        Failure::Client(error) => error,
-        other => panic!("expected a client error, got {other:?}"),
+    match result {
+        Err(Failure::Client(error)) => error,
+        Err(other) => panic!("expected a client error, got {other:?}"),
+        Ok(_outcome) => panic!("expected a client error, got a success"),
     }
 }
 
@@ -195,7 +198,11 @@ impl CreateInteractionConfig for Fixture {
         response: &UpstreamResponse,
         _logging: &mut Logging,
     ) -> Result<String, FixtureError> {
-        self.record(format!("response|{}", response.status_code));
+        let request_id = response
+            .headers
+            .get("x-request-id")
+            .map_or("-", String::as_str);
+        self.record(format!("response|{}|{request_id}", response.status_code));
         self.record(format!("model|{}", model.unwrap_or("-")));
         self.respond(response)
     }
