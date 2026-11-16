@@ -1,0 +1,12 @@
+kind: helper
+name: runway-video-lifecycle-seed
+call:
+  runway_video_lifecycle:
+    operation: content
+    params:
+      - body: '{"id":"t","status":"SUCCEEDED","output":["https://cdn.test/a.mp4"]}'
+        reply:
+          status: 200
+          body: seed-bytes
+env: {}
+compare: {ignore: []}

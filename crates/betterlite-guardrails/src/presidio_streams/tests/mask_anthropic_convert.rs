@@ -32,7 +32,7 @@ async fn changed_text_is_replayed_as_rebuilt_frames() {
 }
 
 #[tokio::test]
-async fn masked_tool_arguments_are_replayed_as_rebuilt_frames() {
+async fn a_tool_only_anthropic_stream_is_rebuilt_with_the_masked_input() {
     let mut harness = Harness::new();
     harness.assembly.builder = Builder::Tool;
     let mut request = request_data("{}");
@@ -41,6 +41,24 @@ async fn masked_tool_arguments_are_replayed_as_rebuilt_frames() {
     let (sent, result) = harness.run(Kind::Mask, &mut request, events).await;
     result.unwrap();
     assert_eq!(sent, ["bytes rebuilt:;args:MASKED"]);
+}
+
+#[tokio::test]
+async fn an_unchanged_tool_only_anthropic_stream_returns_the_original_frames() {
+    let mut harness = Harness::with_base("http://presidio.invalid", Some("HelloAlice"));
+    harness.assembly.builder = Builder::Tool;
+    let mut request = request_data("{}");
+    let arguments_frame = "event: content_block_delta\ndata: {\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"HelloAlice\"}}\n\n";
+    let events = ok(vec![bytes(START_FRAME), bytes(arguments_frame)]);
+    let (sent, result) = harness.run(Kind::Mask, &mut request, events).await;
+    result.unwrap();
+    assert_eq!(
+        sent,
+        [
+            format!("bytes {START_FRAME}"),
+            format!("bytes {arguments_frame}")
+        ]
+    );
 }
 
 #[tokio::test]
