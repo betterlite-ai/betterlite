@@ -1,0 +1,8 @@
+#![no_main]
+
+use betterlite_cache::gcs_cache::body::decode_body;
+use libfuzzer_sys::fuzz_target;
+
+fuzz_target!(|bytes: &[u8]| {
+    let _outcome = decode_body(bytes);
+});

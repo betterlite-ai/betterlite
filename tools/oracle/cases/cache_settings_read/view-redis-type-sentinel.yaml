@@ -1,0 +1,11 @@
+kind: helper
+name: cache-settings-read-view-redis-type-sentinel
+call:
+  b4307:
+    stored:
+      type: "redis"
+      sentinel_nodes: [["localhost", 26379]]
+      service_name: "mymaster"
+    environment: {}
+env: {}
+compare: {ignore: []}

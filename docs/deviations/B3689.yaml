@@ -1,0 +1,32 @@
+task: B3689
+deviations:
+  - what: Default start_date is UTC today minus seven days, not the configured server timezone.
+    why: LiteLLM uses datetime.now(timezone.utc), so betterlite matches for consistency and simplicity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L56-L58
+  - what: UsageOverviewResponse.passRate is calculated as (requests - blocked) / requests * 100, never taken from a separate tracked field.
+    why: LiteLLM calculates it on the fly from aggregated counters; deriving it at the response boundary matches the dependency on B726's table accessors, not on usage_tracking's cost model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L393-L401
+  - what: >-
+      A guardrail record with no guardrail_id becomes a row whose id and name are the empty string; LiteLLM builds
+      UsageOverviewRow(id=None) and its pydantic model rejects that, so the whole overview answers 500.
+    why: the guardrails table always has a primary key, so no working setup can hit that path, and one bad config
+      guardrail should not fail every dashboard row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L437-L441
+  - what: >-
+      Fallback rows for metrics keys no guardrail record covers come out in sorted key order here, where LiteLLM emits
+      them in the aggregated mapping's insertion order, which follows its query's row order.
+    why: betterlite aggregates into a BTreeMap, so the sorted order is what the type gives; it is also stable across
+      database row orders.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L494-L516
+  - what: >-
+      Cost sums use exact decimal arithmetic, where LiteLLM adds Python floats; a sum of prices with long binary
+      expansions can differ in the last bits (0.1 + 0.2 is 0.3 here and 0.30000000000000004 there).
+    why: rust_decimal keeps money exact end to end and the response carries the decimal as a JSON number.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L195-L198
+  - what: >-
+      A guardrail_info.type that is null, a boolean, a list or an object shows the default "Guardrail" in the overview
+      row; LiteLLM shows Python's str() of it ("None", "True", "[1]", "{'a': 1}"). Numbers and text are shown as LiteLLM
+      shows them.
+    why: those texts are Python repr output, which docs/compatibility.md says betterlite does not copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L432-L434
+kept_bugs: []
