@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::responses::config::BedrockResponsesConfig;
 use crate::responses::error::ResponsesError;
 use crate::responses::images::{collect_remote_image_urls, inline_remote_image_urls};
-use crate::responses::request::{async_transform_responses_request, transform_responses_request};
+use crate::responses::request::{async_transform_responses, transform_responses_request};
 
 use super::support::{MODEL, MapFetcher, block_on, input, object};
 
@@ -172,7 +172,7 @@ pub(super) fn remote_url_inlined() {
     let parallel = BedrockResponsesConfig {
         fetcher: MapFetcher::with(&DATA_URLS),
     };
-    let async_body = block_on(async_transform_responses_request(
+    let async_body = block_on(async_transform_responses(
         &parallel.fetcher,
         MODEL,
         &source,
@@ -223,7 +223,7 @@ pub(super) fn remote_url_inlined() {
         refused,
         Err(ResponsesError::Fetch(ImageFetchError::Rejected { .. }))
     ));
-    let refused_async = block_on(async_transform_responses_request(
+    let refused_async = block_on(async_transform_responses(
         &refusing.fetcher,
         MODEL,
         &source,
@@ -251,7 +251,7 @@ pub(super) fn responses_media_fetch() {
         None,
     ))
     .expect("sync fetch");
-    let parallel = block_on(async_transform_responses_request(
+    let parallel = block_on(async_transform_responses(
         &config.fetcher,
         MODEL,
         &source,
@@ -313,7 +313,7 @@ pub(super) fn remote_url_limit() {
         None,
     ));
     assert!(within.is_ok());
-    let over = block_on(async_transform_responses_request(
+    let over = block_on(async_transform_responses(
         &config.fetcher,
         MODEL,
         &blocks(MAX_REMOTE_URLS + 1),

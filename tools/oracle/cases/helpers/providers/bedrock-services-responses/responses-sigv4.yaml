@@ -3,21 +3,21 @@ name: responses-sigv4
 call:
   bedrock_services_responses:
     responses_sigv4:
-      - access_key_id: AKIDEXAMPLE
-        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
-        headers: {content-type: application/json, x-custom: keep}
-        optional_params: {aws_region_name: us-west-2}
+      - headers: {content-type: application/json, x-custom: keep}
+        optional_params:
+          aws_access_key_id: AKIDEXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-west-2
         request_data: {model: us.openai.gpt-5.6-sol, input: hi}
-        now: 1767225600
         error:
           status: 429
           message: slow down
           headers: {x-amzn-RequestId: req-1}
-      - access_key_id: AKIDOTHER
-        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
-        headers: {x-forwarded-for: 10.0.0.1}
-        optional_params: {aws_region_name: eu-west-1}
+      - headers: {x-forwarded-for: 10.0.0.1}
+        optional_params:
+          aws_access_key_id: AKIDOTHER
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          aws_region_name: eu-west-1
         request_data: {input: [{type: message, role: user, content: héllo}], stream: true}
-        now: 1767225600
 env: {}
 compare: {ignore: []}

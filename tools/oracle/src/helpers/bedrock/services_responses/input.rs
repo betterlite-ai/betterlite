@@ -10,27 +10,18 @@ use serde::Deserialize;
 use serde_json::value::RawValue;
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum Input {
-    #[serde(rename = "bedrock_responses_model_route")]
-    ModelRoute(Vec<RouteCase>),
-    #[serde(rename = "responses_bearer_auth")]
-    BearerAuth(Vec<AuthCase>),
-    #[serde(rename = "responses_sigv4")]
-    Sigv4(Vec<SigningCase>),
-    #[serde(rename = "response_option_gates")]
-    OptionGates(Vec<OptionCase>),
-    #[serde(rename = "native_file_search_flag")]
-    NativeFileSearch(Vec<OptionCase>),
-    #[serde(rename = "inline_image_traversal")]
-    Traversal(Vec<TraversalCase>),
-    #[serde(rename = "remote_url_inlined")]
+    BedrockResponsesModelRoute(Vec<RouteCase>),
+    ResponsesBearerAuth(Vec<AuthCase>),
+    ResponsesSigv4(Vec<SigningCase>),
+    ResponseOptionGates(Vec<OptionCase>),
+    NativeFileSearchFlag(Vec<OptionCase>),
+    InlineImageTraversal(Vec<TraversalCase>),
     RemoteUrlInlined(Vec<FetchCase>),
-    #[serde(rename = "responses_runtime_url")]
-    RuntimeUrl(Vec<UrlCase>),
-    #[serde(rename = "inline_image_replacement")]
-    Replacement(Vec<ReplacementCase>),
-    #[serde(rename = "codex_input_rewrite")]
-    CodexRewrite(Vec<CodexCase>),
+    ResponsesRuntimeUrl(Vec<UrlCase>),
+    InlineImageReplacement(Vec<ReplacementCase>),
+    CodexInputRewrite(Vec<CodexCase>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,8 +38,6 @@ pub(crate) struct AuthCase {
     pub(super) headers: IndexMap<String, String>,
     #[serde(default)]
     pub(super) environment: BTreeMap<String, String>,
-    #[serde(default)]
-    pub(super) sign: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,12 +49,9 @@ pub(crate) struct ErrorProbe {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct SigningCase {
-    pub(super) access_key_id: String,
-    pub(super) secret_access_key: String,
     pub(super) headers: BTreeMap<String, String>,
     pub(super) optional_params: BTreeMap<String, Box<RawValue>>,
     pub(super) request_data: IndexMap<String, Json>,
-    pub(super) now: u64,
     pub(super) error: Option<ErrorProbe>,
 }
 

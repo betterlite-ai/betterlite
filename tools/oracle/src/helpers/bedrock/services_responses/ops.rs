@@ -14,7 +14,7 @@ use betterlite_bedrock::responses::error::{ResponsesError, error_from_reply};
 use betterlite_bedrock::responses::images::{collect_remote_image_urls, inline_remote_image_urls};
 use betterlite_bedrock::responses::options::map_openai_params;
 use betterlite_bedrock::responses::request::{
-    async_transform_responses_request, transform_inlined_request, transform_responses_request,
+    async_transform_responses, transform_inlined_request, transform_responses_request,
 };
 use betterlite_bedrock::responses::url::{CompleteUrlParams, complete_url};
 use betterlite_bedrock::signing::target::RegionInputs;
@@ -23,7 +23,6 @@ use betterlite_openai::response_params::bundled::BundledReasoningModels;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::arguments::json::Object;
-use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
@@ -38,6 +37,7 @@ use super::input::{
 
 const API_BASE: &str = "https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1/responses";
 const MODEL: &str = "openai.gpt-oss-120b";
+const CLOCK_SECONDS: u64 = 1_767_225_600;
 const BEARER_VARIABLE: &str = "AWS_BEARER_TOKEN_BEDROCK";
 
 type Case = Result<Value, Box<HelperError>>;
@@ -46,24 +46,28 @@ pub(super) fn run(input: &Input) -> HelperResult {
     let warnings = Warnings::default();
     let _guard = set_default(tracing_subscriber::registry().with(warnings.clone()));
     let results: Vec<Value> = match input {
-        Input::ModelRoute(cases) => cases.iter().map(route_case).collect::<Result<_, _>>()?,
-        Input::BearerAuth(cases) => cases.iter().map(auth_case).collect::<Result<_, _>>()?,
-        Input::Sigv4(cases) => cases.iter().map(sigv4_case).collect::<Result<_, _>>()?,
-        Input::OptionGates(cases) | Input::NativeFileSearch(cases) => cases
+        Input::BedrockResponsesModelRoute(cases) => {
+            cases.iter().map(route_case).collect::<Result<_, _>>()?
+        }
+        Input::ResponsesBearerAuth(cases) => {
+            cases.iter().map(auth_case).collect::<Result<_, _>>()?
+        }
+        Input::ResponsesSigv4(cases) => cases.iter().map(sigv4_case).collect::<Result<_, _>>()?,
+        Input::ResponseOptionGates(cases) | Input::NativeFileSearchFlag(cases) => cases
             .iter()
             .map(|case| option_case(&warnings, case))
             .collect::<Result<_, _>>()?,
-        Input::Traversal(cases) => cases
+        Input::InlineImageTraversal(cases) => cases
             .iter()
             .map(|case| json!(collect_remote_image_urls(&case.input)))
             .collect(),
         Input::RemoteUrlInlined(cases) => cases.iter().map(fetch_case).collect::<Result<_, _>>()?,
-        Input::RuntimeUrl(cases) => cases.iter().map(url_case).collect(),
-        Input::Replacement(cases) => cases
+        Input::ResponsesRuntimeUrl(cases) => cases.iter().map(url_case).collect(),
+        Input::InlineImageReplacement(cases) => cases
             .iter()
             .map(replacement_case)
             .collect::<Result<_, _>>()?,
-        Input::CodexRewrite(cases) => cases
+        Input::CodexInputRewrite(cases) => cases
             .iter()
             .map(|case| codex_case(&warnings, case))
             .collect::<Result<_, _>>()?,
@@ -99,38 +103,7 @@ fn auth_case(case: &AuthCase) -> Case {
     let environment_token = secret_of(case.environment.get(BEARER_VARIABLE));
     let mut validated = case.headers.clone();
     validate_environment(&mut validated, api_key.as_ref(), environment_token.as_ref());
-    let signed = if case.sign {
-        let headers: Vec<(String, Option<String>)> = case
-            .headers
-            .iter()
-            .map(|(name, value)| (name.clone(), Some(value.clone())))
-            .collect();
-        let inputs = SignInputs {
-            headers: &headers,
-            optional_params: &BTreeMap::new(),
-            request_data: &IndexMap::new(),
-            api_base: API_BASE,
-            model: None,
-            api_key: api_key.as_ref(),
-            environment_token: environment_token.as_ref(),
-            region_inputs: RegionInputs::default(),
-            now: UNIX_EPOCH,
-        };
-        let signed = runtime()?
-            .block_on(sign_request(inputs, |_settings, _region| {
-                ready(Err::<Credentials, CredentialError>(
-                    CredentialError::MissingCredentials,
-                ))
-            }))
-            .or_value_error()?;
-        json!({
-            "headers": signed.headers.into_iter().collect::<BTreeMap<_, _>>(),
-            "body_is_none": signed.body.is_none(),
-        })
-    } else {
-        Value::Null
-    };
-    Ok(json!({"headers": validated, "signed": signed}))
+    Ok(json!({"headers": validated}))
 }
 
 fn error_value(probe: Option<&ErrorProbe>) -> Case {
@@ -155,21 +128,45 @@ fn error_value(probe: Option<&ErrorProbe>) -> Case {
     }))
 }
 
+// The signing time and signature change on every run, so only their shape is compared
+fn signed_summary(headers: &BTreeMap<String, Option<String>>) -> Case {
+    let text = |name: &str| headers.get(name).cloned().flatten().unwrap_or_default();
+    let authorization = text("Authorization");
+    let (_, rest) = authorization
+        .split_once("Credential=")
+        .ok_or("no credential scope")
+        .or_value_error()?;
+    let (credential, rest) = rest
+        .split_once(", SignedHeaders=")
+        .ok_or("no signed headers")
+        .or_value_error()?;
+    let (signed_headers, _signature) = rest
+        .split_once(", Signature=")
+        .ok_or("no signature")
+        .or_value_error()?;
+    let fields: Vec<&str> = credential.split('/').collect();
+    let [access_key, _date, region, service, _scope] = fields.as_slice() else {
+        return Err("the credential scope has the wrong shape").or_value_error();
+    };
+    let plain: BTreeMap<&String, &Option<String>> = headers
+        .iter()
+        .filter(|(name, _)| !["Authorization", "X-Amz-Date"].contains(&name.as_str()))
+        .collect();
+    Ok(json!({
+        "access_key": access_key,
+        "region": region,
+        "service": service,
+        "signed_headers": signed_headers,
+        "headers": plain,
+    }))
+}
+
 fn sigv4_case(case: &SigningCase) -> Case {
     let headers: Vec<(String, Option<String>)> = case
         .headers
         .iter()
         .map(|(name, value)| (name.clone(), Some(value.clone())))
         .collect();
-    let credentials = Credentials {
-        access_key_id: SecretString::from(case.access_key_id.clone()),
-        secret_access_key: SecretString::from(case.secret_access_key.clone()),
-        session_token: None,
-    };
-    let now = UNIX_EPOCH
-        .checked_add(Duration::from_secs(case.now))
-        .ok_or("now is out of range")
-        .or_value_error()?;
     let inputs = SignInputs {
         headers: &headers,
         optional_params: &case.optional_params,
@@ -179,15 +176,28 @@ fn sigv4_case(case: &SigningCase) -> Case {
         api_key: None,
         environment_token: None,
         region_inputs: RegionInputs::default(),
-        now,
+        now: UNIX_EPOCH
+            .checked_add(Duration::from_secs(CLOCK_SECONDS))
+            .ok_or("the clock is out of range")
+            .or_value_error()?,
     };
     let signed = runtime()?
-        .block_on(sign_request(inputs, |_settings, _region| {
-            ready(Ok::<Credentials, CredentialError>(credentials.clone()))
+        .block_on(sign_request(inputs, |settings, _region| {
+            ready(
+                match (&settings.access_key_id, &settings.secret_access_key) {
+                    (Some(access), Some(secret)) => Ok(Credentials {
+                        access_key_id: access.clone(),
+                        secret_access_key: secret.clone(),
+                        session_token: None,
+                    }),
+                    _ => Err(CredentialError::MissingCredentials),
+                },
+            )
         }))
         .or_value_error()?;
+    let signed_headers: BTreeMap<String, Option<String>> = signed.headers.into_iter().collect();
     Ok(json!({
-        "headers": signed.headers.into_iter().collect::<BTreeMap<_, _>>(),
+        "signed": signed_summary(&signed_headers)?,
         "body": signed.body.map(|bytes| STANDARD.encode(bytes)),
         "error": error_value(case.error.as_ref())?,
     }))
@@ -229,7 +239,7 @@ fn fetch_outcome(case: &FetchCase, asynchronous: bool) -> Case {
     let params = Object::new();
     let running = runtime()?;
     let outcome = if asynchronous {
-        running.block_on(async_transform_responses_request(
+        running.block_on(async_transform_responses(
             &config.fetcher,
             MODEL,
             &case.input,

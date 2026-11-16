@@ -19,10 +19,9 @@ use crate::responses::images::{collect_remote_image_urls, inline_remote_image_ur
 fn remote_urls_within_limit(input: &ResponsesInput) -> Result<Vec<String>, ResponsesError> {
     let urls = collect_remote_image_urls(input);
     if urls.len() > MAX_REMOTE_URLS {
-        return Err(MediaError::TooManyRemoteUrls {
+        return Err(ResponsesError::Media(MediaError::TooManyRemoteUrls {
             limit: MAX_REMOTE_URLS,
-        }
-        .into());
+        }));
     }
     Ok(urls)
 }
@@ -48,7 +47,7 @@ where
 }
 
 // One convert_urls call carries every distinct URL and answers in input order
-pub async fn async_transform_responses_request<Source>(
+pub async fn async_transform_responses<Source>(
     fetcher: &Source,
     model: &str,
     input: &ResponsesInput,

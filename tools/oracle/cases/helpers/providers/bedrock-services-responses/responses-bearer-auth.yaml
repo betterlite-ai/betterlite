@@ -3,11 +3,11 @@ name: responses-bearer-auth
 call:
   bedrock_services_responses:
     responses_bearer_auth:
-      - {api_key: explicit-token, environment: {AWS_BEARER_TOKEN_BEDROCK: env-token}, headers: {Authorization: Bearer caller, X-Other: kept}, sign: true}
-      - {environment: {AWS_BEARER_TOKEN_BEDROCK: env-token}, headers: {X-Other: kept}, sign: true}
+      - {api_key: explicit-token, environment: {AWS_BEARER_TOKEN_BEDROCK: env-token}, headers: {Authorization: Bearer caller, X-Other: kept}}
+      - {environment: {AWS_BEARER_TOKEN_BEDROCK: env-token}, headers: {X-Other: kept}}
       - {api_key: "", environment: {AWS_BEARER_TOKEN_BEDROCK: env-token}, headers: {authorization: Bearer lower}}
       - {api_key: "", environment: {AWS_BEARER_TOKEN_BEDROCK: ""}, headers: {Authorization: Bearer caller}}
       - {headers: {Authorization: Bearer caller}}
-      - {api_key: explicit-token, headers: {Content-Type: application/json, X-Other: kept}, sign: true}
+      - {api_key: explicit-token, headers: {Content-Type: application/json, X-Other: kept}}
 env: {}
 compare: {ignore: []}

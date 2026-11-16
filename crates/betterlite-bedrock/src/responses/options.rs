@@ -8,7 +8,6 @@ use betterlite_openai::response_params::bundled::BundledReasoningModels;
 use betterlite_openai::response_params::capabilities::ResponsesCapabilities;
 use betterlite_openai::response_params::params::{ResponsesOptions, ResponsesParams};
 use betterlite_prompts::arguments::json::{Json, Object};
-use serde_json::Value;
 
 use crate::responses::config::CUSTOM_LLM_PROVIDER;
 use crate::responses::error::ResponsesError;
@@ -51,14 +50,17 @@ where
             "Bedrock Runtime Responses API: dropping unsupported parameter(s) ('background',) that the endpoint rejects."
         );
     }
+    drop_unsupported_tool_types(mapped_params)
+}
+
+fn drop_unsupported_tool_types(mut mapped_params: Object) -> Result<Object, ResponsesError> {
     let Some(Json::List(tools)) = mapped_params.get("tools") else {
         return Ok(mapped_params);
     };
-    let entries = tools
-        .iter()
-        .map(serde_json::to_value)
-        .collect::<Result<Vec<Value>, _>>()
-        .map_err(ResponsesError::Encode)?;
+    let mut entries = Vec::with_capacity(tools.len());
+    for tool in tools {
+        entries.push(serde_json::to_value(tool).map_err(ResponsesError::Encode)?);
+    }
     let supported = SUPPORTED_TOOL_TYPES
         .map(str::to_owned)
         .into_iter()
@@ -74,11 +76,10 @@ where
     );
     mapped_params.shift_remove("tools");
     if !kept.is_empty() {
-        let retained = kept
-            .into_iter()
-            .map(serde_json::from_value)
-            .collect::<Result<Vec<Json>, _>>()
-            .map_err(ResponsesError::Encode)?;
+        let mut retained = Vec::with_capacity(kept.len());
+        for tool in kept {
+            retained.push(serde_json::from_value(tool).map_err(ResponsesError::Encode)?);
+        }
         mapped_params.insert("tools".to_owned(), Json::List(retained));
     }
     Ok(mapped_params)

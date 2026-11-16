@@ -14,8 +14,6 @@ use crate::responses::error::ResponsesError;
 use crate::signing::service::{ServiceName, ServiceRequest, sign_service_request};
 use crate::signing::target::RegionInputs;
 
-pub const AUTHORIZATION: &str = "Authorization";
-
 #[derive(Clone, Copy)]
 pub struct SignInputs<'request> {
     pub headers: &'request [(String, Option<String>)],
@@ -55,7 +53,7 @@ pub fn validate_environment(
 ) {
     if let Some(token) = resolve_bearer_token(api_key, environment_token) {
         headers.insert(
-            AUTHORIZATION.to_owned(),
+            "Authorization".to_owned(),
             format!("Bearer {}", token.expose_secret()),
         );
     }

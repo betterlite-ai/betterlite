@@ -3,24 +3,17 @@ name: bedrock-responses-model-route
 call:
   bedrock_services_responses:
     bedrock_responses_model_route:
-      - model: openai.served
+      # model_cost mirrors the entries LiteLLM's local model map holds for these names; the Rust side reads only it
+      - model: us.openai.gpt-5.6-sol
         model_cost:
-          openai.served: {supported_endpoints: [/v1/responses, /v1/chat/completions]}
-      - model: openai.prefixed
+          us.openai.gpt-5.6-sol: {supported_endpoints: [/v1/responses, /v1/chat/completions]}
+      - model: chat_completions/us.openai.gpt-5.6-sol
         model_cost:
-          bedrock/openai.prefixed: {supported_endpoints: [/v1/responses]}
-      - model: chat_completions/openai.served
+          us.openai.gpt-5.6-sol: {supported_endpoints: [/v1/responses, /v1/chat/completions]}
+      - model: chat_completions/chat_completions/us.openai.gpt-5.6-sol
         model_cost:
-          openai.served: {supported_endpoints: [/v1/responses]}
-      - model: chat_completions/chat_completions/openai.served
-        model_cost:
-          openai.served: {supported_endpoints: [/v1/responses]}
-      - model: chat_completions/openai.nested
-        model_cost:
-          chat_completions/openai.nested: {supported_endpoints: [/v1/responses]}
-      - model: openai.chat-only
-        model_cost:
-          openai.chat-only: {supported_endpoints: [/v1/chat/completions]}
+          us.openai.gpt-5.6-sol: {supported_endpoints: [/v1/responses, /v1/chat/completions]}
+      - model: writer.palmyra-x4-v1:0
       - model: openai.unknown
       - model: chat_completions/
       - model: ""
