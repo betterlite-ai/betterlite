@@ -1,0 +1,21 @@
+task: B3797
+deviations:
+  - what: The payload size check counts the compact UTF-8 JSON serde produces, while LiteLLM counts json.dumps(payload, default=_json_default).encode("utf-8") with its spaces and ASCII escaping, so a payload near max_payload_bytes can be under the limit in one side and over it in the other.
+    why: Python's json.dumps spacing and escaping are not part of the contract (docs/compatibility.md). The limit still measures the body actually sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1049-L1058
+  - what: A non-finite timeout, initial_backoff or max_backoff and a negative max_payload_bytes are rejected when the settings are resolved. LiteLLM's max() clamps a negative or NaN backoff to 0, accepts inf until a request uses it, and with a negative max_payload_bytes refuses every payload.
+    why: These values are not representable as a Duration or a byte limit here, and docs/compatibility.md makes a wrong-typed field an error that names it. A guardrail that silently waits forever or rejects every payload is worse than a config error at startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L937-L956
+  - what: A non-finite number in the request data is a permanent serialization error that names the value. Python's json.dumps writes the bare NaN and Infinity tokens and sends them.
+    why: Those tokens are not JSON, so a v1 webhook or a v3 endpoint that parses the body strictly rejects the request anyway. docs/compatibility.md has output stay standard JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1049-L1050
+  - what: The verbose straiker.webhook_response event logs the raw response text. LiteLLM logs the parsed body re-dumped by json.dumps.
+    why: The parsed content is the same; only the JSON formatting of a log line differs, and docs/compatibility.md keeps json.dumps formatting out of the port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1123-L1127
+  - what: A webhook answer that fails to deserialize carries serde_json's message inside "invalid response schema: ". LiteLLM carries pydantic's ValidationError text.
+    why: The failure is still permanent, unreachable false and non-retryable, and the prefix names the same condition. The library's message text is not part of the wire contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1119
+  - what: The verbose verdict record is written into the request data's response object under _hidden_params.straiker. LiteLLM reads that field with getattr on the response object, so for the dict a proxy call carries it records nothing.
+    why: The request data here is JSON, where an attribute lookup cannot reach a key. The task requires the verbose record, and writing it where the dict holds it keeps it beside the response it describes instead of dropping it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1131-L1145
+kept_bugs: []
