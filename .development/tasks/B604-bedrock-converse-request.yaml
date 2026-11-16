@@ -1,9 +1,10 @@
 id: B604
 title: Bedrock Converse request assembly
 description: >-
-  Add ConverseRequest assembly, composing prepared options, tool/beta processing and async supplied-media conversion.
+  Add ConverseRequest assembly, composing prepared options, tool/beta processing and supplied-media conversion.
   Preserve model ARN/default-field handling, compact-only context-management filtering and tool-name mappings. Native
-  byte requirements reuse the no-fetch inline-media policy; B181 owns the final message blocks.
+  byte requirements fetch inside B181 through B227's RemoteImage: an image_url or file URL gets one checked GET,
+  and documents keep their base64-only source rule.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/converse_transformation.py:
@@ -55,11 +56,13 @@ description: >-
   then B181 message conversion with llm_provider=bedrock_converse and popped litellm_params.user_continue_message
   defaultNone. B596 resolves metadata after message conversion; opted-in metadata ownership removes caller requestMetadata
   even if resolutionNone, otherwise replaces with trusted resolved map. Unowned metadata remains. Return messages
-  plus common fields, preserving caller mutation order. inline_document_image: Use B181/B183 production media conversion
-  for supplied data/file blocks with no network in oracle; compare source conversion through injected media transport.
-  Current native policy rejects request HTTP(S) URLs when bytes would need downloading with ImageFetchError400,
-  no param/code added by this layer; it never fetches the URL. This URL rejection is a Rust deviation test; pure
-  helper parity uses supplied bytes only. model_arn_request: After format removal, application-inference-profile
+  plus common fields, preserving caller mutation order. inline_document_image: Use B181 production media conversion
+  with B227's injected RemoteImage. A supplied data/file block converts from its bytes. An http(s) image_url or
+  file_id URL is fetched once through B5082's checked fetch on B173's client, under the 600-second deadline and the
+  MAX_IMAGE_URL_DOWNLOAD_SIZE_MB cap, then becomes the same image or document block. A document source must be
+  base64; a url source fails with the existing document-source error before transport, as the source ValueError
+  does. Oracle cases use supplied bytes only; URL fetching is a Rust test through the injected transport.
+  model_arn_request: After format removal, application-inference-profile
   ARN forwards remaining dict output_config verbatim, bypassing capability/effort validation. Anthropic base: global
   drop_params literal True plus unsupported effort -> B576 exact Dropping unsupported `output_config` warning and
   omit; per-call drop does not select this branch. Otherwise B690 normalize only if consumed markerfalse, B600 validates
@@ -78,9 +81,11 @@ description: >-
   regardless of its enabled/disabled value.
 
 
-  Add standalone Rust test converse_request_url_not_fetched asserting ImageFetchError400 and zero media/upstream
-  transport calls; inline_document_image oracle case uses only supplied bytes. The transport response mapping stays
-  with API/error owners.
+  Add standalone Rust test converse_request_media_fetch: a public image URL answered by the fixture transport becomes
+  an image block carrying the fixture bytes, while a resolver that resolves nothing makes the same URL fail with the
+  media error and zero upstream transport calls. The inline_document_image oracle case uses supplied bytes only,
+  so the oracle needs no HTTP interception; URL fetching stays with the Rust test. The transport response mapping
+  stays with API/error owners.
 
 
   Direct shared helper ownership: B598. Reuse these named lower helpers at the source call sites rather than reproducing
@@ -143,6 +148,10 @@ references:
   why: Own AmazonConverseConfig._filter_context_management_for_bedrock_converse, AmazonConverseConfig._transform_request_helper,
     AmazonConverseConfig._async_transform_request, AmazonConverseConfig.transform_request, AmazonConverseConfig._transform_request.
     Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3389-L3616
+  why: BedrockImageProcessor fetches a remote image_url or file_id URL with one safe_get and turns the bytes into an
+    image or document block; B227 ports this and B181 calls it. The async message processor calls process_image_async
+    at L4392-L4407, and a document source that is not base64 raises at L4652-L4664.
 dod:
 - text: 'converse_body_shape: Order: pop _output_config_normalized from caller options and truth-test it; B2204
     filter exceptions/nulls then safe_deep_copy. Separate maxTokens,stopSequences,temperature,topP,topK,top_k; tools/tool_choice;
@@ -181,11 +190,12 @@ dod:
   - case-system-message-order
   - oracle
   - helper-python
-- text: 'inline_document_image: Use B181/B183 production media conversion for supplied data/file blocks with no
-    network in oracle; compare source conversion through injected media transport. Current native policy rejects
-    request HTTP(S) URLs when bytes would need downloading with ImageFetchError400, no param/code added by this
-    layer; it never fetches the URL. This URL rejection is a Rust deviation test; pure helper parity uses supplied
-    bytes only.'
+- text: 'inline_document_image: Use B181 production media conversion with B227''s injected RemoteImage. A supplied
+    data/file block converts from its bytes. An http(s) image_url or file_id URL is fetched once through B5082''s
+    checked fetch on B173''s client, under the 600-second deadline and the MAX_IMAGE_URL_DOWNLOAD_SIZE_MB cap, then
+    becomes the same image or document block. A document source must be base64; a url source fails with the existing
+    document-source error before transport, as the source ValueError does. Oracle cases use supplied bytes only;
+    URL fetching is a Rust test through the injected transport.'
   proof:
   - case-inline-document-image
   - oracle
@@ -224,9 +234,10 @@ dod:
   - case-thinking-history-policy
   - oracle
   - helper-python
-- text: URL media needing downloaded bytes fails400 without any fetch.
+- text: An http(s) image_url or file URL is fetched once through B181's injected B227 transport and becomes an image
+    block; a refusing resolver fails with the media error before transport.
   proof:
-  - url-no-fetch
+  - media-fetch
 checks:
   optional:
   - mutants
@@ -260,10 +271,12 @@ checks:
       plus common fields, preserving caller mutation order.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_request_cases::case_[0-9]+_system_message_order$/)'
   - id: case-inline-document-image
-    why: Use B181/B183 production media conversion for supplied data/file blocks with no network in oracle; compare
-      source conversion through injected media transport. Current native policy rejects request HTTP(S) URLs when
-      bytes would need downloading with ImageFetchError400, no param/code added by this layer; it never fetches
-      the URL. This URL rejection is a Rust deviation test; pure helper parity uses supplied bytes only.
+    why: Use B181 production media conversion with B227's injected RemoteImage. A supplied data/file block converts
+      from its bytes. An http(s) image_url or file_id URL is fetched once through B5082's checked fetch on B173's
+      client, under the 600-second deadline and the MAX_IMAGE_URL_DOWNLOAD_SIZE_MB cap, then becomes the same image
+      or document block. A document source must be base64; a url source fails with the existing document-source
+      error before transport, as the source ValueError does. Oracle cases use supplied bytes only; URL fetching is
+      a Rust test through the injected transport.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_request_cases::case_[0-9]+_inline_document_image$/)'
   - id: case-model-arn-request
     why: 'After format removal, application-inference-profile ARN forwards remaining dict output_config verbatim,
@@ -300,9 +313,9 @@ checks:
       adds additionalModelResponseFieldPaths=[/usage/output_tokens_details], regardless of its enabled/disabled
       value.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_request_cases::case_[0-9]+_thinking_history_policy$/)'
-  - id: url-no-fetch
-    why: The current no-fetch deviation lacks a production assertion.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_request_url_not_fetched$/)'
+  - id: media-fetch
+    why: URL media fetching through the injected transport lacks a production assertion.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_request_media_fetch$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-request/converse-body-shape.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-request/tool-config-injection.yaml
@@ -312,11 +325,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-request/model-arn-request.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-request/output-format-precedence.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-request/thinking-history-policy.yaml
-deviations:
-- what: Request image/document URLs needing byte conversion are not downloaded; return ImageFetchError status400
-    before upstream IO. Supplied bytes/data remain supported.
-  why: B5083's downloader is not wired into this path yet. Request media URLs are fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1998-L2003
+deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
@@ -384,6 +393,9 @@ pitfalls:
 - The normalized-output marker is removed from the caller options before copying; leaving it there leaks internal
   state across reuse.
 - Without converted tools, the source leaves tool_choice among inference fields instead of building toolConfig.
+- B181 fetches a remote image_url or file_id URL through PromptDeps.remote, so the adapter passes the caller's
+  RemoteImage; an oracle case with a public URL would open a socket, and the URL path is tested only through the
+  injected Rust transport.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
