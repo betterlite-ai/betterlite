@@ -1,0 +1,11 @@
+kind: helper
+name: bfl-edit-fuzz-seed
+call:
+  bfl_edit:
+    operation: first_image_only
+    prompt: fuzz
+    image: {kind: bytes, data: aW1hZ2U=}
+    mask: {kind: absent}
+    options: {}
+env: {}
+compare: {ignore: []}
