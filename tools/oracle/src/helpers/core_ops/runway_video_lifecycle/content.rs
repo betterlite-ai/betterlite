@@ -10,6 +10,7 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_oracle_helper_api::helper::HelperResult;
+use http::HeaderMap;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
@@ -68,7 +69,7 @@ impl ArtifactTransport for Script {
             });
         ready(Ok(UpstreamResponse {
             status: self.reply.0,
-            headers: http::HeaderMap::new(),
+            headers: HeaderMap::new(),
             body: self.reply.1.clone().into_bytes(),
         }))
     }

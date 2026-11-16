@@ -10,7 +10,7 @@ use betterlite_core::api::runway::video_lifecycle::{LifecycleOperation, lifecycl
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 mod content;
 
@@ -18,7 +18,7 @@ use self::content::content;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RequestCall {
+pub(crate) struct RequestCall {
     kind: RequestKind,
     video_id: String,
     #[serde(default)]
@@ -37,7 +37,7 @@ enum RequestKind {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ResponseCall {
+pub(crate) struct ResponseCall {
     kind: ResponseKind,
     #[serde(default)]
     provider: Option<String>,
@@ -53,7 +53,7 @@ enum ResponseKind {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ContentCall {
+pub(crate) struct ContentCall {
     body: String,
     reply: ReplyCall,
 }
@@ -67,7 +67,7 @@ struct ReplyCall {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum UnsupportedCall {
+pub(crate) enum UnsupportedCall {
     Remix,
     List,
     CreateCharacter,
