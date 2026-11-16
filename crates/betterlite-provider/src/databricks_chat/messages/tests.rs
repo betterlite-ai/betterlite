@@ -157,6 +157,15 @@ fn keeps_an_assistant_message_with_a_function_call() {
 }
 
 #[test]
+fn keeps_an_assistant_message_with_content_blocks() {
+    let value = json!([{
+        "role": "assistant",
+        "content": [{"type": "text", "text": "hi"}]
+    }]);
+    assert_eq!(transformed(value.clone(), OTHER_MODEL), value);
+}
+
+#[test]
 fn drops_blank_text_blocks_and_keeps_other_blocks() {
     let value = json!([{
         "role": "user",
@@ -298,6 +307,18 @@ fn the_split_keeps_the_other_assistant_fields_on_the_first_message_only() {
     {"role": "tool", "tool_call_id": "a", "content": "ra"},
     {"role": "user", "content": "stop"},
     {"role": "tool", "tool_call_id": "b", "content": "rb"}
+]))]
+#[case(json!([
+    {"role": "assistant", "tool_calls": [
+        {"id": "a", "type": "function", "function": {"name": "f", "arguments": "{}"}},
+        {"id": "a", "type": "function", "function": {"name": "g", "arguments": "{}"}}
+    ]},
+    {"role": "tool", "tool_call_id": "a", "content": "ra"}
+]))]
+#[case(json!([
+    {"role": "assistant", "tool_calls": calls()},
+    {"role": "tool", "tool_call_id": "a", "content": "ra"},
+    {"role": "tool", "tool_call_id": "a", "content": "rb"}
 ]))]
 fn leaves_a_malformed_tool_group_untouched(#[case] value: Value) {
     assert_eq!(transformed(value.clone(), OTHER_MODEL), value);

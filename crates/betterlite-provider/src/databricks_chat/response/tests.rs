@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use betterlite_openai::error::ProviderError;
 use rstest::rstest;
 use serde_json::{Value, json};
 
@@ -132,6 +133,20 @@ fn a_custom_provider_prefixes_the_model_name() {
 }
 
 #[test]
+fn an_empty_provider_falls_back_to_databricks() {
+    let input = ResponseInput {
+        body: r#"{"id": "i", "created": 1, "model": "m", "choices": [], "usage": {}}"#,
+        status_code: 200,
+        headers: BTreeMap::new(),
+        custom_llm_provider: Some(""),
+        json_mode: None,
+        ids: &FixedIds,
+    };
+    let reply = transform_response(input).expect("the response transform succeeds");
+    assert_eq!(reply.model, "databricks/m");
+}
+
+#[test]
 fn a_missing_model_becomes_an_empty_name() {
     let mut value = body(json!({"role": "assistant", "content": "x"}));
     value
@@ -161,6 +176,16 @@ fn a_body_that_is_not_a_json_object_is_a_parse_failure(#[case] text: &str) {
     assert!(message.starts_with("Unable to get json response - "));
     assert!(message.ends_with(&format!(", Original Response: {text}")));
     assert_eq!(error.status_code(), 429);
+}
+
+#[test]
+fn a_response_error_keeps_its_headers_through_the_provider_error() {
+    let provider = ProviderError::from(raw_failure("not json"));
+    assert_eq!(provider.status_code, 429);
+    assert_eq!(
+        provider.headers,
+        Some(vec![(String::from("retry-after"), String::from("3"))])
+    );
 }
 
 #[rstest]

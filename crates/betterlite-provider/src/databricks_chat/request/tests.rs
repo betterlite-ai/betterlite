@@ -2,6 +2,7 @@
 
 use std::future::Future;
 
+use async_trait::async_trait;
 use betterlite_anthropic::anthropic_capability_catalog::OptionalParams;
 use betterlite_anthropic::anthropic_capability_catalog::thinking::ThinkingError;
 use betterlite_anthropic::capabilities::reasoning::ReasoningEffortError;
@@ -12,12 +13,16 @@ use betterlite_models::decisions::Json as DecisionJson;
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use rstest::rstest;
+use secrecy::SecretString;
 use serde_json::{Number, Value, json};
 
+use crate::databricks_auth::environment::DatabricksEnv;
+use crate::databricks_auth::oauth::{OauthReply, OauthTokenRequest, OauthTokenSource};
 use crate::databricks_chat::request::params::map_openai_params;
+use crate::databricks_chat::request::tools::convert_anthropic_tool;
 use crate::databricks_chat::request::{
-    SUPPORTED_OPENAI_PARAMS, get_complete_url, get_config, get_required_params, pop_user_agent,
-    pop_user_agent_parameter, should_fake_stream,
+    EnvironmentRequest, SUPPORTED_OPENAI_PARAMS, get_complete_url, get_config, get_required_params,
+    pop_user_agent, pop_user_agent_parameter, should_fake_stream, validate_environment,
 };
 
 fn object(value: Value) -> Object {
@@ -135,6 +140,69 @@ fn popping_a_user_agent_that_is_not_there_is_none() {
         pop_user_agent(&mut params, "user_agent").expect("an absent user agent is fine"),
         None
     );
+}
+
+const VERSION: &str = "1.105.1";
+
+// an api key request never asks for an OAuth token, so the source refuses instead of sending
+struct NoTokens;
+
+#[async_trait]
+impl OauthTokenSource for NoTokens {
+    async fn send(&self, _request: &OauthTokenRequest) -> OauthReply {
+        OauthReply::Transport(String::from("the request carries an api key"))
+    }
+}
+
+async fn user_agent_of(
+    litellm_user_agent: Option<&str>,
+    env_user_agent: Option<&str>,
+    user_agent_override: Option<&str>,
+) -> String {
+    let key = SecretString::from(String::from("dapi-key"));
+    let env = DatabricksEnv {
+        client_id: None,
+        client_secret: None,
+        api_base: None,
+        user_agent_override: user_agent_override.map(str::to_owned),
+        version: VERSION.to_owned(),
+    };
+    let request = EnvironmentRequest {
+        api_key: Some(&key),
+        api_base: Some("https://adb-1.cloud.databricks.com"),
+        headers: None,
+        litellm_user_agent,
+        env_user_agent,
+    };
+    let mut optional = Object::new();
+    let headers = validate_environment(request, &mut optional, &env, &NoTokens)
+        .await
+        .expect("the headers build");
+    assert_eq!(
+        headers.get("Content-Type").map(String::as_str),
+        Some("application/json")
+    );
+    headers
+        .get("User-Agent")
+        .cloned()
+        .expect("the headers carry a user agent")
+}
+
+#[tokio::test]
+async fn the_user_agent_falls_through_litellm_then_the_environment() {
+    assert_eq!(
+        user_agent_of(Some("lit"), None, None).await,
+        "lit_litellm/1.105.1"
+    );
+    assert_eq!(
+        user_agent_of(Some(""), Some("env"), None).await,
+        "env_litellm/1.105.1"
+    );
+    assert_eq!(
+        user_agent_of(None, None, Some("ovr")).await,
+        "ovr_litellm/1.105.1"
+    );
+    assert_eq!(user_agent_of(Some(""), None, None).await, "litellm/1.105.1");
 }
 
 #[rstest]
@@ -547,4 +615,36 @@ async fn a_non_claude_model_keeps_its_reasoning_effort() {
     )
     .await;
     assert_params(&params, json!({"reasoning_effort": "low"}));
+}
+
+// Python's `tool.get("input_schema") or {}` turns any falsy schema into an empty parameters map
+#[test]
+fn a_tool_without_a_truthy_schema_gets_an_empty_parameters_map() {
+    let tool = object(json!({"name": "f", "input_schema": null}));
+    let converted = convert_anthropic_tool(&tool).expect("the tool converts");
+    assert_eq!(
+        serde_json::to_value(&converted).expect("the tool renders"),
+        json!({"type": "function", "function": {"name": "f", "parameters": {}}})
+    );
+}
+
+// Only a description that exists is added, so an explicit null leaves the key out
+#[test]
+fn a_null_description_is_left_out() {
+    let tool = object(json!({
+        "name": "f",
+        "input_schema": {"type": "object", "properties": {}},
+        "description": null
+    }));
+    let converted = convert_anthropic_tool(&tool).expect("the tool converts");
+    assert_eq!(
+        serde_json::to_value(&converted).expect("the tool renders"),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "f",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        })
+    );
 }

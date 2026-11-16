@@ -352,6 +352,16 @@ fn the_delta_function_call_keeps_its_extras() {
 }
 
 #[test]
+fn a_null_reasoning_and_function_call_are_dropped() {
+    let delta = delta_of(&success(&body(
+        json!({"content": "x", "reasoning": null, "function_call": null}),
+    )));
+    assert!(delta.get("reasoning").is_none());
+    assert!(delta.get("reasoning_content").is_none());
+    assert_eq!(delta["function_call"], json!(null));
+}
+
+#[test]
 fn a_function_call_without_arguments_is_a_shape_error() {
     let error = failure(&body(json!({"function_call": {"name": "f"}})));
     assert_eq!(error.status_code(), 500);
@@ -420,6 +430,22 @@ fn a_custom_tool_call_passes_through() {
             "custom": {"name": "f", "input": null, "zz": 1},
             "index": 0,
             "zz": 2
+        }])
+    );
+}
+
+#[test]
+fn a_custom_tool_call_without_a_type_passes_through() {
+    let delta = delta_of(&success(&body(json!({
+        "tool_calls": [{"custom": {"name": "f"}}]
+    }))));
+    assert_eq!(
+        delta["tool_calls"],
+        json!([{
+            "id": null,
+            "type": null,
+            "custom": {"name": "f", "input": null},
+            "index": 0
         }])
     );
 }
