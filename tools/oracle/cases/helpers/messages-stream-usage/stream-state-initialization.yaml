@@ -1,0 +1,23 @@
+kind: helper
+name: messages-stream-usage-stream-state-initialization
+call:
+  messages_stream_usage:
+    logging: true
+    model: claude-sonnet-4-5
+    tool_name_mapping: {}
+    applied_edits: []
+    compaction_block: null
+    iterations_usage: null
+    chunks_attr:
+    - {}
+    - {}
+    messages_attr:
+    - role: user
+      content: hi
+    steps:
+    - step: snapshot
+    - step: initial_usage
+    - step: snapshot
+env: {}
+compare:
+  ignore: []

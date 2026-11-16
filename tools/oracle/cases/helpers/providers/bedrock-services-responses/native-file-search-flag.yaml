@@ -1,0 +1,18 @@
+kind: helper
+name: native-file-search-flag
+call:
+  bedrock_services_responses:
+    native_file_search_flag:
+      - params:
+          tools:
+            - {type: file_search, vector_store_ids: [vs]}
+            - {type: web_search}
+      - params:
+          tools:
+            - {type: web_search_preview}
+      - params:
+          tools:
+            - {type: function, name: kept, parameters: {}, strict: false}
+            - {type: file_search, vector_store_ids: [vs]}
+env: {}
+compare: {ignore: []}

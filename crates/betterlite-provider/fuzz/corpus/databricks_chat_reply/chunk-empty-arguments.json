@@ -1,0 +1,1 @@
+{"id": null, "created": 1705, "model": null, "choices": [{"delta": {"tool_calls": [{"function": {"name": "f", "arguments": "{}"}}, {"type": "custom", "custom": {"name": "g", "input": "x"}}]}}]}

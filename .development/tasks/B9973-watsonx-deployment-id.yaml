@@ -1,0 +1,132 @@
+id: B9973
+title: Watsonx deployment ids stay inside their path
+description: >-
+  Fix the R2 finding on B5971's Watsonx chat URL, which main's Watsonx text URL shares. A model named
+  deployment/<id> puts <id> into /ml/v1/deployments/<id>/text/... as it is: complete_url in
+  crates/betterlite-provider/src/watsonx_text/request.rs replaces {deployment_id} with the raw text, and
+  get_complete_url in crates/betterlite-openai/src/watsonx_chat/urls.rs formats it in raw. The model comes from
+  the request or the config, so deployment/x/../other reaches /ml/v1/deployments/other/text/chat once the URL
+  is resolved, and a ? or # in the id cuts the path short, while the call carries the IAM bearer token to the
+  watsonx host. LiteLLM does the same ("/".join(model.split("/")[1:]) then endpoint.format), and no working
+  setup relies on a dot segment, an empty segment or a raw ? or # in a deployment id.
+
+
+  Rust change. Add pub fn deployment_id(model: &str) -> Result<Option<String>, WatsonxError> to
+  crates/betterlite-openai/src/watsonx_auth/urls.rs. It returns None when the model does not start with
+  "deployment/", and otherwise the rest of the model encoded with betterlite_http::url_path::encode_segments(rest,
+  "deployment id"). That keeps the slashes between segments, percent-encodes every other reserved byte the way
+  Python's quote(safe="") does, and refuses an empty, "." or ".." segment. A refused id becomes
+  WatsonxError::Api { status_code: 400, message: <the HttpError's text>, headers: None }, the same variant
+  get_base_url uses for its 401, so both callers' existing status mapping answers 400 without a new variant.
+  complete_url in watsonx_text/request.rs and get_complete_url in watsonx_chat/urls.rs call deployment_id in
+  place of their own strip_prefix("deployment/") and put the encoded id into their endpoint as they do today.
+  Neither caller keeps its own prefix check.
+
+
+  Tests. Add crates/betterlite-openai/src/watsonx_auth/tests/deployment_id.rs and declare it with
+  mod deployment_id; in crates/betterlite-openai/src/watsonx_auth/tests.rs. deployment_id_keeps_plain_ids is an
+  #[rstest] with cases plain ("deployment/abc" gives Some("abc")), slashes ("deployment/a/b" gives Some("a/b")),
+  query ("deployment/x?y#z" gives Some("x%3Fy%23z")), not_a_deployment ("granite" gives None) and
+  prefix_needs_the_slash ("deployment" gives None). deployment_id_refuses_a_path_escape is an #[rstest] with cases
+  parent ("deployment/x/../other"), current ("deployment/./x"), empty ("deployment/") and empty_inner
+  ("deployment/a//b"); each asserts WatsonxError::Api with status_code 400. In
+  crates/betterlite-openai/src/watsonx_chat/tests/urls.rs, the case deployment_keeps_empty_id leaves
+  url_picks_the_endpoint, and url_refuses_a_deployment_id_that_leaves_its_path calls get_complete_url with
+  "deployment/x/../other" and asserts the error. In crates/betterlite-provider/src/watsonx_text/tests.rs,
+  complete_url_refuses_a_deployment_id_that_leaves_its_path calls complete_url with "deployment/x/../other"
+  and asserts the error's status() is Some(400). Every new refusal case fails on the unfixed code, which
+  returns a URL.
+
+
+  Oracle. tools/oracle/cases/helpers/watsonx-chat/deployment-stream-url.yaml loses its model: deployment/ url
+  input, since LiteLLM builds /ml/v1/deployments//text/chat there and betterlite now refuses it. Every other
+  Watsonx case stays as it is and must still match LiteLLM.
+
+
+  Deviations. Write docs/deviations/B9973.yaml with the row under deviations below.
+scope:
+  paths:
+  - crates/betterlite-openai/src/watsonx_auth/urls.rs
+  - crates/betterlite-openai/src/watsonx_auth/tests.rs
+  - crates/betterlite-openai/src/watsonx_auth/tests/**
+  - crates/betterlite-openai/src/watsonx_chat/urls.rs
+  - crates/betterlite-openai/src/watsonx_chat/tests/urls.rs
+  - crates/betterlite-provider/src/watsonx_text/request.rs
+  - crates/betterlite-provider/src/watsonx_text/tests.rs
+  - tools/oracle/cases/helpers/watsonx-chat/deployment-stream-url.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/chat/transformation.py#L91-L96
+  why: The chat get_complete_url joins everything after deployment/ and formats it into the deployment endpoint with no encoding.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/completion/transformation.py#L334-L342
+  why: The text completion get_complete_url does the same for the generation endpoints.
+dod:
+- text: >-
+    deployment_id in watsonx_auth/urls.rs keeps plain and multi-segment ids, percent-encodes ? and #, returns None
+    for a model that is not a deployment, and refuses an empty, "." or ".." segment with a 400 Api error.
+  proof: [deployment-id]
+- text: >-
+    The Watsonx chat and text URL builders both refuse deployment/x/../other, and neither strips the deployment/
+    prefix itself any more.
+  proof: [callers, one-prefix-check]
+- text: >-
+    The Watsonx chat, text and auth oracle cases still match LiteLLM.
+  proof: [watsonx-oracle]
+- text: >-
+    docs/deviations/B9973.yaml lists the change with the pinned LiteLLM link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: deployment-id
+    why: The shared deployment id function is missing, lets a path escape through, or changes a plain id.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/src/watsonx_auth/tests/deployment_id.rs)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^watsonx_auth::tests::deployment_id::deployment_id_(keeps_plain_ids|refuses_a_path_escape)::case_/)'
+  - id: callers
+    why: A Watsonx URL builder still sends a deployment id that leaves its path, or a URL test broke.
+    run: >-
+      cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^watsonx_chat::tests::urls::/)'
+      && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^watsonx_text::tests::/)'
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^watsonx_chat::tests::urls::url_refuses_a_deployment_id_that_leaves_its_path$/)'
+      && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^watsonx_text::tests::complete_url_refuses_a_deployment_id_that_leaves_its_path$/)'
+  - id: one-prefix-check
+    why: A caller still strips deployment/ itself, so the encoding lives in two places.
+    run: >-
+      ! grep -q -F 'deployment/' crates/betterlite-openai/src/watsonx_chat/urls.rs crates/betterlite-provider/src/watsonx_text/request.rs
+      && grep -q -F 'encode_segments' crates/betterlite-openai/src/watsonx_auth/urls.rs
+  - id: watsonx-oracle
+    why: A Watsonx helper case no longer matches LiteLLM.
+    run: >-
+      cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-openai,betterlite-oracle-groups/betterlite-oracle-prompts --
+      tools/oracle/cases/helpers/watsonx-chat tools/oracle/cases/helpers/watsonx-text tools/oracle/cases/helpers/watsonx-auth
+  - id: deviation-row
+    why: The deviation misses the dot segment refusal or its pinned link.
+    run: >-
+      grep -q -F '..' docs/deviations/B9973.yaml && grep -q -F 'watsonx/chat/transformation.py#L' docs/deviations/B9973.yaml
+oracle_cases: []
+deviations:
+- what: >-
+    The deployment id after deployment/ in a Watsonx chat or text model is percent-encoded per path segment, so a
+    ? or # stays inside /ml/v1/deployments/<id>/, and an id with an empty, "." or ".." segment is refused with a
+    400 before any request is sent.
+  why: >-
+    LiteLLM formats the raw id into the URL path, so a request or config model can move the call to another path
+    on the watsonx host while it carries the IAM bearer token. Deployment ids are plain names or GUIDs, so no
+    working setup relies on the raw form.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/chat/transformation.py#L91-L96
+out_of_scope:
+- Watsonx project and space ids, which go into the body, not the path.
+- Other providers' path parameters; each has its own task when a review finds one.
+- Changing the WatsonxError variants or the callers' status mapping.
+pitfalls:
+- 'Reuse betterlite_http::url_path::encode_segments; do not write a second encoder or a second dot-segment check.'
+- 'Put deployment_id in watsonx_auth/urls.rs, which both crates already import from; betterlite-provider depends on betterlite-openai, never the other way.'
+- 'Map the HttpError into WatsonxError::Api with status 400 so the text status() and the chat helper pick it up unchanged; no new WatsonxError variant, since every exhaustive match on it would have to change.'
+- 'Do not add oracle cases for a refused or encoded id: LiteLLM builds the raw URL there, so the case cannot match.'
+- 'deployment/a/b must keep its slash: encode per segment, not the whole id as one segment.'
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

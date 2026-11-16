@@ -1,0 +1,24 @@
+task: B689
+deviations:
+  - what: An async open records original_response as the text "lines", where LiteLLM hands the callback the live ModelResponseIterator object.
+    why: the port has no Python object to pass and the iterator's lines are the form a JSON record can carry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L125
+  - what: A status error's message is text, so a body that is not UTF-8 reads "<n> bytes that are not text" and the sync non-200 guard joins the response lines with "\n" where LiteLLM reads the raw response bytes.
+    why: the transport exposes framed lines and betterlite's error carries the body as String, where LiteLLM keeps bytes in AnthropicError.message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L173-L179
+  - what: A malformed api_base fails as the typed Endpoint error, where LiteLLM's httpx exception reaches the generic handler and becomes AnthropicError(500, str(exception)).
+    why: the URL is parsed before the request is built, and a typed error names the bad field instead of a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L107-L111
+  - what: The call timeout is the deadline of the whole exchange, so a stream that keeps sending events past it fails with a transport error at the deadline, where LiteLLM's httpx timeout applies to each read and delivers the whole answer.
+    why: betterlite applies the caller's timeout once per request on the shared ProxiedClient, and B1316 and B1344 list the same difference for their own calls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L89-L95
+  - what: An error body larger than the transport's body limit is dropped, so the AnthropicError keeps the upstream status and headers with an empty message, where LiteLLM reads the whole body under a five second cap.
+    why: the body goes through the proxy client's bounded buffered read, so an oversized error body cannot grow memory; the five second cap and the empty message for a failed read match LiteLLM's masked handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L487-L509
+  - what: The sync non-200 guard keeps an error body only up to the transport's body limit and stops at a whole line, where LiteLLM reads the whole body into AnthropicError.message.
+    why: any 2xx other than 200 reaches the guard, and the limit stops an upstream that keeps sending short lines from buffering without bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L173-L179
+kept_bugs:
+  - what: An async client that returns a non-200 response without raising opens a stream; only the sync helper checks the status and raises AnthropicError.
+    why: make_call has no status check, and the shipped HTTP handler raises for non-2xx itself, so a working setup never sees the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L113-L129

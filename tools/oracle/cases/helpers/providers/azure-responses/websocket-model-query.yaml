@@ -1,0 +1,21 @@
+kind: helper
+name: azure-responses-websocket-model-query
+env: {}
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: websocket_model_query
+    steps:
+      - api_base: null
+      - api_base: https://res.openai.azure.com
+      - api_base: https://res.openai.azure.com/
+      - api_base: "https://res.openai.azure.com/openai/responses?api-version=2024-01-01"
+      - api_base: https://h/base/openai/v1/responses
+      - api_base: "https://h/deployments/d?x=1#y"
+      - api_base: http://host:8080/foo/
+      - api_base: wss://host/base
+      - api_base: https://h/a%2Fb
+      - api_base: https://h/openai%2Fresponses
+      - api_base: https://h/a%3Fb
+      - api_base: https://h/a%23b
+      - api_base: http://h/a%252Fb
