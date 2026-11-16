@@ -1,197 +1,105 @@
 use betterlite_prompts::arguments::json::{Json, Object};
+use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 use crate::databricks_chat::error::DatabricksChatError;
-use crate::databricks_chat::function::{NormalizedFunction, normalize_function};
 use crate::databricks_chat::response::reply::{ReplyFunction, ReplyToolCall};
-use crate::databricks_chat::wire::render;
+use crate::databricks_chat::response::wire::DatabricksToolCall;
 use crate::ollama_chat::ids::IdSource;
 
 const CUSTOM: &str = "custom";
-const FUNCTION: &str = "function";
 const JSON_TOOL_CALL: &str = "json_tool_call";
 const MULTI_TOOL: &str = "multi_tool_use.parallel";
-const PARAMETERS: &str = "parameters";
-const RECIPIENT: &str = "recipient_name";
-const TOOL_USES: &str = "tool_uses";
 
-// Message(tool_calls=...) keeps a non-empty list and turns anything else into null
+// The arguments of a multi_tool_use.parallel call, read with ["tool_uses"]
+#[derive(Deserialize)]
+struct ParallelArguments {
+    tool_uses: Vec<ToolUse>,
+}
+
+#[derive(Deserialize)]
+struct ToolUse {
+    recipient_name: String,
+    // the arguments of the hidden call, encoded again as they came
+    parameters: Json,
+}
+
+// Message(tool_calls=...) keeps a non-empty list and turns an empty one into null
 pub(super) fn normalize(
-    tool_calls: Option<&Json>,
+    tool_calls: Option<&[DatabricksToolCall]>,
     ids: &dyn IdSource,
 ) -> Result<Option<Vec<ReplyToolCall>>, DatabricksChatError> {
-    let Some(value) = tool_calls else {
+    let Some(calls) = tool_calls.filter(|calls| !calls.is_empty()) else {
         return Ok(None);
     };
-    let items = match value {
-        Json::Null => return Ok(None),
-        Json::List(items) => items,
-        Json::Text(text) if text.is_empty() => return Ok(None),
-        Json::Object(fields) if fields.is_empty() => return Ok(None),
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-            return Err(DatabricksChatError::wrong_type("tool_calls", "a list"));
+    let mut normalized = Vec::with_capacity(calls.len());
+    for call in calls {
+        if call.kind.as_deref() == Some(CUSTOM) || call.custom.is_some() {
+            return Err(DatabricksChatError::Shape {
+                message: String::from("a custom tool call in a Databricks reply is not supported"),
+            });
         }
-    };
-    if items.is_empty() {
-        return Ok(None);
-    }
-    let mut calls = Vec::with_capacity(items.len());
-    for item in items {
-        calls.push(normalize_call(item, ids)?);
-    }
-    Ok(Some(calls))
-}
-
-fn normalize_call(item: &Json, ids: &dyn IdSource) -> Result<ReplyToolCall, DatabricksChatError> {
-    let Some(fields) = item.as_object() else {
-        return Err(DatabricksChatError::wrong_type("tool call", "an object"));
-    };
-    let is_custom = fields.get("type").and_then(Json::as_str) == Some(CUSTOM)
-        || !matches!(fields.get(CUSTOM), None | Some(Json::Null));
-    if is_custom {
-        return Err(DatabricksChatError::Shape {
-            message: String::from("a custom tool call in a Databricks reply is not supported"),
+        normalized.push(ReplyToolCall {
+            extra: call.extra.clone(),
+            function: ReplyFunction {
+                arguments: call.function.arguments_text()?,
+                name: call.function.name.clone(),
+            },
+            id: call.id.clone().unwrap_or_else(|| ids.next_id()),
+            kind: call
+                .kind
+                .clone()
+                .unwrap_or_else(|| String::from("function")),
         });
     }
-    let function = match fields.get(FUNCTION) {
-        Some(Json::Object(function)) => function,
-        None | Some(Json::Null) => return Err(DatabricksChatError::missing("tool call", FUNCTION)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(DatabricksChatError::wrong_type(
-                "function of a tool call",
-                "an object",
-            ));
-        }
-    };
-    let id = match fields.get("id") {
-        None | Some(Json::Null) => ids.next_id(),
-        Some(Json::Text(text)) => text.clone(),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(DatabricksChatError::wrong_type(
-                "id of a tool call",
-                "a string",
-            ));
-        }
-    };
-    let kind = match fields.get("type") {
-        None | Some(Json::Null) => String::from("function"),
-        Some(Json::Text(text)) => text.clone(),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(DatabricksChatError::wrong_type(
-                "type of a tool call",
-                "a string",
-            ));
-        }
-    };
-    let mut extra = fields.clone();
-    for named in [FUNCTION, "id", "type"] {
-        extra.shift_remove(named);
-    }
-    let NormalizedFunction { arguments, name } = normalize_function(function)?;
-    Ok(ReplyToolCall {
-        extra,
-        function: ReplyFunction { arguments, name },
-        id,
-        kind,
-    })
+    Ok(Some(normalized))
 }
 
-// _handle_invalid_parallel_tool_calls expands a multi_tool_use.parallel call into its uses
+// _handle_invalid_parallel_tool_calls: a call whose arguments are not JSON leaves the list as it came
 pub(super) fn repair(calls: &[ReplyToolCall]) -> Result<Vec<ReplyToolCall>, DatabricksChatError> {
     let mut repaired = Vec::with_capacity(calls.len());
     for call in calls {
+        if serde_json::from_str::<IgnoredAny>(&call.function.arguments).is_err() {
+            return Ok(calls.to_vec());
+        }
         if call.function.name.as_deref() != Some(MULTI_TOOL) {
             repaired.push(call.clone());
             continue;
         }
-        let Ok(parsed) = serde_json::from_str::<Json>(&call.function.arguments) else {
-            return Ok(calls.to_vec());
-        };
-        let Some(arguments) = parsed.as_object() else {
-            return Err(DatabricksChatError::wrong_type(
-                "arguments of a multi_tool_use.parallel call",
-                "an object",
-            ));
-        };
-        let uses = match arguments.get(TOOL_USES) {
-            Some(Json::List(uses)) => uses,
-            None => {
-                return Err(DatabricksChatError::Shape {
-                    message: String::from(
-                        "a multi_tool_use.parallel call is missing its tool_uses",
+        let parallel: ParallelArguments =
+            serde_json::from_str(&call.function.arguments).map_err(DatabricksChatError::Decode)?;
+        if parallel.tool_uses.is_empty() {
+            repaired.push(call.clone());
+        }
+        for (position, tool_use) in parallel.tool_uses.iter().enumerate() {
+            let recipient = tool_use.recipient_name.as_str();
+            repaired.push(ReplyToolCall {
+                extra: Object::new(),
+                function: ReplyFunction {
+                    arguments: serde_json::to_string(&tool_use.parameters)
+                        .map_err(DatabricksChatError::Encode)?,
+                    name: Some(
+                        recipient
+                            .strip_prefix("functions.")
+                            .unwrap_or(recipient)
+                            .to_owned(),
                     ),
-                });
-            }
-            Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_),
-            ) => {
-                return Err(DatabricksChatError::wrong_type(
-                    "tool_uses of a multi_tool_use.parallel call",
-                    "a list",
-                ));
-            }
-        };
-        for (position, tool_use) in uses.iter().enumerate() {
-            repaired.push(expand(call, tool_use, position)?);
+                },
+                id: format!("{}_{position}", call.id),
+                kind: String::from("function"),
+            });
         }
     }
     Ok(repaired)
 }
 
-fn expand(
-    call: &ReplyToolCall,
-    tool_use: &Json,
-    position: usize,
-) -> Result<ReplyToolCall, DatabricksChatError> {
-    let Some(fields) = tool_use.as_object() else {
-        return Err(DatabricksChatError::wrong_type(
-            "tool_use of a multi_tool_use.parallel call",
-            "an object",
-        ));
-    };
-    let recipient = match fields.get(RECIPIENT) {
-        Some(Json::Text(recipient)) => recipient,
-        None => {
-            return Err(DatabricksChatError::missing(
-                "multi_tool_use.parallel tool_use",
-                RECIPIENT,
-            ));
-        }
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(DatabricksChatError::wrong_type(
-                "recipient_name of a multi_tool_use.parallel tool_use",
-                "a string",
-            ));
-        }
-    };
-    let Some(parameters) = fields.get(PARAMETERS) else {
-        return Err(DatabricksChatError::missing(
-            "multi_tool_use.parallel tool_use",
-            PARAMETERS,
-        ));
-    };
-    let name = recipient.strip_prefix("functions.").unwrap_or(recipient);
-    Ok(ReplyToolCall {
-        extra: Object::new(),
-        function: ReplyFunction {
-            arguments: render(parameters),
-            name: Some(name.to_owned()),
-        },
-        id: format!("{}_{position}", call.id),
-        kind: String::from("function"),
-    })
-}
-
-// _should_convert_tool_call_to_json_mode and the content it builds from the arguments
+// _should_convert_tool_call_to_json_mode: one json_tool_call with arguments becomes the content
 pub(super) fn json_mode_content(calls: &[ReplyToolCall], json_mode: bool) -> Option<String> {
-    if !json_mode || calls.len() != 1 {
+    let [call] = calls else {
         return None;
-    }
-    let call = &calls[0];
-    if call.function.name.as_deref() != Some(JSON_TOOL_CALL) {
-        return None;
-    }
-    if call.function.arguments.is_empty() {
-        return None;
-    }
-    Some(call.function.arguments.clone())
+    };
+    let converts = json_mode
+        && call.function.name.as_deref() == Some(JSON_TOOL_CALL)
+        && !call.function.arguments.is_empty();
+    converts.then(|| call.function.arguments.clone())
 }

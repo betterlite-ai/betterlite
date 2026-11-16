@@ -236,8 +236,7 @@ fn the_supported_params_are_the_openai_subset_databricks_maps() {
     assert!(!SUPPORTED_OPENAI_PARAMS.contains(&"presence_penalty"));
 }
 
-// The capability answers map_openai_params asks for: the static effort budgets of a
-// non-adaptive model, and an adaptive model whose legacy thinking becomes an output_config.
+// Static effort budgets, and for an adaptive model a legacy thinking that becomes output_config
 struct FakeCapabilities {
     adaptive: bool,
 }

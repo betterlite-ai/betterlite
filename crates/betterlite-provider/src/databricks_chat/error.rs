@@ -5,12 +5,11 @@ use betterlite_anthropic::capabilities::reasoning::ReasoningEffortError;
 use betterlite_anthropic::output_schema::SchemaError;
 use betterlite_anthropic::tools::ToolsError;
 use betterlite_openai::error::{OpenAiError, ProviderError, ProviderErrorParts};
+use betterlite_prompts::media_fetch::error::ImageFetchError;
 use thiserror::Error;
 
 use crate::databricks_auth::error::DatabricksError;
 
-// LiteLLM's Databricks chat surface failures: a typed body error keeps the upstream status, a
-// malformed reply or chunk is a 500 except for the KeyError path the chunk parser turns into a 400.
 #[derive(Debug, Error)]
 pub enum DatabricksChatError {
     #[error(transparent)]
@@ -25,18 +24,26 @@ pub enum DatabricksChatError {
     Thinking(#[from] ThinkingError),
     #[error(transparent)]
     Base(#[from] OpenAiError),
+    #[error(transparent)]
+    Fetch(#[from] ImageFetchError),
     #[error("{message}")]
     Response {
         status_code: u16,
         message: String,
         headers: BTreeMap<String, String>,
     },
-    #[error("{message}")]
-    BadRequest { message: String },
+    #[error("content block has type='file' but is missing the required 'file' field")]
+    MissingFile,
     #[error("{message}")]
     Shape { message: String },
+    #[error("the Databricks response is missing its {key}")]
+    MissingKey { key: &'static str },
+    #[error("the {field} of the Databricks usage must be an integer")]
+    UsageCount { field: String },
     #[error("KeyError: '{key}', Got unexpected response from Databricks: {chunk}")]
     ChunkKey { key: &'static str, chunk: String },
+    #[error("the created of a Databricks stream chunk is null and no clock is available")]
+    NullCreated,
     #[error(
         "Invalid reasoning_effort: {value}. Must be one of: 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'none'"
     )]
@@ -48,29 +55,6 @@ pub enum DatabricksChatError {
 }
 
 impl DatabricksChatError {
-    // The shape errors the Databricks transforms raise when a declared type does not hold
-    pub(crate) fn shape(message: impl Into<String>) -> Self {
-        Self::Shape {
-            message: message.into(),
-        }
-    }
-
-    pub(crate) fn missing(owner: &str, name: &str) -> Self {
-        Self::shape(format!("the {name} of a {owner} is missing"))
-    }
-
-    pub(crate) fn wrong_type(owner: &str, expected: &str) -> Self {
-        Self::shape(format!("the {owner} must be {expected}"))
-    }
-
-    // chunk_parser's KeyError path: the 400 that names the key and the whole chunk
-    pub(crate) fn chunk_key(key: &'static str, rendered: &str) -> Self {
-        Self::ChunkKey {
-            key,
-            chunk: rendered.to_owned(),
-        }
-    }
-
     #[must_use]
     pub const fn status_code(&self) -> u16 {
         match self {
@@ -80,14 +64,18 @@ impl DatabricksChatError {
                 None => 400,
             },
             Self::Reasoning(_)
+            | Self::Fetch(_)
             | Self::InvalidEffort { .. }
             | Self::ChunkKey { .. }
-            | Self::BadRequest { .. } => 400,
+            | Self::MissingFile => 400,
             Self::Response { status_code, .. } => *status_code,
             Self::Schema(_)
             | Self::Thinking(_)
             | Self::Base(_)
             | Self::Shape { .. }
+            | Self::MissingKey { .. }
+            | Self::UsageCount { .. }
+            | Self::NullCreated
             | Self::Encode(_)
             | Self::Decode(_) => 500,
         }
@@ -97,22 +85,26 @@ impl DatabricksChatError {
 impl From<DatabricksChatError> for ProviderError {
     fn from(error: DatabricksChatError) -> Self {
         let headers: Vec<(String, String)> = match &error {
-            Self::Databricks(inner) => return Self::from(inner.clone()),
-            Self::Response { headers, .. } => headers
+            DatabricksChatError::Databricks(inner) => return Self::from(inner.clone()),
+            DatabricksChatError::Response { headers, .. } => headers
                 .iter()
                 .map(|(name, value)| (name.clone(), value.clone()))
                 .collect(),
-            Self::Tools(_)
-            | Self::Schema(_)
-            | Self::Reasoning(_)
-            | Self::Thinking(_)
-            | Self::Base(_)
-            | Self::BadRequest { .. }
-            | Self::Shape { .. }
-            | Self::ChunkKey { .. }
-            | Self::InvalidEffort { .. }
-            | Self::Encode(_)
-            | Self::Decode(_) => Vec::new(),
+            DatabricksChatError::Tools(_)
+            | DatabricksChatError::Schema(_)
+            | DatabricksChatError::Reasoning(_)
+            | DatabricksChatError::Thinking(_)
+            | DatabricksChatError::Base(_)
+            | DatabricksChatError::Fetch(_)
+            | DatabricksChatError::MissingFile
+            | DatabricksChatError::Shape { .. }
+            | DatabricksChatError::MissingKey { .. }
+            | DatabricksChatError::UsageCount { .. }
+            | DatabricksChatError::ChunkKey { .. }
+            | DatabricksChatError::NullCreated
+            | DatabricksChatError::InvalidEffort { .. }
+            | DatabricksChatError::Encode(_)
+            | DatabricksChatError::Decode(_) => Vec::new(),
         };
         Self::from(ProviderErrorParts {
             status_code: error.status_code(),

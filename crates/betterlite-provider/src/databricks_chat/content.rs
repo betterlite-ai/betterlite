@@ -1,7 +1,41 @@
-use betterlite_prompts::arguments::json::{Json, Object};
-use serde::Serialize;
+use betterlite_prompts::arguments::json::Json;
+use serde::{Deserialize, Serialize};
 
 use crate::databricks_chat::error::DatabricksChatError;
+
+// AllDatabricksContentValues: a string or a list of text and reasoning blocks
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum DatabricksContent {
+    Text(String),
+    Blocks(Vec<ContentBlock>),
+}
+
+// DatabricksTextContent and DatabricksReasoningContent share one shape; a block reads only its own keys
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ContentBlock {
+    #[serde(rename = "type", default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub summary: Option<Vec<ReasoningSummary>>,
+    // a citation is the provider's own record, forwarded as sent
+    #[serde(default)]
+    pub citations: Option<Vec<Json>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ReasoningSummary {
+    pub text: String,
+    #[serde(default = "default_signature")]
+    pub signature: Option<String>,
+}
+
+// summary.get("signature", ""): an absent signature is "" while a null one stays null
+fn default_signature() -> Option<String> {
+    Some(String::new())
+}
 
 // LiteLLM's ChatCompletionThinkingBlock, the one block shape both the reply and the delta emit
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -12,166 +46,80 @@ pub struct ThinkingBlock {
     pub signature: Option<String>,
 }
 
-pub fn extract_content_str(content: Option<&Json>) -> Result<Option<String>, DatabricksChatError> {
-    match content {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(Json::List(items)) => Ok(Some(text_of_blocks(items)?)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Object(_)) => Err(unsupported_content()),
+#[must_use]
+pub fn extract_content_str(content: Option<&DatabricksContent>) -> Option<String> {
+    match content? {
+        DatabricksContent::Text(text) => Some(text.clone()),
+        DatabricksContent::Blocks(blocks) => Some(
+            blocks
+                .iter()
+                .filter(|block| block.kind.as_deref() == Some("text"))
+                .filter_map(|block| block.text.as_deref())
+                .collect::<String>(),
+        ),
     }
 }
 
-fn text_of_blocks(items: &[Json]) -> Result<String, DatabricksChatError> {
-    let mut collected = String::new();
-    for item in items {
-        let Some(fields) = item.as_object() else {
-            return Err(DatabricksChatError::Shape {
-                message: "a content block must be an object".to_owned(),
-            });
-        };
-        if fields.get("type").and_then(Json::as_str) != Some("text") {
-            continue;
-        }
-        match fields.get("text") {
-            None | Some(Json::Null) => {}
-            Some(Json::Text(text)) => collected.push_str(text),
-            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-                return Err(DatabricksChatError::Shape {
-                    message: "the text of a text content block is not a string".to_owned(),
-                });
-            }
-        }
-    }
-    Ok(collected)
-}
-
-// extract_reasoning_content: reasoning items with summaries become content text and thinking blocks
+// extract_reasoning_content: the summaries of reasoning blocks become the text and the thinking blocks
+#[must_use]
 pub fn extract_reasoning(
-    content: Option<&Json>,
-) -> Result<(Option<String>, Option<Vec<ThinkingBlock>>), DatabricksChatError> {
-    let Some(content) = content else {
-        return Ok((None, None));
+    content: Option<&DatabricksContent>,
+) -> (Option<String>, Option<Vec<ThinkingBlock>>) {
+    let Some(DatabricksContent::Blocks(blocks)) = content else {
+        return (None, None);
     };
-    let Json::List(items) = content else {
-        return Ok((None, None));
-    };
-    let mut reasoning = String::new();
-    let mut blocks = Vec::new();
-    for item in items {
-        let Some(fields) = item.as_object() else {
-            return Err(DatabricksChatError::Shape {
-                message: "a content block must be an object".to_owned(),
-            });
-        };
-        if fields.get("type").and_then(Json::as_str) != Some("reasoning") {
-            continue;
-        }
-        let Some(Json::List(summaries)) = fields.get("summary") else {
-            continue;
-        };
-        for summary in summaries {
-            let Some(summary_fields) = summary.as_object() else {
-                return Err(DatabricksChatError::Shape {
-                    message: "a reasoning summary must be an object".to_owned(),
-                });
-            };
-            let text = required_text(summary_fields, "text")?;
-            reasoning.push_str(text);
-            blocks.push(ThinkingBlock {
-                kind: "thinking".to_owned(),
-                thinking: text.to_owned(),
-                signature: optional_text(summary_fields, "signature")?,
-            });
-        }
+    let summaries: Vec<&ReasoningSummary> = blocks
+        .iter()
+        .filter(|block| block.kind.as_deref() == Some("reasoning"))
+        .flat_map(|block| block.summary.iter().flatten())
+        .collect();
+    if summaries.is_empty() {
+        return (None, None);
     }
-    let reasoning = if blocks.is_empty() {
-        None
-    } else {
-        Some(reasoning)
-    };
-    let blocks = if blocks.is_empty() {
-        None
-    } else {
-        Some(blocks)
-    };
-    Ok((reasoning, blocks))
+    let reasoning = summaries
+        .iter()
+        .map(|summary| summary.text.as_str())
+        .collect::<String>();
+    let thinking = summaries
+        .iter()
+        .map(|summary| ThinkingBlock {
+            kind: String::from("thinking"),
+            thinking: summary.text.clone(),
+            signature: summary.signature.clone(),
+        })
+        .collect::<Vec<ThinkingBlock>>();
+    (Some(reasoning), Some(thinking))
 }
 
-// Python reaches these keys with [], so an absent or null text is an error rather than ""
-fn required_text<'value>(
-    fields: &'value Object,
-    name: &str,
-) -> Result<&'value str, DatabricksChatError> {
-    let Some(Json::Text(text)) = fields.get(name) else {
-        return Err(DatabricksChatError::Shape {
-            message: format!("the {name} of a reasoning summary must be a string"),
-        });
-    };
-    Ok(text)
-}
-
-// Python reaches the signature with .get(..., ""), so a missing one is "" and a null one stays null
-fn optional_text(fields: &Object, name: &str) -> Result<Option<String>, DatabricksChatError> {
-    match fields.get(name) {
-        None => Ok(Some(String::new())),
-        Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(DatabricksChatError::Shape {
-                message: format!("the {name} of a reasoning summary must be a string"),
-            })
-        }
-    }
-}
-
-// extract_citations: each cited text block becomes a list of citations carrying its text
-pub fn extract_citations(content: Option<&Json>) -> Result<Option<Vec<Json>>, DatabricksChatError> {
-    let Some(Json::List(items)) = content else {
+// extract_citations: each cited block becomes a list of its citations carrying the block text
+pub fn extract_citations(
+    content: Option<&DatabricksContent>,
+) -> Result<Option<Vec<Json>>, DatabricksChatError> {
+    let Some(DatabricksContent::Blocks(blocks)) = content else {
         return Ok(None);
     };
-    let mut citations: Vec<Json> = Vec::new();
-    for item in items {
-        let Some(fields) = item.as_object() else {
-            return Err(DatabricksChatError::Shape {
-                message: "a content block must be an object".to_owned(),
-            });
-        };
-        let Some(value) = fields.get("citations") else {
+    let mut citations = Vec::new();
+    for block in blocks {
+        let Some(entries) = block
+            .citations
+            .as_ref()
+            .filter(|entries| !entries.is_empty())
+        else {
             continue;
         };
-        if !value.is_truthy() {
-            continue;
-        }
-        let Json::List(entries) = value else {
-            return Err(DatabricksChatError::Shape {
-                message: "the citations of a content block must be a list".to_owned(),
-            });
-        };
-        let supported_text = match fields.get("text") {
-            None => Json::Null,
-            Some(text) => text.clone(),
-        };
+        let supported_text = block.text.clone().map_or(Json::Null, Json::Text);
         let mut supported = Vec::with_capacity(entries.len());
         for entry in entries {
-            let Some(entry_fields) = entry.as_object() else {
+            let Json::Object(fields) = entry else {
                 return Err(DatabricksChatError::Shape {
-                    message: "a citation must be an object".to_owned(),
+                    message: String::from("a citation of a Databricks reply must be an object"),
                 });
             };
-            let mut citation = entry_fields.clone();
-            citation.insert("supported_text".to_owned(), supported_text.clone());
+            let mut citation = fields.clone();
+            citation.insert(String::from("supported_text"), supported_text.clone());
             supported.push(Json::Object(citation));
         }
         citations.push(Json::List(supported));
     }
-    if citations.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(citations))
-}
-
-fn unsupported_content() -> DatabricksChatError {
-    DatabricksChatError::Shape {
-        message: "Unsupported content type".to_owned(),
-    }
+    Ok((!citations.is_empty()).then_some(citations))
 }

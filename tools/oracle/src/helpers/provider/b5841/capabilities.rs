@@ -9,8 +9,7 @@ use betterlite_core::api::messages_native_transform::capabilities::{
 use betterlite_models::decisions::Json;
 use serde_json::Number;
 
-// The cases use claude models, whose capability answers come from the name; non-adaptive models
-// take the static effort budgets, so the fake never reads a catalog.
+// The cases use claude models, so the fake answers from the name and never reads a catalog
 pub(super) struct FakeCapabilities;
 
 impl ThinkingCapabilities for FakeCapabilities {

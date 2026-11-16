@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use betterlite_prompts::arguments::json::Json as PromptJson;
 use rstest::rstest;
 use serde_json::{Value, json};
 
@@ -17,8 +16,7 @@ impl IdSource for FixedIds {
 }
 
 fn parse_with(body: &Value, json_mode: bool) -> Result<StreamChunk, DatabricksChatError> {
-    let chunk: PromptJson =
-        serde_json::from_value(body.clone()).expect("the fixture chunk is JSON");
+    let chunk = serde_json::to_string(body).expect("the fixture chunk encodes");
     ChunkParser::new(json_mode).parse(&chunk, &FixedIds)
 }
 
@@ -119,15 +117,9 @@ fn a_reasoning_key_stays_an_extra_when_reasoning_content_is_set() {
 #[rstest]
 #[case(json!(""), json!(null))]
 #[case(json!(null), json!(null))]
-#[case(json!(false), json!(null))]
-#[case(json!(0), json!(null))]
-#[case(json!([]), json!(null))]
-#[case(json!({}), json!(null))]
 #[case(json!("length"), json!("length"))]
 #[case(json!("tool_use"), json!("tool_calls"))]
 #[case(json!("weird"), json!("stop"))]
-#[case(json!(true), json!("stop"))]
-#[case(json!(5), json!("stop"))]
 fn the_finish_reason_maps_like_the_openai_one(#[case] raw: Value, #[case] expected: Value) {
     let chunk = chunk_with(
         json!({"index": 0, "delta": {"content": "x"}, "finish_reason": raw}),
@@ -139,7 +131,9 @@ fn the_finish_reason_maps_like_the_openai_one(#[case] raw: Value, #[case] expect
 #[rstest]
 #[case(json!([1]))]
 #[case(json!({"a": 1}))]
-fn a_non_scalar_finish_reason_is_a_shape_error(#[case] raw: Value) {
+#[case(json!(true))]
+#[case(json!(5))]
+fn a_non_string_finish_reason_is_a_decode_error(#[case] raw: Value) {
     let chunk = chunk_with(
         json!({"index": 0, "delta": {"content": "x"}, "finish_reason": raw}),
         json!({}),
@@ -149,7 +143,7 @@ fn a_non_scalar_finish_reason_is_a_shape_error(#[case] raw: Value) {
 
 #[rstest]
 #[case(json!({"index": 0, "delta": {"content": "x"}}), json!(0))]
-#[case(json!({"index": "3", "delta": {"content": "x"}}), json!("3"))]
+#[case(json!({"index": 3, "delta": {"content": "x"}}), json!(3))]
 #[case(json!({"index": null, "delta": {"content": "x"}}), json!(null))]
 fn the_choice_index_passes_through(#[case] choice: Value, #[case] expected: Value) {
     assert_eq!(
@@ -160,9 +154,31 @@ fn the_choice_index_passes_through(#[case] choice: Value, #[case] expected: Valu
 
 #[test]
 fn a_missing_choices_key_is_the_databricks_400() {
-    let error = failure(&json!({"id": "i", "created": 1, "model": "m"}));
+    let chunk = json!({"id": "i", "created": 1, "model": "m"});
+    let error = failure(&chunk);
     assert_eq!(error.status_code(), 400);
-    assert!(error.to_string().contains("KeyError: 'choices'"));
+    assert_eq!(
+        error.to_string(),
+        format!("KeyError: 'choices', Got unexpected response from Databricks: {chunk}")
+    );
+}
+
+#[test]
+fn null_choices_are_a_shape_error() {
+    let error = failure(&json!({"id": "i", "created": 1, "model": "m", "choices": null}));
+    assert_eq!(error.status_code(), 500);
+}
+
+#[rstest]
+#[case(json!({"id": "i", "created": 1, "model": "m", "choices": [{"index": "3", "delta": {}}]}))]
+#[case(json!({"id": "i", "created": 1, "model": "m", "choices": [], "usage": "x"}))]
+#[case(json!({"id": "i", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {"tool_calls": {}}}]}))]
+#[case(json!({"id": "i", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {"tool_calls": ""}}]}))]
+#[case(json!([]))]
+fn a_chunk_outside_its_declared_types_is_a_decode_error(#[case] chunk: Value) {
+    let error = failure(&chunk);
+    assert_eq!(error.status_code(), 500);
+    assert!(matches!(error, DatabricksChatError::Decode(_)), "{error}");
 }
 
 #[rstest]
@@ -197,9 +213,8 @@ fn a_null_id_is_generated_and_a_number_is_a_shape_error() {
         json!({"id": null}),
     );
     assert_eq!(success(&chunk)["id"], json!("generated-id"));
-    let mut broken = json!({"id": 5, "created": 1, "model": "m", "choices": []});
+    let broken = json!({"id": 5, "created": 1, "model": "m", "choices": []});
     assert_eq!(failure(&broken).status_code(), 500);
-    broken["id"] = json!("x");
 }
 
 #[test]
@@ -212,19 +227,8 @@ fn a_null_model_stays_null() {
 }
 
 #[rstest]
-#[case(json!("1700"), json!(1700))]
-#[case(json!(1700), json!(1700))]
-fn created_accepts_an_integer_or_its_string(#[case] raw: Value, #[case] expected: Value) {
-    let chunk = chunk_with(
-        json!({"index": 0, "delta": {"content": "x"}}),
-        json!({"created": raw}),
-    );
-    assert_eq!(success(&chunk)["created"], expected);
-}
-
-#[rstest]
 #[case(json!(1.5))]
-#[case(json!("1.5"))]
+#[case(json!("1700"))]
 #[case(json!(true))]
 #[case(json!(null))]
 fn a_created_that_is_not_an_integer_is_an_error(#[case] raw: Value) {
@@ -257,12 +261,21 @@ fn usage_is_normalized_when_it_is_an_object() {
 }
 
 #[test]
-fn a_non_object_usage_passes_through() {
+fn a_null_created_is_the_no_clock_error() {
     let chunk = chunk_with(
         json!({"index": 0, "delta": {"content": "x"}}),
-        json!({"usage": "x"}),
+        json!({"created": null}),
     );
-    assert_eq!(success(&chunk)["usage"], json!("x"));
+    assert!(matches!(failure(&chunk), DatabricksChatError::NullCreated));
+}
+
+#[test]
+fn a_wrong_typed_usage_count_is_a_usage_error() {
+    let chunk = chunk_with(
+        json!({"index": 0, "delta": {"content": "x"}}),
+        json!({"usage": {"prompt_tokens": "1"}}),
+    );
+    assert_eq!(failure(&chunk).status_code(), 500);
 }
 
 #[rstest]
@@ -403,10 +416,8 @@ fn a_tool_call_defaults_its_type_and_dumps_a_null_id() {
 
 #[rstest]
 #[case(json!([]), json!([]))]
-#[case(json!({}), json!({}))]
-#[case(json!(""), json!(""))]
 #[case(json!(null), json!(null))]
-fn a_falsy_tool_calls_value_passes_through(#[case] raw: Value, #[case] expected: Value) {
+fn an_empty_or_null_tool_calls_value_passes_through(#[case] raw: Value, #[case] expected: Value) {
     let delta = delta_of(&success(&body(json!({"content": "x", "tool_calls": raw}))));
     assert_eq!(delta["tool_calls"], expected);
 }
@@ -461,9 +472,76 @@ fn a_custom_tool_call_without_its_payload_is_a_shape_error() {
 #[test]
 fn empty_arguments_are_cleared_outside_json_mode() {
     let delta = delta_of(&success(&body(json!({
-        "tool_calls": [{"index": 0, "id": "a", "function": {"name": "f", "arguments": "{}"}}]
+        "tool_calls": [
+            {"index": 0, "id": "a", "function": {"name": "f", "arguments": "{}"}},
+            {"index": 1, "id": "b", "function": {"name": "g", "arguments": "{\"a\":1}"}},
+            {"index": 2, "id": "c", "function": {"name": "h", "arguments": {}}},
+            {"index": 3, "id": "d", "function": {"name": "i"}}
+        ]
     }))));
     assert_eq!(delta["tool_calls"][0]["function"]["arguments"], json!(""));
+    assert_eq!(
+        delta["tool_calls"][1]["function"]["arguments"],
+        json!("{\"a\":1}")
+    );
+    assert_eq!(delta["tool_calls"][2]["function"]["arguments"], json!("{}"));
+    assert_eq!(delta["tool_calls"][3]["function"]["arguments"], json!(""));
+}
+
+#[test]
+fn a_function_tool_call_without_its_function_is_a_shape_error() {
+    let error = failure(&body(json!({"tool_calls": [{"index": 0, "id": "a"}]})));
+    assert_eq!(error.status_code(), 500);
+}
+
+#[test]
+fn json_mode_keeps_the_empty_arguments_of_another_call() {
+    let chunk = body(json!({
+        "tool_calls": [{"index": 0, "function": {"name": "other", "arguments": "{}"}}]
+    }));
+    let delta = delta_of(&success_with(&chunk, true));
+    assert_eq!(delta["tool_calls"][0]["function"]["arguments"], json!("{}"));
+}
+
+#[test]
+fn json_mode_without_arguments_leaves_the_tool_calls() {
+    let chunk = body(json!({
+        "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": null}}]
+    }));
+    let delta = delta_of(&success_with(&chunk, true));
+    assert_eq!(delta["content"], json!(null));
+    assert_eq!(
+        delta["tool_calls"][0]["function"]["name"],
+        json!("json_tool_call")
+    );
+}
+
+#[test]
+fn json_mode_refuses_object_arguments() {
+    let chunk = body(json!({
+        "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": {"a": 1}}}]
+    }));
+    let error = parse_with(&chunk, true).expect_err("object arguments cannot be loaded");
+    assert_eq!(error.status_code(), 500);
+}
+
+#[test]
+fn json_mode_keeps_a_values_key_that_is_null() {
+    let chunk = body(json!({
+        "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": "{\"values\": null}"}}]
+    }));
+    assert_eq!(
+        delta_of(&success_with(&chunk, true))["content"],
+        json!("{\"values\":null}")
+    );
+}
+
+#[test]
+fn json_mode_ignores_an_empty_tool_calls_list() {
+    let chunk = body(json!({"content": "x", "tool_calls": []}));
+    let delta = delta_of(&success_with(&chunk, true));
+    assert_eq!(delta["content"], json!("x"));
+    assert_eq!(delta["tool_calls"], json!([]));
 }
 
 #[test]
@@ -518,14 +596,14 @@ fn json_mode_leaves_another_function_name_alone() {
 
 #[test]
 fn json_mode_remembers_the_function_name_across_chunks() {
-    let first: PromptJson = serde_json::from_value(body(json!({
+    let first = body(json!({
         "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": "{\"a\":"}}]
-    })))
-    .expect("the fixture chunk is JSON");
-    let second: PromptJson = serde_json::from_value(body(json!({
+    }))
+    .to_string();
+    let second = body(json!({
         "tool_calls": [{"index": 0, "function": {"arguments": "{\"b\": 2}"}}]
-    })))
-    .expect("the fixture chunk is JSON");
+    }))
+    .to_string();
     let mut parser = ChunkParser::new(true);
     parser
         .parse(&first, &FixedIds)
@@ -539,14 +617,11 @@ fn json_mode_remembers_the_function_name_across_chunks() {
 
 #[test]
 fn json_mode_needs_the_function_key_even_for_a_remembered_name() {
-    let first: PromptJson = serde_json::from_value(body(json!({
+    let first = body(json!({
         "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": "{}"}}]
-    })))
-    .expect("the fixture chunk is JSON");
-    let second: PromptJson = serde_json::from_value(body(json!({
-        "tool_calls": [{"index": 0}]
-    })))
-    .expect("the fixture chunk is JSON");
+    }))
+    .to_string();
+    let second = body(json!({"tool_calls": [{"index": 0}]})).to_string();
     let mut parser = ChunkParser::new(true);
     parser
         .parse(&first, &FixedIds)

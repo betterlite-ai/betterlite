@@ -4,21 +4,19 @@ use betterlite_openai::chat::choice_finish_reason;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, Message};
 use betterlite_prompts::reasoning_fields::content_split::extract_reasoning_content;
-use serde_json::Value;
 
 use crate::databricks_chat::content::{extract_citations, extract_content_str, extract_reasoning};
 use crate::databricks_chat::error::DatabricksChatError;
-use crate::databricks_chat::response::body::{
-    choices_of, missing_key, native_fields, parse_body, required_integer, required_text,
-    response_model, usage_of, wrong_type,
-};
+use crate::databricks_chat::keyed::Keyed;
+use crate::databricks_chat::response::usage::usage_from;
+use crate::databricks_chat::response::wire::{DatabricksChoice, DatabricksMessage, parse_body};
 use crate::ollama_chat::ids::IdSource;
 
-mod body;
 pub mod reply;
 mod tests;
 mod tool_calls;
 pub(crate) mod usage;
+mod wire;
 
 use reply::{Choice, Reply, ReplyMessage, ReplyToolCall};
 
@@ -27,46 +25,44 @@ pub struct ResponseInput<'value> {
     pub status_code: u16,
     pub headers: BTreeMap<String, String>,
     pub custom_llm_provider: Option<&'value str>,
-    pub json_mode: Option<bool>,
+    pub json_mode: bool,
     pub ids: &'value dyn IdSource,
 }
 
 // transform_response: parse the body, then each choice through _transform_dbrx_choices
 pub fn transform_response(input: ResponseInput<'_>) -> Result<Reply, DatabricksChatError> {
     let body = parse_body(&input)?;
-    let id = required_text(&body, "id")?;
-    let created = required_integer(&body, "created")?;
-    let model = response_model(&input, &body)?;
-    let usage = usage_of(&body)?;
-    let choices = choices_of(&body)?;
-    let mut transformed = Vec::with_capacity(choices.len());
-    for choice in choices {
-        let json_mode = input.json_mode.unwrap_or(false);
-        transformed.push(transform_choice(choice, json_mode, input.ids)?);
+    let provider = match input.custom_llm_provider {
+        Some(name) if !name.is_empty() => name,
+        None | Some(_) => "databricks",
+    };
+    let mut choices = Vec::with_capacity(body.choices.len());
+    for choice in body.choices {
+        choices.push(transform_choice(choice, input.json_mode, input.ids)?);
     }
     Ok(Reply {
-        id: id.to_owned(),
-        created,
-        model,
+        id: body.id,
+        created: body.created,
+        model: format!("{provider}/{}", body.model.unwrap_or_default()),
         object: String::from("chat.completion"),
         system_fingerprint: None,
-        choices: transformed,
-        usage,
+        choices,
+        usage: usage_from(&body.usage)?,
     })
 }
 
 // One DatabricksChoice: the tool call repair, the json mode shortcut, then the message transform
 fn transform_choice(
-    value: &Json,
+    choice: DatabricksChoice,
     json_mode: bool,
     ids: &dyn IdSource,
 ) -> Result<Choice, DatabricksChatError> {
-    let Some(fields) = value.as_object() else {
-        return Err(wrong_type("choice", "an object"));
+    let index = match choice.index {
+        Keyed::Given(index) => index,
+        Keyed::Null => 0,
+        Keyed::Missing => return Err(DatabricksChatError::MissingKey { key: "index" }),
     };
-    let message = message_of(fields)?;
-    let index = index_of(fields)?;
-    let calls = tool_calls::normalize(message.get("tool_calls"), ids)?;
+    let calls = tool_calls::normalize(choice.message.tool_calls.as_deref(), ids)?;
     let repaired = match &calls {
         Some(calls) => tool_calls::repair(calls)?,
         None => Vec::new(),
@@ -87,118 +83,92 @@ fn transform_choice(
             provider_specific_fields: None,
         });
     }
-    let message = translated_message(message, calls)?;
-    let (finish_reason, native) = finish_reason_of(fields)?;
+    let message = translated_message(&choice.message, calls)?;
+    let raw = match choice.finish_reason {
+        Keyed::Given(text) => Some(text),
+        Keyed::Null => None,
+        Keyed::Missing => {
+            return Err(DatabricksChatError::MissingKey {
+                key: "finish_reason",
+            });
+        }
+    };
+    let (finish_reason, native) = choice_finish_reason(raw.as_deref());
+    let mut native_fields = Object::new();
+    for (name, value) in native {
+        native_fields.insert(
+            name,
+            serde_json::from_value(value).map_err(DatabricksChatError::Decode)?,
+        );
+    }
     Ok(Choice {
         finish_reason,
         index,
         message,
-        provider_specific_fields: native_fields(native)?,
+        provider_specific_fields: (!native_fields.is_empty()).then_some(native_fields),
     })
-}
-
-fn message_of(fields: &Object) -> Result<&Object, DatabricksChatError> {
-    match fields.get("message") {
-        Some(Json::Object(message)) => Ok(message),
-        None => Err(missing_key("message")),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(wrong_type("message of a choice", "an object"))
-        }
-    }
-}
-
-fn index_of(fields: &Object) -> Result<i64, DatabricksChatError> {
-    match fields.get("index") {
-        None => Err(missing_key("index")),
-        Some(Json::Null) => Ok(0),
-        Some(Json::Number(number)) => match number.as_i64() {
-            Some(index) => Ok(index),
-            None => Err(wrong_type("index of a choice", "an integer")),
-        },
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(wrong_type("index of a choice", "an integer"))
-        }
-    }
-}
-
-// Choices maps a string finish_reason and defaults a null one; the key is only read without json mode
-fn finish_reason_of(
-    fields: &Object,
-) -> Result<(String, BTreeMap<String, Value>), DatabricksChatError> {
-    let raw = match fields.get("finish_reason") {
-        None => return Err(missing_key("finish_reason")),
-        Some(Json::Null) => None,
-        Some(Json::Text(text)) => Some(text.as_str()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(wrong_type("finish_reason of a choice", "a string"));
-        }
-    };
-    Ok(choice_finish_reason(raw))
 }
 
 // Message(role="assistant", ...) from the message content, its reasoning blocks and its citations
 fn translated_message(
-    message: &Object,
+    message: &DatabricksMessage,
     calls: Option<Vec<ReplyToolCall>>,
 ) -> Result<ReplyMessage, DatabricksChatError> {
-    let content = message
-        .get("content")
-        .ok_or_else(|| missing_key("content"))?;
-    let (block_reasoning, blocks) = extract_reasoning(Some(content))?;
-    let content_str = extract_content_str(Some(content))?;
-    let (reasoning_content, content) = match block_reasoning {
+    let content = match &message.content {
+        Keyed::Given(content) => Some(content),
+        Keyed::Null => None,
+        Keyed::Missing => return Err(DatabricksChatError::MissingKey { key: "content" }),
+    };
+    let (block_reasoning, thinking_blocks) = extract_reasoning(content);
+    let content_str = extract_content_str(content);
+    let (reasoning_content, text) = match block_reasoning {
         Some(reasoning) => (Some(reasoning), content_str),
-        None => split_reasoning(message, content_str)?,
+        None => split_reasoning(message, content_str),
     };
-    let citations = extract_citations(Some(content))?;
-    let provider_specific_fields = match citations {
-        Some(citations) => {
-            let mut fields = Object::new();
-            fields.insert("citations".to_owned(), Json::List(citations));
-            Some(fields)
-        }
-        None => None,
-    };
+    let provider_specific_fields = extract_citations(content)?.map(|citations| {
+        let mut fields = Object::new();
+        fields.insert(String::from("citations"), Json::List(citations));
+        fields
+    });
     Ok(ReplyMessage {
-        content,
+        content: text,
         role: String::from("assistant"),
         tool_calls: calls,
         function_call: None,
         reasoning_content,
-        thinking_blocks: blocks,
+        thinking_blocks,
         provider_specific_fields,
     })
 }
 
 // resolve_reasoning_and_content falls back to _extract_reasoning_content over the extracted text
 fn split_reasoning(
-    message: &Object,
+    message: &DatabricksMessage,
     content: Option<String>,
-) -> Result<(Option<String>, Option<String>), DatabricksChatError> {
+) -> (Option<String>, Option<String>) {
     let mut fields = Object::new();
-    for name in ["reasoning_content", "reasoning"] {
-        let Some(value) = message.get(name) else {
-            continue;
-        };
+    for (name, value) in [
+        ("reasoning_content", &message.reasoning_content),
+        ("reasoning", &message.reasoning),
+    ] {
         match value {
-            Json::Text(_) | Json::Null => {
-                fields.insert(name.to_owned(), value.clone());
+            Keyed::Given(text) => {
+                fields.insert(name.to_owned(), Json::Text(text.clone()));
             }
-            Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                return Err(wrong_type(name, "a string"));
+            Keyed::Null => {
+                fields.insert(name.to_owned(), Json::Null);
             }
+            Keyed::Missing => {}
         }
     }
     let synthetic = Message {
         role: String::from("assistant"),
-        content: content.clone().map(Content::Text),
+        content: content.map(Content::Text),
         name: None,
         provider_specific_fields: fields,
     };
-    let (reasoning, resolved) = extract_reasoning_content(&synthetic);
-    let resolved = match resolved {
-        Some(Content::Text(text)) => Some(text),
-        Some(Content::Parts(_)) | None => None,
-    };
-    Ok((reasoning, resolved))
+    match extract_reasoning_content(&synthetic) {
+        (reasoning, Some(Content::Text(text))) => (reasoning, Some(text)),
+        (reasoning, Some(Content::Parts(_)) | None) => (reasoning, None),
+    }
 }

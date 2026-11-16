@@ -1,11 +1,22 @@
 #![cfg(test)]
 
+use betterlite_openai::chat_content::{RefuseDownloads, UrlDownloader};
+use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_prompts::message_content::Message;
 use rstest::rstest;
 use serde_json::{Value, json};
 
 use crate::databricks_chat::error::DatabricksChatError;
 use crate::databricks_chat::messages::transform_messages;
+
+// Answers every download with a data URL that names the URL it was asked for
+struct EchoDownloads;
+
+impl UrlDownloader for EchoDownloads {
+    fn download(&self, url: &str) -> Result<String, ImageFetchError> {
+        Ok(format!("data:application/pdf;base64,{url}"))
+    }
+}
 
 const CLAUDE_MODEL: &str = "databricks-claude-sonnet-4";
 const OTHER_MODEL: &str = "databricks-meta-llama-3.1-70b";
@@ -15,12 +26,14 @@ fn parse(value: Value) -> Vec<Message> {
 }
 
 fn transformed(value: Value, model: &str) -> Value {
-    let messages = transform_messages(&parse(value), model).expect("the messages transform");
+    let messages =
+        transform_messages(&parse(value), model, &EchoDownloads).expect("the messages transform");
     serde_json::to_value(&messages).expect("the transformed messages serialize")
 }
 
 fn failure(value: Value, model: &str) -> DatabricksChatError {
-    transform_messages(&parse(value), model).expect_err("the messages transform fails")
+    transform_messages(&parse(value), model, &EchoDownloads)
+        .expect_err("the messages transform fails")
 }
 
 fn calls() -> Value {
@@ -359,6 +372,14 @@ fn splits_a_turn_with_three_parallel_tool_calls() {
     {"role": "tool", "tool_call_id": "a", "content": "ra"},
     {"role": "tool", "tool_call_id": "a", "content": "rb"}
 ]))]
+#[case(json!([
+    {"role": "assistant", "tool_calls": [
+        {"type": "function", "function": {"name": "f", "arguments": "{}"}},
+        {"id": "b", "type": "function", "function": {"name": "g", "arguments": "{}"}}
+    ]},
+    {"role": "tool", "tool_call_id": "a", "content": "ra"},
+    {"role": "tool", "tool_call_id": "b", "content": "rb"}
+]))]
 fn leaves_a_malformed_tool_group_untouched(#[case] value: Value) {
     assert_eq!(transformed(value.clone(), OTHER_MODEL), value);
 }
@@ -409,8 +430,24 @@ fn a_truthy_non_list_tool_calls_value_is_a_shape_error() {
 )]
 #[case(json!({"type": "file", "file": {}}), json!({"type": "file", "file": {}}))]
 #[case(
-    json!({"type": "file", "file": {"file_id": "https://x/y.pdf"}}),
-    json!({"type": "file", "file": {"file_id": "https://x/y.pdf"}})
+    json!({"type": "file", "file": {"file_id": "https://x/y.pdf", "format": "pdf"}}),
+    json!({"type": "file", "file": {"file_data": "data:application/pdf;base64,https://x/y.pdf", "filename": "my_file.pdf"}})
+)]
+#[case(
+    json!({"type": "file", "file": {"file_id": "http://x/y", "filename": "kept.pdf"}}),
+    json!({"type": "file", "file": {"filename": "my_file.pdf", "file_data": "data:application/pdf;base64,http://x/y"}})
+)]
+#[case(
+    json!({"type": "file", "file": {"file_id": "www.x.com/y"}}),
+    json!({"type": "file", "file": {"file_data": "data:application/pdf;base64,www.x.com/y", "filename": "my_file.pdf"}})
+)]
+#[case(
+    json!({"type": "file", "file": {"file_id": "file-abc"}}),
+    json!({"type": "file", "file": {"file_id": "file-abc"}})
+)]
+#[case(
+    json!({"type": "file", "file": {"format": "pdf"}}),
+    json!({"type": "file", "file": {}})
 )]
 fn rewrites_user_content_items(#[case] item: Value, #[case] expected: Value) {
     let value = json!([{"role": "user", "content": [item]}]);
@@ -420,9 +457,36 @@ fn rewrites_user_content_items(#[case] item: Value, #[case] expected: Value) {
     );
 }
 
+#[test]
+fn a_pdf_url_download_refused_by_the_seam_is_a_bad_request() {
+    let value = json!([{
+        "role": "user",
+        "content": [{"type": "file", "file": {"file_id": "https://x/y.pdf"}}]
+    }]);
+    let error = transform_messages(&parse(value), OTHER_MODEL, &RefuseDownloads)
+        .expect_err("the download is refused");
+    assert_eq!(error.status_code(), 400);
+    assert!(matches!(error, DatabricksChatError::Fetch(_)));
+}
+
+#[test]
+fn a_pdf_url_in_another_role_is_not_downloaded() {
+    let value = json!([{
+        "role": "assistant",
+        "content": [{"type": "file", "file": {"file_id": "https://x/y.pdf"}}]
+    }]);
+    let messages = transform_messages(&parse(value.clone()), OTHER_MODEL, &RefuseDownloads)
+        .expect("only user content is rewritten");
+    assert_eq!(
+        serde_json::to_value(&messages).expect("the messages serialize"),
+        value
+    );
+}
+
 #[rstest]
 #[case(json!({"role": "user", "content": [{"type": "file"}]}))]
 #[case(json!({"role": "user", "content": [{"type": "file", "file": null}]}))]
+#[case(json!({"role": "user", "content": [{"type": "file", "file": "x"}]}))]
 fn a_file_block_without_a_file_is_a_bad_request(#[case] message: Value) {
     let error = failure(json!([message]), OTHER_MODEL);
     assert_eq!(error.status_code(), 400);

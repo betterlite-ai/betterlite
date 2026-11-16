@@ -2,18 +2,16 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Serialize;
 
 use crate::databricks_chat::error::DatabricksChatError;
+use crate::databricks_chat::response::reply::Usage;
 use crate::databricks_chat::response::usage::usage_from;
-use crate::databricks_chat::stream::choice::transform;
-use crate::databricks_chat::wire::{encode_value, render};
+use crate::databricks_chat::stream::choice::StreamChoice;
+use crate::databricks_chat::stream::wire::DatabricksChunk;
 use crate::ollama_chat::ids::IdSource;
 
-mod choice;
-mod citation;
-mod delta;
+pub mod choice;
+pub mod delta;
 mod tests;
-
-pub use choice::StreamChoice;
-pub use delta::Delta;
+pub mod wire;
 
 // ModelResponseStream as DatabricksChatResponseIterator builds it for one chunk
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -23,13 +21,13 @@ pub struct StreamChunk {
     pub model: Option<String>,
     pub object: String,
     pub choices: Vec<StreamChoice>,
-    pub provider_specific_fields: Option<Json>,
-    pub usage: Option<Json>,
+    pub provider_specific_fields: Option<Object>,
+    pub usage: Option<Usage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
 }
 
-// DatabricksChatResponseIterator: the chunk parser keeps the last json-mode function name
+// DatabricksChatResponseIterator: the chunk parser keeps the last function name it saw in json mode
 #[derive(Debug, Default)]
 pub struct ChunkParser {
     json_mode: bool,
@@ -45,114 +43,42 @@ impl ChunkParser {
         }
     }
 
+    // chunk_parser over one decoded data line, reading the choices first as LiteLLM does
     pub fn parse(
         &mut self,
-        chunk: &Json,
+        chunk: &str,
         ids: &dyn IdSource,
     ) -> Result<StreamChunk, DatabricksChatError> {
-        let Some(fields) = chunk.as_object() else {
-            return Err(DatabricksChatError::shape(
-                "a Databricks stream chunk must be an object",
-            ));
+        let parsed: DatabricksChunk =
+            serde_json::from_str(chunk).map_err(DatabricksChatError::Decode)?;
+        let Some(given_choices) = parsed.choices.required("choices", chunk)? else {
+            return Err(DatabricksChatError::Shape {
+                message: String::from("the choices of a Databricks stream chunk are null"),
+            });
         };
-        let rendered = render(chunk);
-        let choices = self.translate_choices(fields, &rendered)?;
+        let mut choices = Vec::with_capacity(given_choices.len());
+        for given in given_choices {
+            choices.push(choice::transform(given, self, chunk)?);
+        }
+        let service_tier = match parsed.service_tier {
+            Some(Json::Text(tier)) if !tier.is_empty() => Some(tier),
+            None | Some(_) => None,
+        };
         Ok(StreamChunk {
-            id: id_of(fields, &rendered, ids)?,
-            created: created_of(fields, &rendered)?,
-            model: model_of(fields, &rendered)?,
+            id: parsed
+                .id
+                .required("id", chunk)?
+                .unwrap_or_else(|| ids.next_id()),
+            created: parsed
+                .created
+                .required("created", chunk)?
+                .ok_or(DatabricksChatError::NullCreated)?,
+            model: parsed.model.required("model", chunk)?,
             object: String::from("chat.completion.chunk"),
             choices,
             provider_specific_fields: None,
-            usage: usage_of(fields)?,
-            service_tier: service_tier_of(fields),
+            usage: parsed.usage.as_ref().map(usage_from).transpose()?,
+            service_tier,
         })
-    }
-
-    // chunk["choices"]: a missing key is the 400 KeyError, any other shape is a 500
-    fn translate_choices(
-        &mut self,
-        fields: &Object,
-        rendered: &str,
-    ) -> Result<Vec<StreamChoice>, DatabricksChatError> {
-        let items = match fields.get("choices") {
-            Some(Json::List(items)) => items,
-            None => return Err(DatabricksChatError::chunk_key("choices", rendered)),
-            Some(_) => {
-                return Err(DatabricksChatError::wrong_type(
-                    "choices of a Databricks stream chunk",
-                    "a list",
-                ));
-            }
-        };
-        let mut choices = Vec::with_capacity(items.len());
-        for item in items {
-            choices.push(transform(item, self, rendered)?);
-        }
-        Ok(choices)
-    }
-}
-
-fn id_of(
-    fields: &Object,
-    rendered: &str,
-    ids: &dyn IdSource,
-) -> Result<String, DatabricksChatError> {
-    match fields.get("id") {
-        None => Err(DatabricksChatError::chunk_key("id", rendered)),
-        Some(Json::Null) => Ok(ids.next_id()),
-        Some(Json::Text(text)) => Ok(text.clone()),
-        Some(_) => Err(DatabricksChatError::wrong_type(
-            "id of a Databricks stream chunk",
-            "a string",
-        )),
-    }
-}
-
-// created: a null one needs the current time, which a transform without a clock cannot read
-fn created_of(fields: &Object, rendered: &str) -> Result<i64, DatabricksChatError> {
-    match fields.get("created") {
-        None => Err(DatabricksChatError::chunk_key("created", rendered)),
-        Some(Json::Number(number)) => number.as_i64().ok_or_else(|| {
-            DatabricksChatError::wrong_type("created of a Databricks stream chunk", "an integer")
-        }),
-        Some(Json::Text(text)) => text.parse::<i64>().map_err(|_| {
-            DatabricksChatError::wrong_type("created of a Databricks stream chunk", "an integer")
-        }),
-        Some(Json::Null) => Err(DatabricksChatError::shape(
-            "the created of a Databricks stream chunk is null and no clock is available",
-        )),
-        Some(_) => Err(DatabricksChatError::wrong_type(
-            "created of a Databricks stream chunk",
-            "an integer",
-        )),
-    }
-}
-
-fn model_of(fields: &Object, rendered: &str) -> Result<Option<String>, DatabricksChatError> {
-    match fields.get("model") {
-        None => Err(DatabricksChatError::chunk_key("model", rendered)),
-        Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(_) => Err(DatabricksChatError::wrong_type(
-            "model of a Databricks stream chunk",
-            "a string",
-        )),
-    }
-}
-
-// usage: a dict is normalized the way Usage(**dict) validates it, any other value passes through
-fn usage_of(fields: &Object) -> Result<Option<Json>, DatabricksChatError> {
-    match fields.get("usage") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(block)) => Ok(Some(encode_value(&usage_from(block)?)?)),
-        Some(value) => Ok(Some(value.clone())),
-    }
-}
-
-fn service_tier_of(fields: &Object) -> Option<String> {
-    match fields.get("service_tier") {
-        Some(Json::Text(text)) if !text.is_empty() => Some(text.clone()),
-        _ => None,
     }
 }

@@ -13,12 +13,18 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Url { cases } => Ok(json!(ops::urls(cases))),
+            Input::Url { cases } => Ok(json!(cases.iter().map(ops::url_of).collect::<Vec<_>>())),
             Input::Headers { cases } => ops::headers(cases),
             Input::Params { cases } => ops::params(cases),
-            Input::Messages { cases } => Ok(json!(ops::messages(cases))),
-            Input::Response { cases } => Ok(json!(ops::responses(cases))),
-            Input::Stream { cases } => Ok(json!(ops::streams(cases))),
+            Input::Messages { cases } => Ok(json!(
+                cases.iter().map(ops::messages_of).collect::<Vec<_>>()
+            )),
+            Input::Response { cases } => Ok(json!(
+                cases.iter().map(ops::response_of).collect::<Vec<_>>()
+            )),
+            Input::Stream { cases } => {
+                Ok(json!(cases.iter().map(ops::stream_of).collect::<Vec<_>>()))
+            }
         }
     }
 }

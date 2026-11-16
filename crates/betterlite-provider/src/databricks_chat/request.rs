@@ -79,9 +79,10 @@ pub fn get_complete_url(
     let gateway_model = model.strip_prefix("databricks/").unwrap_or(model);
     let use_ai_gateway = gateway_model.matches('.').count() >= 2;
     let base = get_api_base(api_base, use_ai_gateway)?;
-    let url_base = match use_ai_gateway {
-        true => base.trim_end_matches('/'),
-        false => base.as_str(),
+    let url_base = if use_ai_gateway {
+        base.trim_end_matches('/')
+    } else {
+        base.as_str()
     };
     Ok(format!("{url_base}/chat/completions"))
 }
@@ -160,10 +161,7 @@ fn pop_user_agent_parameter(
 // Databricks does not support response_format while streaming, so the caller fakes the stream
 #[must_use]
 pub fn should_fake_stream(optional_params: &Object) -> bool {
-    match optional_params.get("response_format") {
-        None | Some(Json::Null) => false,
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            true
-        }
-    }
+    optional_params
+        .get("response_format")
+        .is_some_and(|response_format| !matches!(response_format, Json::Null))
 }

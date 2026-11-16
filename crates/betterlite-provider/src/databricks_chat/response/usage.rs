@@ -60,12 +60,11 @@ pub(crate) fn usage_from(block: &Object) -> Result<Usage, DatabricksChatError> {
 fn count(block: &Object, name: &str) -> Result<Option<i64>, DatabricksChatError> {
     match block.get(name) {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => match number.as_i64() {
-            Some(value) => Ok(Some(value)),
-            None => Err(wrong_type(name, "an integer")),
-        },
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(wrong_type(name, "an integer"))
+        Some(Json::Number(number)) if number.as_i64().is_some() => Ok(number.as_i64()),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            Err(DatabricksChatError::UsageCount {
+                field: name.to_owned(),
+            })
         }
     }
 }
@@ -74,8 +73,14 @@ fn truthy_object(value: Option<&Json>) -> Option<Object> {
     match value {
         Some(Json::Object(fields)) if !fields.is_empty() => Some(fields.clone()),
         None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | Some(Json::Object(_)) => None,
+        | Some(
+            Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_),
+        ) => None,
     }
 }
 
@@ -95,13 +100,13 @@ fn apply_reasoning(
             Json::Number(Number::from(reasoning)),
         );
     }
-    let Some(completion) = completion else {
+    let Some(completion_tokens) = completion else {
         return Ok(());
     };
     if !matches!(fields.get("text_tokens"), None | Some(Json::Null)) {
         return Ok(());
     }
-    let mut text = completion.saturating_sub(reasoning);
+    let mut text = completion_tokens.saturating_sub(reasoning);
     for name in ["image_tokens", "audio_tokens"] {
         if let Some(value) = truthy_integer(fields.get(name), name)? {
             text = text.saturating_sub(value);
@@ -116,20 +121,20 @@ fn apply_reasoning(
 
 // Python treats a falsy value as absent; anything truthy beyond an integer is a shape error
 fn truthy_integer(value: Option<&Json>, name: &str) -> Result<Option<i64>, DatabricksChatError> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    if !value.is_truthy() {
-        return Ok(None);
-    }
     match value {
-        Json::Number(number) => match number.as_i64() {
-            Some(count) => Ok(Some(count)),
-            None => Err(wrong_type(name, "an integer")),
-        },
-        Json::Text(_) | Json::Bool(_) | Json::List(_) | Json::Object(_) => {
-            Err(wrong_type(name, "an integer"))
-        }
+        None => Ok(None),
+        Some(given) if !given.is_truthy() => Ok(None),
+        Some(Json::Number(number)) if number.as_i64().is_some() => Ok(number.as_i64()),
+        Some(
+            Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_),
+        ) => Err(DatabricksChatError::UsageCount {
+            field: name.to_owned(),
+        }),
     }
 }
 
@@ -230,11 +235,5 @@ fn integer_value(value: Option<&Json>) -> Option<i64> {
         | Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
             None
         }
-    }
-}
-
-fn wrong_type(name: &str, expected: &str) -> DatabricksChatError {
-    DatabricksChatError::Shape {
-        message: format!("the {name} of the Databricks usage must be {expected}"),
     }
 }

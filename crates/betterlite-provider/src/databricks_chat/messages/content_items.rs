@@ -1,3 +1,4 @@
+use betterlite_openai::chat_content::UrlDownloader;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, ContentPart, Message};
 
@@ -6,105 +7,111 @@ use crate::databricks_chat::error::DatabricksChatError;
 const DEFAULT_FILENAME: &str = "my_file.pdf";
 const FILE: &str = "file";
 const FILE_DATA: &str = "file_data";
+const FILE_ID: &str = "file_id";
 const FILENAME: &str = "filename";
 const FORMAT: &str = "format";
 const IMAGE_URL: &str = "image_url";
-const USER: &str = "user";
+const PDF_URL_PREFIXES: [&str; 3] = ["https://", "http://", "www."];
 
-// The parent OpenAI message transform rewrites the content items of user messages
+// The parent OpenAI _transform_messages rewrites the content items of user messages
 pub(super) fn transform_user_contents(
     messages: &[Message],
+    downloads: &dyn UrlDownloader,
 ) -> Result<Vec<Message>, DatabricksChatError> {
     let mut transformed = Vec::with_capacity(messages.len());
     for message in messages {
-        transformed.push(transform_user_content(message)?);
+        let mut copy = message.clone();
+        if message.role == "user"
+            && let Some(Content::Parts(parts)) = &mut copy.content
+        {
+            for part in parts {
+                transform_content_item(part, downloads)?;
+            }
+        }
+        transformed.push(copy);
     }
     Ok(transformed)
 }
 
-fn transform_user_content(message: &Message) -> Result<Message, DatabricksChatError> {
-    if message.role != USER {
-        return Ok(message.clone());
-    }
-    let Some(Content::Parts(parts)) = &message.content else {
-        return Ok(message.clone());
-    };
-    if parts.is_empty() {
-        return Ok(message.clone());
-    }
-    let mut converted = Vec::with_capacity(parts.len());
-    for part in parts {
-        converted.push(transform_content_item(part)?);
-    }
-    let mut transformed = message.clone();
-    transformed.content = Some(Content::Parts(converted));
-    Ok(transformed)
-}
-
-fn transform_content_item(part: &ContentPart) -> Result<ContentPart, DatabricksChatError> {
-    let mut transformed = part.clone();
+fn transform_content_item(
+    part: &mut ContentPart,
+    downloads: &dyn UrlDownloader,
+) -> Result<(), DatabricksChatError> {
     match part.kind.as_str() {
-        "image_url" => transform_image_url(&mut transformed)?,
-        FILE => transform_file(&mut transformed)?,
-        _ => {}
+        "image_url" => transform_image_url(&mut part.fields),
+        "file" => transform_file(&mut part.fields, downloads),
+        _ => Ok(()),
     }
-    Ok(transformed)
 }
 
 // A string image_url becomes {"url": ...}; an object loses the litellm-only format key
-fn transform_image_url(item: &mut ContentPart) -> Result<(), DatabricksChatError> {
-    let Some(image_url) = item.fields.get(IMAGE_URL) else {
-        return Err(DatabricksChatError::Shape {
+fn transform_image_url(fields: &mut Object) -> Result<(), DatabricksChatError> {
+    match fields.get_mut(IMAGE_URL) {
+        None => Err(DatabricksChatError::Shape {
             message: String::from("an image_url content block is missing its image_url field"),
-        });
-    };
-    let replacement = match image_url {
-        Json::Text(url) => {
-            let mut fields = Object::new();
-            fields.insert("url".to_owned(), Json::Text(url.clone()));
-            Json::Object(fields)
+        }),
+        Some(Json::Object(image_url)) => {
+            image_url.shift_remove(FORMAT);
+            Ok(())
         }
-        Json::Object(fields) => {
-            let mut stripped = fields.clone();
-            stripped.shift_remove(FORMAT);
-            Json::Object(stripped)
+        Some(image_url @ Json::Text(_)) => {
+            let mut wrapped = Object::new();
+            wrapped.insert(String::from("url"), image_url.clone());
+            *image_url = Json::Object(wrapped);
+            Ok(())
         }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => image_url.clone(),
-    };
-    item.fields.insert(IMAGE_URL.to_owned(), replacement);
-    Ok(())
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_)) => Ok(()),
+    }
 }
 
-// transform_file: the format key goes, a file_data without a filename gets the default one
-fn transform_file(item: &mut ContentPart) -> Result<(), DatabricksChatError> {
-    let Some(file) = item.fields.get(FILE) else {
-        return Err(missing_file());
+// _transform_content_item: a PDF URL file_id is downloaded, a file_data without a filename gets one
+fn transform_file(
+    fields: &mut Object,
+    downloads: &dyn UrlDownloader,
+) -> Result<(), DatabricksChatError> {
+    let Some(Json::Object(file)) = fields.get_mut(FILE) else {
+        return Err(DatabricksChatError::MissingFile);
     };
-    let Json::Object(fields) = file else {
-        if matches!(file, Json::Null) {
-            return Err(missing_file());
+    file.shift_remove(FORMAT);
+    if file.is_empty() {
+        return Ok(());
+    }
+    let pdf_url = match file.get(FILE_ID) {
+        Some(Json::Text(file_id))
+            if PDF_URL_PREFIXES
+                .iter()
+                .any(|prefix| file_id.starts_with(prefix)) =>
+        {
+            Some(file_id.clone())
         }
-        return Err(DatabricksChatError::Shape {
-            message: String::from("the file of a file content block must be an object"),
-        });
+        None
+        | Some(
+            Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_),
+        ) => None,
     };
-    let mut file_object = fields.clone();
-    file_object.shift_remove(FORMAT);
-    if !file_object.is_empty()
-        && !matches!(file_object.get(FILE_DATA), None | Some(Json::Null))
-        && matches!(file_object.get(FILENAME), None | Some(Json::Null))
+    if let Some(url) = pdf_url {
+        file.insert(
+            String::from(FILE_DATA),
+            Json::Text(downloads.download(&url)?),
+        );
+        file.insert(
+            String::from(FILENAME),
+            Json::Text(String::from(DEFAULT_FILENAME)),
+        );
+        file.shift_remove(FILE_ID);
+    }
+    if !matches!(file.get(FILE_DATA), None | Some(Json::Null))
+        && matches!(file.get(FILENAME), None | Some(Json::Null))
     {
-        file_object.insert(FILENAME.to_owned(), Json::Text(DEFAULT_FILENAME.to_owned()));
+        file.insert(
+            String::from(FILENAME),
+            Json::Text(String::from(DEFAULT_FILENAME)),
+        );
     }
-    item.fields
-        .insert(FILE.to_owned(), Json::Object(file_object));
     Ok(())
-}
-
-fn missing_file() -> DatabricksChatError {
-    DatabricksChatError::BadRequest {
-        message: String::from(
-            "content block has type='file' but is missing the required 'file' field",
-        ),
-    }
 }

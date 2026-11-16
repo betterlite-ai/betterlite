@@ -5,34 +5,35 @@ use betterlite_core::api::messages_native_transform::capabilities::{
 };
 use betterlite_models::decisions::Json;
 use betterlite_openai::base_helpers::{add_thinking_max_tokens, thinking_request};
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 
 use super::CLAUDE;
 use super::SUPPORTED_OPENAI_PARAMS;
 use super::tools;
 use crate::databricks_chat::error::DatabricksChatError;
-use crate::databricks_chat::wire::{self, Params, from_params, to_params, to_wire};
+use crate::databricks_chat::wire::{Params, convert};
 
 pub(crate) const PROVIDER: &str = "databricks";
 const ANTHROPIC_PAYLOAD: &str = "supports_anthropic_thinking_payload";
 
 // LiteLLM's map_openai_params, in the order the Databricks transform applies its steps
-pub async fn map_openai_params<Capabilities: ThinkingCapabilities>(
+pub async fn map_openai_params<Capabilities: ThinkingCapabilities + Send>(
     non_default_params: &Object,
     optional_params: &mut Object,
     model: &str,
     _drop_params: bool,
     capabilities: &mut Capabilities,
 ) -> Result<(), DatabricksChatError> {
-    let non_default = to_params(non_default_params)?;
-    let mut mapped = to_params(optional_params)?;
+    let non_default: Params = convert(non_default_params)?;
+    let mut mapped: Params = convert(optional_params)?;
     let is_thinking_enabled = thinking_enabled(&non_default);
     apply_parent(&non_default, &mut mapped);
     if model.contains(CLAUDE) {
         translate_legacy(model, &mut mapped, capabilities).await?;
     }
-    if let Some(tools_value) = mapped.get("tools").cloned() {
-        let converted = tools::map_tools_for_model(model, &tools_value)?;
+    if let Some(tools_value) = mapped.get("tools") {
+        let given: PromptJson = convert(tools_value)?;
+        let converted = convert(&tools::map_tools_for_model(model, &given)?)?;
         mapped.insert("tools".to_owned(), converted);
     }
     if let Some(limit) = non_default.get("max_completion_tokens") {
@@ -51,7 +52,7 @@ pub async fn map_openai_params<Capabilities: ThinkingCapabilities>(
         mapped.shift_remove("reasoning_effort");
     }
     update_thinking_tokens(&non_default, &mut mapped)?;
-    *optional_params = from_params(&mapped)?;
+    *optional_params = convert(&mapped)?;
     Ok(())
 }
 
@@ -75,7 +76,7 @@ fn thinking_enabled(non_default: &Params) -> bool {
 }
 
 // _uses_anthropic_thinking_param lowercases the model and swaps "." for "-" before the check
-async fn uses_thinking_param<Capabilities: ThinkingCapabilities>(
+async fn uses_thinking_param<Capabilities: ThinkingCapabilities + Send>(
     model: &str,
     capabilities: &mut Capabilities,
 ) -> bool {
@@ -89,7 +90,7 @@ async fn uses_thinking_param<Capabilities: ThinkingCapabilities>(
 }
 
 // translate_legacy_thinking_for_adaptive_model writes back only the keys it changed
-async fn translate_legacy<Capabilities: ThinkingCapabilities>(
+async fn translate_legacy<Capabilities: ThinkingCapabilities + Send>(
     model: &str,
     mapped: &mut Params,
     capabilities: &mut Capabilities,
@@ -111,13 +112,9 @@ async fn translate_legacy<Capabilities: ThinkingCapabilities>(
         .await
         .map_err(DatabricksChatError::Thinking)?;
     if params.thinking != before_thinking {
-        match &params.thinking {
-            Some(value) => {
-                mapped.insert("thinking".to_owned(), value.clone());
-            }
-            None => {
-                mapped.shift_remove("thinking");
-            }
+        mapped.shift_remove("thinking");
+        if let Some(value) = &params.thinking {
+            mapped.insert("thinking".to_owned(), value.clone());
         }
     }
     if params.output_config != before_output_config
@@ -134,14 +131,15 @@ fn apply_response_format(
     value: &Json,
     is_thinking_enabled: bool,
 ) -> Result<(), DatabricksChatError> {
-    let prompt_value = wire::prompt_json(value)?;
-    if let Some(tool) = tools::response_format_tool(&prompt_value)? {
-        let wire_tool = wire::decision_json(&tool)?;
-        tools::append_wire_tool(mapped, wire_tool)?;
+    let format: PromptJson = convert(value)?;
+    if let Some(tool) = tools::response_format_tool(&format)? {
+        tools::append_wire_tool(mapped, convert(&tool)?)?;
         mapped.insert("json_mode".to_owned(), Json::Bool(true));
         if !is_thinking_enabled {
-            let choice = tools::json_tool_choice();
-            mapped.insert("tool_choice".to_owned(), wire::decision_json(&choice)?);
+            mapped.insert(
+                "tool_choice".to_owned(),
+                convert(&tools::json_tool_choice())?,
+            );
         }
     }
     mapped.shift_remove("response_format");
@@ -149,21 +147,27 @@ fn apply_response_format(
 }
 
 // _map_reasoning_effort then the adaptive output_config.effort overlay, with the model's view
-async fn apply_reasoning_effort<Capabilities: ThinkingCapabilities>(
+async fn apply_reasoning_effort<Capabilities: ThinkingCapabilities + Send>(
     model: &str,
     value: &Json,
     mapped: &mut Params,
     capabilities: &mut Capabilities,
 ) -> Result<(), DatabricksChatError> {
-    let mapped_thinking = match value {
+    let effort = match value {
         Json::Null => None,
-        Json::Text(effort) => capabilities
-            .map_effort(model, effort, PROVIDER)
+        Json::Text(effort) => Some(effort.as_str()),
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            return Err(DatabricksChatError::InvalidEffort {
+                value: serde_json::to_string(value).map_err(DatabricksChatError::Encode)?,
+            });
+        }
+    };
+    let mapped_thinking = match effort {
+        Some(requested) => capabilities
+            .map_effort(model, requested, PROVIDER)
             .await
             .map_err(DatabricksChatError::Reasoning)?,
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            return Err(invalid_effort(value));
-        }
+        None => None,
     };
     let Some(thinking) = mapped_thinking else {
         mapped.shift_remove("thinking");
@@ -177,8 +181,10 @@ async fn apply_reasoning_effort<Capabilities: ThinkingCapabilities>(
     {
         return Ok(());
     }
-    let Some(level) = effort_level(value) else {
-        return Err(invalid_effort(value));
+    let Some(level) = effort.and_then(effort_level) else {
+        return Err(DatabricksChatError::InvalidEffort {
+            value: effort.unwrap_or_default().to_owned(),
+        });
     };
     let mut output_config = Params::new();
     output_config.insert("effort".to_owned(), Json::Text(level.to_owned()));
@@ -186,26 +192,16 @@ async fn apply_reasoning_effort<Capabilities: ThinkingCapabilities>(
     Ok(())
 }
 
-fn effort_level(value: &Json) -> Option<&'static str> {
-    match value {
-        Json::Text(effort) => match effort.as_str() {
-            "minimal" | "low" => Some("low"),
-            "medium" => Some("medium"),
-            "high" => Some("high"),
-            "xhigh" => Some("xhigh"),
-            "max" => Some("max"),
-            _ => None,
-        },
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+// REASONING_EFFORT_TO_OUTPUT_CONFIG_EFFORT
+fn effort_level(effort: &str) -> Option<&'static str> {
+    match effort {
+        "minimal" | "low" => Some("low"),
+        "medium" => Some("medium"),
+        "high" => Some("high"),
+        "xhigh" => Some("xhigh"),
+        "max" => Some("max"),
+        _ => None,
     }
-}
-
-fn invalid_effort(value: &Json) -> DatabricksChatError {
-    let rendered = match wire::prompt_json(value) {
-        Ok(json) => wire::render(&json),
-        Err(_) => String::new(),
-    };
-    DatabricksChatError::InvalidEffort { value: rendered }
 }
 
 // update_optional_params_with_thinking_tokens, through B2202's checked budget arithmetic
@@ -213,12 +209,10 @@ fn update_thinking_tokens(
     non_default: &Params,
     mapped: &mut Params,
 ) -> Result<(), DatabricksChatError> {
-    let requested = to_wire(non_default)?;
-    let mut options = to_wire(&*mapped)?;
+    let requested = convert(non_default)?;
+    let mut options = convert(&*mapped)?;
     add_thinking_max_tokens(&requested, &mut options, DEFAULT_MAX_TOKENS)
         .map_err(DatabricksChatError::Base)?;
-    let rewritten =
-        serde_json::to_value(options).map_err(|source| DatabricksChatError::Encode(source))?;
-    *mapped = serde_json::from_value(rewritten).map_err(DatabricksChatError::Decode)?;
+    *mapped = convert(&options)?;
     Ok(())
 }

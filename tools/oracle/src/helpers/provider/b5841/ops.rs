@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
+use betterlite_openai::chat_content::RefuseDownloads;
 use betterlite_provider::databricks_auth::environment::DatabricksEnv;
 use betterlite_provider::databricks_auth::oauth::{
     OauthReply, OauthTokenRequest, OauthTokenSource,
@@ -26,11 +27,7 @@ use super::cases::{HeadersCase, MessagesCase, ParamsCase, ResponseCase, StreamCa
 const PROVIDER: &str = "databricks";
 const VERSION: &str = "1.105.1";
 
-pub(super) fn urls(cases: &[UrlCase]) -> Vec<serde_json::Value> {
-    cases.iter().map(url_of).collect()
-}
-
-fn url_of(case: &UrlCase) -> serde_json::Value {
+pub(super) fn url_of(case: &UrlCase) -> serde_json::Value {
     match get_complete_url(case.api_base.as_deref(), &case.model) {
         Ok(url) => json!({"url": url}),
         Err(error) => json!({"status": error.status_code()}),
@@ -109,22 +106,14 @@ fn params_of(case: &ParamsCase, runtime: &Runtime) -> serde_json::Value {
     }
 }
 
-pub(super) fn messages(cases: &[MessagesCase]) -> Vec<serde_json::Value> {
-    cases.iter().map(messages_of).collect()
-}
-
-fn messages_of(case: &MessagesCase) -> serde_json::Value {
-    match transform_messages(&case.messages, &case.model) {
+pub(super) fn messages_of(case: &MessagesCase) -> serde_json::Value {
+    match transform_messages(&case.messages, &case.model, &RefuseDownloads) {
         Ok(transformed) => json!({"messages": transformed}),
         Err(error) => json!({"status": error.status_code()}),
     }
 }
 
-pub(super) fn responses(cases: &[ResponseCase]) -> Vec<serde_json::Value> {
-    cases.iter().map(response_of).collect()
-}
-
-fn response_of(case: &ResponseCase) -> serde_json::Value {
+pub(super) fn response_of(case: &ResponseCase) -> serde_json::Value {
     let Ok(body) = serde_json::to_string(&case.body) else {
         return json!({"status": 500});
     };
@@ -133,7 +122,7 @@ fn response_of(case: &ResponseCase) -> serde_json::Value {
         status_code: 200,
         headers: BTreeMap::new(),
         custom_llm_provider: Some(PROVIDER),
-        json_mode: Some(case.json_mode),
+        json_mode: case.json_mode,
         ids: &RandomIds,
     });
     match reply {
@@ -142,15 +131,14 @@ fn response_of(case: &ResponseCase) -> serde_json::Value {
     }
 }
 
-pub(super) fn streams(cases: &[StreamCase]) -> Vec<serde_json::Value> {
-    cases.iter().map(stream_of).collect()
-}
-
-fn stream_of(case: &StreamCase) -> serde_json::Value {
+pub(super) fn stream_of(case: &StreamCase) -> serde_json::Value {
     let mut parser = ChunkParser::new(case.json_mode);
     let mut chunks = Vec::with_capacity(case.chunks.len());
     for chunk in &case.chunks {
-        match parser.parse(chunk, &RandomIds) {
+        let Ok(text) = serde_json::to_string(chunk) else {
+            return json!({"status": 500});
+        };
+        match parser.parse(&text, &RandomIds) {
             Ok(parsed) => chunks.push(parsed),
             Err(error) => return json!({"status": error.status_code()}),
         }

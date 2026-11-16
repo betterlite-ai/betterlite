@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use betterlite_openai::chat_content::UrlDownloader;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, ContentPart, Message, strip_name_from_message};
 use betterlite_prompts::message_fields::image_hoist::hoist_tool_message_images;
@@ -20,6 +21,7 @@ pub const TOOL_CALL_ID: &str = "tool_call_id";
 pub fn transform_messages(
     messages: &[Message],
     model: &str,
+    downloads: &dyn UrlDownloader,
 ) -> Result<Vec<Message>, DatabricksChatError> {
     let allowed_names = [String::from("user")];
     let mut kept = Vec::with_capacity(messages.len());
@@ -33,13 +35,14 @@ pub fn transform_messages(
         }
         kept.push(sanitized);
     }
-    let sequenced = match model.contains(CLAUDE) {
-        true => kept,
-        false => split_parallel_tool_calls(&merge_adjacent_system_messages(&kept))?,
+    let sequenced = if model.contains(CLAUDE) {
+        kept
+    } else {
+        split_parallel_tool_calls(&merge_adjacent_system_messages(&kept))?
     };
     let stripped = drop_tool_reference_parts(&sequenced);
     let hoisted = hoist_tool_message_images(&stripped);
-    content_items::transform_user_contents(&hoisted)
+    content_items::transform_user_contents(&hoisted, downloads)
 }
 
 // _move_cache_control_into_string_content_block: only a string content moves, and only when the key is set
