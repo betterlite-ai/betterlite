@@ -92,6 +92,27 @@ call:
         content: result
       - role: assistant
         content: null
-env: {}
+    - model: databricks-meta-llama-3-1-70b
+      messages:
+      - role: user
+        content:
+        - type: file
+          file:
+            file_id: https://host/a.pdf
+    - model: databricks-meta-llama-3-1-70b
+      messages:
+      - role: user
+        content:
+        - type: file
+          file:
+            file_data: data:application/pdf;base64,JVBERi0=
+            format: application/pdf
+        - type: file
+          file:
+            file_id: file-abc123
+        - type: image_url
+          image_url: https://host/i.png
+env:
+  MAX_IMAGE_URL_DOWNLOAD_SIZE_MB: "0"
 compare:
   ignore: []

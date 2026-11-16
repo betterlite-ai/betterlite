@@ -9,7 +9,7 @@ from litellm.types.utils import CallTypes, ModelResponse, ModelResponseStream
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 JSON_ADAPTER = TypeAdapter(JsonValue)
-FAILURES = ("DatabricksException", "BadRequestError")
+FAILURES = ("DatabricksException", "BadRequestError", "ImageFetchError")
 MODEL = "databricks-meta-llama-3-1-70b"
 Object = dict[str, JsonValue]
 Params = ParamSpec("Params")

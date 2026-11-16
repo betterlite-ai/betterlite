@@ -157,9 +157,32 @@ call:
         model: m
         choices:
         - index: 0
-          finish_reason: true
+          finish_reason: content_filtered
           delta:
             content: x
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - delta:
+            tool_calls:
+            - function:
+                name: f
+                arguments: '{"a":1}'
+            - index: 5
+              id: c2
+              function:
+                name: g
+            - function:
+                name: h
+                arguments: '{}'
+    - json_mode: false
+      chunks:
+      - created: 1
+        model: m
+        choices: []
     - json_mode: false
       chunks:
       - id: i

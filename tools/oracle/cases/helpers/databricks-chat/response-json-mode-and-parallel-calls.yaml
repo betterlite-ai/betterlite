@@ -67,6 +67,53 @@ call:
           prompt_tokens: 1
           completion_tokens: 2
           total_tokens: 3
+    - json_mode: true
+      body:
+        id: chat-1
+        created: 1700
+        model: m
+        choices:
+        - index: 0
+          finish_reason: tool_calls
+          message:
+            role: assistant
+            content: null
+            tool_calls:
+            - id: call-1
+              type: function
+              function:
+                name: multi_tool_use.parallel
+                arguments: '{"tool_uses": []}'
+            - id: call-2
+              type: function
+              function:
+                name: json_tool_call
+                arguments: '{"a":1}'
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
+    - json_mode: true
+      body:
+        id: chat-1
+        created: 1700
+        model: m
+        choices:
+        - index: 0
+          finish_reason: tool_calls
+          message:
+            role: assistant
+            content: null
+            tool_calls:
+            - id: call-1
+              type: function
+              function:
+                name: multi_tool_use.parallel
+                arguments: '{"tool_uses":[{"recipient_name":"functions.json_tool_call","parameters":{"b":2}}]}'
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
     - json_mode: false
       body:
         id: chat-1
