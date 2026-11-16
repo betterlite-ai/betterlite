@@ -101,6 +101,8 @@ MODEL_RESPONSE: Final[TypeAdapter[ModelResponse]] = TypeAdapter(ModelResponse)
 RESPONSES_API: Final[TypeAdapter[ResponsesAPIResponse]] = TypeAdapter(ResponsesAPIResponse)
 STREAM_CHUNK: Final[TypeAdapter[ModelResponseStream]] = TypeAdapter(ModelResponseStream)
 COMPLETED_EVENT: Final[TypeAdapter[ResponseCompletedEvent]] = TypeAdapter(ResponseCompletedEvent)
+# InMemoryLogRecordExporter.__init__ is unannotated; this typed reference keeps the call checked
+LOG_EXPORTER: Final[type[InMemoryLogRecordExporter]] = InMemoryLogRecordExporter
 
 
 def metric_key(line: MetricLine) -> str:
@@ -173,7 +175,7 @@ def new_logger(
 
 def record_success(request: RecordSuccessCall) -> Recorded:
     reader = InMemoryMetricReader()
-    log_exporter = InMemoryLogRecordExporter()
+    log_exporter = LOG_EXPORTER()
     logger_provider = LoggerProvider()
     logger_provider.add_log_record_processor(SimpleLogRecordProcessor(log_exporter))
     callback_settings = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L184
@@ -199,7 +201,8 @@ def record_success(request: RecordSuccessCall) -> Recorded:
         raw = log.log_record.attributes
         attributes: dict[str, str | int] = {}
         if raw is not None:
-            attributes = TEXTS.validate_python(dict(raw))
+            texts = dict(raw)
+            attributes = TEXTS.validate_python(texts)
         values = {key: attribute_value(value) for key, value in attributes.items()}
         body = JSON.validate_python(log.log_record.body)
         events.append(EventLine(body=body, attributes=values))
