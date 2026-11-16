@@ -23,6 +23,7 @@ Object: TypeAlias = dict[str, JsonValue]
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 EMPTY: Object = {}
 REQUEST = httpx.Request("POST", "https://localhost")
+KEEP_PARAMS = False
 
 
 class Urls(Protocol):
@@ -166,7 +167,7 @@ def embed(step: EmbedStep) -> JsonValue:
 
 def rerank(step: RerankStep) -> JsonValue:
     options = dict(step["options"])
-    mapped = RERANK.map_cohere_rerank_params(options, step["model"], False, "", [])
+    mapped = RERANK.map_cohere_rerank_params(options, step["model"], KEEP_PARAMS, "", [])
     auth_options = dict(options)
     headers = RERANK.validate_environment(
         dict(step["headers"]), step["model"], step["api_key"], auth_options
