@@ -1,0 +1,35 @@
+kind: helper
+name: inline-image-traversal
+call:
+  bedrock_services_responses:
+    inline_image_traversal:
+      - input: just text
+      - input: []
+      - input:
+          - type: message
+            role: user
+            content:
+              - {type: input_text, text: hi}
+              - {type: input_image, detail: auto, image_url: "http://a.example/1.png"}
+              - {type: input_image, detail: auto, image_url: "https://b.example/2.png"}
+              - {type: input_image, detail: auto, image_url: "http://a.example/1.png"}
+              - {type: input_image, detail: auto, image_url: "HTTP://upper.example/x.png"}
+              - {type: input_image, detail: auto, image_url: "s3://bucket/key.png"}
+              - {type: input_image, detail: auto, image_url: "data:image/png;base64,AAAA"}
+              - {type: input_image, detail: auto, file_id: file-1}
+              - {type: input_file, file_url: "http://file.example/x.pdf"}
+          - type: function_call_output
+            call_id: c1
+            output:
+              - {type: input_image, detail: auto, image_url: "https://out.example/3.png"}
+          - type: computer_call_output
+            call_id: c2
+            output: {type: computer_screenshot, image_url: "http://shot.example/4.png"}
+          - type: message
+            role: user
+            content: "http://text.example/5.png"
+          - type: function_call_output
+            call_id: c3
+            output: "http://plain.example/6.png"
+env: {}
+compare: {ignore: []}
