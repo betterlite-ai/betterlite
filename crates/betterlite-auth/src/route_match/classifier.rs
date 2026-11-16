@@ -1,6 +1,6 @@
-use super::templates::{
-    RouteValue, check_route_access, route_matches_pattern, route_matches_wildcard_pattern,
-};
+use betterlite_routes::wildcard::route_matches_wildcard_pattern;
+
+use super::templates::{RouteValue, check_route_access, route_matches_pattern};
 use crate::{auxiliary_routes, inference_routes};
 
 #[must_use]

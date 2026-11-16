@@ -1,0 +1,81 @@
+kind: helper
+name: recraft-malformed-json
+call:
+  recraft:
+    calls:
+      - function: response
+        status: 502
+        headers:
+          X-Upstream: broken
+        body: "not json"
+        created: 1
+        data: []
+calls:
+  - recraft:
+      calls:
+        - function: response
+          status: 200
+          headers: {}
+          body: ""
+          created: 1
+          data: []
+  - recraft:
+      calls:
+        - function: response
+          status: 200
+          headers: {}
+          body: '{"images": []}'
+          created: 1
+          data: []
+  - recraft:
+      calls:
+        - function: response
+          status: 200
+          headers: {}
+          body: "[1, 2]"
+          created: 1
+          data: []
+  - recraft:
+      calls:
+        - function: response
+          status: 200
+          headers: {}
+          body: '{"data": {"url": "x"}}'
+          created: 1
+          data: []
+  - recraft:
+      calls:
+        - function: response
+          status: 200
+          headers: {}
+          body: '{"data": [42]}'
+          created: 1
+          data: []
+  - recraft:
+      calls:
+        - function: response
+          status: 200
+          headers: {}
+          body: '{"data": [{"url": 5}]}'
+          created: 1
+          data: []
+  - recraft:
+      calls:
+        - function: edit_response
+          status: 503
+          headers: {}
+          body: '{"'
+  - recraft:
+      calls:
+        - function: edit_response
+          status: 200
+          headers: {}
+          body: '{"data": 5}'
+  - recraft:
+      calls:
+        - function: edit_response
+          status: 200
+          headers: {}
+          body: '{"images": []}'
+env: {}
+compare: {ignore: []}
