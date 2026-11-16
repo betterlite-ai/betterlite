@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-imagen-generation-unknown-size-square
+call:
+  vertex_imagen_generation:
+    model: imagen-3.0-generate-002
+    mappings:
+      - prompt: a red fox
+        non_default_params: {size: 640x480}
+        optional_params: {}
+        litellm_params: null
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}
