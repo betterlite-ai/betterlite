@@ -266,9 +266,30 @@ fn get_settings_never_shows_a_name_update_skipped() {
 fn get_settings_names_every_updatable_setting_once() {
     let mut names = UPDATABLE_ROUTER_SETTINGS.to_vec();
     names.sort_unstable();
-    names.dedup();
 
-    assert_eq!(names.len(), 18);
+    assert_eq!(
+        names,
+        [
+            "allowed_fails",
+            "context_window_fallbacks",
+            "cooldown_time",
+            "enable_tag_filtering",
+            "enable_weighted_failover",
+            "fallbacks",
+            "max_retries",
+            "model_group_alias",
+            "model_group_retry_policy",
+            "num_retries",
+            "optional_pre_call_checks",
+            "retry_after",
+            "retry_policy",
+            "routing_groups",
+            "routing_strategy",
+            "routing_strategy_args",
+            "tag_routing_prefix",
+            "timeout",
+        ]
+    );
 }
 
 #[test]
