@@ -16,7 +16,7 @@ use crate::purview_dlp_evaluation::error_handling;
 use crate::purview_dlp_evaluation::stream_assembly::assemble_responses_stream;
 use crate::purview_dlp_evaluation::user_id_blocking::resolve_user_id_for_blocking;
 
-use super::context::{HookContext, RecordTargets};
+use super::context::HookContext;
 use super::error::PurviewHookError;
 use super::scan::{PartsScan, scan_parts};
 use super::{Data, conversion, response_parts};
@@ -115,12 +115,7 @@ pub async fn async_post_call_streaming_iterator_hook(
             block_on_violation: true,
             request_data: &request_data,
         };
-        let targets = RecordTargets {
-            base: context.record_base,
-            invocation: context.invocation.as_deref_mut(),
-            sink: context.sink,
-            log_target: context.log_target.as_deref_mut(),
-        };
+        let targets = context.record_targets();
         scan_parts(guardrail, data, &scan, targets).await?;
     }
     Ok(chunks)

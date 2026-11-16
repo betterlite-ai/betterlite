@@ -4,7 +4,7 @@ use crate::purview_dlp_evaluation::MicrosoftPurviewDLPGuardrail;
 use crate::purview_dlp_evaluation::user_id_blocking::resolve_user_id_for_blocking;
 use crate::purview_graph_client::wire::Activity;
 
-use super::context::{HookContext, RecordTargets};
+use super::context::HookContext;
 use super::error::PurviewHookError;
 use super::scan::{ScanRequest, scan_and_record};
 use super::{Data, conversion, request_text};
@@ -29,12 +29,7 @@ pub async fn async_pre_call_hook(
         block_on_violation: true,
         request_data: &request_data,
     };
-    let targets = RecordTargets {
-        base: context.record_base,
-        invocation: context.invocation.as_deref_mut(),
-        sink: context.sink,
-        log_target: context.log_target.as_deref_mut(),
-    };
+    let targets = context.record_targets();
     scan_and_record(guardrail, data, &scan, targets).await
 }
 

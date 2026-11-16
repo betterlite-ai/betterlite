@@ -1,7 +1,7 @@
 import asyncio
 import threading
 from collections.abc import AsyncIterator
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, TypedDict
 
 import httpx
 from fastapi import HTTPException
@@ -14,7 +14,6 @@ from litellm.proxy.guardrails.guardrail_hooks.microsoft_purview.purview_dlp impo
 from litellm.types.llms.openai import ResponsesAPIResponse
 from litellm.types.utils import (
     CallTypesLiteral,
-    LLMResponseTypes,
     ModelResponse,
     ModelResponseStream,
     StreamingChoices,
@@ -101,23 +100,6 @@ class ScriptedEvent(ModelResponseStream):
 EVENT: TypeAdapter[ScriptedEvent] = TypeAdapter(ScriptedEvent)
 
 
-class PurviewHooks(Protocol):
-    async def async_pre_call_hook(
-        self,
-        user_api_key_dict: UserAPIKeyAuth,
-        cache: DualCache,
-        data: dict[str, JsonValue],
-        call_type: CallTypesLiteral,
-    ) -> dict[str, object] | None: ...
-
-    async def async_post_call_success_hook(
-        self,
-        data: dict[str, JsonValue],
-        user_api_key_dict: UserAPIKeyAuth,
-        response: LLMResponseTypes,
-    ) -> LLMResponseTypes: ...
-
-
 class ScriptedReplies:
     def __init__(self, replies: list[Reply]) -> None:
         self.replies = replies
@@ -145,10 +127,7 @@ class ScriptedReplies:
 
 
 def outcome(handler: ScriptedReplies, status: int | None) -> JsonValue:
-    answer: dict[str, JsonValue] = {}
-    answer["scans"] = JSON.validate_python(handler.scans)
-    answer["status"] = status
-    return answer
+    return {"scans": JSON.validate_python(handler.scans), "status": status}
 
 
 async def chunk_stream(chunks: list[ModelResponseStream]) -> AsyncIterator[ModelResponseStream]:
@@ -156,7 +135,9 @@ async def chunk_stream(chunks: list[ModelResponseStream]) -> AsyncIterator[Model
         yield chunk
 
 
-def pre_call(hooks: PurviewHooks, case: Input, handler: ScriptedReplies) -> JsonValue:
+def pre_call(
+    hooks: MicrosoftPurviewDLPGuardrail, case: Input, handler: ScriptedReplies
+) -> JsonValue:
     credentials = UserAPIKeyAuth(user_id=case["identity"]["user_id"])
     try:
         asyncio.run(
@@ -167,7 +148,9 @@ def pre_call(hooks: PurviewHooks, case: Input, handler: ScriptedReplies) -> Json
     return outcome(handler, None)
 
 
-def post_success(hooks: PurviewHooks, case: Input, handler: ScriptedReplies) -> JsonValue:
+def post_success(
+    hooks: MicrosoftPurviewDLPGuardrail, case: Input, handler: ScriptedReplies
+) -> JsonValue:
     response = RESPONSE.validate_python(case["result"])
     credentials = UserAPIKeyAuth(user_id=case["identity"]["user_id"])
     try:
