@@ -9,4 +9,7 @@ deviations:
   - what: There is no gateway_metrics_scrape_cidrs ingress rule on the tasks security group.
     why: The Prometheus sidecar it opened is not part of this module (see B8142 out_of_scope).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/network.tf#L160-L175
+  - what: The rds and redis security groups carry an allow-all egress rule; LiteLLM defines both groups with ingress only, so its rds and redis groups plan with no outbound rules.
+    why: All four module-owned groups carry the same egress rule, which keeps the set uniform and lets a group that later gains an outbound rule (a patching agent, a metrics sidecar) work without another change. Both stores still admit inbound only from the tasks group and never open a connection of their own, but a caller moving from LiteLLM's module plans two extra 0.0.0.0/0 egress rules.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/network.tf#L190-L222
 kept_bugs: []
