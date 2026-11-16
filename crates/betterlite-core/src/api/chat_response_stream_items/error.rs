@@ -35,6 +35,10 @@ pub enum StreamItemsError {
     ProviderFieldsNotObject,
     #[error("no assembled model response is stored")]
     MissingModelResponse,
+    #[error("the system clock reads a time before the Unix epoch")]
+    ClockBeforeEpoch,
+    #[error("the system clock reads past the i64 second range")]
+    ClockOutOfRange,
     #[error(transparent)]
     Assembly(#[from] AssemblyError),
 }

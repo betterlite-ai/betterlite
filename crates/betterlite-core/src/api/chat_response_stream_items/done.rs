@@ -56,11 +56,11 @@ pub fn create_output_item_done_event<Context>(
     _completion: &Json,
 ) -> Result<KnownResponseEvent, StreamItemsError> {
     let item_id = ensure_cached_item_id(state, sources);
-    let Some(stored) = state.progress.litellm_model_response.clone() else {
+    let Some(stored) = &state.progress.litellm_model_response else {
         return Err(StreamItemsError::MissingModelResponse);
     };
-    let text = completion_content(&stored)?;
-    let annotations = completion_annotations(&stored)?;
+    let text = completion_content(stored)?;
+    let annotations = completion_annotations(stored)?;
     Ok(KnownResponseEvent::OutputItemDone(OutputItemDoneEvent {
         output_index: state.progress.message_output_index,
         sequence_number: 1,

@@ -8,7 +8,7 @@ use crate::api::chat_response_stream_items::snapshot::{
 };
 
 use super::fixtures::{
-    AssemblyResponse, FixtureAssembly, field, json, state_with, state_with_assembly,
+    AssemblyResponse, FixtureAssembly, field, json, state_with_assembly, state_with_details,
 };
 
 fn chunk(text: &str) -> IndexMap<String, Json> {
@@ -61,7 +61,7 @@ fn snapshot_and_metadata() {
         json(r#"{"id":"c","_hidden_params":"x"}"#)
     );
 
-    let mut state = state_with("{}");
+    let mut state = state_with_details("{}", None, None);
     merge_provider_specific_fields(&mut state, &provider(r#"{"web_search_results":["a"]}"#));
     merge_provider_specific_fields(
         &mut state,
@@ -95,7 +95,12 @@ fn snapshot_and_metadata() {
         json(r#"["a"]"#)
     );
     assert_eq!(
-        state.logging_context.received(),
+        state
+            .logging_context
+            .received
+            .lock()
+            .expect("the calls lock")
+            .clone(),
         vec![vec![snapshot]],
         "the logging context assembles the collected snapshots"
     );

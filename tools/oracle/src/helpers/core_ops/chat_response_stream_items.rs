@@ -7,6 +7,7 @@ use betterlite_core::api::chat_response_stream_items::done::{
     create_output_text_done_event, create_reasoning_output_item_done_event,
     create_reasoning_summary_part_done_event, create_reasoning_summary_text_done_event,
 };
+use betterlite_core::api::chat_response_stream_items::error::StreamItemsError;
 use betterlite_core::api::chat_response_stream_items::items::{
     create_content_part_added_event, queue_message_item_added_events,
 };
@@ -20,7 +21,6 @@ use betterlite_core::api::chat_response_stream_items::sources::EventSources;
 use betterlite_core::api::chat_response_stream_tools::fields::{list, object};
 use betterlite_core::api::chat_response_stream_tools::state::{ChatStreamState, StreamSetup};
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::responses_event_records::records::KnownResponseEvent;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -112,9 +112,9 @@ fn event_sources(input: &Input) -> EventSources {
         input.uuid_ids.iter().cloned().collect::<VecDeque<_>>(),
         0_i64,
     ));
-    EventSources::new(
-        Arc::new(move || now),
-        Arc::new(move || {
+    EventSources {
+        clock: Arc::new(move || Ok::<i64, StreamItemsError>(now)),
+        ids: Arc::new(move || {
             let mut queue = queue.lock().unwrap_or_else(PoisonError::into_inner);
             if let Some(id) = queue.0.pop_front() {
                 return id;
@@ -122,7 +122,7 @@ fn event_sources(input: &Input) -> EventSources {
             queue.1 = queue.1.checked_add(1).unwrap_or(i64::MAX);
             format!("missing-uuid-{}", queue.1)
         }),
-    )
+    }
 }
 
 fn apply_step(
@@ -131,25 +131,30 @@ fn apply_step(
     step: &Step,
 ) -> Result<Value, Box<HelperError>> {
     match step {
-        Step::Initial => Ok(event_option(
-            return_default_initial_events(state).or_value_error()?,
-        )),
+        Step::Initial => match return_default_initial_events(state, sources).or_value_error()? {
+            Some(event) => Ok(serde_json::to_value(&event).or_value_error()?),
+            None => Ok(Value::Null),
+        },
         Step::MessageItems => {
             queue_message_item_added_events(state, sources).or_value_error()?;
-            Ok(pending_events(state))
+            pending_events(state)
         }
-        Step::ContentPart => Ok(event_view(
-            &create_content_part_added_event(state, sources).or_value_error()?,
-        )),
+        Step::ContentPart => {
+            let event = create_content_part_added_event(state, sources).or_value_error()?;
+            Ok(serde_json::to_value(&event).or_value_error()?)
+        }
         Step::Done { completion } => done_events(state, sources, completion),
         Step::ReasoningDone {
             item_id,
             content,
             sequence_number,
-        } => Ok(reasoning_events(item_id, content, *sequence_number)),
-        Step::DefaultDone { completion } => Ok(event_option(
-            return_default_done_events(state, sources, completion).or_value_error()?,
-        )),
+        } => reasoning_events(item_id, content, *sequence_number),
+        Step::DefaultDone { completion } => {
+            match return_default_done_events(state, sources, completion).or_value_error()? {
+                Some(event) => Ok(serde_json::to_value(&event).or_value_error()?),
+                None => Ok(Value::Null),
+            }
+        }
         Step::Snapshot { chunk, hidden } => snapshot_step(state, chunk, hidden.as_ref()),
         Step::MergeFields { fields } => {
             merge_provider_specific_fields(state, fields);
@@ -159,7 +164,7 @@ fn apply_step(
             let response = create_litellm_model_response(state).or_value_error()?;
             Ok(assembled_view(response.as_ref()))
         }
-        Step::Pending => Ok(pending_events(state)),
+        Step::Pending => pending_events(state),
         Step::Finished => Ok(Value::Bool(is_stream_finished(state))),
         Step::Set { .. } => Ok(set_value(state, step)),
     }
@@ -174,20 +179,30 @@ fn done_events(
     let part =
         create_output_content_part_done_event(state, sources, completion).or_value_error()?;
     let item = create_output_item_done_event(state, sources, completion).or_value_error()?;
-    Ok(json!([
-        event_view(&text),
-        event_view(&part),
-        event_view(&item)
-    ]))
+    let views = [&text, &part, &item]
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .or_value_error()?;
+    Ok(Value::Array(views))
 }
 
-fn reasoning_events(item_id: &str, content: &str, sequence_number: i64) -> Value {
+fn reasoning_events(
+    item_id: &str,
+    content: &str,
+    sequence_number: i64,
+) -> Result<Value, Box<HelperError>> {
     let events = [
         create_reasoning_summary_text_done_event(item_id, content, sequence_number),
         create_reasoning_summary_part_done_event(item_id, content, sequence_number),
         create_reasoning_output_item_done_event(item_id, content, sequence_number),
     ];
-    json!(events.iter().map(event_view).collect::<Vec<_>>())
+    let views = events
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .or_value_error()?;
+    Ok(Value::Array(views))
 }
 
 fn snapshot_step(
@@ -238,17 +253,14 @@ fn set_value(state: &mut ChatStreamState<AssemblyContext>, step: &Step) -> Value
     Value::Null
 }
 
-fn event_option(event: Option<KnownResponseEvent>) -> Value {
-    event.as_ref().map_or(Value::Null, event_view)
-}
-
-fn event_view(event: &KnownResponseEvent) -> Value {
-    serde_json::to_value(event).unwrap_or(Value::Null)
-}
-
-fn pending_events(state: &mut ChatStreamState<AssemblyContext>) -> Value {
+fn pending_events(state: &mut ChatStreamState<AssemblyContext>) -> Result<Value, Box<HelperError>> {
     let events = std::mem::take(&mut state.progress.pending_response_events);
-    json!(events.iter().map(event_view).collect::<Vec<_>>())
+    let views = events
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .or_value_error()?;
+    Ok(Value::Array(views))
 }
 
 fn snapshot_view(snapshot: &Json) -> Value {

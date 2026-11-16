@@ -6,7 +6,7 @@ use crate::api::chat_response_stream_items::items::{
 };
 use crate::api::chat_response_stream_tools::error::StreamToolsError;
 
-use super::fixtures::{event_json, json, sources, state_with};
+use super::fixtures::{json, sources, state_with_details};
 
 fn queued(
     state: &crate::api::chat_response_stream_tools::state::ChatStreamState<String>,
@@ -21,7 +21,7 @@ fn queued(
 
 #[test]
 fn message_item_indices() {
-    let mut state = state_with("{}");
+    let mut state = state_with_details("{}", None, None);
     let sources = sources(10, &["u"]);
     queue_message_item_added_events(&mut state, &sources).expect("the message queues");
     assert_eq!(
@@ -44,7 +44,7 @@ fn message_item_indices() {
 
 #[test]
 fn message_item_indices_use_the_tool_index_after_reasoning() {
-    let mut state = state_with("{}");
+    let mut state = state_with_details("{}", None, None);
     state.progress.cached_reasoning_item_id = Some(String::from("rs_a"));
     state.progress.next_tool_output_index = 3;
     let sources = sources(10, &["u"]);
@@ -68,7 +68,7 @@ fn message_item_indices_use_the_tool_index_after_reasoning() {
 
 #[test]
 fn message_item_indices_reuse_the_cached_item_id() {
-    let mut state = state_with("{}");
+    let mut state = state_with_details("{}", None, None);
     let sources = sources(10, &["u", "v"]);
     queue_message_item_added_events(&mut state, &sources).expect("the first message queues");
     queue_message_item_added_events(&mut state, &sources).expect("the second message queues");
@@ -85,13 +85,13 @@ fn message_item_indices_reuse_the_cached_item_id() {
 
 #[test]
 fn content_part_added_reads_the_message_output_index() {
-    let mut state = state_with("{}");
+    let mut state = state_with_details("{}", None, None);
     state.progress.cached_item_id = Some(String::from("msg_c"));
     state.progress.message_output_index = 7;
     let event = create_content_part_added_event(&mut state, &sources(10, &[]))
         .expect("the content part builds");
     assert_eq!(
-        event_json(&event),
+        json(&serde_json::to_string(&event).expect("the event serializes")),
         json(
             r#"{"type":"response.content_part.added","item_id":"msg_c","output_index":7,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]},"sequence_number":1}"#
         )
@@ -101,7 +101,7 @@ fn content_part_added_reads_the_message_output_index() {
 
 #[test]
 fn message_item_indices_report_tool_index_overflow() {
-    let mut state = state_with("{}");
+    let mut state = state_with_details("{}", None, None);
     state.progress.cached_reasoning_item_id = Some(String::from("rs_a"));
     state.progress.next_tool_output_index = i64::MAX;
     let result = queue_message_item_added_events(&mut state, &sources(10, &["u"]));
@@ -114,7 +114,7 @@ fn message_item_indices_report_tool_index_overflow() {
 
 #[test]
 fn message_item_indices_report_sequence_overflow() {
-    let mut state = state_with("{}");
+    let mut state = state_with_details("{}", None, None);
     state.progress.sequence_number = i64::MAX;
     let result = queue_message_item_added_events(&mut state, &sources(10, &["u"]));
     assert!(matches!(

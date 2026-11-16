@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -6,10 +8,11 @@ use crate::api::chat_response_stream_items::lifecycle::{
     create_response_created_event, create_response_in_progress_event,
 };
 use crate::api::chat_response_stream_items::progression::return_default_initial_events;
+use crate::api::chat_response_stream_items::sources::EventSources;
 use crate::api::chat_response_stream_tools::error::StreamToolsError;
 use crate::api::response_id_codecs::response::build_response_id;
 
-use super::fixtures::{event_json, field, json, sources, state_with, state_with_details};
+use super::fixtures::{field, json, sources, state_with_details};
 
 const RAW_ID: &str = "resp_u";
 const DEFAULTS_ID: &str =
@@ -52,20 +55,20 @@ fn metadata_with(model_info: Json) -> IndexMap<String, Json> {
 
 #[test]
 fn lifecycle_defaults() {
-    let mut state = state_with("{}");
+    let mut state = state_with_details("{}", None, None);
     let sources = sources(10, &["u"]);
     let created = return_default_initial_events(&mut state, &sources)
         .expect("the created event builds")
         .expect("the first call creates the response");
     assert_eq!(
-        event_json(&created),
+        json(&serde_json::to_string(&created).expect("the event serializes")),
         expected_event("response.created", 1, expected_response(DEFAULTS_ID, 10))
     );
     let in_progress = return_default_initial_events(&mut state, &sources)
         .expect("the in-progress event builds")
         .expect("the second call starts the response");
     assert_eq!(
-        event_json(&in_progress),
+        json(&serde_json::to_string(&in_progress).expect("the event serializes")),
         expected_event(
             "response.in_progress",
             2,
@@ -86,10 +89,13 @@ fn lifecycle_defaults() {
 #[test]
 fn lifecycle_copies_request_fields_even_when_null() {
     let request = r#"{"instructions":null,"temperature":null,"text":null,"tools":null,"top_p":null,"truncation":null,"user":null,"metadata":null}"#;
-    let mut state = state_with(request);
+    let mut state = state_with_details(request, None, None);
     let created = create_response_created_event(&mut state, &sources(10, &["u"]))
         .expect("the created event builds");
-    let response = field(&event_json(&created), "response");
+    let response = field(
+        &json(&serde_json::to_string(&created).expect("the event serializes")),
+        "response",
+    );
     let expected = with_fields(
         expected_response(DEFAULTS_ID, 10),
         &[("tools", "null"), ("top_p", "null")],
@@ -100,10 +106,13 @@ fn lifecycle_copies_request_fields_even_when_null() {
 #[test]
 fn lifecycle_copies_supplied_request_fields() {
     let request = r#"{"instructions":"be brief","temperature":0.2,"text":{"format":{"type":"text"}},"tools":[],"top_p":0.9,"truncation":"disabled","user":"grace","metadata":{"trace":"t1"},"tool_choice":"required"}"#;
-    let mut state = state_with(request);
+    let mut state = state_with_details(request, None, None);
     let created = create_response_created_event(&mut state, &sources(10, &["u"]))
         .expect("the created event builds");
-    let response = field(&event_json(&created), "response");
+    let response = field(
+        &json(&serde_json::to_string(&created).expect("the event serializes")),
+        "response",
+    );
     let expected = with_fields(
         expected_response(DEFAULTS_ID, 10),
         &[
@@ -122,10 +131,13 @@ fn lifecycle_copies_supplied_request_fields() {
 
 #[test]
 fn lifecycle_keeps_whole_numbers_written_whole() {
-    let mut state = state_with(r#"{"top_p":1,"temperature":0}"#);
+    let mut state = state_with_details(r#"{"top_p":1,"temperature":0}"#, None, None);
     let created = create_response_created_event(&mut state, &sources(10, &["u"]))
         .expect("the created event builds");
-    let response = field(&event_json(&created), "response");
+    let response = field(
+        &json(&serde_json::to_string(&created).expect("the event serializes")),
+        "response",
+    );
     let expected = with_fields(
         expected_response(DEFAULTS_ID, 10),
         &[("top_p", "1"), ("temperature", "0")],
@@ -136,10 +148,13 @@ fn lifecycle_keeps_whole_numbers_written_whole() {
 #[test]
 fn lifecycle_ignores_request_values_with_fixed_defaults() {
     let request = r#"{"max_output_tokens":99,"parallel_tool_calls":false,"previous_response_id":"prev","reasoning":{"effort":"high"},"store":false}"#;
-    let mut state = state_with(request);
+    let mut state = state_with_details(request, None, None);
     let created = create_response_created_event(&mut state, &sources(10, &["u"]))
         .expect("the created event builds");
-    let response = field(&event_json(&created), "response");
+    let response = field(
+        &json(&serde_json::to_string(&created).expect("the event serializes")),
+        "response",
+    );
     assert_eq!(response, expected_response(DEFAULTS_ID, 10));
 }
 
@@ -151,7 +166,10 @@ fn lifecycle_encodes_ids_with_provider_and_model_metadata() {
     let mut state = state_with_details("{}", Some("azure"), Some(metadata));
     let created = create_response_created_event(&mut state, &sources(11, &["u"]))
         .expect("the created event builds");
-    let response = field(&event_json(&created), "response");
+    let response = field(
+        &json(&serde_json::to_string(&created).expect("the event serializes")),
+        "response",
+    );
     assert_eq!(
         response,
         expected_response(AZURE_ID, 11),
@@ -166,7 +184,13 @@ fn lifecycle_encodes_ids_when_the_metadata_has_no_model_id() {
     let created = create_response_in_progress_event(&mut state, &sources(10, &["u"]))
         .expect("the in-progress event builds");
     assert_eq!(
-        field(&field(&event_json(&created), "response"), "id"),
+        field(
+            &field(
+                &json(&serde_json::to_string(&created).expect("the event serializes")),
+                "response"
+            ),
+            "id"
+        ),
         Json::Text(DEFAULTS_ID.to_owned())
     );
 }
@@ -174,12 +198,18 @@ fn lifecycle_encodes_ids_when_the_metadata_has_no_model_id() {
 #[test]
 fn lifecycle_keeps_an_encoded_cached_id() {
     let encoded = build_response_id(Some("azure"), Some("deployment-1"), RAW_ID);
-    let mut state = state_with("{}");
+    let mut state = state_with_details("{}", None, None);
     state.progress.cached_response_id = Some(encoded.clone());
     let created = create_response_created_event(&mut state, &sources(10, &["unused"]))
         .expect("the created event builds");
     assert_eq!(
-        field(&field(&event_json(&created), "response"), "id"),
+        field(
+            &field(
+                &json(&serde_json::to_string(&created).expect("the event serializes")),
+                "response"
+            ),
+            "id"
+        ),
         Json::Text(encoded)
     );
 }
@@ -206,21 +236,32 @@ fn lifecycle_rejects_metadata_that_is_not_a_model_id() {
 
 #[test]
 fn lifecycle_rejects_a_request_that_is_not_an_object() {
-    let mut state = state_with("[]");
+    let mut state = state_with_details("[]", None, None);
     let result = create_response_created_event(&mut state, &sources(10, &["u"]));
     assert!(matches!(result, Err(StreamItemsError::ResponseNotObject)));
 }
 
 #[test]
 fn lifecycle_reports_request_fields_of_the_wrong_type() {
-    let mut state = state_with(r#"{"instructions":5}"#);
+    let mut state = state_with_details(r#"{"instructions":5}"#, None, None);
     let result = create_response_created_event(&mut state, &sources(10, &["u"]));
     assert!(matches!(result, Err(StreamItemsError::Response { .. })));
 }
 
 #[test]
+fn lifecycle_reports_a_clock_before_the_epoch() {
+    let mut state = state_with_details("{}", None, None);
+    let failing = EventSources {
+        clock: Arc::new(|| Err(StreamItemsError::ClockBeforeEpoch)),
+        ids: Arc::new(|| String::from("u")),
+    };
+    let result = create_response_created_event(&mut state, &failing);
+    assert!(matches!(result, Err(StreamItemsError::ClockBeforeEpoch)));
+}
+
+#[test]
 fn lifecycle_reports_sequence_overflow() {
-    let mut state = state_with("{}");
+    let mut state = state_with_details("{}", None, None);
     state.progress.sequence_number = i64::MAX;
     let result = create_response_created_event(&mut state, &sources(10, &["u"]));
     assert!(matches!(

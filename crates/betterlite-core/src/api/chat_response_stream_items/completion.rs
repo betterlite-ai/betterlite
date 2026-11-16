@@ -64,35 +64,22 @@ fn citation_extras(annotations: Option<&[ChatAnnotation]>) -> Vec<Extra> {
 }
 
 fn annotation_extra(annotation: &OutputAnnotation) -> Extra {
+    let text_json =
+        |value: Option<&str>| value.map_or(Json::Null, |text| Json::Text(text.to_owned()));
+    let number_json =
+        |value: Option<i64>| value.map_or(Json::Null, |number| Json::Number(Number::from(number)));
     let mut extra = Extra::from([
-        (
-            "type".to_owned(),
-            optional_text(annotation.r#type.as_deref()),
-        ),
+        ("type".to_owned(), text_json(annotation.r#type.as_deref())),
         (
             "start_index".to_owned(),
-            optional_number(annotation.start_index),
+            number_json(annotation.start_index),
         ),
-        (
-            "end_index".to_owned(),
-            optional_number(annotation.end_index),
-        ),
-        ("url".to_owned(), optional_text(annotation.url.as_deref())),
-        (
-            "title".to_owned(),
-            optional_text(annotation.title.as_deref()),
-        ),
+        ("end_index".to_owned(), number_json(annotation.end_index)),
+        ("url".to_owned(), text_json(annotation.url.as_deref())),
+        ("title".to_owned(), text_json(annotation.title.as_deref())),
     ]);
     for (key, value) in &annotation.extra {
         extra.insert(key.clone(), value.clone());
     }
     extra
-}
-
-fn optional_text(value: Option<&str>) -> Json {
-    value.map_or(Json::Null, |text| Json::Text(text.to_owned()))
-}
-
-fn optional_number(value: Option<i64>) -> Json {
-    value.map_or(Json::Null, |number| Json::Number(Number::from(number)))
 }

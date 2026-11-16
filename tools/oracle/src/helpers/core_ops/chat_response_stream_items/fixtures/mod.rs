@@ -52,8 +52,11 @@ impl StreamAssembly for AssemblyContext {
     ) -> Result<Option<Response>, AssemblyError> {
         let decoded = chunks
             .iter()
-            .map(decode_chunk)
-            .collect::<Result<Vec<Chunk>, _>>()?;
+            .map(|chunk| {
+                let value = serde_json::to_value(chunk)?;
+                serde_json::from_value(value).map_err(AssemblyError::from)
+            })
+            .collect::<Result<Vec<Chunk>, AssemblyError>>()?;
         let counter = ZeroCounter;
         let costs = NoCosts;
         let request = Request {
@@ -69,11 +72,6 @@ impl StreamAssembly for AssemblyContext {
         self.runtime
             .block_on(stream_chunk_builder(&request, &self.hooks))
     }
-}
-
-fn decode_chunk(chunk: &IndexMap<String, Json>) -> Result<Chunk, AssemblyError> {
-    let value = serde_json::to_value(chunk)?;
-    serde_json::from_value(value).map_err(AssemblyError::from)
 }
 
 pub(crate) fn failure(message: String) -> Box<HelperError> {

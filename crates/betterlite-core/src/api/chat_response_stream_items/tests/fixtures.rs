@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::responses_event_records::records::KnownResponseEvent;
 use betterlite_streaming::stream_chunk_shaping::records::JsonValue;
 use betterlite_streaming::stream_usage_assembly::wire::Usage;
 use betterlite_streaming::streamed_response_assembly::AssemblyError;
@@ -14,15 +13,12 @@ use indexmap::IndexMap;
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::chat_response_stream_tools::state::{ChatStreamState, StreamSetup};
 
+use super::super::error::StreamItemsError;
 use super::super::snapshot::StreamAssembly;
 use super::super::sources::EventSources;
 
 pub(super) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the fixture is JSON")
-}
-
-pub(super) fn state_with(request: &str) -> ChatStreamState<String> {
-    state_with_details(request, None, None)
 }
 
 pub(super) fn state_with_details(
@@ -47,20 +43,15 @@ pub(super) fn sources(now: i64, ids: &[&str]) -> EventSources {
     let queue: Arc<Mutex<VecDeque<String>>> =
         Arc::new(Mutex::new(ids.iter().map(|id| (*id).to_owned()).collect()));
     let next = Arc::clone(&queue);
-    EventSources::new(
-        Arc::new(move || now),
-        Arc::new(move || {
+    EventSources {
+        clock: Arc::new(move || Ok::<i64, StreamItemsError>(now)),
+        ids: Arc::new(move || {
             next.lock()
                 .expect("the id queue locks")
                 .pop_front()
                 .unwrap_or_default()
         }),
-    )
-}
-
-pub(super) fn event_json(event: &KnownResponseEvent) -> Json {
-    let text = serde_json::to_string(event).expect("the event serializes");
-    json(&text)
+    }
 }
 
 pub(super) fn field(value: &Json, name: &str) -> Json {
@@ -103,10 +94,6 @@ impl FixtureAssembly {
             response,
             received: Arc::new(Mutex::new(Vec::new())),
         }
-    }
-
-    pub(super) fn received(&self) -> Vec<Vec<IndexMap<String, Json>>> {
-        self.received.lock().expect("the calls lock").clone()
     }
 }
 

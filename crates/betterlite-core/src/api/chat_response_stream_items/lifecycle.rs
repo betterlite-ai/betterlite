@@ -47,7 +47,7 @@ fn lifecycle_response<Context>(
     let raw_id = match state.progress.cached_response_id.clone() {
         Some(response_id) => response_id,
         None => {
-            let response_id = format!("resp_{}", sources.next_id());
+            let response_id = format!("resp_{}", (sources.ids)());
             state.progress.cached_response_id = Some(response_id.clone());
             response_id
         }
@@ -97,7 +97,7 @@ fn response_data<Context>(
 ) -> Result<IndexMap<String, Json>, StreamItemsError> {
     let request =
         object(&state.responses_api_request).ok_or(StreamItemsError::ResponseNotObject)?;
-    let mut data = fixed_response_fields(state, sources);
+    let mut data = fixed_response_fields(state, (sources.clock)()?);
     for name in [
         "instructions",
         "temperature",
@@ -120,21 +120,24 @@ fn response_data<Context>(
     );
     data.insert(
         "top_p".to_owned(),
-        request.get("top_p").cloned().unwrap_or_else(default_top_p),
+        request
+            .get("top_p")
+            .cloned()
+            .unwrap_or_else(|| Number::from_f64(DEFAULT_TOP_P).map_or(Json::Null, Json::Number)),
     );
     Ok(data)
 }
 
 fn fixed_response_fields<Context>(
     state: &ChatStreamState<Context>,
-    sources: &EventSources,
+    created_at: i64,
 ) -> IndexMap<String, Json> {
     let mut data = IndexMap::new();
     data.insert("id".to_owned(), Json::Null);
     data.insert("object".to_owned(), Json::Text("response".to_owned()));
     data.insert(
         "created_at".to_owned(),
-        Json::Number(Number::from(sources.now())),
+        Json::Number(Number::from(created_at)),
     );
     data.insert("status".to_owned(), Json::Text("in_progress".to_owned()));
     data.insert("model".to_owned(), Json::Text(state.model.clone()));
@@ -150,10 +153,6 @@ fn default_reasoning() -> Json {
         ("effort".to_owned(), Json::Null),
         ("summary".to_owned(), Json::Null),
     ]))
-}
-
-fn default_top_p() -> Json {
-    Number::from_f64(DEFAULT_TOP_P).map_or(Json::Null, Json::Number)
 }
 
 fn decode_response(
