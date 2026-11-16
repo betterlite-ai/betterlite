@@ -9,6 +9,8 @@ const DEFAULTED_WITH_EXTRA: &str =
     r#"{"model":"m","training_file":"f","prompt_loss_weight":0.1,"trainingType":1}"#;
 const EXPLICIT_TRAINING_TYPE: &str =
     r#"{"model":"m","training_file":"f","extra_body":{"trainingType":2}}"#;
+const CREATE_ERROR: &str = r#"{"error":{"message":"bad job","type":"invalid_request_error","param":"training_file","code":"invalid"}}"#;
+const CANCEL_ERROR: &str = r#"{"error":{"message":"no such job","type":"invalid_request_error","param":null,"code":"not_found"}}"#;
 
 #[rstest]
 #[case::training_type_default(training_type_default)]
@@ -92,20 +94,20 @@ fn explicit_training_type() {
 }
 
 fn create_cancel_retrieve() {
-    let steps = create_cancel_retrieve_steps();
+    let (steps, expected) = create_cancel_retrieve_plan();
     let actual: Vec<Observation> = steps.iter().map(run).collect();
-    assert_eq!(actual, create_cancel_retrieve_expected());
-    create_logs_only_the_sync_create();
+    assert_eq!(actual, expected);
+    debug_logs_only_on_sync_paths();
 }
 
-fn create_cancel_retrieve_steps() -> Vec<Step> {
+fn create_cancel_retrieve_plan() -> (Vec<Step>, Vec<Observation>) {
     let queued = job_json("queued", ORG, "[]");
     let cancelled = job_json("cancelled", ORG, "[]");
     let null_error = job_json("queued", ORG, "[]").replace(
         r#""error":null"#,
         r#""error":{"code":null,"message":null,"param":null}"#,
     );
-    vec![
+    let steps = vec![
         create(NO_TRAINING_TYPE, &null_error),
         async_(create(
             r#"{"model":"m","training_file":"f","seed":4}"#,
@@ -113,13 +115,8 @@ fn create_cancel_retrieve_steps() -> Vec<Step> {
         )),
         retrieve("ft_retrieve", &queued),
         async_(cancel("ft_cancel", &cancelled)),
-    ]
-}
-
-fn create_cancel_retrieve_expected() -> Vec<Observation> {
-    let queued = job_json("queued", ORG, "[]");
-    let cancelled = job_json("cancelled", ORG, "[]");
-    vec![
+    ];
+    let expected = vec![
         job_observation(&queued, vec![canonical_create(DEFAULTED)]),
         job_observation(&queued, vec![canonical_create(DEFAULTED_SEEDED)]),
         job_observation(
@@ -134,27 +131,40 @@ fn create_cancel_retrieve_expected() -> Vec<Observation> {
                 job_id: "ft_cancel".to_owned(),
             }],
         ),
-    ]
+    ];
+    (steps, expected)
 }
 
-fn create_logs_only_the_sync_create() {
+fn debug_logs_only_on_sync_paths() {
     let queued = job_json("queued", ORG, "[]");
-    let (_, sync_messages) = capture(|| run(&create(NO_TRAINING_TYPE, &queued)));
-    assert!(
-        sync_messages
-            .iter()
-            .any(|message| message.starts_with(DEBUG_CREATE))
-    );
-    let (_, async_messages) = capture(|| {
+    let (_, sync_create) = capture(|| run(&create(NO_TRAINING_TYPE, &queued)));
+    let (_, async_create) = capture(|| {
         run(&async_(create(
             r#"{"model":"m","training_file":"f","seed":4}"#,
             &queued,
         )))
     });
+    let (_, sync_list) = capture(|| run(&after(list(&queued), "ft_1", 7)));
+    let (_, async_list) = capture(|| run(&async_(after(list(&queued), "ft_2", 3))));
     assert!(
-        !async_messages
+        sync_create
             .iter()
             .any(|message| message.starts_with(DEBUG_CREATE))
+    );
+    assert!(
+        !async_create
+            .iter()
+            .any(|message| message.starts_with(DEBUG_CREATE))
+    );
+    assert!(
+        sync_list
+            .iter()
+            .any(|message| message.starts_with(DEBUG_LIST))
+    );
+    assert!(
+        !async_list
+            .iter()
+            .any(|message| message.starts_with(DEBUG_LIST))
     );
 }
 
@@ -307,64 +317,42 @@ fn wrong_async_steps() -> [Step; 4] {
 }
 
 fn sdk_error_passthrough() {
-    create_error_keeps_its_fields();
-    cancel_error_keeps_its_fields();
+    sdk_errors_keep_their_fields();
     list_replies_are_passed_through();
-    list_logs_only_the_sync_list();
+    debug_logs_only_on_sync_paths();
     unknown_status_is_a_validation_error();
 }
 
-fn create_error_keeps_its_fields() {
+fn sdk_errors_keep_their_fields() {
     let queued = job_json("queued", ORG, "[]");
-    let invalid = failure(
-        400,
-        r#"{"error":{"message":"bad job","type":"invalid_request_error","param":"training_file","code":"invalid"}}"#,
-    );
     let created = Step {
-        reply: Some(invalid),
+        reply: Some(failure(400, CREATE_ERROR)),
         ..create(NO_TRAINING_TYPE, &queued)
     };
-    let raised = status_raised(
-        400,
-        "bad job",
-        "invalid_request_error",
-        Some("training_file"),
-        "invalid",
+    assert_sdk_error(
+        &created,
+        status_raised(400, "bad job", Some("training_file"), "invalid"),
+        vec![canonical_create(DEFAULTED)],
     );
-    assert_eq!(
-        run(&created),
-        Observation {
-            outcome: Outcome::Raised(raised),
-            calls: vec![canonical_create(DEFAULTED)],
-            supplied_calls: Vec::new(),
-        }
+    let cancelled = Step {
+        reply: Some(failure(404, CANCEL_ERROR)),
+        ..cancel("ft_cancel", &queued)
+    };
+    assert_sdk_error(
+        &cancelled,
+        status_raised(404, "no such job", None, "not_found"),
+        vec![Call::Cancel {
+            job_id: "ft_cancel".to_owned(),
+        }],
     );
 }
 
-fn cancel_error_keeps_its_fields() {
-    let queued = job_json("queued", ORG, "[]");
-    let missing = failure(
-        404,
-        r#"{"error":{"message":"no such job","type":"invalid_request_error","param":null,"code":"not_found"}}"#,
-    );
-    let cancelled = Step {
-        reply: Some(missing),
-        ..cancel("ft_cancel", &queued)
-    };
-    let raised = status_raised(
-        404,
-        "no such job",
-        "invalid_request_error",
-        None,
-        "not_found",
-    );
+fn assert_sdk_error(step: &Step, error: Raised, calls: Vec<Call>) {
     assert_eq!(
-        run(&cancelled),
+        run(step),
         Observation {
-            outcome: Outcome::Raised(raised),
-            calls: vec![Call::Cancel {
-                job_id: "ft_cancel".to_owned(),
-            }],
+            outcome: Outcome::Raised(error),
+            calls,
             supplied_calls: Vec::new(),
         }
     );
@@ -398,22 +386,6 @@ fn list_replies_are_passed_through() {
     );
 }
 
-fn list_logs_only_the_sync_list() {
-    let page_value = page(&job_json("queued", ORG, "[]"), true);
-    let (_, sync_messages) = capture(|| run(&after(list(&page_value), "ft_1", 7)));
-    assert!(
-        sync_messages
-            .iter()
-            .any(|message| message.starts_with(DEBUG_LIST))
-    );
-    let (_, async_messages) = capture(|| run(&async_(after(list(&page_value), "ft_2", 3))));
-    assert!(
-        !async_messages
-            .iter()
-            .any(|message| message.starts_with(DEBUG_LIST))
-    );
-}
-
 fn raised_value(message: &str) -> Observation {
     Observation {
         outcome: Outcome::Raised(Raised {
@@ -440,18 +412,12 @@ fn validation_raised() -> Raised {
     }
 }
 
-fn status_raised(
-    status: u16,
-    message: &str,
-    error_type: &str,
-    param: Option<&str>,
-    code: &str,
-) -> Raised {
+fn status_raised(status: u16, message: &str, param: Option<&str>, code: &str) -> Raised {
     Raised {
         class: "APIStatusError",
         message: Some(message.to_owned()),
         status: Some(status),
-        error_type: Some(error_type.to_owned()),
+        error_type: Some("invalid_request_error".to_owned()),
         param: param.map(str::to_owned),
         code: Some(code.to_owned()),
     }

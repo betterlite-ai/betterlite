@@ -36,8 +36,8 @@ fn v1_key(key: Option<&V1Key<'_>>) -> Option<String> {
     }
 }
 
-pub(crate) fn projection(outcome: &ClientOutcome<'_>) -> Value {
-    let (api_key, max_retries, timeout) = match outcome.inputs.as_ref() {
+fn client_inputs(outcome: &ClientOutcome<'_>) -> (Option<String>, Option<i64>, Option<f64>) {
+    match outcome.inputs.as_ref() {
         Some(ClientInputs::Azure(azure)) => (
             azure
                 .api_key
@@ -50,7 +50,11 @@ pub(crate) fn projection(outcome: &ClientOutcome<'_>) -> Value {
             (v1_key(v1.key.as_ref()), Some(v1.max_retries), v1.timeout)
         }
         None => (None, None, None),
-    };
+    }
+}
+
+pub(crate) fn projection(outcome: &ClientOutcome<'_>) -> Value {
+    let (api_key, max_retries, timeout) = client_inputs(outcome);
     json!({
         "class": class_name(outcome.kind),
         "api_key": api_key,

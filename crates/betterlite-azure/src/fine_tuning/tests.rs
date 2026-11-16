@@ -298,12 +298,11 @@ fn settings() -> ClientSettings {
 }
 
 fn ignored_settings() -> ClientSettings {
-    ClientSettings {
-        timeout: Some(7.5),
-        max_retries: Some(7),
-        organization: Some("org-x".to_owned()),
-        ..settings()
-    }
+    let mut settings = settings();
+    settings.timeout = Some(7.5);
+    settings.max_retries = Some(7);
+    settings.organization = Some("org-x".to_owned());
+    settings
 }
 
 fn step(action: Action) -> Step {
