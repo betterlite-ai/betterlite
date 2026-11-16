@@ -65,7 +65,7 @@ fn json_matches_the_direct_fields() {
     assert_eq!(dumped.get("id"), Some(&Json::Text(video.id.clone())));
     assert_eq!(
         dumped.get("usage"),
-        Some(&Json::Object(video.usage.clone().unwrap()))
+        Some(&Json::Object(video.usage.unwrap()))
     );
 }
 
@@ -159,4 +159,10 @@ fn video_object_defaults_missing_optional_fields() {
             .to_string()
             .contains("missing field `object`")
     );
+}
+
+#[test]
+fn json_new_matches_the_decoded_defaults() {
+    let built = VideoObject::new("video_1".to_owned(), "queued".to_owned());
+    assert_eq!(built, video("video_1"));
 }

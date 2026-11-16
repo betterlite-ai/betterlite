@@ -63,12 +63,12 @@ pub fn extract_model_from_target_model_names(
 
 // None is LiteLLM's answer for an object whose id is an explicit null: get("id", "") hands the null back.
 pub fn video_reference_to_id(video_reference: &Json) -> Result<Option<String>, VideoRecordError> {
-    let text = match video_reference {
+    let raw = match video_reference {
         Json::Text(text) => Some(text),
         Json::Object(_) | Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
     };
-    let parsed = text.and_then(|text| serde_json::from_str::<Json>(text).ok());
-    let fields = match video_reference {
+    let parsed = raw.and_then(|text| serde_json::from_str::<Json>(text).ok());
+    let object_fields = match video_reference {
         Json::Object(fields) => Some(fields),
         Json::Text(_) => match parsed.as_ref() {
             Some(Json::Object(fields)) => Some(fields),
@@ -77,8 +77,8 @@ pub fn video_reference_to_id(video_reference: &Json) -> Result<Option<String>, V
         },
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
     };
-    let Some(fields) = fields else {
-        return Ok(Some(text.cloned().unwrap_or_default()));
+    let Some(fields) = object_fields else {
+        return Ok(Some(raw.cloned().unwrap_or_default()));
     };
     match fields.get(ID_FIELD) {
         Some(Json::Text(id)) => Ok(Some(id.clone())),

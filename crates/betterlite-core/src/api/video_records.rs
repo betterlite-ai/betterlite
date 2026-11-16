@@ -39,6 +39,29 @@ pub struct VideoObject {
     pub hidden_params: IndexMap<String, Json>,
 }
 
+impl VideoObject {
+    // The three required fields with every optional one at its LiteLLM default of None and no hidden params.
+    #[must_use]
+    pub fn new(id: String, status: String) -> Self {
+        Self {
+            id,
+            object: VideoKind::Video,
+            status,
+            created_at: None,
+            completed_at: None,
+            expires_at: None,
+            error: None,
+            progress: None,
+            remixed_from_video_id: None,
+            seconds: None,
+            size: None,
+            model: None,
+            usage: None,
+            hidden_params: IndexMap::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CharacterObject {
     pub id: String,
