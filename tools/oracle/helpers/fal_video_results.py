@@ -253,7 +253,7 @@ def unsupported_report() -> JsonValue:
         ),
         attempted(
             "character_get",
-            partial(get_character, "character-1", REQUEST_ID, BASE, params, headers),
+            partial(get_character, "character-1", BASE, params, headers),
         ),
         attempted("edit", partial(edit, PROMPT, REQUEST_ID, BASE, params, headers)),
         attempted("extension", partial(extension, PROMPT, REQUEST_ID, "4", BASE, params, headers)),

@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_core::api::fal::video_results::transport::VideoTransport;
@@ -16,8 +16,9 @@ pub(crate) struct ScriptedTransport {
 
 impl ScriptedTransport {
     pub(crate) fn new(status: Option<u16>, body: &[u8]) -> Self {
+        let reply = status.map(|answer| (answer, body.to_vec()));
         Self {
-            reply: status.map(|status| (status, body.to_vec())),
+            reply,
             requests: Mutex::default(),
         }
     }
@@ -53,7 +54,7 @@ impl VideoTransport for ScriptedTransport {
         headers: HeaderMap,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.record(&url, &headers);
-        std::future::ready(match &self.reply {
+        ready(match &self.reply {
             Some((status, body)) => Ok(UpstreamResponse {
                 status: *status,
                 headers: HeaderMap::new(),

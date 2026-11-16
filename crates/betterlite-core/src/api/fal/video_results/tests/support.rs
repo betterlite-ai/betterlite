@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -16,7 +16,7 @@ use betterlite_openai::videos::reply::VideoObject;
 use http::header::HeaderMap;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 use tokio::time::sleep;
 use url::Url;
 
@@ -103,7 +103,7 @@ impl VideoTransport for FakeTransport {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .expect("the test scripts one answer per request");
-        std::future::ready(match step {
+        ready(match step {
             Step::Answer(status, body) => Ok(UpstreamResponse {
                 status,
                 headers: HeaderMap::new(),
@@ -203,7 +203,7 @@ pub(crate) fn run_status(
     block_on_status(&clients, kind, None, call)
 }
 
-fn runtime() -> tokio::runtime::Runtime {
+fn runtime() -> Runtime {
     Builder::new_current_thread()
         .enable_all()
         .build()

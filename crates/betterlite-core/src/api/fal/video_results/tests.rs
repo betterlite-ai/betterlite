@@ -19,7 +19,9 @@ use super::status::{
     StatusCall, StatusRequest, result_request, status_response, status_video_object,
 };
 use super::text::{error_text, result_error, terminal_result_error};
-use super::transport::{ClientKind, SuppliedTransport, VideoClients, VideoTransport, header_map};
+use super::transport::{
+    ClientKind, SuppliedTransport, VideoClients, VideoTransport as _, header_map,
+};
 use super::unsupported::{ALL, UnsupportedOperation};
 use crate::api::fal::video_prepare::VideoHeaders;
 use crate::api::fal::video_prepare::decode::decode_fal_video_reply;

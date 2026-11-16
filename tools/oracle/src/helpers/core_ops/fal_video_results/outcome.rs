@@ -13,7 +13,7 @@ use betterlite_openai::videos::reply::VideoObject;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Value, json};
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 use url::Url;
 
 use super::input::{ContentCase, StatusCase};
@@ -160,7 +160,7 @@ pub(crate) fn unsupported_report() -> Value {
     json!({"operations": operations})
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
+fn runtime() -> Result<Runtime, Box<HelperError>> {
     Builder::new_current_thread()
         .enable_all()
         .build()
