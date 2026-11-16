@@ -3,7 +3,7 @@ name: openai-assistant-dispatch-threads
 call:
   openai_assistant_dispatch:
     kind: threads
-    operation: create
+    operation: create_thread
     api_base: https://example.test/v1
     api_key: sk-fixture
     data:
@@ -16,7 +16,7 @@ call:
 calls:
   - openai_assistant_dispatch:
       kind: threads
-      operation: retrieve
+      operation: retrieve_thread
       api_base: https://example.test/v1
       api_key: sk-fixture
       thread_id: thread_1
@@ -81,7 +81,7 @@ calls:
             has_more: false
   - openai_assistant_dispatch:
       kind: threads
-      operation: retrieve
+      operation: retrieve_thread
       api_base: https://example.test/v1
       api_key: null
       thread_id: thread_1

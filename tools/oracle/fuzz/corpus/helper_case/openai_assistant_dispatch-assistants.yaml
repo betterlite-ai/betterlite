@@ -3,7 +3,7 @@ name: openai-assistant-dispatch-assistants-seed
 call:
   openai_assistant_dispatch:
     kind: assistants
-    operation: async_list
+    operation: list_assistants
     api_base: "https://example.test/v1"
     api_key: sk-fixture
     params: {order: asc, limit: 5, before: null, after: null}

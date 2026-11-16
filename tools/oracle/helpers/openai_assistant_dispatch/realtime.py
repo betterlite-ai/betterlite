@@ -11,38 +11,52 @@ from typing_extensions import override
 from websockets import exceptions as websockets_exceptions
 from websockets import frames as websockets_frames
 from websockets.asyncio import client as websockets_client
+from websockets.datastructures import Headers
+from websockets.exceptions import InvalidStatus
+from websockets.http11 import Response
 
-from .types import FAILURE, JSON, ClientSocket, Input, RealtimeCall, RealtimeRunner, SslValue
+from .support import ClientSocket, Input, RealtimeCall, RealtimeRunner, SslValue
 
-REAL_WEBSOCKETS: ModuleType = sys.modules["websockets"]
 RUNNER: RealtimeRunner = OpenAIRealtime()
+REAL_WEBSOCKETS: ModuleType = sys.modules["websockets"]
 
 
-class Server(ClientSocket):
+class ProxyClient(ClientSocket):
     def __init__(self, input_value: Input) -> None:
-        self.input_value = input_value
-        self.scope = {
+        self.scope: dict[str, list[tuple[bytes, bytes]]] = {
             "headers": [
                 (name.encode("latin-1"), value.encode("latin-1"))
                 for name, value in input_value["scope_headers"]
             ]
         }
-        self.url: str | None = None
-        self.headers: dict[str, str] | None = None
-        self.max_size: int | None = None
-        self.ssl: SslValue = None
+        self.close_error = input_value["close_error"]
         self.sent: list[str] = []
         self.closed: dict[str, JsonValue] | None = None
 
-    def connect(self, url: str, *, additional_headers: dict[str, str], max_size: int | None, ssl: SslValue) -> Self:
-        self.url = url
-        self.headers = additional_headers
-        self.max_size = max_size
-        self.ssl = ssl
-        return self
+    @override
+    async def send_text(self, data: str) -> None:
+        self.sent.append(data)
+
+    @override
+    async def receive_text(self) -> str:
+        raise ConnectionError("the proxy client never sends a frame")
+
+    @override
+    async def close(self, code: int = 1000, reason: str | None = None) -> None:
+        self.closed = {"code": code, "reason": reason}
+        if self.close_error is not None:
+            raise RuntimeError(self.close_error)
+
+
+# The upstream refuses the handshake with the case's status, or fails with "stop" once it is open.
+class Upstream:
+    def __init__(self, handshake_status: int | None) -> None:
+        self.handshake_status = handshake_status
 
     async def __aenter__(self) -> Self:
-        raise RuntimeError(FAILURE)
+        if self.handshake_status is None:
+            raise RuntimeError("stop")
+        raise InvalidStatus(Response(self.handshake_status, "Handshake rejected", Headers()))
 
     async def __aexit__(
         self,
@@ -51,54 +65,37 @@ class Server(ClientSocket):
         _traceback: TracebackType | None,
     ) -> None: ...
 
-    @override
-    async def send_text(self, data: str) -> None:
-        self.sent.append(data)
-
-    @override
-    async def receive_text(self) -> str:
-        raise ConnectionError("the probe never reads a frame")
-
-    @override
-    async def close(self, code: int = 1000, reason: str | None = None) -> None:
-        self.closed = {"code": code, "reason": reason}
-        close_error = self.input_value["close_error"]
-        if close_error is not None:
-            raise RuntimeError(close_error)
-
 
 class FakeWebsockets(ModuleType):
     exceptions: ModuleType
     frames: ModuleType
     ClientConnection: type[websockets_client.ClientConnection]
 
-    def __init__(self, server: Server) -> None:
+    def __init__(self, handshake_status: int | None) -> None:
         super().__init__("websockets")
         self.exceptions = websockets_exceptions
         self.frames = websockets_frames
         self.ClientConnection = websockets_client.ClientConnection
-        self.server = server
+        self.handshake_status = handshake_status
+        self.session: dict[str, JsonValue] = {}
 
-    def connect(self, url: str, *, additional_headers: dict[str, str], max_size: int | None, ssl: SslValue) -> Server:
-        return self.server.connect(url, additional_headers=additional_headers, max_size=max_size, ssl=ssl)
-
-
-def ssl_kind(*, value: SslValue) -> str:
-    if value is None:
-        return "none"
-    if value is True:
-        return "insecure"
-    return "shared"
-
-
-def header_pairs(headers: dict[str, str] | None) -> list[JsonValue]:
-    if headers is None:
-        return []
-    pairs: list[JsonValue] = [[name, value] for name, value in sorted(headers.items())]
-    return pairs
+    def connect(
+        self,
+        url: str,
+        *,
+        additional_headers: dict[str, str],
+        max_size: int | None,
+        ssl: SslValue,
+    ) -> Upstream:
+        headers: list[JsonValue] = [
+            [name, value] for name, value in sorted(additional_headers.items())
+        ]
+        ssl_kind = "none" if ssl is None else "insecure" if ssl is True else "shared"
+        self.session = {"url": url, "headers": headers, "max_size": max_size, "ssl": ssl_kind}
+        return Upstream(self.handshake_status)
 
 
-async def probe(input_value: Input, server: Server) -> None:
+async def probe(input_value: Input, upstream: FakeWebsockets, client: ProxyClient) -> None:
     logging_obj = Logging(
         model=input_value["model"],
         messages=None,
@@ -111,7 +108,7 @@ async def probe(input_value: Input, server: Server) -> None:
     )
     call: RealtimeCall = {
         "model": input_value["model"],
-        "websocket": server,
+        "websocket": client,
         "logging_obj": logging_obj,
         "api_base": input_value["api_base"],
         "api_key": input_value["api_key"],
@@ -119,20 +116,15 @@ async def probe(input_value: Input, server: Server) -> None:
         "query_params": input_value["query_params"],
         "litellm_metadata": None,
     }
-    sys.modules["websockets"] = FakeWebsockets(server)
+    sys.modules["websockets"] = upstream
     try:
         await RUNNER.async_realtime(**call)
     finally:
         sys.modules["websockets"] = REAL_WEBSOCKETS
 
 
-def realtime_answer(input_value: Input) -> JsonValue:
-    server = Server(input_value)
-    asyncio.run(probe(input_value, server))
-    payload: dict[str, JsonValue] = {
-        "url": server.url,
-        "headers": header_pairs(server.headers),
-        "max_size": server.max_size,
-        "ssl": ssl_kind(value=server.ssl),
-    }
-    return JSON.validate_python(payload)
+def realtime_answer(input_value: Input) -> dict[str, JsonValue]:
+    upstream = FakeWebsockets(input_value["handshake_status"])
+    client = ProxyClient(input_value)
+    asyncio.run(probe(input_value, upstream, client))
+    return {"session": upstream.session, "closed": client.closed}

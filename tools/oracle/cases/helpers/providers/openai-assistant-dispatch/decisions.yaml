@@ -3,6 +3,7 @@ name: openai-assistant-dispatch-decisions
 call:
   openai_assistant_dispatch:
     kind: decisions
+    replies: []
     operation: request
     api_base: https://example.test/v1
     api_key: sk-fixture
@@ -22,6 +23,7 @@ call:
 calls:
   - openai_assistant_dispatch:
       kind: decisions
+      replies: []
       operation: request
       api_base: null
       api_key: null
@@ -33,6 +35,7 @@ calls:
           - {type: predicate, instructions: "Is it valid?"}
   - openai_assistant_dispatch:
       kind: decisions
+      replies: []
       operation: request
       api_base: null
       api_key: null
@@ -46,6 +49,7 @@ calls:
           - {type: predicate, instructions: "Is it valid?"}
   - openai_assistant_dispatch:
       kind: decisions
+      replies: []
       operation: response
       api_base: https://example.test/v1
       api_key: sk-fixture
@@ -64,6 +68,7 @@ calls:
       payload: '{"model":"gpt-4o","answers":[{"type":"predicate","name":"valid","probability":0.9},{"type":"choice","name":"kind","choice":"green","confidence":0.8,"probabilities":[{"value":"green","probability":0.8},{"value":"blue","probability":0.2}]}],"usage":{"input_tokens":3,"output_tokens":2,"input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0},"output_tokens_details":{"reasoning_tokens":0},"total_tokens":5}}'
   - openai_assistant_dispatch:
       kind: decisions
+      replies: []
       operation: response
       api_base: null
       api_key: null

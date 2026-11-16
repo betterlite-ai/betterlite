@@ -4,33 +4,56 @@ use betterlite_models::decisions::openai::DecisionRequestBody;
 use betterlite_openai::assistants::records::ListParams;
 use betterlite_openai::realtime::url::QueryParams;
 use betterlite_openai::thread_runs::records::RunRequest;
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::Value;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum Kind {
-    Assistants,
-    Threads,
-    Runs,
-    Decisions,
-    Realtime,
+pub(crate) enum AssistantsOp {
+    ListAssistants,
+    CreateAssistant,
+    DeleteAssistant,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum Operation {
-    AsyncList,
-    Create,
-    Delete,
-    Retrieve,
+pub(crate) enum ThreadsOp {
+    CreateThread,
+    RetrieveThread,
     AddMessage,
     ListMessages,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RunsOp {
     Buffered,
     Stream,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DecisionsOp {
     Request,
     Response,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RealtimeOp {
     Connect,
+}
+
+// Every operation name belongs to one family, so the name alone picks the family; the Python side routes on kind.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum Operation {
+    Assistants(AssistantsOp),
+    Threads(ThreadsOp),
+    Runs(RunsOp),
+    Decisions(DecisionsOp),
+    Realtime(RealtimeOp),
 }
 
 // LiteLLM reads the verification from SSL_VERIFY at import, so the case sets both this field and the variable.
@@ -40,35 +63,6 @@ pub(crate) enum SslVerification {
     #[default]
     Enabled,
     Disabled,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
-pub(crate) struct Params {
-    pub order: Option<String>,
-    pub limit: Option<i64>,
-    pub before: Option<String>,
-    pub after: Option<String>,
-}
-
-impl Params {
-    pub(crate) fn list_params(&self) -> ListParams {
-        ListParams {
-            order: self.order.clone(),
-            limit: self.limit,
-            before: self.before.clone(),
-            after: self.after.clone(),
-        }
-    }
-}
-
-// The caller's LiteLLM globals, which the decisions leaf consults before it reads the environment.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
-pub(crate) struct Globals {
-    pub api_base: Option<String>,
-    pub api_key: Option<String>,
-    pub openai_key: Option<String>,
 }
 
 // One canned upstream answer: a JSON body, an SSE text body or an error status with either.
@@ -92,35 +86,40 @@ impl Default for Reply {
     }
 }
 
+// A case names the fields its operation reads; the rest default, and neither side reads them.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct Input {
-    pub kind: Kind,
     pub operation: Operation,
     pub api_base: Option<String>,
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     #[serde(default)]
-    pub params: Params,
+    pub params: ListParams,
     pub aget_assistants: Option<bool>,
     #[serde(default)]
     pub arun_thread: bool,
-    pub data: Option<Value>,
+    #[serde(default)]
+    pub data: Value,
     pub request: Option<RunRequest>,
     pub decision: Option<DecisionRequestBody>,
-    pub payload: Option<String>,
-    pub model: Option<String>,
+    #[serde(default)]
+    pub payload: String,
+    #[serde(default)]
+    pub model: String,
     #[serde(default)]
     pub replies: Vec<Reply>,
-    pub assistant_id: Option<String>,
-    pub thread_id: Option<String>,
+    #[serde(default)]
+    pub assistant_id: String,
+    #[serde(default)]
+    pub thread_id: String,
     pub query_params: Option<QueryParams>,
     #[serde(default)]
     pub ssl_verification: SslVerification,
     #[serde(default)]
     pub openai_beta: bool,
     pub close_error: Option<String>,
-    pub max_message_size_bytes: Option<usize>,
+    pub handshake_status: Option<u16>,
     #[serde(default)]
-    pub globals: Globals,
+    pub max_message_size_bytes: usize,
     #[serde(default)]
     pub environment: BTreeMap<String, String>,
 }

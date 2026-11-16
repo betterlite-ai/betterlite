@@ -3,7 +3,7 @@ name: openai-assistant-dispatch-assistants
 call:
   openai_assistant_dispatch:
     kind: assistants
-    operation: async_list
+    operation: list_assistants
     api_base: https://example.test/v1
     api_key: sk-fixture
     params: {order: asc, limit: 5, before: b1, after: a1}
@@ -20,7 +20,7 @@ call:
 calls:
   - openai_assistant_dispatch:
       kind: assistants
-      operation: async_list
+      operation: list_assistants
       api_base: https://example.test/v1
       api_key: sk-fixture
       params: {order: asc, limit: 5, before: b1, after: a1}
@@ -36,7 +36,7 @@ calls:
             has_more: false
   - openai_assistant_dispatch:
       kind: assistants
-      operation: async_list
+      operation: list_assistants
       api_base: https://example.test/v1
       api_key: sk-fixture
       params: {order: desc, limit: 20, before: null, after: null}
@@ -52,7 +52,7 @@ calls:
             has_more: false
   - openai_assistant_dispatch:
       kind: assistants
-      operation: create
+      operation: create_assistant
       api_base: https://example.test/v1
       api_key: sk-fixture
       data: {model: gpt-4o, name: helper}
@@ -61,7 +61,7 @@ calls:
           body: {id: asst_1, object: assistant, created_at: 1, model: gpt-4o, name: helper, tools: []}
   - openai_assistant_dispatch:
       kind: assistants
-      operation: delete
+      operation: delete_assistant
       api_base: https://example.test/v1
       api_key: sk-fixture
       assistant_id: "a/b c"
@@ -70,7 +70,7 @@ calls:
           body: {id: asst_1, deleted: true, object: assistant.deleted}
   - openai_assistant_dispatch:
       kind: assistants
-      operation: create
+      operation: create_assistant
       api_base: https://example.test/v1
       api_key: sk-fixture
       data: {model: gpt-4o, name: helper}

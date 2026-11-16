@@ -1,7 +1,11 @@
+mod assistant;
+mod decision;
 mod input;
 mod project;
+mod realtime;
 mod run;
 mod tests;
+mod thread;
 mod wire;
 
 use betterlite_oracle_helper_api::error::HelperError;
@@ -13,7 +17,7 @@ impl Helper for Op {
     type Input = input::Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        run::invoke(input)
+        run::answer(input)
     }
 }
 

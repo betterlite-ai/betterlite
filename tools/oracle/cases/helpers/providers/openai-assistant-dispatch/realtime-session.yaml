@@ -3,6 +3,7 @@ name: openai-assistant-dispatch-realtime-session
 call:
   openai_assistant_dispatch:
     kind: realtime
+    replies: []
     operation: connect
     api_base: https://example.test/v1
     api_key: sk-fixture
@@ -12,10 +13,12 @@ call:
     scope_headers: [["OpenAI-Beta", "realtime=v1"]]
     ssl_verification: enabled
     close_error: null
+    handshake_status: null
     max_message_size_bytes: 4096
 calls:
   - openai_assistant_dispatch:
       kind: realtime
+      replies: []
       operation: connect
       api_base: http://127.0.0.1:8080
       api_key: sk-fixture
@@ -25,9 +28,11 @@ calls:
       scope_headers: []
       ssl_verification: enabled
       close_error: null
+      handshake_status: null
       max_message_size_bytes: 4096
   - openai_assistant_dispatch:
       kind: realtime
+      replies: []
       operation: connect
       api_base: https://example.test/v1
       api_key: null
@@ -37,9 +42,11 @@ calls:
       scope_headers: []
       ssl_verification: enabled
       close_error: null
+      handshake_status: null
       max_message_size_bytes: 4096
   - openai_assistant_dispatch:
       kind: realtime
+      replies: []
       operation: connect
       api_base: https://example.test/v1
       api_key: sk-fixture
@@ -49,6 +56,35 @@ calls:
       scope_headers: []
       ssl_verification: enabled
       close_error: socket gone
+      handshake_status: null
+      max_message_size_bytes: 4096
+  - openai_assistant_dispatch:
+      kind: realtime
+      replies: []
+      operation: connect
+      api_base: https://example.test/v1
+      api_key: sk-fixture
+      model: realtime-a
+      query_params: null
+      openai_beta: false
+      scope_headers: []
+      ssl_verification: enabled
+      close_error: "Unexpected ASGI message 'websocket.close', after sending 'websocket.close'"
+      handshake_status: null
+      max_message_size_bytes: 4096
+  - openai_assistant_dispatch:
+      kind: realtime
+      replies: []
+      operation: connect
+      api_base: https://example.test/v1
+      api_key: sk-fixture
+      model: realtime-a
+      query_params: null
+      openai_beta: false
+      scope_headers: []
+      ssl_verification: enabled
+      close_error: null
+      handshake_status: 403
       max_message_size_bytes: 4096
 env:
   REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "4096"

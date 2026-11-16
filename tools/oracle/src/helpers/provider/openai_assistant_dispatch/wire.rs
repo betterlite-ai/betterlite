@@ -36,7 +36,7 @@ impl Wire {
             .clone()
     }
 
-    fn record(&self, request: OutboundRequest) -> Reply {
+    fn record(&self, request: &OutboundRequest) -> Reply {
         let mut url = request.url.clone();
         merge_query(&mut url, &request.query);
         let body = match &request.body {
@@ -97,7 +97,7 @@ impl AssistantsTransport for Wire {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        let reply = self.record(request);
+        let reply = self.record(&request);
         ready(Ok(UpstreamResponse {
             status: reply.status,
             headers: answer_headers(&reply),
@@ -106,14 +106,19 @@ impl AssistantsTransport for Wire {
     }
 }
 
+// The proxied client reads an error status before any frame, so a refused open fails the open itself.
 impl RunStreamTransport for Wire {
-    async fn open(&self, request: OutboundRequest) -> Result<RunChunks, ThreadRunsError> {
-        let reply = self.record(request);
+    fn open(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<RunChunks, ThreadRunsError>> + Send {
+        let reply = self.record(&request);
         let body = answer_bytes(&reply);
         if reply.status >= 400 {
-            return Err(ThreadRunsError::Status(reply.status, body));
+            return ready(Err(ThreadRunsError::Status(reply.status, body)));
         }
         let frame: Result<Vec<u8>, ThreadRunsError> = Ok(body);
-        Ok(Box::pin(stream::iter([frame])))
+        let chunks: RunChunks = Box::pin(stream::iter([frame]));
+        ready(Ok(chunks))
     }
 }
