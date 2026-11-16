@@ -273,7 +273,8 @@ def answer_step(wrapper: Wrapper, logging_obj: Logging | None, step: Step) -> Js
             if (event := step.get("event")) is not None:
                 answer = wrapper.event_step(name, event)
         case "compaction":
-            answer = wrapper.compaction(step.get("calls", 0))
+            if (calls := step.get("calls")) is not None:
+                answer = wrapper.compaction(calls)
         case "delta_has_content":
             if (event := step.get("event")) is not None:
                 answer = wrapper.delta_has_content(event)
