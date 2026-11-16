@@ -32,15 +32,22 @@ pub(super) struct CaseLookup {
     entries: BTreeMap<String, PriceRecord>,
 }
 
+impl CaseLookup {
+    // litellm.model_cost holds a bare key and a provider-qualified one; the qualified key wins.
+    fn entry(&self, model: &str, custom_llm_provider: Option<&str>) -> Option<&PriceRecord> {
+        let scoped =
+            custom_llm_provider.and_then(|name| self.entries.get(&format!("{name}/{model}")));
+        scoped.or_else(|| self.entries.get(model))
+    }
+}
+
 impl PriceLookup for CaseLookup {
     fn effective_model_info(
         &self,
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        let scoped =
-            custom_llm_provider.and_then(|name| self.entries.get(&format!("{name}/{model}")));
-        scoped.or_else(|| self.entries.get(model)).cloned()
+        self.entry(model, custom_llm_provider).cloned()
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
@@ -52,12 +59,14 @@ impl PriceLookup for CaseLookup {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        Some(PricedModel {
-            record: self.effective_model_info(model, custom_llm_provider)?,
+        let record = self.entry(model, custom_llm_provider)?.clone();
+        let priced = PricedModel {
+            record,
             tiered_pricing: Vec::new(),
             off_peak_pricing: None,
             off_peak_cache_read_present: false,
-        })
+        };
+        Some(priced)
     }
 }
 
