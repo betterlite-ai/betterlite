@@ -3,7 +3,6 @@ use std::str::FromStr as _;
 use betterlite_models::decisions::Json;
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive as _;
 use serde_json::Number;
 
 use super::{SUPPORTED_OPENAI_PARAMS, VideoParams};
@@ -33,11 +32,11 @@ pub fn map_openai_params(options: &VideoParams) -> VideoParams {
     mapped
 }
 
-// _duration_param: int() of a number or of float() of a text, and a failed conversion drops the duration
+// _duration_param: int() of a number or of float() of a text, and a failed conversion drops the duration; the double is truncated before it is widened so a value just under a whole number stays below it
 fn duration_value(seconds: &Json) -> Option<Json> {
     let duration = match seconds {
         Json::Number(number) => number_decimal(number)?,
-        Json::Text(text) => Decimal::from_f64(text.trim().parse::<f64>().ok()?)?,
+        Json::Text(text) => Decimal::from_f64_retain(text.trim().parse::<f64>().ok()?.trunc())?,
         Json::Bool(flag) => Decimal::from(u8::from(*flag)),
         Json::Null | Json::List(_) | Json::Object(_) => return None,
     };
@@ -54,7 +53,7 @@ fn duration_value(seconds: &Json) -> Option<Json> {
 fn number_decimal(number: &Number) -> Option<Decimal> {
     let text = number.to_string();
     if text.contains(['.', 'e', 'E']) {
-        return Decimal::from_f64(number.as_f64()?);
+        return Decimal::from_f64_retain(number.as_f64()?.trunc());
     }
     parse_decimal_lexeme(&text).ok()
 }

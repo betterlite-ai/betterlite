@@ -10,30 +10,30 @@ const RESOLUTION_TIERS: [(u128, &str); 3] =
 // _ratio_to_resolution: a colon ratio whose sides are all ASCII digits, compared against the strict area limits
 #[must_use]
 pub fn ratio_to_resolution(ratio: Option<&Json>) -> Option<&'static str> {
-    let Some(Json::Text(ratio)) = ratio else {
+    let Some(Json::Text(ratio_text)) = ratio else {
         return None;
     };
-    let (width, height) = ratio.split_once(':')?;
-    if width.is_empty()
-        || height.is_empty()
-        || !width.bytes().all(|byte| byte.is_ascii_digit())
-        || !height.bytes().all(|byte| byte.is_ascii_digit())
+    let (width_text, height_text) = ratio_text.split_once(':')?;
+    if width_text.is_empty()
+        || height_text.is_empty()
+        || !width_text.bytes().all(|byte| byte.is_ascii_digit())
+        || !height_text.bytes().all(|byte| byte.is_ascii_digit())
     {
         return None;
     }
     // a side of zeros is a zero area, and a side too long for u128 is far past every tier
-    let width = width.trim_start_matches('0');
-    let height = height.trim_start_matches('0');
-    if width.is_empty() || height.is_empty() {
+    let width_digits = width_text.trim_start_matches('0');
+    let height_digits = height_text.trim_start_matches('0');
+    if width_digits.is_empty() || height_digits.is_empty() {
         return Some("480p");
     }
-    let area = match (width.parse::<u128>(), height.parse::<u128>()) {
-        (Ok(width), Ok(height)) => width.checked_mul(height),
+    let area = match (width_digits.parse::<u128>(), height_digits.parse::<u128>()) {
+        (Ok(width_pixels), Ok(height_pixels)) => width_pixels.checked_mul(height_pixels),
         _ => None,
     };
     let resolution = RESOLUTION_TIERS
         .iter()
-        .find(|(limit, _)| area.is_some_and(|area| area < *limit))
+        .find(|(limit, _)| area.is_some_and(|pixels| pixels < *limit))
         .map_or("4k", |(_, label)| *label);
     Some(resolution)
 }
@@ -53,9 +53,9 @@ pub fn estimated_cost_usd(credits: Option<&Json>) -> Option<Json> {
 // _progress_percent: half-even rounding of the decimal share, clamped to whole percent
 #[must_use]
 pub fn progress_percent(progress: f64) -> i64 {
-    let scaled =
+    let scaled_share =
         Decimal::from_f64(progress).and_then(|value| value.checked_mul(Decimal::ONE_HUNDRED));
-    let Some(scaled) = scaled else {
+    let Some(percent) = scaled_share else {
         // a share Decimal cannot hold keeps its sign, and a NaN share counts as no progress
         return if progress.is_nan() || progress.is_sign_negative() {
             0
@@ -63,7 +63,7 @@ pub fn progress_percent(progress: f64) -> i64 {
             100
         };
     };
-    let rounded = scaled.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
+    let rounded = percent.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
     // the clamp leaves a whole number in range, so the conversion always fits
     rounded
         .clamp(Decimal::ZERO, Decimal::ONE_HUNDRED)

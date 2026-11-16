@@ -2,12 +2,12 @@ use betterlite_models::decisions::Json;
 use betterlite_models::savings_evidence::billed_at::decode_billed_at;
 use betterlite_openai::openai_video_identifiers::ids::encode_video_id_with_provider;
 use betterlite_openai::videos::reply::{VideoObject, VideoObjectType, duration_usage};
-use serde_json::json;
+use serde_json::{Map, Value, json};
 
 use super::VideoParams;
 use super::error::RunwayVideoError;
 use super::usage::{estimated_cost_usd, ratio_to_resolution};
-use crate::api::runway::tasks::record::{TaskValue, decode_runway_task};
+use crate::api::runway::tasks::record::{RunwayTask, TaskValue, decode_runway_task};
 
 const DEFAULT_STATUS: &str = "pending";
 const DEFAULT_FAILURE_CODE: &str = "unknown";
@@ -51,6 +51,50 @@ fn duration_text(value: &Json) -> Option<String> {
     }
 }
 
+// the request's model, ratio and duration come back as the video's model, size and seconds
+fn copy_request_fields(video: &mut VideoObject, request_data: &VideoParams) {
+    if let Some(Json::Text(requested_model)) = request_data.get("model") {
+        video.model = Some(requested_model.clone());
+    }
+    if let Some(Json::Text(ratio)) = request_data.get("ratio")
+        && ratio.contains(':')
+    {
+        video.size = Some(ratio.replace(':', "x"));
+    }
+    if let Some(duration) = request_data.get("duration") {
+        video.seconds = duration_text(duration).map(|text| json!(text));
+    }
+}
+
+// the error object exists once the task carries either failure field, and each missing one takes its default
+fn failure_error(task: &RunwayTask) -> Option<Map<String, Value>> {
+    if matches!(task.failure_code, TaskValue::Missing) && matches!(task.failure, TaskValue::Missing)
+    {
+        return None;
+    }
+    let error = json!({
+        "code": task.failure_code.or_default(DEFAULT_FAILURE_CODE),
+        "message": task.failure.or_default(DEFAULT_FAILURE_MESSAGE),
+    });
+    error.as_object().cloned()
+}
+
+// the duration usage plus the resolution of the requested ratio and the provider's reported cost
+fn usage_map(
+    video: &VideoObject,
+    task: &RunwayTask,
+    request_data: &VideoParams,
+) -> Map<String, Value> {
+    let mut usage = duration_usage(video);
+    if let Some(resolution) = ratio_to_resolution(request_data.get("ratio")) {
+        usage.insert("video_resolution".to_owned(), json!(resolution));
+    }
+    if let Some(usd) = estimated_cost_usd(task.estimated_credits()) {
+        usage.insert("provider_reported_cost_usd".to_owned(), json!(usd));
+    }
+    usage
+}
+
 // transform_video_create_response: the task record becomes a VideoObject, and pydantic drops the output URL it cannot declare
 pub fn create_response(
     model: &str,
@@ -69,7 +113,7 @@ pub fn create_response(
             .value()
             .map(|timestamp| parse_timestamp(Some(timestamp))),
         expires_at: None,
-        error: None,
+        error: failure_error(&task),
         progress: None,
         remixed_from_video_id: None,
         seconds: None,
@@ -77,36 +121,10 @@ pub fn create_response(
         model: None,
         usage: None,
     };
-    if let Some(Json::Text(requested_model)) = request_data.get("model") {
-        video.model = Some(requested_model.clone());
-    }
-    if let Some(Json::Text(ratio)) = request_data.get("ratio")
-        && ratio.contains(':')
-    {
-        video.size = Some(ratio.replace(':', "x"));
-    }
-    if let Some(duration) = request_data.get("duration") {
-        video.seconds = duration_text(duration).map(|text| json!(text));
-    }
-    if !matches!(task.failure_code, TaskValue::Missing)
-        || !matches!(task.failure, TaskValue::Missing)
-    {
-        let error = json!({
-            "code": task.failure_code.or_default(DEFAULT_FAILURE_CODE),
-            "message": task.failure.or_default(DEFAULT_FAILURE_MESSAGE),
-        });
-        video.error = error.as_object().cloned();
-    }
+    copy_request_fields(&mut video, request_data);
     if let Some(name) = provider {
         video.id = encode_video_id_with_provider(&video.id, name, Some(model));
     }
-    let mut usage = duration_usage(&video);
-    if let Some(resolution) = ratio_to_resolution(request_data.get("ratio")) {
-        usage.insert("video_resolution".to_owned(), json!(resolution));
-    }
-    if let Some(usd) = estimated_cost_usd(task.estimated_credits()) {
-        usage.insert("provider_reported_cost_usd".to_owned(), json!(usd));
-    }
-    video.usage = Some(usage);
+    video.usage = Some(usage_map(&video, &task, request_data));
     Ok(video)
 }
