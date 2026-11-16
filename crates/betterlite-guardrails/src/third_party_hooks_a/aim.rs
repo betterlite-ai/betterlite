@@ -10,7 +10,6 @@ use crate::aim::settings::{AimGuardrail, AimHook};
 use crate::content_inspection::NON_CONVERSATIONAL_CALL_TYPES;
 use crate::lasso_masking::wire::ModelResponseShape;
 
-// Which request-side hook runs: LiteLLM's pre_call and moderation differ only in the hook they send.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AimRequestHook {
     PreCall,
@@ -26,9 +25,7 @@ impl AimRequestHook {
     }
 }
 
-// embeddings carry documents being indexed, not a conversation; Aim inspects them only when asked.
-// pre_call may rewrite the request in place; the during-call dispatch cannot rewrite, so moderation
-// inspects a copy and drops the anonymized result.
+// the during-call dispatch cannot rewrite the request, so moderation inspects a copy and drops the result
 pub async fn hook(
     guardrail: &AimGuardrail,
     data: &mut BTreeMap<String, GuardrailValue>,
@@ -74,7 +71,6 @@ pub async fn post_call_success(
     apply_results(response, &indexes, results)
 }
 
-// all choices are inspected at the same time; gather's return_exceptions keeps every call running
 async fn inspect_choices(
     guardrail: &AimGuardrail,
     data: &BTreeMap<String, GuardrailValue>,
@@ -90,7 +86,6 @@ async fn inspect_choices(
     futures_util::future::join_all(calls).await
 }
 
-// the calls already finished; their results are read in choice order, so the first blocking choice decides
 fn apply_results(
     response: &mut ModelResponseShape,
     indexes: &[usize],

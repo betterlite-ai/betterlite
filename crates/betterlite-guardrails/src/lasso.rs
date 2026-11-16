@@ -18,8 +18,7 @@ use wire::{
     ToolCallFields, ToolDefinition,
 };
 
-// What the classifix endpoint answers: the verdict the classify endpoint also gives, plus the masked
-// messages Lasso wants written back into the request.
+// the classifix answer: the verdict classify also gives, plus the masked messages to write back
 #[derive(Debug, Clone)]
 pub struct ClassifixAnswer {
     pub response: LassoResponse,
@@ -160,8 +159,8 @@ impl LassoGuardrail {
         payload: &LassoPayload,
         api_url: Option<&str>,
     ) -> Result<LassoResponse, LassoError> {
-        let body = self.call_body(headers, payload, api_url).await?;
-        serde_json::from_slice(&body).map_err(|source| LassoError::ResponseJson { source })
+        serde_json::from_slice(&self.call_body(headers, payload, api_url).await?)
+            .map_err(|source| LassoError::ResponseJson { source })
     }
 
     pub async fn call_classifix(

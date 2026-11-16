@@ -6,6 +6,7 @@ use betterlite_config::sections::legacy_guardrails::Settings;
 use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 use secrecy::ExposeSecret as _;
+use serde::Deserialize;
 
 use super::error::ThirdPartyHookError;
 use crate::guardrail_selection::gate::GuardrailSelection;
@@ -18,27 +19,23 @@ pub mod error;
 use body::{CheckBody, input_body, join_input_texts, messages_body};
 use error::{LakeraHookError, rejection_error};
 
-// LiteLLM reads enabled_roles from the litellm_settings.guardrails item named prompt_injection, not
-// from the lakera_prompt_injection name B3663's metadata gate knows the guardrail by
+// enabled_roles come from the item named prompt_injection, not the lakera_prompt_injection callback name
 const CONFIG_ITEM_NAME: &str = "prompt_injection";
 const PROMPT_INJECTION_PATH: &str = "/v1/prompt_injection";
 
-// What the caller decided before a hook runs: B3663's metadata answer and B3665's dynamic params.
 pub struct LakeraSelection<'call> {
     pub should_proceed: bool,
     pub dynamic_params: &'call (dyn GuardrailSelection + Send + Sync),
 }
 
-// How the guardrail was set up: Legacy is litellm_settings.callbacks with no event_hook, Checked is
-// a configured event_hook whose B3665 gate answer the caller supplies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LakeraGate {
     Legacy,
     Checked(bool),
 }
 
-// Which of LiteLLM's two hooks the caller is running.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LakeraHook {
     PreCall,
     Moderation,
@@ -70,8 +67,6 @@ impl LegacyLakeraHooks {
         }
     }
 
-    // LiteLLM's two hooks differ only in the legacy moderation_check they compare: pre_call runs
-    // unless in_parallel is set, moderation unless pre_call is set; the v2 gate skips both.
     pub async fn hook(
         &self,
         hook: LakeraHook,

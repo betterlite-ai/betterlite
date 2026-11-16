@@ -21,7 +21,6 @@ const BLOCKED_BY: &str = "Akto Proxy";
 const BLOCKED_MESSAGE: &str = "Blocked by Akto Guardrails";
 const JSON_CONTENT_TYPE: &str = "application/json";
 
-// the marker Akto's ingest reads for a request its guardrails blocked
 #[derive(Serialize)]
 struct BlockedMarker<'reason> {
     #[serde(rename = "x-blocked-by")]
@@ -47,8 +46,7 @@ pub async fn apply_guardrail(
     input_type: GuardrailInputType,
     event_hook: &LitellmParamsMode,
 ) -> Result<AktoInputs, ThirdPartyHookError> {
-    // HOOK_TO_INPUT maps a single pre_call or post_call mode to one input type; a list or tagged
-    // mode matches neither, so both input types run, as str(event_hook) does in LiteLLM
+    // HOOK_TO_INPUT holds only the single names pre_call and post_call, so a list or tagged mode runs both
     let handled = match event_hook {
         LitellmParamsMode::One(name) if name == "pre_call" => Some(GuardrailInputType::Request),
         LitellmParamsMode::One(name) if name == "post_call" => Some(GuardrailInputType::Response),
@@ -75,24 +73,13 @@ async fn check_request(
     let payload = build_akto_payload(guardrail, &inputs, request_data, REQUEST_STATUS, false)?;
     let verdict = match verdict_of(guardrail, &payload).await {
         Ok(verdict) => verdict,
-        // only a failed connection or an error status is an unreachable service; a malformed answer
-        // propagates as itself, as LiteLLM's except clause only catches httpx request and status errors
-        Err(error) => {
-            return match error {
-                error @ (AktoError::Transport { .. }
-                | AktoError::HttpStatus { .. }
-                | AktoError::InvalidHeader { .. }) => {
-                    Ok(guardrail.handle_unreachable(inputs, &error)?)
-                }
-                error @ (AktoError::MissingBaseUrl
-                | AktoError::MissingApiKey
-                | AktoError::Encode { .. }
-                | AktoError::ResponseTooLarge { .. }
-                | AktoError::ResponseJson { .. }
-                | AktoError::ResponseField { .. }
-                | AktoError::Unreachable) => Err(ThirdPartyHookError::Akto(error)),
-            };
-        }
+        // only a failed connection or an error status is unreachable; a malformed answer propagates as itself
+        Err(
+            error @ (AktoError::Transport { .. }
+            | AktoError::HttpStatus { .. }
+            | AktoError::InvalidHeader { .. }),
+        ) => return Ok(guardrail.handle_unreachable(inputs, &error)?),
+        Err(error) => return Err(ThirdPartyHookError::Akto(error)),
     };
     if verdict.allowed {
         return Ok(inputs);
@@ -110,7 +97,6 @@ async fn check_request(
     })
 }
 
-// the blocked request is mirrored for ingest only, and the rejection does not wait for that send
 fn block(
     guardrail: &AktoMirroring,
     inputs: &AktoInputs,
@@ -137,7 +123,6 @@ fn send_response(
     request_data: &BTreeMap<String, GuardrailValue>,
 ) -> Result<AktoInputs, ThirdPartyHookError> {
     let payload = build_akto_payload(guardrail, &inputs, request_data, REQUEST_STATUS, true)?;
-    // the response side never blocks: guardrails and ingest both run in the background
     let flags = AktoCallFlags {
         guardrails: true,
         ingest_data: true,
@@ -146,7 +131,6 @@ fn send_response(
     Ok(inputs)
 }
 
-// a background send never fails the request, so its task runs on the tracker the guardrail owns
 fn mirror_in_background(guardrail: &AktoMirroring, flags: AktoCallFlags, payload: AktoPayload) {
     let mirror = guardrail.clone();
     guardrail.tasks.spawn(async move {
@@ -166,7 +150,6 @@ async fn verdict_of(
     handle_guardrail_response(&answer)
 }
 
-// the payload the blocked mirror carries: responsePayload is the JSON text of {"body": <marker>}
 fn marker_body(reason: &str) -> Result<String, AktoError> {
     let marker = serde_json::to_string(&BlockedMarker {
         blocked_by: BLOCKED_BY,

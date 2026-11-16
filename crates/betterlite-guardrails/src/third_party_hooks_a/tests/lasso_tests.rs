@@ -6,6 +6,7 @@ use std::time::Duration;
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::lasso_classification::Configured;
+use rstest::rstest;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use ulid::Ulid;
@@ -169,6 +170,13 @@ async fn lasso_moderation_runs_the_prompt_check() {
     assert_eq!(body_of(&calls[0]).get("messageType"), Some(&text("PROMPT")));
 }
 
+async fn pre_call_hello(guardrail: &LassoGuardrail, cache: &TestCache) {
+    let mut data = chat_data(&[message("user", "hello")]);
+    lasso::hook(guardrail, &mut data, cache, LassoRequestHook::PreCall, true)
+        .await
+        .expect("allowed");
+}
+
 #[tokio::test]
 async fn lasso_pre_call_reuses_one_conversation_id_for_a_call() {
     let (base, _server, captured) = serve(
@@ -181,18 +189,8 @@ async fn lasso_pre_call_reuses_one_conversation_id_for_a_call() {
     .await;
     let guardrail = lasso_guardrail(&base, false);
     let cache = TestCache::default();
-    for _ in 0..2 {
-        let mut data = chat_data(&[message("user", "hello")]);
-        lasso::hook(
-            &guardrail,
-            &mut data,
-            &cache,
-            LassoRequestHook::PreCall,
-            true,
-        )
-        .await
-        .expect("allowed");
-    }
+    pre_call_hello(&guardrail, &cache).await;
+    pre_call_hello(&guardrail, &cache).await;
     let calls = captured.lock().expect("captured");
     assert_eq!(calls.len(), 2);
     assert_eq!(
@@ -456,34 +454,28 @@ async fn lasso_timeout_is_a_plain_failure() {
     drop(listener);
 }
 
+#[rstest]
+#[case(StatusCode::UNAUTHORIZED, "Invalid API key")]
+#[case(StatusCode::TOO_MANY_REQUESTS, "Lasso API rate limit exceeded")]
+#[case(StatusCode::INTERNAL_SERVER_ERROR, "API error: 500")]
 #[tokio::test]
-async fn lasso_status_errors_use_litellm_texts() {
-    for (status, expected) in [
-        (StatusCode::UNAUTHORIZED, "Invalid API key"),
-        (
-            StatusCode::TOO_MANY_REQUESTS,
-            "Lasso API rate limit exceeded",
-        ),
-        (StatusCode::INTERNAL_SERVER_ERROR, "API error: 500"),
-    ] {
-        let (base, _server, _captured) =
-            serve("/classify", vec![(status, "nope".to_owned())]).await;
-        let guardrail = lasso_guardrail(&base, false);
-        let mut data = chat_data(&[message("user", "hello")]);
-        let error = lasso::hook(
-            &guardrail,
-            &mut data,
-            &TestCache::default(),
-            LassoRequestHook::PreCall,
-            true,
-        )
-        .await
-        .expect_err("status error");
-        assert!(
-            matches!(&error, ThirdPartyHookError::Failure { message } if message == expected),
-            "{status} answered {error}"
-        );
-    }
+async fn lasso_status_errors_use_litellm_texts(#[case] status: StatusCode, #[case] expected: &str) {
+    let (base, _server, _captured) = serve("/classify", vec![(status, "nope".to_owned())]).await;
+    let guardrail = lasso_guardrail(&base, false);
+    let mut data = chat_data(&[message("user", "hello")]);
+    let error = lasso::hook(
+        &guardrail,
+        &mut data,
+        &TestCache::default(),
+        LassoRequestHook::PreCall,
+        true,
+    )
+    .await
+    .expect_err("status error");
+    assert!(
+        matches!(&error, ThirdPartyHookError::Failure { message } if message == expected),
+        "{status} answered {error}"
+    );
 }
 
 #[tokio::test]

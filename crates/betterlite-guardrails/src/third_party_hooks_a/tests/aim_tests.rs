@@ -164,12 +164,9 @@ async fn aim_post_call_writes_each_redacted_output_back() {
     assert_eq!(content_of(&response, 1), Some(CONTENT_KEPT.to_owned()));
     let calls = captured.lock().expect("captured");
     assert_eq!(calls.len(), 2);
-    for call in calls.iter() {
-        assert_eq!(
-            call.headers.get("x-aim-litellm-hook").map(String::as_str),
-            Some("output")
-        );
-    }
+    assert!(calls.iter().all(|call| {
+        call.headers.get("x-aim-litellm-hook").map(String::as_str) == Some("output")
+    }));
 }
 
 #[tokio::test]

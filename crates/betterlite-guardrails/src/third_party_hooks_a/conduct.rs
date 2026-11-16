@@ -2,9 +2,7 @@ use super::error::ThirdPartyHookError;
 use crate::conduct::error::ConductCheckError;
 use crate::third_party_init_a::conduct::ConductArgs;
 
-// LiteLLM ships a stand-in class whose constructor raises when the optional conduct-litellm-guard
-// package is missing or too old for it. betterlite has no such package, so every build fails the
-// same way and no Conduct hook can be bound.
+// LiteLLM's stand-in constructor raises when the optional conduct-litellm-guard package is missing
 #[derive(Debug, Clone)]
 pub struct ConductGuardrail {
     pub args: ConductArgs,

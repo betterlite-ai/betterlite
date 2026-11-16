@@ -8,8 +8,6 @@ use crate::akto::error::AktoError;
 use crate::conduct::error::ConductCheckError;
 use crate::lasso::error::LassoError;
 
-// What a hook body hands back to the proxy: an HTTP rejection or a plain failure, plus the class
-// errors of the five vendors passed on unchanged so their owner can map them.
 #[derive(Debug, Error)]
 pub enum ThirdPartyHookError {
     #[error("the guardrail rejected the request with status {status}")]
@@ -33,45 +31,19 @@ pub enum ThirdPartyHookError {
 }
 
 impl ThirdPartyHookError {
-    // The proxy picks the HTTP status from the variant alone, never from the message text.
     #[must_use]
     pub const fn status_code(&self) -> StatusCode {
         match self {
             Self::Rejection { status, .. } => *status,
-            Self::Failure { .. } | Self::ConductMissingPackage(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
+            Self::Aim(AimError::Rejected { .. }) | Self::Lasso(LassoError::Blocked { .. }) => {
+                StatusCode::BAD_REQUEST
             }
-            Self::Aim(error) => match error {
-                AimError::Rejected { .. } => StatusCode::BAD_REQUEST,
-                AimError::MissingSecrets
-                | AimError::InvalidHeader(_)
-                | AimError::Timeout(_)
-                | AimError::Request(_)
-                | AimError::HttpStatus(_)
-                | AimError::ResponseTooLarge(_)
-                | AimError::ResponseJson(_)
-                | AimError::RequestJson(_)
-                | AimError::WebSocket(_)
-                | AimError::ConnectTimeout
-                | AimError::FrameUtf8(_)
-                | AimError::StreamTimeout
-                | AimError::StreamJson(_)
-                | AimError::StreamClosed
-                | AimError::StreamBlocked { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            },
+            Self::Failure { .. }
+            | Self::ConductMissingPackage(_)
+            | Self::Aim(_)
+            | Self::Lasso(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Akto(error) => error.status_code(),
             Self::Lakera(error) => error.status_code(),
-            Self::Lasso(error) => match error {
-                LassoError::Blocked { .. } => StatusCode::BAD_REQUEST,
-                LassoError::InvalidHeader { .. }
-                | LassoError::Timeout { .. }
-                | LassoError::InvalidApiKey
-                | LassoError::RateLimited
-                | LassoError::HttpStatus { .. }
-                | LassoError::Request { .. }
-                | LassoError::ResponseTooLarge { .. }
-                | LassoError::ResponseJson { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            },
         }
     }
 }

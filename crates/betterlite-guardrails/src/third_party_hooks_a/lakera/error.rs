@@ -6,8 +6,6 @@ use crate::guardrail_selection::error::GuardrailSelectionError;
 use crate::lakera::rejection::LakeraRejection;
 use crate::third_party_hooks_a::error::ThirdPartyHookError;
 
-// B3777's class has no error type of its own, so the v1 check's failures live here and B8666 reads
-// the HTTP status from them.
 #[derive(Debug, Error)]
 pub enum LakeraHookError {
     #[error("the Lakera guardrail request failed")]
@@ -54,8 +52,6 @@ impl LakeraHookError {
     }
 }
 
-// LiteLLM raises HTTPException(400, detail={"error": ..., "lakera_ai_response": response}), so the
-// detail goes out as the JSON object B3777's rejection serializes to.
 pub(super) fn rejection_error(rejection: &LakeraRejection) -> Result<(), ThirdPartyHookError> {
     let encoded = serde_json::to_value(&rejection.detail)
         .map_err(|source| LakeraHookError::Encode { source })?;

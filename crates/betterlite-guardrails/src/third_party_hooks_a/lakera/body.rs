@@ -15,8 +15,7 @@ pub(super) enum CheckBody {
     Json(GuardrailValue),
 }
 
-// LiteLLM keeps one entry per role in INPUT_POSITIONING_MAP order; a later message of the same role
-// replaces the earlier one, and the system entry carries the tool call arguments.
+// one entry per role in INPUT_POSITIONING_MAP order, a later message of a role replacing the earlier one
 pub(super) fn messages_body(
     messages: &[GuardrailValue],
     enabled: &[Role],

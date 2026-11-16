@@ -16,20 +16,17 @@ use crate::lasso_masking::wire::{LassoContent, LassoMessage, Message, ModelRespo
 
 const VIOLATED_POLICY: &str = "Violated Lasso guardrail policy";
 
-// Which request-side hook runs: pre_call warms the conversation id first, moderation runs straight through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LassoRequestHook {
     PreCall,
     Moderation,
 }
 
-// LiteLLM's post-call hook reads only a nonstreaming chat response and warns about anything else.
 pub enum PostCallResponse<'response> {
     ChatCompletion(&'response mut ModelResponseShape),
     Unexpected,
 }
 
-// One Lasso call: the inspected messages, the endpoint they go to and the message type they carry.
 #[derive(Clone, Copy)]
 struct Inspection<'plan> {
     request_data: &'plan LassoRequestData,
@@ -38,8 +35,6 @@ struct Inspection<'plan> {
     endpoint: Endpoint,
 }
 
-// LiteLLM's async_pre_call_hook and async_moderation_hook: both inspect the prompt, and only the gate and
-// the conversation-id warm differ.
 pub async fn hook<C>(
     guardrail: &LassoGuardrail,
     data: &mut BTreeMap<String, GuardrailValue>,
@@ -61,8 +56,6 @@ where
     run(guardrail, data, cache, MessageType::Prompt).await
 }
 
-// LiteLLM's async_post_call_success_hook: the assistant turn is inspected with COMPLETION, and masking
-// always goes to classifix because the response text is plain.
 pub async fn post_call_success<C>(
     guardrail: &LassoGuardrail,
     data: &BTreeMap<String, GuardrailValue>,
@@ -107,8 +100,6 @@ where
     Ok(())
 }
 
-// Masking rewrites the model response in place; a rejection passes through and every other failure gets
-// LiteLLM's wrapped text.
 fn apply_post_call_masking(
     response: &mut ModelResponseShape,
     masked: Result<Option<Vec<LassoMessage>>, ThirdPartyHookError>,
@@ -127,8 +118,6 @@ fn apply_post_call_masking(
     }
 }
 
-// LiteLLM's _run_lasso_guardrail: expand the request messages, flatten a non-string input into inspection
-// messages, and send what is left to classify or classifix.
 async fn run<C>(
     guardrail: &LassoGuardrail,
     data: &mut BTreeMap<String, GuardrailValue>,
@@ -173,8 +162,6 @@ where
     Ok(())
 }
 
-// The classifix answer's masked messages go back into the request through B3779's mapping, and the input
-// only when the request carried a text one.
 fn apply_masking(
     data: &mut BTreeMap<String, GuardrailValue>,
     messages: &[Message],
@@ -197,8 +184,6 @@ fn apply_masking(
     Ok(())
 }
 
-// Headers and payload through B3778's transport; a classifix answer reports the masked messages when
-// violations came back.
 async fn inspect<C>(
     guardrail: &LassoGuardrail,
     cache: &C,
@@ -237,7 +222,6 @@ where
         .filter(|messages| violations && !messages.is_empty()))
 }
 
-// LiteLLM appends a non-string input as inspection messages after expanding the request messages.
 fn append_input_inspection(
     data: &BTreeMap<String, GuardrailValue>,
     inspected: &mut Vec<LassoMessage>,
@@ -277,7 +261,6 @@ fn litellm_call_id(
     }
 }
 
-// The request's JSON values and the typed shapes cross over as JSON, the one shape both sides agree on.
 fn round_trip<T, R>(field: &str, value: &T) -> Result<R, ThirdPartyHookError>
 where
     T: Serialize + ?Sized,
@@ -303,8 +286,6 @@ fn raw_messages(messages: &[LassoMessage]) -> Result<Vec<Box<RawValue>>, ThirdPa
     Ok(raw)
 }
 
-// LiteLLM's _handle_api_error: the rejection passes, and every other failure becomes a plain Exception
-// whose text the proxy answers with.
 fn api_error(error: LassoError) -> ThirdPartyHookError {
     match error {
         LassoError::Blocked { deputies, response } => blocked(deputies, &response),
@@ -329,7 +310,6 @@ fn api_error(error: LassoError) -> ThirdPartyHookError {
     }
 }
 
-// LiteLLM's HTTPException(400) detail from _process_lasso_response.
 #[derive(Serialize)]
 struct BlockedDetail<'response> {
     error: &'static str,
