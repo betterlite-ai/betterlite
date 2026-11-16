@@ -1,0 +1,7 @@
+kind: helper
+name: guardrail-form-tables-a-decision-model-seed
+call:
+  b6561:
+    provider: decision_model
+env: {}
+compare: {ignore: []}
