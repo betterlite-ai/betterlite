@@ -200,7 +200,10 @@ fn owned_spend_stops_collecting_exactly_past_the_byte_cap() {
         created: Arc::new(Mutex::new(Vec::new())),
     };
     let mut sink = owned_spend(config);
-    PassthroughStreamCollector::add(&mut sink, &vec![b'a'; MAX_COLLECTED_BYTES]);
+    {
+        let chunk = vec![b'a'; MAX_COLLECTED_BYTES];
+        PassthroughStreamCollector::add(&mut sink, &chunk);
+    }
     let mut logging = NoopPassthroughLogging;
     assert!(
         sink.build_logged_response(&mut logging)
