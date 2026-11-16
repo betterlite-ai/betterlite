@@ -1,0 +1,57 @@
+task: B540
+deviations:
+  - what: >-
+      A streaming call whose transport answers with a buffered body raises AzureTextError 500 "the answer is not a
+      stream" here, where LiteLLM hands the parsed TextCompletionResponse to CustomStreamWrapper, which fabricates
+      one finish chunk with no content.
+    why: >-
+      B005's stream wrapper consumes SSE bytes only, so the handler refuses a buffered parse instead of inventing a
+      chunk no provider sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L294-L299
+  - what: >-
+      A buffered call whose transport answers with an SSE body raises AzureTextError 500 "the answer is a stream,
+      not a completion" here, where LiteLLM passes the body to the SDK's JSON parsing and reports whatever that
+      parser raises as a 500.
+    why: >-
+      the shared transport parse returns a typed stream or buffer, so the handler names the mismatch instead of
+      forwarding a decoder message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L159-L166
+  - what: >-
+      The synchronous branch buffers a request whose optional stream value is truthy but not the literal True (for
+      example stream=1 or stream="true"), where LiteLLM sends that value to the OpenAI SDK anyway, gets a Stream
+      back and fails with a wrapped 500 "'Stream' object has no attribute 'model_dump'".
+    why: >-
+      the branch selector is the declared check optional_params["stream"] is True; the typed transport decides the
+      wire shape from the answer, so a truthy non-boolean stays on the buffered path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L114-L122
+  - what: >-
+      AzureOpenAITextConfig keeps its eight settings per instance, each defaulting to None, where LiteLLM's parent
+      OpenAITextCompletionConfig.__init__ runs setattr on the class, so a later constructor call in the same process
+      inherits every non-None value an earlier one stored.
+    why: >-
+      a Rust value cannot write to its own type's defaults; per-instance fields are the only sound form, and a
+      working setup cannot rely on one config object changing another.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/transformation.py#L72-L75
+  - what: >-
+      The message text of an SDK status error is whatever the transport's SdkError carries here; LiteLLM reads the
+      openai exception's str(), which the SDK builds from a JSON body's error object or the raw body text.
+    why: >-
+      B203 owns the OpenAI-compatible transport and its error text, so this handler forwards the message unchanged
+      and this task does not reformat it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L180-L186
+kept_bugs:
+  - what: >-
+      The synchronous streaming call logs additional_args with "acompletion": True, the async call's own flag, on a
+      call that is not asynchronous.
+    why: >-
+      LiteLLM writes that literal into both streaming pre calls, and a logging callback that inspects the flag can
+      observe it, so the value is copied rather than corrected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L285-L291
+  - what: >-
+      A non-integer max_retries is popped and silently dropped on a request that takes the streaming branch, so
+      only the synchronous buffered path and the direct synchronous streaming call raise the 422 "max retries must
+      be an int".
+    why: >-
+      completion() removes the key before it selects the stream branch, and a working setup can already send a
+      string max_retries with stream true and get the request through, so the order is preserved.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L56-L58
