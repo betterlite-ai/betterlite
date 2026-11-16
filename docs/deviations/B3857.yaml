@@ -1,0 +1,18 @@
+task: B3857
+deviations:
+  - what: "The legacy event emitter takes its logger, clock, span context and capture mode as fields and arguments, and there is no `_otel_log_types()` bridge between the OTel SDK versions that moved `LogRecord`."
+    why: "The Rust SDK has one `LogRecord` API, so the version probe has nothing to resolve. Rule inject-dependencies passes the logger and the clock in instead of reading them from the logger object."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1865-L1881"
+  - what: "A null entry in an event body (a map value or a list item) is left out of the exported body. LiteLLM keeps the None."
+    why: "OTLP's AnyValue has no null variant, so a None in the body cannot be exported as one by the Rust SDK."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1929-L1930"
+  - what: "A response, a usage record or a call time of the wrong type is an error that names the field. LiteLLM fails with a TypeError or an AttributeError from inside the recorder."
+    why: "docs/compatibility.md reads a value of the wrong type as an error that names the field."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1657-L1709"
+kept_bugs:
+  - what: "A prompt or completion whose content is not a string (a list of content parts) gets no `gen_ai.prompt` or `message.content` attribute, while its body keeps the content."
+    why: "LiteLLM puts the list in the attribute and the SDK's LogRecord drops an invalid attribute value with a warning, so a working setup never sees it. A setup that reads the content reads the body."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1925-L1927"
+  - what: "Time per output token falls back to the whole call duration when completion_start_time or api_call_start_time is present but not parseable."
+    why: "A working setup relies on the series existing for every billed call with completion tokens, so the fallback stays."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1783-L1812"

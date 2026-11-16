@@ -1,0 +1,14 @@
+task: B9969
+deviations:
+  - what: >-
+      A request tool whose function holds a value that is not an object is rejected with 400 invalid_request_error
+      and code "400", carrying the message "invalid type for 'tools[N].function': expected an object, but got
+      <type> instead" (NoneType, str or list for the values clients send), the same shape the shared Responses
+      transform uses for a non-object tools[N].parameters.
+    why: >-
+      LiteLLM pops the function value from the copied tool and hands it to dict.update, so a null, string or array
+      raises an unhandled TypeError and the proxy answers 500 for a request no deployment can serve; a 400 is the
+      right answer for input the client sent wrong.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L127-L136
+kept_bugs: []
