@@ -42,8 +42,8 @@ fn machine_to_machine_flow(payload: &NewMCPServerRequest) -> OAuth2Flow {
         .and_then(Option::as_ref);
     let token_url = payload.token_url.as_deref();
     let authorization_url = payload.authorization_url.as_deref();
-    let urls = token_url.is_some_and(|url| !url.is_empty())
-        && !authorization_url.is_some_and(|url| !url.is_empty());
+    let urls =
+        token_url.is_some_and(|url| !url.is_empty()) && authorization_url.is_none_or(str::is_empty);
     let machine = urls
         && client_id.is_some_and(|id| !id.is_empty())
         && client_secret.is_some_and(|secret| !secret.0.expose_secret().is_empty());

@@ -24,12 +24,13 @@ pub enum ConnectorServers {
 pub struct ConnectorImportRequest {
     pub mcp_servers: ConnectorServers,
 }
+type Maybe<T> = Option<Option<T>>;
 #[derive(Deserialize)]
 struct RawConnectorImportRequest {
     #[serde(default, rename = "mcp_servers", with = "double_option")]
-    mcp_servers_snake: Option<Option<RawServers>>,
+    mcp_servers_snake: Maybe<RawServers>,
     #[serde(default, rename = "mcpServers", with = "double_option")]
-    mcp_servers_camel: Option<Option<RawServers>>,
+    mcp_servers_camel: Maybe<RawServers>,
 }
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -46,9 +47,9 @@ struct RawConnectorEntry {
     #[serde(default)]
     url: Option<String>,
     #[serde(default, rename = "authorization_token", with = "double_option")]
-    authorization_token_snake: Option<Option<SecretString>>,
+    authorization_token_snake: Maybe<SecretString>,
     #[serde(default, rename = "authorizationToken", with = "double_option")]
-    authorization_token_camel: Option<Option<SecretString>>,
+    authorization_token_camel: Maybe<SecretString>,
     #[serde(default)]
     headers: Option<OrderedMap>,
     #[serde(default)]

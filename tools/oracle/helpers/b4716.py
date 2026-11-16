@@ -29,6 +29,10 @@ class Rejection(BaseModel):
     detail: dict[str, JsonValue]
 
 
+class ErrorMessage(TypedDict):
+    msg: str
+
+
 class PayloadCall(TypedDict):
     function: Literal["validate_payload", "new_request", "update_request", "stamp_flow"]
     payload: dict[str, JsonValue]
@@ -62,8 +66,8 @@ Input = PayloadCall | EligibilityCall | ConflictCall | SanitizeCall | ConvertCal
 
 
 def construction_error(error: ValidationError) -> JsonValue:
-    message = error.errors()[0]["msg"].removeprefix("Value error, ")
-    return {"tag": "error", "message": message}
+    first = TypeAdapter(list[ErrorMessage]).validate_json(error.json())[0]
+    return {"tag": "error", "message": first["msg"].removeprefix("Value error, ")}
 
 
 def validate_payload(call: PayloadCall) -> JsonValue:

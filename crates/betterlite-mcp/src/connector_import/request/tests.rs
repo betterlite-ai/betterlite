@@ -4,7 +4,7 @@ use rstest::rstest;
 use secrecy::ExposeSecret;
 
 use crate::connector_import::request::{
-    ConnectorImportRequest, ConnectorServers, MCPConnectorImportFailure,
+    ConnectorEntry, ConnectorImportRequest, ConnectorServers, MCPConnectorImportFailure,
     MCPConnectorImportResponse, MCPConnectorImportResult, MCPConnectorImportSkipped,
 };
 
@@ -12,9 +12,7 @@ fn parse(source: &str) -> Result<ConnectorImportRequest, serde_json::Error> {
     ConnectorImportRequest::from_slice(source.as_bytes())
 }
 
-fn entries(
-    request: ConnectorImportRequest,
-) -> Vec<(String, crate::connector_import::request::ConnectorEntry)> {
+fn entries(request: ConnectorImportRequest) -> Vec<(String, ConnectorEntry)> {
     let ConnectorServers::Mapping(entries) = request.mcp_servers else {
         panic!("expected a mapping");
     };

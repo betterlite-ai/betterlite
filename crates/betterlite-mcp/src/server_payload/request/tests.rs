@@ -70,6 +70,11 @@ fn defaults_match_the_litellm_model() {
     assert!(request.credentials.is_none());
     assert_eq!(request.dcr_bridge, None);
     assert_eq!(request.oauth2_flow, None);
+}
+
+#[test]
+fn flag_defaults_match_the_litellm_model() {
+    let request = new_request(r#"{"transport":"http","url":"u"}"#, &policy(true)).unwrap();
     assert!(!request.allow_all_keys);
     assert!(request.available_on_public_internet);
     assert!(!request.delegate_auth_to_upstream);
@@ -102,7 +107,7 @@ fn sse_accepts_a_spec_path() {
         r#"{"transport":"sse","spec_path":"spec.json"}"#,
         &policy(true),
     );
-    assert!(request.is_ok());
+    request.unwrap();
 }
 
 #[test]
@@ -167,13 +172,11 @@ fn stdio_needs_a_command_before_args() {
 
 #[test]
 fn stdio_checks_the_basename_of_the_command() {
-    assert!(
-        new_request(
-            r#"{"transport":"stdio","command":"/usr/bin/node","args":["x"]}"#,
-            &policy(true)
-        )
-        .is_ok()
-    );
+    new_request(
+        r#"{"transport":"stdio","command":"/usr/bin/node","args":["x"]}"#,
+        &policy(true),
+    )
+    .unwrap();
     assert_eq!(
         value_error(new_request(
             r#"{"transport":"stdio","command":"npx.exe","args":["x"]}"#,
@@ -210,13 +213,11 @@ fn dcr_bridge_runs_before_the_transport_check() {
 #[test]
 fn discovery_needs_oauth2_authorization_code_without_delegation() {
     let base = r#"{"transport":"http","url":"u","per_server_oauth_discovery":true"#;
-    assert!(
-        new_request(
-            &format!(r#"{base},"auth_type":"oauth2","oauth2_flow":"authorization_code"}}"#),
-            &policy(true)
-        )
-        .is_ok()
-    );
+    new_request(
+        &format!(r#"{base},"auth_type":"oauth2","oauth2_flow":"authorization_code"}}"#),
+        &policy(true),
+    )
+    .unwrap();
     assert_eq!(
         value_error(new_request(
             &format!(r#"{base},"auth_type":"oauth2","oauth2_flow":"client_credentials"}}"#),
@@ -257,14 +258,12 @@ fn a_new_payload_must_carry_both_eligibility_keys() {
 #[test]
 fn update_tolerates_missing_eligibility_keys_but_not_null_ones() {
     let base = r#"{"server_id":"s","transport":"http","url":"u","per_server_oauth_discovery":true"#;
-    assert!(update_request(&format!("{base}}}"), &policy(true)).is_ok());
-    assert!(
-        update_request(
-            &format!(r#"{base},"auth_type":"oauth2","oauth2_flow":"authorization_code"}}"#),
-            &policy(true)
-        )
-        .is_ok()
-    );
+    update_request(&format!("{base}}}"), &policy(true)).unwrap();
+    update_request(
+        &format!(r#"{base},"auth_type":"oauth2","oauth2_flow":"authorization_code"}}"#),
+        &policy(true),
+    )
+    .unwrap();
     assert_eq!(
         value_error(update_request(
             &format!(r#"{base},"auth_type":null}}"#),
@@ -288,20 +287,16 @@ fn dcr_bridge_needs_a_forwarded_token_auth_type() {
         value_error(new_request(&format!("{base}}}"), &policy(true))),
         "dcr_bridge is only supported for auth_type true_passthrough or oauth_delegate (got None). The DCR bridge serves gateway-hosted OAuth discovery for the client-forwarded token modes; interactive oauth2 servers already run the gateway authorization-code flow."
     );
-    assert!(
-        new_request(
-            &format!(r#"{base},"auth_type":"true_passthrough"}}"#),
-            &policy(true)
-        )
-        .is_ok()
-    );
-    assert!(
-        new_request(
-            &format!(r#"{base},"auth_type":"oauth_delegate"}}"#),
-            &policy(true)
-        )
-        .is_ok()
-    );
+    new_request(
+        &format!(r#"{base},"auth_type":"true_passthrough"}}"#),
+        &policy(true),
+    )
+    .unwrap();
+    new_request(
+        &format!(r#"{base},"auth_type":"oauth_delegate"}}"#),
+        &policy(true),
+    )
+    .unwrap();
     assert_eq!(
         value_error(new_request(
             &format!(r#"{base},"auth_type":"oauth2"}}"#),
@@ -320,13 +315,11 @@ fn dcr_bridge_needs_a_forwarded_token_auth_type() {
 
 #[test]
 fn update_dcr_bridge_skips_an_absent_auth_type() {
-    assert!(
-        update_request(
-            r#"{"server_id":"s","transport":"http","url":"u","dcr_bridge":true}"#,
-            &policy(true)
-        )
-        .is_ok()
-    );
+    update_request(
+        r#"{"server_id":"s","transport":"http","url":"u","dcr_bridge":true}"#,
+        &policy(true),
+    )
+    .unwrap();
     assert_eq!(
         value_error(update_request(
             r#"{"server_id":"s","transport":"http","url":"u","dcr_bridge":true,"auth_type":null}"#,

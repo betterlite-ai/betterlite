@@ -63,7 +63,10 @@ pub(crate) fn quote(value: &str) -> String {
         .replace(mark, &format!("\\{mark}"));
     format!("{mark}{escaped}{mark}")
 }
-pub(crate) fn quoted_list<T: AsRef<str>, I: IntoIterator<Item = T>>(values: I) -> String {
+pub(crate) fn quoted_list<I>(values: I) -> String
+where
+    I: IntoIterator<Item: AsRef<str>>,
+{
     let rendered: Vec<String> = values
         .into_iter()
         .map(|value| quote(value.as_ref()))

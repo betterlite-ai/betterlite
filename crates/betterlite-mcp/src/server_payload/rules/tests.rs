@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::io;
 use std::iter::empty;
-use std::str::FromStr;
+use std::str::FromStr as _;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::mcp_env_values::{PayloadRules, StdioPolicy};
@@ -26,7 +26,7 @@ use crate::server_record::OAuth2Flow;
 fn policy(enabled: bool) -> StdioPolicy {
     StdioPolicy {
         enabled,
-        allowed_commands: ["npx".to_owned()].into_iter().collect(),
+        allowed_commands: BTreeSet::from(["npx".to_owned()]),
     }
 }
 
@@ -217,7 +217,7 @@ fn required_fields_keep_input_order_and_duplicates() {
 #[test]
 fn an_empty_required_list_passes() {
     let payload = request(r#"{"transport":"http","url":"u"}"#);
-    assert!(validate_required_fields(&payload, &[]).is_ok());
+    validate_required_fields(&payload, &[]).unwrap();
 }
 
 const LITELLM_FIELD_NAMES: [&str; 45] = [
@@ -340,6 +340,6 @@ fn server_existence_searches_every_id() {
     assert!(does_mcp_server_exist(ids, "b"));
     assert!(!does_mcp_server_exist(ids, "z"));
     assert!(!does_mcp_server_exist(empty::<&str>(), "b"));
-    let owned = vec!["a".to_owned(), "b".to_owned()];
+    let owned = ["a".to_owned(), "b".to_owned()];
     assert!(does_mcp_server_exist(owned.iter().map(String::as_str), "b"));
 }

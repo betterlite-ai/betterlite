@@ -64,7 +64,7 @@ fn sanitizing_replaces_unsupported_characters_and_collapses_underscores() {
     assert_eq!(sanitize_connector_name(" my  srv-1!! "), "my_srv_1");
     assert_eq!(sanitize_connector_name("__a__b__"), "a_b");
     assert_eq!(sanitize_connector_name("a/b"), "a_b");
-    assert_eq!(sanitize_connector_name("naïve"), "na_ve");
+    assert_eq!(sanitize_connector_name("na\u{ef}ve"), "na_ve");
     assert_eq!(sanitize_connector_name("A1_b"), "A1_b");
     assert_eq!(sanitize_connector_name(""), "");
 }

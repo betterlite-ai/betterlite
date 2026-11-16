@@ -9,7 +9,7 @@ use betterlite_mcp::connector_import::request::ConnectorImportRequest;
 use betterlite_mcp::server_payload::names::validate_and_normalize_payload;
 use betterlite_mcp::server_payload::request::{NewMCPServerRequest, UpdateMCPServerRequest};
 // ast-grep-ignore: no-long-names
-use betterlite_mcp::server_payload::request::is_per_server_oauth_discovery_eligible;
+use betterlite_mcp::server_payload::request::is_per_server_oauth_discovery_eligible as discovery_eligible;
 use betterlite_mcp::server_payload::rules::{
     identifier_conflict_message, stamp_omitted_oauth2_flow,
 };
@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 pub(crate) struct Op;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
-enum Input {
+pub(crate) enum Input {
     ValidatePayload(PayloadInput),
     NewRequest(PayloadInput),
     UpdateRequest(PayloadInput),
@@ -34,7 +34,7 @@ enum Input {
         delegate_auth_to_upstream: bool,
     },
     ConflictMessage {
-        field: ConflictField,
+        field: String,
         value: String,
         server_id: String,
     },
@@ -48,15 +48,9 @@ enum Input {
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct PayloadInput {
+pub(crate) struct PayloadInput {
     payload: Json,
     stdio: StdioPolicy,
-}
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum ConflictField {
-    ServerName,
-    Alias,
 }
 impl Helper for Op {
     type Input = Input;
@@ -81,8 +75,7 @@ impl Helper for Op {
                 oauth2_flow,
                 delegate_auth_to_upstream,
             } => Ok(json!({
-                // ast-grep-ignore: no-long-names
-                "eligible": is_per_server_oauth_discovery_eligible(
+                "eligible": discovery_eligible(
                     *auth_type,
                     *oauth2_flow,
                     *delegate_auth_to_upstream,
@@ -92,7 +85,7 @@ impl Helper for Op {
                 field,
                 value,
                 server_id,
-            } => Ok(conflict_message(*field, value, server_id)),
+            } => Ok(conflict_message(field, value, server_id)),
             Input::SanitizeName { name } => Ok(json!({ "name": sanitize_connector_name(name) })),
             Input::ConvertConnectors { connectors, stdio } => convert_connectors(connectors, stdio),
         }
@@ -118,11 +111,12 @@ fn validate_payload(call: &PayloadInput) -> HelperResult {
         Err(error) => Ok(validation_error(&error)),
     }
 }
-fn conflict_message(field: ConflictField, value: &str, server_id: &str) -> Value {
+fn conflict_message(field: &str, value: &str, server_id: &str) -> Value {
     let conflict = McpIdentifierConflict {
-        field: match field {
-            ConflictField::ServerName => IdentifierField::ServerName,
-            ConflictField::Alias => IdentifierField::Alias,
+        field: if field == "alias" {
+            IdentifierField::Alias
+        } else {
+            IdentifierField::ServerName
         },
         value: value.to_owned(),
         server_id: server_id.to_owned(),

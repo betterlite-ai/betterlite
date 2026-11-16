@@ -136,10 +136,13 @@ fn invalid_characters_warning(name: &str) -> String {
         rendered.join(", ")
     )
 }
-pub fn validate_and_normalize_payload<P: NamedPayload>(
+pub fn validate_and_normalize_payload<P>(
     payload: &mut P,
     rules: &PayloadRules,
-) -> Result<(), PayloadError> {
+) -> Result<(), PayloadError>
+where
+    P: NamedPayload,
+{
     let raw_alias = payload.alias();
     let server_name = payload.server_name().filter(|name| !name.is_empty());
     let alias = raw_alias.filter(|text| !text.is_empty());
@@ -162,7 +165,7 @@ pub fn validate_and_normalize_payload<P: NamedPayload>(
             validate_prefix(field, value)?;
         }
     }
-    check_upstream_token_header(payload)
+    check_upstream_token_header(payload.upstream_token_header())
 }
 fn validate_prefix(field: &'static str, value: &str) -> Result<(), PayloadError> {
     let validation = validate_tool_name(value);
@@ -175,8 +178,8 @@ fn validate_prefix(field: &'static str, value: &str) -> Result<(), PayloadError>
         warnings: format!("\n{}", validation.warnings.join("\n")),
     })
 }
-fn check_upstream_token_header<P: NamedPayload>(payload: &P) -> Result<(), PayloadError> {
-    let Some(raw) = payload.upstream_token_header() else {
+fn check_upstream_token_header(header: Option<&str>) -> Result<(), PayloadError> {
+    let Some(raw) = header else {
         return Ok(());
     };
     if raw.is_empty() || validate_header_name(raw).is_ok() {
