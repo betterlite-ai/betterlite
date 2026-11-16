@@ -8,11 +8,12 @@ use betterlite_guardrails::repello_lifecycle::{
     RESPONSE_STAGE, UNREACHABLE_ERROR_TYPE, UNREACHABLE_MESSAGE,
 };
 use rstest::rstest;
+use tracing::subscriber::set_default;
 
 use crate::support::{
-    API_KEY, Data, PASSED_REPLY, captured_body, captured_headers, captured_path, field, guardrail,
-    mock_repello, mock_repello_after, prompt_data, records, request_count, response_data,
-    run_post_call, run_pre_call, settings, text_field,
+    API_KEY, CapturedLog, Data, PASSED_REPLY, captured_body, captured_headers, captured_path,
+    field, guardrail, mock_repello, mock_repello_after, prompt_data, records, request_count,
+    response_data, run_post_call, run_pre_call, settings, text_field,
 };
 
 fn scan_text(body: &Data, stage: &str) -> Option<String> {
@@ -187,6 +188,17 @@ async fn an_empty_reply_is_invalid_json() {
         Err(GuardrailFailure::HttpObject { status: 500, .. })
     ));
     assert_eq!(request_count(&mock), 1);
+}
+
+#[tokio::test]
+async fn the_scanned_text_never_reaches_the_log() {
+    let captured = CapturedLog::default();
+    let _guard = set_default(captured.subscriber(tracing::Level::TRACE));
+    let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
+    let _run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let log = captured.text();
+    assert!(!log.contains("hello"), "{log}");
+    assert!(!log.contains("passed"), "{log}");
 }
 
 #[test]
