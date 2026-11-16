@@ -10,12 +10,6 @@ use super::map::ModalityEvent;
 use super::start::{StartContent, start_content_events};
 use super::state::ContentState;
 
-struct ResolvedIds {
-    output_item_id: Option<String>,
-    response_id: Option<String>,
-    conversation_id: Option<String>,
-}
-
 pub fn handle_openai_modality_event(
     state: &mut ContentState,
     event: ModalityEvent,
@@ -24,84 +18,88 @@ pub fn handle_openai_modality_event(
     ids: &mut dyn ContentIds,
 ) -> Result<Vec<ContentEvent>, ContentError> {
     let delta_type = event.delta_type();
-    let (events, resolved) = match event {
+    let events = match event {
         ModalityEvent::TextDelta | ModalityEvent::AudioDelta => {
             delta_events(state, delta_type, frame, setup_request, ids)?
         }
         ModalityEvent::TextDone | ModalityEvent::AudioDone => done_events(state, delta_type, ids)?,
     };
-    state.output_item_id = resolved.output_item_id;
-    state.response_id = resolved.response_id;
-    state.conversation_id = resolved.conversation_id;
     state.delta_type = Some(delta_type);
     Ok(events)
 }
 
 fn delta_events(
-    state: &ContentState,
+    state: &mut ContentState,
     delta_type: AllDeltaType,
     frame: &Json,
     setup_request: Option<&str>,
     ids: &mut dyn ContentIds,
-) -> Result<(Vec<ContentEvent>, ResolvedIds), ContentError> {
-    let mut resolved = ResolvedIds {
-        output_item_id: state.output_item_id.clone(),
-        response_id: state.response_id.clone(),
-        conversation_id: state.conversation_id.clone(),
-    };
-    if resolved.response_id.as_deref().is_none_or(str::is_empty) {
-        resolved.response_id = Some(format!("resp_{}", ids.next_id()));
-    }
-    let mut events = new_content_start(&mut resolved, setup_request, delta_type, ids)?;
+) -> Result<Vec<ContentEvent>, ContentError> {
+    let response_id = state
+        .response_id
+        .as_deref()
+        .filter(|id| !id.is_empty())
+        .map_or_else(|| format!("resp_{}", ids.next_id()), str::to_owned);
+    let (output_item_id, conversation_id, mut events) =
+        new_content(state, &response_id, setup_request, delta_type, ids)?;
     let server_content = frame
         .as_object()
         .and_then(|fields| fields.get("serverContent"))
         .ok_or(ContentError::MissingServerContent)?;
     events.push(content_delta_event(
         server_content,
-        resolved.output_item_id.as_deref().unwrap_or_default(),
-        resolved.response_id.as_deref().unwrap_or_default(),
+        &output_item_id,
+        &response_id,
         delta_type,
         ids,
     )?);
-    Ok((events, resolved))
+    state.output_item_id = Some(output_item_id);
+    state.response_id = Some(response_id);
+    state.conversation_id = conversation_id;
+    Ok(events)
 }
 
-fn new_content_start(
-    resolved: &mut ResolvedIds,
+fn new_content(
+    state: &ContentState,
+    response_id: &str,
     setup_request: Option<&str>,
     delta_type: AllDeltaType,
     ids: &mut dyn ContentIds,
-) -> Result<Vec<ContentEvent>, ContentError> {
-    let mut events = Vec::new();
-    if resolved.output_item_id.as_deref().is_none_or(str::is_empty) {
-        resolved.output_item_id = Some(format!("item_{}", ids.next_id()));
-        if resolved
-            .conversation_id
-            .as_deref()
-            .is_none_or(str::is_empty)
-        {
-            resolved.conversation_id = Some(format!("conv_{}", ids.next_id()));
+) -> Result<(String, Option<String>, Vec<ContentEvent>), ContentError> {
+    let existing_item = state.output_item_id.as_deref().filter(|id| !id.is_empty());
+    match existing_item {
+        Some(item_id) => Ok((
+            item_id.to_owned(),
+            state.conversation_id.clone(),
+            Vec::new(),
+        )),
+        None => {
+            let item_id = format!("item_{}", ids.next_id());
+            let conversation_id = state
+                .conversation_id
+                .as_deref()
+                .filter(|id| !id.is_empty())
+                .map_or_else(|| format!("conv_{}", ids.next_id()), str::to_owned);
+            let events = start_content_events(
+                &StartContent {
+                    setup_request,
+                    response_id,
+                    output_item_id: &item_id,
+                    conversation_id: &conversation_id,
+                    delta_type,
+                },
+                ids,
+            )?;
+            Ok((item_id, Some(conversation_id), events))
         }
-        events.extend(start_content_events(
-            &StartContent {
-                setup_request,
-                response_id: resolved.response_id.as_deref().unwrap_or_default(),
-                output_item_id: resolved.output_item_id.as_deref().unwrap_or_default(),
-                conversation_id: resolved.conversation_id.as_deref().unwrap_or_default(),
-                delta_type,
-            },
-            ids,
-        )?);
     }
-    Ok(events)
 }
 
 fn done_events(
     state: &ContentState,
     delta_type: AllDeltaType,
     ids: &mut dyn ContentIds,
-) -> Result<(Vec<ContentEvent>, ResolvedIds), ContentError> {
+) -> Result<Vec<ContentEvent>, ContentError> {
     let done = content_done_event(
         state.delta_chunks.as_deref(),
         state.output_item_id.as_deref(),
@@ -109,18 +107,8 @@ fn done_events(
         delta_type,
         ids,
     )?;
-    let (item_id, response_id) = done.done_ids().unwrap_or_default();
-    let additional =
-        additional_done_events(&done, Some(item_id), Some(response_id), delta_type, ids);
-    let mut events = Vec::new();
-    events.push(done);
+    let additional = additional_done_events(&done, ids);
+    let mut events = vec![done.event];
     events.extend(additional);
-    Ok((
-        events,
-        ResolvedIds {
-            output_item_id: state.output_item_id.clone(),
-            response_id: state.response_id.clone(),
-            conversation_id: state.conversation_id.clone(),
-        },
-    ))
+    Ok(events)
 }

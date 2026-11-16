@@ -28,32 +28,6 @@ pub enum ContentEvent {
     OutputItemDone(OutputItemDone),
 }
 
-impl ContentEvent {
-    #[must_use]
-    pub fn done_text(&self) -> Option<&str> {
-        if let Self::TextDone(done) = self {
-            return Some(done.text.as_str());
-        }
-        None
-    }
-
-    #[must_use]
-    pub fn done_ids(&self) -> Option<(&str, &str)> {
-        match self {
-            Self::TextDone(done) => Some((done.item_id.as_str(), done.response_id.as_str())),
-            Self::AudioDone(done) => Some((done.item_id.as_str(), done.response_id.as_str())),
-            Self::ResponseCreated(_)
-            | Self::OutputItemAdded(_)
-            | Self::ConversationItemAdded(_)
-            | Self::ContentPartAdded(_)
-            | Self::TextDelta(_)
-            | Self::AudioDelta(_)
-            | Self::ContentPartDone(_)
-            | Self::OutputItemDone(_) => None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResponseCreated {
     pub event_id: String,

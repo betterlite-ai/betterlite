@@ -8,13 +8,33 @@ use super::events::{
 };
 use super::ids::ContentIds;
 
+pub struct DoneContent {
+    pub event: ContentEvent,
+    pub item_id: String,
+    pub response_id: String,
+    pub text: Option<String>,
+}
+
 pub fn content_done_event(
     delta_chunks: Option<&[Json]>,
     output_item_id: Option<&str>,
     response_id: Option<&str>,
     delta_type: AllDeltaType,
     ids: &mut dyn ContentIds,
-) -> Result<ContentEvent, ContentError> {
+) -> Result<DoneContent, ContentError> {
+    let delta = joined_delta(delta_chunks)?;
+    let item_id = output_item_id.map_or_else(|| format!("item_{}", ids.next_id()), str::to_owned);
+    let response_id = response_id.map_or_else(|| format!("resp_{}", ids.next_id()), str::to_owned);
+    let (event, text) = done_event(&item_id, &response_id, delta, delta_type, ids);
+    Ok(DoneContent {
+        event,
+        item_id,
+        response_id,
+        text,
+    })
+}
+
+fn joined_delta(delta_chunks: Option<&[Json]>) -> Result<String, ContentError> {
     let mut delta = String::new();
     for chunk in delta_chunks.unwrap_or_default() {
         let fields = chunk.as_object().ok_or(ContentError::DeltaChunkNotObject)?;
@@ -24,53 +44,46 @@ pub fn content_done_event(
             .ok_or(ContentError::MissingDeltaField)?;
         delta.push_str(text);
     }
-    let event_item_id =
-        output_item_id.map_or_else(|| format!("item_{}", ids.next_id()), str::to_owned);
-    let event_response_id =
-        response_id.map_or_else(|| format!("resp_{}", ids.next_id()), str::to_owned);
-    Ok(match delta_type {
-        AllDeltaType::Text => ContentEvent::TextDone(ResponseTextDone {
-            content_index: 0,
-            event_id: format!("event_{}", ids.next_id()),
-            item_id: event_item_id,
-            output_index: 0,
-            response_id: event_response_id,
-            text: delta,
-        }),
-        AllDeltaType::Audio => ContentEvent::AudioDone(ResponseAudioDone {
-            content_index: 0,
-            event_id: format!("event_{}", ids.next_id()),
-            item_id: event_item_id,
-            output_index: 0,
-            response_id: event_response_id,
-        }),
-    })
+    Ok(delta)
+}
+
+fn done_event(
+    item_id: &str,
+    response_id: &str,
+    delta: String,
+    delta_type: AllDeltaType,
+    ids: &mut dyn ContentIds,
+) -> (ContentEvent, Option<String>) {
+    match delta_type {
+        AllDeltaType::Text => (
+            ContentEvent::TextDone(ResponseTextDone {
+                content_index: 0,
+                event_id: format!("event_{}", ids.next_id()),
+                item_id: item_id.to_owned(),
+                output_index: 0,
+                response_id: response_id.to_owned(),
+                text: delta.clone(),
+            }),
+            Some(delta),
+        ),
+        AllDeltaType::Audio => (
+            ContentEvent::AudioDone(ResponseAudioDone {
+                content_index: 0,
+                event_id: format!("event_{}", ids.next_id()),
+                item_id: item_id.to_owned(),
+                output_index: 0,
+                response_id: response_id.to_owned(),
+            }),
+            None,
+        ),
+    }
 }
 
 #[must_use]
-pub fn additional_done_events(
-    done: &ContentEvent,
-    current_output_item_id: Option<&str>,
-    current_response_id: Option<&str>,
-    delta_type: AllDeltaType,
-    ids: &mut dyn ContentIds,
-) -> Vec<ContentEvent> {
-    let text_part = match delta_type {
-        AllDeltaType::Text => done.done_text().filter(|text| !text.is_empty()),
-        AllDeltaType::Audio => None,
-    };
-    let part = text_part.map_or_else(
-        || ContentPart::Audio {
-            transcript: String::new(),
-        },
-        |text| ContentPart::Text {
-            text: text.to_owned(),
-        },
-    );
-    let item_id =
-        current_output_item_id.map_or_else(|| format!("item_{}", ids.next_id()), str::to_owned);
-    let response_id =
-        current_response_id.map_or_else(|| format!("resp_{}", ids.next_id()), str::to_owned);
+pub fn additional_done_events(done: &DoneContent, ids: &mut dyn ContentIds) -> Vec<ContentEvent> {
+    let part = done_part(done.text.as_deref());
+    let item_id = done.item_id.clone();
+    let response_id = done.response_id.clone();
     vec![
         ContentEvent::ContentPartDone(ContentPartDone {
             content_index: 0,
@@ -94,4 +107,15 @@ pub fn additional_done_events(
             response_id,
         }),
     ]
+}
+
+fn done_part(text: Option<&str>) -> ContentPart {
+    text.filter(|text| !text.is_empty()).map_or_else(
+        || ContentPart::Audio {
+            transcript: String::new(),
+        },
+        |text| ContentPart::Text {
+            text: text.to_owned(),
+        },
+    )
 }
