@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::io::{Cursor, Seek, SeekFrom};
+use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
@@ -44,6 +44,20 @@ fn request_body(
 fn encoded(response: &GeminiEditResponse) -> Json {
     serde_json::from_str(&serde_json::to_string(response).expect("the response encodes"))
         .expect("the response is JSON")
+}
+
+struct BrokenStream;
+
+impl Read for BrokenStream {
+    fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::other("read refused"))
+    }
+}
+
+impl Seek for BrokenStream {
+    fn seek(&mut self, _position: SeekFrom) -> io::Result<u64> {
+        Err(io::Error::other("seek refused"))
+    }
 }
 
 #[test]
@@ -135,9 +149,9 @@ fn a_list_with_no_image_part_is_refused() {
         .expect_err("an empty list has no image part");
     assert!(matches!(error, GeminiEditError::MissingImage));
     let mut none = [None];
-    let error = transform_image_edit_request(None, &mut none, &params("{}"), &|_| "image/png")
+    let none_error = transform_image_edit_request(None, &mut none, &params("{}"), &|_| "image/png")
         .expect_err("a list of Nones has no image part");
-    assert!(matches!(error, GeminiEditError::MissingImage));
+    assert!(matches!(none_error, GeminiEditError::MissingImage));
 }
 
 #[test]
@@ -161,6 +175,16 @@ fn a_seekable_image_is_read_from_zero_and_its_cursor_restored() {
         )
     );
     assert_eq!(content.position(), 7);
+}
+
+#[test]
+fn a_stream_that_refuses_to_rewind_is_a_stream_error() {
+    let mut stream = BrokenStream;
+    let mut images = [Some(GeminiEditFile::Seekable(&mut stream))];
+    let error = transform_image_edit_request(None, &mut images, &params("{}"), &|_| "image/png")
+        .expect_err("a stream that cannot rewind fails the read");
+    assert!(error.upstream_answer().is_none());
+    assert!(matches!(error, GeminiEditError::Stream(_)));
 }
 
 #[test]
@@ -225,12 +249,12 @@ fn a_non_json_reply_keeps_the_upstream_answer() {
     headers.insert("x-request-id", HeaderValue::from_static("req-1"));
     let error = transform_image_edit_response(&reply(502, headers, r#"{"candidates": ["#))
         .expect_err("a truncated reply fails");
-    let (status, headers) = error
+    let (status, kept) = error
         .upstream_answer()
         .expect("a parse failure keeps the reply answer");
     assert_eq!(status, 502);
     assert_eq!(
-        headers.get("x-request-id"),
+        kept.get("x-request-id"),
         Some(&HeaderValue::from_static("req-1"))
     );
 }

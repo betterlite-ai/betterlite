@@ -9,11 +9,11 @@ pub const SUPPORTED_OPENAI_PARAMS: [&str; 1] = ["size"];
 
 // map_openai_params: a present size becomes the aspect ratio the request will carry
 pub fn map_openai_params(optional_params: &ImageParams) -> Result<ImageParams, GeminiEditError> {
-    let Some(size) = optional_params.get("size") else {
+    let Some(given) = optional_params.get("size") else {
         return Ok(ImageParams::new());
     };
-    let size = match size {
-        Json::Text(size) => size.as_str(),
+    let size = match given {
+        Json::Text(text) => text.as_str(),
         // LiteLLM's `size or ""` sends an absent or null size to the square fallback
         Json::Null => "",
         Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {

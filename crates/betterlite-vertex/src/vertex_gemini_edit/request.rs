@@ -4,6 +4,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageFiles, ImageParams};
+use betterlite_openai::openai_video_identifiers::multipart::ReadSeek;
 
 use super::error::GeminiEditError;
 
@@ -12,7 +13,7 @@ pub enum GeminiEditFile<'image> {
     // a bytes record, used as it came
     Bytes(&'image [u8]),
     // a BytesIO or BufferedReader equivalent, read from position zero and left where it was
-    Seekable(&'image mut (dyn Read + Seek)),
+    Seekable(&'image mut dyn ReadSeek),
     // every other record, which LiteLLM's reader raises ValueError for
     Unsupported,
 }
@@ -29,9 +30,9 @@ pub fn transform_image_edit_request(
         return Err(GeminiEditError::MissingImage);
     }
     // LiteLLM appends the prompt only when it is neither absent nor empty, after the images
-    if let Some(prompt) = prompt.filter(|text| !text.is_empty()) {
+    if let Some(text) = prompt.filter(|text| !text.is_empty()) {
         let mut part = ImageParams::new();
-        part.insert("text".to_owned(), Json::Text(prompt.to_owned()));
+        part.insert("text".to_owned(), Json::Text(text.to_owned()));
         parts.push(Json::Object(part));
     }
     let mut contents = ImageParams::new();
@@ -95,7 +96,7 @@ fn image_bytes(image: &mut GeminiEditFile<'_>) -> Result<Vec<u8>, GeminiEditErro
 }
 
 // LiteLLM rewinds a BytesIO or BufferedReader, reads it and puts the cursor back
-fn read_seekable(stream: &mut (dyn Read + Seek)) -> Result<Vec<u8>, GeminiEditError> {
+fn read_seekable(stream: &mut dyn ReadSeek) -> Result<Vec<u8>, GeminiEditError> {
     let start = stream.stream_position().map_err(GeminiEditError::Stream)?;
     stream
         .seek(SeekFrom::Start(0))
