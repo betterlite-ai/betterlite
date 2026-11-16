@@ -1,0 +1,78 @@
+kind: helper
+name: spend-event-reservation-precedence-and-absent-buckets
+call:
+  spend_event_projection:
+    function: build
+    kwargs: {model: gpt-4, call_type: acompletion}
+    litellm_params: {api_base: "https://api.example"}
+    metadata: {user_api_key_budget_reservation: {id: from-metadata}, team: t1}
+    litellm_metadata: {user_api_key_budget_reservation: {id: from-litellm-metadata}, org: o1}
+    typed_auth: {metadata: null, litellm_metadata: null}
+    response: {kind: absent}
+    start_time: "2026-01-01T00:00:00Z"
+    end_time: "2026-01-01T00:00:01Z"
+    store_bodies: false
+    cache: "on"
+calls:
+  - spend_event_projection:
+      function: build
+      kwargs: {}
+      litellm_params: {}
+      metadata: {user_api_key_budget_reservation: {id: from-metadata}}
+      litellm_metadata: {user_api_key_budget_reservation: {}}
+      typed_auth: {metadata: null, litellm_metadata: null}
+      response: {kind: absent}
+      start_time: "2026-01-01T00:00:00Z"
+      end_time: "2026-01-01T00:00:01Z"
+      store_bodies: false
+      cache: "on"
+  - spend_event_projection:
+      function: build
+      kwargs: {}
+      litellm_params: {}
+      metadata: {user_api_key_auth: {budget_reservation: {id: from-mapping}}, team: t1}
+      litellm_metadata: null
+      typed_auth: {metadata: null, litellm_metadata: null}
+      response: {kind: absent}
+      start_time: "2026-01-01T00:00:00Z"
+      end_time: "2026-01-01T00:00:01Z"
+      store_bodies: false
+      cache: "on"
+  - spend_event_projection:
+      function: build
+      kwargs: {}
+      litellm_params: {}
+      metadata: {user_api_key_auth: {budget_reservation: {id: from-mapping}}}
+      litellm_metadata: null
+      typed_auth: {metadata: {budget_reservation: {id: from-typed}}, litellm_metadata: null}
+      response: {kind: absent}
+      start_time: "2026-01-01T00:00:00Z"
+      end_time: "2026-01-01T00:00:01Z"
+      store_bodies: false
+      cache: "on"
+  - spend_event_projection:
+      function: build
+      kwargs: {}
+      litellm_params: {}
+      metadata: {user_api_key_auth: {budget_reservation: {id: from-mapping}}, user_api_key_budget_reservation: {id: stale}}
+      litellm_metadata: {user_api_key_auth: {x: 1}}
+      typed_auth: {metadata: null, litellm_metadata: {budget_reservation: null}}
+      response: {kind: absent}
+      start_time: "2026-01-01T00:00:00Z"
+      end_time: "2026-01-01T00:00:01Z"
+      store_bodies: false
+      cache: "on"
+  - spend_event_projection:
+      function: build
+      kwargs: {}
+      litellm_params: {}
+      metadata: {user_api_key_auth: {x: 1}, litellm_parent_otel_span: span, team: t1}
+      litellm_metadata: {litellm_parent_otel_span: span, org: o1}
+      typed_auth: {metadata: null, litellm_metadata: null}
+      response: {kind: absent}
+      start_time: "2026-01-01T00:00:00Z"
+      end_time: "2026-01-01T00:00:01Z"
+      store_bodies: false
+      cache: "on"
+env: {}
+compare: {ignore: []}

@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::iter;
 use std::path::{Path, PathBuf};
 use std::str;
 
@@ -10,7 +9,7 @@ use crate::websocket_oracle::{
     OracleLimits,
     decode::{FilesystemFixtures, decode_ws_case},
 };
-use betterlite_oracle_runner::case::helper::parse_helper_case;
+use betterlite_oracle_runner::case::helper::parse_checked_helper_case;
 use betterlite_oracle_runner::case::{
     BodyKind, Ignore, RequestBody, UpstreamAnswer, validate_ignores,
 };
@@ -167,15 +166,9 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
         return Ok(LoadedCase::WebSocket(Box::new(case)));
     }
     if probe.kind.is_some() {
-        let case = parse_helper_case(path, text)?;
-        for call in iter::once(&case.call).chain(&case.calls) {
-            call.check(&GROUPS)
-                .map_err(|message| OracleError::CaseInvalid {
-                    path: path.to_owned(),
-                    message,
-                })?;
-        }
-        return Ok(LoadedCase::Helper(case));
+        return Ok(LoadedCase::Helper(parse_checked_helper_case(
+            path, text, &GROUPS,
+        )?));
     }
     if probe.scenario.is_some() {
         let case: ScenarioCase = serde_saphyr::from_str(text).map_err(parse_error)?;

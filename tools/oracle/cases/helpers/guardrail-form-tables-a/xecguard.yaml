@@ -1,0 +1,8 @@
+kind: helper
+name: guardrail-form-tables-a-xecguard
+call:
+  b6561:
+    provider: xecguard
+env: {}
+compare:
+  ignore: []

@@ -16,7 +16,7 @@ use crate::http::Response;
 use crate::http::browser_flow;
 use crate::paths::artifact_root;
 use crate::process::Gateway;
-use betterlite_oracle_runner::helpers::{HelperRun, run_case};
+use betterlite_oracle_runner::helpers::{HelperRun, run_helper_cases};
 use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
 use betterlite_oracle_runner::routing_mock_scripts::MockScript;
 
@@ -46,7 +46,7 @@ pub(crate) fn run_cases(
     let mut groups = BTreeMap::<String, Vec<Case>>::new();
     let mut scenarios = Vec::new();
     let mut websocket_cases = Vec::new();
-    let mut helper_outcome = HelperRun::Match;
+    let mut helper_cases = Vec::new();
     for loaded_case in cases {
         match loaded_case {
             LoadedCase::Http(http_case) => {
@@ -54,15 +54,11 @@ pub(crate) fn run_cases(
                 groups.entry(key).or_default().push(http_case);
             }
             LoadedCase::Scenario(scenario_case) => scenarios.push(scenario_case),
-            LoadedCase::Helper(helper_case) => {
-                let result = run_case(&helpers::GROUPS, &helper_case, options.self_check)?;
-                if matches!(result, HelperRun::Difference) {
-                    helper_outcome = HelperRun::Difference;
-                }
-            }
+            LoadedCase::Helper(helper_case) => helper_cases.push(helper_case),
             LoadedCase::WebSocket(websocket_case) => websocket_cases.push(*websocket_case),
         }
     }
+    let helper_outcome = run_helper_cases(&helpers::GROUPS, &helper_cases, options.self_check)?;
     let root = artifact_root()?;
     let mut outcomes = Vec::new();
     for (_, group) in groups {

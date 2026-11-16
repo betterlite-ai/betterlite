@@ -116,6 +116,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "imagen_generation"
+path = "fuzz_targets/imagen_generation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "lyria_audio"
 path = "fuzz_targets/lyria_audio.rs"
 test = false

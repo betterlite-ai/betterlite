@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
+use std::iter;
 use std::path::Path;
 
+use betterlite_oracle_helper_api::group::Group;
 use serde::Deserialize;
 
 use super::{Ignore, validate_ignores};
@@ -53,5 +55,22 @@ pub fn parse_helper_case(path: &Path, text: &str) -> Result<HelperCase, HelperRu
             source: Box::new(source),
         })?;
     validate_helper(path, &case)?;
+    Ok(case)
+}
+
+// a crate knows only the groups it was built with, so the caller names them
+pub fn parse_checked_helper_case(
+    path: &Path,
+    text: &str,
+    groups: &[Group],
+) -> Result<HelperCase, HelperRunError> {
+    let case = parse_helper_case(path, text)?;
+    for call in iter::once(&case.call).chain(&case.calls) {
+        call.check(groups)
+            .map_err(|message| HelperRunError::CaseInvalid {
+                path: path.to_owned(),
+                message,
+            })?;
+    }
     Ok(case)
 }
