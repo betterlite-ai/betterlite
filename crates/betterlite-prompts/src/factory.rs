@@ -30,7 +30,7 @@ pub struct PromptFactory {
 }
 
 impl PromptFactory {
-    pub(crate) async fn hf_chat_template(
+    pub async fn hf_chat_template(
         &self,
         model: &str,
         messages: &[Message],
