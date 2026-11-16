@@ -54,7 +54,7 @@ enum RawDisable {
 }
 
 #[derive(Debug, Clone)]
-pub struct Settings {
+pub struct StartupValues {
     pub updates_enabled: bool,
     pub command_timeout: Duration,
     pub lock_timeout: Duration,
@@ -62,7 +62,7 @@ pub struct Settings {
     pub bootstrap_inputs: Vec<&'static str>,
 }
 
-impl Default for Settings {
+impl Default for StartupValues {
     fn default() -> Self {
         Self {
             updates_enabled: true,
@@ -74,9 +74,11 @@ impl Default for Settings {
     }
 }
 
+// boxed so the loaded Config stays small enough for futures that hold it across an await
+pub type Settings = Box<StartupValues>;
+
 impl Section for Raw {
-    // boxed so the loaded Config stays small enough for futures that hold it across an await
-    type Settings = Box<Settings>;
+    type Settings = Settings;
 
     fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
     where
@@ -87,7 +89,7 @@ impl Section for Raw {
         let command = present(PRISMA_COMMAND_TIMEOUT_ENV_VAR);
         let lock = present(MIGRATION_LOCK_TIMEOUT_ENV_VAR);
         let deploy = present(PRISMA_DEPLOY_TIMEOUT_ENV_VAR);
-        Ok(Box::new(Settings {
+        Ok(Box::new(StartupValues {
             updates_enabled: !disable,
             command_timeout: timeout_from_env(
                 PRISMA_COMMAND_TIMEOUT_ENV_VAR,
