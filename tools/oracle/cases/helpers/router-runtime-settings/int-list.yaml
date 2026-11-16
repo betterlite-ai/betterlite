@@ -1,0 +1,12 @@
+kind: helper
+name: router-runtime-settings-int-list
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["allowed_fails", [1]]
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/error/message, why: "Python raises its own exception text; betterlite writes its own message"}
