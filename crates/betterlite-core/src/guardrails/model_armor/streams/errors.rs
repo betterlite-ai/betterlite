@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::error::Error as StdError;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
@@ -15,7 +16,10 @@ pub struct HttpError {
 
 // What a buffered stream run can fail with: a frame that cannot be encoded, or a failure the wiring raises.
 #[derive(Debug, thiserror::Error)]
-pub enum StreamError<Failure: 'static> {
+pub enum StreamError<Failure>
+where
+    Failure: StdError + 'static,
+{
     #[error("the guardrail error frame cannot be encoded")]
     Encode(#[source] serde_json::Error),
     #[error(transparent)]

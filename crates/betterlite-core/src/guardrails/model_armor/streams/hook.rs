@@ -105,7 +105,7 @@ fn scan_failure<W: StreamWire>(
 }
 
 fn finish_scan<W: StreamWire>(
-    mut hook: StreamHook<'_, W>,
+    hook: StreamHook<'_, W>,
     surface: Surface,
     assembled: Assembly,
     content: &str,
