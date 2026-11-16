@@ -110,6 +110,17 @@ fn duration_keeps_more_than_a_double_can(#[case] raw: &str, #[case] expected: &s
     );
 }
 
+#[test]
+fn the_digit_cap_keeps_4096_digits_and_drops_4097() {
+    let zeros = "0".repeat(4095);
+    let expected = format!("1{zeros}");
+    assert_eq!(
+        duration_value(&text("1e4095")),
+        Some(DurationValue::Numeric(expected))
+    );
+    assert_eq!(duration_value(&text("1e4096")), None);
+}
+
 #[rstest]
 #[case::numeric(Some(text("2.5")), Some("2"))]
 #[case::auto(Some(text("auto")), None)]
@@ -231,6 +242,8 @@ fn h3_sizes_use_the_h3_bands(
 #[case::zero_height("10x0")]
 #[case::spaces(" 10x20")]
 #[case::signs("-10x20")]
+#[case::plus_width("+10x20")]
+#[case::plus_height("10x+20")]
 #[case::unicode_digits("١٢x٣٤")]
 #[case::overflow("340282366920938463463374607431768211456x2")]
 #[case::empty("")]

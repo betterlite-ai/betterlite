@@ -44,7 +44,7 @@ fn split_exponent(text: &str) -> Option<(&str, i64)> {
         None => Some((text, 0)),
         Some((mantissa, exponent)) => {
             let (negative, digits) = exponent_parts(exponent);
-            if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
                 return None;
             }
             let magnitude: i64 = digits.parse().ok()?;
