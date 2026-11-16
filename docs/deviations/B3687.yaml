@@ -1,7 +1,8 @@
 task: B3687
 deviations:
   - what: >-
-      major_airlines never answers 404 or 500; the airline list is compiled into the binary.
+      major_airlines never answers 404, and its 500 branch is unreachable because the list
+      is compiled into the binary and a test parses the same text.
     why: >-
       LiteLLM reads major_airlines.json from its package folder on every request, so it
       fails only when an install is broken. A compiled-in file cannot go missing or stop

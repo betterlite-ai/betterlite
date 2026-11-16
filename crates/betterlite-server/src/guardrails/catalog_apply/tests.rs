@@ -16,6 +16,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
+use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::guardrail_records::record::GuardrailStatus;
 use rstest::rstest;
 use serde::Deserialize;
@@ -472,14 +473,21 @@ async fn blocked_words_needs_a_key() {
 async fn apply_returns_the_first_returned_text() {
     let mut world = World::new();
     world.runner = RunnerMode::Texts(vec!["first".to_owned(), "second".to_owned()]);
-    let response = apply_request(&world, r#"{"guardrail_name":"safety","text":"hello"}"#).await;
+    let body = r#"{"guardrail_name":"safety","text":"hello","language":"en"}"#;
+    let response = apply_request(&world, body).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         body_value(response).await,
         value(r#"{"response_text":"first"}"#)
     );
     let call = runner_call(&world.events());
-    assert_eq!(call.inputs.texts, Some(vec!["hello".to_owned()]));
+    assert_eq!(
+        call.inputs,
+        GuardrailApiInputs {
+            texts: Some(vec!["hello".to_owned()]),
+            ..Default::default()
+        }
+    );
 }
 
 #[tokio::test]
