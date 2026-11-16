@@ -112,12 +112,12 @@ impl ChunkState {
         let Ok(event) = decode_agent_event(data.as_bytes()) else {
             return;
         };
-        if self.current_event == THREAD_CREATED_EVENT {
-            self.record_thread(&event);
-        } else if self.current_event == MESSAGE_COMPLETED_EVENT {
-            self.collect_annotations(event);
-        } else if self.current_event == MESSAGE_DELTA_EVENT {
-            self.push_deltas(event);
+        let kind = self.current_event.clone();
+        match kind.as_str() {
+            THREAD_CREATED_EVENT => self.record_thread(&event),
+            MESSAGE_COMPLETED_EVENT => self.collect_annotations(event),
+            MESSAGE_DELTA_EVENT => self.push_deltas(event),
+            _ => {}
         }
     }
 
