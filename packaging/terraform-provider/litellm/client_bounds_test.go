@@ -45,6 +45,42 @@ func TestRequestFailsWhenServerNeverAnswers(t *testing.T) {
 	}
 }
 
+func TestRequestFailsWhenResponseBodyStalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	client := newClient(server.URL, "sk-test", false, clientLimits{
+		requestTimeout:      200 * time.Millisecond,
+		dialTimeout:         time.Second,
+		tlsHandshakeTimeout: time.Second,
+		maxResponseBytes:    1 << 20,
+	})
+
+	start := time.Now()
+	resp, err := MakeRequest(client, "GET", "/stall", nil)
+	if err != nil {
+		t.Fatalf("MakeRequest /stall: %v", err)
+	}
+	defer resp.Body.Close()
+
+	_, err = io.ReadAll(resp.Body)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("reading a stalled response body succeeded")
+	}
+
+	if elapsed < 100*time.Millisecond {
+		t.Errorf("body read failed after %s, want at least 100ms", elapsed)
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("body read failed after %s, want before 5s", elapsed)
+	}
+}
+
 func TestResponseBodyOverCapFails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/at-cap" {
