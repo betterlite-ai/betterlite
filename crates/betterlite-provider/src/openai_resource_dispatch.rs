@@ -72,8 +72,7 @@ pub enum OpenAiResourceError {
     Unsupported { operation: &'static str },
 }
 
-// The only dispatch a leaf call goes through; leaf errors are passed on unchanged, never rewritten
-// The four sync leaves run here, so the returned future carries only Send values
+// The four sync leaves run before the future, so it carries only Send values
 #[must_use]
 pub fn dispatch(operation: OpenAiResourceOperation<'_>) -> DispatchFuture<'_> {
     match operation {

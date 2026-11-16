@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::openai_credentials::Settings;
+use betterlite_openai::api::vector_store_records::records::union::VectorStoreRecord;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::vector_stores::error::VectorStoreError;
 use betterlite_openai::vector_stores::files::{
     Attributes, FileCreateParams, FileListParams, FileOperation, FileUpdateParams,
 };
+use betterlite_openai::vector_stores::reply::{ReplyKind, VectorReply};
 use betterlite_openai::vector_stores::store::{CreateParams, Query, SearchParams};
 use betterlite_openai::vector_stores::{Headers, Request};
 use indexmap::IndexMap;
@@ -451,6 +453,58 @@ async fn file_update_error_row() {
     ));
 }
 
+fn reply(status: u16, body: &str) -> http::Response<Vec<u8>> {
+    let built = http::Response::builder().status(status);
+    built.body(body.as_bytes().to_vec()).unwrap()
+}
+
+async fn search_reply_row() {
+    let settings = settings();
+    let body = r#"{"object":"vector_store.search_results.page","search_query":"q","data":[{"content":[{"text":"t","type":"text"}],"file_id":"f","filename":"a.txt","attributes":{"k":"v"}}]}"#;
+    let response = reply(200, body);
+    let call = Call::Reply {
+        kind: ReplyKind::Search,
+        response: &response,
+    };
+    let result = run(&settings, globals(None), None, call).await;
+    let Ok(OpenAiResourceResult::VectorStores(Outcome::Reply(VectorReply::Record(record)))) =
+        result
+    else {
+        panic!("the search reply decodes to a record");
+    };
+    let VectorStoreRecord::SearchResponse(page) = &*record else {
+        panic!("a search reply is a search response record");
+    };
+    assert_eq!(page.search_query.as_deref(), Some("q"));
+    let file_ids: Vec<_> = page
+        .data
+        .iter()
+        .flatten()
+        .map(|hit| hit.file_id.as_deref())
+        .collect();
+    assert_eq!(file_ids, [Some("f")]);
+    let sent: serde_json::Value = serde_json::from_str(body).unwrap();
+    assert_eq!(serde_json::to_value(&*record).unwrap(), sent);
+}
+
+async fn reply_error_row() {
+    let settings = settings();
+    let response = reply(502, "{");
+    let call = Call::Reply {
+        kind: ReplyKind::Create,
+        response: &response,
+    };
+    let result = run(&settings, globals(None), None, call).await;
+    let Err(error) = result else {
+        panic!("a malformed reply is a leaf error");
+    };
+    assert!(matches!(
+        error,
+        OpenAiResourceError::VectorStores(VectorStoreError::InvalidReply { status, .. })
+            if status.as_u16() == 502
+    ));
+}
+
 pub(crate) async fn check() {
     credential_rows().await;
     environment_rows().await;
@@ -464,4 +518,6 @@ pub(crate) async fn check() {
     file_list_row().await;
     file_operation_rows().await;
     file_update_error_row().await;
+    search_reply_row().await;
+    reply_error_row().await;
 }

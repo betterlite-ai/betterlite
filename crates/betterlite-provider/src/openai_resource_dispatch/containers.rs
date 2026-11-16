@@ -60,7 +60,11 @@ impl Dispatch<'_> {
             Call::Create { name, params } => Ok(Outcome::Create(
                 config.transform_container_create_request(name, params, context),
             )),
-            Call::List { api_base, query } => Ok(list_outcome(config, api_base, context, &query)),
+            Call::List { api_base, query } => {
+                let (url, query) =
+                    config.transform_container_list_request(api_base, context, &query);
+                Ok(Outcome::Request { url, query })
+            }
             Call::Retrieve {
                 container_id,
                 api_base,
@@ -94,16 +98,6 @@ impl Dispatch<'_> {
             )),
         }
     }
-}
-
-fn list_outcome(
-    config: &dyn BaseContainerConfig,
-    api_base: &str,
-    context: ContainerRequestContext<'_>,
-    query: &ContainerListQuery<'_>,
-) -> Outcome {
-    let (url, query) = config.transform_container_list_request(api_base, context, query);
-    Outcome::Request { url, query }
 }
 
 fn file_list_request(

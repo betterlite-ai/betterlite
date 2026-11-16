@@ -6,6 +6,7 @@ use betterlite_openai::vector_stores::files::{
     FileCreateParams, FileListParams, FileOperation, create_request as file_create_request,
     file_request, list_request as file_list_request,
 };
+use betterlite_openai::vector_stores::reply::{ReplyKind, VectorReply, transform_response};
 use betterlite_openai::vector_stores::store::{
     CreateParams, Query, SearchParams, create_request as store_create_request, search_request,
 };
@@ -22,7 +23,7 @@ pub struct Dispatch<'a> {
     pub call: Call<'a>,
 }
 
-// B527's credential, URL, endpoint, search, create and attached-file calls, each calling its leaf
+// B527's credential, URL, endpoint, request and reply calls, each calling its leaf
 pub enum Call<'a> {
     Auth(Option<&'a SecretString>),
     Environment {
@@ -36,6 +37,10 @@ pub enum Call<'a> {
     },
     Endpoints(EndpointKind),
     Request(RequestCall<'a>),
+    Reply {
+        kind: ReplyKind,
+        response: &'a http::Response<Vec<u8>>,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -76,6 +81,7 @@ pub enum Outcome {
     Url(String),
     Endpoints(Box<VectorStoreIndexEndpoints>),
     Request(Request),
+    Reply(VectorReply),
 }
 
 impl Dispatch<'_> {
@@ -115,6 +121,9 @@ impl Dispatch<'_> {
                 Ok(Outcome::Endpoints(Box::new(file_endpoints())))
             }
             Call::Request(request) => Ok(Outcome::Request(request_outcome(request)?)),
+            Call::Reply { kind, response } => {
+                Ok(Outcome::Reply(transform_response(kind, response)?))
+            }
         }
     }
 }
