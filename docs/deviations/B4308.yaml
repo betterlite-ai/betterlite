@@ -12,6 +12,9 @@ deviations:
   - what: "An explicit socket_timeout null cannot disable the 5.0 second default, because the bridge drops null keyword arguments and B4299 then applies RedisCache.__init__'s default."
     why: "redis-py treats a null kwarg as unset too, so a null socket_timeout in LiteLLM also ends at the 5.0 default; no behavior differs, but the mechanism does."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L604-L650
+  - what: "An absent or null host and url with no REDIS_ environment fallback answers B4321's missing-target failure where LiteLLM's redis-py falls back to localhost, and a null value for a name no redis client knows is dropped so the test runs where LiteLLM's redis-py raise fails it."
+    why: "B4321 rejects a settings map with no host or url and its typed option map has no null member, so the bridge drops nulls instead of forwarding them; the route must not pick or default connection fields itself."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L622-L646
   - what: "The named Cache options that only shape caching (mode, namespace, ttl, redis_flush_size, disk_cache_dir, supported_call_types, semantic cache settings and the s3/azure/qdrant credentials) are accepted and ignored instead of being bound into the temporary cache."
     why: "The route only builds the cache to call test_connection, which pings Redis; none of those options reach the connection or the answer, and the temporary cache is dropped before returning."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L80-L218

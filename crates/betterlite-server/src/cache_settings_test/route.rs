@@ -244,7 +244,10 @@ fn cache_settings_from_map(
     }
     options.retain(|name, _value| !is_cache_only(name));
     // redis-py treats a null kwarg as unset, while the passthrough map has no null: only an explicit url null carries meaning.
-    options.retain(|name, value| !value.is_null() || name.as_str() == URL_OPTION);
+    options.retain(|_name, value| !value.is_null());
+    if settings.get(URL_OPTION).is_some_and(Value::is_null) {
+        options.insert(URL_OPTION.to_owned(), Value::Null);
+    }
     let redis: RedisOverrides = serde_path_to_error::deserialize(Value::Object(options))
         .map_err(|source| CacheOptionsError { source })?;
     Ok(CacheSettings {
