@@ -14,7 +14,7 @@ description: >-
 
   The package __init__.py only exports the hook and the config type.
 
-  The plan registers helper operation b8201 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8201.rs, write tools/oracle/helpers/b8201.py, and leave both registries as they are.
+  The plan registers helper operation b8201 as a not_built stub in tools/oracle/src/helpers/mcp/lib.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8201.rs, write tools/oracle/helpers/b8201.py, and leave both registries as they are.
 
 scope:
   paths:

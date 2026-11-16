@@ -18,8 +18,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fixture::{Answer, Constructor, Log, Recorder, Sdk, configs, instant};
+use tokio::runtime::Builder;
 
 mod fixture;
 
@@ -216,7 +218,7 @@ async fn drive(call: &Call) -> Output {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Call;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -230,7 +232,7 @@ impl crate::helpers::Helper for Op {
                 message,
             })
         };
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| failed("RuntimeError", error.to_string()))?;
         serde_json::to_value(runtime.block_on(drive(input)))

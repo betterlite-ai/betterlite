@@ -4,6 +4,7 @@ use betterlite_openai::api::rerank_contracts::records::RerankDocument;
 use betterlite_openai::nvidia_nim_chat::NvidiaNimConfig;
 use betterlite_openai::nvidia_nim_embedding::{SUPPORTED_OPENAI_PARAMS, map_params};
 use betterlite_openai::openai_base_config::Object;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_provider::api::rerank_contracts::Params;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -72,10 +73,10 @@ pub(crate) struct Case {
     pub(crate) request_data: Params,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.kind.as_str() {
             "chat_supported" => Ok(json!({"supported": chat_supported(&input.models)})),
             "chat_map" => Ok(json!({"mapped": chat_map(&input.cases)})),

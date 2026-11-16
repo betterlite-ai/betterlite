@@ -1,7 +1,10 @@
 use betterlite_config::sections::rate_limit_usage::TokenRateLimitType;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_rate_limit::usage_resolution::{
-    ResponseAPIUsage, ResponseObject, Usage, aggregate_only_total_tokens, get_rate_limit_type,
-    get_total_tokens_from_usage, reconcile_io_usage, resolve_rerank_token_usage, response_usage,
+    ResponseAPIUsage, ResponseObject, ResponseUsage, Usage, aggregate_only_total_tokens,
+    get_rate_limit_type, get_total_tokens_from_usage, reconcile_io_usage,
+    recovered_partial_usage_tokens, resolve_rerank_token_usage, response_usage,
 };
 use serde::Deserialize;
 
@@ -49,17 +52,17 @@ fn response(input: &Input) -> ResponseObject {
 
 fn resolved_counts(
     rerank: Option<(u64, u64, bool)>,
-    usage: Option<betterlite_rate_limit::usage_resolution::ResponseUsage<'_>>,
+    usage: Option<ResponseUsage<'_>>,
     response: &ResponseObject,
     rate_limit_type: TokenRateLimitType,
-) -> Result<(u64, u64, u64, bool), Box<crate::helpers::HelperError>> {
+) -> Result<(u64, u64, u64, bool), Box<HelperError>> {
     if let Some((rerank_input, rerank_output, resolved)) = rerank {
         let total = match rate_limit_type {
             TokenRateLimitType::Input => rerank_input,
             TokenRateLimitType::Output => rerank_output,
             TokenRateLimitType::Total => {
                 rerank_input.checked_add(rerank_output).ok_or_else(|| {
-                    Box::new(crate::helpers::HelperError {
+                    Box::new(HelperError {
                         class: "InvalidInput".to_owned(),
                         status: None,
                         error_type: None,
@@ -77,10 +80,10 @@ fn resolved_counts(
     Ok((total, input_tokens, output_tokens, resolved))
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let configured = TokenRateLimitType::from_config(input.rate_limit_type.as_deref());
         let rate_limit_name = get_rate_limit_type(configured);
         let rerank = resolve_rerank_token_usage(
@@ -99,10 +102,7 @@ impl crate::helpers::Helper for Op {
             .combined_usage_object
             .as_ref()
             .map_or((0, 0, 0), |combined_usage| {
-                betterlite_rate_limit::usage_resolution::recovered_partial_usage_tokens(
-                    Some(combined_usage),
-                    configured,
-                )
+                recovered_partial_usage_tokens(Some(combined_usage), configured)
             });
         Ok(serde_json::json!({
             "rate_limit_type": rate_limit_name,

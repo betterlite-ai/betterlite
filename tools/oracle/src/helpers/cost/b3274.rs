@@ -11,7 +11,8 @@ use serde_json::json;
 use thiserror::Error;
 use tokio::runtime::Builder;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -63,7 +64,7 @@ fn pricing_failure(error: &SearchCostError<Unmapped>) -> Box<HelperError> {
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

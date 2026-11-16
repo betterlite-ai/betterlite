@@ -17,19 +17,16 @@ pub mod discovery_http;
 pub mod finops_fixture;
 mod gateway;
 #[expect(
-    clippy::mod_module_files,
     clippy::disallowed_methods,
-    clippy::absolute_paths,
-    clippy::map_err_ignore,
-    reason = "The bounded helper process runner owns these CLI and pipe operations."
+    reason = "Helper operations build provider JSON with serde_json::json!."
 )]
 pub mod helpers;
 pub mod http;
 pub mod http_scenarios;
 pub mod insights_http;
-pub mod mock;
+
 pub mod model_insights_http;
-pub mod multipart_oracle;
+
 pub mod oracle_comparison_contracts;
 pub mod paths;
 pub mod process;
@@ -39,7 +36,7 @@ pub mod process;
 )]
 pub mod router_probes;
 mod routing_component_oracle;
-pub mod routing_mock_scripts;
+
 pub mod routing_probe_ipc;
 pub mod routing_scenarios;
 pub mod runner;
@@ -57,7 +54,8 @@ use std::str::Utf8Error;
 use std::sync::mpsc::RecvError;
 use std::time::{Duration, SystemTimeError};
 
-use axum::http::status::InvalidStatusCode;
+use betterlite_oracle_runner::error::HelperRunError;
+use betterlite_oracle_runner::multipart_oracle::error::MultipartError;
 use betterlite_postgres_fixture::error::FixtureError;
 use case::browser_flow::PlaceholderError;
 use http::browser_flow::BrowserFlowError;
@@ -88,12 +86,6 @@ pub enum OracleError {
     GatewayPort(#[from] paths::PortError),
     #[error(transparent)]
     Cli(#[from] clap::Error),
-    #[error("cannot read case {path}: {source}")]
-    CaseRead {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
     #[error("cannot parse case {path}: {source}")]
     CaseParse {
         path: PathBuf,
@@ -132,31 +124,11 @@ pub enum OracleError {
     #[error("response body event is not valid JSON: {0}")]
     HttpBody(#[source] serde_json::Error),
     #[error(transparent)]
-    Multipart(multipart_oracle::error::MultipartError),
+    Multipart(MultipartError),
     #[error("mock provider failed: {0}")]
     MockIo(#[source] io::Error),
     #[error("mock provider thread panicked")]
     MockJoin,
-    #[error("mock script is {bytes} bytes, past the 16 MiB limit")]
-    ScriptTooLarge { bytes: usize },
-    #[error("cannot parse mock script: {0}")]
-    ScriptParse(#[source] serde_json::Error),
-    #[error("mock script has {count} replies, past the limit of 256")]
-    ScriptReplies { count: usize },
-    #[error("mock script deadline_ms {millis} is outside 1 to 30000")]
-    ScriptDeadline { millis: u64 },
-    #[error("mock script reply {index} waits {millis} ms, past the script deadline")]
-    ScriptDelay { index: usize, millis: u64 },
-    #[error("mock script reply {index} must contain exactly one of body or events")]
-    ScriptAnswer { index: usize },
-    #[error("mock script reply {index} has an invalid status: {source}")]
-    ScriptStatus {
-        index: usize,
-        #[source]
-        source: InvalidStatusCode,
-    },
-    #[error("mock script barrier {name} is held by fewer than two replies")]
-    ScriptBarrier { name: String },
     #[error("cannot open gateway log {path}: {source}")]
     ProcessLog {
         path: PathBuf,
@@ -167,8 +139,6 @@ pub enum OracleError {
     ProcessSpawn(#[source] io::Error),
     #[error("cannot synchronize LiteLLM environment: {0}")]
     ProcessSync(#[source] io::Error),
-    #[error("LiteLLM environment synchronization exited with {0}")]
-    ProcessSyncExited(ExitStatus),
     #[error("gateway exited before readiness: {0}")]
     ProcessExited(ExitStatus),
     #[error("gateway did not become ready within 120 seconds")]
@@ -220,33 +190,6 @@ pub enum OracleError {
     ProbeBuild { status: ExitStatus, stderr: Vec<u8> },
     #[error("helper input is invalid: {message}")]
     HelperInput { message: String },
-    #[error("cannot start helper: {0}")]
-    HelperSpawn(#[source] io::Error),
-    #[error("cannot write helper input: {0}")]
-    HelperIo(#[source] io::Error),
-    #[error("helper stdin is unavailable")]
-    HelperStdin,
-    #[error("helper stdout is unavailable")]
-    HelperStdout,
-    #[error("helper stderr is unavailable")]
-    HelperStderr,
-    #[error("helper reader thread panicked")]
-    HelperJoin,
-    #[error("helper timed out and was reaped")]
-    HelperTimeout,
-    #[error("helper output exceeded 1 MiB")]
-    HelperOutputTooLarge,
-    #[error("helper exited with {status}: {diagnostic}")]
-    HelperExited {
-        status: ExitStatus,
-        diagnostic: String,
-    },
-    #[error("helper output is not valid JSON: {0}")]
-    HelperJson(#[source] serde_json::Error),
-    #[error("BETTERLITE_ORACLE_CACHE must be own or shared")]
-    CacheMode,
-    #[error("HOME is not set, so the shared LiteLLM answer cache has no folder")]
-    CacheHome,
     #[error("database fixture failed: {0}")]
     DatabaseFixture(#[source] FixtureError),
     #[error("cases declare different database fixtures: {cases:?}")]
@@ -289,6 +232,8 @@ pub enum OracleError {
     },
     #[error(transparent)]
     HttpScenario(Box<http_scenarios::error::ScenarioError>),
+    #[error(transparent)]
+    HelperRun(#[from] HelperRunError),
 }
 
 impl From<http_scenarios::error::ScenarioError> for OracleError {

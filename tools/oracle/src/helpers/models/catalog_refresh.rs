@@ -2,11 +2,12 @@ mod input;
 mod scenario;
 mod scripting;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = input::Input;
 
     fn run(input: &Self::Input) -> HelperResult {

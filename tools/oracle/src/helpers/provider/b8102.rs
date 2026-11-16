@@ -1,8 +1,7 @@
 use serde::Deserialize;
 
 use self::script::{HeadersCase, InfoCase, ReplyCase, RequestCase, UrlCase};
-use crate::helpers::Helper;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod ops;
 mod script;

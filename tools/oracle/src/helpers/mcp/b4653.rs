@@ -4,7 +4,8 @@ use serde_json::{Value, json};
 use betterlite_mcp::bridge_credentials::{self, ENCRYPTION_KEY_DOMAIN, SIGNING_KEY_DOMAIN};
 use betterlite_mcp::session_credentials::{self, SESSION_SIGNING_KEY_DOMAIN};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use bridge::EnvelopeFields;
 use session::SessionFields;

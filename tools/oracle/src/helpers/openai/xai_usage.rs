@@ -17,7 +17,8 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Number, Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -69,10 +70,10 @@ impl GenericTokenPricing for CountPricing {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.action {
             Action::Ticks => Ok(ticks(&input.ticks)),
             Action::Cost => priced(&input.usage),
@@ -148,7 +149,7 @@ fn ticks(ticks: &Value) -> Value {
     })
 }
 
-fn priced(fields: &UsageFields) -> crate::helpers::HelperResult {
+fn priced(fields: &UsageFields) -> HelperResult {
     let (prompt_cost, completion_cost) =
         cost_per_token(&CountPricing, "oracle-model", &usage(fields)?)
             .map_err(|error: XaiUsageError| failure(error.to_string()))?;
@@ -157,7 +158,7 @@ fn priced(fields: &UsageFields) -> crate::helpers::HelperResult {
     Ok(json!({ "prompt_cost": prompt, "completion_cost": completion }))
 }
 
-fn reconciled(fields: &UsageFields) -> crate::helpers::HelperResult {
+fn reconciled(fields: &UsageFields) -> HelperResult {
     let mut usage = usage(fields)?;
     fold_reasoning(&mut usage).map_err(|error| failure(error.to_string()))?;
     normalize_totals(&mut usage).map_err(|error| failure(error.to_string()))?;
@@ -171,7 +172,7 @@ fn searched(
     fields: &UsageFields,
     details: Option<&BTreeMap<String, Value>>,
     search_costs: Option<&SearchContextPricing>,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let mut usage = usage(fields)?;
     attach_tool_details(&mut usage, details.cloned());
     let search_cost = cost_per_web_search_request(&usage, search_costs)

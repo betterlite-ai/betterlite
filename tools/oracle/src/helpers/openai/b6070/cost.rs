@@ -21,7 +21,7 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_models::token_rates::ModelInfo;
-use betterlite_openai::fireworks_ai_cost::error::LookupFailed;
+use betterlite_openai::fireworks_ai_cost::error::{FireworksCostError, LookupFailed};
 use betterlite_openai::fireworks_ai_cost::{
     FireworksPricingTiers, ModelInfoLookup, cost_per_token,
 };
@@ -31,7 +31,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use serde_json::value::RawValue;
 
-use crate::helpers::HelperError;
+use betterlite_models::cost_usage::CostUsage;
+use betterlite_oracle_helper_api::error::HelperError;
+use tokio::runtime::Builder;
 
 const NORMALIZERS: NameNormalizers = NameNormalizers {
     bedrock_base_model: get_bedrock_base_model,
@@ -112,6 +114,10 @@ impl ModelInfoLookup for ModelCostLookup {
         query(&environment, &request)
     }
 }
+#[expect(
+    clippy::map_err_ignore,
+    reason = "the gateway lookup trait answers LookupFailed, which holds no detail"
+)]
 fn query(
     environment: &MetadataEnvironment<'_>,
     request: &MetadataRequest<'_>,
@@ -120,7 +126,7 @@ fn query(
         client: RefuseFetch,
         base_url: HF_CONFIG_BASE_URL.to_owned(),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|_| LookupFailed)?;
@@ -157,7 +163,7 @@ pub(super) fn answer(
     call: &CostCall,
     lookup: &ModelCostLookup,
 ) -> Result<(String, String), Box<HelperError>> {
-    let usage = betterlite_models::cost_usage::CostUsage {
+    let usage = CostUsage {
         prompt_tokens: call.usage.prompt,
         completion_tokens: call.usage.completion,
         total_tokens: call.usage.total,
@@ -179,9 +185,7 @@ pub(super) fn answer(
         completion.normalize().to_string(),
     ))
 }
-fn cost_error(
-    error: &betterlite_openai::fireworks_ai_cost::error::FireworksCostError,
-) -> Box<HelperError> {
+fn cost_error(error: &FireworksCostError) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("FireworksCostError"),
         status: None,

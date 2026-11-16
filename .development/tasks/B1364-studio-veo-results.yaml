@@ -68,7 +68,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_veo_operation.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_veo_operation)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_veo_operation_corpus)'
       why: Newly committed provider envelopes must traverse decode_studio_veo_operation.
     - id: studio-veo-result-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_veo_operation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::studio_veo_operation::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_veo_operation*')" && cargo nextest run --locked -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^studio_veo_operation::/)'
       why: The added Studio operation variant is exercised by real HelperCase bytes.
 oracle_cases:
   - tools/oracle/cases/helpers/studio-veo-operation/missing-name.yaml

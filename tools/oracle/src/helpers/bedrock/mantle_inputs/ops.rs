@@ -12,7 +12,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use super::input::{BearerCase, ChatCase, Input, RegionCase};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const FIXTURE_CONFIG: &str =
     "model_list:\n  - model_name: fixture\n    litellm_params: {model: bedrock/fixture}\n";

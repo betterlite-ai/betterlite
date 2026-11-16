@@ -1,3 +1,4 @@
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Json;
 use betterlite_provider::sap_models::validate_chat_completion_tool;
 use betterlite_provider::sap_models::validate_masking_module;
@@ -34,10 +35,10 @@ fn attempt(call: &Call) -> Option<serde_json::Value> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let outcomes: Vec<serde_json::Value> = input
             .calls
             .iter()

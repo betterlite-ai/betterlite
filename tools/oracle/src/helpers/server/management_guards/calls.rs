@@ -119,6 +119,10 @@ pub(super) fn update_value(
     }
 }
 
+#[expect(
+    clippy::map_err_ignore,
+    reason = "an invalid status only says the code is out of range, and LiteLLM answers it with this fixed message"
+)]
 fn http_status(code: Option<u16>) -> Result<StatusCode, GuardFailure> {
     StatusCode::from_u16(code.unwrap_or(400))
         .map_err(|_| GuardFailure::InvalidInput("status_code must be a valid HTTP status"))

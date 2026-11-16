@@ -1,4 +1,6 @@
 use betterlite_db::spend_reset_unit_of_work::spend_reset_data;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -19,10 +21,10 @@ struct Case {
     spend_decrement: Decimal,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut output = BTreeMap::new();
         for (name, case) in &input.cases {
             output.insert(
@@ -31,7 +33,7 @@ impl crate::helpers::Helper for Op {
             );
         }
         serde_json::to_value(output).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,
