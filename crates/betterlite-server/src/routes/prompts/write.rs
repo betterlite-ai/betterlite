@@ -5,31 +5,32 @@
 
 use std::sync::Arc;
 
-use axum::Router;
 use axum::body::Bytes;
+use axum::extract::{Extension, Path, Query, State};
 use axum::routing::{post, put};
+use axum::{Json, Router};
 use betterlite_models::prompt_spec::PromptSpec;
 use betterlite_prompts::registry::mutation::prompt_registry_mutation::methods::PromptRegistryMutation as _;
 use betterlite_prompts::registry::prompt_endpoint_contracts::records::{
-    Prompt, is_ambiguous_keyed_prompt_data,
+    PatchPromptRequest, Prompt, is_ambiguous_keyed_prompt_data,
 };
 use betterlite_prompts::registry::prompt_endpoint_contracts::spec_conversion::create_versioned_prompt_spec;
 use betterlite_prompts::registry::prompt_endpoint_contracts::table::{
-    PromptTableActions, get_next_version_for_prompt,
+    PromptRowFilter, PromptRowQuery, PromptTableActions, get_next_version_for_prompt,
 };
-use betterlite_prompts::registry::prompt_registry_helpers::prompt_environment_or_default;
+use betterlite_prompts::registry::prompt_registry_helpers::{
+    get_base_prompt_id, get_version_number, prompt_environment_or_default,
+};
 
 use self::create::create_prompt;
-use self::delete::delete_prompt;
 use self::error::PromptWriteError;
-use self::patch::patch_prompt;
+use self::patch::{find_patch_target, patch_row};
 use self::state::{PromptWriteState, Writer};
 use self::update::update_prompt;
-use self::wire::{decode_body, new_row};
+use self::wire::{DeletedPrompt, EnvironmentQuery, decode_body, masked, new_row};
 use crate::auth::auth_identity::AuthContext;
 
 mod create;
-mod delete;
 mod error;
 mod patch;
 pub(crate) mod state;
@@ -72,6 +73,33 @@ where
         return Err(PromptWriteError::Ambiguous);
     }
     Ok((request, writer))
+}
+
+async fn require_any_version<Table>(table: &Table, base_prompt_id: &str) -> WriteResult<(), Table>
+where
+    Table: PromptTableActions,
+{
+    let query = PromptRowQuery {
+        filter: PromptRowFilter {
+            id: None,
+            prompt_id: Some(base_prompt_id.to_owned()),
+            version: None,
+            environment: None,
+        },
+        order: Vec::new(),
+        take: None,
+        distinct: Vec::new(),
+    };
+    let existing = table
+        .find_many(query)
+        .await
+        .map_err(|source| PromptWriteError::Table { source })?;
+    if existing.is_empty() {
+        return Err(PromptWriteError::NotFound {
+            detail: format!("Prompt with ID {base_prompt_id} not found"),
+        });
+    }
+    Ok(())
 }
 
 async fn store_new_version<Table>(
@@ -129,4 +157,90 @@ where
         return Err(PromptWriteError::ConfigPrompt { action });
     }
     Ok(())
+}
+
+async fn patch_prompt<Table>(
+    State(state): State<Arc<PromptWriteState<Table>>>,
+    Path(prompt_id): Path<String>,
+    Query(query): Query<EnvironmentQuery>,
+    Extension(context): Extension<AuthContext>,
+    body: Bytes,
+) -> WriteResult<Json<PromptSpec>, Table>
+where
+    Table: PromptTableActions + 'static,
+{
+    let request: PatchPromptRequest = decode_body(&body)?;
+    let writer = state.require_admin_and_db(&context, "patch")?;
+    if request
+        .litellm_params
+        .as_ref()
+        .is_some_and(is_ambiguous_keyed_prompt_data)
+    {
+        return Err(PromptWriteError::Ambiguous);
+    }
+    let base_prompt_id = get_base_prompt_id(&prompt_id);
+    let requested_version = (prompt_id != base_prompt_id).then(|| get_version_number(&prompt_id));
+    let environment = prompt_environment_or_default(query.environment.as_deref());
+    let target_row = find_patch_target(
+        writer.table,
+        &base_prompt_id,
+        requested_version,
+        &environment,
+    )
+    .await?;
+    reject_config_prompt(&state, &base_prompt_id, "update").await?;
+    let updated_row = patch_row(&writer, &target_row, request).await?;
+    let updated_spec = create_versioned_prompt_spec(&updated_row)?;
+    let reloaded = {
+        let mut registry = state.registry.lock().await;
+        let mut callbacks = state.callbacks.lock().await;
+        registry.reload_prompt(&updated_spec, &mut *callbacks)?
+    };
+    Ok(masked(reloaded))
+}
+
+async fn delete_prompt<Table>(
+    State(state): State<Arc<PromptWriteState<Table>>>,
+    Path(prompt_id): Path<String>,
+    Query(query): Query<EnvironmentQuery>,
+    Extension(context): Extension<AuthContext>,
+) -> WriteResult<Json<DeletedPrompt>, Table>
+where
+    Table: PromptTableActions + 'static,
+{
+    let writer = state.require_admin_and_db(&context, "delete")?;
+    let base_prompt_id = get_base_prompt_id(&prompt_id);
+    let environment = query.environment;
+    let resolved = {
+        let registry = state.registry.lock().await;
+        registry
+            .resolve_prompt_spec(&prompt_id, None, environment.as_deref())
+            .is_some()
+    };
+    if !resolved {
+        return Err(PromptWriteError::NotFound {
+            detail: format!("Prompt with ID {prompt_id} not found"),
+        });
+    }
+    reject_config_prompt(&state, &base_prompt_id, "delete").await?;
+    let filter = PromptRowFilter {
+        id: None,
+        prompt_id: Some(base_prompt_id.clone()),
+        version: None,
+        environment: environment.clone(),
+    };
+    writer
+        .table
+        .delete_many(filter)
+        .await
+        .map_err(|source| PromptWriteError::Table { source })?;
+    let mut registry = state.registry.lock().await;
+    let mut callbacks = state.callbacks.lock().await;
+    registry.delete_prompts_by_base_id(&base_prompt_id, environment.as_deref(), &mut *callbacks);
+    drop(callbacks);
+    drop(registry);
+    let environment_note = environment.map_or_else(String::new, |name| format!(" from {name}"));
+    Ok(Json(DeletedPrompt {
+        message: format!("Prompt {base_prompt_id} deleted successfully{environment_note}"),
+    }))
 }

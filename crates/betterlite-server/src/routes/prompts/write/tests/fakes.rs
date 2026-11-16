@@ -43,16 +43,6 @@ pub(super) struct FakeTable {
     fail_deletes: bool,
 }
 
-impl FakeTable {
-    fn with_rows<Value, Apply>(&self, apply: Apply) -> Value
-    where
-        Apply: FnOnce(&mut Vec<PromptRow>) -> Value,
-    {
-        let mut rows = self.rows.lock().expect("rows");
-        apply(&mut rows)
-    }
-}
-
 #[derive(Clone, Copy)]
 pub(super) enum TableMode {
     Absent,
@@ -119,21 +109,20 @@ impl PromptTableActions for FakeTable {
         &self,
         data: PromptRowData,
     ) -> impl Future<Output = Result<PromptRow, FakeFailure>> + Send {
-        let row = self.with_rows(|rows| {
-            let row = PromptRow {
-                id: format!("row-{}", rows.len().saturating_add(1)),
-                prompt_id: data.prompt_id,
-                version: data.version,
-                environment: data.environment,
-                created_by: data.created_by,
-                created_at: fixed_time(),
-                updated_at: fixed_time(),
-                litellm_params: data.litellm_params.expect("litellm_params"),
-                prompt_info: data.prompt_info,
-            };
-            rows.push(row.clone());
-            row
-        });
+        let mut rows = self.rows.lock().expect("rows");
+        let row = PromptRow {
+            id: format!("row-{}", rows.len().saturating_add(1)),
+            prompt_id: data.prompt_id,
+            version: data.version,
+            environment: data.environment,
+            created_by: data.created_by,
+            created_at: fixed_time(),
+            updated_at: fixed_time(),
+            litellm_params: data.litellm_params.expect("litellm_params"),
+            prompt_info: data.prompt_info,
+        };
+        rows.push(row.clone());
+        drop(rows);
         ready(Ok(row))
     }
 
@@ -142,16 +131,17 @@ impl PromptTableActions for FakeTable {
         filter: PromptRowFilter,
         data: PromptRowUpdate,
     ) -> impl Future<Output = Result<Option<PromptRow>, FakeFailure>> + Send {
-        let updated = self.with_rows(|rows| {
-            rows.iter_mut()
-                .find(|row| row_matches(row, &filter))
-                .map(|row| {
-                    row.litellm_params = data.litellm_params;
-                    row.prompt_info = Some(data.prompt_info);
-                    row.created_by = data.created_by.or(row.created_by.take());
-                    row.clone()
-                })
-        });
+        let mut rows = self.rows.lock().expect("rows");
+        let updated = rows
+            .iter_mut()
+            .find(|row| row_matches(row, &filter))
+            .map(|row| {
+                row.litellm_params = data.litellm_params;
+                row.prompt_info = Some(data.prompt_info);
+                row.created_by = data.created_by.or(row.created_by.take());
+                row.clone()
+            });
+        drop(rows);
         ready(Ok(updated))
     }
 
@@ -162,13 +152,12 @@ impl PromptTableActions for FakeTable {
         if self.fail_deletes {
             return ready(Err(FakeFailure));
         }
-        let removed = self.with_rows(|rows| {
-            let (removed, kept): (Vec<PromptRow>, Vec<PromptRow>) =
-                rows.drain(..).partition(|row| row_matches(row, &filter));
-            *rows = kept;
-            removed
-        });
-        ready(Ok(u64::try_from(removed.len()).expect("count")))
+        let mut rows = self.rows.lock().expect("rows");
+        let before = rows.len();
+        rows.retain(|row| !row_matches(row, &filter));
+        let removed = u64::try_from(before.saturating_sub(rows.len())).expect("count");
+        drop(rows);
+        ready(Ok(removed))
     }
 }
 
