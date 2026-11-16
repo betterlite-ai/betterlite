@@ -1,76 +1,72 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use tokio::runtime::Handle;
+use tokio_util::task::TaskTracker;
 
-use super::hooks::ScanSubject;
+use super::hooks::{ScanSubject, scan};
 use super::{NomaGuardrail, RequestData};
 
-impl NomaGuardrail {
-    // LiteLLM's _create_background_noma_check: a missing runtime is logged, never raised
-    pub fn create_background_noma_check<F>(&self, check: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        match Handle::try_current() {
-            Ok(runtime) => {
-                self.tasks.spawn_on(check, &runtime);
-            }
-            Err(error) => tracing::error!("Failed to create background Noma task: {error}"),
+// What a monitor mode check looks at, copied before the request moves on
+pub(super) enum BackgroundSubject<'subject> {
+    UserMessage,
+    Response(&'subject GuardrailValue),
+}
+
+// LiteLLM's _create_background_noma_check: a missing runtime is logged, never raised
+pub(super) fn create_background_noma_check<F>(tasks: &TaskTracker, check: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    match Handle::try_current() {
+        Ok(runtime) => {
+            tasks.spawn_on(check, &runtime);
         }
+        Err(error) => tracing::error!("Failed to create background Noma task: {error}"),
     }
+}
 
-    // The check works on copies, since the request goes on without waiting for it
-    pub(super) fn spawn_user_check(&self, request_data: &RequestData, user_auth: &RequestData) {
-        let guardrail = self.clone();
-        let mut data_copy = request_data.clone();
-        let auth_copy = user_auth.clone();
-        self.create_background_noma_check(async move {
-            guardrail
-                .check_user_message_background(&mut data_copy, &auth_copy)
-                .await;
-        });
-    }
-
-    pub(super) fn spawn_response_check(
-        &self,
-        request_data: &RequestData,
-        response: &GuardrailValue,
-        user_auth: &RequestData,
-    ) {
-        let guardrail = self.clone();
-        let mut data_copy = request_data.clone();
-        let mut response_copy = response.clone();
-        let auth_copy = user_auth.clone();
-        self.create_background_noma_check(async move {
-            guardrail
-                .check_llm_response_background(&mut data_copy, &mut response_copy, &auth_copy)
-                .await;
-        });
-    }
-
-    // LiteLLM's _check_user_message_background: a failure is logged and never reaches the request
-    pub async fn check_user_message_background(
-        &self,
-        request_data: &mut RequestData,
-        user_auth: &RequestData,
-    ) {
-        let scanned = self
-            .scan(request_data, user_auth, ScanSubject::UserMessage, None)
+// The check works on copies, since the request goes on without waiting for it
+pub(super) fn spawn_check(
+    guardrail: &NomaGuardrail,
+    request_data: &RequestData,
+    user_auth: &RequestData,
+    subject: BackgroundSubject<'_>,
+) {
+    let tasks = guardrail.tasks.clone();
+    let worker = guardrail.clone();
+    let mut data_copy = request_data.clone();
+    let auth_copy = user_auth.clone();
+    match subject {
+        BackgroundSubject::UserMessage => create_background_noma_check(&tasks, async move {
+            check_background(
+                &worker,
+                &mut data_copy,
+                &auth_copy,
+                ScanSubject::UserMessage,
+            )
             .await;
-        if let Err(error) = scanned {
-            tracing::error!("Noma background user message check failed: {error}");
+        }),
+        BackgroundSubject::Response(response) => {
+            let mut response_copy = response.clone();
+            create_background_noma_check(&tasks, async move {
+                let subject = ScanSubject::LlmResponse(&mut response_copy);
+                check_background(&worker, &mut data_copy, &auth_copy, subject).await;
+            });
         }
     }
+}
 
-    // LiteLLM's _check_llm_response_background
-    pub async fn check_llm_response_background(
-        &self,
-        request_data: &mut RequestData,
-        response: &mut GuardrailValue,
-        user_auth: &RequestData,
-    ) {
-        let subject = ScanSubject::LlmResponse(response);
-        if let Err(error) = self.scan(request_data, user_auth, subject, None).await {
-            tracing::error!("Noma background response check failed: {error}");
-        }
+// LiteLLM's _check_user_message_background and _check_llm_response_background: a failure is logged and never reaches the request
+pub(super) async fn check_background(
+    guardrail: &NomaGuardrail,
+    request_data: &mut RequestData,
+    user_auth: &RequestData,
+    subject: ScanSubject<'_>,
+) {
+    let failure = match &subject {
+        ScanSubject::UserMessage => "Noma background user message check failed",
+        ScanSubject::LlmResponse(_) => "Noma background response check failed",
+    };
+    if let Err(error) = scan(guardrail, request_data, user_auth, subject, None).await {
+        tracing::error!("{failure}: {error}");
     }
 }

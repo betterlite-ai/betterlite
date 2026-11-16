@@ -1,5 +1,6 @@
 use std::error::Error as StdError;
 
+use betterlite_core::api::messages_native_stream::retention::RetainedOutputLimit;
 use thiserror::Error;
 
 use super::error::NomaLifecycleError;
@@ -22,5 +23,12 @@ where
     Assembly {
         #[source]
         source: E,
+    },
+    #[error("the streamed response is over the buffer budget of {bytes} bytes and {chunks} chunks")]
+    OverBudget {
+        bytes: usize,
+        chunks: usize,
+        #[source]
+        source: RetainedOutputLimit,
     },
 }

@@ -37,11 +37,19 @@ pub struct InitContext<'context> {
     pub registry: &'context mut dyn NomaRegistry,
 }
 
-pub type Initializer =
-    fn(&LitellmParams, &str, InitContext<'_>) -> Result<NomaCallback, NomaLifecycleError>;
+// What a registry entry receives: the configured parameters and the name the guardrail was listed under
+#[derive(Clone, Copy)]
+pub struct GuardrailRequest<'request> {
+    pub params: &'request LitellmParams,
+    pub guardrail_name: &'request str,
+}
 
-pub type GuardrailClass =
-    fn(&LitellmParams, &str, BuildContext<'_>) -> Result<NomaCallback, NomaLifecycleError>;
+// The callback a registry entry builds, registered or not
+pub type Built = Result<NomaCallback, NomaLifecycleError>;
+
+pub type Initializer = fn(GuardrailRequest<'_>, InitContext<'_>) -> Built;
+
+pub type GuardrailClass = fn(GuardrailRequest<'_>, BuildContext<'_>) -> Built;
 
 pub const GUARDRAIL_INITIALIZER_REGISTRY: [(SupportedGuardrailIntegrations, Initializer); 2] = [
     (SupportedGuardrailIntegrations::Noma, initialize_guardrail),
@@ -111,63 +119,53 @@ fn use_v2(params: &LitellmParams) -> Result<bool, NomaLifecycleError> {
 }
 
 // The NomaGuardrail class: building one without registering it
-pub fn build_legacy_guardrail(
-    params: &LitellmParams,
-    guardrail_name: &str,
-    context: BuildContext<'_>,
-) -> Result<NomaCallback, NomaLifecycleError> {
-    let noma_params = NomaParams::from_litellm(params, guardrail_name)?;
+pub fn build_legacy_guardrail(request: GuardrailRequest<'_>, context: BuildContext<'_>) -> Built {
+    let configured = NomaParams::from_litellm(request.params, request.guardrail_name)?;
+    Ok(NomaCallback::Legacy(Arc::new(NomaGuardrail::new(
+        &configured,
+        dependencies(context)?,
+    )?)))
+}
+
+fn dependencies(context: BuildContext<'_>) -> Result<NomaDependencies<'_>, NomaLifecycleError> {
     let client = context
         .client_builder
         .connect_timeout(DEFAULT_CONNECT_TIMEOUT)
         .build()
         .map_err(|source| NomaLifecycleError::Client { source })?;
-    let dependencies = NomaDependencies {
+    Ok(NomaDependencies {
         client,
         now: SystemTime::now,
         env: context.env,
         tasks: context.tasks,
         strict_modes: context.strict_modes,
-    };
-    let guardrail = NomaGuardrail::new(&noma_params, dependencies)?;
-    Ok(NomaCallback::Legacy(Arc::new(guardrail)))
+    })
 }
 
 // The NomaV2Guardrail class: B3782 builds it and registers it, so the registry it gets here is a throwaway
-pub fn build_v2_guardrail(
-    params: &LitellmParams,
-    guardrail_name: &str,
-    context: BuildContext<'_>,
-) -> Result<NomaCallback, NomaLifecycleError> {
-    let v2_params = NomaV2Params::from_litellm(params, guardrail_name, context.strict_modes)?;
-    let guardrail = initialize_noma_v2(
-        &v2_params,
+pub fn build_v2_guardrail(request: GuardrailRequest<'_>, context: BuildContext<'_>) -> Built {
+    let configured =
+        NomaV2Params::from_litellm(request.params, request.guardrail_name, context.strict_modes)?;
+    Ok(NomaCallback::V2(initialize_noma_v2(
+        &configured,
         &DynEnvironment(context.env),
         context.client_builder,
         &mut DiscardRegistry,
-    )?;
-    Ok(NomaCallback::V2(guardrail))
+    )?))
 }
 
-pub fn initialize_guardrail(
-    params: &LitellmParams,
-    guardrail_name: &str,
-    context: InitContext<'_>,
-) -> Result<NomaCallback, NomaLifecycleError> {
-    if use_v2(params)? {
-        return initialize_guardrail_v2(params, guardrail_name, context);
+// Adding the callback to litellm.logging_callback_manager, then handing it back to the caller
+pub fn initialize_guardrail(request: GuardrailRequest<'_>, context: InitContext<'_>) -> Built {
+    if use_v2(request.params)? {
+        return initialize_guardrail_v2(request, context);
     }
-    let callback = build_legacy_guardrail(params, guardrail_name, context.build)?;
+    let callback = build_legacy_guardrail(request, context.build)?;
     context.registry.add_litellm_callback(callback.clone());
     Ok(callback)
 }
 
-pub fn initialize_guardrail_v2(
-    params: &LitellmParams,
-    guardrail_name: &str,
-    context: InitContext<'_>,
-) -> Result<NomaCallback, NomaLifecycleError> {
-    let callback = build_v2_guardrail(params, guardrail_name, context.build)?;
+pub fn initialize_guardrail_v2(request: GuardrailRequest<'_>, context: InitContext<'_>) -> Built {
+    let callback = build_v2_guardrail(request, context.build)?;
     context.registry.add_litellm_callback(callback.clone());
     Ok(callback)
 }

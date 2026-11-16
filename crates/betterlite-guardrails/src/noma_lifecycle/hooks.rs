@@ -3,7 +3,9 @@ use std::collections::BTreeSet;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 
+use super::background::{self, BackgroundSubject};
 use super::error::NomaLifecycleError;
+use super::failure;
 use super::{MCP_CALL_TYPE, NomaGuardrail, RequestData};
 use crate::guardrail_selection::gate::GuardrailSelection as _;
 use crate::noma_scan_policy::ScanCallContext;
@@ -58,110 +60,113 @@ impl RequestHook {
     }
 }
 
-impl NomaGuardrail {
-    // LiteLLM's _process_user_message_check and _process_llm_response_check, behind _check_user_message and _check_llm_response
-    pub(super) async fn scan(
-        &self,
-        request_data: &mut RequestData,
-        user_auth: &RequestData,
-        subject: ScanSubject<'_>,
-        event_type: Option<GuardrailEventHooks>,
-    ) -> Result<(), NomaLifecycleError> {
-        let extra_data = self.base.dynamic_request_body_params(request_data)?;
-        let call = ScanCallContext {
-            user_auth,
-            extra_data: &extra_data,
-            event_type,
-        };
-        match subject {
-            ScanSubject::UserMessage => {
-                self.policy
-                    .process_user_message_check(request_data, call)
-                    .await?;
-            }
-            ScanSubject::LlmResponse(response) => {
-                self.policy
-                    .process_llm_response_check(request_data, response, call)
-                    .await?;
-            }
+// LiteLLM's _process_user_message_check and _process_llm_response_check, behind _check_user_message and _check_llm_response
+pub(super) async fn scan(
+    guardrail: &NomaGuardrail,
+    request_data: &mut RequestData,
+    user_auth: &RequestData,
+    subject: ScanSubject<'_>,
+    event_type: Option<GuardrailEventHooks>,
+) -> Result<(), NomaLifecycleError> {
+    let extra_data = guardrail.base.dynamic_request_body_params(request_data)?;
+    let call = ScanCallContext {
+        user_auth,
+        extra_data: &extra_data,
+        event_type,
+    };
+    match subject {
+        ScanSubject::UserMessage => {
+            guardrail
+                .policy
+                .process_user_message_check(request_data, call)
+                .await?;
         }
-        Ok(())
+        ScanSubject::LlmResponse(response) => {
+            guardrail
+                .policy
+                .process_llm_response_check(request_data, response, call)
+                .await?;
+        }
     }
+    Ok(())
+}
 
-    async fn run_request_hook(
-        &self,
-        hook: RequestHook,
-        input: RequestHookInput<'_>,
-    ) -> Result<(), NomaLifecycleError> {
-        let RequestHookInput {
-            user_auth,
+async fn run_request_hook(
+    guardrail: &NomaGuardrail,
+    hook: RequestHook,
+    input: RequestHookInput<'_>,
+) -> Result<(), NomaLifecycleError> {
+    let RequestHookInput {
+        user_auth,
+        data,
+        call_type,
+        suppressed,
+    } = input;
+    let gate_event = hook.gate_event(call_type);
+    if !guardrail
+        .base
+        .should_run_guardrail(data, gate_event, suppressed)?
+    {
+        return Ok(());
+    }
+    if guardrail.policy.settings.monitor_mode {
+        background::spawn_check(guardrail, data, user_auth, BackgroundSubject::UserMessage);
+        return Ok(());
+    }
+    let event_type = hook.scan_event();
+    let subject = ScanSubject::UserMessage;
+    if let Err(error) = scan(guardrail, data, user_auth, subject, Some(event_type)).await {
+        return failure::handle_failure(guardrail, error, data, event_type, hook.name());
+    }
+    Ok(())
+}
+
+pub async fn async_pre_call_hook(
+    guardrail: &NomaGuardrail,
+    input: RequestHookInput<'_>,
+) -> Result<(), NomaLifecycleError> {
+    tracing::debug!("Running Noma pre-call hook");
+    run_request_hook(guardrail, RequestHook::PreCall, input).await
+}
+
+pub async fn async_moderation_hook(
+    guardrail: &NomaGuardrail,
+    input: RequestHookInput<'_>,
+) -> Result<(), NomaLifecycleError> {
+    tracing::debug!("Running Noma moderation hook");
+    run_request_hook(guardrail, RequestHook::Moderation, input).await
+}
+
+// The response is scanned in place, so an anonymized answer is what the caller keeps
+pub async fn async_post_call_success_hook(
+    guardrail: &NomaGuardrail,
+    input: PostCallHookInput<'_>,
+) -> Result<(), NomaLifecycleError> {
+    let PostCallHookInput {
+        user_auth,
+        data,
+        response,
+        suppressed,
+    } = input;
+    let event_type = GuardrailEventHooks::PostCall;
+    if !guardrail
+        .base
+        .should_run_guardrail(data, event_type, suppressed)?
+    {
+        return Ok(());
+    }
+    if guardrail.policy.settings.monitor_mode {
+        background::spawn_check(
+            guardrail,
             data,
-            call_type,
-            suppressed,
-        } = input;
-        let gate_event = hook.gate_event(call_type);
-        if !self
-            .base
-            .should_run_guardrail(data, gate_event, suppressed)?
-        {
-            return Ok(());
-        }
-        if self.policy.settings.monitor_mode {
-            self.spawn_user_check(data, user_auth);
-            return Ok(());
-        }
-        let event_type = hook.scan_event();
-        if let Err(error) = self
-            .scan(data, user_auth, ScanSubject::UserMessage, Some(event_type))
-            .await
-        {
-            return self.handle_failure(error, data, event_type, hook.name());
-        }
-        Ok(())
-    }
-
-    pub async fn async_pre_call_hook(
-        &self,
-        input: RequestHookInput<'_>,
-    ) -> Result<(), NomaLifecycleError> {
-        tracing::debug!("Running Noma pre-call hook");
-        self.run_request_hook(RequestHook::PreCall, input).await
-    }
-
-    pub async fn async_moderation_hook(
-        &self,
-        input: RequestHookInput<'_>,
-    ) -> Result<(), NomaLifecycleError> {
-        tracing::debug!("Running Noma moderation hook");
-        self.run_request_hook(RequestHook::Moderation, input).await
-    }
-
-    // The response is scanned in place, so an anonymized answer is what the caller keeps
-    pub async fn async_post_call_success_hook(
-        &self,
-        input: PostCallHookInput<'_>,
-    ) -> Result<(), NomaLifecycleError> {
-        let PostCallHookInput {
             user_auth,
-            data,
-            response,
-            suppressed,
-        } = input;
-        let event_type = GuardrailEventHooks::PostCall;
-        if !self
-            .base
-            .should_run_guardrail(data, event_type, suppressed)?
-        {
-            return Ok(());
-        }
-        if self.policy.settings.monitor_mode {
-            self.spawn_response_check(data, response, user_auth);
-            return Ok(());
-        }
-        let subject = ScanSubject::LlmResponse(response);
-        if let Err(error) = self.scan(data, user_auth, subject, Some(event_type)).await {
-            return self.handle_failure(error, data, event_type, "post-call");
-        }
-        Ok(())
+            BackgroundSubject::Response(response),
+        );
+        return Ok(());
     }
+    let subject = ScanSubject::LlmResponse(response);
+    if let Err(error) = scan(guardrail, data, user_auth, subject, Some(event_type)).await {
+        return failure::handle_failure(guardrail, error, data, event_type, "post-call");
+    }
+    Ok(())
 }
