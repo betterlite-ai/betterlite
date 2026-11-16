@@ -63,7 +63,6 @@ class View(TypedDict):
     api_key_set: bool
     timeout: int | None
     litellm_params_set: bool
-    status: None
 
 
 SETTINGS: Final[TypeAdapter[LiteLLMSettings]] = TypeAdapter(LiteLLMSettings)
@@ -127,7 +126,6 @@ def view(arm: Arm, call: HandlerArguments) -> View:
         "api_key_set": call.get("api_key") is not None,
         "timeout": seconds(call.get("timeout")),
         "litellm_params_set": call.get("litellm_params") is not None,
-        "status": None,
     }
 
 

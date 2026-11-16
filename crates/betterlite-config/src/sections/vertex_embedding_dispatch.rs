@@ -106,9 +106,7 @@ fn pin_params(
         let path = format!("model_list.{index}.litellm_params.{name}");
         let resolved = match value {
             Json::Text(text) => Json::Text(resolve_string(text, &path, lookup)?),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                value
-            }
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => value,
         };
         pinned.insert(name.to_owned(), resolved);
     }

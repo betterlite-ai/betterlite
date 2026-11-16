@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -86,9 +87,9 @@ fn prepared(
 
 fn labelled(call: &VertexEmbeddingPrepared) -> (&'static str, &Resolution) {
     match call {
-        VertexEmbeddingPrepared::EmbedContent(call) => ("embed_content", &call.resolved),
-        VertexEmbeddingPrepared::Multimodal(call) => ("multimodal", &call.resolved),
-        VertexEmbeddingPrepared::Text(call) => ("text", &call.resolved),
+        VertexEmbeddingPrepared::EmbedContent(arm) => ("embed_content", &arm.resolved),
+        VertexEmbeddingPrepared::Multimodal(arm) => ("multimodal", &arm.resolved),
+        VertexEmbeddingPrepared::Text(arm) => ("text", &arm.resolved),
     }
 }
 
@@ -99,13 +100,12 @@ fn embed_content_catalog() -> ModelCatalog {
 }
 
 fn assert_text_arguments() {
-    let text = prepared(
+    let VertexEmbeddingPrepared::Text(text) = prepared(
         TEXT_MODEL,
         EmbeddingInput::Text("hello".to_owned()),
         "{}",
         &ModelCatalog::default(),
-    );
-    let VertexEmbeddingPrepared::Text(text) = text else {
+    ) else {
         panic!("the text model selects the text prediction API");
     };
     let key = text.api_key.as_ref().expect("the supplied key");
@@ -120,13 +120,12 @@ fn assert_text_arguments() {
 }
 
 fn assert_embed_content_arguments() {
-    let media = prepared(
+    let VertexEmbeddingPrepared::EmbedContent(media) = prepared(
         EMBED_CONTENT_MODEL,
         EmbeddingInput::Texts(vec!["one".to_owned(), "two".to_owned()]),
         r#"{"image": "gs://bucket/cat.png"}"#,
         &embed_content_catalog(),
-    );
-    let VertexEmbeddingPrepared::EmbedContent(media) = media else {
+    ) else {
         panic!("uses_embed_content selects the embedContent API");
     };
     assert_eq!(
@@ -148,13 +147,12 @@ fn assert_embed_content_arguments() {
 }
 
 fn assert_multimodal_arguments() {
-    let multimodal = prepared(
+    let VertexEmbeddingPrepared::Multimodal(multimodal) = prepared(
         TEXT_MODEL,
         EmbeddingInput::Text("hello".to_owned()),
         r#"{"image": null}"#,
         &ModelCatalog::default(),
-    );
-    let VertexEmbeddingPrepared::Multimodal(multimodal) = multimodal else {
+    ) else {
         panic!("a present media key selects multimodal prediction");
     };
     assert_eq!(multimodal.input, Json::Text("hello".to_owned()));
@@ -164,14 +162,15 @@ fn assert_multimodal_arguments() {
         Some(&Json::Null)
     );
     assert!(multimodal.aembedding);
+}
 
-    let texts = prepared(
+fn assert_multimodal_list_arguments() {
+    let VertexEmbeddingPrepared::Multimodal(texts) = prepared(
         TEXT_MODEL,
         EmbeddingInput::Texts(vec!["one".to_owned(), "two".to_owned()]),
         r#"{"image": "gs://bucket/cat.png"}"#,
         &ModelCatalog::default(),
-    );
-    let VertexEmbeddingPrepared::Multimodal(texts) = texts else {
+    ) else {
         panic!("a text list with a media key selects multimodal prediction");
     };
     assert_eq!(
@@ -182,13 +181,12 @@ fn assert_multimodal_arguments() {
         ])
     );
 
-    let tokens = prepared(
+    let VertexEmbeddingPrepared::Multimodal(tokens) = prepared(
         TEXT_MODEL,
         EmbeddingInput::Tokens(vec![1, 2]),
         r#"{"image": "gs://bucket/cat.png"}"#,
         &ModelCatalog::default(),
-    );
-    let VertexEmbeddingPrepared::Multimodal(tokens) = tokens else {
+    ) else {
         panic!("a token list with a media key selects multimodal prediction");
     };
     assert_eq!(
@@ -200,8 +198,27 @@ fn assert_multimodal_arguments() {
     );
 }
 
-#[test]
-fn resolved_settings_reach_every_arm() {
+type ResolvedFields<'call> = (
+    &'static str,
+    Option<&'call str>,
+    Option<&'call str>,
+    Option<&'call str>,
+    Option<&'call str>,
+);
+
+fn resolved_fields(arm: &VertexEmbeddingPrepared) -> ResolvedFields<'_> {
+    let (label, resolved) = labelled(arm);
+    let key = resolved.credentials.as_ref();
+    (
+        label,
+        resolved.project.as_deref(),
+        resolved.location.as_deref(),
+        key.and_then(ConfiguredCredentials::as_text),
+        resolved.api_base.as_deref(),
+    )
+}
+
+fn configured_settings() -> (VertexSettings, EmbeddingSettings) {
     let vertex = VertexSettings {
         project: Some("settings-project".to_owned()),
         location: Some("settings-location".to_owned()),
@@ -216,74 +233,40 @@ fn resolved_settings_reach_every_arm() {
         api_base: Some("https://settings.example".to_owned()),
         deployments: Vec::new(),
     };
+    (vertex, embedding)
+}
+
+#[test]
+fn resolved_settings_reach_every_arm() {
+    let (vertex, embedding) = configured_settings();
     let defaults = Defaults {
         vertex: &vertex,
         embedding: &embedding,
     };
-    let arms = [
-        prepare(
-            request(
-                EMBED_CONTENT_MODEL,
-                EmbeddingInput::Text("hello".to_owned()),
-                "{}",
-            ),
-            defaults,
-            &embed_content_catalog(),
-        )
-        .expect("a prepared request"),
-        prepare(
-            request(
-                TEXT_MODEL,
-                EmbeddingInput::Text("hello".to_owned()),
-                r#"{"image": null}"#,
-            ),
-            defaults,
-            &ModelCatalog::default(),
-        )
-        .expect("a prepared request"),
-        prepare(
-            request(TEXT_MODEL, EmbeddingInput::Text("hello".to_owned()), "{}"),
-            defaults,
-            &ModelCatalog::default(),
-        )
-        .expect("a prepared request"),
+    let cases = [
+        (EMBED_CONTENT_MODEL, "{}", embed_content_catalog()),
+        (TEXT_MODEL, r#"{"image": null}"#, ModelCatalog::default()),
+        (TEXT_MODEL, "{}", ModelCatalog::default()),
     ];
-    let resolved: Vec<&Resolution> = arms.iter().map(|arm| labelled(arm).1).collect();
-    assert_eq!(
-        resolved
-            .iter()
-            .map(|arm| arm.project.as_deref())
-            .collect::<Vec<_>>(),
-        [Some("settings-project"); 3]
-    );
-    assert_eq!(
-        resolved
-            .iter()
-            .map(|arm| arm.location.as_deref())
-            .collect::<Vec<_>>(),
-        [Some("settings-location"); 3]
-    );
-    assert_eq!(
-        resolved
-            .iter()
-            .map(|arm| arm
-                .credentials
-                .as_ref()
-                .and_then(ConfiguredCredentials::as_text))
-            .collect::<Vec<_>>(),
-        [Some("settings-key"); 3]
-    );
+    let arms: Vec<VertexEmbeddingPrepared> = cases
+        .iter()
+        .map(|(model, options, catalog)| {
+            let hello = EmbeddingInput::Text("hello".to_owned());
+            prepare(request(model, hello, options), defaults, catalog).expect("a prepared request")
+        })
+        .collect();
+    let seen: Vec<ResolvedFields<'_>> = arms.iter().map(resolved_fields).collect();
     // the explicit api_base wins over the setting, as in main.py's or chain
-    assert_eq!(
-        resolved
-            .iter()
-            .map(|arm| arm.api_base.as_deref())
-            .collect::<Vec<_>>(),
-        [Some("https://vertex.example"); 3]
-    );
-    assert!(matches!(arms[0], VertexEmbeddingPrepared::EmbedContent(_)));
-    assert!(matches!(arms[1], VertexEmbeddingPrepared::Multimodal(_)));
-    assert!(matches!(arms[2], VertexEmbeddingPrepared::Text(_)));
+    let expected = ["embed_content", "multimodal", "text"].map(|label| {
+        (
+            label,
+            Some("settings-project"),
+            Some("settings-location"),
+            Some("settings-key"),
+            Some("https://vertex.example"),
+        )
+    });
+    assert_eq!(seen, expected);
 }
 
 #[rstest]
@@ -357,6 +340,7 @@ fn branch_specific_arguments() {
     assert_text_arguments();
     assert_embed_content_arguments();
     assert_multimodal_arguments();
+    assert_multimodal_list_arguments();
 }
 
 #[derive(Default)]
@@ -418,59 +402,60 @@ fn answer() -> MultimodalEmbeddingAnswer {
 }
 
 impl VertexEmbeddingHandlers for Recorder {
-    async fn embed_content(&self, call: &EmbedContentArguments) -> EmbedContentOutcome {
+    fn embed_content(
+        &self,
+        call: &EmbedContentArguments,
+    ) -> impl Future<Output = EmbedContentOutcome> + Send {
         self.record("embed_content", &call.model);
-        Ok(reply())
+        ready(Ok(reply()))
     }
 
-    async fn multimodal(&self, call: &MultimodalArguments) -> MultimodalOutcome {
+    fn multimodal(
+        &self,
+        call: &MultimodalArguments,
+    ) -> impl Future<Output = MultimodalOutcome> + Send {
         self.record("multimodal", &call.model);
-        Ok(answer())
+        ready(Ok(answer()))
     }
 
-    async fn text(&self, call: &TextArguments) -> TextOutcome {
+    fn text(&self, call: &TextArguments) -> impl Future<Output = TextOutcome> + Send {
         self.record("text", &call.model);
-        Ok(response())
+        ready(Ok(response()))
     }
 }
 
 #[tokio::test]
 async fn runs_each_arm_through_its_handler() {
     let recorder = Recorder::default();
-    let arms = [
-        prepared(
-            EMBED_CONTENT_MODEL,
-            EmbeddingInput::Text("hello".to_owned()),
-            "{}",
-            &embed_content_catalog(),
-        ),
-        prepared(
+    let hello = || EmbeddingInput::Text("hello".to_owned());
+    let cases = [
+        (EMBED_CONTENT_MODEL, hello(), "{}", embed_content_catalog()),
+        (
             TEXT_MODEL,
-            EmbeddingInput::Text("hello".to_owned()),
+            hello(),
             r#"{"video": null}"#,
-            &ModelCatalog::default(),
+            ModelCatalog::default(),
         ),
-        prepared(
+        (
             TEXT_MODEL,
             EmbeddingInput::Tokens(vec![1, 2]),
             "{}",
-            &ModelCatalog::default(),
+            ModelCatalog::default(),
         ),
     ];
-    let results = [
-        execute(&arms[0], &recorder)
-            .await
-            .expect("a handler result"),
-        execute(&arms[1], &recorder)
-            .await
-            .expect("a handler result"),
-        execute(&arms[2], &recorder)
-            .await
-            .expect("a handler result"),
-    ];
-    assert!(matches!(results[0], VertexEmbeddingResult::EmbedContent(_)));
-    assert!(matches!(results[1], VertexEmbeddingResult::Multimodal(_)));
-    assert!(matches!(results[2], VertexEmbeddingResult::Text(_)));
+    let mut results = Vec::new();
+    for (model, input, options, catalog) in cases {
+        let arm = prepared(model, input, options, &catalog);
+        results.push(execute(&arm, &recorder).await.expect("a handler result"));
+    }
+    assert!(matches!(
+        results.as_slice(),
+        [
+            VertexEmbeddingResult::EmbedContent(_),
+            VertexEmbeddingResult::Multimodal(_),
+            VertexEmbeddingResult::Text(_),
+        ]
+    ));
     // each handler receives the prepared call of its own arm
     assert_eq!(
         recorder.calls(),
@@ -498,27 +483,32 @@ fn token_input_is_rejected_for_embed_content() {
         },
         &embed_content_catalog(),
     )
-    .err()
-    .expect("tokens have no embedContent form");
+    .expect_err("tokens have no embedContent form");
     assert!(matches!(error, VertexEmbeddingPrepareError::TokenInput));
 }
 
 struct Failing;
 
 impl VertexEmbeddingHandlers for Failing {
-    async fn embed_content(&self, _call: &EmbedContentArguments) -> EmbedContentOutcome {
-        Err(GeminiEmbeddingCallError::MissingApiKey)
+    fn embed_content(
+        &self,
+        _call: &EmbedContentArguments,
+    ) -> impl Future<Output = EmbedContentOutcome> + Send {
+        ready(Err(GeminiEmbeddingCallError::MissingApiKey))
     }
 
-    async fn multimodal(&self, _call: &MultimodalArguments) -> MultimodalOutcome {
-        Err(VertexEmbeddingCallError::Timeout)
+    fn multimodal(
+        &self,
+        _call: &MultimodalArguments,
+    ) -> impl Future<Output = MultimodalOutcome> + Send {
+        ready(Err(VertexEmbeddingCallError::Timeout))
     }
 
-    async fn text(&self, _call: &TextArguments) -> TextOutcome {
-        Err(VertexEmbeddingCallError::Status {
+    fn text(&self, _call: &TextArguments) -> impl Future<Output = TextOutcome> + Send {
+        ready(Err(VertexEmbeddingCallError::Status {
             status: 429,
             body: br#"{"error": {"message": "quota"}}"#.to_vec(),
-        })
+        }))
     }
 }
 
@@ -530,10 +520,7 @@ async fn handler_errors_keep_their_variant() {
         "{}",
         &ModelCatalog::default(),
     );
-    let error = execute(&text, &Failing)
-        .await
-        .err()
-        .expect("a handler error");
+    let error = execute(&text, &Failing).await.expect_err("a handler error");
     let VertexEmbeddingError::Prediction(VertexEmbeddingCallError::Status { status, .. }) = error
     else {
         panic!("the text handler's status error travels unchanged");
