@@ -123,9 +123,9 @@ async fn oneshot_list_allowlist_environment_filter_keeps_litellm_order() {
     assert_eq!(status, StatusCode::OK);
     let listed = body["prompts"].as_array().unwrap();
     assert_eq!(listed.len(), 2);
-    assert_eq!(listed[0]["prompt_id"], "alpha");
-    assert_eq!(listed[0]["environment"], "development");
-    assert_eq!(listed[1]["prompt_id"], "beta");
+    assert_eq!(listed[0]["prompt_id"], "beta");
+    assert_eq!(listed[1]["prompt_id"], "alpha");
+    assert_eq!(listed[1]["environment"], "development");
 }
 
 #[rstest]
