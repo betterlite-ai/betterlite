@@ -44,15 +44,17 @@ def build_token_provider() -> Callable[[], str]:
 class Backend(AzureBlobStorageBackend):
     api_base: str
 
+    # the SDK rewrites ".dfs." to ".blob." inside the account URL, so the mock's path prefixes keep
+    # that marker and the SDK's blob-host calls stay distinguishable from its data lake ones
     @property
     @override
     def azure_storage_dfs_endpoint(self) -> str:
-        return f"{self.api_base}/dfs"
+        return f"{self.api_base}/.dfs."
 
     @property
     @override
     def azure_storage_blob_endpoint(self) -> str:
-        return f"{self.api_base}/blob"
+        return f"{self.api_base}/.blob."
 
 
 def error_view(error: Exception, status: int | None) -> JsonObject:

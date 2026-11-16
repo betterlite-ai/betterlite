@@ -56,8 +56,10 @@ fn backend(
 ) -> Result<Arc<AzureBlobStorageBackend>, SdkHttpError> {
     let mut settings = Settings::from_environment(env)
         .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    settings.dfs_endpoint = format!("{api_base}/dfs");
-    settings.blob_endpoint = format!("{api_base}/blob");
+    // the SDK swaps ".dfs." for ".blob." in the account URL, so the mock's path prefixes carry the
+    // marker and both SDK clients keep distinct origins
+    settings.dfs_endpoint = format!("{api_base}/.dfs.");
+    settings.blob_endpoint = format!("{api_base}/.blob.");
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
     );
