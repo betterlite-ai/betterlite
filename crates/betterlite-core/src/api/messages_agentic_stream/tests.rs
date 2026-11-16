@@ -132,9 +132,9 @@ impl HookSeen {
 
 // a gate the test opens when it wants the pending read or hook to finish
 async fn wait_for(gate: &Arc<AtomicBool>) {
-    let gate = Arc::clone(gate);
+    let open = Arc::clone(gate);
     poll_fn(move |_context| {
-        if gate.load(Ordering::SeqCst) {
+        if open.load(Ordering::SeqCst) {
             Poll::Ready(())
         } else {
             Poll::Pending
@@ -172,10 +172,7 @@ where
         if !this.gate.load(Ordering::SeqCst) {
             return Poll::Pending;
         }
-        match this.outcome.take() {
-            Some(outcome) => Poll::Ready(outcome),
-            None => Poll::Pending,
-        }
+        this.outcome.take().map_or(Poll::Pending, Poll::Ready)
     }
 }
 
@@ -275,12 +272,12 @@ struct ScriptedFollowUp {
 
 async fn next_frame(
     frames: &mut VecDeque<Vec<u8>>,
-    gate: &Option<Arc<AtomicBool>>,
+    gate: Option<&Arc<AtomicBool>>,
     effects: &EffectLog,
     labels: (&str, &str),
 ) -> Result<Option<Vec<u8>>, Infallible> {
-    if let Some(gate) = gate {
-        wait_for(gate).await;
+    if let Some(held) = gate {
+        wait_for(held).await;
     }
     let frame = frames.pop_front();
     effects.record(if frame.is_some() { labels.0 } else { labels.1 });
@@ -292,7 +289,13 @@ impl MessagesProviderStream for ScriptedFollowUp {
     type Error = Infallible;
 
     async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, Infallible> {
-        next_frame(&mut self.frames, &self.gate, &self.effects, self.labels).await
+        next_frame(
+            &mut self.frames,
+            self.gate.as_ref(),
+            &self.effects,
+            self.labels,
+        )
+        .await
     }
 
     async fn aclose(&mut self) -> Option<Result<(), Infallible>> {
@@ -335,7 +338,13 @@ impl MessagesProviderStream for ScriptedInner {
     type Error = Infallible;
 
     async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, Infallible> {
-        next_frame(&mut self.frames, &self.gate, &self.effects, self.labels).await
+        next_frame(
+            &mut self.frames,
+            self.gate.as_ref(),
+            &self.effects,
+            self.labels,
+        )
+        .await
     }
 
     async fn aclose(&mut self) -> Option<Result<(), Infallible>> {
@@ -402,7 +411,9 @@ fn field(value: &Json, key: &str) -> Json {
 fn block_at(response: &Json, index: usize) -> Json {
     match field(response, "content") {
         Json::List(blocks) => blocks[index].clone(),
-        _ => panic!("the response lists content blocks"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+            panic!("the response lists content blocks")
+        }
     }
 }
 

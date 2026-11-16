@@ -9,7 +9,7 @@ use super::{
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 use crate::api::messages_agentic_stream::MessagesAgenticError;
 use crate::api::messages_agentic_stream::stream::MessagesAgenticStream;
-use crate::api::messages_sse_events::stream::MessagesProviderStream;
+use crate::api::messages_sse_events::stream::MessagesProviderStream as _;
 
 type Read = Result<Option<Vec<u8>>, MessagesAgenticError>;
 
