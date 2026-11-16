@@ -55,7 +55,8 @@ async fn provider_framework_tests_behavior(
     #[case] error_type: Option<&str>,
     #[case] authorization: &str,
 ) {
-    let (answered, body, sent, _forwarded) = call(model, PLAIN, key, upstream_reply).await;
+    let (answered, body, sent, _forwarded) =
+        Box::pin(call(model, PLAIN, key, upstream_reply)).await;
     assert_eq!(answered, upstream_reply.0);
     assert!(sent.contains(authorization));
     assert!(!sent.contains("env-key"));
