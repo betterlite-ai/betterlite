@@ -1,10 +1,10 @@
+use std::time::SystemTime;
+
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
-use betterlite_models::duration_cost::openai_seconds::cost_per_second;
-use betterlite_models::price_lookup::PriceLookup;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
@@ -13,17 +13,21 @@ use super::spend::{MediaSpend, decimal_json};
 use crate::api::deepgram::listen_metadata::frames::{
     ListenFrame, audio_seconds, channel_count, transcript,
 };
-use crate::api::deepgram::listen_metadata::pricing::{
-    PROVIDER, addon_pricing_models, is_priced, pricing_model,
-};
-use crate::api::deepgram::listen_metadata::target::{ListenTarget, parse_listen_target};
+use crate::api::deepgram::listen_metadata::pricing::{PROVIDER, is_priced, pricing_model};
+use crate::api::deepgram::listen_metadata::target::parse_listen_target;
+use crate::cost::completion::args::CostCalculator;
+use crate::cost::context::ProviderInference;
+use crate::cost::image_dispatch::policy::ImagePricePolicy;
+use crate::cost::special::policy::ModelResolver;
+use pricing::ListenPricing;
+
+mod pricing;
 
 pub struct DeepgramListenRequest<'request> {
     pub upstream_url: &'request str,
     pub messages: &'request [Json],
     pub kwargs: &'request PassThroughLoggingKwargs,
     pub catalog: &'request ModelCatalog,
-    pub lookup: &'request dyn PriceLookup,
 }
 
 pub struct DeepgramListenOutcome {
@@ -37,9 +41,18 @@ pub struct DeepgramListenOutcome {
     pub unpriced_registry_key: Option<String>,
 }
 
-pub fn deepgram_listen_outcome(
+// The services carry the price catalog and the provider's discount and margin; the clock is the one the charges read.
+pub async fn deepgram_listen_outcome<Resolver, ImagePolicy, Inference, Clock>(
     request: &DeepgramListenRequest<'_>,
-) -> Result<DeepgramListenOutcome, MediaRelayLoggingError> {
+    services: &CostCalculator<'_, Resolver, ImagePolicy, Inference>,
+    clock: &mut Clock,
+) -> Result<DeepgramListenOutcome, MediaRelayLoggingError>
+where
+    Resolver: ModelResolver + Sync,
+    ImagePolicy: ImagePricePolicy + Sync,
+    Inference: ProviderInference + Sync,
+    Clock: FnMut() -> SystemTime + Send,
+{
     let target = parse_listen_target(request.upstream_url)?;
     let frames = parsed_frames(request.messages);
     let seconds = audio_seconds(&frames);
@@ -47,7 +60,13 @@ pub fn deepgram_listen_outcome(
     let billed = seconds
         .checked_mul(Decimal::from(channels))
         .ok_or(MediaRelayLoggingError::Overflow)?;
-    let (response_cost, unpriced_registry_key) = cost_for(&target, billed, request);
+    let (response_cost, unpriced_registry_key) = if is_priced(request.catalog, &target) {
+        let mut pricing = ListenPricing { services, clock };
+        (pricing.audio_cost(billed, &target).await, None)
+    } else {
+        let key = format!("{PROVIDER}/{}", pricing_model(&target));
+        (None, Some(key))
+    };
     let response = response_json(transcript(&frames), billed, response_cost);
     let spend = MediaSpend {
         model: target.query.requested_model().to_owned(),
@@ -66,38 +85,6 @@ pub fn deepgram_listen_outcome(
         billed_seconds: billed,
         unpriced_registry_key,
     })
-}
-
-fn cost_for(
-    target: &ListenTarget,
-    billed: Decimal,
-    request: &DeepgramListenRequest<'_>,
-) -> (Option<Decimal>, Option<String>) {
-    if is_priced(request.catalog, target) {
-        return (audio_cost(billed, target, request.lookup), None);
-    }
-    let key = format!("{PROVIDER}/{}", pricing_model(target));
-    (None, Some(key))
-}
-
-// The base must price for any cost to exist; an addon that fails to price contributes nothing.
-fn audio_cost(billed: Decimal, target: &ListenTarget, lookup: &dyn PriceLookup) -> Option<Decimal> {
-    let mut total = registry_cost(billed, &pricing_model(target), lookup)?;
-    for addon in addon_pricing_models(target) {
-        if let Some(cost) = registry_cost(billed, &addon, lookup) {
-            total = total.checked_add(cost)?;
-        }
-    }
-    Some(total)
-}
-
-// A lookup that fails logs debug and contributes nothing, the way the source's helpers swallow the error.
-fn registry_cost(billed: Decimal, model: &str, lookup: &dyn PriceLookup) -> Option<Decimal> {
-    let Ok((prompt, completion)) = cost_per_second(model, Some(PROVIDER), billed, lookup) else {
-        tracing::debug!(model = %model, "deepgram listen passthrough has no registry price");
-        return None;
-    };
-    prompt.checked_add(completion)
 }
 
 // A message that is not a listen frame is no candidate, the same as a mapping the source's reads miss.

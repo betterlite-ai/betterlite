@@ -15,6 +15,8 @@ pub(crate) fn write_spend(logging_obj: &StreamLoggingObject, spend: &MediaSpend)
     });
 }
 
+#[path = "media_relay_logging/tests/deepgram_adjustments.rs"]
+mod deepgram_adjustments;
 #[path = "media_relay_logging/tests/deepgram_listen.rs"]
 mod deepgram_listen;
 #[path = "media_relay_logging/tests/deepgram_routes.rs"]
@@ -25,5 +27,7 @@ mod deepgram_warning;
 mod fal_passthrough;
 #[path = "media_relay_logging/tests/fal_routes.rs"]
 mod fal_routes;
+#[path = "media_relay_logging/tests/listen_services.rs"]
+mod listen_services;
 #[path = "media_relay_logging/tests/support.rs"]
 mod support;

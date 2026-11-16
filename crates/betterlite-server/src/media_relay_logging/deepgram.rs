@@ -1,17 +1,31 @@
+use std::time::SystemTime;
+
 use betterlite_core::api::media_relay_logging::deepgram::{
     DeepgramListenOutcome, DeepgramListenRequest, deepgram_listen_outcome,
 };
 use betterlite_core::api::media_relay_logging::error::MediaRelayLoggingError;
+use betterlite_core::cost::completion::args::CostCalculator;
+use betterlite_core::cost::context::ProviderInference;
+use betterlite_core::cost::image_dispatch::policy::ImagePricePolicy;
+use betterlite_core::cost::special::policy::ModelResolver;
 use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
 use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
 
 use super::write_spend;
 
 // ast-grep-ignore: no-long-names
-pub fn deepgram_listen_passthrough_handler(
+pub async fn deepgram_listen_passthrough_handler<Resolver, ImagePolicy, Inference, Clock>(
     logging_obj: &StreamLoggingObject,
     request: &DeepgramListenRequest<'_>,
-) -> Result<HandlerOutcome, MediaRelayLoggingError> {
+    services: &CostCalculator<'_, Resolver, ImagePolicy, Inference>,
+    clock: &mut Clock,
+) -> Result<HandlerOutcome, MediaRelayLoggingError>
+where
+    Resolver: ModelResolver + Sync,
+    ImagePolicy: ImagePricePolicy + Sync,
+    Inference: ProviderInference + Sync,
+    Clock: FnMut() -> SystemTime + Send,
+{
     let DeepgramListenOutcome {
         outcome,
         spend,
@@ -19,7 +33,7 @@ pub fn deepgram_listen_passthrough_handler(
         channels,
         billed_seconds,
         unpriced_registry_key,
-    } = deepgram_listen_outcome(request)?;
+    } = deepgram_listen_outcome(request, services, clock).await?;
     write_spend(logging_obj, &spend);
     if let Some(key) = &unpriced_registry_key {
         tracing::warn!(registry_key = %key, "deepgram listen passthrough: no registry entry");
