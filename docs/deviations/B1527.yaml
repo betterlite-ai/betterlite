@@ -1,0 +1,24 @@
+task: B1527
+deviations:
+  - what: An Ultra size whose width or height does not fit i64 falls back to 16:9, where Python's int() reads an unbounded integer and divides it.
+    why: betterlite reads Fal sizes with the shared i64 parser in betterlite-models; a dimension past 9.2e18 is not a size any working request sends, and a size the parser cannot read takes the same fallback as any other unreadable size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/flux_pro_v11_ultra_transformation.py#L121-L126
+  - what: A Pro, Schnell or Dev size string whose width or height does not fit i64 falls back to landscape_4_3, where LiteLLM returns a width/height object with an unbounded integer.
+    why: the same shared i64 parser reads both mappings; a working image request spells whole pixels well inside i64, and a size the parser cannot read takes the same fallback as any other unreadable size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/flux_pro_v11_transformation.py#L80-L87
+  - what: An Ultra custom size is placed in an aspect-ratio interval by exact rational comparison, where LiteLLM divides width by height into an IEEE double first, so a dimension past 2^53 can land on a different interval than the exact ratio does.
+    why: betterlite does no float arithmetic; every whole-pixel size below 2^53 divides exactly enough that both agree, and a size past that is not one a client names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/flux_pro_v11_ultra_transformation.py#L126-L148
+  - what: A size part written in non-ASCII decimal digits falls back to 16:9 for Ultra and to landscape_4_3 for Pro, Schnell and Dev, where Python's int() reads those digits as a number.
+    why: the shared size reader accepts ASCII digits only, the same rule B1525 logs for GPT Image sizes; a working request spells its size in ASCII.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/flux_pro_v11_ultra_transformation.py#L122-L123
+  - what: A Flux reply that is not JSON, or whose root is not an object, fails with a typed error that keeps the upstream status and headers, where LiteLLM wraps only the JSON parse in an error and raises an unhandled AttributeError on a non-object root.
+    why: B1525's shared Fal decoder classifies the reply and this projection reuses it, so the client sees a typed failure instead of a 500 that loses the upstream status; no working Fal setup returns a non-object image reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/flux_pro_v11_ultra_transformation.py#L219-L233
+  - what: A Flux reply larger than 16 MiB is refused with a typed error that keeps the upstream status and headers, where LiteLLM reads the reply without a size limit.
+    why: B1525's shared decoder enforces the limit on a body that comes from outside, and a reply that large is not an image result any setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/flux_pro_v11_ultra_transformation.py#L220
+kept_bugs:
+  - what: Ultra's 1.4-to-1.6 branch can never return 3:2 for a custom size, because the earlier 4:3 branch claims every ratio from 1.3 up to 1.7 first, and the same ordering makes a custom 0.65-to-0.7 ratio return 3:4 before 2:3 would match.
+    why: a setup sending those custom sizes gets 4:3 or 3:4 today; honoring the shadowed branches would change the aspect ratio its requests receive, so only the exact 1536x1024 alias returns 3:2.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/flux_pro_v11_ultra_transformation.py#L135-L141
