@@ -1,5 +1,10 @@
-mock_provider "google" {}
-mock_provider "random" {}
+mock_provider "google" {
+  override_during = plan
+}
+
+mock_provider "random" {
+  override_during = plan
+}
 
 variables {
   project_id = "test-project"
