@@ -123,10 +123,13 @@ fn a_supplied_call_id_is_kept_and_draws_no_uuid() {
 #[case::absent(r#"{"id": "a", "name": "f"}"#, "{}")]
 #[case::object(
     r#"{"id": "a", "name": "f", "args": {"city": "Zürich", "n": [1, 2], "ok": true}}"#,
-    r#"{"city": "Zürich", "n": [1, 2], "ok": true}"#
+    r#"{"city": "Z\u00fcrich", "n": [1, 2], "ok": true}"#
 )]
 #[case::explicit_null(r#"{"id": "a", "name": "f", "args": null}"#, "null")]
-#[case::astral(r#"{"id": "a", "name": "f", "args": {"k": "😀"}}"#, r#"{"k": "😀"}"#)]
+#[case::astral(
+    r#"{"id": "a", "name": "f", "args": {"k": "😀"}}"#,
+    r#"{"k": "\ud83d\ude00"}"#
+)]
 fn arguments_are_dumped_with_python_spacing_and_ascii_escapes(
     #[case] call: &str,
     #[case] expected: &str,
