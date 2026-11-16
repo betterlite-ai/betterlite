@@ -1,7 +1,7 @@
 task: B8144
 deviations:
   - what: Every resource is named `<tenant>-<env>-betterlite`, cut to 30 characters, and the only label the module always adds is `managed_by = "terraform"`.
-    why: betterlite names its own stack after itself, and the 30-character cut keeps every derived name inside the GCP limits that apply to service accounts and Cloud Run resources. LiteLLM names the stack `<tenant>-litellm-<env>` and also stamps a `litellm-stack` label.
+    why: betterlite names its own stack after itself, and the 30-character cut keeps the shared prefix inside the GCP limit for service account ids while leaving room for the suffixes the later parts add. LiteLLM names the stack `<tenant>-litellm-<env>` and also stamps a `litellm-stack` label.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/locals.tf#L5-L22
   - what: The variables live in variables_data.tf, and later parts add variables_identity.tf and variables_service.tf, instead of one variables.tf.
     why: Three parallel tasks write the variables, and a Terraform module reads every .tf file in its folder, so the split changes nothing for a caller.
