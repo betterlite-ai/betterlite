@@ -18,7 +18,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Settings(settings) => settings::run(settings),
+            Input::Settings(settings) => Ok(settings::run(settings)),
             Input::Guardrail(guardrail) => guardrail::run(guardrail),
         }
     }
