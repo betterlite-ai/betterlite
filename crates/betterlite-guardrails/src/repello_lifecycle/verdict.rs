@@ -44,25 +44,37 @@ fn format_policy(policy: &RepelloAIViolatedPolicy) -> String {
         .action_taken
         .as_deref()
         .map(|action| format!("action: {action}"));
-    let score = policy
+    let score = match policy
         .details
         .as_ref()
         .and_then(|details| details.get("score"))
-        .map(|score| {
-            if let GuardrailValue::Text(text) = score {
-                format!("score: {text}")
-            } else {
-                format!(
-                    "score: {}",
-                    serde_json::to_string(score).unwrap_or_default()
-                )
-            }
-        });
+    {
+        None | Some(GuardrailValue::Null) => None,
+        Some(score) => Some(format_score(score)),
+    };
     let parts: Vec<String> = action.into_iter().chain(score).collect();
     if parts.is_empty() {
         return name.to_owned();
     }
     format!("{name} ({})", parts.join(", "))
+}
+
+fn format_score(score: &GuardrailValue) -> String {
+    match score {
+        GuardrailValue::Text(text) => format!("score: {text}"),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => {
+            format!(
+                "score: {}",
+                serde_json::to_string(score).unwrap_or_default()
+            )
+        }
+    }
 }
 
 // LiteLLM's _raise_if_blocked: a block raises the 400 with the formatted detail, a flag is only logged.

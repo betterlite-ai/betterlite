@@ -17,6 +17,7 @@ use crate::repello_content::wire::{
 };
 
 use super::hooks::HookContext;
+use super::numbers;
 use super::verdict::verdict_blocks;
 use super::{
     API_KEY_HEADER, CONFIG_ERROR_STATUS_CODES, Data, ERROR_STATUS, FAILED_MESSAGE,
@@ -179,7 +180,14 @@ async fn decode(mut response: reqwest::Response) -> Result<RepelloAIAnalyzeRespo
     let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
         .await
         .map_err(read_error)?;
-    serde_json::from_slice(&body).map_err(|_malformed| PostError::InvalidJson { status: code })
+    parse_answer(&body).map_err(|_malformed| PostError::InvalidJson { status: code })
+}
+
+// LiteLLM's TypeAdapter(RepelloAIAnalyzeResponse).validate_json: the answer the Argus API sent, typed.
+pub fn parse_answer(body: &[u8]) -> Result<RepelloAIAnalyzeResponse, serde_json::Error> {
+    let mut answer: RepelloAIAnalyzeResponse = serde_json::from_slice(body)?;
+    numbers::repair(&mut answer);
+    Ok(answer)
 }
 
 // A failed scan records the detail object, which is what LiteLLM keeps as guardrail_json_response.

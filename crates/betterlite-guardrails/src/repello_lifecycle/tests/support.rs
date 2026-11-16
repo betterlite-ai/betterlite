@@ -23,6 +23,7 @@ use betterlite_guardrails::guardrail_records::record::{
 };
 use betterlite_guardrails::repello_content::wire::RepelloAIAnalyzeResponse;
 use betterlite_guardrails::repello_lifecycle::RepelloAILifecycle;
+use betterlite_guardrails::repello_lifecycle::analyze::parse_answer;
 use betterlite_guardrails::repello_lifecycle::config::{RepelloAIParams, RepelloAISettings};
 use betterlite_guardrails::repello_lifecycle::hooks::{
     HookContext, HookTarget, scan_hook, streaming_iterator_hook,
@@ -228,7 +229,7 @@ pub(crate) fn decoded_params(body: &str) -> RepelloAIParams {
 }
 
 pub(crate) fn parsed(text: &str) -> RepelloAIAnalyzeResponse {
-    serde_json::from_str(text).unwrap()
+    parse_answer(text.as_bytes()).unwrap()
 }
 
 pub(crate) async fn run_hook(

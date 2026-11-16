@@ -39,6 +39,10 @@ fn a_block_without_policies_uses_the_default_message(#[case] reply: &str) {
     r#"{"verdict": "blocked", "policies_violated": [{"policy_name": "pii", "details": {"score": "high"}}]}"#,
     "Blocked by RepelloAI Argus guardrail. Policies violated: pii (score: high)."
 )]
+#[case::null_score(
+    r#"{"verdict": "blocked", "policies_violated": [{"policy_name": "pii", "details": {"score": null}}]}"#,
+    "Blocked by RepelloAI Argus guardrail. Policies violated: pii."
+)]
 #[case::action_and_score(
     r#"{"verdict": "blocked", "policies_violated": [{"policy_name": "pii", "action_taken": "block", "details": {"score": 0.5}}]}"#,
     "Blocked by RepelloAI Argus guardrail. Policies violated: pii (action: block, score: 0.5)."

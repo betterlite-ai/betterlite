@@ -18,6 +18,7 @@ call:
       body:
         verdict: blocked
         policies_violated:
-          - {policy_name: pii, action_taken: block}
+          - {policy_name: pii, action_taken: block, details: {score: 0.9}}
+          - {policy_name: toxicity, details: {score: null}}
 env: {}
 compare: {ignore: []}
