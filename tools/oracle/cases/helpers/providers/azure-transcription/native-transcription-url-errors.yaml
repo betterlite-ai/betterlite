@@ -1,0 +1,19 @@
+kind: helper
+name: azure-transcription-native-url-errors
+call:
+  azure_transcription:
+    function: native_config
+    probes:
+      - model: azure/speech/azure-stt
+        api_key: sk-fixture
+        bases:
+          - null
+          - 'https://example.openai.azure.com'
+          - 'https://example.openai.azure.com.evil'
+          - 'https://speech.test'
+      - model: azure/speech/azure-stt
+        api_key: sk-fixture
+        environment_api_base: 'https://eastus.api.cognitive.microsoft.com'
+        bases: [null]
+env: {AZURE_SPEECH_API_BASE: 'https://eastus.api.cognitive.microsoft.com'}
+compare: {ignore: []}
