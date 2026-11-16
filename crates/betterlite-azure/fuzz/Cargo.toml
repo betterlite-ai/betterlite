@@ -70,3 +70,10 @@ path = "fuzz_targets/azure_managed_identity.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "azure_transcription"
+path = "fuzz_targets/azure_transcription.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,11 @@
+kind: helper
+name: fal-flux-fallback-sizes
+call:
+  fal_flux:
+    operation: unknown_size_fallback
+    profiles: [ultra, pro_v11, schnell, dev]
+    sizes: ["auto", "1500x1000", "1024X768", "1024-x-768", "10x", "", "1_0x2_0", "-5x+6", "1024x0", "0x100"]
+    image_sizes: ["1024x768", {width: 512}, 7, true, null]
+env: {}
+compare:
+  ignore: []

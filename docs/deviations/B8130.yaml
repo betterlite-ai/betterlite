@@ -1,0 +1,27 @@
+task: B8130
+deviations:
+  - what: The chart, its helpers and its default image are named betterlite, betterlite-helm and ghcr.io/betterlite-ai/betterlite, and the config file is mounted at /etc/betterlite/config.yaml.
+    why: The product name changes and the betterlite image (B5071) has no /etc/litellm folder; the environment variable names stay LiteLLM's so existing configuration keeps working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/values.yaml#L1-L20
+  - what: The billingMetrics values and their helpers are not ported.
+    why: Billable-request metering is for LiteLLM Enterprise licenses and betterlite has no enterprise package.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/_helpers.tpl#L47-L90
+  - what: ci/test-values.yaml does not set USE_DDTRACE, DD_ENV or DD_SERVICE.
+    why: The native server ignores USE_DDTRACE (B5070), so the chart test sets a neutral EXAMPLE_ENV variable instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/ci/test-values.yaml
+  - what: collector.command runs the betterlite subcommand ("betterlite", "collector") instead of LiteLLM's "python -m litellm.proxy.collector".
+    why: The chart ships the native image, which has no Python interpreter or litellm module; the collector sidecar's environment variables keep LiteLLM's names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/values.yaml#L217-L220
+  - what: values.yaml carries listen (0.0.0.0), masterkey (empty), extraContainers and extraInitContainers, which LiteLLM's values.yaml leaves commented out or absent.
+    why: The chart documents every key its templates read, and the workload tasks read listen, extraContainers and extraInitContainers; the rendered result matches LiteLLM because its helpers already fall back to the same defaults.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/values.yaml#L135-L141
+  - what: The Helm test pod image comes from test.kubectlImage (docker.io/bitnamilegacy/kubectl:1.29.2-debian-12-r3), where LiteLLM hardcodes the same image in its test template.
+    why: B8132 renders the test pods from this value, so a cluster can point them at a mirror it already has without editing the chart.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/tests/test-servicemonitor.yaml#L13
+kept_bugs:
+  - what: With db.deployStandalone the proxy receives DATABASE_NAME=litellm from the helper, not postgresql.auth.database, so changing the bundled subchart's database leaves the proxy pointing at a database the server never created.
+    why: LiteLLM hardcodes the name in betterlite.proxyEnv, and the chart and the bundled PostgreSQL subchart both default to litellm, so a setup that overrides only the subchart's database was already broken and no working setup relies on the hardcode being fixed here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/_helpers.tpl#L189-L190
+  - what: secret-masterkey.yaml always writes the generated key under data.masterkey, while betterlite.proxyEnv reads masterkeySecretKey when it is set, so a masterkeySecretKey without masterkeySecretName leaves the proxy reading a key the chart never created.
+    why: LiteLLM's Secret template hardcodes the data key, and a setup that sets masterkeySecretKey supplies its own Secret through masterkeySecretName, which skips this template entirely.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/secret-masterkey.yaml#L10
