@@ -75,60 +75,73 @@ where
 // completion_cost(call_type="transcription") for one registry entry; the billed duration rides on the response's hidden params.
 fn transcription_args(model: &str, billed: Decimal) -> CompletionArgs<'_> {
     CompletionArgs {
-        billing: CompletionBillingInput {
-            model: Some(model),
-            prompt: "",
-            messages: &[],
-            completion: "",
-            call_type: Some(CallType::Transcription),
-            custom_llm_provider: Some(PROVIDER),
-            region_name: None,
-            router_model_id: None,
-            custom_pricing: None,
-            base_model: None,
-            optional_params: None,
-            service_tier: None,
-            response: None,
+        billing: billing_input(model),
+        charge: charge_inputs(billed),
+    }
+}
+
+fn billing_input(model: &str) -> CompletionBillingInput<'_> {
+    CompletionBillingInput {
+        model: Some(model),
+        prompt: "",
+        messages: &[],
+        completion: "",
+        call_type: Some(CallType::Transcription),
+        custom_llm_provider: Some(PROVIDER),
+        region_name: None,
+        router_model_id: None,
+        custom_pricing: None,
+        base_model: None,
+        optional_params: None,
+        service_tier: None,
+        response: None,
+    }
+}
+
+fn charge_inputs<'input>(billed: Decimal) -> ChargeInputs<'input> {
+    ChargeInputs {
+        passthrough_image: false,
+        total_time: None,
+        data_residency: None,
+        vertex_location: None,
+        custom_cost_per_token: None,
+        custom_cost_per_second: None,
+        logging: LoggingView {
+            model: None,
+            params: None,
+            timing: None,
         },
-        charge: ChargeInputs {
-            passthrough_image: false,
-            total_time: None,
-            data_residency: None,
-            vertex_location: None,
-            custom_cost_per_token: None,
-            custom_cost_per_second: None,
-            logging: LoggingView {
-                model: None,
-                params: None,
-                timing: None,
-            },
-            response: ResponseParts {
-                cost_response: None,
-                image: ImageParts {
-                    response: ImageResponseView::Other,
-                    quality: None,
-                    image_count: None,
-                    size: None,
-                },
-                video_usage: None,
-                transcription: TranscriptionDuration {
-                    hidden: HiddenDuration::Seconds(billed),
-                    response_duration: None,
-                },
-                rerank: None,
-                protocol: None,
-                replicate: ReplicateStamps::default(),
-                model_response: None,
-            },
-            ocr_billing: None,
-            vector_response: None,
-            search_hidden_params: None,
-            server_tool_projection: None,
-            tools: ToolInputs {
-                response: ToolBillingResponse::Other(OtherView { usage: None }),
-                params: BuiltInToolParams::default(),
-                google_maps_requests: None,
-            },
+        response: response_parts(billed),
+        ocr_billing: None,
+        vector_response: None,
+        search_hidden_params: None,
+        server_tool_projection: None,
+        tools: ToolInputs {
+            response: ToolBillingResponse::Other(OtherView { usage: None }),
+            params: BuiltInToolParams::default(),
+            google_maps_requests: None,
         },
+    }
+}
+
+// The billed duration reaches the calculator through the response's hidden params.
+fn response_parts<'response>(billed: Decimal) -> ResponseParts<'response> {
+    ResponseParts {
+        cost_response: None,
+        image: ImageParts {
+            response: ImageResponseView::Other,
+            quality: None,
+            image_count: None,
+            size: None,
+        },
+        video_usage: None,
+        transcription: TranscriptionDuration {
+            hidden: HiddenDuration::Seconds(billed),
+            response_duration: None,
+        },
+        rerank: None,
+        protocol: None,
+        replicate: ReplicateStamps::default(),
+        model_response: None,
     }
 }

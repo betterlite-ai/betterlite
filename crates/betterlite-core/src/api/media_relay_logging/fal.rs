@@ -26,6 +26,7 @@ pub struct FalPassthroughRequest<'request> {
     pub queue_base: Option<&'request str>,
 }
 
+#[derive(Debug)]
 pub struct FalPassthroughOutcome {
     pub outcome: HandlerOutcome,
     pub spend: MediaSpend,
