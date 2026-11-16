@@ -67,6 +67,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "gemini_live_client"
+path = "fuzz_targets/gemini_live_client.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "gemini_live_setup"
 path = "fuzz_targets/gemini_live_setup.rs"
 test = false
