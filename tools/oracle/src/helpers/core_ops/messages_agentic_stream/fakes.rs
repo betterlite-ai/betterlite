@@ -155,10 +155,10 @@ pub(crate) struct GatedHook {
 impl Future for GatedHook {
     type Output = Result<MessagesAgenticStreamResult<ScriptedFollowUp>, AgenticHookError>;
 
-    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
         if !this.gate.load(Ordering::SeqCst) {
-            context.waker().wake_by_ref();
+            cx.waker().wake_by_ref();
             return Poll::Pending;
         }
         this.outcome.take().map_or(Poll::Pending, Poll::Ready)
