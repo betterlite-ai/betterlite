@@ -35,7 +35,7 @@ use crate::api::agents::item::error::ProviderFailure;
 
 use super::super::{InteractionGetDeps, InteractionGetRequest};
 
-pub(super) const TIMEOUT: Duration = Duration::from_secs(5);
+const TIMEOUT: Duration = Duration::from_secs(5);
 const RETRY: Duration = Duration::from_millis(10);
 pub(super) const GET_BODY: &str = r#"{"id": "int_1", "model": "gemini-2.5-flash"}"#;
 
