@@ -39,16 +39,17 @@ async fn mapping_source(
     Ok(Some(PrefetchedHub(info)))
 }
 
-async fn request_body(
+fn chat_inputs(call: &ChatContext<'_>) -> Result<(ChatObject, Vec<ChatMessage>), HubDispatchError> {
+    let params = json::convert::<Object, ChatObject>(call.optional_params)?;
+    let messages = call.messages.iter().map(json::convert);
+    Ok((params, messages.collect::<Result<_, _>>()?))
+}
+
+pub async fn request_body(
     call: &ChatContext<'_>,
     deps: &DispatchDeps<'_>,
 ) -> Result<ChatObject, HubDispatchError> {
-    let params = json::convert::<Object, ChatObject>(call.optional_params)?;
-    let messages: Vec<ChatMessage> = call
-        .messages
-        .iter()
-        .map(json::convert)
-        .collect::<Result<_, _>>()?;
+    let (params, messages) = chat_inputs(call)?;
     let sources = Sources {
         call: None,
         globals: deps.globals,
@@ -107,7 +108,7 @@ fn chat_http(
     })
 }
 
-fn prepared(
+pub fn chat_request(
     call: &ChatContext<'_>,
     deps: &DispatchDeps<'_>,
     body: &ChatObject,
@@ -121,14 +122,6 @@ fn prepared(
         return Ok(PreparedRequest::Stream(Box::new(chat)));
     }
     Ok(PreparedRequest::Chat(Box::new(chat)))
-}
-
-pub async fn chat_request(
-    call: &mut ChatContext<'_>,
-    deps: &DispatchDeps<'_>,
-) -> Result<PreparedRequest, HubDispatchError> {
-    let body = request_body(call, deps).await?;
-    prepared(call, deps, &body)
 }
 
 pub struct NoMapping;

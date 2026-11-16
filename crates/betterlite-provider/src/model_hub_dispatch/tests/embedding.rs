@@ -47,8 +47,8 @@ async fn the_embedding_arm_posts_the_prepared_body_and_logs_both_hooks() {
         panic!("the embedding arm posts once");
     };
     assert_eq!(sent.url, "http://mock/embed");
-    assert_eq!(sent.headers.get("Authorization").unwrap(), "Bearer hf-key");
-    assert_eq!(sent.headers.get("x-call").unwrap(), "1");
+    assert_eq!(sent.headers["Authorization"], "Bearer hf-key");
+    assert_eq!(sent.headers["x-call"], "1");
     let expected = r#"{"inputs":["a","b"],"options":{"wait_for_model":true}}"#;
     assert_eq!(sent.body, expected);
     let started = state.model_call_details.get("api_call_start_time");

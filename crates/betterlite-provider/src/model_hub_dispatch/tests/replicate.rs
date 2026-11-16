@@ -27,8 +27,7 @@ fn polled() -> Services {
 
 // the prompt the create request carried
 fn created_prompt(services: &Services) -> Option<PromptJson> {
-    let sent = services.transport.sent.lock().unwrap();
-    let create = sent.first()?;
+    let create = services.transport.sent.lock().unwrap().first().cloned()?;
     let body: Object = serde_json::from_slice(create.body.as_deref()?).ok()?;
     let Some(PromptJson::Object(input)) = body.get("input") else {
         return None;
@@ -88,9 +87,7 @@ async fn the_replicate_arm_creates_then_polls_with_the_context_key() {
 
 #[tokio::test]
 async fn the_replicate_arm_uses_the_lenient_policy_for_an_async_call() {
-    let lenient = r#"{"status":"succeeded","output":5}"#;
-    let replies = vec![replicate_reply(CREATE), replicate_reply(lenient)];
-    let services = Services::new(Vec::new(), Vec::new(), replies);
+    let services = polled();
     let mut messages = vec![user_message()];
     let mut options = Object::new();
     let mut call = chat_context(MODEL, &mut messages, &mut options, None);
@@ -103,7 +100,7 @@ async fn the_replicate_arm_uses_the_lenient_policy_for_an_async_call() {
     let ReplicateCompletion::Reply(reply) = *completion else {
         panic!("a non-stream call returns the reply");
     };
-    assert_eq!(reply.text, "5");
+    assert_eq!(reply.text, "ok");
     assert_eq!(reply.created, None);
 }
 

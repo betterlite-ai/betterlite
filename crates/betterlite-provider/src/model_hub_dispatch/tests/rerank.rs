@@ -48,7 +48,7 @@ fn the_rerank_config_takes_its_key_and_base_from_the_chains() {
         litellm_params: None,
     };
     let headers = inherited.validate_environment(request).unwrap();
-    assert_eq!(headers.get("Authorization").unwrap(), "Bearer hf-global");
+    assert_eq!(headers["Authorization"], "Bearer hf-global");
     assert!(
         inherited
             .supported_rerank_params("m")

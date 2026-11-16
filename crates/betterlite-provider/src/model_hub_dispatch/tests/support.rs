@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -163,7 +163,7 @@ impl ScriptedHttp {
         self.record(request);
         replies
             .lock()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .ok_or(HubDispatchError::BodyNotObject)
     }
@@ -391,15 +391,15 @@ impl Services {
     }
 }
 
+type Deps<'call> = &'call DispatchDeps<'call>;
+type Log<'call, 'state, 'env> = &'call mut CallLogging<'state, 'env>;
+type Ran<'call, T> = LocalBoxFuture<'call, Result<T, HubDispatchError>>;
+
 // one entry point of the module under test; the logging env is not Sync, so its future stays local
 pub(super) trait Arm {
     type Output;
 
-    fn run<'call>(
-        self,
-        deps: &'call DispatchDeps<'_>,
-        log: &'call mut CallLogging<'_, '_>,
-    ) -> LocalBoxFuture<'call, Result<Self::Output, HubDispatchError>>
+    fn run<'call>(self, deps: Deps<'call>, log: Log<'call, '_, '_>) -> Ran<'call, Self::Output>
     where
         Self: 'call;
 }
@@ -407,11 +407,7 @@ pub(super) trait Arm {
 impl Arm for &EmbeddingCall<'_> {
     type Output = EmbeddingResponse;
 
-    fn run<'call>(
-        self,
-        deps: &'call DispatchDeps<'_>,
-        log: &'call mut CallLogging<'_, '_>,
-    ) -> LocalBoxFuture<'call, Result<EmbeddingResponse, HubDispatchError>>
+    fn run<'call>(self, deps: Deps<'call>, log: Log<'call, '_, '_>) -> Ran<'call, Self::Output>
     where
         Self: 'call,
     {
@@ -422,11 +418,7 @@ impl Arm for &EmbeddingCall<'_> {
 impl Arm for (ChatConfigTag, &mut ChatContext<'_>) {
     type Output = Option<HubCompletion>;
 
-    fn run<'call>(
-        self,
-        deps: &'call DispatchDeps<'_>,
-        log: &'call mut CallLogging<'_, '_>,
-    ) -> LocalBoxFuture<'call, Result<Option<HubCompletion>, HubDispatchError>>
+    fn run<'call>(self, deps: Deps<'call>, log: Log<'call, '_, '_>) -> Ran<'call, Self::Output>
     where
         Self: 'call,
     {

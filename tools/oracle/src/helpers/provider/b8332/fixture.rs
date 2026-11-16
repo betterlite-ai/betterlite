@@ -5,17 +5,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{StreamResponse, UpstreamResponse};
-use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
-};
-use betterlite_logging::logging_privacy::request::Decision;
-use betterlite_logging::logging_state::correlation::{
-    CorrelationContext, CorrelationSettings, CorrelationSetup,
-};
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_openai::huggingface_chat::mapping::HubResponse;
 use betterlite_openai::huggingface_embedding::response::OrdinaryEncoder;
-use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_prompts::builtin::Message;
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::hub::{Hub, builtin_entries};
@@ -32,16 +23,13 @@ use betterlite_provider::replicate::poll::transport::{
 use betterlite_provider::replicate::reply::{
     PostCall, PostCallLogger, TokenCounter as ReplicateTokenCounter,
 };
-use betterlite_redact::secret::Redactor;
 use betterlite_tokenizer::count::error::CountError;
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, Utc};
 use http::HeaderMap;
 
 use super::Reply;
-use super::wire::helper_error;
 
-const INIT: &str = r#"{"model":"oracle","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
-const NOW_SECONDS: i64 = 1_700_000_000;
+pub(super) const NOW_SECONDS: i64 = 1_700_000_000;
 
 // one request as the provider would see it on the wire
 pub(super) struct Wire {
@@ -204,12 +192,6 @@ impl PredibaseTokenCounter for Counting {
     }
 }
 
-struct Discard;
-
-impl LogSink for Discard {
-    fn emit(&self, _record: LogRecord) {}
-}
-
 // the services a dispatch call needs, all answering from the case
 pub(super) struct Fixture {
     pub(super) recorder: Arc<Recorder>,
@@ -267,40 +249,5 @@ impl Fixture {
             now: self.clock.now(),
             timeout: Duration::from_secs(5),
         }
-    }
-}
-
-pub(super) fn log_state(redactor: &Redactor) -> Result<LoggingState, Box<HelperError>> {
-    let init: LoggingInit =
-        serde_json::from_str(INIT).map_err(|error| helper_error("LoggingInit", &error))?;
-    LoggingState::new(
-        init,
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
-        redactor,
-        || String::from("trace"),
-        Duration::default,
-    )
-    .map_err(|error| helper_error("LoggingState", &error))
-}
-
-pub(super) fn log_env(redactor: &Redactor) -> PrePostEnv<'_> {
-    PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor,
-        log: &Discard,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now: DateTime::<FixedOffset>::from(
-            DateTime::from_timestamp(NOW_SECONDS, 0).unwrap_or_default(),
-        ),
     }
 }

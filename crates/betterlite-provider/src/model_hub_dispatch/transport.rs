@@ -57,9 +57,9 @@ pub struct Pooled<'client> {
 }
 #[async_trait]
 impl HubGetAsync for Pooled<'_> {
-    async fn get(&self, wire: &WireRequest<'_>) -> Result<HubResponse, HubDispatchError> {
+    async fn get(&self, request: &WireRequest<'_>) -> Result<HubResponse, HubDispatchError> {
         self.client
-            .send_buffered(wire.outbound()?)
+            .send_buffered(request.outbound()?)
             .await
             .map(hub_response)
             .map_err(|source| HubDispatchError::Operation(OperationError::from(source)))
@@ -67,18 +67,18 @@ impl HubGetAsync for Pooled<'_> {
 }
 #[async_trait]
 impl PostTransport for Pooled<'_> {
-    async fn post(&self, wire: &WireRequest<'_>) -> Result<UpstreamResponse, HubDispatchError> {
+    async fn post(&self, request: &WireRequest<'_>) -> Result<UpstreamResponse, HubDispatchError> {
         self.client
-            .send_buffered(wire.outbound()?)
+            .send_buffered(request.outbound()?)
             .await
             .map_err(|source| HubDispatchError::Operation(OperationError::from(source)))
     }
     async fn post_stream(
         &self,
-        wire: &WireRequest<'_>,
+        request: &WireRequest<'_>,
     ) -> Result<StreamResponse, HubDispatchError> {
         self.client
-            .send(wire.outbound()?)
+            .send(request.outbound()?)
             .await
             .map_err(|source| HubDispatchError::Operation(OperationError::from(source)))
     }

@@ -1,4 +1,5 @@
 mod fixture;
+mod logging;
 mod wire;
 
 use std::collections::BTreeMap;
@@ -29,7 +30,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::runtime::{Builder, Runtime};
 
-use fixture::{Fixture, Recorder, Wire, log_env, log_state};
+use fixture::{Fixture, Recorder, Wire};
+use logging::{log_env, log_state};
 use wire::{answer, error_status, helper_error};
 
 #[derive(Clone, Copy, Deserialize)]
@@ -105,15 +107,29 @@ fn options(case: &Case) -> Object {
     options
 }
 
-fn chat(
+// None runs the embedding arm; a tag runs that chat arm through dispatch
+fn invoke(
     case: &Case,
-    tag: ChatConfigTag,
+    tag: Option<ChatConfigTag>,
     deps: &DispatchDeps<'_>,
     log: &mut CallLogging<'_, '_>,
     runtime: &Runtime,
 ) -> Result<Option<HubCompletion>, HubDispatchError> {
-    let mut messages = case.messages.clone();
     let mut asked = options(case);
+    let Some(tag) = tag else {
+        let embedding = EmbeddingCall {
+            model: &case.model,
+            input: &case.input,
+            optional_params: &asked,
+            api_key: case.api_key.as_ref(),
+            api_base: case.api_base.as_deref(),
+            headers: &BTreeMap::new(),
+        };
+        return runtime
+            .block_on(embed(&embedding, deps, log))
+            .map(|_reply| None);
+    };
+    let mut messages = case.messages.clone();
     let mut call = ChatContext {
         model: &case.model,
         messages: &mut messages,
@@ -129,24 +145,6 @@ fn chat(
         construction: ConfigConstruction::Shared,
     };
     runtime.block_on(dispatch(&selection, &mut call, deps, log))
-}
-
-fn embedding(
-    case: &Case,
-    deps: &DispatchDeps<'_>,
-    log: &mut CallLogging<'_, '_>,
-    runtime: &Runtime,
-) -> Result<(), HubDispatchError> {
-    let asked = options(case);
-    let call = EmbeddingCall {
-        model: &case.model,
-        input: &case.input,
-        optional_params: &asked,
-        api_key: case.api_key.as_ref(),
-        api_base: case.api_base.as_deref(),
-        headers: &BTreeMap::new(),
-    };
-    runtime.block_on(embed(&call, deps, log)).map(drop)
 }
 
 // litellm.rerank hands the config query, documents and its return_documents=True default
@@ -211,14 +209,19 @@ fn call(
     let deps = fixture.deps(&globals, &case.env);
     match case.op {
         Operation::HuggingfaceChat => {
-            let completion = chat(case, ChatConfigTag::HuggingFaceChat, &deps, log, runtime)?;
+            let chat = Some(ChatConfigTag::HuggingFaceChat);
+            let completion = invoke(case, chat, &deps, log, runtime)?;
             keep_prepared(&fixture.recorder, completion);
             Ok(())
         }
-        Operation::HuggingfaceEmbedding => embedding(case, &deps, log, runtime),
+        Operation::HuggingfaceEmbedding => invoke(case, None, &deps, log, runtime).map(drop),
         Operation::HuggingfaceRerank => rerank(case, &fixture.recorder, &globals),
-        Operation::Replicate => chat(case, ChatConfigTag::Replicate, &deps, log, runtime).map(drop),
-        Operation::Predibase => chat(case, ChatConfigTag::Predibase, &deps, log, runtime).map(drop),
+        Operation::Replicate => {
+            invoke(case, Some(ChatConfigTag::Replicate), &deps, log, runtime).map(drop)
+        }
+        Operation::Predibase => {
+            invoke(case, Some(ChatConfigTag::Predibase), &deps, log, runtime).map(drop)
+        }
     }
 }
 

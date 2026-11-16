@@ -86,7 +86,6 @@ class Recorder:
         self.requests: list[JsonValue] = []
 
     def handle(self, request: httpx.Request) -> httpx.Response:
-        # LiteLLM's model info lookup and the Hub client's own calls are other code's requests
         # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5849
         if request.url.host == HUB_HOST and not request.url.path.startswith(MODEL_INFO_PREFIX):
             return httpx.Response(404)

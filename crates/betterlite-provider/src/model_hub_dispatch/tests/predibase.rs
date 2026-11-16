@@ -71,7 +71,7 @@ async fn the_predibase_arm_sends_the_generate_request() {
     };
     let url = "http://mock/tenant-1/deployments/v2/llms/meta-llama/llama-2-7b-chat/generate";
     assert_eq!(sent.url, url);
-    assert_eq!(sent.headers.get("Authorization").unwrap(), "Bearer pb-env");
+    assert_eq!(sent.headers["Authorization"], "Bearer pb-env");
     let body: Object = serde_json::from_str(&sent.body).unwrap();
     let inputs = PromptJson::Text(String::from("<s>[INST] hi [/INST]\n"));
     assert_eq!(body.get("inputs"), Some(&inputs));

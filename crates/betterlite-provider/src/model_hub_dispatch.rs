@@ -181,9 +181,11 @@ pub fn dispatch<'call>(
     Box::pin(async move {
         match provider {
             None => Ok(None),
-            Some(HubProvider::HuggingFace) => Ok(Some(HubCompletion::HuggingFace(Box::new(
-                huggingface::chat_request(call, deps).await?,
-            )))),
+            Some(HubProvider::HuggingFace) => {
+                let body = huggingface::request_body(call, deps).await?;
+                let request = huggingface::chat_request(call, deps, &body)?;
+                Ok(Some(HubCompletion::HuggingFace(Box::new(request))))
+            }
             Some(HubProvider::Replicate) => Ok(Some(HubCompletion::Replicate(Box::new(
                 replicate::complete(call, deps, log).await?,
             )))),

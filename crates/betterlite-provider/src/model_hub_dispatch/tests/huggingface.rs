@@ -90,7 +90,7 @@ async fn the_huggingface_arm_falls_back_to_the_global_headers() {
     let plain = chat(prepared(
         run_with(&services, &globals, &environment(&[]), (HF, &mut call)).await,
     ));
-    assert_eq!(plain.http.headers.get("x-global").unwrap(), "g");
+    assert_eq!(plain.http.headers["x-global"], "g");
 }
 
 #[tokio::test]
@@ -107,7 +107,7 @@ async fn the_huggingface_arm_prefers_the_call_headers_over_the_global_ones() {
     let plain = chat(prepared(
         run_with(&services, &globals, &environment(&[]), (HF, &mut call)).await,
     ));
-    assert_eq!(plain.http.headers.get("x-call").unwrap(), "1");
+    assert_eq!(plain.http.headers["x-call"], "1");
     assert!(plain.http.headers.get("x-global").is_none());
 }
 
@@ -127,11 +127,8 @@ async fn the_huggingface_arm_fetches_the_provider_mapping_without_a_base() {
     };
     let url = "https://huggingface.co/api/models/meta-llama/Llama-3-8B-Instruct";
     assert_eq!(info.url, url);
-    assert_eq!(
-        info.headers.get("Authorization").unwrap(),
-        "Bearer hub-secret"
-    );
-    assert_eq!(info.headers.get("Accept").unwrap(), "application/json");
+    assert_eq!(info.headers["Authorization"], "Bearer hub-secret");
+    assert_eq!(info.headers["Accept"], "application/json");
     let expand = vec![(
         String::from("expand"),
         String::from("inferenceProviderMapping"),
