@@ -64,7 +64,7 @@ pub(super) fn token_prompt() {
     token_prompt_reply(&run);
     logged_headers();
     let mut joined = sync_buffered("{}");
-    joined.messages = parts_messages();
+    joined.messages = Some(parts_messages());
     assert_eq!(text(&joined.execute().pre(&["input"])), "Sys Hi");
 }
 
