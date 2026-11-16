@@ -461,6 +461,32 @@ where
     }))
 }
 
+// LiteLLM answers 400 for a prompt the key's allowlist omits before it checks admin-view
+fn info_access<TableError>(
+    principal: &Principal,
+    prompt_id: &str,
+) -> Result<(), PromptReadError<TableError>>
+where
+    TableError: StdError + 'static,
+{
+    let view = PromptKeyView::from_principal(principal).map_err(PromptReadError::KeyMetadata)?;
+    if let Some(allowed) = view.allowlist()
+        && !allowed.iter().any(|entry| entry.as_str() == prompt_id)
+    {
+        return Err(PromptReadError::Denied {
+            status: StatusCode::BAD_REQUEST,
+            detail: format!("Prompt {prompt_id} not found"),
+        });
+    }
+    if !has_admin_view(principal) {
+        return Err(PromptReadError::Denied {
+            status: StatusCode::FORBIDDEN,
+            detail: "You are not authorized to access this prompt".to_owned(),
+        });
+    }
+    Ok(())
+}
+
 async fn get_prompt_info<Table>(
     State(state): State<PromptReadState<Table>>,
     Extension(context): Extension<AuthContext>,
@@ -470,23 +496,7 @@ async fn get_prompt_info<Table>(
 where
     Table: PromptTableActions,
 {
-    let view =
-        PromptKeyView::from_principal(&context.principal).map_err(PromptReadError::KeyMetadata)?;
-    let allowlist = view.allowlist();
-    if let Some(allowed) = allowlist
-        && !allowed.iter().any(|entry| entry == &prompt_id)
-    {
-        return Err(PromptReadError::Denied {
-            status: StatusCode::BAD_REQUEST,
-            detail: format!("Prompt {prompt_id} not found"),
-        });
-    }
-    if !has_admin_view(&context.principal) {
-        return Err(PromptReadError::Denied {
-            status: StatusCode::FORBIDDEN,
-            detail: "You are not authorized to access this prompt".to_owned(),
-        });
-    }
+    info_access::<Table::Failure>(&context.principal, &prompt_id)?;
     let base_prompt_id = get_base_prompt_id(&prompt_id);
     let environment = query.environment.as_deref();
     let environments = prompt_environments(&state, &base_prompt_id).await?;
