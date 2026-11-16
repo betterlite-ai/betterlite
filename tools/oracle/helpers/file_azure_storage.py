@@ -1,18 +1,19 @@
 import asyncio
 import time
-from typing import Final, TypedDict
+from typing import Final, Protocol, TypedDict
 
+import fastuuid
 import httpx
-from aiohttp import ClientSession
+import litellm
 from fastuuid import UUID
-from litellm._uuid import uuid as litellm_uuid
+from litellm.integrations.azure_storage.azure_storage import AzureBlobStorageLogger
 from litellm.llms.base_llm.files.azure_blob_storage_backend import AzureBlobStorageBackend
-from litellm.llms.custom_httpx import http_handler
-from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
+from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, httpxSpecialProvider
 from pydantic import JsonValue, TypeAdapter
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 BEARER = "tok-1"
+CLIENT_KEY: Final = "async_httpx_client" + httpxSpecialProvider.LoggingCallback
 
 
 class FileNameCall(TypedDict):
@@ -57,20 +58,23 @@ class AnswerStatus:
         return httpx.Response(200, request=request)
 
 
-def async_handler(
-    llm_provider: str,
-    params: dict[str, JsonValue] | None = None,
-    shared_session: ClientSession | None = None,
-) -> AsyncHTTPHandler:
-    del llm_provider, params, shared_session
-    return AsyncHTTPHandler(transport=httpx.MockTransport(AnswerStatus()))
+class ClientCache(Protocol):
+    def set_cache(self, key: str, value: AsyncHTTPHandler) -> None: ...
+
+
+class Backend(AzureBlobStorageBackend):
+    def __init__(self) -> None:
+        AzureBlobStorageLogger.__init__(self, build_credential_chain_token_provider=FixedChain())
 
 
 async def generate_name(call: FileNameCall) -> JsonValue:
     time.time = Clock(call["now_seconds"])
-    litellm_uuid.uuid4 = FixedFast(call["uuid"]).uuid4
-    http_handler.get_async_httpx_client = async_handler
-    backend = AzureBlobStorageBackend(build_credential_chain_token_provider=FixedChain())
+    fastuuid.uuid4 = FixedFast(call["uuid"]).uuid4
+    cache: ClientCache = litellm.in_memory_llm_clients_cache
+    cache.set_cache(
+        key=CLIENT_KEY, value=AsyncHTTPHandler(transport=httpx.MockTransport(AnswerStatus()))
+    )
+    backend = Backend()
     url = await backend.upload_file(
         file_content=b"abc",
         filename=call["filename"],

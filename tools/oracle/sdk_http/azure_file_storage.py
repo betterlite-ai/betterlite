@@ -4,6 +4,7 @@ from typing import Literal
 
 import httpx
 from azure.core.exceptions import HttpResponseError
+from litellm.integrations.azure_storage.azure_storage import AzureBlobStorageLogger
 from litellm.llms.base_llm.files.azure_blob_storage_backend import AzureBlobStorageBackend
 from pydantic import BaseModel, ConfigDict, JsonValue
 from typing_extensions import override
@@ -46,6 +47,10 @@ class FixedChain:
 class Backend(AzureBlobStorageBackend):
     api_base: str
 
+    def __init__(self, api_base: str) -> None:
+        AzureBlobStorageLogger.__init__(self, build_credential_chain_token_provider=FixedChain())
+        self.api_base = api_base
+
     # the SDK rewrites ".dfs." to ".blob.", so the mock's prefixes keep both origins apart
     @property
     @override
@@ -83,20 +88,21 @@ async def download_view(backend: Backend, call: DownloadCall) -> JsonObject:
 
 
 async def execute(call: FileAzureStorageCall, api_base: str) -> JsonObject:
-    backend = Backend(build_credential_chain_token_provider=FixedChain())
-    backend.api_base = api_base
+    value: JsonObject
     try:
+        backend = Backend(api_base)
         match call:
             case UploadCall():
-                return await upload_view(backend, call)
+                value = await upload_view(backend, call)
             case DownloadCall():
-                return await download_view(backend, call)
+                value = await download_view(backend, call)
     except ValueError as error:
         return error_view(error, None)
     except HttpResponseError as error:
         return error_view(error, error.status_code)
     except httpx.HTTPStatusError as error:
         return error_view(error, error.response.status_code)
+    return value
 
 
 def run_file_azure_storage(call: FileAzureStorageCall, api_base: str) -> str:
