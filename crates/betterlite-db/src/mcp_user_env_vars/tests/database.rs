@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::auxiliary_repository::repository::{PrismaClient, TableError};
 use crate::database_replica::availability::Availability;
 use crate::mcp_user_env_vars::codec::seal_user_env_vars;
-use crate::mcp_user_env_vars::postgres::postgres_user_env_vars_store;
+use crate::mcp_user_env_vars::postgres::{PostgresUserEnvVarsStore, postgres_user_env_vars_store};
 use crate::mcp_user_env_vars::store::UserEnvVars;
 use crate::postgres_store::session::PostgresStore;
 use crate::stored_cipher::DbCipher;
@@ -43,7 +43,7 @@ fn publisher() -> PublishChange<TableError> {
     Arc::new(|_name: &str| -> PublishFuture<TableError> { Box::pin(async { Ok(()) }) })
 }
 
-fn cipher() -> DbCipher {
+fn db_cipher() -> DbCipher {
     StoredCipher {
         settings: CipherSettings {
             signing_key: Some(SecretString::from(SALT.to_owned())),
@@ -52,6 +52,19 @@ fn cipher() -> DbCipher {
         nonces: OsNonces,
         diagnostics: TracingDiagnostics,
     }
+}
+
+fn store_for<'a>(
+    db: &'a PostgresStore,
+    availability: &'a Availability,
+) -> PostgresUserEnvVarsStore<'a> {
+    let client = PrismaClient {
+        writer: db,
+        reader: db,
+        availability,
+    };
+    postgres_user_env_vars_store(Some(client), publisher(), db_cipher())
+        .expect("the postgres store builds")
 }
 
 async fn seeded() -> (PostgresFixture, PostgresStore) {
@@ -81,9 +94,9 @@ async fn seed(
     cipher: &DbCipher,
     user_id: &str,
     server_id: &str,
-    values: UserEnvVars,
+    values: &UserEnvVars,
 ) {
-    let sealed = seal_user_env_vars(&values, cipher).expect("the test values seal");
+    let sealed = seal_user_env_vars(values, cipher).expect("the test values seal");
     let session = db.session().await.expect("the fixture connects");
     session
         .execute(
@@ -97,50 +110,39 @@ async fn seed(
 #[tokio::test]
 async fn reads_one_users_rows_through_the_table_handle() {
     let (_fixture, db) = seeded().await;
-    let cipher = cipher();
-    seed(
-        &db,
-        &cipher,
-        "alice",
-        "srv-1",
-        secrets([("API_KEY", "s3cr3t")]),
-    )
-    .await;
-    seed(
-        &db,
-        &cipher,
-        "alice",
-        "srv-2",
-        secrets([("TOKEN", "tok-2")]),
-    )
-    .await;
-    seed(&db, &cipher, "bob", "srv-1", secrets([("API_KEY", "bobs")])).await;
+    let cipher = db_cipher();
+    seed(&db, &cipher, "alice", "srv-1", &secrets([("K", "one")])).await;
     let availability = Availability::default();
-    let client = PrismaClient {
-        writer: &db,
-        reader: &db,
-        availability: &availability,
-    };
-    let store = postgres_user_env_vars_store(Some(client), publisher(), cipher())
-        .expect("the postgres store builds");
+    let store = store_for(&db, &availability);
     let found = store
         .get_user_env_vars("alice", "srv-1")
         .await
         .expect("the seeded row decodes");
-    assert_eq!(exposed(&found), texts([("API_KEY", "s3cr3t")]));
+    assert_eq!(exposed(&found), texts([("K", "one")]));
     let missing = store
         .get_user_env_vars("alice", "srv-3")
         .await
         .expect("a missing row is an empty map");
     assert!(missing.is_empty());
+}
+
+#[tokio::test]
+async fn bulk_reads_only_the_requested_servers() {
+    let (_fixture, db) = seeded().await;
+    let cipher = db_cipher();
+    seed(&db, &cipher, "alice", "srv-1", &secrets([("K", "one")])).await;
+    seed(&db, &cipher, "alice", "srv-2", &secrets([("K", "two")])).await;
+    seed(&db, &cipher, "bob", "srv-1", &secrets([("K", "bob")])).await;
+    let availability = Availability::default();
+    let store = store_for(&db, &availability);
     let ids = ["srv-1".to_owned(), "srv-2".to_owned(), "srv-3".to_owned()];
     let bulk = store
         .get_user_env_vars_bulk("alice", &ids)
         .await
         .expect("the seeded rows decode");
     assert_eq!(bulk.len(), 2);
-    assert_eq!(exposed(&bulk["srv-1"]), texts([("API_KEY", "s3cr3t")]));
-    assert_eq!(exposed(&bulk["srv-2"]), texts([("TOKEN", "tok-2")]));
+    assert_eq!(exposed(&bulk["srv-1"]), texts([("K", "one")]));
+    assert_eq!(exposed(&bulk["srv-2"]), texts([("K", "two")]));
     assert!(!bulk.contains_key("srv-3"));
 }
 
@@ -148,58 +150,38 @@ async fn reads_one_users_rows_through_the_table_handle() {
 async fn merge_creates_and_overwrites_one_sealed_row_in_a_transaction() {
     let (_fixture, db) = seeded().await;
     let availability = Availability::default();
-    let client = PrismaClient {
-        writer: &db,
-        reader: &db,
-        availability: &availability,
-    };
-    let store = postgres_user_env_vars_store(Some(client), publisher(), cipher())
-        .expect("the postgres store builds");
+    let store = store_for(&db, &availability);
     let created = store
         .merge_user_env_vars(
             "alice",
             "srv-1",
-            &secrets([("API_KEY", "fresh"), ("EXTRA", "x")]),
-            &names(&["API_KEY", "EXTRA"]),
+            &secrets([("K", "one"), ("EXTRA", "x")]),
+            &names(&["K", "EXTRA"]),
         )
         .await
         .expect("the merge commits");
-    assert_eq!(
-        exposed(&created),
-        texts([("API_KEY", "fresh"), ("EXTRA", "x")])
-    );
+    assert_eq!(exposed(&created), texts([("EXTRA", "x"), ("K", "one")]));
     let pruned = store
-        .merge_user_env_vars(
-            "alice",
-            "srv-1",
-            &secrets([("API_KEY", "rotated")]),
-            &names(&["API_KEY"]),
-        )
+        .merge_user_env_vars("alice", "srv-1", &secrets([("K", "two")]), &names(&["K"]))
         .await
         .expect("the second merge commits");
-    assert_eq!(exposed(&pruned), texts([("API_KEY", "rotated")]));
-    let stored = store
+    assert_eq!(exposed(&pruned), texts([("K", "two")]));
+    let reread = store
         .get_user_env_vars("alice", "srv-1")
         .await
         .expect("the merged row reads back");
-    assert_eq!(exposed(&stored), texts([("API_KEY", "rotated")]));
+    assert_eq!(exposed(&reread), texts([("K", "two")]));
 }
 
 #[tokio::test]
 async fn delete_removes_only_the_named_row() {
     let (_fixture, db) = seeded().await;
-    let cipher = cipher();
-    seed(&db, &cipher, "alice", "srv-1", secrets([("API_KEY", "a")])).await;
-    seed(&db, &cipher, "alice", "srv-2", secrets([("TOKEN", "b")])).await;
-    seed(&db, &cipher, "bob", "srv-1", secrets([("API_KEY", "c")])).await;
+    let cipher = db_cipher();
+    seed(&db, &cipher, "alice", "srv-1", &secrets([("K", "one")])).await;
+    seed(&db, &cipher, "alice", "srv-2", &secrets([("K", "two")])).await;
+    seed(&db, &cipher, "bob", "srv-1", &secrets([("K", "bob")])).await;
     let availability = Availability::default();
-    let client = PrismaClient {
-        writer: &db,
-        reader: &db,
-        availability: &availability,
-    };
-    let store = postgres_user_env_vars_store(Some(client), publisher(), cipher())
-        .expect("the postgres store builds");
+    let store = store_for(&db, &availability);
     store
         .delete_user_env_vars("alice", "srv-1")
         .await
@@ -210,12 +192,12 @@ async fn delete_removes_only_the_named_row() {
         .await
         .expect("the rows read");
     assert!(!remaining.contains_key("srv-1"));
-    assert_eq!(exposed(&remaining["srv-2"]), texts([("TOKEN", "b")]));
+    assert_eq!(exposed(&remaining["srv-2"]), texts([("K", "two")]));
     let bobs = store
         .get_user_env_vars("bob", "srv-1")
         .await
-        .expect("the other user's row reads");
-    assert_eq!(exposed(&bobs), texts([("API_KEY", "c")]));
+        .expect("the other row reads");
+    assert_eq!(exposed(&bobs), texts([("K", "bob")]));
     store
         .delete_user_env_vars("alice", "srv-1")
         .await
