@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::batch_provider_read::Settings;
+use betterlite_config::sections::batch_provider_read::Payload;
 use betterlite_config::sections::resource_sdk_settings;
 use betterlite_openai::batches::records::BatchStatus;
 use betterlite_openai::batches::sdk::{Timeout, TimeoutPhases};
@@ -774,12 +774,12 @@ async fn anthropic_reads_its_own_environment(
     #[case] base_url: Option<&str>,
     #[case] expected: &str,
 ) {
-    let settings = Settings {
+    let settings = Box::new(Payload {
         resources: bare_resources(),
         anthropic_api_base: api_base.map(str::to_owned),
         anthropic_base_url: base_url.map(str::to_owned),
         anthropic_api_key: Some(SecretString::from("sk-anthropic".to_owned())),
-    };
+    });
     let (_, calls) = answered(settings, &input("anthropic")).await;
     let Recorded::Anthropic {
         api_base: recorded_base,

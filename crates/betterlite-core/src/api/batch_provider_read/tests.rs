@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_config::sections::batch_provider_read::Settings;
+use betterlite_config::sections::batch_provider_read::{Payload, Settings};
 use betterlite_config::sections::resource_sdk_settings;
 use betterlite_openai::api::batch_records::RetrieveBatchRequest;
 use betterlite_openai::batches::records::{BatchObject, BatchObjectKind, BatchStatus};
@@ -248,12 +248,12 @@ fn base_settings() -> Settings {
 }
 
 fn configured(resources: resource_sdk_settings::Settings) -> Settings {
-    Settings {
+    Box::new(Payload {
         resources,
         anthropic_api_base: None,
         anthropic_base_url: None,
         anthropic_api_key: None,
-    }
+    })
 }
 
 // every field named, so a test that sets two of them says which two
