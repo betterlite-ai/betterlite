@@ -44,10 +44,12 @@ class VeoConfig(Protocol):
     ]
 
 
+# LiteLLM's __init__ is untyped, and every method this file calls is stateless
+HANDLER: Final = VertexAIVideoConfig.__new__(VertexAIVideoConfig)
 # litellm's config classes carry untyped parameters, so the protocol is the declared shape
 CONFIG: Final[VeoConfig] = TypeAdapter[VeoConfig](
     VeoConfig, config=ARBITRARY_TYPES
-).validate_python(VertexAIVideoConfig())
+).validate_python(HANDLER)
 
 
 class CreateStep(TypedDict):
@@ -97,33 +99,35 @@ def mapped_params(step: CreateStep) -> dict[str, JsonValue]:
     return mapped
 
 
-def create_answer(step: CreateStep) -> JsonValue:
-    body, _files, url = CONFIG.transform_video_create_request(
-        step["model"],
-        step["prompt"],
-        step["api_base"],
-        mapped_params(step),
-        GenericLiteLLMParams(),
-        {},
-    )
-    return JSON.validate_python({"url": url, "body": body})
-
-
-def edit_answer(step: EditStep) -> JsonValue:
-    url, body, _files = CONFIG.transform_video_edit_request(
-        step["prompt"],
-        step["video_id"],
-        step["api_base"],
-        GenericLiteLLMParams(),
-        {},
-        None,
-        step["extra_body"],
-        step["prefetched"],
-    )
-    return JSON.validate_python({"url": url, "body": body})
+def request_answer(url: str, body: JsonObject) -> JsonValue:
+    answer: JsonObject = {"url": url, "body": body}
+    return JSON.validate_python(answer)
 
 
 def run(input_value: Input) -> JsonValue:
-    creates: list[JsonValue] = [create_answer(step) for step in input_value["creates"]]
-    edits: list[JsonValue] = [edit_answer(step) for step in input_value["edits"]]
-    return JSON.validate_python({"creates": creates, "edits": edits})
+    creates: list[JsonValue] = []
+    for step in input_value["creates"]:
+        body, _files, url = CONFIG.transform_video_create_request(
+            step["model"],
+            step["prompt"],
+            step["api_base"],
+            mapped_params(step),
+            GenericLiteLLMParams(),
+            {},
+        )
+        creates.append(request_answer(url, body))
+    edits: list[JsonValue] = []
+    for step in input_value["edits"]:
+        url, body, _files = CONFIG.transform_video_edit_request(
+            step["prompt"],
+            step["video_id"],
+            step["api_base"],
+            GenericLiteLLMParams(),
+            {},
+            None,
+            step["extra_body"],
+            step["prefetched"],
+        )
+        edits.append(request_answer(url, body))
+    answer: JsonObject = {"creates": creates, "edits": edits}
+    return JSON.validate_python(answer)
