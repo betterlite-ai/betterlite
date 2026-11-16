@@ -18,7 +18,7 @@ pub fn pairwise_judge_response_format() -> Json {
     let schema = object([
         ("description", Json::Text(VERDICT_DESCRIPTION.to_owned())),
         ("properties", verdict_properties()),
-        ("required", Json::List(required.into())),
+        ("required", Json::List(Vec::from(required))),
         ("title", Json::Text("PairwiseVerdict".to_owned())),
         ("type", Json::Text("object".to_owned())),
         ("additionalProperties", Json::Bool(false)),
@@ -40,7 +40,7 @@ pub fn pairwise_judge_response_format() -> Json {
 fn verdict_properties() -> Json {
     let labels = ["A", "B", "tie"].map(|label| Json::Text(label.to_owned()));
     let preference = object([
-        ("enum", Json::List(labels.into())),
+        ("enum", Json::List(Vec::from(labels))),
         ("title", Json::Text("Preference".to_owned())),
         ("type", Json::Text("string".to_owned())),
     ]);
