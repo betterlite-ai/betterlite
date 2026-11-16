@@ -53,28 +53,6 @@ where
     serde_json::from_value(encoded).map_err(DatabricksChatError::Decode)
 }
 
-pub(crate) fn text(value: &DecisionJson) -> Option<&str> {
-    match value {
-        DecisionJson::Text(text) => Some(text.as_str()),
-        DecisionJson::Null
-        | DecisionJson::Bool(_)
-        | DecisionJson::Number(_)
-        | DecisionJson::List(_)
-        | DecisionJson::Object(_) => None,
-    }
-}
-
-pub(crate) fn object(value: &DecisionJson) -> Option<&Params> {
-    match value {
-        DecisionJson::Object(fields) => Some(fields),
-        DecisionJson::Null
-        | DecisionJson::Bool(_)
-        | DecisionJson::Number(_)
-        | DecisionJson::Text(_)
-        | DecisionJson::List(_) => None,
-    }
-}
-
 // A short rendering for the chunk parser's KeyError text; Python's repr is not ported.
 pub(crate) fn render(value: &Json) -> String {
     match serde_json::to_string(value) {
