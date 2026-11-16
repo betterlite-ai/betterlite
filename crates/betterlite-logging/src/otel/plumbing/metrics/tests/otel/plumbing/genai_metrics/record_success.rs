@@ -48,9 +48,11 @@ fn a_response_without_usage_records_no_token_usage(#[case] response: &str) {
     assert_eq!(sums(&recorded, DURATION), ["3"]);
 }
 
-#[test]
-fn missing_token_counts_record_zero() {
-    let recorded = record("{}", Some(r#"{"usage": {"total_tokens": 9}}"#));
+#[rstest]
+#[case::absent(r#"{"usage": {"total_tokens": 9}}"#)]
+#[case::null(r#"{"usage": {"prompt_tokens": null, "completion_tokens": null}}"#)]
+fn missing_token_counts_record_zero(#[case] response: &str) {
+    let recorded = record("{}", Some(response));
     assert_eq!(sums(&recorded, TOKENS), ["0", "0"]);
 }
 
