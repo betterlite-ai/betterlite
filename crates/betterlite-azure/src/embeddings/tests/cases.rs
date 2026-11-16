@@ -79,6 +79,11 @@ pub(super) fn list_input() {
     let post = &outcome.recorder.post[0];
     assert_eq!(post.kind, ResponseKind::SdkObject);
     assert_eq!(post.input, data["input"]);
+    let Json::Object(original) = &post.original_response else {
+        panic!("the post call records the response object");
+    };
+    assert_eq!(original["model"], text("text-embedding-3-small"));
+    assert_eq!(&post.complete_input_dict, data);
     assert_eq!(
         post.api_base.as_deref(),
         Some("https://example.openai.azure.com")
