@@ -14,7 +14,7 @@ use betterlite_openai::openai_video_identifiers::ids::decode_video_id_with_provi
 use betterlite_openai::videos::reply::{VideoObject, VideoObjectType};
 use http::header::HeaderMap;
 use rstest::rstest;
-use tokio::io::AsyncReadExt as _;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::runtime::Builder;
 use tokio::time::sleep;
@@ -36,6 +36,10 @@ const STATUS_URL: &str = "https://queue.fal.run/fal-ai/kling-video/requests/req-
 const MODEL_PATH: &str = "fal-ai/kling-video";
 const SHORT_READ_LIMIT: TransportLimits = TransportLimits {
     read_timeout: Duration::from_millis(500),
+    ..TransportLimits::DEFAULT
+};
+const SMALL_BODY_LIMIT: TransportLimits = TransportLimits {
+    body_bytes: 4,
     ..TransportLimits::DEFAULT
 };
 const HOLD: Duration = Duration::from_secs(2);
@@ -129,6 +133,15 @@ async fn hold_open(listener: TcpListener) {
         "the client sends its request before the read limit"
     );
     sleep(HOLD).await;
+}
+
+// reads the client's request and answers it with the fixed reply the caller scripted
+async fn serve_artifact(listener: TcpListener, answer: &'static [u8]) {
+    let (mut stream, _) = listener.accept().await.expect("the connection");
+    let mut chunk = [0_u8; 4096];
+    let read = stream.read(&mut chunk).await.expect("the request bytes");
+    assert_ne!(read, 0, "the client sends its request before the reply");
+    stream.write_all(answer).await.expect("the reply");
 }
 
 fn mock_failure() -> Step {
@@ -715,6 +728,33 @@ fn an_artifact_transport_failure_is_an_error() {
     );
     let error = run_content(&transport, ClientKind::Sync, &reply).expect_err("a failed download");
     assert!(matches!(error, VideoResultsError::ArtifactTransport(_)));
+}
+
+#[tokio::test]
+async fn an_artifact_over_the_transport_body_limit_is_a_transport_error() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener");
+    let address = listener.local_addr().expect("the address");
+    let client = outbound_client(SMALL_BODY_LIMIT);
+    let clients = VideoClients {
+        sync: &client,
+        asynchronous: &client,
+    };
+    let body = format!(r#"{{"video": {{"url": "http://{address}/out.mp4"}}}}"#);
+    let reply = content_reply(200, VideoHeaders::new(), body.as_bytes());
+    let (result, ()) = tokio::join!(
+        content_response(&clients, ClientKind::Sync, &reply),
+        serve_artifact(
+            listener,
+            b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\nconnection: close\r\n\r\n12345"
+        )
+    );
+    let error = result.expect_err("the artifact is over the limit");
+    assert!(matches!(
+        error,
+        VideoResultsError::ArtifactTransport(TransportError::BodyTooLarge { limit: 4 })
+    ));
 }
 
 #[rstest]
