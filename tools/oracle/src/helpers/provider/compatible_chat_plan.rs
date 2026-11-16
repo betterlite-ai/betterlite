@@ -29,6 +29,9 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
 mod tests;
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
@@ -72,21 +75,21 @@ impl LogSink for Silent {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         input
             .calls
             .iter()
             .map(answer)
-            .collect::<Result<Vec<Value>, Box<crate::helpers::HelperError>>>()
+            .collect::<Result<Vec<Value>, Box<HelperError>>>()
             .map(|calls| json!({"calls": calls}))
     }
 }
 
-fn invalid(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: String::from("InvalidInput"),
         status: None,
         error_type: None,
@@ -96,7 +99,7 @@ fn invalid(message: String) -> Box<crate::helpers::HelperError> {
     })
 }
 
-fn seconds(timeout: Option<f64>) -> Result<Option<Duration>, Box<crate::helpers::HelperError>> {
+fn seconds(timeout: Option<f64>) -> Result<Option<Duration>, Box<HelperError>> {
     timeout
         .map(|value| Duration::try_from_secs_f64(value).map_err(|error| invalid(error.to_string())))
         .transpose()
@@ -127,10 +130,7 @@ fn chat_execution<'call>(
     }
 }
 
-fn state(
-    redactor: &Redactor,
-    init: LoggingInit,
-) -> Result<LoggingState, Box<crate::helpers::HelperError>> {
+fn state(redactor: &Redactor, init: LoggingInit) -> Result<LoggingState, Box<HelperError>> {
     LoggingState::new(
         init,
         CorrelationSetup {
@@ -184,10 +184,7 @@ fn headers_value(headers: &Headers, watch: &[String]) -> Value {
     json!(picked)
 }
 
-fn request_value(
-    plan: &ChatPlan<'_>,
-    watch: &[String],
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn request_value(plan: &ChatPlan<'_>, watch: &[String]) -> Result<Value, Box<HelperError>> {
     let body = serde_json::to_value(&plan.body).map_err(|error| invalid(error.to_string()))?;
     Ok(json!({
         "url": &plan.url,
@@ -198,10 +195,7 @@ fn request_value(
 }
 
 // the fixture sender answers every send with the case's status and body, as the source's client would have
-fn fixture_answer(
-    plan: &ChatPlan<'_>,
-    call: &Call,
-) -> Result<ChatAnswer, Box<crate::helpers::HelperError>> {
+fn fixture_answer(plan: &ChatPlan<'_>, call: &Call) -> Result<ChatAnswer, Box<HelperError>> {
     let body = serde_json::to_vec(&call.reply).map_err(|error| invalid(error.to_string()))?;
     if plan.buffered() {
         return Ok(ChatAnswer::Buffered {
@@ -251,7 +245,7 @@ fn with_send(mut fields: Value, request: Value, transport: bool) -> Value {
     fields
 }
 
-fn answer(call: &Call) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn answer(call: &Call) -> Result<Value, Box<HelperError>> {
     let key = call.api_key.clone().map(SecretString::from);
     let execution = chat_execution(call, key.as_ref(), seconds(call.timeout)?);
     let redactor =

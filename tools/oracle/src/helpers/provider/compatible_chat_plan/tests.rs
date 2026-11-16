@@ -3,12 +3,11 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
-use crate::helpers::invoke;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 
 fn seeds() -> Vec<(String, HelperCase)> {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let mut seeds: Vec<(String, HelperCase)> = fs::read_dir(corpus)
         .expect("the helper corpus")
         .map(|entry| entry.expect("a corpus entry").path())
@@ -50,16 +49,7 @@ fn helper_seeds_answer_every_call() {
     assert!(!seeds.is_empty());
     let failed: Vec<&str> = seeds
         .iter()
-        .filter(|(_, case)| {
-            let calls = case.call.input["calls"].as_array().map_or(0, Vec::len);
-            let output = invoke(&case.call);
-            let answered = output
-                .value
-                .as_ref()
-                .and_then(|value| value["calls"].as_array())
-                .is_some_and(|answers| answers.len() == calls);
-            !output.ok || !answered
-        })
+        .filter(|(_, case)| !matches!(run_case(&[crate::GROUP], case, false), Ok(HelperRun::Match)))
         .map(|(path, _)| path.as_str())
         .collect();
     assert!(failed.is_empty(), "{failed:?}");
