@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError;
 use betterlite_openai::api::vector_store_records::records::score::Score;
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResponse;
 use indexmap::IndexMap;
@@ -24,6 +25,12 @@ pub enum PayloadError {
     Json(#[from] serde_json::Error),
     #[error("the Vertex AI Search payload field {0} must be {1}")]
     Field(&'static str, &'static str),
+    #[error("the Vertex AI Search payload field {field} must be a decimal number: {source}")]
+    Score {
+        field: &'static str,
+        #[source]
+        source: DecimalLexemeError,
+    },
     #[error("the Vertex AI Search payload is {size} bytes, over the {limit} byte limit")]
     TooLarge { size: usize, limit: usize },
     #[error("the Vertex AI Search payload root is not a JSON object")]

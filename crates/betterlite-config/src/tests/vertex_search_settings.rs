@@ -36,35 +36,23 @@ fn deployment(keys: &str) -> String {
 fn loads_vertex_collection_id() {
     let configured = load(&deployment("      vertex_collection_id: team_collection\n"))
         .expect("the loader's view parses the key");
-    assert_eq!(
-        configured.vertex_collection_id.as_deref(),
-        Some("team_collection")
-    );
+    assert_eq!(configured.vertex_collection_id, "team_collection");
     let absent = load(&deployment("")).expect("a config without the key loads");
-    assert_eq!(
-        absent.vertex_collection_id.as_deref(),
-        Some(DEFAULT_COLLECTION_ID)
-    );
+    assert_eq!(absent.vertex_collection_id, DEFAULT_COLLECTION_ID);
     let nulled = load(&deployment("      vertex_collection_id: null\n"))
         .expect("a null key takes the default");
-    assert_eq!(
-        nulled.vertex_collection_id.as_deref(),
-        Some(DEFAULT_COLLECTION_ID)
-    );
+    assert_eq!(nulled.vertex_collection_id, DEFAULT_COLLECTION_ID);
 }
 
 #[test]
 fn loads_vertex_engine_id() {
     let configured = load(&deployment("      vertex_engine_id: app-example\n"))
         .expect("the loader's view parses the key");
-    assert_eq!(
-        configured.vertex_engine_id.as_deref(),
-        Some("app-example")
-    );
+    assert_eq!(configured.vertex_engine_id.as_deref(), Some("app-example"));
     let absent = load(&deployment("")).expect("a config without the key loads");
     assert_eq!(absent.vertex_engine_id, None);
-    let nulled = load(&deployment("      vertex_engine_id: null\n"))
-        .expect("a null key stays absent");
+    let nulled =
+        load(&deployment("      vertex_engine_id: null\n")).expect("a null key stays absent");
     assert_eq!(nulled.vertex_engine_id, None);
 }
 
@@ -72,14 +60,11 @@ fn loads_vertex_engine_id() {
 fn loads_vertex_search_store_id() {
     let configured = load(&deployment("      vector_store_id: store-example\n"))
         .expect("the loader's view parses the key");
-    assert_eq!(
-        configured.vector_store_id.as_deref(),
-        Some("store-example")
-    );
+    assert_eq!(configured.vector_store_id.as_deref(), Some("store-example"));
     let absent = load(&deployment("")).expect("a config without the key loads");
     assert_eq!(absent.vector_store_id, None);
-    let nulled = load(&deployment("      vector_store_id: null\n"))
-        .expect("a null key stays absent");
+    let nulled =
+        load(&deployment("      vector_store_id: null\n")).expect("a null key stays absent");
     assert_eq!(nulled.vector_store_id, None);
 }
 

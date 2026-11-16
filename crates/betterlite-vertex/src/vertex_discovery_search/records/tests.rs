@@ -108,18 +108,15 @@ fn a_query_sequence_is_joined_with_spaces() {
 }
 
 #[rstest]
-#[case("{}", Some("default_collection"))]
-#[case(r#"{"vertex_collection_id":null}"#, Some("default_collection"))]
-#[case(
-    r#"{"vertex_collection_id":"team_collection"}"#,
-    Some("team_collection")
-)]
+#[case("{}", "default_collection")]
+#[case(r#"{"vertex_collection_id":null}"#, "default_collection")]
+#[case(r#"{"vertex_collection_id":"team_collection"}"#, "team_collection")]
 fn the_search_options_default_the_collection_when_absent_or_null(
     #[case] params: &str,
-    #[case] collection: Option<&str>,
+    #[case] collection: &str,
 ) {
     let options = VertexSearchOptions::from_params(&object(params)).unwrap();
-    assert_eq!(options.vertex_collection_id.as_deref(), collection);
+    assert_eq!(options.vertex_collection_id, collection);
 }
 
 #[rstest]
@@ -503,6 +500,26 @@ fn a_chunk_relevance_score_that_is_not_a_number_names_the_field() {
     assert!(
         matches!(error, PayloadError::Json(decode) if decode.to_string().contains("relevanceScore"))
     );
+}
+
+#[test]
+fn a_chunk_relevance_score_out_of_range_keeps_its_cause() {
+    let error = decode_vertex_search_payload(
+        br#"{"results":[{"chunk":{"relevanceScore":1e999}}]}"#,
+        "query",
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            PayloadError::Score {
+                field: "relevanceScore",
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+    assert!(std::error::Error::source(&error).is_some());
 }
 
 #[rstest]

@@ -17,7 +17,7 @@ use crate::model_urls::error::VertexUrlError;
 use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::probe::AccessToken;
 use crate::vertex_discovery_search::error::VertexDiscoverySearchError;
-use crate::vertex_discovery_search::options::VertexSearchOptions;
+use crate::vertex_discovery_search::options::{DEFAULT_COLLECTION_ID, VertexSearchOptions};
 
 fn params<'text>(project: Option<&'text str>, location: Option<&'text str>) -> VertexParams<'text> {
     VertexParams {
@@ -39,9 +39,9 @@ fn settings(project: Option<&str>, location: Option<&str>) -> VertexSettings {
     }
 }
 
-fn options(collection: Option<&str>, engine: Option<&str>, store: Option<&str>) -> VertexSearchOptions {
+fn options(collection: &str, engine: Option<&str>, store: Option<&str>) -> VertexSearchOptions {
     VertexSearchOptions {
-        vertex_collection_id: collection.map(str::to_owned),
+        vertex_collection_id: collection.to_owned(),
         vertex_engine_id: engine.map(str::to_owned),
         vector_store_id: store.map(str::to_owned),
     }
@@ -247,7 +247,7 @@ fn an_engine_target_uses_the_default_serving_config() {
         None,
         params(Some("proj"), Some("us-central1")),
         &settings,
-        &options(None, Some("app"), Some("ignored")),
+        &options(DEFAULT_COLLECTION_ID, Some("app"), Some("ignored")),
     )
     .unwrap();
     assert_eq!(
@@ -263,7 +263,7 @@ fn a_datastore_target_uses_its_default_config() {
         None,
         params(Some("proj"), Some("us-central1")),
         &settings,
-        &options(Some("collection"), None, Some("store")),
+        &options("collection", None, Some("store")),
     )
     .unwrap();
     assert_eq!(
@@ -279,7 +279,7 @@ fn the_collection_and_target_segments_are_encoded() {
         None,
         params(Some("proj"), Some("us-central1")),
         &settings,
-        &options(Some("my collection"), Some("apps/1"), None),
+        &options("my collection", Some("apps/1"), None),
     )
     .unwrap();
     assert!(url.contains("/collections/my%20collection/"), "{url}");
@@ -293,7 +293,7 @@ fn a_datastore_target_without_a_store_names_the_missing_field() {
         None,
         params(Some("proj"), Some("us-central1")),
         &settings,
-        &options(None, None, None),
+        &options(DEFAULT_COLLECTION_ID, None, None),
     )
     .unwrap_err();
     assert!(matches!(error, VertexDiscoverySearchError::StoreRequired));
@@ -310,7 +310,7 @@ fn a_built_url_without_a_location_names_the_missing_setting() {
         None,
         params(Some("proj"), None),
         &settings,
-        &options(None, None, Some("store")),
+        &options(DEFAULT_COLLECTION_ID, None, Some("store")),
     )
     .unwrap_err();
     assert!(matches!(
@@ -326,7 +326,7 @@ fn a_built_url_without_a_project_names_the_missing_setting() {
         None,
         params(None, Some("us-central1")),
         &settings,
-        &options(None, None, Some("store")),
+        &options(DEFAULT_COLLECTION_ID, None, Some("store")),
     )
     .unwrap_err();
     assert!(matches!(
@@ -342,10 +342,13 @@ fn the_configured_project_and_location_are_used_when_the_request_has_none() {
         None,
         params(None, None),
         &settings,
-        &options(None, None, Some("store")),
+        &options(DEFAULT_COLLECTION_ID, None, Some("store")),
     )
     .unwrap();
-    assert!(url.contains("/projects/configured/locations/europe/"), "{url}");
+    assert!(
+        url.contains("/projects/configured/locations/europe/"),
+        "{url}"
+    );
 }
 
 #[test]
@@ -355,7 +358,7 @@ fn an_empty_collection_is_refused_as_a_segment() {
         None,
         params(Some("proj"), Some("us-central1")),
         &settings,
-        &options(Some(""), None, Some("store")),
+        &options("", None, Some("store")),
     )
     .unwrap_err();
     assert!(matches!(

@@ -52,8 +52,10 @@ pub(super) fn chunk_result(
         .unwrap_or("");
     let document_id = document_id_from_chunk_name(chunk.name.as_deref().unwrap_or(""));
     let score = match &chunk.relevance_score {
-        Some(number) => Score::try_from(number.clone())
-            .map_err(|_error| PayloadError::Field("relevanceScore", "a decimal number"))?,
+        Some(number) => Score::try_from(number.clone()).map_err(|source| PayloadError::Score {
+            field: "relevanceScore",
+            source,
+        })?,
         None => positional,
     };
     let file_id = if uri.is_empty() {
@@ -112,80 +114,56 @@ fn document_id_from_chunk_name(name: &str) -> String {
     after.split('/').next().unwrap_or_default().to_owned()
 }
 
-struct DocumentView<'view> {
-    link: &'view str,
-    title: &'view str,
-    display_link: &'view str,
-    formatted_url: &'view str,
-    document_id: &'view str,
-    struct_data: Option<&'view IndexMap<String, Json>>,
-}
-
 // LiteLLM's _document_result: the link names the file, and structData stays a document attribute
-fn document_view(hit: &Hit) -> DocumentView<'_> {
-    let document = hit.document.as_ref();
-    let derived = document.and_then(|document| document.derived.as_ref());
-    DocumentView {
-        link: derived
-            .and_then(|derived| derived.link.as_deref())
-            .unwrap_or(""),
-        title: derived
-            .and_then(|derived| derived.title.as_deref())
-            .unwrap_or(""),
-        display_link: derived
-            .and_then(|derived| derived.display_link.as_deref())
-            .unwrap_or(""),
-        formatted_url: derived
-            .and_then(|derived| derived.formatted_url.as_deref())
-            .unwrap_or(""),
-        document_id: hit.id.as_deref().unwrap_or(""),
-        struct_data: document.and_then(|document| document.struct_data.as_ref()),
-    }
-}
-
 pub(super) fn document_result(
     hit: &Hit,
     positional: Score,
 ) -> Result<VectorStoreSearchResult, PayloadError> {
-    let view = document_view(hit);
-    let derived = hit
-        .document
-        .as_ref()
-        .and_then(|document| document.derived.as_ref());
-    let file_id = if view.link.is_empty() {
-        view.document_id.to_owned()
-    } else {
-        view.link.to_owned()
-    };
-    result_with(
-        positional,
-        document_text(derived),
-        file_id,
-        view.title,
-        document_attributes(&view),
-    )
-}
-
-fn document_attributes(view: &DocumentView<'_>) -> IndexMap<String, Json> {
-    let mut attributes = IndexMap::from([(
-        "document_id".to_owned(),
-        Json::Text(view.document_id.to_owned()),
-    )]);
+    let document = hit.document.as_ref();
+    let derived = document.and_then(|document| document.derived.as_ref());
+    let link = derived
+        .and_then(|derived| derived.link.as_deref())
+        .unwrap_or("");
+    let title = derived
+        .and_then(|derived| derived.title.as_deref())
+        .unwrap_or("");
+    let document_id = hit.id.as_deref().unwrap_or("");
+    let file_id = if link.is_empty() { document_id } else { link };
+    let mut attributes =
+        IndexMap::from([("document_id".to_owned(), Json::Text(document_id.to_owned()))]);
     for (name, value) in [
-        ("link", view.link),
-        ("title", view.title),
-        ("displayLink", view.display_link),
-        ("formattedUrl", view.formatted_url),
+        ("link", link),
+        ("title", title),
+        (
+            "displayLink",
+            derived
+                .and_then(|derived| derived.display_link.as_deref())
+                .unwrap_or(""),
+        ),
+        (
+            "formattedUrl",
+            derived
+                .and_then(|derived| derived.formatted_url.as_deref())
+                .unwrap_or(""),
+        ),
     ] {
         if !value.is_empty() {
             attributes.insert(name.to_owned(), Json::Text(value.to_owned()));
         }
     }
-    let struct_data = view.struct_data.filter(|fields| !fields.is_empty());
+    let struct_data = document
+        .and_then(|document| document.struct_data.as_ref())
+        .filter(|fields| !fields.is_empty());
     if let Some(struct_data) = struct_data {
         attributes.insert("structData".to_owned(), Json::Object(struct_data.clone()));
     }
-    attributes
+    result_with(
+        positional,
+        document_text(derived),
+        file_id.to_owned(),
+        title,
+        attributes,
+    )
 }
 
 fn document_text(derived: Option<&DerivedStructData>) -> String {

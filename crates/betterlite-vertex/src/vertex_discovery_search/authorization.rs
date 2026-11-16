@@ -11,7 +11,7 @@ use betterlite_openai::api::vector_store_records::records::vector::{
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::VertexDiscoverySearchError;
-use super::options::{DEFAULT_COLLECTION_ID, VertexSearchOptions};
+use super::options::VertexSearchOptions;
 use crate::credential_sources::getters::VertexParams;
 use crate::endpoint_target::headers::set_headers;
 use crate::model_policy::capabilities::VertexCapabilityProvider;
@@ -113,14 +113,8 @@ pub fn get_complete_url(
     let project = params
         .safe_get_vertex_ai_project(settings)
         .ok_or(VertexUrlError::ProjectRequired)?;
-    let collection = encode_segment(
-        options
-            .vertex_collection_id
-            .as_deref()
-            .unwrap_or(DEFAULT_COLLECTION_ID),
-        COLLECTION_FIELD,
-    )
-    .map_err(|source| VertexDiscoverySearchError::Segment(COLLECTION_FIELD, source))?;
+    let collection = encode_segment(&options.vertex_collection_id, COLLECTION_FIELD)
+        .map_err(|source| VertexDiscoverySearchError::Segment(COLLECTION_FIELD, source))?;
     let base = format!(
         "{DISCOVERY_ENGINE_BASE}/projects/{project}/locations/{location}/collections/{collection}"
     );
