@@ -110,6 +110,17 @@ fn expiry_reads_the_offset_and_separator_forms_python_reads() {
 }
 
 #[test]
+fn expiry_does_not_read_python_forms_outside_the_isoformat_grammar() {
+    let basic =
+        payload(r#"{"type":"oauth2","access_token":"tok","expires_at":"20200101T000000+0000"}"#);
+    assert!(!is_oauth_credential_expired(&basic, 0));
+    let comma = payload(
+        r#"{"type":"oauth2","access_token":"tok","expires_at":"2020-01-02T00:00:00,500+00:00"}"#,
+    );
+    assert!(!is_oauth_credential_expired(&comma, 0));
+}
+
+#[test]
 fn expiry_reads_a_date_alone_as_midnight_utc() {
     let past_date = payload(r#"{"type":"oauth2","access_token":"tok","expires_at":"2020-01-01"}"#);
     assert!(is_oauth_credential_expired(&past_date, 0));

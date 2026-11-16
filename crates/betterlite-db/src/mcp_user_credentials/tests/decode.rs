@@ -74,6 +74,17 @@ fn parse_oauth_payload_returns_none_for_values_that_are_not_a_payload_object(
 }
 
 #[test]
+fn parse_oauth_payload_drops_keys_outside_the_declared_payload() {
+    let parsed = parse_oauth_payload(Some(
+        r#"{"type":"oauth2","access_token":"tok","client_secret":"hidden"}"#,
+    ))
+    .expect("parsing runs")
+    .expect("the value holds an OAuth2 payload");
+    let written = serde_json::to_string(&parsed).expect("the payload serializes");
+    assert!(!written.contains("client_secret"));
+}
+
+#[test]
 fn parse_oauth_payload_reports_a_payload_field_of_the_wrong_type() {
     let failed = parse_oauth_payload(Some("{\"type\":\"oauth2\",\"scopes\":\"read\"}"));
     assert!(failed.is_err());
