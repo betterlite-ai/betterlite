@@ -42,37 +42,14 @@ STATUS_KEY: Final = "_model_armor_status"
 APPLIED_KEY: Final = "applied_guardrails"
 
 
-class ChatCase(TypedDict):
-    surface: Literal["chat"]
+class Input(TypedDict):
+    surface: Literal["chat", "anthropic", "responses"]
     chunks: list[JsonValue]
     mask_response_content: bool
     fail_on_error: bool
     sanitize_error_detail: bool
     answer_status: int
     answer_body: str
-
-
-class AnthropicCase(TypedDict):
-    surface: Literal["anthropic"]
-    chunks: list[str]
-    mask_response_content: bool
-    fail_on_error: bool
-    sanitize_error_detail: bool
-    answer_status: int
-    answer_body: str
-
-
-class ResponsesCase(TypedDict):
-    surface: Literal["responses"]
-    chunks: list[JsonValue]
-    mask_response_content: bool
-    fail_on_error: bool
-    sanitize_error_detail: bool
-    answer_status: int
-    answer_body: str
-
-
-Input: TypeAlias = ChatCase | AnthropicCase | ResponsesCase
 
 ResponseEvent: TypeAlias = (
     ResponseCreatedEvent
@@ -185,6 +162,7 @@ REASONING_DELTA: Final[TypeAdapter[ReasoningSummaryTextDeltaEvent]] = TypeAdapte
     ReasoningSummaryTextDeltaEvent
 )
 ARGS_DELTA: Final[TypeAdapter[ArgsDeltaEvent]] = TypeAdapter(ArgsDeltaEvent)
+STR: Final[TypeAdapter[str]] = TypeAdapter(str)
 CHAT_OUT: Final[TypeAdapter[ChatChunk]] = TypeAdapter(ChatChunk)
 EVENT_OUT: Final[TypeAdapter[EventChunk]] = TypeAdapter(EventChunk)
 ERROR_OUT: Final[TypeAdapter[ErrorChunk]] = TypeAdapter(ErrorChunk)
@@ -224,21 +202,15 @@ def response_event(payload: JsonValue) -> ResponseEvent:
 
 
 def build_items(request: Input) -> list[OutputItem]:
+    items: list[OutputItem] = []
     match request["surface"]:
         case "chat":
-            chat: list[OutputItem] = [
-                CHAT_IN.validate_python(chunk) for chunk in request["chunks"]
-            ]
-            return chat
+            items = [CHAT_IN.validate_python(chunk) for chunk in request["chunks"]]
         case "responses":
-            responses: list[OutputItem] = [
-                response_event(chunk) for chunk in request["chunks"]
-            ]
-            return responses
+            items = [response_event(chunk) for chunk in request["chunks"]]
         case "anthropic":
-            texts: list[OutputItem] = []
-            texts.extend(request["chunks"])
-            return texts
+            items = [STR.validate_python(chunk) for chunk in request["chunks"]]
+    return items
 
 
 async def feed(items: list[OutputItem]) -> AsyncIterator[OutputItem]:
