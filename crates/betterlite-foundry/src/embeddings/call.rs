@@ -16,7 +16,9 @@ use crate::embeddings::error::FoundryEmbeddingError;
 use crate::embeddings::reply::{
     EmbeddingReply, FoundryEmbeddingResponse, decode_foundry_embedding, interleave,
 };
-use crate::embeddings::request::{FoundryEmbeddingOptions, ImageEmbeddingRequest, transform_request};
+use crate::embeddings::request::{
+    FoundryEmbeddingOptions, ImageEmbeddingRequest, transform_request,
+};
 use crate::embeddings::route::models_route_base;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,7 +33,8 @@ pub struct SuppliedClient<'client, Client> {
     pub client: &'client Client,
 }
 
-// B173 owns client construction; the sync replacement takes the call timeout, the async one its B173 client
+// B173 builds the clients: the sync replacement is HTTPHandler(timeout, concurrent_limit=1),
+// the async one the azure_ai client with the same timeout
 pub trait EmbeddingClientFactory {
     type Client: ImageTransport;
 
@@ -50,7 +53,8 @@ pub struct TextEmbeddingCall<'call> {
     pub timeout: Duration,
 }
 
-// the inherited OpenAI embedding call: it receives the original input, image strings included
+// the inherited OpenAI embedding call: it receives the original input, image strings included,
+// and its reply carries the projected reply headers so the Cohere transform can read them
 pub trait TextEmbedding {
     fn embed(
         &self,
@@ -114,7 +118,8 @@ where
     sync_guards(request.mode, base, request.api_key)?;
     let url = format!("{}/images/embeddings", base.unwrap_or_default());
     let headers = request_headers(request.api_key)?;
-    let body = serde_json::to_vec(image).map_err(|source| FoundryEmbeddingError::Encode { source })?;
+    let body =
+        serde_json::to_vec(image).map_err(|source| FoundryEmbeddingError::Encode { source })?;
     let reused = supplied
         .filter(|client| client.mode == request.mode)
         .map(|client| client.client);
@@ -217,7 +222,8 @@ fn reply_data(
 }
 
 // LiteLLM projects the reply headers onto the response so the Cohere transform can read them
-pub(crate) fn projected_headers(headers: &HeaderMap) -> AdditionalHeaders {
+#[must_use]
+pub fn projected_headers(headers: &HeaderMap) -> AdditionalHeaders {
     let mut pairs = IndexMap::new();
     for (name, value) in headers {
         if let Ok(text) = value.to_str() {
