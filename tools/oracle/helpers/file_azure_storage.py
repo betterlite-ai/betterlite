@@ -1,19 +1,21 @@
 import asyncio
+import sys
 import time
+from types import ModuleType
 from typing import Final, Protocol, TypedDict
 
+import azure.identity
 import fastuuid
 import httpx
 import litellm
 from fastuuid import UUID
-from litellm.integrations.azure_storage.azure_storage import AzureBlobStorageLogger
-from litellm.llms.base_llm.files.azure_blob_storage_backend import AzureBlobStorageBackend
+from litellm.llms.base_llm.files.storage_backend_factory import get_storage_backend
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, httpxSpecialProvider
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue
 
-JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 BEARER = "tok-1"
 CLIENT_KEY: Final = "async_httpx_client" + httpxSpecialProvider.LoggingCallback
+IDENTITY_MODULE = azure.identity.__name__
 
 
 class FileNameCall(TypedDict):
@@ -27,16 +29,6 @@ class Input(TypedDict):
     calls: list[FileNameCall]
 
 
-class FixedToken:
-    def __call__(self) -> str:
-        return BEARER
-
-
-class FixedChain:
-    def __call__(self) -> FixedToken:
-        return FixedToken()
-
-
 class Clock:
     def __init__(self, seconds: float) -> None:
         self.seconds = seconds
@@ -45,11 +37,11 @@ class Clock:
         return self.seconds
 
 
-class FixedFast:
+class FixedUuid:
     def __init__(self, value: str) -> None:
         self.value = UUID(value)
 
-    def uuid4(self) -> UUID:
+    def __call__(self) -> UUID:
         return self.value
 
 
@@ -62,19 +54,34 @@ class ClientCache(Protocol):
     def set_cache(self, key: str, value: AsyncHTTPHandler) -> None: ...
 
 
-class Backend(AzureBlobStorageBackend):
-    def __init__(self) -> None:
-        AzureBlobStorageLogger.__init__(self, build_credential_chain_token_provider=FixedChain())
+class ScriptedCredential:
+    def __init__(self, *_args: "ScriptedCredential", **_kwargs: str | None) -> None: ...
 
 
-async def generate_name(call: FileNameCall) -> JsonValue:
+class ScriptedProvider:
+    def __init__(self, _credential: ScriptedCredential, _scope: str) -> None: ...
+
+    def __call__(self) -> str:
+        return BEARER
+
+
+class ScriptedIdentity(ModuleType):
+    CertificateCredential: type[ScriptedCredential] = ScriptedCredential
+    ChainedTokenCredential: type[ScriptedCredential] = ScriptedCredential
+    ClientSecretCredential: type[ScriptedCredential] = ScriptedCredential
+    DefaultAzureCredential: type[ScriptedCredential] = ScriptedCredential
+    ManagedIdentityCredential: type[ScriptedCredential] = ScriptedCredential
+    WorkloadIdentityCredential: type[ScriptedCredential] = ScriptedCredential
+    get_bearer_token_provider: type[ScriptedProvider] = ScriptedProvider
+
+
+async def generate_name(call: FileNameCall, cache: ClientCache) -> JsonValue:
     time.time = Clock(call["now_seconds"])
-    fastuuid.uuid4 = FixedFast(call["uuid"]).uuid4
-    cache: ClientCache = litellm.in_memory_llm_clients_cache
+    fastuuid.uuid4 = FixedUuid(call["uuid"])
     cache.set_cache(
         key=CLIENT_KEY, value=AsyncHTTPHandler(transport=httpx.MockTransport(AnswerStatus()))
     )
-    backend = Backend()
+    backend = get_storage_backend("azure_storage")
     url = await backend.upload_file(
         file_content=b"abc",
         filename=call["filename"],
@@ -82,16 +89,12 @@ async def generate_name(call: FileNameCall) -> JsonValue:
         path_prefix=None,
         file_naming_strategy=call["strategy"],
     )
-    return JSON.validate_python({"name": url.rsplit("/", 1)[-1]})
+    name: dict[str, JsonValue] = {"name": url.rsplit("/", 1)[-1]}
+    return name
 
 
-async def generate_names(input_value: Input) -> list[JsonValue]:
-    names: list[JsonValue] = []
-    for call in input_value["calls"]:
-        names.append(await generate_name(call))
+def run(input_value: Input) -> list[JsonValue]:
+    sys.modules[IDENTITY_MODULE] = ScriptedIdentity(IDENTITY_MODULE)
+    cache: ClientCache = litellm.in_memory_llm_clients_cache
+    names: list[JsonValue] = [asyncio.run(generate_name(call, cache)) for call in input_value["calls"]]
     return names
-
-
-def run(input_value: Input) -> JsonValue:
-    names = asyncio.run(generate_names(input_value))
-    return JSON.validate_python(names)
