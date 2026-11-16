@@ -2,7 +2,7 @@ use betterlite_config::sections::studio_identity::Settings;
 use betterlite_core::api::agents::collection::AgentFailure;
 use betterlite_http::interactions::agents_create_read::AgentsApiConfig;
 use betterlite_http::interactions::base::{
-    ErrorClasses, Params, PreparedRequest, RequestHeaders, UpstreamResponse,
+    ErrorClasses, Params, PreparedRequest, RequestHeaders, ResponseHeaders, UpstreamResponse,
 };
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_vertex::studio_agents::decode::{
@@ -16,6 +16,7 @@ use betterlite_vertex::studio_agents::urls::{collection_target, item_target};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 // LiteLLM's exception_type reads status_code and message off the GeminiError the config raises
@@ -62,7 +63,7 @@ impl ErrorClasses for GeminiConfig {
         &self,
         message: &str,
         status_code: u16,
-        _headers: &betterlite_http::interactions::base::ResponseHeaders,
+        _headers: &ResponseHeaders,
     ) -> AgentError {
         AgentError::Refused {
             message: message.to_owned(),
@@ -76,7 +77,7 @@ impl AgentsApiConfig for GeminiConfig {
     type GetOutput = Value;
     fn validate_environment(
         &self,
-        headers: &std::collections::BTreeMap<String, String>,
+        headers: &BTreeMap<String, String>,
         litellm_params: &Params,
     ) -> Result<RequestHeaders, AgentError> {
         let validated: AgentHeaders =

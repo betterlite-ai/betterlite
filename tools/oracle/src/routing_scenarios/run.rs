@@ -8,7 +8,8 @@ use reqwest::redirect::Policy;
 
 use super::{HttpStep, JoinPoint, Scenario, ScenarioStep};
 use crate::OracleError;
-use crate::http::{self, Response};
+use crate::http;
+use crate::http::Response;
 
 type ConcurrentResult = (usize, Result<Response, OracleError>);
 

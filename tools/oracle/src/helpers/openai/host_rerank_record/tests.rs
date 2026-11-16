@@ -1,0 +1,155 @@
+#![cfg(test)]
+
+use std::fs;
+use std::path::Path;
+
+use serde_json::{Value, json};
+
+use betterlite_oracle_helper_api::helper::{Helper as _, HelperResult};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
+
+const FIXED_ID: &str = "00000000-0000-4000-8000-000000000001";
+
+fn parse_case(file: &str) -> HelperCase {
+    let path = Path::new(ORACLE_DIR)
+        .join("cases/helpers/host-rerank-record")
+        .join(file);
+    serde_saphyr::from_str(&fs::read_to_string(path).expect("the case is readable"))
+        .expect("the case parses as a helper case")
+}
+
+fn run_case_file(file: &str) -> HelperResult {
+    super::Op::decode_and_run(&parse_case(file).call.input)
+}
+
+fn answer(file: &str) -> Value {
+    run_case_file(file).unwrap()
+}
+
+#[test]
+fn helper_seeds_select_host_rerank_record() {
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
+    let seeds: Vec<String> = fs::read_dir(corpus)
+        .expect("helper corpus")
+        .map(|entry| entry.expect("corpus entry").path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("host_rerank_record"))
+        })
+        .map(|path| fs::read_to_string(path).expect("seed file"))
+        .collect();
+    assert_eq!(seeds.len(), 2);
+    assert!(seeds.iter().all(|source| {
+        let case: HelperCase = serde_saphyr::from_str(source).expect("helper seed");
+        validate_helper(Path::new("<helper>"), &case).is_ok()
+            && case.call.operation == "host_rerank_record"
+            && super::Op::decode_and_run(&case.call.input).is_ok()
+    }));
+}
+
+#[test]
+fn jina_reads_the_dictionary_and_not_the_formal_arguments() {
+    let result = answer("jina-formals-versus-dictionary.yaml");
+    assert_eq!(
+        result["mapped"],
+        json!({"top_n": 1_i32, "return_documents": true})
+    );
+    assert_eq!(
+        result["request"],
+        json!({"model": "jina-reranker-v2", "top_n": 1_i32, "return_documents": true})
+    );
+    assert_eq!(
+        result["headers"],
+        json!({
+            "accept": "application/json",
+            "content-type": "application/json",
+            "authorization": "Bearer jk",
+        })
+    );
+    assert_eq!(result["url"], "https://api.jina.ai/v1/rerank");
+}
+
+#[test]
+fn a_jina_base_keeps_its_parts_and_replaces_the_path() {
+    let result = answer("path-replacement-and-empty-base.yaml");
+    assert_eq!(result["url"], "https://jina.test:8443/v1/rerank?q=1#f");
+    assert_eq!(result["request"]["query"], "q");
+}
+
+#[test]
+fn a_base_path_is_replaced() {
+    let result = answer("jina-path-replacement.yaml");
+    assert_eq!(result["url"], "https://x.test/v1/rerank");
+}
+
+#[test]
+fn a_jina_status_is_a_plain_error_with_the_body() {
+    let error = run_case_file("generic-status-and-json-errors.yaml").unwrap_err();
+    assert_eq!(error.status, None);
+    assert_eq!(error.message, r#"{"results":[]}"#);
+}
+
+#[test]
+fn an_infinity_body_that_is_not_json_carries_the_upstream_status() {
+    let error = run_case_file("infinity-json-error-keeps-status.yaml").unwrap_err();
+    assert_eq!(error.status, Some(502));
+    assert!(error.message.contains("bad gateway"));
+}
+
+#[test]
+fn missing_results_are_an_empty_list_and_the_counters_are_read() {
+    let result = answer("missing-results-and-empty-document.yaml");
+    let response = &result["response"];
+    assert_eq!(response["id"], "r1");
+    assert_eq!(response["results"], json!([]));
+    assert_eq!(
+        response["meta"]["tokens"],
+        json!({"input_tokens": 3_i32, "output_tokens": 2_i32})
+    );
+}
+
+#[test]
+fn missing_infinity_results_are_an_empty_list_with_a_fresh_id() {
+    let result = answer("infinity-missing-results.yaml");
+    assert_eq!(result["response"]["results"], json!([]));
+    assert_eq!(result["response"]["id"], FIXED_ID);
+    assert_eq!(result["url"], "https://i.test/rerank");
+}
+
+#[test]
+fn the_output_counter_is_not_clamped_at_zero() {
+    let result = answer("negative-output-and-token-cost.yaml");
+    assert_eq!(
+        result["response"]["meta"]["tokens"],
+        json!({"input_tokens": 10_i32, "output_tokens": -6_i32})
+    );
+    assert_eq!(result["response"]["id"], FIXED_ID);
+    assert_eq!(result["response"]["results"][0]["index"], 0_i32);
+    assert!(result["response"]["results"][0].get("document").is_none());
+    assert_eq!(result["response"]["results"][1]["index"], 1_i32);
+    assert_eq!(
+        result["response"]["results"][1]["document"],
+        json!({"text": "b"})
+    );
+}
+
+#[test]
+fn jina_reply_is_decoded_and_the_raw_text_reaches_the_hook() {
+    let result = answer("jina-reply-and-hook.yaml");
+    let response = &result["response"];
+    assert_eq!(response["id"], "r");
+    assert_eq!(response["results"][0]["document"], json!({"text": "a"}));
+    assert_eq!(
+        response["meta"]["billed_units"],
+        json!({"total_tokens": 8_i32})
+    );
+    assert_eq!(response["meta"]["tokens"], json!({"input_tokens": 8_i32}));
+    assert_eq!(
+        result["hook"],
+        json!([
+            r#"{"id":"r","usage":{"total_tokens":8,"input_tokens":8},"results":[{"index":0,"relevance_score":0.5,"document":"a"}]}"#
+        ])
+    );
+}

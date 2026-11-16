@@ -1,0 +1,37 @@
+kind: helper
+name: policy-info-response-chain
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyInfoResponse
+    value:
+      policy_name: healthcare
+      inherit: baseline
+      scope:
+        teams: [healthcare-team]
+        keys: []
+        models: ["*"]
+        tags: [prod]
+      guardrails:
+        add: [hipaa]
+        remove: [pii]
+      resolved_guardrails: [hipaa, audit]
+      inheritance_chain: [baseline, healthcare]
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: project_info
+      policy_name: healthcare
+      policy:
+        inherit: baseline
+        description: HIPAA
+        guardrails:
+          add: [hipaa]
+          remove: [pii]
+      resolved:
+        policy_name: healthcare
+        guardrails: [hipaa, audit]
+        inheritance_chain: [baseline, healthcare]
+env: {}
+compare: {ignore: []}

@@ -16,9 +16,14 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use logs::Logs;
 use script::{Requests, Route, Script};
+use std::mem;
+use tokio::runtime::Builder;
+use tokio::time::{Instant, advance};
+use tracing::subscriber;
 
 pub(crate) struct Op;
 
@@ -60,7 +65,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .start_paused(true)
             .build()
@@ -82,11 +87,9 @@ async fn execute(input: &Input) -> Value {
     let requests = Requests::default();
     let logs = Logs::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = subscriber::set_default(subscriber);
     let script = Script::new(&input.routes, Arc::clone(&requests));
-    let Ok(manager) =
-        CyberArkSecretManager::new(&input.env, script, Arc::new(tokio::time::Instant::now))
-    else {
+    let Ok(manager) = CyberArkSecretManager::new(&input.env, script, Arc::new(Instant::now)) else {
         return json!({"init": {"ok": false, "logs": logs.take()}, "steps": []});
     };
     let init = json!({"ok": true, "logs": logs.take()});
@@ -94,7 +97,7 @@ async fn execute(input: &Input) -> Value {
     for step in &input.steps {
         let result = run_step(&manager, step).await;
         let entries = logs.take();
-        let sent = std::mem::take(&mut *requests.lock().unwrap_or_else(PoisonError::into_inner));
+        let sent = mem::take(&mut *requests.lock().unwrap_or_else(PoisonError::into_inner));
         steps.push(json!({"result": result, "logs": entries, "requests": sent}));
     }
     json!({"init": init, "steps": steps})
@@ -125,7 +128,7 @@ async fn run_step(manager: &CyberArkSecretManager<Script>, step: &Step) -> Value
             value,
         } => rotate(manager, current, new, value).await,
         Step::Advance { ms } => {
-            tokio::time::advance(Duration::from_millis(*ms)).await;
+            advance(Duration::from_millis(*ms)).await;
             Value::Null
         }
     }

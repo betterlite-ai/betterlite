@@ -5,10 +5,11 @@ use super::{HttpStep, Scenario, ScenarioStep};
 use crate::OracleError;
 use crate::artifacts;
 use crate::case::{Compare, ScenarioCase};
-use crate::compare::{self, Difference};
+use crate::compare;
 use crate::http::Response;
-use crate::mock::ProviderRequest;
 use crate::runner::native_feature_eligibility;
+use betterlite_oracle_runner::compare::Difference;
+use betterlite_oracle_runner::mock::ProviderRequest;
 
 pub(crate) struct ScenarioCompareInput<'input> {
     pub(crate) root: &'input Path,

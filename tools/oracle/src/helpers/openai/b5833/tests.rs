@@ -5,24 +5,25 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::HelperCase;
+use betterlite_oracle_runner::case::helper::HelperCase;
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 fn load_case(file: &str) -> HelperCase {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/groq-chat")
         .join(file);
     serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
-fn run_case(file: &str) -> Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
     super::Op::decode_and_run(&load_case(file).call.input).unwrap()
 }
 
 #[test]
 fn credentials_prefer_explicit_then_environment_then_the_default() {
-    let credentials = &run_case("credentials-and-base.yaml")["credentials"];
+    let credentials = &run_case_file("credentials-and-base.yaml")["credentials"];
     assert_eq!(credentials[0]["api_base"], "https://explicit.test");
     assert_eq!(credentials[0]["api_key"], "explicit-key");
     assert_eq!(credentials[1]["api_base"], "https://environment.test");
@@ -34,7 +35,7 @@ fn credentials_prefer_explicit_then_environment_then_the_default() {
 
 #[test]
 fn a_capable_model_keeps_web_search_and_appends_reasoning_effort() {
-    let params = &run_case("supported-params-capabilities.yaml")["supported"][0]["params"];
+    let params = &run_case_file("supported-params-capabilities.yaml")["supported"][0]["params"];
     let names: Vec<&str> = params
         .as_array()
         .unwrap()
@@ -48,7 +49,7 @@ fn a_capable_model_keeps_web_search_and_appends_reasoning_effort() {
 
 #[test]
 fn a_compound_model_keeps_web_search_options_without_reasoning_effort() {
-    let entries = &run_case("supported-params-compound-model.yaml")["supported"];
+    let entries = &run_case_file("supported-params-compound-model.yaml")["supported"];
     assert!(
         entries[0]["params"]
             .as_array()
@@ -78,7 +79,7 @@ fn a_compound_model_keeps_web_search_options_without_reasoning_effort() {
 #[test]
 fn a_failed_reasoning_lookup_leaves_the_list_without_reasoning_effort() {
     let params =
-        &run_case("supported-params-reasoning-lookup-failure.yaml")["supported"][0]["params"];
+        &run_case_file("supported-params-reasoning-lookup-failure.yaml")["supported"][0]["params"];
     assert!(
         !params
             .as_array()
@@ -89,7 +90,7 @@ fn a_failed_reasoning_lookup_leaves_the_list_without_reasoning_effort() {
 
 #[test]
 fn assistant_null_members_are_dropped_and_other_roles_are_kept() {
-    let messages = &run_case("assistant-null-members.yaml")["messages"][0]["messages"];
+    let messages = &run_case_file("assistant-null-members.yaml")["messages"][0]["messages"];
     assert!(messages[0].get("content").is_none());
     assert!(messages[0].get("custom_null").is_none());
     assert!(messages[0].get("function_call").is_none());
@@ -99,7 +100,7 @@ fn assistant_null_members_are_dropped_and_other_roles_are_kept() {
 
 #[test]
 fn an_unsupported_schema_becomes_a_json_tool_call() {
-    let mapped = &run_case("response-format-tool-workaround.yaml")["options"][0];
+    let mapped = &run_case_file("response-format-tool-workaround.yaml")["options"][0];
     assert_eq!(
         mapped["optional_params"]["tools"][0]["function"]["name"],
         "json_tool_call"
@@ -111,7 +112,7 @@ fn an_unsupported_schema_becomes_a_json_tool_call() {
 
 #[test]
 fn a_native_schema_model_keeps_its_response_format() {
-    let mapped = &run_case("response-format-native-schema.yaml")["options"][0];
+    let mapped = &run_case_file("response-format-native-schema.yaml")["options"][0];
     assert_eq!(
         mapped["optional_params"]["response_format"]["type"],
         "json_schema"
@@ -121,19 +122,19 @@ fn a_native_schema_model_keeps_its_response_format() {
 
 #[test]
 fn user_tools_with_a_schema_fail_with_400() {
-    let entry = &run_case("response-format-with-tools-error.yaml")["options"][0];
+    let entry = &run_case_file("response-format-with-tools-error.yaml")["options"][0];
     assert_eq!(entry["error"]["status"], 400_u64);
 }
 
 #[test]
 fn a_json_schema_without_a_schema_is_a_bad_request() {
-    let entries = &run_case("response-format-tool-workaround.yaml")["options"];
+    let entries = &run_case_file("response-format-tool-workaround.yaml")["options"];
     assert_eq!(entries[1]["error"]["status"], 400_u64);
 }
 
 #[test]
 fn web_search_options_add_one_tool_without_duplicating_it() {
-    let entries = &run_case("web-search-options-tool.yaml")["options"];
+    let entries = &run_case_file("web-search-options-tool.yaml")["options"];
     assert_eq!(
         entries[0]["optional_params"]["tools"],
         json!([{"type": "browser_search"}])
@@ -148,7 +149,7 @@ fn web_search_options_add_one_tool_without_duplicating_it() {
 
 #[test]
 fn max_completion_tokens_is_sent_as_max_tokens() {
-    let mapped = &run_case("max-completion-tokens-swap.yaml")["options"][0];
+    let mapped = &run_case_file("max-completion-tokens-swap.yaml")["options"][0];
     assert_eq!(mapped["optional_params"]["max_tokens"], 128_u64);
     assert!(
         mapped["optional_params"]
@@ -159,7 +160,7 @@ fn max_completion_tokens_is_sent_as_max_tokens() {
 
 #[test]
 fn service_tier_maps_to_auto_for_null_and_unknown_values() {
-    let replies = &run_case("service-tier-mapping.yaml")["replies"];
+    let replies = &run_case_file("service-tier-mapping.yaml")["replies"];
     assert_eq!(replies[0]["service_tier"], "auto");
     assert_eq!(replies[1]["service_tier"], "flex");
     assert_eq!(replies[2]["service_tier"], "auto");
@@ -168,7 +169,7 @@ fn service_tier_maps_to_auto_for_null_and_unknown_values() {
 
 #[test]
 fn browser_actions_are_counted_and_a_missing_usage_is_not_billed() {
-    let replies = &run_case("executed-tools-counts.yaml")["replies"];
+    let replies = &run_case_file("executed-tools-counts.yaml")["replies"];
     assert_eq!(replies[0]["web_search_requests"], 2_u64);
     assert_eq!(replies[0]["browser_open_requests"], 1_u64);
     assert_eq!(replies[1]["web_search_requests"], 0_u64);
@@ -179,7 +180,7 @@ fn browser_actions_are_counted_and_a_missing_usage_is_not_billed() {
 
 #[test]
 fn a_malformed_executed_tools_list_bills_nothing_for_that_reply() {
-    let replies = &run_case("executed-tools-bad-shape.yaml")["replies"];
+    let replies = &run_case_file("executed-tools-bad-shape.yaml")["replies"];
     assert_eq!(replies[0]["web_search_requests"], Value::Null);
     assert_eq!(replies[1]["web_search_requests"], Value::Null);
     assert_eq!(replies[2]["web_search_requests"], 1_u64);
@@ -188,7 +189,7 @@ fn a_malformed_executed_tools_list_bills_nothing_for_that_reply() {
 
 #[test]
 fn an_error_chunk_becomes_an_item_beside_the_parsed_chunks() {
-    let chunks = &run_case("stream-chunk-error-and-reasoning.yaml")["chunks"];
+    let chunks = &run_case_file("stream-chunk-error-and-reasoning.yaml")["chunks"];
     assert_eq!(chunks[0]["reasoning_content"], "thinking");
     assert_eq!(chunks[1]["content"], "done");
     assert_eq!(chunks[2]["error"]["status"], 429_u64);
@@ -196,7 +197,7 @@ fn an_error_chunk_becomes_an_item_beside_the_parsed_chunks() {
 
 #[test]
 fn transcription_params_copy_or_drop_by_response_format() {
-    let entries = &run_case("stt-options.yaml")["stt"];
+    let entries = &run_case_file("stt-options.yaml")["stt"];
     assert_eq!(
         entries[0]["optional_params"]["response_format"],
         "verbose_json"
@@ -208,7 +209,7 @@ fn transcription_params_copy_or_drop_by_response_format() {
 
 #[test]
 fn an_unsupported_transcription_format_is_dropped_or_fails() {
-    let entries = &run_case("stt-unsupported-format.yaml")["stt"];
+    let entries = &run_case_file("stt-unsupported-format.yaml")["stt"];
     assert_eq!(entries[0]["error"]["status"], 400_u64);
     assert_eq!(entries[1]["optional_params"]["temperature"], 1_u64);
     assert!(
@@ -221,7 +222,7 @@ fn an_unsupported_transcription_format_is_dropped_or_fails() {
 
 #[test]
 fn search_and_browser_open_costs_are_exact_decimals() {
-    let costs = &run_case("web-search-cost.yaml")["costs"];
+    let costs = &run_case_file("web-search-cost.yaml")["costs"];
     assert_eq!(costs[0]["cost"], "0.013000000000");
     assert_eq!(costs[1]["cost"], "0.004000000000");
     assert_eq!(costs[2]["cost"], "0.000000000000");

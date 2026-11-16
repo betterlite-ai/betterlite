@@ -6,7 +6,8 @@ use betterlite_provider::ollama_chat::config::OllamaChatConfig;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use tokio::runtime::{Builder, Runtime};
 
 #[derive(Deserialize)]
 pub(crate) struct ParamCase {
@@ -44,8 +45,8 @@ pub(crate) struct ReplyCase {
     pub(super) litellm_params: IndexMap<String, Json>,
 }
 
-pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|source| {

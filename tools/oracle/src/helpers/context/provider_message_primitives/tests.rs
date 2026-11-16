@@ -3,11 +3,12 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 
 #[test]
 fn helper_seeds_select_provider_message_primitives() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -40,12 +41,12 @@ fn helper_seeds_select_provider_message_primitives() {
 #[case::chat_id("chat-id-prefix")]
 #[case::tool_call("tool-call-record-projection")]
 fn provider_message_primitives_cases_match_litellm(#[case] name: &str) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/providers/provider-message-primitives")
         .join(format!("{name}.yaml"));
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-    let run = crate::helpers::run_case(&case, false).unwrap();
-    assert!(matches!(run, crate::helpers::HelperRun::Match));
+    let run = run_case(&[crate::GROUP], &case, false).unwrap();
+    assert!(matches!(run, HelperRun::Match));
 }
 
 #[rstest::rstest]
@@ -73,6 +74,6 @@ fn matches_litellm(call: &str) {
         "kind: helper\nname: inline\ncall: {{provider_message_primitives: {{{call}}}}}\nenv: {{}}\ncompare: {{ignore: []}}\n"
     );
     let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-    let run = crate::helpers::run_case(&case, false).unwrap();
-    assert!(matches!(run, crate::helpers::HelperRun::Match));
+    let run = run_case(&[crate::GROUP], &case, false).unwrap();
+    assert!(matches!(run, HelperRun::Match));
 }

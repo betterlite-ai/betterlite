@@ -4,6 +4,7 @@ use betterlite_error::proxy_enums::special_headers::SpecialHeaders;
 // ast-grep-ignore: no-long-names
 use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::structured::Payload;
 use serde::Deserialize;
 use serde_json::Value;
@@ -83,10 +84,10 @@ fn access_denied_output(
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::Exception {
                 message,

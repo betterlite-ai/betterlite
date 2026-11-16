@@ -1,0 +1,20 @@
+task: B621
+deviations:
+  - what: >-
+      A max_tokens integer below the range of a 64-bit signed integer is not compared with the
+      minimum thinking budget, so the clear thinking injection proceeds, where LiteLLM's int keeps
+      the value, compares it as not greater than the budget, warns and returns False.
+    why: >-
+      The request record holds 64-bit numbers, so the guard cannot see a value below -9.2e18 that
+      Python's int holds; such a max_tokens is outside every context window, and betterlite injects
+      thinking rather than refuse a request over a number it cannot compare.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L297-L306
+  - what: >-
+      A thinking.budget_tokens integer outside the range of a 64-bit signed integer is a
+      MessageOptionsError::BudgetTokens, where LiteLLM's int() keeps the arbitrary-precision value,
+      injects it as thinking.budget_tokens and derives the effort from it.
+    why: >-
+      The budget is compared with the effort thresholds and copied into the request as an i64;
+      refusing the value beats forwarding one no 64-bit comparison can hold.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L323-L329
+kept_bugs: []

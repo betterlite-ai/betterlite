@@ -1,0 +1,13 @@
+{
+  "kind": "helper",
+  "name": "refresh-coordinator-single-flight",
+  "call": {
+    "b4657": {
+      "function": "coordinator"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

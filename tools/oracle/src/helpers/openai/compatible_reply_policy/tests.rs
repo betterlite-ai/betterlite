@@ -5,12 +5,13 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/compatible-reply-policy")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -19,7 +20,7 @@ fn run_case(file: &str) -> Value {
 
 #[test]
 fn helper_seeds_select_compatible_reply_policy() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -40,7 +41,7 @@ fn helper_seeds_select_compatible_reply_policy() {
 
 #[test]
 fn missing_and_empty_headers_and_base_follow_the_python_checks() {
-    let validated = &run_case("missing-empty-headers-and-base.yaml")["validate"];
+    let validated = &run_case_file("missing-empty-headers-and-base.yaml")["validate"];
     assert_eq!(validated[0]["status"], 400_i32);
     assert_eq!(validated[1]["status"], 400_i32);
     assert_eq!(validated[2]["headers"], json!({}));
@@ -54,7 +55,7 @@ fn missing_and_empty_headers_and_base_follow_the_python_checks() {
 
 #[test]
 fn null_tokens_become_zero_and_only_one_tool_call_converts() {
-    let transformed = &run_case("null-token-and-single-tool.yaml")["transform"];
+    let transformed = &run_case_file("null-token-and-single-tool.yaml")["transform"];
     assert_eq!(transformed[0]["usage"], json!([0_i32, 5_i32, 0_i32]));
     assert_eq!(
         transformed[1]["choices"][0],
@@ -75,7 +76,7 @@ fn null_tokens_become_zero_and_only_one_tool_call_converts() {
 
 #[test]
 fn an_empty_provider_still_prefixes_and_an_empty_base_model_is_hidden() {
-    let transformed = &run_case("provider-prefix-and-hidden-model.yaml")["transform"];
+    let transformed = &run_case_file("provider-prefix-and-hidden-model.yaml")["transform"];
     assert_eq!(transformed[0]["model"], "acme/m");
     assert_eq!(transformed[1]["model"], "/m");
     assert_eq!(transformed[1]["hidden_model"], "base");
@@ -85,7 +86,7 @@ fn an_empty_provider_still_prefixes_and_an_empty_base_model_is_hidden() {
 
 #[test]
 fn embedding_options_keep_false_and_zero_and_override_model_and_input() {
-    let options = &run_case("embedding-option-filter.yaml")["options"];
+    let options = &run_case_file("embedding-option-filter.yaml")["options"];
     assert_eq!(
         options[0],
         json!({"model": "m", "input": ["a"], "dimensions": 0_i32, "flag": false, "tag": "x", "empty": []})

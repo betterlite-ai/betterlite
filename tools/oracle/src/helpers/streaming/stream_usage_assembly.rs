@@ -16,7 +16,10 @@ use serde_json::{Value, json};
 
 mod fixture;
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fixture::{CounterFixture, FixtureCounter, failure, hooks};
+use tokio::runtime::{Builder, Runtime};
 
 #[path = "stream_usage_assembly/tests.rs"]
 mod tests;
@@ -81,18 +84,18 @@ struct CalculateRequest<'request> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| failure(error.to_string()))?;
         run_input(&runtime, input)
     }
 }
 
-fn run_input(runtime: &tokio::runtime::Runtime, input: &Input) -> crate::helpers::HelperResult {
+fn run_input(runtime: &Runtime, input: &Input) -> HelperResult {
     match input {
         Input::Batch { cases } => run_batch(runtime, cases),
         Input::CalculateUsage { .. } => calculate_input(runtime, input),
@@ -135,10 +138,7 @@ fn run_input(runtime: &tokio::runtime::Runtime, input: &Input) -> crate::helpers
     }
 }
 
-fn calculate_input(
-    runtime: &tokio::runtime::Runtime,
-    input: &Input,
-) -> crate::helpers::HelperResult {
+fn calculate_input(runtime: &Runtime, input: &Input) -> HelperResult {
     let Input::CalculateUsage {
         chunks,
         model,
@@ -167,7 +167,7 @@ fn calculate_input(
     )
 }
 
-fn run_batch(runtime: &tokio::runtime::Runtime, cases: &[Input]) -> crate::helpers::HelperResult {
+fn run_batch(runtime: &Runtime, cases: &[Input]) -> HelperResult {
     let results = cases
         .iter()
         .map(|case| run_input(runtime, case))
@@ -175,11 +175,7 @@ fn run_batch(runtime: &tokio::runtime::Runtime, cases: &[Input]) -> crate::helpe
     Ok(Value::Array(results))
 }
 
-fn reasoning(
-    runtime: &tokio::runtime::Runtime,
-    choices: &[ReasoningChoice],
-    counter: &CounterFixture,
-) -> Value {
+fn reasoning(runtime: &Runtime, choices: &[ReasoningChoice], counter: &CounterFixture) -> Value {
     let fixture = FixtureCounter::new(counter, None);
     match runtime.block_on(count_reasoning_tokens(&fixture, choices)) {
         Ok(tokens) => json!({
@@ -191,9 +187,7 @@ fn reasoning(
     }
 }
 
-fn detail_update(
-    result: Option<&Cow<'_, PromptTokensDetails>>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn detail_update(result: Option<&Cow<'_, PromptTokensDetails>>) -> Result<Value, Box<HelperError>> {
     let same_object = result.is_none_or(|cow| matches!(cow, Cow::Borrowed(_)));
     let details = match result {
         None => Value::Null,
@@ -203,10 +197,10 @@ fn detail_update(
 }
 
 fn calculate(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
     request: &CalculateRequest<'_>,
     counter: &CounterFixture,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let fixture = FixtureCounter::new(counter, request.messages.map(<[Value]>::to_vec));
     let hooks = hooks()?;
     let typed_messages = decode_messages(request.messages)?;
@@ -231,9 +225,7 @@ fn calculate(
     }))
 }
 
-fn decode_messages(
-    messages: Option<&[Value]>,
-) -> Result<Option<Vec<Message>>, Box<crate::helpers::HelperError>> {
+fn decode_messages(messages: Option<&[Value]>) -> Result<Option<Vec<Message>>, Box<HelperError>> {
     let Some(raw) = messages else {
         return Ok(None);
     };
@@ -264,7 +256,7 @@ fn error_output(error: &UsageAssemblyError) -> Value {
     json!({"ok": false, "error_type": kind})
 }
 
-fn rendered<T>(value: &T) -> Result<Value, Box<crate::helpers::HelperError>>
+fn rendered<T>(value: &T) -> Result<Value, Box<HelperError>>
 where
     T: Serialize,
 {

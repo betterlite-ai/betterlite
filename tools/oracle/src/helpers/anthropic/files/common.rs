@@ -5,7 +5,8 @@ use betterlite_anthropic::files::error::FilesError;
 use betterlite_config::sections::anthropic_credentials::Settings as ConfigSettings;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use std::fmt::Display;
 
 pub(crate) fn header_map(pairs: &[(String, String)]) -> Result<HeaderMap, Box<HelperError>> {
     let mut headers = HeaderMap::new();
@@ -43,7 +44,7 @@ pub(crate) fn raised(error: &FilesError) -> serde_json::Value {
 
 pub(crate) fn failure<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     Box::new(HelperError {
         class: "Error".to_owned(),

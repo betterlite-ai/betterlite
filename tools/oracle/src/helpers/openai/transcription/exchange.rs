@@ -34,7 +34,8 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::{Probe, Provider, Reply};
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use tokio::runtime::Builder;
 
 const FILE_NAME: &str = "a.wav";
 
@@ -153,9 +154,7 @@ fn send(
         Err(error) => return Ok((Value::Null, Err(error))),
     };
     let request = request_view(&outbound);
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .or_config_error()?;
+    let runtime = Builder::new_current_thread().build().or_config_error()?;
     let sent = runtime.block_on(Fixture::new(&probe.reply)?.send(outbound));
     Ok((request, finish_transcription(pending, sent, recorder)))
 }

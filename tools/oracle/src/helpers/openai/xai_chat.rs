@@ -7,7 +7,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod logs;
 mod oauth;
@@ -15,6 +16,7 @@ mod ops;
 mod tests;
 
 use ops::Run;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -103,7 +105,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| invalid(error.to_string()))?;
         let run = Run {

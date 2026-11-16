@@ -1,0 +1,18 @@
+kind: helper
+name: hosted-skill-store-shared-cache-denial
+call:
+  hosted_skill_store:
+    now: "2026-02-03T04:05:06"
+    uuid: "00000000-0000-4000-8000-000000000003"
+    rows:
+      - {skill_id: litellm_skill_a, display_title: Alpha, created_by: alice}
+    steps:
+      - {action: get, skill_id: litellm_skill_a, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_a, principal: {user_id: bob}}
+      - {action: get, skill_id: litellm_skill_a, principal: {user_id: carol, admin: true}}
+      - {action: delete, skill_id: litellm_skill_a, principal: {user_id: bob}}
+      - {action: delete, skill_id: litellm_skill_a, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_a, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_a, principal: {user_id: carol, admin: true}}
+env: {}
+compare: {ignore: []}
