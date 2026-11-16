@@ -206,6 +206,23 @@ async fn deepgram_listen_declared_channels_multiply_the_billed_seconds() {
 }
 
 #[tokio::test]
+async fn deepgram_listen_without_a_model_query_bills_the_default_model() {
+    let listener = Listener::new(CATALOG);
+    let logging_obj = logging_object();
+    let frames = messages(r#"[{"type": "Metadata", "duration": 2}]"#);
+    let caller = kwargs(&[]);
+    let url = "https://api.deepgram.com/v1/listen";
+
+    listener
+        .listen(&logging_obj, url, &frames, &caller)
+        .await
+        .expect("the handler runs");
+
+    assert_eq!(logged_model(&logging_obj), "nova-3");
+    assert_eq!(spend_cost(&logging_obj), json("0.00016"));
+}
+
+#[tokio::test]
 async fn deepgram_listen_multilingual_language_prices_the_multilingual_entry() {
     let listener = Listener::new(CATALOG);
     let logging_obj = logging_object();
