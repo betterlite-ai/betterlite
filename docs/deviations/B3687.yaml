@@ -1,0 +1,56 @@
+task: B3687
+deviations:
+  - what: >-
+      major_airlines never answers 404 or 500; the airline list is compiled into the binary.
+    why: >-
+      LiteLLM reads major_airlines.json from its package folder on every request, so it
+      fails only when an install is broken. A compiled-in file cannot go missing or stop
+      parsing at runtime, and a working setup always gets the list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1506-L1525
+  - what: >-
+      The text after "Invalid YAML syntax: " is serde-saphyr's, not PyYAML's, and the
+      parser follows YAML 1.2, so yes, no, on, off and YAML 1.1-only scalars such as 1:30
+      stay plain text where PyYAML reads a boolean or a base-60 integer. A date such as
+      2024-01-01 stays text too, where PyYAML loads a datetime.
+    why: >-
+      PyYAML's marks and messages are not reproducible. A text keyword and a text action
+      are what the entry checks compare, so a 1.2 parse keeps working files working; an
+      oracle case for bad syntax compares the status and valid only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1575
+  - what: >-
+      A body that never reaches the declared model (not JSON, not an object, or a value of
+      the wrong type) gets the sibling routes' 422 body, json_invalid or value_error with
+      serde's message, in place of FastAPI's pydantic type and wording. On apply_guardrail
+      the body is decoded locally with serde_path_to_error instead of B3662's
+      decode_apply_request, because that decoder reports a missing root field as the path
+      ".", where FastAPI says loc ["body","text"] with "Field required".
+    why: >-
+      One 422 shape across the admin routes, and the field name FastAPI reports is what an
+      oracle case compares. Only the message wording and the pydantic type name differ;
+      status and loc match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2339-L2343
+  - what: >-
+      A category file that is not UTF-8 answers 500 with Rust's io error text after
+      "Error reading category file: ", not Python's UnicodeDecodeError text.
+    why: >-
+      Both are a 500 with the same prefix, and the suffix names the decoder that refused
+      the file. Python's codec wording is not reproducible in Rust.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1484-L1495
+  - what: >-
+      A deeply nested YAML document answers {"valid": false, "error": "Invalid YAML
+      syntax: ..."}; LiteLLM's catch-all answers "Validation error: {e}" for the
+      RecursionError the parser raises there.
+    why: >-
+      serde-saphyr enforces its own depth limit and reports the over-deep document as a
+      parse error. Both answers are 200 with valid false, and no working file nests that
+      deep.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1613-L1618
+  - what: >-
+      An action value that is a list or a mapping is echoed as "[a]" or "{k: 1}" in the
+      "'BLOCK' or 'MASK'" message, where Python's str() prints "['a']" or "{'k': 1}".
+    why: >-
+      The message repeats the value as it was written for text and scalar values, which
+      match Python's str (None, True, 5, 1.5). A container in action is never a working
+      blocked-words file, and Rust prints containers its own way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1602
+kept_bugs: []
