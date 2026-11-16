@@ -109,7 +109,7 @@ impl Helper for Op {
         for probe in &input.probes {
             values.push(match input.function {
                 Function::Exchange => exchange::exchange(probe)?,
-                Function::NativeConfig => native_config(probe)?,
+                Function::NativeConfig => native_config(probe),
                 Function::NativeResponse => native_response(probe),
                 Function::NativeRequest => native_request(probe)?,
             });
@@ -125,7 +125,7 @@ fn error_view(error: &NativeError) -> Value {
     })
 }
 
-fn native_config(probe: &Probe) -> HelperResult {
+fn native_config(probe: &Probe) -> Value {
     let key = probe.api_key.clone().map(SecretString::from);
     let environment_key = probe.environment_api_key.clone().map(SecretString::from);
     let caller: Headers = probe.headers.clone().into_iter().collect();
@@ -147,13 +147,13 @@ fn native_config(probe: &Probe) -> HelperResult {
         );
     }
     let failure = get_error_class(String::from("boom"), 502, Headers::new());
-    Ok(json!({
+    json!({
         "supported": SUPPORTED_OPENAI_PARAMS,
         "mapped": map_openai_params(&probe.non_default_params, probe.existing_params.clone()),
         "headers": headers,
         "urls": urls,
         "error_status": failure.status(),
-    }))
+    })
 }
 
 fn native_response(probe: &Probe) -> Value {

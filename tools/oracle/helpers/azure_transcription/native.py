@@ -1,7 +1,8 @@
 import base64
 import os
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
+from functools import partial
 from typing import Final, Protocol
 
 import httpx
@@ -114,38 +115,42 @@ def environment(name: str, value: str | None) -> Generator[None]:
             os.environ[name] = previous
 
 
-def checked_headers(config: ConfigView, probe: Probe) -> Json:
-    empty: dict[str, Json] = {}
+# the native config raises BaseLLMException, and its status is what the case compares
+def captured(call: Callable[[], Json]) -> Json:
     try:
-        with environment("AZURE_SPEECH_API_KEY", probe.environment_api_key):
-            validated = config.validate_environment(
-                dict(probe.headers), probe.model, NoMessages(), empty, empty, probe.api_key
-            )
+        return call()
     except PROVIDER_ERROR as failure:
         status = ErrorStatus.model_validate(failure, from_attributes=True).status_code
         return {"ok": False, "status": status}
+
+
+def headers_view(config: ConfigView, probe: Probe) -> Json:
+    empty: dict[str, Json] = {}
+    with environment("AZURE_SPEECH_API_KEY", probe.environment_api_key):
+        validated = config.validate_environment(
+            dict(probe.headers), probe.model, NoMessages(), empty, empty, probe.api_key
+        )
     return {"ok": True, "value": validated}
 
 
-def checked_urls(config: ConfigView, probe: Probe) -> list[Json]:
+def url_view(config: ConfigView, probe: Probe, base: str | None) -> Json:
     empty: dict[str, Json] = {}
-    urls: list[Json] = []
-    for base in probe.bases:
-        try:
-            with environment("AZURE_SPEECH_API_BASE", probe.environment_api_base):
-                url = config.get_complete_url(
-                    api_base=base,
-                    api_key=None,
-                    model=probe.model,
-                    optional_params=dict(probe.optional_params),
-                    litellm_params=empty,
-                )
-        except PROVIDER_ERROR as failure:
-            status = ErrorStatus.model_validate(failure, from_attributes=True).status_code
-            urls.append({"ok": False, "status": status})
-        else:
-            urls.append({"ok": True, "url": url})
-    return urls
+    with environment("AZURE_SPEECH_API_BASE", probe.environment_api_base):
+        url = config.get_complete_url(
+            api_base=base,
+            api_key=None,
+            model=probe.model,
+            optional_params=dict(probe.optional_params),
+            litellm_params=empty,
+        )
+    return {"ok": True, "url": url}
+
+
+def response_view(config: BaseAudioTranscriptionConfig, raw: httpx.Response) -> Json:
+    response = config.transform_audio_transcription_response(raw)
+    private: dict[str, Json] | None = response.__pydantic_private__
+    hidden = PRIVATE.validate_python(private)["_hidden_params"]
+    return {"ok": True, "text": response.text, "hidden": hidden}
 
 
 def native_config(config: ConfigView, probe: Probe) -> Json:
@@ -157,28 +162,29 @@ def native_config(config: ConfigView, probe: Probe) -> Json:
         drop_params=False,
     )
     error = config.get_error_class("boom", 502, {"x-request-id": "req-1"})
+    urls: list[Json] = [captured(partial(url_view, config, probe, base)) for base in probe.bases]
     return {
         "supported": supported,
         "mapped": mapped,
-        "headers": checked_headers(config, probe),
-        "urls": checked_urls(config, probe),
+        "headers": captured(partial(headers_view, config, probe)),
+        "urls": urls,
         "error_status": error.status_code,
     }
 
 
 def native_response(config: BaseAudioTranscriptionConfig, probe: Probe) -> Json:
-    results: list[Json] = []
-    for item in probe.bodies:
-        raw = httpx.Response(item.status, headers=dict(probe.headers), content=item.body.encode())
-        try:
-            response = config.transform_audio_transcription_response(raw)
-        except PROVIDER_ERROR as failure:
-            status = ErrorStatus.model_validate(failure, from_attributes=True).status_code
-            results.append({"ok": False, "status": status})
-        else:
-            private: dict[str, Json] | None = response.__pydantic_private__
-            hidden = PRIVATE.validate_python(private)["_hidden_params"]
-            results.append({"ok": True, "text": response.text, "hidden": hidden})
+    results: list[Json] = [
+        captured(
+            partial(
+                response_view,
+                config,
+                httpx.Response(
+                    item.status, headers=dict(probe.headers), content=item.body.encode()
+                ),
+            )
+        )
+        for item in probe.bodies
+    ]
     return {"results": results}
 
 
