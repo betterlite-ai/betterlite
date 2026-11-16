@@ -22,8 +22,7 @@ fn chunk_item(chunk: &Chunk) -> Value {
     })
 }
 
-// Only the fields both sides of the oracle see the same way: the rebuilt chunk's usage is LiteLLM's
-// token counter against B010's zeros, and the source chunk's tool calls are passed through as they are.
+// The delta's role and content are the only choice fields both sides of the oracle see the same way.
 fn choice_item(choice: &Choice) -> Value {
     let role = choice.delta.as_ref().and_then(|delta| delta.role.clone());
     let content = choice
@@ -49,8 +48,7 @@ fn sse_item(frame: &str) -> Value {
     json!({"kind": "sse", "body": parsed})
 }
 
-// A content item's text is the blocking payload in LiteLLM's spaced json.dumps and in our compact
-// serde, so it goes out parsed when it is JSON at all.
+// The text is the block payload in LiteLLM's spaced json.dumps and our compact serde, so it is parsed.
 pub(super) fn content_item(item: &ContentJson) -> Value {
     match item {
         ContentJson::Object(fields) => {

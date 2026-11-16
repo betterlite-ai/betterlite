@@ -190,7 +190,10 @@ def item_value(item: ModelResponseStream | str) -> JsonValue:
 
 
 def content_values(items: list[ContentItemDump]) -> list[JsonValue]:
-    return [{"type": item["type"], "text": parsed_text(item["text"])} for item in items]
+    rendered: list[JsonValue] = []
+    for item in items:
+        rendered.append({"type": item["type"], "text": parsed_text(item["text"])})
+    return rendered
 
 
 def recorded(script: Script) -> tuple[JsonValue, JsonValue]:
