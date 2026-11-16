@@ -1,19 +1,20 @@
 #![cfg(test)]
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use rstest::rstest;
 
-use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 
 use super::Op;
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 const KINDS: [&str; 3] = ["url", "lifecycle", "headers"];
 
 fn seed_sources() -> Vec<String> {
-    let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -28,7 +29,9 @@ fn seed_sources() -> Vec<String> {
 
 #[rstest]
 fn helper_seeds_select_vertex_interactions(
-    #[files("fuzz/corpus/helper_case/vertex_interactions*.yaml")] path: PathBuf,
+    #[base_dir = "../../.."]
+    #[files("fuzz/corpus/helper_case/vertex_interactions*.yaml")]
+    path: PathBuf,
 ) {
     let source = fs::read_to_string(&path).unwrap();
     let case: HelperCase = serde_saphyr::from_str(&source).unwrap();

@@ -8,22 +8,22 @@ use rand::TryRng as _;
 use rstest::rstest;
 
 use crate::OracleError;
-use crate::case::Ignore;
 use crate::cli::Options;
-use crate::process::sync_litellm;
 use crate::router_probes::random::InjectedRandom;
 use crate::router_probes::single_candidate::{Deployment, Input, Output};
 use crate::router_probes::{
     ProbeOperation, ProbeOutput, Reply, Request, Sample, UnbuiltInput, execute,
 };
 use crate::routing_component_oracle::{
-    Commands, ProbeCase, ProbeCompare, ProbeStep, compare_replies, python_command, run_case,
-    validate_probe_case,
+    Commands, ProbeCase, ProbeCompare, ProbeStep, compare_replies, python_command,
+    run_component_case, validate_probe_case,
 };
 use crate::routing_probe_ipc::child::{ProbeCommand, run_bounded};
 use crate::routing_probe_ipc::{
     MAX_MESSAGE_BYTES, OPERATION_DEADLINE, ProbeClock, ProbeFailure, parse_message,
 };
+use betterlite_oracle_runner::case::Ignore;
+use betterlite_oracle_runner::helpers::sync_litellm;
 
 const CLOCK: &str = r#""clock":{"unix_millis":1700000000123,"monotonic_millis":42000}"#;
 const SINGLE_CANDIDATE: &str = r#"{"single_candidate":{"deployments":[{"id":"only"}]}}"#;
@@ -216,7 +216,11 @@ printf '%s' "$2""#;
         self_check: false,
         paths: Vec::new(),
     };
-    assert!(run_case(&options, &commands, &case).await.unwrap());
+    assert!(
+        run_component_case(&options, &commands, &case)
+            .await
+            .unwrap()
+    );
 }
 
 #[rstest]

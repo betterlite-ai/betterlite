@@ -2,6 +2,8 @@ use betterlite_openai::voyage_embedding::{
     VoyageEmbeddingError, VoyageEmbeddingVariant, decode_voyage_embedding_reply, endpoint, request,
     voyage_credentials, voyage_headers,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -35,10 +37,10 @@ struct Reply {
     status: u16,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let text_result = transform(&input.text, VoyageEmbeddingVariant::Text)?;
         let contextual_reply = transform(&input.contextual, VoyageEmbeddingVariant::Contextual)?;
         let contextual_result = serde_json::json!({
@@ -52,7 +54,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn transform(call: &Call, variant: VoyageEmbeddingVariant) -> crate::helpers::HelperResult {
+fn transform(call: &Call, variant: VoyageEmbeddingVariant) -> HelperResult {
     let response = call
         .reply
         .as_ref()
@@ -61,7 +63,7 @@ fn transform(call: &Call, variant: VoyageEmbeddingVariant) -> crate::helpers::He
         .map_err(|error| match error {
             VoyageEmbeddingError::Decode {
                 status, message, ..
-            } => Box::new(crate::helpers::HelperError {
+            } => Box::new(HelperError {
                 class: "VoyageError".to_owned(),
                 status: Some(status),
                 error_type: None,

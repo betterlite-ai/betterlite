@@ -5,7 +5,7 @@ use betterlite_openai::video_edits::response::{
 
 use super::CharacterResponse;
 use super::support::helper_error;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn character_reply(reply: &CharacterResponse) -> HelperResult {
     match decode_character_reply(reply.body.as_bytes()) {

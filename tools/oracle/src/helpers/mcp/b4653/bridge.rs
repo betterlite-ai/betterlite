@@ -15,7 +15,9 @@ use betterlite_mcp::errors::{SessionKeyError, SessionMintError};
 use betterlite_secrets::secret_codec::OsNonces;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_mcp::envelope::models::SubjectType;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -92,8 +94,8 @@ impl From<Failure> for Box<HelperError> {
 
 fn identity(mint: &EnvelopeMint) -> EnvelopeIdentity {
     let subject_type = match mint.subject_type {
-        SubjectTypeInput::KeyHash => betterlite_mcp::envelope::models::SubjectType::KeyHash,
-        SubjectTypeInput::UserId => betterlite_mcp::envelope::models::SubjectType::UserId,
+        SubjectTypeInput::KeyHash => SubjectType::KeyHash,
+        SubjectTypeInput::UserId => SubjectType::UserId,
     };
     EnvelopeIdentity {
         server_id: mint.server_id.clone(),

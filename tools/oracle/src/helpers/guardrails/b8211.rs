@@ -11,10 +11,13 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{Helper, HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, ProviderCall};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{MockScript, ProviderCall};
+use std::slice;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -66,7 +69,7 @@ impl Helper for Op {
 fn execute(input: &Input) -> Result<Output, Box<HelperError>> {
     let (mock, base) = start_mock(&input.answer)?;
     let guardrail = build_guardrail(input, base)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| fail("OSError", error.to_string()))?;
@@ -137,7 +140,7 @@ fn build_guardrail(
 }
 
 fn start_mock(answer: &UpstreamAnswer) -> Result<(MockProvider, String), Box<HelperError>> {
-    let script = MockScript::try_from(std::slice::from_ref(answer))
+    let script = MockScript::try_from(slice::from_ref(answer))
         .map_err(|error| fail("MockError", error.to_string()))?;
     let mock = MockProvider::start(script).map_err(|error| fail("MockError", error.to_string()))?;
     let base = mock.base_url.clone();

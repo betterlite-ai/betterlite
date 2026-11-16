@@ -12,7 +12,8 @@ use uuid::Uuid;
 
 use self::fixture::{FixedIds, FixtureHandler, Recorder, drain, header_map};
 use self::project::outcome;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod fixture;
 mod project;
@@ -69,10 +70,10 @@ const fn default_messages() -> Json {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let ids = parse_ids(&input.ids)?;
         Builder::new_current_thread()
             .enable_all()
@@ -82,7 +83,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-async fn execute(input: &Input, ids: &[Uuid]) -> crate::helpers::HelperResult {
+async fn execute(input: &Input, ids: &[Uuid]) -> HelperResult {
     let mut sync = Vec::new();
     let mut asynchronous = Vec::new();
     for scenario in &input.scenarios {

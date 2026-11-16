@@ -5,7 +5,8 @@ use betterlite_guardrails::prompt_injection::similarity::check_user_input_simila
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]

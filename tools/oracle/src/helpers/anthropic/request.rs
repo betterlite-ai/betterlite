@@ -5,13 +5,16 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 
 mod fixtures;
 mod tests;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fixtures::warnings::Warnings;
 use fixtures::{FixtureInput, Records};
+use tokio::runtime::Builder;
+use tracing::subscriber;
 
 // LiteLLM stores the sanitized-to-original tool name map here and only when a name was rewritten
 const REVERSE_MAP_KEY: &str = "_anthropic_tool_name_map";
@@ -42,28 +45,24 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let records = Records::load(&input.fixture).or_config_error()?;
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .or_config_error()?;
         let warnings = Warnings::default();
         let subscriber = tracing_subscriber::registry().with(warnings.clone());
-        tracing::subscriber::with_default(subscriber, || {
+        subscriber::with_default(subscriber, || {
             runtime.block_on(answer(input, &records, &warnings))
         })
     }
 }
 
-async fn answer(
-    input: &Input,
-    records: &Records,
-    warnings: &Warnings,
-) -> crate::helpers::HelperResult {
+async fn answer(input: &Input, records: &Records, warnings: &Warnings) -> HelperResult {
     let prepared = match records.prepare(input).await {
         Ok(prepared) => prepared,
         Err(error) => return Ok(json!({"raised": true, "status": error.status_code()})),

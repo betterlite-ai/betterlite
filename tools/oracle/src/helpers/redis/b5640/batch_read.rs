@@ -6,7 +6,7 @@ use serde_json::{Map, Value, json};
 
 use super::helper_error;
 use super::input::BatchReadCall;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(crate) fn run(call: &BatchReadCall) -> HelperResult {
     let keys: Vec<Option<&str>> = call.keys.iter().map(Option::as_deref).collect();

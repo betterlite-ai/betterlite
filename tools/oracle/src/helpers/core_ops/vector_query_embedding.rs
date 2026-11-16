@@ -15,7 +15,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::error::Error;
+use tokio::runtime::Builder;
 
 mod fixtures;
 
@@ -78,10 +81,10 @@ pub(crate) struct ForwardInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::QueryPreparation {
                 queries,
@@ -140,7 +143,7 @@ fn precedence_case(case: &PrecedenceCase) -> Result<Value, Box<HelperError>> {
     })
 }
 
-fn forward_report(input: &ForwardInput, asynchronous: bool) -> crate::helpers::HelperResult {
+fn forward_report(input: &ForwardInput, asynchronous: bool) -> HelperResult {
     let mut logging = VectorStoreLogging::default();
     let request = QuerySearchRequest {
         search: SearchRequest {
@@ -155,7 +158,7 @@ fn forward_report(input: &ForwardInput, asynchronous: bool) -> crate::helpers::H
         embedding_executor: None,
     };
     let (url, body) = if asynchronous {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| fixtures::helper_error(error.to_string()))?;
@@ -174,10 +177,7 @@ fn forward_report(input: &ForwardInput, asynchronous: bool) -> crate::helpers::H
     }))
 }
 
-fn defaults_report(
-    api_bases: &[Option<String>],
-    litellm_params: &Params,
-) -> crate::helpers::HelperResult {
+fn defaults_report(api_bases: &[Option<String>], litellm_params: &Params) -> HelperResult {
     let mut urls = Vec::with_capacity(api_bases.len());
     for api_base in api_bases {
         let url = DirectFixture
@@ -215,7 +215,7 @@ fn defaults_report(
 
 fn raised<T, E>(outcome: Result<T, E>) -> String
 where
-    E: std::error::Error,
+    E: Error,
 {
     match outcome {
         Ok(_) => "no error".to_owned(),
