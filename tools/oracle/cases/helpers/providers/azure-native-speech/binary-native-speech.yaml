@@ -1,0 +1,12 @@
+kind: helper
+name: binary-native-speech
+call:
+  azure_native_speech:
+    binary_native_speech:
+      cases:
+        - {status: 200, body: ID3audio, content_type: audio/mpeg}
+        - {status: 400, body: '', content_type: application/json}
+        - {status: 500, body: error text, content_type: text/plain}
+        - {status: 206, body: 'звук'}
+env: {}
+compare: {ignore: []}

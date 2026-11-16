@@ -1,0 +1,5 @@
+kind: helper
+name: azure_native_speech-native_speech_headers-seed
+call: {azure_native_speech: {native_speech_headers: {cases: [{headers: {}, api_key: seeded-key}, {headers: {Ocp-Apim-Subscription-Key: caller-key}}]}}}
+env: {}
+compare: {ignore: []}
