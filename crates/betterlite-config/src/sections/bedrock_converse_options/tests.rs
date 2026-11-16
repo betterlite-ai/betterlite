@@ -54,6 +54,15 @@ fn assert_i64(
         Some(global_value),
         "{key} global"
     );
+    assert_i64_merged(key, deployment_value, global_value, read);
+}
+
+fn assert_i64_merged(
+    key: &str,
+    deployment_value: i64,
+    global_value: i64,
+    read: fn(&ConverseOptionValues) -> Option<i64>,
+) {
     let configured = load(&both(
         key,
         &deployment_value.to_string(),
