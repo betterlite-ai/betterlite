@@ -1,0 +1,17 @@
+kind: helper
+name: openrouter-image-edit-request
+call:
+  b5830:
+    op: edit_request
+    cases:
+      - model: google/gemini-2.5-flash-image
+        prompt: add a hat
+        image: {kind: reader, data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", position: 1}
+        optional_params: {n: 1}
+        headers: {}
+        api_key: sk-key
+        global_api_key: null
+        environment: {}
+        api_base: "https://proxy.example/v1/"
+env: {}
+compare: {ignore: []}
