@@ -11,6 +11,8 @@ use tokio::runtime::Builder;
 
 use super::fakes::{self, RecordedCall};
 use super::{Input, Operation};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Serialize)]
 struct ExecuteOutput {
@@ -19,7 +21,7 @@ struct ExecuteOutput {
     calls: Vec<RecordedCall>,
 }
 
-pub(super) fn run_search(input: &Input) -> crate::helpers::HelperResult {
+pub(super) fn run_search(input: &Input) -> HelperResult {
     match input.operation {
         Operation::ShortCircuit => {
             let request = ShortCircuitRequest {
@@ -62,7 +64,7 @@ pub(super) fn run_search(input: &Input) -> crate::helpers::HelperResult {
     }
 }
 
-pub(super) fn rich_search_inputs(input: &Input) -> crate::helpers::HelperResult {
+pub(super) fn rich_search_inputs(input: &Input) -> HelperResult {
     let results: Vec<Option<RichWebSearchInput>> = input
         .tool_inputs
         .iter()
@@ -71,7 +73,7 @@ pub(super) fn rich_search_inputs(input: &Input) -> crate::helpers::HelperResult 
     serde_json::to_value(results).map_err(failure)
 }
 
-pub(super) fn provider_supports(input: &Input) -> crate::helpers::HelperResult {
+pub(super) fn provider_supports(input: &Input) -> HelperResult {
     let execution = fakes::build(input);
     let mut results = Vec::with_capacity(input.search_providers.len());
     for provider in &input.search_providers {
@@ -80,12 +82,12 @@ pub(super) fn provider_supports(input: &Input) -> crate::helpers::HelperResult {
     serde_json::to_value(results).map_err(failure)
 }
 
-fn failure<Source>(error: Source) -> Box<crate::helpers::HelperError>
+fn failure<Source>(error: Source) -> Box<HelperError>
 where
     Source: Display,
 {
     let message = error.to_string();
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "SearchExecutionError".to_owned(),
         message,
         status: None,
@@ -95,8 +97,8 @@ where
     })
 }
 
-fn search_failure(error: SearchFailure) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn search_failure(error: SearchFailure) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "SearchFailure".to_owned(),
         message: error.message,
         status: None,

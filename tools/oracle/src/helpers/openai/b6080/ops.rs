@@ -15,7 +15,8 @@ use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::SecretString;
 use serde_json::{Number, Value, json};
 
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::chat::{chat_params, chunk};
 use super::input::{DecisionsCase, EmbeddingCase, Input, ReplyCase, ResponsesCase};

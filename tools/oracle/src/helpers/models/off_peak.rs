@@ -2,6 +2,8 @@ use betterlite_models::off_peak::schema::OffPeakBlockEntry;
 use betterlite_models::off_peak::{
     BaseCosts, ResolvedBaseCosts, TokenRates, apply_off_peak_pricing, apply_off_peak_to_base_costs,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
@@ -39,8 +41,8 @@ impl From<TokenRates> for RatesOutput {
     }
 }
 
-fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    let error = crate::helpers::HelperError {
+fn helper_error(class: &str, message: String) -> Box<HelperError> {
+    let error = HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
@@ -51,10 +53,10 @@ fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError
     Box::new(error)
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let off_peak_pricing = input
             .off_peak_pricing
             .as_ref()

@@ -8,7 +8,8 @@ use betterlite_prompts::bedrock_tools::tools::bedrock_tools;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 // The Python adapter reads `model` beside each call and resolves the same capability flags from LiteLLM's price map.
 #[derive(Debug, Deserialize)]

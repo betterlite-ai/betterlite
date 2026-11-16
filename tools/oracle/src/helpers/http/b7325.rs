@@ -10,7 +10,10 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use reqwest::redirect::Policy;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -63,11 +66,11 @@ fn access_token(request: &Request, environment: &BTreeMap<String, String>) -> He
     .map_err(|error| failure("ValueError", None, error.to_string()))?;
     let client = reqwest::ClientBuilder::new()
         .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(Policy::none())
         .build()
         .map_err(|error| failure("OSError", None, error.to_string()))?;
     let auth = GigachatAuthenticator::new(config.sections.gigachat_auth, client, SystemRuntime);
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("RuntimeError", None, error.to_string()))?;

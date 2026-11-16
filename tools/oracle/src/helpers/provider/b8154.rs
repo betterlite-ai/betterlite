@@ -9,8 +9,7 @@ use self::script::ReplyCase;
 use self::script::RequestCase;
 use self::script::SplitCase;
 use self::script::UrlCase;
-use crate::helpers::Helper;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod ops;
 mod script;

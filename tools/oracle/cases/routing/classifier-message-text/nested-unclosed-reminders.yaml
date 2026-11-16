@@ -1,0 +1,12 @@
+kind: probe
+name: nested-unclosed-reminders
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_message_text:
+        user_agent: "codex_cli_rs/1.0"
+        messages:
+          - role: user
+            content: "<system-reminder>outer <system-reminder>inner</system-reminder> tail</system-reminder> keep <environment_context>ctx</environment_context> <system-reminder>unclosed"
+compare: {ignore: []}

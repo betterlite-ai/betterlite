@@ -8,9 +8,9 @@ use crate::case::{Case, ScenarioCase};
 use crate::cli::Options;
 use crate::gateway::GatewayInput;
 use crate::http;
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, ScriptSpec};
 use crate::routing_scenarios;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{MockScript, ScriptSpec};
 
 // A scenario is always its own gateway pair, so there is no group key or multi-case bookkeeping.
 pub(super) fn run_scenario_case(

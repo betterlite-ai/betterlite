@@ -18,7 +18,7 @@ description: >-
   production MCP area, shared registry and transport; do not assemble a router of fake MCP
   handlers. Inject only outside dependencies such as the upstream peer and recording exporter.
 
-  One small oracle facility is needed. tools/oracle/src/mock/mcp_reply.rs transforms an
+  One small oracle facility is needed. tools/oracle/runner/src/mock/mcp_reply.rs transforms an
   already parsed mock reply for a request whose path starts with /__mcp_fixture/. Extract
   only its JSON-RPC string or integer id into an owned correlation value. When an Answer's
   JSON object has jsonrpc "2.0" and top-level id equal to the string "$mcp_request_id",
@@ -126,8 +126,8 @@ scope:
   paths:
     - crates/betterlite-server/src/mcp/gateway_parity.rs
     - crates/betterlite-server/src/mcp/gateway_parity/**
-    - tools/oracle/src/mock/mcp_reply.rs
-    - tools/oracle/src/mock/mcp_reply/**
+    - tools/oracle/runner/src/mock/mcp_reply.rs
+    - tools/oracle/runner/src/mock/mcp_reply/**
     - tools/oracle/cases/http/mcp-gateway-parity/**
     - tools/oracle/fuzz/corpus/http_case/mcp-gateway-parity-*
   lint_tables: false
@@ -172,7 +172,7 @@ checks:
   commands:
     - id: mock-tests
       why: The id transformer or the real mock handoff is absent, or other mock traffic is changed.
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^mock::mcp_reply::/)'
+      run: cargo nextest run --locked -p betterlite-oracle-runner --no-tests=fail -E 'test(/^mock::mcp_reply::/)'
     - id: composition-tests
       why: Registry sharing, authorization-before-egress, tracing handoff or SSE shutdown is not exercised through the actual application.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::gateway_parity::/)'
