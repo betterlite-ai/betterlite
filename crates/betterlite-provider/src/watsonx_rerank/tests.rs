@@ -298,6 +298,22 @@ async fn auth_uses_environment_token() {
     assert_eq!(options, Params::new());
 }
 
+// an empty env token or zen key counts as unset, so the IAM fallback runs and fails without a key
+#[tokio::test]
+async fn auth_empty_environment_values_fall_through() {
+    let auth = auth(environment(&[
+        ("WATSONX_TOKEN", ""),
+        ("WATSONX_ZENAPIKEY", ""),
+    ]));
+    let mut options = Params::new();
+    let error = config(&auth)
+        .validate_environment(Headers::new(), None, &mut options)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, WatsonxRerankError::Watsonx(_)));
+    assert_eq!(error.status(), None);
+}
+
 #[rstest]
 #[case::option(r#"{"zen_api_key":"z"}"#, None, "ZenApiKey z")]
 #[case::option_after_null_token(r#"{"token":null,"zen_api_key":"z"}"#, None, "ZenApiKey z")]
