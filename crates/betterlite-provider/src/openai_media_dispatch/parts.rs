@@ -28,18 +28,15 @@ pub(super) fn media_part(part: MediaMultipartPart<'_>) -> MediaPart {
         content_type,
         body,
     } = part;
+    let part_body = match body {
+        MediaBody::Bytes(bytes) => MediaPartBody::Bytes(bytes.to_vec()),
+        MediaBody::Text(text) => MediaPartBody::Text(text.to_owned()),
+        MediaBody::Stream { .. } => MediaPartBody::Streamed,
+    };
     MediaPart {
         field,
         filename: Some(filename),
         content_type: Some(content_type.to_owned()),
-        body: media_body(body),
-    }
-}
-
-fn media_body(body: MediaBody<'_>) -> MediaPartBody {
-    match body {
-        MediaBody::Bytes(bytes) => MediaPartBody::Bytes(bytes.to_vec()),
-        MediaBody::Text(text) => MediaPartBody::Text(text.to_owned()),
-        MediaBody::Stream { .. } => MediaPartBody::Streamed,
+        body: part_body,
     }
 }
