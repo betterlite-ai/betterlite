@@ -157,6 +157,11 @@ async fn handshake_error() {
     assert_eq!(status, 400);
     assert_eq!(body, ERROR_TEXT);
     assert_eq!(header(&headers, "x-request-id"), Some("req-1"));
+    // a body that is not UTF-8 reads its byte count, the text a JSON record can carry
+    let error = undecodable_handshake().await;
+    let (status, body, _headers) = anthropic_error(error);
+    assert_eq!(status, 400);
+    assert_eq!(body, "2 bytes that are not text");
 }
 
 async fn async_handshake(exception_headers: Option<HeaderMap>) -> StreamOpenError<FixtureFailure> {
@@ -196,6 +201,30 @@ async fn sync_handshake() -> StreamOpenError<FixtureFailure> {
         logger: &logger,
     };
     let result = make_sync_call(
+        clients,
+        &stream_call(DATA, &messages, &reverse),
+        stream_build(&FixedIds),
+    )
+    .await;
+    assert_no_post_call(&logger.state());
+    match result {
+        Ok(_) => panic!("a status error opens no stream"),
+        Err(error) => error,
+    }
+}
+
+async fn undecodable_handshake() -> StreamOpenError<FixtureFailure> {
+    let messages = messages();
+    let reverse = reverse_map();
+    let transport = FixtureTransport::status_bytes(400, vec![0xff, 0xfe], response_headers(), None);
+    let logger = RecordingLogger::new(&messages);
+    let clients = StreamClients {
+        supplied: Some(&transport),
+        module_level_aclient: &transport,
+        module_level_client: &transport,
+        logger: &logger,
+    };
+    let result = make_call(
         clients,
         &stream_call(DATA, &messages, &reverse),
         stream_build(&FixedIds),
