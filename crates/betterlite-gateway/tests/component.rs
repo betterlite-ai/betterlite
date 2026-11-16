@@ -70,16 +70,14 @@ struct Server {
     _output: BufReader<ChildStderr>,
 }
 
-impl Server {
-    fn terminate(mut self) -> Option<i32> {
-        let mut child = self.child.take().unwrap();
-        kill(
-            Pid::from_raw(i32::try_from(child.id()).unwrap()),
-            Signal::SIGTERM,
-        )
-        .unwrap();
-        child.wait().unwrap().code()
-    }
+fn terminate(mut server: Server) -> Option<i32> {
+    let mut child = server.child.take().unwrap();
+    kill(
+        Pid::from_raw(i32::try_from(child.id()).unwrap()),
+        Signal::SIGTERM,
+    )
+    .unwrap();
+    child.wait().unwrap().code()
 }
 
 impl Drop for Server {
@@ -114,7 +112,7 @@ async fn status_and_body(port: u16, path: &str) -> (u16, String) {
 async fn shutdown_exits_zero_on_sigterm() {
     let (_directory, config) = config_file(EMPTY_CONFIG);
     let server = start(&mut command(&config, 0));
-    assert_eq!(server.terminate(), Some(0_i32));
+    assert_eq!(terminate(server), Some(0_i32));
 }
 
 #[tokio::test]
@@ -122,7 +120,7 @@ async fn shutdown_exits_zero_with_a_config_that_reads_the_process_environment() 
     let (_directory, config) =
         config_file("general_settings:\n  master_key: os.environ/B4471_MASTER\n");
     let server = start(command(&config, 0).env("B4471_MASTER", "environment-master"));
-    assert_eq!(server.terminate(), Some(0_i32));
+    assert_eq!(terminate(server), Some(0_i32));
 }
 
 #[tokio::test]
@@ -175,7 +173,7 @@ async fn shutdown_exits_zero_after_filtering_requests_by_path() {
     assert_eq!(allowed_status, 200);
     let (chat_status, _) = status_and_body(port, "/v1/chat/completions").await;
     assert_ne!(chat_status, 404);
-    assert_eq!(server.terminate(), Some(0_i32));
+    assert_eq!(terminate(server), Some(0_i32));
 }
 
 #[tokio::test]
@@ -183,7 +181,7 @@ async fn dropping_the_server_stops_the_process_and_closes_its_port() {
     let (_directory, config) = config_file(EMPTY_CONFIG);
     let server = start(&mut command(&config, 0));
     let port = server.port;
-    assert!(TcpStream::connect(("127.0.0.1", port)).await.is_ok());
+    TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     drop(server);
-    assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
+    TcpStream::connect(("127.0.0.1", port)).await.unwrap_err();
 }
