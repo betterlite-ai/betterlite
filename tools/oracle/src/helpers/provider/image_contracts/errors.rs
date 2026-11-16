@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 
 use super::fixtures::{EditFixture, GenerationFixture, VariationFixture};
 use super::{BaseErrors, MODEL};
+use std::fmt::Display;
 
 pub(super) fn base_errors(fields: &BaseErrors) -> Value {
     let generation = BaseImageGenerationConfig::get_error_class(
@@ -108,7 +109,7 @@ fn response_probes() -> (String, String) {
 
 fn raised<T, E>(outcome: Result<T, E>) -> String
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     match outcome {
         Ok(_) => String::from("no error"),

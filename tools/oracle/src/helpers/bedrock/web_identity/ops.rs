@@ -4,7 +4,6 @@ use super::fixture::{
 };
 use super::input::{Case, Input, ReplyTag, WebIdentityReply};
 use super::ports;
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_bedrock::assume_role::expiry::{Expiration, StsResponse};
 use betterlite_bedrock::aws_endpoints::error::AwsEndpointError;
 use betterlite_bedrock::aws_endpoints::sts::StsClientKwargs;
@@ -15,16 +14,19 @@ use betterlite_bedrock::web_identity::claims::decode_web_identity_claims;
 use betterlite_bedrock::web_identity::error::WebIdentityError;
 use betterlite_bedrock::web_identity::irsa::{SameAccountIrsa, handle_irsa_same_account};
 use betterlite_config::sections::bedrock_web_identity::DEFAULT_MAX_POLICY_SIZE;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
-use tokio::runtime::Runtime;
+use std::io::Error;
+use tokio::runtime::{Builder, Runtime};
 #[derive(Debug, thiserror::Error)]
 pub(super) enum FixtureError {
     #[error(transparent)]
     Endpoint(#[from] AwsEndpointError),
     #[error(transparent)]
-    Runtime(#[from] std::io::Error),
+    Runtime(#[from] Error),
     #[error("{0}")]
     Case(&'static str),
 }
@@ -53,7 +55,7 @@ pub(super) fn fixture(
     let record = transport.record.clone();
     let native = fixture::sources(&case.environment, files, transport);
     let kwargs = fixture::kwargs(&case.environment).map_err(FixtureError::from)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(FixtureError::from)?;

@@ -19,8 +19,9 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::{ParamCase, ReplyCase, RequestCase};
-use crate::helpers::HelperError;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::{Builder, Runtime};
 
 const NOW: i64 = 1_700_000_000;
 
@@ -39,8 +40,8 @@ impl TokenCounter for WordsCounter {
     }
 }
 
-pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|source| {

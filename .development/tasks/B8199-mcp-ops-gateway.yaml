@@ -11,7 +11,7 @@ description: >-
   overloads; Rust uses one enum of operations and one enum of results, and execute matches on the
   operation. An operation kind that proxy mode does not allow is rejected with the Python's text.
 
-  The plan registers helper operation b8199 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8199.rs, write tools/oracle/helpers/b8199.py, and leave both registries as they are.
+  The plan registers helper operation b8199 as a not_built stub in tools/oracle/src/helpers/mcp/lib.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8199.rs, write tools/oracle/helpers/b8199.py, and leave both registries as they are.
 
 scope:
   paths:

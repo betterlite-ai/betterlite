@@ -12,18 +12,20 @@ use betterlite_models::passthrough_policies::sdk_timeout::{
 use serde_json::json;
 use url::Url;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::{DeploymentFields, Input, Operation, RequestFields, RouterFields, ValueInput};
+use std::fmt::Display;
 
 mod input;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.operation {
             Operation::QueryMerge => query_output(input),
             Operation::ForwardHeaders => header_output(input),
@@ -39,7 +41,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn query_output(input: &Input) -> crate::helpers::HelperResult {
+fn query_output(input: &Input) -> HelperResult {
     let existing_url = input
         .existing_url
         .as_deref()
@@ -51,7 +53,7 @@ fn query_output(input: &Input) -> crate::helpers::HelperResult {
     serde_json::to_value(merged).map_err(|error| helper_error("Serialize", error))
 }
 
-fn header_output(input: &Input) -> crate::helpers::HelperResult {
+fn header_output(input: &Input) -> HelperResult {
     let request = input.request_headers.clone().unwrap_or_default();
     let custom = input.custom_headers.clone().unwrap_or_default();
     let merged =
@@ -73,7 +75,7 @@ fn settings_timeout(input: &Input) -> Result<f64, Box<HelperError>> {
     Ok(config.sections.passthrough_request_policies.request_timeout)
 }
 
-fn sdk_output(input: &Input) -> crate::helpers::HelperResult {
+fn sdk_output(input: &Input) -> HelperResult {
     let settings = settings_timeout(input)?;
     let request = request_timeouts(input.request.as_ref());
     let deployment = deployment_timeouts(input.deployment.as_ref());
@@ -124,7 +126,7 @@ fn timeout_value(input: Option<&ValueInput>) -> Option<TimeoutValue> {
 
 fn helper_error<Message>(class: &str, message: Message) -> Box<HelperError>
 where
-    Message: std::fmt::Display,
+    Message: Display,
 {
     Box::new(HelperError {
         class: class.to_owned(),

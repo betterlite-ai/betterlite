@@ -9,7 +9,9 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::slice;
 
 pub(crate) struct Op;
 
@@ -76,7 +78,7 @@ impl Helper for Op {
                 span_id,
                 log_stream_id,
             } => Ok(json!(trace::build_traces_payload(
-                std::slice::from_ref(record),
+                slice::from_ref(record),
                 &[(trace_id.clone(), span_id.clone())],
                 log_stream_id.as_deref(),
             ))),

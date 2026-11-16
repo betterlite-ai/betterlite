@@ -17,7 +17,8 @@ use indexmap::IndexSet;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -125,10 +126,10 @@ fn construction_reports(models: &[String]) -> Result<Value, Box<HelperError>> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::ChatConfigSelector { models } => chat_reports(models),
             Input::NativeMessagesRoute { models } => Ok(Value::Array(

@@ -1,4 +1,4 @@
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn failure(message: String) -> Box<HelperError> {
     Box::new(HelperError {

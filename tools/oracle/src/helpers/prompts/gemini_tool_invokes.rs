@@ -11,7 +11,8 @@ use betterlite_prompts::message_content::Message;
 use serde::Deserialize;
 use serde_json::{json, to_value};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", deny_unknown_fields)]

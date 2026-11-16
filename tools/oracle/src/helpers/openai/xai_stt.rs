@@ -18,7 +18,8 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use super::xai_files::{LIMITS, authorization, outcome, settings, upstream};
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -131,10 +132,10 @@ fn step(step: &Step, settings: &Settings) -> Result<Value, Box<HelperError>> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let settings = settings(input.xai_key.as_deref(), &input.env);
         let answers = input
             .steps
