@@ -1,6 +1,6 @@
 import json
 from datetime import date
-from typing import ClassVar, Final, Literal, TypeAlias, TypedDict, cast
+from typing import ClassVar, Final, Literal, Self, TypeAlias, TypedDict, cast
 
 from litellm.proxy.management_endpoints.usage_endpoints import ai_usage_chat
 from litellm.proxy.management_endpoints.usage_endpoints.ai_usage_chat import (
@@ -91,7 +91,7 @@ class FixedDate(date):
 
     @classmethod
     @override
-    def today(cls) -> FixedDate:
+    def today(cls) -> Self:
         return cls.fromisoformat(cls.iso)
 
 
