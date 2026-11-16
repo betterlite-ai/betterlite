@@ -6,10 +6,22 @@ use std::time::Duration;
 use betterlite_logging::azure_storage_logging::logger::CALLBACK_NAME;
 use betterlite_logging::callback_logger::CallbackLogger;
 
-use super::support::{Harness, event, settings};
+use super::support::{Harness, event, settings, settings_with_account_key};
 use crate::api::file_storage_contracts::storage::FileStorageBackend;
 
 const SUPPLIED: &str = "https://acct.blob.core.windows.net/files/a.txt";
+
+// the logger uploads to the same filesystem under the same key, so the backend hands it its settings
+#[test]
+fn the_logger_gets_the_backend_settings() {
+    let harness = Harness::new(settings_with_account_key(), &[]);
+    let logger = &harness.backend.logger.settings;
+    assert_eq!(logger.account_name, "acct");
+    assert_eq!(logger.file_system, "files");
+    assert_eq!(logger.dfs_endpoint, "https://acct.dfs.core.windows.net");
+    assert_eq!(logger.blob_endpoint, "https://acct.blob.core.windows.net");
+    assert!(logger.account_key.is_some());
+}
 
 #[tokio::test]
 async fn logger_overrides_do_nothing() {
