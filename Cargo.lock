@@ -3349,6 +3349,7 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "betterlite-a2a",
+ "betterlite-analytics",
  "betterlite-auth",
  "betterlite-azure",
  "betterlite-bedrock",
