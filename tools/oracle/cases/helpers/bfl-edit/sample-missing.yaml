@@ -1,0 +1,26 @@
+kind: helper
+name: sample-missing
+call:
+  bfl_edit:
+    operation: sample_required
+    status: 200
+    body: '{"status":"Ready"}'
+    now: 1700000000
+calls:
+  - bfl_edit:
+      operation: sample_required
+      status: 200
+      body: '{"result":{"sample":null}}'
+      now: 1700000000
+  - bfl_edit:
+      operation: sample_required
+      status: 200
+      body: '{"result":{"sample":""}}'
+      now: 1700000000
+  - bfl_edit:
+      operation: sample_required
+      status: 502
+      body: 'not json'
+      now: 1700000000
+env: {}
+compare: {ignore: []}

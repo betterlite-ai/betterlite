@@ -1,0 +1,13 @@
+id: B9967
+milestone: R2 bug fixes
+title: Deploy deadline outcome does not race its own lock
+status: todo
+depends_on: [B717]
+file: tasks/B9967-deploy-deadline-outcome.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

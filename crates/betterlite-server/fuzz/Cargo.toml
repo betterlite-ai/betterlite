@@ -191,3 +191,10 @@ path = "fuzz_targets/workflow_run_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mcp_rotation_blob"
+path = "fuzz_targets/mcp_rotation_blob.rs"
+test = false
+doc = false
+bench = false
