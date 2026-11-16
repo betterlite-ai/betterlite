@@ -520,6 +520,8 @@ async fn cancel_transport_failure_is_a_500() {
         VertexBatchLifecycleError::CancelTransport { .. }
     ));
     assert_eq!(error.status_code(), 500);
+    // the POST is never retried, so the transport saw exactly one attempt
+    assert_eq!(transport.requests().len(), 1);
 }
 
 #[tokio::test]
