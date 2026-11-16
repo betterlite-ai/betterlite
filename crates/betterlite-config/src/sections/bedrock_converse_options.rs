@@ -68,8 +68,7 @@ struct RawDeployment {
     litellm_params: RawValues,
 }
 
-// Numbers take a RawNumber so an os.environ/ reference reads into the field's type instead of failing
-// the YAML view every section parses.
+// Numbers take a RawNumber so an os.environ/ reference reads into the field's type, not a YAML error.
 #[derive(Debug, Default, Deserialize)]
 struct RawValues {
     #[serde(rename = "maxTokens")]

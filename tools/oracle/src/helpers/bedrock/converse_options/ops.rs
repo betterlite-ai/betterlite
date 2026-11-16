@@ -66,7 +66,7 @@ fn current_thread_runtime() -> Result<Runtime, Box<HelperError>> {
 
 // The ceiling fields are all normalize_opus_effort reads; the case map supplies them directly.
 struct CaseLookup<'case> {
-    entries: &'case ParamMap,
+    model_cost: &'case ParamMap,
 }
 
 impl ModelInfoLookup for CaseLookup<'_> {
@@ -77,7 +77,7 @@ impl ModelInfoLookup for CaseLookup<'_> {
         model: &str,
     ) -> impl Future<Output = Result<ModelInfo, Infallible>> + Send {
         let mut fields = vec![("key".to_owned(), Json::Text(model.to_owned()))];
-        if let Some(ParamValue::Mapping(entry)) = self.entries.get(model)
+        if let Some(ParamValue::Mapping(entry)) = self.model_cost.get(model)
             && let Some(ParamValue::Text(ceiling)) =
                 entry.get("bedrock_output_config_effort_ceiling")
         {
@@ -119,9 +119,7 @@ fn handle(
     let budget_settings = budgets(environment)?;
     let resolution = fixture.resolution();
     let catalogs = fixture.catalogs();
-    let lookup = CaseLookup {
-        entries: model_cost,
-    };
+    let lookup = CaseLookup { model_cost };
     let mut params = optional_params.clone();
     let runtime = current_thread_runtime()?;
     let mut keys = ModelCostKeys::default();
@@ -138,9 +136,8 @@ fn handle(
             handle_reasoning_effort(model, effort, &mut params, &mut capability, &sources).await
         })
         .map_err(|error| helper_error(&error, error.status_code()))?;
-    Ok(
-        json!({ "params": serde_json::to_value(params).map_err(|error| helper_error(error, None))? }),
-    )
+    let params = serde_json::to_value(params).map_err(|error| helper_error(error, None))?;
+    Ok(json!({ "params": params }))
 }
 
 fn params(model_cost: &ParamMap, models: &[String]) -> HelperResult {

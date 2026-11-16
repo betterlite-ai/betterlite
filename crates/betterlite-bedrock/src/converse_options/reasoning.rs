@@ -53,11 +53,10 @@ where
         return Ok(());
     }
     if is_openai_gpt_reasoning_model(model) {
-        let mut reasoning = ParamMap::new();
-        reasoning.insert(
+        let reasoning = ParamMap::from([(
             EFFORT_FIELD.to_owned(),
             ParamValue::Text(reasoning_effort.to_owned()),
-        );
+        )]);
         optional_params.insert("reasoning".to_owned(), ParamValue::Mapping(reasoning));
         return Ok(());
     }
@@ -136,34 +135,21 @@ where
     Transport: ModelInfoClient,
     Lookup: ModelInfoLookup,
 {
-    let mut output_config = ParamValue::Mapping(match optional_params.get(OUTPUT_CONFIG_FIELD) {
-        Some(ParamValue::Mapping(fields)) => fields.clone(),
-        Some(
-            ParamValue::Null
-            | ParamValue::Bool(_)
-            | ParamValue::Number(_)
-            | ParamValue::Text(_)
-            | ParamValue::List(_),
-        )
-        | None => ParamMap::new(),
-    });
-    if let ParamValue::Mapping(fields) = &mut output_config {
-        fields
-            .entry(EFFORT_FIELD.to_owned())
-            .or_insert(ParamValue::Text(mapped_effort.to_owned()));
+    let mut fields = ParamMap::new();
+    if let Some(ParamValue::Mapping(existing)) = optional_params.get(OUTPUT_CONFIG_FIELD) {
+        fields.clone_from(existing);
     }
+    fields
+        .entry(EFFORT_FIELD.to_owned())
+        .or_insert(ParamValue::Text(mapped_effort.to_owned()));
+    let mut output_config = ParamValue::Mapping(fields);
     normalize_opus_effort(model, &mut output_config, sources.lookup, sources.packaged).await?;
-    let effort = match &output_config {
-        ParamValue::Mapping(fields) => fields
-            .get(EFFORT_FIELD)
-            .cloned()
-            .unwrap_or(ParamValue::Null),
-        ParamValue::Null
-        | ParamValue::Bool(_)
-        | ParamValue::Number(_)
-        | ParamValue::Text(_)
-        | ParamValue::List(_) => ParamValue::Null,
-    };
+    let mut effort = ParamValue::Null;
+    if let ParamValue::Mapping(normalized) = &output_config
+        && let Some(declared) = normalized.get(EFFORT_FIELD)
+    {
+        effort.clone_from(declared);
+    }
     validate_adaptive_effort(model, &effort, environment, sources.catalogs).await?;
     optional_params.insert(OUTPUT_CONFIG_FIELD.to_owned(), output_config);
     optional_params.insert(
