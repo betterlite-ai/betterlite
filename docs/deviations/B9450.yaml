@@ -58,4 +58,21 @@ deviations:
       the sanitized text, so the hook cannot update the original's mirror without changing B3762's
       entry point.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L532-L575
+  - what: >-
+      With original_response present, an MCP output block rewrites call.original's text content but
+      leaves the original's structured_content / structuredContent mirror and is_error unchanged.
+    why: >-
+      LiteLLM's _replace_mcp_tool_response also sets the mirror to the replacement's structured
+      content and is_error to true on the original object; B9450's replace_tool_response only
+      rewrites content, and the block payload carries no value for either field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L214-L243
+  - what: >-
+      The synthesized MCP violation message's text content is the block payload in compact JSON
+      (serde_json's formatting), not in Python's json.dumps spacing.
+    why: >-
+      LiteLLM builds the blocking TextContent with json.dumps(payload) (", " and ": " separators);
+      betterlite serializes the same payload with serde_json, which emits no spaces. The parsed JSON
+      is identical, so the oracle cases compare the text after parsing it, and a client that parses
+      the text sees no difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L175-L213
 kept_bugs: []
