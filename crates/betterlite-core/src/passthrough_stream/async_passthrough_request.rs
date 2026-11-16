@@ -90,9 +90,6 @@ where
         )));
     }
     let target = logging.spend_target();
-    let model = target.model.to_owned();
-    let custom_llm_provider = target.custom_llm_provider.to_owned();
-    let endpoint = target.endpoint.to_owned();
     let mut stream = AsyncPassthroughStream {
         initialized: false,
         status_code: 0,
@@ -102,9 +99,9 @@ where
         spend: SpendCollection {
             sink: Some(OwnedProviderSpend {
                 config: provider_config,
-                model,
-                custom_llm_provider,
-                endpoint,
+                model: target.model.to_owned(),
+                custom_llm_provider: target.custom_llm_provider.to_owned(),
+                endpoint: target.endpoint.to_owned(),
                 chunks: Vec::new(),
                 collected_bytes: 0,
                 disabled: false,
