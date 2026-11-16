@@ -1,0 +1,71 @@
+kind: helper
+name: openrouter-image-edit-url-key-request
+call:
+  b5830:
+    op: edit_request
+    cases:
+      - model: google/gemini-2.5-flash-image
+        prompt: make it blue
+        image: {kind: bytes, data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="}
+        optional_params:
+          image_config: {aspect_ratio: "1:1"}
+          n: 1
+          model: ignored
+          messages: ignored
+          modalities: ignored
+        headers: {X-Trace: t1}
+        api_key: sk-key
+        global_api_key: null
+        environment: {}
+        api_base: https://proxy.example/v1
+      - model: google/gemini-2.5-flash-image
+        prompt: add a hat
+        image: {kind: reader, data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", position: 2}
+        optional_params: {}
+        headers: {}
+        api_key: ""
+        global_api_key: sk-global
+        environment: {OPENROUTER_API_KEY: sk-env, OPENROUTER_API_BASE: "https://env.example/v1///"}
+        api_base: null
+      - model: google/gemini-2.5-flash-image
+        prompt: null
+        image: {kind: bytes, data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="}
+        optional_params: {}
+        headers: {}
+        api_key: sk-key
+        global_api_key: null
+        environment: {}
+        api_base: null
+      - model: google/gemini-2.5-flash-image
+        prompt: add a hat
+        image: null
+        optional_params: {}
+        headers: {}
+        api_key: sk-key
+        global_api_key: null
+        environment: {}
+        api_base: null
+      - model: google/gemini-2.5-flash-image
+        prompt: add a hat
+        image: null
+        optional_params: {}
+        headers: {}
+        api_key: null
+        global_api_key: null
+        environment: {OPENROUTER_API_KEY: sk-env}
+        api_base: "https://proxy.example/chat/completions/"
+calls:
+  - b5830:
+      op: edit_request
+      cases:
+        - model: google/gemini-2.5-flash-image
+          prompt: add a hat
+          image: null
+          optional_params: {}
+          headers: {}
+          api_key: null
+          global_api_key: null
+          environment: {}
+          api_base: null
+env: {}
+compare: {ignore: []}
