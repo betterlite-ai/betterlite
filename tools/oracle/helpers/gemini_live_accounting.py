@@ -150,8 +150,9 @@ def usage_value(config: LiveConfig, step: UsageStep) -> JsonValue:
         "current_delta_type": None,
         "session_configuration_request": None,
     }
+    frame: UsageObject = {"usageMetadata": step["usage"]}
     answer = config.transform_realtime_response(
-        json.dumps({"usageMetadata": step["usage"]}),
+        json.dumps(frame),
         MODEL,
         Trace(litellm_trace_id="trace"),
         transform_input,
@@ -181,13 +182,14 @@ def step_value(config: LiveConfig, step: Step) -> JsonValue:
         return client_messages(config, step["message"])
     if step["kind"] == "audio":
         audio = b64encode(bytes(step["audio_bytes"])).decode()
-        append = json.dumps({"type": "input_audio_buffer.append", "audio": audio})
-        return {"sent": len(config.transform_realtime_request(append, MODEL))}
+        append: UsageObject = {"type": "input_audio_buffer.append", "audio": audio}
+        return {"sent": len(config.transform_realtime_request(json.dumps(append), MODEL))}
     if step["kind"] == "standalone_usage":
         return usage_value(config, step)
     if step["kind"] == "response_done":
         return done_value(config, step)
-    return {"usage": DOCUMENT.validate_python(config.unbilled_usage_on_session_close(step["model"]))}
+    closed = config.unbilled_usage_on_session_close(step["model"])
+    return {"usage": DOCUMENT.validate_python(closed)}
 
 
 def run(input_value: JsonValue) -> JsonValue:
@@ -195,7 +197,7 @@ def run(input_value: JsonValue) -> JsonValue:
     litellm_uuid.uuid4 = CountedUuid()
     config: LiveConfig
     add_aliases: AliasAdder
-    config, add_aliases = GeminiRealtimeConfig(), GeminiRealtimeConfig._add_pipecat_usage_detail_aliases  # type: ignore[no-untyped-call,assignment,misc]  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L143-L189
+    config, add_aliases = GeminiRealtimeConfig(), GeminiRealtimeConfig._add_pipecat_usage_detail_aliases  # type: ignore[no-untyped-call,assignment]  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L143-L189
     if parsed["op"] == "aliases":
         usage = parsed.get("usage")
         if usage is None:

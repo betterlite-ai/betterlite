@@ -29,7 +29,7 @@ calls:
       op: steps
       steps:
         - kind: calls
-          burst: {count: 258, id_prefix: c, name_prefix: n}
+          burst: {count: 258, id_prefix: "c", name_prefix: "n"}
           response_id: resp
           output_item_id: item
         - kind: message
