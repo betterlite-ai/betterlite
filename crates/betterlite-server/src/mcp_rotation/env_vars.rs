@@ -15,7 +15,7 @@ use super::error::RotationCodecError;
 const GLOBAL_ENV_VAR_KEY: &str = "mcp_global_env_var";
 
 pub fn reencrypt_global_env_values<N, D>(
-    stored: Option<&JsonValue>,
+    column: Option<&JsonValue>,
     cipher: &StoredCipher<N, D>,
     new_key: &SecretString,
 ) -> Result<Option<JsonValue>, RotationCodecError>
@@ -23,7 +23,7 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    let Some(stored) = stored else {
+    let Some(stored) = column else {
         return Ok(None);
     };
     let Some(value) = decode_env_entries(stored)? else {

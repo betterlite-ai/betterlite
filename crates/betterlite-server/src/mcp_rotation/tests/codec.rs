@@ -13,8 +13,8 @@ use super::super::codec::{
 };
 use super::super::error::RotationCodecError;
 use super::support::{
-    NEW_KEY, OLD_KEY, blob, cipher, decode_credential, decode_env_var, exposed, json, new_key,
-    object, open, sealed, string,
+    NEW_KEY, OLD_KEY, blob, cipher, credential_text, decode_credential, decode_env_var, json,
+    new_key, object, open, sealed, string,
 };
 
 const SECRET_FIELDS: [&str; 7] = [
@@ -59,9 +59,9 @@ fn credential_field_matrix(#[case] field: &str) {
     let JsonValue::String(text) = rotated else {
         panic!("the rotated credentials are a JSON text string");
     };
-    let rotated = blob(&text);
+    let fields = blob(&text);
     assert_eq!(
-        rotated.get(field),
+        fields.get(field),
         Some(&string(&sealed(&format!("{field}-value"), NEW_KEY))),
         "the {field} field is re-encrypted under the new key"
     );
@@ -78,13 +78,13 @@ fn credential_field_matrix_leaves_other_fields() {
     let JsonValue::String(text) = rotated else {
         panic!("the rotated credentials are a JSON text string");
     };
-    let rotated = blob(&text);
-    assert_eq!(rotated.get("aws_region_name"), Some(&string("us-east-1")));
+    let fields = blob(&text);
+    assert_eq!(fields.get("aws_region_name"), Some(&string("us-east-1")));
     assert_eq!(
-        rotated.get("aws_service_name"),
+        fields.get("aws_service_name"),
         Some(&string("bedrock-agentcore"))
     );
-    assert_eq!(rotated.get("scopes"), Some(&json(r#"["read","write"]"#)));
+    assert_eq!(fields.get("scopes"), Some(&json(r#"["read","write"]"#)));
 }
 
 #[test]
@@ -101,11 +101,11 @@ fn credential_field_matrix_leaves_null_and_non_string_fields() {
     let JsonValue::String(text) = rotated else {
         panic!("the rotated credentials are a JSON text string");
     };
-    let rotated = blob(&text);
-    assert_eq!(rotated.get("auth_value"), Some(&JsonValue::Null));
-    assert_eq!(rotated.get("client_id"), Some(&json("17")));
+    let fields = blob(&text);
+    assert_eq!(fields.get("auth_value"), Some(&JsonValue::Null));
+    assert_eq!(fields.get("client_id"), Some(&json("17")));
     assert_eq!(
-        rotated.get("client_secret"),
+        fields.get("client_secret"),
         Some(&json(r#"{"nested":"map"}"#))
     );
 }
@@ -126,13 +126,13 @@ fn credential_decrypt_passthrough() {
     let JsonValue::String(text) = rotated else {
         panic!("the rotated credentials are a JSON text string");
     };
-    let rotated = blob(&text);
+    let fields = blob(&text);
     assert_eq!(
-        rotated.get("client_id"),
+        fields.get("client_id"),
         Some(&string(&sealed("plain-text-not-ciphertext", NEW_KEY)))
     );
     assert_eq!(
-        rotated.get("client_secret"),
+        fields.get("client_secret"),
         Some(&string(&sealed("client-secret-value", NEW_KEY)))
     );
 }
@@ -183,9 +183,9 @@ fn credential_json_text_blob_is_reencrypted() {
     let JsonValue::String(text) = rotated else {
         panic!("the rotated credentials are a JSON text string");
     };
-    let rotated = blob(&text);
+    let fields = blob(&text);
     assert_eq!(
-        rotated.get("auth_value"),
+        fields.get("auth_value"),
         Some(&string(&sealed("auth_value-value", NEW_KEY)))
     );
 }
@@ -231,8 +231,10 @@ fn decrypt_credentials_keeps_undecryptable_strings() {
 #[test]
 fn user_legacy_base64() {
     let old = cipher(OLD_KEY);
-    let plaintext = decode_credential("aGVsbG8tdG9rZW4=", &old);
-    assert_eq!(exposed(plaintext).as_deref(), Some("hello-token"));
+    assert_eq!(
+        credential_text("aGVsbG8tdG9rZW4=", &old).as_deref(),
+        Some("hello-token")
+    );
     let decoded = decode_credential("aGVsbG8tdG9rZW4=", &old);
     let rotated = reencrypt_user_value(decoded, &old, &new_key())
         .unwrap()
@@ -246,8 +248,8 @@ fn user_legacy_base64() {
 #[test]
 fn user_empty_plaintext() {
     let old = cipher(OLD_KEY);
-    assert_eq!(exposed(decode_credential("", &old)).as_deref(), Some(""));
-    assert_eq!(exposed(decode_credential("***", &old)).as_deref(), Some(""));
+    assert_eq!(credential_text("", &old).as_deref(), Some(""));
+    assert_eq!(credential_text("***", &old).as_deref(), Some(""));
     let decoded = decode_credential("", &old);
     let rotated = reencrypt_user_value(decoded, &old, &new_key())
         .unwrap()
@@ -288,7 +290,7 @@ fn user_env_no_base64_fallback() {
         None
     );
     assert_eq!(
-        exposed(decode_credential("aGVsbG8tdG9rZW4=", &old)).as_deref(),
+        credential_text("aGVsbG8tdG9rZW4=", &old).as_deref(),
         Some("hello-token")
     );
 }
@@ -340,5 +342,5 @@ fn secret_error_classes_surface() {
     };
     let result = encrypt_credentials(&mut credentials, &missing, None);
     assert!(matches!(result, Err(SecretError::MissingKey)));
-    assert!(encrypt_credentials(&mut credentials, &cipher, Some(&new_key())).is_ok());
+    encrypt_credentials(&mut credentials, &cipher, Some(&new_key())).unwrap();
 }

@@ -20,7 +20,7 @@ use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
-use betterlite_redis::config_sync::table_actions::TableActions;
+use betterlite_redis::config_sync::table_actions::TableActions as _;
 use betterlite_secrets::secret_codec::secret_map::{
     SecretMap, decode_secret_map, encrypt_secret_map,
 };
@@ -189,7 +189,11 @@ fn json(text: &str) -> JsonValue {
 fn credential_field(column: &str, field: &str) -> String {
     let stored = match json(column) {
         JsonValue::String(text) => json(&text),
-        other => other,
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_)) => other,
     };
     let JsonValue::Object(fields) = stored else {
         panic!("the rotated credentials are a JSON object");
@@ -249,7 +253,7 @@ async fn assert_server_rotated(client: &Client) {
     .unwrap();
     assert_eq!(
         map.get("X-Key")
-            .map(|value| value.expose_secret().to_owned()),
+            .map(|secret| secret.expose_secret().to_owned()),
         Some("plain-value".to_owned())
     );
 }
@@ -349,13 +353,14 @@ async fn table_actions_only_update() {
         actions.delete_many(keys("u", "s")).await,
         Err(TableError::MissingRow)
     ));
-    assert!(actions.update(Vec::new(), keys("u", "s")).await.is_err());
-    assert!(
-        actions
-            .update_many(Vec::new(), keys("u", "s"))
-            .await
-            .is_err()
-    );
+    actions
+        .update(Vec::new(), keys("u", "s"))
+        .await
+        .unwrap_err();
+    actions
+        .update_many(Vec::new(), keys("u", "s"))
+        .await
+        .unwrap_err();
 }
 
 async fn user_stages(
@@ -388,61 +393,86 @@ async fn user_stages(
     .unwrap();
     let values = column_param(client, USER_ENV_SQL, "u1").await.unwrap();
     assert_eq!(open(&values, NEW_KEY).as_deref(), Some("user-env"));
-    let skipped = column_param(client, USER_ENV_SQL, "u2").await;
-    assert_eq!(skipped.as_deref(), Some("AA"));
+    let env_skipped = column_param(client, USER_ENV_SQL, "u2").await;
+    assert_eq!(env_skipped.as_deref(), Some("AA"));
 }
 
-#[tokio::test]
-async fn postgres_rows_and_failures() {
-    let (fixture, pool, client) = database().await;
-    let texts = texts();
-    seed(&client, &texts).await;
-    let writer = PostgresStore {
-        pool: Some(pool.clone()),
-    };
-    let availability = Availability::default();
-    let journal = Arc::new(Mutex::new(Vec::new()));
+fn rotation_store<'db>(
+    writer: &'db PostgresStore,
+    availability: &'db Availability,
+    journal: &Arc<Mutex<Vec<String>>>,
+) -> PostgresRotationStore<'db> {
     let prisma = Some(PrismaClient {
-        writer: &writer,
-        reader: &writer,
-        availability: &availability,
+        writer,
+        reader: writer,
+        availability,
     });
-    let publish = recording_publisher(&journal);
-    let store = PostgresRotationStore {
-        servers: PrismaTableRepository::new(prisma, publish.clone(), MCPServerTable),
-        oauth_clients: PrismaTableRepository::new(prisma, publish.clone(), MCPServerOAuthClient),
-        user_credentials: PrismaTableRepository::new(prisma, publish.clone(), MCPUserCredentials),
+    let publish = recording_publisher(journal);
+    PostgresRotationStore {
+        servers: PrismaTableRepository::new(prisma, Arc::clone(&publish), MCPServerTable),
+        oauth_clients: PrismaTableRepository::new(
+            prisma,
+            Arc::clone(&publish),
+            MCPServerOAuthClient,
+        ),
+        user_credentials: PrismaTableRepository::new(
+            prisma,
+            Arc::clone(&publish),
+            MCPUserCredentials,
+        ),
         user_env_vars: PrismaTableRepository::new(prisma, publish, McpUserEnvVars),
-    };
-    let old = cipher(OLD_KEY);
-    let key = new_key();
+    }
+}
+
+async fn server_stages(
+    client: &Client,
+    store: &PostgresRotationStore<'_>,
+    old: &TestCipher,
+    key: &SecretString,
+    journal: &Arc<Mutex<Vec<String>>>,
+) {
     let abort = Rotation {
-        store: &store,
-        cipher: &old,
-        new_key: &key,
+        store,
+        cipher: old,
+        new_key: key,
     }
     .servers("rotator")
     .await;
     assert!(abort.is_err(), "the boom row aborts the server stage");
     assert_eq!(
-        published(&journal),
+        published(journal),
         ["litellm_mcpservertable"],
         "only the committed server write is published"
     );
-    assert_server_rotated(&client).await;
-    assert_boom_untouched(&client).await;
-    assert_oauth(&client, "oauth-1", OLD_KEY).await;
+    assert_server_rotated(client).await;
+    assert_boom_untouched(client).await;
+    assert_oauth(client, "oauth-1", OLD_KEY).await;
     client.batch_execute(DROP_TRIGGER_SQL).await.unwrap();
     Rotation {
-        store: &store,
-        cipher: &old,
-        new_key: &key,
+        store,
+        cipher: old,
+        new_key: key,
     }
     .servers("rotator")
     .await
     .unwrap();
-    assert_oauth(&client, "oauth-1", NEW_KEY).await;
-    assert_oauth(&client, "oauth-2", NEW_KEY).await;
+    assert_oauth(client, "oauth-1", NEW_KEY).await;
+    assert_oauth(client, "oauth-2", NEW_KEY).await;
+}
+
+#[tokio::test]
+async fn postgres_rows_and_failures() {
+    let (fixture, pool, client) = database().await;
+    seed(&client, &texts()).await;
+    let writer = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let availability = Availability::default();
+    let journal = Arc::new(Mutex::new(Vec::new()));
+    let store = rotation_store(&writer, &availability, &journal);
+    let old = cipher(OLD_KEY);
+    let key = new_key();
+    server_stages(&client, &store, &old, &key, &journal).await;
     user_stages(&client, &store, &old, &key).await;
     assert_eq!(
         published(&journal),

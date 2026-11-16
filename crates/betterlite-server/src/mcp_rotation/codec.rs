@@ -48,13 +48,18 @@ pub fn is_falsey(value: &JsonValue) -> bool {
 fn stored_value(value: JsonValue) -> StoredValue<JsonValue> {
     match value {
         JsonValue::String(text) => StoredValue::Text(SecretString::from(text)),
-        other => StoredValue::Other(other),
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_)) => StoredValue::Other(other),
     }
 }
 
-pub fn sealed_text(sealed: StoredValue<JsonValue>) -> JsonValue {
-    match sealed {
-        StoredValue::Text(sealed) => JsonValue::String(sealed.expose_secret().to_owned()),
+#[must_use]
+pub fn sealed_text(value: StoredValue<JsonValue>) -> JsonValue {
+    match value {
+        StoredValue::Text(text) => JsonValue::String(text.expose_secret().to_owned()),
         StoredValue::Other(other) => other,
     }
 }
@@ -94,15 +99,15 @@ where
             continue;
         };
         let stored = StoredValue::<()>::Text(SecretString::from(take(text)));
-        let plaintext = cipher.decrypt_value(stored, field, KEEP_ORIGINAL);
-        if let Some(StoredValue::Text(plaintext)) = plaintext {
+        let opened = cipher.decrypt_value(stored, field, KEEP_ORIGINAL);
+        if let Some(StoredValue::Text(plaintext)) = opened {
             plaintext.expose_secret().clone_into(text);
         }
     }
 }
 
 pub fn reencrypt_credentials_blob<N, D>(
-    credentials: Option<&JsonValue>,
+    column: Option<&JsonValue>,
     cipher: &StoredCipher<N, D>,
     new_key: &SecretString,
 ) -> Result<Option<JsonValue>, RotationCodecError>
@@ -110,7 +115,7 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    let Some(credentials) = credentials else {
+    let Some(credentials) = column else {
         return Ok(None);
     };
     if is_falsey(credentials) {

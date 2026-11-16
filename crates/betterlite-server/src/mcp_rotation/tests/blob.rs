@@ -28,9 +28,9 @@ fn rotation_blob_prefers_json(#[case] text: &str, #[case] expected: JsonValue) {
 fn rotation_blob_falls_back_to_legacy_base64() {
     let encoded = URL_SAFE.encode("legacy-secret");
     let decoded = decode_mcp_rotation_blob(encoded.as_bytes()).unwrap();
-    assert!(decoded == JsonValue::String("legacy-secret".to_owned()));
+    assert_eq!(decoded, JsonValue::String("legacy-secret".to_owned()));
     let padded = decode_mcp_rotation_blob(b"aGVsbG8=").unwrap();
-    assert!(padded == JsonValue::String("hello".to_owned()));
+    assert_eq!(padded, JsonValue::String("hello".to_owned()));
 }
 
 #[test]
@@ -93,9 +93,9 @@ fn legacy_base64_rejects_like_cpython(#[case] rejected: &str) {
 fn legacy_base64_size_limit_is_enforced() {
     let at_limit = " ".repeat(MAX_ENCODED_BYTES);
     let decoded = decode_mcp_rotation_blob(at_limit.as_bytes()).unwrap();
-    assert!(decoded == JsonValue::String(String::new()));
+    assert_eq!(decoded, JsonValue::String(String::new()));
     let over_limit = " ".repeat(MAX_ENCODED_BYTES + 1);
-    assert!(decode_mcp_rotation_blob(over_limit.as_bytes()).is_err());
+    decode_mcp_rotation_blob(over_limit.as_bytes()).unwrap_err();
 }
 
 #[rstest]

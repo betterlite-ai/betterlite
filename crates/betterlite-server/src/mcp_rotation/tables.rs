@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::future::{Future, ready};
 
 use betterlite_db::auxiliary_repository::bindings::{
     MCPServerOAuthClient, MCPServerTable, MCPUserCredentials,
@@ -59,7 +60,7 @@ pub struct McpUpdateActions<'db> {
 
 impl McpUpdateActions<'_> {
     async fn changed(&self, data: &[Option<String>], keys: &[String]) -> Result<usize, TableError> {
-        let mut params: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(keys.len() + data.len());
+        let mut params: Vec<&(dyn ToSql + Sync)> = Vec::new();
         for key in keys {
             params.push(key);
         }
@@ -75,6 +76,14 @@ impl McpUpdateActions<'_> {
     }
 }
 
+macro_rules! unsupported {
+    ($($method:ident($($arg:ident: $ty:ty),*) -> $out:ty;)*) => {$(
+        fn $method(&self, $($arg: $ty),*) -> impl Future<Output = Result<$out, TableError>> + Send {
+            ready(Err(TableError::MissingRow))
+        }
+    )*};
+}
+
 impl TableActions for McpUpdateActions<'_> {
     type Row = ();
     type Filter = Vec<String>;
@@ -82,12 +91,12 @@ impl TableActions for McpUpdateActions<'_> {
     type UpdateData = Vec<Option<String>>;
     type Failure = TableError;
 
-    async fn create(&self, _data: Self::CreateData) -> Result<Self::Row, Self::Failure> {
-        Err(TableError::MissingRow)
-    }
-
-    async fn create_many(&self, _data: Vec<Self::CreateData>) -> Result<usize, Self::Failure> {
-        Err(TableError::MissingRow)
+    unsupported! {
+        create(_data: Self::CreateData) -> Self::Row;
+        create_many(_data: Vec<Self::CreateData>) -> usize;
+        upsert(_filter: Self::Filter, _data: Self::CreateData) -> Self::Row;
+        delete(_filter: Self::Filter) -> Option<Self::Row>;
+        delete_many(_filter: Self::Filter) -> usize;
     }
 
     async fn update(
@@ -104,22 +113,6 @@ impl TableActions for McpUpdateActions<'_> {
         filter: Self::Filter,
     ) -> Result<usize, Self::Failure> {
         self.changed(&data, &filter).await
-    }
-
-    async fn upsert(
-        &self,
-        _filter: Self::Filter,
-        _data: Self::CreateData,
-    ) -> Result<Self::Row, Self::Failure> {
-        Err(TableError::MissingRow)
-    }
-
-    async fn delete(&self, _filter: Self::Filter) -> Result<Option<Self::Row>, Self::Failure> {
-        Err(TableError::MissingRow)
-    }
-
-    async fn delete_many(&self, _filter: Self::Filter) -> Result<usize, Self::Failure> {
-        Err(TableError::MissingRow)
     }
 }
 

@@ -121,9 +121,9 @@ fn env_scope_and_falsey_values() {
     assert!(entries.contains(&env_entry("list-value", json("[]"))));
     assert!(entries.contains(&env_entry("map-value", object(&[]))));
     let inner = serde_json::to_string(&scope_entries()).unwrap();
-    let entries =
+    let inner_entries =
         rotated_entries(reencrypt_global_env_values(Some(&string(&inner)), &old, &key).unwrap());
-    assert_scope_rotation(&entries);
+    assert_scope_rotation(&inner_entries);
 }
 
 #[test]
@@ -203,14 +203,14 @@ fn env_corrupt_preserved_warning() {
         env_entry("corrupt", string("not-a-ciphertext")),
         env_entry("valid", string(&sealed("valid-value", OLD_KEY))),
     ]);
-    let entries =
+    let rotated =
         rotated_entries(reencrypt_global_env_values(Some(&entries), &old, &new_key()).unwrap());
     assert_eq!(
-        entries.first(),
+        rotated.first(),
         Some(&env_entry("corrupt", string("not-a-ciphertext")))
     );
     assert_eq!(
-        entries.get(1),
+        rotated.get(1),
         Some(&env_entry("valid", string(&sealed("valid-value", NEW_KEY))))
     );
 }
@@ -378,6 +378,6 @@ fn env_non_object_entry_errors() {
     let entries = array(vec![json("17")]);
     let result = reencrypt_global_env_values(Some(&entries), &cipher(OLD_KEY), &new_key());
     assert!(matches!(result, Err(RotationCodecError::Encoding(_))));
-    let result = reencrypt_global_env_values(Some(&json("17")), &cipher(OLD_KEY), &new_key());
-    assert!(matches!(result, Err(RotationCodecError::Encoding(_))));
+    let scalar = reencrypt_global_env_values(Some(&json("17")), &cipher(OLD_KEY), &new_key());
+    assert!(matches!(scalar, Err(RotationCodecError::Encoding(_))));
 }

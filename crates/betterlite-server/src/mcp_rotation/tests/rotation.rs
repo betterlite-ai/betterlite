@@ -315,20 +315,22 @@ async fn user_legacy_base64() {
     drop(guard);
     let writes = store.written();
     assert_eq!(writes.len(), 2);
-    let Write::UserCredential { credential_b64, .. } = &writes[0] else {
+    let Write::UserCredential {
+        credential_b64: first,
+        ..
+    } = &writes[0]
+    else {
         panic!("a user credential row is written");
     };
-    assert_eq!(
-        open(credential_b64, NEW_KEY).as_deref(),
-        Some("hello-token")
-    );
-    let Write::UserCredential { credential_b64, .. } = &writes[1] else {
+    assert_eq!(open(first, NEW_KEY).as_deref(), Some("hello-token"));
+    let Write::UserCredential {
+        credential_b64: second,
+        ..
+    } = &writes[1]
+    else {
         panic!("a user credential row is written");
     };
-    assert_eq!(
-        open(credential_b64, NEW_KEY).as_deref(),
-        Some("encrypted-token")
-    );
+    assert_eq!(open(second, NEW_KEY).as_deref(), Some("encrypted-token"));
     assert!(
         logs.lines()
             .first()
@@ -356,7 +358,7 @@ async fn user_corrupt_skip() {
     let lines = logs.lines();
     assert_eq!(lines.len(), 3, "two warnings and one summary: {lines:?}");
     assert!(lines.first().unwrap().contains("user_id=u1 server_id=s1"));
-    assert!(lines.get(1).unwrap().contains("user_id=u2 server_id=s1"));
+    assert!(lines[1].contains("user_id=u2 server_id=s1"));
     assert!(
         lines
             .last()
@@ -504,12 +506,7 @@ async fn user_rotation_counts() {
         5,
         "three warnings and two summaries: {lines:?}"
     );
-    assert!(
-        lines
-            .get(2)
-            .unwrap()
-            .contains("rotated 2 row(s), skipped 2")
-    );
+    assert!(lines[2].contains("rotated 2 row(s), skipped 2"));
     assert!(
         lines
             .last()

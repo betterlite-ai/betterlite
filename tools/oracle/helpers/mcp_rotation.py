@@ -217,35 +217,31 @@ def rotate_servers(value: RotateServers) -> JsonValue:
     return run_case(value, recorder, rotation)
 
 
-def rotate_user_credentials(value: RotateUserCredentials) -> JsonValue:
+def rotate_users(value: RotateUserCredentials | RotateUserEnvVars) -> JsonValue:
     recorder = Recorder(value.get("fail_at_write"))
-    rows = [
-        Row(row["server_id"], user_id=row["user_id"], credential_b64=row["credential_b64"])
-        for row in value["rows"]
-    ]
-    table = RecordingTable("user_credentials", rows, recorder)
-    rotation: Coroutine[None, None, None] = rotate_mcp_user_credentials_master_key(
-        FakeClient({CREDENTIAL_TABLE: table}), value["new_master_key"]
-    )
-    return run_case(value, recorder, rotation)
-
-
-def rotate_user_env_vars(value: RotateUserEnvVars) -> JsonValue:
-    recorder = Recorder(value.get("fail_at_write"))
-    rows = [
-        Row(row["server_id"], user_id=row["user_id"], values_b64=row["values_b64"])
-        for row in value["rows"]
-    ]
-    table = RecordingTable("user_env_vars", rows, recorder)
-    rotation: Coroutine[None, None, None] = rotate_mcp_user_env_vars_master_key(
-        FakeClient({ENV_VAR_TABLE: table}), value["new_master_key"]
-    )
+    rotation: Coroutine[None, None, None]
+    if value["function"] == "rotate_user_credentials":
+        credentials = [
+            Row(row["server_id"], user_id=row["user_id"], credential_b64=row["credential_b64"])
+            for row in value["rows"]
+        ]
+        table = RecordingTable("user_credentials", credentials, recorder)
+        rotation = rotate_mcp_user_credentials_master_key(
+            FakeClient({CREDENTIAL_TABLE: table}), value["new_master_key"]
+        )
+    else:
+        env_vars = [
+            Row(row["server_id"], user_id=row["user_id"], values_b64=row["values_b64"])
+            for row in value["rows"]
+        ]
+        table = RecordingTable("user_env_vars", env_vars, recorder)
+        rotation = rotate_mcp_user_env_vars_master_key(
+            FakeClient({ENV_VAR_TABLE: table}), value["new_master_key"]
+        )
     return run_case(value, recorder, rotation)
 
 
 def run(input_value: Input) -> JsonValue:
     if input_value["function"] == "rotate_servers":
         return rotate_servers(input_value)
-    if input_value["function"] == "rotate_user_credentials":
-        return rotate_user_credentials(input_value)
-    return rotate_user_env_vars(input_value)
+    return rotate_users(input_value)

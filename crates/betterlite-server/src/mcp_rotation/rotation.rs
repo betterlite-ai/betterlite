@@ -199,7 +199,7 @@ where
         let quoted = serde_json::to_string(value)
             .map_err(RotationCodecError::Json)
             .map_err(RotationError::Codec)?;
-        let map = match decode_secret_map(self.cipher, Some(&quoted), field) {
+        let decoded = match decode_secret_map(self.cipher, Some(&quoted), field) {
             Ok(map) => map,
             Err(SecretError::MapDecode { .. }) => {
                 tracing::warn!("Cannot rotate MCP {field} for server {server_id}");
@@ -207,7 +207,7 @@ where
             }
             Err(error) => return Err(RotationError::Codec(RotationCodecError::Secret(error))),
         };
-        let Some(map) = map.filter(|map| !map.is_empty()) else {
+        let Some(map) = decoded.filter(|candidate| !candidate.is_empty()) else {
             return Ok(None);
         };
         let ciphertext = encrypt_secret_map(self.cipher, &map, Some(self.new_key))
