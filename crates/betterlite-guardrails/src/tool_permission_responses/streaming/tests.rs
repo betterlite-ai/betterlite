@@ -176,17 +176,26 @@ fn check_assembled_stream_returns_nothing_without_tool_calls() {
     );
 }
 
-fn anthropic_tool_stream(tool_name: &str) -> String {
-    let frames = [
+fn anthropic_tool_stream(tool_names: &[&str]) -> String {
+    let mut frames = vec![
         r#"{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-test","usage":{"input_tokens":10,"output_tokens":1}}}"#.to_owned(),
-        format!(
-            r#"{{"type":"content_block_start","index":0,"content_block":{{"type":"tool_use","id":"toolu_1","name":"{tool_name}","input":{{}}}}}}"#
-        ),
-        r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"cmd\":\"ls\"}"}}"#.to_owned(),
-        r#"{"type":"content_block_stop","index":0}"#.to_owned(),
-        r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}"#.to_owned(),
-        r#"{"type":"message_stop"}"#.to_owned(),
     ];
+    for (index, tool_name) in tool_names.iter().enumerate() {
+        frames.push(format!(
+            r#"{{"type":"content_block_start","index":{index},"content_block":{{"type":"tool_use","id":"toolu_{index}","name":"{tool_name}","input":{{}}}}}}"#
+        ));
+        frames.push(format!(
+            r#"{{"type":"content_block_delta","index":{index},"delta":{{"type":"input_json_delta","partial_json":"{{\"cmd\":\"ls\"}}"}}}}"#
+        ));
+        frames.push(format!(
+            r#"{{"type":"content_block_stop","index":{index}}}"#
+        ));
+    }
+    frames.push(
+        r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}"#
+            .to_owned(),
+    );
+    frames.push(r#"{"type":"message_stop"}"#.to_owned());
     frames
         .iter()
         .map(|data| format!("data: {data}\n\n"))
@@ -253,7 +262,7 @@ fn emitted_text(items: &[StreamItem]) -> String {
 
 #[tokio::test]
 async fn post_call_streaming_iterator_hook_rewrites_a_denied_anthropic_stream() {
-    let stream = anthropic_tool_stream("shell");
+    let stream = anthropic_tool_stream(&["shell"]);
     let items = run_anthropic(
         &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
         stream,
@@ -265,6 +274,23 @@ async fn post_call_streaming_iterator_hook_rewrites_a_denied_anthropic_stream() 
     ));
     assert!(text.contains(r#""stop_reason":"end_turn""#));
     assert!(!text.contains(r#""type":"tool_use""#));
+}
+
+#[tokio::test]
+async fn post_call_streaming_iterator_hook_keeps_an_allowed_anthropic_tool_use() {
+    let stream = anthropic_tool_stream(&["shell", "read"]);
+    let items = run_anthropic(
+        &rewrite_guardrail(vec![
+            rule("block-shell", "deny", "shell"),
+            rule("allow-read", "allow", "read"),
+        ]),
+        stream,
+    )
+    .await;
+    let text = emitted_text(&items);
+    assert!(text.contains(r#""name":"read""#));
+    assert!(text.contains("Permission denied:"));
+    assert!(!text.contains(r#""name":"shell""#));
 }
 
 #[tokio::test]
@@ -285,7 +311,7 @@ async fn post_call_streaming_iterator_hook_keeps_thinking_blocks_of_a_denied_ant
 
 #[tokio::test]
 async fn post_call_streaming_iterator_hook_passes_an_allowed_anthropic_stream_through() {
-    let stream = anthropic_tool_stream("read");
+    let stream = anthropic_tool_stream(&["read"]);
     let items = run_anthropic(
         &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
         stream.clone(),
