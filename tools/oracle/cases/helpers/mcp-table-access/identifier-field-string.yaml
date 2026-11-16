@@ -1,0 +1,11 @@
+kind: helper
+name: mcp-table-access-identifier-field-string
+call:
+  b4711:
+    function: create_if_free
+    server_name: Solo
+    alias: null
+    rows: []
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}
