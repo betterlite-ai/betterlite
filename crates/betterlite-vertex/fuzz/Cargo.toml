@@ -277,6 +277,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_search_payload"
+path = "fuzz_targets/vertex_search_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_speech_audio"
 path = "fuzz_targets/vertex_speech_audio.rs"
 test = false
