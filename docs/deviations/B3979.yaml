@@ -21,4 +21,7 @@ deviations:
   - what: A response error that is not a JSON string is dropped with a warning; LiteLLM's membership test over an error object checks its keys and then writes the object into the row.
     why: The failure branch's error is a string on the response contract, and Python's membership over a non-string is duck typing that docs/compatibility.md excludes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L83
-kept_bugs: []
+kept_bugs:
+  - what: A success event whose payload carries no litellm_call_id writes its row under a fresh uuid4, so it cannot update an initiated row.
+    why: The success dispatch site falls back to str(uuid.uuid4()) when litellm_params has no call id, and the pre-call dispatch raises on the missing key and writes no initiated row; a setup in that state still relies on getting its success row, so betterlite keeps the fallback instead of dropping the row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2904-L2908
