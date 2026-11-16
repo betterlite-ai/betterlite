@@ -5,16 +5,33 @@ use betterlite_config::sections::lasso_classification::Configured;
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret as _;
+use serde::Deserialize;
 use serde_json::value::RawValue;
 use ulid::Ulid;
 
 pub mod error;
 pub mod wire;
+use crate::lasso_masking::wire::LassoMessage;
 use error::LassoError;
 use wire::{
     LassoPayload, LassoRequestData, LassoResponse, MessageType, Source, ToolArguments, ToolCall,
     ToolCallFields, ToolDefinition,
 };
+
+// What the classifix endpoint answers: the verdict the classify endpoint also gives, plus the masked
+// messages Lasso wants written back into the request.
+#[derive(Debug, Clone)]
+pub struct ClassifixAnswer {
+    pub response: LassoResponse,
+    pub messages: Option<Vec<LassoMessage>>,
+}
+
+// The classifix messages parse on their own, since LassoResponse has no field for them.
+#[derive(Deserialize)]
+struct MaskedMessages {
+    #[serde(default)]
+    messages: Option<Vec<LassoMessage>>,
+}
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const CONVERSATION_TTL: Duration = Duration::from_secs(3_600);
@@ -143,6 +160,33 @@ impl LassoGuardrail {
         payload: &LassoPayload,
         api_url: Option<&str>,
     ) -> Result<LassoResponse, LassoError> {
+        let body = self.call_body(headers, payload, api_url).await?;
+        serde_json::from_slice(&body).map_err(|source| LassoError::ResponseJson { source })
+    }
+
+    pub async fn call_classifix(
+        &self,
+        headers: HeaderMap,
+        payload: &LassoPayload,
+    ) -> Result<ClassifixAnswer, LassoError> {
+        let endpoint = format!("{}/classifix", self.settings.api_base);
+        let body = self.call_body(headers, payload, Some(&endpoint)).await?;
+        let response =
+            serde_json::from_slice(&body).map_err(|source| LassoError::ResponseJson { source })?;
+        let masked: MaskedMessages =
+            serde_json::from_slice(&body).map_err(|source| LassoError::ResponseJson { source })?;
+        Ok(ClassifixAnswer {
+            response,
+            messages: masked.messages,
+        })
+    }
+
+    async fn call_body(
+        &self,
+        headers: HeaderMap,
+        payload: &LassoPayload,
+        api_url: Option<&str>,
+    ) -> Result<Vec<u8>, LassoError> {
         let endpoint = api_url.map_or_else(
             || format!("{}/classify", self.settings.api_base),
             ToOwned::to_owned,
@@ -169,7 +213,7 @@ impl LassoGuardrail {
             }
             body.extend_from_slice(&chunk);
         }
-        serde_json::from_slice(&body).map_err(|source| LassoError::ResponseJson { source })
+        Ok(body)
     }
 
     pub fn process_response(&self, response: LassoResponse) -> Result<(), LassoError> {

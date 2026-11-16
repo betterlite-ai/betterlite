@@ -9,6 +9,15 @@ deviations:
   - what: The legacy Lakera v1 call keeps the timeout of the injected HTTP client, and a guardrail timeout configured in litellm_params is not applied to it.
     why: B3777's LegacyLakeraModeration keeps no timeout field, so the hook has none to pass. LiteLLM passes self.timeout, which is None unless the guardrail sets one and then leaves the handler's own default in place.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L253
+  - what: Lasso's moderation hook runs with the shared conversation cache when the during-call dispatch reaches it.
+    why: LiteLLM's dispatch calls async_moderation_hook without the cache argument Lasso's signature requires, so every during_call request for this guardrail fails with a TypeError (500). This follows the hook's intent; the choice is the owner's to confirm.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3021-L3027
+  - what: A blocking Lasso verdict names its deputies in the sorted findings key order, not in the order the Lasso answer listed them.
+    why: The transport models findings as a BTreeMap (B3778), so the detail's detection_message joins blocking deputies alphabetically where LiteLLM iterates the decoded JSON in response order. The set of blocking deputies and the 400 status are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L896-L905
+  - what: The 400 detail's lasso_response carries only the violations_detected, deputies and findings fields, not any other key the Lasso answer held.
+    why: The transport decodes the answer into its typed LassoResponse model (B3778) and drops unknown keys, while LiteLLM echoes the whole decoded JSON object into detail["lasso_response"]. The error text and status are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L857-L864
 kept_bugs:
   - what: With neither a messages list nor an input text or list, the legacy Lakera check still posts to the v1 endpoint with an empty body.
     why: LiteLLM starts the body as an empty string and posts it unchanged, so the v1 API answers an error status and the hook fails that request. Copied because the task text and LiteLLM agree on the call being made, and a working setup may rely on it.

@@ -43,13 +43,34 @@ impl ThirdPartyHookError {
             }
             Self::Aim(error) => match error {
                 AimError::Rejected { .. } => StatusCode::BAD_REQUEST,
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
+                AimError::MissingSecrets
+                | AimError::InvalidHeader(_)
+                | AimError::Timeout(_)
+                | AimError::Request(_)
+                | AimError::HttpStatus(_)
+                | AimError::ResponseTooLarge(_)
+                | AimError::ResponseJson(_)
+                | AimError::RequestJson(_)
+                | AimError::WebSocket(_)
+                | AimError::ConnectTimeout
+                | AimError::FrameUtf8(_)
+                | AimError::StreamTimeout
+                | AimError::StreamJson(_)
+                | AimError::StreamClosed
+                | AimError::StreamBlocked { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             },
             Self::Akto(error) => error.status_code(),
             Self::Lakera(error) => error.status_code(),
             Self::Lasso(error) => match error {
                 LassoError::Blocked { .. } => StatusCode::BAD_REQUEST,
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
+                LassoError::InvalidHeader { .. }
+                | LassoError::Timeout { .. }
+                | LassoError::InvalidApiKey
+                | LassoError::RateLimited
+                | LassoError::HttpStatus { .. }
+                | LassoError::Request { .. }
+                | LassoError::ResponseTooLarge { .. }
+                | LassoError::ResponseJson { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             },
         }
     }
