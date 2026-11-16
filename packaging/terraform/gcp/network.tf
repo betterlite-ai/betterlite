@@ -40,7 +40,7 @@ resource "google_vpc_access_connector" "this" {
 
   name          = "${local.name}-conn"
   region        = var.region
-  network       = local.network_name
+  network       = local.network_self_link
   ip_cidr_range = var.vpc_connector_cidr
   machine_type  = "e2-micro"
   min_instances = 2

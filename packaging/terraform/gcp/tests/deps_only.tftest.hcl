@@ -140,11 +140,12 @@ run "existing_network_attaches_the_stores" {
 
   assert {
     condition = alltrue([
+      google_vpc_access_connector.this[0].network == var.network_id,
       google_sql_database_instance.writer.settings[0].ip_configuration[0].private_network == var.network_id,
       google_sql_database_instance.reader.settings[0].ip_configuration[0].private_network == var.network_id,
       google_redis_instance.this[0].authorized_network == var.network_id,
     ])
-    error_message = "Cloud SQL and Memorystore must attach to the supplied network."
+    error_message = "The connector, Cloud SQL and Memorystore must attach to the supplied network, project included."
   }
 }
 
