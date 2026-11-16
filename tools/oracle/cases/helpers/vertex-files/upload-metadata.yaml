@@ -1,0 +1,8 @@
+kind: helper
+name: vertex-files-upload-metadata
+call:
+  vertex_files:
+    operation: upload_reply
+    body: '{"kind":"storage#object","id":"my-bucket/litellm-vertex-files/uploads/row/1700000000000000","name":"litellm-vertex-files/uploads/row","size":"42","timeCreated":"2024-12-04T21:53:12.120184Z","purpose":"fine-tune"}'
+env: {}
+compare: {ignore: []}
