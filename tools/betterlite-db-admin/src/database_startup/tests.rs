@@ -74,13 +74,6 @@ impl Postgres {
                 .expect("a test connection");
         let mut tasks = JoinSet::new();
         tasks.spawn(connection);
-        client
-            .execute(
-                "SELECT pg_advisory_lock($1)",
-                &[&packaged::FIXTURE_LOCK_KEY],
-            )
-            .await
-            .expect("the fixture lock is held");
         let schema: String = client
             .query_one("SELECT current_schema()", &[])
             .await
@@ -99,13 +92,6 @@ impl Postgres {
             .close_async()
             .await
             .expect("the schema is dropped");
-        self.client
-            .execute(
-                "SELECT pg_advisory_unlock($1)",
-                &[&packaged::FIXTURE_LOCK_KEY],
-            )
-            .await
-            .expect("the fixture lock is released");
         drop(self.client);
         drop(self.tasks);
     }

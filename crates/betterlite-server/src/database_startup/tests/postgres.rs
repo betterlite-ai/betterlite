@@ -1,7 +1,6 @@
 use std::future::Future;
 use std::time::Duration;
 
-use betterlite_config::sections::database_startup::packaged::FIXTURE_LOCK_KEY;
 use betterlite_config::sections::database_startup::startup::{StartupSettings, StartupSwitch};
 use betterlite_db::migration_deploy::catalog::Migration;
 use betterlite_db::migration_ledger::lock::JitterSource;
@@ -78,10 +77,6 @@ where
     Fut: Future<Output = ()> + Send + 'static,
 {
     let (database, fixture) = provision().await;
-    let gate = database.pool.get().await.expect("a fixture connection");
-    gate.execute("SELECT pg_advisory_lock($1)", &[&FIXTURE_LOCK_KEY])
-        .await
-        .expect("the fixture lock is held");
     let pool = database.pool.clone();
     let mut tasks = JoinSet::new();
     tasks.spawn(async move {
@@ -92,9 +87,6 @@ where
     let outcome = tasks.join_next().await.expect("the test task");
     pool.close();
     fixture.close_async().await.expect("the fixture closes");
-    gate.execute("SELECT pg_advisory_unlock($1)", &[&FIXTURE_LOCK_KEY])
-        .await
-        .expect("the fixture lock is released");
     outcome.expect("the test task joins");
 }
 
