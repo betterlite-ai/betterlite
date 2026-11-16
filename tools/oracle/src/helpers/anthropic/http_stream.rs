@@ -1,5 +1,4 @@
 use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -68,15 +67,4 @@ impl Helper for Op {
             Scenario::ResponseHeaders => response_headers(input),
         }
     }
-}
-
-fn value_error(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: Some(None),
-        param: Some(None),
-        code: Some(None),
-        message,
-    })
 }

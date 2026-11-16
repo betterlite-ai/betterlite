@@ -33,7 +33,6 @@ pub struct StreamClients<'clients, Client> {
     pub logger: &'clients dyn StreamLogger,
 }
 
-// what make_call hands logging_obj.post_call once the iterator is built
 pub struct StreamPostCall<'call> {
     pub input: &'call Json,
     pub original_response: &'call str,
@@ -106,7 +105,6 @@ where
     }
 }
 
-// LiteLLM hands logging_obj.post_call the live iterator, and the record carries the text standing for it
 fn post_call(logger: &dyn StreamLogger, call: &StreamCall<'_>, original_response: &str) {
     logger.post_call(StreamPostCall {
         input: call.messages,

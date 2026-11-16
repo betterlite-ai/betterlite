@@ -1,6 +1,6 @@
 use std::mem;
-use std::sync::PoisonError;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use betterlite_anthropic::anthropic_http_stream::call::{
@@ -11,9 +11,7 @@ use betterlite_anthropic::anthropic_http_stream::transport::StreamPost;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use tokio::runtime::Builder;
 
-use super::fixture::{
-    FixedCounter, FixedIds, FixtureTransport, HelperFailure, SilentLogger, Verdict,
-};
+use super::fixture::{FixedCounter, FixedIds, FixtureTransport, HelperFailure, SilentLogger};
 use super::support::header_map;
 use super::{Input, MAX_EVENT_BYTES};
 
@@ -52,18 +50,20 @@ pub(crate) fn transport(
             input.upstream_body.as_deref().unwrap_or_default(),
             headers,
         )),
-        Outcome::Unknown => Ok(FixtureTransport::new(Verdict::Failed(
-            PostFailure::Unknown(HelperFailure::Unknown {
-                message: input
-                    .failure_message
-                    .as_deref()
-                    .unwrap_or("the transport exploded")
-                    .to_owned(),
-            }),
-        ))),
-        Outcome::Timeout => Ok(FixtureTransport::new(Verdict::Failed(PostFailure::Known(
-            HelperFailure::Timeout,
-        )))),
+        Outcome::Unknown => {
+            let message = input.failure_message.as_deref();
+            let failure = HelperFailure::Unknown {
+                message: message.unwrap_or("the transport exploded").to_owned(),
+            };
+            Ok(FixtureTransport::new(
+                Err(PostFailure::Unknown(failure)),
+                Arc::default(),
+            ))
+        }
+        Outcome::Timeout => Ok(FixtureTransport::new(
+            Err(PostFailure::Known(HelperFailure::Timeout)),
+            Arc::default(),
+        )),
     }
 }
 

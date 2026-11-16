@@ -19,15 +19,14 @@ pub(crate) fn header_map(pairs: &IndexMap<String, String>) -> Result<HeaderMap, 
 }
 
 pub(crate) fn selected(headers: &HeaderMap, names: &[String]) -> Value {
-    let mut fields = serde_json::Map::new();
+    let mut fields = IndexMap::new();
     for name in names {
         let value = headers
             .get(name.as_str())
-            .and_then(|value| value.to_str().ok())
-            .map_or(Value::Null, |text| Value::String(text.to_owned()));
-        fields.insert(name.clone(), value);
+            .and_then(|text| text.to_str().ok());
+        fields.insert(name.as_str(), value);
     }
-    Value::Object(fields)
+    json!(fields)
 }
 
 pub(crate) fn post_value(post: &StreamPost, names: &[String]) -> Value {
@@ -40,13 +39,9 @@ pub(crate) fn post_value(post: &StreamPost, names: &[String]) -> Value {
 }
 
 pub(crate) fn options_value(state: &StreamState) -> Value {
-    let mut reverse = serde_json::Map::new();
-    for (sanitized, original) in &state.tool_name_reverse_map {
-        reverse.insert(sanitized.clone(), Value::String(original.clone()));
-    }
     json!({
         "json_mode": state.json_mode,
         "speed": state.speed,
-        "tool_name_reverse_map": Value::Object(reverse),
+        "tool_name_reverse_map": state.tool_name_reverse_map,
     })
 }

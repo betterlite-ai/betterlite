@@ -12,8 +12,6 @@ from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 Failure = Literal["unknown", "timeout"]
 Opened = tuple[ModelResponseIterator, httpx.Headers]
-Settled = tuple[Opened | None, BaseException | None]
-
 
 class Input(TypedDict):
     scenario: str
@@ -36,7 +34,6 @@ class Input(TypedDict):
     upstream_body: str | None
     failure_message: str | None
 
-
 class Upstream:
     def __init__(self, input_value: Input, status: int) -> None:
         self.status = status
@@ -58,18 +55,15 @@ class Upstream:
         self.requests.append(request)
         return self.reply()
 
-
 class SyncUpstream(Upstream):
     def post(self, url: str, **options: JsonValue) -> httpx.Response:
         del url, options
         return self.reply()
 
-
 class AsyncGuard(Upstream):
     async def post(self, url: str, **options: JsonValue) -> httpx.Response:
         del url, options
         return self.reply()
-
 
 class Raiser:
     def __init__(self, failure: Failure, message: str | None) -> None:
@@ -82,9 +76,7 @@ class Raiser:
             raise httpx.ReadTimeout(self.message)
         raise RuntimeError(self.message)
 
-
 Client = AsyncHTTPHandler | HTTPHandler | Upstream
-
 
 class ErrorView(BaseModel):
     model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True)
@@ -93,7 +85,6 @@ class ErrorView(BaseModel):
     message: bytes
     headers: httpx.Headers | dict[str, str] | None = None
 
-
 class OptionsView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -101,14 +92,12 @@ class OptionsView(BaseModel):
     speed: str | None
     tool_name_reverse_map: dict[str, str]
 
-
 class WrapperView(BaseModel):
     model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True)
 
     model: str
     custom_llm_provider: str | None
     completion_stream: ModelResponseIterator
-
 
 class CallArguments(TypedDict):
     client: Client | None
@@ -123,7 +112,6 @@ class CallArguments(TypedDict):
     speed: str | None
     tool_name_reverse_map: dict[str, str] | None
 
-
 @runtime_checkable
 class Handlers(Protocol):
     def make_call(self, **kwargs: Unpack[CallArguments]) -> Awaitable[Opened]: ...
@@ -131,7 +119,6 @@ class Handlers(Protocol):
     def make_sync_call(self, **kwargs: Unpack[CallArguments]) -> Opened: ...
 
     def process_anthropic_headers(self, headers: httpx.Headers) -> dict[str, str]: ...
-
 
 class StreamArguments(TypedDict):
     model: str
@@ -153,13 +140,11 @@ class StreamArguments(TypedDict):
     litellm_params: dict[str, JsonValue]
     headers: dict[str, str]
 
-
 @runtime_checkable
 class CompletionHandlers(Protocol):
     def acompletion_stream_function(
         self, **kwargs: Unpack[StreamArguments]
     ) -> Awaitable[CustomStreamWrapper]: ...
-
 
 CALLS: TypeAdapter[Handlers] = TypeAdapter(
     Handlers, config=ConfigDict(arbitrary_types_allowed=True)

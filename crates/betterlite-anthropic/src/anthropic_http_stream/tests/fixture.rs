@@ -150,13 +150,13 @@ impl StreamTransport for FixtureTransport {
             .into_iter()
             .map(|line| Ok(TransportChunk::Text(line)))
             .collect::<Vec<Result<TransportChunk, ReceiveError<FixtureFailure>>>>();
-        let lines = stream::iter(items)
+        let chunks = stream::iter(items)
             .inspect(move |_item| flag.store(true, Ordering::SeqCst))
             .boxed();
         Ok(StreamReply {
             status_code,
             headers,
-            lines,
+            lines: chunks,
         })
     }
 }

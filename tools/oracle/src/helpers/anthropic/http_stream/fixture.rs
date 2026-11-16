@@ -27,14 +27,7 @@ pub(crate) enum HelperFailure {
     Exhausted,
 }
 
-pub(crate) enum Verdict {
-    Reply {
-        status_code: u16,
-        headers: HeaderMap,
-        lines: Vec<String>,
-    },
-    Failed(PostFailure<HelperFailure>),
-}
+pub(crate) type Verdict = Result<StreamReply<HelperFailure>, PostFailure<HelperFailure>>;
 
 pub(crate) struct FixtureTransport {
     verdict: Mutex<Option<Verdict>>,
@@ -43,32 +36,41 @@ pub(crate) struct FixtureTransport {
 }
 
 impl FixtureTransport {
-    pub(crate) fn new(verdict: Verdict) -> Self {
+    pub(crate) fn new(verdict: Verdict, polled: Arc<AtomicBool>) -> Self {
         Self {
             verdict: Mutex::new(Some(verdict)),
             posts: Mutex::new(Vec::new()),
-            polled: Arc::new(AtomicBool::new(false)),
+            polled,
         }
     }
 
     pub(crate) fn reply(status_code: u16, headers: HeaderMap, lines: &[String]) -> Self {
-        Self::new(Verdict::Reply {
+        let polled = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&polled);
+        let items = lines
+            .iter()
+            .map(|line| Ok(TransportChunk::Text(line.clone())))
+            .collect::<Vec<Result<TransportChunk, ReceiveError<HelperFailure>>>>();
+        let chunks = stream::iter(items)
+            .inspect(move |_item| flag.store(true, Ordering::SeqCst))
+            .boxed();
+        let reply = StreamReply {
             status_code,
             headers,
-            lines: lines.to_vec(),
-        })
+            lines: chunks,
+        };
+        Self::new(Ok(reply), polled)
     }
 
     pub(crate) fn status(status_code: u16, body: &str, headers: HeaderMap) -> Self {
-        Self::new(Verdict::Failed(PostFailure::Status(Box::new(
-            StatusFailure {
-                status_code,
-                body: body.as_bytes().to_vec(),
-                // the client raised on the response, so the headers come from the response itself
-                exception_headers: None,
-                response_headers: Some(headers),
-            },
-        ))))
+        let failure = PostFailure::Status(Box::new(StatusFailure {
+            status_code,
+            body: body.as_bytes().to_vec(),
+            // the client raised on the response, so the headers come from the response itself
+            exception_headers: None,
+            response_headers: Some(headers),
+        }));
+        Self::new(Err(failure), Arc::default())
     }
 }
 
@@ -88,28 +90,7 @@ impl StreamTransport for FixtureTransport {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        let verdict = taken.ok_or(PostFailure::Unknown(HelperFailure::Exhausted))?;
-        let (status_code, headers, lines) = match verdict {
-            Verdict::Failed(failure) => return Err(failure),
-            Verdict::Reply {
-                status_code,
-                headers,
-                lines,
-            } => (status_code, headers, lines),
-        };
-        let flag = Arc::clone(&self.polled);
-        let items = lines
-            .into_iter()
-            .map(|line| Ok(TransportChunk::Text(line)))
-            .collect::<Vec<Result<TransportChunk, ReceiveError<HelperFailure>>>>();
-        let lines = stream::iter(items)
-            .inspect(move |_item| flag.store(true, Ordering::SeqCst))
-            .boxed();
-        Ok(StreamReply {
-            status_code,
-            headers,
-            lines,
-        })
+        taken.unwrap_or(Err(PostFailure::Unknown(HelperFailure::Exhausted)))
     }
 }
 

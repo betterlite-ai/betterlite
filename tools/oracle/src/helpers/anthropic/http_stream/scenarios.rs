@@ -15,7 +15,7 @@ use tokio::runtime::Builder;
 use super::calls::{Outcome, TIMEOUT, attempt, transport};
 use super::fixture::{FixedCounter, FixedIds, HelperFailure, SilentLogger};
 use super::support::{HelperValue, header_map, options_value, post_value, selected};
-use super::{Input, MAX_EVENT_BYTES, value_error};
+use super::{Input, MAX_EVENT_BYTES};
 
 struct Replied {
     post: Value,
@@ -29,9 +29,7 @@ fn replied(input: &Input, synchronous: bool) -> Result<Replied, Box<HelperError>
         post_value(post, &input.request_header_names)
     });
     let polled = attempt.polled;
-    let opened = attempt
-        .result
-        .map_err(|error| value_error(error.to_string()))?;
+    let opened = attempt.result.or_value_error()?;
     Ok(Replied {
         post,
         polled,
@@ -82,7 +80,7 @@ pub(super) fn non_http_error(input: &Input) -> HelperResult {
 // the answer for a call that raised: LiteLLM's AnthropicError fields, or the Timeout it re-raises
 fn error_value(input: &Input, synchronous: bool, outcome: Outcome) -> HelperValue {
     let Err(error) = attempt(input, synchronous, outcome)?.result else {
-        return Err(value_error("the call opened a stream".to_owned()));
+        return Err("the call opened a stream").or_value_error();
     };
     let text = error.to_string();
     match error {
@@ -105,7 +103,7 @@ fn error_value(input: &Input, synchronous: bool, outcome: Outcome) -> HelperValu
         } => Ok(json!({ "class": "Timeout", "status": 408 })),
         // any other raised error carries the fixture's own diagnostic as its display text
         StreamOpenError::Reraised { .. } | StreamOpenError::Endpoint { .. } => {
-            Err(value_error(text))
+            Err(text).or_value_error()
         }
     }
 }
@@ -142,7 +140,7 @@ pub(super) fn stream_flag_and_context(input: &Input) -> HelperResult {
             },
             build,
         ))
-        .map_err(|error| value_error(error.to_string()))?;
+        .or_value_error()?;
     let posts = mem::take(&mut *client.posts.lock().unwrap_or_else(PoisonError::into_inner));
     let post = posts.first().map_or(Value::Null, |post| {
         post_value(post, &input.request_header_names)

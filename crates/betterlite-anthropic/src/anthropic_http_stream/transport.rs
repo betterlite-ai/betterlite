@@ -88,13 +88,6 @@ impl StreamTransport for ProxiedClient {
     }
 }
 
-const fn is_timeout(source: &TransportError) -> bool {
-    matches!(
-        source,
-        TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
-    )
-}
-
 // LiteLLM reads an error body under a cap and keeps the upstream status with an empty message when the read fails
 async fn error_status(response: StreamResponse, limit: usize) -> StatusFailure {
     let status_code = response.response.status().as_u16();
@@ -113,7 +106,10 @@ async fn error_status(response: StreamResponse, limit: usize) -> StatusFailure {
 
 // The handler turns a timeout into litellm.Timeout, which make_call re-raises; any other send error becomes a 500
 fn post_failure(source: TransportError) -> PostFailure<StreamFailure> {
-    let timed = is_timeout(&source);
+    let timed = matches!(
+        source,
+        TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
+    );
     let failure = StreamFailure::Transport(source);
     if timed {
         PostFailure::Known(failure)

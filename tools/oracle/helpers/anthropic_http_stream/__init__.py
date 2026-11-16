@@ -23,7 +23,6 @@ from .wire import (
     Opened,
     OptionsView,
     Raiser,
-    Settled,
     SyncUpstream,
     Upstream,
     WrapperView,
@@ -33,13 +32,11 @@ TIMEOUT: Final[float] = 1.5
 OPENED_STATUS: Final[int] = 200
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
-
 def _text(body: bytes) -> str:
     try:
         return body.decode("utf-8")
     except UnicodeDecodeError:
         return f"{len(body)} bytes that are not text"
-
 
 def _logging(messages: list[dict[str, JsonValue]]) -> Logging:
     return Logging(
@@ -52,7 +49,6 @@ def _logging(messages: list[dict[str, JsonValue]]) -> Logging:
         function_id="fn-1",
     )
 
-
 def _request_value(request: httpx.Request, names: list[str]) -> dict[str, JsonValue]:
     return {
         "url": str(request.url),
@@ -62,7 +58,6 @@ def _request_value(request: httpx.Request, names: list[str]) -> dict[str, JsonVa
         ),
     }
 
-
 def _options(iterator: ModelResponseIterator) -> dict[str, JsonValue]:
     view = OptionsView.model_validate(iterator)
     return {
@@ -71,7 +66,6 @@ def _options(iterator: ModelResponseIterator) -> dict[str, JsonValue]:
         "tool_name_reverse_map": JSON.validate_python(view.tool_name_reverse_map),
     }
 
-
 def _opened_value(
     input_value: Input, request: httpx.Request, opened: Opened
 ) -> dict[str, JsonValue]:
@@ -79,7 +73,6 @@ def _opened_value(
     picked = JSON.validate_python({name: opened[1].get(name) for name in names})
     post = _request_value(request, input_value["request_header_names"])
     return {"post": post, "stream_options": _options(opened[0]), "response_headers": picked}
-
 
 def _arguments(input_value: Input, client: Client) -> CallArguments:
     return CallArguments(
@@ -96,28 +89,25 @@ def _arguments(input_value: Input, client: Client) -> CallArguments:
         tool_name_reverse_map=input_value["reverse_map"],
     )
 
-
 async def _async_call(input_value: Input, client: Client) -> Opened:
     arguments = _arguments(input_value, client)
     return await HANDLER.make_call(**arguments)
-
 
 def _sync_call(input_value: Input, client: Client) -> Opened:
     arguments = _arguments(input_value, client)
     return HANDLER.make_sync_call(**arguments)
 
-
 async def _threaded_call(input_value: Input, client: Client) -> Opened:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _sync_call, input_value, client)
 
-
-async def _settled(call: Awaitable[Opened]) -> Settled:
+async def _failed(call: Awaitable[Opened]) -> BaseException:
     task = asyncio.ensure_future(call)
     await asyncio.wait({task})
     failure = task.exception()
-    return (None, failure) if failure is not None else (task.result(), None)
-
+    if failure is None:
+        raise ValueError("the call opened a stream")
+    return failure
 
 def _error(input_value: Input, failure: BaseException, *, status: bool) -> dict[str, JsonValue]:
     view = ErrorView.model_validate(failure)
@@ -136,19 +126,10 @@ def _error(input_value: Input, failure: BaseException, *, status: bool) -> dict[
         ),
     }
 
-
-def _raised(input_value: Input, settled: Settled, *, status: bool) -> dict[str, JsonValue]:
-    failure = settled[1]
-    if failure is None:
-        raise ValueError("the call opened a stream")
-    return _error(input_value, failure, status=status)
-
-
 def _status_call(input_value: Input, upstream: Upstream, *, synchronous: bool) -> Awaitable[Opened]:
     if synchronous:
         return _threaded_call(input_value, upstream)
     return _async_call(input_value, AsyncHTTPHandler(transport=httpx.MockTransport(upstream)))
-
 
 def _failure_call(input_value: Input, failure: Failure, *, synchronous: bool) -> Awaitable[Opened]:
     transport = httpx.MockTransport(Raiser(failure, input_value["failure_message"]))
@@ -156,23 +137,19 @@ def _failure_call(input_value: Input, failure: Failure, *, synchronous: bool) ->
         return _threaded_call(input_value, HTTPHandler(client=httpx.Client(transport=transport)))
     return _async_call(input_value, AsyncHTTPHandler(transport=transport))
 
-
 def _status_error_call(
     input_value: Input, upstream: Upstream, *, synchronous: bool
 ) -> dict[str, JsonValue]:
-    settled = asyncio.run(_settled(_status_call(input_value, upstream, synchronous=synchronous)))
-    return _raised(input_value, settled, status=True)
-
+    call = _status_call(input_value, upstream, synchronous=synchronous)
+    return _error(input_value, asyncio.run(_failed(call)), status=True)
 
 def _failure(input_value: Input, failure: Failure, *, synchronous: bool) -> dict[str, JsonValue]:
-    settled = asyncio.run(_settled(_failure_call(input_value, failure, synchronous=synchronous)))
-    return _raised(input_value, settled, status=False)
-
+    call = _failure_call(input_value, failure, synchronous=synchronous)
+    return _error(input_value, asyncio.run(_failed(call)), status=False)
 
 def _upstream_status(input_value: Input, fallback: int) -> int:
     requested = input_value["upstream_status"]
     return fallback if requested is None else requested
-
 
 async def _completion(
     input_value: Input, client: AsyncHTTPHandler, data: dict[str, JsonValue]
@@ -198,7 +175,6 @@ async def _completion(
         headers=input_value["headers"],
     )
 
-
 def _stream_post(input_value: Input) -> dict[str, JsonValue]:
     asynchronous = Upstream(input_value, OPENED_STATUS)
     client = AsyncHTTPHandler(transport=httpx.MockTransport(asynchronous))
@@ -211,7 +187,6 @@ def _stream_post(input_value: Input) -> dict[str, JsonValue]:
         "sync": _opened_value(input_value, synchronous.requests[0], sync_opened),
     }
 
-
 def _handshake_error(input_value: Input) -> dict[str, JsonValue]:
     status = _upstream_status(input_value, 400)
     return {
@@ -221,7 +196,6 @@ def _handshake_error(input_value: Input) -> dict[str, JsonValue]:
         ),
     }
 
-
 def _non_http_error(input_value: Input) -> dict[str, JsonValue]:
     return {
         "async_unknown": _failure(input_value, "unknown", synchronous=False),
@@ -229,7 +203,6 @@ def _non_http_error(input_value: Input) -> dict[str, JsonValue]:
         "sync_unknown": _failure(input_value, "unknown", synchronous=True),
         "sync_known": _failure(input_value, "timeout", synchronous=True),
     }
-
 
 def _sync_status_guard(input_value: Input) -> dict[str, JsonValue]:
     status = _upstream_status(input_value, 529)
@@ -245,7 +218,6 @@ def _sync_status_guard(input_value: Input) -> dict[str, JsonValue]:
         "sync": rejected,
     }
 
-
 def _stream_flag(input_value: Input) -> dict[str, JsonValue]:
     upstream = Upstream(input_value, OPENED_STATUS)
     client = AsyncHTTPHandler(transport=httpx.MockTransport(upstream))
@@ -257,7 +229,6 @@ def _stream_flag(input_value: Input) -> dict[str, JsonValue]:
         "request": _request_value(upstream.requests[0], input_value["request_header_names"]),
         "stream_options": _options(view.completion_stream),
     }
-
 
 def _response_headers(input_value: Input) -> dict[str, JsonValue]:
     upstream = Upstream(input_value, OPENED_STATUS)
@@ -271,7 +242,6 @@ def _response_headers(input_value: Input) -> dict[str, JsonValue]:
         "projected": JSON.validate_python(HANDLER.process_anthropic_headers(headers)),
     }
 
-
 SCENARIOS: Final[dict[str, Callable[[Input], dict[str, JsonValue]]]] = {
     "stream_post": _stream_post,
     "handshake_error": _handshake_error,
@@ -280,7 +250,6 @@ SCENARIOS: Final[dict[str, Callable[[Input], dict[str, JsonValue]]]] = {
     "stream_flag_and_context": _stream_flag,
     "response_headers": _response_headers,
 }
-
 
 def run(input_value: Input) -> JsonValue:
     scenario = SCENARIOS[input_value["scenario"]]
