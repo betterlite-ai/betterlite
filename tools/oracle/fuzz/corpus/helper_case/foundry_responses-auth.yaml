@@ -1,0 +1,12 @@
+kind: helper
+name: foundry-responses-auth-seed
+call:
+  foundry_responses:
+    steps:
+      - kind: auth
+        api_base: https://seed.services.ai.azure.com
+        api_key: seed-key
+      - kind: auth
+        params: {tenant_id: seed-tenant, client_id: seed-client, client_secret: seed-secret}
+env: {}
+compare: {ignore: []}

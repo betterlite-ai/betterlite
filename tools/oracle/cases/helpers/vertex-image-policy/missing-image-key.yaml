@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-image-policy-missing-image-key
+call:
+  vertex_image_policy:
+    models: []
+    billing: []
+    replies:
+      - {kind: convert, body: {predictions: [{bytesBase64Encoded: AAA}, {raiFilteredReason: blocked}]}, existing: []}
+env: {}
+compare: {ignore: []}

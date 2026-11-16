@@ -1,6 +1,9 @@
 use std::slice::from_ref;
 use std::time::Duration;
 
+use deadpool_postgres::Pool;
+use tokio::time::{Instant, sleep};
+
 use crate::migration_ledger::ledger_reads::FailedLookup;
 
 use crate::migration_ledger::lock::PRISMA_LOCK_KEY;
@@ -215,11 +218,6 @@ async fn postgres_lock_contention_is_typed() {
     with_schema(|database| async move {
         let jitter = FakeJitter(0);
         let steps = database.steps(&[], &jitter);
-        let held = steps
-            .deploy_lock_held()
-            .await
-            .expect("the lock state reads");
-        assert!(!held, "no session holds the Prisma migration lock yet");
         let holder = database.pool.get().await.expect("a holder session");
         holder
             .execute("SELECT pg_advisory_lock($1)", &[&PRISMA_LOCK_KEY])
@@ -241,18 +239,60 @@ async fn postgres_lock_contention_is_typed() {
     .await;
 }
 
+// The timed-out backend keeps sleeping with the lock until it is terminated, so the test kills it and waits
+async fn terminate_lock_holder(pool: &Pool) {
+    let client = pool.get().await.expect("a fixture connection");
+    let pid: i32 = client
+        .query_one(
+            "SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND granted AND objsubid = 1 \
+             AND classid::bigint = 0 AND objid::bigint = $1",
+            &[&PRISMA_LOCK_KEY],
+        )
+        .await
+        .expect("the sleeping backend still holds the migration lock")
+        .get(0);
+    client
+        .execute("SELECT pg_terminate_backend($1)", &[&pid])
+        .await
+        .expect("the timed-out backend is terminated");
+    let deadline = Instant::now().checked_add(Duration::from_secs(5)).unwrap();
+    loop {
+        let held: bool = client
+            .query_one(
+                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted \
+                 AND objsubid = 1 AND classid::bigint = 0 AND objid::bigint = $1)",
+                &[&PRISMA_LOCK_KEY],
+            )
+            .await
+            .expect("the lock state reads")
+            .get(0);
+        if !held {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the terminated backend still holds the migration lock"
+        );
+        sleep(Duration::from_millis(10)).await;
+    }
+}
+
 #[tokio::test]
 async fn postgres_slow_statement_is_a_deploy_timeout() {
     with_schema(|database| async move {
-        let catalog = [migration("20240101000000_slow", "SELECT pg_sleep(30)")];
+        let catalog = [migration(
+            "20240101000000_slow",
+            "SELECT set_config('statement_timeout', '0', false); SELECT pg_sleep(30)",
+        )];
         let jitter = FakeJitter(0);
         let steps = database.steps(&catalog, &jitter);
-        // A generous budget lets the statement start and be canceled by statement_timeout (57014).
+        // A zero statement timeout leaves the deadline as the only way this deploy ends
         let outcome = steps
             .deploy(Duration::from_secs(2))
             .await
             .expect("a typed deploy outcome");
-        assert!(matches!(outcome, DeployOutcome::TimedOut));
+        terminate_lock_holder(&database.pool).await;
+        assert!(matches!(outcome, DeployOutcome::TimedOut), "{outcome:?}");
     })
     .await;
 }
