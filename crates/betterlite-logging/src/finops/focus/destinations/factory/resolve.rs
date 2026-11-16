@@ -60,9 +60,9 @@ enum Credential {
 }
 
 // a setting comes from the override first and from its environment variable only when the override is absent
-pub(super) struct Sources<'a> {
-    pub(super) overrides: &'a DestinationOverrides,
-    pub(super) environment: &'a dyn EnvironmentLookup,
+pub(super) struct Sources<'source> {
+    pub(super) overrides: &'source DestinationOverrides,
+    pub(super) environment: &'source dyn EnvironmentLookup,
 }
 
 impl Sources<'_> {

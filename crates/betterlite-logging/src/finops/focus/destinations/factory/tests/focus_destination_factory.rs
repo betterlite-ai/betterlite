@@ -29,10 +29,10 @@ fn configured_secret(value: &Option<SecretString>) -> Option<&str> {
     value.as_ref().map(|secret| secret.expose_secret())
 }
 
-fn sources<'a>(
-    overrides: &'a DestinationOverrides,
-    environment: &'a dyn EnvironmentLookup,
-) -> resolve::Sources<'a> {
+fn sources<'source>(
+    overrides: &'source DestinationOverrides,
+    environment: &'source dyn EnvironmentLookup,
+) -> resolve::Sources<'source> {
     resolve::Sources {
         overrides,
         environment,
