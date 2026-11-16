@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-image-policy-first-prediction-only
+call:
+  vertex_image_policy:
+    models: []
+    billing: []
+    replies:
+      - {kind: detect, body: {predictions: [{raiFilteredReason: blocked}, {bytesBase64Encoded: AAA}]}, existing: []}
+      - {kind: detect, body: {predictions: [{bytesBase64Encoded: AAA}, {raiFilteredReason: blocked}]}, existing: []}
+      - {kind: detect, body: {other: []}, existing: []}
+env: {}
+compare: {ignore: []}
