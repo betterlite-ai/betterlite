@@ -3,13 +3,12 @@ use std::collections::BTreeMap;
 use betterlite_openai::evals::error::EvalsError;
 use betterlite_openai::evals::transformation::EvalsRequestContext;
 use betterlite_openai::evals::types::{
-    CreateEvalRequest, CreateRunRequest, DataSourceConfig, DataSourceConfigCustom, EvalOrder,
-    EvalOrderBy, GraderConfig, LLMAsJudgeGraderConfig, ListEvalsParams, ListRunsParams,
-    UpdateEvalRequest,
+    CreateEvalRequest, CreateRunRequest, DataSourceConfig, DataSourceConfigCustom, GraderConfig,
+    LLMAsJudgeGraderConfig, ListEvalsParams, ListRunsParams, UpdateEvalRequest,
 };
 use betterlite_openai::openai_base_config::{Headers, Object};
 
-use super::fixture::{evals_config, object};
+use super::fixture::{evals_config, object, parse};
 use crate::openai_resource_dispatch::evals::{Call, Dispatch, EvalRef, Outcome, RunId};
 use crate::openai_resource_dispatch::{
     OpenAiResourceError, OpenAiResourceOperation, OpenAiResourceResult, dispatch,
@@ -112,48 +111,36 @@ fn run_id() -> RunId<'static> {
     }
 }
 
-async fn eval_payload_rows() {
+async fn payload_rows() {
     let data = create_data();
     let created = r#"{"name":"smoke","data_source_config":{"type":"custom","item_schema":{"type":"object"},"include_sample_schema":true},"testing_criteria":[{"type":"llm_as_judge","model":"gpt-test"}]}"#;
-    let create = Call::CreateEval(&data);
-    row(create, Expected::new(None, false, Some(created))).await;
-    let listing = ListEvalsParams {
-        limit: Some(3),
-        after: Some(String::from("eval_0")),
-        before: None,
-        order: Some(EvalOrder::Desc),
-        order_by: Some(EvalOrderBy::UpdatedAt),
-    };
+    row(
+        Call::CreateEval(&data),
+        Expected::new(None, false, Some(created)),
+    )
+    .await;
     let listed = r#"{"limit":3,"after":"eval_0","order":"desc","order_by":"updated_at"}"#;
+    let evals: ListEvalsParams = parse(listed);
     let list_url = Some("https://api.evals.test/v1/evals");
-    let list = Call::ListEvals(&listing);
-    row(list, Expected::new(list_url, false, Some(listed))).await;
-}
-
-async fn run_payload_rows() {
-    let data = CreateRunRequest {
-        data_source: object(r#"{"type":"completions"}"#),
-        name: Some(String::from("nightly")),
-        metadata: None,
-    };
+    row(
+        Call::ListEvals(&evals),
+        Expected::new(list_url, false, Some(listed)),
+    )
+    .await;
     let run_body = r#"{"data_source":{"type":"completions"},"name":"nightly"}"#;
+    let run_data: CreateRunRequest = parse(run_body);
     let create = Call::CreateRun {
         eval_id: "eval_1",
-        request: &data,
+        request: &run_data,
     };
     row(create, Expected::new(Some(RUNS_URL), false, Some(run_body))).await;
-    let listing = ListRunsParams {
-        limit: Some(2),
-        after: None,
-        before: Some(String::from("run_0")),
-        order: Some(EvalOrder::Asc),
-    };
-    let listed = r#"{"limit":2,"before":"run_0","order":"asc"}"#;
+    let run_listed = r#"{"limit":2,"before":"run_0","order":"asc"}"#;
+    let runs: ListRunsParams = parse(run_listed);
     let list = Call::ListRuns {
         eval_id: "eval_1",
-        params: &listing,
+        params: &runs,
     };
-    row(list, Expected::new(Some(RUNS_URL), false, Some(listed))).await;
+    row(list, Expected::new(Some(RUNS_URL), false, Some(run_listed))).await;
 }
 
 async fn eval_id_rows() {
@@ -195,8 +182,7 @@ async fn error_row() {
 }
 
 pub(crate) async fn check() {
-    eval_payload_rows().await;
-    run_payload_rows().await;
+    payload_rows().await;
     eval_id_rows().await;
     run_id_rows().await;
     error_row().await;

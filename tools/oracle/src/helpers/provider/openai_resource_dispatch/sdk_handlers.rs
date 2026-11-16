@@ -86,20 +86,18 @@ pub(super) async fn files_create(case: &FilesCreate) -> HelperResult {
 }
 
 pub(super) async fn batches_create(case: &BatchesCreate) -> HelperResult {
-    let api = BatchesApi {
-        constructor: NoClient,
-    };
-    let connection = BatchConnection {
-        is_async: false,
-        settings: ClientSettings::default(),
-        client: Some(Fixture {
-            status: case.status,
-            body: case.reply.to_string().into_bytes(),
-        }),
-    };
     let call = BatchDispatch {
-        api: &api,
-        connection,
+        api: &BatchesApi {
+            constructor: NoClient,
+        },
+        connection: BatchConnection {
+            is_async: false,
+            settings: ClientSettings::default(),
+            client: Some(Fixture {
+                status: case.status,
+                body: case.reply.to_string().into_bytes(),
+            }),
+        },
         call: BatchCall::Create(&case.create),
     };
     let operation = OpenAiResourceOperation::Batches(Box::pin(call.run()));

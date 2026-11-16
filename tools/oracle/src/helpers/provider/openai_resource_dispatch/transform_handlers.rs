@@ -83,28 +83,25 @@ pub(super) async fn evals_get(case: &EvalsGet) -> HelperResult {
         openai_key: None,
         env_api_key: None,
     };
-    let litellm_params = Object::new();
-    let request_headers = Headers::new();
     let context = EvalsRequestContext {
-        litellm_params: &litellm_params,
-        headers: &request_headers,
+        litellm_params: &Object::new(),
+        headers: &Headers::new(),
     };
-    let call = EvalsCall::GetEval(EvalRef {
-        eval_id: &case.eval_id,
-        api_base: &case.api_base,
-    });
     let operation = OpenAiResourceOperation::Evals(Box::new(EvalsDispatch {
         config: &config,
         context,
-        call,
+        call: EvalsCall::GetEval(EvalRef {
+            eval_id: &case.eval_id,
+            api_base: &case.api_base,
+        }),
     }));
-    let outcome = dispatch(operation)
-        .await
-        .map_err(|error| leaf_failure(&error))?;
-    let OpenAiResourceResult::Evals(EvalsOutcome::Headers((url, headers))) = outcome else {
-        return Err(failure("Variant", OTHER_OUTCOME));
-    };
-    Ok(json!({ "url": url, "headers": headers }))
+    match dispatch(operation).await {
+        Ok(OpenAiResourceResult::Evals(EvalsOutcome::Headers((url, headers)))) => {
+            Ok(json!({ "url": url, "headers": headers }))
+        }
+        Ok(_) => Err(failure("Variant", OTHER_OUTCOME)),
+        Err(error) => Err(leaf_failure(&error)),
+    }
 }
 
 pub(super) async fn vector_stores_create(case: &VectorStoresCreate) -> HelperResult {
