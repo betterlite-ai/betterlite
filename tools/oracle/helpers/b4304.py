@@ -141,7 +141,11 @@ def response_kind(response: JsonValue) -> str:
 
 
 def write_record(sink: str, key: str, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    return {"sink": sink, "kind": response_kind(value["response"]), "key": key}
+    return {
+        "sink": sink,
+        "kind": response_kind(value["response"]),
+        "key": key,
+    }
 
 
 class RecordingBackend(BaseCache):

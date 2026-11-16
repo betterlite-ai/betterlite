@@ -18,7 +18,7 @@ pub(crate) enum Sink {
 
 #[derive(Default)]
 pub(crate) struct Recorder {
-    writes: Mutex<Vec<Value>>,
+    pub(crate) writes: Mutex<Vec<Value>>,
 }
 
 impl Recorder {
@@ -30,11 +30,6 @@ impl Recorder {
         });
         let mut writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
         writes.push(write);
-    }
-
-    pub(crate) fn writes(&self) -> Vec<Value> {
-        let writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
-        writes.clone()
     }
 }
 
@@ -57,13 +52,7 @@ fn stored_kind(envelope: &CacheValue) -> &'static str {
 }
 
 pub(crate) struct RecordingBackend {
-    recorder: Arc<Recorder>,
-}
-
-impl RecordingBackend {
-    pub(crate) fn new(recorder: Arc<Recorder>) -> Self {
-        Self { recorder }
-    }
+    pub(crate) recorder: Arc<Recorder>,
 }
 
 #[async_trait]
@@ -97,17 +86,8 @@ impl EnvelopeBackend for RecordingBackend {
 }
 
 pub(crate) struct RecordingMemory {
-    recorder: Arc<Recorder>,
-    stored: Mutex<BTreeMap<String, CacheValue>>,
-}
-
-impl RecordingMemory {
-    pub(crate) fn new(recorder: Arc<Recorder>) -> Self {
-        Self {
-            recorder,
-            stored: Mutex::new(BTreeMap::new()),
-        }
-    }
+    pub(crate) recorder: Arc<Recorder>,
+    pub(crate) stored: Mutex<BTreeMap<String, CacheValue>>,
 }
 
 impl MemoryCacheOps for RecordingMemory {

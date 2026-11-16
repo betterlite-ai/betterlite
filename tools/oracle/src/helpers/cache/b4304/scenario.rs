@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_cache::cache_key::settings::CacheKeySettings;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
-use betterlite_cache::embedding::response::EmbeddingResponse;
 use betterlite_cache::envelope::facade::{Clock, EnvelopeSettings, ResponseCache};
 use betterlite_cache::handler::state::OriginalFunction;
 use betterlite_cache::types::cache_type::{CacheMode, LiteLlmCacheType};
@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use super::input::{Body, Input, ResultKindInput, StoreResult, StoreScenario, WrapScenario};
+use super::input::{Input, ResultKindInput, StoreResult, StoreScenario, WrapScenario};
 use super::record::{Recorder, RecordingBackend, RecordingMemory};
 use crate::b4297::{HelperCache, SilentConsole, SilentLogger};
 
@@ -52,7 +52,11 @@ pub(crate) async fn run(input: &Input) -> HelperResult {
 async fn store_scenario(scenario: &StoreScenario) -> Result<Value, Box<HelperError>> {
     let recorder = Arc::new(Recorder::default());
     let dual = if scenario.dual {
-        Some(recording_dual(&recorder))
+        let memory = Arc::new(RecordingMemory {
+            recorder: Arc::clone(&recorder),
+            stored: Mutex::new(BTreeMap::new()),
+        });
+        Some(DualCache::new(memory, None, dual_settings()))
     } else {
         None
     };
@@ -68,7 +72,10 @@ async fn store_scenario(scenario: &StoreScenario) -> Result<Value, Box<HelperErr
             cache,
             supported_call_types: scenario.supported_call_types.clone(),
         },
-        tracker: Arc::new(tracker()),
+        tracker: Arc::new(CacheWriteTracker {
+            tasks: TaskTracker::new(),
+            cancellation: CancellationToken::new(),
+        }),
     };
     store_response(
         &context,
@@ -82,7 +89,12 @@ async fn store_scenario(scenario: &StoreScenario) -> Result<Value, Box<HelperErr
     )
     .or_value_error()?;
     context.tracker.wait_idle().await;
-    Ok(json!({ "writes": recorder.writes() }))
+    let writes = recorder
+        .writes
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    Ok(json!({ "writes": writes }))
 }
 
 fn wrap_scenario(scenario: &WrapScenario) -> Result<Value, Box<HelperError>> {
@@ -106,14 +118,14 @@ fn wrap_scenario(scenario: &WrapScenario) -> Result<Value, Box<HelperError>> {
 fn cacheable_result(result: &StoreResult) -> Result<CacheableResult, Box<HelperError>> {
     match result {
         StoreResult::Chat(body) => Ok(CacheableResult::Chat(body.body.clone())),
-        StoreResult::Embedding(body) => Ok(CacheableResult::Embedding(embedding_response(body)?)),
+        StoreResult::Embedding(body) => {
+            let value = serde_json::to_value(&body.body).or_value_error()?;
+            Ok(CacheableResult::Embedding(
+                serde_json::from_value(value).or_value_error()?,
+            ))
+        }
         StoreResult::Raw(body) => Ok(CacheableResult::Other(body.body.clone())),
     }
-}
-
-fn embedding_response(body: &Body) -> Result<EmbeddingResponse, Box<HelperError>> {
-    let value = serde_json::to_value(&body.body).or_value_error()?;
-    serde_json::from_value(value).or_value_error()
 }
 
 const fn result_kind(kind: ResultKindInput) -> ResultKind {
@@ -132,19 +144,7 @@ fn original_function(name: &str) -> OriginalFunction {
     }
 }
 
-fn tracker() -> CacheWriteTracker {
-    CacheWriteTracker {
-        tasks: TaskTracker::new(),
-        cancellation: CancellationToken::new(),
-    }
-}
-
-fn recording_dual(recorder: &Arc<Recorder>) -> DualCache<RecordingMemory> {
-    let memory = Arc::new(RecordingMemory::new(Arc::clone(recorder)));
-    DualCache::new(memory, None, dual_settings())
-}
-
-const fn dual_settings() -> DualCacheSettings {
+fn dual_settings() -> DualCacheSettings {
     DualCacheSettings {
         default_in_memory_ttl: None,
         default_redis_ttl: None,
@@ -161,7 +161,9 @@ fn response_cache(
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_config_error()?;
     let clock: Clock = Arc::new(|| 0.0_f64);
     Ok(Arc::new(ResponseCache {
-        backend: Arc::new(RecordingBackend::new(Arc::clone(recorder))),
+        backend: Arc::new(RecordingBackend {
+            recorder: Arc::clone(recorder),
+        }),
         key_settings: CacheKeySettings {
             cache_type,
             mode: CacheMode::DefaultOn,
