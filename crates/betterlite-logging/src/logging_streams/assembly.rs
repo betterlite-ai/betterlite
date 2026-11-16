@@ -1,0 +1,106 @@
+use std::error::Error;
+
+use betterlite_models::decisions::Json;
+use rust_decimal::Decimal;
+use thiserror::Error;
+
+use crate::fields::usage::Usage;
+use crate::fields::usage::parse::usage_from_mapping;
+// ast-grep-ignore: no-long-names
+use crate::logging_failure::partial_usage::record_partial_usage_for_failure;
+use crate::logging_state::LoggingState;
+
+pub type PromptCounter<'counter> =
+    dyn Fn() -> Result<i64, PromptCountError> + Send + Sync + 'counter;
+
+#[derive(Debug, Error)]
+pub enum PromptCountError {
+    #[error("the prompt token count failed")]
+    Failed(#[source] Box<dyn Error + Send + Sync>),
+}
+
+#[derive(Debug, Error)]
+pub enum StreamAssemblyError {
+    #[error("the streamed response could not be assembled")]
+    Builder(#[source] Box<dyn Error + Send + Sync>),
+}
+
+// B2227's stream_chunk_builder over one stream's chunks, given the caller's prompt-token counter.
+pub trait StreamAssembly {
+    fn assemble(
+        &self,
+        count_prompt_tokens: Option<&PromptCounter<'_>>,
+    ) -> Result<Option<Json>, StreamAssemblyError>;
+
+    fn total_usage(&self) -> Usage;
+}
+
+// LiteLLM's end-of-stream assembly: the complete response, the usage-only fallback, or nothing.
+pub enum StreamBuild {
+    Complete(Json),
+    UsageOnly(Usage),
+    Empty,
+}
+
+#[must_use]
+pub fn successful_stream_handoff(
+    assembly: &dyn StreamAssembly,
+    count_prompt_tokens: Option<&PromptCounter<'_>>,
+) -> StreamBuild {
+    match assembly.assemble(count_prompt_tokens) {
+        Ok(Some(response)) => StreamBuild::Complete(response),
+        Ok(None) => StreamBuild::Empty,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                "stream_chunk_builder raised at end-of-stream; logging best-effort usage from chunks"
+            );
+            StreamBuild::UsageOnly(assembly.total_usage())
+        }
+    }
+}
+
+// LiteLLM's _record_partial_usage_for_failure: an interrupted stream still billed for its chunks.
+pub fn partial_stream_handoff<Cost>(
+    assembly: &dyn StreamAssembly,
+    count_prompt_tokens: Option<&PromptCounter<'_>>,
+    state: &mut LoggingState,
+    response_cost: Cost,
+) -> Option<Decimal>
+where
+    Cost: FnOnce(&Json) -> Option<Decimal>,
+{
+    let response = match assembly.assemble(count_prompt_tokens) {
+        Ok(Some(response)) => response,
+        Ok(None) => return None,
+        Err(error) => {
+            tracing::debug!(%error, "could not recover partial usage for interrupted stream");
+            return None;
+        }
+    };
+    let usage = response_usage(&response)?;
+    let response = with_call_model(response, &state.model);
+    let cost = response_cost(&response).unwrap_or(Decimal::ZERO);
+    // ast-grep-ignore: no-long-names
+    record_partial_usage_for_failure(state, &usage, cost);
+    Some(cost)
+}
+
+fn response_usage(response: &Json) -> Option<Usage> {
+    let Json::Object(fields) = response else {
+        return None;
+    };
+    let Some(Json::Object(usage)) = fields.get("usage") else {
+        return None;
+    };
+    usage_from_mapping(usage).ok()
+}
+
+fn with_call_model(mut response: Json, model: &str) -> Json {
+    if !model.is_empty()
+        && let Json::Object(fields) = &mut response
+    {
+        fields.insert("model".to_owned(), Json::Text(model.to_owned()));
+    }
+    response
+}
