@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use tracing_subscriber::layer::SubscriberExt as _;
 
 use super::warnings::Warnings;
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 const DEFAULT_EVENT_ID: &str = "00000000-0000-4000-8000-000000000000";
 
