@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Protocol, TypeAlias, TypedDict
+from typing import Protocol, TypeAlias
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -11,11 +11,6 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 
 Body: TypeAlias = dict[str, JsonValue]
 
-# pydantic leaves a plain dict message alone, and LiteLLM reads the prompt from exactly these fields
-PROMPT: list[AllMessageValues] = [
-    {"role": "user", "content": "hello there"},  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
-    {"role": "user", "content": "second"},  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
-]
 EMPTY_MESSAGES: list[AllMessageValues] = []
 EMPTY: Body = {}
 

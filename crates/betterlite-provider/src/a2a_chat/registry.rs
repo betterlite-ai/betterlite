@@ -144,7 +144,7 @@ fn fill_from_agent(
         api_key = registry_api_key(&agent.litellm_params, uses_entra, entra)?;
     }
     let mut headers = input.headers.cloned();
-    if input.headers.is_none_or(|given| given.is_empty()) {
+    if input.headers.is_none_or(BTreeMap::is_empty) {
         headers = registry_headers(&agent.litellm_params, uses_entra)?
             .filter(|stored| !stored.is_empty())
             .or(headers);

@@ -1,8 +1,15 @@
 from typing import Literal, TypedDict
 
+from litellm.types.llms.openai import AllMessageValues
 from pydantic import JsonValue
 
-from .support import EMPTY, EMPTY_MESSAGES, PROMPT, Body, ChatConfig, config
+from .support import EMPTY, EMPTY_MESSAGES, Body, ChatConfig, config
+
+# pydantic leaves a plain dict message alone, and LiteLLM reads the prompt from exactly these fields
+PROMPT: list[AllMessageValues] = [
+    {"role": "user", "content": "hello there"},  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
+    {"role": "user", "content": "second"},  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
+]
 
 
 class RequestCase(TypedDict):

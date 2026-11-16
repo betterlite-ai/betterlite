@@ -5,7 +5,7 @@ from litellm.llms.a2a.common_utils import A2AError
 from litellm.types.utils import ModelResponse
 from pydantic import JsonValue, TypeAdapter
 
-from .support import EMPTY, EMPTY_MESSAGES, Body, ChatConfig, config, error_view, logging_object
+from .support import EMPTY, EMPTY_MESSAGES, ChatConfig, config, error_view, logging_object
 
 
 class ReplyMessage(TypedDict):
