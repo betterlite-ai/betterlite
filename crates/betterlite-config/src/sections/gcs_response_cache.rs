@@ -11,10 +11,11 @@ const PATH_PATH: &str = "litellm_settings.cache_params.gcs_path";
 const BUCKET_VARIABLE: &str = "GCS_BUCKET_NAME";
 const SERVICE_ACCOUNT_VARIABLE: &str = "GCS_PATH_SERVICE_ACCOUNT";
 
+// every section's raw and snapshot live on the loader's stack, so this section boxes both
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Raw {
-    litellm_settings: LiteLlmSettings,
+    litellm_settings: Box<LiteLlmSettings>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -34,7 +35,7 @@ struct CacheParams {
     gcs_path: Option<String>,
 }
 
-pub type Settings = Option<GcsResponseCacheSettings>;
+pub type Settings = Option<Box<GcsResponseCacheSettings>>;
 
 #[derive(Debug, Clone)]
 pub struct GcsResponseCacheSettings {
@@ -50,16 +51,17 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        if self.litellm_settings.cache != Some(true) {
+        let litellm_settings = *self.litellm_settings;
+        if litellm_settings.cache != Some(true) {
             return Ok(None);
         }
-        let Some(params) = self.litellm_settings.cache_params else {
+        let Some(params) = litellm_settings.cache_params else {
             return Ok(None);
         };
         if params.cache_type.as_deref() != Some("gcs") {
             return Ok(None);
         }
-        convert_params(params, lookup).map(Some)
+        convert_params(params, lookup).map(|settings| Some(Box::new(settings)))
     }
 }
 

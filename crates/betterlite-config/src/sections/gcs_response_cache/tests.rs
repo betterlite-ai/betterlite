@@ -19,7 +19,7 @@ fn load(source: &str) -> Result<Config, ConfigError> {
 fn loads_bucket_service_account_and_path() {
     let config = load("litellm_settings:\n  cache: true\n  cache_params:\n    type: gcs\n    gcs_bucket_name: responses\n    gcs_path_service_account: /run/sa.json\n    gcs_path: responses//\n")
         .expect("valid GCS settings");
-    let settings = config.sections.gcs_response_cache.unwrap();
+    let settings = *config.sections.gcs_response_cache.unwrap();
     assert_eq!(settings.bucket_name, "responses");
     assert_eq!(
         settings.service_account_path.unwrap().expose_secret(),
@@ -32,7 +32,7 @@ fn loads_bucket_service_account_and_path() {
 fn missing_path_is_empty() {
     let config = load("litellm_settings:\n  cache: true\n  cache_params:\n    type: gcs\n    gcs_bucket_name: responses\n")
         .expect("valid GCS settings");
-    let settings = config.sections.gcs_response_cache.unwrap();
+    let settings = *config.sections.gcs_response_cache.unwrap();
     assert_eq!(settings.path, "");
 }
 
@@ -40,7 +40,7 @@ fn missing_path_is_empty() {
 fn missing_service_account_is_none() {
     let config = load("litellm_settings:\n  cache: true\n  cache_params:\n    type: gcs\n    gcs_bucket_name: responses\n")
         .expect("valid GCS settings");
-    let settings = config.sections.gcs_response_cache.unwrap();
+    let settings = *config.sections.gcs_response_cache.unwrap();
     assert!(settings.service_account_path.is_none());
 }
 
@@ -55,7 +55,7 @@ fn falls_back_to_bucket_and_service_account_environment() {
     let config = ConfigLoader { lookup }
         .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: gcs\n")
         .expect("environment-backed GCS settings");
-    let settings = config.sections.gcs_response_cache.unwrap();
+    let settings = *config.sections.gcs_response_cache.unwrap();
     assert_eq!(settings.bucket_name, "responses");
     assert_eq!(
         settings.service_account_path.unwrap().expose_secret(),
@@ -74,7 +74,7 @@ fn explicit_values_beat_environment() {
     let config = ConfigLoader { lookup }
         .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: gcs\n    gcs_bucket_name: from-config\n    gcs_path_service_account: /config/sa.json\n")
         .expect("configured GCS settings");
-    let settings = config.sections.gcs_response_cache.unwrap();
+    let settings = *config.sections.gcs_response_cache.unwrap();
     assert_eq!(settings.bucket_name, "from-config");
     assert_eq!(
         settings.service_account_path.unwrap().expose_secret(),
@@ -93,7 +93,7 @@ fn empty_values_fall_back_to_environment() {
     let config = ConfigLoader { lookup }
         .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: gcs\n    gcs_bucket_name: ''\n    gcs_path_service_account: ''\n")
         .expect("environment-backed GCS settings");
-    let settings = config.sections.gcs_response_cache.unwrap();
+    let settings = *config.sections.gcs_response_cache.unwrap();
     assert_eq!(settings.bucket_name, "from-environment");
     assert_eq!(
         settings.service_account_path.unwrap().expose_secret(),
@@ -135,7 +135,7 @@ fn resolves_environment_references() {
     let config = ConfigLoader { lookup }
         .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: gcs\n    gcs_bucket_name: os.environ/BUCKET\n    gcs_path_service_account: os.environ/CREDENTIALS\n    gcs_path: os.environ/PREFIX\n")
         .expect("environment references resolve");
-    let settings = config.sections.gcs_response_cache.unwrap();
+    let settings = *config.sections.gcs_response_cache.unwrap();
     assert_eq!(settings.bucket_name, "responses");
     assert_eq!(
         settings.service_account_path.unwrap().expose_secret(),
@@ -181,7 +181,7 @@ fn empty_service_account_environment_is_none() {
     let config = ConfigLoader { lookup }
         .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: gcs\n    gcs_bucket_name: responses\n")
         .expect("the bucket comes from the config");
-    let settings = config.sections.gcs_response_cache.unwrap();
+    let settings = *config.sections.gcs_response_cache.unwrap();
     assert!(settings.service_account_path.is_none());
 }
 
