@@ -71,8 +71,7 @@ struct EditConfig {
     base_steps: i64,
 }
 
-// transform_image_edit_request: the predict body as serialized JSON, and no multipart files
-// images is None only when the caller sent no image at all, and an empty list may still carry a mask
+// transform_image_edit_request: the predict body as serialized JSON and no multipart files, with a missing image list refused before the prompt
 pub fn transform_image_edit_request(
     prompt: Option<&str>,
     images: Option<&mut [Option<ImagenFileInput<'_>>]>,
@@ -80,11 +79,11 @@ pub fn transform_image_edit_request(
     mapped: &ImageParams,
     max_depth: i64,
 ) -> Result<(String, ImageFiles), ImagenEditError> {
-    let Some(images) = images else {
+    let Some(uploads) = images else {
         return Err(ImagenEditError::MissingImage);
     };
     // every reference is read before the prompt is checked, so a bad image wins over an absent prompt
-    let references = prepare_references(images, mask, max_depth)?;
+    let references = prepare_references(uploads, mask, max_depth)?;
     let Some(edit_prompt) = prompt else {
         return Err(ImagenEditError::MissingPrompt);
     };

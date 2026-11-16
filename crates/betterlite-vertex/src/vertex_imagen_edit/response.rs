@@ -4,8 +4,7 @@ use betterlite_openai::api::image_contracts::records::{ImageData, ImageResponse,
 use super::error::ImagenEditError;
 use crate::vertex_imagen_generation::decode::decode_imagen_generation;
 
-// transform_image_edit_response: only a prediction holding the bytesBase64Encoded key becomes an image
-// ImageResponse() stamps the current time and a zero usage, and the edit transform leaves both alone
+// transform_image_edit_response: only a prediction holding the bytesBase64Encoded key becomes an image, and ImageResponse stamps the time and a zero usage
 pub fn transform_image_edit_response(
     reply: &UpstreamResponse,
     now_seconds: i64,

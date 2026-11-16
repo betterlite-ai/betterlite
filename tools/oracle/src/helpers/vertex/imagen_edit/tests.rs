@@ -299,7 +299,7 @@ fn a_value_key_that_is_not_base64_falls_through_to_the_next_one() {
 }
 
 #[test]
-fn the_depth_limit_refuses_the_third_nested_list() {
+fn a_record_past_the_depth_limit_is_refused() {
     let error = Op::run(&input(json!({
         "model": "imagen-3.0-capability-001",
         "prompt": "paint",
@@ -321,6 +321,10 @@ fn the_depth_limit_refuses_the_third_nested_list() {
     })))
     .expect_err("the reader stops past the limit");
     assert_eq!(error.class, "ValueError");
+}
+
+#[test]
+fn a_record_at_the_depth_limit_is_read() {
     let parsed = Op::run(&input(json!({
         "model": "imagen-3.0-capability-001",
         "prompt": "paint",

@@ -50,76 +50,53 @@ fn nested_mapping(depth: usize, leaf: ImagenFileInput<'static>) -> ImagenFileInp
     image
 }
 
-struct NoTellStream {
-    content: Vec<u8>,
-    position: usize,
+// the one operation a test stream refuses: its tell, its rewind, or its read
+#[derive(Clone, Copy)]
+enum StreamFault {
+    Tell,
+    Rewind,
+    Read,
 }
 
-impl Read for NoTellStream {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        let remaining = &self.content[self.position..];
-        let count = remaining.len().min(buffer.len());
-        buffer[..count].copy_from_slice(&remaining[..count]);
-        self.position = self.position.saturating_add(count);
-        Ok(count)
+struct FaultyStream {
+    cursor: Cursor<Vec<u8>>,
+    fault: StreamFault,
+}
+
+impl FaultyStream {
+    fn new(content: &[u8], position: u64, fault: StreamFault) -> Self {
+        let mut cursor = Cursor::new(content.to_vec());
+        cursor.set_position(position);
+        Self { cursor, fault }
     }
 }
 
-// a tell is a seek to the current position, which this stream refuses
-impl Seek for NoTellStream {
-    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
-        match position {
-            SeekFrom::Start(offset) => {
-                self.position = usize::try_from(offset).expect("a seek offset fits");
-                Ok(offset)
-            }
-            SeekFrom::Current(_) | SeekFrom::End(_) => Err(io::Error::other("tell refused")),
+impl Read for FaultyStream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.fault {
+            StreamFault::Read => Err(io::Error::other("read refused")),
+            StreamFault::Tell | StreamFault::Rewind => self.cursor.read(buf),
         }
     }
 }
 
-// the tell answers, while the rewind from a moved cursor does not
-struct NoRewindStream {
-    content: Vec<u8>,
-    position: usize,
-}
-
-impl Read for NoRewindStream {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        let remaining = &self.content[self.position..];
-        let count = remaining.len().min(buffer.len());
-        buffer[..count].copy_from_slice(&remaining[..count]);
-        self.position = self.position.saturating_add(count);
-        Ok(count)
-    }
-}
-
-impl Seek for NoRewindStream {
-    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
-        match position {
-            SeekFrom::Current(0) => Ok(u64::try_from(self.position).expect("a position fits")),
-            SeekFrom::Start(0) => Err(io::Error::other("rewind refused")),
-            SeekFrom::Start(offset) => {
-                self.position = usize::try_from(offset).expect("a seek offset fits");
+impl Seek for FaultyStream {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        match (self.fault, pos) {
+            (StreamFault::Tell, SeekFrom::Current(_) | SeekFrom::End(_)) => {
+                Err(io::Error::other("tell refused"))
+            }
+            (StreamFault::Rewind, SeekFrom::Start(0)) => Err(io::Error::other("rewind refused")),
+            (StreamFault::Rewind, SeekFrom::Current(0)) => self.cursor.stream_position(),
+            (StreamFault::Rewind, SeekFrom::Current(_) | SeekFrom::End(_)) => {
+                Err(io::Error::other("seek refused"))
+            }
+            (_, SeekFrom::Start(offset)) => {
+                self.cursor.set_position(offset);
                 Ok(offset)
             }
-            SeekFrom::Current(_) | SeekFrom::End(_) => Err(io::Error::other("seek refused")),
+            (_, pos) => self.cursor.seek(pos),
         }
-    }
-}
-
-// tell and rewind answer, while the read does not
-struct NoReadStream;
-
-impl Read for NoReadStream {
-    fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
-        Err(io::Error::other("read refused"))
-    }
-}
-
-impl Seek for NoReadStream {
-    fn seek(&mut self, _position: SeekFrom) -> io::Result<u64> {
-        Ok(0)
     }
 }
 
@@ -376,10 +353,7 @@ fn a_seekable_stream_is_read_whole_and_left_where_it_was() {
 
 #[test]
 fn a_seekable_stream_whose_tell_refuses_is_a_stream_error() {
-    let mut stream = NoTellStream {
-        content: b"0123456789".to_vec(),
-        position: 7,
-    };
+    let mut stream = FaultyStream::new(b"0123456789", 7, StreamFault::Tell);
     let mut image = ImagenFileInput::Seekable(&mut stream);
     let error = read_bytes(&mut image).expect_err("a BytesIO always answers its tell");
     assert!(matches!(error, ImagenEditError::Stream(_)));
@@ -387,10 +361,7 @@ fn a_seekable_stream_whose_tell_refuses_is_a_stream_error() {
 
 #[test]
 fn a_seekable_stream_that_cannot_rewind_is_a_stream_error() {
-    let mut stream = NoRewindStream {
-        content: b"0123456789".to_vec(),
-        position: 7,
-    };
+    let mut stream = FaultyStream::new(b"0123456789", 7, StreamFault::Rewind);
     let mut image = ImagenFileInput::Seekable(&mut stream);
     let error = read_bytes(&mut image).expect_err("a BytesIO always rewinds");
     assert!(matches!(error, ImagenEditError::Stream(_)));
@@ -398,7 +369,7 @@ fn a_seekable_stream_that_cannot_rewind_is_a_stream_error() {
 
 #[test]
 fn a_seekable_stream_that_cannot_read_is_a_stream_error() {
-    let mut stream = NoReadStream;
+    let mut stream = FaultyStream::new(b"0123456789", 0, StreamFault::Read);
     let mut image = ImagenFileInput::Seekable(&mut stream);
     let error = read_bytes(&mut image).expect_err("a refused read fails");
     assert!(matches!(error, ImagenEditError::Stream(_)));
@@ -418,10 +389,7 @@ fn a_buffered_stream_with_a_position_is_rewound_and_restored() {
 
 #[test]
 fn a_buffered_stream_that_cannot_tell_is_read_from_where_it_stands() {
-    let mut stream = NoTellStream {
-        content: b"0123456789".to_vec(),
-        position: 7,
-    };
+    let mut stream = FaultyStream::new(b"0123456789", 7, StreamFault::Tell);
     let mut image = ImagenFileInput::Buffered(&mut stream);
     assert_eq!(
         read_bytes(&mut image).expect("the stream reads"),
@@ -437,11 +405,11 @@ fn a_reader_answers_its_bytes_or_its_text() {
         read_bytes(&mut image).expect("the reader answers"),
         b"abc".as_slice()
     );
-    let mut text = TextReader("héllo".to_owned());
+    let mut text = TextReader("h\u{e9}llo".to_owned());
     let mut text_image = ImagenFileInput::Reader(&mut text);
     assert_eq!(
         read_bytes(&mut text_image).expect("the text is encoded"),
-        "héllo".as_bytes()
+        "h\u{e9}llo".as_bytes()
     );
 }
 
@@ -476,9 +444,9 @@ fn permissive_base64_decodes(#[case] text: &str, #[case] expected: &[u8]) {
 #[case::two_symbols("YW")]
 #[case::three_symbols("YWJ")]
 #[case::junk_symbols("not base64!")]
-#[case::non_ascii("héllo")]
+#[case::non_ascii("h\u{e9}llo")]
 #[case::a_short_pad_run_leaves_a_partial_quad("YQ=Q")]
-#[case::non_ascii_after_a_pad_run("YQ==é")]
+#[case::non_ascii_after_a_pad_run("YQ==\u{e9}")]
 #[case::a_pad_run_that_data_follows_leaves_a_partial_quad("QUI=QUJD")]
 #[case::pads_split_by_junk_do_not_complete_the_quad("YQ=\n=QUJD")]
 fn an_undecodable_text_is_a_base64_error(#[case] text: &str) {
