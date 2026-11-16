@@ -1,7 +1,6 @@
 from typing import Final, Literal, Required, TypedDict
 
 from litellm.integrations import shadow_eval_logger
-from litellm.llms.base_llm.base_utils import type_to_response_format_param
 from pydantic import JsonValue, TypeAdapter
 
 JSON: Final = TypeAdapter(JsonValue)
@@ -49,18 +48,14 @@ def unmask(input_value: Input) -> JsonValue:
 
 
 def response_format(_: Input) -> JsonValue:
-    schema = JSON.validate_python(type_to_response_format_param(shadow_eval_logger.PairwiseVerdict))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
+    schema = JSON.validate_python(shadow_eval_logger.PAIRWISE_JUDGE_RESPONSE_FORMAT)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L480
     return {"response_format": schema}
-
-
-def system_prompt(_: Input) -> JsonValue:
-    return {"text": shadow_eval_logger.PAIRWISE_JUDGE_SYSTEM_PROMPT}
 
 
 def run(input_value: Input) -> JsonValue:
     operation = input_value["operation"]
     if operation == "system_prompt":
-        return system_prompt(input_value)
+        return {"text": shadow_eval_logger.PAIRWISE_JUDGE_SYSTEM_PROMPT}
     if operation == "tool_definitions":
         return tool_definitions(input_value)
     if operation == "judge_prompt":

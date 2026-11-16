@@ -14,35 +14,11 @@ const VERDICT_DESCRIPTION: &str = concat!(
 // The workspace's Json object is an IndexMap, so the constant LiteLLM holds is built by a function here
 #[must_use]
 pub fn pairwise_judge_response_format() -> Json {
-    let preference = object([
-        (
-            "enum",
-            Json::List(vec![
-                Json::Text("A".to_owned()),
-                Json::Text("B".to_owned()),
-                Json::Text("tie".to_owned()),
-            ]),
-        ),
-        ("title", Json::Text("Preference".to_owned())),
-        ("type", Json::Text("string".to_owned())),
-    ]);
-    let confidence = object([
-        ("title", Json::Text("Confidence".to_owned())),
-        ("type", Json::Text("number".to_owned())),
-    ]);
+    let required = ["preference", "confidence"].map(|name| Json::Text(name.to_owned()));
     let schema = object([
         ("description", Json::Text(VERDICT_DESCRIPTION.to_owned())),
-        (
-            "properties",
-            object([("preference", preference), ("confidence", confidence)]),
-        ),
-        (
-            "required",
-            Json::List(vec![
-                Json::Text("preference".to_owned()),
-                Json::Text("confidence".to_owned()),
-            ]),
-        ),
+        ("properties", verdict_properties()),
+        ("required", Json::List(required.into())),
         ("title", Json::Text("PairwiseVerdict".to_owned())),
         ("type", Json::Text("object".to_owned())),
         ("additionalProperties", Json::Bool(false)),
@@ -58,6 +34,21 @@ pub fn pairwise_judge_response_format() -> Json {
             ]),
         ),
     ])
+}
+
+// pydantic's field schemas: preference is the Literal's enum, confidence a float
+fn verdict_properties() -> Json {
+    let labels = ["A", "B", "tie"].map(|label| Json::Text(label.to_owned()));
+    let preference = object([
+        ("enum", Json::List(labels.into())),
+        ("title", Json::Text("Preference".to_owned())),
+        ("type", Json::Text("string".to_owned())),
+    ]);
+    let confidence = object([
+        ("title", Json::Text("Confidence".to_owned())),
+        ("type", Json::Text("number".to_owned())),
+    ]);
+    object([("preference", preference), ("confidence", confidence)])
 }
 
 fn object<const SIZE: usize>(entries: [(&str, Json); SIZE]) -> Json {

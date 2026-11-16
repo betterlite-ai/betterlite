@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::iter::repeat_with;
+
 use betterlite_logging::logging_privacy::CallbackMetadataError;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
@@ -25,9 +27,7 @@ fn metadata_failure_names_the_callback_error_and_costs_nothing() {
 fn the_uniform_coin_draws_both_positions() {
     let coin = UniformCoin::new(StdRng::seed_from_u64(7));
 
-    let draws: Vec<bool> = std::iter::repeat_with(|| coin.real_is_a())
-        .take(64)
-        .collect();
+    let draws: Vec<bool> = repeat_with(|| coin.real_is_a()).take(64).collect();
 
     assert!(draws.iter().any(|value| *value));
     assert!(draws.iter().any(|value| !*value));
