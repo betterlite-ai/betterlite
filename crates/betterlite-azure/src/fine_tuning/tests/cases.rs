@@ -137,6 +137,18 @@ fn create_cancel_retrieve() {
     ];
     let actual: Vec<Observation> = steps.iter().map(run).collect();
     assert_eq!(actual, expected.to_vec());
+    let (_, sync_messages) = capture(|| run(&steps[0]));
+    assert!(
+        sync_messages
+            .iter()
+            .any(|message| message.starts_with(DEBUG_CREATE))
+    );
+    let (_, async_messages) = capture(|| run(&steps[1]));
+    assert!(
+        !async_messages
+            .iter()
+            .any(|message| message.starts_with(DEBUG_CREATE))
+    );
 }
 
 fn azure_status_normalization() {
@@ -416,5 +428,18 @@ fn sdk_error_passthrough() {
             }],
             supplied_calls: Vec::new(),
         }
+    );
+    let (_, sync_messages) = capture(|| run(&after(list(&page(&queued, true)), "ft_1", 7)));
+    assert!(
+        sync_messages
+            .iter()
+            .any(|message| message.starts_with(DEBUG_LIST))
+    );
+    let (_, async_messages) =
+        capture(|| run(&async_(after(list(&page(&queued, true)), "ft_2", 3))));
+    assert!(
+        !async_messages
+            .iter()
+            .any(|message| message.starts_with(DEBUG_LIST))
     );
 }

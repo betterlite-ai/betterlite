@@ -32,6 +32,8 @@ const MISSING: &str = "Azure OpenAI client is not initialized. Make sure api_key
 const NOT_ASYNC: &str =
     "OpenAI client is not an instance of AsyncOpenAI. Make sure you passed an AsyncOpenAI client.";
 const DEBUG_DEFAULT: &str = "Azure fine-tuning: defaulting trainingType=1 (supervised)";
+const DEBUG_CREATE: &str = "creating fine tuning job, args=";
+const DEBUG_LIST: &str = "list fine tuning job, after=";
 
 type Calls = Arc<Mutex<Vec<Call>>>;
 type Reply = Result<Vec<u8>, SdkError>;
