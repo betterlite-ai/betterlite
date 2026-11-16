@@ -4,10 +4,9 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{
-    DashscopeFamily, FamilyEnv, QWEN_AI_PLATFORM_IMAGE_BASE, QWEN_AI_PLATFORM_KEY_MESSAGE,
-    QWENCLOUD_IMAGE_BASE, QWENCLOUD_KEY_MESSAGE, chat_config, chat_policy, embedding_config,
-    embedding_identity, image_config, image_identity, missing_family_key_message, rerank_config,
-    rerank_settings, resolve_family_api_key,
+    DashscopeFamily, FamilyEnv, chat_config, chat_policy, embedding_config, embedding_identity,
+    image_config, image_identity, missing_family_key_message, rerank_config, rerank_settings,
+    resolve_family_api_key,
 };
 
 fn no_env() -> FamilyEnv {
@@ -118,12 +117,12 @@ fn the_plain_embedding_identity_reads_only_the_dashscope_key() {
 #[case::qwencloud(
     DashscopeFamily::QwenCloud,
     "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-    QWENCLOUD_KEY_MESSAGE
+    "QwenCloud API key is required. Set 'QWENCLOUD_API_KEY' or 'DASHSCOPE_API_KEY' env var or pass api_key explicitly."
 )]
 #[case::qwen_ai_platform(
     DashscopeFamily::QwenAiPlatform,
     "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    QWEN_AI_PLATFORM_KEY_MESSAGE
+    "Qianwen AI Platform API key is required. Set 'QWEN_AI_PLATFORM_API_KEY' or 'DASHSCOPE_API_KEY' env var or pass api_key explicitly."
 )]
 fn a_brand_embedding_identity_reads_the_brand_key_before_the_dashscope_key(
     #[case] family: DashscopeFamily,
@@ -198,7 +197,7 @@ fn rerank_config_carries_the_family_identity_and_settings() {
     let config = rerank_config(family, &env_with_keys());
     assert_eq!(
         config.identity.missing_key_message,
-        QWEN_AI_PLATFORM_KEY_MESSAGE
+        "Qianwen AI Platform API key is required. Set 'QWEN_AI_PLATFORM_API_KEY' or 'DASHSCOPE_API_KEY' env var or pass api_key explicitly."
     );
     assert_eq!(
         config
@@ -245,13 +244,13 @@ fn the_plain_image_identity_takes_the_international_host_and_the_dashscope_key()
 #[rstest]
 #[case::qwencloud(
     DashscopeFamily::QwenCloud,
-    QWENCLOUD_IMAGE_BASE,
-    QWENCLOUD_KEY_MESSAGE
+    "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+    "QwenCloud API key is required. Set 'QWENCLOUD_API_KEY' or 'DASHSCOPE_API_KEY' env var or pass api_key explicitly."
 )]
 #[case::qwen_ai_platform(
     DashscopeFamily::QwenAiPlatform,
-    QWEN_AI_PLATFORM_IMAGE_BASE,
-    QWEN_AI_PLATFORM_KEY_MESSAGE
+    "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+    "Qianwen AI Platform API key is required. Set 'QWEN_AI_PLATFORM_API_KEY' or 'DASHSCOPE_API_KEY' env var or pass api_key explicitly."
 )]
 fn a_brand_image_identity_reads_the_brand_key_and_its_own_host(
     #[case] family: DashscopeFamily,
@@ -286,7 +285,7 @@ fn image_config_carries_the_family_identity() {
     let config = image_config(DashscopeFamily::QwenAiPlatform, &env_with_keys());
     assert_eq!(
         config.identity.default_image_base,
-        QWEN_AI_PLATFORM_IMAGE_BASE
+        "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     );
     assert_eq!(
         config
