@@ -6,9 +6,8 @@ use betterlite_azure::transcription::call::AzureTranscriptionError;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_openai::transcription::duration::duration_number;
 use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use serde_json::{Value, json};
-
-use crate::helpers::{HelperError, OrHelperError as _};
 
 pub(super) fn request_view(request: &OutboundRequest) -> Value {
     let present: BTreeMap<&str, &str> = ["api-key", "authorization", "accept"]

@@ -25,6 +25,7 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use http::HeaderMap;
 use http::header::{CONTENT_LENGTH, HeaderName, HeaderValue};
 use secrecy::SecretString;
@@ -33,7 +34,6 @@ use uuid::Uuid;
 
 use self::view::{error_view, request_view, result_view};
 use super::{Probe, Reply};
-use crate::helpers::{HelperError, OrHelperError as _};
 
 const FILE_NAME: &str = "a.wav";
 const AUDIO: &[u8] = b"abc";
