@@ -10,6 +10,7 @@ workspace = true
 cargo-fuzz = true
 [dependencies]
 async-trait = "0.1.92"
+betterlite-prompts = { path = "../../betterlite-prompts" }
 betterlite-tokenizer = { path = ".." }
 libfuzzer-sys = "0.4.9"
 tokio.workspace = true

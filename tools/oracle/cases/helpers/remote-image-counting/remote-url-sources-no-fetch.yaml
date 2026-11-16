@@ -1,0 +1,24 @@
+kind: helper
+name: remote-url-sources-no-fetch
+call:
+  b9963:
+    calls:
+      - function: count_content
+        content:
+          - type: image
+            source:
+              type: url
+              url: https://example.com/missing.png
+      - function: count_content
+        content:
+          - type: document
+            source:
+              type: url
+              url: https://example.com/missing.png
+      - function: count_content
+        content:
+          - type: file
+            file:
+              file_data: https://example.com/missing.png
+env: {}
+compare: {ignore: []}

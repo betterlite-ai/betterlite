@@ -66,7 +66,7 @@ checks:
       run: test -f crates/betterlite-auth/fuzz/fuzz_targets/sso_record.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/sso_record)" && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(replays_the_sso_record_corpus)'
     - id: sso-role-corpus
       why: The shared helper decoder has no sso_roles call seed.
-      run: grep -rlq 'sso_roles:' tools/oracle/fuzz/corpus/helper_case/sso-roles-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: grep -rlq 'sso_roles:' tools/oracle/fuzz/corpus/helper_case/sso-roles-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-auth --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/sso-roles/multiple-ranked-roles.yaml
   - tools/oracle/cases/helpers/sso-roles/unranked-roles-sort.yaml

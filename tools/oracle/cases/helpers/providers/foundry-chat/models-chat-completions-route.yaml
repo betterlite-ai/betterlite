@@ -1,0 +1,19 @@
+kind: helper
+name: foundry-chat-models-chat-completions-route
+call:
+  foundry_chat:
+    model_cost: {}
+    chat_models: []
+    text_models: []
+    urls:
+      - {api_base: null, api_version: null}
+      - {api_base: "https://litellm8397336933.services.ai.azure.com", api_version: null}
+      - {api_base: "https://studio.example.test", api_version: null}
+      - {api_base: "https://x.services.ai.azure.com.evil.test", api_version: null}
+      - {api_base: "https://proxy.example.test/services.ai.azure.com/route", api_version: null}
+      - {api_base: "https://x.services.ai.azure.com/models", api_version: null}
+      - {api_base: "https://studio.example.test/openai/deployments/d", api_version: null}
+      - {api_base: "https://studio.example.test/", api_version: v}
+      - {api_base: "https://resource.services.ai.azure.com/", api_version: null}
+env: {}
+compare: {ignore: []}
