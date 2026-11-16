@@ -186,6 +186,29 @@ async fn oneshot_versions_admin_reads_the_history_newest_first() {
 }
 
 #[tokio::test]
+async fn oneshot_versions_ignores_the_version_suffix_in_the_path() {
+    let table = FakePromptTable::answering(vec![
+        stored_prompt("alpha", 1, "development"),
+        stored_prompt("alpha", 2, "development"),
+    ]);
+    let (status, body) = call(
+        state(registry(Vec::new()), Some(Arc::clone(&table))),
+        "/prompts/alpha.v1/versions",
+        master_context(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let listed = body["prompts"].as_array().unwrap();
+    assert_eq!(listed.len(), 2);
+    assert_eq!(listed[0]["version"], json!(2));
+    assert_eq!(
+        table.queries()[0].filter.prompt_id.as_deref(),
+        Some("alpha")
+    );
+    assert_eq!(table.queries()[0].filter.version, None);
+}
+
+#[tokio::test]
 async fn oneshot_versions_admin_view_key_reads_the_history() {
     let table = FakePromptTable::answering(vec![stored_prompt("alpha", 1, "development")]);
     let (status, body) = call(
