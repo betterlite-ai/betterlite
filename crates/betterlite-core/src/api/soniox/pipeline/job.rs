@@ -40,16 +40,6 @@ pub(super) struct JobState {
     transcription: Option<String>,
 }
 
-impl JobState {
-    fn new(prepared: &Prepared) -> Self {
-        Self {
-            selected_file: prepared.options.file_id.clone().filter(|id| !id.is_empty()),
-            uploaded_file: None,
-            transcription: None,
-        }
-    }
-}
-
 pub(super) async fn execute<P, S, T>(
     pipeline: &SonioxPipeline<'_, P, S>,
     call: &PipelineCall<'_>,
@@ -70,7 +60,11 @@ where
         limits: pipeline.limits,
         boundaries: pipeline.boundaries,
     };
-    let mut state = JobState::new(prepared);
+    let mut state = JobState {
+        selected_file: prepared.options.file_id.clone().filter(|id| !id.is_empty()),
+        uploaded_file: None,
+        transcription: None,
+    };
     let outcome = run(&remote, pipeline.audio_files, call, target, &mut state).await;
     clean_up(
         &remote,

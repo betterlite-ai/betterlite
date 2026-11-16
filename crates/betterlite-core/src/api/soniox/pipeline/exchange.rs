@@ -36,7 +36,7 @@ where
         method: Method::POST,
         url: endpoint(remote, TRANSCRIPTIONS_PATH)?,
         query: Vec::new(),
-        headers: send_headers(remote)?,
+        headers: header_map(&remote.prepared.auth_headers).map_err(PipelineError::Header)?,
         body: RequestBody::Json(encoded),
         deadline: remote.timeout,
     };
@@ -59,7 +59,7 @@ where
         method: Method::GET,
         url: endpoint(remote, &path)?,
         query: Vec::new(),
-        headers: send_headers(remote)?,
+        headers: header_map(&remote.prepared.auth_headers).map_err(PipelineError::Header)?,
         body: RequestBody::Empty,
         deadline: remote.timeout,
     };
@@ -81,16 +81,6 @@ where
         url: endpoint,
         source,
     })
-}
-
-fn send_headers<T, S>(remote: &SonioxRemote<'_, T, S>) -> Result<http::HeaderMap, PipelineError>
-where
-    T: RemoteTransport,
-    S: Sleeper,
-{
-    let source = &remote.prepared.auth_headers;
-    let headers = header_map(source).map_err(PipelineError::Header)?;
-    Ok(headers)
 }
 
 fn reply(response: &UpstreamResponse, limits: &ApiLimits) -> Result<SonioxReply, PipelineError> {
