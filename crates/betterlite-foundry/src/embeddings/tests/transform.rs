@@ -319,7 +319,7 @@ fn projection_joins_and_decodes() {
         ("x-ratelimit-limit-requests", "100"),
         ("vary", "Accept"),
         ("x-ratelimit-limit-requests", "200"),
-        ("x-region", "caf\u{e9}"),
+        ("x-region", "r\u{e9}sum\u{e9}"),
     ]));
     let joined = AdditionalHeaders::from([
         (
@@ -336,15 +336,18 @@ fn projection_joins_and_decodes() {
         ),
         (
             "llm_provider-x-region".to_owned(),
-            HeaderJson::Text("caf\u{e9}".to_owned()),
+            HeaderJson::Text("r\u{e9}sum\u{e9}".to_owned()),
         ),
     ]);
     assert_eq!(projected_headers(&repeated), joined);
     let mut latin = header_map(&[]);
-    latin.append("x-region", HeaderValue::from_bytes(b"caf\xe9").unwrap());
+    latin.append(
+        "x-region",
+        HeaderValue::from_bytes(b"r\xe9sum\xe9").unwrap(),
+    );
     let decoded = AdditionalHeaders::from([(
         "llm_provider-x-region".to_owned(),
-        HeaderJson::Text("caf\u{e9}".to_owned()),
+        HeaderJson::Text("r\u{e9}sum\u{e9}".to_owned()),
     )]);
     assert_eq!(projected_headers(&latin), decoded);
 }
