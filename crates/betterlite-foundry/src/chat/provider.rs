@@ -12,14 +12,14 @@ pub struct OpenAiModelLists<'data> {
     pub embedding: &'data BTreeSet<String>,
 }
 
-// environment_base and environment_key are AZURE_AI_API_BASE and AZURE_AI_API_KEY, read by the
-// caller, where an empty variable counts as unset
 pub struct ProviderRequest<'data> {
     pub model: &'data str,
     pub api_base: Option<&'data str>,
     pub api_key: Option<&'data SecretString>,
     pub custom_llm_provider: ProviderId,
+    // AZURE_AI_API_BASE, read by the caller, where an empty variable counts as unset
     pub environment_base: Option<&'data str>,
+    // AZURE_AI_API_KEY, read by the caller, where an empty variable counts as unset
     pub environment_key: Option<&'data SecretString>,
     pub lists: OpenAiModelLists<'data>,
 }
