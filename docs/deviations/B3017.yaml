@@ -1,29 +1,57 @@
 task: B3017
 deviations:
-  - what: The agent lookup takes a read-only AgentRegistry the caller passes in, instead of reading LiteLLM's module-global `global_agent_registry`.
-    why: betterlite wires dependencies through constructors and keeps no module-level state; registry population, database reads and reconcile stay with the tasks that own them.
+  - what: >-
+      The agent lookup takes a read-only AgentRegistry the caller passes in, instead of reading LiteLLM's module-global `global_agent_registry`.
+    why: >-
+      betterlite wires dependencies through constructors and keeps no module-level state; registry population, database reads and reconcile stay with the tasks that own them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L959-L960
-  - what: The router alias scan reads a DeploymentSnapshot the caller passes, or none when the caller has no router, instead of importing `litellm.proxy.proxy_server.llm_router`.
-    why: betterlite keeps no module globals; a missing router is the same state LiteLLM resolves before startup builds one, and the alias scan then finds no deployment.
+  - what: >-
+      The router alias scan reads a DeploymentSnapshot the caller passes, or none when the caller has no router, instead of importing `litellm.proxy.proxy_server.llm_router`.
+    why: >-
+      betterlite keeps no module globals; a missing router is the same state LiteLLM resolves before startup builds one, and the alias scan then finds no deployment.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/rate_limiter_utils.py#L82-L86
-  - what: The agent lookup cannot fail, so LiteLLM's `except Exception` wrapper that re-raises "Error getting agent from DB: ..." is not built.
-    why: The registry's read is infallible in Rust, so no caller can observe that error and no secondary exception escapes the session-budget hook.
+  - what: >-
+      The agent lookup cannot fail, so LiteLLM's `except Exception` wrapper that re-raises an error saying the agent could not be fetched from the DB is not built.
+    why: >-
+      The registry's read is infallible in Rust, so no caller can observe that error and no secondary exception escapes the session-budget hook.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L928-L943
-  - what: ProxyRateLimitError.message holds the coerced message, without the `litellm.RateLimitError: ` prefix that litellm.exceptions.RateLimitError.__init__ prepends to its message attribute.
-    why: The 429 body carries the structured detail a proxy client receives, and the prefix is exception display text that docs/compatibility.md does not port.
+  - what: >-
+      ProxyRateLimitError.message holds the coerced message, without the `litellm.RateLimitError: ` prefix that litellm.exceptions.RateLimitError.__init__ prepends to its message attribute.
+    why: >-
+      The 429 body carries the structured detail a proxy client receives, and the prefix is exception display text that docs/compatibility.md does not port.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L471
-  - what: An explicit empty headers map stays an empty map on the error where LiteLLM's `if headers` turns it into None; the 429 carries no headers either way.
-    why: docs/compatibility.md uses an explicit empty value as given instead of Python truthiness.
+  - what: >-
+      An explicit empty headers map stays an empty map on the error where LiteLLM's `if headers` turns it into None; the 429 carries no headers either way.
+    why: >-
+      docs/compatibility.md uses an explicit empty value as given instead of Python truthiness.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L161
-  - what: An explicit empty model or llm_provider string stays empty; LiteLLM's `model or ""` and `llm_provider or "litellm_proxy"` replace it with the default. Absent or null takes the default in both.
-    why: docs/compatibility.md uses an explicit "" as given instead of Python truthiness.
+  - what: >-
+      An explicit empty model or llm_provider string stays empty; LiteLLM's `model or ""` and `llm_provider or "litellm_proxy"` replace it with the default. Absent or null takes the default in both.
+    why: >-
+      docs/compatibility.md uses an explicit empty string as given instead of Python truthiness.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L158-L159
-  - what: A header value that is not a string or a number is stringified as its JSON text (true, {"a": 1}), where LiteLLM calls Python str() (True, {'a': 1}).
-    why: docs/compatibility.md writes standard JSON instead of Python repr or str text.
+  - what: >-
+      A header value that is not a string or a number is stringified as its JSON text (true, {"a": 1}), where LiteLLM calls Python str() (True, {'a': 1}).
+    why: >-
+      docs/compatibility.md writes standard JSON instead of Python repr or str text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L161
-  - what: A mapping detail that names neither an "error" nor a "message" text is written as compact JSON, where Python json.dumps writes its own spacing.
-    why: docs/compatibility.md does not port json.dumps formatting.
+  - what: >-
+      A mapping detail that names neither an "error" nor a "message" text is written as compact JSON, where Python json.dumps writes its own spacing.
+    why: >-
+      docs/compatibility.md does not port json.dumps formatting.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L82-L85
-  - what: _coerce_message takes a JSON value, so the `str(detail)` fallback for a Python object that is not JSON is not built.
-    why: betterlite's detail is a JSON value at this boundary, and every detail LiteLLM's proxy limiters pass is JSON.
+  - what: >-
+      _coerce_message takes a JSON value, so the `str(detail)` fallback for a Python object that is not JSON is not built.
+    why: >-
+      betterlite's detail is a JSON value at this boundary, and every detail LiteLLM's proxy limiters pass is JSON.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L84-L86
+  - what: >-
+      A detail that is not null, a string or a mapping is stringified as its JSON text (true, ["a"]), where LiteLLM calls Python str() (True, ['a']).
+    why: >-
+      docs/compatibility.md writes standard JSON instead of Python repr or str text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L86
+  - what: >-
+      A header name or value the HTTP layer cannot carry is dropped from the 429 response; LiteLLM passes every stringified header to FastAPI and leaves validation to the server.
+    why: >-
+      A header no limiter sends must not turn the 429 into a different error, and the status and detail body still go out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L161
