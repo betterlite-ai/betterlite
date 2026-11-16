@@ -1,6 +1,7 @@
 use std::str::from_utf8;
 use std::sync::Arc;
 
+use betterlite_auth::auth_identity::records::Principal;
 use betterlite_db::auxiliary_repository::repository::{PrismaClient, TableError};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
@@ -74,12 +75,12 @@ fn no_publish() -> PublishChange<TableError> {
     })
 }
 
-struct NewRow<'a> {
-    skill_id: &'a str,
-    owner: &'a str,
-    title: &'a str,
-    created_at: &'a str,
-    content: Option<&'a [u8]>,
+struct NewRow<'text> {
+    skill_id: &'text str,
+    owner: &'text str,
+    title: &'text str,
+    created_at: &'text str,
+    content: Option<&'text [u8]>,
 }
 
 async fn insert_row(store: &PostgresStore, row: &NewRow<'_>) {
@@ -175,48 +176,53 @@ async fn assert_public_page(reads: &StoredSkillReads<PrismaSkillRepository<'_>>)
     assert_eq!(page[2].file_content, Some(b"zip".to_vec()));
 }
 
-async fn assert_owner_pages(reads: &StoredSkillReads<PrismaSkillRepository<'_>>) {
-    let alice = principal("alice");
-    let alice_page = reads
-        .list_skills(SkillPage::default(), Some(&alice))
-        .await
-        .unwrap();
-    assert_eq!(ids(&alice_page), vec![ALICE_SKILL, OLD_SKILL]);
-    let bob_page = reads
-        .list_skills(SkillPage::default(), Some(&principal("bob")))
-        .await
-        .unwrap();
-    assert_eq!(ids(&bob_page), vec![BOB_SKILL]);
-}
-
-async fn assert_admin_pages(reads: &StoredSkillReads<PrismaSkillRepository<'_>>) {
-    let admin_page = reads
-        .list_skills(SkillPage::default(), Some(&admin("root")))
-        .await
-        .unwrap();
-    assert_eq!(admin_page.len(), 3);
-    let anonymous_page = reads
-        .list_skills(SkillPage::default(), Some(&anonymous()))
-        .await
-        .unwrap();
-    assert!(anonymous_page.is_empty());
-    let second_page = reads
-        .list_skills(
-            SkillPage {
-                limit: 1,
-                offset: 1,
-            },
-            Some(&admin("root")),
-        )
-        .await
-        .unwrap();
-    assert_eq!(ids(&second_page), vec![ALICE_SKILL]);
+async fn assert_page(
+    reads: &StoredSkillReads<PrismaSkillRepository<'_>>,
+    principal: Option<&Principal>,
+    page: SkillPage,
+    expected: &[&str],
+) {
+    let listed = reads.list_skills(page, principal).await.unwrap();
+    assert_eq!(ids(&listed), expected);
 }
 
 async fn assert_listing_pages(reads: &StoredSkillReads<PrismaSkillRepository<'_>>) {
     assert_public_page(reads).await;
-    assert_owner_pages(reads).await;
-    assert_admin_pages(reads).await;
+    assert_page(
+        reads,
+        None,
+        SkillPage::default(),
+        &[BOB_SKILL, ALICE_SKILL, OLD_SKILL],
+    )
+    .await;
+    let alice = principal("alice");
+    assert_page(
+        reads,
+        Some(&alice),
+        SkillPage::default(),
+        &[ALICE_SKILL, OLD_SKILL],
+    )
+    .await;
+    assert_page(
+        reads,
+        Some(&principal("bob")),
+        SkillPage::default(),
+        &[BOB_SKILL],
+    )
+    .await;
+    assert_page(
+        reads,
+        Some(&admin("root")),
+        SkillPage::default(),
+        &[BOB_SKILL, ALICE_SKILL, OLD_SKILL],
+    )
+    .await;
+    assert_page(reads, Some(&anonymous()), SkillPage::default(), &[]).await;
+    let second = SkillPage {
+        limit: 1,
+        offset: 1,
+    };
+    assert_page(reads, Some(&admin("root")), second, &[ALICE_SKILL]).await;
 }
 
 async fn assert_owner_gets(reads: &StoredSkillReads<PrismaSkillRepository<'_>>) {

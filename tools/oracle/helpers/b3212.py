@@ -145,9 +145,13 @@ def error_token(error: ValueError) -> str:
 async def list_answer(step: Step, principal: UserAPIKeyAuth | None) -> JsonValue:
     limit = step.get("limit")
     offset = step.get("offset")
+    if limit is None:
+        limit = 20
+    if offset is None:
+        offset = 0
     found = await LiteLLMSkillsHandler.list_skills(
-        limit=20 if limit is None else limit,
-        offset=0 if offset is None else offset,
+        limit=limit,
+        offset=offset,
         user_api_key_dict=principal,
     )
     return {"action": "list", "rows": [row_value(row) for row in found]}

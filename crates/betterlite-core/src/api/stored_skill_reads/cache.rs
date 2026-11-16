@@ -38,6 +38,17 @@ struct Rows {
     values: BTreeMap<String, Option<SkillTable>>,
 }
 
+impl Rows {
+    fn cached(&mut self, skill_id: &str) -> Result<CachedSkill, StoredSkillReadError> {
+        let (found, _) = lookup_marked(&mut self.markers, &mut self.values, skill_id)?;
+        Ok(match found {
+            None => CachedSkill::Miss,
+            Some(None) => CachedSkill::Missing,
+            Some(Some(row)) => CachedSkill::Row(Box::new(row)),
+        })
+    }
+}
+
 pub(crate) struct SkillRowCache {
     rows: Mutex<Rows>,
 }
@@ -62,14 +73,9 @@ impl SkillRowCache {
 
     pub(crate) fn lookup(&self, skill_id: &str) -> Result<CachedSkill, StoredSkillReadError> {
         let mut guard = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        let rows = &mut *guard;
-        let found = lookup_marked(&mut rows.markers, &mut rows.values, skill_id)?;
+        let found = guard.cached(skill_id);
         drop(guard);
-        Ok(match found.0 {
-            None => CachedSkill::Miss,
-            Some(None) => CachedSkill::Missing,
-            Some(Some(row)) => CachedSkill::Row(Box::new(row)),
-        })
+        found
     }
 
     pub(crate) fn store(
