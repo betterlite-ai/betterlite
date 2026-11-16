@@ -1,0 +1,32 @@
+kind: helper
+name: dashscope-image-params-and-size
+call:
+  b8172:
+    function: image_params_and_size
+    non_default_params:
+      n: 2
+      size: 1792x1024
+      quality: hd
+      response_format: b64_json
+    optional_params:
+      n: 9
+calls:
+  - b8172:
+      function: image_params_and_size
+      non_default_params:
+        size: 800x600
+        style: vivid
+      optional_params: {}
+  - b8172:
+      function: image_params_and_size
+      non_default_params:
+        size: xlarge
+      optional_params: {}
+  - b8172:
+      function: image_params_and_size
+      non_default_params:
+        size: 512x512
+      optional_params:
+        size: 1
+env: {}
+compare: {ignore: []}
