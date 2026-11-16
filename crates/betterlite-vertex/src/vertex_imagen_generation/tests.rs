@@ -455,7 +455,7 @@ fn a_non_string_encoded_image_names_its_path() {
 fn leading_whitespace_before_the_object_still_parses() {
     let decoded = decode_imagen_generation(&reply("  {\"predictions\":[]}"))
         .expect("leading whitespace is not part of the document");
-    assert!(decoded.predictions.is_empty());
+    assert!(decoded.images.is_empty());
 }
 
 #[test]
@@ -463,7 +463,7 @@ fn a_reply_at_the_limit_still_parses() {
     let mut reply = reply(r#"{"predictions":[]}"#);
     reply.body.resize(MAX_RESPONSE_BYTES, b' ');
     let decoded = decode_imagen_generation(&reply).expect("a body at the limit parses");
-    assert!(decoded.predictions.is_empty());
+    assert!(decoded.images.is_empty());
 }
 
 #[test]
