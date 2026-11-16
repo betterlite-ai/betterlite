@@ -7,10 +7,10 @@ use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn principal_of(fields: &PrincipalFields) -> Result<Principal, Box<HelperError>> {
     let user = fields.user_id.as_deref();
-    let teams = match &fields.team_id {
-        Some(id) => vec![json!({"id": id})],
-        None => Vec::new(),
-    };
+    let mut teams = Vec::new();
+    if let Some(id) = &fields.team_id {
+        teams.push(json!({"id": id}));
+    }
     let roles = if fields.admin {
         vec![Role::PlatformAdmin]
     } else {
