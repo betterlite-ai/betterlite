@@ -77,7 +77,11 @@ def register(agent: AgentCase) -> None:
 
 
 def kept_headers(headers: dict[str, str]) -> dict[str, JsonValue]:
-    return {name: value for name, value in headers.items() if name in KEPT_HEADERS}
+    kept: dict[str, JsonValue] = {}
+    for name, value in headers.items():
+        if name in KEPT_HEADERS:
+            kept[name] = value
+    return kept
 
 
 def request_view(responder: Responder) -> JsonValue | None:
