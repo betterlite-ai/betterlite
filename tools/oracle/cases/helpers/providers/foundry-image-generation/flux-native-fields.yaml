@@ -1,0 +1,27 @@
+kind: helper
+name: foundry-image-generation-flux-native-fields
+call:
+  foundry_image_generation:
+    params:
+      - {model: FLUX.2-pro, non_default_params: {size: auto}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {size: AUTO}, optional_params: {width: 1}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {size: Auto}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {size: 1024x768}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {size: 1024X768}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {size: " 1024 x 768 "}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {size: 512x512}, optional_params: {width: 1, height: 2, quality: low, custom: true}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {width: 300, size: 512x512}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {size: 512x512, width: 300}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {quality: high}, optional_params: {quality: low}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {style: vivid, response_format: b64_json}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {style: vivid, response_format: b64_json}, optional_params: {}, drop_params: true}
+      - {model: FLUX.2-pro, non_default_params: {style: vivid, size: bad}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {style: vivid, size: bad}, optional_params: {}, drop_params: true}
+      - {model: FLUX.2-pro, non_default_params: {size: bad}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {size: ""}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {size: 1024}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {size: 1024x768x1}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {size: axb}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {size: "auto "}, optional_params: {}, drop_params: false}
+env: {}
+compare: {ignore: []}
