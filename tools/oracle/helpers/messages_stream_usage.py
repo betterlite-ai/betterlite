@@ -298,7 +298,8 @@ def state_answer(wrapper: Wrapper, logging_obj: Logging | None, step: Step) -> J
         case "hold_stop":
             wrapper.hold_stop(step["event"])
             return None
-    raise ValueError("unknown state step")
+        case _:
+            raise ValueError("not a state step")
 
 
 def usage_answer(wrapper: Wrapper, step: Step) -> JsonValue:
@@ -312,7 +313,8 @@ def usage_answer(wrapper: Wrapper, step: Step) -> JsonValue:
             return wrapper.choiceless(None if value is None else usage_object(value))
         case "augment":
             return wrapper.augment(step["event"])
-    raise ValueError("unknown usage step")
+        case _:
+            raise ValueError("not a usage step")
 
 
 def event_answer(wrapper: Wrapper, step: Step) -> JsonValue:
@@ -321,7 +323,8 @@ def event_answer(wrapper: Wrapper, step: Step) -> JsonValue:
             return wrapper.refusal_stop(step["event"])
         case "compaction":
             return wrapper.compaction(step["calls"])
-    raise ValueError("unknown event step")
+        case _:
+            raise ValueError("not an event step")
 
 
 def chunk_answer(wrapper: Wrapper, step: Step) -> JsonValue:
@@ -332,7 +335,8 @@ def chunk_answer(wrapper: Wrapper, step: Step) -> JsonValue:
             return wrapper.is_blank(stream_chunk(step["choices"]))
         case "start_block":
             return wrapper.start_block(stream_chunk(step["choices"]))
-    raise ValueError("unknown chunk step")
+        case _:
+            raise ValueError("not a chunk step")
 
 
 def answer_step(wrapper: Wrapper, logging_obj: Logging | None, step: Step) -> JsonValue:
