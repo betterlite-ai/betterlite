@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_azure::credentials::source::CredentialSources;
 use betterlite_prompts::arguments::json::Object;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::credentials::AZURE_AI_API_KEY_VAR;
 use crate::credentials::auth_headers::{AuthHeaderRequest, get_azure_ai_auth_headers};
@@ -25,7 +25,11 @@ pub fn validate_environment(
     request: &EnvironmentRequest<'_>,
 ) -> Result<BTreeMap<String, String>, CredentialsError> {
     let resolved_base = request.accessors.api_base(request.api_base);
-    let api_key = request.accessors.api_key(request.api_key);
+    // LiteLLM's get_azure_ai_auth_headers reads the key for truth, so an empty one falls to Entra
+    let api_key = request
+        .accessors
+        .api_key(request.api_key)
+        .filter(|key| !key.expose_secret().is_empty());
     let auth = get_azure_ai_auth_headers(&AuthHeaderRequest {
         api_key: api_key.as_ref(),
         params: request.params,

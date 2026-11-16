@@ -24,7 +24,7 @@ impl DecisionsProviderConfig for AzureAiDecisionsConfig {
     }
 
     fn get_complete_url(&self, api_base: &str, _model: &str) -> String {
-        // the trait cannot fail, so an unparseable base is left for the transport to reject
+        // the trait cannot fail, so an unparsable base is left for the transport to reject
         decisions_url(api_base).unwrap_or_else(|_| api_base.to_owned())
     }
 }

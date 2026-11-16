@@ -12,13 +12,13 @@ const SECRETS: [(&str, &str); 2] = [
     ("AZURE_AI_API_KEY", "env-key"),
 ];
 
-pub(super) fn decisions_route() {
+pub(in crate::responses::tests) fn decisions_route() {
     metadata();
     rendered_routes();
     retained_paths();
     credential_resolution();
     missing_message();
-    unparseable_base();
+    unparsable_base();
     systemone_wire();
 }
 
@@ -149,7 +149,7 @@ fn missing_message() {
     );
 }
 
-fn unparseable_base() {
+fn unparsable_base() {
     // the provider-config trait cannot fail, so a base the transport must reject comes back untouched
     assert_eq!(url("https://host:port"), "https://host:port");
     assert_eq!(

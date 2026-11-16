@@ -3,9 +3,10 @@ use std::collections::BTreeMap;
 use betterlite_prompts::arguments::json::Json;
 use secrecy::SecretString;
 
-use crate::credentials::model_info::ModelInfoAccessors;
 use crate::responses::auth::{EnvironmentRequest, validate_environment};
-use crate::responses::tests::support::{FixtureSources, environment, headers, object};
+use crate::responses::tests::support::{
+    FixtureSources, environment, headers, headers_for, no_accessors, object,
+};
 use crate::responses::url::complete_url;
 
 pub(super) fn credential_identity_isolation() {
@@ -17,25 +18,8 @@ pub(super) fn credential_identity_isolation() {
 
 fn auth_headers(key: &str, api_base: &str) -> BTreeMap<String, String> {
     let caller = headers(&[]);
-    let env = environment(&[]);
-    let sources = FixtureSources::default();
     let secret = SecretString::from(key.to_owned());
-    validate_environment(&EnvironmentRequest {
-        headers: &caller,
-        accessors: ModelInfoAccessors {
-            global_api_base: None,
-            global_api_key: None,
-            environment_api_base: None,
-            environment_api_key: None,
-        },
-        api_base: Some(api_base),
-        api_key: Some(&secret),
-        params: None,
-        environment: &env,
-        refresh_enabled: false,
-        sources: &sources,
-    })
-    .unwrap()
+    headers_for(&caller, no_accessors(), Some(api_base), Some(&secret))
 }
 
 fn header_identities() {
@@ -65,12 +49,7 @@ fn entra_headers(
     ]);
     validate_environment(&EnvironmentRequest {
         headers: &caller,
-        accessors: ModelInfoAccessors {
-            global_api_base: None,
-            global_api_key: None,
-            environment_api_base: None,
-            environment_api_key: None,
-        },
+        accessors: no_accessors(),
         api_base: Some("https://res.services.ai.azure.com"),
         api_key: None,
         params: Some(&params),
@@ -89,6 +68,10 @@ fn entra_identities() {
         "client-first",
         "secret-first",
     );
+    let first_token = first.get("Authorization").unwrap();
+    assert!(first_token.contains("tenant=tenant-first"), "{first_token}");
+    assert!(!first_token.contains("secret-second"), "{first_token}");
+    assert_single_call(&first_sources, "secret-first", "client-second");
     let second_sources = FixtureSources::default();
     let second = entra_headers(
         &second_sources,
@@ -96,46 +79,26 @@ fn entra_identities() {
         "client-second",
         "secret-second",
     );
-    let first_token = first.get("Authorization").unwrap();
-    assert!(first_token.contains("tenant=tenant-first"), "{first_token}");
-    assert!(!first_token.contains("secret-second"), "{first_token}");
     let second_token = second.get("Authorization").unwrap();
     assert!(
         second_token.contains("client=client-second"),
         "{second_token}"
     );
     assert!(!second_token.contains("tenant-first"), "{second_token}");
-    let first_calls = first_sources.calls.lock().unwrap();
-    assert_eq!(first_calls.len(), 1);
-    assert!(
-        first_calls[0].contains("secret-first"),
-        "{}",
-        first_calls[0]
-    );
-    assert!(
-        !first_calls[0].contains("client-second"),
-        "{}",
-        first_calls[0]
-    );
-    let second_calls = second_sources.calls.lock().unwrap();
-    assert_eq!(second_calls.len(), 1);
-    assert!(
-        !second_calls[0].contains("secret-first"),
-        "{}",
-        second_calls[0]
-    );
+    assert_single_call(&second_sources, "client-second", "secret-first");
+}
+
+fn assert_single_call(sources: &FixtureSources, expected: &str, forbidden: &str) {
+    let calls = sources.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].contains(expected), "{}", calls[0]);
+    assert!(!calls[0].contains(forbidden), "{}", calls[0]);
 }
 
 fn url_identities() {
-    let sources = ModelInfoAccessors {
-        global_api_base: None,
-        global_api_key: None,
-        environment_api_base: None,
-        environment_api_key: None,
-    };
-    let first = complete_url(sources, Some("https://first.services.ai.azure.com")).unwrap();
+    let first = complete_url(no_accessors(), Some("https://first.services.ai.azure.com")).unwrap();
     let second = complete_url(
-        sources,
+        no_accessors(),
         Some("https://second.services.ai.azure.com?api-version=1"),
     )
     .unwrap();

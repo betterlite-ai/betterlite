@@ -1,6 +1,6 @@
 pub mod auth;
 pub mod decisions;
-mod path;
+pub mod path;
 pub mod url;
 
 mod tests;

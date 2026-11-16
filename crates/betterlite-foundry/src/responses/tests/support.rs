@@ -9,6 +9,9 @@ use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::credentials::model_info::ModelInfoAccessors;
+use crate::responses::auth::{EnvironmentRequest, validate_environment};
+
 #[derive(Default)]
 pub(super) struct FixtureSources {
     pub(super) calls: Mutex<Vec<String>>,
@@ -130,4 +133,35 @@ pub(super) fn object<const N: usize>(entries: [(&str, Json); N]) -> Object {
         .into_iter()
         .map(|(key, value)| (key.to_owned(), value))
         .collect()
+}
+
+pub(super) const fn no_accessors() -> ModelInfoAccessors<'static> {
+    ModelInfoAccessors {
+        global_api_base: None,
+        global_api_key: None,
+        environment_api_base: None,
+        environment_api_key: None,
+    }
+}
+
+// the caller headers, model-info layers and auth inputs vary per case; everything else is the empty fixture
+pub(super) fn headers_for(
+    caller: &BTreeMap<String, String>,
+    accessors: ModelInfoAccessors<'_>,
+    api_base: Option<&str>,
+    api_key: Option<&SecretString>,
+) -> BTreeMap<String, String> {
+    let env = environment(&[]);
+    let sources = FixtureSources::default();
+    validate_environment(&EnvironmentRequest {
+        headers: caller,
+        accessors,
+        api_base,
+        api_key,
+        params: None,
+        environment: &env,
+        refresh_enabled: false,
+        sources: &sources,
+    })
+    .unwrap()
 }
