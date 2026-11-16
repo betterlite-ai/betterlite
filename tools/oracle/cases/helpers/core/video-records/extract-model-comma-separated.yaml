@@ -1,0 +1,11 @@
+kind: helper
+name: b3330-extract-model-comma-separated
+call:
+  b3330: {function: extract_model, value: "  ,  anthropic/claude , openai/gpt-4o  "}
+calls:
+  - b3330: {function: extract_model, value: "single-model"}
+  - b3330: {function: extract_model, value: ",,"}
+  - b3330: {function: extract_model, value: "   "}
+  - b3330: {function: extract_model, value: ""}
+env: {}
+compare: {ignore: []}

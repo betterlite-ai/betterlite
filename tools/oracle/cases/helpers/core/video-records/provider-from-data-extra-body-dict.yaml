@@ -1,0 +1,12 @@
+kind: helper
+name: b3330-provider-from-data-extra-body-dict
+call:
+  b3330: {function: custom_provider, value: {extra_body: {custom_llm_provider: vertex_ai}}}
+calls:
+  - b3330: {function: custom_provider, value: {extra_body: {other: x}}}
+  - b3330: {function: custom_provider, value: {extra_body: {custom_llm_provider: null}}}
+  - b3330: {function: custom_provider, value: {extra_body: {custom_llm_provider: ""}}}
+  - b3330: {function: custom_provider, value: {extra_body: {custom_llm_provider: 5}}}
+  - b3330: {function: custom_provider, value: {custom_llm_provider: null, extra_body: {custom_llm_provider: vertex_ai}}}
+env: {}
+compare: {ignore: []}
