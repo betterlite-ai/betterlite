@@ -1,0 +1,19 @@
+kind: helper
+name: foundry-image-generation-flux-model-path
+call:
+  foundry_image_generation:
+    paths:
+      - FLUX.2-flex
+      - flux_2_flex
+      - azure_ai/FLUX.2-FLEX-preview
+      - black-forest-labs/flux-2-flex
+      - flux-2-flexible
+      - flux2-flex
+      - flux.2-pro
+      - FLUX-2
+      - flux.2-dev
+      - flux-1-schnell
+      - gpt-image-1
+      - ""
+env: {}
+compare: {ignore: []}

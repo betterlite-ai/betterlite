@@ -1,0 +1,11 @@
+kind: helper
+name: mcp-table-access-lock-keys-sorted
+call:
+  b4711:
+    function: create_if_free
+    server_name: Zulu
+    alias: alpha
+    rows: []
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}
