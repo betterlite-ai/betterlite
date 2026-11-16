@@ -1,0 +1,174 @@
+suite: servicemonitor and helm test pods
+templates:
+  - servicemonitor.yaml
+  - tests/test-connection.yaml
+  - tests/test-env-vars.yaml
+  - tests/test-servicemonitor.yaml
+release:
+  name: mon
+  namespace: observability
+tests:
+  - it: renders no ServiceMonitor by default
+    template: servicemonitor.yaml
+    asserts:
+      - hasDocuments: { count: 0 }
+
+  - it: renders a ServiceMonitor for the proxy when enabled
+    template: servicemonitor.yaml
+    set:
+      serviceMonitor.enabled: true
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: ServiceMonitor }
+      - equal: { path: apiVersion, value: monitoring.coreos.com/v1 }
+      - equal: { path: metadata.name, value: mon-betterlite }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/name"]', value: betterlite }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: mon }
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: betterlite
+            app.kubernetes.io/instance: mon
+
+  - it: selects the release namespace when no namespace is configured
+    template: servicemonitor.yaml
+    set:
+      serviceMonitor.enabled: true
+    asserts:
+      - equal: { path: spec.namespaceSelector.matchNames, value: [observability] }
+
+  - it: carries explicit namespace match names
+    template: servicemonitor.yaml
+    set:
+      serviceMonitor.enabled: true
+      serviceMonitor.namespaceSelector.matchNames:
+        - monitoring
+        - observability
+    asserts:
+      - equal: { path: spec.namespaceSelector.matchNames, value: [monitoring, observability] }
+
+  - it: scrapes the proxy port with the documented defaults
+    template: servicemonitor.yaml
+    set:
+      serviceMonitor.enabled: true
+    asserts:
+      - lengthEqual: { path: spec.endpoints, count: 1 }
+      - equal: { path: 'spec.endpoints[0].port', value: http }
+      - equal: { path: 'spec.endpoints[0].path', value: /metrics/ }
+      - equal: { path: 'spec.endpoints[0].interval', value: 15s }
+      - equal: { path: 'spec.endpoints[0].scrapeTimeout', value: 10s }
+      - equal: { path: 'spec.endpoints[0].scheme', value: http }
+      - isNull: { path: 'spec.endpoints[0].relabelings' }
+
+  - it: scrapes the metrics service port when the metrics server is enabled
+    template: servicemonitor.yaml
+    set:
+      serviceMonitor.enabled: true
+      metricsServer.enabled: true
+    asserts:
+      - equal: { path: 'spec.endpoints[0].port', value: metrics }
+
+  - it: writes a custom interval and scrape timeout
+    template: servicemonitor.yaml
+    set:
+      serviceMonitor.enabled: true
+      serviceMonitor.interval: 30s
+      serviceMonitor.scrapeTimeout: 20s
+    asserts:
+      - equal: { path: 'spec.endpoints[0].interval', value: 30s }
+      - equal: { path: 'spec.endpoints[0].scrapeTimeout', value: 20s }
+
+  - it: renders relabelings when set
+    template: servicemonitor.yaml
+    set:
+      serviceMonitor.enabled: true
+      serviceMonitor.relabelings:
+        - action: replace
+          targetLabel: cluster
+          replacement: production
+    asserts:
+      - equal: { path: 'spec.endpoints[0].relabelings[0].action', value: replace }
+      - equal: { path: 'spec.endpoints[0].relabelings[0].targetLabel', value: cluster }
+
+  - it: carries custom labels and annotations
+    template: servicemonitor.yaml
+    set:
+      serviceMonitor.enabled: true
+      serviceMonitor.labels:
+        release: prometheus
+      serviceMonitor.annotations:
+        example.com/scrape: "true"
+    asserts:
+      - equal: { path: metadata.labels.release, value: prometheus }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/name"]', value: betterlite }
+      - equal: { path: 'metadata.annotations["example.com/scrape"]', value: "true" }
+
+  - it: renders the connection test pod as a test hook
+    template: tests/test-connection.yaml
+    asserts:
+      - isKind: { of: Pod }
+      - equal: { path: metadata.name, value: mon-betterlite-test-connection }
+      - equal: { path: 'metadata.annotations["helm.sh/hook"]', value: test }
+      - equal: { path: 'spec.containers[0].name', value: wget }
+      - equal: { path: 'spec.containers[0].image', value: busybox }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: mon-betterlite:4000/health/readiness }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: seq 1 30 }
+      - equal: { path: spec.restartPolicy, value: Never }
+
+  - it: renders the environment test pod as a test hook
+    template: tests/test-env-vars.yaml
+    set:
+      envVars:
+        EXAMPLE_ENV: dev_helm
+    asserts:
+      - isKind: { of: Pod }
+      - equal: { path: metadata.name, value: mon-betterlite-env-test }
+      - equal: { path: 'metadata.annotations["helm.sh/hook"]', value: test }
+      - equal: { path: 'spec.containers[0].image', value: busybox }
+      - equal: { path: 'spec.containers[0].env[0].name', value: EXAMPLE_ENV }
+      - equal: { path: 'spec.containers[0].env[0].value', value: dev_helm }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: EXAMPLE_ENV }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: '"dev_helm"' }
+      - equal: { path: spec.restartPolicy, value: Never }
+
+  - it: keeps the expected env literal when envVars is empty
+    template: tests/test-env-vars.yaml
+    asserts:
+      - isNullOrEmpty: { path: 'spec.containers[0].env[0].value' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'EXAMPLE_ENV" != "dev_helm"' }
+
+  - it: renders no ServiceMonitor test pod when the ServiceMonitor is off
+    template: tests/test-servicemonitor.yaml
+    asserts:
+      - hasDocuments: { count: 0 }
+
+  - it: renders the ServiceMonitor test pod when monitoring is on
+    template: tests/test-servicemonitor.yaml
+    set:
+      serviceMonitor.enabled: true
+    asserts:
+      - isKind: { of: Pod }
+      - equal: { path: metadata.name, value: mon-betterlite-test-servicemonitor }
+      - equal: { path: 'metadata.annotations["helm.sh/hook"]', value: test }
+      - equal: { path: 'spec.containers[0].image', value: docker.io/bitnamilegacy/kubectl:1.29.2-debian-12-r3 }
+      - equal: { path: spec.serviceAccountName, value: default }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: kubectl get servicemonitor mon-betterlite }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'ENDPOINT_PORT" != "http"' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: '"10s"' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: kubectl get svc mon-betterlite }
+
+  - it: expects the metrics port when the metrics server is enabled
+    template: tests/test-servicemonitor.yaml
+    set:
+      serviceMonitor.enabled: true
+      metricsServer.enabled: true
+    asserts:
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'ENDPOINT_PORT" != "metrics"' }
+
+  - it: pulls the kubectl image from the test values
+    template: tests/test-servicemonitor.yaml
+    set:
+      serviceMonitor.enabled: true
+      test.kubectlImage: registry.example.com/kubectl:1.30.0
+    asserts:
+      - equal: { path: 'spec.containers[0].image', value: registry.example.com/kubectl:1.30.0 }

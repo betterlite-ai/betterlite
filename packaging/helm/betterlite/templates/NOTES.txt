@@ -1,0 +1,43 @@
+betterlite componentized: release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+Components:
+{{- if .Values.gateway.enabled }}
+  - gateway  : Service {{ include "betterlite.gateway.fullname" . }} on port {{ .Values.gateway.service.port }}
+{{- end }}
+{{- if .Values.backend.enabled }}
+  - backend  : Service {{ include "betterlite.backend.fullname" . }} on port {{ .Values.backend.service.port }}
+{{- end }}
+{{- if .Values.ui.enabled }}
+  - ui       : Service {{ include "betterlite.ui.fullname" . }} on port {{ .Values.ui.service.port }}
+{{- end }}
+
+Port-forward examples:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "betterlite.gateway.fullname" . }} {{ .Values.gateway.service.port }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "betterlite.backend.fullname" . }} {{ .Values.backend.service.port }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "betterlite.ui.fullname" . }} {{ .Values.ui.service.port }}
+
+Reminders:
+  - Sensitive values come from Secret references only. Before installing, set:
+      - masterKey.secretName                                   (Secret with the proxy master key)
+      - database.writer.{host,port,dbname}                     (writer connection pieces)
+      - database.writer.passwordSecret.{name,usernameKey,passwordKey}
+                                                               (Secret holding the writer DB username + password)
+      - database.writer.useIAMAuth: true                       (optional; sets IAM_TOKEN_DB_AUTH=true and omits
+                                                                DATABASE_PASSWORD so the proxy mints the URL from
+                                                                an IAM token at startup)
+      - database.reader.host                                   (optional; enables read-replica routing, and
+                                                                database.reader.dbname is required when set)
+      - database.reader.useIAMAuth: true                       (optional; requires database.writer.useIAMAuth: true)
+      - redis.passwordSecret.name                              (optional; set when redis.host needs auth)
+      - redis.cluster: true                                    (optional; sets REDIS_CLUSTER_NODES from
+                                                                redis.host and redis.port)
+  - Per-component extras (gateway / backend / ui):
+      - {component}.extraEnv / envConfigMaps / envSecrets      (the latter two are lists of resource names)
+      - {component}.logLevel                                   (renders as LITELLM_LOG)
+      - gateway.config.proxy_config                            (rendered into a ConfigMap and mounted at
+                                                                /etc/betterlite/config.yaml; the gateway reads it
+                                                                through CONFIG_FILE_PATH)
+      - {component}.pdb.{enabled,minAvailable,maxUnavailable}  (per-component PodDisruptionBudget)
+      - {component}.topologySpreadConstraints                  (standard k8s list, e.g. spread across zones)
+  - Enable ingress.enabled=true to dispatch / to the ui, the gateway data-plane prefixes to the gateway
+    and the catch-all to the backend.

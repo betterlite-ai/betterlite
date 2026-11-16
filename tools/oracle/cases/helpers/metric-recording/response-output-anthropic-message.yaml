@@ -1,0 +1,15 @@
+kind: helper
+name: response-output-anthropic-message
+call:
+  b3857:
+    function: response_output
+    kind: other
+    response:
+      type: message
+      role: assistant
+      content:
+      - {type: text, text: hi}
+      model: claude
+env: {}
+compare:
+  ignore: []

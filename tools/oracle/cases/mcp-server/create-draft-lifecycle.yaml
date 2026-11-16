@@ -1,0 +1,66 @@
+kind: helper
+name: mcp-server-create-draft-lifecycle
+call:
+  b4712:
+    function: create_draft
+    salt_key: b4712-salt
+    touched_by: admin
+    payload: {server_name: Draft One, url: https://draft.test/mcp}
+    rows: []
+    server_id: sess-1
+    ttl_seconds: 600
+    users: []
+calls:
+  - b4712:
+      function: create_draft
+      salt_key: b4712-salt
+      touched_by: admin
+      payload: {server_name: Draft One, url: https://draft.test/mcp}
+      rows: []
+      server_id: sess-1
+      ttl_seconds: 600
+      users: []
+  - b4712:
+      function: create_draft
+      salt_key: b4712-salt
+      touched_by: admin
+      payload: {server_name: Reauth, url: https://reauth.test/mcp}
+      rows:
+        - {server_id: sess-2, server_name: Existing, transport: sse, approval_status: active}
+      server_id: sess-2
+      ttl_seconds: 600
+      users: []
+  - b4712:
+      function: create_draft
+      salt_key: b4712-salt
+      touched_by: admin
+      payload: {server_name: Fresh Draft, url: https://fresh.test/mcp}
+      rows:
+        - {server_id: sess-old, server_name: stale, transport: sse, approval_status: draft, updated_at: "2020-01-01T00:00:00Z"}
+        - {server_id: sess-live, server_name: live, transport: sse, approval_status: draft, updated_at: "2999-01-01T00:00:00Z"}
+      server_id: sess-3
+      ttl_seconds: 600
+      users: []
+  - b4712:
+      function: get_draft
+      salt_key: b4712-salt
+      touched_by: admin
+      payload: {}
+      rows:
+        - {server_id: sess-live, server_name: live, transport: sse, approval_status: draft, updated_at: "2999-01-01T00:00:00Z"}
+      server_id: sess-live
+      ttl_seconds: 600
+      users: []
+  - b4712:
+      function: get_draft
+      salt_key: b4712-salt
+      touched_by: admin
+      payload: {}
+      rows:
+        - {server_id: sess-old, server_name: stale, transport: sse, approval_status: draft, updated_at: "2020-01-01T00:00:00Z"}
+      server_id: sess-old
+      ttl_seconds: 600
+      users: []
+env:
+  LITELLM_SALT_KEY: b4712-salt
+compare: {ignore: []}

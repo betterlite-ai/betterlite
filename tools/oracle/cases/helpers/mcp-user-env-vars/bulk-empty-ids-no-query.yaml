@@ -1,0 +1,13 @@
+kind: helper
+name: mcp-user-env-vars-bulk-empty-ids-no-query
+call:
+  b4714:
+    function: bulk
+    salt_key: b4714-salt
+    user_id: user-1
+    server_ids: []
+    rows:
+      - {user_id: user-1, server_id: srv-1, values_b64: 'F79vrGjHN3nZ5VZwOO0kIox-wuXgS7I0mPFk6uiP2RtFJ9qenc8kOCY2Bg8Yfd1thhRxiEAJWd_zY4_PJIeUuBr60AWAFZS3B4GA4pg82cKVLnxKdg=='}
+env:
+  LITELLM_SALT_KEY: b4714-salt
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: replicate-create-poll
+call:
+  b8332:
+    input: []
+    query: ""
+    op: replicate
+    model: meta/meta-llama-3-8b-instruct
+    messages: [{role: user, content: hi}]
+    api_key: rep-key
+    replies:
+      - status: 201
+        body: '{"id":"oracle-1","status":"starting","urls":{"get":"http://mock/v1/predictions/oracle-1"}}'
+      - status: 200
+        body: '{"id":"oracle-1","status":"succeeded","output":["ok"]}'
+    env: {HF_HUB_OFFLINE: "1"}
+env: {HF_HUB_OFFLINE: "1"}
+compare: {ignore: []}

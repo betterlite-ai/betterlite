@@ -215,7 +215,8 @@ fn configure(
                 | ConfigError::InvalidFloat { .. }
                 | ConfigError::InvalidInteger { .. }
                 | ConfigError::InvalidScalar { .. }
-                | ConfigError::Environment { .. } => "ConfigError",
+                | ConfigError::Environment { .. }
+                | ConfigError::LoadThread { .. } => "ConfigError",
             };
             (class, error.to_string())
         }
