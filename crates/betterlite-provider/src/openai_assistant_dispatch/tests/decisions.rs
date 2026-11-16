@@ -86,7 +86,6 @@ async fn decisions_request() {
     assert!(transport.seen.lock().unwrap().is_empty());
 }
 
-// Nothing explicit is supplied, so the leaf resolves from the globals first and the environment after them.
 async fn decisions_resolution(
     globals: LiteLlmGlobals,
     environment: BTreeMap<String, String>,
@@ -158,8 +157,8 @@ async fn decisions_malformed_payload() {
     assert!(matches!(error, OpenAiAssistantError::DecisionsPayload(_)));
 }
 
-pub(super) async fn case() {
-    decisions_request().await;
+// Nothing explicit is supplied, so the leaf resolves from the globals first and the environment after them.
+async fn credential_resolution() {
     let environment = env(&[
         ("OPENAI_API_KEY", "sk-env"),
         ("OPENAI_BASE_URL", "https://env.test/v1"),
@@ -171,10 +170,8 @@ pub(super) async fn case() {
         organization: None,
     };
     let openai_key_only = LiteLlmGlobals {
-        api_base: None,
-        api_key: None,
         openai_key: Some(SecretString::from("sk-global-openai")),
-        organization: None,
+        ..LiteLlmGlobals::default()
     };
     decisions_resolution(
         LiteLlmGlobals::default(),
@@ -197,6 +194,10 @@ pub(super) async fn case() {
         Some("sk-global-openai"),
     )
     .await;
+}
+
+// With nothing supplied anywhere, the leaf keeps OpenAI's public base and sends no key.
+async fn default_credential_resolution() {
     decisions_resolution(
         LiteLlmGlobals::default(),
         BTreeMap::new(),
@@ -204,6 +205,12 @@ pub(super) async fn case() {
         None,
     )
     .await;
+}
+
+pub(super) async fn case() {
+    decisions_request().await;
+    credential_resolution().await;
+    default_credential_resolution().await;
     decisions_response().await;
     decisions_malformed_payload().await;
 }

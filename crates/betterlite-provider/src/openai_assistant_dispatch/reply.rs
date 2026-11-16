@@ -6,10 +6,11 @@ use betterlite_openai::thread_runs::records::RunReply;
 use betterlite_openai::thread_runs::stream::RunEventStream;
 use secrecy::SecretString;
 
+// the assistant record dwarfs a deletion, so it is boxed to stay within 3x, the limit variant_size_differences enforces
 #[derive(Debug)]
 pub enum AssistantsReply {
     Page(AssistantPage),
-    Assistant(AssistantObject),
+    Assistant(Box<AssistantObject>),
     Deleted(AssistantDeleted),
 }
 

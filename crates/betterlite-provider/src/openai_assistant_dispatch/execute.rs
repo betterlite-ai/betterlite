@@ -91,10 +91,10 @@ where
         AssistantsOperation::Create {
             data,
             async_requested,
-        } => AssistantsReply::Assistant(
+        } => AssistantsReply::Assistant(Box::new(
             api.create_assistants(options, &data, None, async_requested)
                 .await?,
-        ),
+        )),
         AssistantsOperation::Delete {
             assistant_id,
             async_requested,
