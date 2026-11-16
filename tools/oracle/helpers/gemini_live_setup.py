@@ -43,7 +43,7 @@ class FixedUuid:
     def __init__(self, value: str) -> None:
         self.value = UUID(value)
 
-    def uuid4(self) -> UUID:
+    def __call__(self) -> UUID:
         return self.value
 
 
@@ -67,8 +67,7 @@ def logging_session_id(call: Call) -> str:
     return "" if value is None else value
 
 
-def session_update(call: Call) -> JsonValue:
-    config = GeminiRealtimeConfig()
+def session_update(call: Call, config: GeminiRealtimeConfig) -> JsonValue:
     message = json.dumps({"type": "session.update", "session": session_payload(call)})
     messages = config.transform_realtime_request(
         message,
@@ -78,9 +77,9 @@ def session_update(call: Call) -> JsonValue:
     return {"messages": [DOCUMENT.validate_json(answer) for answer in messages]}
 
 
-def automatic(call: Call) -> JsonValue:
-    litellm.gemini_live_defer_setup = call.get("defer_setup", False)
-    config = GeminiRealtimeConfig()
+def automatic(call: Call, config: GeminiRealtimeConfig) -> JsonValue:
+    deferred = call.get("defer_setup")
+    litellm.gemini_live_defer_setup = False if deferred is None else deferred
     required = config.requires_session_configuration()
     setup: JsonValue = None
     if required:
@@ -89,9 +88,8 @@ def automatic(call: Call) -> JsonValue:
     return {"required": required, "setup": setup}
 
 
-def created(call: Call) -> JsonValue:
-    litellm_uuid.uuid4 = FixedUuid(event_id(call)).uuid4
-    config = GeminiRealtimeConfig()
+def created(call: Call, config: GeminiRealtimeConfig) -> JsonValue:
+    litellm_uuid.uuid4 = FixedUuid(event_id(call))
     event = config.transform_session_created_event(
         call["model"],
         logging_session_id(call),
@@ -100,8 +98,7 @@ def created(call: Call) -> JsonValue:
     return OBJECT.validate_python(event)
 
 
-def endpoint(call: Call) -> JsonValue:
-    config = GeminiRealtimeConfig()
+def endpoint(call: Call, config: GeminiRealtimeConfig) -> JsonValue:
     url = config.get_complete_url(
         call.get("api_base"),
         call["model"],
@@ -111,13 +108,14 @@ def endpoint(call: Call) -> JsonValue:
 
 
 def dispatch(call: Call) -> JsonValue:
+    config = GeminiRealtimeConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L143-L148
     if call["op"] == "session_update":
-        return session_update(call)
+        return session_update(call, config)
     if call["op"] == "automatic":
-        return automatic(call)
+        return automatic(call, config)
     if call["op"] == "created":
-        return created(call)
-    return endpoint(call)
+        return created(call, config)
+    return endpoint(call, config)
 
 
 def label(message: str) -> str:
