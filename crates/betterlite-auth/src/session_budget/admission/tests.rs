@@ -103,10 +103,12 @@ async fn admission_allows_a_session_with_no_recorded_spend() {
 async fn admission_rejects_at_an_explicit_zero_budget() {
     let handler = handler(FakeCache::new());
     let registry = agent_registry_with(&[BUDGET_ZERO]);
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &json(REQUEST))
-            .await
-            .is_err()
+    let error = check(&handler, &registry, Some("agent-1"), &json(REQUEST))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        rejection(error).rate_limit_type,
+        Some(RateLimitDimension::Budget)
     );
 }
 
@@ -149,10 +151,12 @@ async fn admission_treats_a_numeric_text_budget_as_a_number() {
     cache.preload_memory(SPEND_KEY, amount("0.5"));
     let handler = handler(cache);
     let registry = agent_registry_with(&[BUDGET_TEXT]);
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &json(REQUEST))
-            .await
-            .is_err()
+    let error = check(&handler, &registry, Some("agent-1"), &json(REQUEST))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        rejection(error).rate_limit_type,
+        Some(RateLimitDimension::Budget)
     );
 }
 
@@ -162,10 +166,12 @@ async fn admission_treats_a_true_budget_as_one_dollar() {
     cache.preload_memory(SPEND_KEY, amount("1.0"));
     let handler = handler(cache);
     let registry = agent_registry_with(&[BUDGET_TRUE]);
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &json(REQUEST))
-            .await
-            .is_err()
+    let error = check(&handler, &registry, Some("agent-1"), &json(REQUEST))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        rejection(error).rate_limit_type,
+        Some(RateLimitDimension::Budget)
     );
 }
 
@@ -197,10 +203,12 @@ async fn admission_rejects_a_budget_that_is_not_a_number() {
 async fn admission_treats_a_false_budget_as_zero() {
     let handler = handler(FakeCache::new());
     let registry = agent_registry_with(&[BUDGET_FALSE]);
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &json(REQUEST))
-            .await
-            .is_err()
+    let error = check(&handler, &registry, Some("agent-1"), &json(REQUEST))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        rejection(error).rate_limit_type,
+        Some(RateLimitDimension::Budget)
     );
 }
 
@@ -221,11 +229,13 @@ async fn admission_rejects_a_list_budget() {
 async fn admission_rejects_a_non_finite_budget() {
     let handler = handler(over_budget_cache());
     let registry = agent_registry_with(&[BUDGET_INFINITY]);
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &json(REQUEST))
-            .await
-            .is_err()
-    );
+    let error = check(&handler, &registry, Some("agent-1"), &json(REQUEST))
+        .await
+        .unwrap_err();
+    let SessionBudgetError::InvalidBudget { agent_id } = error else {
+        panic!("expected an invalid budget error");
+    };
+    assert_eq!(agent_id, "agent-1");
 }
 
 #[tokio::test]

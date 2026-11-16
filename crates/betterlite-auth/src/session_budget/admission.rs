@@ -43,8 +43,9 @@ pub(crate) fn max_budget_for(
         return Ok(None);
     };
     let value: Json =
-        serde_json::from_str(raw.get()).map_err(|_error| SessionBudgetError::InvalidBudget {
+        serde_json::from_str(raw.get()).map_err(|source| SessionBudgetError::BudgetJson {
             agent_id: agent_id.to_owned(),
+            source,
         })?;
     budget_amount(&value, agent_id)
 }
