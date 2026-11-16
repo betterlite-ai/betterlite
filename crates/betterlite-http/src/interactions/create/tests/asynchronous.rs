@@ -102,7 +102,7 @@ async fn async_create_interaction_returns_the_open_response_as_a_stream_iterator
         calls.contains(&"async_stream|200|gemini-2.5-flash".to_owned()),
         "{calls:?}"
     );
-    assert!(calls.iter().all(|call| !call.starts_with("response|")));
+    assert!(calls.iter().all(|entry| !entry.starts_with("response|")));
     assert_eq!(
         logging.model_call_details.get("streamed"),
         Some(&JsonValue::Bool(true))
@@ -132,7 +132,7 @@ async fn async_create_interaction_converts_a_failing_status_through_the_provider
     assert!(
         calls
             .iter()
-            .all(|call| !call.starts_with("response|") && !call.starts_with("async_stream|"))
+            .all(|entry| !entry.starts_with("response|") && !entry.starts_with("async_stream|"))
     );
     serving.request.join().unwrap();
 }

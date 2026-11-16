@@ -239,7 +239,7 @@ impl Call {
             provider: ProviderId::Gemini,
             extra_headers: RequestHeaders::new(),
             // the compiler's view of litellm.request_timeout, which defaults to 6000 seconds
-            request_timeout: Duration::from_secs(6000),
+            request_timeout: Duration::from_mins(100),
             timeout: None,
         }
     }
@@ -340,13 +340,13 @@ pub(crate) fn serve_with_body(answer: Vec<u8>, pause: Option<Duration>) -> Servi
 }
 
 fn read_request(stream: &mut TcpStream) -> Result<Received, IoError> {
-    let mut head = Vec::new();
-    while !head.ends_with(b"\r\n\r\n") {
+    let mut head_bytes = Vec::new();
+    while !head_bytes.ends_with(b"\r\n\r\n") {
         let mut byte = [0];
         stream.read_exact(&mut byte)?;
-        head.push(byte[0]);
+        head_bytes.push(byte[0]);
     }
-    let head = String::from_utf8(head).map_err(IoError::other)?;
+    let head = String::from_utf8(head_bytes).map_err(IoError::other)?;
     let length = head
         .lines()
         .find_map(|line| line.strip_prefix("content-length: "))

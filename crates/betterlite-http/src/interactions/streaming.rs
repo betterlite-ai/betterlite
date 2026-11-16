@@ -94,10 +94,10 @@ fn held(client: &Client, response: Response) -> StreamResponse {
 }
 
 // _safe_read_response: a body that cannot be read reads as empty, and the real status still names the error
-fn sync_failure<C: ErrorClasses>(
-    config: &C,
-    response: BlockingResponse,
-) -> CreateInteractionError<C::Error> {
+fn sync_failure<C>(config: &C, response: BlockingResponse) -> CreateInteractionError<C::Error>
+where
+    C: ErrorClasses,
+{
     let status_code = response.status().as_u16();
     let headers = response_headers(response.headers());
     let body = read_body(response, MAX_RESPONSE_BYTES).unwrap_or_default();
@@ -105,10 +105,10 @@ fn sync_failure<C: ErrorClasses>(
 }
 
 // _safe_aread_response: the read gets five seconds, then a failure or an expiry reads as empty
-async fn async_failure<C: ErrorClasses>(
-    config: &C,
-    mut response: Response,
-) -> CreateInteractionError<C::Error> {
+async fn async_failure<C>(config: &C, mut response: Response) -> CreateInteractionError<C::Error>
+where
+    C: ErrorClasses,
+{
     let status_code = response.status().as_u16();
     let headers = response_headers(response.headers());
     let read = timeout(

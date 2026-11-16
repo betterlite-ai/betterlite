@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use betterlite_config::tls::Verification;
@@ -8,8 +9,8 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::support::{
-    Call, Fixture, FixtureError, api_key_header, caller_headers, client_error, dead_address,
-    posted, provider_error, run, serve_with_body, transport_error,
+    Call, Fixture, FixtureError, Serving, api_key_header, caller_headers, client_error,
+    dead_address, posted, provider_error, run, serve_with_body, transport_error,
 };
 use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::tests::support as base;
@@ -17,8 +18,7 @@ use crate::interactions::base::{ClientError, Logging, Params, RequestFailure};
 use crate::interactions::create::CreateOutcome;
 use crate::interactions::create::synchronous::create_interaction;
 
-#[test]
-fn create_interaction_posts_the_provider_request_and_returns_the_transformed_response() {
+fn served() -> (Serving, Fixture) {
     let serving = serve_with_body(
         base::reply("200 OK", &[("x-request-id", "r1")], "{\"id\":\"int_1\"}"),
         None,
@@ -28,33 +28,31 @@ fn create_interaction_posts_the_provider_request_and_returns_the_transformed_res
         data: base::params(r#"{"model": "m", "input": "hello"}"#),
         ..Fixture::new()
     };
-    let mut call = Call::new(serving.address);
+    (serving, fixture)
+}
+
+fn served_call(address: SocketAddr) -> Call {
+    let mut call = Call::new(address);
     call.agent = Some("agent_1".to_owned());
     call.optional_params = base::params(r#"{"store": false, "background": true}"#);
     call.extra_headers = caller_headers(&[("x-caller", "c1")]);
     call.params.insert(
         "api_base".to_owned(),
-        JsonValue::Text(format!("http://{}/base", serving.address)),
+        JsonValue::Text(format!("http://{address}/base")),
     );
+    call
+}
 
-    let (outcome, logging) = run(&fixture, &call);
+#[test]
+fn create_interaction_posts_the_provider_request_and_returns_the_transformed_response() {
+    let (serving, fixture) = served();
+    let call = served_call(serving.address);
+
+    let (outcome, _logging) = run(&fixture, &call);
 
     assert_eq!(
         outcome.unwrap(),
         CreateOutcome::Response("{\"id\":\"int_1\"}".to_owned())
-    );
-    assert_eq!(
-        fixture.calls(),
-        vec![
-            "environment|gemini-2.5-flash|1|1".to_owned(),
-            format!(
-                "url|http://{}/base|gemini-2.5-flash|agent_1|1|false",
-                serving.address
-            ),
-            "create|gemini-2.5-flash|agent_1|true|2|1|1".to_owned(),
-            "response|200|r1".to_owned(),
-            "model|gemini-2.5-flash".to_owned(),
-        ]
     );
     let received = serving.request.join().unwrap();
     assert_eq!(
@@ -69,6 +67,38 @@ fn create_interaction_posts_the_provider_request_and_returns_the_transformed_res
         posted(&received.body),
         posted(r#"{"model": "m", "input": "hello"}"#)
     );
+}
+
+#[test]
+fn create_interaction_asks_the_config_for_each_step_in_order() {
+    let (serving, fixture) = served();
+    let call = served_call(serving.address);
+
+    let (_outcome, _logging) = run(&fixture, &call);
+
+    assert_eq!(
+        fixture.calls(),
+        vec![
+            "environment|gemini-2.5-flash|1|1".to_owned(),
+            format!(
+                "url|http://{}/base|gemini-2.5-flash|agent_1|1|false",
+                serving.address
+            ),
+            "create|gemini-2.5-flash|agent_1|true|2|1|1".to_owned(),
+            "response|200|r1".to_owned(),
+            "model|gemini-2.5-flash".to_owned(),
+        ]
+    );
+    serving.request.join().unwrap();
+}
+
+#[test]
+fn create_interaction_logs_the_pre_call_with_the_transformed_request() {
+    let (serving, fixture) = served();
+    let call = served_call(serving.address);
+
+    let (_outcome, logging) = run(&fixture, &call);
+
     let recorded = logging.pre_call.as_ref().unwrap();
     assert_eq!(recorded.input, "hello");
     assert_eq!(recorded.api_key.expose_secret(), "");
@@ -81,6 +111,7 @@ fn create_interaction_posts_the_provider_request_and_returns_the_transformed_res
         logging.model_call_details.get("complete_input_dict"),
         Some(&posted(r#"{"model": "m", "input": "hello"}"#))
     );
+    serving.request.join().unwrap();
 }
 
 #[test]
@@ -112,7 +143,7 @@ fn create_interaction_returns_a_stream_iterator_for_a_stream_request() {
             serving.address
         ))
     );
-    assert!(calls.iter().all(|call| !call.starts_with("response|")));
+    assert!(calls.iter().all(|entry| !entry.starts_with("response|")));
     assert_eq!(
         logging.model_call_details.get("streamed"),
         Some(&JsonValue::Bool(true))
@@ -141,7 +172,7 @@ fn create_interaction_converts_a_failing_status_through_the_provider_error_class
     assert!(
         calls
             .iter()
-            .all(|call| !call.starts_with("response|") && !call.starts_with("sync_stream|"))
+            .all(|entry| !entry.starts_with("response|") && !entry.starts_with("sync_stream|"))
     );
     serving.request.join().unwrap();
 }
@@ -171,7 +202,7 @@ fn create_interaction_leaves_a_provider_error_from_the_config_unchanged(
         fixture
             .calls()
             .iter()
-            .all(|call| !call.starts_with("error|"))
+            .all(|entry| !entry.starts_with("error|"))
     );
     serving.request.join().unwrap();
 }
