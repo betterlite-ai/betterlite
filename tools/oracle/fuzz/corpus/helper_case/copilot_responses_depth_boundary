@@ -1,0 +1,25 @@
+kind: helper
+name: depth_boundary
+call:
+  copilot_responses:
+    settings: {DEFAULT_MAX_RECURSE_DEPTH: "3"}
+    steps:
+      - step: auth
+        copilot_key: tid=1
+        headers: {}
+        params: {input: [[[{type: input_image}]]]}
+      - step: auth
+        copilot_key: tid=1
+        headers: {}
+        params: {input: [[[[{type: input_image}]]]]}
+      - step: auth
+        copilot_key: tid=1
+        headers: {}
+        params: {input: [{content: [{content: [{type: input_image}]}]}]}
+      - step: auth
+        copilot_key: tid=1
+        headers: {}
+        params: {input: [{content: [{content: [{content: [{type: input_image}]}]}]}]}
+env: {DEFAULT_MAX_RECURSE_DEPTH: "3"}
+compare:
+  ignore: []

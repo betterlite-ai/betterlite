@@ -1,0 +1,12 @@
+task: B8172
+deviations:
+  - what: An image reply whose top-level body, output, choices, message or content has the wrong JSON type fails with a typed BaseLLMException, status 500, where LiteLLM raises a raw AttributeError or TypeError.
+    why: The uncaught Python exception carries no status. 500 is the status LiteLLM's generic exception mapping gives an unclassified exception, and the Rust decoder returns an error instead of panicking.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/image_generation/transformation.py#L195-L211
+  - what: An image reply whose image value is a number, a boolean or an object fails with the same typed BaseLLMException, status 500, where LiteLLM skips a falsy value such as 0 or false and lets pydantic reject the rest with a ValidationError.
+    why: LiteLLM's `if image_url:` is truthiness, which betterlite does not copy. A value outside the declared string type gets an error that names the field (docs/compatibility.md).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/image_generation/transformation.py#L205-L211
+  - what: A non-200 image reply whose body is not UTF-8 fails with a message naming the body's byte count, where LiteLLM carries httpx's replacement-character decoding of the same body.
+    why: betterlite reads reply bodies as UTF-8 JSON and does not copy Python's replacement decoding. The status and the headers on the error stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/image_generation/transformation.py#L177-L182
+kept_bugs: []

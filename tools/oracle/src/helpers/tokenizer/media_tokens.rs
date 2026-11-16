@@ -28,6 +28,8 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use tokio::runtime::Builder;
 
+use super::b9963::refusing::RefusingFetcher;
+
 const DEFAULT_MODEL: &str = "gpt-3.5-turbo";
 
 #[derive(Debug, Deserialize)]
@@ -81,14 +83,14 @@ impl BlockingCounter for DirectRunner {
     }
 }
 
-struct Fixture {
+pub(crate) struct Fixture {
     service: Arc<CountingService>,
     counted: TextCounted,
     max_exact_chars: NonZeroUsize,
 }
 
 impl Fixture {
-    fn texter(&self) -> Texter<'_> {
+    pub(crate) fn texter(&self) -> Texter<'_> {
         Texter {
             counter: self.service.as_ref(),
             counted: &self.counted,
@@ -97,7 +99,7 @@ impl Fixture {
     }
 }
 
-fn fixture(encoding: Encoding) -> Result<Fixture, Box<HelperError>> {
+pub(crate) fn fixture(encoding: Encoding) -> Result<Fixture, Box<HelperError>> {
     let settings = CountSettings::default();
     let limits = settings
         .encode_limits()
@@ -221,7 +223,7 @@ async fn count_call(
             ImageCounting::Exact
         },
     };
-    let counted = count_token_media(&fixture.texter(), &media, &settings)
+    let counted = count_token_media(&fixture.texter(), &media, &settings, &RefusingFetcher)
         .await
         .map_err(|error| failure(error.to_string()))?;
     Ok(json!(counted.tokens))
@@ -277,7 +279,7 @@ async fn input_tokens(
         .ok_or_else(|| failure("the token count does not fit in a machine word".to_owned()))
 }
 
-fn failure(message: String) -> Box<HelperError> {
+pub(crate) fn failure(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: "MediaError".to_owned(),
         status: None,

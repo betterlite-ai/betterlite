@@ -1,0 +1,17 @@
+kind: helper
+name: hosted-skill-ops-seed
+call:
+  hosted_skill_ops:
+    now: "2026-02-03T04:05:06"
+    uuid: "00000000-0000-4000-8000-000000000007"
+    rows:
+      - {skill_id: litellm_skill_seed, created_by: alice, created_at: "2026-01-01T00:00:00", updated_at: "2026-01-01T00:00:00"}
+    page:
+      - {skill_id: litellm_skill_seed, created_by: alice, created_at: "2026-01-01T00:00:00", updated_at: "2026-01-01T00:00:00"}
+    steps:
+      - {action: create, principal: {user_id: alice}, display_title: Seeded, files: [[seed.zip, "c2VlZA=="]], metadata: {tier: 2}}
+      - {action: list, principal: {user_id: alice}, limit: 1}
+      - {action: get, principal: {user_id: alice}, skill_id: litellm_skill_seed, litellm_call_id: call-2}
+      - {action: delete, principal: {user_id: alice}, skill_id: litellm_skill_seed}
+env: {}
+compare: {ignore: []}
