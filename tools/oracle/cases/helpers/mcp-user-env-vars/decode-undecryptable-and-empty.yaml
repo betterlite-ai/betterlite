@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-user-env-vars-decode-undecryptable-and-empty
+call:
+  b4714:
+    function: get
+    salt_key: b4714-salt
+    user_id: user-2
+    server_id: srv-9
+    rows:
+      - {user_id: user-2, server_id: srv-9, values_b64: 'dHSLSXLO1c4NofkmZNWooxi6pyQoacCJ6jbnmIqq-AtoJ1gatU_z5rnDPbHhz_HN_EDq0gq_FPJ7zCiJvpJtN3pfzA=='}
+calls:
+  - b4714:
+      function: get
+      salt_key: b4714-salt
+      user_id: user-3
+      server_id: srv-empty
+      rows:
+        - {user_id: user-3, server_id: srv-empty, values_b64: ''}
+env:
+  LITELLM_SALT_KEY: b4714-salt
+compare: {ignore: []}

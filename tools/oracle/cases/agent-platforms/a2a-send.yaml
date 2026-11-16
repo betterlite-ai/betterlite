@@ -1,0 +1,30 @@
+kind: helper
+name: a2a-send
+call:
+  b050:
+    op: dispatch
+    platform: a2a
+    model: my-agent
+    messages: [{role: user, content: hi}]
+    stream: null
+    api_base: null
+    api_key: null
+    headers: null
+    optionals: {}
+    globals: {api_base: null, api_key: null, headers: null}
+    environment: {}
+    registry:
+      - agent_name: my-agent
+        agent_card_params: {url: 'http://card.test/agent'}
+        litellm_params:
+          api_key: card-key
+          headers: {x-card: 'yes'}
+          timeout: 12
+    upstream:
+      status: 200
+      body: '{"jsonrpc": "2.0", "id": "req-1", "result": {"kind": "message", "role": "agent", "parts": [{"kind": "text", "text": "hello from the agent"}], "messageId": "msg-1"}}'
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/request/body/id, why: "LiteLLM draws the JSON-RPC request id from a fresh uuid"}
+    - {pointer: /value/request/body/params/message/messageId, why: "LiteLLM draws the A2A message id from a fresh uuid"}

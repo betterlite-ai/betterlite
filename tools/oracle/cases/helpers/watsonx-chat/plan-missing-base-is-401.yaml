@@ -1,0 +1,16 @@
+kind: helper
+name: watsonx-chat-plan-missing-base-is-401
+env: {}
+compare: {ignore: []}
+call:
+  b5971:
+    env: {}
+    maps: []
+    infos: []
+    urls: []
+    plans:
+      - model: granite-13b
+        api_base: null
+        api_key: null
+        headers: {Authorization: Bearer caller}
+        options: {project_id: project-1}

@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-user-env-vars-bulk-omits-missing-and-keeps-unreadable
+call:
+  b4714:
+    function: bulk
+    salt_key: b4714-salt
+    user_id: user-1
+    server_ids: [srv-1, srv-2, srv-gone]
+    rows:
+      - {user_id: user-1, server_id: srv-1, values_b64: 'F79vrGjHN3nZ5VZwOO0kIox-wuXgS7I0mPFk6uiP2RtFJ9qenc8kOCY2Bg8Yfd1thhRxiEAJWd_zY4_PJIeUuBr60AWAFZS3B4GA4pg82cKVLnxKdg=='}
+      - {user_id: user-1, server_id: srv-2, values_b64: 'dHSLSXLO1c4NofkmZNWooxi6pyQoacCJ6jbnmIqq-AtoJ1gatU_z5rnDPbHhz_HN_EDq0gq_FPJ7zCiJvpJtN3pfzA=='}
+      - {user_id: user-2, server_id: srv-9, values_b64: 'uaE9mPQDBwGTawNeRfUBio_sZwwdXMIF_2TC17_3EIwHasxX3PdZmP1zt3irkwKZ0dINLrwHemwlrWNCIDxQx3r3'}
+env:
+  LITELLM_SALT_KEY: b4714-salt
+compare: {ignore: []}

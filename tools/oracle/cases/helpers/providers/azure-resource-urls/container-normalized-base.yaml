@@ -1,0 +1,19 @@
+kind: helper
+name: container-normalized-base
+call:
+  azure_resource_urls:
+    container_normalized_base:
+      - {api_base: "https://r.example/openai/responses", api_version: "2025-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/openai/responses/", api_version: "2025-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/prefix/openai/responses?x=1#frag", api_version: "2025-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/openai/responses;p=1", api_version: "2025-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/openai/responses?api-version=2024-09-01&x=1#f", api_version: "2025-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/openai/v1/responses", api_version: "2025-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/openai/responses/extra", api_version: "2025-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/OPENAI/responses", api_version: "2025-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/openai/responses/openai/responses", api_version: "2025-01-01", module: {}, environment: {}}
+      - {api_base: "HTTPS://R.example/a/openai/responses/?q#f", api_version: "2025-01-01", module: {}, environment: {}}
+      - {api_base: "", api_version: "2025-01-01", module: {api_base: "https://m.example"}, environment: {}}
+      - {api_base: "https://r.example", api_version: "2025-01-01", module: {}, environment: {}}
+env: {}
+compare: {ignore: []}

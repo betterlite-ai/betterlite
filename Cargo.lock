@@ -1099,6 +1099,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-redact",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",
@@ -1865,6 +1866,7 @@ name = "betterlite-foundry"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-anthropic",
  "betterlite-azure",
  "betterlite-config",
  "betterlite-context",
@@ -1874,6 +1876,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-secret-managers",
  "chrono",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
  "percent-encoding",
@@ -2442,6 +2445,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "sha2 0.11.1",
  "speedate",
@@ -2921,10 +2925,12 @@ name = "betterlite-oracle-foundry"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-anthropic",
  "betterlite-azure",
  "betterlite-config",
  "betterlite-core",
  "betterlite-foundry",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-oracle-helper-api",
@@ -2932,6 +2938,8 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-secret-managers",
  "chrono",
+ "http 1.5.0",
+ "indexmap 2.14.2",
  "jiff",
  "rust_decimal",
  "secrecy",
@@ -2939,6 +2947,8 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3352,7 +3362,9 @@ dependencies = [
  "betterlite-anthropic",
  "betterlite-bedrock",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-core",
+ "betterlite-error",
  "betterlite-foundry",
  "betterlite-http",
  "betterlite-logging",
@@ -3372,6 +3384,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde-saphyr",
@@ -4360,6 +4373,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-openapi",
  "betterlite-postgres-fixture",
+ "betterlite-prompts",
  "betterlite-provider",
  "betterlite-redact",
  "betterlite-redis",
@@ -4367,6 +4381,7 @@ dependencies = [
  "betterlite-router",
  "betterlite-secrets",
  "betterlite-semantic",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-tracing",
  "betterlite-vertex",
@@ -4441,7 +4456,9 @@ version = "0.0.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-core",
+ "betterlite-guardrails",
  "betterlite-server",
+ "form_urlencoded",
  "libfuzzer-sys",
  "serde_json",
 ]

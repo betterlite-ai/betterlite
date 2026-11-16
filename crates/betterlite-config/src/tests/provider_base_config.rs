@@ -1,10 +1,11 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::io;
 
 use rstest::rstest;
 
-use crate::loader::{ConfigError, ConfigLoader};
+use crate::loader::{ConfigError, ConfigLoader, EnvironmentLookup};
 
 fn environment_lookup(environment: &[(&str, &str)]) -> BTreeMap<String, String> {
     environment
@@ -215,6 +216,39 @@ fn shared_env_os_environ_number() {
     },
     "environment"
 )]
+#[case::load_thread(
+    ConfigError::LoadThread { source: io::Error::other("thread limit reached") },
+    "load_thread"
+)]
 fn category_names_every_config_error_variant(#[case] error: ConfigError, #[case] expected: &str) {
     assert_eq!(error.category(), expected);
+}
+
+#[test]
+fn load_thread_error_names_the_start_failure() {
+    let error = ConfigError::LoadThread {
+        source: io::Error::other("thread limit reached"),
+    };
+    assert_eq!(
+        error.to_string(),
+        "could not start the config load thread: thread limit reached"
+    );
+}
+
+struct PanickingLookup;
+
+impl EnvironmentLookup for PanickingLookup {
+    fn lookup(&self, _name: &str) -> Option<String> {
+        panic!("the config load cannot read the environment")
+    }
+}
+
+#[test]
+#[should_panic(expected = "the config load cannot read the environment")]
+fn a_panic_in_the_load_thread_stays_a_panic() {
+    ConfigLoader {
+        lookup: PanickingLookup,
+    }
+    .load("{}")
+    .unwrap();
 }

@@ -119,7 +119,8 @@ fn invalid_value_fallback(
         | ConfigError::Unsupported { .. }
         | ConfigError::MissingEnvironment { .. }
         | ConfigError::InvalidFloat { .. }
-        | ConfigError::InvalidInteger { .. } => None,
+        | ConfigError::InvalidInteger { .. }
+        | ConfigError::LoadThread { .. } => None,
     };
     assert_eq!(actual_scalar, expected_scalar, "{error}");
 }

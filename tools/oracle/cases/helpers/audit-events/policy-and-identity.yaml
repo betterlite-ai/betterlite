@@ -1,0 +1,90 @@
+kind: helper
+name: audit-policy-and-identity
+call:
+  audit_events:
+    aspect: policy
+    explicit: false
+    store: true
+    env: "true"
+calls:
+  - audit_events:
+      aspect: policy
+      explicit: null
+      store: true
+      env: "false"
+  - audit_events:
+      aspect: policy
+      explicit: null
+      store: null
+      env: " TRUE "
+  - audit_events:
+      aspect: policy
+      explicit: null
+      store: null
+      env: "yes"
+  - audit_events:
+      aspect: policy
+      explicit: null
+      store: null
+      env: ""
+  - audit_events:
+      aspect: policy
+      explicit: null
+      store: null
+      env: null
+  - audit_events:
+      aspect: policy
+      explicit: null
+      store: false
+      env: null
+  - audit_events:
+      aspect: identity
+      litellm_changed_by: ops
+      user_id: user-1
+      metadata: {allow_litellm_changed_by_header: true}
+      team_metadata: null
+      admin_name: admin
+  - audit_events:
+      aspect: identity
+      litellm_changed_by: ops
+      user_id: user-1
+      metadata: {allow_litellm_changed_by_header: false}
+      team_metadata: {allow_litellm_changed_by_header: true}
+      admin_name: null
+  - audit_events:
+      aspect: identity
+      litellm_changed_by: ops
+      user_id: user-1
+      metadata: null
+      team_metadata: null
+      admin_name: admin
+  - audit_events:
+      aspect: identity
+      litellm_changed_by: ""
+      user_id: ""
+      metadata: {allow_litellm_changed_by_header: true}
+      team_metadata: null
+      admin_name: admin
+  - audit_events:
+      aspect: identity
+      litellm_changed_by: ops
+      user_id: user-1
+      metadata: {allow_litellm_changed_by_header: "true"}
+      team_metadata: null
+      admin_name: null
+  - audit_events:
+      aspect: identity
+      litellm_changed_by: null
+      user_id: null
+      metadata: null
+      team_metadata: null
+      admin_name: admin
+  - audit_events:
+      aspect: identity
+      litellm_changed_by: null
+      user_id: null
+      metadata: null
+      team_metadata: null
+      admin_name: null
+env: {}
+compare: {ignore: []}

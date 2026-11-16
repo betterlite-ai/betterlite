@@ -2,11 +2,17 @@ use betterlite_models::call_helpers::drop_params::drop_params_env_flag;
 use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use std::collections::{BTreeMap, BTreeSet};
+use std::io;
 use std::num::{ParseFloatError, ParseIntError};
+use std::panic;
 use std::path::PathBuf;
+use std::thread;
 use thiserror::Error;
+use tracing::Span;
+use tracing::dispatcher::{get_default, set_default};
 
 use crate::providers::bedrock::request_policy::metadata_fields;
+use crate::providers::vertex::gemini_live_defer_setup;
 use crate::raw::{RawConfig, RawGeneral, RawLiteLlm, RawNumber, RawRouter};
 use crate::resolve::{parse_float, parse_integer, resolve_number as number, resolve_secret};
 use crate::secret_codec::general_settings;
@@ -56,6 +62,11 @@ pub enum ConfigError {
     },
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },
+    #[error("could not start the config load thread: {source}")]
+    LoadThread {
+        #[source]
+        source: io::Error,
+    },
 }
 
 impl ConfigError {
@@ -69,6 +80,7 @@ impl ConfigError {
             Self::InvalidInteger { .. } => "invalid_integer",
             Self::InvalidScalar { .. } => "invalid_scalar",
             Self::Environment { .. } => "environment",
+            Self::LoadThread { .. } => "load_thread",
         }
     }
 }
@@ -77,8 +89,31 @@ pub struct ConfigLoader<L> {
     pub lookup: L,
 }
 
-impl<L: EnvironmentLookup> ConfigLoader<L> {
+// the loader walks deep YAML once per section, so its thread gets a stack sized for the walk
+const CONFIG_LOAD_STACK_SIZE: usize = 64 * 1024 * 1024;
+
+impl<L: EnvironmentLookup + Sync> ConfigLoader<L> {
     pub fn load(&self, source: &str) -> Result<Config, ConfigError> {
+        // scoped subscribers and spans live on the caller's thread, so the load thread re-enters them
+        let dispatch = get_default(Clone::clone);
+        let span = Span::current();
+        thread::scope(|scope| {
+            let handle = thread::Builder::new()
+                .name("config-load".to_owned())
+                .stack_size(CONFIG_LOAD_STACK_SIZE)
+                .spawn_scoped(scope, || {
+                    let _dispatch = set_default(&dispatch);
+                    span.in_scope(|| self.load_document(source))
+                })
+                .map_err(|error| ConfigError::LoadThread { source: error })?;
+            match handle.join() {
+                Ok(result) => result,
+                Err(payload) => panic::resume_unwind(payload),
+            }
+        })
+    }
+
+    fn load_document(&self, source: &str) -> Result<Config, ConfigError> {
         let (raw, core_ignored) = parse_view::<RawConfig>(source)?;
         let mut ignored = vec![core_ignored];
         let raw_sections = RawSections::parse(source, &mut ignored)?;
@@ -216,6 +251,7 @@ fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSetting
         num_retries,
         request_timeout,
         drop_params: raw.drop_params,
+        gemini_live_defer_setup: gemini_live_defer_setup(raw.gemini_live_defer_setup, lookup),
         proxy_trust: ProxyTrust {
             aiohttp_trust_env: raw.aiohttp_trust_env,
             disable_aiohttp_trust_env: raw.disable_aiohttp_trust_env,
