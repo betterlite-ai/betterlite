@@ -1,0 +1,15 @@
+kind: helper
+name: missing_identifiers_and_null_counts
+call:
+  tool_row:
+    rows:
+      - {"tool_name":"no-id"}
+      - {"tool_id":"t2"}
+      - {"tool_id":"t3","tool_name":"null-count","call_count":null}
+      - {"tool_id":"t4","tool_name":"missing-count"}
+      - {"tool_id":"t5","tool_name":"negative-count","call_count":-12}
+      - {"tool_id":"t6","tool_name":"zero-count","call_count":0}
+    tokens: []
+    users: []
+env: {}
+compare: {ignore: []}

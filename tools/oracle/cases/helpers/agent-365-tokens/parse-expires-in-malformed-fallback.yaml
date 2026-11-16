@@ -1,0 +1,14 @@
+kind: helper
+name: parse-expires-in-malformed-fallback
+call:
+  b3741:
+    function: agent_365_token_exchange
+    replies:
+      - {status: 200, body: {access_token: tok-soon, expires_in: soon}, raw: null}
+      - {status: 200, body: {access_token: tok-absent}, raw: null}
+    repeat_last_reply: false
+    steps:
+      - {kind: token, assertion: malformed.assertion.value}
+      - {kind: token, assertion: absent.assertion.value}
+env: {}
+compare: {ignore: []}

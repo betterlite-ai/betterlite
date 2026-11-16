@@ -1,0 +1,18 @@
+kind: helper
+name: auth-model-patterns-team-alias-live-target
+call:
+  auth_model_patterns:
+    steps:
+      - {object_kind: team, model: "team-alias", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {"team-alias": "gpt-4o"}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "team-alias", models: ["gpt-4o-mini"], team_id: "team-1", team_models: [], team_model_aliases: {"team-alias": "gpt-4o"}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "team-alias", models: ["gpt-4o"], team_id: "team-2", team_models: [], team_model_aliases: {"team-alias": "gpt-4o"}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "team-alias", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "team-alias", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {"team-alias": "gpt-4o"}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "team-public", models: ["gpt-4o", "team-group"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "model_name_team-1_abc", access_groups: ["team-group"], team_id: "team-1", team_public_model_name: "team-public"}], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "team-public", models: ["gpt-4o", "team-group"], team_id: "team-2", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "model_name_team-1_abc", access_groups: ["team-group"], team_id: "team-1", team_public_model_name: "team-public"}], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "team-public", models: ["gpt-4o", "team-group"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "model_name_team-1_abc", access_groups: ["team-group"], team_id: "team-1", team_public_model_name: "team-public"}], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "model_name_team-1_abc", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "model_name_team-1_abc", access_groups: ["team-group"], team_id: "team-1", team_public_model_name: "team-public"}], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "stale", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {"stale": "model_name_team-1_missing"}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "model_name_team-1_abc", access_groups: [], team_id: "team-1", team_public_model_name: "team-public"}], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "gpt-4o-mini", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+env: {}
+compare: {ignore: []}
