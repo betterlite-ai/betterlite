@@ -1,7 +1,7 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
 
-use super::decode::{Audio, ClientEvent, ItemCreate, ToolResult};
+use super::decode::{Audio, ClientEvent, ItemCreate, OptionalOutput, ToolResult};
 use super::error::LiveClientError;
 use super::records::{
     ClientContent, ClientContentMessage, FunctionResponse, RealtimeInputMessage, TextPart,
@@ -144,7 +144,7 @@ impl LiveClient {
     }
 }
 
-fn output_object(output: Option<Option<String>>) -> Object {
+fn output_object(output: OptionalOutput) -> Object {
     let value = match output {
         None => return Object::new(),
         Some(None) => Json::Null,

@@ -11,6 +11,9 @@ use serde_json::value::RawValue;
 use super::error::LiveClientError;
 use crate::gemini_live_setup::session::SessionUpdate;
 
+// an absent output is None, an explicit null is Some(None) and a JSON string is Some(Some(text))
+pub type OptionalOutput = Option<Option<String>>;
+
 #[derive(Debug)]
 pub enum ClientEvent {
     SessionUpdate(Box<SessionUpdate>),
@@ -41,7 +44,7 @@ pub enum ItemCreate {
 pub struct ToolResult {
     pub call_id: Option<String>,
     // absent wraps into an empty response, null into a null result, and a string is parsed as JSON
-    pub output: Option<Option<String>>,
+    pub output: OptionalOutput,
 }
 
 #[derive(Deserialize)]
@@ -90,7 +93,7 @@ struct ItemObject {
     content: Option<Vec<ContentPart>>,
     call_id: Option<String>,
     #[serde(default, with = "serde_with::rust::double_option")]
-    output: Option<Option<String>>,
+    output: OptionalOutput,
 }
 
 #[derive(Deserialize)]

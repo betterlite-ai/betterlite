@@ -7,6 +7,8 @@ use crate::gemini_live_client::error::LiveClientError;
 
 use super::support::{decode, decode_bytes};
 
+type ExpectedOutput = Option<Option<&'static str>>;
+
 fn tool_item(body: &str) -> String {
     format!(
         r#"{{"type":"conversation.item.create","item":{{"type":"function_call_output"{body}}}}}"#
@@ -96,7 +98,7 @@ fn an_event_without_a_known_type_is_unknown(#[case] source: &str) {
 fn a_function_call_output_keeps_absent_and_null_values(
     #[case] body: &str,
     #[case] call_id: Option<&str>,
-    #[case] output: Option<Option<&str>>,
+    #[case] output: ExpectedOutput,
 ) {
     let ClientEvent::ItemCreate(ItemCreate::ToolResult(result)) = decode(&tool_item(body)) else {
         panic!("the item is a tool result");
