@@ -312,6 +312,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_veo_operation"
+path = "fuzz_targets/vertex_veo_operation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_stream"
 path = "fuzz_targets/vertex_stream.rs"
 test = false
