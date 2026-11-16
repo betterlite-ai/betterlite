@@ -89,7 +89,8 @@ class Input(TypedDict):
 
 
 def check_duration(default_duration_seconds: int) -> None:
-    if DEFAULT_GOOGLE_VIDEO_DURATION_SECONDS != default_duration_seconds:  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    if DEFAULT_GOOGLE_VIDEO_DURATION_SECONDS != default_duration_seconds:
         raise ValueError("the case env must match default_duration_seconds")
 
 
