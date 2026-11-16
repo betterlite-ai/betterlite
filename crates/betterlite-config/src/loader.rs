@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::providers::bedrock::request_policy::metadata_fields;
+use crate::providers::vertex::gemini_live_defer_setup;
 use crate::raw::{RawConfig, RawGeneral, RawLiteLlm, RawNumber, RawRouter};
 use crate::resolve::{parse_float, parse_integer, resolve_number as number, resolve_secret};
 use crate::secret_codec::general_settings;
@@ -216,6 +217,7 @@ fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSetting
         num_retries,
         request_timeout,
         drop_params: raw.drop_params,
+        gemini_live_defer_setup: gemini_live_defer_setup(raw.gemini_live_defer_setup, lookup),
         proxy_trust: ProxyTrust {
             aiohttp_trust_env: raw.aiohttp_trust_env,
             disable_aiohttp_trust_env: raw.disable_aiohttp_trust_env,
