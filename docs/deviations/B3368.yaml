@@ -9,14 +9,18 @@ deviations:
       async fn that awaits the handler's async form.
     link: ""
   - what: >-
-      Errors are mapped once, with the resolved provider for errors raised after the container id is
-      decoded and the caller's provider for errors before it. LiteLLM maps in the sync body and the
-      async wrapper maps the already mapped exception again with the provider the caller gave.
+      Each path maps an error once instead of LiteLLM's sync-body mapping followed by the async
+      wrapper's second pass. On the blocking path the provider is the resolved one after the
+      container id is decoded. On the async path an error raised while preparing is mapped with the
+      resolved provider, and an error the handler raises at ahandle is mapped with the caller's
+      custom_llm_provider.
     why: >-
-      exception_type returns an exception that is already a LiteLLM type unchanged, so the second pass
-      changes nothing a caller can see.
+      LiteLLM's async path never reaches the sync body's except for a handler error: the sync body
+      returns the unstarted coroutine and the error surfaces at the wrapper's await, so only the
+      wrapper's mapping with the caller's provider runs there. A preparation error is mapped in the
+      sync body first, and the wrapper's exception_type returns that LiteLLM exception unchanged.
     link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2358-L2367
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L172-L185
   - what: >-
       The import-time endpoint table, the ten module-level aliases and containers/__init__.py have no
       Rust code. all_endpoint_names and async_endpoint_names are the export surface and the endpoints
