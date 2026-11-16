@@ -407,6 +407,22 @@ fn finish_without_usage_flushes() {
 }
 
 #[test]
+fn refusal_text_overrides_the_stop_reason() {
+    let mut stream = driver(vec![finish("stop")]);
+    stream.state.refusal_text = "No".to_owned();
+    assert_message(&next(&mut stream));
+    assert_events(
+        &mut stream,
+        &[
+            TEXT_START,
+            STOP_0,
+            r#"{"type":"message_delta","delta":{"stop_reason":"refusal","stop_details":{"type":"refusal","category":null,"explanation":"No"}},"usage":{"input_tokens":0,"output_tokens":0}}"#,
+            MESSAGE_STOP,
+        ],
+    );
+}
+
+#[test]
 fn hidden_usage_closes_a_chunk_without_one() {
     let hidden = chunk(
         r#"{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"hidden_params":{"usage":{"prompt_tokens":9,"completion_tokens":3}}}"#,
