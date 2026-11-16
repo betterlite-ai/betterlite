@@ -21,10 +21,11 @@ where
     if depth > MAX_DEPTH {
         return mapping;
     }
-    mapping
-        .into_iter()
-        .map(|(key, value)| (key, resolve_value(value, depth, lookup)))
-        .collect()
+    let mut resolved = IndexMap::with_capacity(mapping.len());
+    for (key, value) in mapping {
+        resolved.insert(key, resolve_value(value, depth, lookup));
+    }
+    resolved
 }
 
 // LiteLLM resolves mappings and the dict items of a list, never a plain list item, up to the depth limit
