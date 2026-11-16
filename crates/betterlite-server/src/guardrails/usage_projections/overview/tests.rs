@@ -167,6 +167,20 @@ fn guardrail_overview_omits_unlisted_metric_keys_with_no_requests() {
 }
 
 #[test]
+fn guardrail_overview_orders_fallback_rows_by_metric_key() {
+    let mut aggregates = empty_aggregates();
+    aggregates
+        .metrics
+        .insert("z-guard".to_owned(), totals(1, 1, 0));
+    aggregates
+        .metrics
+        .insert("a-guard".to_owned(), totals(1, 1, 0));
+    let rows = guardrail_overview_rows(&[], &aggregates);
+    let ids: Vec<&str> = rows.iter().map(|row| row.id.as_str()).collect();
+    assert_eq!(ids, ["a-guard", "z-guard"]);
+}
+
+#[test]
 fn guardrail_overview_reads_the_previous_rate_for_the_trend() {
     let lakera = record("uuid-1", Some("lakera"), "lakera");
     let mut aggregates = empty_aggregates();

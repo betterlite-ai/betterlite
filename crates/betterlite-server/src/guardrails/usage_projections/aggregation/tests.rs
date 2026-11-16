@@ -77,6 +77,15 @@ fn sum_tracked_cost_skips_rows_with_no_price() {
 }
 
 #[test]
+fn sum_tracked_cost_adds_decimals_exactly() {
+    let rows = [
+        unit("requests", "lakera", 2, 0, Some(Decimal::new(1, 1))),
+        unit("requests", "lakera", 2, 0, Some(Decimal::new(2, 1))),
+    ];
+    assert_eq!(sum_tracked_cost(&refs(&rows)), Some(Decimal::new(3, 1)));
+}
+
+#[test]
 fn sum_tracked_cost_skips_rows_whose_units_are_all_untracked() {
     let rows = [
         unit("requests", "lakera", 4, 4, Some(Decimal::new(125, 2))),
