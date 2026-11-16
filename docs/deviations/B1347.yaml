@@ -6,7 +6,4 @@ deviations:
   - what: A reply whose root is not a JSON object, or whose candidates, content, parts or inlineData values are not the declared shapes, fails with a typed Shape error naming the path, where LiteLLM's candidate loop raises an uncaught AttributeError or TypeError as HTTP 500.
     why: The declared shapes are an object holding a candidates list of contents with part objects, so such a reply is malformed; betterlite names the failure instead of answering 500, and no working setup receives one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_gemini_transformation.py#L211-L220
-  - what: A size that is neither a string nor null fails with a typed FieldType error naming size, where LiteLLM's dict lookup answers the square fallback for any hashable non-string and raises TypeError for an unhashable one.
-    why: The declared size type is a string, so a typed error naming the field is the right answer for a caller that sent a number or a list, and no working setup sends one.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_gemini_transformation.py#L66-L70
 kept_bugs: []

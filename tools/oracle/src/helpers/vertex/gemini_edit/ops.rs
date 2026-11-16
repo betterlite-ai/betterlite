@@ -34,6 +34,7 @@ use serde_json::{Value, json};
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -83,14 +84,14 @@ pub(super) fn run_cases(input: &Input) -> HelperResult {
             .or_value_error()?;
     drop(views);
     let positions = positions_value(&prepared);
-    let target = match &input.target {
-        Some(target) => target_value(&input.model, target)?,
-        None => Value::Null,
-    };
-    let response = match &input.response {
-        Some(reply) => reply_value(reply)?,
-        None => Value::Null,
-    };
+    let target = input
+        .target
+        .as_ref()
+        .map_or(Ok(Value::Null), |target| target_value(&input.model, target))?;
+    let response = input
+        .response
+        .as_ref()
+        .map_or(Ok(Value::Null), reply_value)?;
     Ok(json!({
         "supported": SUPPORTED_OPENAI_PARAMS,
         "mapped": mapped,
@@ -111,16 +112,12 @@ enum PreparedImage {
 fn prepared_images(
     specs: Option<&[Option<ImageSpec>]>,
 ) -> Result<Vec<Option<PreparedImage>>, Box<HelperError>> {
-    let Some(specs) = specs else {
+    let Some(items) = specs else {
         return Ok(Vec::new());
     };
-    let mut prepared = Vec::with_capacity(specs.len());
-    for spec in specs {
-        let record = match spec {
-            Some(spec) => Some(prepared_image(spec)?),
-            None => None,
-        };
-        prepared.push(record);
+    let mut prepared = Vec::with_capacity(items.len());
+    for spec in items {
+        prepared.push(spec.as_ref().map(prepared_image).transpose()?);
     }
     Ok(prepared)
 }
@@ -182,9 +179,7 @@ fn target_headers(
     };
     // the custom-base case never mints a token, so a load or a refresh that runs fails the case
     let cache = CredentialCache::new(Arc::new(FixedClock), Arc::new(NoCredentials));
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .or_config_error()?;
+    let runtime = Builder::new_current_thread().build().or_config_error()?;
     let headers = runtime
         .block_on(validate_environment(&cache, settings, &request))
         .or_value_error()?;

@@ -50,16 +50,12 @@ fn input(value: Value) -> Input {
     serde_json::from_value(value).expect("the helper input should decode")
 }
 
-fn request(image: Value, prompt: Option<&str>, size: Option<&str>) -> Input {
-    let optional_params = match size {
-        Some(size) => json!({"size": size}),
-        None => json!({}),
-    };
+fn request(image: Value) -> Input {
     input(json!({
         "model": "gemini-2.5-flash-image",
-        "prompt": prompt,
+        "prompt": null,
         "image": image,
-        "optional_params": optional_params,
+        "optional_params": {},
         "target": null,
         "response": null,
     }))
@@ -70,8 +66,8 @@ fn helper_seeds_select_vertex_gemini_edit() {
     let cases = seed_cases();
     assert!(!cases.is_empty());
     let inputs: Vec<Input> = cases.iter().map(decode).collect();
-    assert!(inputs.iter().any(|input| input.response.is_some()));
-    assert!(inputs.iter().any(|input| input.image.is_some()));
+    assert!(inputs.iter().any(|parsed| parsed.response.is_some()));
+    assert!(inputs.iter().any(|parsed| parsed.image.is_some()));
     assert!(cases.iter().all(|case| matches!(
         run_case(&[crate::GROUP], case, false).expect("the seed should run"),
         HelperRun::Match
@@ -143,11 +139,9 @@ fn a_custom_base_is_trimmed_and_skips_authentication() {
 
 #[test]
 fn a_seekable_record_is_read_from_zero_and_keeps_its_position() {
-    let parsed = Op::run(&request(
-        json!([{"kind": "seekable", "data_base64": DIGITS, "position": 7}]),
-        None,
-        None,
-    ))
+    let parsed = Op::run(&request(json!([
+        {"kind": "seekable", "data_base64": DIGITS, "position": 7}
+    ])))
     .expect("the stream reads");
     assert_eq!(parsed["positions"], json!([7]));
     assert_eq!(
@@ -161,14 +155,14 @@ fn a_seekable_record_is_read_from_zero_and_keeps_its_position() {
 #[case::all_none(json!([null]))]
 #[case::absent(Value::Null)]
 fn an_image_list_without_a_part_is_a_value_error(#[case] image: Value) {
-    let error = Op::run(&request(image, None, None)).expect_err("no part is refused");
+    let error = Op::run(&request(image)).expect_err("no part is refused");
     assert_eq!(error.class, "ValueError");
     assert_eq!(error.status, None);
 }
 
 #[test]
 fn an_unsupported_record_is_a_value_error() {
-    let error = Op::run(&request(json!([{"kind": "unsupported"}]), None, None))
+    let error = Op::run(&request(json!([{"kind": "unsupported"}])))
         .expect_err("the record carries no bytes");
     assert_eq!(error.class, "ValueError");
 }
