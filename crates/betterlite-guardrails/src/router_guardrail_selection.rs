@@ -9,11 +9,14 @@ use crate::router_guardrail_selection::error::GuardrailSelectionError;
 mod tests;
 
 // A router guardrail carries no weight, rpm or tpm, so LiteLLM's simple_shuffle ends in random.choice
-pub fn select_router_guardrail<'list, R: Rng>(
+pub fn select_router_guardrail<'list, R>(
     guardrails: &'list [RouterGuardrail],
     guardrail_name: &str,
     rng: &mut R,
-) -> Result<&'list RouterGuardrail, GuardrailSelectionError> {
+) -> Result<&'list RouterGuardrail, GuardrailSelectionError>
+where
+    R: Rng,
+{
     let matching: Vec<&RouterGuardrail> = guardrails
         .iter()
         .filter(|guardrail| guardrail.guardrail_name == guardrail_name)

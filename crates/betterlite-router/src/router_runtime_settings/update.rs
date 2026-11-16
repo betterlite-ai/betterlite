@@ -1,7 +1,7 @@
 use serde_json::{Map, Value};
 
 use super::error::RouterSettingsError;
-use super::integer::python_int;
+use super::integer::int_setting;
 use super::retry_policy_value::retry_policy_value;
 use super::target::RouterSettingsTarget;
 use super::{RUNTIME_UPDATABLE_ROUTER_SETTINGS, RouterRuntimeSettings};
@@ -25,16 +25,22 @@ fn change_strategy(
     target: &mut dyn RouterSettingsTarget,
     kwargs: &[(String, Value)],
     strategy: &Value,
+    pass: &mut UpdatePass,
 ) -> Result<(), RouterSettingsError> {
+    if pass.previous_strategy.as_ref() == Some(strategy) {
+        return Ok(());
+    }
     let args = kwargs
         .iter()
         .find(|(name, _)| name == "routing_strategy_args")
         .map(|(_, args)| args);
     if strategy.as_str() == Some("lar1") {
-        target.apply_lar1(args.filter(|candidate| !candidate.is_null()))
+        target.apply_lar1(args.filter(|candidate| !candidate.is_null()))?;
     } else {
-        target.init_routing_strategy(strategy, args.unwrap_or(&Value::Object(Map::new())))
+        target.init_routing_strategy(strategy, args.unwrap_or(&Value::Object(Map::new())))?;
     }
+    pass.rebuild_routing_groups = true;
+    Ok(())
 }
 
 impl RouterRuntimeSettings {
@@ -89,17 +95,14 @@ impl RouterRuntimeSettings {
                 None => return Ok(()),
             },
             "routing_strategy" => {
-                if pass.previous_strategy.as_ref() != Some(value) {
-                    change_strategy(target, kwargs, value)?;
-                    pass.rebuild_routing_groups = true;
-                }
+                change_strategy(target, kwargs, value, pass)?;
                 value.clone()
             }
             "routing_strategy_args" => {
                 pass.routing_args_updated = self.values.get(name) != Some(value);
                 value.clone()
             }
-            integer if INTEGER_SETTINGS.contains(&integer) => python_int(name, value)?,
+            integer if INTEGER_SETTINGS.contains(&integer) => int_setting(name, value)?,
             _ => value.clone(),
         };
         self.values.insert(name.to_owned(), stored);

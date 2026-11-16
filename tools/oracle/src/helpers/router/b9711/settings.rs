@@ -29,50 +29,42 @@ struct Recorder {
     calls: Vec<Value>,
 }
 
+type Step = Result<(), RouterSettingsError>;
+
 impl Recorder {
-    fn record(&mut self, step: &str, argument: Value) {
+    fn record(&mut self, step: &str, argument: Value) -> Step {
         self.calls.push(json!([step, argument]));
+        Ok(())
     }
 }
 
 impl RouterSettingsTarget for Recorder {
-    fn set_optional_pre_call_checks(&mut self, checks: &Value) -> Result<(), RouterSettingsError> {
-        self.record("set_optional_pre_call_checks", checks.clone());
-        Ok(())
+    fn set_optional_pre_call_checks(&mut self, checks: &Value) -> Step {
+        self.record("set_optional_pre_call_checks", checks.clone())
     }
 
-    fn init_routing_strategy(
-        &mut self,
-        strategy: &Value,
-        args: &Value,
-    ) -> Result<(), RouterSettingsError> {
-        self.record(
-            "routing_strategy_init",
-            json!({"routing_strategy": strategy, "routing_strategy_args": args}),
-        );
-        Ok(())
+    fn init_routing_strategy(&mut self, strategy: &Value, args: &Value) -> Step {
+        let call = json!({"routing_strategy": strategy, "routing_strategy_args": args});
+        self.record("routing_strategy_init", call)
     }
 
-    fn apply_updated_strategy_args(&mut self) -> Result<(), RouterSettingsError> {
-        self.record("apply_updated_routing_strategy_args", Value::Null);
-        Ok(())
+    fn apply_updated_strategy_args(&mut self) -> Step {
+        self.record("apply_updated_routing_strategy_args", Value::Null)
     }
 
-    fn apply_lar1(&mut self, args: Option<&Value>) -> Result<(), RouterSettingsError> {
-        self.record("apply_lar1", args.cloned().unwrap_or(Value::Null));
-        Ok(())
+    fn apply_lar1(&mut self, args: Option<&Value>) -> Step {
+        self.record("apply_lar1", args.cloned().unwrap_or(Value::Null))
     }
 
     // The Python recorder validates the input as a list or None, which is where a bad value fails
-    fn init_routing_groups(&mut self, input: Option<&Value>) -> Result<(), RouterSettingsError> {
+    fn init_routing_groups(&mut self, input: Option<&Value>) -> Step {
         if input.is_some_and(|groups| !groups.is_array()) {
             return Err(RouterSettingsError::Target {
                 name: "init_routing_groups".to_owned(),
                 message: "routing_groups must be a list or null".to_owned(),
             });
         }
-        self.record("init_routing_groups", input.cloned().unwrap_or(Value::Null));
-        Ok(())
+        self.record("init_routing_groups", input.cloned().unwrap_or(Value::Null))
     }
 }
 

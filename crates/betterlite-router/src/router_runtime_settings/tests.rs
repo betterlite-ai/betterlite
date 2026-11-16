@@ -16,53 +16,48 @@ struct Recorder {
     fail_strategy: bool,
 }
 
+type Step = Result<(), RouterSettingsError>;
+
+fn failure(name: &str, message: &str) -> Step {
+    Err(RouterSettingsError::Target {
+        name: name.to_owned(),
+        message: message.to_owned(),
+    })
+}
+
 impl RouterSettingsTarget for Recorder {
-    fn set_optional_pre_call_checks(&mut self, checks: &Value) -> Result<(), RouterSettingsError> {
+    fn set_optional_pre_call_checks(&mut self, checks: &Value) -> Step {
         self.calls
             .push(("set_optional_pre_call_checks", checks.clone()));
         Ok(())
     }
 
-    fn init_routing_strategy(
-        &mut self,
-        strategy: &Value,
-        args: &Value,
-    ) -> Result<(), RouterSettingsError> {
-        self.calls.push((
-            "init_routing_strategy",
-            json!({"strategy": strategy, "args": args}),
-        ));
+    fn init_routing_strategy(&mut self, strategy: &Value, args: &Value) -> Step {
+        let call = json!({"strategy": strategy, "args": args});
+        self.calls.push(("init_routing_strategy", call));
         if self.fail_strategy {
-            return Err(RouterSettingsError::Target {
-                name: "init_routing_strategy".to_owned(),
-                message: "unknown strategy".to_owned(),
-            });
+            return failure("init_routing_strategy", "unknown strategy");
         }
         Ok(())
     }
 
-    fn apply_updated_strategy_args(&mut self) -> Result<(), RouterSettingsError> {
+    fn apply_updated_strategy_args(&mut self) -> Step {
         self.calls
             .push(("apply_updated_strategy_args", Value::Null));
         Ok(())
     }
 
-    fn apply_lar1(&mut self, args: Option<&Value>) -> Result<(), RouterSettingsError> {
-        self.calls.push((
-            "apply_lar1",
-            json!({"absent": args.is_none(), "args": args}),
-        ));
+    fn apply_lar1(&mut self, args: Option<&Value>) -> Step {
+        let call = json!({"absent": args.is_none(), "args": args});
+        self.calls.push(("apply_lar1", call));
         Ok(())
     }
 
-    fn init_routing_groups(&mut self, input: Option<&Value>) -> Result<(), RouterSettingsError> {
+    fn init_routing_groups(&mut self, input: Option<&Value>) -> Step {
         self.calls
             .push(("init_routing_groups", input.cloned().unwrap_or(Value::Null)));
         if self.fail_groups {
-            return Err(RouterSettingsError::Target {
-                name: "init_routing_groups".to_owned(),
-                message: "invalid routing_groups".to_owned(),
-            });
+            return failure("init_routing_groups", "invalid routing_groups");
         }
         Ok(())
     }
@@ -277,6 +272,7 @@ fn get_settings_stores_the_other_names_as_given() {
 #[case::string(json!("42"), json!(42))]
 #[case::string_with_spaces(json!("  7\n"), json!(7))]
 #[case::string_with_sign(json!("+8"), json!(8))]
+#[case::float_past_i64_into_u64(json!(1.0e19), json!(10_000_000_000_000_000_000_u64))]
 #[case::integer_past_f64_precision(json!(9_007_199_254_740_993_i64), json!(9_007_199_254_740_993_i64))]
 #[case::integer_past_i64(json!(18_446_744_073_709_551_615_u64), json!(18_446_744_073_709_551_615_u64))]
 fn update_int_follows_python_int(#[case] given: Value, #[case] stored: Value) {
@@ -311,8 +307,10 @@ fn update_int_casts_each_of_the_five_settings(#[case] name: &str) {
 #[case::text(json!("abc"))]
 #[case::empty_text(json!(""))]
 #[case::decimal_text(json!("4.5"))]
-#[case::float_past_i64(json!(1.0e30))]
-fn update_int_refuses_what_python_int_refuses(#[case] given: Value) {
+// the last two are past the stored range, which docs/deviations/B9711.yaml lists
+#[case::float_past_decimal_range(json!(1.0e30))]
+#[case::float_below_i64(json!(-1.0e19))]
+fn update_int_refuses_what_it_cannot_store(#[case] given: Value) {
     let mut settings = router(full_values());
     let mut recorder = Recorder::default();
 
@@ -421,6 +419,11 @@ fn update_policy_other_values_keep_the_old_policy(#[case] given: Value) {
 #[test]
 fn update_policy_wrong_field_type_names_the_field_and_keeps_the_old_policy() {
     let mut settings = router(full_values());
+    update(
+        &mut settings,
+        json!({"retry_policy": {"RateLimitErrorRetries": 3}}),
+    );
+    let before = shown(&settings)["retry_policy"].clone();
     let mut recorder = Recorder::default();
 
     let error = settings
@@ -433,7 +436,8 @@ fn update_policy_wrong_field_type_names_the_field_and_keeps_the_old_policy() {
     assert!(
         matches!(&error, RouterSettingsError::RetryPolicy { field, .. } if field == "NotFoundErrorRetries")
     );
-    assert_eq!(shown(&settings)["retry_policy"], Value::Null);
+    assert_eq!(shown(&settings)["retry_policy"], before);
+    assert_eq!(before["RateLimitErrorRetries"], json!(3));
 }
 
 #[test]
