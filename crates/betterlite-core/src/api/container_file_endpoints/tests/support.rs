@@ -9,6 +9,7 @@ use std::time::Duration;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_logging::logging_state::correlation::{
@@ -33,6 +34,7 @@ use betterlite_openai::containers::container_file_http::{
 use betterlite_openai::openai_base_config::Object;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use http::Method;
 use http::header::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -229,49 +231,75 @@ fn local_client(limits: TransportLimits) -> ProxiedClient {
     ProxiedClient::build(base_builder(), &policy, limits).expect("the client")
 }
 
-// the client's own read timeout is the only source of a Deadline, so a local listener keeps the answer back
-pub(super) async fn deadline_failure() -> ContainerFileHttpError {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("the listener");
-    let address = listener.local_addr().expect("the address");
-    let client = local_client(TransportLimits {
-        read_timeout: LOCAL_TIMEOUT,
-        ..TransportLimits::DEFAULT
-    });
-    let url = Url::parse(&format!("http://{address}/v1/files")).expect("the URL");
-    let held = async {
-        let (mut stream, _) = listener.accept().await.expect("the connection");
-        let mut chunk = [0_u8; 64];
-        let read = stream.read(&mut chunk).await.expect("the request bytes");
-        assert_ne!(read, 0, "the client sends its request");
-        sleep(LOCAL_HOLD).await;
-    };
-    let (result, ()) = tokio::join!(client.get(url, HeaderMap::new()), held);
-    let error = result.expect_err("the read timeout ends the request");
-    ContainerFileHttpError::Transfer(TransferError::Transport(error))
+fn timeout_request(url: Url) -> OutboundRequest {
+    OutboundRequest {
+        method: Method::GET,
+        url,
+        query: Vec::new(),
+        headers: HeaderMap::new(),
+        body: RequestBody::Empty,
+        deadline: LOCAL_HOLD,
+    }
 }
 
-// a listener whose accept queue is full, so a connect waits until the client's own connect timeout
-pub(super) async fn connect_timeout_failure() -> ContainerFileHttpError {
+#[derive(Clone, Copy)]
+pub(super) enum TimeoutKind {
+    Deadline,
+    Connect,
+}
+
+// a listener whose accept queue is full, so a connect waits instead of failing
+fn saturated_listener() -> (TcpListener, Vec<TcpStream>) {
     let socket = TcpSocket::new_v4().expect("the socket");
     socket
         .bind("127.0.0.1:0".parse::<SocketAddr>().expect("the address"))
         .expect("the bind");
     let listener = socket.listen(1).expect("the listen");
     let address = listener.local_addr().expect("the address");
-    let _fillers: Vec<TcpStream> = (0_u8..4)
+    let fillers = (0_u8..4)
         .filter_map(|_| TcpStream::connect_timeout(&address, LOCAL_TIMEOUT).ok())
         .collect();
-    let client = local_client(TransportLimits {
-        connect_timeout: LOCAL_TIMEOUT,
-        ..TransportLimits::DEFAULT
+    (listener, fillers)
+}
+
+// the client's own read or connect timeout is the source, so a local listener makes each one real
+pub(super) async fn timeout_failure(kind: TimeoutKind) -> ContainerFileHttpError {
+    let (listener, _fillers) = match kind {
+        TimeoutKind::Deadline => (
+            TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("the listener"),
+            Vec::new(),
+        ),
+        TimeoutKind::Connect => saturated_listener(),
+    };
+    let address = listener.local_addr().expect("the address");
+    let client = local_client(match kind {
+        TimeoutKind::Deadline => TransportLimits {
+            read_timeout: LOCAL_TIMEOUT,
+            ..TransportLimits::DEFAULT
+        },
+        TimeoutKind::Connect => TransportLimits {
+            connect_timeout: LOCAL_TIMEOUT,
+            ..TransportLimits::DEFAULT
+        },
     });
     let url = Url::parse(&format!("http://{address}/v1/files")).expect("the URL");
-    let error = client
-        .get(url, HeaderMap::new())
-        .await
-        .expect_err("the connect times out");
+    let result = match kind {
+        TimeoutKind::Deadline => {
+            let held = async {
+                let (mut stream, _) = listener.accept().await.expect("the connection");
+                let mut chunk = [0_u8; 64];
+                let read = stream.read(&mut chunk).await.expect("the request bytes");
+                assert_ne!(read, 0, "the client sends its request");
+                sleep(LOCAL_HOLD).await;
+            };
+            let (result, ()) = tokio::join!(client.send_buffered(timeout_request(url)), held);
+            result
+        }
+        TimeoutKind::Connect => client.send_buffered(timeout_request(url)).await,
+    };
+    let error = result.expect_err("the timeout ends the request");
     ContainerFileHttpError::Transfer(TransferError::Transport(error))
 }
 
