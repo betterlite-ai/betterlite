@@ -200,7 +200,9 @@ async fn pre_call_skips_a_sanitized_text_that_matches_what_it_scanned() {
     )
     .await;
     let hooks = fixture.hooks();
-    let mut request = prompt_data();
+    let mut request = data(
+        r#"{"messages":[{"role":"user","content":"first"},{"role":"user","content":"hello"}]}"#,
+    );
     let mut recorder = Recorder::new(Some(GuardrailEventHooks::PreCall));
     hooks
         .pre_call(&mut request, None, &mut recorder.context())
@@ -208,7 +210,9 @@ async fn pre_call_skips_a_sanitized_text_that_matches_what_it_scanned() {
         .expect("clean");
     assert_eq!(
         request.get("messages"),
-        Some(&value(r#"[{"role":"user","content":"hello"}]"#))
+        Some(&value(
+            r#"[{"role":"user","content":"first"},{"role":"user","content":"hello"}]"#
+        ))
     );
     assert_eq!(
         bucket(&request, "metadata").get("_model_armor_status"),
