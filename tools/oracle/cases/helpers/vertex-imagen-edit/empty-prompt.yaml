@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-imagen-edit-empty-prompt
+call:
+  vertex_imagen_edit:
+    model: imagen-3.0-capability-001
+    prompt: ""
+    image: [{kind: bytes, data_base64: iVBORw0KGgo=}]
+    mask: null
+    optional_params: {}
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}

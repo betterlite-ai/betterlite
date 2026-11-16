@@ -1,0 +1,21 @@
+task: B8133
+deviations:
+  - what: The chart is named betterlite and its default component image repositories are ghcr.io/betterlite-ai/betterlite-gateway, betterlite-backend and betterlite-ui.
+    why: The product name changes, and the native component images are built in betterlite's own registry namespace.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/values.yaml#L358-L361
+  - what: The migrations Job uses the betterlite-backend image instead of a dedicated litellm-migrations image.
+    why: The native migration command is part of the betterlite binary set (B1232), so no separate migrations image exists.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/values.yaml#L162-L165
+  - what: The billingMetrics block and its helpers are not ported, and no billing word appears in the chart.
+    why: Billable-request metering is LiteLLM Enterprise only and betterlite has no enterprise package.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/_helpers.tpl#L37-L86
+  - what: A component's ServiceAccount renders only when its own component is enabled; LiteLLM renders it whenever serviceAccounts.<component>.create is true, even for a disabled component.
+    why: A disabled component has no pod to bind the account to, so the chart leaves the account out rather than creating an unused object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/serviceaccount.yaml#L1-L16
+  - what: The gateway ConfigMap renders only when gateway.enabled and gateway.config.create are both true; LiteLLM renders it whenever gateway.config.create is true, even for a disabled gateway.
+    why: A disabled gateway mounts no config, so the chart does not create a ConfigMap nothing reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/configmap.yaml#L1-L9
+  - what: values.yaml carries gateway.metricsServer.command and gateway.collector.command, and no sidecar command is hardcoded.
+    why: betterlite has no Python to run python -m litellm.proxy.prometheus_metrics_server or python -m litellm.proxy.collector, so B8134 renders betterlite subcommands and an operator can override them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/deployment.yaml#L132-L169
+kept_bugs: []
