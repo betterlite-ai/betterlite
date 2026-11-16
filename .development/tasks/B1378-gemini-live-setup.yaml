@@ -36,6 +36,17 @@ description: >-
   100 adapters and 95 fuzz lines, cap 800.
 scope:
   paths:
+    - "crates/betterlite-config/tests/config_tests/snapshots/config_tests__test_cases__simple_config_yaml.snap"
+    - "crates/betterlite-config/src/types.rs"
+    - "crates/betterlite-config/src/sections.rs"
+    - "crates/betterlite-config/src/sections/gemini_live_setup.rs"
+    - "crates/betterlite-config/src/sections/gemini_cache_prefix.rs"
+    - "crates/betterlite-config/src/raw.rs"
+    - "crates/betterlite-config/src/lib.rs"
+    - "crates/betterlite-config/**"
+    - "crates/betterlite-config/src/sections"
+    - "crates/betterlite-config/src/loader.rs"
+    - "crates/betterlite-config/src"
     - crates/betterlite-vertex/src/gemini_live_setup.rs
     - crates/betterlite-vertex/src/gemini_live_setup/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
