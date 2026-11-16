@@ -29,7 +29,7 @@ const ENCODED_FIELDS: [&str; 6] = [
 #[derive(Debug, Deserialize)]
 pub(super) struct Case {
     akto_api_key: String,
-    unreachable_fallback: Fallback,
+    unreachable_fallback: String,
     event_hook: LitellmParamsMode,
     texts: Vec<String>,
     request_data: BTreeMap<String, GuardrailValue>,
@@ -37,35 +37,11 @@ pub(super) struct Case {
     answers: Vec<UpstreamAnswer>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Fallback {
-    FailClosed,
-    FailOpen,
-}
-
 pub(super) async fn run(case: &Case) -> HelperResult {
     let scripted = Scripted::start(&case.answers)?;
-    let configured = Configured {
-        guardrail_name: "akto".to_owned(),
-        api_base: scripted.base_url.clone(),
-        api_key: SecretString::from(case.akto_api_key.clone()),
-        account_id: "1000000".to_owned(),
-        vxlan_id: "0".to_owned(),
-        unreachable_fallback: match case.unreachable_fallback {
-            Fallback::FailClosed => UnreachableFallback::FailClosed,
-            Fallback::FailOpen => UnreachableFallback::FailOpen,
-        },
-        timeout: Duration::from_secs(5),
-    };
-    let guardrail = AktoMirroring::new(configured, reqwest::Client::default()).map_err(failure)?;
-    let inputs = AktoInputs {
-        texts: case.texts.clone(),
-        model: None,
-        tools: None,
-        tool_calls: None,
-        structured_messages: None,
-    };
+    let guardrail = mirroring(case, scripted.base_url.clone())?;
+    let mut inputs = AktoInputs::default();
+    inputs.texts.clone_from(&case.texts);
     let outcome = akto::apply_guardrail(
         &guardrail,
         inputs,
@@ -88,6 +64,23 @@ pub(super) async fn run(case: &Case) -> HelperResult {
         &secrets,
         &outcome,
     ))
+}
+
+fn mirroring(case: &Case, api_base: String) -> Result<AktoMirroring, Box<HelperError>> {
+    let configured = Configured {
+        guardrail_name: "akto".to_owned(),
+        api_base,
+        api_key: SecretString::from(case.akto_api_key.clone()),
+        account_id: "1000000".to_owned(),
+        vxlan_id: "0".to_owned(),
+        unreachable_fallback: if case.unreachable_fallback == "fail_open" {
+            UnreachableFallback::FailOpen
+        } else {
+            UnreachableFallback::FailClosed
+        },
+        timeout: Duration::from_secs(5),
+    };
+    AktoMirroring::new(configured, reqwest::Client::default()).map_err(failure)
 }
 
 fn decoded_body(body: &Value) -> Result<Value, Box<HelperError>> {

@@ -33,13 +33,12 @@ pub(super) struct Case {
     answers: Vec<UpstreamAnswer>,
 }
 
-pub(super) async fn run(case: &Case) -> HelperResult {
-    let scripted = Scripted::start(&case.answers)?;
+fn legacy_hooks(case: &Case, api_base: String) -> LegacyLakeraHooks {
     let moderation = LegacyLakeraModeration::new(
         LegacyLakeraModerationParams {
             moderation_check: Some(case.moderation_check),
             category_thresholds: None,
-            api_base: Some(scripted.base_url.clone()),
+            api_base: Some(api_base),
             api_key: Some(SecretString::from(case.api_key.clone())),
         },
         |_name| String::new(),
@@ -59,14 +58,19 @@ pub(super) async fn run(case: &Case) -> HelperResult {
             },
         );
     }
-    let legacy = LegacyLakeraHooks::new(
+    LegacyLakeraHooks::new(
         moderation,
         &LegacySettings {
             items: Vec::new(),
             by_name,
         },
         case.add_function_to_prompt,
-    );
+    )
+}
+
+pub(super) async fn run(case: &Case) -> HelperResult {
+    let scripted = Scripted::start(&case.answers)?;
+    let legacy = legacy_hooks(case, scripted.base_url.clone());
     let gate = case.gate.map_or(LakeraGate::Legacy, LakeraGate::Checked);
     let base = GuardrailBase {
         settings: GuardrailSettings::default(),
