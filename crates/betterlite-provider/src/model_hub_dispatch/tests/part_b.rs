@@ -159,7 +159,10 @@ async fn the_embedding_arm_fails_with_500_when_the_reply_has_an_error_key() {
     let Some(Json::Object(args)) = state.model_call_details.get("additional_args") else {
         panic!("the post_call keeps its arguments");
     };
-    assert!(args.contains_key("complete_input_dict"));
+    let Some(Json::Object(logged)) = args.get("complete_input_dict") else {
+        panic!("the post_call keeps the request body");
+    };
+    assert!(logged.contains_key("inputs"));
     let event = state.model_call_details.get("log_event_type");
     assert_eq!(event, Some(&Json::Text(String::from("post_api_call"))));
 }
@@ -504,13 +507,11 @@ async fn the_predibase_arm_sends_the_generate_request() {
     );
     let mut messages = vec![user_message()];
     let mut options = object(&[("tenant_id", PromptJson::Text(String::from("tenant-1")))]);
-    let mut call = chat_context(
-        PB_MODEL,
-        &mut messages,
-        &mut options,
-        Some("http://mock"),
-        None,
-    );
+    let base = Some("http://mock");
+    let mut call = ChatContext {
+        acompletion: true,
+        ..chat_context(PB_MODEL, &mut messages, &mut options, base, None)
+    };
     let env = environment(&[("PREDIBASE_API_KEY", "pb-env")]);
     let (outcome, _logged) =
         dispatch_with(&services, &env, ChatConfigTag::Predibase, &mut call).await;
