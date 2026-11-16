@@ -3,7 +3,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use betterlite_core::vertex_embedding_dispatch::{
-    self, Defaults, Native, SelectionRequest, VertexEmbeddingDispatchError,
+    self, Defaults, Pinned, SelectionRequest, VertexEmbeddingDispatchError,
 };
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Extra;
@@ -15,10 +15,7 @@ use betterlite_vertex::vertex_embedding_call::error::VertexEmbeddingCallError;
 use secrecy::SecretString;
 use thiserror::Error;
 
-use self::arguments::{
-    EmbedContentArguments, MultimodalArguments, TextArguments, embed_content_arguments,
-    multimodal_arguments, text_arguments,
-};
+use self::arguments::{EmbedContentArguments, MultimodalArguments, TextArguments, arguments};
 
 pub mod adapter;
 pub mod arguments;
@@ -37,6 +34,7 @@ pub struct VertexEmbeddingInput {
     pub litellm_params: Option<Extra>,
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
+    pub pinned: Option<Pinned>,
     pub extra_headers: BTreeMap<String, String>,
     pub timeout: Option<Duration>,
     pub aembedding: bool,
@@ -44,9 +42,9 @@ pub struct VertexEmbeddingInput {
 
 #[derive(Debug, Clone)]
 pub enum VertexEmbeddingPrepared {
-    EmbedContent(EmbedContentArguments),
-    Multimodal(MultimodalArguments),
-    Text(TextArguments),
+    EmbedContent(Box<EmbedContentArguments>),
+    Multimodal(Box<MultimodalArguments>),
+    Text(Box<TextArguments>),
 }
 
 pub enum VertexEmbeddingResult {
@@ -71,54 +69,50 @@ pub enum VertexEmbeddingError {
     Prediction(#[from] VertexEmbeddingCallError),
 }
 
+pub type EmbedContentOutcome = Result<EmbeddingReply, GeminiEmbeddingCallError>;
+pub type MultimodalOutcome = Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError>;
+pub type TextOutcome = Result<EmbeddingResponse, VertexEmbeddingCallError>;
+
 pub fn prepare(
     request: VertexEmbeddingInput,
     defaults: Defaults<'_>,
     catalog: &ModelCatalog,
 ) -> Result<VertexEmbeddingPrepared, VertexEmbeddingPrepareError> {
-    let resolution = vertex_embedding_dispatch::select(
+    let resolved = vertex_embedding_dispatch::select(
         SelectionRequest {
             model: &request.model,
             api_base: request.api_base.as_deref(),
             optional_params: &request.optional_params,
+            pinned: request.pinned.as_ref(),
         },
         defaults,
         catalog,
     )?;
-    let prepared = match resolution.native {
-        Native::EmbedContent => {
-            VertexEmbeddingPrepared::EmbedContent(embed_content_arguments(request, resolution)?)
-        }
-        Native::Multimodal => {
-            VertexEmbeddingPrepared::Multimodal(multimodal_arguments(request, resolution))
-        }
-        Native::Text => VertexEmbeddingPrepared::Text(text_arguments(request, resolution)),
-    };
-    Ok(prepared)
+    arguments(request, resolved)
 }
 
 // the three embedding handlers main.py calls, as the arguments each signature receives
 pub trait VertexEmbeddingHandlers {
-    fn embed_content<'call>(
-        &'call self,
-        call: &'call EmbedContentArguments,
-    ) -> impl Future<Output = Result<EmbeddingReply, GeminiEmbeddingCallError>> + Send + 'call;
+    fn embed_content(
+        &self,
+        call: &EmbedContentArguments,
+    ) -> impl Future<Output = EmbedContentOutcome> + Send;
 
-    fn multimodal<'call>(
-        &'call self,
-        call: &'call MultimodalArguments,
-    ) -> impl Future<Output = Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError>> + Send + 'call;
+    fn multimodal(
+        &self,
+        call: &MultimodalArguments,
+    ) -> impl Future<Output = MultimodalOutcome> + Send;
 
-    fn text<'call>(
-        &'call self,
-        call: &'call TextArguments,
-    ) -> impl Future<Output = Result<EmbeddingResponse, VertexEmbeddingCallError>> + Send + 'call;
+    fn text(&self, call: &TextArguments) -> impl Future<Output = TextOutcome> + Send;
 }
 
-pub async fn execute<Handlers: VertexEmbeddingHandlers + Sync>(
+pub async fn execute<Handlers>(
     prepared: &VertexEmbeddingPrepared,
     handlers: &Handlers,
-) -> Result<VertexEmbeddingResult, VertexEmbeddingError> {
+) -> Result<VertexEmbeddingResult, VertexEmbeddingError>
+where
+    Handlers: VertexEmbeddingHandlers + Sync,
+{
     let result = match prepared {
         VertexEmbeddingPrepared::EmbedContent(call) => {
             VertexEmbeddingResult::EmbedContent(handlers.embed_content(call).await?)

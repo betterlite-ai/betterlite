@@ -16,7 +16,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 use tracing::subscriber::{DefaultGuard, set_default};
 
-use super::{Defaults, MULTIMODAL_EMBEDDING_MODELS, Native, SelectionRequest, select};
+use super::{Defaults, MULTIMODAL_EMBEDDING_MODELS, Native, SelectionRequest, pin, select};
 
 const MODEL: &str = "text-embedding-005";
 const EMBED_CONTENT_MODEL: &str = "gemini-embedding-2";
@@ -33,12 +33,12 @@ impl Captured {
 }
 
 impl io::Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .map_err(|error| io::Error::other(error.to_string()))?
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -81,6 +81,7 @@ fn resolution(
             model,
             api_base: None,
             optional_params,
+            pinned: None,
         },
         Defaults { vertex, embedding },
         catalog,
@@ -103,6 +104,7 @@ fn loaded_resolution(source: &str, environment: &[(&str, &str)]) -> super::Resol
             model: MODEL,
             api_base: None,
             optional_params: &empty,
+            pinned: None,
         },
         Defaults {
             vertex: &loaded.sections.vertex_credential_sources,
@@ -325,6 +327,7 @@ fn an_explicit_api_base_and_option_credentials_win() {
             model: MODEL,
             api_base: Some("https://explicit.example"),
             optional_params: &optional_params,
+            pinned: None,
         },
         Defaults {
             vertex: &vertex,
@@ -356,6 +359,7 @@ fn a_wrong_typed_alias_names_its_field() {
             model: MODEL,
             api_base: None,
             optional_params: &optional_params,
+            pinned: None,
         },
         Defaults {
             vertex: &vertex,
@@ -379,6 +383,7 @@ fn rejected_credentials(optional_params: &Extra) -> String {
             model: MODEL,
             api_base: None,
             optional_params,
+            pinned: None,
         },
         Defaults {
             vertex: &vertex,
@@ -432,4 +437,67 @@ fn an_unreadable_credential_object_names_its_field() {
         rejected_credentials(&optional_params),
         "the vertex_ai_credentials option is not a readable credential"
     );
+}
+
+fn pinned_resolution(pins: &str, options: &str, vertex: &VertexSettings) -> super::Resolution {
+    let pinned = pin(&params(pins)).expect("pinned options");
+    let optional_params = params(options);
+    select(
+        SelectionRequest {
+            model: MODEL,
+            api_base: None,
+            optional_params: &optional_params,
+            pinned: Some(&pinned),
+        },
+        Defaults {
+            vertex,
+            embedding: &EmbeddingSettings::default(),
+        },
+        &ModelCatalog::default(),
+    )
+    .expect("a resolved request")
+}
+
+#[test]
+fn pinned_options_sit_between_the_request_and_the_settings() {
+    let vertex = VertexSettings {
+        project: Some("settings-project".to_owned()),
+        location: Some("settings-location".to_owned()),
+        ..VertexSettings::default()
+    };
+    let pins = format!(
+        r#"{{"vertex_ai_project": "pinned-project", "vertex_location": "pinned-location", "vertex_credentials": {ACCOUNT}, "api_base": "https://pinned.example"}}"#
+    );
+    let pinned_only = pinned_resolution(&pins, "{}", &vertex);
+    assert_eq!(pinned_only.project.as_deref(), Some("pinned-project"));
+    assert_eq!(pinned_only.location.as_deref(), Some("pinned-location"));
+    assert_eq!(
+        pinned_only.api_base.as_deref(),
+        Some("https://pinned.example")
+    );
+    assert!(matches!(
+        pinned_only.credentials,
+        Some(ConfiguredCredentials::Source(_))
+    ));
+    let overridden = pinned_resolution(&pins, r#"{"vertex_project": "option-project"}"#, &vertex);
+    assert_eq!(overridden.project.as_deref(), Some("option-project"));
+    assert_eq!(overridden.location.as_deref(), Some("pinned-location"));
+    let unpinned = pinned_resolution("{}", "{}", &vertex);
+    assert_eq!(unpinned.project.as_deref(), Some("settings-project"));
+    assert!(unpinned.credentials.is_none());
+}
+
+#[rstest]
+#[case::project(
+    r#"{"vertex_project": 5}"#,
+    "the vertex_project option must be a string"
+)]
+#[case::api_base(r#"{"api_base": ["x"]}"#, "the api_base option must be a string")]
+#[case::credentials(
+    r#"{"vertex_credentials": true}"#,
+    "the vertex_credentials option must be a string or an object"
+)]
+fn a_wrong_typed_pin_names_its_field(#[case] pins: &str, #[case] message: &str) {
+    let error = pin(&params(pins)).expect_err("a rejected pin");
+    assert_eq!(error.to_string(), message);
 }

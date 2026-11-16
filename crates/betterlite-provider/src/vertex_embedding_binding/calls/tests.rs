@@ -18,6 +18,7 @@ use betterlite_core::operation::embedding::{
     EmbeddingResult,
 };
 use betterlite_core::operation::{CallResult, Operation};
+use betterlite_core::vertex_embedding_dispatch::pin;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -240,7 +241,7 @@ fn calls(wire: &Arc<Wire>, pinned: &str) -> VertexEmbeddingCalls<Wire> {
         transport: Arc::clone(wire),
         vertex: VertexSettings::default(),
         embedding: EmbeddingSettings::default(),
-        deployments: BTreeMap::from([(MODEL_ID.to_owned(), params(pinned))]),
+        pinned: BTreeMap::from([(MODEL_ID.to_owned(), pin(&params(pinned)).expect("pins"))]),
     }
 }
 
@@ -437,6 +438,46 @@ async fn a_request_cannot_choose_the_credentials(#[case] name: &str) {
     };
     assert_eq!(refused, name);
     assert!(wire.sent.lock().expect("the call log").is_empty());
+}
+
+#[rstest]
+#[case::base64(r#""encoding_format": "base64""#, "encoding_format")]
+#[case::user(r#""user": "someone""#, "user")]
+#[tokio::test]
+async fn unsupported_openai_options_are_refused_by_name(
+    #[case] option: &str,
+    #[case] expected: &str,
+) {
+    let wire = Wire::answering(200, TEXT_ANSWER);
+    let request = format!(r#"{{"model": "embed", "input": "hello", {option}}}"#);
+    let outcome = embed(
+        &calls(&wire, PINNED),
+        "vertex_ai/text-embedding-005",
+        &request,
+    )
+    .await;
+    let Some(EmbeddingFailure::Route(EmbeddingError::Unsupported { name })) = outcome.err() else {
+        panic!("the option is refused as unsupported");
+    };
+    assert_eq!(name, expected);
+    assert!(wire.sent.lock().expect("the call log").is_empty());
+}
+
+#[tokio::test]
+async fn float_encoding_is_a_no_op() {
+    let wire = Wire::answering(200, TEXT_ANSWER);
+    let request = r#"{"model": "embed", "input": "hello", "encoding_format": "float"}"#;
+    embed(
+        &calls(&wire, PINNED),
+        "vertex_ai/text-embedding-005",
+        request,
+    )
+    .await
+    .expect("an embedding");
+    assert_eq!(
+        body_text(&wire.only_request()),
+        r#"{"instances":[{"content":"hello"}],"parameters":{}}"#
+    );
 }
 
 #[tokio::test]

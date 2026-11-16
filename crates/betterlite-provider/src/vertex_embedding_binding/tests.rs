@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -10,7 +9,7 @@ use betterlite_config::sections::vertex_credential_sources::credential_source::{
     ConfiguredCredentials, CredentialSource,
 };
 use betterlite_config::sections::vertex_embedding_dispatch::Settings as EmbeddingSettings;
-use betterlite_core::vertex_embedding_dispatch::Defaults;
+use betterlite_core::vertex_embedding_dispatch::{Defaults, Resolution, pin};
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::embedding::{EmbeddingInput, EmbeddingResponse, EmbeddingUsage};
@@ -29,14 +28,15 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::arguments::{EmbedContentArguments, MultimodalArguments, TextArguments};
 use super::{
-    VertexEmbeddingError, VertexEmbeddingHandlers, VertexEmbeddingInput,
-    VertexEmbeddingPrepareError, VertexEmbeddingPrepared, VertexEmbeddingResult, execute, prepare,
+    EmbedContentOutcome, MultimodalOutcome, TextOutcome, VertexEmbeddingError,
+    VertexEmbeddingHandlers, VertexEmbeddingInput, VertexEmbeddingPrepareError,
+    VertexEmbeddingPrepared, VertexEmbeddingResult, execute, prepare,
 };
 
 const TEXT_MODEL: &str = "text-embedding-005";
 const EMBED_CONTENT_MODEL: &str = "gemini-embedding-2";
 const ACCOUNT: &str =
-    r#"{"type": "service_account", "client_email": "sa@example.iam", "private_key": "key"}"#;
+    r#"{"type": "service_account", "client_email": "sa@example.iam", "private_key": "hunter2"}"#;
 
 fn catalog(source: &str) -> ModelCatalog {
     ModelCatalog::parse(source.as_bytes(), UnknownFields::Reject).expect("a catalog")
@@ -54,10 +54,24 @@ fn request(model: &str, input: EmbeddingInput, optional_params: &str) -> VertexE
         litellm_params: Some(params(r#"{"custom_llm_provider": "vertex_ai"}"#)),
         api_key: Some(SecretString::from("gemini-key".to_owned())),
         api_base: Some("https://vertex.example".to_owned()),
+        pinned: None,
         extra_headers: BTreeMap::from([("x-goog-request-params".to_owned(), "a=b".to_owned())]),
         timeout: Some(Duration::from_secs(42)),
         aembedding: true,
     }
+}
+
+fn prepare_plain(
+    request: VertexEmbeddingInput,
+    catalog: &ModelCatalog,
+) -> Result<VertexEmbeddingPrepared, VertexEmbeddingPrepareError> {
+    let vertex = VertexSettings::default();
+    let embedding = EmbeddingSettings::default();
+    let defaults = Defaults {
+        vertex: &vertex,
+        embedding: &embedding,
+    };
+    prepare(request, defaults, catalog)
 }
 
 fn prepared(
@@ -66,17 +80,15 @@ fn prepared(
     optional_params: &str,
     catalog: &ModelCatalog,
 ) -> VertexEmbeddingPrepared {
-    let vertex = VertexSettings::default();
-    let embedding = EmbeddingSettings::default();
-    prepare(
-        request(model, input, optional_params),
-        Defaults {
-            vertex: &vertex,
-            embedding: &embedding,
-        },
-        catalog,
-    )
-    .expect("a prepared request")
+    prepare_plain(request(model, input, optional_params), catalog).expect("a prepared request")
+}
+
+fn labelled(call: &VertexEmbeddingPrepared) -> (&'static str, &Resolution) {
+    match call {
+        VertexEmbeddingPrepared::EmbedContent(call) => ("embed_content", &call.resolved),
+        VertexEmbeddingPrepared::Multimodal(call) => ("multimodal", &call.resolved),
+        VertexEmbeddingPrepared::Text(call) => ("text", &call.resolved),
+    }
 }
 
 fn embed_content_catalog() -> ModelCatalog {
@@ -100,11 +112,9 @@ fn assert_text_arguments() {
     assert_eq!(text.timeout, Some(Duration::from_secs(42)));
     assert_eq!(
         text.litellm_params,
-        Some(Json::Object(params(
-            r#"{"custom_llm_provider": "vertex_ai"}"#
-        )))
+        Some(params(r#"{"custom_llm_provider": "vertex_ai"}"#))
     );
-    assert_eq!(text.optional_params, Json::Object(Extra::new()));
+    assert_eq!(text.resolved.optional_params, Extra::new());
     assert!(text.aembedding);
 }
 
@@ -132,7 +142,7 @@ fn assert_embed_content_arguments() {
             .map(String::as_str),
         Some("a=b")
     );
-    assert!(media.optional_params.contains_key("image"));
+    assert!(media.resolved.optional_params.contains_key("image"));
     assert!(media.aembedding);
 }
 
@@ -148,7 +158,10 @@ fn assert_multimodal_arguments() {
     };
     assert_eq!(multimodal.input, Json::Text("hello".to_owned()));
     assert!(multimodal.litellm_params.is_some());
-    assert_eq!(multimodal.optional_params.get("image"), Some(&Json::Null));
+    assert_eq!(
+        multimodal.resolved.optional_params.get("image"),
+        Some(&Json::Null)
+    );
     assert!(multimodal.aembedding);
 
     let texts = prepared(
@@ -233,36 +246,18 @@ fn resolved_settings_reach_every_arm() {
         .expect("a prepared request"),
     ];
     for arm in &arms {
-        let (project, location, credentials, api_base) = match arm {
-            VertexEmbeddingPrepared::EmbedContent(call) => (
-                &call.project,
-                &call.location,
-                &call.credentials,
-                &call.api_base,
-            ),
-            VertexEmbeddingPrepared::Multimodal(call) => (
-                &call.project,
-                &call.location,
-                &call.credentials,
-                &call.api_base,
-            ),
-            VertexEmbeddingPrepared::Text(call) => (
-                &call.project,
-                &call.location,
-                &call.credentials,
-                &call.api_base,
-            ),
-        };
-        assert_eq!(project.as_deref(), Some("settings-project"));
-        assert_eq!(location.as_deref(), Some("settings-location"));
+        let (_, resolved) = labelled(arm);
+        assert_eq!(resolved.project.as_deref(), Some("settings-project"));
+        assert_eq!(resolved.location.as_deref(), Some("settings-location"));
         assert_eq!(
-            credentials
+            resolved
+                .credentials
                 .as_ref()
                 .and_then(ConfiguredCredentials::as_text),
             Some("settings-key")
         );
         // the explicit api_base wins over the setting, as in main.py's or chain
-        assert_eq!(api_base.as_deref(), Some("https://vertex.example"));
+        assert_eq!(resolved.api_base.as_deref(), Some("https://vertex.example"));
     }
     assert!(matches!(arms[0], VertexEmbeddingPrepared::EmbedContent(_)));
     assert!(matches!(arms[1], VertexEmbeddingPrepared::Multimodal(_)));
@@ -291,14 +286,44 @@ fn an_object_credential_reaches_every_arm(
         &optional_params,
         &catalog,
     );
-    let (selected, credentials) = match call {
-        VertexEmbeddingPrepared::EmbedContent(call) => ("embed_content", call.credentials),
-        VertexEmbeddingPrepared::Multimodal(call) => ("multimodal", call.credentials),
-        VertexEmbeddingPrepared::Text(call) => ("text", call.credentials),
-    };
+    let (selected, resolved) = labelled(&call);
     assert_eq!(selected, arm);
     assert!(matches!(
-        credentials,
+        resolved.credentials,
+        Some(ConfiguredCredentials::Source(
+            CredentialSource::ServiceAccount(_)
+        ))
+    ));
+}
+
+#[rstest]
+#[case::embed_content("embed_content", EMBED_CONTENT_MODEL, "{}", embed_content_catalog())]
+#[case::multimodal(
+    "multimodal",
+    TEXT_MODEL,
+    r#"{"image": null}"#,
+    ModelCatalog::default()
+)]
+#[case::text("text", TEXT_MODEL, "{}", ModelCatalog::default())]
+fn pinned_options_reach_every_arm(
+    #[case] arm: &str,
+    #[case] model: &str,
+    #[case] options: &str,
+    #[case] catalog: ModelCatalog,
+) {
+    let pins = format!(
+        r#"{{"vertex_project": "pinned-project", "vertex_ai_location": "pinned-location", "vertex_ai_credentials": {ACCOUNT}}}"#
+    );
+    let mut pinned_request = request(model, EmbeddingInput::Text("hello".to_owned()), options);
+    pinned_request.pinned = Some(pin(&params(&pins)).expect("pinned options"));
+    let call = prepare_plain(pinned_request, &catalog).expect("a prepared request");
+    assert!(!format!("{call:?}").contains("hunter2"));
+    let (selected, resolved) = labelled(&call);
+    assert_eq!(selected, arm);
+    assert_eq!(resolved.project.as_deref(), Some("pinned-project"));
+    assert_eq!(resolved.location.as_deref(), Some("pinned-location"));
+    assert!(matches!(
+        resolved.credentials,
         Some(ConfiguredCredentials::Source(
             CredentialSource::ServiceAccount(_)
         ))
@@ -371,36 +396,19 @@ fn answer() -> MultimodalEmbeddingAnswer {
 }
 
 impl VertexEmbeddingHandlers for Recorder {
-    fn embed_content<'call>(
-        &'call self,
-        call: &'call EmbedContentArguments,
-    ) -> impl Future<Output = Result<EmbeddingReply, GeminiEmbeddingCallError>> + Send + 'call {
-        async move {
-            self.record("embed_content", &call.model);
-            Ok(reply())
-        }
+    async fn embed_content(&self, call: &EmbedContentArguments) -> EmbedContentOutcome {
+        self.record("embed_content", &call.model);
+        Ok(reply())
     }
 
-    fn multimodal<'call>(
-        &'call self,
-        call: &'call MultimodalArguments,
-    ) -> impl Future<Output = Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError>> + Send + 'call
-    {
-        async move {
-            self.record("multimodal", &call.model);
-            Ok(answer())
-        }
+    async fn multimodal(&self, call: &MultimodalArguments) -> MultimodalOutcome {
+        self.record("multimodal", &call.model);
+        Ok(answer())
     }
 
-    fn text<'call>(
-        &'call self,
-        call: &'call TextArguments,
-    ) -> impl Future<Output = Result<EmbeddingResponse, VertexEmbeddingCallError>> + Send + 'call
-    {
-        async move {
-            self.record("text", &call.model);
-            Ok(response())
-        }
+    async fn text(&self, call: &TextArguments) -> TextOutcome {
+        self.record("text", &call.model);
+        Ok(response())
     }
 }
 
@@ -469,32 +477,19 @@ fn token_input_is_rejected_for_embed_content() {
 struct Failing;
 
 impl VertexEmbeddingHandlers for Failing {
-    fn embed_content<'call>(
-        &'call self,
-        _call: &'call EmbedContentArguments,
-    ) -> impl Future<Output = Result<EmbeddingReply, GeminiEmbeddingCallError>> + Send + 'call {
-        async move { Err(GeminiEmbeddingCallError::MissingApiKey) }
+    async fn embed_content(&self, _call: &EmbedContentArguments) -> EmbedContentOutcome {
+        Err(GeminiEmbeddingCallError::MissingApiKey)
     }
 
-    fn multimodal<'call>(
-        &'call self,
-        _call: &'call MultimodalArguments,
-    ) -> impl Future<Output = Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError>> + Send + 'call
-    {
-        async move { Err(VertexEmbeddingCallError::Timeout) }
+    async fn multimodal(&self, _call: &MultimodalArguments) -> MultimodalOutcome {
+        Err(VertexEmbeddingCallError::Timeout)
     }
 
-    fn text<'call>(
-        &'call self,
-        _call: &'call TextArguments,
-    ) -> impl Future<Output = Result<EmbeddingResponse, VertexEmbeddingCallError>> + Send + 'call
-    {
-        async move {
-            Err(VertexEmbeddingCallError::Status {
-                status: 429,
-                body: br#"{"error": {"message": "quota"}}"#.to_vec(),
-            })
-        }
+    async fn text(&self, _call: &TextArguments) -> TextOutcome {
+        Err(VertexEmbeddingCallError::Status {
+            status: 429,
+            body: br#"{"error": {"message": "quota"}}"#.to_vec(),
+        })
     }
 }
 

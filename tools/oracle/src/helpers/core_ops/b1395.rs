@@ -1,23 +1,20 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_core::vertex_embedding_dispatch::Defaults;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
-use betterlite_models::decisions::{Extra, Json};
-use betterlite_openai::embedding::{EmbeddingInput, EmbeddingResponse};
+use betterlite_models::decisions::Extra;
+use betterlite_openai::embedding::EmbeddingInput;
 use betterlite_provider::vertex_embedding_binding::arguments::{
     EmbedContentArguments, MultimodalArguments, TextArguments,
 };
 use betterlite_provider::vertex_embedding_binding::{
-    VertexEmbeddingError, VertexEmbeddingHandlers, VertexEmbeddingPrepared, VertexEmbeddingRequest,
-    execute, prepare,
+    EmbedContentOutcome, MultimodalOutcome, TextOutcome, VertexEmbeddingError,
+    VertexEmbeddingHandlers, VertexEmbeddingInput, VertexEmbeddingPrepared, execute, prepare,
 };
 use betterlite_vertex::gemini_embedding_call::error::GeminiEmbeddingCallError;
-use betterlite_vertex::gemini_embedding_records::response::EmbeddingReply;
-use betterlite_vertex::multimodal_embedding_records::response::MultimodalEmbeddingAnswer;
 use betterlite_vertex::vertex_embedding_call::error::VertexEmbeddingCallError;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -75,22 +72,19 @@ impl Helper for Op {
         if input.fail {
             return failed(&prepared);
         }
-        Ok(match &prepared {
-            VertexEmbeddingPrepared::EmbedContent(call) => embed_content_view(call),
-            VertexEmbeddingPrepared::Multimodal(call) => multimodal_view(call),
-            VertexEmbeddingPrepared::Text(call) => text_view(call),
-        })
+        Ok(view(&prepared))
     }
 }
 
-fn request(input: &Input) -> VertexEmbeddingRequest {
-    VertexEmbeddingRequest {
+fn request(input: &Input) -> VertexEmbeddingInput {
+    VertexEmbeddingInput {
         model: input.model.clone(),
         input: EmbeddingInput::Text(input.input.clone()),
         optional_params: input.optional_params.clone(),
         litellm_params: input.litellm_params.clone(),
         api_key: input.api_key.clone().map(SecretString::from),
         api_base: input.api_base.clone(),
+        pinned: None,
         extra_headers: input.extra_headers.clone(),
         timeout: input.timeout_seconds.map(Duration::from_secs),
         aembedding: false,
@@ -110,57 +104,49 @@ fn remaining(params: &Extra) -> Vec<&str> {
     names
 }
 
-fn text_remaining(params: &Json) -> Vec<&str> {
-    match params {
-        Json::Object(fields) => remaining(fields),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Vec::new(),
+fn arm(prepared: &VertexEmbeddingPrepared) -> &'static str {
+    match prepared {
+        VertexEmbeddingPrepared::EmbedContent(_) => "embed_content",
+        VertexEmbeddingPrepared::Multimodal(_) => "multimodal",
+        VertexEmbeddingPrepared::Text(_) => "text",
     }
 }
 
-fn embed_content_view(call: &EmbedContentArguments) -> Value {
+fn view(prepared: &VertexEmbeddingPrepared) -> Value {
+    let (resolved, extra_headers, api_key_set, timeout, litellm_params_set) = match prepared {
+        VertexEmbeddingPrepared::EmbedContent(call) => (
+            &call.resolved,
+            json!(call.extra_headers),
+            false,
+            None,
+            false,
+        ),
+        VertexEmbeddingPrepared::Multimodal(call) => (
+            &call.resolved,
+            Value::Null,
+            false,
+            None,
+            call.litellm_params.is_some(),
+        ),
+        VertexEmbeddingPrepared::Text(call) => (
+            &call.resolved,
+            Value::Null,
+            call.api_key.is_some(),
+            call.timeout.map(|timeout| timeout.as_secs()),
+            call.litellm_params.is_some(),
+        ),
+    };
     json!({
-        "arm": "embed_content",
-        "project": call.project,
-        "location": call.location,
-        "credentials": call.credentials.as_ref().and_then(ConfiguredCredentials::as_text),
-        "api_base": call.api_base,
-        "remaining": remaining(&call.optional_params),
-        "extra_headers": call.extra_headers,
-        "api_key_set": false,
-        "timeout": null,
-        "litellm_params_set": false,
-        "status": null,
-    })
-}
-
-fn multimodal_view(call: &MultimodalArguments) -> Value {
-    json!({
-        "arm": "multimodal",
-        "project": call.project,
-        "location": call.location,
-        "credentials": call.credentials.as_ref().and_then(ConfiguredCredentials::as_text),
-        "api_base": call.api_base,
-        "remaining": remaining(&call.optional_params),
-        "extra_headers": null,
-        "api_key_set": false,
-        "timeout": null,
-        "litellm_params_set": call.litellm_params.is_some(),
-        "status": null,
-    })
-}
-
-fn text_view(call: &TextArguments) -> Value {
-    json!({
-        "arm": "text",
-        "project": call.project,
-        "location": call.location,
-        "credentials": call.credentials.as_ref().and_then(ConfiguredCredentials::as_text),
-        "api_base": call.api_base,
-        "remaining": text_remaining(&call.optional_params),
-        "extra_headers": null,
-        "api_key_set": call.api_key.is_some(),
-        "timeout": call.timeout.map(|timeout| timeout.as_secs()),
-        "litellm_params_set": call.litellm_params.is_some(),
+        "arm": arm(prepared),
+        "project": resolved.project,
+        "location": resolved.location,
+        "credentials": resolved.credentials.as_ref().and_then(ConfiguredCredentials::as_text),
+        "api_base": resolved.api_base,
+        "remaining": remaining(&resolved.optional_params),
+        "extra_headers": extra_headers,
+        "api_key_set": api_key_set,
+        "timeout": timeout,
+        "litellm_params_set": litellm_params_set,
         "status": null,
     })
 }
@@ -184,49 +170,29 @@ fn failed(prepared: &VertexEmbeddingPrepared) -> Result<Value, Box<HelperError>>
         VertexEmbeddingError::EmbedContent(_) => None,
         VertexEmbeddingError::Prediction(error) => Some(error.status_code()),
     };
-    Ok(match prepared {
-        VertexEmbeddingPrepared::EmbedContent(_) => {
-            json!({"arm": "embed_content", "status": status})
-        }
-        VertexEmbeddingPrepared::Multimodal(_) => json!({"arm": "multimodal", "status": status}),
-        VertexEmbeddingPrepared::Text(_) => json!({"arm": "text", "status": status}),
-    })
+    Ok(json!({"arm": arm(prepared), "status": status}))
 }
 
 // the three handlers, refusing every arm the way main.py's provider does
 struct Failing;
 
+fn refused() -> VertexEmbeddingCallError {
+    VertexEmbeddingCallError::Status {
+        status: FAIL_STATUS,
+        body: b"the provider refused the request".to_vec(),
+    }
+}
+
 impl VertexEmbeddingHandlers for Failing {
-    fn embed_content<'call>(
-        &'call self,
-        _call: &'call EmbedContentArguments,
-    ) -> impl Future<Output = Result<EmbeddingReply, GeminiEmbeddingCallError>> + Send + 'call {
-        async move { Err(GeminiEmbeddingCallError::MissingApiKey) }
+    async fn embed_content(&self, _call: &EmbedContentArguments) -> EmbedContentOutcome {
+        Err(GeminiEmbeddingCallError::MissingApiKey)
     }
 
-    fn multimodal<'call>(
-        &'call self,
-        _call: &'call MultimodalArguments,
-    ) -> impl Future<Output = Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError>> + Send + 'call
-    {
-        async move {
-            Err(VertexEmbeddingCallError::Status {
-                status: FAIL_STATUS,
-                body: b"the provider refused the request".to_vec(),
-            })
-        }
+    async fn multimodal(&self, _call: &MultimodalArguments) -> MultimodalOutcome {
+        Err(refused())
     }
 
-    fn text<'call>(
-        &'call self,
-        _call: &'call TextArguments,
-    ) -> impl Future<Output = Result<EmbeddingResponse, VertexEmbeddingCallError>> + Send + 'call
-    {
-        async move {
-            Err(VertexEmbeddingCallError::Status {
-                status: FAIL_STATUS,
-                body: b"the provider refused the request".to_vec(),
-            })
-        }
+    async fn text(&self, _call: &TextArguments) -> TextOutcome {
+        Err(refused())
     }
 }
