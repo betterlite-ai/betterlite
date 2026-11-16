@@ -171,3 +171,26 @@ fn a_shard_is_one_of_n() {
         );
     }
 }
+
+#[test]
+fn a_root_manifest_edit_marks_every_package_unless_it_only_touches_workspace_dependencies() {
+    let everything = ["alpha", "beta", "betterlite-dashboard-browser", "gamma"].map(str::to_owned);
+    for (edit, expected) in [
+        (
+            "[workspace.dependencies]\nalpha = { path = \"alpha\" }\n",
+            Vec::new(),
+        ),
+        ("[profile.dev]\ndebug = 0\n", everything.to_vec()),
+    ] {
+        let folder = tempfile::tempdir().unwrap();
+        let root = folder.path();
+        let base = workspace(root);
+        let manifest = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+        fs::write(root.join("Cargo.toml"), format!("{manifest}\n{edit}")).unwrap();
+        commit(root);
+        let graph = package_graph(root).unwrap();
+        let mut edited = packages(root, &base, &graph, true).unwrap();
+        edited.sort_unstable();
+        assert_eq!(edited, expected, "{edit}");
+    }
+}
