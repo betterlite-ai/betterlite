@@ -9,6 +9,9 @@ use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::headers::failure_headers;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
+use crate::server::chat_setup::vertex_embedding::{
+    VertexEmbeddingSetupError, vertex_embedding_calls,
+};
 use crate::server::connections::{accept_connection, drain_connections};
 use crate::server::filter::filter_route;
 use crate::shutdown::build_shutdown_signal;
@@ -63,6 +66,11 @@ pub enum ServerError {
     ListenerAddress {
         #[source]
         source: io::Error,
+    },
+    #[error(transparent)]
+    VertexEmbedding {
+        #[from]
+        source: VertexEmbeddingSetupError,
     },
 }
 pub async fn run(
@@ -146,6 +154,7 @@ pub(crate) fn application(
     shutting_down: Arc<AtomicBool>,
 ) -> Result<Router, ServerError> {
     let executor = Arc::new(chat);
+    let vertex = vertex_embedding_calls(config, &executor.client, &executor.deployments)?;
     let shared = Arc::new(Shared);
     let state = Arc::new(ServerState::new(config, Arc::clone(&executor), shared));
     let routed = router(
@@ -158,7 +167,7 @@ pub(crate) fn application(
                 .error_body_call_id
                 .include_call_id_in_error_body,
         )?,
-        embedding_routes(executor),
+        embedding_routes(executor, vertex),
     );
     // a route layer, so a blocked route's 404 still passes the security headers, size limit and admission below
     let stacked = request_stack::wrap(

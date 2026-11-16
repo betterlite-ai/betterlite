@@ -9,4 +9,7 @@ deviations:
   - what: When a deployment pins both vertex_credentials and vertex_ai_credentials, the alias main.py does not pop is dropped instead of staying in optional_params.
     why: LiteLLM leaves it in optional_params, and the text handler builds the Vertex request parameters from them, so the service-account document or file path would be sent to Google in the request body.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_embeddings/transformation.py#L144
+  - what: A Vertex embedding deployment whose credentials are an AWS workload identity pool document fails the call, since the server holds no AWS credential provider for the Google token exchange.
+    why: The AWS credential resolver of the Bedrock crate needs a credential cache, secret lookup and STS settings that the server does not build yet, so the source reports its provider as unavailable instead of signing with a guess.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L158-L178
 kept_bugs: []

@@ -18,7 +18,7 @@ use betterlite_core::operation::embedding::{
 };
 use betterlite_http::error::HttpError;
 use betterlite_openai::chat::client_mock;
-use betterlite_openai::chat::deployment::ChatDeployment;
+use betterlite_openai::chat::deployment::{ChatDeployment, Provider as DeploymentProvider};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest, EmbeddingResponse};
 use betterlite_redact::secret::Redactor;
@@ -51,9 +51,14 @@ struct ErrorObject {
     code: String,
 }
 
-pub(crate) fn embedding_routes(executor: Arc<ChatExecutor>) -> Router {
+// a vertex_ai deployment reaches `vertex` when the config has one, and every other deployment keeps the provider path
+pub(crate) fn embedding_routes(
+    executor: Arc<ChatExecutor>,
+    vertex: Option<Arc<dyn EmbeddingCall>>,
+) -> Router {
     let calls: Arc<dyn EmbeddingCall> = Arc::new(EmbeddingCalls {
         executor: Arc::clone(&executor),
+        vertex,
     });
     let log = Arc::new(TracingCallLog);
     let dispatch = Arc::new(Dispatch::new(
@@ -83,6 +88,7 @@ struct EmbeddingState {
 // the existing embedding implementation, reached through the dispatch pipeline's port
 struct EmbeddingCalls {
     executor: Arc<ChatExecutor>,
+    vertex: Option<Arc<dyn EmbeddingCall>>,
 }
 
 fn embedding_port_failure(error: CallError<EmbeddingError>) -> EmbeddingFailure {
@@ -101,6 +107,14 @@ impl EmbeddingCall for EmbeddingCalls {
         &self,
         call: EmbeddingCallInput<'_>,
     ) -> Result<EmbeddingResult, EmbeddingFailure> {
+        // a configured mock answers before any upstream call, as on every other provider
+        if let Some(vertex) = &self.vertex
+            && matches!(&call.deployment.provider, DeploymentProvider::Unsupported { model } if model.starts_with("vertex_ai/"))
+            && !embedding_mocks_resolve(&self.executor, &call.deployment, call.request)
+                .map_err(EmbeddingFailure::Route)?
+        {
+            return vertex.embed(call).await;
+        }
         let (response, upstream_headers, upstream_time) =
             embed(&self.executor, &call.deployment, call.request)
                 .await

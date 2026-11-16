@@ -1,3 +1,7 @@
+use std::fmt::{Debug, Formatter, Result as FmtResult};
+
+use betterlite_models::decisions::{Extra, Json};
+
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 use crate::sections::Section;
@@ -10,6 +14,26 @@ mod tests;
 pub struct Raw {
     #[serde(default)]
     litellm_settings: RawSettings,
+    #[serde(default)]
+    model_list: Vec<RawDeployment>,
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+struct RawDeployment {
+    #[serde(default)]
+    litellm_params: RawParams,
+}
+
+// the per-deployment options main.py's embedding branch reads; every other litellm_params key stays unread here
+#[derive(Debug, Default, serde::Deserialize)]
+struct RawParams {
+    vertex_project: Option<Json>,
+    vertex_ai_project: Option<Json>,
+    vertex_location: Option<Json>,
+    vertex_ai_location: Option<Json>,
+    vertex_credentials: Option<Json>,
+    vertex_ai_credentials: Option<Json>,
+    api_base: Option<Json>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -22,6 +46,18 @@ pub struct Settings {
     pub project: Option<String>,
     pub credentials: Option<ConfiguredCredentials>,
     pub api_base: Option<String>,
+    // one entry per model_list entry, in file order
+    pub deployments: Vec<PinParams>,
+}
+
+// the pinned options hold service-account documents, so a diagnostic names the keys and never the values
+#[derive(Clone, Default)]
+pub struct PinParams(pub Extra);
+
+impl Debug for PinParams {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_list().entries(self.0.keys()).finish()
+    }
 }
 
 impl Section for Raw {
@@ -31,6 +67,32 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        let mut deployments = Vec::new();
+        for (index, deployment) in self.model_list.into_iter().enumerate() {
+            let params = deployment.litellm_params;
+            let named = [
+                ("vertex_project", params.vertex_project),
+                ("vertex_ai_project", params.vertex_ai_project),
+                ("vertex_location", params.vertex_location),
+                ("vertex_ai_location", params.vertex_ai_location),
+                ("vertex_credentials", params.vertex_credentials),
+                ("vertex_ai_credentials", params.vertex_ai_credentials),
+                ("api_base", params.api_base),
+            ];
+            let mut pinned = Extra::new();
+            for (name, value) in named {
+                let Some(value) = value else {
+                    continue;
+                };
+                let path = format!("model_list.{index}.litellm_params.{name}");
+                let resolved = match value {
+                    Json::Text(text) => Json::Text(resolve_string(text, &path, lookup)?),
+                    other => other,
+                };
+                pinned.insert(name.to_owned(), resolved);
+            }
+            deployments.push(PinParams(pinned));
+        }
         Ok(Settings {
             project: read(lookup, &["VERTEX_PROJECT"]),
             credentials: parse_credentials(read(lookup, &["VERTEX_CREDENTIALS"]))?,
@@ -38,6 +100,7 @@ impl Section for Raw {
                 Some(text) => Some(resolve_string(text, "litellm_settings.api_base", lookup)?),
                 None => read(lookup, &["VERTEXAI_API_BASE", "VERTEX_API_BASE"]),
             },
+            deployments,
         })
     }
 }

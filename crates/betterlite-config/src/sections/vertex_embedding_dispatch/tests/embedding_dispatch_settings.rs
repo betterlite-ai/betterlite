@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use betterlite_models::decisions::Json;
+
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use crate::sections::vertex_embedding_dispatch::Settings;
@@ -108,4 +110,38 @@ fn parses_vertex_credentials_as_a_credential_source() {
         parsed.credentials,
         Some(ConfiguredCredentials::Source(_))
     ));
+}
+
+#[test]
+fn keeps_only_the_embedding_options_of_each_deployment() {
+    let source = "model_list:\n  - model_name: embed\n    litellm_params:\n      model: vertex_ai/text-embedding-004\n      vertex_project: os.environ/PIN_PROJECT\n      vertex_ai_location: us-east1\n      api_key: sk-private\n  - model_name: bare\n    litellm_params:\n      model: vertex_ai/other\n";
+    let loaded = load(source, &[("PIN_PROJECT", "pinned-project")]).unwrap();
+    assert_eq!(loaded.deployments.len(), 2);
+    let first = &loaded.deployments[0].0;
+    assert_eq!(
+        first.get("vertex_project"),
+        Some(&Json::Text("pinned-project".to_owned()))
+    );
+    assert_eq!(
+        first.get("vertex_ai_location"),
+        Some(&Json::Text("us-east1".to_owned()))
+    );
+    assert_eq!(first.len(), 2);
+    assert!(loaded.deployments[1].0.is_empty());
+}
+
+#[test]
+fn names_a_missing_environment_variable_in_a_deployment_pin() {
+    let source = "model_list:\n  - model_name: embed\n    litellm_params:\n      model: vertex_ai/x\n      vertex_credentials: os.environ/NOT_SET\n";
+    let error = load(source, &[]).unwrap_err();
+    assert!(error.to_string().contains("NOT_SET"));
+}
+
+#[test]
+fn debug_output_of_a_deployment_pin_hides_its_values() {
+    let source = "model_list:\n  - model_name: embed\n    litellm_params:\n      model: vertex_ai/x\n      vertex_credentials: very-secret-document\n";
+    let loaded = load(source, &[]).unwrap();
+    let shown = format!("{:?}", loaded.deployments[0]);
+    assert!(shown.contains("vertex_credentials"));
+    assert!(!shown.contains("very-secret-document"));
 }

@@ -106,7 +106,7 @@ async fn embedding_route_rejects_malformed_body(#[case] path: &str) {
         .header("content-type", "application/json")
         .body(Body::from("not-json"))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor))
+    let response = embedding_routes(Arc::new(executor), None)
         .oneshot(request)
         .await
         .expect("response");
@@ -205,7 +205,7 @@ async fn mock_calls_behavior_tests_behavior() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"model":"embed","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor))
+    let response = embedding_routes(Arc::new(executor), None)
         .oneshot(request)
         .await
         .expect("response");
@@ -247,7 +247,7 @@ async fn a_mock_testing_param_is_rejected_on_embeddings(#[case] mocked: bool) {
             r#"{"model":"embed","input":"hello","mock_timeout":true}"#,
         ))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor))
+    let response = embedding_routes(Arc::new(executor), None)
         .oneshot(request)
         .await
         .expect("response");
@@ -273,7 +273,7 @@ async fn a_mock_embedding_answers_with_the_stripped_model() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor))
+    let response = embedding_routes(Arc::new(executor), None)
         .oneshot(request)
         .await
         .expect("response");
@@ -298,7 +298,7 @@ async fn a_mock_embedding_answers_with_the_body_model() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"model":"alias","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor))
+    let response = embedding_routes(Arc::new(executor), None)
         .oneshot(request)
         .await
         .expect("response");
@@ -359,7 +359,7 @@ async fn an_embedding_answer_echoes_the_callers_call_id(#[case] sent: &str, #[ca
         .header("x-litellm-call-id", sent)
         .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor))
+    let response = embedding_routes(Arc::new(executor), None)
         .oneshot(request)
         .await
         .expect("response");
@@ -416,7 +416,7 @@ async fn a_stripped_client_mock_field_never_reaches_the_embedding_provider() {
             r#"{"model":"embed","input":"hello","mock_response":{"choices":[{"logprobs":null}]},"mock_tool_calls":[{"function":{"arguments":"{}"}}]}"#,
         ))
         .expect("request");
-    let call = embedding_routes(Arc::new(executor)).oneshot(request);
+    let call = embedding_routes(Arc::new(executor), None).oneshot(request);
     let (sent, answered) = tokio::join!(provider(listener), call);
     let response = answered.expect("response");
     assert_eq!(response.status(), StatusCode::OK);
@@ -477,7 +477,7 @@ async fn an_unmocked_embedding_goes_through_the_provider_framework() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor))
+    let response = embedding_routes(Arc::new(executor), None)
         .oneshot(request)
         .await
         .expect("response");
