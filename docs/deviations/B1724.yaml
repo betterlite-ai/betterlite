@@ -1,0 +1,130 @@
+task: B1724
+deviations:
+  - what: >-
+      A key carrying platform_admin, platform_viewer or org_admin reads the global
+      view. A key whose only roles are org_viewer, team_admin or team_member, and a
+      key with no role at all, the master key aside, read only their own per-user
+      spend view on /global/spend/logs, /global/spend/keys and /global/spend/models.
+      LiteLLM scopes only internal_user and internal_user_view_only this way and
+      sends every other role down the global path, where a key reads every user's
+      spend.
+    why: >-
+      LiteLLM has no org_viewer, team_admin or team_member role, and betterlite's
+      equivalents are scoped to an organization or a team, not to the platform.
+      Treating them as internal can only narrow what a key reads, so no working
+      setup loses access it was meant to have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4044-L4048
+  - what: >-
+      A limit above i64::MAX or below i64::MIN is answered with the 422 int_parsing
+      body on /global/spend/keys and /global/spend/models.
+    why: >-
+      Python's int is unbounded, so LiteLLM accepts the text and hands it to the
+      database, where the query fails and the route answers 500. betterlite parses
+      the parameter into an i64 and rejects what it cannot represent at the edge.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4058-L4064
+  - what: >-
+      A database failure on /global/spend/keys, /global/spend/models and
+      /global/spend/teams answers the generic 500 body
+      {"error": {"message": "Internal server error", "type": "internal_server_error"}}.
+    why: >-
+      LiteLLM's app level handler turns a recognized database-unavailable error into
+      a 503 service-unavailable ProxyException. betterlite answers 500 for every
+      store failure on these routes, while an unconfigured pool keeps the 500 detail
+      body each route documents.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2053-L2057
+  - what: >-
+      The ranked team totals add exact decimals, so a multi-day total carries no
+      binary residue. LiteLLM adds the rounded Python floats, and a team whose two
+      days round to 0.1 and 0.2 reaches the client as 0.30000000000000004.
+    why: >-
+      Money is Decimal in betterlite, and the task asks for each daily amount to be
+      rounded to two places before summing. A dashboard shows cents, not float
+      residue.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4129
+  - what: >-
+      The teams array on /global/spend/teams is sorted. LiteLLM builds it from a
+      Python set, whose order changes between processes.
+    why: >-
+      A JSON array is ordered, so a client comparing two responses from LiteLLM can
+      already see different orders. betterlite returns the same aliases in sorted
+      order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4153
+  - what: >-
+      A spend amount that Postgres returns as NaN or Infinity, or as a value
+      Decimal cannot represent, answers the route's 500 error body. LiteLLM
+      passes it through and serializes the NaN or Infinity number.
+    why: >-
+      json.dumps writes NaN and Infinity as bare literals, which no strict JSON
+      parser accepts, so such a response is already broken for a client. betterlite
+      treats an amount it cannot represent as unreadable spend data and keeps the
+      typed parse cause in the error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3951-L3957
+  - what: >-
+      A failed /global/spend/logs or /global/spend request carries the route prefix
+      and the typed cause in its message, with no Python traceback. A missing
+      database on /global/spend answers "No db connected" where LiteLLM sends the
+      Python repr of the detail dict.
+    why: >-
+      LiteLLM appends traceback.format_exc() to the message, which puts server file
+      paths and source lines in an HTTP response. The wrapper, type, param and code
+      stay the same, so a client that reads those fields sees no change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3911-L3923
+kept_bugs:
+  - what: >-
+      An internal viewer's /global/spend/keys ignores the limit it sends and always
+      asks for ten keys.
+    why: >-
+      The helper declares limit ten and the route never passes its own. A dashboard
+      that sends limit=1 to this route gets ten rows from LiteLLM today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4047
+  - what: >-
+      Two grouped team rows for the same alias and day overwrite each other in the
+      daily entry, while the total adds both.
+    why: >-
+      The daily map is assigned rather than summed per row. A setup whose alias is
+      shared by two team ids gets the last row's amount for that day and the sum of
+      both in the ranked totals.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4122
+  - what: >-
+      The ranked team totals add the amounts after each one is rounded to two
+      decimal places, not the raw amounts.
+    why: >-
+      The rounding happens before the accumulation in the LiteLLM loop. Summing raw
+      amounts and rounding once changes the total whenever daily amounts carry a
+      third decimal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4129
+  - what: >-
+      A team row with a null spend date is dropped before it reaches the response.
+    why: >-
+      The loop skips such rows, so a setup never sees a daily entry without a date
+      even when a spend log has no startTime.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4110
+  - what: >-
+      /global/spend/teams returns every daily row and every alias but only the ten
+      highest team totals.
+    why: >-
+      The dashboard draws all days and legends every alias while ranking ten teams.
+      Cutting the daily rows with the totals would lose chart data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4138
+  - what: >-
+      /global/spend/logs answers 500 for a missing database even when the
+      Prometheus source is connected.
+    why: >-
+      The database check runs before the Prometheus branch, so a setup with spend
+      tracking in Prometheus and no pool sees an error rather than the Prometheus
+      series.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3871
+  - what: >-
+      An internal viewer with no user id gets a 500, not an empty list.
+    why: >-
+      The helper raises a ValueError that the route turns into the internal_error
+      wrapper, so a key bound to no user cannot read this route.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3818
+  - what: >-
+      /global/spend/models passes a zero or negative limit to Postgres and answers
+      500 when the database rejects it, unlike /global/spend/keys which answers 422.
+    why: >-
+      The models route has no positivity check. A dashboard that sends limit=0 to
+      models gets an error today, and keeping the two routes' answers different
+      keeps their contracts different.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4304

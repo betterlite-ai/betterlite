@@ -1,0 +1,12 @@
+kind: helper
+name: b3330-provider-from-data-extra-body-json-string
+call:
+  b3330: {function: custom_provider, value: {extra_body: '{"custom_llm_provider": "openai"}'}}
+calls:
+  - b3330: {function: custom_provider, value: {extra_body: '{"other": "x"}'}}
+  - b3330: {function: custom_provider, value: {extra_body: '{"custom_llm_provider": 7}'}}
+  - b3330: {function: custom_provider, value: {extra_body: '{"custom_llm_provider": ""}'}}
+  - b3330: {function: custom_provider, value: {extra_body: '["custom_llm_provider"]'}}
+  - b3330: {function: custom_provider, value: {extra_body: ""}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: openai-assistant-dispatch-runs-seed
+call:
+  openai_assistant_dispatch:
+    kind: runs
+    operation: buffered
+    api_base: "https://example.test/v1"
+    api_key: sk-fixture
+    arun_thread: false
+    request: {thread_id: thread_1, assistant_id: asst_1, additional_instructions: null, instructions: null, metadata: null, model: gpt-4o, tools: null}
+    replies:
+      - status: 200
+        body: {id: run_1, object: thread.run, created_at: 1, thread_id: thread_1, assistant_id: asst_1, status: completed, model: gpt-4o, instructions: "", tools: [], parallel_tool_calls: true}
+      - status: 200
+        body: {id: run_1, object: thread.run, created_at: 1, thread_id: thread_1, assistant_id: asst_1, status: completed, model: gpt-4o, instructions: "", tools: [], parallel_tool_calls: true}
+env: {}
+compare: {ignore: []}
