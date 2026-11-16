@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::support::{BASE, DELETE_BODY, FILE_BODY, FakeClient, LIST_BODY, fixture, handler};
 use crate::containers::container_file_http::request::{ParamValue, SslVerify};
-use crate::containers::container_file_http::transport::{ContainerMethod, SuppliedClient};
+use crate::containers::container_file_http::transport::ContainerMethod;
 use crate::containers::container_file_http::{ContainerFileHttpError, ContainerFileReply};
 
 #[test]
@@ -146,7 +146,7 @@ fn handle_reuses_a_supplied_blocking_client() {
     let fixture = fixture();
     let supplied = FakeClient::answering(200, LIST_BODY.as_bytes());
     let mut call = fixture.call("list_container_files");
-    call.client = Some(SuppliedClient::Blocking(&supplied));
+    call.blocking_client = Some(&supplied);
     handler.handle(&call).unwrap();
     assert_eq!(supplied.seen().len(), 1);
     assert!(handler.clients.client.seen().is_empty());
@@ -159,7 +159,7 @@ fn handle_replaces_a_supplied_async_client_with_a_blocking_one() {
     let fixture = fixture();
     let supplied = FakeClient::answering(200, LIST_BODY.as_bytes());
     let mut call = fixture.call("list_container_files");
-    call.client = Some(SuppliedClient::Asynchronous(&supplied));
+    call.async_client = Some(&supplied);
     handler.handle(&call).unwrap();
     assert!(supplied.seen().is_empty());
     assert_eq!(handler.clients.client.seen().len(), 1);
@@ -172,7 +172,7 @@ async fn ahandle_reuses_a_supplied_async_client() {
     let fixture = fixture();
     let supplied = FakeClient::answering(200, LIST_BODY.as_bytes());
     let mut call = fixture.call("alist_container_files");
-    call.client = Some(SuppliedClient::Asynchronous(&supplied));
+    call.async_client = Some(&supplied);
     handler.ahandle(&call).await.unwrap();
     assert_eq!(supplied.seen().len(), 1);
     assert!(handler.clients.client.seen().is_empty());
@@ -185,7 +185,7 @@ async fn ahandle_replaces_a_supplied_blocking_client_with_an_async_one() {
     let fixture = fixture();
     let supplied = FakeClient::answering(200, LIST_BODY.as_bytes());
     let mut call = fixture.call("alist_container_files");
-    call.client = Some(SuppliedClient::Blocking(&supplied));
+    call.blocking_client = Some(&supplied);
     handler.ahandle(&call).await.unwrap();
     assert!(supplied.seen().is_empty());
     assert_eq!(handler.clients.client.seen().len(), 1);

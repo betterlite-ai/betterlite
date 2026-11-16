@@ -2,10 +2,11 @@ use std::future::{Future, ready};
 
 use betterlite_http::proxy::pool::PoolError;
 
+use super::ContainerFileHttpCall;
 use super::request::SslVerify;
 use super::transport::{
     AsyncClient, BlockingClient, ClientSource, ContainerHttpReply, ContainerHttpRequest,
-    SuppliedClient, TransferError,
+    TransferError,
 };
 
 // What differs between the blocking and the async path, so one body serves both
@@ -13,7 +14,7 @@ pub trait Channel<Source: ClientSource> {
     type Client: Send + Sync;
 
     fn supplied<'client>(
-        supplied: &SuppliedClient<'client, Source>,
+        call: &ContainerFileHttpCall<'client, Source>,
     ) -> Option<&'client Self::Client>;
 
     fn build(source: &Source, ssl_verify: Option<&SslVerify>) -> Result<Self::Client, PoolError>;
@@ -32,12 +33,9 @@ impl<Source: ClientSource> Channel<Source> for BlockingKind {
     type Client = Source::Blocking;
 
     fn supplied<'client>(
-        supplied: &SuppliedClient<'client, Source>,
+        call: &ContainerFileHttpCall<'client, Source>,
     ) -> Option<&'client Source::Blocking> {
-        match supplied {
-            SuppliedClient::Blocking(client) => Some(*client),
-            SuppliedClient::Asynchronous(_) => None,
-        }
+        call.blocking_client
     }
 
     fn build(
@@ -60,12 +58,9 @@ impl<Source: ClientSource> Channel<Source> for AsyncKind {
     type Client = Source::Asynchronous;
 
     fn supplied<'client>(
-        supplied: &SuppliedClient<'client, Source>,
+        call: &ContainerFileHttpCall<'client, Source>,
     ) -> Option<&'client Source::Asynchronous> {
-        match supplied {
-            SuppliedClient::Asynchronous(client) => Some(*client),
-            SuppliedClient::Blocking(_) => None,
-        }
+        call.async_client
     }
 
     fn build(

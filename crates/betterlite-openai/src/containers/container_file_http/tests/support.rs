@@ -314,7 +314,8 @@ impl Fixture {
             timeout: None,
             values: &self.values,
             file: None,
-            client: None,
+            blocking_client: None,
+            async_client: None,
         }
     }
 }

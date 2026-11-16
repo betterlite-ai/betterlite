@@ -21,9 +21,7 @@ use self::request::{
     pre_call_record, read_params, request_headers,
 };
 use self::response::transform_reply;
-use self::transport::{
-    ClientSource, ContainerHttpRequest, Selected, SuppliedClient, TransferError,
-};
+use self::transport::{ClientSource, ContainerHttpRequest, Selected, TransferError};
 use crate::api::container_contracts::catalog::{
     CatalogError, ContainerEndpoint, container_endpoints,
 };
@@ -121,7 +119,9 @@ pub struct ContainerFileHttpCall<'call, Source: ClientSource> {
     // path and query values by name: container_id, file_id, after, limit, order
     pub values: &'call BTreeMap<String, ParamValue>,
     pub file: Option<&'call ContainerFileUpload>,
-    pub client: Option<SuppliedClient<'call, Source>>,
+    // a supplied client is kept only when it is the kind the method called needs
+    pub blocking_client: Option<&'call Source::Blocking>,
+    pub async_client: Option<&'call Source::Asynchronous>,
 }
 
 pub struct GenericContainerHandler<Source: ClientSource, Hook: PreCallHook> {
@@ -143,10 +143,7 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
         &self,
         call: &ContainerFileHttpCall<'_, Source>,
     ) -> Result<ContainerFileReply, ContainerFileHttpError> {
-        let endpoint = find_endpoint(call.endpoint_name)?;
-        let params = read_params(call.litellm_params)?;
-        let mut running = pin!(self.run::<BlockingKind>(call, &endpoint, &params));
-        match running
+        match pin!(self.lookup_and_run::<BlockingKind>(call))
             .as_mut()
             .poll(&mut Context::from_waker(Waker::noop()))
         {
@@ -164,6 +161,18 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
         self.run::<AsyncKind>(call, &endpoint, &params).await
     }
 
+    async fn lookup_and_run<Mode>(
+        &self,
+        call: &ContainerFileHttpCall<'_, Source>,
+    ) -> Result<ContainerFileReply, ContainerFileHttpError>
+    where
+        Mode: Channel<Source>,
+    {
+        let endpoint = find_endpoint(call.endpoint_name)?;
+        let params = read_params(call.litellm_params)?;
+        self.run::<Mode>(call, &endpoint, &params).await
+    }
+
     // One body for both paths, in LiteLLM's order: client, then the request
     async fn run<Mode>(
         &self,
@@ -174,8 +183,7 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
     where
         Mode: Channel<Source>,
     {
-        let supplied = call.client.as_ref().and_then(Mode::supplied);
-        let client = Selected::choose(supplied, || {
+        let client = Selected::choose(Mode::supplied(call), || {
             Mode::build(&self.clients, params.ssl_verify.as_ref())
         })?;
         let request = self.prepare(endpoint, call, params)?;

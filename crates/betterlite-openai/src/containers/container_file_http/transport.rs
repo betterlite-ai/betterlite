@@ -80,12 +80,6 @@ pub trait ClientSource: Send + Sync {
     -> Result<Self::Asynchronous, PoolError>;
 }
 
-// A supplied client is reused only when its kind matches the method called
-pub enum SuppliedClient<'client, Source: ClientSource> {
-    Blocking(&'client Source::Blocking),
-    Asynchronous(&'client Source::Asynchronous),
-}
-
 // The client a call sends with: the caller's own or one the source built for it
 pub enum Selected<'client, Client> {
     Supplied(&'client Client),
