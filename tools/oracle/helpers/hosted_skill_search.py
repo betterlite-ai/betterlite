@@ -68,17 +68,6 @@ class ResultFields(TypedDict):
     score: float
 
 
-class Order(TypedDict):
-    created_at: str
-
-
-ScopeFilter = TypedDict("ScopeFilter", {"in": list[str]})
-
-
-class Where(TypedDict):
-    created_by: ScopeFilter
-
-
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 RESULT: TypeAdapter[ResultFields] = TypeAdapter(ResultFields)
 
@@ -93,25 +82,10 @@ def build_skill(fields: SkillFields) -> LiteLLM_SkillsTable:
     )
 
 
-def skill_rows_of(input_value: Input) -> list[LiteLLM_SkillsTable]:
-    fields = input_value.get("skills")
+def skills_of(fields: list[SkillFields] | None) -> list[LiteLLM_SkillsTable]:
     if fields is None:
         return []
-    return [build_skill(skill) for skill in fields]
-
-
-def row_fields_of(input_value: Input) -> list[LiteLLM_SkillsTable]:
-    fields = input_value.get("rows")
-    if fields is None:
-        return []
-    return [build_skill(row) for row in fields]
-
-
-def vectors_of(input_value: Input) -> dict[str, list[float]]:
-    vectors = input_value.get("vectors")
-    if vectors is None:
-        return {}
-    return vectors
+    return [build_skill(field) for field in fields]
 
 
 def top_k_of(input_value: Input) -> int:
@@ -121,15 +95,7 @@ def top_k_of(input_value: Input) -> int:
     return top_k
 
 
-def embedding_model_of(input_value: Input) -> str:
-    model = input_value.get("embedding_model")
-    if model is None:
-        raise ValueError("embedding_model is required")
-    return model
-
-
 def principal_of(fields: PrincipalFields) -> UserAPIKeyAuth:
-    # The handler receives resolved auth fields; construction would replace token with the api key.
     principal = UserAPIKeyAuth(
         user_id=fields.get("user_id"),
         team_id=fields.get("team_id"),
@@ -146,24 +112,23 @@ class ScriptedEmbedder:
         self.effects = effects
 
     async def __call__(self, texts: Sequence[str]) -> Sequence[Vector]:
-        self.effects.append(JSON.validate_python({"kind": "embed", "texts": list(texts)}))
+        effect = {"kind": "embed", "texts": list(texts)}
+        self.effects.append(JSON.validate_python(effect))
         fault = self.request.get("fault")
         if fault == "value":
             raise ValueError("boom")
         if fault == "http":
             raise HTTPException(status_code=429, detail="slow down")
-        vectors = vectors_of(self.request)
+        vectors = self.request.get("vectors")
+        if vectors is None:
+            vectors = {}
         return [tuple(vectors[text]) for text in texts]
 
 
 class ScriptedRouterEmbedder:
     def __init__(
-        self,
-        request: Input,
-        effects: list[JsonValue],
-        router: Router | None,
-        principal: UserAPIKeyAuth,
-        proxy_logging: ProxyLogging,
+        self, request: Input, effects: list[JsonValue],
+        router: Router | None, principal: UserAPIKeyAuth, proxy_logging: ProxyLogging,
     ) -> None:
         self.request = request
         self.effects = effects
@@ -191,11 +156,12 @@ class ScriptedRouterEmbedder:
 
 class FakeTable:
     def __init__(self, request: Input, effects: list[JsonValue]) -> None:
-        self.rows = row_fields_of(request)
+        self.rows = skills_of(request.get("rows"))
         self.effects = effects
 
     async def find_many(
-        self, take: int, skip: int, order: Order, where: Where | None
+        self, take: int, skip: int, order: dict[str, str],
+        where: dict[str, dict[str, list[str]]] | None,
     ) -> list[LiteLLM_SkillsTable]:
         effect = {"kind": "find_many", "take": take, "skip": skip, "order": order, "where": where}
         self.effects.append(JSON.validate_python(effect))
@@ -239,19 +205,28 @@ def outcome_json(outcome: HostedSkillSearchOutcome, effects: list[JsonValue]) ->
 
 
 def text_value(input_value: Input) -> JsonValue:
-    skill = build_skill(input_value["skill"])
-    return JSON.validate_python({"text": skill_search_text(skill)})
+    fields = input_value.get("skill")
+    if fields is None:
+        raise ValueError("skill is required")
+    value = {"text": skill_search_text(build_skill(fields))}
+    return JSON.validate_python(value)
 
 
 async def index_value(input_value: Input) -> JsonValue:
     effects: list[JsonValue] = []
     embedder = ScriptedEmbedder(input_value, effects)
+    model = input_value.get("embedding_model")
+    if model is None:
+        raise ValueError("embedding_model is required")
+    query = input_value.get("query")
+    if query is None:
+        query = ""
     outcome = await SkillSearchIndex().search(
-        input_value["query"],
-        skill_rows_of(input_value),
+        query,
+        skills_of(input_value.get("skills")),
         top_k_of(input_value),
         embedder,
-        embedding_model_of(input_value),
+        model,
     )
     return outcome_json(outcome, effects)
 
@@ -261,12 +236,15 @@ async def search_value(input_value: Input) -> JsonValue:
     router = Router(model_list=[]) if input_value.get("router") is True else None
     principal = UserAPIKeyAuth()
     proxy_logging = ProxyLogging(user_api_key_cache=UserApiKeyCache())
-    skill_search.router_embedder = ScriptedRouterEmbedder(
+    skill_search.router_embedder = ScriptedRouterEmbedder(  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/skill_search.py#L17
         input_value, effects, router, principal, proxy_logging
     )
+    query = input_value.get("query")
+    if query is None:
+        query = ""
     outcome = await search_skills(
-        query=input_value["query"],
-        skills=skill_rows_of(input_value),
+        query=query,
+        skills=skills_of(input_value.get("skills")),
         top_k=top_k_of(input_value),
         router=router,
         embedding_model=input_value.get("embedding_model"),
@@ -286,12 +264,15 @@ async def hosted_value(input_value: Input) -> JsonValue:
     principal = UserAPIKeyAuth() if principal_fields is None else principal_of(principal_fields)
     router = Router(model_list=[]) if input_value.get("router") is True else None
     proxy_logging = ProxyLogging(user_api_key_cache=UserApiKeyCache())
-    skill_search.router_embedder = ScriptedRouterEmbedder(
+    skill_search.router_embedder = ScriptedRouterEmbedder(  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/skill_search.py#L17
         input_value, effects, router, principal, proxy_logging
     )
+    query = input_value.get("query")
+    if query is None:
+        query = ""
     outcome = await search_hosted_skills(
         custom_llm_provider=input_value.get("custom_llm_provider"),
-        query=input_value["query"],
+        query=query,
         top_k=top_k_of(input_value),
         router=router,
         embedding_model=input_value.get("embedding_model"),

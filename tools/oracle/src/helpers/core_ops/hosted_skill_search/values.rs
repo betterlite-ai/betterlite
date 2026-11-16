@@ -2,7 +2,6 @@ use betterlite_auth::auth_identity::records::Principal;
 use betterlite_core::skills::search::{
     HostedSkillSearchError, SkillSearchError, SkillSearchOutcome, skill_search_result,
 };
-use betterlite_core::skills::store::StoreError;
 use betterlite_db::managed_resource_rows::skills::SkillTable;
 use betterlite_oracle_helper_api::error::HelperError;
 use serde_json::{Value, json};
@@ -20,23 +19,20 @@ pub(super) fn invalid_input(message: String) -> Box<HelperError> {
     })
 }
 
-pub(super) fn store_error(error: &StoreError) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "StoreError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
-}
-
-pub(super) fn http_error(error: &SkillSearchError) -> Box<HelperError> {
+pub(super) fn hosted_error(error: &HostedSkillSearchError) -> Box<HelperError> {
     match error {
-        SkillSearchError::Http {
+        HostedSkillSearchError::Store(store) => Box::new(HelperError {
+            class: "StoreError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: store.to_string(),
+        }),
+        HostedSkillSearchError::Search(SkillSearchError::Http {
             status_code,
             detail,
-        } => Box::new(HelperError {
+        }) => Box::new(HelperError {
             class: "HTTPException".to_owned(),
             status: Some(*status_code),
             error_type: None,
@@ -44,13 +40,6 @@ pub(super) fn http_error(error: &SkillSearchError) -> Box<HelperError> {
             code: None,
             message: format!("HTTP {status_code}: {detail}"),
         }),
-    }
-}
-
-pub(super) fn hosted_error(error: &HostedSkillSearchError) -> Box<HelperError> {
-    match error {
-        HostedSkillSearchError::Store(store) => store_error(store),
-        HostedSkillSearchError::Search(search) => http_error(search),
     }
 }
 

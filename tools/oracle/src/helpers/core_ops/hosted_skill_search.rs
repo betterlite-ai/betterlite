@@ -19,8 +19,12 @@ impl Helper for Op {
             .map_err(|error| values::invalid_input(error.to_string()))?;
         match input.function.as_str() {
             "text" => calls::text_value(input),
-            "rank" | "failures" => runtime.block_on(calls::index_value(input, &effects)),
-            "search" => runtime.block_on(calls::search_value(input, &effects)),
+            "rank" | "failures" => {
+                runtime.block_on(calls::ranked_value(input, &effects, calls::Ranking::Index))
+            }
+            "search" => {
+                runtime.block_on(calls::ranked_value(input, &effects, calls::Ranking::Search))
+            }
             "hosted" => runtime.block_on(calls::hosted_value(input, &effects)),
             other => Err(values::invalid_input(format!("unknown function: {other}"))),
         }

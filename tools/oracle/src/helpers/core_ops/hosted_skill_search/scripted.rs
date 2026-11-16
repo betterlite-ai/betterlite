@@ -42,8 +42,11 @@ impl Effects {
     }
 
     pub(super) fn take(&self) -> Vec<Value> {
-        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *entries)
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .drain(..)
+            .collect()
     }
 }
 
