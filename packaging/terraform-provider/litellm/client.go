@@ -8,10 +8,26 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 )
+
+const (
+	defaultRequestTimeout      = 300 * time.Second
+	defaultDialTimeout         = 30 * time.Second
+	defaultTLSHandshakeTimeout = 10 * time.Second
+	defaultMaxResponseBytes    = 64 << 20
+)
+
+type clientLimits struct {
+	requestTimeout      time.Duration
+	dialTimeout         time.Duration
+	tlsHandshakeTimeout time.Duration
+	maxResponseBytes    int64
+}
 
 type Client struct {
 	APIBase            string
@@ -35,16 +51,63 @@ func isNotFound(err error) bool {
 }
 
 func NewClient(apiBase, apiKey string, insecureSkipVerify bool) *Client {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
+	return newClient(apiBase, apiKey, insecureSkipVerify, clientLimits{
+		requestTimeout:      defaultRequestTimeout,
+		dialTimeout:         defaultDialTimeout,
+		tlsHandshakeTimeout: defaultTLSHandshakeTimeout,
+		maxResponseBytes:    defaultMaxResponseBytes,
+	})
+}
+
+func newClient(apiBase, apiKey string, insecureSkipVerify bool, limits clientLimits) *Client {
+	transport := &http.Transport{
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: insecureSkipVerify},
+		DialContext:         (&net.Dialer{Timeout: limits.dialTimeout}).DialContext,
+		TLSHandshakeTimeout: limits.tlsHandshakeTimeout,
 	}
 
 	return &Client{
-		APIBase:            apiBase,
-		APIKey:             apiKey,
-		httpClient:         &http.Client{Transport: tr},
+		APIBase: apiBase,
+		APIKey:  apiKey,
+		httpClient: &http.Client{
+			Transport: &cappedTransport{transport: transport, limit: limits.maxResponseBytes},
+			Timeout:   limits.requestTimeout,
+		},
 		InsecureSkipVerify: insecureSkipVerify,
 	}
+}
+
+type cappedTransport struct {
+	transport http.RoundTripper
+	limit     int64
+}
+
+func (t *cappedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.transport.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &cappedBody{body: resp.Body, limit: t.limit, remaining: t.limit}
+	return resp, nil
+}
+
+type cappedBody struct {
+	body      io.ReadCloser
+	limit     int64
+	remaining int64
+}
+
+func (b *cappedBody) Read(p []byte) (int, error) {
+	n, err := b.body.Read(p)
+	b.remaining -= int64(n)
+	if b.remaining < 0 {
+		return n, fmt.Errorf("response body exceeds the %d-byte cap", b.limit)
+	}
+	return n, err
+}
+
+func (b *cappedBody) Close() error {
+	return b.body.Close()
 }
 
 // Organization member methods

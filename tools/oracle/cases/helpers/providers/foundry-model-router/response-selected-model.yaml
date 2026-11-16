@@ -1,0 +1,13 @@
+kind: helper
+name: foundry-model-router-response-selected-model
+call:
+  foundry_model_router:
+    responses:
+      - model: model_router/deployment
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"provider-sent","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}'
+      - model: model-router/second
+        body: '{"id":"chatcmpl-2","object":"chat.completion","created":2,"model":"provider-second","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}'
+      - model: prefix/model-router/deployment
+        body: '{"id":"chatcmpl-3","object":"chat.completion","created":3,"choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}'
+env: {}
+compare: {ignore: []}
