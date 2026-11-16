@@ -1,0 +1,21 @@
+kind: helper
+name: missing-base
+call:
+  foundry_responses:
+    steps:
+      - kind: missing_base
+      - kind: missing_base
+        global_api_base: https://global.services.ai.azure.com
+      - kind: missing_base
+        environment: {AZURE_AI_API_BASE: https://env.services.ai.azure.com}
+      - kind: missing_base
+        global_api_base: https://global.services.ai.azure.com
+        environment: {AZURE_AI_API_BASE: https://env.services.ai.azure.com}
+      - kind: missing_base
+        api_base: https://explicit.services.ai.azure.com
+        global_api_base: https://global.services.ai.azure.com
+        environment: {AZURE_AI_API_BASE: https://env.services.ai.azure.com}
+      - kind: missing_base
+        environment: {AZURE_AI_API_BASE: ""}
+env: {}
+compare: {ignore: []}
