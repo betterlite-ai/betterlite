@@ -1,18 +1,20 @@
 task: B3367
 deviations:
   - what: >-
-      The sync and async entry points are two Rust functions. The sync function drops async_call from the kwargs it
-      logs and never returns a coroutine, and aupload_container_file awaits an async executor instead of running the
-      sync function on the event loop with contextvars copied.
+      The flow lives in one Rust function, aupload_container_file, and the sync upload_container_file runs that same
+      function through a ready future and a single poll. Neither entry returns a coroutine from a sync function, and
+      the sync path logs no async_call flag.
     why: >-
       A Rust function returns one type, so LiteLLM's _is_async switch between a value and a coroutine has no
-      counterpart; the logging state, the call id and the redactor are explicit arguments, so there is no context to
-      copy. B3363's handler exposes handle and ahandle as separate methods for the same reason.
+      counterpart, and there is no event loop to hand the sync function to. One body keeps the two entries from
+      drifting, and the poll is B3363's handle for its blocking path. The logging state, the call id and the redactor
+      are explicit arguments, so there is no context to copy.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1183-L1214
   - what: >-
       The generic container handler is reached through an UploadExecutor/AsyncUploadExecutor seam that names the
       provider config as ContainerProviderConfig and carries litellm_params as typed JSON values, instead of core
-      building the provider config and calling the handler itself.
+      building the provider config and calling the handler itself. The handler's _is_async argument is the choice
+      between the two executor traits, so the call carries no flag of its own.
     why: >-
       Core cannot build a BaseContainerConfig with credentials (the Azure config is B547's and not landed) and cannot
       name serde_json::Map or Value, which clippy.toml disallows; the route layer that holds the credentials builds

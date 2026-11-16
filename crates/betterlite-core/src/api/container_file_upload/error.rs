@@ -39,6 +39,9 @@ where
     ProviderConfigMissing { provider: String },
     #[error(transparent)]
     Logging(#[from] LoggingStateError),
+    // the sync wrapper's single poll cannot park, so this reports a broken poll contract, not a provider answer
+    #[error("the blocking upload was asked to wait for an answer that never came")]
+    Suspended,
     #[error("{0}")]
     Provider(#[source] Failure),
 }
@@ -67,15 +70,24 @@ where
     let class = match &error {
         ContainerFileUploadError::Decode(field_error) => field_type_class(field_error, provider),
         ContainerFileUploadError::Provider(carried) => dispatch(
-            &DispatchInput::Raw(Box::new(provider_exception(carried, provider))),
+            &DispatchInput::Raw(Box::new(exception(
+                carried.message(),
+                provider,
+                carried.status_code(),
+            ))),
+            redactor,
+        ),
+        ContainerFileUploadError::Suspended => dispatch(
+            &DispatchInput::Raw(Box::new(exception(error.to_string(), provider, None))),
             redactor,
         ),
         ContainerFileUploadError::Mock(_)
         | ContainerFileUploadError::ProviderConfigMissing { .. }
-        | ContainerFileUploadError::Logging(_) => dispatch(
-            &DispatchInput::Raw(Box::new(value_exception(&error, provider))),
-            redactor,
-        ),
+        | ContainerFileUploadError::Logging(_) => {
+            let mut raw = exception(error.to_string(), provider, None);
+            "ValueError".clone_into(&mut raw.exception_type);
+            dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
+        }
     };
     ContainerFileUploadFailure { error, class }
 }
@@ -95,39 +107,16 @@ fn field_type_class(error: &ContainerFieldTypeError, provider: &str) -> ErrorCla
     ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
 }
 
-fn provider_exception<Failure>(carried: &Failure, provider: &str) -> RawException
-where
-    Failure: UploadFailure,
-{
-    let message = carried.message();
+// the ValueError LiteLLM raises itself, the ValueError subclass pydantic raises, and a provider's own answer
+fn exception(message: String, provider: &str, status_code: Option<u16>) -> RawException {
     RawException {
         model: MODEL.to_owned(),
         custom_llm_provider: provider.to_owned(),
         error_str: message.clone(),
-        status_code: carried.status_code(),
+        status_code,
         status_code_is_synthesized: false,
         message: Some(message),
         body: None,
         exception_type: String::new(),
-    }
-}
-
-// the ValueError LiteLLM raises itself, or the ValueError subclass pydantic raises: the status is unknown
-fn value_exception<Failure>(
-    error: &ContainerFileUploadError<Failure>,
-    provider: &str,
-) -> RawException
-where
-    Failure: UploadFailure,
-{
-    RawException {
-        model: MODEL.to_owned(),
-        custom_llm_provider: provider.to_owned(),
-        error_str: error.to_string(),
-        status_code: None,
-        status_code_is_synthesized: false,
-        message: Some(error.to_string()),
-        body: None,
-        exception_type: String::from("ValueError"),
     }
 }

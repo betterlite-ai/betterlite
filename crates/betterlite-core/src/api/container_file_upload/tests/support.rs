@@ -84,11 +84,15 @@ pub(crate) fn logging() -> LoggingState {
 
 pub(crate) fn file() -> ContainerFileUpload {
     ContainerFileUpload {
-        file_data: FileData::InMemoryFile {
-            name: FILE_NAME.to_owned(),
-            content_type: "text/plain".to_owned(),
-            content: FILE_BODY.to_vec(),
-        },
+        file_data: in_memory_file(),
+    }
+}
+
+fn in_memory_file() -> FileData {
+    FileData::InMemoryFile {
+        name: FILE_NAME.to_owned(),
+        content_type: "text/plain".to_owned(),
+        content: FILE_BODY.to_vec(),
     }
 }
 
@@ -139,9 +143,12 @@ impl Fixture {
     }
 
     pub(crate) fn request(&self) -> ContainerFileUploadRequest<'_> {
+        let container = self.container_id.as_str();
+        let upload = &self.file;
+        let parameters = &self.kwargs;
         ContainerFileUploadRequest {
-            container_id: &self.container_id,
-            file: &self.file,
+            container_id: container,
+            file: upload,
             timeout: self.timeout,
             api_key: self.api_key.clone(),
             api_base: self.api_base.as_deref(),
@@ -150,7 +157,7 @@ impl Fixture {
             extra_headers: self.extra_headers.as_ref(),
             extra_query: self.extra_query.as_ref(),
             extra_body: self.extra_body.as_ref(),
-            kwargs: &self.kwargs,
+            kwargs: parameters,
         }
     }
 

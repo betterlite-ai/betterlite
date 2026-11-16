@@ -4,7 +4,10 @@ mod mock;
 mod prepare;
 
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
+use std::pin::pin;
 use std::sync::Mutex;
+use std::task::{Context, Poll, Waker};
 
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::json_value::JsonValue;
@@ -47,6 +50,7 @@ pub struct ContainerFileUploadRequest<'request> {
 }
 
 // the collaborators the operation needs: B247's logging object, B185's redactor and REQUEST_TIMEOUT's seconds
+#[derive(Clone, Copy)]
 pub struct ContainerFileUploadDeps<'deps> {
     pub logging: &'deps Mutex<LoggingState>,
     pub redactor: &'deps Redactor,
@@ -54,7 +58,7 @@ pub struct ContainerFileUploadDeps<'deps> {
     pub request_timeout_seconds: f64,
 }
 
-// LiteLLM's upload_container_file: the mock, the named credentials, the managed id, the logging update, then the handler
+// LiteLLM's upload_container_file: the body below, sent by a blocking executor whose answer is ready at once
 pub fn upload_container_file<Executor>(
     executor: &Executor,
     deps: ContainerFileUploadDeps<'_>,
@@ -63,30 +67,14 @@ pub fn upload_container_file<Executor>(
 where
     Executor: UploadExecutor,
 {
-    let prepared = prepare_upload::<Executor::Failure>(&deps, request)?;
-    let prepared_upload = match prepared {
-        Prepared::Mock(object) => return Ok(object),
-        Prepared::Call(upload) => upload,
-    };
-    let call = ContainerFileUploadCall {
-        endpoint_name: ENDPOINT_NAME,
-        provider_config: prepared_upload.provider_config,
-        litellm_params: &prepared_upload.litellm_params,
-        logging: deps.logging,
-        extra_headers: request.extra_headers,
-        extra_query: request.extra_query,
-        timeout_seconds: prepared_upload.timeout_seconds,
-        container_id: &prepared_upload.container_id,
-        file: request.file,
-    };
-    finish(
-        executor.upload(&call),
-        &prepared_upload.provider,
-        deps.redactor,
-    )
+    let adapter = BlockingAsAsync { executor };
+    match poll_once(aupload_container_file(&adapter, deps, request)) {
+        Some(outcome) => outcome,
+        None => Err(suspended(request, deps.redactor)),
+    }
 }
 
-// aupload_container_file: the same operation, awaited through the async executor the same handler offers
+// aupload_container_file: the mock, the named credentials, the managed id, the logging update, then the awaited handler
 pub async fn aupload_container_file<Executor>(
     executor: &Executor,
     deps: ContainerFileUploadDeps<'_>,
@@ -115,6 +103,53 @@ where
         executor.aupload(&call).await,
         &prepared_upload.provider,
         deps.redactor,
+    )
+}
+
+// the blocking executor seen as an async one: its answer is ready before the first poll returns
+struct BlockingAsAsync<'executor, Executor> {
+    executor: &'executor Executor,
+}
+
+impl<Executor> AsyncUploadExecutor for BlockingAsAsync<'_, Executor>
+where
+    Executor: UploadExecutor,
+{
+    type Failure = Executor::Failure;
+
+    fn aupload(
+        &self,
+        call: &ContainerFileUploadCall<'_>,
+    ) -> impl Future<Output = Result<ContainerFileObject, Self::Failure>> + Send {
+        ready(self.executor.upload(call))
+    }
+}
+
+// the poll B3363's handler uses for its blocking path: one poll, and the ready future answers it
+fn poll_once<Running>(future: Running) -> Option<Running::Output>
+where
+    Running: Future,
+{
+    let mut future = pin!(future);
+    let mut context = Context::from_waker(Waker::noop());
+    match future.as_mut().poll(&mut context) {
+        Poll::Ready(outcome) => Some(outcome),
+        Poll::Pending => None,
+    }
+}
+
+// the adapter cannot park, so the sync entry reaches this only if the poll contract breaks
+fn suspended<Failure>(
+    request: &ContainerFileUploadRequest<'_>,
+    redactor: &Redactor,
+) -> ContainerFileUploadFailure<Failure>
+where
+    Failure: UploadFailure,
+{
+    error::failure(
+        ContainerFileUploadError::Suspended,
+        request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER),
+        redactor,
     )
 }
 
