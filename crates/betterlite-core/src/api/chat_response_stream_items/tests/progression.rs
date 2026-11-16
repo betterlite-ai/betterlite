@@ -33,10 +33,10 @@ fn default_done_progression() {
 
 #[test]
 fn default_done_progression_queues_the_message_for_final_content() {
-    let completion = completion(&json("\"hi\""), "[]");
+    let final_content = completion(&json("\"hi\""), "[]");
     let mut state = state_with_details("{}", None, None);
     let sources = sources(10, &["u"]);
-    let shell = return_default_done_events(&mut state, &sources, &completion)
+    let shell = return_default_done_events(&mut state, &sources, &final_content)
         .expect("the message shell builds")
         .expect("the first call returns the message shell");
     assert_eq!(
@@ -60,7 +60,7 @@ fn default_done_progression_queues_the_message_for_final_content() {
         )
     );
     state.progress.litellm_model_response = Some(completion(&json("\"stored\""), "[]"));
-    let text = return_default_done_events(&mut state, &sources, &completion)
+    let text = return_default_done_events(&mut state, &sources, &final_content)
         .expect("the text done event builds")
         .expect("the second call returns text done");
     assert_eq!(
@@ -70,7 +70,7 @@ fn default_done_progression_queues_the_message_for_final_content() {
         )
     );
     assert!(state.progress.sent_output_text_done);
-    let part = return_default_done_events(&mut state, &sources, &completion)
+    let part = return_default_done_events(&mut state, &sources, &final_content)
         .expect("the part done event builds")
         .expect("the third call returns part done");
     assert_eq!(
@@ -81,7 +81,7 @@ fn default_done_progression_queues_the_message_for_final_content() {
         json("\"response.content_part.done\"")
     );
     assert!(state.progress.sent_content_part_done);
-    let item = return_default_done_events(&mut state, &sources, &completion)
+    let item = return_default_done_events(&mut state, &sources, &final_content)
         .expect("the item done event builds")
         .expect("the fourth call returns item done");
     assert_eq!(
@@ -92,7 +92,7 @@ fn default_done_progression_queues_the_message_for_final_content() {
     );
     assert!(state.progress.sent_output_item_done);
     assert!(
-        return_default_done_events(&mut state, &sources, &completion)
+        return_default_done_events(&mut state, &sources, &final_content)
             .expect("the last call succeeds")
             .is_none()
     );
