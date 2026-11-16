@@ -36,6 +36,9 @@ call:
         - provider: null
           request_data: {}
           body: '{"id":"t","createdAt":"yesterday","completedAt":null}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","status":"SUCCEEDED","output":["https://o.test/a.mp4","https://o.test/b.mp4"]}'
         - provider: runwayml
           request_data: {}
           body: '{"id":"task_1","status":"PENDING"}'
