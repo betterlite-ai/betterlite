@@ -2,7 +2,7 @@ use axum::http::StatusCode;
 use betterlite_config::sections::panw_prisma_airs::FallbackAction;
 
 use super::support::{
-    self, LogCapture, data, field, guardrail, json, no_masking, response, response_masking,
+    self, LogCapture, NO_MASKING, RESPONSE_MASKING, data, field, guardrail, json, response,
     settings, text_of,
 };
 use crate::panw_prisma_airs::error_detail::ErrorCode;
@@ -29,17 +29,12 @@ fn content_text(message: &MaskedResponseMessage) -> String {
 #[tokio::test]
 async fn an_allowed_response_is_not_modified() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
+    let guardrail = guardrail(settings(&server.base, NO_MASKING, FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(ANSWER);
-    let scan = scan_streaming_response(
-        &guardrail,
-        &request_data,
-        &mut model_response,
-        support::now(),
-    )
-    .await
-    .expect("scan");
+    let scan = scan_streaming_response(&guardrail, &request_data, &mut model_response)
+        .await
+        .expect("scan");
     assert!(!scan.modified);
     assert_eq!(scan.verdict.action, Action::Allow);
     assert_eq!(scan.verdict.category.as_deref(), Some("benign"));
@@ -57,18 +52,13 @@ async fn an_allowed_response_is_not_modified() {
 async fn an_allowed_mask_modifies_every_choice() {
     let logs = LogCapture::start("assembly-mask", tracing::Level::INFO);
     let server = support::serve(StatusCode::OK, MASKED).await;
-    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
+    let guardrail = guardrail(settings(&server.base, NO_MASKING, FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response =
         response(r#"{"choices":[{"message":{"content":"one"}},{"message":{"content":"two"}}]}"#);
-    let scan = scan_streaming_response(
-        &guardrail,
-        &request_data,
-        &mut model_response,
-        support::now(),
-    )
-    .await
-    .expect("scan");
+    let scan = scan_streaming_response(&guardrail, &request_data, &mut model_response)
+        .await
+        .expect("scan");
     assert!(scan.modified);
     let choices = model_response.choices.as_ref().expect("choices");
     let first = choices
@@ -96,17 +86,12 @@ async fn an_allowed_mask_modifies_every_choice() {
 #[tokio::test]
 async fn a_blocked_response_with_a_mask_but_no_flag_errors() {
     let server = support::serve(StatusCode::OK, BLOCK_MASKED).await;
-    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
+    let guardrail = guardrail(settings(&server.base, NO_MASKING, FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(ANSWER);
-    let error = scan_streaming_response(
-        &guardrail,
-        &request_data,
-        &mut model_response,
-        support::now(),
-    )
-    .await
-    .expect_err("blocked");
+    let error = scan_streaming_response(&guardrail, &request_data, &mut model_response)
+        .await
+        .expect_err("blocked");
     match error {
         StreamError::Http(http) => {
             assert_eq!(http.status, 400);
@@ -133,19 +118,14 @@ async fn a_blocked_response_with_a_mask_and_the_flag_is_masked() {
     let server = support::serve(StatusCode::OK, BLOCK_MASKED).await;
     let guardrail = guardrail(settings(
         &server.base,
-        response_masking(),
+        RESPONSE_MASKING,
         FallbackAction::Block,
     ));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(ANSWER);
-    let scan = scan_streaming_response(
-        &guardrail,
-        &request_data,
-        &mut model_response,
-        support::now(),
-    )
-    .await
-    .expect("masked");
+    let scan = scan_streaming_response(&guardrail, &request_data, &mut model_response)
+        .await
+        .expect("masked");
     assert!(scan.modified);
     let choices = model_response.choices.as_ref().expect("choices");
     let message = choices
@@ -163,17 +143,12 @@ async fn a_blocked_response_with_a_mask_and_the_flag_is_masked() {
 async fn empty_content_is_a_synthetic_allow() {
     let logs = LogCapture::start("assembly-empty", tracing::Level::INFO);
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
+    let guardrail = guardrail(settings(&server.base, NO_MASKING, FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(r#"{"choices":[]}"#);
-    let scan = scan_streaming_response(
-        &guardrail,
-        &request_data,
-        &mut model_response,
-        support::now(),
-    )
-    .await
-    .expect("scan");
+    let scan = scan_streaming_response(&guardrail, &request_data, &mut model_response)
+        .await
+        .expect("scan");
     assert!(!scan.modified);
     assert_eq!(scan.verdict.action, Action::Allow);
     assert_eq!(scan.verdict.category.as_deref(), Some("no_content"));
@@ -182,20 +157,23 @@ async fn empty_content_is_a_synthetic_allow() {
     assert!(written.contains("PANW Prisma AIRS: No content to scan in streaming response"));
 }
 
+#[rstest::rstest]
+#[case::spaces("   ")]
+#[case::a_lone_file_separator("\u{1c}")]
+#[case::a_lone_unit_separator("\u{1f}")]
 #[tokio::test]
-async fn whitespace_content_is_no_content() {
+async fn whitespace_content_is_no_content(#[case] content: &str) {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
+    let guardrail = guardrail(settings(&server.base, NO_MASKING, FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
-    let mut model_response = response(r#"{"choices":[{"message":{"content":"   "}}]}"#);
-    let scan = scan_streaming_response(
-        &guardrail,
-        &request_data,
-        &mut model_response,
-        support::now(),
-    )
-    .await
-    .expect("scan");
+    let source = format!(
+        r#"{{"choices":[{{"message":{{"content":{}}}}}]}}"#,
+        serde_json::to_string(content).expect("content json")
+    );
+    let mut model_response = response(&source);
+    let scan = scan_streaming_response(&guardrail, &request_data, &mut model_response)
+        .await
+        .expect("scan");
     assert_eq!(scan.verdict.category.as_deref(), Some("no_content"));
     assert!(server.body_texts().await.is_empty());
 }
@@ -203,17 +181,12 @@ async fn whitespace_content_is_no_content() {
 #[tokio::test]
 async fn a_transient_failure_is_returned_unmodified() {
     let server = support::serve(StatusCode::TOO_MANY_REQUESTS, "{}").await;
-    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
+    let guardrail = guardrail(settings(&server.base, NO_MASKING, FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(ANSWER);
-    let scan = scan_streaming_response(
-        &guardrail,
-        &request_data,
-        &mut model_response,
-        support::now(),
-    )
-    .await
-    .expect("scan");
+    let scan = scan_streaming_response(&guardrail, &request_data, &mut model_response)
+        .await
+        .expect("scan");
     assert!(!scan.modified);
     assert_eq!(scan.verdict.failure, Some(Failure::Transient));
     assert_eq!(scan.verdict.category.as_deref(), Some("http_429_error"));
@@ -222,17 +195,12 @@ async fn a_transient_failure_is_returned_unmodified() {
 #[tokio::test]
 async fn a_permanent_failure_is_returned_unmodified() {
     let server = support::serve(StatusCode::BAD_REQUEST, "{}").await;
-    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
+    let guardrail = guardrail(settings(&server.base, NO_MASKING, FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(ANSWER);
-    let scan = scan_streaming_response(
-        &guardrail,
-        &request_data,
-        &mut model_response,
-        support::now(),
-    )
-    .await
-    .expect("scan");
+    let scan = scan_streaming_response(&guardrail, &request_data, &mut model_response)
+        .await
+        .expect("scan");
     assert!(!scan.modified);
     assert_eq!(scan.verdict.failure, Some(Failure::Permanent));
 }
@@ -240,19 +208,14 @@ async fn a_permanent_failure_is_returned_unmodified() {
 #[tokio::test]
 async fn tool_call_arguments_are_scanned() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
+    let guardrail = guardrail(settings(&server.base, NO_MASKING, FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(
         r#"{"choices":[{"message":{"tool_calls":[{"function":{"arguments":"{\"a\":1}"}}]}}]}"#,
     );
-    let scan = scan_streaming_response(
-        &guardrail,
-        &request_data,
-        &mut model_response,
-        support::now(),
-    )
-    .await
-    .expect("scan");
+    let scan = scan_streaming_response(&guardrail, &request_data, &mut model_response)
+        .await
+        .expect("scan");
     assert!(!scan.modified);
     let bodies = server.body_texts().await;
     let body = json(bodies.first().expect("one scan"));
@@ -270,34 +233,24 @@ async fn an_oversized_mask_errors() {
         r#"{{"action":"allow","category":"benign","response_masked_data":{{"data":"{masked}"}}}}"#
     );
     let server = support::serve(StatusCode::OK, &body).await;
-    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
+    let guardrail = guardrail(settings(&server.base, NO_MASKING, FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(ANSWER);
-    let error = scan_streaming_response(
-        &guardrail,
-        &request_data,
-        &mut model_response,
-        support::now(),
-    )
-    .await
-    .expect_err("oversized");
+    let error = scan_streaming_response(&guardrail, &request_data, &mut model_response)
+        .await
+        .expect_err("oversized");
     assert!(matches!(error, StreamError::Masking(_)));
 }
 
 #[tokio::test]
 async fn unreadable_metadata_errors_before_the_scan() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
+    let guardrail = guardrail(settings(&server.base, NO_MASKING, FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1","metadata":"x"}"#);
     let mut model_response = response(ANSWER);
-    let error = scan_streaming_response(
-        &guardrail,
-        &request_data,
-        &mut model_response,
-        support::now(),
-    )
-    .await
-    .expect_err("metadata");
+    let error = scan_streaming_response(&guardrail, &request_data, &mut model_response)
+        .await
+        .expect_err("metadata");
     assert!(matches!(error, StreamError::Data { .. }));
     assert!(server.body_texts().await.is_empty());
 }

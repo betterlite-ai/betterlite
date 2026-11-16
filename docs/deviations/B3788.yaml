@@ -6,6 +6,9 @@ deviations:
   - what: "Raw SSE text extraction skips a content_block_delta whose delta is not an object or whose text is not a string. In LiteLLM the delta.get call or the join raises on those, and the streaming hook turns that into the generic scan-failure frame."
     why: "A malformed event line should not turn an otherwise allowed stream into a 500 frame; the declared text_delta carries a string text."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L886-L904
+  - what: "The /v1/responses event extractor skips a chat.completion.chunk choice whose delta is not an object. In LiteLLM delta.get on that value raises AttributeError, and the streaming hook turns it into the generic scan-failure frame."
+    why: "A malformed event should not turn an otherwise allowed stream into a 500 frame; a chat.completion.chunk delta is an object in the declared shape, and the fallback branch exists only for defense in depth."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L923-L929
   - what: "When a prompt scan returns masked text but the request's messages hold no message the shared masker selects (B3787's last user or developer message with content), the pre-call hook answers 500 instead of allowing the request unchanged."
     why: "B3787 makes the scan and the rewrite pick the same message; when no message qualifies, sending the unmasked content would defeat the mask the scan asked for, so the hook fails closed."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L670-L688

@@ -1,6 +1,4 @@
-use std::time::SystemTime;
-
-use super::StreamError;
+use super::{StreamError, is_strip_whitespace};
 use crate::panw_prisma_airs::audit::Direction;
 use crate::panw_prisma_airs::construct::PanwPrismaAirs;
 use crate::panw_prisma_airs::error_detail::{GuardrailHttpError, build_error_detail};
@@ -24,10 +22,9 @@ pub async fn scan_streaming_response(
     guardrail: &PanwPrismaAirs,
     data: &Data,
     response: &mut Response,
-    start_time: SystemTime,
 ) -> Result<StreamScan, StreamError> {
     let response_text = extract_response_text(&extraction_view(response));
-    if response_text.trim().is_empty() {
+    if response_text.trim_matches(is_strip_whitespace).is_empty() {
         tracing::info!("PANW Prisma AIRS: No content to scan in streaming response");
         return Ok(StreamScan {
             modified: false,

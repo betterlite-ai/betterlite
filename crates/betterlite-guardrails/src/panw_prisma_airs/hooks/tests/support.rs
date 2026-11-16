@@ -44,35 +44,29 @@ pub(super) const SCAN_PATH: &str = "/v1/scan/sync/request";
 pub(super) const APPLIED: &str = "applied_guardrails";
 pub(super) const RECORDS: &str = "standard_logging_guardrail_information";
 
-pub(super) fn no_masking() -> MaskingSettings {
-    MaskingSettings {
-        mask_on_block: false,
-        content: ContentMaskSettings {
-            request_content: false,
-            response_content: false,
-        },
-    }
-}
+pub(super) const NO_MASKING: MaskingSettings = MaskingSettings {
+    mask_on_block: false,
+    content: ContentMaskSettings {
+        request_content: false,
+        response_content: false,
+    },
+};
 
-pub(super) fn request_masking() -> MaskingSettings {
-    MaskingSettings {
-        mask_on_block: false,
-        content: ContentMaskSettings {
-            request_content: true,
-            response_content: false,
-        },
-    }
-}
+pub(super) const REQUEST_MASKING: MaskingSettings = MaskingSettings {
+    mask_on_block: false,
+    content: ContentMaskSettings {
+        request_content: true,
+        response_content: false,
+    },
+};
 
-pub(super) fn response_masking() -> MaskingSettings {
-    MaskingSettings {
-        mask_on_block: false,
-        content: ContentMaskSettings {
-            request_content: false,
-            response_content: true,
-        },
-    }
-}
+pub(super) const RESPONSE_MASKING: MaskingSettings = MaskingSettings {
+    mask_on_block: false,
+    content: ContentMaskSettings {
+        request_content: false,
+        response_content: true,
+    },
+};
 
 pub(super) fn settings(
     api_base: &str,
@@ -122,23 +116,19 @@ pub(super) fn guardrail(configured: Configured) -> PanwPrismaAirs {
 }
 
 pub(super) fn blocking(api_base: &str) -> PanwPrismaAirs {
-    guardrail(settings(api_base, no_masking(), FallbackAction::Block))
+    guardrail(settings(api_base, NO_MASKING, FallbackAction::Block))
 }
 
 pub(super) fn allowing(api_base: &str) -> PanwPrismaAirs {
-    guardrail(settings(api_base, no_masking(), FallbackAction::Allow))
+    guardrail(settings(api_base, NO_MASKING, FallbackAction::Allow))
 }
 
 pub(super) fn masking_requests(api_base: &str) -> PanwPrismaAirs {
-    guardrail(settings(api_base, request_masking(), FallbackAction::Block))
+    guardrail(settings(api_base, REQUEST_MASKING, FallbackAction::Block))
 }
 
 pub(super) fn masking_responses(api_base: &str) -> PanwPrismaAirs {
-    guardrail(settings(
-        api_base,
-        response_masking(),
-        FallbackAction::Block,
-    ))
+    guardrail(settings(api_base, RESPONSE_MASKING, FallbackAction::Block))
 }
 
 // The hook only ever asks the selection about the events a test allows.
@@ -284,7 +274,8 @@ pub(super) fn scan_entries(data: &Data) -> Vec<ScanEntry> {
     };
     let mut entries = Vec::new();
     for item in items {
-        entries.push(serde_json::from_value::<ScanEntry>(item.clone()).expect("scan entry"));
+        let encoded = serde_json::to_value(item).expect("scan entry json");
+        entries.push(serde_json::from_value::<ScanEntry>(encoded).expect("scan entry"));
     }
     entries
 }

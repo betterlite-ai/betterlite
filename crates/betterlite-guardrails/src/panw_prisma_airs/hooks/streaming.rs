@@ -11,6 +11,14 @@ pub mod frames;
 pub mod hook;
 pub mod raw;
 
+// The characters str.strip removes: Unicode whitespace plus the file, group, record and unit separators.
+pub(super) fn is_strip_whitespace(character: char) -> bool {
+    match character {
+        '\u{1c}'..='\u{1f}' => true,
+        other => other.is_whitespace(),
+    }
+}
+
 // LiteLLM routes on the first chunk: raw SSE bytes, /v1/responses events, or ModelResponse chunks.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamChunk {

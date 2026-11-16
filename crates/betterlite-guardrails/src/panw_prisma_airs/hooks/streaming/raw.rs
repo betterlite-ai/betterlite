@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-use super::{StreamChunk, StreamError};
+use super::{StreamChunk, StreamError, is_strip_whitespace};
 use crate::panw_prisma_airs::audit::{Direction, GuardrailAudit};
 use crate::panw_prisma_airs::construct::PanwPrismaAirs;
 use crate::panw_prisma_airs::error_detail::{GuardrailHttpError, build_error_detail};
@@ -25,21 +25,12 @@ pub fn extract_text_from_sse_bytes(chunks: &[StreamChunk]) -> String {
             joined.extend_from_slice(bytes);
         }
     }
-    let is_blank =
-        |character: char| character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character);
     let mut parts = Vec::new();
     for raw_line in joined.split(|byte| *byte == b'\n') {
-        let mut line = String::with_capacity(raw_line.len());
-        for piece in raw_line.utf8_chunks() {
-            line.push_str(piece.valid());
-            if !piece.invalid().is_empty() {
-                line.push('\u{FFFD}');
-            }
-        }
-        let Some(payload) = line.trim_matches(is_blank).strip_prefix("data: ") else {
+        let Some(payload) = data_payload(raw_line) else {
             continue;
         };
-        let Ok(event) = serde_json::from_str::<Data>(payload) else {
+        let Ok(event) = serde_json::from_str::<Data>(&payload) else {
             continue;
         };
         if data::text(&event, "type") != Some("content_block_delta") {
@@ -57,28 +48,41 @@ pub fn extract_text_from_sse_bytes(chunks: &[StreamChunk]) -> String {
     parts.concat()
 }
 
+// One SSE line as Python reads it: invalid UTF-8 becomes U+FFFD, str.strip trims it, and only "data: " lines count.
+fn data_payload(raw_line: &[u8]) -> Option<String> {
+    let line = String::from_utf8_lossy(raw_line);
+    let payload = line
+        .trim_matches(is_strip_whitespace)
+        .strip_prefix("data: ")?;
+    Some(payload.to_owned())
+}
+
 // Mirrors LiteLLM's fn _extract_text_from_streaming_events for /v1/responses events.
 #[must_use]
 pub fn extract_event_text(chunks: &[StreamChunk]) -> String {
     let mut parts = Vec::new();
     for chunk in chunks {
-        let StreamChunk::Event(GuardrailValue::Object(event)) = chunk else {
-            continue;
-        };
-        if data::text(event, "type") == Some("response.output_text.delta") {
-            if let Some(GuardrailValue::Text(delta)) = event.get("delta") {
-                parts.push(delta.clone());
-            }
-            continue;
-        }
-        if data::text(event, "object") == Some("chat.completion.chunk") {
-            push_chat_delta_text(event, &mut parts);
+        if let StreamChunk::Event(GuardrailValue::Object(event)) = chunk {
+            push_event_text(event, &mut parts);
         }
     }
     if parts.is_empty() {
         push_done_text(chunks, &mut parts);
     }
     parts.concat()
+}
+
+// The two event shapes /v1/responses can carry: output_text deltas and the chat.completion.chunk fallback.
+fn push_event_text(event: &BTreeMap<String, GuardrailValue>, parts: &mut Vec<String>) {
+    if data::text(event, "type") == Some("response.output_text.delta") {
+        if let Some(GuardrailValue::Text(delta)) = event.get("delta") {
+            parts.push(delta.clone());
+        }
+        return;
+    }
+    if data::text(event, "object") == Some("chat.completion.chunk") {
+        push_chat_delta_text(event, parts);
+    }
 }
 
 fn push_chat_delta_text(event: &BTreeMap<String, GuardrailValue>, parts: &mut Vec<String>) {
@@ -120,7 +124,7 @@ pub async fn scan_raw_streaming_text(
     audit: &mut GuardrailAudit,
     start_time: SystemTime,
 ) -> Result<(), StreamError> {
-    if text.trim().is_empty() {
+    if text.trim_matches(is_strip_whitespace).is_empty() {
         return Ok(());
     }
     let Some(verdict) = scan_raw_verdict(guardrail, data, text, audit, start_time).await? else {

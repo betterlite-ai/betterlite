@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 use serde_json::value::RawValue;
 
 use super::support::{
-    self, FakeAssembler, FakeSelection, LogCapture, context, data, field, guardrail, no_masking,
+    self, FakeAssembler, FakeSelection, LogCapture, NO_MASKING, context, data, field, guardrail,
     object_of, settings, text_of,
 };
 use crate::guardrail_message_scope::StreamItem;
@@ -72,7 +72,7 @@ fn an_http_frame_uses_the_status_as_its_code() {
 fn an_internal_500_frame_carries_no_action() {
     let guardrail = guardrail(settings(
         "http://127.0.0.1:1",
-        no_masking(),
+        NO_MASKING,
         FallbackAction::Block,
     ));
     let http = internal(
@@ -121,7 +121,7 @@ fn a_generic_frame_logs_the_error() {
 #[tokio::test]
 async fn a_blocked_raw_stream_yields_a_frame() {
     let server = support::serve(StatusCode::OK, BLOCK).await;
-    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
+    let guardrail = guardrail(settings(&server.base, NO_MASKING, FallbackAction::Block));
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let chunks = vec![StreamChunk::Bytes(
         b"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"secret\"}}\n\n"

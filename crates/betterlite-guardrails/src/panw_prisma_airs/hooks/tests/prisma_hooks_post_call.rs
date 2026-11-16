@@ -46,7 +46,8 @@ async fn allow_scan_records_the_response_scan() {
         Some(&GuardrailValue::Boolean(true))
     );
     assert_eq!(names_in(&request_data, APPLIED), vec!["panw".to_owned()]);
-    let entry = scan_entries(&request_data).first().expect("scan entry");
+    let entries = scan_entries(&request_data);
+    let entry = entries.first().expect("scan entry");
     assert_eq!(entry.stage, GuardrailEventHooks::PostCall);
     assert_eq!(entry.scan_id, "scan-1");
     let record = records(&request_data).first().expect("record");

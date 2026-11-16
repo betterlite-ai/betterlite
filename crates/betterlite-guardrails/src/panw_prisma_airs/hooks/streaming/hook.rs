@@ -89,8 +89,7 @@ async fn scan_assembled(
     let Some(mut response) = assembled else {
         return Ok(into_items(stream.chunks));
     };
-    let scan =
-        assembly::scan_streaming_response(guardrail, data, &mut response, start_time).await?;
+    let scan = assembly::scan_streaming_response(guardrail, data, &mut response).await?;
     if scan.verdict.failure.is_some() {
         handle_api_error_with_logging(
             guardrail,

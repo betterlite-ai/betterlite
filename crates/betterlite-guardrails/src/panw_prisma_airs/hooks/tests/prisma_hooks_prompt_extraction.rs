@@ -39,7 +39,6 @@ fn extracts_the_prompt(#[case] source: &str, #[case] expected: &str) {
     );
 }
 
-#[test]
 #[rstest::rstest]
 #[case::a_boolean(r#"{"prompt":["a",true]}"#)]
 #[case::an_object(r#"{"prompt":["a",{"b":1}]}"#)]
