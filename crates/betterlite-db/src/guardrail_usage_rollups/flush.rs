@@ -4,7 +4,8 @@ use crate::spend_batches::{StatementLimits, spend_log_write_batches};
 use crate::tool_spend::RetryPause;
 
 use super::{
-    GuardrailIndexRow, GuardrailRollupFailure, GuardrailRollupSink, RollupRow, UPSERT_RETRY_TIMES,
+    GuardrailIndexRow, GuardrailRollupFailure as _, GuardrailRollupSink, RollupRow,
+    UPSERT_RETRY_TIMES,
 };
 
 // Attempts every row once per round, and only a connection-safe failure survives into the next round

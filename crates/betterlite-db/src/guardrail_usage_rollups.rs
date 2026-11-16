@@ -42,10 +42,10 @@ pub enum GuardrailAction {
 
 #[must_use]
 pub fn guardrail_status_to_action(status: Option<&str>) -> GuardrailAction {
-    let Some(status) = status else {
+    let Some(text) = status else {
         return GuardrailAction::Passed;
     };
-    let lowered = status.to_lowercase();
+    let lowered = text.to_lowercase();
     if lowered == "not_run" {
         return GuardrailAction::NotRun;
     }
@@ -58,7 +58,7 @@ pub fn guardrail_status_to_action(status: Option<&str>) -> GuardrailAction {
     GuardrailAction::Passed
 }
 
-#[derive(Clone, Deserialize, PartialEq)]
+#[derive(Clone, Deserialize, Eq, PartialEq)]
 pub struct GuardrailSpendLog {
     pub request_id: Option<String>,
     #[serde(rename = "startTime")]
@@ -68,7 +68,7 @@ pub struct GuardrailSpendLog {
     pub metadata: Option<PayloadMetadata>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct GuardrailMetadata {
     pub guardrail_information: Option<Vec<GuardrailEntry>>,
     #[serde(rename = "standard_logging_guardrail_information")]
@@ -92,9 +92,8 @@ pub struct UsageUnitKey {
 
 // the key holds the caller's api key, so a diagnostic shows the other fields and leaves that one out
 impl fmt::Debug for UsageUnitKey {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("UsageUnitKey")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UsageUnitKey")
             .field("guardrail_id", &self.guardrail_id)
             .field("date", &self.date)
             .field("team_id", &self.team_id)
@@ -243,9 +242,10 @@ pub async fn process_guardrail_usage<Sink>(
 
 // Takes the queued rows before the write, then merges the fresh rows into insertion order
 fn merged_with_pending(pending: &SharedPendingRollups, fresh: FreshRollups) -> FreshRollups {
-    let mut state = pending.lock().unwrap_or_else(PoisonError::into_inner);
-    let queued_metrics = mem::take(&mut state.metrics);
-    let queued_units = mem::take(&mut state.units);
+    let (queued_metrics, queued_units) = {
+        let mut state = pending.lock().unwrap_or_else(PoisonError::into_inner);
+        (mem::take(&mut state.metrics), mem::take(&mut state.units))
+    };
     (
         rollups::merged_rows(queued_metrics, fresh.0, rollups::summed_counts),
         rollups::merged_rows(queued_units, fresh.1, rollups::summed_units),

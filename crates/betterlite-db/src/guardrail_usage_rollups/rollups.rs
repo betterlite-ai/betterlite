@@ -96,7 +96,7 @@ fn add_entry_units(
         };
         let cost = costs
             .as_ref()
-            .and_then(|costs| costs.get(unit_name))
+            .and_then(|by_unit| by_unit.get(unit_name))
             .copied()
             .flatten();
         units.entry(key).or_default().add_usage(count, cost);
@@ -107,7 +107,7 @@ impl UsageUnitIncrement {
     fn add_usage(&mut self, count: i64, cost: Option<Decimal>) {
         self.units = self.units.saturating_add(count);
         match cost {
-            Some(cost) => self.cost = self.cost.checked_add(cost).unwrap_or(Decimal::MAX),
+            Some(billed) => self.cost = self.cost.checked_add(billed).unwrap_or(Decimal::MAX),
             None => self.untracked_units = self.untracked_units.saturating_add(count),
         }
     }

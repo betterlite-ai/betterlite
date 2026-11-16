@@ -18,7 +18,7 @@ use crate::guardrail_usage_rollups::{
 };
 use crate::tool_spend::RetryPause;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub(super) struct UnitCall {
     pub(super) guardrail_id: String,
     pub(super) date: String,

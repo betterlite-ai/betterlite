@@ -29,7 +29,7 @@ pub enum PayloadStartTime {
     Text(String),
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct GuardrailEntry {
     pub guardrail_id: Option<String>,
     pub guardrail_name: Option<String>,
@@ -41,7 +41,7 @@ pub struct GuardrailEntry {
 }
 
 // LiteLLM's metadata is either the object itself or a JSON string holding it
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(from = "MetadataWire")]
 pub struct PayloadMetadata(pub GuardrailMetadata);
 
@@ -104,12 +104,12 @@ pub fn information_entries(payload: &GuardrailSpendLog) -> &[GuardrailEntry] {
 pub(crate) fn ids_by_name(entries: &[GuardrailEntry]) -> IndexMap<String, String> {
     let mut ids = IndexMap::new();
     for entry in entries {
-        let id = entry.guardrail_id.as_deref().filter(|id| !id.is_empty());
-        let name = entry
+        let own_id = entry.guardrail_id.as_deref().filter(|id| !id.is_empty());
+        let own_name = entry
             .guardrail_name
             .as_deref()
             .filter(|name| !name.is_empty());
-        if let (Some(id), Some(name)) = (id, name) {
+        if let (Some(id), Some(name)) = (own_id, own_name) {
             ids.insert(name.to_owned(), id.to_owned());
         }
     }
@@ -129,7 +129,7 @@ pub(crate) fn resolved_id(
         .guardrail_name
         .as_deref()
         .filter(|name| !name.is_empty());
-    if let Some(id) = name.and_then(|name| ids.get(name)) {
+    if let Some(id) = name.and_then(|known| ids.get(known)) {
         return Some(id.clone());
     }
     name.map(str::to_owned)
