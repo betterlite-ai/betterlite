@@ -80,6 +80,7 @@ fn token_usage_is_split_by_the_token_type_attribute() {
 
 #[rstest]
 #[case::absent("{}", false)]
+#[case::null(r#"{"response_cost": null}"#, false)]
 #[case::zero(r#"{"response_cost": 0}"#, false)]
 #[case::negative(r#"{"response_cost": -0.5}"#, false)]
 #[case::positive(r#"{"response_cost": 0.25}"#, true)]

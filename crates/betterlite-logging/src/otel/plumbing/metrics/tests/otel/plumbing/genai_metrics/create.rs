@@ -21,19 +21,27 @@ fn the_six_histograms_carry_the_litellm_name_description_and_unit() {
     instruments.time_per_output_token.record(1.0_f64, &[]);
     instruments.response_duration.record(1.0_f64, &[]);
     provider.force_flush().expect("flush");
-    let finished = exporter.get_finished_metrics().expect("finished metrics");
-    let mut described = Histograms::new();
-    for metric in finished
+    assert_eq!(described(&exporter), expected());
+}
+
+fn described(exporter: &InMemoryMetricExporter) -> Histograms {
+    exporter
+        .get_finished_metrics()
+        .expect("finished metrics")
         .iter()
         .flat_map(ResourceMetrics::scope_metrics)
         .flat_map(ScopeMetrics::metrics)
-    {
-        described.insert(
-            metric.name().to_owned(),
-            (metric.description().to_owned(), metric.unit().to_owned()),
-        );
-    }
-    let expected: Histograms = [
+        .map(|metric| {
+            (
+                metric.name().to_owned(),
+                (metric.description().to_owned(), metric.unit().to_owned()),
+            )
+        })
+        .collect()
+}
+
+fn expected() -> Histograms {
+    [
         (
             "gen_ai.client.operation.duration",
             ("GenAI operation duration", "s"),
@@ -64,6 +72,5 @@ fn the_six_histograms_carry_the_litellm_name_description_and_unit() {
     ]
     .into_iter()
     .map(|(name, (description, unit))| (name.to_owned(), (description.to_owned(), unit.to_owned())))
-    .collect();
-    assert_eq!(described, expected);
+    .collect()
 }
