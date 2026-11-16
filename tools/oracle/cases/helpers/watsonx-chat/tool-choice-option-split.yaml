@@ -1,0 +1,29 @@
+kind: helper
+name: watsonx-chat-tool-choice-option-split
+env: {}
+compare: {ignore: []}
+call:
+  b5971:
+    env: {}
+    maps:
+      - non_default: {tool_choice: auto}
+        optional: {}
+      - non_default: {tool_choice: none}
+        optional: {}
+      - non_default: {tool_choice: required}
+        optional: {}
+      - non_default: {tool_choice: any}
+        optional: {}
+      - non_default: {tool_choice: Auto}
+        optional: {}
+      - non_default: {tool_choice: {type: function, function: {name: lookup}}}
+        optional: {}
+      - non_default: {tool_choice: null, temperature: 0.5}
+        optional: {}
+      - non_default: {temperature: 0.5}
+        optional: {tool_choice_option: auto}
+      - non_default: {tool_choice: required, temperature: 0.2, max_tokens: 10}
+        optional: {temperature: 1}
+    infos: []
+    urls: []
+    plans: []

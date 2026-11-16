@@ -8,10 +8,17 @@ on:
     types: [checks_requested]
   push:
     branches: [main]
-  # the queue already tested each merged tree, and testing only what a push affects still ran 87,708 and 88,290 of 91,578 tests (runs 43789028753, 43793982262), so a push lints, every 2 hours a run tests what changed, and at 01:17 UTC everything runs and refills the cargo cache (Max, 11-16); at minute 17, since GitHub drops scheduled runs at the start of an hour under load and none fired at 08:00 or 10:00 on 11-16
+  # the queue already tested each merged tree, and testing only what a push affects still ran 87,708 and 88,290 of 91,578 tests (runs 43789028753, 43793982262), so a push lints, every 2 hours a run tests what changed, and at 01:17 UTC everything runs and refills the cargo cache (Max, 11-16); at minute 17, since GitHub drops scheduled runs at the start of an hour under load and none fired at 10:00 on 11-16
   schedule:
     - cron: "17 1 * * *"
     - cron: "17 */2 * * *"
+  # GitHub never started a scheduled run in this repository (none for any workflow by 13:11 UTC on 11-16), so the same run can start by hand
+  workflow_dispatch:
+    inputs:
+      everything:
+        description: test every package and refill the cargo cache, as the 01:17 UTC run does
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -22,8 +29,8 @@ env:
   MUTANTS_SHARDS: 6
 
 concurrency:
-  group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref || (github.event_name == 'schedule' && 'scheduled') || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'push' && github.event_name != 'schedule' }}
+  group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref || ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'scheduled') || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
 
 defaults:
   run:
@@ -55,8 +62,9 @@ jobs:
       - name: Find the base, the task and the parts to run
         id: find
         env:
-          EVENT: ${{ github.event_name }}
-          NIGHTLY: ${{ github.event.schedule == '17 1 * * *' }}
+          # a run started by hand is a scheduled run
+          EVENT: ${{ github.event_name == 'workflow_dispatch' && 'schedule' || github.event_name }}
+          NIGHTLY: ${{ github.event.schedule == '17 1 * * *' || inputs.everything == true }}
           PR_BRANCH: ${{ github.head_ref }}
           QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
           QUEUE_REF: ${{ github.event.merge_group.head_ref }}
@@ -70,9 +78,9 @@ jobs:
             branch=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
           elif [[ $EVENT == push || $EVENT == schedule ]]; then
             # a waiting run gives way to the next one (11-15: 193 merges, 49 push runs, 21 cancelled), and a red run proves nothing, so a push lints everything since the last green main run and a scheduled run tests everything since the last green scheduled run
-            events='["schedule"]'
+            events='["schedule","workflow_dispatch"]'
             if [[ $EVENT == push ]]; then
-              events='["push","schedule"]'
+              events='["push","schedule","workflow_dispatch"]'
             fi
             base=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/actions/workflows/gate.yml/runs?branch=main&status=success&per_page=100" | jq -r --argjson events "$events" '[.workflow_runs[] | select(.event | IN($events[]))][0].head_sha // empty')
             if [[ -z $base ]] || ! git merge-base --is-ancestor "$base" HEAD; then
