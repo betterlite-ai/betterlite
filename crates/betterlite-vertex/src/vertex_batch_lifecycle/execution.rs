@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::str::from_utf8;
 use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
@@ -70,4 +71,14 @@ where
         )?)
         .await
         .map_err(transport_error)
+}
+
+// httpx decodes response.text leniently, so a body that is not UTF-8 keeps the text before its first invalid byte
+pub(super) fn body_text(body: &[u8]) -> String {
+    match from_utf8(body) {
+        Ok(text) => text.to_owned(),
+        Err(invalid) => from_utf8(body.get(..invalid.valid_up_to()).unwrap_or_default())
+            .unwrap_or_default()
+            .to_owned(),
+    }
 }

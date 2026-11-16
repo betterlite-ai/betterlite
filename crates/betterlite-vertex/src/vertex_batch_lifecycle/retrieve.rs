@@ -8,7 +8,7 @@ use http::header::HeaderMap;
 use crate::provider_metadata::timestamp::LocalTimeContext;
 use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::probe::AccessToken;
-use crate::vertex_batch_create::execution::{DEFAULT_CLIENT_DEADLINE, body_text};
+use crate::vertex_batch_create::execution::DEFAULT_CLIENT_DEADLINE;
 use crate::vertex_batch_create::fetch::ProtectedGet;
 use crate::vertex_batch_create::payload::decode_vertex_batch_payload;
 use crate::vertex_batch_create::target::collection_url;
@@ -16,14 +16,14 @@ use crate::vertex_batch_records::response::to_batch_object;
 use crate::vertex_batch_records::types::VertexBatchPredictionResponse;
 
 use super::error::VertexBatchLifecycleError;
-use super::execution::{BatchLifecycleRequest, resolve};
+use super::execution::{BatchLifecycleRequest, body_text, resolve};
 use super::target::{endpoint_tail, proxy_url};
 use super::wire::pre_call_args;
 
 pub struct PreparedBatchRetrieve {
-    target: String,
-    headers: HeaderMap,
-    pub logging: AdditionalArgs,
+    pub(super) target: String,
+    pub(super) headers: HeaderMap,
+    pub(super) logging: AdditionalArgs,
 }
 
 pub fn retrieve_url(

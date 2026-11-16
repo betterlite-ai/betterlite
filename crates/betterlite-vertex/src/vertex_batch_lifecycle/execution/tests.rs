@@ -569,22 +569,25 @@ async fn caller_cancel_closes_response() {
 #[tokio::test]
 async fn credentials_failure_stops_before_any_request() {
     let request = base(None, None);
-    let retrieve = prepare_batch_retrieve(&request, "777", missing_token()).await;
-    let list = prepare_batch_list(&request, None, None, missing_token()).await;
-    let cancel = prepare_batch_cancel(&request, "777", missing_token()).await;
-    let retrieve = retrieve.unwrap_err();
+    let Err(retrieve) = prepare_batch_retrieve(&request, "777", missing_token()).await else {
+        panic!("a missing token must stop the retrieve");
+    };
     assert!(matches!(
         retrieve,
         VertexBatchLifecycleError::Credentials { .. }
     ));
     assert_eq!(retrieve.status_code(), 500);
-    let list = list.unwrap_err();
+    let Err(list) = prepare_batch_list(&request, None, None, missing_token()).await else {
+        panic!("a missing token must stop the list");
+    };
     assert!(matches!(
         list,
         VertexBatchLifecycleError::Credentials { .. }
     ));
     assert_eq!(list.status_code(), 500);
-    let cancel = cancel.unwrap_err();
+    let Err(cancel) = prepare_batch_cancel(&request, "777", missing_token()).await else {
+        panic!("a missing token must stop the cancel");
+    };
     assert!(matches!(
         cancel,
         VertexBatchLifecycleError::Credentials { .. }

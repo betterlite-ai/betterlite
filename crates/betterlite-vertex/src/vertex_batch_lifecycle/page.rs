@@ -1,10 +1,10 @@
 use betterlite_http::proxy::UpstreamResponse;
 
-use crate::vertex_batch_create::execution::body_text;
 use crate::vertex_batch_create::payload::decode_vertex_batch_payload;
 use crate::vertex_batch_records::types::VertexBatchJobPage;
 
 use super::error::VertexBatchLifecycleError;
+use super::execution::body_text;
 
 mod tests;
 

@@ -64,7 +64,7 @@ where
         &prepared.target,
         prepared.headers,
         prepared.query,
-        VertexBatchLifecycleError::ListTransport,
+        |source| VertexBatchLifecycleError::ListTransport { source },
     )
     .await?;
     let page = decode_vertex_batch_page(&reply)?;
