@@ -171,7 +171,7 @@ fn case_outcomes(model: &str, prompt: &str, cases: &[MappingCase]) -> Vec<Value>
 
 fn mapping_outcome(family: Family, case: &MappingCase, model: &str, prompt: &str) -> Value {
     match mapped_params(family, case, model) {
-        Ok(params) => mapped_body(params, prompt),
+        Ok(params) => mapped_body(&params, prompt),
         Err(status) => json!({"error": {"status": status}}),
     }
 }
@@ -199,7 +199,7 @@ fn mapped_params(
     }
 }
 
-fn mapped_body(params: ImageParams, prompt: &str) -> Value {
+fn mapped_body(params: &ImageParams, prompt: &str) -> Value {
     let body = image_generation_body(prompt, params.clone());
     json!({
         "params": params,
