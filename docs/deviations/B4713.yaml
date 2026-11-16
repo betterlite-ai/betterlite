@@ -1,0 +1,42 @@
+task: B4713
+deviations:
+  - what: The Rust type for secret-free credential items is McpUserCredentialListItem (25 characters) rather than the LiteLLM class name MCPServerUserCredentialListItem (31 characters).
+    why: Rust identifier length is capped at 30 characters per repository rules. The shorter name preserves the semantic meaning while fitting the constraint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1686-L1702
+  - what: identity_binding_proof is stored as an optional JSON field in OAuthCredentialPayload and is only included in the serialized payload when present (non-None), and an empty string counts as present.
+    why: LiteLLM includes the field conditionally with a truthiness test at line 1601. betterlite keeps an explicit value as given, so the field and its value are the declared ones and only an absent value is left out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1597-L1608
+  - what: _decode_user_credential uses exception_type="debug" for decrypt_value_helper and return_original_value=False.
+    why: LiteLLM logs at debug level for user credential decryption failures to avoid alarming operators for rows written under old keys; return_original_value=False ensures we fail cleanly rather than returning ciphertext.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1389-L1394
+  - what: Undecryptable credentials (decrypted=None from decrypt_value_helper) and rows that decode to an empty string are replaced by store_user_oauth_credential with a warning log.
+    why: LiteLLM logs a warning when replacing undecryptable BYOK with OAuth (lines 1628-1634); we match this to allow recovery when a user re-authorizes under a new key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1628-L1634
+  - what: Absent or unparseable expires_at in is_oauth_credential_expired is treated as non-expired (returns False).
+    why: LiteLLM's behavior (lines 1650-1651) is to assume a token without expiry is valid, allowing fallback to implicit provider defaults when the field is absent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1649-L1658
+  - what: oauth_grant_state uses MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS (a constant from LiteLLM) for the default buffer.
+    why: LiteLLM applies this buffer (line 1665) to decide whether to proactively refresh; betterlite preserves this threshold.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1661-L1667
+  - what: store_user_oauth_credential reads the clock once, so connected_at and expires_at are exactly expires_in seconds apart, where LiteLLM reads datetime.now twice (lines 1595 and 1600) and stores a lifetime a few microseconds short of expires_in.
+    why: One clock read makes the stored lifetime the one the caller asked for. The difference only shows up when a caller subtracts connected_at from expires_at and rounds down, and a single now is the value both fields describe.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1593-L1602
+  - what: OAuthCredentialPayload.access_token is Option<String> in betterlite, where the LiteLLM TypedDict declares it required, so the absent-token branch of oauth_grant_state is representable and tested.
+    why: LiteLLM reads the field defensively (line 1663 treats a missing access_token as absent) and the task calls it required; every write still sets it, and a stored payload that lacks it is classified "absent" exactly as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1661-L1667
+  - what: A row whose decoded JSON claims type oauth2 but carries a field of the wrong JSON type (for example scopes as a string) is a CredentialError::Json naming the field, and keys outside the declared payload are dropped, where LiteLLM returns the parsed dict unchanged.
+    why: betterlite decodes stored values into the declared payload type at every boundary, and docs/compatibility.md makes a value of the wrong type an error rather than duck-typed data. Rows LiteLLM or betterlite writes always hold the declared field types.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1413-L1434
+  - what: expires_in and buffer_seconds values beyond the timestamp range are ExpiresInOutOfRange from the store and false from the expiry check, where Python raises OverflowError from timedelta, which is outside the except clause at line 1657 and so propagates.
+    why: An uncaught OverflowError is a 500 for a value no working setup sends; betterlite makes the write fail with a named error and keeps the expiry check total, which the task's "unparseable is not expired" rule already requires.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1649-L1658
+  - what: parse_iso_moment accepts RFC 3339 with an offset, a space instead of T, a naive timestamp read as UTC, and a date alone. It does not accept Python's basic format (20240102T030405+0000), ISO week dates or a comma before the fraction.
+    why: Every value either side writes comes from datetime.isoformat or betterlite's matched isoformat, so the accepted forms cover what a working setup stores; a value outside them is unparseable and not expired, as LiteLLM answers for fromisoformat failures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1649-L1656
+  - what: MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS is the constant 60 in betterlite. The environment variable of the same name is not read.
+    why: The constant belongs to another task per this task's out_of_scope list, and betterlite reads no environment variables outside its config layer, so the value LiteLLM ships is pinned here instead of being configurable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L198
+  - what: Credential list items carry the row's updated_at text as the database hands it over, where LiteLLM parses the column to a datetime and writes datetime.isoformat() back.
+    why: PostgreSQL returns a timestamptz through row_to_json in ISO form, so a row written by either implementation lists with the same updated_at text; the column is never a naive value that needs a timezone applied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1686-L1702
+kept_bugs: []
