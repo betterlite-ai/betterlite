@@ -231,7 +231,7 @@ async fn route_reads_the_stored_object_the_database_returns() {
     let reinit = support::reinit();
     let audit = support::audit(true);
     let harness = support::harness(Some(repository), Arc::clone(&reinit), Arc::clone(&audit));
-    let body = support::request_body(support::json(r#"{"host":"h"}"#));
+    let body = support::request_body(support::json(r#"{"host":"saved-host"}"#));
     let (status, text) = support::post(&harness, Some(support::master_key()), &body).await;
     assert_eq!(status, StatusCode::OK);
     assert!(text.contains(r#""password":"***REDACTED***""#));
