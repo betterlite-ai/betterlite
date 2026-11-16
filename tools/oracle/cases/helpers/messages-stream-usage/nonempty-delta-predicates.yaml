@@ -91,16 +91,6 @@ call:
           provider_specific_fields: null
     - step: is_blank
       choices:
-      - finish_reason: ""
-        delta:
-          content: null
-          tool_calls: []
-          reasoning_content: null
-          thinking_blocks: null
-          refusal: null
-          provider_specific_fields: null
-    - step: is_blank
-      choices:
       - finish_reason: null
         delta:
           content: null
