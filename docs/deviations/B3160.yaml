@@ -1,0 +1,12 @@
+task: B3160
+deviations:
+  - what: A store failure answers 500 with the detail "Internal server error" and logs the cause, where LiteLLM puts str(e) of the database exception in the detail on all four routes.
+    why: The database error text can carry connection strings, table names and row values, and messages are betterlite's own under rule errors-match-litellm. The status stays 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L413-L414
+  - what: An event data object that repeats a key is rejected with a 422 that names the field, where Python's JSON parser keeps the last value.
+    why: Rule no-silent-drops, and the same duplicate-key rejection JsonData applies to every JSON object betterlite stores.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L94-L97
+kept_bugs:
+  - what: The event and message appends pass the raw caller, so a view-only admin must own the run to append, while the two list routes let the same caller read every run. Only a full PROXY_ADMIN skips the ownership check on a write.
+    why: A setup that gives a view-only role write access to foreign runs would fail today too, and the split is the behavior the task text spells out. A key without a route grant is refused earlier by route auth.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L374
