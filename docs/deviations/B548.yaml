@@ -1,0 +1,6 @@
+task: B548
+deviations:
+  - what: A logged non-chat relay response is the provider's decoded JSON body object, where LiteLLM returns the validated EmbeddingResponse, ResponsesAPIResponse or ImageResponse model.
+    why: betterlite log records carry standard JSON (docs/compatibility.md); B3570's RelayShape keeps the body object and B548 does not rebuild the pydantic model, so a consumer reads the same fields as JSON keys rather than model attributes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L46-L52
+kept_bugs: []

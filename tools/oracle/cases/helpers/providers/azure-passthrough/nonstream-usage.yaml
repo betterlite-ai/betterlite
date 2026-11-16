@@ -1,0 +1,56 @@
+kind: helper
+name: azure-passthrough-nonstream-usage
+call:
+  azure_passthrough:
+    function: nonstream_usage
+    nonstream_steps:
+      - endpoint: openai/deployments/my-d/chat/completions
+        model: gpt-4o
+        status: 200
+        headers: {content-type: application/json}
+        body:
+          id: chatcmpl-1
+          object: chat.completion
+          created: 7
+          model: gpt-4o
+          choices:
+            - index: 0
+              message: {role: assistant, content: hello}
+              finish_reason: stop
+          usage: {prompt_tokens: 8, completion_tokens: 4, total_tokens: 12}
+        request_data:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+      - endpoint: openai/deployments/my-d/embeddings
+        model: text-embedding-3-small
+        status: 200
+        headers: {content-type: application/json}
+        body:
+          object: list
+          data:
+            - {object: embedding, index: 0, embedding: [0.25, -1.5]}
+          model: text-embedding-3-small
+          usage: {prompt_tokens: 8, total_tokens: 8}
+        request_data:
+          input: [hello]
+      - endpoint: openai/deployments/my-d/responses
+        model: gpt-4o
+        status: 200
+        headers: {content-type: application/json}
+        body:
+          id: resp_1
+          created_at: 7
+          output: []
+          status: completed
+          usage: {input_tokens: 5, output_tokens: 2, total_tokens: 7}
+        request_data:
+          model: gpt-4o
+          input: hello
+      - endpoint: openai/deployments/my-d/models
+        model: gpt-4o
+        status: 200
+        headers: {content-type: application/json}
+        body: {object: list, data: []}
+        request_data: {}
+env: {}
+compare: {ignore: []}
