@@ -4,19 +4,11 @@ use indexmap::IndexMap;
 use super::error::WatsonxRerankError;
 use crate::api::rerank_contracts::{MapCohereRerankParams, Params};
 
-pub const SUPPORTED_COHERE_RERANK_PARAMS: [&str; 5] = [
-    "query",
-    "documents",
-    "top_n",
-    "return_documents",
-    "max_tokens_per_doc",
-];
-
 pub fn map_cohere_rerank_params(
     request: &MapCohereRerankParams<'_>,
 ) -> Result<Params, WatsonxRerankError> {
     let mut mapped = Params::new();
-    for (key, value) in request.non_default_params.iter() {
+    for (key, value) in &*request.non_default_params {
         match key.as_str() {
             "query" | "project_id" | "space_id" => {
                 if !matches!(value, Json::Null) {
@@ -32,25 +24,19 @@ pub fn map_cohere_rerank_params(
                     return Err(WatsonxRerankError::InvalidDocuments);
                 }
             },
-            "top_n" => {
-                if !matches!(value, Json::Null) {
-                    if let Some(return_options) = return_options(&mut mapped) {
-                        return_options.insert(String::from("top_n"), value.clone());
-                    }
+            "top_n" if !matches!(value, Json::Null) => {
+                if let Some(return_options) = return_options(&mut mapped) {
+                    return_options.insert(String::from("top_n"), value.clone());
                 }
             }
-            "return_documents" => {
-                if let Json::Bool(_) = value {
-                    if let Some(return_options) = return_options(&mut mapped) {
-                        return_options.insert(String::from("inputs"), value.clone());
-                    }
+            "return_documents" if matches!(value, Json::Bool(_)) => {
+                if let Some(return_options) = return_options(&mut mapped) {
+                    return_options.insert(String::from("inputs"), value.clone());
                 }
             }
-            "max_tokens_per_doc" => {
-                if !matches!(value, Json::Null) {
-                    if let Some(parameters) = parameters(&mut mapped) {
-                        parameters.insert(String::from("truncate_input_tokens"), value.clone());
-                    }
+            "max_tokens_per_doc" if !matches!(value, Json::Null) => {
+                if let Some(parameters) = parameters(&mut mapped) {
+                    parameters.insert(String::from("truncate_input_tokens"), value.clone());
                 }
             }
             _ => {}

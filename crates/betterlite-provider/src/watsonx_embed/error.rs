@@ -20,8 +20,6 @@ pub enum WatsonxEmbeddingError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the watsonx embeddings reply has more results than an index can hold")]
-    TooManyResults,
 }
 
 impl From<WatsonxError> for WatsonxEmbeddingError {
@@ -35,10 +33,9 @@ impl WatsonxEmbeddingError {
     pub fn status(&self) -> Option<u16> {
         match self {
             Self::Watsonx(error) => api_status(error),
-            Self::UnsupportedInput
-            | Self::InvalidField { .. }
-            | Self::InvalidResponse { .. }
-            | Self::TooManyResults => None,
+            Self::UnsupportedInput | Self::InvalidField { .. } | Self::InvalidResponse { .. } => {
+                None
+            }
         }
     }
 }

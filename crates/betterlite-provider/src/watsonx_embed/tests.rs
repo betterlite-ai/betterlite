@@ -9,11 +9,12 @@ use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
 use betterlite_openai::watsonx_auth::types::WatsonxParams;
 use rstest::rstest;
 use secrecy::SecretString;
+use serde_json::Number;
 
 use super::WatsonxEmbeddingConfig;
 use super::error::WatsonxEmbeddingError;
 use super::reply::decode_watsonx_embedding_reply;
-use super::request::SUPPORTED_OPENAI_PARAMS;
+use crate::watsonx_rerank::reply::decode_watsonx_rerank_reply;
 
 fn params(wire: &str) -> WatsonxParams {
     serde_json::from_str(wire).unwrap()
@@ -64,22 +65,17 @@ fn body_map(body: &super::request::WatsonxEmbeddingBody) -> WatsonxParams {
     serde_json::from_str(&serde_json::to_string(body).unwrap()).unwrap()
 }
 
-#[test]
-fn supported_params_are_empty() {
-    assert!(SUPPORTED_OPENAI_PARAMS.is_empty());
-}
-
 #[rstest]
 #[case::trailing_slash(
     "https://host/",
     "granite",
-    r#"{}"#,
+    "{}",
     "https://host/ml/v1/text/embeddings?version=2024-03-13"
 )]
 #[case::deployment_model(
     "https://host",
     "deployment/abc",
-    r#"{}"#,
+    "{}",
     "https://host/ml/v1/text/embeddings?version=2024-03-13"
 )]
 #[case::version_used(
@@ -220,8 +216,8 @@ fn request_without_project_or_space_is_401() {
 }
 
 #[rstest]
-#[case::token_ids(r#"[1,2]"#)]
-#[case::token_lists(r#"[[1],[2]]"#)]
+#[case::token_ids("[1,2]")]
+#[case::token_lists("[[1],[2]]")]
 fn request_rejects_token_input(#[case] input: &str) {
     let input: EmbeddingInput = serde_json::from_str(input).unwrap();
     let error = config(&project_environment())
@@ -253,7 +249,7 @@ fn response_maps_results_and_usage() {
         br#"{"results":[{"embedding":[0.1,-2]},{"embedding":[3]}],"input_token_count":7}"#,
     )
     .unwrap();
-    let response = WatsonxEmbeddingConfig::transform_embedding_response("granite", reply).unwrap();
+    let response = WatsonxEmbeddingConfig::transform_embedding_response("granite", reply);
     assert_eq!(
         response,
         EmbeddingResponse {
@@ -262,14 +258,14 @@ fn response_maps_results_and_usage() {
                 EmbeddingRecord {
                     object: String::from("embedding"),
                     embedding: EmbeddingVector::Floats(vec![
-                        serde_json::Number::from_f64(0.1).unwrap(),
-                        serde_json::Number::from(-2),
+                        Number::from_f64(0.1).unwrap(),
+                        Number::from(-2_i32),
                     ]),
                     index: 0,
                 },
                 EmbeddingRecord {
                     object: String::from("embedding"),
-                    embedding: EmbeddingVector::Floats(vec![serde_json::Number::from(3)]),
+                    embedding: EmbeddingVector::Floats(vec![Number::from(3_i32)]),
                     index: 1,
                 },
             ],
@@ -288,7 +284,7 @@ fn response_maps_results_and_usage() {
 #[test]
 fn response_without_usage_defaults_to_zero() {
     let reply = decode_watsonx_embedding_reply(br#"{"results":[]}"#).unwrap();
-    let response = WatsonxEmbeddingConfig::transform_embedding_response("m", reply).unwrap();
+    let response = WatsonxEmbeddingConfig::transform_embedding_response("m", reply);
     assert_eq!(response.usage.prompt_tokens, 0);
     assert_eq!(response.usage.total_tokens, 0);
     assert_eq!(response.usage.completion_tokens, 0);
@@ -299,7 +295,7 @@ fn response_without_usage_defaults_to_zero() {
 #[test]
 fn response_null_usage_count_defaults_to_zero() {
     let reply = decode_watsonx_embedding_reply(br#"{"input_token_count":null}"#).unwrap();
-    let response = WatsonxEmbeddingConfig::transform_embedding_response("m", reply).unwrap();
+    let response = WatsonxEmbeddingConfig::transform_embedding_response("m", reply);
     assert_eq!(response.usage.prompt_tokens, 0);
 }
 
@@ -337,7 +333,7 @@ fn replays_the_watsonx_embed_rerank_reply_corpus() {
         .inspect(|path| {
             let bytes = fs::read(path).unwrap();
             let _embedding = decode_watsonx_embedding_reply(&bytes);
-            let _rerank = crate::watsonx_rerank::reply::decode_watsonx_rerank_reply(&bytes);
+            let _rerank = decode_watsonx_rerank_reply(&bytes);
         })
         .count();
     assert!(seen > 0_usize);

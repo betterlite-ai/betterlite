@@ -33,11 +33,18 @@ impl WatsonxEmbeddingConfig<'_> {
             base.trim_end_matches('/'),
             WatsonxEndpoint::Embeddings.path()
         );
-        let version = request::take_api_version(options)?;
+        let version = options
+            .remove("api_version")
+            .map(serde_json::from_value::<Option<String>>)
+            .transpose()
+            .map_err(|source| WatsonxEmbeddingError::InvalidField {
+                field: "api_version",
+                source,
+            })?
+            .flatten();
         Ok(add_api_version_to_url(&url, version.as_deref()))
     }
 
-    // _get_api_params and _prepare_payload run before the input check, so a missing project 401s first
     pub fn transform_embedding_request(
         &self,
         model: &str,
@@ -54,23 +61,20 @@ impl WatsonxEmbeddingConfig<'_> {
         })
     }
 
-    // the response keeps no environment state, so this borrows nothing from the config
     pub fn transform_embedding_response(
         model: &str,
         reply: WatsonxEmbeddingReply,
-    ) -> Result<EmbeddingResponse, WatsonxEmbeddingError> {
+    ) -> EmbeddingResponse {
         let prompt_tokens = reply.input_token_count.unwrap_or_default();
-        let mut data = Vec::with_capacity(reply.results.len());
-        for (position, result) in reply.results.into_iter().enumerate() {
-            let index =
-                u32::try_from(position).map_err(|_error| WatsonxEmbeddingError::TooManyResults)?;
-            data.push(EmbeddingRecord {
+        let data = (0_u32..)
+            .zip(reply.results)
+            .map(|(index, result)| EmbeddingRecord {
                 object: String::from("embedding"),
                 embedding: result.embedding,
                 index,
-            });
-        }
-        Ok(EmbeddingResponse {
+            })
+            .collect();
+        EmbeddingResponse {
             object: String::from("list"),
             data,
             model: model.to_owned(),
@@ -81,6 +85,6 @@ impl WatsonxEmbeddingConfig<'_> {
                 prompt_tokens_details: None,
                 total_tokens: prompt_tokens,
             },
-        })
+        }
     }
 }

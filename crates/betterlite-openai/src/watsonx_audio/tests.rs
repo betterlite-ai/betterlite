@@ -1,24 +1,29 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::future::{Future, ready};
+use std::str;
 use std::sync::Arc;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use http::HeaderMap;
+use http::header::{HeaderName, HeaderValue};
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use super::WatsonxAudioConfig;
 use super::error::WatsonxAudioError;
+use super::reply::decode_watsonx_transcription_reply;
 use super::request::SUPPORTED_OPENAI_PARAMS;
 use crate::api::audio_file_input::ProcessedAudioFile;
 use crate::openai_base_config::Object;
 use crate::watsonx_auth::WatsonxAuth;
 use crate::watsonx_auth::environment::WatsonxEnvironment;
+use crate::watsonx_auth::error::WatsonxError;
 use crate::watsonx_auth::transport::WatsonxTransport;
 
 struct NoTransport;
@@ -81,8 +86,8 @@ fn headers(wire: &[(&str, &str)]) -> HeaderMap {
     let mut headers = HeaderMap::new();
     for (name, value) in wire {
         headers.insert(
-            http::header::HeaderName::try_from(*name).unwrap(),
-            http::header::HeaderValue::try_from(*value).unwrap(),
+            HeaderName::try_from(*name).unwrap(),
+            HeaderValue::try_from(*value).unwrap(),
         );
     }
     headers
@@ -213,7 +218,7 @@ async fn auth_without_key_is_missing_iam_key() {
 #[rstest]
 #[case::trailing_slash(
     "https://host/",
-    r#"{}"#,
+    "{}",
     "https://host/ml/v1/audio/transcriptions?version=2024-03-13"
 )]
 #[case::version_used(
@@ -281,7 +286,7 @@ fn url_with_non_text_version_names_the_field() {
 }
 
 #[rstest]
-#[case::no_ids(r#"{}"#, r#"[["model","granite"]]"#)]
+#[case::no_ids("{}", r#"[["model","granite"]]"#)]
 #[case::project_id(r#"{"project_id":"p"}"#, r#"[["model","granite"],["project_id","p"]]"#)]
 #[case::watsonx_project(
     r#"{"watsonx_project":"wp"}"#,
@@ -336,12 +341,10 @@ fn request_rejects_non_text_ids(#[case] given: &str, #[case] field: &str) {
 
 #[test]
 fn reply_keeps_text_and_other_keys_and_drops_model() {
-    let auth = auth(WatsonxEnvironment::default());
-    let response = config(&auth)
-        .transform_audio_response(
-            br#"{"text":"hello","model":"m","task":"transcribe","duration":2.5}"#,
-        )
-        .unwrap();
+    let response = decode_watsonx_transcription_reply(
+        br#"{"text":"hello","model":"m","task":"transcribe","duration":2.5}"#,
+    )
+    .unwrap();
     assert_eq!(response.text, Some(String::from("hello")));
     assert_eq!(
         response.extra,
@@ -351,45 +354,31 @@ fn reply_keeps_text_and_other_keys_and_drops_model() {
 
 #[test]
 fn reply_keeps_null_usage_as_null() {
-    let auth = auth(WatsonxEnvironment::default());
-    let response = config(&auth)
-        .transform_audio_response(br#"{"text":"hello","usage":null}"#)
-        .unwrap();
+    let response = decode_watsonx_transcription_reply(br#"{"text":"hello","usage":null}"#).unwrap();
     assert_eq!(response.extra.get("usage"), Some(&Value::Null));
 }
 
 #[test]
 fn reply_keeps_usage_beside_text() {
-    let auth = auth(WatsonxEnvironment::default());
-    let response = config(&auth)
-        .transform_audio_response(br#"{"text":"hello","usage":{"total_tokens":3}}"#)
-        .unwrap();
+    let response =
+        decode_watsonx_transcription_reply(br#"{"text":"hello","usage":{"total_tokens":3}}"#)
+            .unwrap();
     assert_eq!(response.text, Some(String::from("hello")));
-    assert_eq!(
-        response.extra.get("usage"),
-        Some(&json!({"total_tokens": 3}))
-    );
+    let usage: Value = serde_json::from_str(r#"{"total_tokens":3}"#).unwrap();
+    assert_eq!(response.extra.get("usage"), Some(&usage));
 }
 
 #[test]
 fn reply_keeps_usage_without_text() {
-    let auth = auth(WatsonxEnvironment::default());
-    let response = config(&auth)
-        .transform_audio_response(br#"{"usage":{"total_tokens":3}}"#)
-        .unwrap();
+    let response = decode_watsonx_transcription_reply(br#"{"usage":{"total_tokens":3}}"#).unwrap();
     assert_eq!(response.text, None);
-    assert_eq!(
-        response.extra.get("usage"),
-        Some(&json!({"total_tokens": 3}))
-    );
+    let usage: Value = serde_json::from_str(r#"{"total_tokens":3}"#).unwrap();
+    assert_eq!(response.extra.get("usage"), Some(&usage));
 }
 
 #[test]
 fn reply_empty_text_is_kept() {
-    let auth = auth(WatsonxEnvironment::default());
-    let response = config(&auth)
-        .transform_audio_response(br#"{"text":""}"#)
-        .unwrap();
+    let response = decode_watsonx_transcription_reply(br#"{"text":""}"#).unwrap();
     assert_eq!(response.text, Some(String::new()));
 }
 
@@ -398,15 +387,14 @@ fn reply_empty_text_is_kept() {
 #[case::null_text_and_usage(br#"{"text":null,"usage":null}"#)]
 #[case::only_model(br#"{"model":"m"}"#)]
 fn reply_without_text_or_usage_fails(#[case] body: &[u8]) {
-    let auth = auth(WatsonxEnvironment::default());
-    let error = config(&auth).transform_audio_response(body).unwrap_err();
+    let error = decode_watsonx_transcription_reply(body).unwrap_err();
     assert!(matches!(error, WatsonxAudioError::MissingFields { .. }));
     assert_eq!(error.status(), None);
     assert_eq!(
         error.to_string(),
         format!(
             "Invalid response format. Received response does not match the expected format. Got: {}",
-            String::from_utf8_lossy(body)
+            str::from_utf8(body).unwrap()
         )
     );
 }
@@ -416,17 +404,13 @@ fn reply_without_text_or_usage_fails(#[case] body: &[u8]) {
 #[case::not_an_object(b"[]")]
 #[case::text_number(br#"{"text":5}"#)]
 fn reply_rejects_malformed_bodies(#[case] body: &[u8]) {
-    let auth = auth(WatsonxEnvironment::default());
-    let error = config(&auth).transform_audio_response(body).unwrap_err();
+    let error = decode_watsonx_transcription_reply(body).unwrap_err();
     assert_eq!(error.status(), None);
 }
 
 #[test]
 fn reply_text_number_names_the_field() {
-    let auth = auth(WatsonxEnvironment::default());
-    let error = config(&auth)
-        .transform_audio_response(br#"{"text":5}"#)
-        .unwrap_err();
+    let error = decode_watsonx_transcription_reply(br#"{"text":5}"#).unwrap_err();
     assert!(matches!(
         error,
         WatsonxAudioError::NotText { field: "text" }
@@ -435,7 +419,7 @@ fn reply_text_number_names_the_field() {
 
 #[test]
 fn error_status_comes_from_the_shared_api_error() {
-    let error = WatsonxAudioError::from(crate::watsonx_auth::error::WatsonxError::Api {
+    let error = WatsonxAudioError::from(WatsonxError::Api {
         status_code: 404,
         message: String::from("missing"),
         headers: None,
@@ -445,13 +429,13 @@ fn error_status_comes_from_the_shared_api_error() {
 
 #[test]
 fn replays_the_watsonx_transcription_reply_corpus() {
-    let seen = std::fs::read_dir("fuzz/corpus/watsonx_transcription_reply")
+    let seen = fs::read_dir("fuzz/corpus/watsonx_transcription_reply")
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.is_file())
         .inspect(|path| {
-            let bytes = std::fs::read(path).unwrap();
-            let _reply = super::reply::decode_watsonx_transcription_reply(&bytes);
+            let bytes = fs::read(path).unwrap();
+            let _reply = decode_watsonx_transcription_reply(&bytes);
         })
         .count();
     assert!(seen > 0_usize);

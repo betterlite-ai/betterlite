@@ -5,7 +5,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::WatsonxPassthroughConfig;
 use crate::openai_base_config::Object;
-use crate::passthrough::transformation::BasePassthroughConfig;
+use crate::passthrough::transformation::BasePassthroughConfig as _;
 use crate::passthrough::transformation::types::{PassthroughTarget, PassthroughUrlRequest};
 use crate::watsonx_auth::environment::WatsonxEnvironment;
 

@@ -11,6 +11,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::{
     RerankResponse, RerankResponseDocument, RerankResponseMeta, RerankResponseResult, RerankTokens,
 };
+use betterlite_openai::watsonx_audio::error::body_text;
 use betterlite_openai::watsonx_auth::WatsonxAuth;
 use betterlite_openai::watsonx_auth::error::WatsonxError;
 use betterlite_openai::watsonx_auth::transport::WatsonxTransport;
@@ -108,7 +109,7 @@ impl<T: WatsonxTransport> WatsonxRerankConfig<'_, T> {
         };
         let Some(results) = reply.results else {
             return Err(WatsonxRerankError::NoResults {
-                body: String::from_utf8_lossy(&raw.body).into_owned(),
+                body: body_text(&raw.body),
             });
         };
         let mut transformed = Vec::with_capacity(results.len());
@@ -144,7 +145,10 @@ fn transform_result(
         Some(Some(Json::Text(text))) => Some(RerankResponseDocument { text }),
         Some(Some(Json::Object(fields))) => match fields.get("text") {
             Some(Json::Text(text)) => Some(RerankResponseDocument { text: text.clone() }),
-            _ => {
+            None
+            | Some(
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
+            ) => {
                 return Err(WatsonxRerankError::ReplyField {
                     field: "results[].input.text",
                 });

@@ -31,19 +31,29 @@ impl WatsonxTransport for NoTransport {
 }
 
 fn environment(values: &BTreeMap<String, String>) -> WatsonxEnvironment {
-    let secret = |name: &str| {
-        values
-            .get(name)
-            .map(|value| SecretString::from(value.clone()))
-    };
     let text = |name: &str| values.get(name).cloned();
+    let secret = |name: &str| text(name).map(SecretString::from);
     WatsonxEnvironment {
-        watsonx_api_base: text("WATSONX_API_BASE"),
+        watsonx_iam_url: text("WATSONX_IAM_URL"),
+        wx_api_key: secret("WX_API_KEY"),
         watsonx_api_key: secret("WATSONX_API_KEY"),
-        watsonx_project_id: text("WATSONX_PROJECT_ID"),
-        watsonx_token: secret("WATSONX_TOKEN"),
+        watsonx_apikey: secret("WATSONX_APIKEY"),
         watsonx_zenapikey: secret("WATSONX_ZENAPIKEY"),
-        ..WatsonxEnvironment::default()
+        watsonx_token: secret("WATSONX_TOKEN"),
+        watsonx_api_base: text("WATSONX_API_BASE"),
+        watsonx_url: text("WATSONX_URL"),
+        wx_url: text("WX_URL"),
+        wml_url: text("WML_URL"),
+        watsonx_project_id: text("WATSONX_PROJECT_ID"),
+        wx_project_id: text("WX_PROJECT_ID"),
+        project_id: text("PROJECT_ID"),
+        watsonx_region: text("WATSONX_REGION"),
+        wx_region: text("WX_REGION"),
+        region: text("REGION"),
+        watsonx_deployment_space_id: text("WATSONX_DEPLOYMENT_SPACE_ID"),
+        watsonx_space_id: text("WATSONX_SPACE_ID"),
+        wx_space_id: text("WX_SPACE_ID"),
+        space_id: text("SPACE_ID"),
     }
 }
 

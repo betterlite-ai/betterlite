@@ -1,5 +1,9 @@
+use std::collections::BTreeMap;
+
 use betterlite_openai::embedding::EmbeddingVector;
+use betterlite_openai::watsonx_audio::error::body_text;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 use super::error::WatsonxEmbeddingError;
 
@@ -16,11 +20,14 @@ pub struct WatsonxEmbeddingResult {
     pub embedding: EmbeddingVector,
 }
 
+// a reply that is valid JSON but not an object must fail, where serde would read an array as the struct's fields
 pub fn decode_watsonx_embedding_reply(
     bytes: &[u8],
 ) -> Result<WatsonxEmbeddingReply, WatsonxEmbeddingError> {
-    serde_json::from_slice(bytes).map_err(|source| WatsonxEmbeddingError::InvalidResponse {
-        body: String::from_utf8_lossy(bytes).into_owned(),
+    let invalid = |source: serde_json::Error| WatsonxEmbeddingError::InvalidResponse {
+        body: body_text(bytes),
         source,
-    })
+    };
+    serde_json::from_slice::<BTreeMap<String, IgnoredAny>>(bytes).map_err(invalid)?;
+    serde_json::from_slice(bytes).map_err(invalid)
 }

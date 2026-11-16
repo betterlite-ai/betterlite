@@ -1,6 +1,10 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::score::Score;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
+use serde_json::error::Category;
 
 use super::error::WatsonxRerankError;
 
@@ -22,11 +26,12 @@ pub struct WatsonxRerankResult {
     pub input: Option<Option<Json>>,
 }
 
+// a reply that is valid JSON but not an object must fail, where serde would read an array as the struct's fields
 pub fn decode_watsonx_rerank_reply(bytes: &[u8]) -> Result<WatsonxRerankReply, WatsonxRerankError> {
-    serde_json::from_slice(bytes).map_err(|source| match source.classify() {
-        serde_json::error::Category::Data => WatsonxRerankError::Reply(source),
-        serde_json::error::Category::Io
-        | serde_json::error::Category::Syntax
-        | serde_json::error::Category::Eof => WatsonxRerankError::Parse(source),
-    })
+    let classify = |source: serde_json::Error| match source.classify() {
+        Category::Data => WatsonxRerankError::Reply(source),
+        Category::Io | Category::Syntax | Category::Eof => WatsonxRerankError::Parse(source),
+    };
+    serde_json::from_slice::<BTreeMap<String, IgnoredAny>>(bytes).map_err(classify)?;
+    serde_json::from_slice(bytes).map_err(classify)
 }

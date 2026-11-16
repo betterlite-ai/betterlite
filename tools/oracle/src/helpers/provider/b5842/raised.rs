@@ -26,7 +26,6 @@ raised_from!(
     WatsonxRerankError
 );
 
-// the compared type, param and code stay null because every LiteLLM failure here carries only a status
 impl From<Raised> for Box<HelperError> {
     fn from(raised: Raised) -> Self {
         Self::new(HelperError {

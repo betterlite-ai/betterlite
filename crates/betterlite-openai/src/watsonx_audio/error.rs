@@ -1,5 +1,8 @@
-use crate::watsonx_auth::error::WatsonxError;
+use std::str;
+
 use thiserror::Error;
+
+use crate::watsonx_auth::error::WatsonxError;
 
 #[derive(Debug, Error)]
 pub enum WatsonxAudioError {
@@ -36,10 +39,19 @@ impl WatsonxAudioError {
 
 // only the shared credential and URL failures carry a status in the four watsonx endpoint families
 #[must_use]
-pub fn api_status(error: &WatsonxError) -> Option<u16> {
+pub const fn api_status(error: &WatsonxError) -> Option<u16> {
     if let WatsonxError::Api { status_code, .. } = error {
         Some(*status_code)
     } else {
         None
     }
+}
+
+// the body of a reply is shown as text only when it is UTF-8, and its length stands in otherwise
+#[must_use]
+pub fn body_text(bytes: &[u8]) -> String {
+    let Ok(text) = str::from_utf8(bytes) else {
+        return format!("{} bytes that are not UTF-8", bytes.len());
+    };
+    text.to_owned()
 }

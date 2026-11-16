@@ -12,7 +12,6 @@ use serde_json::Value;
 use self::error::WatsonxAudioError;
 use self::request::{AUDIO_PATH, SUPPORTED_OPENAI_PARAMS, WatsonxTranscriptionRequest};
 use crate::api::audio_file_input::ProcessedAudioFile;
-use crate::api::transcription_contract::TranscriptionResponse;
 use crate::openai_base_config::Object;
 use crate::watsonx_auth::WatsonxAuth;
 use crate::watsonx_auth::transport::WatsonxTransport;
@@ -24,7 +23,6 @@ pub struct WatsonxAudioConfig<'env, T> {
 }
 
 impl<T: WatsonxTransport> WatsonxAudioConfig<'_, T> {
-    // the header defaults come from the shared getter, and the multipart writer sets the content type itself
     pub async fn validate_environment(
         &self,
         headers: HeaderMap,
@@ -40,7 +38,6 @@ impl<T: WatsonxTransport> WatsonxAudioConfig<'_, T> {
         Ok(resolved)
     }
 
-    // the version is read here and stays in the options, unlike the embedding URL
     pub fn get_complete_url(
         &self,
         api_base: Option<&str>,
@@ -68,11 +65,11 @@ impl<T: WatsonxTransport> WatsonxAudioConfig<'_, T> {
         options: &Object,
     ) -> Result<WatsonxTranscriptionRequest, WatsonxAudioError> {
         let mut fields = vec![(String::from("model"), Value::String(model.to_owned()))];
-        let project_id = match text_option(options, "project_id")? {
-            Some(project_id) => Some(project_id),
+        let named_project = match text_option(options, "project_id")? {
+            Some(id) => Some(id),
             None => text_option(options, "watsonx_project")?,
         };
-        match project_id {
+        match named_project {
             Some(project_id) => {
                 fields.push((String::from("project_id"), Value::String(project_id)));
             }
@@ -88,18 +85,6 @@ impl<T: WatsonxTransport> WatsonxAudioConfig<'_, T> {
             }
         }
         Ok(WatsonxTranscriptionRequest { fields, file })
-    }
-
-    pub fn transform_audio_response(
-        &self,
-        body: &[u8],
-    ) -> Result<TranscriptionResponse, WatsonxAudioError> {
-        // ast-grep-ignore: no-long-names
-        let response = reply::decode_watsonx_transcription_reply(body)?;
-        Ok(TranscriptionResponse {
-            text: response.text,
-            extra: response.extra,
-        })
     }
 }
 

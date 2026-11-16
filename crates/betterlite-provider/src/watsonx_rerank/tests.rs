@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::str;
 use std::sync::Arc;
 
 use betterlite_http::proxy::UpstreamResponse;
@@ -16,11 +17,12 @@ use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
 use betterlite_openai::watsonx_auth::transport::WatsonxTransport;
 use rstest::rstest;
 use secrecy::SecretString;
+use serde_json::Number;
 use uuid::Uuid;
 
 use super::WatsonxRerankConfig;
 use super::error::WatsonxRerankError;
-use super::params::{SUPPORTED_COHERE_RERANK_PARAMS, map_cohere_rerank_params};
+use super::params::map_cohere_rerank_params;
 use super::request::transform_rerank_request;
 use crate::api::rerank_contracts::{
     Headers, MapCohereRerankParams, Params, RerankProviderResponse,
@@ -125,7 +127,7 @@ fn response(status_code: u16, body: &[u8]) -> RerankProviderResponse {
 }
 
 fn score(value: f64) -> Score {
-    Score::try_from(serde_json::Number::from_f64(value).unwrap()).unwrap()
+    Score::try_from(Number::from_f64(value).unwrap()).unwrap()
 }
 
 fn tokens(input_tokens: Option<Option<i64>>) -> Option<RerankResponseMeta> {
@@ -137,20 +139,6 @@ fn tokens(input_tokens: Option<Option<i64>>) -> Option<RerankResponseMeta> {
             output_tokens: None,
         })),
     })
-}
-
-#[test]
-fn supported_params_match_litellm() {
-    assert_eq!(
-        SUPPORTED_COHERE_RERANK_PARAMS,
-        [
-            "query",
-            "documents",
-            "top_n",
-            "return_documents",
-            "max_tokens_per_doc"
-        ]
-    );
 }
 
 #[test]
@@ -215,7 +203,7 @@ fn params_map_rejects_wrong_document_shapes(#[case] value: &str) {
     r#"{"api_version":""}"#,
     "https://host/ml/v1/text/rerank?version=2024-03-13"
 )]
-#[case::no_version(r#"{}"#, "https://host/ml/v1/text/rerank?version=2024-03-13")]
+#[case::no_version("{}", "https://host/ml/v1/text/rerank?version=2024-03-13")]
 #[case::null_version(
     r#"{"api_version":null}"#,
     "https://host/ml/v1/text/rerank?version=2024-03-13"
@@ -317,7 +305,7 @@ async fn auth_uses_environment_token() {
 #[case::option(r#"{"zen_api_key":"z"}"#, None, "ZenApiKey z")]
 #[case::option_after_null_token(r#"{"token":null,"zen_api_key":"z"}"#, None, "ZenApiKey z")]
 #[case::empty_token_falls_through(r#"{"token":""}"#, Some(("WATSONX_ZENAPIKEY", "envzen")), "ZenApiKey envzen")]
-#[case::environment( r#"{}"#, Some(("WATSONX_ZENAPIKEY", "envzen")), "ZenApiKey envzen")]
+#[case::environment( "{}", Some(("WATSONX_ZENAPIKEY", "envzen")), "ZenApiKey envzen")]
 #[tokio::test]
 async fn auth_uses_zen_api_key(
     #[case] options: &str,
@@ -562,7 +550,7 @@ fn response_rejects_wrong_shapes(#[case] body: &[u8], #[case] message: &str) {
 }
 
 #[rstest]
-#[case::missing_results(br#"{}"#)]
+#[case::missing_results(b"{}")]
 #[case::null_results(br#"{"results":null}"#)]
 fn response_without_results_fails(#[case] body: &[u8]) {
     let error = failure(body);
@@ -571,7 +559,7 @@ fn response_without_results_fails(#[case] body: &[u8]) {
         error.to_string(),
         format!(
             "No results found in the response={}",
-            String::from_utf8_lossy(body)
+            str::from_utf8(body).unwrap()
         )
     );
 }

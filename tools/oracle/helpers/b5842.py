@@ -9,7 +9,7 @@ from litellm.llms.base_llm.audio_transcription.transformation import (
     AudioTranscriptionRequestData,
 )
 from litellm.llms.watsonx.audio_transcription.transformation import (
-    IBMWatsonXAudioTranscriptionConfig,
+    IBMWatsonXAudioTranscriptionConfig as WatsonxAudio,
 )
 from litellm.llms.watsonx.embed.transformation import IBMWatsonXEmbeddingConfig
 from litellm.llms.watsonx.passthrough.transformation import WatsonxPassthroughConfig
@@ -25,7 +25,6 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 EMPTY: Object = {}
 REQUEST = httpx.Request("POST", "https://localhost")
 KEEP_PARAMS = False
-START = datetime(2024, 1, 1, tzinfo=UTC)
 
 
 class Urls(Protocol):
@@ -48,9 +47,7 @@ class EmbedConfig(Urls, Protocol):
 
 class RerankConfig(Protocol):
     @property
-    def map_cohere_rerank_params(self) -> Callable[
-        [Object, str, bool, str, list[str]], Object
-    ]: ...
+    def map_cohere_rerank_params(self) -> Callable[[Object, str, bool, str, list[str]], Object]: ...
 
     @property
     def validate_environment(self) -> Callable[
@@ -69,11 +66,11 @@ class RerankConfig(Protocol):
 
 class AudioConfig(Urls, Protocol):
     # the request dataclass holds a dict or bytes, so the form comes back through a view
-    def transform_audio_transcription_request(
+    def transform_audio_transcription_request(  # ast-grep-ignore: no-long-names
         self, model: str, audio: tuple[str, bytes, str], params: Object, extra: Object, /
     ) -> AudioTranscriptionRequestData: ...
 
-    def transform_audio_transcription_response(
+    def transform_audio_transcription_response(  # ast-grep-ignore: no-long-names
         self, raw: httpx.Response, /
     ) -> TranscriptionResponse: ...
 
@@ -146,13 +143,11 @@ CONVERTED: IncEx = {
 # BaseConfig.__init__ only passes, and __new__ keeps mypy from reading the untyped call
 EMBED: EmbedConfig = IBMWatsonXEmbeddingConfig.__new__(IBMWatsonXEmbeddingConfig)
 RERANK: RerankConfig = IBMWatsonXRerankConfig()
-AUDIO: AudioConfig = IBMWatsonXAudioTranscriptionConfig.__new__(
-    IBMWatsonXAudioTranscriptionConfig
-)
+AUDIO: AudioConfig = WatsonxAudio.__new__(WatsonxAudio)
 PASSTHROUGH: PassthroughConfig = WatsonxPassthroughConfig()
 LOGGING = Logging(
     model="model", messages=None, stream=False, call_type="embedding",
-    start_time=START, litellm_call_id="call", function_id="function",
+    start_time=datetime(2024, 1, 1, tzinfo=UTC), litellm_call_id="call", function_id="function",
 )
 
 
@@ -162,15 +157,9 @@ def embed(step: EmbedStep) -> JsonValue:
     body = EMBED.transform_embedding_request(step["model"], step["input"], options, EMPTY)
     reply: JsonValue = None
     if (text := step["reply"]) is not None:
+        raw = httpx.Response(200, content=text.encode(), request=REQUEST)
         response = EMBED.transform_embedding_response(
-            step["model"],
-            httpx.Response(200, content=text.encode(), request=REQUEST),
-            EmbeddingResponse(object="list"),
-            LOGGING,
-            None,
-            EMPTY,
-            EMPTY,
-            EMPTY,
+            step["model"], raw, EmbeddingResponse(object="list"), LOGGING, None, EMPTY, EMPTY, EMPTY
         )
         # model and usage details come from the caller's response, so only converted fields compare
         reply = JSON.validate_json(response.model_dump_json(include=CONVERTED))
@@ -196,7 +185,7 @@ def rerank(step: RerankStep) -> JsonValue:
     return {
         "map": mapped,
         "auth": {
-            "headers": {name.lower(): value for name, value in headers.items()},
+            "headers": {name: value for name, value in headers.items()},
             "options": auth_options,
         },
         "request": request,

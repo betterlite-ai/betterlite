@@ -5,6 +5,8 @@ use betterlite_openai::passthrough::transformation::types::{
     PassthroughTarget, PassthroughUrlRequest,
 };
 use betterlite_openai::watsonx_audio::WatsonxAudioConfig;
+// ast-grep-ignore: no-long-names
+use betterlite_openai::watsonx_audio::reply::decode_watsonx_transcription_reply as decode_audio;
 use betterlite_openai::watsonx_auth::WatsonxAuth;
 use betterlite_openai::watsonx_auth::transport::WatsonxTransport;
 use betterlite_openai::watsonx_auth::types::WatsonxParams;
@@ -21,7 +23,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use super::input::Step;
+use super::input::{AudioFile, Step};
 use super::raised::Raised;
 
 type Outcome = Result<Value, Raised>;
@@ -34,22 +36,27 @@ pub(super) fn embed<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> 
     let mut options: WatsonxParams = step.options.clone().into_iter().collect();
     let url = config.get_complete_url(step.api_base.as_deref(), &mut options)?;
     let body = config.transform_embedding_request(&step.model, input, options)?;
-    let mut reply = Value::Null;
-    if let Some(text) = &step.reply {
-        let decoded = decode_watsonx_embedding_reply(text.as_bytes())?;
-        let response = WatsonxEmbeddingConfig::transform_embedding_response(&step.model, decoded)?;
-        let usage = response.usage;
-        reply = json!({
-            "object": response.object,
-            "data": response.data,
-            "usage": {
-                "prompt_tokens": usage.prompt_tokens,
-                "completion_tokens": usage.completion_tokens,
-                "total_tokens": usage.total_tokens,
-            },
-        });
-    }
+    let reply = step
+        .reply
+        .as_deref()
+        .map(|text| embedding_reply(&step.model, text))
+        .transpose()?;
     Ok(json!({"url": url, "request": body, "reply": reply}))
+}
+
+fn embedding_reply(model: &str, text: &str) -> Outcome {
+    let decoded = decode_watsonx_embedding_reply(text.as_bytes())?;
+    let response = WatsonxEmbeddingConfig::transform_embedding_response(model, decoded);
+    let usage = response.usage;
+    Ok(json!({
+        "object": response.object,
+        "data": response.data,
+        "usage": {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        },
+    }))
 }
 
 pub(super) async fn rerank<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> Outcome {
@@ -79,22 +86,21 @@ pub(super) async fn rerank<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &St
         .validate_environment(step.headers.clone(), api_key.as_ref(), &mut auth_options)
         .await?;
     let request = transform_rerank_request(&step.model, mapped.clone(), &auth.environment)?;
-    let mut reply = Value::Null;
-    if let (Some(text), Some(status)) = (&step.reply, step.status) {
-        let raw = RerankProviderResponse {
-            status_code: status,
-            headers: Headers::new(),
-            body: text.as_bytes().to_vec(),
-        };
-        reply = json!(config.transform_rerank_response(&raw)?);
-    }
-    let lowered: Headers = headers
-        .into_iter()
-        .map(|(name, value)| (name.to_lowercase(), value))
-        .collect();
+    let reply = step
+        .reply
+        .as_deref()
+        .zip(step.status)
+        .map(|(text, status)| {
+            config.transform_rerank_response(&RerankProviderResponse {
+                status_code: status,
+                headers: Headers::new(),
+                body: text.as_bytes().to_vec(),
+            })
+        })
+        .transpose()?;
     Ok(json!({
         "map": mapped,
-        "auth": {"headers": lowered, "options": auth_options},
+        "auth": {"headers": headers, "options": auth_options},
         "request": request,
         "reply": reply,
     }))
@@ -103,29 +109,39 @@ pub(super) async fn rerank<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &St
 pub(super) fn audio<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> Outcome {
     let config = WatsonxAudioConfig { auth };
     let url = config.get_complete_url(step.api_base.as_deref(), &step.options)?;
-    let mut request = Value::Null;
-    if let Some(file) = &step.file {
-        let processed = ProcessedAudioFile {
-            file_content: file.content.as_bytes().to_vec(),
-            filename: file.filename.clone(),
-            content_type: file.content_type.clone(),
-        };
-        let built = config.transform_audio_request(&step.model, processed, &step.options)?;
-        let data: Object = built.fields.into_iter().collect();
-        request = json!({
-            "data": data,
-            "file": {
-                "filename": built.file.filename,
-                "content_type": built.file.content_type,
-                "size": built.file.file_content.len(),
-            },
-        });
-    }
-    let mut reply = Value::Null;
-    if let Some(text) = &step.reply {
-        reply = json!(config.transform_audio_response(text.as_bytes())?);
-    }
+    let request = step
+        .file
+        .as_ref()
+        .map(|file| audio_request(&config, step, file))
+        .transpose()?;
+    let reply = step
+        .reply
+        .as_deref()
+        .map(|text| decode_audio(text.as_bytes()))
+        .transpose()?;
     Ok(json!({"url": url, "request": request, "reply": reply}))
+}
+
+fn audio_request<T: WatsonxTransport>(
+    config: &WatsonxAudioConfig<'_, T>,
+    step: &Step,
+    file: &AudioFile,
+) -> Outcome {
+    let processed = ProcessedAudioFile {
+        file_content: file.content.as_bytes().to_vec(),
+        filename: file.filename.clone(),
+        content_type: file.content_type.clone(),
+    };
+    let built = config.transform_audio_request(&step.model, processed, &step.options)?;
+    let data: Object = built.fields.into_iter().collect();
+    Ok(json!({
+        "data": data,
+        "file": {
+            "filename": built.file.filename,
+            "content_type": built.file.content_type,
+            "size": built.file.file_content.len(),
+        },
+    }))
 }
 
 pub(super) fn passthrough<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> Outcome {

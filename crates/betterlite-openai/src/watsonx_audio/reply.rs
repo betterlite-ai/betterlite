@@ -1,6 +1,6 @@
 use serde_json::{Map, Value};
 
-use super::error::WatsonxAudioError;
+use super::error::{WatsonxAudioError, body_text};
 use crate::api::transcription_contract::TranscriptionResponse;
 
 // ast-grep-ignore: no-long-names
@@ -18,7 +18,7 @@ pub fn decode_watsonx_transcription_reply(
     let usage_is_set = fields.get("usage").is_some_and(|usage| !usage.is_null());
     if text.is_none() && !usage_is_set {
         return Err(WatsonxAudioError::MissingFields {
-            body: String::from_utf8_lossy(bytes).into_owned(),
+            body: body_text(bytes),
         });
     }
     fields.entry(String::from("usage")).or_insert(Value::Null);
