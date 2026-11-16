@@ -20,8 +20,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::reasoning_models::DropParams;
 use betterlite_openai::response_events::RawResponse;
 use betterlite_openai::response_params::bundled::BundledReasoningModels;
-use betterlite_openai::response_params::error::ResponseParamsError;
-use betterlite_openai::response_params::params::{ResponsesOptions, ResponsesParams};
+use betterlite_openai::response_params::params::ResponsesOptions;
 use betterlite_openai::response_resources::request::{
     InputItemsOrder, ListInputItemsQuery, ResourceOperation, ResourceRequest,
 };
@@ -83,15 +82,10 @@ fn projected_body(step: &TransformStep) -> Result<Value, Box<HelperError>> {
     Ok(Value::Object(projected))
 }
 pub(super) fn websocket_report(call: &Steps<WebsocketStep>) -> Value {
-    let steps = call
-        .steps
-        .iter()
-        .map(websocket_step)
-        .collect::<Vec<Value>>();
     json!({
         "supports_native_websocket": SUPPORTS_NATIVE_WEBSOCKET,
         "model_in_websocket_url": MODEL_IN_WEBSOCKET_URL,
-        "steps": steps,
+        "steps": call.steps.iter().map(websocket_step).collect::<Vec<Value>>(),
     })
 }
 fn websocket_step(step: &WebsocketStep) -> Value {
@@ -220,10 +214,7 @@ fn map_row(runtime: &Runtime, install: &Install, step: &MapStep) -> Value {
         global: step.global_drop_params,
         request: step.drop_params,
     };
-    map_value(runtime.block_on(map_params(&mut fixture, &options, drop, &mut bundled)))
-}
-fn map_value(mapped: Result<ResponsesParams, ResponseParamsError>) -> Value {
-    match mapped {
+    match runtime.block_on(map_params(&mut fixture, &options, drop, &mut bundled)) {
         Ok(value) => json!({
             "ok": true,
             "value": serde_json::to_value(value).expect("the mapped params serialize"),

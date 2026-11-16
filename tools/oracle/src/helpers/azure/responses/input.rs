@@ -58,15 +58,10 @@ pub(crate) struct ResourceStep {
     pub(crate) endpoint: Endpoint,
     pub(crate) api_base: String,
     pub(crate) response_id: String,
-    #[serde(default)]
     pub(crate) after: Option<String>,
-    #[serde(default)]
     pub(crate) before: Option<String>,
-    #[serde(default)]
     pub(crate) include: Option<Vec<String>>,
-    #[serde(default)]
     pub(crate) limit: Option<i64>,
-    #[serde(default)]
     pub(crate) order: Option<InputItemsOrder>,
 }
 #[derive(Debug, Deserialize)]

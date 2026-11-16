@@ -38,10 +38,10 @@ fn flattened_tools(options: &Object) -> Result<Object, ResponsesError> {
         Some(Json::List(tools)) => tools.clone(),
         Some(_) | None => return Ok(flattened),
     };
-    let mut updated = Vec::with_capacity(tools.len());
-    for tool in &tools {
-        updated.push(flattened_tool(tool)?);
-    }
+    let updated = tools
+        .iter()
+        .map(flattened_tool)
+        .collect::<Result<Vec<_>, _>>()?;
     flattened.insert("tools".to_owned(), Json::List(updated));
     Ok(flattened)
 }
