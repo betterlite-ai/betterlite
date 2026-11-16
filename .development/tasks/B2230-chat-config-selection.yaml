@@ -246,7 +246,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/chat_config_selection*")"
       && grep -lq 'chat_config_selection' tools/oracle/fuzz/corpus/helper_case/chat_config_selection* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_chat_config_selection$/)'
+      run --locked -p betterlite-oracle-context --no-tests=fail -E 'test(/::helper_seeds_select_chat_config_selection$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-openai-family-selection
     why: For provider OPENAI first use B668 o-series predicate and return the OpenAIOSeriesConfig class tag without

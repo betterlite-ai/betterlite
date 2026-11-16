@@ -76,11 +76,12 @@ fn provider_fields(fields: &IndexMap<String, Json>) -> Option<FalImageProviderSp
     (provider != FalImageProviderSpecificFields::default()).then_some(provider)
 }
 
-pub fn decode_fal_image_reply(
+// the permissive record view: the size and JSON checks and the object root, with every field left as sent
+pub fn decode_fal_image_record(
     status: u16,
     headers: &ImageHeaders,
     body: &[u8],
-) -> Result<Vec<FalImage>, FalImageError> {
+) -> Result<IndexMap<String, Json>, FalImageError> {
     if body.len() > MAX_FAL_REPLY_BYTES {
         return Err(FalImageError::ReplyTooLarge {
             status,
@@ -100,6 +101,15 @@ pub fn decode_fal_image_reply(
             headers: headers.clone(),
         });
     };
+    Ok(fields)
+}
+
+pub fn decode_fal_image_reply(
+    status: u16,
+    headers: &ImageHeaders,
+    body: &[u8],
+) -> Result<Vec<FalImage>, FalImageError> {
+    let fields = decode_fal_image_record(status, headers, body)?;
     Ok(fields
         .get("images")
         .map_or_else(Vec::new, fal_images_to_image_objects))

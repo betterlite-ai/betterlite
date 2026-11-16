@@ -242,7 +242,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model_metadata_resolution*")"
       && grep -lq 'model_metadata_resolution' tools/oracle/fuzz/corpus/helper_case/model_metadata_resolution* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_model_metadata_resolution$/)'
+      cargo nextest run --locked -p betterlite-oracle-models --no-tests=fail -E 'test(/::helper_seeds_select_model_metadata_resolution$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-potential-names
     why: With provider None try B174 inference; on any error leave split_model=original and provider unchanged.

@@ -5,12 +5,13 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/compatible-model-limits")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -19,7 +20,7 @@ fn run_case(file: &str) -> Value {
 
 #[test]
 fn helper_seeds_select_compatible_model_limits() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -40,7 +41,7 @@ fn helper_seeds_select_compatible_model_limits() {
 
 #[test]
 fn limits_take_positive_integers_and_clamp_to_the_context() {
-    let limits = run_case("positive-nonbool-and-clamp.yaml");
+    let limits = run_case_file("positive-nonbool-and-clamp.yaml");
     assert_eq!(
         limits[0],
         json!({"max_tokens": 4096_i32, "max_input_tokens": 4096_i32, "max_output_tokens": 1024_i32})
@@ -57,7 +58,7 @@ fn limits_take_positive_integers_and_clamp_to_the_context() {
 
 #[test]
 fn the_first_matching_id_wins_and_any_bad_list_is_empty() {
-    let limits = run_case("first-id-and-empty-list.yaml");
+    let limits = run_case_file("first-id-and-empty-list.yaml");
     assert_eq!(limits[0]["max_tokens"], 10_i32);
     assert_eq!(limits.as_array().unwrap()[1..], vec![json!({}); 7]);
 }

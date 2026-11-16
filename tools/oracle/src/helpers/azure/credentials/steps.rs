@@ -14,7 +14,8 @@ use betterlite_config::sections::azure_credentials::{DeploymentSettings, Raw};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::fixture::{FixtureSources, scripted};
 use super::{HeaderStep, Input, ResponseSource, ResponseStep, TokenStep, source_error};

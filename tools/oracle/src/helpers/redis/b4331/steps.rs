@@ -13,7 +13,7 @@ use tokio::time::sleep;
 
 use super::input::{PostCall, Step};
 use super::scenario::{Handle, Prefetch, Scenario, Target, invalid};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 impl Scenario<'_> {
     pub(crate) async fn step(&mut self, step: &Step) -> Result<(), Box<HelperError>> {

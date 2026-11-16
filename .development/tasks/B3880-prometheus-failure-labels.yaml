@@ -143,13 +143,13 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::failure::(.*::)?prometheus_failure::provider_from_exception::/)'
     - id: provider-from-exception-oracle
       why: Oracle cases for provider-from-exception with unset/fallback/real llm_provider variants must replay through the helper.
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3880::provider_from_exception/)'
+      run: cargo nextest run --locked -p betterlite-oracle-logging --no-tests=fail -E 'test(/^b3880::provider_from_exception/)'
     - id: bounded-model-non-string-collapse
       why: Non-string requested_model must collapse to "other".
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(prometheus_failure::model_cardinality::non_string_collapse)'
     - id: helper-python
       why: The independently invoked MIT helper semantics must match the production functions.
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3880::/)'
+      run: cargo nextest run --locked -p betterlite-oracle-logging --no-tests=fail -E 'test(/^b3880::/)'
     - id: helper-case-corpus
       why: Oracle helper cases and corpus must replay with the new failure labels decoder.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/prometheus-failure)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'

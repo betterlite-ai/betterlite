@@ -11,7 +11,7 @@ checks:
   - id: helper-case-corpus
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_primitives*")"
       && grep -lq 'bedrock_invoke_primitives' tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_primitives* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_invoke_primitives$/)'
+      cargo nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_invoke_primitives$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
   - id: case-base-options
@@ -178,7 +178,7 @@ description: >-
 deviations:
 - what: Use local Hugging Face assets only. A missing Bedrock Llama instruct template raises No chat template found
     without an outbound download; custom_prompt_dict remains a local bypass.
-  why: The download decision remains open for Max. Preserve this branch's actual failure instead of borrowing the
+  why: Hugging Face downloads are not wired in yet. betterlite downloads what LiteLLM downloads, from the same place (decision 2026-10-31), and B9962 wires it in. Preserve this branch's actual failure instead of borrowing the
     fallback from the later factory branch.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5266-L5309
 dod:

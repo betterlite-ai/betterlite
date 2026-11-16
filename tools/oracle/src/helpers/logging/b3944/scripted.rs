@@ -15,7 +15,7 @@ use betterlite_logging::newrelic_metrics::transport::{
 };
 use http::HeaderMap;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::ReplyInput;
 use super::failure;

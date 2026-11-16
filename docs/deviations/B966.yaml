@@ -1,0 +1,9 @@
+task: B966
+deviations:
+  - what: A chat response whose usage is null projects input_tokens=0 and output_tokens=0.
+    why: LiteLLM reads response.usage without a fallback, so a reply that carries no usage raises AttributeError and becomes a 500; no working setup relies on that crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1577
+  - what: A final message iteration carries no output_tokens when completion_tokens is negative, where LiteLLM writes the negative count.
+    why: B968's UsageIteration holds output_tokens as u64, so a negative count cannot be represented; the usage frame itself still reports the negative completion count, and no provider counts negative tokens.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1590
+kept_bugs: []

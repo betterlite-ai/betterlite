@@ -7,6 +7,7 @@ pub(crate) mod globs;
 mod lint_table;
 pub(crate) mod module_tree;
 mod scope;
+pub(crate) mod shared_names;
 mod tests;
 mod tools;
 mod workspace;
@@ -15,8 +16,10 @@ use crate::development::Development;
 use crate::error::GateError;
 use crate::facts::Facts;
 use crate::spec::catalog::BuiltinId;
+use crate::spec::litellm::Litellm;
 use crate::spec::task::Task;
 use crate::validate::validate;
+use crate::yaml::read_yaml;
 
 pub(crate) struct Context<'run> {
     pub(crate) development: &'run Development,
@@ -31,14 +34,21 @@ pub(crate) fn run_builtin(id: BuiltinId, context: &Context<'_>) -> Result<Vec<St
         BuiltinId::Scope => scope::check(context),
         BuiltinId::LintTable => lint_table::check(context),
         BuiltinId::DiffBudget => diff_budget::check(context),
-        BuiltinId::ExpectBudget => Ok(expect_budget::check(
-            context.task.budget.max_new_expects,
-            &context.facts.added_rust_lines,
-            &context.facts.added_python_lines,
-        )),
+        BuiltinId::ExpectBudget => {
+            let litellm: Litellm =
+                read_yaml(&context.development.root.join(".development/litellm.yaml"))?;
+            Ok(expect_budget::check(
+                context.task.budget.max_new_expects,
+                &format!("{}/blob/{}/", litellm.repository, litellm.commit),
+                &context.facts.added_rust_lines,
+                &context.facts.added_python_lines,
+                &context.facts.added_helper_lines,
+            ))
+        }
         BuiltinId::FileSize => file_size::check(context),
         BuiltinId::Crates => crates::check(&context.development.root),
         BuiltinId::ModuleTree => module_tree::check(context),
         BuiltinId::CaseIgnores => case_ignores::check(context),
+        BuiltinId::SharedNames => shared_names::check(context),
     }
 }

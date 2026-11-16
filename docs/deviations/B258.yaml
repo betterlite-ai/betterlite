@@ -16,8 +16,8 @@ deviations:
       downloader. The public counting helpers default use_default_image_token_count to false and may
       fetch in LiteLLM.
     why: >-
-      B009 and the bounded-inputs rule keep request-derived URLs away from outbound calls until Max
-      decides between no remote fetch and the shared SSRF-checked downloader.
+      B5083's SSRF-checked downloader is not wired into this path yet. Request media URLs are
+      fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L408-L443
   - what: >-
