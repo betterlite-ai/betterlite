@@ -1,0 +1,14 @@
+kind: helper
+name: non-dict-parameters-dropped
+call:
+  vertex_veo_request:
+    creates:
+      - model: veo-3.0-fast-generate-001
+        prompt: a cat on a mat
+        api_base: 'https://mock'
+        params: {}
+        extra_body:
+          parameters: not a dict
+    edits: []
+env: {}
+compare: {ignore: []}

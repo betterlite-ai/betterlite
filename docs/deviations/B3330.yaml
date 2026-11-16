@@ -1,0 +1,9 @@
+task: B3330
+deviations:
+  - what: extract_model_from_target_model_names strips and filters empty entries only for comma-separated string input; list input returns its first element unfiltered, so ["", "foo"] answers "" and not "foo".
+    why: LiteLLM splits and filters a string but indexes a list directly, and copying that asymmetry keeps betterlite's answer identical for both input shapes a caller can send.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/utils.py#L8-L13
+  - what: 'video_reference_to_id rejects an id that is present but not text, as {"id": 5} in an object or in a JSON string, with an error that names the id field, where LiteLLM hands the non-text value back unchanged.'
+    why: LiteLLM's video_reference_to_id returns whatever dict.get("id", "") found, and the edit and extension endpoints pass that value to decode_video_id_with_provider outside their try blocks, so the proxy answers 500 internal_server_error for a request it should refuse as bad input. Naming the field lets the routes answer 400 instead, which is the 500-to-4xx fix rule owned-behavior-is-built asks for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/utils.py#L16-L25
+kept_bugs: []
