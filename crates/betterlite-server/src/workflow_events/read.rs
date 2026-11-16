@@ -51,6 +51,8 @@ pub(super) async fn prepare_list<'state>(
     let caller = require_caller(identity)?;
     let take = query_limit(uri)?;
     let (runs, writes) = require_ports(state)?;
-    require_run(runs, run_id, caller.read_scope()).await?;
+    require_run(runs, run_id, caller.read_scope())
+        .await
+        .map_err(EventsError::run_lookup)?;
     Ok((take, writes))
 }

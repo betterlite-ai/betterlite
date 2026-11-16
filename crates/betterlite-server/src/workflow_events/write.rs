@@ -75,6 +75,8 @@ where
     let request: Request = decode_body(body)?;
     let (runs, writes) = require_ports(state)?;
     // a write skips the ownership check only for a full PROXY_ADMIN
-    require_run(runs, run_id, Some(&caller)).await?;
+    require_run(runs, run_id, Some(&caller))
+        .await
+        .map_err(EventsError::run_lookup)?;
     Ok((request, runs, writes))
 }

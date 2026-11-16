@@ -4,6 +4,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use thiserror::Error;
 
+use crate::error_body::json_error;
 use crate::workflow_runs::error::{RunsError, ValidationFailure};
 use crate::workflow_runs::store::StoreError;
 
@@ -17,6 +18,18 @@ pub enum EventsError {
     Conflict,
     #[error("the limit query parameter is out of range")]
     Limit(#[from] LimitIssue),
+    #[error("the workflow store failed during the run lookup")]
+    RunLookup(#[source] StoreError),
+}
+
+impl EventsError {
+    // LiteLLM calls _require_run outside its try block, so a store failure there reaches the unhandled-exception handler
+    pub(super) fn run_lookup(error: RunsError) -> Self {
+        match error {
+            RunsError::Store(source) => Self::RunLookup(source),
+            other => Self::Runs(other),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -91,6 +104,15 @@ impl IntoResponse for EventsError {
     fn into_response(self) -> Response {
         match self {
             Self::Runs(error) => error.into_response(),
+            Self::RunLookup(source) => {
+                tracing::error!(error = ?source, "workflow event run lookup failed");
+                json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error",
+                    "internal_server_error",
+                    "500",
+                )
+            }
             Self::Conflict => (
                 StatusCode::CONFLICT,
                 Json(DetailBody {

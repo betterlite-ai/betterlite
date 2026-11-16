@@ -7,7 +7,8 @@ use rstest::rstest;
 
 use super::support::{
     DetailReply, EventListReply, FailureKind, FakeStore, LocReply, MessageListReply,
-    ValidationReply, get, master, member, member_without_key, proxy_admin, viewer,
+    ValidationReply, assert_unhandled_failure, get, master, member, member_without_key,
+    proxy_admin, viewer,
 };
 use crate::workflow_runs::models::SequenceTable;
 
@@ -298,6 +299,21 @@ async fn a_list_store_failure_is_a_500(#[case] events: bool) {
     };
     let reply = get(Some(&store), Some(&master()), &uri).await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[rstest]
+#[case::events(true)]
+#[case::messages(false)]
+#[tokio::test]
+async fn a_list_run_lookup_failure_is_an_unhandled_500(#[case] events: bool) {
+    let store = Arc::new(FakeStore::failing_as(FailureKind::Read));
+    let uri = if events {
+        events_uri("run-0")
+    } else {
+        messages_uri("run-0")
+    };
+    let reply = get(Some(&store), Some(&master()), &uri).await;
+    assert_unhandled_failure(&reply);
 }
 
 #[rstest]

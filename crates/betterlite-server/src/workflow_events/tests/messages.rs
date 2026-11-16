@@ -6,8 +6,8 @@ use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use rstest::rstest;
 
 use super::support::{
-    DetailReply, FailureKind, FakeStore, LocReply, ValidationReply, master, member, post,
-    proxy_admin, viewer,
+    DetailReply, FailureKind, FakeStore, LocReply, ValidationReply, assert_unhandled_failure,
+    master, member, post, proxy_admin, viewer,
 };
 use crate::workflow_events::error::CONFLICT_DETAIL;
 use crate::workflow_events::models::MessageCreateData;
@@ -158,13 +158,13 @@ async fn a_message_asks_for_a_fresh_number_after_a_collision() {
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     let row: WorkflowMessageRow = serde_json::from_str(&reply.body).unwrap();
-    assert_eq!(row.sequence_number, 2);
+    assert_eq!(row.sequence_number, 6);
     let numbers: Vec<i32> = store
         .attempts()
         .iter()
         .map(|attempt| attempt.sequence_number)
         .collect();
-    assert_eq!(numbers, [0, 1, 2]);
+    assert_eq!(numbers, [0, 3, 6]);
     assert_eq!(store.message_writes().len(), 1);
 }
 
@@ -183,7 +183,12 @@ async fn five_message_collisions_answer_409_without_a_sixth_attempt() {
     assert_eq!(reply.status, StatusCode::CONFLICT);
     let detail: DetailReply = serde_json::from_str(&reply.body).unwrap();
     assert_eq!(detail.detail, CONFLICT_DETAIL);
-    assert_eq!(store.attempts().len(), 5);
+    let numbers: Vec<i32> = store
+        .attempts()
+        .iter()
+        .map(|attempt| attempt.sequence_number)
+        .collect();
+    assert_eq!(numbers, [0, 3, 6, 9, 12]);
     assert!(store.message_writes().is_empty());
 }
 
@@ -201,6 +206,19 @@ async fn a_message_write_failure_is_a_500_without_the_cause() {
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     let detail: DetailReply = serde_json::from_str(&reply.body).unwrap();
     assert_eq!(detail.detail, "Internal server error");
+}
+
+#[tokio::test]
+async fn a_message_run_lookup_failure_is_an_unhandled_500() {
+    let store = Arc::new(FakeStore::failing_as(FailureKind::Read));
+    let reply = post(
+        Some(&store),
+        Some(&master()),
+        "/v1/workflows/runs/run-0/messages",
+        &a_message(),
+    )
+    .await;
+    assert_unhandled_failure(&reply);
 }
 
 #[rstest]

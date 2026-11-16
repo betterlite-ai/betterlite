@@ -29,6 +29,8 @@ const BASE_SECONDS: i64 = 1_700_000_000;
 const READ_FAILURE: &str = "connection reset";
 const WRITE_FAILURE: &str = "the event write rolled back";
 const LIST_FAILURE: &str = "the event read failed";
+// a competing writer lands this far ahead, so only a fresh MAX+1 reaches past it
+const COMPETING_GAP: i32 = 2;
 
 pub(super) struct Reply {
     pub(super) status: StatusCode,
@@ -70,6 +72,30 @@ pub(super) struct EventListReply {
 pub(super) struct MessageListReply {
     pub(super) messages: Vec<WorkflowMessageRow>,
     pub(super) count: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ErrorReply {
+    pub(super) error: ErrorBody,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ErrorBody {
+    pub(super) message: String,
+    #[serde(rename = "type")]
+    pub(super) error_type: String,
+    pub(super) param: Option<String>,
+    pub(super) code: String,
+}
+
+// the body LiteLLM's unhandled-exception handler returns when the run lookup itself fails
+pub(super) fn assert_unhandled_failure(reply: &Reply) {
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    let parsed: ErrorReply = serde_json::from_str(&reply.body).unwrap();
+    assert_eq!(parsed.error.message, "Internal server error");
+    assert_eq!(parsed.error.error_type, "internal_server_error");
+    assert!(parsed.error.param.is_none());
+    assert_eq!(parsed.error.code, "500");
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -208,7 +234,7 @@ impl FakeStore {
         }
     }
 
-    // the attempt is recorded first, and a configured collision stands in for the writer that won
+    // the attempt is recorded first; a collision stands in for a competing writer that already took a later number
     fn record_attempt(
         &self,
         table: SequenceTable,
@@ -381,7 +407,7 @@ impl WorkflowEventStore for FakeStore {
                 &data.run_id,
                 &data.event_type,
                 &data.step_name,
-                data.sequence_number,
+                data.sequence_number + COMPETING_GAP,
                 None,
             );
             inner.events.push(taken);
@@ -414,7 +440,14 @@ impl WorkflowEventStore for FakeStore {
         let (mut inner, collides) =
             self.record_attempt(SequenceTable::Messages, data.sequence_number, None);
         if collides {
-            push_message(&mut inner, data);
+            let ahead = MessageCreateData {
+                run_id: data.run_id.clone(),
+                role: data.role.clone(),
+                content: data.content.clone(),
+                sequence_number: data.sequence_number + COMPETING_GAP,
+                session_id: data.session_id.clone(),
+            };
+            push_message(&mut inner, &ahead);
             return Err(WriteError::SequenceTaken);
         }
         inner.message_writes.push(data.clone());

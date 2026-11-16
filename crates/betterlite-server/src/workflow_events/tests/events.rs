@@ -7,8 +7,8 @@ use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use rstest::rstest;
 
 use super::support::{
-    Attempt, DetailReply, FailureKind, FakeStore, LocReply, ValidationReply, master, member, post,
-    proxy_admin, viewer,
+    Attempt, DetailReply, FailureKind, FakeStore, LocReply, ValidationReply,
+    assert_unhandled_failure, master, member, post, proxy_admin, viewer,
 };
 use crate::workflow_events::error::CONFLICT_DETAIL;
 use crate::workflow_events::models::EventCreateData;
@@ -170,13 +170,13 @@ async fn an_event_asks_for_a_fresh_number_after_a_collision() {
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     let row: WorkflowEventRow = serde_json::from_str(&reply.body).unwrap();
-    assert_eq!(row.sequence_number, 1);
+    assert_eq!(row.sequence_number, 3);
     let numbers: Vec<i32> = store
         .attempts()
         .iter()
         .map(|attempt| attempt.sequence_number)
         .collect();
-    assert_eq!(numbers, [0, 1]);
+    assert_eq!(numbers, [0, 3]);
     assert_eq!(store.event_writes().len(), 1);
 }
 
@@ -194,8 +194,13 @@ async fn four_collisions_still_land_on_the_fifth_attempt() {
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     let row: WorkflowEventRow = serde_json::from_str(&reply.body).unwrap();
-    assert_eq!(row.sequence_number, 4);
-    assert_eq!(store.attempts().len(), 5);
+    assert_eq!(row.sequence_number, 12);
+    let numbers: Vec<i32> = store
+        .attempts()
+        .iter()
+        .map(|attempt| attempt.sequence_number)
+        .collect();
+    assert_eq!(numbers, [0, 3, 6, 9, 12]);
 }
 
 #[tokio::test]
@@ -218,7 +223,7 @@ async fn five_collisions_answer_409_without_a_sixth_attempt() {
         .iter()
         .map(|attempt| attempt.sequence_number)
         .collect();
-    assert_eq!(numbers, [0, 1, 2, 3, 4]);
+    assert_eq!(numbers, [0, 3, 6, 9, 12]);
     assert!(store.event_writes().is_empty());
     assert_eq!(store.run_status(&run_id).as_deref(), Some("running"));
 }
@@ -240,7 +245,7 @@ async fn an_event_write_failure_is_a_500_without_the_cause() {
 }
 
 #[tokio::test]
-async fn an_event_run_lookup_failure_is_a_500() {
+async fn an_event_run_lookup_failure_is_an_unhandled_500() {
     let store = Arc::new(FakeStore::failing_as(FailureKind::Read));
     let reply = post(
         Some(&store),
@@ -249,7 +254,7 @@ async fn an_event_run_lookup_failure_is_a_500() {
         &an_event("step.started"),
     )
     .await;
-    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_unhandled_failure(&reply);
 }
 
 #[rstest]
