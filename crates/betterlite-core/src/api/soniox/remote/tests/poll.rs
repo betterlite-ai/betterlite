@@ -8,9 +8,11 @@ use rust_decimal::prelude::FromPrimitive as _;
 use super::support::{
     Clock, Outcome, RecordedBody, Script, TIMEOUT, auth, options, prepared, remote,
 };
+use crate::api::soniox::prepare::Prepared;
 use crate::api::soniox::prepare::options::HandlerOptions;
 use crate::api::soniox::prepare::response::TranscriptionMeta;
 use crate::api::soniox::remote::error::RemoteError;
+use crate::api::soniox::remote::exchange::interval;
 use crate::api::soniox::remote::poll::poll_until_completed;
 
 async fn poll_with(
@@ -239,6 +241,45 @@ async fn poll_reports_a_header_the_request_cannot_carry() {
     };
     assert_eq!(name, "x-bad");
     assert!(transport.calls().is_empty());
+}
+
+#[tokio::test]
+async fn poll_reports_a_header_name_the_request_cannot_carry() {
+    let transport = Script::new(vec![completed()]);
+    let sleeper = Clock::default();
+    let ready = prepared(options(), &[("bad name", "value")]);
+    let error = poll_until_completed(&remote(&transport, &sleeper, &ready), "job-1")
+        .await
+        .unwrap_err();
+    let RemoteError::HeaderName { name, .. } = error else {
+        panic!("a header name a request cannot carry must fail before the request is sent");
+    };
+    assert_eq!(name, "bad name");
+    assert!(transport.calls().is_empty());
+}
+
+#[tokio::test]
+async fn poll_reports_an_endpoint_it_cannot_send_to() {
+    let transport = Script::new(vec![completed()]);
+    let sleeper = Clock::default();
+    let ready = Prepared {
+        api_base: "not a url".to_owned(),
+        ..prepared(options(), &auth())
+    };
+    let error = poll_until_completed(&remote(&transport, &sleeper, &ready), "job-1")
+        .await
+        .unwrap_err();
+    let RemoteError::Url { url, .. } = error else {
+        panic!("an endpoint that is not a URL must fail before the request is sent");
+    };
+    assert_eq!(url, "not a url/v1/transcriptions/job-1");
+    assert!(transport.calls().is_empty());
+}
+
+#[test]
+fn interval_refuses_a_negative_span() {
+    let error = interval(Decimal::NEGATIVE_ONE).unwrap_err();
+    assert!(matches!(error, RemoteError::Interval { .. }));
 }
 
 #[tokio::test]

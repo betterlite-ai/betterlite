@@ -149,6 +149,20 @@ async fn upload_reports_the_missing_authorization_header() {
 }
 
 #[tokio::test]
+async fn upload_reports_a_header_value_the_request_cannot_carry() {
+    let transport = Script::new(Vec::new());
+    let sleeper = Clock::default();
+    let ready = prepared(options(), &[("Authorization", "line\nbreak")]);
+    let soniox = remote(&transport, &sleeper, &ready);
+    let error = upload_file(&soniox, &audio()).await.unwrap_err();
+    let RemoteError::HeaderValue { name, .. } = error else {
+        panic!("a header value a request cannot carry must fail before the request is sent");
+    };
+    assert_eq!(name, "Authorization");
+    assert!(transport.calls().is_empty());
+}
+
+#[tokio::test]
 async fn upload_propagates_a_transport_failure_without_retrying() {
     let transport = Script::new(vec![
         Outcome::Fail(TransportError::Closed),

@@ -3,7 +3,7 @@ import base64
 from collections.abc import Callable, Coroutine
 from functools import partial
 from types import SimpleNamespace
-from typing import Final, Generic, Literal, Protocol, TypeAlias, TypeVar, TypedDict, cast
+from typing import Final, Generic, Literal, Protocol, TypeAlias, TypedDict, TypeVar, cast
 
 import httpx
 import litellm
