@@ -21,7 +21,7 @@ pub(crate) mod capture;
 mod child;
 pub(crate) mod embedding_executor;
 pub mod error;
-pub(crate) mod file_azure_storage;
+pub mod file_azure_storage;
 pub(crate) mod messages_header_stream;
 pub mod messages_stream_logging;
 pub(crate) mod native;
