@@ -1,0 +1,15 @@
+task: B3156
+deviations:
+  - what: cache_key returns a key for a pull whose list response had no body key, where LiteLLM returns None because body is not in model_fields_set.
+    why: GitHubPullListItem (B3152, crates/betterlite-server/src/roi_github/models.rs, outside this task's scope) stores body as Option<String> with no field presence, so an absent key and an explicit null both read as None. GitHub's pull list always sends the body key, so only a GitHub-compatible server that omits it sees the difference, and the key it gets is the one a null body would get.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/pull_cache.py#L17
+  - what: Reports that block publication (every repository unreadable, no pull requests from the readable ones, no readable PR metadata, no estimate scored) return a module-local ReportBlocked error whose message is LiteLLM's text, where LiteLLM raises github.SourceError with that text.
+    why: SourceError (B3152) is a closed enum of transport and pagination failures with no message variant, and roi_github/error.rs is outside this task's scope; the messages and the inputs that fail are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L268-L313
+  - what: estimate_with_fallback turns an EstimatorError into the error estimate, where LiteLLM catches SourceError.
+    why: B3154 raises EstimatorError with LiteLLM's fixed message instead of SourceError, so the fallback reasoning text is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L198-L210
+kept_bugs:
+  - what: read_repositories with no selected repositories raises the "could not read any selected repository" error, because zero unavailable repositories equals zero selected ones.
+    why: A working setup cannot reach it with valid settings, and the message is what LiteLLM returns for the same input, so the comparison is copied as written.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L270-L275
