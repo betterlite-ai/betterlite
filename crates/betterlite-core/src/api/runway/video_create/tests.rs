@@ -279,6 +279,8 @@ fn timestamps_decode_offsets_and_zero_everything_else() {
         1_762_897_730
     );
     assert_eq!(parse_timestamp(Some(&text("1969-12-31T23:59:59.5Z"))), 0);
+    assert_eq!(parse_timestamp(Some(&text("1969-12-31T23:59:59Z"))), -1);
+    assert_eq!(parse_timestamp(Some(&text("1970-01-01T00:00:00.5Z"))), 0);
     assert_eq!(parse_timestamp(Some(&text("yesterday"))), 0);
     assert_eq!(parse_timestamp(Some(&text(""))), 0);
     assert_eq!(parse_timestamp(Some(&Json::Null)), 0);
@@ -379,6 +381,7 @@ fn request_fields_reach_the_reply_and_colons_become_x_in_the_size() {
 #[case::below_1080p("1999:2000", Some("1080p"))]
 #[case::exactly_4000000("2000:2000", Some("4k"))]
 #[case::zero("0:0", Some("480p"))]
+#[case::single_zero_side("0:720", Some("480p"))]
 #[case::leading_zeros("0800:0750", Some("720p"))]
 #[case::not_a_ratio("1280", None)]
 #[case::empty_side(":720", None)]
@@ -462,6 +465,7 @@ fn progress_rounds_half_even_and_clamps(#[case] progress: f64, #[case] expected:
 fn progress_clamps_non_finite_shares() {
     assert_eq!(progress_percent(f64::NAN), 0);
     assert_eq!(progress_percent(f64::INFINITY), 100);
+    assert_eq!(progress_percent(f64::NEG_INFINITY), 0);
 }
 
 #[test]

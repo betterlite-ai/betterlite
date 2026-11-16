@@ -56,7 +56,12 @@ pub fn progress_percent(progress: f64) -> i64 {
     let scaled =
         Decimal::from_f64(progress).and_then(|value| value.checked_mul(Decimal::ONE_HUNDRED));
     let Some(scaled) = scaled else {
-        return if progress > 0.0 { 100 } else { 0 };
+        // a share Decimal cannot hold keeps its sign, and a NaN share counts as no progress
+        return if progress.is_nan() || progress.is_sign_negative() {
+            0
+        } else {
+            100
+        };
     };
     let rounded = scaled.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
     // the clamp leaves a whole number in range, so the conversion always fits

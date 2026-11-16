@@ -440,11 +440,11 @@ fn replays_the_runway_task_corpus(#[files("fuzz/corpus/runway_task/*")] path: Pa
     if let Ok(task) = decode_runway_task(&bytes) {
         assert_eq!(str::from_utf8(&bytes).map(str::len), Ok(bytes.len()));
         drop(task.state());
-        drop(task.created_at.value());
-        drop(task.completed_at.value());
-        drop(task.estimated_credits());
+        drop(task.created_at.value().cloned());
+        drop(task.completed_at.value().cloned());
+        drop(task.estimated_credits().cloned());
         drop(task.failure.or_default("unknown"));
         drop(task.failure_code.or_default("unknown"));
-        drop(task.progress);
+        drop(task.progress.to_string());
     }
 }
