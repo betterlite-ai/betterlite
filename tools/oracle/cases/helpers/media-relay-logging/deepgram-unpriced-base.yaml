@@ -12,6 +12,8 @@ call:
         kwargs: {}
         catalog:
           deepgram/streaming/redact: {litellm_provider: deepgram, input_cost_per_second: 0.00003333}
+        cost_discount_config: {}
+        cost_margin_config: {}
     fal_passthroughs: []
 env: {}
 compare: {ignore: []}

@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
-
-use betterlite_core::api::media_relay_logging::deepgram::{
-    DeepgramListenRequest, deepgram_listen_outcome,
+use betterlite_config::cost_adjustments::{
+    AdjustmentKind, CostAdjustmentMap, resolve_adjustment_entries,
 };
+use betterlite_core::api::media_relay_logging::deepgram::DeepgramListenRequest;
 use betterlite_core::api::media_relay_logging::fal::{
     FalPassthroughRequest, fal_ai_passthrough_outcome,
 };
@@ -12,15 +11,16 @@ use betterlite_core::api::media_relay_logging::routes::{
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
-use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
-use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
+use self::services::{Adjustments, listen_outcome, registry};
 use crate::helpers::{Helper, HelperError, HelperResult};
+
+mod services;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -51,6 +51,10 @@ struct DeepgramCall {
     kwargs: IndexMap<String, Json>,
     #[serde(default)]
     catalog: IndexMap<String, Json>,
+    #[serde(default)]
+    cost_discount_config: CostAdjustmentMap,
+    #[serde(default)]
+    cost_margin_config: CostAdjustmentMap,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,46 +70,6 @@ struct FalCall {
     catalog: IndexMap<String, Json>,
     #[serde(default)]
     queue_base: Option<String>,
-}
-
-// The case's catalog stands in for litellm.model_cost, so a raw lookup is the key and an effective one is provider-qualified.
-struct CaseLookup {
-    entries: BTreeMap<String, PriceRecord>,
-}
-
-impl PriceLookup for CaseLookup {
-    fn effective_model_info(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<PriceRecord> {
-        let scoped =
-            custom_llm_provider.and_then(|name| self.entries.get(&format!("{name}/{model}")));
-        scoped.or_else(|| self.entries.get(model)).cloned()
-    }
-
-    fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
-        self.entries.get(key).cloned()
-    }
-
-    fn effective_priced_model(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<PricedModel> {
-        let record = self.effective_model_info(model, custom_llm_provider)?;
-        Some(PricedModel {
-            record,
-            tiered_pricing: Vec::new(),
-            off_peak_pricing: None,
-            off_peak_cache_read_present: false,
-        })
-    }
-}
-
-struct Registry {
-    catalog: ModelCatalog,
-    lookup: CaseLookup,
 }
 
 pub(crate) struct Op;
@@ -141,18 +105,23 @@ impl Helper for Op {
     }
 }
 
-fn registry(entries: &IndexMap<String, Json>) -> Result<Registry, Box<HelperError>> {
-    let bytes = serde_json::to_vec(entries).map_err(failure)?;
-    let catalog = ModelCatalog::parse(&bytes, UnknownFields::Reject).map_err(failure)?;
-    let lookup = CaseLookup {
-        entries: serde_json::from_slice(&bytes).map_err(failure)?,
-    };
-    Ok(Registry { catalog, lookup })
-}
-
 // What the relay handler leaves for the spend logger: the response text, the billed duration and its cost.
 fn deepgram_answer(call: &DeepgramCall) -> Result<Value, Box<HelperError>> {
-    let registry = registry(&call.catalog)?;
+    let registry = registry(&call.catalog).map_err(failure)?;
+    let adjustments = Adjustments {
+        discount: resolve_adjustment_entries(
+            AdjustmentKind::Discount,
+            "litellm_settings.cost_discount_config",
+            call.cost_discount_config.clone(),
+        )
+        .map_err(failure)?,
+        margin: resolve_adjustment_entries(
+            AdjustmentKind::Margin,
+            "litellm_settings.cost_margin_config",
+            call.cost_margin_config.clone(),
+        )
+        .map_err(failure)?,
+    };
     let kwargs = PassThroughLoggingKwargs {
         entries: call.kwargs.clone(),
     };
@@ -161,9 +130,11 @@ fn deepgram_answer(call: &DeepgramCall) -> Result<Value, Box<HelperError>> {
         messages: &call.messages,
         kwargs: &kwargs,
         catalog: &registry.catalog,
-        lookup: &registry.lookup,
     };
-    let listen = deepgram_listen_outcome(&request).map_err(failure)?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .map_err(failure)?;
+    let listen = runtime.block_on(listen_outcome(&registry, &adjustments, &request))?;
     let spend = listen.spend;
     Ok(json!({
         "text": transcript_text(&listen.outcome),
@@ -177,7 +148,7 @@ fn deepgram_answer(call: &DeepgramCall) -> Result<Value, Box<HelperError>> {
 
 // What the relay handler leaves for the spend logger: the image urls, the model and the submission's cost.
 fn fal_answer(call: &FalCall) -> Result<Value, Box<HelperError>> {
-    let registry = registry(&call.catalog)?;
+    let registry = registry(&call.catalog).map_err(failure)?;
     let kwargs = PassThroughLoggingKwargs {
         entries: call.kwargs.clone(),
     };

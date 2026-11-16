@@ -15,6 +15,8 @@ call:
           deepgram/streaming/nova-3: {litellm_provider: deepgram, input_cost_per_second: 0.00008}
           deepgram/streaming/redact: {litellm_provider: deepgram, input_cost_per_second: 0.00003333}
           deepgram/streaming/diarize: {litellm_provider: deepgram, input_cost_per_second: 0.00001}
+        cost_discount_config: {}
+        cost_margin_config: {}
     fal_passthroughs: []
 env: {}
 compare: {ignore: []}

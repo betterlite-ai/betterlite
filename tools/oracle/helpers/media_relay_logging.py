@@ -26,6 +26,8 @@ class DeepgramCall(TypedDict):
     messages: list[dict[str, JsonValue]]
     kwargs: dict[str, JsonValue]
     catalog: dict[str, dict[str, JsonValue]]
+    cost_discount_config: dict[str, float]
+    cost_margin_config: dict[str, float | dict[str, float]]
 
 
 class FalCall(TypedDict):
@@ -118,16 +120,22 @@ def image_urls(result: HandlerResult) -> list[JsonValue]:
 
 def deepgram_answer(call: DeepgramCall) -> JsonValue:
     litellm.model_cost = dict(call["catalog"])
+    litellm.cost_discount_config = call["cost_discount_config"]
+    litellm.cost_margin_config = call["cost_margin_config"]
     logging_obj = make_logging()
     handler = deepgram_listen.DeepgramListenPassthroughLoggingHandler()
-    returned = LoggedAnswer.model_validate(
-        handler.deepgram_listen_passthrough_handler(
-            websocket_messages=call["messages"],
-            logging_obj=logging_obj,
-            upstream_url=call["upstream_url"],
-            kwargs=call["kwargs"],
+    try:
+        returned = LoggedAnswer.model_validate(
+            handler.deepgram_listen_passthrough_handler(
+                websocket_messages=call["messages"],
+                logging_obj=logging_obj,
+                upstream_url=call["upstream_url"],
+                kwargs=call["kwargs"],
+            )
         )
-    )
+    finally:
+        litellm.cost_discount_config = {}
+        litellm.cost_margin_config = {}
     details = RecordedLogging.model_validate(logging_obj).model_call_details
     audio_seconds = deepgram_listen_audio_seconds(call["messages"])
     channels = deepgram_listen_channel_count(call["messages"], call["upstream_url"])

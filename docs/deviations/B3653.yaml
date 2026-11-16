@@ -36,11 +36,11 @@ deviations:
       value, the same rules the token cost leaves follow, so a stringly typed rate still prices.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/cost_calculation.py#L78-L87
   - what: >-
-      A registry entry that cannot be priced is a typed error inside the pricing leaf, which the handler logs at
-      debug and turns into no cost, where LiteLLM's completion_cost raises and the handler catches the exception
-      and logs it at debug. Either way the spend row keeps its model and provider with a null cost.
-    why: the cost leaves here return Result instead of raising, so the handler catches DurationCostError and keeps
-      the spend row the way the source's except clause does.
+      A registry entry that cannot be priced makes completion_cost return a typed error, which the handler logs at
+      debug and turns into no cost, where LiteLLM's completion_cost raises and the handler catches the exception and
+      logs it at debug. Either way the spend row keeps its model and provider with a null cost.
+    why: completion_cost here returns Result instead of raising, so the handler matches the error and keeps the
+      spend row the way the source's except clause does.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/deepgram_listen_passthrough_logging_handler.py#L25-L35
   - what: >-
       An upstream listen URL that does not parse is a typed target error here, where LiteLLM reads every query
