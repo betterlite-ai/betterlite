@@ -72,16 +72,32 @@ impl DictAccess for VideoObject {
                 VideoKind::Video => "video".to_owned(),
             })),
             "status" => Some(Json::Text(self.status.clone())),
-            "created_at" => Some(optional_integer(self.created_at)),
-            "completed_at" => Some(optional_integer(self.completed_at)),
-            "expires_at" => Some(optional_integer(self.expires_at)),
-            "error" => Some(optional_object(self.error.as_ref())),
-            "progress" => Some(optional_integer(self.progress)),
-            "remixed_from_video_id" => Some(optional_text(self.remixed_from_video_id.as_deref())),
-            "seconds" => Some(optional_text(self.seconds.as_deref())),
-            "size" => Some(optional_text(self.size.as_deref())),
-            "model" => Some(optional_text(self.model.as_deref())),
-            "usage" => Some(optional_object(self.usage.as_ref())),
+            "created_at" => Some(
+                self.created_at
+                    .map_or(Json::Null, |number| Json::Number(Number::from(number))),
+            ),
+            "completed_at" => Some(
+                self.completed_at
+                    .map_or(Json::Null, |number| Json::Number(Number::from(number))),
+            ),
+            "expires_at" => Some(
+                self.expires_at
+                    .map_or(Json::Null, |number| Json::Number(Number::from(number))),
+            ),
+            "error" => Some(self.error.clone().map_or(Json::Null, Json::Object)),
+            "progress" => Some(
+                self.progress
+                    .map_or(Json::Null, |number| Json::Number(Number::from(number))),
+            ),
+            "remixed_from_video_id" => Some(
+                self.remixed_from_video_id
+                    .clone()
+                    .map_or(Json::Null, Json::Text),
+            ),
+            "seconds" => Some(self.seconds.clone().map_or(Json::Null, Json::Text)),
+            "size" => Some(self.size.clone().map_or(Json::Null, Json::Text)),
+            "model" => Some(self.model.clone().map_or(Json::Null, Json::Text)),
+            "usage" => Some(self.usage.clone().map_or(Json::Null, Json::Object)),
             HIDDEN_PARAMS => Some(Json::Object(self.hidden_params.clone())),
             _ => None,
         }
@@ -103,26 +119,5 @@ impl DictAccess for CharacterObject {
             HIDDEN_PARAMS => Some(Json::Object(self.hidden_params.clone())),
             _ => None,
         }
-    }
-}
-
-fn optional_integer(value: Option<i64>) -> Json {
-    match value {
-        Some(number) => Json::Number(Number::from(number)),
-        None => Json::Null,
-    }
-}
-
-fn optional_text(value: Option<&str>) -> Json {
-    match value {
-        Some(text) => Json::Text(text.to_owned()),
-        None => Json::Null,
-    }
-}
-
-fn optional_object(value: Option<&IndexMap<String, Json>>) -> Json {
-    match value {
-        Some(fields) => Json::Object(fields.clone()),
-        None => Json::Null,
     }
 }

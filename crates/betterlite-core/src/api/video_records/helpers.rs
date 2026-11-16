@@ -24,9 +24,17 @@ pub fn encode_character_id_in_response(
             character.id = encode_character_id(&character.id, custom_llm_provider, model_id);
             Ok(())
         }
-        CharacterResponse::Fields(fields) => {
-            encode_fields_character_id(fields, custom_llm_provider, model_id)
-        }
+        CharacterResponse::Fields(fields) => match fields.get(ID_FIELD) {
+            None | Some(Json::Null) => Ok(()),
+            Some(Json::Text(character_id)) => {
+                let encoded = encode_character_id(character_id, custom_llm_provider, model_id);
+                fields.insert(ID_FIELD.to_owned(), Json::Text(encoded));
+                Ok(())
+            }
+            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+                Err(VideoRecordError::NotText { field: ID_FIELD })
+            }
+        },
     }
 }
 
@@ -40,27 +48,45 @@ pub fn extract_model_from_target_model_names(
             .map(str::trim)
             .find(|name| !name.is_empty())
             .map(str::to_owned)),
-        Json::List(names) => first_model(names),
+        Json::List(names) => match names.first() {
+            Some(Json::Text(name)) => Ok(Some(name.clone())),
+            Some(Json::Null) | None => Ok(None),
+            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+                Err(VideoRecordError::NotText {
+                    field: "target_model_names",
+                })
+            }
+        },
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => Ok(None),
     }
 }
 
 // None is LiteLLM's answer for an object whose id is an explicit null: get("id", "") hands the null back.
 pub fn video_reference_to_id(video_reference: &Json) -> Result<Option<String>, VideoRecordError> {
-    match video_reference {
-        Json::Object(fields) => id_of(fields),
-        Json::Text(text) => {
-            let Ok(parsed) = serde_json::from_str::<Json>(text) else {
-                return Ok(Some(text.clone()));
-            };
-            match parsed {
-                Json::Object(fields) => id_of(&fields),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                    Ok(Some(text.clone()))
-                }
-            }
+    let text = match video_reference {
+        Json::Text(text) => Some(text),
+        Json::Object(_) | Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
+    };
+    let parsed = text.and_then(|text| serde_json::from_str::<Json>(text).ok());
+    let fields = match video_reference {
+        Json::Object(fields) => Some(fields),
+        Json::Text(_) => match parsed.as_ref() {
+            Some(Json::Object(fields)) => Some(fields),
+            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
+            | None => None,
+        },
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
+    };
+    let Some(fields) = fields else {
+        return Ok(Some(text.cloned().unwrap_or_default()));
+    };
+    match fields.get(ID_FIELD) {
+        Some(Json::Text(id)) => Ok(Some(id.clone())),
+        Some(Json::Null) => Ok(None),
+        None => Ok(Some(String::new())),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(VideoRecordError::NotText { field: ID_FIELD })
         }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => Ok(Some(String::new())),
     }
 }
 
@@ -84,29 +110,6 @@ pub fn get_custom_provider_from_data(
     }
 }
 
-fn first_model(names: &[Json]) -> Result<Option<String>, VideoRecordError> {
-    match names.first() {
-        Some(Json::Text(name)) => Ok(Some(name.clone())),
-        Some(Json::Null) | None => Ok(None),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(VideoRecordError::NotText {
-                field: "target_model_names",
-            })
-        }
-    }
-}
-
-fn id_of(fields: &IndexMap<String, Json>) -> Result<Option<String>, VideoRecordError> {
-    match fields.get(ID_FIELD) {
-        Some(Json::Text(id)) => Ok(Some(id.clone())),
-        Some(Json::Null) => Ok(None),
-        None => Ok(Some(String::new())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(VideoRecordError::NotText { field: ID_FIELD })
-        }
-    }
-}
-
 fn provider_from_extra_body(text: &str) -> Option<String> {
     match serde_json::from_str::<Json>(text) {
         Ok(Json::Object(fields)) => extra_body_provider(&fields),
@@ -121,23 +124,5 @@ fn extra_body_provider(fields: &IndexMap<String, Json>) -> Option<String> {
         Some(Json::Text(provider)) => Some(provider.clone()),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => None,
-    }
-}
-
-fn encode_fields_character_id(
-    fields: &mut IndexMap<String, Json>,
-    custom_llm_provider: &str,
-    model_id: Option<&str>,
-) -> Result<(), VideoRecordError> {
-    match fields.get(ID_FIELD) {
-        None | Some(Json::Null) => Ok(()),
-        Some(Json::Text(character_id)) => {
-            let encoded = encode_character_id(character_id, custom_llm_provider, model_id);
-            fields.insert(ID_FIELD.to_owned(), Json::Text(encoded));
-            Ok(())
-        }
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(VideoRecordError::NotText { field: ID_FIELD })
-        }
     }
 }
