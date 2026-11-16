@@ -9,7 +9,7 @@ deviations:
   - what: A prompts value that is not a list, or an entry that is not a mapping, is a config error naming the key. LiteLLM fails later with a TypeError or a validation error.
     why: A 4xx-style startup refusal that names the key replaces an unhandled exception.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7027-L7034
-  - what: The os.environ walk over prompt entries stops at a fixed 100 levels and ignores DEFAULT_MAX_RECURSE_DEPTH.
-    why: B3662's guardrail walk fixed the same cap, and no working prompt config nests anywhere near it; the cap only guards against a runaway config.
+  - what: The os.environ walk over prompt entries stops at a fixed 100 levels, ignores DEFAULT_MAX_RECURSE_DEPTH and logs no warning when it stops.
+    why: B3662's guardrail walk fixed the same cap without a warning, and no working prompt config nests anywhere near it; the cap only guards against a runaway config.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85
 kept_bugs: []
