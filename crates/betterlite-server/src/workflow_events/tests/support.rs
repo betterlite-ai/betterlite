@@ -483,12 +483,9 @@ impl WorkflowEventStore for FakeStore {
         take: u16,
     ) -> Result<Vec<WorkflowMessageRow>, StoreError> {
         let data = self.record_list(SequenceTable::Messages, run_id, take)?;
-        let Some(held) = data.messages.get(run_id) else {
-            return Ok(Vec::new());
-        };
-        let rows: Vec<WorkflowMessageRow> = held.iter().take(usize::from(take)).cloned().collect();
-        drop(data);
-        Ok(rows)
+        Ok(data.messages.get(run_id).map_or_else(Vec::new, |held| {
+            held.iter().take(usize::from(take)).cloned().collect()
+        }))
     }
 }
 
