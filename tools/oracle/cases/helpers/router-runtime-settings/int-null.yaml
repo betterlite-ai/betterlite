@@ -1,0 +1,12 @@
+kind: helper
+name: router-runtime-settings-int-null
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["cooldown_time", null]
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/error/message, why: "Python raises its own exception text; betterlite writes its own message"}

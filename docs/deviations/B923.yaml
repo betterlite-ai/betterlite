@@ -1,0 +1,33 @@
+task: B923
+deviations:
+  - what: content_part.done keeps the url_citation fields of each annotation; LiteLLM dumps every annotation as an empty object.
+    why: The citation fields are what the output_item.done payload of the same completion carries, and B1115 already converts them; dropping them loses data the caller can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2785-L2807
+  - what: A whole-number top_p or temperature keeps its written form (1 stays 1); LiteLLM's float fields write 1.0.
+    why: betterlite keeps the number with rust_decimal's arbitrary precision, the same difference B3510 records for response fields; the value is equal and only the written scale differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L515-L531
+  - what: A litellm_metadata.model_info or model_info.id that is not a string is an error naming the field; LiteLLM interpolates it into the encoded response id.
+    why: The declared metadata shape gives model_info.id as a string, and rule no-silent-drops refuses an id that only reads as text by accident.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L331-L353
+  - what: A sequence number or a tool output index at i64::MAX is an error (SequenceOverflow, IndexOverflow); Python integers have no bound.
+    why: The counters are i64 in the shared state, so the overflow is reported instead of wrapping to a negative event index.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L546-L611
+  - what: A system clock reading before the Unix epoch or past the i64 second range is an error (ClockBeforeEpoch, ClockOutOfRange); Python writes the negative or huge created_at.
+    why: created_at is an i64 in the event payload, and an error names the clock instead of writing a timestamp no caller can use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L502
+  - what: output_item.done with no stored model response is a MissingModelResponse error; LiteLLM raises AttributeError dereferencing the None response.
+    why: The stored response is absent only when assembly produced nothing, and the typed error names that state instead of a crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L780-L784
+  - what: A hidden_params or hidden_params.provider_specific_fields that is not a JSON object is a HiddenParamsNotObject or ProviderFieldsNotObject error; LiteLLM raises AttributeError calling setdefault on it.
+    why: The assembled response comes from the logging context, so a wrong shape is reported with the field name instead of a crash mid-stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L646-L655
+kept_bugs:
+  - what: output_item.done stamps sequence_number 1 whatever the stream sequence is, because LiteLLM passes the OutputItemDoneEvent default.
+    why: A working setup sees 1 in every message item done event, so the value stays.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L792-L796
+  - what: create_output_item_done_event ignores its completion argument and reads self.litellm_model_response instead.
+    why: The caller always passes the same final completion, so copying the quirk keeps the payload identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L780-L785
+  - what: return_default_done_events with no message item added and empty final content marks all three done flags without emitting an event.
+    why: The stream then reports finished with no message shell; a working driver relies on that terminal state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L860-L868
