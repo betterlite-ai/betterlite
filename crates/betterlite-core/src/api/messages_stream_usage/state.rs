@@ -42,8 +42,8 @@ pub struct CompactionProgress {
 // The polyfill output and tool-name corrections the call was translated with, copied so later edits cannot leak in
 pub struct StreamSetup {
     pub model: String,
-    pub tool_name_mapping: Option<IndexMap<String, String>>,
-    pub applied_edits: Option<Vec<AppliedEdit>>,
+    pub tool_name_mapping: IndexMap<String, String>,
+    pub applied_edits: Vec<AppliedEdit>,
     pub compaction_block: Option<CompactionBlock>,
     pub iterations_usage: Option<Vec<UsageIteration>>,
 }
@@ -84,8 +84,8 @@ impl<S> StreamState<S> {
         Self {
             model: setup.model,
             message_id,
-            tool_name_mapping: setup.tool_name_mapping.unwrap_or_default(),
-            applied_edits: setup.applied_edits.unwrap_or_default(),
+            tool_name_mapping: setup.tool_name_mapping,
+            applied_edits: setup.applied_edits,
             compaction_block: setup.compaction_block,
             iterations_usage: setup.iterations_usage,
             refusal_text: String::new(),

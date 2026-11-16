@@ -4,7 +4,7 @@ call:
   messages_stream_usage:
     logging: false
     model: claude-sonnet-4-5
-    tool_name_mapping: null
+    tool_name_mapping: {}
     applied_edits:
     - type: clear_tool_uses_20250919
       cleared_tool_uses: 1

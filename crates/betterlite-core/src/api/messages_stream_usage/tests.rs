@@ -72,8 +72,8 @@ impl IdSource for FixedIds {
 fn setup() -> StreamSetup {
     StreamSetup {
         model: "claude-sonnet-4-5".to_owned(),
-        tool_name_mapping: None,
-        applied_edits: None,
+        tool_name_mapping: IndexMap::new(),
+        applied_edits: Vec::new(),
         compaction_block: None,
         iterations_usage: None,
     }
@@ -293,7 +293,7 @@ fn chunks_and_messages_forward_through_the_splitter() {
 #[test]
 fn applied_edits_are_copied_into_the_state() {
     let state = state_with(StreamSetup {
-        applied_edits: Some(vec![applied_edit()]),
+        applied_edits: vec![applied_edit()],
         ..setup()
     });
     assert_eq!(state.applied_edits, vec![applied_edit()]);
@@ -331,7 +331,7 @@ fn held_usage_adds_a_missing_delta() {
 #[test]
 fn held_usage_attaches_context_edits() {
     let mut state = state_with(StreamSetup {
-        applied_edits: Some(vec![applied_edit()]),
+        applied_edits: vec![applied_edit()],
         ..setup()
     });
     state.holding_stop_reason_chunk = Some(object(r#"{"type": "message_delta"}"#));
@@ -350,7 +350,7 @@ fn held_usage_attaches_context_edits() {
 #[test]
 fn held_usage_keeps_an_existing_context_management() {
     let mut state = state_with(StreamSetup {
-        applied_edits: Some(vec![applied_edit()]),
+        applied_edits: vec![applied_edit()],
         ..setup()
     });
     state.holding_stop_reason_chunk = Some(object(
@@ -393,6 +393,45 @@ fn choiceless_chunk_queues_merged_usage() {
     assert_eq!(state.chunk_queue.front(), Some(&expected));
     assert!(state.queued_usage_chunk);
     assert!(state.holding_stop_reason_chunk.is_none());
+}
+
+#[test]
+fn held_usage_gets_polyfill_iterations() {
+    let held = object(
+        r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"input_tokens": 0, "output_tokens": 0}}"#,
+    );
+    let expected = json!({
+        "type": "message_delta",
+        "delta": {"stop_reason": "end_turn"},
+        "usage": {
+            "input_tokens": 5,
+            "output_tokens": 2,
+            "cache_read_input_tokens": 3,
+            "iterations": [
+                {"type": "compaction", "input_tokens": 12, "output_tokens": 3},
+                {"type": "message", "input_tokens": 5, "output_tokens": 2},
+            ],
+        },
+    });
+    let mut state = iterations_state();
+    state.holding_stop_reason_chunk = Some(held.clone());
+    let merged = state
+        .merge_usage_into_held_stop(&record(PROBE_USAGE))
+        .expect("a held stop");
+    assert_eq!(
+        serde_json::to_value(&merged).expect("the fixture serializes"),
+        expected
+    );
+    assert!(
+        state
+            .handle_choiceless_chunk(Some(&record(PROBE_USAGE)))
+            .expect("a usage")
+    );
+    assert_eq!(
+        serde_json::to_value(state.chunk_queue.front().expect("queued"))
+            .expect("the fixture serializes"),
+        expected
+    );
 }
 
 #[test]
@@ -556,7 +595,7 @@ fn non_object_usage_blocks_iterations() {
 #[test]
 fn iterations_absent_still_attaches_context_edits() {
     let state = state_with(StreamSetup {
-        applied_edits: Some(vec![applied_edit()]),
+        applied_edits: vec![applied_edit()],
         ..setup()
     });
     let augmented = state
@@ -721,6 +760,14 @@ fn blank_delta_predicates() {
         (r#"{"delta": {"content": ""}}"#, true),
         (r#"{"delta": {"refusal": "no"}}"#, false),
         (r#"{"delta": {"refusal": ""}}"#, true),
+        (
+            r#"{"delta": {"refusal": null, "provider_specific_fields": {"refusal": "No"}}}"#,
+            false,
+        ),
+        (
+            r#"{"delta": {"refusal": null, "provider_specific_fields": {"refusal": ""}}}"#,
+            true,
+        ),
         (r#"{"delta": {"reasoning_content": "r"}}"#, false),
         (r#"{"delta": {}}"#, true),
         (r#"{"delta": {"thinking_blocks": []}}"#, true),
@@ -769,10 +816,7 @@ fn blankness_without_choices_is_an_error() {
 #[test]
 fn content_boundary_and_tool_restore() {
     let mut state = state_with(StreamSetup {
-        tool_name_mapping: Some(IndexMap::from([(
-            "short".to_owned(),
-            "long_tool_name".to_owned(),
-        )])),
+        tool_name_mapping: IndexMap::from([("short".to_owned(), "long_tool_name".to_owned())]),
         ..setup()
     });
     assert!(!start(&mut state, r#"{"delta": {"content": "hi"}}"#));
@@ -844,6 +888,26 @@ fn refusal_fragments_accumulate_in_order() {
     assert!(!start(&mut state, r#"{"delta": {"refusal": "No"}}"#));
     assert!(!start(&mut state, r#"{"delta": {"refusal": " thanks"}}"#));
     assert_eq!(state.refusal_text, "No thanks");
+}
+
+#[test]
+fn refusal_in_provider_specific_fields_becomes_the_explanation() {
+    let mut state = state();
+    assert!(!start(
+        &mut state,
+        r#"{"delta": {"refusal": null, "provider_specific_fields": {"refusal": "No"}}}"#
+    ));
+    assert_eq!(state.refusal_text, "No");
+    let event = object(r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn"}}"#);
+    let processed = state.with_refusal_stop_details(event).expect("processed");
+    assert_eq!(
+        serde_json::to_value(processed.get("delta").expect("delta"))
+            .expect("the fixture serializes"),
+        json!({
+            "stop_reason": "refusal",
+            "stop_details": {"type": "refusal", "category": null, "explanation": "No"},
+        })
+    );
 }
 
 #[test]

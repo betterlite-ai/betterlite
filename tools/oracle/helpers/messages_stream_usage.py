@@ -128,8 +128,8 @@ Step: TypeAlias = StateStep | UsageStep | EventStep | ChunkStep
 class Input(TypedDict):
     logging: bool
     model: str
-    tool_name_mapping: dict[str, str] | None
-    applied_edits: list[AppliedEdit] | None
+    tool_name_mapping: dict[str, str]
+    applied_edits: list[AppliedEdit]
     compaction_block: CompactionBlock | None
     iterations_usage: list[UsageIteration] | None
     chunks_attr: list[JsonValue] | None

@@ -4,7 +4,7 @@ call:
   messages_stream_usage:
     logging: false
     model: claude-sonnet-4-5
-    tool_name_mapping: null
+    tool_name_mapping: {}
     applied_edits:
     - type: clear_tool_uses_20250919
       cleared_tool_uses: 1
@@ -71,6 +71,34 @@ call:
       event:
         type: message_delta
         context_management: null
+    - step: hold_stop
+      event:
+        type: message_delta
+        delta:
+          stop_reason: end_turn
+        usage:
+          input_tokens: 0
+          output_tokens: 0
+    - step: merge_held_usage
+      usage:
+        prompt_tokens: 8
+        completion_tokens: 2
+        prompt_tokens_details: null
+        server_tool_use: null
+        cache_read_input_tokens: 3
+        cache_creation_input_tokens: null
+        _cache_read_input_tokens: null
+        _cache_creation_input_tokens: null
+    - step: choiceless
+      usage:
+        prompt_tokens: 8
+        completion_tokens: 2
+        prompt_tokens_details: null
+        server_tool_use: null
+        cache_read_input_tokens: 3
+        cache_creation_input_tokens: null
+        _cache_read_input_tokens: null
+        _cache_creation_input_tokens: null
     - step: snapshot
 env: {}
 compare:

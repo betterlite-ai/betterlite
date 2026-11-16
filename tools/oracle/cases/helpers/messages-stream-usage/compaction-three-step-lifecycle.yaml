@@ -4,8 +4,8 @@ call:
   messages_stream_usage:
     logging: false
     model: claude-sonnet-4-5
-    tool_name_mapping: null
-    applied_edits: null
+    tool_name_mapping: {}
+    applied_edits: []
     compaction_block:
       type: compaction
       content: S

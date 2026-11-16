@@ -6,7 +6,7 @@ call:
     model: claude-sonnet-4-5
     tool_name_mapping:
       short: long_tool_name
-    applied_edits: null
+    applied_edits: []
     compaction_block: null
     iterations_usage: null
     chunks_attr: null

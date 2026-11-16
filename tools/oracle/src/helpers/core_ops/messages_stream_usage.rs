@@ -22,9 +22,9 @@ pub(crate) struct Input {
     logging: bool,
     model: String,
     #[serde(default)]
-    tool_name_mapping: Option<IndexMap<String, String>>,
+    tool_name_mapping: IndexMap<String, String>,
     #[serde(default)]
-    applied_edits: Option<Vec<AppliedEdit>>,
+    applied_edits: Vec<AppliedEdit>,
     #[serde(default)]
     compaction_block: Option<CompactionBlock>,
     #[serde(default)]
