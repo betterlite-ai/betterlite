@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-table-access-submissions-counts
+call:
+  b4711:
+    function: submissions
+    salt_key: b4711-salt
+    rows:
+      - {server_id: srv-p1, server_name: p1, transport: sse, approval_status: pending_review, submitted_by: user-1, submitted_at: "2026-01-01T00:00:00Z"}
+      - {server_id: srv-p2, server_name: p2, transport: sse, approval_status: pending_review, submitted_by: user-2, submitted_at: "2026-01-02T00:00:00Z"}
+      - {server_id: srv-a1, server_name: a1, transport: sse, approval_status: active, submitted_by: user-1, submitted_at: "2026-01-03T00:00:00Z"}
+      - {server_id: srv-r1, server_name: r1, transport: sse, approval_status: rejected, submitted_by: user-2, submitted_at: "2026-01-04T00:00:00Z"}
+      - {server_id: srv-n1, server_name: n1, transport: sse, approval_status: active, submitted_at: null}
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}
