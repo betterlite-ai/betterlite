@@ -368,6 +368,7 @@ fn a_cost_beyond_the_decimal_range_names_the_field() {
 #[case::choice_number(r#"{"choices": [5]}"#, "choices[0]")]
 #[case::choice_list(r#"{"choices": [[]]}"#, "choices[0]")]
 #[case::message_null(r#"{"choices": [{"message": null}]}"#, "choices[0].message")]
+#[case::message_list(r#"{"choices": [{"message": []}]}"#, "choices[0].message")]
 #[case::images_object(
     r#"{"choices": [{"message": {"images": {}}}]}"#,
     "choices[0].message.images"
@@ -376,8 +377,16 @@ fn a_cost_beyond_the_decimal_range_names_the_field() {
     r#"{"choices": [{"message": {"images": [5]}}]}"#,
     "choices[0].message.images[0]"
 )]
+#[case::entry_list(
+    r#"{"choices": [{"message": {"images": [[]]}}]}"#,
+    "choices[0].message.images[0]"
+)]
 #[case::image_url_number(
     r#"{"choices": [{"message": {"images": [{"image_url": 5}]}}]}"#,
+    "choices[0].message.images[0].image_url"
+)]
+#[case::image_url_list(
+    r#"{"choices": [{"message": {"images": [{"image_url": []}]}}]}"#,
     "choices[0].message.images[0].image_url"
 )]
 #[case::image_url_null(
@@ -422,6 +431,21 @@ fn a_wrong_shape_names_the_field(#[case] body: &str, #[case] path: &str) {
     };
     let message = error.to_string();
     assert!(message.starts_with(&prefix), "{message}");
+}
+
+#[rstest]
+#[case::body_list("[]", "invalid type: a list, expected a JSON object")]
+#[case::body_null("null", "invalid type: null, expected a JSON object")]
+#[case::body_number("5", "invalid type: a number, expected a JSON object")]
+#[case::body_text(r#""x""#, "invalid type: a string, expected a JSON object")]
+#[case::body_boolean("true", "invalid type: a boolean, expected a JSON object")]
+#[case::choices_object(
+    r#"{"choices": {}}"#,
+    "choices: invalid type: an object, expected a list"
+)]
+fn a_wrong_shape_names_the_type_it_found(#[case] body: &str, #[case] message: &str) {
+    let error = decode(body).expect_err("the shape is wrong");
+    assert_eq!(error.to_string(), message);
 }
 
 #[rstest]
