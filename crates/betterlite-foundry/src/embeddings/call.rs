@@ -33,8 +33,7 @@ pub struct SuppliedClient<'client, Client> {
     pub client: &'client Client,
 }
 
-// B173 builds the clients: the sync replacement is HTTPHandler(timeout, concurrent_limit=1),
-// the async one the azure_ai client with the same timeout
+// B173 builds the clients: HTTPHandler(timeout, concurrent_limit=1) sync, azure_ai async
 pub trait EmbeddingClientFactory {
     type Client: ImageTransport;
 
@@ -53,8 +52,7 @@ pub struct TextEmbeddingCall<'call> {
     pub timeout: Duration,
 }
 
-// the inherited OpenAI embedding call: it receives the original input, image strings included,
-// and its reply carries the projected reply headers so the Cohere transform can read them
+// the inherited OpenAI embedding call sees the original input and returns projected headers
 pub trait TextEmbedding {
     fn embed(
         &self,

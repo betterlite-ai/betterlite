@@ -1,6 +1,6 @@
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingUsage};
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
 use crate::embeddings::error::FoundryEmbeddingError;
 
@@ -26,13 +26,25 @@ pub struct FoundryEmbeddingResponse {
 
 #[derive(Debug, Deserialize)]
 struct RawReply {
-    #[serde(default, deserialize_with = "present")]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     object: Option<Option<String>>,
-    #[serde(default, deserialize_with = "present")]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     model: Option<Option<String>>,
-    #[serde(default, deserialize_with = "present")]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     data: Option<Option<Vec<EmbeddingRecord>>>,
-    #[serde(default, deserialize_with = "present")]
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
     usage: Option<Option<RawUsage>>,
 }
 
@@ -121,10 +133,9 @@ pub fn interleave(
 ) -> Result<Vec<EmbeddingRecord>, FoundryEmbeddingError> {
     match (image, text) {
         (Some(images), Some(texts)) => combined(input_len, image_indices, images, texts),
-        (image_records, text_records) => Ok(image_records
-            .or(text_records)
-            .unwrap_or_default()
-            .to_vec()),
+        (image_records, text_records) => {
+            Ok(image_records.or(text_records).unwrap_or_default().to_vec())
+        }
     }
 }
 
@@ -150,13 +161,4 @@ fn combined(
         combined.push(chosen.clone());
     }
     Ok(combined)
-}
-
-// serde's Option reads null as None, so this keeps a present null distinct from an absent key
-fn present<'de, Loader, Field>(loader: Loader) -> Result<Option<Option<Field>>, Loader::Error>
-where
-    Loader: Deserializer<'de>,
-    Field: Deserialize<'de>,
-{
-    Option::<Field>::deserialize(loader).map(Some)
 }
