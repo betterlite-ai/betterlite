@@ -467,6 +467,39 @@ fn zero_counters_keep_only_summary_iterations() {
 }
 
 #[test]
+fn single_sided_counters_still_append_a_message_iteration() {
+    let state = iterations_state();
+    for (event, input, output) in [
+        (
+            r#"{"type": "message_delta", "usage": {"input_tokens": 5, "output_tokens": 0}}"#,
+            5_i64,
+            0_i64,
+        ),
+        (
+            r#"{"type": "message_delta", "usage": {"input_tokens": 0, "output_tokens": 2}}"#,
+            0_i64,
+            2_i64,
+        ),
+    ] {
+        let augmented = state
+            .augment_message_delta_usage(object(event))
+            .expect("augmented");
+        assert_eq!(
+            serde_json::to_value(augmented.get("usage").expect("usage"))
+                .expect("the fixture serializes"),
+            json!({
+                "input_tokens": input,
+                "output_tokens": output,
+                "iterations": [
+                    {"type": "compaction", "input_tokens": 12, "output_tokens": 3},
+                    {"type": "message", "input_tokens": input, "output_tokens": output},
+                ],
+            })
+        );
+    }
+}
+
+#[test]
 fn missing_counters_keep_only_summary_iterations() {
     let state = iterations_state();
     let absent = state
