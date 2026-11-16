@@ -106,7 +106,7 @@ fn chart_point_keeps_a_present_score() {
         date: "2026-11-01".to_owned(),
         passed: 8,
         blocked: 2,
-        score: Some(0.5),
+        score: Some(0.5_f64),
     };
     assert_eq!(
         serde_json::to_string(&point).unwrap(),

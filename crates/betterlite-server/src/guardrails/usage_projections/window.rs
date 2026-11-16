@@ -39,7 +39,7 @@ impl UsageWindowError {
 fn parse_usage_date(text: &str) -> Option<NaiveDate> {
     let parsed = NaiveDate::parse_from_str(text, "%Y-%m-%d").ok()?;
     let year = parsed.year();
-    if !(1..=9999).contains(&year) {
+    if !(1_i32..=9_999_i32).contains(&year) {
         return None;
     }
     // chrono's parser takes one-digit months and signed years, which Python's fromisoformat refuses
@@ -52,18 +52,12 @@ pub fn resolve_usage_window(
     now: DateTime<Utc>,
 ) -> Result<UsageWindow, UsageWindowError> {
     let today = now.date_naive();
-    let end = match end_date {
-        Some(text) => text.to_owned(),
-        None => today.format("%Y-%m-%d").to_string(),
-    };
+    let end = end_date.map_or_else(|| today.format("%Y-%m-%d").to_string(), str::to_owned);
     // chrono's calendar starts far below any clock date, so only its own first day overflows
     let week_ago = today
         .checked_sub_days(Days::new(7))
         .unwrap_or(NaiveDate::MIN);
-    let start = match start_date {
-        Some(text) => text.to_owned(),
-        None => week_ago.format("%Y-%m-%d").to_string(),
-    };
+    let start = start_date.map_or_else(|| week_ago.format("%Y-%m-%d").to_string(), str::to_owned);
     let Some(start_parsed) = parse_usage_date(&start) else {
         return Err(UsageWindowError::DateFormat);
     };

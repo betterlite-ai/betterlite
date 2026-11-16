@@ -107,130 +107,98 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Input) -> HelperResult {
-        match input {
-            Input::ResolveWindow { cases } => resolve_window_cases(cases),
-            Input::Thresholds { cases } => threshold_cases(cases),
-            Input::DailyMetrics { cases } => daily_cases(cases),
-            Input::RowSums { cases } => row_sum_cases(cases),
-            Input::RowParts { cases } => row_part_cases(cases),
-            Input::GroupBy { cases } => group_cases(cases),
-            Input::GuardrailOverview { cases } => guardrail_cases(cases),
-            Input::PolicyOverview { cases } => policy_cases(cases),
-        }
-    }
-}
-
-fn resolve_window_cases(cases: &[WindowCase]) -> HelperResult {
-    let mut results = Vec::new();
-    for case in cases {
-        let window = resolve_usage_window(
-            case.start_date.as_deref(),
-            case.end_date.as_deref(),
-            case.now,
-        );
-        let value = match window {
-            Ok(window) => json!({"start": window.start, "end": window.end}),
-            Err(error) => json!({"status": error.status_code().as_u16()}),
+        let results = match input {
+            Input::ResolveWindow { cases } => answers(cases, window_answer),
+            Input::Thresholds { cases } => answers(cases, threshold_answer),
+            Input::DailyMetrics { cases } => answers(cases, daily_answer),
+            Input::RowSums { cases } => answers(cases, row_sum_answer),
+            Input::RowParts { cases } => answers(cases, row_part_answer),
+            Input::GroupBy { cases } => answers(cases, group_answer),
+            Input::GuardrailOverview { cases } => answers(cases, |case| {
+                json!(guardrail_overview_rows(&case.records, &case.aggregates))
+            }),
+            Input::PolicyOverview { cases } => answers(cases, |case| {
+                json!(policy_overview_rows(&case.records, &case.aggregates))
+            }),
         };
-        results.push(value);
+        Ok(json!({"results": results}))
     }
-    Ok(json!({"results": results}))
 }
 
-fn threshold_cases(cases: &[ThresholdCase]) -> HelperResult {
-    let mut results = Vec::new();
+fn answers<C, A>(cases: &[C], answer: A) -> Vec<Value>
+where
+    A: Fn(&C) -> Value,
+{
+    let mut values = Vec::with_capacity(cases.len());
     for case in cases {
-        let value = json!({
-            "status": status_from_fail_rate(case.fail_rate),
-            "trend": trend_from_comparison(case.fail_rate, case.previous),
-        });
-        results.push(value);
+        values.push(answer(case));
     }
-    Ok(json!({"results": results}))
+    values
 }
 
-fn daily_cases(cases: &[DailyCase]) -> HelperResult {
-    let mut results = Vec::new();
-    for case in cases {
-        let value = match case.reduce {
-            DailyReduce::Aggregate => json!(aggregate_daily_metrics(&case.rows)),
-            DailyReduce::Previous => json!(prev_fail_rates(&case.rows)),
-            DailyReduce::Chart => json!(chart_from_metrics(&case.rows)),
-        };
-        results.push(value);
-    }
-    Ok(json!({"results": results}))
+fn window_answer(case: &WindowCase) -> Value {
+    let start = case.start_date.as_deref();
+    let end = case.end_date.as_deref();
+    resolve_usage_window(start, end, case.now).map_or_else(
+        |error| json!({"status": error.status_code().as_u16()}),
+        |window| json!({"start": window.start, "end": window.end}),
+    )
 }
 
-fn row_sum_cases(cases: &[SumCase]) -> HelperResult {
-    let mut results = Vec::new();
-    for case in cases {
-        let rows: Vec<&UsageCounterRow> = case.rows.iter().collect();
-        let value = match case.reduce {
-            SumReduce::Units => json!(sum_counter_units(&rows)),
-            SumReduce::Untracked => json!(sum_untracked_units(&rows)),
-            SumReduce::Cost => json!(sum_tracked_cost(&rows).map(|cost| cost.as_f64())),
-        };
-        results.push(value);
-    }
-    Ok(json!({"results": results}))
+fn threshold_answer(case: &ThresholdCase) -> Value {
+    json!({
+        "status": status_from_fail_rate(case.fail_rate),
+        "trend": trend_from_comparison(case.fail_rate, case.previous),
+    })
 }
 
-fn row_part_cases(cases: &[RowsCase]) -> HelperResult {
-    let mut results = Vec::new();
-    for case in cases {
-        let parts: Vec<Value> = case
-            .rows
-            .iter()
-            .map(|row| {
-                json!({
-                    "untracked": row_untracked_units(row),
-                    "cost": row_tracked_cost(row).map(|cost| cost.as_f64()),
-                })
+fn daily_answer(case: &DailyCase) -> Value {
+    match case.reduce {
+        DailyReduce::Aggregate => json!(aggregate_daily_metrics(&case.rows)),
+        DailyReduce::Previous => json!(prev_fail_rates(&case.rows)),
+        DailyReduce::Chart => json!(chart_from_metrics(&case.rows)),
+    }
+}
+
+fn row_sum_answer(case: &SumCase) -> Value {
+    let rows: Vec<&UsageCounterRow> = case.rows.iter().collect();
+    match case.reduce {
+        SumReduce::Units => json!(sum_counter_units(&rows, |row| row.units)),
+        SumReduce::Untracked => json!(sum_untracked_units(&rows)),
+        SumReduce::Cost => json!(sum_tracked_cost(&rows).map(|cost| cost.as_f64())),
+    }
+}
+
+fn row_part_answer(case: &RowsCase) -> Value {
+    let parts: Vec<Value> = case
+        .rows
+        .iter()
+        .map(|row| {
+            json!({
+                "untracked": row_untracked_units(row),
+                "cost": row_tracked_cost(row).map(|cost| cost.as_f64()),
             })
-            .collect();
-        results.push(json!(parts));
-    }
-    Ok(json!({"results": results}))
+        })
+        .collect();
+    json!(parts)
 }
 
-fn group_cases(cases: &[GroupCase]) -> HelperResult {
-    let mut results = Vec::new();
-    for case in cases {
-        let value = match case.reduce {
-            SumReduce::Units => json!(by(&case.rows, case.key, sum_counter_units)),
-            SumReduce::Untracked => json!(by(&case.rows, case.key, sum_untracked_units)),
-            SumReduce::Cost => {
-                let groups: BTreeMap<String, Option<f64>> =
-                    by(&case.rows, case.key, sum_tracked_cost)
-                        .into_iter()
-                        .map(|(group, total)| (group, total.map(|cost| cost.as_f64())))
-                        .collect();
-                json!(groups)
-            }
-        };
-        results.push(value);
+fn group_answer(case: &GroupCase) -> Value {
+    match case.reduce {
+        SumReduce::Units => json!(by(&case.rows, case.key, |group| sum_counter_units(
+            group,
+            |row| row.units
+        ))),
+        SumReduce::Untracked => json!(by(&case.rows, case.key, sum_untracked_units)),
+        SumReduce::Cost => json!(grouped_costs(&case.rows, case.key)),
     }
-    Ok(json!({"results": results}))
 }
 
-fn guardrail_cases(cases: &[GuardrailCase]) -> HelperResult {
-    let mut results = Vec::new();
-    for case in cases {
-        results.push(json!(guardrail_overview_rows(
-            &case.records,
-            &case.aggregates
-        )));
-    }
-    Ok(json!({"results": results}))
-}
-
-fn policy_cases(cases: &[PolicyCase]) -> HelperResult {
-    let mut results = Vec::new();
-    for case in cases {
-        results.push(json!(policy_overview_rows(&case.records, &case.aggregates)));
-    }
-    Ok(json!({"results": results}))
+fn grouped_costs(rows: &[UsageCounterRow], key: UsageUnitKey) -> BTreeMap<String, Option<f64>> {
+    by(rows, key, sum_tracked_cost)
+        .into_iter()
+        .map(|(group, total)| (group, total.map(|cost| cost.as_f64())))
+        .collect()
 }
 
 mod tests;

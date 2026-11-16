@@ -7,7 +7,8 @@ pub struct UsageCounterRow {
     pub usage_unit: String,
     pub guardrail_id: String,
     pub team_id: String,
-    pub api_key: String,
+    #[serde(rename = "api_key")]
+    pub hashed_api_key: String,
     pub units: i64,
     pub untracked_units: i64,
     #[serde(default)]

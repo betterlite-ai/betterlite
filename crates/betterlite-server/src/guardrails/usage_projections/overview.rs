@@ -48,7 +48,7 @@ fn guardrail_row(
     covered.extend(lookup_keys.iter().map(|key| (*key).to_owned()));
     let totals = *first_match(&lookup_keys, &aggregates.metrics, &MetricTotals::default());
     let rate = metric_rate(totals.blocked, totals.requests);
-    let previous = *first_match(&lookup_keys, &aggregates.previous_rates, &0.0);
+    let previous = *first_match(&lookup_keys, &aggregates.previous_rates, &0.0_f64);
     let units = first_match(&lookup_keys, &aggregates.units, &EMPTY_UNITS).clone();
     let untracked = first_match(&lookup_keys, &aggregates.untracked, &EMPTY_UNITS).clone();
     let cost = *first_match(&lookup_keys, &aggregates.costs, &None);
@@ -79,7 +79,11 @@ fn metric_only_rows(
             continue;
         }
         let rate = metric_rate(totals.blocked, totals.requests);
-        let previous = aggregates.previous_rates.get(key).copied().unwrap_or(0.0);
+        let previous = aggregates
+            .previous_rates
+            .get(key)
+            .copied()
+            .unwrap_or(0.0_f64);
         rows.push(UsageOverviewRow {
             id: key.clone(),
             name: key.clone(),
@@ -109,7 +113,11 @@ pub fn policy_overview_rows(
         let id = policy.policy_id.clone();
         let totals = aggregates.metrics.get(&id).copied().unwrap_or_default();
         let rate = metric_rate(totals.blocked, totals.requests);
-        let previous = aggregates.previous_rates.get(&id).copied().unwrap_or(0.0);
+        let previous = aggregates
+            .previous_rates
+            .get(&id)
+            .copied()
+            .unwrap_or(0.0_f64);
         let name = policy
             .policy_name
             .as_deref()

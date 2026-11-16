@@ -21,7 +21,7 @@ fn unit(
         usage_unit: counter.to_owned(),
         guardrail_id: guardrail.to_owned(),
         team_id: "team-a".to_owned(),
-        api_key: "key-1".to_owned(),
+        hashed_api_key: "key-1".to_owned(),
         units,
         untracked_units,
         cost,
@@ -39,7 +39,7 @@ fn refs(rows: &[UsageCounterRow]) -> Vec<&UsageCounterRow> {
 #[test]
 fn sum_counter_units_adds_rows_of_the_same_counter() {
     let rows = [price(4), price(6), unit("tokens", "lakera", 9, 9, None)];
-    let sums = sum_counter_units(&refs(&rows));
+    let sums = sum_counter_units(&refs(&rows), |row| row.units);
     assert_eq!(sums.get("requests"), Some(&10));
     assert_eq!(sums.get("tokens"), Some(&9));
     assert_eq!(sums.len(), 2);
@@ -120,16 +120,17 @@ fn grouping_by_each_column_splits_the_sums() {
     let mut presidio = unit("requests", "presidio", 6, 0, Some(Decimal::new(50, 2)));
     presidio.team_id = "team-b".to_owned();
     let mut tokens = unit("tokens", "lakera", 2, 0, Some(Decimal::new(50, 2)));
-    tokens.api_key = "key-2".to_owned();
+    tokens.hashed_api_key = "key-2".to_owned();
     let rows = [
         unit("requests", "lakera", 4, 0, Some(Decimal::new(50, 2))),
         presidio,
         tokens,
     ];
-    let by_counter = by(&rows, UsageUnitKey::Counter, sum_counter_units);
-    let by_guardrail = by(&rows, UsageUnitKey::Guardrail, sum_counter_units);
-    let by_team = by(&rows, UsageUnitKey::Team, sum_counter_units);
-    let by_key = by(&rows, UsageUnitKey::Key, sum_counter_units);
+    let tracked = |group: &[&UsageCounterRow]| sum_counter_units(group, |row| row.units);
+    let by_counter = by(&rows, UsageUnitKey::Counter, tracked);
+    let by_guardrail = by(&rows, UsageUnitKey::Guardrail, tracked);
+    let by_team = by(&rows, UsageUnitKey::Team, tracked);
+    let by_key = by(&rows, UsageUnitKey::Key, tracked);
     assert_eq!(
         by_counter.get("requests"),
         Some(&BTreeMap::from([("requests".to_owned(), 10)]))
@@ -153,8 +154,8 @@ fn grouping_by_each_column_splits_the_sums() {
 
 #[test]
 fn first_match_takes_the_first_lookup_key_the_mapping_holds() {
-    let mapping = BTreeMap::from([("id-1".to_owned(), 7)]);
-    assert_eq!(first_match(&["name", "id-1"], &mapping, &0), &7);
-    assert_eq!(first_match(&["name"], &mapping, &0), &0);
-    assert_eq!(first_match(&[], &mapping, &0), &0);
+    let mapping = BTreeMap::from([("id-1".to_owned(), 7_i32)]);
+    assert_eq!(first_match(&["name", "id-1"], &mapping, &0_i32), &7_i32);
+    assert_eq!(first_match(&["name"], &mapping, &0_i32), &0_i32);
+    assert_eq!(first_match(&[], &mapping, &0_i32), &0_i32);
 }

@@ -35,23 +35,24 @@ pub const fn row_tracked_cost(row: &UsageCounterRow) -> Option<Decimal> {
     }
 }
 
+// LiteLLM sums the requested column per counter and keeps zero totals in the tracked map
 #[must_use]
-pub fn sum_counter_units(rows: &[&UsageCounterRow]) -> BTreeMap<String, i64> {
+pub fn sum_counter_units(
+    rows: &[&UsageCounterRow],
+    units_of: fn(&UsageCounterRow) -> i64,
+) -> BTreeMap<String, i64> {
     let mut sums: BTreeMap<String, i64> = BTreeMap::new();
     for row in rows {
         let sum = sums.entry(row.usage_unit.clone()).or_insert(0);
-        *sum = sum.saturating_add(row.units);
+        *sum = sum.saturating_add(units_of(row));
     }
     sums
 }
 
+// LiteLLM drops a counter whose untracked total is zero, which the tracked map keeps
 #[must_use]
 pub fn sum_untracked_units(rows: &[&UsageCounterRow]) -> BTreeMap<String, i64> {
-    let mut sums: BTreeMap<String, i64> = BTreeMap::new();
-    for row in rows {
-        let sum = sums.entry(row.usage_unit.clone()).or_insert(0);
-        *sum = sum.saturating_add(row_untracked_units(row));
-    }
+    let mut sums = sum_counter_units(rows, row_untracked_units);
     sums.retain(|_, units| *units != 0);
     sums
 }
@@ -63,10 +64,7 @@ pub fn sum_tracked_cost(rows: &[&UsageCounterRow]) -> Option<Decimal> {
         let Some(cost) = row_tracked_cost(row) else {
             continue;
         };
-        total = Some(match total {
-            Some(sum) => sum.saturating_add(cost),
-            None => cost,
-        });
+        total = Some(total.map_or(cost, |sum| sum.saturating_add(cost)));
     }
     total
 }
@@ -81,7 +79,7 @@ where
         let group = match key {
             UsageUnitKey::Counter => &row.usage_unit,
             UsageUnitKey::Team => &row.team_id,
-            UsageUnitKey::Key => &row.api_key,
+            UsageUnitKey::Key => &row.hashed_api_key,
             UsageUnitKey::Guardrail => &row.guardrail_id,
         };
         groups.entry(group.clone()).or_default().push(row);

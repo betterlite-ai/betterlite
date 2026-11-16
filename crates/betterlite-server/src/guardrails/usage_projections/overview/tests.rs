@@ -187,8 +187,12 @@ fn guardrail_overview_reads_the_previous_rate_for_the_trend() {
     aggregates
         .metrics
         .insert("lakera".to_owned(), totals(10, 8, 2));
-    aggregates.previous_rates.insert("lakera".to_owned(), 10.0);
-    aggregates.previous_rates.insert("uuid-1".to_owned(), 90.0);
+    aggregates
+        .previous_rates
+        .insert("lakera".to_owned(), 10.0_f64);
+    aggregates
+        .previous_rates
+        .insert("uuid-1".to_owned(), 90.0_f64);
     let rows = guardrail_overview_rows(&[lakera], &aggregates);
     assert_eq!(rows.first().unwrap().trend, UsageTrend::Up);
 }
@@ -201,7 +205,7 @@ fn guardrail_overview_uses_the_previous_rate_of_a_custom_row() {
         .insert("mcp-guard".to_owned(), totals(6, 2, 4));
     aggregates
         .previous_rates
-        .insert("mcp-guard".to_owned(), 10.0);
+        .insert("mcp-guard".to_owned(), 10.0_f64);
     let rows = guardrail_overview_rows(&[], &aggregates);
     assert_eq!(rows.first().unwrap().trend, UsageTrend::Up);
     assert_eq!(rows.first().unwrap().status, UsageStatus::Critical);
@@ -214,7 +218,9 @@ fn policy_overview_looks_rows_up_by_policy_id() {
     aggregates
         .metrics
         .insert("pol-1".to_owned(), totals(20, 18, 2));
-    aggregates.previous_rates.insert("pol-1".to_owned(), 10.0);
+    aggregates
+        .previous_rates
+        .insert("pol-1".to_owned(), 10.0_f64);
     let rows = policy_overview_rows(&[pii], &aggregates);
     assert_eq!(rows.len(), 1);
     let row = rows.first().unwrap();
@@ -254,7 +260,7 @@ fn policy_overview_names_an_unnamed_policy_by_its_id() {
     let empty = policy("pol-2", Some(""));
     let rows = policy_overview_rows(&[unnamed, empty], &empty_aggregates());
     assert_eq!(rows.first().unwrap().name, "pol-1");
-    assert_eq!(rows.get(1).unwrap().name, "pol-2");
+    assert_eq!(rows[1].name, "pol-2");
 }
 
 #[test]

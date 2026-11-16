@@ -33,7 +33,7 @@ pub const fn status_from_fail_rate(fail_rate: f64) -> UsageStatus {
 // a rate that moves less than half a percentage point is steady; no previous rate means steady
 #[must_use]
 pub fn trend_from_comparison(current_fail: f64, previous_fail: f64) -> UsageTrend {
-    if previous_fail <= 0.0 {
+    if previous_fail <= 0.0_f64 {
         return UsageTrend::Stable;
     }
     let diff = Sub::sub(current_fail, previous_fail);

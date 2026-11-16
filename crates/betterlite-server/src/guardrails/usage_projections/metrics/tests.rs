@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::ops::Div;
+use std::ops::Div as _;
 
 use super::{
     MetricTotals, aggregate_daily_metrics, chart_from_metrics, metric_rate, prev_fail_rates,
@@ -90,7 +90,7 @@ fn metrics_aggregation_rounds_each_rate_like_python() {
     assert_eq!(metric_rate(1, 3).rounded.to_bits(), 33.3_f64.to_bits());
     assert_eq!(
         metric_rate(1, 3).exact.to_bits(),
-        100.0_f64.div(3.0).to_bits()
+        100.0_f64.div(3.0_f64).to_bits()
     );
     assert_eq!(metric_rate(16, 100).rounded.to_bits(), 16.0_f64.to_bits());
     assert_eq!(metric_rate(0, 3).rounded.to_bits(), 0.0_f64.to_bits());
@@ -139,8 +139,8 @@ fn metrics_aggregation_chart_groups_days_in_chronological_order() {
     assert_eq!(dates, ["2026-11-01", "2026-11-02"]);
     assert_eq!(chart.first().unwrap().passed, 8);
     assert_eq!(chart.first().unwrap().blocked, 2);
-    assert_eq!(chart.get(1).unwrap().passed, 4);
-    assert_eq!(chart.get(1).unwrap().blocked, 2);
+    assert_eq!(chart[1].passed, 4);
+    assert_eq!(chart[1].blocked, 2);
 }
 
 #[test]

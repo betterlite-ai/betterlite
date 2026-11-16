@@ -92,7 +92,7 @@ pub fn prev_fail_rates(metrics: &[UsageMetricRow]) -> BTreeMap<String, f64> {
         .into_iter()
         .map(|(id, period)| {
             if period.requests == 0 {
-                (id, 0.0)
+                (id, 0.0_f64)
             } else {
                 (id, fail_rate(period.blocked, period.requests))
             }

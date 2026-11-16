@@ -19,7 +19,7 @@ fn usage_counter_row_decodes_a_priced_row() {
     assert_eq!(row.usage_unit, "requests");
     assert_eq!(row.guardrail_id, "uuid-1");
     assert_eq!(row.team_id, "team-a");
-    assert_eq!(row.api_key, "key-1");
+    assert_eq!(row.hashed_api_key, "key-1");
     assert_eq!(row.units, 12);
     assert_eq!(row.untracked_units, 3);
     assert_eq!(row.cost, Some(Decimal::new(175, 2)));

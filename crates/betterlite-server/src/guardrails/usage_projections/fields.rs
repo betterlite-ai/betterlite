@@ -17,21 +17,21 @@ pub fn field_str(mapping: &OpaqueParams, key: &str, default: &str) -> String {
         Some(GuardrailValue::Text(text)) => text.clone(),
         Some(GuardrailValue::SignedInteger(number)) => number.to_string(),
         Some(GuardrailValue::UnsignedInteger(number)) => number.to_string(),
-        Some(GuardrailValue::Decimal(number)) => python_float_text(*number),
+        Some(GuardrailValue::Decimal(number)) => float_text(*number),
         Some(_) | None => default.to_owned(),
     }
 }
 
-// Python's str(float) writes the exponent with a sign and two digits at least; Rust's Debug does neither
-fn python_float_text(number: f64) -> String {
+// Rust's Debug prints a float like Python's repr, except that Debug leaves an exponent unsigned and unpadded
+fn float_text(number: f64) -> String {
     let text = format!("{number:?}");
     let Some((mantissa, exponent)) = text.split_once('e') else {
         return text;
     };
-    let Ok(exponent) = exponent.parse::<i32>() else {
+    let Ok(power) = exponent.parse::<i32>() else {
         return text;
     };
-    format!("{mantissa}e{exponent:+03}")
+    format!("{mantissa}e{power:+03}")
 }
 
 #[must_use]
