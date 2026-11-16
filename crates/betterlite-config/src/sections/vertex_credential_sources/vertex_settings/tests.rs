@@ -10,6 +10,8 @@ use crate::sections::vertex_credential_sources::credential_source::{
     ConfiguredCredentials, CredentialSource,
 };
 
+mod vertex_video_settings;
+
 struct Lookup {
     variables: BTreeMap<String, String>,
     home: Option<PathBuf>,

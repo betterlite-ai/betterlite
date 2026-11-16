@@ -9,16 +9,16 @@ use crate::vertex_veo_operation::usage::video_usage;
 
 #[test]
 fn a_request_without_parameters_has_empty_usage() {
-    let missing = video_usage(None, settings(8)).expect("no request data converts");
+    let missing = video_usage(None, &settings(8)).expect("no request data converts");
     assert_eq!(serde_json::to_value(&missing).unwrap(), json!({}));
-    let empty = video_usage(Some(&object([])), settings(8)).expect("empty data converts");
+    let empty = video_usage(Some(&object([])), &settings(8)).expect("empty data converts");
     assert_eq!(serde_json::to_value(&empty).unwrap(), json!({}));
 }
 
 #[test]
 fn a_null_parameters_block_is_the_empty_default() {
     let data = object([("parameters", Json::Null)]);
-    let usage = video_usage(Some(&data), settings(8)).expect("the parameters convert");
+    let usage = video_usage(Some(&data), &settings(8)).expect("the parameters convert");
     assert_eq!(
         serde_json::to_value(&usage).unwrap(),
         json!({"duration_seconds": 8.0})
@@ -28,7 +28,7 @@ fn a_null_parameters_block_is_the_empty_default() {
 #[test]
 fn a_missing_parameters_key_still_carries_the_default_duration() {
     let data = object([("instances", Json::List(Vec::new()))]);
-    let usage = video_usage(Some(&data), settings(8)).expect("the parameters convert");
+    let usage = video_usage(Some(&data), &settings(8)).expect("the parameters convert");
     assert_eq!(
         serde_json::to_value(&usage).unwrap(),
         json!({"duration_seconds": 8.0})
@@ -39,7 +39,7 @@ fn a_missing_parameters_key_still_carries_the_default_duration() {
 fn a_missing_duration_is_the_configured_default() {
     let parameters = object([("resolution", text("720p"))]);
     let usage =
-        video_usage(Some(&request_data(parameters)), settings(11)).expect("the usage converts");
+        video_usage(Some(&request_data(parameters)), &settings(11)).expect("the usage converts");
     assert_eq!(
         serde_json::to_value(&usage).unwrap(),
         json!({"duration_seconds": 11.0, "video_resolution": "720p"})
@@ -54,7 +54,7 @@ fn a_missing_duration_is_the_configured_default() {
 fn a_falsy_duration_is_the_configured_default(#[case] duration: Json) {
     let parameters = object([("durationSeconds", duration)]);
     let usage =
-        video_usage(Some(&request_data(parameters)), settings(8)).expect("the usage converts");
+        video_usage(Some(&request_data(parameters)), &settings(8)).expect("the usage converts");
     assert_eq!(
         serde_json::to_value(&usage).unwrap(),
         json!({"duration_seconds": 8.0})
@@ -70,7 +70,7 @@ fn a_falsy_duration_is_the_configured_default(#[case] duration: Json) {
 fn a_readable_duration_is_a_float(#[case] duration: Json, #[case] seconds: f64) {
     let parameters = object([("durationSeconds", duration)]);
     let usage =
-        video_usage(Some(&request_data(parameters)), settings(8)).expect("the usage converts");
+        video_usage(Some(&request_data(parameters)), &settings(8)).expect("the usage converts");
     assert_eq!(
         serde_json::to_value(&usage).unwrap(),
         json!({"duration_seconds": seconds})
@@ -84,14 +84,14 @@ fn a_readable_duration_is_a_float(#[case] duration: Json, #[case] seconds: f64) 
 fn an_unreadable_duration_is_omitted(#[case] duration: Json) {
     let parameters = object([("durationSeconds", duration)]);
     let usage =
-        video_usage(Some(&request_data(parameters)), settings(8)).expect("the usage converts");
+        video_usage(Some(&request_data(parameters)), &settings(8)).expect("the usage converts");
     assert_eq!(serde_json::to_value(&usage).unwrap(), json!({}));
 }
 
 #[test]
 fn empty_parameters_keep_the_default_duration() {
     let usage =
-        video_usage(Some(&request_data(object([]))), settings(8)).expect("the usage converts");
+        video_usage(Some(&request_data(object([]))), &settings(8)).expect("the usage converts");
     assert_eq!(
         serde_json::to_value(&usage).unwrap(),
         json!({"duration_seconds": 8.0})
@@ -105,7 +105,7 @@ fn empty_parameters_keep_the_default_duration() {
 fn a_resolution_is_trimmed_and_lowercased(#[case] resolution: Json, #[case] expected: &str) {
     let parameters = object([("resolution", resolution)]);
     let usage =
-        video_usage(Some(&request_data(parameters)), settings(8)).expect("the usage converts");
+        video_usage(Some(&request_data(parameters)), &settings(8)).expect("the usage converts");
     assert_eq!(
         serde_json::to_value(&usage).unwrap(),
         json!({"duration_seconds": 8.0, "video_resolution": expected})
@@ -119,7 +119,7 @@ fn a_resolution_is_trimmed_and_lowercased(#[case] resolution: Json, #[case] expe
 fn an_absent_resolution_is_omitted(#[case] resolution: Json) {
     let parameters = object([("resolution", resolution)]);
     let usage =
-        video_usage(Some(&request_data(parameters)), settings(8)).expect("the usage converts");
+        video_usage(Some(&request_data(parameters)), &settings(8)).expect("the usage converts");
     assert_eq!(
         serde_json::to_value(&usage).unwrap(),
         json!({"duration_seconds": 8.0})
@@ -134,7 +134,7 @@ fn an_absent_resolution_is_omitted(#[case] resolution: Json) {
 fn a_resolution_that_is_not_text_or_a_number_is_omitted(#[case] resolution: Json) {
     let parameters = object([("resolution", resolution)]);
     let usage =
-        video_usage(Some(&request_data(parameters)), settings(8)).expect("the usage converts");
+        video_usage(Some(&request_data(parameters)), &settings(8)).expect("the usage converts");
     assert_eq!(
         serde_json::to_value(&usage).unwrap(),
         json!({"duration_seconds": 8.0})
@@ -147,7 +147,7 @@ fn a_resolution_that_is_not_text_or_a_number_is_omitted(#[case] resolution: Json
 fn a_positive_sample_count_is_the_video_count(#[case] sample_count: Json, #[case] count: u64) {
     let parameters = object([("sampleCount", sample_count)]);
     let usage =
-        video_usage(Some(&request_data(parameters)), settings(8)).expect("the usage converts");
+        video_usage(Some(&request_data(parameters)), &settings(8)).expect("the usage converts");
     assert_eq!(
         serde_json::to_value(&usage).unwrap(),
         json!({"duration_seconds": 8.0, "video_count": count})
@@ -165,7 +165,7 @@ fn a_positive_sample_count_is_the_video_count(#[case] sample_count: Json, #[case
 fn a_sample_count_that_is_not_a_positive_integer_is_omitted(#[case] sample_count: Json) {
     let parameters = object([("sampleCount", sample_count)]);
     let usage =
-        video_usage(Some(&request_data(parameters)), settings(8)).expect("the usage converts");
+        video_usage(Some(&request_data(parameters)), &settings(8)).expect("the usage converts");
     assert_eq!(
         serde_json::to_value(&usage).unwrap(),
         json!({"duration_seconds": 8.0})
@@ -180,7 +180,7 @@ fn a_sample_count_that_is_not_a_positive_integer_is_omitted(#[case] sample_count
 fn parameters_that_are_not_an_object_are_rejected(#[case] parameters: Json) {
     let data = object([("parameters", parameters)]);
     assert!(matches!(
-        video_usage(Some(&data), settings(8)),
+        video_usage(Some(&data), &settings(8)),
         Err(VeoOperationError::ParametersShape)
     ));
 }

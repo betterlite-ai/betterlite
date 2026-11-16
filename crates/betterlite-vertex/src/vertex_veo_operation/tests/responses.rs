@@ -120,7 +120,7 @@ fn create_encodes_the_provider_and_returns_processing() {
         ("durationSeconds", number(6)),
         ("resolution", text("1080p")),
     ]));
-    let video = create_response(MODEL, &body, Some(PROVIDER), Some(&data), settings(8))
+    let video = create_response(MODEL, &body, Some(PROVIDER), Some(&data), &settings(8))
         .expect("the create converts");
     assert_eq!(video.status, "processing");
     assert_eq!(video.model.as_deref(), Some(MODEL));
@@ -141,7 +141,7 @@ fn create_encodes_the_provider_and_returns_processing() {
 fn create_without_a_provider_keeps_the_operation_name() {
     let body = encoded(&json!({"name": OPERATION}));
     let video =
-        create_response(MODEL, &body, None, None, settings(8)).expect("the create converts");
+        create_response(MODEL, &body, None, None, &settings(8)).expect("the create converts");
     assert_eq!(video.id, OPERATION);
     assert_eq!(
         serde_json::to_value(&video.usage).expect("the usage converts"),
@@ -154,7 +154,7 @@ fn create_without_a_provider_keeps_the_operation_name() {
 #[case::null(br#"{"name": null}"#.as_slice())]
 fn create_requires_an_operation_name(#[case] body: &[u8]) {
     assert!(matches!(
-        create_response(MODEL, body, None, None, settings(8)),
+        create_response(MODEL, body, None, None, &settings(8)),
         Err(VeoOperationError::MissingName)
     ));
     assert_eq!(
@@ -168,7 +168,7 @@ fn edit_reads_the_model_and_the_request_usage() {
     let body = encoded(&json!({"name": OPERATION}));
     let data = request_data(object([("durationSeconds", number(4))]));
     let video =
-        edit_response(&body, Some(PROVIDER), Some(&data), settings(8)).expect("the edit converts");
+        edit_response(&body, Some(PROVIDER), Some(&data), &settings(8)).expect("the edit converts");
     assert_eq!(video.status, "processing");
     assert_eq!(video.model.as_deref(), Some(MODEL));
     assert_eq!(
@@ -184,7 +184,7 @@ fn edit_reads_the_model_and_the_request_usage() {
 #[test]
 fn edit_without_a_model_keeps_an_empty_model() {
     let body = encoded(&json!({"name": "operations/op-1"}));
-    let video = edit_response(&body, None, None, settings(8)).expect("the edit converts");
+    let video = edit_response(&body, None, None, &settings(8)).expect("the edit converts");
     assert_eq!(video.model.as_deref(), Some(""));
     assert_eq!(video.id, "operations/op-1");
 }
@@ -194,7 +194,7 @@ fn edit_without_a_model_keeps_an_empty_model() {
 #[case::null(br#"{"name": null}"#.as_slice())]
 fn edit_requires_an_operation_name(#[case] body: &[u8]) {
     assert!(matches!(
-        edit_response(body, None, None, settings(8)),
+        edit_response(body, None, None, &settings(8)),
         Err(VeoOperationError::MissingEditName)
     ));
     assert_eq!(

@@ -259,6 +259,7 @@ fn an_empty_resolved_project_falls_back_to_the_configured_one(
         location: None,
         credentials: None,
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     };
     let granted = access("tok", resolved);
     let outcome = complete_url(&granted, &vertex);

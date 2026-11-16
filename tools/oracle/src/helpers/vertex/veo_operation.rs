@@ -1,6 +1,6 @@
 mod tests;
 
-use betterlite_config::vertex::video_settings;
+use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_vertex::provider_metadata::timestamp::LocalTimeContext;
 use betterlite_vertex::vertex_veo_operation::content::content_response;
@@ -57,19 +57,20 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let settings = video_settings::Settings {
+        let settings = VertexSettings {
             default_video_duration_seconds: input.default_duration_seconds,
+            ..VertexSettings::default()
         };
         let calls = input
             .calls
             .iter()
-            .map(|call| resolve(call, settings))
+            .map(|call| resolve(call, &settings))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(json!({ "calls": calls }))
     }
 }
 
-fn resolve(call: &Call, settings: video_settings::Settings) -> HelperResult {
+fn resolve(call: &Call, settings: &VertexSettings) -> HelperResult {
     match call {
         Call::CreateResponse {
             model,
@@ -112,7 +113,7 @@ fn create_answer(
     provider: Option<&str>,
     request_data: Option<&Object>,
     response: &Value,
-    settings: video_settings::Settings,
+    settings: &VertexSettings,
 ) -> HelperResult {
     let body = serde_json::to_vec(response).or_value_error()?;
     let video = create_response(model, &body, provider, request_data, settings).or_value_error()?;
@@ -142,7 +143,7 @@ fn edit_answer(
     provider: Option<&str>,
     request_data: Option<&Object>,
     response: &Value,
-    settings: video_settings::Settings,
+    settings: &VertexSettings,
 ) -> HelperResult {
     let body = serde_json::to_vec(response).or_value_error()?;
     let video = edit_response(&body, provider, request_data, settings).or_value_error()?;

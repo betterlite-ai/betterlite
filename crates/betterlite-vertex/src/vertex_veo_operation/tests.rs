@@ -4,7 +4,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
 
-use betterlite_config::vertex::video_settings;
+use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_prompts::arguments::json::{Json, Object};
 use jiff::tz::TimeZone;
 use rstest::rstest;
@@ -49,9 +49,10 @@ fn request_data(parameters: Object) -> Object {
     data
 }
 
-fn settings(default_video_duration_seconds: i64) -> video_settings::Settings {
-    video_settings::Settings {
+fn settings(default_video_duration_seconds: i64) -> VertexSettings {
+    VertexSettings {
         default_video_duration_seconds,
+        ..VertexSettings::default()
     }
 }
 
