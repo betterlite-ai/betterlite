@@ -15,11 +15,11 @@ pub async fn forwarding_params<Rows>(
 where
     Rows: ContainerObjectTable,
 {
-    let mut model_id = decoded_model_id(container_id);
+    let mut model_id = decode_container_id(container_id).model_id.flatten();
     if model_id.is_none() {
         let stored_id = stored_container_id(ownership, identity).await?;
-        if let Some(stored_id) = stored_id.filter(|stored| stored.as_str() != container_id) {
-            model_id = decoded_model_id(&stored_id);
+        if let Some(recovered) = stored_id.filter(|stored| stored.as_str() != container_id) {
+            model_id = decode_container_id(&recovered).model_id.flatten();
         }
     }
     Ok(ContainerForwardingParams {
@@ -59,8 +59,4 @@ where
         .caches
         .store_stored_id(&model_object_id, stored_id.as_deref())?;
     Ok(stored_id)
-}
-
-fn decoded_model_id(container_id: &str) -> Option<String> {
-    decode_container_id(container_id).model_id.flatten()
 }

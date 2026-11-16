@@ -89,6 +89,25 @@ fn cache_stored_id_maps_absent_and_empty_to_the_sentinel() {
 }
 
 #[test]
+fn cache_keeps_a_json_literal_text_unchanged() {
+    let cache = ContainerCaches::new(fixed_clock()).unwrap();
+    cache
+        .store_owner("container:openai:c1", Some("\"bob\""))
+        .unwrap();
+    assert_eq!(
+        cache.owner("container:openai:c1").unwrap(),
+        CachedOwner::Owned("\"bob\"".to_owned())
+    );
+    cache
+        .store_stored_id("container:openai:c1", Some("42"))
+        .unwrap();
+    assert_eq!(
+        cache.stored_id("container:openai:c1").unwrap(),
+        CachedStoredId::Known("42".to_owned())
+    );
+}
+
+#[test]
 fn cache_sentinels_match_litellm() {
     assert_eq!(NEGATIVE_OWNER_SENTINEL, "__litellm_container_no_owner__");
     assert_eq!(

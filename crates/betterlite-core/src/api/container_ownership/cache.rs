@@ -1,4 +1,4 @@
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_context::dynamic_logging_cache::Clock;
 use betterlite_context::local_ttl_cache::{CacheError, CacheValue, LocalTtlCache};
@@ -44,8 +44,8 @@ pub(crate) struct ContainerCaches {
 impl ContainerCaches {
     pub(crate) fn new(clock: Clock) -> Result<Self, CacheError> {
         Ok(Self {
-            owner: Mutex::new(cache(OWNER_CAPACITY, clock.clone())?),
-            stored_id: Mutex::new(cache(STORED_ID_CAPACITY, clock.clone())?),
+            owner: Mutex::new(cache(OWNER_CAPACITY, Arc::clone(&clock))?),
+            stored_id: Mutex::new(cache(STORED_ID_CAPACITY, Arc::clone(&clock))?),
             allowed: Mutex::new(cache(ALLOWED_CAPACITY, clock)?),
         })
     }
@@ -54,7 +54,7 @@ impl ContainerCaches {
         let mut guard = self.owner.lock().unwrap_or_else(PoisonError::into_inner);
         let cached = guard.get(model_object_id)?;
         drop(guard);
-        let Some(CacheValue::Text(text)) = cached else {
+        let Some(text) = wrapped_text(cached) else {
             return Ok(CachedOwner::Miss);
         };
         Ok(match text.as_str() {
@@ -70,7 +70,11 @@ impl ContainerCaches {
     ) -> Result<(), CacheError> {
         let stored = owner.map_or_else(|| NEGATIVE_OWNER_SENTINEL.to_owned(), str::to_owned);
         let mut guard = self.owner.lock().unwrap_or_else(PoisonError::into_inner);
-        let written = guard.set(model_object_id, CacheValue::Text(stored), None);
+        let written = guard.set(
+            model_object_id,
+            CacheValue::Array(vec![CacheValue::Text(stored)]),
+            None,
+        );
         drop(guard);
         written
     }
@@ -82,7 +86,7 @@ impl ContainerCaches {
             .unwrap_or_else(PoisonError::into_inner);
         let cached = guard.get(model_object_id)?;
         drop(guard);
-        let Some(CacheValue::Text(text)) = cached else {
+        let Some(text) = wrapped_text(cached) else {
             return Ok(CachedStoredId::Miss);
         };
         Ok(match text.as_str() {
@@ -104,7 +108,11 @@ impl ContainerCaches {
             .stored_id
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        let written = guard.set(model_object_id, CacheValue::Text(stored), None);
+        let written = guard.set(
+            model_object_id,
+            CacheValue::Array(vec![CacheValue::Text(stored)]),
+            None,
+        );
         drop(guard);
         written
     }
@@ -140,6 +148,14 @@ impl ContainerCaches {
         guard.delete(cache_key);
         drop(guard);
     }
+}
+
+// LocalTtlCache::get decodes a stored text as JSON, so a text is kept inside a one-item array and comes back unchanged
+fn wrapped_text(cached: Option<CacheValue>) -> Option<String> {
+    let Some(CacheValue::Array(items)) = cached else {
+        return None;
+    };
+    items.into_iter().next().and_then(cached_text)
 }
 
 fn cached_text(value: CacheValue) -> Option<String> {

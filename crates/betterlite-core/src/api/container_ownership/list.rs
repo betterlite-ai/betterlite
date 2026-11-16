@@ -24,10 +24,10 @@ where
     Source: ContainerListSource + Sync,
 {
     let allowed = allowed_container_ids(ownership, caller.principal).await?;
-    let page_limit = limit.unwrap_or(DEFAULT_CONTAINER_LIST_LIMIT);
-    if page_limit < 0 {
-        return Err(ContainerListError::InvalidLimit { limit: page_limit });
-    }
+    let requested = limit.unwrap_or(DEFAULT_CONTAINER_LIST_LIMIT);
+    let Ok(page_limit) = usize::try_from(requested) else {
+        return Err(ContainerListError::InvalidLimit { limit: requested });
+    };
     let needed = page_limit.saturating_add(1);
     let (last_page, owned) =
         collect_owned(source, after, needed, &allowed, caller.custom_llm_provider)
@@ -40,14 +40,10 @@ where
 fn list_page(
     last_page: ContainerListPage,
     owned: Vec<Record>,
-    page_limit: i64,
+    page_limit: usize,
 ) -> ContainerListPage {
-    let has_more =
-        usize::try_from(page_limit).is_ok_and(|limit| owned.len() > limit) || last_page.has_more;
-    let data: Vec<Record> = owned
-        .into_iter()
-        .take(usize::try_from(page_limit).unwrap_or(usize::MAX))
-        .collect();
+    let has_more = owned.len() > page_limit || last_page.has_more;
+    let data: Vec<Record> = owned.into_iter().take(page_limit).collect();
     let first_id = page_id(data.first());
     let last_id = page_id(data.last());
     ContainerListPage {
@@ -92,7 +88,7 @@ where
 async fn collect_owned<Source>(
     source: &Source,
     after: Option<&str>,
-    needed: i64,
+    needed: usize,
     allowed: &BTreeSet<String>,
     custom_llm_provider: &str,
 ) -> Result<(ContainerListPage, Vec<Record>), Source::Failure>
@@ -113,7 +109,7 @@ where
             .cloned()
             .collect();
         let owned_count = owned.len().saturating_add(page_owned.len());
-        let enough = usize::try_from(needed).is_ok_and(|needed| owned_count >= needed);
+        let enough = owned_count >= needed;
         owned.extend(page_owned);
         let Some(last_id) = page_last_id(&page) else {
             return Ok((page, owned));

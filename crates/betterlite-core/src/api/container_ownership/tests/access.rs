@@ -206,3 +206,32 @@ async fn owner_cache_expires_after_the_ttl() {
     assert!(matches!(&error, ContainerOwnershipError::Forbidden));
     assert_eq!(objects.effects().len(), 2);
 }
+
+#[tokio::test]
+async fn cached_owner_that_is_a_json_literal_stays_distinct_from_its_bare_text() {
+    let objects = ScriptedObjects::default();
+    objects.row_for(
+        "container:openai:container-1",
+        CONTAINER_OBJECT_PURPOSE,
+        Some("\"bob\""),
+    );
+    let ownership = ContainerOwnership::new(objects.clone(), fixed_clock()).unwrap();
+    let quoted = principal(r#"\"bob\""#);
+    let quoted_caller = ContainerCaller {
+        principal: Some(&quoted),
+        custom_llm_provider: "openai",
+    };
+    assert_container_access(&ownership, "container-1", quoted_caller)
+        .await
+        .unwrap();
+    let bob = principal("bob");
+    let bob_caller = ContainerCaller {
+        principal: Some(&bob),
+        custom_llm_provider: "openai",
+    };
+    let error = assert_container_access(&ownership, "container-1", bob_caller)
+        .await
+        .unwrap_err();
+    assert!(matches!(&error, ContainerOwnershipError::Forbidden));
+    assert_eq!(objects.effects().len(), 1);
+}

@@ -50,14 +50,4 @@ deviations:
       LiteLLM's hidden_params.get only runs after the dict check, so a list or string value there is a 500 from an
       input the declared response type never produces. betterlite's typed lookup has no such call to fail.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L130-L143
-  - what: >-
-      The owner and stored-id caches store their text through B2226's LocalTtlCache, whose get decodes a stored
-      text as JSON. An owner or stored ID that is itself a JSON scalar literal, such as 42, true or null, reads
-      back as a non-text value and is treated as a cache miss, so that lookup reads the row again; the answer is
-      the same.
-    why: >-
-      LiteLLM's InMemoryCache hands back the Python object it stored, so a numeric-looking scope stays a string.
-      The sentinel values in both caches are not valid JSON, so they keep round-tripping as text, which is what
-      the untracked answer relies on. The extra row read only costs a query.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L255-L279
 kept_bugs: []
