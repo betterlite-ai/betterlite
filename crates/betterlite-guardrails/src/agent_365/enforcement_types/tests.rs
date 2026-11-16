@@ -92,7 +92,7 @@ fn assert_non_object(body: &str) {
         error.to_string(),
         "the Agent 365 endpoint returned a non-object JSON body"
     );
-    assert!(matches!(error, EvaluateResponseError::NonObjectBody { .. }));
+    assert!(matches!(error, EvaluateResponseError::NonObjectBody));
 }
 
 fn assert_missing_allowed(body: &str) {
@@ -110,6 +110,31 @@ fn rejects_a_non_object_json_body() {
     assert_non_object(r#""allowed""#);
     assert_non_object("null");
     assert_non_object("5");
+}
+
+#[test]
+fn rejects_an_array_that_lists_the_verdict_fields_in_order() {
+    assert_non_object(r#"[true, {"status":"Evaluated"}]"#);
+    assert_non_object(r#"[true, {"status":"Evaluated"}, "corr-1"]"#);
+}
+
+#[test]
+fn reads_an_array_defender_as_an_empty_one() {
+    let verdict = decode(r#"{"allowed":true,"defender":["Evaluated",null,null]}"#).unwrap();
+    assert!(verdict.allowed);
+    assert_eq!(verdict.defender, DefenderResult::default());
+    assert!(!verdict.defender_evaluated());
+    assert_eq!(
+        verdict.unevaluated_reason(),
+        "Microsoft Defender did not evaluate the call (defender.status=missing)"
+    );
+}
+
+#[test]
+fn takes_the_last_of_repeated_keys() {
+    let verdict =
+        decode(r#"{"allowed":false,"allowed":true,"defender":{"status":"Evaluated"}}"#).unwrap();
+    assert!(verdict.allowed);
 }
 
 #[test]
@@ -221,7 +246,11 @@ fn replays_the_agent_365_evaluate_response_corpus() {
             (name, decode_evaluate_response(&bytes))
         })
         .collect();
-    assert_eq!(outcomes.len(), 5);
+    assert_eq!(outcomes.len(), 6);
+    assert!(matches!(
+        &outcomes["array_verdict.json"],
+        Err(EvaluateResponseError::NonObjectBody)
+    ));
     assert!(matches!(&outcomes["allowed.json"], Ok(verdict) if verdict.allowed));
     assert!(matches!(&outcomes["blocked.json"], Ok(verdict) if !verdict.allowed));
     assert!(matches!(
@@ -230,7 +259,7 @@ fn replays_the_agent_365_evaluate_response_corpus() {
     ));
     assert!(matches!(
         &outcomes["non_object.json"],
-        Err(EvaluateResponseError::NonObjectBody { .. })
+        Err(EvaluateResponseError::NonObjectBody)
     ));
     assert!(matches!(
         &outcomes["truncated.json"],

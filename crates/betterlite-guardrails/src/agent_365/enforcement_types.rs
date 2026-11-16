@@ -1,12 +1,10 @@
 use indexmap::IndexMap;
-use serde::Deserialize;
-use serde::de::IgnoredAny;
-use serde_json::error::Category;
 use thiserror::Error;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use crate::agent_365_tokens::DEFENDER_STATUS_EVALUATED;
+use crate::primitives::json_value::JsonValue;
 
 // LiteLLM's _DefenderResult; a missing field is the same as an absent one
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -60,79 +58,42 @@ pub enum EvaluateResponseError {
         source: serde_json::Error,
     },
     #[error("the Agent 365 endpoint returned a non-object JSON body")]
-    NonObjectBody {
-        #[source]
-        source: serde_json::Error,
-    },
+    NonObjectBody,
     #[error("the Agent 365 endpoint returned a verdict without a boolean 'allowed' field")]
     MissingAllowed,
 }
 
-#[derive(Debug, Deserialize)]
-struct EvaluateWire {
-    #[serde(default)]
-    allowed: AllowedField,
-    #[serde(default)]
-    defender: DefenderField,
-    #[serde(rename = "correlationId", default)]
-    correlation_id: TextField,
-}
-
-// One key as LiteLLM reads it with isinstance: a value of the key's type, any other value, or an absent key
-#[derive(Debug, Default, Deserialize)]
-#[serde(untagged)]
-enum Field<T> {
-    Value(T),
-    Other(IgnoredAny),
-    #[default]
-    Missing,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct DefenderWire {
-    status: Option<TextField>,
-    verdict: Option<TextField>,
-    message: Option<TextField>,
-}
-
-type AllowedField = Field<bool>;
-type DefenderField = Field<DefenderWire>;
-type TextField = Field<String>;
-
+// The body is read as a JSON tree first, so an array never fills the verdict's fields by position
 pub fn decode_evaluate_response(body: &[u8]) -> Result<EvaluateVerdict, EvaluateResponseError> {
-    let wire: EvaluateWire = serde_json::from_slice(body).map_err(|source| {
-        // serde reports well-formed JSON of the wrong shape as a data error and broken JSON as a syntax error
-        if source.classify() == Category::Data {
-            EvaluateResponseError::NonObjectBody { source }
-        } else {
-            EvaluateResponseError::NonJsonBody { source }
-        }
-    })?;
-    let Field::Value(allowed) = wire.allowed else {
+    let parsed: JsonValue = serde_json::from_slice(body)
+        .map_err(|source| EvaluateResponseError::NonJsonBody { source })?;
+    let JsonValue::Object(verdict) = parsed else {
+        return Err(EvaluateResponseError::NonObjectBody);
+    };
+    let Some(&JsonValue::Bool(allowed)) = verdict.get("allowed") else {
         return Err(EvaluateResponseError::MissingAllowed);
     };
-    let defender = match wire.defender {
-        Field::Value(defender) => DefenderResult {
-            status: defender.status.and_then(TextField::into_text),
-            verdict: defender.verdict.and_then(TextField::into_text),
-            message: defender.message.and_then(TextField::into_text),
+    let defender = match verdict.get("defender") {
+        Some(JsonValue::Object(defender)) => DefenderResult {
+            status: text_of(defender.get("status")),
+            verdict: text_of(defender.get("verdict")),
+            message: text_of(defender.get("message")),
         },
         // LiteLLM reads a defender that is not an object as an empty one
-        Field::Other(_) | Field::Missing => DefenderResult::default(),
+        _ => DefenderResult::default(),
     };
     Ok(EvaluateVerdict {
         allowed,
         defender,
-        correlation_id: wire.correlation_id.into_text(),
+        correlation_id: text_of(verdict.get("correlationId")),
     })
 }
 
-impl Field<String> {
-    fn into_text(self) -> Option<String> {
-        match self {
-            Self::Value(text) => Some(text),
-            Self::Other(_) | Self::Missing => None,
-        }
+// LiteLLM's isinstance(value, str): a value of any other type reads as absent
+fn text_of(value: Option<&JsonValue>) -> Option<String> {
+    match value {
+        Some(JsonValue::String(text)) => Some(text.clone()),
+        _ => None,
     }
 }
 
