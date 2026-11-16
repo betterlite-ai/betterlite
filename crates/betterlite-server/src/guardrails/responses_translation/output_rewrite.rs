@@ -177,11 +177,7 @@ fn scanned_output(response: &Value) -> Result<Option<ExtractedOutput>, OutputRew
         tracing::debug!("OpenAI Responses API: Empty output in response");
         return Ok(None);
     }
-    let extracted = extract_output(items)?;
-    if extracted.texts.is_empty() && extracted.tool_calls.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(extracted))
+    Ok(Some(extract_output(items)?))
 }
 
 fn scan_inputs(
@@ -244,6 +240,10 @@ where
     let Some(extracted) = scanned_output(&value)? else {
         return Ok(());
     };
+    if extracted.texts.is_empty() && extracted.tool_calls.is_empty() {
+        tracing::debug!("OpenAI Responses API: Processed output response: {response:?}");
+        return Ok(());
+    }
     let mut fresh_request_data = Object::new();
     let prepared_request_data = request_data.unwrap_or(&mut fresh_request_data);
     add_response_context(prepared_request_data, response, context.user_api_key_dict);
