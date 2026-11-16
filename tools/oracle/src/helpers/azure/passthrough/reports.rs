@@ -7,7 +7,6 @@ use betterlite_azure::passthrough::endpoint::{
 use betterlite_azure::passthrough::logging::AzureRelayedLog;
 use betterlite_azure::passthrough::url::without_api_version;
 use betterlite_openai::api::responses_event_records::records::ResponsesTerminalEvent;
-use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughUrlRequest, RelayedResponse,
@@ -188,59 +187,13 @@ fn nonstream_step(step: &NonstreamStep) -> Value {
         &step.request_data,
         &mut logging_obj,
     );
-    let view = match &logged {
-        Some(AzureRelayedLog::Chat(object) | AzureRelayedLog::Relay(object)) => relay_view(object),
-        Some(AzureRelayedLog::Terminal(event)) => terminal_view(event),
-        None => Value::Null,
-    };
     let input = config.chat_reply.logged();
     json!({
         "result_some": logged.is_some(),
         "call_type": call_type(&logging_obj),
-        "view": view,
         "logging_input": input.as_ref().map(|(messages, _body)| messages.clone()),
         "complete_input_dict": input.map(|(_messages, body)| body),
     })
-}
-
-fn relay_view(body: &Object) -> Value {
-    let mut view = Object::new();
-    for name in ["id", "object", "created", "created_at", "data"] {
-        if let Some(value) = body.get(name).filter(|value| !value.is_null()) {
-            view.insert(name.to_owned(), value.clone());
-        }
-    }
-    let choice = body
-        .get("choices")
-        .and_then(Value::as_array)
-        .and_then(|choices| choices.first());
-    copy_choice(choice, &mut view);
-    for name in ["prompt_tokens", "total_tokens"] {
-        if let Some(value) = usage_number(body, name) {
-            view.insert(name.to_owned(), value);
-        }
-    }
-    Value::Object(view)
-}
-
-fn copy_choice(choice: Option<&Value>, view: &mut Object) {
-    let Some(choice) = choice else {
-        return;
-    };
-    if let Some(content) = choice
-        .get("message")
-        .and_then(|message| message.get("content"))
-    {
-        view.insert(String::from("content"), content.clone());
-    }
-    if let Some(reason) = choice.get("finish_reason").filter(|value| !value.is_null()) {
-        view.insert(String::from("finish_reason"), reason.clone());
-    }
-}
-
-fn usage_number(body: &Object, name: &str) -> Option<Value> {
-    let usage = body.get("usage")?.as_object()?;
-    usage.get(name).filter(|value| !value.is_null()).cloned()
 }
 
 fn auth_report(key_steps: &[KeyStep], validation_steps: &[ValidationStep]) -> Value {

@@ -1,5 +1,4 @@
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
 
 use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
 use betterlite_azure::credentials::source::{
@@ -10,27 +9,14 @@ use betterlite_azure::passthrough::config::AzurePassthroughConfig;
 use betterlite_azure::passthrough::logging::{
     ChatReplyProjection, ChatStreamAssembly, NoChatReplyProjection,
 };
-use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
-};
-use betterlite_logging::logging_privacy::request::Decision;
-use betterlite_logging::logging_state::correlation::{
-    CorrelationContext, CorrelationSettings, CorrelationSetup,
-};
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat_choices::reply::{ResponseReply, transform_response};
+use betterlite_openai::chat_choices::reply::ResponseReply;
 use betterlite_openai::compatible_wire::LogInput;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughLogging, PassthroughTarget, RelayCallType,
 };
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::DateTime;
 use secrecy::SecretString;
-
-const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"b548","function_id":"b548","litellm_trace_id":"trace-b548"}"#;
-const NOW: &str = "2026-01-01T00:05:00+00:00";
 
 pub(crate) fn base_config(api_base_env: Option<&str>) -> AzurePassthroughConfig {
     AzurePassthroughConfig {
@@ -67,70 +53,7 @@ pub(crate) fn secret(text: &str) -> SecretString {
     SecretString::from(text.to_owned())
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct Silent;
-
-impl LogSink for Silent {
-    fn emit(&self, _record: LogRecord) {}
-}
-
-// the real post-call sink B668 writes through, built on a stable clock and call id
-struct LoggingFixture {
-    redactor: Redactor,
-    state: LoggingState,
-    sink: Silent,
-}
-
-impl LoggingFixture {
-    fn new() -> Option<Self> {
-        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).ok()?;
-        let state = LoggingState::new(
-            serde_json::from_str::<LoggingInit>(INIT).ok()?,
-            CorrelationSetup {
-                context: &mut CorrelationContext::default(),
-                settings: CorrelationSettings::default(),
-            },
-            &redactor,
-            || String::from("trace"),
-            Duration::default,
-        )
-        .ok()?;
-        Some(Self {
-            redactor,
-            state,
-            sink: Silent,
-        })
-    }
-
-    fn project(&mut self, reply: &ResponseReply<'_>, input: LogInput) -> Option<Object> {
-        let env = PrePostEnv {
-            debug: DebugSettings::default(),
-            globals: GlobalFlags::default(),
-            decision: Decision {
-                content: false,
-                key_info: false,
-            },
-            redactor: &self.redactor,
-            log: &self.sink,
-            input_callbacks: &[],
-            sentry: None,
-            logger_fn: None,
-            now: DateTime::parse_from_rfc3339(NOW).ok()?,
-        };
-        match transform_response(
-            reply,
-            &mut self.state,
-            &env,
-            input,
-            |decoded, _raw_headers, _hidden_headers| Ok(decoded),
-        ) {
-            Ok(value) => value.as_object().cloned(),
-            Err(_failure) => None,
-        }
-    }
-}
-
-// keeps the B668 projection's log input alongside the projected reply
+// keeps the B668 log input beside the reply and hands back the decoded body its projection reads
 #[derive(Debug, Default)]
 pub(crate) struct OracleChatProjection {
     logged: Mutex<Option<(Json, Json)>>,
@@ -154,7 +77,7 @@ impl ChatReplyProjection for OracleChatProjection {
     ) -> Option<Object> {
         let recorded = (input.messages.clone(), Json::from(&input.data));
         *self.logged.lock().unwrap_or_else(PoisonError::into_inner) = Some(recorded);
-        LoggingFixture::new()?.project(reply, input)
+        serde_json::from_slice::<Object>(reply.body).ok()
     }
 }
 
@@ -205,6 +128,14 @@ impl PassthroughLogging for RecordingLogging {
     }
 }
 
+fn failure(message: &str) -> SourceFailure {
+    SourceFailure {
+        class: String::from("AssertionError"),
+        status: None,
+        message: String::from(message),
+    }
+}
+
 pub(crate) struct NoSources;
 
 impl CredentialSources for NoSources {
@@ -212,33 +143,21 @@ impl CredentialSources for NoSources {
         &'source self,
         _record: &ClientSecretRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("AssertionError"),
-            status: None,
-            message: String::from("no client secret source is configured"),
-        })
+        Err(failure("no client secret source is configured"))
     }
 
     fn username_password<'source>(
         &'source self,
         _record: &UsernamePasswordRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("AssertionError"),
-            status: None,
-            message: String::from("no username and password source is configured"),
-        })
+        Err(failure("no username and password source is configured"))
     }
 
     fn sdk_refresh<'source>(
         &'source self,
         _scope: &str,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("AssertionError"),
-            status: None,
-            message: String::from("no refresh source is configured"),
-        })
+        Err(failure("no refresh source is configured"))
     }
 
     fn default_credential<'source>(
@@ -249,11 +168,7 @@ impl CredentialSources for NoSources {
     }
 
     fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("AssertionError"),
-            status: None,
-            message: String::from("no oidc source is configured"),
-        })
+        Err(failure("no oidc source is configured"))
     }
 }
 
