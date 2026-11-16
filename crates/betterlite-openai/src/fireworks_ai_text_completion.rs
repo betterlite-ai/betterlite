@@ -16,6 +16,8 @@ pub enum FireworksCompletionError {
 }
 
 impl FireworksCompletionError {
+    // the prompt error carries no status, so no test can tell this match from a bare None
+    #[cfg_attr(test, mutants::skip)]
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {

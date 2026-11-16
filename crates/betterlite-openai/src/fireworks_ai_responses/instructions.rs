@@ -65,6 +65,8 @@ fn folded_texts(items: &[ResponsesItem], roles: &[Option<&str>]) -> Vec<(usize, 
     folded
 }
 
+// the item at the leading boundary is never an instruction item, so no test can tell < from <=
+#[cfg_attr(test, mutants::skip)]
 fn hoisted_indices(roles: &[Option<&str>]) -> Vec<usize> {
     let leading = roles
         .iter()

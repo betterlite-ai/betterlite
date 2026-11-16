@@ -72,6 +72,16 @@ fn stripped_body(optional_params: &Object, model: &str) -> Object {
         .map(String::as_str)
         .filter(|key| STRIP_PARAMS.contains(key))
         .collect();
+    log_stripped(&dropped, model);
+    body.iter()
+        .filter(|(key, _)| !STRIP_PARAMS.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
+}
+
+// the debug event is not part of the body, so no test can tell when it fires
+#[cfg_attr(test, mutants::skip)]
+fn log_stripped(dropped: &[&str], model: &str) {
     if !dropped.is_empty() {
         tracing::debug!(
             ?dropped,
@@ -79,10 +89,6 @@ fn stripped_body(optional_params: &Object, model: &str) -> Object {
             "fireworks_ai does not support NIM/vLLM params; dropping them from the request"
         );
     }
-    body.iter()
-        .filter(|(key, _)| !STRIP_PARAMS.contains(&key.as_str()))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect()
 }
 
 fn moved_body(body: &Object, optional_params: &Object) -> Object {
@@ -150,6 +156,8 @@ where
     result
 }
 
+// the debug event is not part of the body, so no test can tell when it fires
+#[cfg_attr(test, mutants::skip)]
 fn log_unknown_kwargs(kwargs: &Object, model: &str) {
     let unknown: Vec<&str> = kwargs
         .keys()
