@@ -139,15 +139,19 @@ impl Field<String> {
 impl EvaluateVerdict {
     #[must_use]
     pub fn defender_evaluated(&self) -> bool {
-        let status = self.defender.status.as_deref();
-        status == Some(DEFENDER_STATUS_EVALUATED)
+        match self.defender.status.as_deref() {
+            Some(status) => status == DEFENDER_STATUS_EVALUATED,
+            None => false,
+        }
     }
 
     // LiteLLM's f"Microsoft Defender did not evaluate the call (defender.status={defender_status or 'missing'})"
     #[must_use]
     pub fn unevaluated_reason(&self) -> String {
-        let status = self.defender.status.as_deref().unwrap_or("missing");
-        format!("Microsoft Defender did not evaluate the call (defender.status={status})")
+        format!(
+            "Microsoft Defender did not evaluate the call (defender.status={})",
+            self.defender.status.as_deref().unwrap_or("missing")
+        )
     }
 
     #[must_use]
