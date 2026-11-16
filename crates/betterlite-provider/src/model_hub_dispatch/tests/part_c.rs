@@ -13,6 +13,11 @@ use super::embedding::NoTag;
 use super::hub::PooledHub;
 use super::huggingface::NoMapping;
 use super::transport::PooledPost;
+use crate::api::rerank_contracts::{
+    MapCohereRerankParams, Params as RerankParams, RerankLogging, RerankProviderResponse,
+    ResponseTransform,
+};
+use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 
 const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 const TEMPLATE: &str = r#"{"roles":{"user":{"pre_message":"U:","post_message":"!"}},"initial_prompt_value":"I","final_prompt_value":"F"}"#;
@@ -223,4 +228,71 @@ async fn the_huggingface_arm_skips_the_mapping_when_a_base_is_set() {
     let sent_model = PromptJson::Text(String::from(model));
     assert_eq!(body.get("model"), Some(&sent_model));
     assert_eq!(services.hub.calls(), 0);
+}
+
+#[test]
+fn the_rerank_config_maps_the_cohere_params_and_builds_the_body() {
+    let globals = empty_globals();
+    let config = huggingface_rerank_config(None, None, &globals, &environment(&[])).unwrap();
+    let documents = Json::List(vec![Json::Text(String::from("d"))]);
+    let mut cohere = RerankParams::from([
+        (String::from("query"), Json::Text(String::from("q"))),
+        (String::from("documents"), documents.clone()),
+    ]);
+    let mapped = config
+        .map_cohere_rerank_params(MapCohereRerankParams {
+            non_default_params: &mut cohere,
+            model: "m",
+            drop_params: false,
+            query: "q",
+            documents: &[],
+            custom_llm_provider: None,
+            top_n: None,
+            rank_fields: None,
+            return_documents: None,
+            max_chunks_per_doc: None,
+            max_tokens_per_doc: None,
+            instruction: None,
+        })
+        .unwrap();
+    assert_eq!(mapped.get("texts"), Some(&documents));
+    let body = config
+        .transform_rerank_request("m", &mapped, &Headers::new(), None)
+        .unwrap();
+    let direction = Json::Text(String::from("Right"));
+    assert_eq!(body.get("truncation_direction"), Some(&direction));
+}
+
+#[test]
+fn the_rerank_config_reads_the_reply_with_the_module_counter() {
+    let globals = empty_globals();
+    let config = huggingface_rerank_config(None, None, &globals, &environment(&[])).unwrap();
+    let raw = RerankProviderResponse {
+        status_code: 200,
+        headers: Headers::new(),
+        body: br#"[{"index":0,"score":0.5}]"#.to_vec(),
+    };
+    let request = RerankParams::from([
+        (String::from("query"), Json::Text(String::from("q"))),
+        (
+            String::from("texts"),
+            Json::List(vec![Json::Text(String::from("d"))]),
+        ),
+    ]);
+    let empty = RerankParams::new();
+    let mut logging = RerankLogging::default();
+    let transform = ResponseTransform {
+        model: "m",
+        raw_response: &raw,
+        logging: &mut logging,
+        api_key: None,
+        request_data: &request,
+        optional_params: &empty,
+        litellm_params: &empty,
+    };
+    let response = config
+        .transform_rerank_response(RerankResponse::default(), transform)
+        .unwrap();
+    assert!(response.id.is_some());
+    assert_eq!(response.results.map(|results| results.len()), Some(1));
 }
