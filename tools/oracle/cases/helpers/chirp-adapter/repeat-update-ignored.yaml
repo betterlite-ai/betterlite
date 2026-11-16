@@ -1,0 +1,16 @@
+kind: helper
+name: chirp-adapter-repeat-update-ignored
+call:
+  chirp_adapter:
+    function: commands
+    project: oracle-project
+    location: null
+    model: chirp_2
+    session_id: null
+    steps:
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":16000},"transcription":{"model":"chirp_2","language":"en-US"}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"chirp_3"}}}}}'
+      - '{"type":"transcription_session.update","session":{"audio":{"input":{"transcription":{"model":"chirp_2","language":"de"}}}}}'
+      - '{"type":"session.update"}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,29 @@
+kind: helper
+name: shadow-unmask-tie
+call:
+  b4084:
+    operation: unmask
+    raw_preference: tie
+    real_is_a: false
+calls:
+  - b4084:
+      operation: unmask
+      raw_preference: TIE
+      real_is_a: false
+  - b4084:
+      operation: unmask
+      raw_preference: ""
+      real_is_a: false
+  - b4084:
+      operation: unmask
+      raw_preference: a
+      real_is_a: false
+  - b4084:
+      operation: unmask
+      raw_preference: unclear
+      real_is_a: true
+  - b4084:
+      operation: unmask
+      raw_preference: "Tie "
+env: {}
+compare: {ignore: []}

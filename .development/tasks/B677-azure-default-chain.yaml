@@ -355,7 +355,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_default_chain*")"
       && grep -lq 'azure_default_chain' tools/oracle/fuzz/corpus/helper_case/azure_default_chain* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_default_chain$/)'
+      run --locked -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_default_chain$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-azure-credential
     why: The AZURE_CREDENTIAL setting is not loaded with its required defaults and precedence.
