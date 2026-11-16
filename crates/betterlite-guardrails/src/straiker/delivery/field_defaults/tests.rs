@@ -4,9 +4,6 @@ use std::time::Duration;
 
 use crate::generic_guardrail_contracts::UnreachableFallback;
 use crate::straiker::delivery::fixtures::{raw, settings};
-use crate::straiker::delivery::{
-    DEFAULT_INITIAL_BACKOFF, DEFAULT_MAX_BACKOFF, DEFAULT_MAX_PAYLOAD_BYTES, DEFAULT_MAX_RETRIES,
-};
 
 #[test]
 fn an_unset_timeout_is_five_seconds() {
@@ -16,15 +13,9 @@ fn an_unset_timeout_is_five_seconds() {
 #[test]
 fn retries_and_backoffs_start_at_their_defaults() {
     let resolved = settings(&raw());
-    assert_eq!(resolved.max_retries, DEFAULT_MAX_RETRIES);
-    assert_eq!(
-        resolved.initial_backoff.to_bits(),
-        DEFAULT_INITIAL_BACKOFF.to_bits()
-    );
-    assert_eq!(
-        resolved.max_backoff.to_bits(),
-        DEFAULT_MAX_BACKOFF.to_bits()
-    );
+    assert_eq!(resolved.max_retries, 2);
+    assert_eq!(resolved.initial_backoff.to_bits(), 0.1_f64.to_bits());
+    assert_eq!(resolved.max_backoff.to_bits(), 2.0_f64.to_bits());
 }
 
 #[test]
@@ -40,10 +31,7 @@ fn an_unset_fallback_blocks_and_errors_propagate() {
 
 #[test]
 fn an_unset_payload_limit_is_half_a_mebibyte() {
-    assert_eq!(
-        settings(&raw()).max_payload_bytes,
-        DEFAULT_MAX_PAYLOAD_BYTES
-    );
+    assert_eq!(settings(&raw()).max_payload_bytes, 524_288);
 }
 
 #[test]

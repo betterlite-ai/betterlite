@@ -258,7 +258,7 @@ pub fn response_shape(request_data: &Object) -> Result<Response, DeliveryError> 
     let Json::Object(fields) = response else {
         return Ok(Response::Other(response.clone()));
     };
-    if is_text_completion(fields) {
+    if fields.get("object").and_then(Json::as_str) == Some(TEXT_COMPLETION_OBJECT) {
         let encoded =
             serde_json::to_value(Json::Object(fields.clone())).map_err(DeliveryError::Serialize)?;
         if let Ok(completion) = serde_json::from_value::<TextCompletionResponse>(encoded) {
@@ -266,11 +266,6 @@ pub fn response_shape(request_data: &Object) -> Result<Response, DeliveryError> 
         }
     }
     Ok(Response::Chat(fields.clone()))
-}
-
-fn is_text_completion(fields: &Object) -> bool {
-    let object = fields.get("object").and_then(Json::as_str);
-    object == Some(TEXT_COMPLETION_OBJECT)
 }
 
 fn application(settings: &StraikerSettings, request_data: &Object) -> WebhookApplication {

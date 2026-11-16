@@ -1,7 +1,9 @@
 pub mod apply;
+pub mod attempts;
 pub mod block;
 pub mod blocked_turns;
 pub mod envelope;
+pub mod failure_policy;
 pub mod headers;
 pub mod payload;
 pub mod request_json;
@@ -9,6 +11,7 @@ pub mod responses;
 pub mod retry;
 pub mod settings;
 pub mod transport;
+pub mod v3_prepare;
 
 #[path = "delivery/tests/fixtures.rs"]
 mod fixtures;

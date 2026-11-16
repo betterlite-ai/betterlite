@@ -4,15 +4,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
-use crate::straiker::delivery::DEFAULT_BLOCK_MESSAGE;
 
 const BLOCK_STATUS: u16 = 400;
-
-#[must_use]
-pub fn block_message(reason: Option<String>) -> String {
-    let fallback = DEFAULT_BLOCK_MESSAGE.to_owned();
-    reason.unwrap_or(fallback)
-}
 
 #[must_use]
 pub fn block_failure(

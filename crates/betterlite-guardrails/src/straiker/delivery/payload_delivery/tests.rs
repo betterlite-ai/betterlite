@@ -600,20 +600,58 @@ async fn a_pooled_url_error_retries_and_fails_open() {
     assert_eq!(caps(&handler).len(), 2);
 }
 
-#[tokio::test]
-async fn a_non_utf8_answer_is_a_permanent_failure() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let fakes = Fakes::default();
+// Answers `count` connections with `reply` once each request, headers and body, has arrived.
+async fn serve_requests(listener: TcpListener, reply: &'static [u8], count: usize) -> Vec<String> {
+    let mut requests = Vec::new();
+    for _ in 0..count {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut received = Vec::new();
+        let mut chunk = [0_u8; 4096];
+        loop {
+            let read = stream.read(&mut chunk).await.unwrap();
+            assert_ne!(read, 0, "the client closed before the request arrived");
+            received.extend_from_slice(&chunk[..read]);
+            let text = String::from_utf8_lossy(&received).to_lowercase();
+            let Some((head, body)) = text.split_once("\r\n\r\n") else {
+                continue;
+            };
+            let length = head
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length: "))
+                .map_or(0, |value| value.trim().parse::<usize>().unwrap());
+            if body.len() >= length {
+                break;
+            }
+        }
+        stream.write_all(reply).await.unwrap();
+        requests.push(String::from_utf8_lossy(&received).into_owned());
+    }
+    requests
+}
+
+fn pooled_handler(
+    api_base: &str,
+    max_retries: i64,
+    fallback: &str,
+) -> StraikerDelivery<PooledPost, FakeDelay> {
     let mut args = raw();
-    args.api_base = format!("http://{address}");
-    args.unreachable_fallback = "fail_open".to_owned();
-    let handler = StraikerDelivery {
+    args.api_base = api_base.to_owned();
+    args.max_retries = Some(max_retries);
+    args.unreachable_fallback = fallback.to_owned();
+    StraikerDelivery {
         settings: settings(&args),
         transport: pooled(),
         delay: FakeDelay::default(),
         blocked_turns: BlockedTurns::new(Clock::default().source()).unwrap(),
-    };
+    }
+}
+
+#[tokio::test]
+async fn a_non_utf8_ok_answer_is_a_permanent_schema_failure() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let fakes = Fakes::default();
+    let handler = pooled_handler(&format!("http://{address}"), 2, "fail_open");
     let mut data = request_data(SIMPLE_DATA);
     let call = fakes.call(Some("completion"), None);
     let (answer, _received) = tokio::join!(
@@ -624,12 +662,13 @@ async fn a_non_utf8_answer_is_a_permanent_failure() {
             GuardrailInputType::Request,
             &call
         ),
-        serve_one(
+        serve_requests(
             listener,
-            b"HTTP/1.1 200 OK\r\ncontent-length: 1\r\nconnection: close\r\n\r\n\xff"
+            b"HTTP/1.1 200 OK\r\ncontent-length: 1\r\nconnection: close\r\n\r\n\xff",
+            1
         )
     );
-    let failure = answer.expect_err("the body is not UTF-8");
+    let failure = answer.expect_err("the body is not a verdict");
     assert!(caps(&handler).is_empty());
     let GuardrailFailure::GuardrailRaised {
         message,
@@ -640,7 +679,64 @@ async fn a_non_utf8_answer_is_a_permanent_failure() {
         panic!("expected a block");
     };
     assert!(!blocked_content);
-    assert!(message.contains("not UTF-8"), "got {message}");
+    assert!(message.contains("invalid response schema"), "got {message}");
+}
+
+#[tokio::test]
+async fn a_non_utf8_error_page_is_retried_and_fails_open() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let fakes = Fakes::default();
+    let handler = pooled_handler(&format!("http://{address}"), 1, "fail_open");
+    let mut data = request_data(SIMPLE_DATA);
+    let call = fakes.call(Some("completion"), None);
+    let (answer, received) = tokio::join!(
+        run(
+            &handler,
+            &mut data,
+            inputs(&["hi"]),
+            GuardrailInputType::Request,
+            &call
+        ),
+        serve_requests(
+            listener,
+            b"HTTP/1.1 503 Service Unavailable\r\ncontent-length: 1\r\nconnection: close\r\n\r\n\xff",
+            2
+        )
+    );
+    assert_eq!(
+        answer.expect("a 503 under fail_open lets the call pass"),
+        inputs(&["hi"])
+    );
+    assert_eq!(received.len(), 2);
+    assert_eq!(caps(&handler).len(), 1);
+}
+
+#[tokio::test]
+async fn headers_that_differ_only_in_case_are_both_sent() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let post = pooled();
+    let headers = WebhookHeaders {
+        authorization: SecretString::from("Bearer test-key"),
+        values: BTreeMap::from([
+            ("X-Foo".to_owned(), "upper".to_owned()),
+            ("x-foo".to_owned(), "lower".to_owned()),
+        ]),
+    };
+    let url = format!("http://{address}/x");
+    let (answer, received) = tokio::join!(
+        post.post(request(&url, Duration::from_secs(2), &headers)),
+        serve_requests(
+            listener,
+            b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}",
+            1
+        )
+    );
+    answer.expect("the post succeeds");
+    let text = received.first().unwrap().to_lowercase();
+    assert!(text.contains("x-foo: upper\r\n"), "got {text}");
+    assert!(text.contains("x-foo: lower\r\n"), "got {text}");
 }
 
 #[tokio::test]

@@ -43,14 +43,10 @@ impl PooledPost {
             .send_buffered(outbound)
             .await
             .map_err(|source| unreachable(source.to_string()))?;
-        let body = String::from_utf8(response.body).map_err(|source| WebhookFailure {
-            message: format!("the response body is not UTF-8: {source}"),
-            is_unreachable: false,
-            retryable: false,
-        })?;
+        // httpx's response.text decodes lossily, so a non-UTF-8 error page still classifies by its status.
         Ok(WebhookReply {
             status: response.status,
-            body,
+            body: String::from_utf8_lossy(&response.body).into_owned(),
         })
     }
 }
@@ -84,7 +80,7 @@ fn outbound_request(request: &WebhookRequest<'_>) -> Result<OutboundRequest, Web
         let header_value = HeaderValue::from_bytes(value.as_bytes()).map_err(|source| {
             unreachable(format!("the {name} header value is not valid: {source}"))
         })?;
-        headers.insert(header_name, header_value);
+        headers.append(header_name, header_value);
     }
     let mut authorization = HeaderValue::from_bytes(
         request.headers.authorization.expose_secret().as_bytes(),
