@@ -10,6 +10,7 @@ use betterlite_db::ptu::charges::pricing::{
 use betterlite_db::ptu::charges::window::{backfill_window, lapsed_models};
 use betterlite_db::ptu::store::prune::{prune_chunks, prune_cutoff};
 use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::{Value, json};
 
 use self::values::{
@@ -88,10 +89,10 @@ struct EntryInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut answers: BTreeMap<String, Value> = BTreeMap::new();
         for (name, step) in &input.steps {
             answers.insert(name.clone(), answer(step)?);
