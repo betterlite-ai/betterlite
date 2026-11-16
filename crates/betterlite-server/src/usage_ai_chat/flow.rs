@@ -61,21 +61,7 @@ async fn run_chat<Model: UsageChatModel, Data: UsageDataSource, Clock>(
     request: &UsageChatRequest<'_>,
     sink: &mpsc::Sender<String>,
 ) -> Result<(), ChatError<Model::Error>> {
-    let thinking = SseEvent::Status {
-        message: THINKING.to_owned(),
-    };
-    sink.send(sse_frame(&thinking)).await?;
-    let tools = tools_for_role(request.is_admin);
-    let reply = parts
-        .model
-        .complete(&ModelRequest {
-            model,
-            messages: chat.as_slice(),
-            tools: Some(tools.as_slice()),
-            temperature: USAGE_AI_TEMPERATURE,
-        })
-        .await
-        .map_err(|source| ModelError::Completion { source })?;
+    let reply = request_reply(parts, model, chat.as_slice(), request.is_admin, sink).await?;
     if reply.tool_calls.is_empty() {
         if let Some(content) = reply.content.filter(|text| !text.is_empty()) {
             sink.send(sse_frame(&SseEvent::Chunk { content })).await?;
@@ -83,20 +69,42 @@ async fn run_chat<Model: UsageChatModel, Data: UsageDataSource, Clock>(
         sink.send(sse_frame(&SseEvent::Done)).await?;
         return Ok(());
     }
-    let ModelReply {
-        content,
-        tool_calls,
-    } = reply;
     chat.push(ChatMessage::AssistantToolCalls {
-        content,
-        tool_calls: tool_calls.clone(),
+        content: reply.content,
+        tool_calls: reply.tool_calls.clone(),
     });
-    for call in tool_calls {
-        process_tool_call::<Data, Model::Error>(&parts.data, &call, chat, request, sink).await?;
+    for call in &reply.tool_calls {
+        process_tool_call::<Data, Model::Error>(&parts.data, call, chat, request, sink).await?;
     }
     stream_final_response(&parts.model, model, chat.as_slice(), sink).await?;
     sink.send(sse_frame(&SseEvent::Done)).await?;
     Ok(())
+}
+
+async fn request_reply<Model: UsageChatModel, Data: UsageDataSource, Clock>(
+    parts: &UsageChatParts<Model, Data, Clock>,
+    model: &str,
+    messages: &[ChatMessage],
+    is_admin: bool,
+    sink: &mpsc::Sender<String>,
+) -> Result<ModelReply, ChatError<Model::Error>> {
+    let thinking = SseEvent::Status {
+        message: THINKING.to_owned(),
+    };
+    sink.send(sse_frame(&thinking)).await?;
+    let tools = tools_for_role(is_admin);
+    let request = ModelRequest {
+        model,
+        messages,
+        tools: Some(tools.as_slice()),
+        temperature: USAGE_AI_TEMPERATURE,
+    };
+    let reply = parts
+        .model
+        .complete(&request)
+        .await
+        .map_err(|source| ModelError::Completion { source })?;
+    Ok(reply)
 }
 
 async fn process_tool_call<Data: UsageDataSource, Fault: Error + 'static>(
