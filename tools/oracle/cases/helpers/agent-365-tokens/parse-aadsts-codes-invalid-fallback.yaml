@@ -1,0 +1,12 @@
+kind: helper
+name: parse-aadsts-codes-invalid-fallback
+call:
+  b3741:
+    function: agent_365_token_exchange
+    replies:
+      - {status: 400, body: {error: invalid_grant, error_codes: AADSTS700016}, raw: null}
+    repeat_last_reply: false
+    steps:
+      - {kind: token, assertion: header.payload.signature}
+env: {}
+compare: {ignore: []}

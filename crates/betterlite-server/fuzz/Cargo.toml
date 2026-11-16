@@ -187,6 +187,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "mcp_rotation_blob"
+path = "fuzz_targets/mcp_rotation_blob.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "spend_totals_query"
 path = "fuzz_targets/spend_totals_query.rs"
 test = false

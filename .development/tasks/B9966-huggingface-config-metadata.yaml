@@ -1,0 +1,386 @@
+id: B9966
+title: Model metadata downloads the Hugging Face model config
+description: >-
+  Fix the no-fetch cost metadata B068 left behind. crates/betterlite-core/src/cost/completion/lookup.rs
+  holds CatalogLookup with `hf: HfConfigClient<NoHfConfig>`; NoHfConfig answers Err from every
+  ModelInfoClient::get, resolved polls get_model_info_helper with now_or_never(), and an unmapped
+  huggingface model therefore prices from huggingface_model_info(model, None): a chat-mode record with
+  max_tokens None. LiteLLM downloads the config instead. _get_max_position_embeddings (utils.py
+  L5847-L5867) GETs https://huggingface.co/{model}/raw/main/config.json through litellm.module_level_client
+  with HF_CONFIG_FETCH_TIMEOUT_SECONDS and returns max_position_embeddings, and get_model_info's
+  huggingface branch (L5992-L6013) answers ModelInfoBase with that value; every fetch failure returns None,
+  so a 404, a timeout, a bad body or a missing field leaves max_tokens absent and the rest of the record
+  unchanged. get_model_info is lru_cached (L5870-L5885) on (model, custom_llm_provider, api_base), and the
+  cost calculator calls the cached helper with the provider it used for pricing (cost_calculator.py L351,
+  L746). Max decided on 2026-10-31 that betterlite downloads what LiteLLM downloads from the same place, so
+  this task records no deviation row for the download itself. B2219 already built HF_CONFIG_TIMEOUT_SECONDS
+  (10.0), HF_CONFIG_BODY_LIMIT (16 MiB), HF_CONFIG_BASE_URL, CONFIG_PATH, decode_hf_model_config,
+  huggingface_model_info and HfConfigClient<Client>::max_position_embeddings in
+  crates/betterlite-models/src/model_metadata_resolution/hf_config.rs; that file changes only to make
+  huggingface_model_info public.
+
+
+  The seam. PriceLookup is synchronous and every charge reads it through &dyn PriceLookup, while B2225's
+  get_model_info_helper_cached (crates/betterlite-models/src/full_model_metadata.rs) is async and already
+  mirrors LiteLLM's lru_cache over (model, custom_llm_provider, api_base), with ModelInfoCache::new(size)
+  where a size of zero or less disables caching. So the fetch runs before the charge and the synchronous
+  read consumes the cached answer; now_or_never() is never expected to complete a real ProxiedClient
+  request, and no second fetch path is added.
+
+
+  Rust changes in betterlite-core. CatalogLookup becomes `CatalogLookup<Client = NoHfConfig>` with a
+  `cache: ModelInfoCache` field. Keep `impl CatalogLookup<NoHfConfig> { pub fn new(model_cost, settings) }`
+  as the catalog-only constructor with the refusing client and ModelInfoCache::new(0), so the oracle
+  response_charge frame and every existing test compile unchanged. Add
+  `pub fn with_model_info(model_cost: &[u8], settings: LookupSettings, hf: HfConfigClient<Client>,
+  cache: ModelInfoCache) -> Result<Self, LookupError>` on `impl<Client: ModelInfoClient> CatalogLookup<Client>`;
+  new delegates to it. Add
+  `pub async fn prefetch_model_info(&self, model: &str, custom_llm_provider: Option<&str>, region_name:
+  Option<&str>)`: resolve the names with the new `names_for` below, build MetadataEnvironment the way
+  resolved does, and await get_model_info_helper_cached with HelperQuery { model: names.model,
+  custom_llm_provider: Some(names.provider), api_base: None }, &NoDynamicMetadata and a local
+  ModelCostKeys::default(). Every error, including the name resolution, is swallowed, like LiteLLM's
+  `except Exception: return None`; do not hold self.keys across the await. Make resolved check
+  self.cache.find(model, provider, None) first and serialize the ModelInfo handle with
+  serde_json::value::to_raw_value. When the cache misses, keep the current synchronous helper call, and
+  when it does not complete and provider is Some("huggingface"), answer
+  huggingface_model_info(model, None).ok(): a real transport pends until the prefetch filled the cache,
+  and a disabled or evicted cache must leave the soft record the main branch answers today instead of
+  turning an unmapped model's charge into an UnknownModel error. The four trait impls on the lookup gain
+  the same `Client: ModelInfoClient` parameter and keep their methods: PriceLookup in lookup.rs,
+  ModelResolver and ProviderInference in resolver.rs, and ToolPriceSource in tool_source.rs;
+  effective_model_info and effective_priced_model read resolved as they do now.
+
+
+  Name selection. The cache key the price path will query is not the raw billing pair. model_names::select
+  (crates/betterlite-core/src/cost/call_price/model_names.rs) collapses a supplied provider prefix, picks
+  the catalog key, and resolves the provider slug when none is supplied, and call_price then asks
+  effective_model_info(chosen_model, Some(provider)). Extract the body into
+  `pub fn names_for(model: &str, custom_llm_provider: Option<&str>, region_name: Option<&str>, lookup:
+  &dyn PriceLookup, resolution: &ResolutionContext<'_>) -> Result<ModelNames, CallPriceError>` and have
+  select call it with env.lookup and env.resolution, so the prefetch uses the same function rather than a
+  copy. No other file in the pricing path changes.
+
+
+  Rust changes in betterlite-models. Add `pub fn find(&self, model: &str, custom_llm_provider:
+  Option<&str>, api_base: Option<&str>) -> Option<ModelInfoHandle>` to ModelInfoCache
+  (full_model_metadata/cache.rs), building the existing CacheKey. Make huggingface_model_info pub in
+  hf_config.rs. Nothing else in full_model_metadata or hf_config changes.
+
+
+  Rust changes in betterlite-http. The skeleton creates crates/betterlite-http/src/proxy/model_info.rs
+  empty and adds `pub mod model_info;` to crates/betterlite-http/src/proxy.rs; write the module there.
+  `impl ModelInfoClient for ProxiedClient` with `type Error = ModelInfoFetchError`, an error enum
+  (ModelInfoFetchError, variants Url(url::ParseError), HeaderName { name: String }, Transport(#[from]
+  TransportError)). get builds a HeaderMap from request.headers (HeaderName::from_static on the
+  &'static str, HeaderValue::from_str on the SecretString with ExposeSecret), parses request.url, builds
+  `OutboundRequest { method: Method::GET, url, query: Vec::new(), headers, body: RequestBody::Empty,
+  deadline: request.timeout }`, calls self.send_following(outbound).await (the path B173 documents as
+  following provider redirects with each hop re-checked, so a Hugging Face redirect behaves like
+  LiteLLM's module_level_client), then .buffered(self.limits.body_bytes).await. Convert the HeaderMap to
+  (name, value) string pairs, skipping a value that is not UTF-8, and answer
+  FetchResponse::new(status, pairs, body); TransportLimits::DEFAULT.body equals HF_CONFIG_BODY_LIMIT.
+  Keep the module within the 300-line source limit.
+
+
+  Rust changes in betterlite-server. CostService becomes `CostService<Formulas, Client = ProxiedClient>`
+  and holds `lookup: CatalogLookup<Client>`; its constraints gain `Client: ModelInfoClient + 'static`.
+  new takes `hf: HfConfigClient<Client>` and `cache: ModelInfoCache` after the existing arguments and calls
+  CatalogLookup::with_model_info. Add a private `async fn prefetch_model_info(&self, billing:
+  &CompletionBillingInput<'_>)` that returns at once when billing.model is None and otherwise awaits
+  self.lookup.prefetch_model_info(model, billing.custom_llm_provider, billing.region_name). Call it after
+  self.bound(...) and before the calculator in completion_cost (cost_service.rs) and in response_cost
+  (cost_service/response.rs, which gains the same Client parameter), so the clock reading keeps its place
+  in the request. In
+  state/cost_service.rs, Slot::new reads `shared.http`, builds `HfConfigClient { client:
+  shared.http.clone(), base_url: HF_CONFIG_BASE_URL.to_owned() }` and
+  `ModelInfoCache::new(config.sections.full_model_metadata.default_max_lru_cache_size)`, and passes both to
+  CostService::new. That is B8610's field, the clone of chat.client whose tracker server::run drains; build
+  no second ProxiedClient. Slot stays `Result<CostService<ProviderFormulas>, SlotError>` through the
+  default type parameter. This is the only production construction of a Hugging Face client: the
+  synchronous limits lookup (crates/betterlite-models/src/lookup/limits.rs), B197's base_model clamp and
+  B2201's get_max_tokens callers hold no client and are not changed.
+
+
+  Tests. Core: crates/betterlite-core/src/cost/completion/tests/lookup.rs gets a MapHf implementing
+  ModelInfoClient over a BTreeMap<String, Vec<u8>> keyed by URL with a Mutex<Vec<String>> of requested
+  URLs, plus a PendingHf whose get returns std::future::pending() and reuses NoHfConfig for the refusing
+  case. A fixture builds CatalogLookup::with_model_info from a small cost map and
+  HfConfigClient { client, base_url: HF_CONFIG_BASE_URL.to_owned() } with ModelInfoCache::new(64). Tests:
+  prefetch_fills_hf_metadata (max_tokens 4096, litellm_provider huggingface, mode chat),
+  refusing_transport_stays_soft (the record exists with max_tokens None),
+  pending_transport_answers_soft (the synchronous read answers the same soft record, no error),
+  second_prefetch_hits_cache (one request for two prefetches and both reads answer 4096),
+  mapped_model_needs_no_fetch (a catalog model answers its static record and the client records no
+  request). Cache: full_model_metadata/tests.rs gets find_reads_a_cached_entry (put through the cached
+  helper or put, find answers the same handle for the same key, None for another key) and
+  find_skips_a_disabled_cache (ModelInfoCache::new(0) answers None). Transport:
+  proxy::model_info::tests uses the pub(crate) serve helper in proxy/tests.rs and default_client():
+  get_maps_the_response (status, a lowercased header, body), get_sends_the_request_headers (the recorded
+  request head carries the supplied header and a GET line), get_uses_the_request_deadline (a server that
+  delays past request.timeout answers ModelInfoFetchError::Transport(Deadline)), get_follows_a_redirect
+  (a 302 Location answer loops to TransportError::TooManyRedirects, which proves hops are followed rather
+  than returned). Server: cost_service/tests.rs builds
+  CostService::new(..., refusing_hf(), ModelInfoCache::new(0)) in the existing service helper, and adds
+  charge_prefetches_hf_metadata (an unmapped org/model with custom_llm_provider huggingface through
+  completion_cost charges zero and effective_model_info then answers max_tokens 4096) and
+  charge_caches_the_config (two charges make one client request). The existing
+  the_slot_builds_the_shared_service_from_the_bundled_catalog test keeps whatever Shared construction
+  B8610 left it; the slot-wiring check proves the field reads.
+
+
+  Oracle helper. The skeleton registers this task's helper operation b9966 in the core_ops group and adds
+  tools/oracle/src/helpers/core_ops/b9966.rs and tools/oracle/helpers/b9966.py to the scope; replace the
+  stub Op in the Rust file with the typed input and impl Helper, and write run in the Python file. Input:
+  catalog (raw cost map object), model (string), provider (string or null), lookups (1 or 2), and answers
+  (a list of {status: u16, body: string or null} tried in order, the last answer repeating). The Rust
+  adapter builds a CatalogLookup with with_model_info over a map client that answers those statuses and
+  bodies in order and counts requests, awaits prefetch_model_info(model, provider, None) lookups times,
+  reads effective_model_info(model, provider), and answers {record: record or null, fetches: count}. The
+  Python adapter patches litellm.module_level_client.get with a typed callable object holding the answers:
+  it returns an object whose json() decodes the body and whose raise_for_status() raises for a non-2xx
+  status, the way httpx does, and it counts calls. Clear
+  litellm.utils._cached_get_model_info_helper.cache_clear() before each case, call
+  litellm.utils._cached_get_model_info_helper(model=model, custom_llm_provider=provider) once per
+  lookup, and answer the same {record, fetches} shape, where record is the returned Mapping. Patch the
+  attribute on litellm.module_level_client, not on the imported httpx module. Cases under
+  tools/oracle/cases/helpers/huggingface-config-metadata: config-supplies-max-tokens (200 with
+  {"max_position_embeddings": 4096}), config-without-the-field (200 with {"hidden_size": 768}),
+  config-fetch-fails (404), second-lookup-hits-the-cache (lookups 2, one fetch), and
+  mapped-model-never-fetches (catalog holds gpt-4o, provider null, record ignored with a why that says
+  betterlite reads the case catalog while pinned LiteLLM reads its bundled map, fetches must be 0). Add
+  the seed tools/oracle/fuzz/corpus/helper_case/b9966-config-supplies-max-tokens.yaml. The helper module
+  and Python file are the skeleton's; tools/oracle/src/helpers/core_ops/lib.rs and
+  tools/oracle/helpers/dispatch.py are not this task's to edit.
+
+
+  Deviations. Delete the first row of docs/deviations/B013.yaml, the one that says a huggingface model
+  gets no max_position_embeddings, and leave the provider-inference row. docs/deviations/B197.yaml and
+  docs/deviations/B2201.yaml keep their rows: their synchronous clamp and get_max_tokens paths still hold
+  no client. Write docs/deviations/B9966.yaml with the row in deviations below. Size: about 100 changed
+  production lines in betterlite-core, 15 in betterlite-models, 100 in betterlite-http, 70 in
+  betterlite-server, about 240 lines across the two oracle adapters, and 6 lines in the deviation files;
+  tests, oracle cases and the fuzz corpus sit outside the changed-line budget.
+scope:
+  paths:
+  - crates/betterlite-core/src/cost/completion/lookup.rs
+  - crates/betterlite-core/src/cost/completion/resolver.rs
+  - crates/betterlite-core/src/cost/completion/tool_source.rs
+  - crates/betterlite-core/src/cost/completion/tests/lookup.rs
+  - crates/betterlite-core/src/cost/call_price/model_names.rs
+  - crates/betterlite-models/src/full_model_metadata/cache.rs
+  - crates/betterlite-models/src/full_model_metadata/tests.rs
+  - crates/betterlite-models/src/model_metadata_resolution/hf_config.rs
+  - crates/betterlite-http/src/proxy/model_info.rs
+  - crates/betterlite-http/src/proxy.rs
+  - crates/betterlite-server/src/cost_service.rs
+  - crates/betterlite-server/src/cost_service/response.rs
+  - crates/betterlite-server/src/cost_service/tests.rs
+  - crates/betterlite-server/src/state/cost_service.rs
+  - docs/deviations/B013.yaml
+  - docs/deviations/B9966.yaml
+  - tools/oracle/src/helpers/core_ops/b9966.rs
+  - tools/oracle/src/helpers/core_ops/b9966/**
+  - tools/oracle/helpers/b9966.py
+  - tools/oracle/helpers/b9966/**
+  - tools/oracle/cases/helpers/huggingface-config-metadata/**
+  - "tools/oracle/fuzz/corpus/helper_case/b9966-*"
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5847-L5867
+  why: _get_max_position_embeddings, the exact URL, the module-level client and timeout, and the None answers.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5870-L5885
+  why: _cached_get_model_info_helper, the lru_cache key and maxsize this task keeps through B2225's cache.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5992-L6013
+  why: get_model_info's huggingface branch and the full ModelInfoBase shape the soft record copies.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L345-L355
+  why: _per_second_pricing_cost asks the cached helper with the pricing provider and treats an unmapped model as no answer.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L740-L750
+  why: the token path's _cached_get_model_info_helper call, the same (model, custom_llm_provider) key cost_per_token uses.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L100
+  why: HF_CONFIG_FETCH_TIMEOUT_SECONDS is 10.0.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L493
+  why: DEFAULT_MAX_LRU_CACHE_SIZE is 64 and the config key overrides it.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L2274
+  why: module_level_client is an HTTPHandler, the client whose get the fetch uses.
+dod:
+- text: >-
+    A prefetch through a map-backed client makes the price lookup answer max_tokens 4096 with
+    litellm_provider huggingface and mode chat for an unmapped huggingface model, and a refusing client
+    answers the same record with max_tokens None.
+  proof: [hf-lookup-tests, oracle]
+- text: >-
+    The prefetched answer is cached like LiteLLM's lru_cache: a second prefetch fetches once, a
+    catalog-mapped model never fetches, and a transport that cannot answer during a synchronous read
+    answers the soft record instead of an error.
+  proof: [hf-lookup-tests, hf-cache-tests]
+- text: >-
+    The cost service builds its Hugging Face client from Shared.http with HF_CONFIG_BASE_URL and the
+    configured default_max_lru_cache_size, builds no second ProxiedClient, and both async charge entries
+    prefetch model info before they price.
+  proof: [hf-service-tests, slot-wiring]
+- text: >-
+    The shared outbound client answers a ModelInfoClient request as a GET carrying the request's headers,
+    timeout and redirect hops, bounded by the transport body limit, and maps the status, headers and body
+    back into a FetchResponse.
+  proof: [hf-transport-tests]
+- text: >-
+    Oracle cases compare the price lookup's record and fetch count with LiteLLM's cached helper under the
+    same config answers: a supplied value, a missing field, a 404, a cached second lookup and a mapped
+    model that never fetches.
+  proof: [oracle, helper-cases, helper-python, helper-case-corpus]
+- text: >-
+    docs/deviations/B013.yaml no longer says a huggingface model gets no max_position_embeddings, and
+    docs/deviations/B9966.yaml records the cache-dependent miss with its pinned link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: hf-lookup-tests
+    why: The prefetch seam is missing, a fetch happens where LiteLLM does not fetch, or the synchronous read errors instead of answering the soft record.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-core/src/cost/completion/tests/lookup.rs)"
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::completion::tests::lookup::(prefetch_fills_hf_metadata|refusing_transport_stays_soft|pending_transport_answers_soft|second_prefetch_hits_cache|mapped_model_needs_no_fetch)$/)'
+  - id: hf-cache-tests
+    why: The cache read seam is missing or a disabled cache answers an entry.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-models/src/full_model_metadata/cache.rs)"
+      && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^full_model_metadata::tests::(find_reads_a_cached_entry|find_skips_a_disabled_cache)$/)'
+  - id: hf-transport-tests
+    why: The ProxiedClient ModelInfoClient impl is missing or sends the wrong request.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-http/src/proxy/model_info.rs)"
+      && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^proxy::model_info::tests::/)'
+  - id: hf-service-tests
+    why: The cost service does not prefetch, or it fetches again for a cached model.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-server/src/cost_service.rs)"
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cost_service::tests::(charge_prefetches_hf_metadata|charge_caches_the_config)$/)'
+  - id: slot-wiring
+    why: The production slot still builds a refusing client, or reads a fresh client or a hardcoded cache size.
+    run: >-
+      grep -qF 'shared.http' crates/betterlite-server/src/state/cost_service.rs
+      && grep -qF 'default_max_lru_cache_size' crates/betterlite-server/src/state/cost_service.rs
+      && grep -qF 'HF_CONFIG_BASE_URL' crates/betterlite-server/src/state/cost_service.rs
+      && ! grep -qF 'ProxiedClient::' crates/betterlite-server/src/state/cost_service.rs
+  - id: helper-cases
+    why: No new helper case exists on this branch.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/huggingface-config-metadata)"
+  - id: helper-python
+    why: The oracle adapters fail strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+      --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: The b9966 seed is missing or the shared helper corpus does not replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b9966-*")"
+      && grep -lq 'b9966' tools/oracle/fuzz/corpus/helper_case/b9966-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: deviation-row
+    why: The new deviation is missing or the old no-download row remains.
+    run: >-
+      grep -qF 'utils.py#L5992-L6013' docs/deviations/B9966.yaml
+      && ! grep -qF 'A huggingface model gets no max_position_embeddings' docs/deviations/B013.yaml
+      && grep -qF 'With no provider given, the provider is inferred' docs/deviations/B013.yaml
+oracle_cases:
+- tools/oracle/cases/helpers/huggingface-config-metadata/config-supplies-max-tokens.yaml
+- tools/oracle/cases/helpers/huggingface-config-metadata/config-without-the-field.yaml
+- tools/oracle/cases/helpers/huggingface-config-metadata/config-fetch-fails.yaml
+- tools/oracle/cases/helpers/huggingface-config-metadata/second-lookup-hits-the-cache.yaml
+- tools/oracle/cases/helpers/huggingface-config-metadata/mapped-model-never-fetches.yaml
+deviations:
+- what: >-
+    The price lookup fetches the Hugging Face config before the charge and reads the cached answer,
+    because PriceLookup is synchronous. When default_max_lru_cache_size is 0 (caching disabled), after
+    the entry was evicted, or for a charge whose prepared attempt prices a response-stated model or
+    provider the prefetch did not resolve, max_tokens stays absent in the chat-mode record, where
+    LiteLLM's get_model_info fetches on that call and carries max_position_embeddings.
+  why: >-
+    LiteLLM's cost calculator runs the cached get_model_info inline, so its lru_cache sits in front of a
+    synchronous fetch. betterlite's lookup cannot start a request from a synchronous read; the fetch runs
+    before the charge through B2225's cache, and a disabled, evicted or unmatched entry leaves only the
+    soft record. The download itself is the same URL under the same timeout, so the 2026-10-31 decision
+    records no row for it.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5992-L6013
+out_of_scope:
+- >-
+  B013's synchronous limits path (crates/betterlite-models/src/lookup/limits.rs), B197's base_model
+  clamp and B2201's get_max_tokens callers: they hold no Hugging Face client and keep their rows. Only
+  B013's first row goes, because it says the model info itself gets no max_position_embeddings.
+- >-
+  B2219's fetch details: the 16 MiB body cap, the single 10 second deadline and the wrong-typed
+  max_position_embeddings mapping keep their rows and their tests.
+- >-
+  B845's deployment model info: it reads Hugging Face metadata through the shared resolver with a
+  caller-supplied ModelInfoClient and does not wait on this task.
+- >-
+  The oracle registry files (tools/oracle/src/helpers/core_ops/lib.rs and
+  tools/oracle/helpers/dispatch.py) and the stub op; the skeleton writes them.
+- >-
+  Any second Hugging Face client, a request-time fetch from the synchronous lookup, and a new HTTP
+  oracle case: the route-reachable behavior is the price lookup, which the helper cases already drive
+  through the same CatalogLookup the charge uses.
+pitfalls:
+- >-
+  The oracle helper for this task is pre-registered as b9966 in the core_ops group. Replace the stub Op
+  in tools/oracle/src/helpers/core_ops/b9966.rs with an impl Helper whose Input is the typed input, and
+  write run in tools/oracle/helpers/b9966.py. The registry files
+  (tools/oracle/src/helpers/core_ops/lib.rs and tools/oracle/helpers/dispatch.py) are not this task's to
+  edit.
+- >-
+  The cache key is the pair names_for returns, not the billing strings. Prefetching billing.model with no
+  provider would store under a different key than call_price queries, and a supplied provider prefix
+  would be stored with the prefix still attached.
+- >-
+  Do not put the cache.put before the fetch or store a record whose max_tokens is None. On main the
+  refusing client answers the soft record, and caching it would hide a later successful fetch for the
+  whole process lifetime.
+- >-
+  Do not hold the keys mutex across the prefetch await. A future holding a std MutexGuard is not Send,
+  and the charge futures run on the server's workers.
+- >-
+  huggingface_model_info stays the source of the soft record. Do not rebuild the ModelInfoBase field list
+  in betterlite-core, and do not answer None when the synchronous helper pends, because the charge would
+  turn an unmapped model into an UnknownModel error on a cache miss.
+- >-
+  send_following follows redirects with each hop re-checked. execute_buffered does not follow a 302, and
+  LiteLLM's HTTPHandler does; a 302 answer must not fail the fetch.
+- >-
+  The body limit is self.limits.body_bytes, not HF_CONFIG_BODY_LIMIT copied by hand.
+  TransportLimits::DEFAULT.body already equals that byte count, and a caller-built request must keep
+  body_limit and the client's configured limit in step.
+- >-
+  The server test's map client counts requests, so a second prefetch that bypasses the cache shows up as
+  an extra count; the oracle case compares counts for the same reason.
+- >-
+  Patch litellm.module_level_client.get, not a class the handler was built from.
+  _get_max_position_embeddings resolves the attribute on litellm.module_level_client at call time.
+- >-
+  Clear litellm.utils._cached_get_model_info_helper before each oracle case, or the second case reads
+  the first case's record and its fetch count.
+- >-
+  The mapped-model oracle case ignores the record because betterlite reads the case's catalog while
+  pinned LiteLLM reads its bundled map, so only the zero fetch count is comparable, and the ignore needs
+  that why.
+- >-
+  Keep no second ProxiedClient in state/cost_service.rs. shared.http is the clone of chat.client whose
+  tracker server::run drains; a fresh client leaves its requests undrained at shutdown.
+- >-
+  The existing Slot test constructs &Shared. It keeps whatever B8610's Shared construction requires; the
+  slot-wiring check, not that test, proves the field reads.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

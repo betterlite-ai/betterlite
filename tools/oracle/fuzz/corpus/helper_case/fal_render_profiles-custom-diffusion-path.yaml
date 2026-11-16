@@ -1,0 +1,20 @@
+kind: helper
+name: fal-render-profiles-custom-diffusion-path-seed
+call:
+  fal_render_profiles:
+    operation: custom_diffusion_path
+    environment: {FAL_AI_API_BASE: "https://environment.test/fal/"}
+    api_bases: [null, ""]
+    models: ["stable-diffusion-v35-medium", "fal-ai/stable-diffusion-v35-medium", "custom/sd"]
+    model: "fal-ai/ideogram/v3"
+    prompt: "a prompt"
+    cases:
+      - non_default: {n: 2, size: "1024x768", response_format: "url"}
+        optional: {}
+        drop_params: false
+      - non_default: {size: {width: 10, height: 20}}
+        optional: {image_size: "square"}
+        drop_params: true
+env: {}
+compare:
+  ignore: []
