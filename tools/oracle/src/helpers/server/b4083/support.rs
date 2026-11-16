@@ -57,6 +57,18 @@ impl LoadTables {
             stats_requests: Mutex::new(Vec::new()),
         }
     }
+
+    fn requested_stats(&self, job_ids: &[String]) -> Vec<JobAttemptStats> {
+        self.stats_requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(job_ids.to_vec());
+        self.stats
+            .iter()
+            .filter(|stat| job_ids.contains(&stat.job_id))
+            .cloned()
+            .collect()
+    }
 }
 
 impl ShadowTables for LoadTables {
@@ -81,18 +93,8 @@ impl ShadowTables for LoadTables {
         &'database self,
         job_ids: &'database [String],
     ) -> ShadowFuture<'database, Vec<JobAttemptStats>, Self::Error> {
-        Box::pin(async move {
-            self.stats_requests
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(job_ids.to_vec());
-            Ok(self
-                .stats
-                .iter()
-                .filter(|stat| job_ids.contains(&stat.job_id))
-                .cloned()
-                .collect())
-        })
+        let found = self.requested_stats(job_ids);
+        Box::pin(async move { Ok(found) })
     }
 
     fn insert_attempt<'database>(
@@ -150,10 +152,8 @@ impl ShadowTables for AttemptTables {
         &'database self,
         attempt: &'database ShadowAttemptRow,
     ) -> ShadowFuture<'database, (), Self::Error> {
-        Box::pin(async move {
-            self.record(attempt);
-            Ok(())
-        })
+        self.record(attempt);
+        Box::pin(async { Ok(()) })
     }
 
     fn upsert_funnel<'database>(

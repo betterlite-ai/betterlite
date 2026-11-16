@@ -92,11 +92,6 @@ impl ActiveShadowEvalJob {
             spend,
         })
     }
-
-    #[must_use]
-    pub fn arm_target<'job>(&'job self, arm_router: &'job str) -> &'job str {
-        self.baseline_model.as_deref().unwrap_or(arm_router)
-    }
 }
 
 // rows from before router_names existed hold the whole router set in router_name alone

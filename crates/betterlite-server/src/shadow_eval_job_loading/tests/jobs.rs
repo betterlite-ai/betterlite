@@ -19,7 +19,6 @@ fn shadow_eval_job_validation_accepts_a_forward_job_without_a_baseline() {
     assert_eq!(job.models, BTreeSet::from(["gpt-4o".to_owned()]));
     assert_eq!(job.attempts, 2);
     assert_eq!(job.spend, Decimal::new(5, 1));
-    assert_eq!(job.arm_target("router-a"), "router-a");
 }
 
 #[test]
@@ -30,7 +29,6 @@ fn shadow_eval_job_validation_accepts_a_reverse_job_with_one_router() {
     assert_eq!(job.direction, ShadowEvalDirection::Reverse);
     assert_eq!(job.baseline_model, Some("baseline-model".to_owned()));
     assert_eq!(job.arm_router_names, vec!["router-b"]);
-    assert_eq!(job.arm_target("router-b"), "baseline-model");
 }
 
 #[test]
@@ -39,7 +37,6 @@ fn shadow_eval_job_validation_accepts_a_forward_job_with_several_arms() {
     row.router_names = vec!["router-b".to_owned(), "router-c".to_owned()];
     let job = ActiveShadowEvalJob::from_row(&row, 0, Decimal::ZERO).unwrap();
     assert_eq!(job.arm_router_names, vec!["router-b", "router-c"]);
-    assert_eq!(job.arm_target("router-c"), "router-c");
 }
 
 #[test]

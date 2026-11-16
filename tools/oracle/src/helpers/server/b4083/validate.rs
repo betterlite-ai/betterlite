@@ -28,6 +28,6 @@ fn validate_row(input: &JobInput, arm_router: &str) -> Value {
         "valid": true,
         "direction": job.direction.as_str(),
         "arm_router_names": job.arm_router_names,
-        "arm_target": job.arm_target(arm_router),
+        "arm_target": job.baseline_model.as_deref().unwrap_or(arm_router),
     })
 }
