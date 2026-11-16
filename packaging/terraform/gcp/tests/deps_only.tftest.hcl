@@ -78,6 +78,47 @@ run "default_creates_the_network_and_stores" {
     ])
     error_message = "The database, its user, the password secret, the module label and Memorystore must keep the module defaults."
   }
+
+  assert {
+    condition = alltrue([
+      random_password.db_password.length == 32,
+      random_password.db_password.special == false,
+      random_password.db_password.min_lower == 4,
+      random_password.db_password.min_upper == 4,
+      random_password.db_password.min_numeric == 4,
+    ])
+    error_message = "The generated password must stay 32 characters of letters and digits with no special characters."
+  }
+}
+
+run "invalid_tenant_slug_fails" {
+  command = plan
+
+  variables {
+    tenant = "Tenant_1"
+  }
+
+  expect_failures = [var.tenant]
+}
+
+run "invalid_env_slug_fails" {
+  command = plan
+
+  variables {
+    env = "production"
+  }
+
+  expect_failures = [var.env]
+}
+
+run "unknown_database_edition_fails" {
+  command = plan
+
+  variables {
+    db_edition = "STANDARD"
+  }
+
+  expect_failures = [var.db_edition]
 }
 
 run "caller_labels_merge_with_the_module_label" {
