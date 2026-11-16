@@ -1,0 +1,7 @@
+kind: helper
+name: settings-api-base-validation
+call:
+  b3765: {"function": "init", "config": {"api_key": "test-key", "api_base": "http://169.254.169.254/latest"}, "env": {}}
+env: {}
+compare:
+  ignore: []

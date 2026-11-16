@@ -3362,7 +3362,9 @@ dependencies = [
  "betterlite-anthropic",
  "betterlite-bedrock",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-core",
+ "betterlite-error",
  "betterlite-foundry",
  "betterlite-http",
  "betterlite-logging",
@@ -4454,6 +4456,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-core",
+ "betterlite-guardrails",
  "betterlite-server",
  "form_urlencoded",
  "libfuzzer-sys",
