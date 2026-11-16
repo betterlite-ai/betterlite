@@ -5,7 +5,7 @@ use betterlite_core::api::video_records::helpers::{
     video_reference_to_id,
 };
 use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -35,9 +35,6 @@ impl Helper for Op {
                 get_custom_provider_from_data(value).or_value_error()?
             }
         };
-        match answer {
-            Some(text) => Ok(Value::String(text)),
-            None => Ok(Value::Null),
-        }
+        Ok(answer.map_or(Value::Null, Value::String))
     }
 }
