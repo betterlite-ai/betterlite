@@ -1,0 +1,13 @@
+kind: helper
+name: mcp-user-env-vars-delete-missing-row
+call:
+  b4714:
+    function: delete
+    salt_key: b4714-salt
+    user_id: user-1
+    server_id: srv-missing
+    rows:
+      - {user_id: user-2, server_id: srv-missing, values_b64: 'uaE9mPQDBwGTawNeRfUBio_sZwwdXMIF_2TC17_3EIwHasxX3PdZmP1zt3irkwKZ0dINLrwHemwlrWNCIDxQx3r3'}
+env:
+  LITELLM_SALT_KEY: b4714-salt
+compare: {ignore: []}

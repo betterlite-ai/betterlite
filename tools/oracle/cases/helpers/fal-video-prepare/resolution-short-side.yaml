@@ -1,0 +1,36 @@
+kind: helper
+name: fal-video-prepare-resolution-short-side
+call:
+  fal_video_prepare:
+    operation: resolution_short_side
+    models:
+      - "fal-ai/kling-video"
+      - "minimax/h3/hailuo-02"
+    sizes:
+      - "1024x768"
+      - "1280x720"
+      - "900x1600"
+      - "1000x1000"
+      - "300x200"
+      - "3x4"
+      - "21x9"
+      - "9x16"
+      - "2x1"
+      - "480P"
+      - "2K"
+      - "4K"
+      - "768p"
+      - "1080p"
+      - "720x1280"
+      - "479x853"
+      - "481x854"
+      - "0x10"
+      - "10x0"
+      - "10X20"
+      - " 1024x768"
+      - "1024.5x768"
+      - 1024
+      - null
+env: {}
+compare:
+  ignore: []

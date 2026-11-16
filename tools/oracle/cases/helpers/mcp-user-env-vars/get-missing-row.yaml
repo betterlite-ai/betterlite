@@ -1,0 +1,12 @@
+kind: helper
+name: mcp-user-env-vars-get-missing-row
+call:
+  b4714:
+    function: get
+    salt_key: b4714-salt
+    user_id: user-1
+    server_id: srv-missing
+    rows: []
+env:
+  LITELLM_SALT_KEY: b4714-salt
+compare: {ignore: []}
