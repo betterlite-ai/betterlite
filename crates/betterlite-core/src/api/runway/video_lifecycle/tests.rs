@@ -194,16 +194,16 @@ fn cancel_reply_zeroes_an_absent_or_unreadable_created_at() {
 }
 
 #[rstest]
-#[case::zero(0.0, 0)]
-#[case::eighth(0.125, 12)]
-#[case::three_eighths(0.375, 38)]
-#[case::half(0.5, 50)]
-#[case::almost_one(0.999, 100)]
-#[case::one(1.0, 100)]
-#[case::beyond_one(1.5, 100)]
-#[case::negative(-0.2, 0)]
-#[case::tie_rounds_down(0.545, 54)]
-#[case::tie_rounds_up(0.575, 58)]
+#[case::zero(0.0_f64, 0)]
+#[case::eighth(0.125_f64, 12)]
+#[case::three_eighths(0.375_f64, 38)]
+#[case::half(0.5_f64, 50)]
+#[case::almost_one(0.999_f64, 100)]
+#[case::one(1.0_f64, 100)]
+#[case::beyond_one(1.5_f64, 100)]
+#[case::negative(-0.2_f64, 0)]
+#[case::tie_rounds_down(0.545_f64, 54)]
+#[case::tie_rounds_up(0.575_f64, 58)]
 fn retrieval_progress_is_half_even_percent_clamped_to_the_range(
     #[case] share: f64,
     #[case] expected: i64,
@@ -295,7 +295,7 @@ fn retrieval_wraps_a_nonempty_id_without_the_model() {
     assert_ne!(wrapped.id, "task_1");
     let decoded = decode_video_id_with_provider(&wrapped.id);
     assert_eq!(decoded.custom_llm_provider.as_deref(), Some("runwayml"));
-    assert_eq!(decoded.model_id, None);
+    assert_eq!(decoded.model_id.as_deref(), Some(""));
     assert_eq!(decoded.video_id, "task_1");
     let empty = retrieve_response(br#"{"id":""}"#, Some("runwayml")).unwrap();
     assert_eq!(empty.id, "");

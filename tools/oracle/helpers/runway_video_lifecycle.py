@@ -28,7 +28,7 @@ ContentRequest = Callable[
 VideoReply = Callable[[httpx.Response, Logging, str | None], VideoObject]
 
 
-class UnsupportedTransform(Protocol):
+class UnsupportedCall(Protocol):
     def __call__(self, *args: str | GenericLiteLLMParams | JsonObject) -> JsonValue: ...
 
 
@@ -39,44 +39,44 @@ class VideoConfig(Protocol):
     ) -> str: ...
 
     @property
-    def transform_video_content_request(self) -> ContentRequest: ...  # ast-grep-ignore: no-long-names
+    def transform_video_content_request(self) -> ContentRequest: ...  # ast-grep-ignore
 
     @property
-    def transform_video_status_retrieve_request(self) -> TaskRequest: ...  # ast-grep-ignore: no-long-names
+    def transform_video_status_retrieve_request(self) -> TaskRequest: ...  # ast-grep-ignore
 
     @property
     def transform_video_delete_request(self) -> TaskRequest: ...
 
     @property
-    def transform_video_status_retrieve_response(self) -> VideoReply: ...  # ast-grep-ignore: no-long-names
+    def transform_video_status_retrieve_response(self) -> VideoReply: ...  # ast-grep-ignore
 
     @property
-    def transform_video_delete_response(  # ast-grep-ignore: no-long-names
+    def transform_video_delete_response(  # ast-grep-ignore
         self,
     ) -> Callable[[httpx.Response, Logging], VideoObject]: ...
 
     @property
-    def transform_video_content_response(  # ast-grep-ignore: no-long-names
+    def transform_video_content_response(  # ast-grep-ignore
         self,
     ) -> Callable[[httpx.Response, Logging], bytes]: ...
 
     @property
-    def transform_video_remix_request(self) -> UnsupportedTransform: ...
+    def transform_video_remix_request(self) -> UnsupportedCall: ...
 
     @property
-    def transform_video_list_request(self) -> UnsupportedTransform: ...
+    def transform_video_list_request(self) -> UnsupportedCall: ...
 
     @property
-    def transform_video_create_character_request(self) -> UnsupportedTransform: ...  # ast-grep-ignore: no-long-names
+    def transform_video_create_character_request(self) -> UnsupportedCall: ...  # ast-grep-ignore
 
     @property
-    def transform_video_get_character_request(self) -> UnsupportedTransform: ...  # ast-grep-ignore: no-long-names
+    def transform_video_get_character_request(self) -> UnsupportedCall: ...  # ast-grep-ignore
 
     @property
-    def transform_video_edit_request(self) -> UnsupportedTransform: ...
+    def transform_video_edit_request(self) -> UnsupportedCall: ...
 
     @property
-    def transform_video_extension_request(self) -> UnsupportedTransform: ...  # ast-grep-ignore: no-long-names
+    def transform_video_extension_request(self) -> UnsupportedCall: ...  # ast-grep-ignore
 
 
 @runtime_checkable

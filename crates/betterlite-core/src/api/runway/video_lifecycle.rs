@@ -22,8 +22,8 @@ pub struct LifecycleRequest {
 
 // the three task paths LiteLLM transforms; content carries the variant the source accepts and never reads
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LifecycleOperation<'a> {
-    Content { variant: Option<&'a str> },
+pub enum LifecycleOperation<'variant> {
+    Content { variant: Option<&'variant str> },
     Status,
     Cancel,
 }
