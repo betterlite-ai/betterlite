@@ -118,7 +118,7 @@ fn respond(outcome: Outcome) -> Result<UpstreamResponse, TransportError> {
 fn header_map(headers: &[(&'static str, &'static str)]) -> HeaderMap {
     let mut map = HeaderMap::new();
     for &(name, value) in headers {
-        map.insert(
+        map.append(
             HeaderName::from_static(name),
             HeaderValue::from_bytes(value.as_bytes()).unwrap(),
         );

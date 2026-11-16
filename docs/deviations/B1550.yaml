@@ -17,13 +17,6 @@ deviations:
       nothing, and a working setup carries valid header names and values.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L523
   - what: >-
-      A reply header whose bytes are not visible ASCII fails the call with a typed ReplyHeader error naming the
-      header, where httpx decodes reply headers as ASCII, then UTF-8, then ISO-8859-1, and LiteLLM's call proceeds.
-    why: >-
-      betterlite carries reply headers as http HeaderValue text, which the JSON reply and the SonioxException record
-      can hold; a working Soniox reply sends visible ASCII headers.
-    link: ""
-  - what: >-
       The 504 message prints the poll interval from the prepared Decimal, so an interval whose float text needs more
       than about sixteen significant digits loses them (2.5000000000000004 prints as 2.5), where LiteLLM interpolates
       the Python float repr.

@@ -34,8 +34,6 @@ pub enum RemoteError {
     },
     #[error("the authenticated headers carry no {name} header")]
     MissingHeader { name: &'static str },
-    #[error("the {name} reply header is not text")]
-    ReplyHeader { name: String },
     #[error("the polling interval of {seconds} seconds cannot be waited for")]
     Interval { seconds: Decimal },
 }

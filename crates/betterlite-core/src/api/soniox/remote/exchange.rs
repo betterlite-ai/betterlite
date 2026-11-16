@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_openai::files::stream::flatten_headers;
 use betterlite_openai::openai_base_config::Headers;
 use http::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use rust_decimal::Decimal;
@@ -60,22 +61,9 @@ pub(super) fn reply(
     response: UpstreamResponse,
     limits: &ApiLimits,
 ) -> Result<SonioxReply, RemoteError> {
-    let headers = reply_headers(&response.headers)?;
+    let headers = flatten_headers(&response.headers).into_iter().collect();
     decode_soniox_reply(i64::from(response.status), headers, &response.body, limits)
         .map_err(RemoteError::Reply)
-}
-
-fn reply_headers(source: &HeaderMap) -> Result<Headers, RemoteError> {
-    let mut headers = Headers::new();
-    for (name, value) in source {
-        let text = value
-            .to_str()
-            .map_err(|_invalid| RemoteError::ReplyHeader {
-                name: name.as_str().to_owned(),
-            })?;
-        headers.insert(name.as_str().to_owned(), text.to_owned());
-    }
-    Ok(headers)
 }
 
 pub(super) fn interval(seconds: Decimal) -> Result<Duration, RemoteError> {

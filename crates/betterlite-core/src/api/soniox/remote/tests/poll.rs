@@ -68,12 +68,12 @@ async fn poll_returns_the_completed_metadata() {
 async fn poll_keeps_waiting_on_an_upper_case_status() {
     let mut chosen = options();
     chosen.max_attempts = 2;
-    let body = Outcome::Reply {
+    let upper = || Outcome::Reply {
         status: 200,
         headers: Vec::new(),
         body: r#"{"status":"COMPLETED"}"#,
     };
-    let (outcome, transport, sleeper) = poll_with(vec![body], chosen, "job-1").await;
+    let (outcome, transport, sleeper) = poll_with(vec![upper(), upper()], chosen, "job-1").await;
     assert_timeout(outcome, "2", "1.0");
     assert_eq!(transport.calls().len(), 2);
     assert_eq!(sleeper.sleeps(), vec![Duration::from_millis(1000); 2]);
@@ -242,17 +242,19 @@ async fn poll_reports_a_header_the_request_cannot_carry() {
 }
 
 #[tokio::test]
-async fn poll_reports_a_reply_header_that_is_not_text() {
+async fn poll_joins_repeated_reply_headers_and_reads_text() {
     let body = Outcome::Reply {
         status: 200,
-        headers: vec![("x-note", "café")],
-        body: r#"{"status":"completed"}"#,
+        headers: vec![("via", "1.1 a"), ("via", "1.1 b"), ("x-note", "café")],
+        body: r#"{"status":"error","error_message":"bad audio"}"#,
     };
     let (outcome, _, _) = poll_with(vec![body], options(), "job-1").await;
-    let RemoteError::ReplyHeader { name } = outcome.unwrap_err() else {
-        panic!("a reply header whose bytes are not visible ASCII must fail the decode");
+    let RemoteError::Provider(provider) = outcome.unwrap_err() else {
+        panic!("a terminal error must surface as the provider error");
     };
-    assert_eq!(name, "x-note");
+    let headers = provider.headers.unwrap();
+    assert_eq!(headers.get("via").map(String::as_str), Some("1.1 a, 1.1 b"));
+    assert_eq!(headers.get("x-note").map(String::as_str), Some("café"));
 }
 
 #[tokio::test]

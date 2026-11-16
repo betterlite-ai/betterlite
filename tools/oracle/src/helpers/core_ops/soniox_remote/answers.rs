@@ -186,7 +186,6 @@ fn failure_outcome(error: RemoteError) -> Value {
         | RemoteError::HeaderName { .. }
         | RemoteError::HeaderValue { .. }
         | RemoteError::MissingHeader { .. }
-        | RemoteError::ReplyHeader { .. }
         | RemoteError::Interval { .. }) => {
             json!({ "kind": "reply", "message": refused.to_string() })
         }

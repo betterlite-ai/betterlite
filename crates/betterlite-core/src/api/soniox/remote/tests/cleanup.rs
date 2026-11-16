@@ -160,33 +160,40 @@ async fn cleanup_ignores_the_delete_status() {
 
 #[tokio::test]
 async fn cleanup_sends_the_request_local_credential() {
-    let transport = Script::new(vec![ok(), ok()]);
+    let transport = Script::new(vec![ok(), ok(), ok(), ok()]);
     let sleeper = Clock::default();
     let other = prepared(options(), &[("Authorization", "Bearer sk-neighbour")]);
     let ready = prepared(options(), &[("Authorization", "Bearer sk-local")]);
-    let soniox = remote(&transport, &sleeper, &ready);
-    soniox.cleanup(Some("job-1"), Some("file-1")).await;
-    let calls = transport.calls();
-    assert_eq!(
-        calls[0]
-            .headers
-            .get(AUTHORIZATION)
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "Bearer sk-local"
-    );
-    assert_eq!(
-        calls[1]
-            .headers
-            .get(AUTHORIZATION)
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "Bearer sk-local"
-    );
-    assert_eq!(
-        other.auth_headers.get("Authorization").map(String::as_str),
-        Some("Bearer sk-neighbour")
-    );
+    remote(&transport, &sleeper, &other)
+        .cleanup(Some("job-n"), Some("file-n"))
+        .await;
+    remote(&transport, &sleeper, &ready)
+        .cleanup(Some("job-1"), Some("file-1"))
+        .await;
+    let sent: Vec<(String, String)> = transport
+        .calls()
+        .iter()
+        .map(|call| {
+            (
+                call.url.clone(),
+                call.headers
+                    .get(AUTHORIZATION)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_owned(),
+            )
+        })
+        .collect();
+    let expected = [
+        ("transcriptions/job-n", "Bearer sk-neighbour"),
+        ("files/file-n", "Bearer sk-neighbour"),
+        ("transcriptions/job-1", "Bearer sk-local"),
+        ("files/file-1", "Bearer sk-local"),
+    ];
+    assert_eq!(sent.len(), expected.len());
+    for ((url, credential), (path, bearer)) in sent.iter().zip(expected) {
+        assert_eq!(url, &format!("https://api.soniox.test/v1/{path}"));
+        assert_eq!(credential, bearer);
+    }
 }
