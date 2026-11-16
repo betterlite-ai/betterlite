@@ -85,11 +85,10 @@ pub async fn run_with_listener(
     host: &str,
 ) -> Result<(), ServerError> {
     let shutting_down = Arc::new(AtomicBool::new(false));
-    let background = Background {
-        outbound: chat.client.clone(),
-        tasks: TaskTracker::new(),
-    };
-    let app = application(&config, chat, Arc::clone(&shutting_down), &background.tasks)?;
+    let outbound = chat.client.clone();
+    let tasks = TaskTracker::new();
+    let app = application(&config, chat, Arc::clone(&shutting_down), &tasks)?;
+    let background = Background { outbound, tasks };
     Box::pin(serve(app, shutting_down, background, host, listener)).await
 }
 

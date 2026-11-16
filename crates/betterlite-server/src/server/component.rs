@@ -78,12 +78,11 @@ pub fn serve_component(
     let result = runtime.block_on(async {
         let listener = bind(host, port).await?;
         let shutting_down = Arc::new(AtomicBool::new(false));
-        let background = Background {
-            outbound: chat.client.clone(),
-            tasks: TaskTracker::new(),
-        };
-        let app = application(&config, chat, Arc::clone(&shutting_down), &background.tasks)?
+        let outbound = chat.client.clone();
+        let tasks = TaskTracker::new();
+        let app = application(&config, chat, Arc::clone(&shutting_down), &tasks)?
             .layer(Extension(routes));
+        let background = Background { outbound, tasks };
         Box::pin(serve(app, shutting_down, background, host, listener)).await
     });
     match result {

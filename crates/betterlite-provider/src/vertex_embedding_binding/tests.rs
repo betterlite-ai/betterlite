@@ -146,58 +146,6 @@ fn assert_embed_content_arguments() {
     assert!(media.aembedding);
 }
 
-fn assert_multimodal_arguments() {
-    let VertexEmbeddingPrepared::Multimodal(multimodal) = prepared(
-        TEXT_MODEL,
-        EmbeddingInput::Text("hello".to_owned()),
-        r#"{"image": null}"#,
-        &ModelCatalog::default(),
-    ) else {
-        panic!("a present media key selects multimodal prediction");
-    };
-    assert_eq!(multimodal.input, Json::Text("hello".to_owned()));
-    assert!(multimodal.litellm_params.is_some());
-    assert_eq!(
-        multimodal.resolved.optional_params.get("image"),
-        Some(&Json::Null)
-    );
-    assert!(multimodal.aembedding);
-}
-
-fn assert_multimodal_list_arguments() {
-    let VertexEmbeddingPrepared::Multimodal(texts) = prepared(
-        TEXT_MODEL,
-        EmbeddingInput::Texts(vec!["one".to_owned(), "two".to_owned()]),
-        r#"{"image": "gs://bucket/cat.png"}"#,
-        &ModelCatalog::default(),
-    ) else {
-        panic!("a text list with a media key selects multimodal prediction");
-    };
-    assert_eq!(
-        texts.input,
-        Json::List(vec![
-            Json::Text("one".to_owned()),
-            Json::Text("two".to_owned()),
-        ])
-    );
-
-    let VertexEmbeddingPrepared::Multimodal(tokens) = prepared(
-        TEXT_MODEL,
-        EmbeddingInput::Tokens(vec![1, 2]),
-        r#"{"image": "gs://bucket/cat.png"}"#,
-        &ModelCatalog::default(),
-    ) else {
-        panic!("a token list with a media key selects multimodal prediction");
-    };
-    assert_eq!(
-        tokens.input,
-        Json::List(vec![
-            Json::Number(serde_json::Number::from(1_i32)),
-            Json::Number(serde_json::Number::from(2_i32)),
-        ])
-    );
-}
-
 type ResolvedFields<'call> = (
     &'static str,
     Option<&'call str>,
@@ -339,8 +287,44 @@ fn pinned_options_reach_every_arm(
 fn branch_specific_arguments() {
     assert_text_arguments();
     assert_embed_content_arguments();
-    assert_multimodal_arguments();
-    assert_multimodal_list_arguments();
+}
+
+#[rstest]
+#[case::null_image(
+    EmbeddingInput::Text("hello".to_owned()),
+    r#"{"image": null}"#,
+    Json::Text("hello".to_owned())
+)]
+#[case::text_list(
+    EmbeddingInput::Texts(vec!["one".to_owned(), "two".to_owned()]),
+    r#"{"image": "gs://bucket/cat.png"}"#,
+    Json::List(vec![Json::Text("one".to_owned()), Json::Text("two".to_owned())])
+)]
+#[case::token_list(
+    EmbeddingInput::Tokens(vec![1, 2]),
+    r#"{"image": "gs://bucket/cat.png"}"#,
+    Json::List(vec![
+        Json::Number(serde_json::Number::from(1_i32)),
+        Json::Number(serde_json::Number::from(2_i32)),
+    ])
+)]
+fn a_media_key_selects_multimodal_arguments(
+    #[case] input: EmbeddingInput,
+    #[case] options: &str,
+    #[case] expected: Json,
+) {
+    let VertexEmbeddingPrepared::Multimodal(multimodal) =
+        prepared(TEXT_MODEL, input, options, &ModelCatalog::default())
+    else {
+        panic!("a present media key selects multimodal prediction");
+    };
+    assert_eq!(multimodal.input, expected);
+    assert!(multimodal.litellm_params.is_some());
+    assert_eq!(
+        multimodal.resolved.optional_params.get("image"),
+        params(options).get("image")
+    );
+    assert!(multimodal.aembedding);
 }
 
 #[derive(Default)]
@@ -424,47 +408,47 @@ impl VertexEmbeddingHandlers for Recorder {
     }
 }
 
+#[rstest]
+#[case::embed_content(
+    EMBED_CONTENT_MODEL,
+    EmbeddingInput::Text("hello".to_owned()),
+    "{}",
+    embed_content_catalog(),
+    "embed_content"
+)]
+#[case::multimodal(
+    TEXT_MODEL,
+    EmbeddingInput::Text("hello".to_owned()),
+    r#"{"video": null}"#,
+    ModelCatalog::default(),
+    "multimodal"
+)]
+#[case::text(
+    TEXT_MODEL,
+    EmbeddingInput::Tokens(vec![1, 2]),
+    "{}",
+    ModelCatalog::default(),
+    "text"
+)]
 #[tokio::test]
-async fn runs_each_arm_through_its_handler() {
+async fn runs_each_arm_through_its_handler(
+    #[case] model: &str,
+    #[case] input: EmbeddingInput,
+    #[case] options: &str,
+    #[case] catalog: ModelCatalog,
+    #[case] arm: &str,
+) {
     let recorder = Recorder::default();
-    let hello = || EmbeddingInput::Text("hello".to_owned());
-    let cases = [
-        (EMBED_CONTENT_MODEL, hello(), "{}", embed_content_catalog()),
-        (
-            TEXT_MODEL,
-            hello(),
-            r#"{"video": null}"#,
-            ModelCatalog::default(),
-        ),
-        (
-            TEXT_MODEL,
-            EmbeddingInput::Tokens(vec![1, 2]),
-            "{}",
-            ModelCatalog::default(),
-        ),
-    ];
-    let mut results = Vec::new();
-    for (model, input, options, catalog) in cases {
-        let arm = prepared(model, input, options, &catalog);
-        results.push(execute(&arm, &recorder).await.expect("a handler result"));
-    }
-    assert!(matches!(
-        results.as_slice(),
-        [
-            VertexEmbeddingResult::EmbedContent(_),
-            VertexEmbeddingResult::Multimodal(_),
-            VertexEmbeddingResult::Text(_),
-        ]
-    ));
-    // each handler receives the prepared call of its own arm
-    assert_eq!(
-        recorder.calls(),
-        [
-            ("embed_content", EMBED_CONTENT_MODEL.to_owned()),
-            ("multimodal", TEXT_MODEL.to_owned()),
-            ("text", TEXT_MODEL.to_owned()),
-        ]
-    );
+    let call = prepared(model, input, options, &catalog);
+    let result = execute(&call, &recorder).await.expect("a handler result");
+    let produced = match result {
+        VertexEmbeddingResult::EmbedContent(_) => "embed_content",
+        VertexEmbeddingResult::Multimodal(_) => "multimodal",
+        VertexEmbeddingResult::Text(_) => "text",
+    };
+    assert_eq!(produced, arm);
+    // the handler of the selected arm receives that arm's prepared call
+    assert_eq!(recorder.calls(), [(arm, model.to_owned())]);
 }
 
 #[test]
@@ -520,8 +504,8 @@ async fn handler_errors_keep_their_variant() {
         "{}",
         &ModelCatalog::default(),
     );
-    let error = execute(&text, &Failing).await.expect_err("a handler error");
-    let VertexEmbeddingError::Prediction(VertexEmbeddingCallError::Status { status, .. }) = error
+    let Err(VertexEmbeddingError::Prediction(VertexEmbeddingCallError::Status { status, .. })) =
+        execute(&text, &Failing).await
     else {
         panic!("the text handler's status error travels unchanged");
     };

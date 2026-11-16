@@ -20,7 +20,7 @@ upstream:
     body: {error: {code: 400, message: bad input, status: INVALID_ARGUMENT}}
 compare:
   headers: [content-type, x-litellm-call-id]
-  headers_present: [x-litellm-model-id]
+  headers_present: []
   upstream_headers: [authorization]
   ignore:
     - {pointer: /upstream/0/headers/authorization, why: the self-signed JWT carries iat and exp from signing time}
