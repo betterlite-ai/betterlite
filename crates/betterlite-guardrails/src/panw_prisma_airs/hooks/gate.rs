@@ -3,7 +3,6 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use super::context::HookContext;
 use super::data::Data;
 use crate::guardrail_selection::error::GuardrailSelectionError;
-use crate::guardrail_selection::gate::GuardrailSelection as _;
 
 // LiteLLM's PanwPrismaAirsHandler.should_run_guardrail: an MCP event also asks the base hook it stands in for.
 pub fn should_run_guardrail(

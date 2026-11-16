@@ -13,7 +13,7 @@ use super::scan_metadata;
 use crate::panw_prisma_airs::audit::{Direction, GuardrailAudit};
 use crate::panw_prisma_airs::construct::PanwPrismaAirs;
 use crate::panw_prisma_airs::error_detail::{GuardrailHttpError, build_error_detail};
-use crate::panw_prisma_airs::error_handling::{handle_api_error_with_logging, record_scan_id};
+use crate::panw_prisma_airs::error_handling::handle_api_error_with_logging;
 use crate::panw_prisma_airs::payload::ScanRequest;
 use crate::panw_prisma_airs::scan::call_panw_api;
 use crate::panw_prisma_airs::verdict::{Action, ScanVerdict};
@@ -64,8 +64,7 @@ async fn run_post_call(
     else {
         return Ok(());
     };
-    audit_bridge::record_information(guardrail, audit, &verdict, start_time, Direction::Response);
-    record_scan_id(guardrail, audit, &verdict, Direction::Response);
+    audit_bridge::record_scan(guardrail, audit, &verdict, start_time, Direction::Response);
     apply_response_verdict(guardrail, response, audit, &verdict)
 }
 

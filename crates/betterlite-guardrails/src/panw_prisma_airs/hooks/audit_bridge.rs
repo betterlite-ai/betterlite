@@ -18,8 +18,8 @@ const RECORDS_KEY: &str = "standard_logging_guardrail_information";
 // The name B3786's error handling records; its constant is private to that module.
 pub const PROVIDER_NAME: &str = "panw_prisma_airs";
 
-// Mirrors LiteLLM's add_standard_logging_guardrail_information_to_request_data for a successful scan.
-pub fn record_information(
+// The two writes every successful scan makes: its logging record and its scan id.
+pub fn record_scan(
     guardrail: &PanwPrismaAirs,
     audit: &mut GuardrailAudit,
     verdict: &ScanVerdict,
@@ -40,17 +40,17 @@ pub fn record_information(
         duration: end_time.duration_since(start_time).unwrap_or_default(),
         event_type: direction.stage(),
     });
+    record_scan_id(guardrail, audit, verdict, direction);
 }
 
-// The three writes LiteLLM repeats after a successful response scan: record, scan id, applied header.
+// The third write LiteLLM repeats at each raw-stream success: the applied-guardrails header.
 pub fn record_response_success(
     guardrail: &PanwPrismaAirs,
     audit: &mut GuardrailAudit,
     verdict: &ScanVerdict,
     start_time: SystemTime,
 ) {
-    record_information(guardrail, audit, verdict, start_time, Direction::Response);
-    record_scan_id(guardrail, audit, verdict, Direction::Response);
+    record_scan(guardrail, audit, verdict, start_time, Direction::Response);
     audit.add_applied_guardrail(&guardrail.settings.guardrail_name);
 }
 

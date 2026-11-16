@@ -1,5 +1,3 @@
-use serde_json::value::RawValue;
-
 use crate::prisma_airs_extraction as extraction;
 use crate::prisma_airs_masking as masking;
 
@@ -21,11 +19,8 @@ pub fn extraction_view(response: &masking::Response) -> extraction::Response {
 }
 
 fn choice_view(choice: &masking::ResponseChoice) -> extraction::ResponseChoice {
-    match choice.message.as_ref() {
-        Some(message) => extraction::ResponseChoice {
-            message: Some(message_view(message)),
-        },
-        None => extraction::ResponseChoice { message: None },
+    extraction::ResponseChoice {
+        message: choice.message.as_ref().map(message_view),
     }
 }
 
@@ -44,30 +39,24 @@ fn content_view(content: &masking::MaskContent) -> extraction::MessageContent {
     match content {
         masking::MaskContent::Text(text) => extraction::MessageContent::Text(text.clone()),
         masking::MaskContent::Parts(parts) => {
-            extraction::MessageContent::Parts(parts.iter().filter_map(part_view).collect())
+            // A content part LiteLLM would not read as text, such as an image, stays out of the scan.
+            let readable = parts
+                .iter()
+                .filter_map(|raw| serde_json::from_str(raw.get()).ok())
+                .collect();
+            extraction::MessageContent::Parts(readable)
         }
     }
 }
 
 fn tool_call_view(call: &masking::MaskedToolCall) -> extraction::ToolCall {
-    match call.function.as_ref() {
-        Some(function) => extraction::ToolCall {
-            function: Some(function_view(function)),
-        },
-        None => extraction::ToolCall { function: None },
+    extraction::ToolCall {
+        function: call.function.as_ref().map(function_view),
     }
 }
 
 fn function_view(call: &masking::MaskedFunctionCall) -> extraction::FunctionCall {
-    match call.arguments.as_ref() {
-        Some(arguments) => extraction::FunctionCall {
-            arguments: Some(arguments.clone()),
-        },
-        None => extraction::FunctionCall { arguments: None },
+    extraction::FunctionCall {
+        arguments: call.arguments.clone(),
     }
-}
-
-// A content part LiteLLM would not read as text, such as an image, stays out of the scan.
-fn part_view(raw: &RawValue) -> Option<extraction::ContentPart> {
-    serde_json::from_str(raw.get()).ok()
 }
