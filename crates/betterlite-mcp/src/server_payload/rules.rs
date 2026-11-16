@@ -1,31 +1,13 @@
-use std::collections::BTreeSet;
-
-use betterlite_db::mcp::table_access::McpIdentifierConflict;
-use betterlite_db::mcp_stored_contracts::{MCPAuth, MCPCredentials};
-use secrecy::ExposeSecret as _;
-
-use crate::server_payload::PayloadError;
-use crate::server_payload::repr;
 use crate::server_payload::request::NewMCPServerRequest;
+use crate::server_payload::{PayloadError, quoted_list};
 use crate::server_record::OAuth2Flow;
-
+use betterlite_config::sections::mcp_env_values::StdioPolicy;
+use betterlite_db::mcp::table_access::McpIdentifierConflict;
+use betterlite_db::mcp_stored_contracts::MCPAuth;
+use secrecy::ExposeSecret as _;
 mod fields;
 mod tests;
-
 pub const MCP_STDIO_DISABLED_MESSAGE: &str = "stdio MCP servers are disabled on this proxy. Set LITELLM_ENABLE_MCP_STDIO=true on the proxy and restart to enable them";
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PayloadRules {
-    pub prefix_separator: String,
-    pub stdio: StdioPolicy,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StdioPolicy {
-    pub enabled: bool,
-    pub allowed_commands: BTreeSet<String>,
-}
-
 #[must_use]
 pub fn is_mcp_stdio_blocked(transport: Option<&str>, policy: &StdioPolicy) -> bool {
     if transport != Some("stdio") {
@@ -33,7 +15,6 @@ pub fn is_mcp_stdio_blocked(transport: Option<&str>, policy: &StdioPolicy) -> bo
     }
     !policy.enabled
 }
-
 pub fn warn_if_mcp_stdio_blocked(
     server_name: Option<&str>,
     transport: Option<&str>,
@@ -45,69 +26,33 @@ pub fn warn_if_mcp_stdio_blocked(
     let name = server_name.unwrap_or("None");
     tracing::warn!("MCP server '{name}' will not start: {MCP_STDIO_DISABLED_MESSAGE}");
 }
-
 pub fn stamp_omitted_oauth2_flow(payload: &mut NewMCPServerRequest) {
     if payload.auth_type != Some(MCPAuth::Oauth2) || payload.oauth2_flow.is_some() {
         return;
     }
     payload.oauth2_flow = Some(machine_to_machine_flow(payload));
 }
-
 fn machine_to_machine_flow(payload: &NewMCPServerRequest) -> OAuth2Flow {
-    let token_url = payload
-        .token_url
-        .as_deref()
-        .is_some_and(|url| !url.is_empty());
-    let authorization_url = payload
-        .authorization_url
-        .as_deref()
-        .is_some_and(|url| !url.is_empty());
-    let machine_to_machine = token_url
-        && payload
-            .credentials
-            .as_ref()
-            .is_some_and(credentials_have_client_id)
-        && payload
-            .credentials
-            .as_ref()
-            .is_some_and(credentials_have_client_secret)
-        && !authorization_url;
-    if machine_to_machine {
+    let credentials = payload.credentials.as_ref();
+    let client_id = credentials
+        .and_then(|stored| stored.client_id.as_ref())
+        .and_then(Option::as_ref);
+    let client_secret = credentials
+        .and_then(|stored| stored.client_secret.as_ref())
+        .and_then(Option::as_ref);
+    let token_url = payload.token_url.as_deref();
+    let authorization_url = payload.authorization_url.as_deref();
+    let urls = token_url.is_some_and(|url| !url.is_empty())
+        && !authorization_url.is_some_and(|url| !url.is_empty());
+    let machine = urls
+        && client_id.is_some_and(|id| !id.is_empty())
+        && client_secret.is_some_and(|secret| !secret.0.expose_secret().is_empty());
+    if machine {
         OAuth2Flow::ClientCredentials
     } else {
         OAuth2Flow::AuthorizationCode
     }
 }
-
-fn credentials_have_client_id(credentials: &MCPCredentials) -> bool {
-    let Some(client_id) = credentials
-        .client_id
-        .as_ref()
-        .and_then(|value| value.as_deref())
-    else {
-        return false;
-    };
-    if client_id.is_empty() {
-        return false;
-    }
-    true
-}
-
-fn credentials_have_client_secret(credentials: &MCPCredentials) -> bool {
-    let Some(secret) = credentials
-        .client_secret
-        .as_ref()
-        .and_then(|value| value.as_ref())
-    else {
-        return false;
-    };
-    if secret.0.expose_secret().is_empty() {
-        return false;
-    }
-    true
-}
-
-// ast-grep-ignore: no-long-names
 pub fn validate_required_fields(
     payload: &NewMCPServerRequest,
     required: &[String],
@@ -118,30 +63,29 @@ pub fn validate_required_fields(
     let mut parsed = Vec::with_capacity(required.len());
     let mut unknown = Vec::new();
     for name in required {
-        match <fields::NewServerField as std::str::FromStr>::from_str(name) {
+        match name.parse::<fields::NewServerField>() {
             Ok(field) => parsed.push((name, field)),
-            Err(_) => unknown.push(name.clone()),
+            Err(_) => unknown.push(name),
         }
     }
     if !unknown.is_empty() {
         return Err(PayloadError::UnknownRequiredFields {
-            unknown: repr::list(&unknown),
+            unknown: quoted_list(unknown),
         });
     }
-    let missing = parsed
-        .iter()
-        .filter(|(_, field)| !fields::present(payload, *field))
-        .map(|(name, _)| (*name).clone())
-        .collect::<Vec<String>>();
-    if missing.is_empty() {
-        Ok(())
-    } else {
-        Err(PayloadError::MissingRequiredFields {
-            missing: repr::list(&missing),
-        })
+    let mut missing = Vec::new();
+    for (name, field) in parsed {
+        if !fields::present(payload, field) {
+            missing.push(name);
+        }
     }
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(PayloadError::MissingRequiredFields {
+        missing: quoted_list(missing),
+    })
 }
-
 #[must_use]
 pub fn identifier_conflict_message(conflict: &McpIdentifierConflict) -> String {
     let field = conflict.field.as_str();
@@ -151,7 +95,6 @@ pub fn identifier_conflict_message(conflict: &McpIdentifierConflict) -> String {
         "An MCP server with {field} '{value}' already exists (server_id={server_id}). MCP server names and aliases must be unique, case-insensitive."
     )
 }
-
 // ast-grep-ignore: no-long-names
 pub fn warn_if_id_jag_server_outruns_sso(
     server_id: Option<&str>,
@@ -161,14 +104,23 @@ pub fn warn_if_id_jag_server_outruns_sso(
     if auth_type != Some("oauth2_id_jag") {
         return;
     }
-    let Some(gap) = gap else {
-        return;
-    };
-    let server = server_id.unwrap_or("None");
-    tracing::warn!("MCP server {server} is registered with auth_type=oauth2_id_jag, but {gap}.");
+    if let Some(reason) = gap {
+        let server = server_id.unwrap_or("None");
+        tracing::warn!(
+            "MCP server {server} is registered with auth_type=oauth2_id_jag, but {reason}."
+        );
+    }
 }
-
 #[must_use]
-pub fn does_mcp_server_exist(server_ids: impl IntoIterator<Item = &'_ str>, id: &str) -> bool {
-    server_ids.into_iter().any(|candidate| candidate == id)
+pub fn does_mcp_server_exist<I>(server_ids: I, id: &str) -> bool
+where
+    I: IntoIterator,
+    I::Item: AsRef<str>,
+{
+    for candidate in server_ids {
+        if candidate.as_ref() == id {
+            return true;
+        }
+    }
+    false
 }

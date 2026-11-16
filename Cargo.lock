@@ -2312,6 +2312,7 @@ dependencies = [
 name = "betterlite-mcp-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-mcp",
  "chrono",
  "libfuzzer-sys",

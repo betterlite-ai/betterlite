@@ -2,6 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use rstest::rstest;
+
 use crate::loader::{ConfigError, ConfigLoader};
 
 fn load(environment: &[(&str, &str)]) -> Result<super::PayloadRules, ConfigError> {
@@ -55,20 +57,20 @@ fn the_separator_is_read_with_an_empty_value_meaning_unset() {
     );
 }
 
-#[test]
-fn stdio_is_enabled_only_for_true_after_trim_and_lowercase() {
-    for (value, expected) in [
-        ("true", true),
-        (" TRUE ", true),
-        ("True", true),
-        ("yes", false),
-        ("1", false),
-        ("tru", false),
-        ("", false),
-    ] {
-        let rules = load(&[("LITELLM_ENABLE_MCP_STDIO", value)]).unwrap();
-        assert_eq!(rules.stdio.enabled, expected, "{value:?}");
-    }
+#[rstest]
+#[case::lowercase_true("true", true)]
+#[case::trimmed_uppercase_true(" TRUE ", true)]
+#[case::capitalized_true("True", true)]
+#[case::yes("yes", false)]
+#[case::one("1", false)]
+#[case::prefixed_true("truex", false)]
+#[case::empty("", false)]
+fn stdio_is_enabled_only_for_true_after_trim_and_lowercase(
+    #[case] value: &str,
+    #[case] expected: bool,
+) {
+    let rules = load(&[("LITELLM_ENABLE_MCP_STDIO", value)]).unwrap();
+    assert_eq!(rules.stdio.enabled, expected, "{value:?}");
 }
 
 #[test]

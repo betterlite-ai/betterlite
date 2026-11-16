@@ -2,14 +2,15 @@
 
 use std::collections::BTreeSet;
 
+use betterlite_config::sections::mcp_env_values::{PayloadRules, StdioPolicy};
 use betterlite_prompts::arguments::json::Json;
+use rstest::rstest;
 
 use super::{
-    ToolNameValidation, normalize_server_name, validate_and_normalize_payload,
-    validate_mcp_server_name, validate_tool_display_names, validate_tool_name,
+    ToolNameValidation, validate_and_normalize_payload, validate_mcp_server_name,
+    validate_tool_display_names, validate_tool_name,
 };
 use crate::server_payload::request::{NewMCPServerRequest, OrderedMap, UpdateMCPServerRequest};
-use crate::server_payload::rules::{PayloadRules, StdioPolicy};
 
 fn rules(separator: &str) -> PayloadRules {
     PayloadRules {
@@ -26,11 +27,11 @@ fn payload(source: &str) -> Json {
 }
 
 fn new_request(source: &str) -> NewMCPServerRequest {
-    NewMCPServerRequest::from_value(payload(source), &rules("-").stdio).unwrap()
+    NewMCPServerRequest::from_value(&payload(source), &rules("-").stdio).unwrap()
 }
 
 fn update_request(source: &str) -> UpdateMCPServerRequest {
-    UpdateMCPServerRequest::from_value(payload(source), &rules("-").stdio).unwrap()
+    UpdateMCPServerRequest::from_value(&payload(source), &rules("-").stdio).unwrap()
 }
 
 fn normalized(source: &str, separator: &str) -> Result<(Option<String>, Option<String>), String> {
@@ -158,22 +159,34 @@ fn the_display_name_pattern_follows_python_dollar() {
     let mut trailing_newline = OrderedMap::new();
     trailing_newline.insert("tool".to_owned(), "abc\n".to_owned());
     assert!(validate_tool_display_names(&trailing_newline).is_ok());
-    for display_name in ["abc\n\n", "a.b", "a b", "café"] {
-        let mut names = OrderedMap::new();
-        names.insert("tool".to_owned(), display_name.to_owned());
-        assert!(
-            validate_tool_display_names(&names).is_err(),
-            "{display_name} should be rejected"
-        );
-    }
-    for display_name in ["abc", "a_b", "a-b", "A1"] {
-        let mut names = OrderedMap::new();
-        names.insert("tool".to_owned(), display_name.to_owned());
-        assert!(
-            validate_tool_display_names(&names).is_ok(),
-            "{display_name} should be accepted"
-        );
-    }
+}
+
+#[rstest]
+#[case::two_trailing_newlines("abc\n\n")]
+#[case::dot("a.b")]
+#[case::space("a b")]
+#[case::non_ascii("café")]
+fn an_invalid_display_name_pattern_is_rejected(#[case] display_name: &str) {
+    let mut names = OrderedMap::new();
+    names.insert("tool".to_owned(), display_name.to_owned());
+    assert!(
+        validate_tool_display_names(&names).is_err(),
+        "{display_name} should be rejected"
+    );
+}
+
+#[rstest]
+#[case::plain("abc")]
+#[case::underscore("a_b")]
+#[case::hyphen("a-b")]
+#[case::mixed("A1")]
+fn a_valid_display_name_pattern_is_accepted(#[case] display_name: &str) {
+    let mut names = OrderedMap::new();
+    names.insert("tool".to_owned(), display_name.to_owned());
+    assert!(
+        validate_tool_display_names(&names).is_ok(),
+        "{display_name} should be accepted"
+    );
 }
 
 #[test]
@@ -242,8 +255,12 @@ fn an_empty_or_valid_upstream_token_header_passes() {
 
 #[test]
 fn normalize_server_name_replaces_every_space() {
-    assert_eq!(normalize_server_name("a b  c"), "a_b__c");
-    assert_eq!(normalize_server_name("plain"), "plain");
+    let mut spaced = new_request(r#"{"server_name": "a b  c"}"#);
+    assert!(validate_and_normalize_payload(&mut spaced, &rules("-")).is_err());
+    assert_eq!(spaced.alias, Some("a_b__c".to_owned()));
+    let mut plain = new_request(r#"{"server_name": "plain_name"}"#);
+    validate_and_normalize_payload(&mut plain, &rules("-")).unwrap();
+    assert_eq!(plain.alias, Some("plain_name".to_owned()));
 }
 
 #[test]
@@ -255,7 +272,7 @@ fn an_empty_tool_name_is_invalid() {
 
 #[test]
 fn tool_name_length_counts_characters() {
-    let longest: String = "x".repeat(128);
+    let longest = "x".repeat(128);
     assert!(validate_tool_name(&longest).is_valid);
     let too_long = "é".repeat(129);
     let validation = validate_tool_name(&too_long);

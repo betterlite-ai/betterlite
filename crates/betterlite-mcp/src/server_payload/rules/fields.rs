@@ -1,123 +1,60 @@
+use crate::server_payload::request::NewMCPServerRequest;
 use betterlite_db::mcp_stored_contracts::MCPAuth;
 use strum::EnumString;
-
-use crate::server_payload::request::NewMCPServerRequest;
-
-#[derive(Clone, Copy, Debug, Eq, EnumString, PartialEq)]
-#[strum(serialize_all = "snake_case")]
-pub(crate) enum NewServerField {
-    ServerId,
-    ServerName,
-    Alias,
-    Description,
-    Transport,
-    AuthType,
-    Credentials,
-    Url,
-    SpecPath,
-    McpInfo,
-    McpAccessGroups,
-    AllowedTools,
-    ToolNameToDisplayName,
-    ToolNameToDescription,
-    ExtraHeaders,
-    StaticHeaders,
-    EnvVars,
-    Instructions,
-    Command,
-    Args,
-    Env,
-    Issuer,
-    AuthorizationUrl,
-    TokenUrl,
-    RegistrationUrl,
-    Oauth2Flow,
-    TokenExchangeEndpoint,
-    Audience,
-    SubjectTokenType,
-    TokenExchangeProfile,
-    AllowAllKeys,
-    AvailableOnPublicInternet,
-    DelegateAuthToUpstream,
-    OauthPassthrough,
-    DcrBridge,
-    PerServerOauthDiscovery,
-    IsByok,
-    ByokDescription,
-    ByokApiKeyHelpUrl,
-    SourceUrl,
-    Timeout,
-    MaxConcurrentRequests,
-    ApprovalStatus,
-    SubmittedBy,
-    SubmittedAt,
-}
-
-fn non_empty(value: Option<&str>) -> bool {
-    let Some(text) = value else {
-        return false;
-    };
-    !text.is_empty()
-}
-
-fn non_empty_list<T>(values: Option<&[T]>) -> bool {
-    let Some(values) = values else {
-        return false;
-    };
-    !values.is_empty()
-}
-
-pub(super) fn present(payload: &NewMCPServerRequest, field: NewServerField) -> bool {
-    match field {
-        NewServerField::ServerId => non_empty(payload.server_id.as_deref()),
-        NewServerField::ServerName => non_empty(payload.server_name.as_deref()),
-        NewServerField::Alias => non_empty(payload.alias.as_deref()),
-        NewServerField::Description => non_empty(payload.description.as_deref()),
-        NewServerField::Transport => true,
-        NewServerField::AuthType => payload.auth_type.is_some_and(|auth| auth != MCPAuth::None),
-        NewServerField::Credentials => payload.credentials.is_some(),
-        NewServerField::Url => non_empty(payload.url.as_deref()),
-        NewServerField::SpecPath => non_empty(payload.spec_path.as_deref()),
-        NewServerField::McpInfo => payload.mcp_info.is_some(),
-        NewServerField::McpAccessGroups => !payload.mcp_access_groups.is_empty(),
-        NewServerField::AllowedTools => non_empty_list(payload.allowed_tools.as_deref()),
-        NewServerField::ToolNameToDisplayName => payload.tool_name_to_display_name.is_some(),
-        NewServerField::ToolNameToDescription => payload.tool_name_to_description.is_some(),
-        NewServerField::ExtraHeaders => non_empty_list(payload.extra_headers.as_deref()),
-        NewServerField::StaticHeaders => payload.static_headers.is_some(),
-        NewServerField::EnvVars => non_empty_list(payload.env_vars.as_deref()),
-        NewServerField::Instructions => non_empty(payload.instructions.as_deref()),
-        NewServerField::Command => non_empty(payload.command.as_deref()),
-        NewServerField::Args => !payload.args.is_empty(),
-        // an empty dict counts as present, unlike an empty list
-        NewServerField::Env => true,
-        NewServerField::Issuer => non_empty(payload.issuer.as_deref()),
-        NewServerField::AuthorizationUrl => non_empty(payload.authorization_url.as_deref()),
-        NewServerField::TokenUrl => non_empty(payload.token_url.as_deref()),
-        NewServerField::RegistrationUrl => non_empty(payload.registration_url.as_deref()),
-        NewServerField::Oauth2Flow => payload.oauth2_flow.is_some(),
-        NewServerField::TokenExchangeEndpoint => {
-            non_empty(payload.token_exchange_endpoint.as_deref())
+macro_rules! new_server_fields {
+    (
+        always: $($always:ident),* $(,)? ;
+        text: $($text_variant:ident($text_field:ident)),* $(,)? ;
+        auth: $($auth_variant:ident($auth_field:ident)),* $(,)? ;
+        some: $($some_variant:ident($some_field:ident)),* $(,)? ;
+        list: $($list_variant:ident($list_field:ident)),* $(,)? ;
+        optional_list: $($optional_variant:ident($optional_field:ident)),* $(,)? ;
+    ) => {
+        #[derive(Clone, Copy, Debug, Eq, EnumString, PartialEq)]
+        #[strum(serialize_all = "snake_case")]
+        pub(crate) enum NewServerField {
+            $($always,)*
+            $($text_variant,)*
+            $($auth_variant,)*
+            $($some_variant,)*
+            $($list_variant,)*
+            $($optional_variant,)*
         }
-        NewServerField::Audience => non_empty(payload.audience.as_deref()),
-        NewServerField::SubjectTokenType => non_empty(payload.subject_token_type.as_deref()),
-        NewServerField::TokenExchangeProfile => {
-            non_empty(payload.token_exchange_profile.as_deref())
+        pub(super) fn present(payload: &NewMCPServerRequest, field: NewServerField) -> bool {
+            match field {
+                $(NewServerField::$always)|* => true,
+                $(NewServerField::$text_variant => {
+                    payload.$text_field.as_deref().is_some_and(|text| !text.is_empty())
+                })*
+                $(NewServerField::$auth_variant => {
+                    payload.$auth_field.is_some_and(|auth| auth != MCPAuth::None)
+                })*
+                $(NewServerField::$some_variant => payload.$some_field.is_some(),)*
+                $(NewServerField::$list_variant => !payload.$list_field.is_empty(),)*
+                $(NewServerField::$optional_variant => {
+                    payload.$optional_field.as_deref().is_some_and(|values| !values.is_empty())
+                })*
+            }
         }
-        NewServerField::AllowAllKeys => true,
-        NewServerField::AvailableOnPublicInternet => true,
-        NewServerField::DelegateAuthToUpstream => true,
-        NewServerField::OauthPassthrough => true,
-        NewServerField::DcrBridge => payload.dcr_bridge.is_some(),
-        NewServerField::PerServerOauthDiscovery => true,
-        NewServerField::IsByok => true,
-        NewServerField::ByokDescription => !payload.byok_description.is_empty(),
-        NewServerField::ByokApiKeyHelpUrl => non_empty(payload.byok_api_key_help_url.as_deref()),
-        NewServerField::SourceUrl => non_empty(payload.source_url.as_deref()),
-        NewServerField::Timeout => payload.timeout.is_some(),
-        NewServerField::MaxConcurrentRequests => payload.max_concurrent_requests.is_some(),
-        NewServerField::ApprovalStatus => non_empty(payload.approval_status.as_deref()),
-        NewServerField::SubmittedBy => non_empty(payload.submitted_by.as_deref()),
-        NewServerField::SubmittedAt => non_empty(payload.submitted_at.as_deref()),
-    }
+    };
+}
+// an empty dict counts as present, unlike an empty list
+new_server_fields! {
+    always: Transport, Env, AllowAllKeys, AvailableOnPublicInternet, DelegateAuthToUpstream,
+        OauthPassthrough, PerServerOauthDiscovery, IsByok;
+    text: ServerId(server_id), ServerName(server_name), Alias(alias), Description(description),
+        Url(url), SpecPath(spec_path), Instructions(instructions), Command(command), Issuer(issuer),
+        AuthorizationUrl(authorization_url), TokenUrl(token_url), RegistrationUrl(registration_url),
+        TokenExchangeEndpoint(token_exchange_endpoint), Audience(audience),
+        SubjectTokenType(subject_token_type), TokenExchangeProfile(token_exchange_profile),
+        ByokApiKeyHelpUrl(byok_api_key_help_url), SourceUrl(source_url),
+        ApprovalStatus(approval_status), SubmittedBy(submitted_by), SubmittedAt(submitted_at);
+    auth: AuthType(auth_type);
+    some: Credentials(credentials), McpInfo(mcp_info),
+        ToolNameToDisplayName(tool_name_to_display_name),
+        ToolNameToDescription(tool_name_to_description), StaticHeaders(static_headers),
+        Oauth2Flow(oauth2_flow), DcrBridge(dcr_bridge), Timeout(timeout),
+        MaxConcurrentRequests(max_concurrent_requests);
+    list: McpAccessGroups(mcp_access_groups), Args(args), ByokDescription(byok_description);
+    optional_list: AllowedTools(allowed_tools), ExtraHeaders(extra_headers), EnvVars(env_vars);
 }

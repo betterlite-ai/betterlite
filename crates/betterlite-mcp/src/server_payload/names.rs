@@ -1,16 +1,12 @@
 use crate::credential_contracts::header_carrier::validate_header_name;
-use crate::server_payload::PayloadError;
-use crate::server_payload::repr;
 use crate::server_payload::request::{NewMCPServerRequest, OrderedMap, UpdateMCPServerRequest};
-use crate::server_payload::rules::PayloadRules;
-
+use crate::server_payload::{PayloadError, quote};
+use betterlite_config::sections::mcp_env_values::PayloadRules;
 mod tests;
-
 pub struct ToolNameValidation {
     pub is_valid: bool,
     pub warnings: Vec<String>,
 }
-
 pub trait NamedPayload {
     fn server_name(&self) -> Option<&str>;
     fn alias(&self) -> Option<&str>;
@@ -18,73 +14,51 @@ pub trait NamedPayload {
     fn display_names(&self) -> Option<&OrderedMap>;
     fn upstream_token_header(&self) -> Option<&str>;
 }
-
 macro_rules! named_payload {
     ($request:ty) => {
         impl NamedPayload for $request {
             fn server_name(&self) -> Option<&str> {
                 self.server_name.as_deref()
             }
-
             fn alias(&self) -> Option<&str> {
                 self.alias.as_deref()
             }
-
             fn set_alias(&mut self, alias: Option<String>) {
                 self.alias = alias;
             }
-
             fn display_names(&self) -> Option<&OrderedMap> {
                 self.tool_name_to_display_name.as_ref()
             }
-
             fn upstream_token_header(&self) -> Option<&str> {
-                self.credentials
-                    .as_ref()
-                    .and_then(|credentials| credentials.upstream_token_header.as_ref())
-                    .and_then(|value| value.as_deref())
+                let credentials = self.credentials.as_ref()?;
+                credentials.upstream_token_header.as_ref()?.as_deref()
             }
         }
     };
 }
-
 named_payload!(NewMCPServerRequest);
 named_payload!(UpdateMCPServerRequest);
-
 pub fn validate_mcp_server_name(name: &str, separator: &str) -> Result<(), PayloadError> {
-    if !name.is_empty() && name.contains(separator) {
-        return Err(PayloadError::SeparatorInName {
-            separator: separator.to_owned(),
-            name: name.to_owned(),
-        });
+    if name.is_empty() || !name.contains(separator) {
+        return Ok(());
     }
-    Ok(())
+    Err(PayloadError::SeparatorInName {
+        separator: separator.to_owned(),
+        name: name.to_owned(),
+    })
 }
-
-#[must_use]
-pub fn normalize_server_name(server_name: &str) -> String {
-    let mut normalized = String::with_capacity(server_name.len());
-    for (index, part) in server_name.split(' ').enumerate() {
-        if index > 0 {
-            normalized.push('_');
-        }
-        normalized.push_str(part);
-    }
-    normalized
-}
-
 pub fn validate_tool_display_names(names: &OrderedMap) -> Result<(), PayloadError> {
-    for (tool_name, display_name) in names {
-        if !display_name.is_empty() && !matches_display_pattern(display_name) {
-            return Err(PayloadError::DisplayName {
-                display_name: display_name.clone(),
-                tool_name: tool_name.clone(),
-            });
-        }
-    }
-    Ok(())
+    let invalid = names.iter().find(|(_, display_name)| {
+        !display_name.is_empty() && !matches_display_pattern(display_name)
+    });
+    let Some((tool_name, display_name)) = invalid else {
+        return Ok(());
+    };
+    Err(PayloadError::DisplayName {
+        display_name: display_name.clone(),
+        tool_name: tool_name.clone(),
+    })
 }
-
 // Python's `$` also matches before one trailing newline, so a single trailing newline is allowed
 fn matches_display_pattern(value: &str) -> bool {
     let trimmed = value.strip_suffix('\n').unwrap_or(value);
@@ -93,7 +67,6 @@ fn matches_display_pattern(value: &str) -> bool {
             character.is_ascii_alphanumeric() || character == '_' || character == '-'
         })
 }
-
 #[must_use]
 pub fn validate_tool_name(name: &str) -> ToolNameValidation {
     let length = name.chars().count();
@@ -113,115 +86,96 @@ pub fn validate_tool_name(name: &str) -> ToolNameValidation {
         warnings.push("Tool name contains commas, which may cause parsing issues".to_owned());
     }
     if name.starts_with('-') || name.ends_with('-') {
-        warnings.push(
-            "Tool name starts or ends with a dash, which may cause parsing issues in some contexts"
-                .to_owned(),
-        );
+        warnings.push(DASH_WARNING.to_owned());
     }
     if name.starts_with('.') || name.ends_with('.') {
-        warnings.push(
-            "Tool name starts or ends with a dot, which may cause parsing issues in some contexts"
-                .to_owned(),
-        );
+        warnings.push(DOT_WARNING.to_owned());
     }
-    if name
-        .chars()
-        .any(|character| !is_tool_name_character(character))
-    {
-        warnings.push(invalid_characters_warning(name));
-        warnings.push(
-            "Allowed characters are: A-Z, a-z, 0-9, underscore (_), dash (-), and dot (.)"
-                .to_owned(),
-        );
+    let invalid = name.chars().any(|character| {
+        !(character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+    });
+    if !invalid {
         return ToolNameValidation {
-            is_valid: false,
+            is_valid: true,
             warnings,
         };
     }
-    ToolNameValidation {
-        is_valid: true,
-        warnings,
-    }
-}
-
-fn invalid(warnings: Vec<String>) -> ToolNameValidation {
+    warnings.push(invalid_characters_warning(name));
+    warnings.push(ALLOWED_CHARACTERS_WARNING.to_owned());
     ToolNameValidation {
         is_valid: false,
         warnings,
     }
 }
-
-fn is_tool_name_character(character: char) -> bool {
-    if character.is_ascii_alphanumeric() {
-        return true;
+const DASH_WARNING: &str =
+    "Tool name starts or ends with a dash, which may cause parsing issues in some contexts";
+const DOT_WARNING: &str =
+    "Tool name starts or ends with a dot, which may cause parsing issues in some contexts";
+const ALLOWED_CHARACTERS_WARNING: &str =
+    "Allowed characters are: A-Z, a-z, 0-9, underscore (_), dash (-), and dot (.)";
+const fn invalid(warnings: Vec<String>) -> ToolNameValidation {
+    ToolNameValidation {
+        is_valid: false,
+        warnings,
     }
-    matches!(character, '.' | '_' | '-')
 }
-
 fn invalid_characters_warning(name: &str) -> String {
     let mut seen = Vec::new();
     for character in name.chars() {
-        if !is_tool_name_character(character) && !seen.contains(&character) {
+        let allowed = character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-');
+        if !allowed && !seen.contains(&character) {
             seen.push(character);
         }
     }
-    let rendered = seen
+    let rendered: Vec<String> = seen
         .iter()
-        .map(|character| repr::text(&character.to_string()))
-        .collect::<Vec<String>>();
-    let joined = rendered.join(", ");
-    format!("Tool name contains invalid characters: {joined}")
+        .map(|character| quote(&character.to_string()))
+        .collect();
+    format!(
+        "Tool name contains invalid characters: {}",
+        rendered.join(", ")
+    )
 }
-
-// ast-grep-ignore: no-long-names
-pub fn validate_and_normalize_payload(
-    payload: &mut impl NamedPayload,
+pub fn validate_and_normalize_payload<P: NamedPayload>(
+    payload: &mut P,
     rules: &PayloadRules,
 ) -> Result<(), PayloadError> {
-    if let Some(name) = payload.server_name().filter(|name| !name.is_empty()) {
+    let raw_alias = payload.alias();
+    let server_name = payload.server_name().filter(|name| !name.is_empty());
+    let alias = raw_alias.filter(|text| !text.is_empty());
+    for name in [server_name, alias].into_iter().flatten() {
         validate_mcp_server_name(name, &rules.prefix_separator)?;
-    }
-    if let Some(alias) = payload.alias().filter(|alias| !alias.is_empty()) {
-        validate_mcp_server_name(alias, &rules.prefix_separator)?;
     }
     if let Some(names) = payload.display_names() {
         validate_tool_display_names(names)?;
     }
-    let alias = payload.alias().filter(|alias| !alias.is_empty());
-    let server_name = payload.server_name().filter(|name| !name.is_empty());
     let normalized = match (alias, server_name) {
-        (None, Some(name)) => Some(normalize_server_name(name)),
-        (Some(alias), _) => Some(normalize_server_name(alias)),
-        (None, None) => None,
+        (Some(chosen), _) | (None, Some(chosen)) => Some(chosen.replace(' ', "_")),
+        (None, None) => raw_alias.map(str::to_owned),
     };
     payload.set_alias(normalized);
-    if let Some(name) = payload.server_name().filter(|name| !name.is_empty()) {
-        validate_prefix("server_name", name)?;
-    }
-    if let Some(alias) = payload.alias().filter(|alias| !alias.is_empty()) {
-        validate_prefix("alias", alias)?;
+    for (field, candidate) in [
+        ("server_name", payload.server_name()),
+        ("alias", payload.alias()),
+    ] {
+        if let Some(value) = candidate.filter(|text| !text.is_empty()) {
+            validate_prefix(field, value)?;
+        }
     }
     check_upstream_token_header(payload)
 }
-
 fn validate_prefix(field: &'static str, value: &str) -> Result<(), PayloadError> {
     let validation = validate_tool_name(value);
     if validation.is_valid {
         return Ok(());
     }
-    let warnings = if validation.warnings.is_empty() {
-        String::new()
-    } else {
-        format!("\n{}", validation.warnings.join("\n"))
-    };
     Err(PayloadError::ToolPrefix {
         value: value.to_owned(),
         field,
-        warnings,
+        warnings: format!("\n{}", validation.warnings.join("\n")),
     })
 }
-
-fn check_upstream_token_header(payload: &impl NamedPayload) -> Result<(), PayloadError> {
+fn check_upstream_token_header<P: NamedPayload>(payload: &P) -> Result<(), PayloadError> {
     let Some(raw) = payload.upstream_token_header() else {
         return Ok(());
     };
@@ -229,6 +183,6 @@ fn check_upstream_token_header(payload: &impl NamedPayload) -> Result<(), Payloa
         return Ok(());
     }
     Err(PayloadError::UpstreamTokenHeader {
-        rendered: repr::text(raw),
+        rendered: quote(raw),
     })
 }

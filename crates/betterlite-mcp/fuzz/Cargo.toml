@@ -12,6 +12,7 @@ workspace = true
 cargo-fuzz = true
 
 [dependencies]
+betterlite-config = { path = "../../betterlite-config" }
 betterlite-mcp = { path = ".." }
 chrono = { version = "0.4.45", default-features = false }
 libfuzzer-sys = "0.4.9"

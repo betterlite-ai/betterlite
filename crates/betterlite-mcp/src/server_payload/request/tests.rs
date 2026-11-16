@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 
+use betterlite_config::sections::mcp_env_values::StdioPolicy;
 use betterlite_db::mcp_stored_contracts::{MCPAuth, MCPTransport};
 use betterlite_prompts::arguments::json::Json;
 
@@ -9,7 +10,6 @@ use crate::server_payload::RequestError;
 use crate::server_payload::request::{
     NewMCPServerRequest, UpdateMCPServerRequest, is_per_server_oauth_discovery_eligible,
 };
-use crate::server_payload::rules::StdioPolicy;
 use crate::server_record::OAuth2Flow;
 
 const DISABLED: &str = "stdio MCP servers are disabled on this proxy. Set LITELLM_ENABLE_MCP_STDIO=true on the proxy and restart to enable them";
@@ -38,14 +38,14 @@ fn policy(enabled: bool) -> StdioPolicy {
 }
 
 fn new_request(source: &str, stdio: &StdioPolicy) -> Result<NewMCPServerRequest, RequestError> {
-    NewMCPServerRequest::from_value(payload(source), stdio)
+    NewMCPServerRequest::from_value(&payload(source), stdio)
 }
 
 fn update_request(
     source: &str,
     stdio: &StdioPolicy,
 ) -> Result<UpdateMCPServerRequest, RequestError> {
-    UpdateMCPServerRequest::from_value(payload(source), stdio)
+    UpdateMCPServerRequest::from_value(&payload(source), stdio)
 }
 
 fn value_error<T>(result: Result<T, RequestError>) -> String {
@@ -286,15 +286,20 @@ fn dcr_bridge_needs_a_forwarded_token_auth_type() {
         value_error(new_request(&format!("{base}}}"), &policy(true))),
         "dcr_bridge is only supported for auth_type true_passthrough or oauth_delegate (got None). The DCR bridge serves gateway-hosted OAuth discovery for the client-forwarded token modes; interactive oauth2 servers already run the gateway authorization-code flow."
     );
-    for auth_type in ["true_passthrough", "oauth_delegate"] {
-        assert!(
-            new_request(
-                &format!(r#"{base},"auth_type":"{auth_type}"}}"#),
-                &policy(true)
-            )
-            .is_ok()
-        );
-    }
+    assert!(
+        new_request(
+            &format!(r#"{base},"auth_type":"true_passthrough"}}"#),
+            &policy(true)
+        )
+        .is_ok()
+    );
+    assert!(
+        new_request(
+            &format!(r#"{base},"auth_type":"oauth_delegate"}}"#),
+            &policy(true)
+        )
+        .is_ok()
+    );
     assert_eq!(
         value_error(new_request(
             &format!(r#"{base},"auth_type":"oauth2"}}"#),

@@ -1,14 +1,11 @@
+use crate::server_payload::request::OrderedMap;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::de::Error as _;
-
-use crate::server_payload::request::OrderedMap;
-
+use serde_with::rust::double_option;
 mod tests;
-
 pub type ConnectorMap = IndexMap<String, ConnectorEntry>;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectorEntry {
     pub name: Option<String>,
@@ -21,34 +18,29 @@ pub struct ConnectorEntry {
     pub env: OrderedMap,
     pub description: Option<String>,
 }
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConnectorServers {
     Mapping(ConnectorMap),
     List(Vec<ConnectorEntry>),
 }
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectorImportRequest {
     pub mcp_servers: ConnectorServers,
 }
-
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct RawConnectorImportRequest {
-    #[serde(default, rename = "mcp_servers")]
+    #[serde(default, rename = "mcp_servers", with = "double_option")]
     mcp_servers_snake: Option<Option<RawServers>>,
-    #[serde(default, rename = "mcpServers")]
+    #[serde(default, rename = "mcpServers", with = "double_option")]
     mcp_servers_camel: Option<Option<RawServers>>,
 }
-
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(untagged)]
 enum RawServers {
     Mapping(IndexMap<String, RawConnectorEntry>),
     List(Vec<RawConnectorEntry>),
 }
-
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct RawConnectorEntry {
     #[serde(default)]
     name: Option<String>,
@@ -56,9 +48,9 @@ struct RawConnectorEntry {
     kind: Option<String>,
     #[serde(default)]
     url: Option<String>,
-    #[serde(default, rename = "authorization_token")]
+    #[serde(default, rename = "authorization_token", with = "double_option")]
     authorization_token_snake: Option<Option<String>>,
-    #[serde(default, rename = "authorizationToken")]
+    #[serde(default, rename = "authorizationToken", with = "double_option")]
     authorization_token_camel: Option<Option<String>>,
     #[serde(default)]
     headers: Option<OrderedMap>,
@@ -71,16 +63,10 @@ struct RawConnectorEntry {
     #[serde(default)]
     description: Option<String>,
 }
-
 impl ConnectorImportRequest {
     pub fn from_slice(bytes: &[u8]) -> Result<Self, serde_json::Error> {
         let raw: RawConnectorImportRequest = serde_json::from_slice(bytes)?;
-        let servers = match (raw.mcp_servers_snake, raw.mcp_servers_camel) {
-            (Some(value), _) => value,
-            (None, Some(value)) => value,
-            (None, None) => None,
-        };
-        let Some(servers) = servers else {
+        let Some(servers) = raw.mcp_servers_snake.or(raw.mcp_servers_camel).flatten() else {
             return Err(serde_json::Error::custom(
                 "mcp_servers must be an object or a list of connector entries",
             ));
@@ -90,29 +76,23 @@ impl ConnectorImportRequest {
                 entries
                     .into_iter()
                     .map(|(name, entry)| (name, entry.into_entry()))
-                    .collect::<ConnectorMap>(),
+                    .collect(),
             ),
             RawServers::List(entries) => ConnectorServers::List(
                 entries
                     .into_iter()
                     .map(RawConnectorEntry::into_entry)
-                    .collect::<Vec<ConnectorEntry>>(),
+                    .collect(),
             ),
         };
         Ok(Self { mcp_servers })
     }
 }
-
 impl RawConnectorEntry {
     fn into_entry(self) -> ConnectorEntry {
-        let authorization_token = match (
-            self.authorization_token_snake,
-            self.authorization_token_camel,
-        ) {
-            (Some(value), _) => value,
-            (None, Some(value)) => value,
-            (None, None) => None,
-        };
+        let snake = self.authorization_token_snake;
+        let camel = self.authorization_token_camel;
+        let authorization_token = snake.or(camel).flatten();
         ConnectorEntry {
             name: self.name,
             entry_type: self.kind,
@@ -126,26 +106,22 @@ impl RawConnectorEntry {
         }
     }
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct MCPConnectorImportResult {
     pub name: String,
     pub server_id: String,
     pub alias: String,
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct MCPConnectorImportSkipped {
     pub name: String,
     pub reason: String,
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct MCPConnectorImportFailure {
     pub name: String,
     pub error: String,
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct MCPConnectorImportResponse {
     pub imported: Vec<MCPConnectorImportResult>,

@@ -30,7 +30,7 @@ scrypt = { version = "0.11.0", default-features = false }
 secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value", "arbitrary_precision"] }
-serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
 sha2.workspace = true
 sse-stream = "0.2.6"
 strum = { version = "0.28.0", features = ["derive"] }

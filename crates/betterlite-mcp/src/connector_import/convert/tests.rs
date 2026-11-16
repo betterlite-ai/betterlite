@@ -2,16 +2,17 @@
 
 use std::collections::BTreeSet;
 
+use betterlite_config::sections::mcp_env_values::StdioPolicy;
 use betterlite_db::mcp_stored_contracts::{MCPAuth, MCPTransport};
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::{
     ConnectorConversionError, ConnectorOutcome, ConvertedConnector, convert_connector_entries,
     sanitize_connector_name,
 };
-use crate::connector_import::request::{ConnectorImportRequest, OrderedMap};
-use crate::server_payload::request::NewMCPServerRequest;
-use crate::server_payload::rules::StdioPolicy;
+use crate::connector_import::request::ConnectorImportRequest;
+use crate::server_payload::request::{NewMCPServerRequest, OrderedMap};
 
 fn policy(enabled: bool) -> StdioPolicy {
     StdioPolicy {
@@ -63,7 +64,7 @@ fn sanitizing_replaces_unsupported_characters_and_collapses_underscores() {
     assert_eq!(sanitize_connector_name(" my  srv-1!! "), "my_srv_1");
     assert_eq!(sanitize_connector_name("__a__b__"), "a_b");
     assert_eq!(sanitize_connector_name("a/b"), "a_b");
-    assert_eq!(sanitize_connector_name("café"), "caf");
+    assert_eq!(sanitize_connector_name("naïve"), "na_ve");
     assert_eq!(sanitize_connector_name("A1_b"), "A1_b");
     assert_eq!(sanitize_connector_name(""), "");
 }
@@ -80,21 +81,18 @@ fn a_mapping_entry_is_converted_under_its_key() {
     assert_eq!(request.approval_status.as_deref(), Some("active"));
 }
 
-#[test]
-fn the_type_selects_the_transport() {
-    for (extra, transport) in [
-        (r#","type":"sse""#, MCPTransport::Sse),
-        (r#","type":"SSE""#, MCPTransport::Sse),
-        (r#","type":"http""#, MCPTransport::Http),
-        (r#","type":"url""#, MCPTransport::Http),
-        (r#","type":"streamable_http""#, MCPTransport::Http),
-        (r#","type":"streamable-http""#, MCPTransport::Http),
-        (r#","type":"""#, MCPTransport::Http),
-        ("", MCPTransport::Http),
-    ] {
-        let converted = converted(&entry("https://mcp.test", extra));
-        assert_eq!(converted.request.transport, transport, "{extra}");
-    }
+#[rstest]
+#[case::sse(r#","type":"sse""#, MCPTransport::Sse)]
+#[case::uppercase_sse(r#","type":"SSE""#, MCPTransport::Sse)]
+#[case::http(r#","type":"http""#, MCPTransport::Http)]
+#[case::url(r#","type":"url""#, MCPTransport::Http)]
+#[case::streamable_http(r#","type":"streamable_http""#, MCPTransport::Http)]
+#[case::streamable_hyphen(r#","type":"streamable-http""#, MCPTransport::Http)]
+#[case::empty_type(r#","type":"""#, MCPTransport::Http)]
+#[case::missing_type("", MCPTransport::Http)]
+fn the_type_selects_the_transport(#[case] extra: &str, #[case] transport: MCPTransport) {
+    let converted = converted(&entry("https://mcp.test", extra));
+    assert_eq!(converted.request.transport, transport, "{extra}");
 }
 
 #[test]
@@ -130,12 +128,12 @@ fn a_non_bearer_authorization_header_keeps_the_whole_value() {
 
 #[test]
 fn bearer_detection_is_case_insensitive_and_may_leave_an_empty_token() {
-    let converted = converted(&entry(
+    let empty_token = converted(&entry(
         "https://mcp.test",
         r#","headers":{"Authorization":"BEARER "}"#,
     ));
-    assert_eq!(converted.request.auth_type, Some(MCPAuth::BearerToken));
-    assert_eq!(auth_value(&converted.request).as_deref(), Some(""));
+    assert_eq!(empty_token.request.auth_type, Some(MCPAuth::BearerToken));
+    assert_eq!(auth_value(&empty_token.request).as_deref(), Some(""));
     let scheme = converted(&entry(
         "https://mcp.test",
         r#","headers":{"Authorization":"BearerX"}"#,
@@ -297,12 +295,15 @@ fn list_entries_without_names_fail_with_the_url_or_the_index() {
             }
         })
         .collect();
+    assert_eq!(names.len(), 3_usize);
     assert_eq!(names[0].0, "https://first");
     assert_eq!(names[1].0, "entry 1");
     assert_eq!(names[2].0, "entry 2");
-    for (_, error) in names {
-        assert_eq!(error, "Connector entries in list form must have a name.");
-    }
+    let errors: Vec<&str> = names.iter().map(|(_, error)| error.as_str()).collect();
+    assert_eq!(
+        errors,
+        ["Connector entries in list form must have a name."; 3]
+    );
 }
 
 #[test]

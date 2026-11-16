@@ -1,30 +1,23 @@
-use betterlite_prompts::arguments::json::{Json, Object};
-
-use crate::server_payload::request::{NewMCPServerRequest, OrderedMap};
-use crate::server_payload::rules::StdioPolicy;
-
 use super::request::{ConnectorEntry, ConnectorImportRequest, ConnectorServers};
-
+use crate::server_payload::request::{NewMCPServerRequest, OrderedMap};
+use betterlite_config::sections::mcp_env_values::StdioPolicy;
+use betterlite_prompts::arguments::json::{Json, Object};
 mod tests;
-
 #[derive(Debug, Clone)]
 pub enum ConnectorOutcome {
     Converted(ConvertedConnector),
     Failed(ConnectorConversionError),
 }
-
 #[derive(Debug, Clone)]
 pub struct ConvertedConnector {
     pub name: String,
     pub request: Box<NewMCPServerRequest>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectorConversionError {
     pub name: String,
     pub error: String,
 }
-
 #[must_use]
 pub fn convert_connector_entries(
     request: &ConnectorImportRequest,
@@ -42,68 +35,43 @@ pub fn convert_connector_entries(
             .collect(),
     }
 }
-
 fn convert_list_entry(
     index: usize,
     entry: &ConnectorEntry,
     stdio: &StdioPolicy,
 ) -> ConnectorOutcome {
-    let Some(name) = non_empty(entry.name.as_deref()) else {
-        let name =
-            non_empty(entry.url.as_deref()).map_or_else(|| format!("entry {index}"), str::to_owned);
-        return failed(&name, "Connector entries in list form must have a name.");
+    let Some(name) = entry.name.as_deref().filter(|text| !text.is_empty()) else {
+        let url = entry.url.as_deref().filter(|text| !text.is_empty());
+        let label = url.map_or_else(|| format!("entry {index}"), str::to_owned);
+        return failed(&label, "Connector entries in list form must have a name.");
     };
     convert_entry(name, entry, stdio)
 }
-
 fn convert_entry(name: &str, entry: &ConnectorEntry, stdio: &StdioPolicy) -> ConnectorOutcome {
     let sanitized = sanitize_connector_name(name);
     if sanitized.is_empty() {
         return failed(name, "Connector name is empty after sanitization.");
     }
-    let url = non_empty(entry.url.as_deref());
-    let command = non_empty(entry.command.as_deref());
+    let url = entry.url.as_deref().filter(|text| !text.is_empty());
+    let command = entry.command.as_deref().filter(|text| !text.is_empty());
     if url.is_some() && command.is_some() {
         return failed(name, "Connector cannot have both a url and a command.");
     }
-    if let Some(command) = command {
-        return stdio_outcome(name, &sanitized, command, entry, stdio);
+    let mut fields = base_fields(sanitized, entry);
+    match (command, url) {
+        (Some(program), _) => add_stdio_fields(&mut fields, program, entry),
+        (None, Some(address)) => {
+            let Some(transport) = supported_transport(entry) else {
+                let sent = entry.entry_type.as_deref().unwrap_or("");
+                return failed(name, &format!("Unsupported connector type '{sent}'."));
+            };
+            fields.insert("transport".to_owned(), Json::Text(transport.to_owned()));
+            fields.insert("url".to_owned(), Json::Text(address.to_owned()));
+            add_remote_auth(&mut fields, entry);
+        }
+        (None, None) => return failed(name, "Connector must have either a url or a command."),
     }
-    let Some(url) = url else {
-        return failed(name, "Connector must have either a url or a command.");
-    };
-    remote_outcome(name, &sanitized, url, entry, stdio)
-}
-
-fn stdio_outcome(
-    name: &str,
-    sanitized: &str,
-    command: &str,
-    entry: &ConnectorEntry,
-    stdio: &StdioPolicy,
-) -> ConnectorOutcome {
-    let payload = stdio_payload(sanitized, command, entry);
-    build_outcome(name, payload, stdio)
-}
-
-fn remote_outcome(
-    name: &str,
-    sanitized: &str,
-    url: &str,
-    entry: &ConnectorEntry,
-    stdio: &StdioPolicy,
-) -> ConnectorOutcome {
-    let Some(transport) = supported_transport(entry) else {
-        let sent = entry.entry_type.as_deref().unwrap_or("");
-        return failed(name, &format!("Unsupported connector type '{sent}'."));
-    };
-    let auth = remote_auth(entry);
-    let payload = remote_payload(sanitized, url, transport, entry, &auth);
-    build_outcome(name, payload, stdio)
-}
-
-fn build_outcome(name: &str, payload: Json, stdio: &StdioPolicy) -> ConnectorOutcome {
-    match NewMCPServerRequest::from_value(payload, stdio) {
+    match NewMCPServerRequest::from_value(&Json::Object(fields), stdio) {
         Ok(request) => ConnectorOutcome::Converted(ConvertedConnector {
             name: name.to_owned(),
             request: Box::new(request),
@@ -111,22 +79,75 @@ fn build_outcome(name: &str, payload: Json, stdio: &StdioPolicy) -> ConnectorOut
         Err(error) => failed(name, &format!("Value error, {error}")),
     }
 }
-
-fn failed(name: &str, error: &str) -> ConnectorOutcome {
-    ConnectorOutcome::Failed(ConnectorConversionError {
-        name: name.to_owned(),
-        error: error.to_owned(),
-    })
+fn base_fields(sanitized: String, entry: &ConnectorEntry) -> Object {
+    let mut fields = Object::new();
+    fields.insert("server_name".to_owned(), Json::Text(sanitized.clone()));
+    fields.insert("alias".to_owned(), Json::Text(sanitized));
+    if let Some(description) = &entry.description {
+        fields.insert("description".to_owned(), Json::Text(description.clone()));
+    }
+    fields.insert(
+        "approval_status".to_owned(),
+        Json::Text("active".to_owned()),
+    );
+    fields
 }
-
-fn non_empty(value: Option<&str>) -> Option<&str> {
-    let text = value?;
-    if text.is_empty() {
+fn add_stdio_fields(fields: &mut Object, program: &str, entry: &ConnectorEntry) {
+    fields.insert("transport".to_owned(), Json::Text("stdio".to_owned()));
+    fields.insert("command".to_owned(), Json::Text(program.to_owned()));
+    let args = entry.args.iter().cloned().map(Json::Text).collect();
+    fields.insert("args".to_owned(), Json::List(args));
+    fields.insert("env".to_owned(), map_json(&entry.env));
+}
+fn add_remote_auth(fields: &mut Object, entry: &ConnectorEntry) {
+    let (header_value, static_headers) = split_headers(entry.headers.as_ref());
+    let direct = entry
+        .authorization_token
+        .as_deref()
+        .filter(|text| !text.is_empty());
+    let header = header_value.as_deref();
+    let bearer = header.and_then(bearer_token);
+    let (auth_type, auth_value) = match (direct, bearer, header) {
+        (Some(token), _, _) | (None, Some(token), _) => ("bearer_token", Some(token)),
+        (None, None, Some(whole)) => ("authorization", Some(whole)),
+        (None, None, None) => ("none", None),
+    };
+    fields.insert("auth_type".to_owned(), Json::Text(auth_type.to_owned()));
+    if let Some(value) = auth_value {
+        let credential = Json::Text(value.to_owned());
+        let credentials = Object::from([("auth_value".to_owned(), credential)]);
+        fields.insert("credentials".to_owned(), Json::Object(credentials));
+    }
+    if let Some(headers) = static_headers {
+        fields.insert("static_headers".to_owned(), map_json(&headers));
+    }
+}
+fn split_headers(headers: Option<&OrderedMap>) -> (Option<String>, Option<OrderedMap>) {
+    let Some(all) = headers else {
+        return (None, None);
+    };
+    let mut authorization = None;
+    let mut seen = false;
+    let mut remaining = OrderedMap::new();
+    for (name, value) in all {
+        if name.eq_ignore_ascii_case("authorization") {
+            if !seen {
+                authorization = (!value.is_empty()).then(|| value.clone());
+            }
+            seen = true;
+        } else {
+            remaining.insert(name.clone(), value.clone());
+        }
+    }
+    (authorization, (!remaining.is_empty()).then_some(remaining))
+}
+fn bearer_token(value: &str) -> Option<&str> {
+    let prefix = value.get(..7)?;
+    if !prefix.eq_ignore_ascii_case("bearer ") {
         return None;
     }
-    Some(text)
+    value.get(7..)
 }
-
 fn supported_transport(entry: &ConnectorEntry) -> Option<&'static str> {
     let lowered = entry.entry_type.as_deref().unwrap_or("").to_lowercase();
     match lowered.as_str() {
@@ -135,141 +156,18 @@ fn supported_transport(entry: &ConnectorEntry) -> Option<&'static str> {
         _ => None,
     }
 }
-
-struct RemoteAuth {
-    auth_type: &'static str,
-    credentials: Option<Json>,
-    static_headers: Option<OrderedMap>,
-}
-
-fn remote_auth(entry: &ConnectorEntry) -> RemoteAuth {
-    let static_headers = remaining_headers(entry.headers.as_ref());
-    if let Some(token) = non_empty(entry.authorization_token.as_deref()) {
-        return bearer_auth(token, static_headers);
-    }
-    let Some(header_value) = authorization_header(entry.headers.as_ref()) else {
-        return RemoteAuth {
-            auth_type: "none",
-            credentials: None,
-            static_headers,
-        };
-    };
-    if let Some(token) = bearer_token(&header_value) {
-        return bearer_auth(token, static_headers);
-    }
-    RemoteAuth {
-        auth_type: "authorization",
-        credentials: Some(auth_value(&header_value)),
-        static_headers,
-    }
-}
-
-fn authorization_header(headers: Option<&OrderedMap>) -> Option<String> {
-    let headers = headers?;
-    let value = headers
+fn map_json(values: &OrderedMap) -> Json {
+    let fields = values
         .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
-        .map(|(_, value)| value.clone())?;
-    if value.is_empty() {
-        return None;
-    }
-    Some(value)
+        .map(|(name, value)| (name.clone(), Json::Text(value.clone())));
+    Json::Object(fields.collect())
 }
-
-fn remaining_headers(headers: Option<&OrderedMap>) -> Option<OrderedMap> {
-    let mut remaining = OrderedMap::new();
-    if let Some(headers) = headers {
-        for (name, value) in headers {
-            if !name.eq_ignore_ascii_case("authorization") {
-                remaining.insert(name.clone(), value.clone());
-            }
-        }
-    }
-    if remaining.is_empty() {
-        return None;
-    }
-    Some(remaining)
+fn failed(name: &str, error: &str) -> ConnectorOutcome {
+    ConnectorOutcome::Failed(ConnectorConversionError {
+        name: name.to_owned(),
+        error: error.to_owned(),
+    })
 }
-
-fn bearer_token(value: &str) -> Option<&str> {
-    if value
-        .get(..7)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("bearer "))
-    {
-        return value.get(7..);
-    }
-    None
-}
-
-fn bearer_auth(token: &str, static_headers: Option<OrderedMap>) -> RemoteAuth {
-    let credentials = auth_value(token);
-    RemoteAuth {
-        auth_type: "bearer_token",
-        credentials: Some(credentials),
-        static_headers,
-    }
-}
-
-fn auth_value(token: &str) -> Json {
-    let mut fields = Object::new();
-    fields.insert("auth_value".to_owned(), Json::Text(token.to_owned()));
-    Json::Object(fields)
-}
-
-fn stdio_payload(sanitized: &str, command: &str, entry: &ConnectorEntry) -> Json {
-    let mut fields = Object::new();
-    insert_text(&mut fields, "server_name", Some(sanitized));
-    insert_text(&mut fields, "alias", Some(sanitized));
-    insert_text(&mut fields, "description", entry.description.as_deref());
-    insert_text(&mut fields, "approval_status", Some("active"));
-    insert_text(&mut fields, "transport", Some("stdio"));
-    insert_text(&mut fields, "command", Some(command));
-    fields.insert(
-        "args".to_owned(),
-        Json::List(entry.args.iter().cloned().map(Json::Text).collect()),
-    );
-    fields.insert("env".to_owned(), ordered_map_json(&entry.env));
-    Json::Object(fields)
-}
-
-fn remote_payload(
-    sanitized: &str,
-    url: &str,
-    transport: &str,
-    entry: &ConnectorEntry,
-    auth: &RemoteAuth,
-) -> Json {
-    let mut fields = Object::new();
-    insert_text(&mut fields, "server_name", Some(sanitized));
-    insert_text(&mut fields, "alias", Some(sanitized));
-    insert_text(&mut fields, "description", entry.description.as_deref());
-    insert_text(&mut fields, "approval_status", Some("active"));
-    insert_text(&mut fields, "transport", Some(transport));
-    insert_text(&mut fields, "url", Some(url));
-    insert_text(&mut fields, "auth_type", Some(auth.auth_type));
-    if let Some(credentials) = &auth.credentials {
-        fields.insert("credentials".to_owned(), credentials.clone());
-    }
-    if let Some(headers) = &auth.static_headers {
-        fields.insert("static_headers".to_owned(), ordered_map_json(headers));
-    }
-    Json::Object(fields)
-}
-
-fn ordered_map_json(values: &OrderedMap) -> Json {
-    let mut fields = Object::new();
-    for (name, value) in values {
-        fields.insert(name.clone(), Json::Text(value.clone()));
-    }
-    Json::Object(fields)
-}
-
-fn insert_text(fields: &mut Object, key: &str, value: Option<&str>) {
-    if let Some(value) = value {
-        fields.insert(key.to_owned(), Json::Text(value.to_owned()));
-    }
-}
-
 #[must_use]
 pub fn sanitize_connector_name(name: &str) -> String {
     let mut sanitized = String::with_capacity(name.len());

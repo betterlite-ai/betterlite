@@ -1,0 +1,21 @@
+task: B4716
+deviations:
+  - what: submitted_at on NewMCPServerRequest is kept as the raw string and not parsed as a datetime.
+    why: The create route always overwrites it, so a parsed value is never read; a malformed value is accepted here where LiteLLM answers 422.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1663-L1676
+  - what: The prefix separator and the stdio policy are passed in as PayloadRules and StdioPolicy, where LiteLLM reads MCP_TOOL_PREFIX_SEPARATOR, LITELLM_ENABLE_MCP_STDIO and LITELLM_MCP_STDIO_EXTRA_COMMANDS from the environment at call time.
+    why: Library code in betterlite takes no environment reads and no module state; the mcp_env_values config section reads the same three variables once, so a user sees the same values until the process restarts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/stdio_gate.py#L7-L15
+  - what: The required field list comes from the mcp_required_fields config section, where LiteLLM reads proxy_general_settings on every call.
+    why: Settings reach this crate as a parsed config section; a change through the config update route takes effect when the section reloads rather than on the next call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L356-L362
+  - what: A field of the wrong type fails with RequestError::Shape carrying serde_json's message, where pydantic raises a ValidationError whose msg reads Input should be ... . Both reject the payload before conversion.
+    why: The request models deserialize with serde, whose type error text the task specifies as Shape; docs/compatibility.md makes a wrong-typed value an error that names the field instead of copying pydantic's wording.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1615-L1676
+kept_bugs:
+  - what: The tool display name pattern accepts one trailing newline, so "name\n" saves where a strict ^[a-zA-Z0-9_-]+$ would reject it.
+    why: Python's $ matches before a trailing newline and the task says to mirror the pattern rather than tighten it; the oracle case display-name-pattern pins the accepted value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L597-L616
+  - what: The stdio allowlist includes python and python3, so an allowed command with args such as -c can execute arbitrary code.
+    why: LiteLLM ships the same default list and documents the residual risk as accepted because the endpoints require PROXY_ADMIN, and an operator adds extra commands through LITELLM_MCP_STDIO_EXTRA_COMMANDS; the oracle case new-stdio-command-rules pins the list and its error text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L210-L219

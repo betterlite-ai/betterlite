@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use crate::connector_import::request::{
     ConnectorImportRequest, ConnectorServers, MCPConnectorImportFailure,
     MCPConnectorImportResponse, MCPConnectorImportResult, MCPConnectorImportSkipped,
@@ -24,6 +26,7 @@ fn mapping_entries_keep_their_key_order() {
         entries(parse(r#"{"mcpServers":{"zulu":{"url":"u1"},"alpha":{"url":"u2"}}}"#).unwrap());
     let names: Vec<&str> = parsed.iter().map(|(name, _)| name.as_str()).collect();
     assert_eq!(names, ["zulu", "alpha"]);
+    assert_eq!(parsed.len(), 2_usize);
     assert_eq!(parsed[0].1.url.as_deref(), Some("u1"));
     assert_eq!(parsed[1].1.url.as_deref(), Some("u2"));
 }
@@ -69,16 +72,13 @@ fn a_null_snake_key_does_not_fall_back_to_the_camel_key() {
     assert!(parse(r#"{"mcp_servers":null,"mcpServers":{}}"#).is_err());
 }
 
-#[test]
-fn a_missing_or_wrong_shaped_key_fails() {
-    for source in [
-        "{}",
-        r#"{"mcpServers":"text"}"#,
-        r#"{"mcpServers":5}"#,
-        "[]",
-    ] {
-        assert!(parse(source).is_err(), "{source} should be rejected");
-    }
+#[rstest]
+#[case::missing_key("{}")]
+#[case::text_value(r#"{"mcpServers":"text"}"#)]
+#[case::number_value(r#"{"mcpServers":5}"#)]
+#[case::array_root("[]")]
+fn a_missing_or_wrong_shaped_key_fails(#[case] source: &str) {
+    assert!(parse(source).is_err(), "{source} should be rejected");
 }
 
 #[test]

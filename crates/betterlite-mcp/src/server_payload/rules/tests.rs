@@ -2,20 +2,23 @@
 
 use std::collections::BTreeSet;
 use std::io;
+use std::iter::empty;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_config::sections::mcp_env_values::{PayloadRules, StdioPolicy};
 use betterlite_db::mcp::table_access::McpIdentifierConflict;
 use betterlite_db::mcp::table_access::types::IdentifierField;
 use betterlite_prompts::arguments::json::Json;
+use rstest::rstest;
 use tracing::subscriber::DefaultGuard;
 use tracing::subscriber::set_default;
 
 use super::fields::NewServerField;
 use super::{
-    MCP_STDIO_DISABLED_MESSAGE, PayloadRules, StdioPolicy, does_mcp_server_exist,
-    identifier_conflict_message, is_mcp_stdio_blocked, stamp_omitted_oauth2_flow,
-    validate_required_fields, warn_if_id_jag_server_outruns_sso, warn_if_mcp_stdio_blocked,
+    MCP_STDIO_DISABLED_MESSAGE, does_mcp_server_exist, identifier_conflict_message,
+    is_mcp_stdio_blocked, stamp_omitted_oauth2_flow, validate_required_fields,
+    warn_if_id_jag_server_outruns_sso, warn_if_mcp_stdio_blocked,
 };
 use crate::server_payload::request::NewMCPServerRequest;
 use crate::server_record::OAuth2Flow;
@@ -32,7 +35,7 @@ fn payload(source: &str) -> Json {
 }
 
 fn request(source: &str) -> NewMCPServerRequest {
-    NewMCPServerRequest::from_value(payload(source), &policy(false)).unwrap()
+    NewMCPServerRequest::from_value(&payload(source), &policy(false)).unwrap()
 }
 
 #[derive(Clone, Default)]
@@ -55,7 +58,7 @@ impl io::Write for Captured {
 impl Captured {
     fn text(&self) -> String {
         let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        String::from_utf8_lossy(&bytes).into_owned()
+        String::from_utf8(bytes.clone()).unwrap()
     }
 }
 
@@ -117,20 +120,29 @@ fn stamping_keeps_an_explicit_flow() {
     assert_eq!(explicit.oauth2_flow, Some(OAuth2Flow::AuthorizationCode));
 }
 
-#[test]
-fn stamping_without_the_machine_to_machine_shape_uses_authorization_code() {
-    for source in [
-        r#"{"transport":"http","url":"u","auth_type":"oauth2","credentials":{"client_id":"id","client_secret":"secret"}}"#,
-        r#"{"transport":"http","url":"u","auth_type":"oauth2","token_url":"https://token","credentials":{"client_secret":"secret"}}"#,
-        r#"{"transport":"http","url":"u","auth_type":"oauth2","token_url":"https://token","credentials":{"client_id":"id"}}"#,
-        r#"{"transport":"http","url":"u","auth_type":"oauth2","token_url":"https://token","credentials":{"client_id":"","client_secret":"secret"}}"#,
-        r#"{"transport":"http","url":"u","auth_type":"oauth2","token_url":"https://token","credentials":{"client_id":"id","client_secret":""}}"#,
-        r#"{"transport":"http","url":"u","auth_type":"oauth2","token_url":"https://token","authorization_url":"https://authorize","credentials":{"client_id":"id","client_secret":"secret"}}"#,
-    ] {
-        let mut payload = request(source);
-        stamp_omitted_oauth2_flow(&mut payload);
-        assert_eq!(payload.oauth2_flow, Some(OAuth2Flow::AuthorizationCode));
-    }
+#[rstest]
+#[case::missing_token_url(
+    r#"{"transport":"http","url":"u","auth_type":"oauth2","credentials":{"client_id":"id","client_secret":"secret"}}"#
+)]
+#[case::missing_client_id(
+    r#"{"transport":"http","url":"u","auth_type":"oauth2","token_url":"https://token","credentials":{"client_secret":"secret"}}"#
+)]
+#[case::missing_client_secret(
+    r#"{"transport":"http","url":"u","auth_type":"oauth2","token_url":"https://token","credentials":{"client_id":"id"}}"#
+)]
+#[case::empty_client_id(
+    r#"{"transport":"http","url":"u","auth_type":"oauth2","token_url":"https://token","credentials":{"client_id":"","client_secret":"secret"}}"#
+)]
+#[case::empty_client_secret(
+    r#"{"transport":"http","url":"u","auth_type":"oauth2","token_url":"https://token","credentials":{"client_id":"id","client_secret":""}}"#
+)]
+#[case::authorization_url_present(
+    r#"{"transport":"http","url":"u","auth_type":"oauth2","token_url":"https://token","authorization_url":"https://authorize","credentials":{"client_id":"id","client_secret":"secret"}}"#
+)]
+fn stamping_without_the_machine_to_machine_shape_uses_authorization_code(#[case] source: &str) {
+    let mut payload = request(source);
+    stamp_omitted_oauth2_flow(&mut payload);
+    assert_eq!(payload.oauth2_flow, Some(OAuth2Flow::AuthorizationCode));
 }
 
 #[test]
@@ -208,57 +220,62 @@ fn an_empty_required_list_passes() {
     assert!(validate_required_fields(&payload, &[]).is_ok());
 }
 
+const LITELLM_FIELD_NAMES: [&str; 45] = [
+    "server_id",
+    "server_name",
+    "alias",
+    "description",
+    "transport",
+    "auth_type",
+    "credentials",
+    "url",
+    "spec_path",
+    "mcp_info",
+    "mcp_access_groups",
+    "allowed_tools",
+    "tool_name_to_display_name",
+    "tool_name_to_description",
+    "extra_headers",
+    "static_headers",
+    "env_vars",
+    "instructions",
+    "command",
+    "args",
+    "env",
+    "issuer",
+    "authorization_url",
+    "token_url",
+    "registration_url",
+    "oauth2_flow",
+    "token_exchange_endpoint",
+    "audience",
+    "subject_token_type",
+    "token_exchange_profile",
+    "allow_all_keys",
+    "available_on_public_internet",
+    "delegate_auth_to_upstream",
+    "oauth_passthrough",
+    "dcr_bridge",
+    "per_server_oauth_discovery",
+    "is_byok",
+    "byok_description",
+    "byok_api_key_help_url",
+    "source_url",
+    "timeout",
+    "max_concurrent_requests",
+    "approval_status",
+    "submitted_by",
+    "submitted_at",
+];
+
 #[test]
 fn every_litellm_field_name_parses() {
-    for name in [
-        "server_id",
-        "server_name",
-        "alias",
-        "description",
-        "transport",
-        "auth_type",
-        "credentials",
-        "url",
-        "spec_path",
-        "mcp_info",
-        "mcp_access_groups",
-        "allowed_tools",
-        "tool_name_to_display_name",
-        "tool_name_to_description",
-        "extra_headers",
-        "static_headers",
-        "env_vars",
-        "instructions",
-        "command",
-        "args",
-        "env",
-        "issuer",
-        "authorization_url",
-        "token_url",
-        "registration_url",
-        "oauth2_flow",
-        "token_exchange_endpoint",
-        "audience",
-        "subject_token_type",
-        "token_exchange_profile",
-        "allow_all_keys",
-        "available_on_public_internet",
-        "delegate_auth_to_upstream",
-        "oauth_passthrough",
-        "dcr_bridge",
-        "per_server_oauth_discovery",
-        "is_byok",
-        "byok_description",
-        "byok_api_key_help_url",
-        "source_url",
-        "timeout",
-        "max_concurrent_requests",
-        "approval_status",
-        "submitted_by",
-        "submitted_at",
-    ] {
-        assert!(NewServerField::from_str(name).is_ok(), "missing {name}");
-    }
+    let unparsed: Vec<&str> = LITELLM_FIELD_NAMES
+        .iter()
+        .filter(|name| NewServerField::from_str(name).is_err())
+        .copied()
+        .collect();
+    assert!(unparsed.is_empty(), "unparsed {unparsed:?}");
 }
 
 #[test]
@@ -322,7 +339,7 @@ fn server_existence_searches_every_id() {
     let ids = ["a", "b", "c"];
     assert!(does_mcp_server_exist(ids, "b"));
     assert!(!does_mcp_server_exist(ids, "z"));
-    assert!(!does_mcp_server_exist(std::iter::empty::<&str>(), "b"));
+    assert!(!does_mcp_server_exist(empty::<&str>(), "b"));
     let owned = vec!["a".to_owned(), "b".to_owned()];
     assert!(does_mcp_server_exist(owned.iter().map(String::as_str), "b"));
 }
