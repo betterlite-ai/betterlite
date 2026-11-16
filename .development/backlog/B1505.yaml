@@ -1,14 +1,14 @@
 id: B1505
 milestone: M3 providers
 title: Rank only the caller's accessible hosted skills
-status: done
+status: todo
 depends_on: [B1502, B171, B4261]
 file: tasks/B1505-skill-search.yaml
 covers:
   - "litellm/llms/litellm_proxy/skills/skill_search.py"
 parent: B044
 split_from: null
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2019
+pr: null
