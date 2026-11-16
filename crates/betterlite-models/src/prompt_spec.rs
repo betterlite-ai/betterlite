@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
-use secrecy::SecretString;
-use serde::ser::{SerializeMap as _, Serializer};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::decisions::Json;
@@ -40,7 +39,8 @@ impl Default for PromptInfo {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(into = "PromptLiteLLMParamsJson")]
 pub struct PromptLiteLLMParams {
     pub prompt_id: Option<String>,
     pub prompt_integration: String,
@@ -58,37 +58,37 @@ pub struct PromptLiteLLMParams {
     pub extra: IndexMap<String, Json>,
 }
 
-// The database row stores the key the way LiteLLM's model_dump_json does, so the secret is exposed here and a response copy masks it first
-impl Serialize for PromptLiteLLMParams {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut map = serializer.serialize_map(None)?;
-        map.serialize_entry("prompt_id", &self.prompt_id)?;
-        map.serialize_entry("prompt_integration", &self.prompt_integration)?;
-        map.serialize_entry("api_base", &self.api_base)?;
-        map.serialize_entry(
-            "api_key",
-            &self
-                .api_key
-                .as_ref()
-                .map(secrecy::ExposeSecret::expose_secret),
-        )?;
-        map.serialize_entry(
-            "provider_specific_query_params",
-            &self.provider_specific_query_params,
-        )?;
-        map.serialize_entry("ignore_prompt_manager_model", &self.ignore_model)?;
-        map.serialize_entry(
-            "ignore_prompt_manager_optional_params",
-            &self.ignore_optional_params,
-        )?;
-        map.serialize_entry("dotprompt_content", &self.dotprompt_content)?;
-        for (name, value) in &self.extra {
-            map.serialize_entry(name, value)?;
+// The database row stores the key the way LiteLLM's model_dump_json does, so this copy exposes the secret and a response copy masks it first
+#[derive(Clone, Serialize)]
+struct PromptLiteLLMParamsJson {
+    prompt_id: Option<String>,
+    prompt_integration: String,
+    api_base: Option<String>,
+    api_key: Option<String>,
+    provider_specific_query_params: Option<IndexMap<String, Json>>,
+    #[serde(rename = "ignore_prompt_manager_model")]
+    ignore_model: bool,
+    #[serde(rename = "ignore_prompt_manager_optional_params")]
+    ignore_optional_params: bool,
+    dotprompt_content: Option<String>,
+    #[serde(flatten)]
+    extra: IndexMap<String, Json>,
+}
+
+impl From<PromptLiteLLMParams> for PromptLiteLLMParamsJson {
+    fn from(params: PromptLiteLLMParams) -> Self {
+        let api_key = params.api_key.map(|key| key.expose_secret().to_owned());
+        Self {
+            prompt_id: params.prompt_id,
+            prompt_integration: params.prompt_integration,
+            api_base: params.api_base,
+            api_key,
+            provider_specific_query_params: params.provider_specific_query_params,
+            ignore_model: params.ignore_model,
+            ignore_optional_params: params.ignore_optional_params,
+            dotprompt_content: params.dotprompt_content,
+            extra: params.extra,
         }
-        map.end()
     }
 }
 
