@@ -1,0 +1,10 @@
+kind: helper
+name: foundry-agent-requests-agent-ids-seed
+call:
+  foundry_agent_requests:
+    agent_ids:
+      - {model: azure_ai/agents/seeded, optional_params: {}}
+      - {model: azure_ai/agents/seeded, optional_params: {agent_id: explicit}}
+      - {model: azure_ai/agents/seeded, optional_params: {assistant_id: assistant}}
+env: {}
+compare: {ignore: []}
