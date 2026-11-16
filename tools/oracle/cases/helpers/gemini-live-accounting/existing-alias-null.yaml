@@ -1,0 +1,25 @@
+kind: helper
+name: existing-alias-null
+call:
+  gemini_live_accounting:
+    op: aliases
+    usage:
+      input_tokens_details: {audio_tokens: 8}
+      input_token_details: null
+      output_tokens_details: {text_tokens: 3}
+      output_token_details: null
+calls:
+  - gemini_live_accounting:
+      op: aliases
+      usage:
+        input_tokens_details: {audio_tokens: 8}
+        input_token_details: {audio_tokens: 1}
+        output_tokens_details: {text_tokens: 3}
+  - gemini_live_accounting:
+      op: aliases
+      usage:
+        input_tokens_details: {audio_tokens: 8}
+        input_token_details: null
+        output_tokens_details: {text_tokens: 3}
+env: {}
+compare: {ignore: []}
