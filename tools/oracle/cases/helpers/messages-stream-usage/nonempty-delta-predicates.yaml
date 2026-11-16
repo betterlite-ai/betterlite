@@ -142,7 +142,7 @@ call:
           tool_calls: []
           reasoning_content: null
           thinking_blocks: null
-          refusal: no
+          refusal: "no"
           provider_specific_fields: null
     - step: is_blank
       choices:
