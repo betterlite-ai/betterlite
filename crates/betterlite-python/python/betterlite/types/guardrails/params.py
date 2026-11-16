@@ -2,8 +2,8 @@ from datetime import datetime
 from enum import StrEnum
 from typing import ClassVar, Literal, Required, Self, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
-from typing_extensions import ReadOnly, TypedDict
+from pydantic import ConfigDict, Field, JsonValue, field_validator, model_validator
+from typing_extensions import ReadOnly, TypedDict, override
 
 from betterlite.types.guardrails.content_filter import (
     ContentFilterConfigModel,
@@ -60,7 +60,7 @@ from betterlite.types.proxy.guardrails.guardrail_hooks.vigil_guard import (
     VigilGuardGuardrailConfigModel,
 )
 from betterlite.types.proxy.guardrails.guardrail_hooks.xecguard import XecGuardConfigModel
-from betterlite.types.utils.base import ResponseObject
+from betterlite.types.utils.base import InitValue, ResponseObject
 
 
 class Mode(ResponseObject):
@@ -233,14 +233,11 @@ class LitellmParams(  # pyright: ignore[reportGeneralTypeIssues, reportIncompati
             case tuple() | BedrockChecksConfigModel() | None:
                 return self
 
-    @model_validator(mode="before")
-    @classmethod
-    def default_on_false(cls, data: JsonValue | BaseModel) -> JsonValue | BaseModel:
-        match data:
-            case dict() if data.get("default_on") is None:
-                return {**data, "default_on": False}
-            case dict() | list() | str() | bool() | int() | float() | BaseModel() | None:
-                return data
+    @override
+    def __init__(self, **data: InitValue) -> None:
+        if data.get("default_on") is None:
+            data["default_on"] = False
+        super().__init__(**data)
 
 
 class Guardrail(TypedDict, total=False):

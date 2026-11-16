@@ -40,14 +40,6 @@ deviations:
       and absent names, and the names test compares the three against LiteLLM's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1278-L1288
   - what: >-
-      LitellmParams sets default_on to False with a model_validator in before mode instead of an
-      overridden __init__. Construction and model_validate both give False for an absent or null
-      default_on, as LiteLLM's __init__ does.
-    why: >-
-      The synthesized pydantic __init__ of the first base class makes strict basedpyright reject a
-      super().__init__(**kwargs) call that forwards untyped keywords. A before-validator needs no call.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1262-L1269
-  - what: >-
       guardrailConfig is the TypedDict class _GuardrailConfig and the module binds the LiteLLM name to it
       with a TypeAlias, and GUARDRAIL_DEFINITION_LOCATION is built with the functional StrEnum call, where
       LiteLLM declares both as classes with lowercase or underscore names. The TypedDict's __name__ is

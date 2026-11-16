@@ -503,7 +503,7 @@ def test_default_on_names() -> None:
     assert params.LitellmParams(guardrail="g", mode="pre_call").default_on is False
     assert params.LitellmParams(guardrail="g", mode="pre_call", default_on=None).default_on is False
     assert params.LitellmParams(guardrail="g", mode="pre_call", default_on=True).default_on is True
-    assert params.LitellmParams.model_validate(BASE).default_on is False
+    assert params.LitellmParams.model_validate(BASE).default_on is None
 
 
 def test_mode_union_names() -> None:
