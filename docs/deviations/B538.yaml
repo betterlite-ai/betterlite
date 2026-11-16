@@ -7,6 +7,9 @@ deviations:
     why: LiteLLM reads the hostname past an invalid port with urlparse and rewrites the base to the regional TTS endpoint; betterlite rejects the malformed URL rather than acting on a base no client can reach. A base with a valid scheme and port is unaffected.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L333-L349
 kept_bugs:
+  - what: The voice name and the explicit lang are interpolated into the voice element's name and xml:lang attributes literally, without XML escaping or validation, so a value containing a single quote or < yields invalid SSML.
+    why: Setups pass Azure voice names such as en-US-JennyNeural and locale codes such as en-US, which are what the attributes are meant to hold; escaping them would change every request, and the values come from the caller's own kwargs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L462-L473
   - what: style, styledegree and role are interpolated into the mstts:express-as attributes literally, without XML escaping or validation, so a value containing a quote yields invalid SSML.
     why: Setups pass Azure style names such as cheerful and role names such as Senior_Male, which are also what the attribute values are meant to be; escaping them would change every request, and the values come from the caller's own kwargs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L185-L194

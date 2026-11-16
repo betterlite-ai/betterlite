@@ -15,10 +15,9 @@ pub fn get_complete_url(identity: &NativeSpeechIdentity) -> Result<String, Nativ
         .ok()
         .and_then(|parsed| parsed.host_str().map(str::to_owned))
         .unwrap_or_default();
-    if hostname == COGNITIVE_SERVICES_DOMAIN
-        || hostname.ends_with(&format!(".{COGNITIVE_SERVICES_DOMAIN}"))
-    {
-        let region = extract_region(&hostname, COGNITIVE_SERVICES_DOMAIN);
+    let cognitive_suffix = format!(".{COGNITIVE_SERVICES_DOMAIN}");
+    if hostname == COGNITIVE_SERVICES_DOMAIN || hostname.ends_with(&cognitive_suffix) {
+        let region = hostname.strip_suffix(&cognitive_suffix).unwrap_or("");
         return Ok(build_tts_url(region));
     }
     if (hostname == TTS_SPEECH_DOMAIN || hostname.ends_with(&format!(".{TTS_SPEECH_DOMAIN}")))
@@ -27,11 +26,6 @@ pub fn get_complete_url(identity: &NativeSpeechIdentity) -> Result<String, Nativ
         return Ok(trimmed.to_owned());
     }
     Ok(format!("{trimmed}{TTS_ENDPOINT_PATH}"))
-}
-
-fn extract_region<'host>(hostname: &'host str, domain: &str) -> &'host str {
-    let suffix = format!(".{domain}");
-    hostname.strip_suffix(&suffix).unwrap_or("")
 }
 
 fn build_tts_url(region: &str) -> String {
