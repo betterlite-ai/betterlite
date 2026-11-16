@@ -36,7 +36,7 @@ use super::config::{CallMode, ChatStreamConfig, REPEATED_CHUNK_LIMIT, StreamLogg
 use super::error::ChatStreamError;
 use super::ports::{
     ChatStreamPorts, ChunkSource, SourceFailure, StreamCache, StreamClock, StreamFailure,
-    StreamLogging, StreamSourceError, StreamingDeploymentHook,
+    StreamLogging, StreamSourceError, StreamingDeploymentHook, SystemClock,
 };
 use crate::call_setup::RequestMap;
 use crate::call_setup::correlation::CorrelationRestore;

@@ -60,12 +60,19 @@ async fn duration_within_limit_reads_a_chunk() {
 }
 
 #[tokio::test]
-async fn duration_unset_never_expires() {
+async fn duration_exact_limit_still_reads() {
+    let mut config = config(CallMode::Async);
+    config.max_streaming_duration = Some(5.0);
     let world = World::new();
     let mut correlation = CorrelationContext::default();
     let source = FakeSource::new(vec![content_chunk("Hi")]);
-    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
-    world.clock.set(0, 1_000_000.0);
+    let mut stream = start(&world, &mut correlation, config, source);
+    world.clock.set(0, 1005.0);
 
     assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
+}
+
+#[test]
+fn duration_system_clock_is_live() {
+    assert!(SystemClock.now().seconds > 0);
 }
