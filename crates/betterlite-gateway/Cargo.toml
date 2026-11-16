@@ -12,6 +12,7 @@ clap = { version = "4.6.7", features = ["derive", "env"] }
 
 [dev-dependencies]
 axum.workspace = true
+betterlite-server = { path = "../betterlite-server", features = ["testing"] }
 nix = { version = "0.31.3", default-features = false, features = ["signal"] }
 phf.workspace = true
 rstest = "=0.27.0"

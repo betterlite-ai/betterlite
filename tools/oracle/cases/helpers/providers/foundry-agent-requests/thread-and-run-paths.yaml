@@ -1,0 +1,29 @@
+kind: helper
+name: foundry-agent-requests-thread-and-run-paths
+call:
+  foundry_agent_requests:
+    paths:
+      - {function: threads, api_base: "https://base.example", api_version: "2025-05-01", thread_id: t, run_id: r}
+      - {function: messages, api_base: "https://base.example", api_version: "2025-05-01", thread_id: thread-1, run_id: r}
+      - {function: list_messages, api_base: "https://base.example", api_version: "2025-05-15-preview", thread_id: thread-1, run_id: r}
+      - {function: runs, api_base: "https://base.example", api_version: "2025-05-01", thread_id: thread-1, run_id: r}
+      - {function: run_status, api_base: "https://base.example", api_version: "2025-05-01", thread_id: thread-1, run_id: run-1}
+      - {function: thread_and_run, api_base: "https://base.example", api_version: "2025-05-01", thread_id: t, run_id: r}
+calls:
+  - foundry_agent_requests:
+      paths:
+        - {function: messages, api_base: "https://base.example", api_version: "2025-05-01", thread_id: "thread 1/2", run_id: r}
+        - {function: runs, api_base: "https://base.example", api_version: "2025-05-01", thread_id: "a.b-c_d~e", run_id: r}
+        - {function: run_status, api_base: "https://base.example", api_version: "2025-05-01", thread_id: thread-1, run_id: "run/1"}
+        - {function: messages, api_base: "https://base.example", api_version: "2025-05-01", thread_id: "%41", run_id: r}
+        - {function: messages, api_base: "https://base.example/", api_version: "2025-05-01", thread_id: t, run_id: r}
+        - {function: runs, api_base: "", api_version: "", thread_id: t, run_id: r}
+  - foundry_agent_requests:
+      paths:
+        - {function: messages, api_base: "https://base.example", api_version: "2025-05-01", thread_id: "", run_id: r}
+        - {function: runs, api_base: "https://base.example", api_version: "2025-05-01", thread_id: ".", run_id: r}
+        - {function: run_status, api_base: "https://base.example", api_version: "2025-05-01", thread_id: "..", run_id: r}
+        - {function: run_status, api_base: "https://base.example", api_version: "2025-05-01", thread_id: thread-1, run_id: ""}
+        - {function: run_status, api_base: "https://base.example", api_version: "2025-05-01", thread_id: thread-1, run_id: ".."}
+env: {}
+compare: {ignore: []}

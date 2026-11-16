@@ -91,7 +91,7 @@ checks:
     run: test -f crates/betterlite-core/fuzz/fuzz_targets/vector_store_access.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/vector_store_access)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_access::tests::replays_corpus$/)'
   - id: helper-corpus
     why: the access operation has no newly added helper input
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_store_access-*)" && grep -qE '^[[:space:]]+vector_store_access:' tools/oracle/fuzz/corpus/helper_case/vector_store_access-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_store_access-*)" && grep -qE '^[[:space:]]+vector_store_access:' tools/oracle/fuzz/corpus/helper_case/vector_store_access-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/vector-store-access/parameter-string-normalization.yaml
 - tools/oracle/cases/helpers/vector-store-access/admin-and-lifecycle.yaml

@@ -1,0 +1,22 @@
+kind: helper
+name: speed-rate-boundaries
+call:
+  azure_native_speech:
+    speed_rate_boundaries:
+      speeds:
+        - null
+        - 1.0
+        - 2.0
+        - 0.5
+        - 0.25
+        - 4.0
+        - 5.0
+        - 0.125
+        - 1.0625
+        - 0.0625
+        - 0.07
+        - 0.123
+        - 2.5
+        - 3.0
+env: {}
+compare: {ignore: []}
