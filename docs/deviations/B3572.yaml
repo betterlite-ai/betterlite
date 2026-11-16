@@ -103,4 +103,14 @@ deviations:
       and headers for a non-streaming request, and the same chunk stream for a streaming
       one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L616-L633
+  - what: >-
+      The blocking relay is a Rust Iterator over Result items: a read failure is
+      yielded once as Err after the flush and the close, and the closed source ends
+      the iteration on the next call, where LiteLLM's generator raises the exception
+      out of next() and is exhausted afterwards.
+    why: >-
+      A Rust iterator cannot raise out of band, so the failure travels in the item
+      type. It surfaces at the same point, after the same flush and close, and a
+      caller that stops at the first error sees the same end of stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L234-L251
 kept_bugs: []

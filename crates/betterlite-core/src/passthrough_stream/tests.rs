@@ -458,6 +458,7 @@ impl AsyncChunkSource for ScriptedSource {
                 let mut log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
                 log.closed = log.closed.saturating_add(1);
             }
+            self.script.steps.clear();
             if self.script.close_fails {
                 return Err(HttpError::Timeout);
             }
@@ -478,6 +479,7 @@ impl SyncChunkSource for ScriptedSource {
     fn close(&mut self) -> Result<(), HttpError> {
         let mut log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
         log.closed = log.closed.saturating_add(1);
+        self.script.steps.clear();
         if self.script.close_fails {
             return Err(HttpError::Timeout);
         }
