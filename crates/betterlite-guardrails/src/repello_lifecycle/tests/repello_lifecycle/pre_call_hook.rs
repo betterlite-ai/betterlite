@@ -44,13 +44,15 @@ async fn the_configured_event_scans_the_prompt_and_records_the_guardrail() {
 }
 
 #[rstest]
-#[case::post_call("post_call")]
-#[case::during_call("during_call")]
+#[case::post_call(LitellmParamsMode::One(String::from("post_call")))]
+#[case::post_call_list(LitellmParamsMode::Many(vec![String::from("post_call")]))]
 #[tokio::test]
-async fn another_event_hook_skips_the_scan(#[case] mode: &str) {
+async fn another_event_hook_skips_the_scan(#[case] mode: LitellmParamsMode) {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
+    let mut configured = params();
+    configured.mode = mode;
     let run = run_hook(
-        &guarding(&mock.base, mode),
+        &guardrail_with(&configured, settings(&mock.base)),
         prompt_data(),
         HookTarget::Prompt,
         &BTreeSet::new(),

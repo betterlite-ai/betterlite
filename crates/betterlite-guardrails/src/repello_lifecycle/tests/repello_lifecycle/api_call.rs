@@ -4,6 +4,7 @@ use std::time::Duration;
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
+use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::repello_lifecycle::hooks::HookTarget;
 use betterlite_guardrails::repello_lifecycle::{
@@ -16,8 +17,8 @@ use tracing::subscriber::set_default;
 
 use crate::support::{
     API_KEY, CapturedLog, PASSED_REPLY, captured_body, captured_headers, captured_path, field,
-    guardrail, mock_repello, mock_repello_after, prompt_data, records, request_count,
-    response_data, run_hook, settings, text_field,
+    guardrail, guardrail_with, mock_repello, mock_repello_after, params, prompt_data, records,
+    request_count, response_data, run_hook, settings, text_field,
 };
 
 fn scan_text(body: &Data, stage: &str) -> Option<String> {
@@ -61,8 +62,10 @@ async fn a_prompt_scan_posts_the_asset_and_the_prompt_text() {
 #[tokio::test]
 async fn a_response_scan_posts_the_response_text() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
+    let mut configured = params();
+    configured.mode = LitellmParamsMode::One(String::from("post_call"));
     let run = run_hook(
-        &guardrail(settings(&mock.base)),
+        &guardrail_with(&configured, settings(&mock.base)),
         prompt_data(),
         HookTarget::Response(&response_data()),
         &BTreeSet::new(),
@@ -213,7 +216,7 @@ async fn a_timed_out_scan_passes_under_fail_open() {
 async fn a_key_that_cannot_be_a_header_value_is_the_generic_failure_even_under_fail_open() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
     let mut configured = settings(&mock.base);
-    configured.api_key = SecretString::from(String::from("ключ"));
+    configured.api_key = SecretString::from(String::from("key\nvalue"));
     configured.unreachable_fallback = UnreachableFallback::FailOpen;
     let run = run_hook(
         &guardrail(configured),
@@ -236,6 +239,30 @@ async fn a_key_that_cannot_be_a_header_value_is_the_generic_failure_even_under_f
     assert_eq!(
         text_field(&recorded[0], "guardrail_status").as_deref(),
         Some("guardrail_failed_to_respond")
+    );
+}
+
+#[tokio::test]
+async fn a_float_score_in_a_blocked_answer_is_printed_as_a_number() {
+    let mock = mock_repello(
+        StatusCode::OK,
+        r#"{"verdict": "blocked", "policies_violated": [{"policy_name": "pii", "details": {"score": 0.9}}]}"#,
+    )
+    .await;
+    let run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
+    let Err(GuardrailFailure::Http { status, detail }) = run.result else {
+        panic!("a blocked verdict must fail the request");
+    };
+    assert_eq!(status, 400);
+    assert_eq!(
+        detail,
+        "Blocked by RepelloAI Argus guardrail. Policies violated: pii (score: 0.9)."
     );
 }
 

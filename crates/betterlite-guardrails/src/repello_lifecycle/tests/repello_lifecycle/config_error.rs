@@ -86,9 +86,10 @@ async fn a_misconfigured_scan_records_the_failure_and_its_status(
         text_field(response, "error").as_deref(),
         Some(MISCONFIGURED_MESSAGE)
     );
+    // the record is rebuilt from its JSON, which reads a non-negative number back as signed
     assert_eq!(
         field(response, "status_code"),
-        Some(&GuardrailValue::UnsignedInteger(401))
+        Some(&GuardrailValue::SignedInteger(401))
     );
 }
 

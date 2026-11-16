@@ -9,7 +9,7 @@ use betterlite_guardrails::repello_lifecycle::config::{
 use betterlite_guardrails::repello_lifecycle::guardrail_settings;
 use rstest::rstest;
 
-use crate::support::{GUARDRAIL_NAME, empty_env, lookup, params};
+use crate::support::{GUARDRAIL_NAME, lookup, params};
 
 fn resolved(configured: &RepelloAIParams) -> RepelloAISettings {
     let env = lookup(&[("ARGUS_API_KEY", "env-key")]);
@@ -37,7 +37,8 @@ fn a_configured_timeout_is_the_request_timeout() {
 fn a_timeout_that_is_not_a_duration_is_rejected(#[case] seconds: f64) {
     let mut configured = params();
     configured.timeout = Some(seconds);
-    let error = RepelloAISettings::resolve(&configured, &empty_env()).unwrap_err();
+    let env = lookup(&[("ARGUS_API_KEY", "env-key")]);
+    let error = RepelloAISettings::resolve(&configured, &env).unwrap_err();
     assert!(matches!(error, RepelloLifecycleError::Timeout { .. }));
 }
 

@@ -11,8 +11,8 @@ use tracing::subscriber::set_default;
 
 use crate::support::{
     BLOCKED_REPLY, CapturedLog, FLAGGED_REPLY, PASSED_REPLY, applied, captured_body, captured_path,
-    chat_chunks, guardrail, guardrail_with, mock_repello, params, prompt_data, records,
-    request_count, run_stream, settings, text_chunks, text_field, value,
+    chat_chunks, guardrail_with, mock_repello, params, prompt_data, records, request_count,
+    run_stream, settings, text_chunks, text_field, value,
 };
 
 fn guarding(base: &str, mode: &str) -> RepelloAILifecycle {
@@ -168,10 +168,16 @@ async fn an_unreachable_api_decides_the_stream_by_the_fallback(
     #[case] relayed: bool,
 ) {
     let mock = mock_repello(StatusCode::INTERNAL_SERVER_ERROR, "{}").await;
-    let mut configured = settings(&mock.base);
+    let mut configured = params();
+    configured.mode = LitellmParamsMode::One(String::from("post_call"));
     configured.unreachable_fallback = fallback;
     let chunks = chat_chunks();
-    let run = run_stream(&guardrail(configured), prompt_data(), &chunks).await;
+    let run = run_stream(
+        &guardrail_with(&configured, settings(&mock.base)),
+        prompt_data(),
+        &chunks,
+    )
+    .await;
     assert_eq!(run.result.is_ok(), relayed);
     if relayed {
         assert_eq!(run.output, expected(&chunks));

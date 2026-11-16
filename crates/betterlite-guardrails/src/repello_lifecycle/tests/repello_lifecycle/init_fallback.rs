@@ -2,7 +2,7 @@ use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
 use betterlite_guardrails::repello_lifecycle::config::{RepelloAIParams, RepelloAISettings};
 use rstest::rstest;
 
-use crate::support::{empty_env, lookup, params};
+use crate::support::{lookup, params};
 
 fn params_with_fallback(fallback: UnreachableFallback, default_on: bool) -> RepelloAIParams {
     let mut configured = params();
