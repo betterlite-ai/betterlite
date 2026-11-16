@@ -169,6 +169,35 @@ fn no_function_calls_emit_no_events_and_remember_nothing() {
 }
 
 #[test]
+fn a_null_function_call_list_is_an_empty_list() {
+    let mut names = ToolCallNames::default();
+    let events = transform(
+        &mut names,
+        r#"{"functionCalls": null}"#,
+        ToolCallIds::default(),
+    );
+    assert!(events.is_empty());
+    assert!(names.entries.is_empty());
+}
+
+#[test]
+fn a_null_name_takes_the_empty_default_and_is_not_remembered() {
+    let mut names = ToolCallNames::default();
+    let events = transform(
+        &mut names,
+        r#"{"functionCalls": [{"id": "a", "name": null, "args": {"k": 1}}]}"#,
+        ToolCallIds {
+            response_id: Some("resp"),
+            output_item_id: Some("item"),
+        },
+    );
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].name, "");
+    assert_eq!(events[0].arguments, r#"{"k": 1}"#);
+    assert!(names.entries.is_empty());
+}
+
+#[test]
 fn only_calls_with_an_id_and_a_name_are_remembered() {
     let mut names = ToolCallNames::default();
     let events = transform(

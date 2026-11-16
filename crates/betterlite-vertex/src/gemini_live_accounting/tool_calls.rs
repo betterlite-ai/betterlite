@@ -2,6 +2,7 @@ use betterlite_logging::python_json::dumps;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use serde_with::{As, DefaultOnNull};
 use uuid::Uuid;
 
 use crate::gemini_live_client::state::ToolCallNames;
@@ -11,14 +12,14 @@ const GENERATED_CALL_ID_DIGITS: usize = 16;
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolCallMessage {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
     pub function_calls: Vec<FunctionCall>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct FunctionCall {
     pub id: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
     pub name: String,
     #[serde(default = "default_args")]
     pub args: Json,
