@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use betterlite_context::chat_config_selection::selection::ChatConfigError;
@@ -89,7 +89,7 @@ impl ChatConfigSelection for TestSelector {
     ) -> Result<Option<ChatConfigTag>, ChatConfigError> {
         self.calls
             .lock()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .push((model.to_owned(), provider));
         Ok(self.tag)
     }
@@ -116,22 +116,25 @@ struct TestTransform {
 
 impl NativeReplyTransform for TestTransform {
     fn transform(&self, request: &NativeReplyRequest<'_>) -> Result<Json, Box<ProviderError>> {
-        self.recorded.lock().unwrap().push(RecordedReply {
-            tag: request.tag,
-            model: request.model.to_owned(),
-            provider: request.custom_llm_provider.to_owned(),
-            status: request.status_code,
-            body: request.body.to_vec(),
-            messages: request
-                .messages
-                .iter()
-                .map(|message| (message.role.to_owned(), message.content.to_owned()))
-                .collect(),
-            request_data: request.request_data.clone(),
-            optional_empty: request.optional_params.is_empty(),
-            litellm_empty: request.litellm_params.is_empty(),
-            api_key: request.api_key.to_owned(),
-        });
+        self.recorded
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(RecordedReply {
+                tag: request.tag,
+                model: request.model.to_owned(),
+                provider: request.custom_llm_provider.to_owned(),
+                status: request.status_code,
+                body: request.body.to_vec(),
+                messages: request
+                    .messages
+                    .iter()
+                    .map(|message| (message.role.to_owned(), message.content.to_owned()))
+                    .collect(),
+                request_data: request.request_data.clone(),
+                optional_empty: request.optional_params.is_empty(),
+                litellm_empty: request.litellm_params.is_empty(),
+                api_key: request.api_key.to_owned(),
+            });
         if self.fail {
             return Err(Box::new(ProviderError::from(ProviderErrorParts {
                 status_code: 400,
@@ -149,7 +152,7 @@ impl NativeReplyTransform for TestTransform {
 
 struct TestAssembler {
     chunks: Mutex<Vec<StreamChunk>>,
-    calls: Mutex<usize>,
+    calls: Mutex<Vec<usize>>,
     marker: Json,
 }
 
@@ -160,8 +163,7 @@ impl StreamLogAssembler for TestAssembler {
         _logging_obj: &mut dyn PassthroughLogging,
     ) -> Option<Json> {
         *self.chunks.lock().unwrap() = chunks.to_vec();
-        let mut calls = self.calls.lock().unwrap();
-        *calls = calls.saturating_add(1);
+        self.calls.lock().unwrap().push(chunks.len());
         Some(self.marker.clone())
     }
 }
@@ -237,7 +239,7 @@ fn fixtures() -> (TestSelector, TestTransform, TestAssembler) {
         },
         TestAssembler {
             chunks: Mutex::new(Vec::new()),
-            calls: Mutex::new(0),
+            calls: Mutex::new(Vec::new()),
             marker: json(r#"{"id":"assembled"}"#),
         },
     )
@@ -294,9 +296,9 @@ fn signing_context<'text>(
     }
 }
 
-fn default_plan<'services>(
-    services: &'services (TestSelector, TestTransform, TestAssembler),
-) -> BedrockPassthroughPlan<'services> {
+fn default_plan(
+    services: &(TestSelector, TestTransform, TestAssembler),
+) -> BedrockPassthroughPlan<'_> {
     plan(
         &services.0,
         &services.1,
@@ -527,8 +529,14 @@ fn endpoint_decides_the_chat_config_model() {
     ] {
         assert!(log_with(&config, endpoint).is_some(), "{endpoint}");
     }
-    let calls = services.0.calls.lock().unwrap();
-    let models: Vec<&str> = calls.iter().map(|(model, _)| model.as_str()).collect();
+    let models: Vec<String> = services
+        .0
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(model, _)| model.clone())
+        .collect();
     assert_eq!(
         models,
         [
@@ -609,24 +617,24 @@ fn endpoint_sources() {
     let services = fixtures();
     let config = default_plan(&services);
     let proxy = Some("https://proxy.example/base/");
-    let expected = "https://proxy.example/base/model/x/converse";
+    let via_proxy = "https://proxy.example/base/model/x/converse";
     assert_eq!(
         url_with(&config, "anthropic.claude-3", "{}", proxy),
-        expected
+        via_proxy
     );
     let configured = r#"{"aws_bedrock_runtime_endpoint":"https://configured.example"}"#;
-    let expected = "https://configured.example/model/x/converse";
+    let via_configured = "https://configured.example/model/x/converse";
     assert_eq!(
         url_with(&config, "anthropic.claude-3", configured, None),
-        expected
+        via_configured
     );
     let mut environed = environment();
     environed.runtime_endpoint = Some("https://env.example".to_owned());
     let env_config = plan(&services.0, &services.1, &services.2, environed, identity());
-    let expected = "https://env.example/model/x/converse";
+    let via_environment = "https://env.example/model/x/converse";
     assert_eq!(
         url_with(&env_config, "anthropic.claude-3", "{}", None),
-        expected
+        via_environment
     );
     let query = object(r#"{"beta":"1"}"#);
     let params = object("{}");
@@ -653,16 +661,16 @@ fn region_sources() {
         identity(),
     );
     let arn = "arn:aws:bedrock:eu-west-1:1:foundation-model/anthropic.claude";
-    let expected = "https://bedrock-runtime.eu-west-1.amazonaws.com/model/x/converse";
-    assert_eq!(url_with(&config, arn, "{}", None), expected);
+    let from_arn = "https://bedrock-runtime.eu-west-1.amazonaws.com/model/x/converse";
+    assert_eq!(url_with(&config, arn, "{}", None), from_arn);
     let explicit = r#"{"aws_region_name":"ap-south-1"}"#;
-    let expected = "https://bedrock-runtime.ap-south-1.amazonaws.com/model/x/converse";
-    assert_eq!(url_with(&config, arn, explicit, None), expected);
+    let from_explicit = "https://bedrock-runtime.ap-south-1.amazonaws.com/model/x/converse";
+    assert_eq!(url_with(&config, arn, explicit, None), from_explicit);
     let profile = r#"{"model_id":"arn:aws:bedrock:ap-south-1:1:application-inference-profile/x"}"#;
-    let expected = "https://bedrock-runtime.ap-south-1.amazonaws.com/model/arn:aws:bedrock:ap-south-1:1:application-inference-profile%2Fx/converse";
+    let from_profile = "https://bedrock-runtime.ap-south-1.amazonaws.com/model/arn:aws:bedrock:ap-south-1:1:application-inference-profile%2Fx/converse";
     assert_eq!(
         url_with(&config, "anthropic.claude-3", profile, None),
-        expected
+        from_profile
     );
     let wrong = object(r#"{"aws_region_name":5}"#);
     let request = url_request(

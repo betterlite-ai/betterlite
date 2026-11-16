@@ -82,8 +82,9 @@ pub fn decoder_box(choice: DecoderChoice) -> Option<Box<dyn EventChunkDecoder>> 
             }
             None
         }
-        DecoderChoice::Converse(decoder) => Some(Box::new(decoder)),
-        DecoderChoice::Invoke { decoder, .. } => Some(Box::new(decoder)),
+        DecoderChoice::Converse(decoder) | DecoderChoice::Invoke { decoder, .. } => {
+            Some(Box::new(decoder))
+        }
     }
 }
 pub struct BedrockEventStreamCollector<'plan> {
@@ -114,13 +115,13 @@ impl<'plan> BedrockEventStreamCollector<'plan> {
             failure: None,
         }
     }
-    pub fn feed(&mut self, chunk: &[u8]) -> Result<(), StreamLogError> {
+    pub fn feed(&mut self, bytes: &[u8]) -> Result<(), StreamLogError> {
         let Some(decoder) = self.decoder.as_mut() else {
             return Ok(());
         };
         let Some(total) = self
             .fed_bytes
-            .checked_add(chunk.len())
+            .checked_add(bytes.len())
             .filter(|total| *total <= MAX_COLLECTED_BYTES)
         else {
             self.decoder = None;
@@ -129,7 +130,7 @@ impl<'plan> BedrockEventStreamCollector<'plan> {
             return Err(StreamLogError::TooLarge);
         };
         self.fed_bytes = total;
-        self.buffer.extend_from_slice(chunk);
+        self.buffer.extend_from_slice(bytes);
         loop {
             let Some(event) = decode_aws_event_frame(&mut self.buffer)? else {
                 return Ok(());
@@ -137,14 +138,14 @@ impl<'plan> BedrockEventStreamCollector<'plan> {
             let Some(message) = parse_message_from_event(Some(&self.shape), &event)? else {
                 continue;
             };
-            let value = decode_passthrough_log_event(message.as_bytes())?;
-            let translated = match decoder.decode(&value, self.clock)? {
-                DecodedChunk::Chunk(chunk) => Some(*chunk),
-                DecodedChunk::Generic(value) => generic_chunk(&value, self.clock)?,
+            let event_json = decode_passthrough_log_event(message.as_bytes())?;
+            let translated = match decoder.decode(&event_json, self.clock)? {
+                DecodedChunk::Chunk(boxed) => Some(*boxed),
+                DecodedChunk::Generic(generic) => generic_chunk(&generic, self.clock)?,
                 DecodedChunk::Ignored => None,
             };
-            if let Some(chunk) = translated {
-                self.chunks.add(chunk);
+            if let Some(decoded) = translated {
+                self.chunks.add(decoded);
             }
         }
     }

@@ -10,8 +10,8 @@ use thiserror::Error;
 #[error("the provider request failed")]
 pub struct ProviderFailure(pub Box<ProviderError>);
 impl fmt::Debug for ProviderFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("ProviderFailure([REDACTED])")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ProviderFailure([REDACTED])")
     }
 }
 #[derive(Debug, Error)]

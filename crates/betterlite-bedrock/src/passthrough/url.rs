@@ -41,10 +41,10 @@ pub fn complete_url(
         region: &region,
         endpoint_type: BedrockEndpointType::Runtime,
     });
-    let rewritten = match &model_id {
-        None => request.target.endpoint.to_owned(),
-        Some(model_id) => with_model_id(request.target.endpoint, &encoded_model_id(model_id)),
-    };
+    let rewritten = model_id.as_ref().map_or_else(
+        || request.target.endpoint.to_owned(),
+        |id| with_model_id(request.target.endpoint, &encoded_model_id(id)),
+    );
     let url = plan.format_url(
         &rewritten,
         &endpoint.endpoint_url,

@@ -110,7 +110,7 @@ fn fragments_and_generic_records() {
     stream.feed(&event_frame("other", b"")).unwrap();
     let logged = stream.build_logged_response(&mut TestLogging).unwrap();
     assert_eq!(logged, Some(json(ASSEMBLED)));
-    assert_eq!(*assembler.calls.lock().unwrap(), 1);
+    assert_eq!(assembler.calls.lock().unwrap().len(), 1);
     let chunks = assembler.chunks.lock().unwrap();
     assert_eq!(chunks.len(), 2);
     assert_eq!(chunks[0].id, "c1");
@@ -126,10 +126,10 @@ fn disabled_and_empty_collectors() {
     disabled.feed(&hello_frame()).unwrap();
     let skipped = disabled.build_logged_response(&mut TestLogging).unwrap();
     assert_eq!(skipped, None);
-    let mut empty = collector(Some(Box::new(FixtureDecoder)), &assembler);
+    let empty = collector(Some(Box::new(FixtureDecoder)), &assembler);
     let nothing = empty.build_logged_response(&mut TestLogging).unwrap();
     assert_eq!(nothing, None);
-    assert_eq!(*assembler.calls.lock().unwrap(), 0);
+    assert_eq!(assembler.calls.lock().unwrap().len(), 0);
 }
 
 fn decoder_and_frame_errors_propagate() {
@@ -202,7 +202,7 @@ fn oversized_streams_stop_collecting() {
     stream.add(&hello_frame());
     let skipped = stream.build_logged_response(&mut TestLogging).unwrap();
     assert_eq!(skipped, None);
-    assert_eq!(*assembler.calls.lock().unwrap(), 0);
+    assert_eq!(assembler.calls.lock().unwrap().len(), 0);
 }
 
 pub(super) fn event_stream_collector() {

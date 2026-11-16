@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
 
-use betterlite_models::decisions::Json;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
@@ -35,8 +34,8 @@ fn headers_stay_with_their_plan(
 ) {
     let mut headers = Headers::new();
     headers.insert("x-first".to_owned(), "1".to_owned());
-    let mut signed = sign(first, headers.clone());
-    signed.insert("x-first".to_owned(), "changed".to_owned());
+    let signed = sign(first, headers.clone());
+    assert_eq!(signed.get("x-first").map(String::as_str), Some("1"));
     assert!(!sign(second, Headers::new()).contains_key("x-first"));
     assert_eq!(headers.get("x-first").map(String::as_str), Some("1"));
     assert_eq!(first.environment, second.environment);
@@ -137,7 +136,7 @@ fn replays_the_bedrock_services_passthrough_corpus(
 fn log_event_boundaries_keep_their_category() {
     assert_eq!(outcome(br#"  ["not", "an", "object"]"#), "not-object");
     assert_eq!(outcome(b"{\"a\":\"\xff\"}"), "not-utf8");
-    let value: Json = json(r#"{"bytes":"x"}"#);
+    let value = json(r#"{"bytes":"x"}"#);
     assert_eq!(
         decode_passthrough_log_event(br#"{"bytes":"x"}"#).unwrap(),
         value

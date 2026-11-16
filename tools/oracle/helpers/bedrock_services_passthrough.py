@@ -1,6 +1,6 @@
 import logging
 from datetime import UTC, datetime
-from typing import Final, Literal, NotRequired, Protocol, TypedDict
+from typing import Final, Literal, NotRequired, Protocol, TypedDict, override
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -13,16 +13,6 @@ SPEND_WARNING: Final = "Bedrock passthrough spend tracking skipped:"
 
 
 class Typed(Protocol):
-    def get_complete_url(
-        self,
-        api_base: str | None,
-        api_key: str | None,
-        model: str,
-        endpoint: str,
-        request_query_params: dict[str, str] | None,
-        litellm_params: dict[str, JsonValue],
-    ) -> tuple[httpx.URL, str]: ...
-
     def sign_request(
         self,
         headers: dict[str, str],
@@ -117,6 +107,7 @@ class WarningCapture(logging.Handler):
         super().__init__()
         self.messages: list[str] = []
 
+    @override
     def emit(self, record: logging.LogRecord) -> None:
         self.messages.append(record.getMessage())
 
@@ -151,7 +142,7 @@ def params_of(
 
 def url_run(run: UrlRun) -> JsonValue:
     request_data: dict[str, JsonValue] = {}
-    url, endpoint_url = SIGNER.get_complete_url(
+    url, endpoint_url = CONFIG.get_complete_url(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L171-L178
         api_base=run.get("api_base"),
         api_key=None,
         model=run["model"],
@@ -164,7 +155,7 @@ def url_run(run: UrlRun) -> JsonValue:
     return {
         "url": str(url),
         "endpoint_url": endpoint_url,
-        "streaming": CONFIG.is_streaming_request(run["endpoint"], request_data),
+        "streaming": CONFIG.is_streaming_request(run["endpoint"], request_data),  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L136-L137
     }
 
 
@@ -187,7 +178,7 @@ def reply_run(run: ReplyRun) -> JsonValue:
     request_data: dict[str, JsonValue] = {}
     response = httpx.Response(200, content=run["body"].encode())
     try:
-        logged = CONFIG.logging_non_streaming_response(
+        logged = CONFIG.logging_non_streaming_response(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L234-L275
             model="m",
             custom_llm_provider=run["provider"],
             httpx_response=response,
@@ -202,19 +193,20 @@ def reply_run(run: ReplyRun) -> JsonValue:
 
 def response_view(response: BaseModel) -> JsonValue:
     reply = REPLY.validate_json(response.model_dump_json())
-    choice = reply["choices"][0]
     usage = reply.get("usage")
-    return {
-        "model": reply["model"],
-        "content": choice["message"]["content"],
-        "finish_reason": choice["finish_reason"],
-        "usage": None
-        if usage is None
-        else {
+    counted: JsonValue = None
+    if usage is not None:
+        counted = {
             "prompt_tokens": usage["prompt_tokens"],
             "completion_tokens": usage["completion_tokens"],
             "total_tokens": usage["total_tokens"],
-        },
+        }
+    first = reply["choices"][0]
+    return {
+        "model": reply["model"],
+        "content": first["message"]["content"],
+        "finish_reason": first["finish_reason"],
+        "usage": counted,
     }
 
 

@@ -97,7 +97,7 @@ impl StreamLogAssembler for ViewAssembler {
         serde_json::from_str(&view.to_string()).ok()
     }
 }
-fn plan(
+const fn plan(
     environment: PassthroughEnvironment,
     identity: PassthroughIdentity,
 ) -> BedrockPassthroughPlan<'static> {

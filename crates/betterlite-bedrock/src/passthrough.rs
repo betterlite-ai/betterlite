@@ -1,4 +1,5 @@
 use crate::aws_endpoints::region::{LlmRegion, llm_region_name};
+use crate::aws_settings::bedrock_bearer_token;
 use crate::aws_settings::sources::Credentials;
 use crate::signing::body::Body;
 use crate::signing::endpoint::{RequestHeaders, request_headers};
@@ -55,9 +56,8 @@ pub struct BedrockPassthroughPlan<'services> {
     pub clock: CollectorClock,
 }
 impl fmt::Debug for BedrockPassthroughPlan<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("BedrockPassthroughPlan")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BedrockPassthroughPlan")
             .field("has_credentials", &self.identity.credentials.is_some())
             .field("has_bearer_token", &self.identity.bearer_token.is_some())
             .field("environment", &self.environment)
@@ -134,8 +134,7 @@ impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
         context: &PassthroughSigning<'_>,
     ) -> Result<(Headers, Option<Vec<u8>>), Self::Error> {
         let body = request_body(context)?;
-        let bearer =
-            crate::aws_settings::bedrock_bearer_token(None, self.identity.bearer_token.as_ref());
+        let bearer = bedrock_bearer_token(None, self.identity.bearer_token.as_ref());
         let pairs = content_type_pairs(&headers, bearer.is_some());
         let supplied = supplied_authorization(&pairs);
         let region = signing_region(self, context, bearer.is_some())?;
