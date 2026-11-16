@@ -84,6 +84,8 @@ class Input(TypedDict):
 def seed_reader(seed: ImageSeed | None) -> io.BytesIO | None:
     if seed is None or seed["kind"] != "file":
         return None
+    if "data" not in seed:
+        raise ValueError("a file image seed carries its data")
     buffer = io.BytesIO(base64.b64decode(seed["data"]))
     position = seed.get("position")
     buffer.seek(0 if position is None else position)
@@ -96,6 +98,8 @@ def image_value(seed: ImageSeed, reader: io.BytesIO | None) -> JsonValue | io.By
         return reader
     if kind == "null":
         return None
+    if "value" not in seed:
+        raise ValueError("a dict or text image seed carries its value")
     return seed["value"]
 
 
