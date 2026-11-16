@@ -210,7 +210,10 @@ impl<Row: DeserializeOwned + Send + 'static> PolicyTable<Row> for FakeTable<Row>
         &self,
         filter: PolicyClause,
     ) -> impl Future<Output = Result<Option<Row>, FakeFailure>> + Send {
-        ready(self.answer(Call::FindUnique(filter)).map(Vec::pop))
+        ready(
+            self.answer(Call::FindUnique(filter))
+                .map(|mut rows| rows.pop()),
+        )
     }
 
     fn find_many(
@@ -241,7 +244,7 @@ impl<Row: DeserializeOwned + Send + 'static> PolicyTable<Row> for FakeTable<Row>
         &self,
         filter: PolicyClause,
     ) -> impl Future<Output = Result<Option<Row>, FakeFailure>> + Send {
-        ready(self.answer(Call::Delete(filter)).map(Vec::pop))
+        ready(self.answer(Call::Delete(filter)).map(|mut rows| rows.pop()))
     }
 
     fn delete_many(
