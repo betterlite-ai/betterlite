@@ -24,7 +24,7 @@ impl From<PurviewDlpHttpError> for PurviewHookError {
 impl From<ContentCheckError> for PurviewHookError {
     fn from(error: ContentCheckError) -> Self {
         match error {
-            ContentCheckError::Http(error) => Self::Http(error),
+            ContentCheckError::Http(http) => Self::Http(http),
             ContentCheckError::Record { source } => Self::Record { source },
         }
     }

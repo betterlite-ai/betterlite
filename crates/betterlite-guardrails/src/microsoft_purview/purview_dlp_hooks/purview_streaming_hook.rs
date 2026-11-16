@@ -24,7 +24,7 @@ use services::{NoCosts, SilentConsole, SilentCounter, SilentLogger};
 
 pub(super) const ASSEMBLY_ERROR: &str =
     "Microsoft Purview DLP: Unable to assemble streamed response for scanning; blocking response.";
-pub(super) const INCOMPLETE_ERROR: &str = "Microsoft Purview DLP: Incomplete Responses API stream — no final response event received for DLP scanning; blocking response.";
+pub(super) const INCOMPLETE_ERROR: &str = "Microsoft Purview DLP: Incomplete Responses API stream \u{2014} no final response event received for DLP scanning; blocking response.";
 
 mod services;
 mod tests;

@@ -13,7 +13,7 @@ use crate::purview_graph_client::user_id_resolution::resolve_logging_user_id;
 use crate::purview_graph_client::wire::Activity;
 
 use super::context::RecordTargets;
-use super::scan::{PartsScan, ScanRequest, scan_and_record, scan_parts};
+use super::scan::{PART_SEPARATOR, ScanRequest, scan_and_record};
 use super::{Data, conversion, request_text, response_parts};
 
 // The audit needs the guardrail by Arc: the deferred path runs it from another thread while the request returns.
@@ -48,6 +48,14 @@ impl AuditEngine {
     }
 }
 
+// What one audit call borrows from the request; the prompt and response audits share it.
+struct Audit<'audit> {
+    engine: &'audit AuditEngine,
+    kwargs: &'audit mut Data,
+    request_data: &'audit Object,
+    user_id: &'audit str,
+}
+
 // LiteLLM wraps each audit call in its own try/except, so a prompt failure never stops the response audit.
 pub async fn async_logging_hook(
     engine: &AuditEngine,
@@ -60,77 +68,65 @@ pub async fn async_logging_hook(
         tracing::debug!("Purview audit: no user_id, skipping");
         return;
     };
-    audit_prompt(engine, kwargs, &request_data, &user_id, call_type).await;
-    audit_response(engine, kwargs, &request_data, &user_id, result).await;
-}
-
-async fn audit_prompt(
-    engine: &AuditEngine,
-    kwargs: &mut Data,
-    request_data: &Object,
-    user_id: &str,
-    call_type: Option<CallType>,
-) {
-    let text =
-        match request_text::prompt_text(kwargs, request_data, call_type, &engine.cache, false) {
-            Ok(text) => text,
-            Err(error) => {
-                tracing::error!("Purview audit logging error (prompt): {error}");
-                return;
-            }
-        };
-    let Some(text) = text else {
-        return;
+    let prompt = prompt_for_audit(engine, kwargs, &request_data, call_type);
+    let response = parts_for_audit(result);
+    let mut audit = Audit {
+        engine,
+        kwargs,
+        request_data: &request_data,
+        user_id: &user_id,
     };
-    let scan = ScanRequest {
-        user_id,
-        text: &text,
-        activity: Activity::UploadText,
-        block_on_violation: false,
-        request_data,
-    };
-    let targets = RecordTargets {
-        base: &engine.record_base,
-        invocation: None,
-        sink: engine.sink.as_ref(),
-        log_target: None,
-    };
-    if let Err(error) = scan_and_record(&engine.guardrail, kwargs, &scan, targets).await {
-        tracing::error!("Purview audit logging error (prompt): {error}");
+    if let Some(text) = prompt {
+        audit_text(&mut audit, Activity::UploadText, "prompt", &text).await;
+    }
+    if let Some(text) = response {
+        audit_text(&mut audit, Activity::DownloadText, "response", &text).await;
     }
 }
 
-async fn audit_response(
+fn prompt_for_audit(
     engine: &AuditEngine,
-    kwargs: &mut Data,
+    kwargs: &Data,
     request_data: &Object,
-    user_id: &str,
-    result: &GuardrailValue,
-) {
-    let parts = match response_parts::parts(result) {
-        Ok(parts) => parts,
+    call_type: Option<CallType>,
+) -> Option<String> {
+    match request_text::prompt_text(kwargs, request_data, call_type, &engine.cache, false) {
+        Ok(text) => text,
+        Err(error) => {
+            tracing::error!("Purview audit logging error (prompt): {error}");
+            None
+        }
+    }
+}
+
+fn parts_for_audit(result: &GuardrailValue) -> Option<String> {
+    match response_parts::parts(result) {
+        Ok(parts) if !parts.is_empty() => Some(parts.join(PART_SEPARATOR)),
+        Ok(_) => None,
         Err(error) => {
             tracing::error!("Purview audit logging error (response): {error}");
-            return;
+            None
         }
-    };
-    if parts.is_empty() {
-        return;
     }
-    let scan = PartsScan {
-        user_id,
-        parts: &parts,
+}
+
+async fn audit_text(audit: &mut Audit<'_>, activity: Activity, label: &str, text: &str) {
+    let scan = ScanRequest {
+        user_id: audit.user_id,
+        text,
+        activity,
         block_on_violation: false,
-        request_data,
+        request_data: audit.request_data,
     };
     let targets = RecordTargets {
-        base: &engine.record_base,
+        base: &audit.engine.record_base,
         invocation: None,
-        sink: engine.sink.as_ref(),
+        sink: audit.engine.sink.as_ref(),
         log_target: None,
     };
-    if let Err(error) = scan_parts(&engine.guardrail, kwargs, &scan, targets).await {
-        tracing::error!("Purview audit logging error (response): {error}");
+    if let Err(error) = scan_and_record(&audit.engine.guardrail, audit.kwargs, &scan, targets).await
+    {
+        tracing::error!("Purview audit logging error ({label}): {error}");
     }
 }
 

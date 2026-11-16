@@ -1,3 +1,5 @@
+use crate::guardrail_message_scope::Object;
+
 pub mod context;
 pub mod error;
 pub mod purview_async_logging_hook;
@@ -11,8 +13,7 @@ mod request_text;
 mod response_parts;
 mod scan;
 
-#[cfg(test)]
 #[path = "purview_dlp_hooks/tests/support.rs"]
 mod test_support;
 
-pub type Data = crate::guardrail_message_scope::Object;
+pub type Data = Object;
