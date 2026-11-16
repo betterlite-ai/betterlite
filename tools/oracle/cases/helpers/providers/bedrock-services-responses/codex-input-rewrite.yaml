@@ -1,0 +1,29 @@
+kind: helper
+name: codex-input-rewrite
+call:
+  bedrock_services_responses:
+    codex_input_rewrite:
+      - model: us.openai.gpt-5.6-sol
+        input:
+          - type: local_shell_call
+            id: ls1
+            call_id: call-1
+            status: completed
+            action: {type: exec, command: [ls, -la], env: {}}
+          - {type: message, role: user, content: keep}
+        params: {temperature: 0.5}
+      - model: chat_completions/chat_completions/us.openai.gpt-5.6-sol
+        input:
+          - {type: message, role: user, content: keep}
+        params: {instructions: be brief}
+      - model: chat_completions/us.openai.gpt-5.6-sol
+        input: hello
+      - model: us.openai.gpt-5.6-sol
+        input:
+          - type: local_shell_call
+            id: ls2
+            call_id: ""
+            status: completed
+            action: {type: exec, command: [pwd], env: {}}
+env: {}
+compare: {ignore: []}

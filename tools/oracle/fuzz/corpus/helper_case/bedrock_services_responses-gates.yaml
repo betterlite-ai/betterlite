@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-services-responses-gates
+call:
+  bedrock_services_responses:
+    response_option_gates:
+      - params: {background: false, temperature: 0.5}
+      - params:
+          tools:
+            - {type: function, name: kept, parameters: {}, strict: false}
+            - {type: web_search}
+env: {}
+compare: {ignore: []}
