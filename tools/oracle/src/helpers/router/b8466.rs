@@ -11,7 +11,9 @@ use serde_json::{Value, json};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 const LOGGING_HANDLE: &str = "logging-handle";
 const ORIGINAL_FUNCTION: &str = "acompletion";
@@ -193,7 +195,7 @@ fn factory_answer(
 ) -> HelperResult {
     let handle = Json::Text(LOGGING_HANDLE.to_owned());
     kwargs.insert("litellm_logging_obj".to_owned(), handle.clone());
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| value_error(error.to_string()))?;

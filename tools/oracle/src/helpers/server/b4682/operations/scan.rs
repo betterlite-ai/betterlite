@@ -12,6 +12,10 @@ use serde_json::{Value, json};
 
 use super::super::input::{GuardedInput, HookOutcome, ServerInput, ToolInput};
 use super::{convert_tools, error, to_server};
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::time::Duration;
+use tokio::runtime::Builder;
+use tokio::time;
 
 #[derive(Default)]
 struct ControlledHook {
@@ -38,7 +42,7 @@ impl GuardrailHook for ControlledHook {
             let previous = active.fetch_add(1, Ordering::SeqCst);
             let current = previous.saturating_add(1);
             maximum.fetch_max(current, Ordering::SeqCst);
-            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+            time::sleep(Duration::from_millis(2)).await;
             active.fetch_sub(1, Ordering::SeqCst);
             outcome.failure.map_or(guarded, Err)
         }
@@ -51,7 +55,7 @@ pub(in crate::b4682) fn run_scan(
     credentials: &[String],
     headers: &BTreeMap<String, String>,
     batch_report: bool,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let tools = convert_tools(inputs)?;
     let server = to_server(&ServerInput::default());
     let caller = CallerContext::default();
@@ -69,7 +73,7 @@ pub(in crate::b4682) fn run_scan(
         active: Arc::new(AtomicUsize::new(0)),
         maximum: Arc::new(AtomicUsize::new(0)),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|source| error("RuntimeError", source.to_string()))?;

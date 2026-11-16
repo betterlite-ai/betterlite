@@ -5,9 +5,10 @@ use betterlite_auth::auth_identity::records::{
 use betterlite_auth::auth_identity::roles::map_role;
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, TeamRole};
 use betterlite_core::api::managed_resource_store::{
-    get_primary_owner_scope, get_resource_owner_scopes, is_proxy_admin,
+    OwnerScope, get_primary_owner_scope, get_resource_owner_scopes, is_proxy_admin,
     user_can_access_resource_owner,
 };
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, Serialize};
 
 pub(crate) struct Op;
@@ -80,10 +81,10 @@ impl From<&OwnerFields> for Principal {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let value = evaluate(&input.query);
         let probes: Vec<_> = input.probes.iter().map(evaluate).collect();
         Ok(serde_json::json!({"result": value, "probes": probes}))
@@ -93,8 +94,8 @@ impl crate::helpers::Helper for Op {
 #[derive(Serialize)]
 struct Output {
     is_proxy_admin: bool,
-    scopes: Vec<betterlite_core::api::managed_resource_store::OwnerScope>,
-    primary: Option<betterlite_core::api::managed_resource_store::OwnerScope>,
+    scopes: Vec<OwnerScope>,
+    primary: Option<OwnerScope>,
     access: bool,
 }
 

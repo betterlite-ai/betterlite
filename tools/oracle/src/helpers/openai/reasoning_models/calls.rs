@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use super::fixture::{Fixture, Resolver};
 use super::{Call, Probe, Probes};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Clone, Copy)]
 enum Mode {

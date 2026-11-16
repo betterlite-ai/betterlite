@@ -9,6 +9,7 @@ use betterlite_guardrails::cisco_redaction::mcp::{
     apply_redaction_mcp_input, apply_redaction_mcp_output,
 };
 use betterlite_guardrails::cisco_verdict;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -67,10 +68,10 @@ pub(crate) enum Call {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Call;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(json!({"result": outcome(input)}))
     }
 }

@@ -6,20 +6,20 @@ use reqwest::StatusCode;
 use reqwest::header::HeaderValue;
 
 use super::deepkeep_failure;
+use std::str::Utf8Error;
+use std::{iter, str};
+use tokio::runtime::Builder;
 
-fn utf8_error() -> std::str::Utf8Error {
-    let invalid: Vec<u8> = std::iter::repeat_n(0xFF_u8, 1).collect();
-    std::str::from_utf8(&invalid).unwrap_err()
+fn utf8_error() -> Utf8Error {
+    let invalid: Vec<u8> = iter::repeat_n(0xFF_u8, 1).collect();
+    str::from_utf8(&invalid).unwrap_err()
 }
 
 fn connection_refused() -> reqwest::Error {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
     runtime
         .block_on(reqwest::Client::new().get(format!("http://{addr}")).send())
         .unwrap_err()

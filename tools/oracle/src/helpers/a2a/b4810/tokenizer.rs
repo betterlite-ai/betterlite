@@ -4,7 +4,7 @@ use betterlite_tokenizer::engine::assets;
 use betterlite_tokenizer::engine::tiktoken::{Encoding, TiktokenEngine};
 
 use super::helper_error;
-use crate::compare::helper::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) struct Cl100kCounter {
     engine: TiktokenEngine,

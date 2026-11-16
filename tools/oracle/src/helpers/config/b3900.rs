@@ -1,4 +1,4 @@
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use logs::Logs;
 
 mod logs;

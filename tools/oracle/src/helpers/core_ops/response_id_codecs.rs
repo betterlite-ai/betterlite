@@ -13,8 +13,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use logs::Logs;
+use tracing::subscriber;
 
 mod logs;
 mod tests;
@@ -112,7 +114,7 @@ where
 {
     let logs = Logs::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());
-    let value = tracing::subscriber::with_default(subscriber, call);
+    let value = subscriber::with_default(subscriber, call);
     let diagnostic = if logs.take().is_empty() {
         None
     } else {

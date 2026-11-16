@@ -7,7 +7,8 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::chat_choices::endpoint::{
-    ModelListRequest, ModelListTransport, complete_url, get_models, validate_environment,
+    ModelListError, ModelListRequest, ModelListTransport, complete_url, get_models,
+    validate_environment,
 };
 use betterlite_openai::credentials::{ExplicitCredentials, LiteLlmGlobals, get_openai_credentials};
 use betterlite_openai::openai_base_config::Headers;
@@ -18,7 +19,8 @@ use serde_json::{Value, json};
 use url::Url;
 
 use super::{AuthSteps, CredentialCall, UrlSteps, failure};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 const DEADLINE: Duration = Duration::from_secs(600);
 
@@ -78,9 +80,7 @@ impl ModelListTransport for Fixture {
 }
 
 pub(super) fn model_list(steps: &ModelListSteps) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .map_err(failure)?;
+    let runtime = Builder::new_current_thread().build().map_err(failure)?;
     let mut outputs = Vec::with_capacity(steps.steps.len());
     for step in &steps.steps {
         let fixture = Fixture {
@@ -109,7 +109,7 @@ pub(super) fn model_list(steps: &ModelListSteps) -> HelperResult {
 }
 
 fn outcome(
-    models: Result<Vec<String>, betterlite_openai::chat_choices::endpoint::ModelListError>,
+    models: Result<Vec<String>, ModelListError>,
     calls: &[(String, Option<String>)],
 ) -> Value {
     match models {

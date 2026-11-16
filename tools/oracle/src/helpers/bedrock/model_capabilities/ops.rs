@@ -19,7 +19,8 @@ use tokio::runtime::Builder;
 
 use super::fixture::{CachedModelInfo, Fixture};
 use super::input::{EffortCase, Input, MantleCase};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const FIXTURE_CONFIG: &str =
     "model_list:\n  - model_name: fixture\n    litellm_params: {model: bedrock/fixture}\n";

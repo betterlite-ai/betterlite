@@ -4,7 +4,7 @@ use betterlite_a2a::completion_bridge::wire::MessageSendParams;
 use betterlite_core::agents::json::AgentJson;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use calls::{Mode, call, config, sse};
 
 mod calls;
