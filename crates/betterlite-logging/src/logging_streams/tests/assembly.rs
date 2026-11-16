@@ -11,12 +11,8 @@ use super::support::{FakeAssembly, json, state};
 use crate::fields::usage::Usage;
 use crate::logging_state::LoggingState;
 use crate::logging_streams::assembly::{
-    PromptCountError, PromptCounter, StreamBuild, partial_stream_handoff, successful_stream_handoff,
+    PromptCounter, StreamBuild, partial_stream_handoff, successful_stream_handoff,
 };
-
-fn counter() -> Result<i64, PromptCountError> {
-    Ok(7)
-}
 
 fn completed() -> Json {
     json(
@@ -96,7 +92,7 @@ fn test_hands_over_usage_when_the_builder_fails() {
 
 fn test_passes_the_prompt_counter_through() {
     let assembly = FakeAssembly::new(Some(completed()), false);
-    let held: &PromptCounter<'_> = &counter;
+    let held: &PromptCounter<'_> = &|| Ok(7);
     let _build = successful_stream_handoff(&assembly, Some(held));
     assert_eq!(assembly.counter_values(), vec![Some(7)]);
 }
@@ -115,9 +111,9 @@ fn test_records_partial_usage_and_cost() {
         if let Json::Object(fields) = response {
             *seen.lock().unwrap() = fields.get("model").cloned();
         }
-        Some(Decimal::from(3))
+        Some(Decimal::from(3_i32))
     });
-    assert_eq!(cost, Some(Decimal::from(3)));
+    assert_eq!(cost, Some(Decimal::from(3_i32)));
     assert_eq!(
         state.model_call_details.get("response_cost"),
         Some(&cost_json("3.0"))

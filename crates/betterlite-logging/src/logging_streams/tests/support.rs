@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::sections::logging_privacy::Settings;
@@ -222,7 +222,10 @@ impl StreamCollector for FakeCollector {
         &self,
         state: &mut LoggingState,
     ) -> Result<Option<SuccessResult>, Self::Error> {
-        *self.seen_model.lock().unwrap() = Some(state.model.clone());
+        *self
+            .seen_model
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(state.model.clone());
         if let Some(message) = self.failure {
             return Err(CollectorFailure { message });
         }
@@ -263,7 +266,7 @@ impl StreamAssembly for FakeAssembly {
     ) -> Result<Option<Json>, StreamAssemblyError> {
         self.seen_counters
             .lock()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .push(count_prompt_tokens.and_then(|counter| counter().ok()));
         if self.failure {
             return Err(StreamAssemblyError::Builder(Box::new(BuilderFailure)));
@@ -312,7 +315,7 @@ impl StreamChunks<Json> for FakeChunks {
     }
 
     fn build(&self) -> Result<Option<Json>, StreamAssemblyError> {
-        let mut log = self.log.lock().unwrap();
+        let mut log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
         log.builds = log.builds.saturating_add(1);
         drop(log);
         if self.failure {

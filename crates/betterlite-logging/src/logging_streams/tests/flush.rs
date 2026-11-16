@@ -5,6 +5,7 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::support::{CollectorFailure, FakeCollector, HandlerFixture, json, state_with};
+use crate::logging_state::LoggingState;
 use crate::logging_state::correlation::CorrelationContext;
 use crate::logging_streams::flush::{async_flush_passthrough, flush_passthrough};
 use crate::logging_success::assembled::{ASYNC_STREAM_RESPONSE_KEY, COMPLETE_STREAMING_RESPONSE};
@@ -12,7 +13,7 @@ use crate::logging_success::types::SuccessResult;
 
 type Behavior = fn() -> Pin<Box<dyn Future<Output = ()> + Send>>;
 
-fn passthrough_state() -> crate::logging_state::LoggingState {
+fn passthrough_state() -> LoggingState {
     state_with(Some(true), "pass_through_endpoint", "gpt-4o")
 }
 

@@ -2,19 +2,16 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::support::{json, state, time};
+use crate::logging_state::LoggingState;
 use crate::logging_streams::duration::{
     CallDurationError, DURATION_KEY, TIMING_WINDOWS_KEY, record_call_duration,
 };
 
-fn record(
-    state: &mut crate::logging_state::LoggingState,
-    start: &str,
-    end: &str,
-) -> Result<(), CallDurationError> {
+fn record(state: &mut LoggingState, start: &str, end: &str) -> Result<(), CallDurationError> {
     record_call_duration(state, time(start), time(end))
 }
 
-fn windows(state: &crate::logging_state::LoggingState) -> Option<Json> {
+fn windows(state: &LoggingState) -> Option<Json> {
     let Some(Json::Object(details)) = state.model_call_details.get("litellm_params") else {
         return None;
     };
