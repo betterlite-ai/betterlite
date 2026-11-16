@@ -22,7 +22,7 @@ description: >-
   resolution.
 
 
-  Write adjacent tests.rs functions existing_input_id_mapping, existing_output_error_id__5d60, lookup_failure_keeps_raw_id,
+  Write adjacent tests.rs functions existing_input_id_mapping, existing_output_error_id_5d60, lookup_failure_keeps_raw_id,
   ensure_no_hook_stops_afte_1794, database_get_no_hook_no_query, database_update_no_hook_n_99fb, poller_job_absent
   under api::batch_managed_records::tests; each independently drives the production result and effects described
   here. HelperCase replay remains in B171.
@@ -181,7 +181,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_managed_records::tests::existing_input_id_mapping($|::)/)'
   - id: case-existing-output-error-id-mapping
     why: the existing-output-error-id-mapping source behavior is not independently tested
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_managed_records::tests::existing_output_error_id__5d60($|::)/)'
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_managed_records::tests::existing_output_error_id_5d60($|::)/)'
   - id: case-lookup-failure-keeps-raw-id
     why: the lookup-failure-keeps-raw-id source behavior is not independently tested
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_managed_records::tests::lookup_failure_keeps_raw_id($|::)/)'

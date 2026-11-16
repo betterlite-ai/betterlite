@@ -1,0 +1,116 @@
+id: B9971
+title: Image token counting caps remote fetches per count
+description: >-
+  Fix the R2 finding on B9963. In exact mode every high-detail remote image_url calls the fetcher's convert_url once,
+  one after another, in image_tokens in crates/betterlite-tokenizer/src/media/image_count.rs, and nothing caps how
+  many calls one count makes. A body with thousands of high-detail https URLs, at the top level or nested in
+  tool_result and document content lists, sends that many outbound downloads, each with up to three attempts, a
+  deadline and a body of up to MAX_IMAGE_URL_DOWNLOAD_SIZE_MB. LiteLLM does the same: _count_image_tokens runs
+  get_image_dimensions for every image_url item (token_counter.py L891-L893), and that downloads the URL each time
+  (L232-L245).
+
+
+  The prompts inline path already bounds this. B183 refuses a request that names more than MAX_REMOTE_URLS (256)
+  remote media URLs before any download (crates/betterlite-prompts/src/media/limits.rs, docs/deviations/B183.yaml).
+  The tokenizer depends on betterlite-prompts already, so it reuses that constant: import
+  betterlite_prompts::media::limits::MAX_REMOTE_URLS, and do not define a second 256.
+
+
+  Rust change. One count makes at most MAX_REMOTE_URLS convert_url calls. MediaCounter in
+  crates/betterlite-tokenizer/src/media/count.rs carries the number of calls made so far for this count (an
+  AtomicUsize field, since image_tokens takes the counter by shared reference and the fetcher is Sync), built at 0
+  where count.rs constructs the counter. In image_tokens, the fetch branch checks that number first: when it already
+  equals MAX_REMOTE_URLS, return the new MediaError::TooManyRemoteFetches { limit: MAX_REMOTE_URLS } without calling
+  the fetcher; otherwise add one and fetch. Add the variant to crates/betterlite-tokenizer/src/media/error.rs with the
+  message "the content asks for more than {limit} remote image downloads", next to TooDeep. Default-count mode, low
+  and auto detail, data URLs and every non-remote source never fetch and never count toward the cap. A repeated URL
+  still fetches each time, as in LiteLLM, and each call counts.
+
+
+  Tests. Add crates/betterlite-tokenizer/src/media/tests/remote_fetch_cap.rs and declare it with
+  mod remote_fetch_cap; in crates/betterlite-tokenizer/src/media/tests.rs. Use support.rs's count, settings,
+  words_fixture and MappingFetcher with exact-mode settings, and map every URL to the same 1024x1024 PNG data URL
+  remote_image_fetch.rs uses (765 tokens each). counts_up_to_the_fetch_cap builds one content list of 256 high-detail
+  image_url items with distinct https URLs and asserts the count succeeds with 256 * 765 image tokens and 256 fetcher
+  calls. refuses_past_the_fetch_cap is an #[rstest] with cases top_level (257 items in the content list) and
+  nested_tool_result (256 top-level items plus one more inside a tool_result content list): each asserts
+  MediaError::TooManyRemoteFetches { limit: 256 } and exactly 256 fetcher calls. low_detail_never_counts sends 300
+  low-detail remote URLs and asserts success with 0 fetcher calls. The refusing cases fail on the unfixed code, where
+  the count succeeds after 257 fetches.
+
+
+  Deviations. Write docs/deviations/B9971.yaml with the row under deviations below. B9963's own rows stay as they are.
+scope:
+  paths:
+  - crates/betterlite-tokenizer/src/media/count.rs
+  - crates/betterlite-tokenizer/src/media/image_count.rs
+  - crates/betterlite-tokenizer/src/media/error.rs
+  - crates/betterlite-tokenizer/src/media/tests.rs
+  - crates/betterlite-tokenizer/src/media/tests/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L232-L245
+  why: get_image_dimensions downloads a remote URL with safe_get and the MAX_IMAGE_URL_DOWNLOAD_SIZE_MB cap, once per call.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L889-L893
+  why: every image_url item in a content list goes through _count_image_tokens, so the number of downloads grows with the request.
+dod:
+- text: >-
+    One token count makes at most 256 remote image downloads; the next one is refused with
+    MediaError::TooManyRemoteFetches { limit: 256 } before the fetcher is called, for top-level and nested items alike.
+  proof: [fetch-cap]
+- text: >-
+    A count with exactly 256 high-detail remote images still succeeds, and low-detail remote images never fetch or count.
+  proof: [under-the-cap]
+- text: >-
+    B9963's remote image tests and the other media tests still pass.
+  proof: [media-tests]
+- text: >-
+    docs/deviations/B9971.yaml records the cap with the pinned LiteLLM link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: fetch-cap
+    why: A count still fetches past 256 remote images, or refuses with another error.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/src/media/tests/remote_fetch_cap.rs)"
+      && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^media::tests::remote_fetch_cap::refuses_past_the_fetch_cap::case_/)'
+  - id: under-the-cap
+    why: The cap refuses a count it should allow, or low detail started fetching.
+    run: >-
+      cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^media::tests::remote_fetch_cap::(counts_up_to_the_fetch_cap|low_detail_never_counts)$/)'
+  - id: media-tests
+    why: The cap broke B9963's remote image counting or another media case.
+    run: >-
+      cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^media::tests::/)'
+  - id: deviation-row
+    why: The deviation misses the 256 cap or its pinned link, or the cap got its own constant.
+    run: >-
+      grep -q -F '256' docs/deviations/B9971.yaml && grep -q -F 'token_counter.py#L889-L893' docs/deviations/B9971.yaml
+      && grep -q -F 'MAX_REMOTE_URLS' crates/betterlite-tokenizer/src/media/image_count.rs
+      && ! grep -q -E 'const [A-Z_]+: usize = 256' crates/betterlite-tokenizer/src/media/*.rs
+oracle_cases: []
+deviations:
+- what: >-
+    A token count that would download more than 256 remote images (high detail, exact mode) is refused with
+    "the content asks for more than 256 remote image downloads" after the 256th download, wherever the items sit in
+    the content. The cap is MAX_REMOTE_URLS, the same 256 B183 puts on remote media in chat requests.
+  why: >-
+    LiteLLM downloads every high-detail remote image a count names, so the outbound downloads, each up to the
+    MAX_IMAGE_URL_DOWNLOAD_SIZE_MB cap, grow with one request. Bounding them keeps a single token count from making the
+    gateway fetch without limit.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L889-L893
+out_of_scope:
+- How the token counting routes turn MediaError into an HTTP answer; this task adds the variant and the refusal only.
+- Caching or deduplicating downloads of a repeated URL; each call counts, as LiteLLM fetches each time.
+- B183's chat-request cap and the prompts crate; this task only reads MAX_REMOTE_URLS.
+pitfalls:
+- 'Reuse betterlite_prompts::media::limits::MAX_REMOTE_URLS; a second 256 in the tokenizer fails the deviation-row check.'
+- 'Check the count before calling convert_url, so the 257th URL never reaches the fetcher; the tests assert exactly 256 calls.'
+- 'Only the fetch branch counts: default-count mode, low or auto detail, data URLs and non-remote sources must stay at 0 calls.'
+- 'Do not add an oracle case for the cap: LiteLLM fetches every URL there, so the answers differ by design.'
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
