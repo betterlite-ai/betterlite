@@ -159,7 +159,7 @@ fn text_view(call: &TextArguments) -> Value {
         "remaining": text_remaining(&call.optional_params),
         "extra_headers": null,
         "api_key_set": call.api_key.is_some(),
-        "timeout": call.timeout.map(Duration::as_secs),
+        "timeout": call.timeout.map(|timeout| timeout.as_secs()),
         "litellm_params_set": call.litellm_params.is_some(),
         "status": null,
     })
