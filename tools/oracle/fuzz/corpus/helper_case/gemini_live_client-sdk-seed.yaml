@@ -1,0 +1,14 @@
+kind: helper
+name: gemini-live-client-sdk-seed
+call:
+  gemini_live_client:
+    op: sdk
+    cases:
+      - {shape: bytes, base64: aGk=}
+      - {shape: bytes_list, base64: aGk=}
+      - {shape: datetime_list, datetime: {year: 2024, month: 1, day: 2, hour: 3, minute: 4, second: 5, microsecond: 0}}
+      - {shape: empty_list}
+      - {shape: object_bytes, base64: aGk=, depth: 100}
+      - {shape: list_list_bytes, base64: aGk=}
+env: {}
+compare: {ignore: []}

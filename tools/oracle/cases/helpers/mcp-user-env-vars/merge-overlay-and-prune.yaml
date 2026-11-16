@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-user-env-vars-merge-overlay-and-prune
+call:
+  b4714:
+    function: merge
+    salt_key: b4714-salt
+    user_id: user-1
+    server_id: srv-1
+    updates: {API_KEY: new-secret, FRESH: f1}
+    allowed_names: [API_KEY, FRESH]
+    rows:
+      - {user_id: user-1, server_id: srv-1, values_b64: 'kdhs4Mgi_OFKB-lWlqgCDMiDczsZ3vpSg-opsKKolZUhroKxcZR2qxb4wetegcysrXl2dYYI5AgYCz9d2WNs3UQRHYFQRSiFgl-pLGbjaJAqSQ9c'}
+env:
+  LITELLM_SALT_KEY: b4714-salt
+compare: {ignore: []}

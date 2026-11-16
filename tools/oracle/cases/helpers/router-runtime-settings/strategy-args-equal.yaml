@@ -1,0 +1,10 @@
+kind: helper
+name: router-runtime-settings-strategy-args-equal
+call:
+  b9711:
+    function: settings
+    initial: {"routing_strategy_args": {"a": 1}}
+    kwargs:
+      - ["routing_strategy_args", {"a": 1}]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,27 @@
+task: B3685
+deviations:
+  - what: The 200 body of create and replace carries `litellm_params` as B3662 serializes it (the keys set plus the base defaults), where LiteLLM dumps every field of every provider mixin as null. A parameter sent as null also lands in the stored text as its decoded default (`default_on` null becomes false), where LiteLLM stores null.
+    why: B3662's `LitellmParams` serializer deliberately leaves out the mixin fields and normalizes null optionals to their defaults, and no DB-free oracle case can see the difference. The stored row is the same for every key that was set.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L402-L432
+  - what: A 422 for an invalid create, replace or patched `litellm_params` carries B3662's error text where pydantic would carry its own, and a rule or timeout error is located at the params object rather than at the inner field. A missing inner field does match pydantic, with type `missing`, the field appended to `loc`, and the params object as input.
+    why: Pydantic's text is a repr of a Python exception with no Rust equivalent, and B3662 reports a failing timeout or rule at the params object. Its missing-field error names the field, so that case matches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1217-L1223
+  - what: A create or replace body whose `guardrail_info` is explicitly null stores `{}` in the column, where LiteLLM stores the JSON value null.
+    why: B3662's `Guardrail` record holds `Option<OpaqueParams>` and cannot tell an explicit null from an absent key, so `guardrail_to_update` encodes null and absent alike as `{}`. Every later read treats a null info as `{}` too, so only the stored text differs, and the create 200 body still echoes the null the client sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L317-L330
+  - what: PATCH starts from the stored row decoded into `LitellmParams` and re-encoded, where LiteLLM rebuilds `LitellmParams` from the stored dict and merges over `model_dump(exclude_unset=True)`. A stored row that never named `default_on` therefore gains `"default_on":false` in its text after a patch.
+    why: The conversion in `LitellmParams::try_from` inserts the documented default for `default_on`, so a decoded guardrail always carries it. The effective configuration and the response body are identical, since false is that default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1209-L1216
+  - what: Replace and patch read the row again with `ReviewRows::find_unique` after the update and answer 500 "Guardrail with ID {id} not found after the update" when it is gone. LiteLLM's Prisma update returns the row itself, so that branch cannot happen there.
+    why: B3682's update returns the registry's `Guardrail`, which carries no `status`, `submitted_at` or `reviewed_at`, and the task wants those columns in the 200 body. The second read is the only way to get them without a join, so a row deleted between the two statements gets this error instead of a body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L344-L360
+  - what: The review row holds `Option<JsonData>` for `litellm_params` and `guardrail_info` rather than the `Option<serde_json::Value>` the task text names; the JSON shape is the same.
+    why: clippy.toml disallows `serde_json::Value` and `serde_json::Map`, and this task's expect budget is zero, so the row uses B726's typed JSON instead. The values are read with the same object-or-text rule as `_parse_json_field`.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L811-L822
+kept_bugs:
+  - what: Approve sets the row to active before it reads and validates the stored params, so a submission with missing or empty params answers 500 and stays active in the database with nothing enforcing it.
+    why: The task pins this order, and a setup that approved such a row once and retried after fixing the row relies on the status already being written. A working deployment sees the submission disappear from the pending list, which is what LiteLLM does too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1032-L1044
+  - what: Create deletes the new row only when the in-memory start fails with a configuration error; any other start error leaves the row stored and answers 200, and the next sync cycle is the only thing that can start it.
+    why: The row is what a later config sync reads, so a setup whose enterprise package was missing at create time gets the guardrail on the next restart once the package is installed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L424-L430
