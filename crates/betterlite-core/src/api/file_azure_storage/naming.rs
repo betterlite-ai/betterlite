@@ -64,13 +64,13 @@ fn safe_basename(original_filename: &str) -> String {
     }
 }
 
-// PurePath(name).suffix.lstrip("."): the last dot wins, but not when it opens or ends the name
+// PurePath(name).suffix.lstrip("."): the last dot wins, unless it opens the name
 fn safe_extension(original_filename: &str) -> String {
     let name = safe_basename(original_filename);
     let Some(index) = name.rfind('.') else {
         return String::new();
     };
-    if index == 0 || index + 1 == name.len() {
+    if index == 0 {
         return String::new();
     }
     name.get(index + 1..).unwrap_or_default().to_owned()
