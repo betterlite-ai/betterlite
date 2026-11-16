@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::sync::PoisonError;
 
 use betterlite_logging::analytics::python::repr;
 use betterlite_prompts::builtin::{Content, Message};
@@ -8,7 +7,6 @@ use betterlite_prompts::cohere::prompt::cohere_message_pt;
 use betterlite_prompts::cohere::types::CohereToolResult;
 use betterlite_prompts::error::FactoryError;
 use betterlite_prompts::factory::custom::{CustomPromptTemplate, RoleTemplate, custom_prompt};
-use betterlite_prompts::factory::hub::{ChatTemplate, TokenizerConfig};
 use betterlite_prompts::factory::{Output, PromptFactory, prompt_factory};
 use betterlite_prompts::message_content::Message as ContentMessage;
 use chrono::{DateTime, Utc};
@@ -17,7 +15,6 @@ use thiserror::Error;
 
 use crate::aws_endpoints::provider::BedrockInvokeProvider as Provider;
 
-const LLAMA3_INSTRUCT_MODEL: &str = "meta-llama/Meta-Llama-3-8B-Instruct";
 const DEEPSEEK_MODEL: &str = "deepseek-r1/deepseek-r1-7b-instruct";
 
 #[derive(Debug, Error)]
@@ -86,7 +83,14 @@ pub async fn convert_messages_to_prompt(
         ) => factory_prompt(&conversion, conversion.model, Some("bedrock"), "bedrock").await,
         Some(Provider::Cohere) => cohere_prompt(conversion.messages),
         Some(Provider::DeepseekR1) => {
-            factory_prompt(&conversion, DEEPSEEK_MODEL, None, "deepseek_r1").await
+            let prompt = conversion
+                .prompts
+                .hf_chat_template(DEEPSEEK_MODEL, conversion.messages, conversion.now)
+                .await?;
+            Ok(ConvertedPrompt {
+                prompt,
+                chat_history: None,
+            })
         }
         Some(
             Provider::Ai21
@@ -108,15 +112,6 @@ async fn factory_prompt(
     custom_provider: Option<&str>,
     operation: &'static str,
 ) -> Result<ConvertedPrompt, ConversionError> {
-    let local_template = match custom_provider {
-        Some("bedrock") => bedrock_template(&model.to_lowercase()),
-        _ => Some(model),
-    };
-    if let Some(template) = local_template
-        && !has_local_template(conversion.prompts, template)
-    {
-        return Err(ConversionError::Factory(FactoryError::NoChatTemplate));
-    }
     match prompt_factory(
         conversion.prompts,
         model,
@@ -166,24 +161,4 @@ fn concatenated(messages: &[Message]) -> Result<ConvertedPrompt, ConversionError
         prompt,
         chat_history: None,
     })
-}
-
-fn bedrock_template(lower: &str) -> Option<&'static str> {
-    let matched_earlier = lower.contains("amazon.titan-text")
-        || lower.contains("anthropic.")
-        || lower.contains("mistral.")
-        || (lower.contains("llama2") && lower.contains("chat"));
-    let instruct =
-        (lower.contains("llama3") || lower.contains("llama4")) && lower.contains("instruct");
-    (!matched_earlier && instruct).then_some(LLAMA3_INSTRUCT_MODEL)
-}
-
-fn has_local_template(prompts: &PromptFactory, model: &str) -> bool {
-    let cached = prompts.cache.lock().unwrap_or_else(PoisonError::into_inner);
-    match cached.get(model) {
-        Some(TokenizerConfig::Success(Some(document))) => {
-            matches!(document.chat_template, ChatTemplate::Text(_))
-        }
-        Some(TokenizerConfig::Success(None) | TokenizerConfig::Failure) | None => false,
-    }
 }
