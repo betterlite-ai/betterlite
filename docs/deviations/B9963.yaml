@@ -1,0 +1,33 @@
+task: B9963
+deviations:
+  - what: >-
+      A remote image URL that needs exact counting is fetched through the shared media downloader, so a
+      URL the policy refuses, a non-200 answer, a body over MAX_IMAGE_URL_DOWNLOAD_SIZE_MB, a deadline or
+      the disabled switch ends the count with the downloader's typed ImageFetchError, whose text names
+      the URL; a caller that set default_token_count still gets that count, the way LiteLLM's
+      content-list catch gives it. The downloader also settles the media type itself, from the declared
+      Content-Type, the URL extension and the leading bytes, so a 200 whose declared type is generic or
+      missing, whose extension has no mapping and whose bytes name no image ends with
+      ImageFetchError::UnknownMediaType, where LiteLLM reads the body, finds no image type
+      (token_counter.py L251) and counts the default 300x300 dimensions (L293-L294). A declared
+      non-generic type whose bytes the parser cannot place is not that failure: both sides count the
+      default dimensions there, which the remote-high-fetched-unknown-bytes case and the unknown-bytes
+      test cover. LiteLLM's get_image_dimensions swallows every fetch exception and base64-decodes the
+      URL string itself, so a URL without a comma raises a ValueError that _count_content_list turns
+      into default_token_count or a ValueError, and a URL whose tail decodes counts the default 300x300
+      dimensions.
+    why: >-
+      The 2026-10-31 decision sends every request-supplied media URL through the SSRF-checked fetch, and
+      a count built from bytes that came out of the URL text is not the image the client named. B5083's
+      rows cover the downloader's caps, retries, deadline and content-type inference.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L219-L294
+  - what: >-
+      Counting uses the downloader's cache: a second exact count of the same URL within the cache's
+      600-second TTL counts the remembered data URL without a request, where get_image_dimensions fetches
+      on every call.
+    why: >-
+      B5083's Fetcher is the one media downloader, and a separate uncached fetch for counting would send
+      a second request for a URL the same request already fetched.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L232-L245
