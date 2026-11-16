@@ -5,7 +5,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use super::DEFAULT_BLOCK_MESSAGE;
 use super::error::CatoError;
 use super::redaction::anonymize_request;
-use super::wire::AnalyzeResponse;
+use super::wire::{AnalyzeResponse, RequiredAction};
 
 pub(super) fn handle_actions(
     response: &AnalyzeResponse,
@@ -25,21 +25,8 @@ pub(super) fn handle_actions(
             Ok(())
         }
         "block_action" => {
-            let policies = response
-                .analysis_result
-                .as_ref()
-                .and_then(|result| result.policy_drill_down.as_ref())
-                .map(|policies| policies.keys().cloned().collect::<Vec<_>>())
-                .unwrap_or_default();
-            tracing::info!(
-                ?policies,
-                "Cato: violation detected, enabled policies logged"
-            );
-            let message = required_action
-                .detection_message
-                .clone()
-                .unwrap_or_else(|| DEFAULT_BLOCK_MESSAGE.to_owned());
-            Err(CatoError::Blocked { message })
+            tracing::info!(policies = ?policy_names(response), "Cato: violation detected");
+            Err(block_error(required_action))
         }
         "anonymize_action" => {
             tracing::info!("Cato: anonymize action");
@@ -50,4 +37,22 @@ pub(super) fn handle_actions(
             Ok(())
         }
     }
+}
+
+pub(super) fn policy_names(response: &AnalyzeResponse) -> Vec<String> {
+    response
+        .analysis_result
+        .as_ref()
+        .and_then(|result| result.policy_drill_down.as_ref())
+        .map(|policies| policies.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+// LiteLLM raises HTTPException(400, detection_message); an absent message takes betterlite's own
+pub(super) fn block_error(required_action: &RequiredAction) -> CatoError {
+    let message = required_action
+        .detection_message
+        .clone()
+        .unwrap_or_else(|| DEFAULT_BLOCK_MESSAGE.to_owned());
+    CatoError::Blocked { message }
 }
