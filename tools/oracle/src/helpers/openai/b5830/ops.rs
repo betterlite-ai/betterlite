@@ -84,14 +84,14 @@ fn generation_request(cases: &[RequestCase]) -> HelperResult {
 }
 fn edit_params(cases: &[ImageParams]) -> HelperResult {
     let config = edit_config("");
-    let mut answers = Vec::with_capacity(cases.len());
-    for case in cases {
-        let mapped = config.map_params(case).or_value_error()?;
-        answers.push(json!({
-            "supported": config.supported_params,
-            "params": mapped,
-        }));
-    }
+    let answers = cases
+        .iter()
+        .map(|case| {
+            let params = config.map_params(case)?;
+            Ok(json!({"supported": config.supported_params, "params": params}))
+        })
+        .collect::<Result<Vec<_>, ImageConfigError>>()
+        .or_value_error()?;
     Ok(Value::Array(answers))
 }
 fn edit_requests(cases: &[RequestCase]) -> HelperResult {

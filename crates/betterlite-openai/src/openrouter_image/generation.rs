@@ -36,7 +36,9 @@ impl GenerationConfig {
         for (name, value) in non_default_params {
             if self.supported_params.contains(&name.as_str()) {
                 map_supported(name.as_str(), value, &mut optional_params)?;
-            } else if !drop_params {
+                continue;
+            }
+            if !drop_params {
                 optional_params.insert(String::from(name), value.clone());
             }
         }

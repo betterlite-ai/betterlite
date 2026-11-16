@@ -106,33 +106,28 @@ def edit_params(cases: list[Object]) -> JsonValue:
     return JSON.validate_python(answers)
 
 
-def edit_requests(cases: list[EditRequestCase]) -> JsonValue:
-    answers: list[JsonValue] = []
-    for case in cases:
-        activate(case["environment"], case["global_api_key"])
-        url = EDIT.get_complete_url(case["model"], case["api_base"], {})
-        headers = EDIT.validate_environment(
-            dict(case["headers"]), case["model"], case["api_key"], None, case["api_base"]
-        )
-        source = image_source(case["image"])
-        request, files = EDIT.transform_image_edit_request(
-            case["model"],
-            case["prompt"],
-            source.value,
-            dict(case["optional_params"]),
-            GenericLiteLLMParams(),
-            headers,
-        )
-        answers.append(
-            {
-                "url": url,
-                "headers": JSON.validate_python(headers),
-                "request": JSON.validate_python(request),
-                "files": JSON.validate_python(files),
-                "position": source.position(),
-            }
-        )
-    return JSON.validate_python(answers)
+def edit_request(case: EditRequestCase) -> JsonValue:
+    activate(case["environment"], case["global_api_key"])
+    url = EDIT.get_complete_url(case["model"], case["api_base"], {})
+    headers = EDIT.validate_environment(
+        dict(case["headers"]), case["model"], case["api_key"], None, case["api_base"]
+    )
+    source = image_source(case["image"])
+    request, files = EDIT.transform_image_edit_request(
+        case["model"],
+        case["prompt"],
+        source.value,
+        dict(case["optional_params"]),
+        GenericLiteLLMParams(),
+        headers,
+    )
+    return {
+        "url": url,
+        "headers": JSON.validate_python(headers),
+        "request": JSON.validate_python(request),
+        "files": JSON.validate_python(files),
+        "position": source.position(),
+    }
 
 
 def edit_reply(cases: list[ReplyCase]) -> JsonValue:
@@ -155,6 +150,6 @@ def run(input_value: Input) -> JsonValue:
         case "edit_params":
             return edit_params(input_value["cases"])
         case "edit_request":
-            return edit_requests(input_value["cases"])
+            return JSON.validate_python([edit_request(case) for case in input_value["cases"]])
         case "edit_reply":
             return edit_reply(input_value["cases"])
