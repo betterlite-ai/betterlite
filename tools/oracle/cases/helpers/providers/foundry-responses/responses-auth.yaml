@@ -1,0 +1,44 @@
+kind: helper
+name: responses-auth
+call:
+  foundry_responses:
+    steps:
+      - kind: auth
+        api_base: https://res.services.ai.azure.com
+        api_key: foundry-key
+        headers: {Authorization: Bearer caller-token, Content-Type: text/plain, X-Caller: keep}
+      - kind: auth
+        api_base: https://res.openai.azure.com
+        api_key: foundry-key
+      - kind: auth
+        api_base: https://api.example.com
+        api_key: foundry-key
+      - kind: auth
+        api_key: foundry-key
+      - kind: auth
+        api_base: https://res.services.ai.azure.com
+        api_key: foundry-key
+        headers: {api-key: stale-key}
+      - kind: auth
+        global_api_base: https://global.services.ai.azure.com
+        global_api_key: global-key
+      - kind: auth
+        environment: {AZURE_AI_API_BASE: https://env.services.ai.azure.com, AZURE_AI_API_KEY: env-key}
+      - kind: auth
+        api_base: https://explicit.openai.azure.com
+        api_key: explicit-key
+        global_api_base: https://global.services.ai.azure.com
+        global_api_key: global-key
+        environment: {AZURE_AI_API_BASE: https://env.services.ai.azure.com, AZURE_AI_API_KEY: env-key}
+      - kind: auth
+        api_base: https://res.services.ai.azure.com
+        params: {tenant_id: tenant, client_id: client, client_secret: foundry-secret}
+      - kind: auth
+        environment: {AZURE_TENANT_ID: tenant, AZURE_CLIENT_ID: client, AZURE_CLIENT_SECRET: foundry-secret}
+      - kind: auth
+        api_base: https://res.services.ai.azure.com
+        params: {azure_ad_token: ad-token}
+      - kind: auth
+        api_base: https://res.services.ai.azure.com
+env: {}
+compare: {ignore: []}
