@@ -1,0 +1,1 @@
+{"id":"vid-1","object":"video","status":"completed","created_at":1700000000,"completed_at":1700000060,"expires_at":1700000600,"error":null,"progress":100,"remixed_from_video_id":null,"seconds":"4","size":"720x1280","model":"sora-2","usage":{"duration_seconds":4.0}}
