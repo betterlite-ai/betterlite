@@ -3,7 +3,7 @@ title: Bedrock Responses and inline-image policy
 description: >-
   Add BedrockResponsesConfig for model-selected Bedrock Runtime URLs, bearer/signature preparation and Responses
   request projection. Preserve supported parameter gates and native file-search capability. Remote image traversal
-  identifies URL blocks but cannot download them under the current policy; supplied inline images use existing bounded
+  collects URL blocks and fetches each through the injected fetcher, and supplied inline images use the same bounded
   media processing.
 
 
@@ -24,10 +24,10 @@ description: >-
   and no copied helper algorithm is permitted.
 
 
-  remote-url-current-rejection supplies an http:// image or PDF URL requiring local bytes and expects ImageFetchError
-  status 400 before transport under the current open request-download decision; inject the same failed-download
-  seam into the pinned helper. Inline bytes continue to compare normally; provider-forwardable URL descriptors remain
-  unchanged where the source forwards them.
+  remote-url-inlined supplies an http:// image URL and fixture bytes; both the pinned helper and the Rust adapter
+  fetch through the injected seam, so the compared bodies carry the same data URL. A refusing fetcher fails before
+  transport with its typed error. Provider-forwardable descriptors outside the four traversed block positions
+  remain unchanged.
 
 
   Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
@@ -59,12 +59,12 @@ description: >-
   Only list input is traversed. For dict items inspect content then output in that order, each accepting a list
   or single dict. Select dict blocks of exact type input_image or computer_screenshot with string image_url starting
   case-sensitive http:// or https://. Ignore nested URL objects,input_file,nonstring URLs,uppercase schemes,s3://,data:
-  and deeper nested blocks. Collect distinct URLs in first-seen order. remote_url_current_rejection: Both sync and
-  async production paths reject a recognized remote image URL requiring bytes with ImageFetchError400 before transport
-  and with zero network calls, under the open request-download decision. The pinned oracle uses injected failing
-  fetch callbacks to compare this failure seam; test local no-network policy separately. Merge the old remote_image_no_fetch
-  duplicate. No actual downloader is built. Source sync would fetch distinct URLs in order, async gathers them,
-  but neither is enabled in betterlite. responses_runtime_url: Resolve region with B591 _get_aws_region_name(litellm_params,model=None).
+  and deeper nested blocks. Collect distinct URLs in first-seen order. remote_url_inlined: Both sync and async
+  production paths fetch every recognized remote image URL through the injected fetcher before transport. Sync calls
+  convert_url once per distinct URL in first-seen order and builds the mapping; async calls convert_urls once with
+  every distinct URL and gets answers back in input order. The pinned oracle injects the same fixture bytes on both
+  sides, and a refusing fetcher fails before transport with its typed error. Merge the old remote_image_no_fetch
+  duplicate. responses_runtime_url: Resolve region with B591 _get_aws_region_name(litellm_params,model=None).
   Override chain truthy explicit api_base,litellm_params.aws_bedrock_runtime_endpoint,AWS_BEDROCK_RUNTIME_ENDPOINT;
   else B591 partition-aware runtime endpoint. Trim trailing slashes then remove first matching suffix in order /openai/v1/responses,/v1/responses,/responses,/openai/v1,/v1;
   append /openai/v1/responses. Preserve unrecognized path/query suffixes; no Mantle host selection. inline_image_replacement:
@@ -76,6 +76,11 @@ description: >-
   the endpoint rejects. Then B507 transform_responses_api_request receives model without leading chat_completions/,normalized
   input and unchanged params/headers. Reuse all B907 normalization fixtures and B507 parent request/default cases;
   no hoist_additional_tools call is added here.
+
+
+  Add standalone Rust test responses_media_fetch: the sync transform with a map-backed fetcher replaces an input_image
+  URL with its data URL, the async transform returns the same body through convert_urls, and a refusing fetcher
+  fails with its typed error before transport.
 
 
   Write standalone Rust test runtime_responses_credential_identity_isolation in betterlite-bedrock: Distinct configured
@@ -101,7 +106,7 @@ description: >-
 
   Write rstest function responses_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   bedrock_responses_model_route, responses_bearer_auth, responses_sigv4, response_option_gates, native_file_search_flag,
-  inline_image_traversal, remote_url_current_rejection, responses_runtime_url, inline_image_replacement, codex_input_rewrite.
+  inline_image_traversal, remote_url_inlined, responses_runtime_url, inline_image_replacement, codex_input_rewrite.
   Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
   API tasks retain route registration; this task must not register a duplicate axum route.
 
@@ -194,15 +199,19 @@ dod:
   - case-inline-image-traversal
   - oracle
   - helper-python
-- text: 'remote_url_current_rejection: Both sync and async production paths reject a recognized remote image URL
-    requiring bytes with ImageFetchError400 before transport and with zero network calls, under the open request-download
-    decision. The pinned oracle uses injected failing fetch callbacks to compare this failure seam; test local no-network
-    policy separately. Merge the old remote_image_no_fetch duplicate. No actual downloader is built. Source sync
-    would fetch distinct URLs in order, async gathers them, but neither is enabled in betterlite.'
+- text: 'remote_url_inlined: Both sync and async production paths fetch every recognized remote image URL through
+    the injected fetcher before transport. Sync calls convert_url once per distinct URL in first-seen order and builds
+    the mapping; async calls convert_urls once with every distinct URL and gets answers back in input order. The
+    pinned oracle injects the same fixture bytes on both sides, and a refusing fetcher fails before transport with
+    its typed error. Merge the old remote_image_no_fetch duplicate.'
   proof:
-  - case-remote-url-current-rejection
+  - case-remote-url-inlined
   - oracle
   - helper-python
+- text: Remote media fetches through the injected fetcher on both transforms; a refusing fetcher fails with its typed
+    error before transport.
+  proof:
+  - media-fetch
 - text: New bedrock_services_responses seeds parse as the intended call variant and replay through the shared production
     parser.
   proof:
@@ -278,13 +287,13 @@ checks:
       starting case-sensitive http:// or https://. Ignore nested URL objects,input_file,nonstring URLs,uppercase
       schemes,s3://,data: and deeper nested blocks. Collect distinct URLs in first-seen order.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_inline_image_traversal$/)'
-  - id: case-remote-url-current-rejection
-    why: Both sync and async production paths reject a recognized remote image URL requiring bytes with ImageFetchError400
-      before transport and with zero network calls, under the open request-download decision. The pinned oracle
-      uses injected failing fetch callbacks to compare this failure seam; test local no-network policy separately.
-      Merge the old remote_image_no_fetch duplicate. No actual downloader is built. Source sync would fetch distinct
-      URLs in order, async gathers them, but neither is enabled in betterlite.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_remote_url_current_rejection$/)'
+  - id: case-remote-url-inlined
+    why: Both sync and async production paths fetch every recognized remote image URL through the injected fetcher
+      before transport. Sync calls convert_url once per distinct URL in first-seen order and builds the mapping;
+      async calls convert_urls once with every distinct URL and gets answers back in input order. The pinned oracle
+      injects the same fixture bytes on both sides, and a refusing fetcher fails before transport with its typed
+      error. Merge the old remote_image_no_fetch duplicate.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_remote_url_inlined$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
     run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_responses.py tools/oracle/helpers/bedrock_services_responses)" &&
@@ -294,7 +303,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_responses*")"
       && grep -lq 'bedrock_services_responses' tools/oracle/fuzz/corpus/helper_case/bedrock_services_responses*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_responses$/)'
+      && cargo nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_responses$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-responses-runtime-url
     why: Resolve region with B591 _get_aws_region_name(litellm_params,model=None). Override chain truthy explicit
@@ -321,6 +330,9 @@ checks:
   - id: secret-safe-failure
     why: Debug and owned failure paths do not expose fixture credentials.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::runtime_responses_secret_safe_failure$/)'
+  - id: media-fetch
+    why: The Responses media fetch through the injected fetcher lacks a production assertion.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_media_fetch$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/bedrock-responses-model-route.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/responses-bearer-auth.yaml
@@ -328,15 +340,11 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/response-option-gates.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/native-file-search-flag.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/inline-image-traversal.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-responses/remote-url-current-rejection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-responses/remote-url-inlined.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/responses-runtime-url.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/inline-image-replacement.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-responses/codex-input-rewrite.yaml
-deviations:
-- what: Request http(s) images that need local bytes fail with ImageFetchError status400 before any outbound fetch.
-    Inline data and source-forwarded s3:// or other descriptors keep their pinned handling.
-  why: B5083's downloader is not wired into this path yet. Request media URLs are fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L80-L345
+deviations: []
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.

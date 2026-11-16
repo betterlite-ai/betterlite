@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Writes .config/test-seconds.toml from the tests parts of one green main gate run: bash .github/scripts/test-seconds.sh <run id>
+# Writes .config/test-seconds.toml from the tests parts of one green nightly gate run, since a main push only tests what it affects: bash .github/scripts/test-seconds.sh <run id>
 set -euo pipefail
 run=$1
 repository=betterlite-ai/betterlite

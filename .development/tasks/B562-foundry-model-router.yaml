@@ -184,7 +184,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_model_router*")"
       && grep -lq 'foundry_model_router' tools/oracle/fuzz/corpus/helper_case/foundry_model_router* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_model_router$/)'
+      run --locked -p betterlite-oracle-foundry --no-tests=fail -E 'test(/::helper_seeds_select_foundry_model_router$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-api-version-and-unsupported-validation
     why: 'Version precedence is truthy explicit api_version, litellm.api_version, AZURE_API_VERSION, then None;
