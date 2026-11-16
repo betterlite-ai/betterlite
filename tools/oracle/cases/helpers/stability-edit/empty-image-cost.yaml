@@ -1,0 +1,17 @@
+kind: helper
+name: stability-edit-empty-image-cost
+call:
+  stability_edit:
+    calls:
+      - function: response
+        model: stability/inpaint
+        status: 200
+        body: '{"finish_reason": "SUCCESS"}'
+        created: 11
+      - function: response
+        model: stability/inpaint
+        status: 200
+        body: '{"image": "abc", "finish_reason": "SUCCESS"}'
+        created: 12
+env: {}
+compare: {ignore: []}
