@@ -15,18 +15,27 @@ pub fn assemble_complete_stream<Chunk, Chunks>(
     result: &SuccessResult,
     chunk: &Chunk,
     chunks: &mut Chunks,
-) -> Result<Option<Json>, StreamAssemblyError>
+) -> Option<Json>
 where
     Chunks: StreamChunks<Chunk>,
 {
     if let SuccessResult::Chat(response) = result {
-        return Ok(Some(response.clone()));
+        return Some(response.clone());
     }
     chunks.push(chunk);
     if !matches!(result, SuccessResult::Chunk(_)) || !has_finish_reason(result) {
-        return Ok(None);
+        return None;
     }
-    chunks.build()
+    match chunks.build() {
+        Ok(complete) => complete,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                "stream_chunk_builder raised while assembling the cached streaming response"
+            );
+            None
+        }
+    }
 }
 
 fn has_finish_reason(result: &SuccessResult) -> bool {

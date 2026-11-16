@@ -60,17 +60,18 @@ fn write_windows(
     let metadata = object_slot(metadata, "metadata")?;
     let litellm_metadata = object_slot(litellm_metadata, "litellm_metadata")?;
     match (metadata, litellm_metadata) {
-        (Some(metadata), Some(litellm_metadata)) => {
-            for (name, value) in metadata.iter() {
-                if name.contains(SPEND_METADATA_MARKER) {
-                    litellm_metadata.insert(name.clone(), value.clone());
+        (metadata, Some(litellm_metadata)) if !litellm_metadata.is_empty() => {
+            if let Some(metadata) = metadata {
+                for (name, value) in metadata {
+                    if name.contains(SPEND_METADATA_MARKER) {
+                        litellm_metadata.insert(name.clone(), value.clone());
+                    }
                 }
             }
             write_window(litellm_metadata, start_time, end_time)
         }
-        (Some(metadata), None) => write_window(metadata, start_time, end_time),
-        (None, Some(litellm_metadata)) => write_window(litellm_metadata, start_time, end_time),
-        (None, None) => Ok(()),
+        (Some(metadata), _) if !metadata.is_empty() => write_window(metadata, start_time, end_time),
+        _ => Ok(()),
     }
 }
 

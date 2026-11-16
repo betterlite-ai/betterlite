@@ -68,6 +68,21 @@ fn records_a_negative_duration() {
 
 fn writes_a_timing_window_into_metadata() {
     let mut state = state(Some(true));
+    state.model_call_details.insert(
+        "litellm_params".to_owned(),
+        json(r#"{"metadata":{"request_retry_count":1}}"#),
+    );
+    record(
+        &mut state,
+        "2024-01-01T00:00:00+00:00",
+        "2024-01-01T00:00:02+00:00",
+    )
+    .unwrap();
+    assert_eq!(windows(&state), Some(json("[[1704067200,1704067202]]")));
+}
+
+fn ignores_an_empty_metadata_object() {
+    let mut state = state(Some(true));
     state
         .model_call_details
         .insert("litellm_params".to_owned(), json(r#"{"metadata":{}}"#));
@@ -77,7 +92,73 @@ fn writes_a_timing_window_into_metadata() {
         "2024-01-01T00:00:02+00:00",
     )
     .unwrap();
+    assert_eq!(windows(&state), None);
+    assert_eq!(
+        state.model_call_details.get("litellm_params"),
+        Some(&json(r#"{"metadata":{}}"#))
+    );
+}
+
+fn ignores_two_empty_metadata_objects() {
+    let mut state = state(Some(true));
+    state.model_call_details.insert(
+        "litellm_params".to_owned(),
+        json(r#"{"metadata":{},"litellm_metadata":{}}"#),
+    );
+    record(
+        &mut state,
+        "2024-01-01T00:00:00+00:00",
+        "2024-01-01T00:00:02+00:00",
+    )
+    .unwrap();
+    assert_eq!(
+        state.model_call_details.get("litellm_params"),
+        Some(&json(r#"{"metadata":{},"litellm_metadata":{}}"#))
+    );
+}
+
+fn writes_into_metadata_beside_an_empty_litellm_metadata() {
+    let mut state = state(Some(true));
+    state.model_call_details.insert(
+        "litellm_params".to_owned(),
+        json(r#"{"metadata":{"route":"r"},"litellm_metadata":{}}"#),
+    );
+    record(
+        &mut state,
+        "2024-01-01T00:00:00+00:00",
+        "2024-01-01T00:00:02+00:00",
+    )
+    .unwrap();
     assert_eq!(windows(&state), Some(json("[[1704067200,1704067202]]")));
+    let Some(Json::Object(details)) = state.model_call_details.get("litellm_params") else {
+        panic!("litellm_params must stay an object");
+    };
+    assert_eq!(details.get("litellm_metadata"), Some(&json("{}")));
+}
+
+fn writes_into_a_lone_litellm_metadata() {
+    let mut state = state(Some(true));
+    state.model_call_details.insert(
+        "litellm_params".to_owned(),
+        json(r#"{"litellm_metadata":{"route":"r"}}"#),
+    );
+    record(
+        &mut state,
+        "2024-01-01T00:00:00+00:00",
+        "2024-01-01T00:00:02+00:00",
+    )
+    .unwrap();
+    let Some(Json::Object(details)) = state.model_call_details.get("litellm_params") else {
+        panic!("litellm_params must stay an object");
+    };
+    let Some(Json::Object(metadata)) = details.get("litellm_metadata") else {
+        panic!("litellm_metadata must gain the window");
+    };
+    assert_eq!(
+        metadata.get(TIMING_WINDOWS_KEY),
+        Some(&json("[[1704067200,1704067202]]"))
+    );
+    assert_eq!(metadata.get("route"), Some(&Json::Text("r".to_owned())));
 }
 
 fn appends_to_earlier_windows() {
@@ -153,7 +234,7 @@ fn writes_into_litellm_metadata_and_copies_spend_keys() {
     state.model_call_details.insert(
         "litellm_params".to_owned(),
         json(
-            r#"{"metadata":{"user_api_key":"key-1","user_api_key_alias":"alias"},"litellm_metadata":{}}"#,
+            r#"{"metadata":{"user_api_key":"key-1","user_api_key_alias":"alias"},"litellm_metadata":{"route":"r"}}"#,
         ),
     );
     record(
@@ -279,6 +360,12 @@ fn rejects_a_non_object_litellm_metadata() {
 #[case::duration_records_a_fractional_duration(records_a_fractional_duration)]
 #[case::duration_records_a_negative_duration(records_a_negative_duration)]
 #[case::duration_writes_a_timing_window(writes_a_timing_window_into_metadata)]
+#[case::duration_ignores_an_empty_metadata(ignores_an_empty_metadata_object)]
+#[case::duration_ignores_two_empty_metadata_objects(ignores_two_empty_metadata_objects)]
+#[case::duration_writes_into_metadata_beside_an_empty_litellm_metadata(
+    writes_into_metadata_beside_an_empty_litellm_metadata
+)]
+#[case::duration_writes_into_a_lone_litellm_metadata(writes_into_a_lone_litellm_metadata)]
 #[case::duration_appends_to_earlier_windows(appends_to_earlier_windows)]
 #[case::duration_skips_invalid_earlier_windows(skips_earlier_windows_that_are_not_number_pairs)]
 #[case::duration_ignores_a_non_list_window_field(ignores_recorded_windows_that_are_not_a_list)]

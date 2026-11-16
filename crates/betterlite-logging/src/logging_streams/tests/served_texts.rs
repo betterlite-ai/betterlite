@@ -184,13 +184,10 @@ fn drops_a_stream_piece_past_the_text_bound() {
 }
 
 fn keeps_stream_pieces_that_fill_the_text_bound() {
-    let filling = "x".repeat(MAX_SERVED_TEXT_BYTES);
+    let filling = "x".repeat(16 * 1024 * 1024);
     let pieces = chunks(&[("0".to_owned(), filling), ("0".to_owned(), "y".to_owned())]);
     let texts = served_stream_output_texts(&pieces).unwrap();
-    assert_eq!(
-        texts[0].as_ref().map(String::len),
-        Some(MAX_SERVED_TEXT_BYTES)
-    );
+    assert_eq!(texts[0].as_ref().map(String::len), Some(16 * 1024 * 1024));
 }
 
 fn keeps_a_stream_piece_after_a_dropped_one() {
