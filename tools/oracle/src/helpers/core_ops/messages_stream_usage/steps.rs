@@ -10,7 +10,6 @@ use betterlite_core::api::messages_stream_usage::state::{StreamSetup, StreamStat
 use betterlite_core::api::messages_stream_usage::usage::{
     augment_message_delta_usage, handle_choiceless_chunk, initial_usage, merge_usage_into_held_stop,
 };
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_prompts::arguments::json::Object;
 use serde_json::Value;
@@ -28,10 +27,11 @@ pub(super) struct Harness {
 
 impl Harness {
     pub(super) fn build(input: &Input) -> Result<Self, Box<HelperError>> {
-        let mut logging: Option<LoggingState> = None;
-        if input.logging {
-            logging = Some(logging_state()?);
-        }
+        let mut logging = if input.logging {
+            Some(logging_state()?)
+        } else {
+            None
+        };
         let source = ScriptedSource {
             chunks_attr: input.chunks_attr.clone(),
             messages_attr: input.messages_attr.clone(),
@@ -78,9 +78,9 @@ fn failure(error: &StreamStateError) -> Box<HelperError> {
     })
 }
 
-fn hold_stop(harness: &mut Harness, event: &Object) -> Result<Value, Box<HelperError>> {
+fn hold_stop(harness: &mut Harness, event: &Object) -> Value {
     harness.state.holding_stop_reason_chunk = Some(event.clone());
-    Ok(Value::Null)
+    Value::Null
 }
 
 fn merge_held_usage(harness: &Harness, usage: &UsageRecord) -> Result<Value, Box<HelperError>> {
@@ -139,7 +139,7 @@ fn start_block(harness: &mut Harness, choices: &[ChoiceRecord]) -> Result<Value,
 pub(super) fn answer(harness: &mut Harness, step: &Step) -> Result<Value, Box<HelperError>> {
     match step {
         Step::Snapshot => Ok(view::snapshot(&harness.state, harness.logged_id.as_deref())),
-        Step::HoldStop { event } => hold_stop(harness, event),
+        Step::HoldStop { event } => Ok(hold_stop(harness, event)),
         Step::InitialUsage => serde_json::to_value(initial_usage()).or_value_error(),
         Step::MergeHeldUsage { usage } => merge_held_usage(harness, usage),
         Step::Choiceless { usage } => choiceless(harness, usage.as_deref()),
