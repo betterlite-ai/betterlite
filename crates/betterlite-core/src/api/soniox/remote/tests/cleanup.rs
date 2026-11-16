@@ -5,6 +5,7 @@ use http::header::AUTHORIZATION;
 use super::support::{
     Clock, Outcome, RecordedBody, Script, TIMEOUT, auth, options, prepared, remote,
 };
+use crate::api::soniox::prepare::Prepared;
 use crate::api::soniox::remote::cleanup::clean_up;
 
 fn ok() -> Outcome {
@@ -169,6 +170,30 @@ async fn cleanup_ignores_the_delete_status() {
     )
     .await;
     assert_eq!(transport.calls().len(), 2);
+}
+
+#[tokio::test]
+async fn cleanup_skips_a_delete_it_cannot_build() {
+    let transport = Script::new(Vec::new());
+    let sleeper = Clock::default();
+    let bad_base = Prepared {
+        api_base: "not a url".to_owned(),
+        ..prepared(options(), &auth())
+    };
+    let bad_header = prepared(options(), &[("bad name", "value")]);
+    clean_up(
+        &remote(&transport, &sleeper, &bad_base),
+        Some("job-1"),
+        Some("file-1"),
+    )
+    .await;
+    clean_up(
+        &remote(&transport, &sleeper, &bad_header),
+        Some("job-1"),
+        Some("file-1"),
+    )
+    .await;
+    assert!(transport.calls().is_empty());
 }
 
 fn sent_credentials(transport: &Script) -> Vec<(String, String)> {
