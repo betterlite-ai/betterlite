@@ -1,6 +1,9 @@
+use betterlite_openai::openai_base_config::{Headers, Object};
+
+use crate::chat::FoundryChatOptions;
 use crate::chat::response::{ResponseError, transform_response};
 
-use super::support::body;
+use super::support::{EnvironmentFixture, NoSources, body, settings};
 
 const COMPLETE: &str = r#"{
   "id": "chatcmpl-fixture",
@@ -81,4 +84,30 @@ fn refuses_the_wrong_shape() {
     )
     .expect_err("the response shape needs an id");
     assert!(matches!(incomplete, ResponseError::Json(_)));
+}
+
+#[test]
+fn parse_stages_the_response_through_the_body_transform() {
+    let optional = Object::new();
+    let credentials = settings(None, None);
+    let options = FoundryChatOptions {
+        model: "deployment",
+        api_version: None,
+        messages: &[],
+        optional_params: &optional,
+        environment: EnvironmentFixture {
+            headers: Headers::new(),
+            argument_key: None,
+            params_key: None,
+            configured_key: None,
+            credentials: &credentials,
+            sources: &NoSources,
+            refresh_enabled: false,
+            api_base: Some("https://studio.example.test"),
+        }
+        .request(),
+    };
+    let parsed = options.parse(body(COMPLETE)).expect("the body parses");
+    assert_eq!(parsed.model, "azure_ai/provider-sent");
+    assert_eq!(parsed.choices.len(), 1);
 }

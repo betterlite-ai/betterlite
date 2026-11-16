@@ -42,6 +42,14 @@ pub(super) fn api_version_url_precedence() {
         ),
         "https://studio.example.test/v1/chat/completions?api-version=2024-05-01-preview"
     );
+    // the existing api-version wins even when other query names are present too
+    assert_eq!(
+        url(
+            "https://studio.example.test/v1?api-version=given&a=1",
+            Some("configured")
+        ),
+        "https://studio.example.test/v1/chat/completions?api-version=given&a=1"
+    );
     // an empty existing api-version still blocks the configured one
     assert_eq!(
         url("https://studio.example.test/v1?api-version=", Some("v")),

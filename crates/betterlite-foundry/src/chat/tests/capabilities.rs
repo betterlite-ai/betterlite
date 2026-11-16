@@ -1,9 +1,11 @@
+use betterlite_models::catalog::{ModelCatalog, UnknownFields};
+use betterlite_models::model_capability_predicates::CapabilityRequest;
 use betterlite_openai::openai_base_config::Object;
-use betterlite_openai::reasoning_models::{DropParams, ReasoningError};
+use betterlite_openai::reasoning_models::{DropParams, ReasoningCapabilities, ReasoningError};
 
-use crate::chat::capabilities::supports_stop_reason;
+use crate::chat::capabilities::{CostMap, supports_stop_reason};
 
-use super::support::{capabilities, catalog, object};
+use super::support::{capabilities, catalog, object, runtime};
 
 // The routing entry answers most lookups, while the bare entry holds the OpenAI catalog's answers
 const PREFERRED: &str = r#"{
@@ -17,7 +19,7 @@ const PREFERRED: &str = r#"{
     "litellm_provider": "openai",
     "mode": "chat",
     "supports_tool_choice": true,
-    "supports_none_reasoning_effort": true
+    "supports_none_reasoning_effort": false
   }
 }"#;
 
@@ -64,6 +66,11 @@ const GROK: &str = r#"{
   "grok-4": {"supports_tool_choice": true},
   "azure_ai/grok-3": {"supports_tool_choice": true},
   "grok-3": {"supports_tool_choice": true}
+}"#;
+
+const RESPONSE_SCHEMA: &str = r#"{
+  "gpt-5": {"supports_response_schema": true},
+  "gpt-5-mini": {"supports_response_schema": false}
 }"#;
 
 const REMOVED: [&str; 9] = [
@@ -212,6 +219,9 @@ fn ordinary_model_filtering() {
     assert!(params.contains(&"stop"));
     assert!(params.contains(&"user"));
     assert!(!params.contains(&"reasoning_effort"));
+    // an uncatalogued model gains reasoning_effort only under the OpenAI family, never Azure AI Studio
+    let uncatalogued = plain_model.supported("gpt-4o", &catalog(&[], &[]));
+    assert!(!uncatalogued.contains(&"reasoning_effort"));
     // the superclass map reads the plain GPT allowlist, so tool_choice survives the filtered query
     let optional = plain_model
         .mapped(
@@ -243,4 +253,31 @@ fn stop_reason_delegation() {
     assert!(params.contains(&"tool_choice"));
     let params = grok.supported("grok-3", &grok_catalog);
     assert!(params.contains(&"stop"));
+}
+
+#[test]
+fn catalog_cost_map_reads_the_model_catalog() {
+    let model_catalog = ModelCatalog::parse(br#"{"gpt-4o":{}}"#, UnknownFields::Reject)
+        .expect("the fixture catalog parses");
+    assert!(CostMap::contains(&model_catalog, "gpt-4o"));
+    assert!(!CostMap::contains(&model_catalog, "gpt-5"));
+}
+
+#[test]
+fn wrapper_forwards_schema_and_default_declarations() {
+    let mut fixture = capabilities(RESPONSE_SCHEMA, &["gpt-5", "gpt-5-mini"], &[]);
+    let schema_model = CapabilityRequest {
+        model: "gpt-5",
+        custom_llm_provider: None,
+    };
+    let plain_model = CapabilityRequest {
+        model: "gpt-5-mini",
+        custom_llm_provider: None,
+    };
+    let mut wrapper = fixture.wrapper();
+    assert!(runtime().block_on(wrapper.supports_response_schema(&schema_model)));
+    assert!(!runtime().block_on(wrapper.supports_response_schema(&plain_model)));
+    assert!(!wrapper.catalogue_declares_default());
+    let mut declared = capabilities(DECLARED_MEDIUM, &["gpt-5"], &[]);
+    assert!(declared.wrapper().catalogue_declares_default());
 }

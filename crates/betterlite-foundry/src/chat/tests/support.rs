@@ -18,7 +18,8 @@ use betterlite_prompts::message_content::Message;
 use secrecy::SecretString;
 
 use crate::chat::capabilities::{
-    CostMap, RequestParams, map_params, model_map_lookup_name, supported_params,
+    CostMap, FoundryCapabilities, RequestParams, map_params, model_map_lookup_name,
+    supported_params,
 };
 use crate::chat::environment::{EnvironmentRequest, TokenSource, validate_environment};
 use crate::chat::environment_error::EnvironmentError;
@@ -100,6 +101,13 @@ pub(super) fn capabilities(source: &str, chat: &[&str], text: &[&str]) -> Fixtur
 impl Fixture {
     pub(super) fn lookup_name(&self, model: &str) -> String {
         model_map_lookup_name(model, &self.costs)
+    }
+
+    pub(super) fn wrapper(&mut self) -> FoundryCapabilities<'_, CapabilityFixture> {
+        FoundryCapabilities {
+            inner: &mut self.capabilities,
+            cost_map: &self.costs,
+        }
     }
 
     pub(super) fn supported(

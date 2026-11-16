@@ -161,9 +161,13 @@ fn debug_hides_keys() {
     let request_debug = format!("{:?}", options.environment);
     assert!(!request_debug.contains(SENTINEL_KEY));
     assert!(request_debug.contains("has_argument_key: true"));
-    assert!(!format!("{options:?}").contains(SENTINEL_KEY));
+    let options_debug = format!("{options:?}");
+    assert!(!options_debug.contains(SENTINEL_KEY));
+    assert!(options_debug.contains("mistral-large"), "{options_debug}");
     let prepared = options.prepare().expect("the fixture prepares");
-    assert!(!format!("{prepared:?}").contains(SENTINEL_KEY));
+    let prepared_debug = format!("{prepared:?}");
+    assert!(!prepared_debug.contains(SENTINEL_KEY));
+    assert!(prepared_debug.contains("api-key"), "{prepared_debug}");
     assert_eq!(
         prepared.headers.get("api-key").map(String::as_str),
         Some(SENTINEL_KEY)
