@@ -10,6 +10,7 @@ use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 use betterlite_streaming::stream_chunk_shaping::records::JsonValue;
+use betterlite_streaming::stream_usage_assembly::UsageTokenCounter;
 use betterlite_streaming::stream_usage_assembly::wire::Usage;
 use betterlite_streaming::streamed_response_assembly::cost::{
     CostError, CostInput, StreamCostCalculator,
@@ -28,7 +29,7 @@ use tracing_subscriber::registry;
 use uuid::Uuid;
 
 use super::{
-    RelayAssemblyRequest, RelayTokenCounter, complete_streaming_response,
+    RelayAssemblyRequest, RelayTokenCounter, RelayedCounter, complete_streaming_response,
     count_relayed_prompt_tokens, is_remote_high_detail_image,
 };
 
@@ -677,5 +678,53 @@ async fn assembly_stamps_the_cost_of_the_given_calculator() {
     assert_eq!(
         response.hidden_params.get("response_cost"),
         Some(&JsonValue::Number(cost))
+    );
+}
+
+#[tokio::test]
+async fn assembly_counts_reasoning_tokens_through_the_relayed_counter() {
+    let chunks = vec![delta_chunk(
+        json!({ "reasoning_content": "think", "content": "Hi" }),
+        Some("stop"),
+    )];
+    let counter = FixtureCounter {
+        messages: 0,
+        text: 3,
+        response_text: 2,
+        fail_messages: false,
+        calls: Mutex::new(Vec::new()),
+    };
+    let assembly = request(&chunks, None, &counter, &NoCost);
+    let response = complete_streaming_response(&assembly, &hooks()).await;
+    let response = chat(response.as_ref().unwrap());
+    assert_eq!(response.usage.prompt_tokens, 0);
+    assert_eq!(response.usage.completion_tokens, 5);
+    assert_eq!(
+        counter.calls(),
+        vec![String::from("text:think"), String::from("response:Hi")]
+    );
+}
+
+#[tokio::test]
+async fn relayed_counter_counts_messages_through_the_prompt_estimate() {
+    let raw = json!([{
+        "role": "user",
+        "content": [
+            { "type": "text", "text": "describe" },
+            { "type": "image_url", "image_url": { "url": "https://example.com/a.png", "detail": "high" } },
+        ],
+    }]);
+    let typed = messages(raw);
+    let counter = FixtureCounter::new(8, 0);
+    let relayed = RelayedCounter { counter: &counter };
+    let counted = UsageTokenCounter::count_messages(&relayed, MODEL, Some(&typed)).await;
+    assert_eq!(counted.ok(), Some(8 + REMOTE_BOUND));
+    assert_eq!(counter.calls(), vec![String::from("messages:user:text")]);
+    let failing = FixtureCounter::failing(9);
+    let relayed = RelayedCounter { counter: &failing };
+    let counted = UsageTokenCounter::count_messages(&relayed, MODEL, Some(&typed)).await;
+    assert_eq!(
+        counted.err().map(|error| error.to_string()),
+        Some(String::from("either text or messages must be provided"))
     );
 }
