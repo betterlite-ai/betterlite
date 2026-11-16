@@ -1099,6 +1099,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-redact",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",

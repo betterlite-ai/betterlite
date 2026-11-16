@@ -1,0 +1,46 @@
+kind: helper
+name: fireworks-ai-chat-message-cleanup
+call:
+  b6072:
+    catalog: []
+    headers: []
+    keys: []
+    requests:
+      - model: llama-v3
+        messages:
+          - role: user
+            content:
+              - type: text
+                text: first
+                cache_control: {type: ephemeral}
+              - type: text
+                text: second
+          - role: system
+            content:
+              - type: text
+                text: instructions
+                cache_control: {type: ephemeral}
+        optional_params: {}
+      - model: llama-v3
+        messages:
+          - role: user
+            content: hello
+            name: jane
+            cache_control: {type: ephemeral}
+            provider_specific_fields: {refusal: null}
+            thinking_blocks: [{type: thinking, thinking: why}]
+          - role: assistant
+            content:
+              - type: text
+                text: seen
+                cache_control: {type: ephemeral}
+          - role: user
+            content:
+              - type: image_url
+                image_url: {url: "https://example.com/cat.png", detail: high}
+        optional_params: {}
+    replies: []
+    chunks: []
+    models: []
+env: {}
+compare: {ignore: []}
