@@ -18,7 +18,8 @@ use betterlite_openai::videos::status::status_response;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::input::{
     AuthCall, Body, Call, Create, CreateResponse, ErrorCall, ListRequest, Reference, Response,
