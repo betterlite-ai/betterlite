@@ -432,6 +432,32 @@ async fn route_resolves_the_redis_environment_fallbacks() {
 }
 
 #[tokio::test]
+async fn route_lets_an_explicit_null_url_override_the_redis_url_environment() {
+    let redis = FakeRedis::start().await;
+    let environment = BTreeMap::from([(
+        "REDIS_URL".to_owned(),
+        format!("redis://{}:{}", redis.host(), redis.port()),
+    )]);
+    let body = support::request(json!({"type": "redis", "url": null}));
+    let (status, text) = support::post(
+        support::state_with_environment(environment),
+        Some(support::admin()),
+        &body,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(redis.connections(), 0);
+    assert_eq!(
+        support::answer(&text),
+        json!({
+            "status": "failed",
+            "message": format!("Cache connection test failed: {MISSING_TARGET}"),
+            "error": MISSING_TARGET,
+        })
+    );
+}
+
+#[tokio::test]
 async fn route_logs_the_settings_redacted() {
     let (records, _captured) = capture_logs();
     let redis = FakeRedis::start().await;
