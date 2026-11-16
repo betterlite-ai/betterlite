@@ -14,13 +14,14 @@ pub mod reply;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OpenAiAssistantRequest;
 
+// every payload is boxed so the enum stays pointer-sized inside OperationResult, where the next largest variant is 16 bytes
 pub enum OpenAiAssistantResult {
-    Assistants(AssistantsReply),
-    Threads(ThreadReply),
-    Runs(RunOutcome),
-    Decisions(DecisionsReply),
-    Session(OpenAiAssistantPrepared),
-    SessionFailure(ClientAction),
+    Assistants(Box<AssistantsReply>),
+    Threads(Box<ThreadReply>),
+    Runs(Box<RunOutcome>),
+    Decisions(Box<DecisionsReply>),
+    Session(Box<OpenAiAssistantPrepared>),
+    SessionFailure(Box<ClientAction>),
 }
 
 // The prepared realtime session the composition installs; OpenAI installs no event normalizer at the pin, so only its presence is recorded.

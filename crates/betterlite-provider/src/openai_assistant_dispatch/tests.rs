@@ -240,12 +240,15 @@ async fn assistants_create() {
     transport.queue(200, ASSISTANT);
     let mut logger = RecordingLogger::default();
     let call = assistants_operation(AssistantsOperation::Create {
-        data: assistant_create(),
+        data: Box::new(assistant_create()),
         async_requested: true,
     });
     let created = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Assistants(AssistantsReply::Assistant(assistant)) = created else {
+    let OpenAiAssistantResult::Assistants(reply) = created else {
         panic!("create did not return an assistant")
+    };
+    let AssistantsReply::Assistant(assistant) = *reply else {
+        panic!()
     };
     assert_eq!(assistant.id, "asst_1");
     assert_eq!(assistant.model, "gpt-4o");
@@ -269,8 +272,11 @@ async fn assistants_delete() {
         async_requested: false,
     });
     let removed = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Assistants(AssistantsReply::Deleted(deleted)) = removed else {
+    let OpenAiAssistantResult::Assistants(reply) = removed else {
         panic!("delete did not return a deletion")
+    };
+    let AssistantsReply::Deleted(deleted) = *reply else {
+        panic!()
     };
     assert!(deleted.deleted);
     assert_eq!(deleted.id, "asst_1");
@@ -294,8 +300,11 @@ async fn assistants_listing_async_facade() {
         params: caller_params(),
     });
     let listed = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Assistants(AssistantsReply::Page(page)) = listed else {
+    let OpenAiAssistantResult::Assistants(reply) = listed else {
         panic!("the async facade listing did not return a page")
+    };
+    let AssistantsReply::Page(page) = *reply else {
+        panic!()
     };
     assert_eq!(page.data[0].id, "asst_1");
     assert_eq!(page.has_more, Some(true));
@@ -399,8 +408,11 @@ async fn threads_create() {
         async_requested: true,
     });
     let created = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Threads(ThreadReply::Thread(thread)) = created else {
+    let OpenAiAssistantResult::Threads(reply) = created else {
         panic!("create did not return a thread")
+    };
+    let ThreadReply::Thread(thread) = *reply else {
+        panic!()
     };
     assert_eq!(thread.id, "thread_1");
     let seen = transport.requests();
@@ -425,8 +437,11 @@ async fn threads_retrieve() {
         async_requested: false,
     });
     let retrieved = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Threads(ThreadReply::Thread(thread)) = retrieved else {
+    let OpenAiAssistantResult::Threads(reply) = retrieved else {
         panic!("retrieve did not return a thread")
+    };
+    let ThreadReply::Thread(thread) = *reply else {
+        panic!()
     };
     assert_eq!(thread.id, "thread_1");
     let seen = transport.requests();
@@ -442,12 +457,15 @@ async fn threads_add_message() {
     let mut logger = RecordingLogger::default();
     let call = threads_operation(ThreadsOperation::AddMessage {
         thread_id: String::from("thread_1"),
-        data: message_data(),
+        data: Box::new(message_data()),
         async_requested: true,
     });
     let added = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Threads(ThreadReply::Message(message)) = added else {
+    let OpenAiAssistantResult::Threads(reply) = added else {
         panic!("add_message did not return a message")
+    };
+    let ThreadReply::Message(message) = *reply else {
+        panic!()
     };
     assert_eq!(message.id, "msg_1");
     assert_eq!(message.status, Some(MessageStatus::Completed));
@@ -470,8 +488,11 @@ async fn threads_list_messages() {
         async_requested: false,
     });
     let listed = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Threads(ThreadReply::Page(page)) = listed else {
+    let OpenAiAssistantResult::Threads(reply) = listed else {
         panic!("list_messages did not return a page")
+    };
+    let ThreadReply::Page(page) = *reply else {
+        panic!()
     };
     assert_eq!(page.data.len(), 1);
     assert_eq!(page.data[0].id, "msg_1");
@@ -532,15 +553,13 @@ async fn runs_buffered() {
     transport.queue(200, RUN);
     transport.queue(200, RUN);
     let mut logger = RecordingLogger::default();
-    let outcome = run_operation(
-        &transport,
-        &mut logger,
-        runs_operation(RunDispatch::default()),
-    )
-    .await
-    .unwrap();
-    let OpenAiAssistantResult::Runs(RunOutcome::Polled(kind, reply)) = outcome else {
+    let call = runs_operation(RunDispatch::default());
+    let outcome = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Runs(run) = outcome else {
         panic!("a buffered run did not return a polled reply")
+    };
+    let RunOutcome::Polled(kind, reply) = *run else {
+        panic!()
     };
     assert_eq!(kind, ClientKind::Sync);
     assert_eq!(reply.id, "run_1");
@@ -563,11 +582,13 @@ async fn runs_async_facade() {
         arun_thread: true,
         stream: false,
     };
-    let outcome = run_operation(&transport, &mut logger, runs_operation(dispatch))
-        .await
-        .unwrap();
-    let OpenAiAssistantResult::Runs(RunOutcome::Polled(kind, reply)) = outcome else {
+    let call = runs_operation(dispatch);
+    let outcome = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Runs(run) = outcome else {
         panic!("the async facade did not return a polled reply")
+    };
+    let RunOutcome::Polled(kind, reply) = *run else {
+        panic!()
     };
     assert_eq!(kind, ClientKind::Async);
     assert_eq!(reply.status, "completed");
@@ -584,10 +605,12 @@ async fn runs_streaming() {
         arun_thread: false,
         stream: true,
     };
-    let outcome = run_operation(&transport, &mut logger, runs_operation(dispatch))
-        .await
-        .unwrap();
-    let OpenAiAssistantResult::Runs(RunOutcome::Streaming(mut events)) = outcome else {
+    let call = runs_operation(dispatch);
+    let outcome = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Runs(run) = outcome else {
+        panic!("a streaming run did not stay a stream")
+    };
+    let RunOutcome::Streaming(mut events) = *run else {
         panic!("a streaming run did not stay a stream")
     };
     let mut names: Vec<String> = Vec::new();
@@ -651,14 +674,14 @@ async fn decisions_request() {
         },
     );
     let projected = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Decisions(DecisionsReply {
+    let OpenAiAssistantResult::Decisions(reply) = projected else {
+        panic!("the decisions request did not project")
+    };
+    let DecisionsReply {
         api_base,
         api_key,
         projection,
-    }) = projected
-    else {
-        panic!("the decisions request did not project")
-    };
+    } = *reply;
     assert_eq!(api_base.as_deref(), Some(BASE));
     assert_eq!(
         api_key.as_ref().map(|key| key.expose_secret().as_str()),
@@ -667,7 +690,7 @@ async fn decisions_request() {
     let DecisionsProjection::Request(wire) = projection else {
         panic!("the request call produced a response projection")
     };
-    assert!(matches!(&wire, ProviderRequestWire::OpenAi(_)));
+    assert!(matches!(&*wire, ProviderRequestWire::OpenAi(_)));
     let written: JsonValue = serde_json::from_slice(&serde_json::to_vec(&wire).unwrap()).unwrap();
     assert_eq!(written, json(CHOICE_WIRE));
     assert!(transport.requests().is_empty());
@@ -705,12 +728,12 @@ async fn decisions_response() {
         },
     );
     let projected = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Decisions(DecisionsReply {
-        projection: DecisionsProjection::Response(response),
-        ..
-    }) = projected
-    else {
+    let OpenAiAssistantResult::Decisions(reply) = projected else {
         panic!("the response call did not project its answer")
+    };
+    let DecisionsReply { projection, .. } = *reply;
+    let DecisionsProjection::Response(response) = projection else {
+        panic!("the response call produced another projection")
     };
     assert_eq!(response.model, "gpt-4o");
     assert_eq!(response.usage.total_tokens.0.as_u64(), Some(5));
@@ -873,7 +896,7 @@ async fn realtime_connection_failures() {
     let OpenAiAssistantResult::SessionFailure(refused) = answered else {
         panic!("a handshake refusal did not return a session failure")
     };
-    assert_eq!(refused, ClientAction::RefuseHandshake { status_code: 403 });
+    assert_eq!(*refused, ClientAction::RefuseHandshake { status_code: 403 });
     let other = realtime_failure(RealtimeFailureOwned::Other {
         message: String::from("connection reset"),
     });
@@ -882,7 +905,7 @@ async fn realtime_connection_failures() {
         panic!("a connection failure did not return a session failure")
     };
     assert_eq!(
-        closed,
+        *closed,
         ClientAction::Close(RealtimeClose {
             code: 1011,
             reason: String::from("Internal server error: connection reset"),
@@ -903,7 +926,7 @@ async fn realtime_close_failures() {
     let OpenAiAssistantResult::SessionFailure(action) = answered else {
         panic!("an ignored close failure did not return a session failure")
     };
-    assert!(matches!(action, ClientAction::IgnoreCloseFailure { .. }));
+    assert!(matches!(*action, ClientAction::IgnoreCloseFailure { .. }));
     let unexpected = realtime_failure(RealtimeFailureOwned::CloseFailed {
         message: String::from("connection reset"),
         close_error: String::from("socket gone"),

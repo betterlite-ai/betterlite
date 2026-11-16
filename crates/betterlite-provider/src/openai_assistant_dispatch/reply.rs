@@ -21,7 +21,8 @@ pub enum RunOutcome {
 
 #[derive(Debug)]
 pub enum DecisionsProjection {
-    Request(ProviderRequestWire),
+    // both wires are boxed so neither variant is over 3x the other, the limit variant_size_differences enforces
+    Request(Box<ProviderRequestWire>),
     Response(Box<DecisionResponse>),
 }
 

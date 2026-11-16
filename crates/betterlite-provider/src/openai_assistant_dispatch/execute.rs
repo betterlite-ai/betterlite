@@ -41,16 +41,16 @@ where
     };
     let result = match operation {
         OpenAiAssistantOperation::Assistants(call) => {
-            OpenAiAssistantResult::Assistants(assistants(call, &transport).await?)
+            OpenAiAssistantResult::Assistants(Box::new(assistants(call, &transport).await?))
         }
         OpenAiAssistantOperation::Threads(call) => {
-            OpenAiAssistantResult::Threads(threads(call, &transport).await?)
+            OpenAiAssistantResult::Threads(Box::new(threads(call, &transport).await?))
         }
         OpenAiAssistantOperation::Runs(call) => {
-            OpenAiAssistantResult::Runs(runs(call, &transport).await?)
+            OpenAiAssistantResult::Runs(Box::new(runs(call, &transport).await?))
         }
         OpenAiAssistantOperation::Decisions(call) => {
-            OpenAiAssistantResult::Decisions(decisions(call)?)
+            OpenAiAssistantResult::Decisions(Box::new(decisions(call)?))
         }
         OpenAiAssistantOperation::Realtime(call) => session(call, logger)?,
     };
@@ -170,7 +170,9 @@ fn decisions(call: DecisionsCall) -> Result<DecisionsReply, OpenAiAssistantError
     let projection = match call.operation {
         DecisionsOperation::Request { model, request } => {
             let ir = openai_request_to_ir(&request);
-            DecisionsProjection::Request(config.transform_decisions_request(&model, &ir, "openai")?)
+            DecisionsProjection::Request(Box::new(
+                config.transform_decisions_request(&model, &ir, "openai")?,
+            ))
         }
         DecisionsOperation::Response {
             model,
@@ -213,19 +215,21 @@ fn session<L: RealtimeLogger>(
                 max_message_size_bytes,
             };
             let plan = prepare_connection(&settings, logger)?;
-            Ok(OpenAiAssistantResult::Session(OpenAiAssistantPrepared {
-                url: plan.url,
-                headers: plan.headers,
-                ssl: plan.ssl,
-                max_message_size_bytes: plan.max_message_size_bytes,
-                force_transcription_model: plan.force_transcription_model,
-                event_normalizer_installed: plan.event_normalizer.is_some(),
-            }))
+            Ok(OpenAiAssistantResult::Session(Box::new(
+                OpenAiAssistantPrepared {
+                    url: plan.url,
+                    headers: plan.headers,
+                    ssl: plan.ssl,
+                    max_message_size_bytes: plan.max_message_size_bytes,
+                    force_transcription_model: plan.force_transcription_model,
+                    event_normalizer_installed: plan.event_normalizer.is_some(),
+                },
+            )))
         }
         RealtimeCall::Failure(failure) => {
             let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
             let action = client_action(failure.borrowed(), &redactor)?;
-            Ok(OpenAiAssistantResult::SessionFailure(action))
+            Ok(OpenAiAssistantResult::SessionFailure(Box::new(action)))
         }
     }
 }

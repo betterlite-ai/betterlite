@@ -32,8 +32,9 @@ pub enum AssistantsOperation {
         facade: AssistantsFacade,
         params: ListParams,
     },
+    // the create record dwarfs the listing parameters, so it is boxed to stay within 3x, the limit variant_size_differences enforces
     Create {
-        data: AssistantCreate,
+        data: Box<AssistantCreate>,
         async_requested: bool,
     },
     Delete {
@@ -58,9 +59,10 @@ pub enum ThreadsOperation {
         thread_id: String,
         async_requested: bool,
     },
+    // the message record dwarfs the thread calls, so it is boxed to stay within 3x, the limit variant_size_differences enforces
     AddMessage {
         thread_id: String,
-        data: ThreadMessageData,
+        data: Box<ThreadMessageData>,
         async_requested: bool,
     },
     ListMessages {
