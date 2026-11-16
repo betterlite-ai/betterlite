@@ -3,7 +3,8 @@ title: Bedrock Claude chat through Invoke
 description: >-
   Add BedrockClaudeRequest override over Anthropic chat transforms, including anthropic_version, model removal,
   beta filtering, effort clamping and tool-search naming. Preserve native output schema and safe response metadata.
-  URL document sources that require bytes remain rejected under the open no-fetch decision.
+  URL document sources are fetched through the injected fetcher and rewritten to base64, and the async path
+  inlines every remote part before the body build.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py:
@@ -26,10 +27,10 @@ description: >-
   algorithm is permitted.
 
 
-  remote-url-current-rejection supplies an http:// image or PDF URL requiring local bytes and expects ImageFetchError
-  status 400 before transport under the current open request-download decision; inject the same failed-download
-  seam into the pinned helper. Inline bytes continue to compare normally; provider-forwardable URL descriptors remain
-  unchanged where the source forwards them.
+  remote-url-inlined supplies an http:// image or PDF URL and fixture bytes; both the pinned helper and the Rust
+  adapter fetch through the injected seam, so the compared bodies carry the same data URLs. A refusing fetcher
+  fails before transport with its typed error. Provider-forwardable URL descriptors remain unchanged where the
+  source forwards them: the sync body keeps image URL sources, and only document url sources are converted.
 
 
   Reuse AnthropicConfig.get_supported_openai_params from B569 (litellm/llms/anthropic/chat/transformation.py); its
@@ -111,10 +112,11 @@ description: >-
   (retain explicit None/empty), and retain other tool records. Write the new list back into the supplied options;
   malformed nonmapping entries propagate their error. There is no warning for BM25 removal. inline_document: Document
   traversal ignores non-list messages/content, non-dict messages/blocks/sources, non-document blocks, sources whose
-  type is not url, and URLs that are not strings. A URL ending case-insensitively in .pdf supplies application/pdf
-  to B183 conversion; a query suffix prevents that inference. The source post-download rewrite replaces source with
-  only type=base64,media_type,data while retaining other block fields. Successful URL acquisition itself is excluded
-  by the declared no-fetch deviation; inline base64 documents stay unchanged and are tested normally. claude_response_usage:
+  type is not url, and URLs that are not strings. Each accepted document URL is fetched once, in first-seen order,
+  through the injected fetcher's convert_url. A URL ending case-insensitively in .pdf supplies application/pdf to
+  the rewrite; a query suffix prevents that inference. The post-download rewrite replaces source with only
+  type=base64,media_type,data while retaining other block fields; a fetched value without a base64 marker fails.
+  Inline base64 documents stay unchanged and make no fetch. claude_response_usage:
   Delegate the entire response to B580 AnthropicConfig.transform_response with the same model/raw response/preallocated
   response/logging/request_data/messages/options/litellm_params/encoding/api_key/json_mode. Use B580 response, usage,
   metadata and error cases unchanged; no second Bedrock decoder or new status mapping belongs here. response_format_tool_stub:
@@ -126,15 +128,17 @@ description: >-
   restoring the original model, remove mapped tool_choice only when response_format is present, tool_choice is a
   dict named json_tool_call, and B688 forced_tool_use_unsupported(original_model) is true. Other names, non-dicts
   and ordinary requests retain the choice. async_media_order: uses_async_transform_request returns True. Async first
-  invokes B183 async_inline_remote_media on messages, then calls this same synchronous transform; errors from inlining
-  occur before option/body processing. Sync builds the body before document-URL conversion, then computes beta values.
-  Compare those mutation/failure boundaries without making remote calls.
+  invokes B183 async_inline_remote_media on messages with the inline-everything predicate, then calls this same
+  synchronous transform; errors from inlining occur before option/body processing. Sync builds the body before
+  document-URL conversion, then computes beta values. Compare those mutation/failure boundaries through a map-backed
+  fetcher and a refusing one.
 
 
-  The existing remote_url_current_rejection oracle row uses a blocked loopback URL at B183 and compares ImageFetchError
-  status 400 before transport. Add standalone Rust test claude_invoke_never_fetches_request_urls for an otherwise
-  valid public HTTP/PDF URL: assert the same typed rejection and zero outbound attempts. This second test proves
-  the declared policy difference and is not a Python remote-fetch oracle.
+  The remote_url_inlined oracle row injects the same fixture bytes on both sides: the pinned helper patches
+  async_inline_remote_media and convert_url_to_base64, and the Rust adapter uses a map-backed fetcher, so the
+  compared bodies carry identical data URLs. Add standalone Rust test claude_invoke_media_fetch: a map-backed
+  fetcher turns an image URL and a PDF document URL into data URLs, and a refusing fetcher makes the same URLs
+  fail with its typed error and zero upstream transport attempts.
 
 
   Public supports_* capability predicates called by this slice are owned by B2221, including native-streaming/schema
@@ -155,7 +159,7 @@ description: >-
 
   Write rstest function claude_invoke_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   bedrock_anthropic_version, adaptive_effort_ceiling, bedrock_beta_filter, tool_search_tool_name, inline_document,
-  claude_response_usage, response_format_tool_stub, forced_tool_choice_removed, remote_url_current_rejection, async_media_order.
+  claude_response_usage, response_format_tool_stub, forced_tool_choice_removed, remote_url_inlined, async_media_order.
   Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
   API tasks retain route registration; this task must not register a duplicate axum route.
 
@@ -239,11 +243,11 @@ dod:
   - oracle
   - helper-python
 - text: 'inline_document: Document traversal ignores non-list messages/content, non-dict messages/blocks/sources,
-    non-document blocks, sources whose type is not url, and URLs that are not strings. A URL ending case-insensitively
-    in .pdf supplies application/pdf to B183 conversion; a query suffix prevents that inference. The source post-download
-    rewrite replaces source with only type=base64,media_type,data while retaining other block fields. Successful
-    URL acquisition itself is excluded by the declared no-fetch deviation; inline base64 documents stay unchanged
-    and are tested normally.'
+    non-document blocks, sources whose type is not url, and URLs that are not strings. Each accepted document URL
+    is fetched once, in first-seen order, through the injected fetcher''s convert_url. A URL ending case-insensitively
+    in .pdf supplies application/pdf to the rewrite; a query suffix prevents that inference. The post-download
+    rewrite replaces source with only type=base64,media_type,data while retaining other block fields; a fetched
+    value without a base64 marker fails. Inline base64 documents stay unchanged and make no fetch.'
   proof:
   - case-inline-document
   - oracle
@@ -273,9 +277,9 @@ dod:
   - case-forced-tool-choice-removed
   - oracle
   - helper-python
-- text: 'remote url current rejection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/remote-url-current-rejection.yaml.'
+- text: 'remote url inlined: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/remote-url-inlined.yaml.'
   proof:
-  - case-remote-url-current-rejection
+  - case-remote-url-inlined
   - oracle
   - helper-python
 - text: New bedrock_claude_invoke seeds parse as the intended call variant and replay through the shared production
@@ -283,16 +287,17 @@ dod:
   proof:
   - helper-case-corpus
 - text: 'async_media_order: uses_async_transform_request returns True. Async first invokes B183 async_inline_remote_media
-    on messages, then calls this same synchronous transform; errors from inlining occur before option/body processing.
-    Sync builds the body before document-URL conversion, then computes beta values. Compare those mutation/failure
-    boundaries without making remote calls.'
+    on messages with the inline-everything predicate, then calls this same synchronous transform; errors from
+    inlining occur before option/body processing. Sync builds the body before document-URL conversion, then computes
+    beta values. Compare those mutation/failure boundaries through a map-backed fetcher and a refusing one.'
   proof:
   - case-async-media-order
   - oracle
   - helper-python
-- text: Public request URLs requiring bytes are rejected with ImageFetchError 400 and never fetched.
+- text: Public request URLs are inlined through the injected fetcher; a refusing fetcher fails with its typed error
+    before transport.
   proof:
-  - no-request-download
+  - media-fetch
 checks:
   optional:
   - mutants
@@ -331,11 +336,11 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_tool_search_tool_name$/)'
   - id: case-inline-document
     why: Document traversal ignores non-list messages/content, non-dict messages/blocks/sources, non-document blocks,
-      sources whose type is not url, and URLs that are not strings. A URL ending case-insensitively in .pdf supplies
-      application/pdf to B183 conversion; a query suffix prevents that inference. The source post-download rewrite
-      replaces source with only type=base64,media_type,data while retaining other block fields. Successful URL acquisition
-      itself is excluded by the declared no-fetch deviation; inline base64 documents stay unchanged and are tested
-      normally.
+      sources whose type is not url, and URLs that are not strings. Each accepted document URL is fetched once,
+      in first-seen order, through the injected fetcher's convert_url. A URL ending case-insensitively in .pdf supplies
+      application/pdf to the rewrite; a query suffix prevents that inference. The post-download rewrite replaces
+      source with only type=base64,media_type,data while retaining other block fields; a fetched value without a
+      base64 marker fails. Inline base64 documents stay unchanged and make no fetch.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_inline_document$/)'
   - id: case-claude-response-usage
     why: Delegate the entire response to B580 AnthropicConfig.transform_response with the same model/raw response/preallocated
@@ -355,9 +360,9 @@ checks:
       is a dict named json_tool_call, and B688 forced_tool_use_unsupported(original_model) is true. Other names,
       non-dicts and ordinary requests retain the choice.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_forced_tool_choice_removed$/)'
-  - id: case-remote-url-current-rejection
-    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/remote-url-current-rejection.yaml.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_remote_url_current_rejection$/)'
+  - id: case-remote-url-inlined
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-claude-invoke/remote-url-inlined.yaml.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_remote_url_inlined$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
     run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_claude_invoke.py tools/oracle/helpers/bedrock_claude_invoke)" && uv run
@@ -370,14 +375,14 @@ checks:
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_claude_invoke$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-async-media-order
-    why: uses_async_transform_request returns True. Async first invokes B183 async_inline_remote_media on messages,
-      then calls this same synchronous transform; errors from inlining occur before option/body processing. Sync
-      builds the body before document-URL conversion, then computes beta values. Compare those mutation/failure
-      boundaries without making remote calls.
+    why: uses_async_transform_request returns True. Async first invokes B183 async_inline_remote_media on messages
+      with the inline-everything predicate, then calls this same synchronous transform; errors from inlining occur
+      before option/body processing. Sync builds the body before document-URL conversion, then computes beta values.
+      Compare those mutation/failure boundaries through a map-backed fetcher and a refusing one.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_cases::case_[0-9]+_async_media_order$/)'
-  - id: no-request-download
-    why: The no-fetch deviation is absent.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_never_fetches_request_urls$/)'
+  - id: media-fetch
+    why: The media fetch through the injected fetcher lacks a production assertion.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_invoke_media_fetch$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/bedrock-anthropic-version.yaml
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/adaptive-effort-ceiling.yaml
@@ -387,13 +392,9 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/claude-response-usage.yaml
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/response-format-tool-stub.yaml
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/forced-tool-choice-removed.yaml
-- tools/oracle/cases/helpers/providers/bedrock-claude-invoke/remote-url-current-rejection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-claude-invoke/remote-url-inlined.yaml
 - tools/oracle/cases/helpers/providers/bedrock-claude-invoke/async-media-order.yaml
-deviations:
-- what: Never fetch request URLs. A document/image URL requiring local bytes fails with ImageFetchError status 400
-    before upstream transport; inline data and descriptors the provider accepts remain supported.
-  why: B5083's downloader is not wired into this path yet. Request media URLs are fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L303-L340
+deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
