@@ -1,0 +1,25 @@
+kind: helper
+name: usage-ai-chat-fetch-args-team-ids
+call:
+  b3103:
+    function: fetch_args
+    tool: team
+    arguments:
+      start_date: "2026-01-01"
+      end_date: "2026-01-31"
+      team_ids: "team-1, team-2"
+    user_id: null
+    is_admin: true
+calls:
+  - b3103:
+      function: fetch_args
+      tool: tag
+      arguments:
+        start_date: "2026-01-01"
+        end_date: "2026-01-31"
+        tags: ""
+      user_id: null
+      is_admin: true
+env: {}
+compare:
+  ignore: []

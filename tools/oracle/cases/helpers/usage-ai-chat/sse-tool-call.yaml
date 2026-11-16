@@ -1,0 +1,16 @@
+kind: helper
+name: usage-ai-chat-sse-tool-call
+call:
+  b3103:
+    function: sse
+    event:
+      type: tool_call
+      tool_name: get_usage_data
+      tool_label: global usage data
+      arguments:
+        start_date: "2026-01-01"
+        end_date: "2026-01-31"
+      status: running
+env: {}
+compare:
+  ignore: []
