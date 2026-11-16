@@ -144,12 +144,13 @@ class FakeTable(PrismaWrapper):
 
     async def delete_many(self, where: Where) -> int:
         self.deleted.append(self.label)
-        removed = [row for row in self.rows if where_matches(row, where)]
-        self.rows = [row for row in self.rows if not where_matches(row, where)]
+        removed = await self.find_many(where=where)
+        self.rows = [row for row in self.rows if all(row is not gone for gone in removed)]
         return len(removed)
 
     async def find_many(self, where: Where | None = None, take: int | None = None) -> list[FakeRow]:
-        matches = [row for row in self.rows if where is None or where_matches(row, where)]
+        clauses: list[tuple[str, JsonValue | datetime]] = [] if where is None else [*where.items()]
+        matches = [row for row in self.rows if all(field_matches(row, *part) for part in clauses)]
         return matches if take is None else matches[:take]
 
     async def find_first(self, where: Where) -> FakeRow | None:
@@ -200,7 +201,8 @@ def parsed_columns(data: Where) -> Where:
 # The where shapes LiteLLM's MCP server writes send: AND/OR/NOT, equality, gte, not, insensitive.
 def field_matches(values: FakeRow, key: str, condition: JsonValue | datetime) -> bool:
     if key in {"AND", "OR", "NOT"}:
-        nested = [where_matches(values, part) for part in BRANCHES.validate_python(condition)]
+        branches = [list(branch.items()) for branch in BRANCHES.validate_python(condition)]
+        nested = [all(field_matches(values, *part) for part in branch) for branch in branches]
         return {"AND": all(nested), "OR": any(nested), "NOT": not any(nested)}[key]
     value = values.get(key)
     try:
@@ -213,13 +215,6 @@ def field_matches(values: FakeRow, key: str, condition: JsonValue | datetime) ->
         return value is not None and value != operators["not"]
     wanted = STRING.validate_python(operators["equals"]).lower()
     return value is not None and STRING.validate_python(value).lower() == wanted
-
-
-def where_matches(values: FakeRow, where: Where) -> bool:
-    for key, condition in where.items():
-        if not field_matches(values, key, condition):
-            return False
-    return True
 
 
 def written(outcome: LiteLLM_MCPServerTable | mcp_db.McpIdentifierConflict | None) -> Outcome:
