@@ -348,7 +348,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_openai_invoke*")"
       && grep -lq 'bedrock_openai_invoke' tools/oracle/fuzz/corpus/helper_case/bedrock_openai_invoke* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_openai_invoke$/)'
+      run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_openai_invoke$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-openai-invoke-body
     why: Pop stream from original options, then copy all remaining fields except the twelve B590 authentication

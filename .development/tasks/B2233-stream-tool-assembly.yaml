@@ -131,7 +131,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/stream_tool_assembly*")"
       && grep -lq 'stream_tool_assembly' tools/oracle/fuzz/corpus/helper_case/stream_tool_assembly* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_stream_tool_assembly$/)'
+      run --locked -p betterlite-oracle-streaming --no-tests=fail -E 'test(/::helper_seeds_select_stream_tool_assembly$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-tool-indices-and-fragments
     why: Process every choice and tool in chunk order, key by (choice index default0, tool index default0), skip

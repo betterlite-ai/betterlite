@@ -212,7 +212,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_services*")"
       && grep -lq 'bedrock_services_services' tools/oracle/fuzz/corpus/helper_case/bedrock_services_services* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_services$/)'
+      cargo nextest run --locked -p betterlite-oracle-provider --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_services$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-installed-service-families
     why: Exercise B680 agents/Claude Platform and B681 Responses/passthrough/search/vector/realtime through the

@@ -256,7 +256,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_tools*")"
       && grep -lq 'anthropic_tools' tools/oracle/fuzz/corpus/helper_case/anthropic_tools* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_tools$/)' && cargo nextest
+      -p betterlite-oracle-anthropic --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_tools$/)' && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-namespace-and-native-tools
     why: 'Namespace expands only one level: nested input_schema passes unchanged, flat name without function wraps

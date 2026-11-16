@@ -244,7 +244,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_realtime*")"
       && grep -lq 'openai_realtime' tools/oracle/fuzz/corpus/helper_case/openai_realtime* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_realtime$/)' && cargo nextest
+      -p betterlite-oracle-openai --no-tests=fail -E 'test(/::helper_seeds_select_openai_realtime$/)' && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-realtime-ssl-and-size
     why: ws:// uses no TLS context; wss delegates to the shared realtime SSL context, translating False to websockets
