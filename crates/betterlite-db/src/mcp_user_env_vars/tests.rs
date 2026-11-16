@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod database;
 mod fakes;
 
 use std::collections::{BTreeMap, BTreeSet};
