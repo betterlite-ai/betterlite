@@ -307,36 +307,57 @@ def row_views(client: FakeClient) -> list[ServerView]:
 
 async def create(client: FakeClient, call: Call) -> Outcome:
     request = NewMCPServerRequest.model_validate(call["payload"])
-    by = call["touched_by"]
-    match call["function"]:
-        case "create":
-            return (await mcp_db.create_mcp_server(client, request, by)).server_id, None
-        case "create_if_free":
-            return written(await mcp_db.create_mcp_server_if_identifier_free(client, request, by))
-    ttl, draft_id = call["ttl_seconds"], call["server_id"]
-    draft = await mcp_db.create_draft_mcp_server(client, request, by, ttl, draft_id)
+    created = await mcp_db.create_mcp_server(client, request, call["touched_by"])
+    return created.server_id, None
+
+
+async def create_if_free(client: FakeClient, call: Call) -> Outcome:
+    request = NewMCPServerRequest.model_validate(call["payload"])
+    created = await mcp_db.create_mcp_server_if_identifier_free(client, request, call["touched_by"])
+    return written(created)
+
+
+async def create_draft(client: FakeClient, call: Call) -> Outcome:
+    request = NewMCPServerRequest.model_validate(call["payload"])
+    draft = await mcp_db.create_draft_mcp_server(
+        client, request, call["touched_by"], call["ttl_seconds"], call["server_id"]
+    )
     return draft.server_id, None
 
 
-async def dispatch(client: FakeClient, call: Call) -> Outcome:
-    match call["function"]:
-        case "get_draft":
-            ttl = call["ttl_seconds"]
-            return written(await mcp_db.get_draft_mcp_server(client, call["server_id"], ttl))
-        case "update":
-            changes = UpdateMCPServerRequest.model_validate(call["payload"])
-            return written(await mcp_db.update_mcp_server(client, changes, call["touched_by"]))
-        case "delete":
-            invalidate = client.record_invalidation
-            deleted = await mcp_db.delete_mcp_server(client, call["server_id"], invalidate)
-            return (None if deleted is None else deleted.server_id), None
-    return await create(client, call)
+async def get_draft(client: FakeClient, call: Call) -> Outcome:
+    found = await mcp_db.get_draft_mcp_server(client, call["server_id"], call["ttl_seconds"])
+    return written(found)
+
+
+async def update(client: FakeClient, call: Call) -> Outcome:
+    changes = UpdateMCPServerRequest.model_validate(call["payload"])
+    updated = await mcp_db.update_mcp_server(client, changes, call["touched_by"])
+    return written(updated)
+
+
+async def delete(client: FakeClient, call: Call) -> Outcome:
+    deleted = await mcp_db.delete_mcp_server(client, call["server_id"], client.record_invalidation)
+    return (None if deleted is None else deleted.server_id), None
 
 
 def run(call: Call) -> Answer:
     sys.modules[PROXY_SERVER] = ProxyServerStub()
     client = FakeClient(call["rows"], call["users"], call["server_id"])
-    server_id, conflict = asyncio.run(dispatch(client, call))
+    match call["function"]:
+        case "create":
+            handler = create
+        case "create_if_free":
+            handler = create_if_free
+        case "create_draft":
+            handler = create_draft
+        case "get_draft":
+            handler = get_draft
+        case "update":
+            handler = update
+        case "delete":
+            handler = delete
+    server_id, conflict = asyncio.run(handler(client, call))
     return {
         "server_id": server_id,
         "conflict": conflict,
