@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
@@ -114,13 +116,16 @@ fn choice_view(choice: &ChatChoice) -> Value {
     })
 }
 
-fn failure(message: String) -> Box<HelperError> {
+fn failure<Error>(error: Error) -> Box<HelperError>
+where
+    Error: Display,
+{
     Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message,
+        message: error.to_string(),
     })
 }

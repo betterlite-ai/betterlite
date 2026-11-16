@@ -15,12 +15,10 @@ use betterlite_streaming::streamed_response_assembly::response::Response;
 use betterlite_streaming::streamed_response_assembly::{self, AssemblyError, Request};
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::{Message, MessageContent, Part};
-use betterlite_tokenizer::image::error::ImageError;
 use betterlite_tokenizer::image::geometry::high_detail_upper_bound;
 use betterlite_tokenizer::image::settings::Settings;
 use betterlite_tokenizer::image::tokens::DEFAULT_BASE_TOKENS;
 use serde_json::Value;
-use thiserror::Error;
 use uuid::Uuid;
 
 mod tests;
@@ -29,24 +27,6 @@ const SSE_DATA_PREFIX: &str = "data: ";
 const SSE_DATA_BARE_PREFIX: &str = "data:";
 const IMAGE_URL_TYPE: &str = "image_url";
 const HIGH_DETAIL: &str = "high";
-
-#[derive(Debug, Error)]
-pub enum RelayedCountError {
-    #[error(transparent)]
-    Counter(#[from] CountError),
-    #[error("the high detail image upper bound could not be computed")]
-    UpperBound(#[from] ImageError),
-}
-
-// The builder turns any prompt count failure into zero, so a failed image bound joins the overflow class.
-impl From<RelayedCountError> for CountError {
-    fn from(error: RelayedCountError) -> Self {
-        match error {
-            RelayedCountError::Counter(source) => source,
-            RelayedCountError::UpperBound(_error) => Self::Overflow,
-        }
-    }
-}
 
 // The relay logging path is synchronous, so the caller binds a counter it can call from there.
 pub trait RelayTokenCounter: Send + Sync {
@@ -70,7 +50,7 @@ pub fn count_relayed_prompt_tokens(
     counter: &dyn RelayTokenCounter,
     model: &str,
     messages: Option<&[Message]>,
-) -> Result<i64, RelayedCountError> {
+) -> Result<i64, CountError> {
     let Some(messages) = messages else {
         return Ok(0);
     };
@@ -82,15 +62,14 @@ pub fn count_relayed_prompt_tokens(
         remote_images = remote_images.saturating_add(remote);
     }
     let counted = counter.count_messages(model, &local)?;
-    let bound = high_detail_upper_bound(DEFAULT_BASE_TOKENS, &Settings::default())?;
+    let bound = high_detail_upper_bound(DEFAULT_BASE_TOKENS, &Settings::default())
+        .map_err(|_error| CountError::Overflow)?;
     let per_image = i64::try_from(bound).map_err(|_error| CountError::Overflow)?;
     let images = i64::try_from(remote_images).map_err(|_error| CountError::Overflow)?;
-    let remote_tokens = per_image
-        .checked_mul(images)
-        .ok_or_else(|| RelayedCountError::Counter(CountError::Overflow))?;
+    let remote_tokens = per_image.checked_mul(images).ok_or(CountError::Overflow)?;
     counted
         .checked_add(remote_tokens)
-        .ok_or_else(|| RelayedCountError::Counter(CountError::Overflow))
+        .ok_or(CountError::Overflow)
 }
 
 // LiteLLM drops the remote parts from the content list and leaves a content that is not a list alone.
@@ -144,10 +123,8 @@ where
     let counter = RelayedCounter {
         counter: request.counter,
     };
-    let count_prompt_tokens = || {
-        count_relayed_prompt_tokens(request.counter, request.model, request.messages)
-            .map_err(CountError::from)
-    };
+    let count_prompt_tokens =
+        || count_relayed_prompt_tokens(request.counter, request.model, request.messages);
     let builder_request = Request {
         chunks: Some(chunks),
         messages: request.messages,
@@ -180,7 +157,7 @@ impl UsageTokenCounter for RelayedCounter<'_> {
         model: &str,
         messages: Option<&[Message]>,
     ) -> Result<i64, CountError> {
-        count_relayed_prompt_tokens(self.counter, model, messages).map_err(CountError::from)
+        count_relayed_prompt_tokens(self.counter, model, messages)
     }
 }
 
