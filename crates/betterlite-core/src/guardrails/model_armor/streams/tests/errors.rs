@@ -102,6 +102,20 @@ fn frame_error_falls_back_to_sse_for_responses_without_items() {
 }
 
 #[test]
+fn frame_error_falls_back_to_sse_for_an_empty_responses_item_list() {
+    let wire = FakeWire::new(Setup {
+        responses: Some(Vec::new()),
+        ..Setup::default()
+    });
+    let error = http(500, GuardrailValue::Text("boom".to_owned()));
+    let framed = frame_error(&wire, Surface::Responses, &error).expect("the frames build");
+    assert_eq!(
+        framed,
+        sse_frame(&value(r#"{"message": "boom", "code": "500"}"#)).expect("the frame encodes")
+    );
+}
+
+#[test]
 fn frame_error_encodes_sse_for_chat_completions() {
     let wire = FakeWire::new(Setup::default());
     let error = http(400, GuardrailValue::Text("blocked".to_owned()));

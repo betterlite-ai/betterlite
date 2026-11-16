@@ -75,8 +75,8 @@ pub fn frame_error<W: StreamWire>(
                 .map_err(StreamError::Wiring)
         }
         Surface::Responses => match wire.responses_error_items(error) {
-            Some(items) => Ok(items),
-            None => sse_frame(&payload).map_err(StreamError::Encode),
+            Some(items) if !items.is_empty() => Ok(items),
+            _ => sse_frame(&payload).map_err(StreamError::Encode),
         },
         Surface::ChatCompletions | Surface::OpaqueSse => {
             sse_frame(&payload).map_err(StreamError::Encode)
