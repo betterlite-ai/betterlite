@@ -100,6 +100,12 @@ scope:
     - crates/betterlite-guardrails/Cargo.toml
     - Cargo.lock
     - tools/oracle/cases/guardrails/cisco-stream/**
+    - tools/oracle/fuzz/corpus/helper_case/cisco-stream-*
+    - tools/oracle/helpers/b9450.py
+    - tools/oracle/helpers/b9450/**
+    - tools/oracle/src/helpers/guardrails/b9450.rs
+    - tools/oracle/src/helpers/guardrails/b9450/**
+    - tools/oracle/src/helpers/guardrails/lib.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L419-L537
