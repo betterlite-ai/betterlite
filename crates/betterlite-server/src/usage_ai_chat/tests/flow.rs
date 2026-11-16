@@ -161,27 +161,23 @@ async fn flow_runs_every_admin_tool_call_in_order() {
         &chat_request(&messages, None, Some("admin-1"), true),
     )
     .await;
-    let events: [(&str, &str, &[(&str, &str)], &str); 4] = [
-        (
+    let expected = [
+        frame_tool(
             "get_team_usage_data",
             "team usage data",
             &TEAM_DAYS,
             "running",
         ),
-        (
+        frame_tool(
             "get_team_usage_data",
             "team usage data",
             &TEAM_DAYS,
             "complete",
         ),
-        ("get_tag_usage_data", "tag usage data", &DAYS, "running"),
-        ("get_tag_usage_data", "tag usage data", &DAYS, "complete"),
+        frame_tool("get_tag_usage_data", "tag usage data", &DAYS, "running"),
+        frame_tool("get_tag_usage_data", "tag usage data", &DAYS, "complete"),
     ];
-    let expected = events
-        .into_iter()
-        .map(|(name, label, arguments, status)| frame_tool(name, label, arguments, status))
-        .collect::<Vec<String>>();
-    assert_eq!(frames[1..5].to_vec(), expected);
+    assert_eq!(&frames[1..5], expected.as_slice());
     assert_eq!(frames[7], done_frame());
 }
 
