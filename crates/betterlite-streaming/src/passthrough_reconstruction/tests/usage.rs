@@ -95,6 +95,9 @@ fn builds_the_usage_object_from_the_stream() {
     assert_eq!(chat.usage.prompt_tokens, 11);
     assert_eq!(chat.usage.completion_tokens, 4);
     assert_eq!(chat.usage.total_tokens, 15);
+    assert!(chat.system_fingerprint.is_none());
+    assert!(chat.service_tier.is_none());
+    assert!(chat.hidden_params.is_empty());
 }
 
 #[test]
@@ -139,6 +142,12 @@ fn keeps_the_model_when_the_message_has_none() {
     )];
     let response =
         build_usage_only_response(&request(&numeric, &calculator, "unknown", None)).unwrap();
+    assert_eq!(chat_of(response).model, "unknown");
+    let empty = [text_chunk(
+        "data: {\"type\":\"message_start\",\"message\":{\"model\":\"\"}}",
+    )];
+    let response =
+        build_usage_only_response(&request(&empty, &calculator, "unknown", None)).unwrap();
     assert_eq!(chat_of(response).model, "unknown");
 }
 
@@ -232,6 +241,23 @@ fn keeps_the_last_output_count_and_ignores_null_and_text() {
     assert_eq!(
         calculator.seen_object(),
         "{\"input_tokens\":0,\"output_tokens\":9}"
+    );
+}
+
+#[test]
+fn keeps_the_cache_read_geo_and_speed_a_message_delta_carries() {
+    let calculator = FixtureCalculator::default();
+    let chunks = [
+        text_chunk(&start_event("{\"cache_read_input_tokens\":3}")),
+        text_chunk(&delta_event(
+            "end_turn",
+            "{\"cache_read_input_tokens\":7,\"inference_geo\":\"eu\",\"speed\":\"slow\"}",
+        )),
+    ];
+    assert!(built(&chunks, &calculator).is_some());
+    assert_eq!(
+        calculator.seen_object(),
+        "{\"input_tokens\":0,\"output_tokens\":0,\"cache_read_input_tokens\":7,\"inference_geo\":\"eu\",\"speed\":\"slow\"}"
     );
 }
 

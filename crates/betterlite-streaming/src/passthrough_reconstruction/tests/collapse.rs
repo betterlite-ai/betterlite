@@ -185,3 +185,19 @@ fn merges_under_index_zero_when_the_stream_carries_no_index() {
         )
     );
 }
+
+#[test]
+fn reads_a_non_string_delta_text_as_empty() {
+    let chunks = [text_chunk(&format!(
+        "{TEXT_BLOCK_START}\n\nevent: content_block_delta\ndata: {{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{{\"type\":\"text_delta\",\"text\":5}}}}"
+    ))];
+    let collapsed = collapse_pure_text_chunks(&chunks)
+        .unwrap()
+        .expect("a numeric text is read as absent");
+    assert_eq!(
+        collapsed.last().map(String::as_str),
+        Some(
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\"}}"
+        )
+    );
+}

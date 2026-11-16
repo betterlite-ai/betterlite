@@ -75,3 +75,8 @@ fn answers_none_for_empty_done_or_malformed_payloads() {
     assert!(extract_sse_data("event: message_start").is_none());
     assert!(extract_sse_data("metadata: {\"type\":\"sneaky\"}").is_none());
 }
+
+#[test]
+fn reads_no_data_line_split_on_a_bare_carriage_return() {
+    assert!(extract_sse_data("event: x\rdata: {\"type\":\"x\"}").is_none());
+}
