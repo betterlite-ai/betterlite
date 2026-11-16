@@ -73,7 +73,7 @@ where
         .map_err(transport_error)
 }
 
-// httpx decodes response.text leniently, so a body that is not UTF-8 keeps the text before its first invalid byte
+// httpx's response.text replaces invalid bytes, so a message keeps the text before the first one
 pub(super) fn body_text(body: &[u8]) -> String {
     match from_utf8(body) {
         Ok(text) => text.to_owned(),
