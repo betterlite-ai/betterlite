@@ -6,6 +6,7 @@ use super::hooks::{ScanSubject, scan};
 use super::{NomaGuardrail, RequestData};
 
 // What a monitor mode check looks at, copied before the request moves on
+#[derive(Clone, Copy)]
 pub(super) enum BackgroundSubject<'subject> {
     UserMessage,
     Response(&'subject GuardrailValue),
@@ -48,8 +49,8 @@ pub(super) fn spawn_check(
         BackgroundSubject::Response(response) => {
             let mut response_copy = response.clone();
             create_background_noma_check(&tasks, async move {
-                let subject = ScanSubject::LlmResponse(&mut response_copy);
-                check_background(&worker, &mut data_copy, &auth_copy, subject).await;
+                let scanned = ScanSubject::LlmResponse(&mut response_copy);
+                check_background(&worker, &mut data_copy, &auth_copy, scanned).await;
             });
         }
     }

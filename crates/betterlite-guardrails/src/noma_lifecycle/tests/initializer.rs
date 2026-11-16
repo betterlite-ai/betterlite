@@ -208,7 +208,7 @@ fn use_v2_routes_the_initializer(#[case] entry: &str, #[case] routed_to_v2: bool
 }
 
 // the entries are configured through the initializer, which must reject them without registering anything
-fn initialize_entry(entry: &str) -> Result<NomaCallback, NomaLifecycleError> {
+fn initialize_rejected(entry: &str) -> NomaLifecycleError {
     let env = environment(&[]);
     let mut recorder = Recorder::default();
     let context = InitContext {
@@ -216,16 +216,16 @@ fn initialize_entry(entry: &str) -> Result<NomaCallback, NomaLifecycleError> {
         registry: &mut recorder,
     };
     let body = format!(r#"{{"guardrail": "noma", "mode": "pre_call", {entry}}}"#);
-    let built = initialize_guardrail(request(&litellm_params(&body), "bad"), context);
+    let error = initialize_guardrail(request(&litellm_params(&body), "bad"), context).unwrap_err();
     assert!(recorder.callbacks.is_empty());
-    built
+    error
 }
 
 #[rstest]
 #[case::number(r#""use_v2": 1"#)]
 #[case::text_that_is_no_boolean(r#""use_v2": "maybe""#)]
 fn a_use_v2_that_is_no_boolean_is_an_error(#[case] entry: &str) {
-    let error = initialize_entry(entry).unwrap_err();
+    let error = initialize_rejected(entry);
     assert!(matches!(
         error,
         NomaLifecycleError::Params(_) | NomaLifecycleError::Environment(_)
@@ -272,6 +272,6 @@ fn the_v2_guardrail_reads_the_environment_it_is_given() {
 #[case::anonymize_input(r#""anonymize_input": "no""#)]
 #[case::application_id(r#""application_id": 7"#)]
 fn a_parameter_of_the_wrong_type_is_an_error(#[case] entry: &str) {
-    let error = initialize_entry(entry).unwrap_err();
+    let error = initialize_rejected(entry);
     assert!(matches!(error, NomaLifecycleError::Params(_)));
 }

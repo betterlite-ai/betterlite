@@ -314,8 +314,8 @@ async fn an_assembly_failure_is_raised(#[case] assembly: Assembly, #[case] scans
 }
 
 fn padded(chunks: usize, bytes: usize) -> Vec<Result<GuardrailValue, ModelStreamError>> {
-    (0..chunks)
-        .map(|_index| Ok(GuardrailValue::Text("x".repeat(bytes))))
+    std::iter::repeat_with(|| Ok(GuardrailValue::Text("x".repeat(bytes))))
+        .take(chunks)
         .collect()
 }
 
