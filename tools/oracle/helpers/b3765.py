@@ -1,18 +1,16 @@
 import asyncio
 import os
+from collections.abc import Awaitable
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.compresr.compresr import CompresrGuardrail
-from litellm.types.utils import GenericGuardrailAPIInputs
-from pydantic import JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 JSON: Final = TypeAdapter(JsonValue)
-INPUTS: Final = TypeAdapter(GenericGuardrailAPIInputs)
-START_TIME: Final = datetime(2024, 1, 1, tzinfo=UTC)
 
 
 class Config(TypedDict, total=False):
@@ -56,13 +54,26 @@ class LoggingDetails(Protocol):
     model_call_details: Details
 
 
+@runtime_checkable
+class Applier(Protocol):
+    def apply_guardrail(
+        self, inputs: dict[str, JsonValue], request_data: dict[str, JsonValue],
+        input_type: Literal["request"], logging_obj: Logging | None = None,
+    ) -> Awaitable[dict[str, JsonValue]]: ...
+
+
+class ApplierRecord(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    applier: Applier
+
+
 def logging_for(caller: Caller) -> Logging:
     logging_obj = Logging(
         model="gpt-4o",
         messages=None,
         stream=False,
         call_type="acompletion",
-        start_time=START_TIME,
+        start_time=datetime(2024, 1, 1, tzinfo=UTC),
         litellm_call_id=caller["call_id"],
         function_id="b3765",
     )
@@ -119,6 +130,16 @@ class Recorder:
         return httpx.Response(self.reply["status"], content=self.reply["body"].encode())
 
 
+async def apply_once(
+    applier: Applier, call: ApplyCall, request_data: dict[str, JsonValue]
+) -> dict[str, JsonValue]:
+    caller = call["caller"]
+    logging_obj = None if caller is None else logging_for(caller)
+    return await applier.apply_guardrail(
+        call["inputs"], request_data, "request", logging_obj
+    )
+
+
 def apply(call: ApplyCall) -> JsonValue:
     guardrail = CompresrGuardrail(**call["config"])
     recorder = Recorder(call["reply"])
@@ -128,13 +149,10 @@ def apply(call: ApplyCall) -> JsonValue:
     request_data: dict[str, JsonValue] = {}
     if headers is not None:
         request_data["proxy_server_request"] = {"headers": dict(headers)}
-    caller = call["caller"]
-    logging_obj = None if caller is None else logging_for(caller)
-    inputs = INPUTS.validate_python(call["inputs"])
-    output = asyncio.run(
-        guardrail.apply_guardrail(inputs, request_data, "request", logging_obj)
-    )
-    return {"inputs": JSON.validate_python(output), "requests": recorder.requests}
+    # LiteLLM types apply_guardrail with GenericGuardrailAPIInputs, whose message TypedDicts carry Any
+    applier = ApplierRecord.model_validate({"applier": guardrail}).applier
+    output = asyncio.run(apply_once(applier, call, request_data))
+    return {"inputs": output, "requests": recorder.requests}
 
 
 def run(input_value: InitCall | ApplyCall) -> JsonValue:
