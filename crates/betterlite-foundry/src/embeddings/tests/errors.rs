@@ -128,8 +128,8 @@ fn meaningful_error_in_reply() {
     let response = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap();
     assert_eq!(response.data.len(), 1);
     // the reply error is checked before the rest of the reply is decoded
-    let shape = format!(r#"{{"error":{{"message":"quota"}},"data":"text"}}"#);
-    let factory = Factory::new(Answer::json(&shape));
+    let shape = r#"{"error":{"message":"quota"},"data":"text"}"#;
+    let factory = Factory::new(Answer::json(shape));
     let error = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap_err();
     assert!(matches!(
         error,
