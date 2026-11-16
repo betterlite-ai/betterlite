@@ -1945,6 +1945,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",
  "fancy-regex 0.19.2",
