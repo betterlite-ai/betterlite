@@ -1,0 +1,53 @@
+kind: helper
+name: fireworks-ai-chat-stream-options
+call:
+  b6072:
+    catalog: []
+    headers: []
+    keys: []
+    requests:
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {stream: true}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {stream: true, stream_options: null}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {stream: true, stream_options: {}}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {stream: true, stream_options: {include_usage: false, foo: 1}}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {stream: true, stream_options: {include_usage: true, foo: 1}}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {stream: true, stream_options: {foo: 1}}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {stream: false, stream_options: {include_usage: false}}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {stream_options: {foo: 1}}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {stream: null, stream_options: {foo: 1}}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {stream: true, temperature: 0}
+    replies: []
+    chunks: []
+    models: []
+env: {}
+compare: {ignore: []}
