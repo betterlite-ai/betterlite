@@ -18,6 +18,9 @@ deviations:
   - what: The 400 detail's lasso_response carries only the violations_detected, deputies and findings fields, not any other key the Lasso answer held.
     why: The transport decodes the answer into its typed LassoResponse model (B3778) and drops unknown keys, while LiteLLM echoes the whole decoded JSON object into detail["lasso_response"]. The error text and status are unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L857-L864
+  - what: A Lasso request that times out fails with the text "Lasso API timeout".
+    why: LiteLLM's async handler turns the httpx timeout into litellm.Timeout before _handle_api_error sees it, so the check for httpx.TimeoutException never matches and the failure carries the generic wrapper text with the elapsed seconds. betterlite keeps the status (500) and uses the specific text the handler names, since the elapsed time is not a fixed message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L589-L622
 kept_bugs:
   - what: With neither a messages list nor an input text or list, the legacy Lakera check still posts to the v1 endpoint with an empty body.
     why: LiteLLM starts the body as an empty string and posts it unchanged, so the v1 API answers an error status and the hook fails that request. Copied because the task text and LiteLLM agree on the call being made, and a working setup may rely on it.

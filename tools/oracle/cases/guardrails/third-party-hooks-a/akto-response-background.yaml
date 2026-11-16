@@ -1,0 +1,21 @@
+kind: helper
+name: akto-response-background
+call:
+  b9451:
+    vendor: akto
+    akto_api_key: akto-key
+    unreachable_fallback: fail_closed
+    event_hook: post_call
+    texts: [the model answer]
+    request_data:
+      messages:
+        - {role: user, content: hello there}
+      model: gpt-4o
+      metadata: {user_api_key_user_id: user-1}
+    input_type: response
+    answers:
+      - status: 200
+        headers: {}
+        body: {data: {guardrailsResult: {Allowed: false, Reason: ignored on the response side}}}
+env: {}
+compare: {ignore: []}
