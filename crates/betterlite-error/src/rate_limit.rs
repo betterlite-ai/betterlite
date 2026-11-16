@@ -32,7 +32,7 @@ pub enum RateLimitDimension {
 pub const PROXY_LLM_PROVIDER_FALLBACK: &str = "litellm_proxy";
 
 // ProxyRateLimitError.__init__'s six arguments, before its defaults fill the model and provider.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ProxyRateLimitErrorInit {
     pub detail: Payload,
     pub headers: Option<BTreeMap<String, Payload>>,
@@ -43,7 +43,7 @@ pub struct ProxyRateLimitErrorInit {
 }
 
 // A 429 from litellm's proxy-side limiting: the HTTPException side a route handler forwards and the RateLimitError side callers categorize.
-#[derive(Clone, PartialEq, thiserror::Error)]
+#[derive(Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{message}")]
 pub struct ProxyRateLimitError {
     pub detail: Payload,
@@ -78,11 +78,11 @@ impl ProxyRateLimitError {
             llm_provider,
         } = init;
         let message = coerce_message(&detail);
-        let headers = headers.map(http_headers).transpose()?;
+        let checked_headers = headers.map(http_headers).transpose()?;
         Ok(Self {
             detail,
             message,
-            headers,
+            headers: checked_headers,
             category: category.unwrap_or(RateLimitCategory::LitellmRateLimit),
             rate_limit_type,
             model: model.unwrap_or_default(),

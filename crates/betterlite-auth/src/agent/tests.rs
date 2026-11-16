@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
-use serde_json::json;
 
 use super::{AgentRef, get_agent_by_id};
 use crate::agent_policy::AgentResponse;
@@ -10,12 +10,23 @@ use crate::agent_registry::AgentRegistry;
 use crate::agent_registry::AgentRegistryApi as _;
 
 fn config_json(agent_name: &str) -> Json {
-    serde_json::from_value(json!({
-        "agent_name": agent_name,
-        "agent_card_params": {"model": "gpt-4o"},
-        "litellm_params": {"max_budget_per_session": 1.5},
-    }))
-    .expect("the config entry is a JSON object")
+    Json::Object(JsonObject::from([
+        ("agent_name".to_owned(), Json::Text(agent_name.to_owned())),
+        (
+            "agent_card_params".to_owned(),
+            Json::Object(JsonObject::from([(
+                "model".to_owned(),
+                Json::Text(String::from("gpt-4o")),
+            )])),
+        ),
+        (
+            "litellm_params".to_owned(),
+            Json::Object(JsonObject::from([(
+                "max_budget_per_session".to_owned(),
+                Json::Number(serde_json::Number::from_f64(1.5).expect("1.5 is finite")),
+            )])),
+        ),
+    ]))
 }
 
 fn registry_with_config(agent_name: &str) -> AgentRegistry {

@@ -1,7 +1,13 @@
 #![cfg(test)]
+#![expect(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    reason = "test fixtures are built with serde_json::json!, whose map construction and Into calls the lint table bans"
+)]
 
 use std::collections::BTreeMap;
 
+use axum::body::to_bytes;
 use axum::http::StatusCode;
 use axum::http::header::{HeaderMap, HeaderValue};
 use axum::response::IntoResponse as _;
@@ -41,9 +47,9 @@ fn rate_limit_dimension_tests_behavior(#[case] dimension: RateLimitDimension, #[
 #[case::nested_error(json!({"error": {"message": "inner"}}), "inner")]
 #[case::nested_message(json!({"message": {"message": "deep"}}), "deep")]
 #[case::error_before_message(json!({"error": "first", "message": "second"}), "first")]
-#[case::non_text_error_falls_through(json!({"error": 42, "message": "fallback"}), "fallback")]
+#[case::non_text_error_falls_through(json!({"error": 42_i32, "message": "fallback"}), "fallback")]
 #[case::object_json(json!({"foo": "bar"}), "{\"foo\":\"bar\"}")]
-#[case::number(json!(7), "7")]
+#[case::number(json!(7_i32), "7")]
 #[case::boolean(json!(true), "true")]
 #[case::array(json!(["a"]), "[\"a\"]")]
 fn coerce_message_tests_behavior(#[case] detail: Payload, #[case] expected: &str) {
@@ -85,7 +91,7 @@ fn new_keeps_given_fields() {
     let init = ProxyRateLimitErrorInit {
         detail: json!({"error": {"message": "slow down"}}),
         headers: Some(BTreeMap::from([
-            (String::from("retry-after"), json!(5)),
+            (String::from("retry-after"), json!(5_i32)),
             (String::from("x-bucket"), json!("a")),
         ])),
         category: Some(RateLimitCategory::LitellmBatchRateLimit),
@@ -123,11 +129,11 @@ fn explicit_empty_model_and_provider_stay_empty() {
 
 #[rstest]
 #[case::text(json!("z"), "z")]
-#[case::integer(json!(5), "5")]
-#[case::float(json!(1.5), "1.5")]
+#[case::integer(json!(5_i32), "5")]
+#[case::float(json!(1.5_f64), "1.5")]
 #[case::empty_text(json!(""), "")]
 #[case::boolean(json!(true), "true")]
-#[case::object(json!({"a": 1}), "{\"a\":1}")]
+#[case::object(json!({"a": 1_i32}), "{\"a\":1}")]
 fn header_values_are_stringified(#[case] value: Payload, #[case] expected: &str) {
     let error = error_with_headers(BTreeMap::from([(String::from("x-test"), value)]));
     let headers = error.headers.expect("headers were given");
@@ -151,7 +157,7 @@ async fn into_response_is_a_429_with_detail_and_headers() {
     let init = ProxyRateLimitErrorInit {
         detail: json!({"error": {"message": "slow down"}}),
         headers: Some(BTreeMap::from([
-            (String::from("retry-after"), json!(5)),
+            (String::from("retry-after"), json!(5_i32)),
             (String::from("x-bucket"), json!("a")),
         ])),
         category: None,
@@ -171,7 +177,7 @@ async fn into_response_is_a_429_with_detail_and_headers() {
         response.headers().get("x-bucket"),
         Some(&HeaderValue::from_static("a"))
     );
-    let body = axum::body::to_bytes(response.into_body(), 1024)
+    let body = to_bytes(response.into_body(), 1024)
         .await
         .expect("the detail body is small");
     assert_eq!(
@@ -223,8 +229,8 @@ async fn into_response_keeps_headers_that_differ_only_by_case() {
     let init = ProxyRateLimitErrorInit {
         detail: Payload::Null,
         headers: Some(BTreeMap::from([
-            (String::from("Retry-After"), json!(5)),
-            (String::from("retry-after"), json!(9)),
+            (String::from("Retry-After"), json!(5_i32)),
+            (String::from("retry-after"), json!(9_i32)),
         ])),
         category: None,
         rate_limit_type: None,

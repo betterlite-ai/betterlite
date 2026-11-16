@@ -4,9 +4,9 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedModel};
 use rstest::rstest;
-use serde_json::json;
 
 use super::{NoRouter, resolve_rate_limit_provider};
 use crate::rejection_provider::{DeploymentSnapshot, ProviderResolution, SnapshotError};
@@ -79,11 +79,16 @@ impl DeploymentSnapshot for FakeRouter {
 }
 
 fn deployment(alias: &str, underlying: &str) -> Json {
-    serde_json::from_value(json!({
-        "model_name": alias,
-        "litellm_params": {"model": underlying},
-    }))
-    .expect("a deployment row is a JSON object")
+    Json::Object(JsonObject::from([
+        ("model_name".to_owned(), Json::Text(alias.to_owned())),
+        (
+            "litellm_params".to_owned(),
+            Json::Object(JsonObject::from([(
+                "model".to_owned(),
+                Json::Text(underlying.to_owned()),
+            )])),
+        ),
+    ]))
 }
 
 fn rows(texts: &[&str]) -> Vec<Json> {

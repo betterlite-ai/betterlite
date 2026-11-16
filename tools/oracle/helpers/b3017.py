@@ -11,11 +11,11 @@ from pydantic import JsonValue, TypeAdapter
 
 
 class Registry(Protocol):
-    def load_agents_from_config(
-        self, agent_config: Sequence[Mapping[str, JsonValue]] | None = None
-    ) -> None: ...
-
-    def register_agent(self, agent_config: AgentResponse) -> None: ...
+    def load_agents_from_db_and_config(
+        self,
+        agent_config: Sequence[Mapping[str, JsonValue]] | None = None,
+        db_agents: Sequence[Mapping[str, JsonValue]] | None = None,
+    ) -> Sequence[AgentResponse]: ...
 
     def get_agent_by_id(self, agent_id: str) -> AgentResponse | None: ...
 
@@ -103,9 +103,9 @@ def agent_snapshot(agent: AgentResponse) -> AgentSnapshot:
 
 def run_agent_lookup(call: AgentLookupInput) -> AgentLookupOutput:
     registry = REGISTRY()
-    for record in call["registered_agents"]:
-        registry.register_agent(AgentResponse.model_validate(record))
-    registry.load_agents_from_config(call["config_agents"])
+    registry.load_agents_from_db_and_config(
+        agent_config=call["config_agents"], db_agents=call["registered_agents"]
+    )
     found = registry.get_agent_by_id(call["lookup_id"])
     if found is None:
         return {"found": None}
