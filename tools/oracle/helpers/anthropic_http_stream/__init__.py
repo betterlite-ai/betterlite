@@ -1,5 +1,4 @@
 import asyncio
-import functools
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Final
@@ -103,10 +102,14 @@ async def _async_call(input_value: Input, client: Client) -> Opened:
     return await HANDLER.make_call(**arguments)
 
 
+def _sync_call(input_value: Input, client: Client) -> Opened:
+    arguments = _arguments(input_value, client)
+    return HANDLER.make_sync_call(**arguments)
+
+
 async def _threaded_call(input_value: Input, client: Client) -> Opened:
     loop = asyncio.get_running_loop()
-    call = functools.partial(HANDLER.make_sync_call, **_arguments(input_value, client))
-    return await loop.run_in_executor(None, call)
+    return await loop.run_in_executor(None, _sync_call, input_value, client)
 
 
 async def _settled(call: Awaitable[Opened]) -> Settled:

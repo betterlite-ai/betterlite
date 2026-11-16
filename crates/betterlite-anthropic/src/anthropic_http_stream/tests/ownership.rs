@@ -14,7 +14,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::aleph_alpha::error::AlephAlphaError;
@@ -113,9 +113,8 @@ async fn anthropic_http_stream_proxied_status_error() {
     tasks.spawn(serve_response(listener, status_response(400, ERROR_TEXT)));
     let client = proxied_client();
     let drain_client = client.clone();
-    let error = match open_with(&api_base, &client, Duration::from_secs(10)).await {
-        Ok(_) => panic!("a 400 reply opens no stream"),
-        Err(error) => error,
+    let Err(error) = open_with(&api_base, &client, Duration::from_secs(10)).await else {
+        panic!("a 400 reply opens no stream")
     };
     let StreamOpenError::Anthropic {
         status_code,
@@ -148,9 +147,8 @@ async fn anthropic_http_stream_proxied_open_timeout() {
     tasks.spawn(serve_silence(listener));
     let client = proxied_client();
     let drain_client = client.clone();
-    let error = match open_with(&api_base, &client, SHORT_TIMEOUT).await {
-        Ok(_) => panic!("a server that never answers opens no stream"),
-        Err(error) => error,
+    let Err(error) = open_with(&api_base, &client, SHORT_TIMEOUT).await else {
+        panic!("a server that never answers opens no stream")
     };
     let StreamOpenError::Reraised { source } = error else {
         panic!("a send timeout is re-raised");
@@ -176,9 +174,8 @@ async fn anthropic_http_stream_proxied_connect_refused() {
     let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
     drop(listener);
     let client = proxied_client();
-    let error = match open_with(&api_base, &client, SHORT_TIMEOUT).await {
-        Ok(_) => panic!("a refused connection opens no stream"),
-        Err(error) => error,
+    let Err(error) = open_with(&api_base, &client, SHORT_TIMEOUT).await else {
+        panic!("a refused connection opens no stream")
     };
     let StreamOpenError::Unknown { source } = error else {
         panic!("a refused connection becomes AnthropicError(500)");
@@ -201,9 +198,8 @@ async fn anthropic_http_stream_proxied_error_body_stalls() {
     tasks.spawn(serve_stalled_body(listener, 500));
     let client = proxied_client();
     let drain_client = client.clone();
-    let error = match open_with(&api_base, &client, SHORT_TIMEOUT).await {
-        Ok(_) => panic!("a 500 reply opens no stream"),
-        Err(error) => error,
+    let Err(error) = open_with(&api_base, &client, SHORT_TIMEOUT).await else {
+        panic!("a 500 reply opens no stream")
     };
     assert_status(error, 500);
     drain_client
@@ -225,9 +221,8 @@ async fn anthropic_http_stream_proxied_error_body_truncated() {
     tasks.spawn(serve_short_body(listener, 500));
     let client = proxied_client();
     let drain_client = client.clone();
-    let error = match open_with(&api_base, &client, SHORT_TIMEOUT).await {
-        Ok(_) => panic!("a 500 reply opens no stream"),
-        Err(error) => error,
+    let Err(error) = open_with(&api_base, &client, SHORT_TIMEOUT).await else {
+        panic!("a 500 reply opens no stream")
     };
     assert_status(error, 500);
     drain_client
@@ -250,9 +245,8 @@ async fn anthropic_http_stream_proxied_error_body_truncated_keeps_429() {
     tasks.spawn(serve_short_body(listener, 429));
     let client = proxied_client();
     let drain_client = client.clone();
-    let error = match open_with(&api_base, &client, SHORT_TIMEOUT).await {
-        Ok(_) => panic!("a 429 reply opens no stream"),
-        Err(error) => error,
+    let Err(error) = open_with(&api_base, &client, SHORT_TIMEOUT).await else {
+        panic!("a 429 reply opens no stream")
     };
     assert_status(error, 429);
     drain_client
@@ -275,15 +269,13 @@ async fn anthropic_http_stream_error_body_read_capped() {
     tasks.spawn(serve_stalled_body(listener, 500));
     let client = proxied_client();
     let drain_client = client.clone();
-    let error = match timeout(
+    let Err(error) = timeout(
         Duration::from_secs(9),
         open_with(&api_base, &client, LONG_TIMEOUT),
     )
     .await
-    .expect("the error body read is capped instead of waiting for the call deadline")
-    {
-        Ok(_) => panic!("a 500 reply opens no stream"),
-        Err(error) => error,
+    .expect("the error body read is capped instead of waiting for the call deadline") else {
+        panic!("a 500 reply opens no stream")
     };
     assert_status(error, 500);
     drain_client
@@ -452,7 +444,7 @@ async fn serve_trickle(listener: TcpListener, frames: usize) {
         {
             return;
         }
-        tokio::time::sleep(TRICKLE_STEP).await;
+        sleep(TRICKLE_STEP).await;
     }
 }
 

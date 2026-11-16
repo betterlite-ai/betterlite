@@ -21,22 +21,32 @@ use super::fixture::{
     stream_build_with, stream_call,
 };
 
+#[derive(Clone, Copy, Debug)]
+enum Scenario {
+    StreamPost,
+    HandshakeError,
+    NonHttpError500,
+    SyncStatusGuard,
+    StreamFlagAndContext,
+    ResponseHeaders,
+}
+
 #[rstest]
-#[case::case_0_stream_post(0)]
-#[case::case_1_handshake_error(1)]
-#[case::case_2_non_http_error_500(2)]
-#[case::case_3_sync_status_guard(3)]
-#[case::case_4_stream_flag_and_context(4)]
-#[case::case_5_response_headers(5)]
+#[case::stream_post(Scenario::StreamPost)]
+#[case::handshake_error(Scenario::HandshakeError)]
+#[case::non_http_error_500(Scenario::NonHttpError500)]
+#[case::sync_status_guard(Scenario::SyncStatusGuard)]
+#[case::stream_flag_and_context(Scenario::StreamFlagAndContext)]
+#[case::response_headers(Scenario::ResponseHeaders)]
 #[tokio::test]
-async fn anthropic_http_stream_cases(#[case] case: u8) {
-    match case {
-        0 => stream_post().await,
-        1 => handshake_error().await,
-        2 => non_http_error_500().await,
-        3 => sync_status_guard().await,
-        4 => stream_flag_and_context().await,
-        _ => response_headers_case().await,
+async fn anthropic_http_stream_cases(#[case] scenario: Scenario) {
+    match scenario {
+        Scenario::StreamPost => stream_post().await,
+        Scenario::HandshakeError => handshake_error().await,
+        Scenario::NonHttpError500 => non_http_error_500().await,
+        Scenario::SyncStatusGuard => sync_status_guard().await,
+        Scenario::StreamFlagAndContext => stream_flag_and_context().await,
+        Scenario::ResponseHeaders => response_headers_case().await,
     }
 }
 
@@ -158,7 +168,7 @@ async fn handshake_error() {
         response_headers(),
         None,
     );
-    let error = handshake_result(response, false).await;
+    let error = handshake_result(&response, false).await;
     let (status, body, headers) = anthropic_error(error);
     assert_eq!(status, 400);
     assert_eq!(body, ERROR_TEXT);
@@ -170,7 +180,7 @@ async fn handshake_error() {
         response_headers(),
         Some(exception_headers()),
     );
-    let carried_error = handshake_result(carried, false).await;
+    let carried_error = handshake_result(&carried, false).await;
     let (carried_status, _, carried_headers) = anthropic_error(carried_error);
     assert_eq!(carried_status, 400);
     assert_eq!(header(&carried_headers, "x-request-id"), Some("req-2"));
@@ -180,29 +190,29 @@ async fn handshake_error() {
         response_headers(),
         None,
     );
-    let sync_error = handshake_result(sync_response, true).await;
+    let sync_error = handshake_result(&sync_response, true).await;
     let (sync_status, sync_body, sync_headers) = anthropic_error(sync_error);
     assert_eq!(sync_status, 400);
     assert_eq!(sync_body, ERROR_TEXT);
     assert_eq!(header(&sync_headers, "x-request-id"), Some("req-1"));
     // a body that is not UTF-8 reads its byte count, the text a JSON record can carry
     let bytes = FixtureTransport::status_bytes(400, vec![0xff, 0xfe], response_headers(), None);
-    let bytes_error = handshake_result(bytes, false).await;
+    let bytes_error = handshake_result(&bytes, false).await;
     let (_, bytes_body, _) = anthropic_error(bytes_error);
     assert_eq!(bytes_body, "2 bytes that are not text");
 }
 
 async fn handshake_result(
-    transport: FixtureTransport,
+    transport: &FixtureTransport,
     synchronous: bool,
 ) -> StreamOpenError<FixtureFailure> {
     let messages = messages();
     let reverse = reverse_map();
     let logger = RecordingLogger::new(&messages);
     let clients = StreamClients {
-        supplied: Some(&transport),
-        module_level_aclient: &transport,
-        module_level_client: &transport,
+        supplied: Some(transport),
+        module_level_aclient: transport,
+        module_level_client: transport,
         logger: &logger,
     };
     let call = stream_call(DATA, &messages, &reverse);
@@ -224,10 +234,10 @@ async fn handshake_result(
         .await
     };
     assert_no_post_call(&logger.state());
-    match result {
-        Ok(_) => panic!("a status error opens no stream"),
-        Err(error) => error,
-    }
+    let Err(error) = result else {
+        panic!("a status error opens no stream")
+    };
+    error
 }
 
 fn anthropic_error<Failure>(error: StreamOpenError<Failure>) -> (u16, String, HeaderMap)
@@ -254,10 +264,13 @@ where
 
 async fn non_http_error_500() {
     let unknown_async = failed_call(PostFailure::Unknown(FixtureFailure::Unknown), false).await;
-    let StreamOpenError::Unknown { source } = unknown_async else {
+    let StreamOpenError::Unknown {
+        source: unknown_source,
+    } = unknown_async
+    else {
         panic!("an unrecognized exception becomes AnthropicError(500)")
     };
-    assert_eq!(source.to_string(), "the transport exploded");
+    assert_eq!(unknown_source.to_string(), "the transport exploded");
     let unknown_sync = failed_call(PostFailure::Unknown(FixtureFailure::Unknown), true).await;
     let StreamOpenError::Unknown {
         source: sync_source,
@@ -267,10 +280,13 @@ async fn non_http_error_500() {
     };
     assert_eq!(sync_source.to_string(), "the transport exploded");
     let timeout_async = failed_call(PostFailure::Known(FixtureFailure::Timeout), false).await;
-    let StreamOpenError::Reraised { source } = timeout_async else {
+    let StreamOpenError::Reraised {
+        source: timeout_source,
+    } = timeout_async
+    else {
         panic!("a LITELLM_EXCEPTION_TYPES member is re-raised")
     };
-    assert!(matches!(source, FixtureFailure::Timeout));
+    assert!(matches!(timeout_source, FixtureFailure::Timeout));
     let timeout_sync = failed_call(PostFailure::Known(FixtureFailure::Timeout), true).await;
     let StreamOpenError::Reraised {
         source: sync_timeout,
@@ -314,10 +330,10 @@ async fn failed_call(
         .await
     };
     assert_no_post_call(&logger.state());
-    match result {
-        Ok(_) => panic!("a failing transport opens no stream"),
-        Err(error) => error,
-    }
+    let Err(error) = result else {
+        panic!("a failing transport opens no stream")
+    };
+    error
 }
 
 async fn sync_status_guard() {
@@ -362,16 +378,15 @@ async fn sync_status_rejects() {
         module_level_client: &transport,
         logger: &logger,
     };
-    let error = match (StreamOpening {
+    let Err(error) = (StreamOpening {
         clients,
         call: &stream_call(DATA, &messages, &reverse),
         build: stream_build(&FixedIds),
     })
     .make_sync_call()
     .await
-    {
-        Ok(_) => panic!("the sync helper rejects a returned status"),
-        Err(error) => error,
+    else {
+        panic!("the sync helper rejects a returned status")
     };
     assert_no_post_call(&logger.state());
     let (status, body, headers) = anthropic_error(error);
@@ -407,16 +422,15 @@ async fn guard_message(messages: &Json, lines: &[&str], limit: usize) -> String 
         module_level_client: &transport,
         logger: &logger,
     };
-    let error = match (StreamOpening {
+    let Err(error) = (StreamOpening {
         clients,
         call: &stream_call(DATA, messages, &reverse),
         build: stream_build_with(&FixedIds, limit),
     })
     .make_sync_call()
     .await
-    {
-        Ok(_) => panic!("the sync helper rejects a returned status"),
-        Err(error) => error,
+    else {
+        panic!("the sync helper rejects a returned status")
     };
     assert_no_post_call(&logger.state());
     let (status, body, headers) = anthropic_error(error);
@@ -591,16 +605,15 @@ async fn anthropic_http_stream_malformed_api_base() {
         module_level_client: &transport,
         logger: &logger,
     };
-    let error = match (StreamOpening {
+    let Err(error) = (StreamOpening {
         clients,
         call: &call,
         build: stream_build(&FixedIds),
     })
     .make_call()
     .await
-    {
-        Ok(_) => panic!("a malformed api_base opens no stream"),
-        Err(error) => error,
+    else {
+        panic!("a malformed api_base opens no stream")
     };
     assert!(matches!(error, StreamOpenError::Endpoint { .. }));
     assert!(transport.posts().is_empty());

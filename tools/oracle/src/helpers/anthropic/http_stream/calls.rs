@@ -1,3 +1,4 @@
+use std::mem;
 use std::sync::PoisonError;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -117,7 +118,7 @@ pub(crate) fn attempt(
     });
     Ok(Attempt {
         result,
-        posts: std::mem::take(&mut *client.posts.lock().unwrap_or_else(PoisonError::into_inner)),
+        posts: mem::take(&mut *client.posts.lock().unwrap_or_else(PoisonError::into_inner)),
         polled: client.polled.load(Ordering::SeqCst),
     })
 }

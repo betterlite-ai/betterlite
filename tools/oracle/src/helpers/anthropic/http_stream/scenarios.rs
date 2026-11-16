@@ -1,3 +1,4 @@
+use std::mem;
 use std::sync::PoisonError;
 
 use betterlite_anthropic::anthropic_http_stream::call::{OpenedStream, StreamBuild, StreamClients};
@@ -83,6 +84,7 @@ fn error_value(input: &Input, synchronous: bool, outcome: Outcome) -> HelperValu
     let Err(error) = attempt(input, synchronous, outcome)?.result else {
         return Err(value_error("the call opened a stream".to_owned()));
     };
+    let text = error.to_string();
     match error {
         StreamOpenError::Anthropic {
             status_code,
@@ -102,7 +104,9 @@ fn error_value(input: &Input, synchronous: bool, outcome: Outcome) -> HelperValu
             source: HelperFailure::Timeout,
         } => Ok(json!({ "class": "Timeout", "status": 408 })),
         // any other raised error carries the fixture's own diagnostic as its display text
-        other => Err(value_error(other.to_string())),
+        StreamOpenError::Reraised { .. } | StreamOpenError::Endpoint { .. } => {
+            Err(value_error(text))
+        }
     }
 }
 
@@ -139,7 +143,7 @@ pub(super) fn stream_flag_and_context(input: &Input) -> HelperResult {
             build,
         ))
         .map_err(|error| value_error(error.to_string()))?;
-    let posts = std::mem::take(&mut *client.posts.lock().unwrap_or_else(PoisonError::into_inner));
+    let posts = mem::take(&mut *client.posts.lock().unwrap_or_else(PoisonError::into_inner));
     let post = posts.first().map_or(Value::Null, |post| {
         post_value(post, &input.request_header_names)
     });

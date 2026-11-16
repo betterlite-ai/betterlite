@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::convert::Infallible;
-use std::future::Future;
+use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -108,7 +108,7 @@ impl FixtureTransport {
     }
 
     pub(crate) fn posts(&self) -> Vec<StreamPost> {
-        std::mem::take(&mut *self.posts.lock().unwrap_or_else(PoisonError::into_inner))
+        mem::take(&mut *self.posts.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     pub(crate) fn polled(&self) -> bool {
@@ -126,41 +126,38 @@ impl FixtureTransport {
 impl StreamTransport for FixtureTransport {
     type Failure = FixtureFailure;
 
-    fn post(
+    async fn post(
         &self,
         post: StreamPost,
-    ) -> impl Future<Output = Result<StreamReply<FixtureFailure>, PostFailure<FixtureFailure>>> + Send
-    {
-        async move {
-            self.posts
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(post);
-            let verdict = self
-                .take()
-                .ok_or(PostFailure::Unknown(FixtureFailure::Exhausted))?;
-            let (status_code, headers, lines) = match verdict {
-                Verdict::Failed(failure) => return Err(failure),
-                Verdict::Reply {
-                    status_code,
-                    headers,
-                    lines,
-                } => (status_code, headers, lines),
-            };
-            let flag = Arc::clone(&self.polled);
-            let items = lines
-                .into_iter()
-                .map(|line| Ok(TransportChunk::Text(line)))
-                .collect::<Vec<Result<TransportChunk, ReceiveError<FixtureFailure>>>>();
-            let lines = stream::iter(items)
-                .inspect(move |_item| flag.store(true, Ordering::SeqCst))
-                .boxed();
-            Ok(StreamReply {
+    ) -> Result<StreamReply<FixtureFailure>, PostFailure<FixtureFailure>> {
+        self.posts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(post);
+        let verdict = self
+            .take()
+            .ok_or(PostFailure::Unknown(FixtureFailure::Exhausted))?;
+        let (status_code, headers, lines) = match verdict {
+            Verdict::Failed(failure) => return Err(failure),
+            Verdict::Reply {
                 status_code,
                 headers,
                 lines,
-            })
-        }
+            } => (status_code, headers, lines),
+        };
+        let flag = Arc::clone(&self.polled);
+        let items = lines
+            .into_iter()
+            .map(|line| Ok(TransportChunk::Text(line)))
+            .collect::<Vec<Result<TransportChunk, ReceiveError<FixtureFailure>>>>();
+        let lines = stream::iter(items)
+            .inspect(move |_item| flag.store(true, Ordering::SeqCst))
+            .boxed();
+        Ok(StreamReply {
+            status_code,
+            headers,
+            lines,
+        })
     }
 }
 

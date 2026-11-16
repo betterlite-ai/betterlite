@@ -60,13 +60,15 @@ impl FixtureTransport {
     }
 
     pub(crate) fn status(status_code: u16, body: &str, headers: HeaderMap) -> Self {
-        Self::new(Verdict::Failed(PostFailure::Status(Box::new(StatusFailure {
-            status_code,
-            body: body.as_bytes().to_vec(),
-            // the client raised on the response, so the headers come from the response itself
-            exception_headers: None,
-            response_headers: Some(headers),
-        }))))
+        Self::new(Verdict::Failed(PostFailure::Status(Box::new(
+            StatusFailure {
+                status_code,
+                body: body.as_bytes().to_vec(),
+                // the client raised on the response, so the headers come from the response itself
+                exception_headers: None,
+                response_headers: Some(headers),
+            },
+        ))))
     }
 }
 
