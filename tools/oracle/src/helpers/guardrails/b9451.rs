@@ -8,8 +8,8 @@ mod scripted;
 use serde::Deserialize;
 use tokio::runtime::Builder;
 
+use betterlite_oracle_helper_api::error::OrHelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use scripted::failure;
 
 pub(crate) struct Op;
 
@@ -30,7 +30,7 @@ impl Helper for Op {
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(failure)?;
+            .or_config_error()?;
         runtime.block_on(async {
             match input {
                 Input::Aim(case) => aim::run(case).await,

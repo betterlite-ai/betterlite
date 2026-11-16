@@ -54,8 +54,8 @@ pub async fn apply_guardrail(
             None
         }
     };
-    if let Some(handled) = handled
-        && handled != input_type
+    if let Some(only) = handled
+        && only != input_type
     {
         return Ok(inputs);
     }
@@ -86,12 +86,7 @@ async fn check_request(
     if verdict.allowed {
         return Ok(inputs);
     }
-    block(guardrail, &inputs, request_data, &verdict)?;
-    let detail = if verdict.reason.is_empty() {
-        BLOCKED_MESSAGE.to_owned()
-    } else {
-        verdict.reason
-    };
+    let detail = block(guardrail, &inputs, request_data, verdict)?;
     Err(ThirdPartyHookError::Rejection {
         status: StatusCode::FORBIDDEN,
         detail: GuardrailValue::Text(detail),
@@ -103,8 +98,8 @@ fn block(
     guardrail: &AktoMirroring,
     inputs: &AktoInputs,
     request_data: &BTreeMap<String, GuardrailValue>,
-    verdict: &GuardrailVerdict,
-) -> Result<(), ThirdPartyHookError> {
+    verdict: GuardrailVerdict,
+) -> Result<String, ThirdPartyHookError> {
     let mut blocked = build_akto_payload(guardrail, inputs, request_data, BLOCKED_STATUS, false)?;
     blocked.response_payload = marker_body(&verdict.reason)?;
     blocked.response_headers = serde_json::to_string(&ResponseHeaders {
@@ -116,7 +111,10 @@ fn block(
         ingest_data: true,
     };
     mirror_in_background(guardrail, flags, blocked);
-    Ok(())
+    if verdict.reason.is_empty() {
+        return Ok(BLOCKED_MESSAGE.to_owned());
+    }
+    Ok(verdict.reason)
 }
 
 fn send_response(

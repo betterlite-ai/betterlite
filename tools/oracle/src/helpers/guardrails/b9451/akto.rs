@@ -12,8 +12,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::scripted::{Scripted, failure, outcome_view};
-use betterlite_oracle_helper_api::error::HelperError;
+use super::scripted::{Scripted, outcome_view};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_oracle_runner::case::UpstreamAnswer;
 
@@ -76,24 +76,25 @@ fn mirroring(case: &Case, api_base: String) -> Result<AktoMirroring, Box<HelperE
         },
         timeout: Duration::from_secs(5),
     };
-    AktoMirroring::new(configured, reqwest::Client::default()).map_err(failure)
+    AktoMirroring::new(configured, reqwest::Client::default()).or_config_error()
 }
 
 fn decoded_body(body: &Value) -> Result<Value, Box<HelperError>> {
     let mut fields = body.clone();
     let Some(object) = fields.as_object_mut() else {
-        return Err(failure("the Akto request body is not an object"));
+        return Err("the Akto request body is not an object").or_config_error();
     };
     object.insert("time".to_owned(), json!("<millis>"));
     for name in ENCODED_FIELDS {
         let text = object
             .get(name)
             .and_then(Value::as_str)
-            .ok_or_else(|| failure(format!("the Akto field {name} is not text")))?;
-        let mut inner: Value = serde_json::from_str(text).map_err(failure)?;
+            .ok_or_else(|| format!("the Akto field {name} is not text"))
+            .or_config_error()?;
+        let mut inner: Value = serde_json::from_str(text).or_config_error()?;
         let inner_text = inner.get("body").and_then(Value::as_str).map(str::to_owned);
         if let (Some(encoded), Some(slot)) = (inner_text, inner.get_mut("body")) {
-            *slot = serde_json::from_str(&encoded).map_err(failure)?;
+            *slot = serde_json::from_str(&encoded).or_config_error()?;
         }
         object.insert(name.to_owned(), inner);
     }

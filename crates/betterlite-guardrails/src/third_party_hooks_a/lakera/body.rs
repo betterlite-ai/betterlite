@@ -106,22 +106,22 @@ fn enabled_role(value: Option<&GuardrailValue>, roles: &[Role]) -> Option<Role> 
 }
 
 fn entry(role: &str, content: Option<&GuardrailValue>) -> GuardrailValue {
-    let content = content.cloned().unwrap_or(GuardrailValue::Null);
+    let value = content.cloned().unwrap_or(GuardrailValue::Null);
     GuardrailValue::Object(BTreeMap::from([
         ("role".to_owned(), GuardrailValue::Text(role.to_owned())),
-        ("content".to_owned(), content),
+        ("content".to_owned(), value),
     ]))
 }
 
 fn collect_function_arguments(
-    calls: &GuardrailValue,
+    tool_calls: &GuardrailValue,
     arguments: &mut Vec<String>,
 ) -> Result<(), LakeraHookError> {
-    let GuardrailValue::Array(calls) = calls else {
+    let GuardrailValue::Array(calls) = tool_calls else {
         return Err(LakeraHookError::InvalidField { field: TOOL_CALLS });
     };
-    for call in calls {
-        let GuardrailValue::Object(call) = call else {
+    for item in calls {
+        let GuardrailValue::Object(call) = item else {
             return Err(LakeraHookError::InvalidField { field: TOOL_CALLS });
         };
         match call.get("function") {

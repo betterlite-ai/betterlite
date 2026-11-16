@@ -12,7 +12,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::scripted::{Hook, Scripted, chat_response, contents, failure, outcome_view};
+use super::scripted::{Hook, Scripted, chat_response, contents, outcome_view};
+use betterlite_oracle_helper_api::error::OrHelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_oracle_runner::case::UpstreamAnswer;
 
@@ -54,7 +55,7 @@ pub(super) async fn run(case: &Case) -> HelperResult {
         Arc::new(AimWebSocketConnector),
         Some(Duration::from_secs(30)),
     )
-    .map_err(failure)?;
+    .or_config_error()?;
     let mut response = chat_response(&case.outputs)?;
     let outcome = call_hook(&guardrail, case, &mut response).await;
     let secrets = [("authorization", format!("Bearer {}", case.api_key))];

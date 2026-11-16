@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt::Display;
 use std::net::TcpListener;
 
 use betterlite_guardrails::aim::error::AimError;
@@ -10,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use url::form_urlencoded;
 
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_runner::case::UpstreamAnswer;
 use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
 use betterlite_oracle_runner::routing_mock_scripts::{MockScript, redact_credentials};
@@ -23,20 +22,6 @@ pub(super) enum Hook {
     PostCall,
 }
 
-pub(super) fn failure<Error>(error: Error) -> Box<HelperError>
-where
-    Error: Display,
-{
-    Box::new(HelperError {
-        class: "OracleHelperError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
-}
-
 pub(super) struct Scripted {
     pub(super) base_url: String,
     mock: Option<MockProvider>,
@@ -45,16 +30,16 @@ pub(super) struct Scripted {
 
 impl Scripted {
     pub(super) fn start(answers: &[UpstreamAnswer]) -> Result<Self, Box<HelperError>> {
-        let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(failure)?;
+        let silent = TcpListener::bind(("127.0.0.1", 0)).or_config_error()?;
         let mock = if answers.is_empty() {
             None
         } else {
-            let script = MockScript::try_from(answers).map_err(failure)?;
-            Some(MockProvider::start(script).map_err(failure)?)
+            let script = MockScript::try_from(answers).or_config_error()?;
+            Some(MockProvider::start(script).or_config_error()?)
         };
         let base_url = match &mock {
             Some(provider) => provider.base_url.clone(),
-            None => format!("http://{}", silent.local_addr().map_err(failure)?),
+            None => format!("http://{}", silent.local_addr().or_config_error()?),
         };
         Ok(Self {
             base_url,
@@ -68,7 +53,7 @@ impl Scripted {
             .mock
             .map(MockProvider::finish)
             .transpose()
-            .map_err(failure)?;
+            .or_config_error()?;
         Ok(calls
             .unwrap_or_default()
             .into_iter()
@@ -144,7 +129,7 @@ pub(super) fn chat_response(outputs: &[String]) -> Result<ModelResponseShape, Bo
         .iter()
         .map(|text| json!({"message": {"role": "assistant", "content": text}}))
         .collect();
-    serde_json::from_str(&json!({"choices": choices}).to_string()).map_err(failure)
+    serde_json::from_str(&json!({"choices": choices}).to_string()).or_config_error()
 }
 
 pub(super) fn contents(response: &ModelResponseShape) -> Value {

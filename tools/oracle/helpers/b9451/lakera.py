@@ -1,7 +1,7 @@
 from typing import Literal, Protocol, TypedDict
 
 import litellm
-from litellm import DualCache
+from litellm.caching.dual_cache import DualCache
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.lakera_ai import lakeraAI_Moderation
 from litellm.types.guardrails import GuardrailEventHooks, GuardrailItem, Role
@@ -65,4 +65,5 @@ async def run_lakera(case: LakeraCase) -> Json:
             default_on=True,
         )
         outcome = await attempt(call_hook(guardrail, case))
-        return outcome_view(server, outcome, ("content-type",), {"authorization": f"Bearer {case['api_key']}"})
+        secrets = {"authorization": f"Bearer {case['api_key']}"}
+        return outcome_view(server, outcome, ("content-type",), secrets)

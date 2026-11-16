@@ -8,9 +8,9 @@ use crate::third_party_hooks_a::error::ThirdPartyHookError;
 
 const VIOLATED_POLICY: &str = "Violated Lasso guardrail policy";
 
-pub(super) fn api_error(error: LassoError) -> ThirdPartyHookError {
-    match error {
-        LassoError::Blocked { deputies, response } => blocked(deputies, &response),
+pub(super) fn api_error(failure: LassoError) -> ThirdPartyHookError {
+    match failure {
+        LassoError::Blocked { deputies, response } => blocked(&deputies, &response),
         LassoError::Timeout { .. } => ThirdPartyHookError::Failure {
             message: "Lasso API timeout".to_owned(),
         },
@@ -39,7 +39,7 @@ struct BlockedDetail<'response> {
     lasso_response: &'response LassoResponse,
 }
 
-fn blocked(deputies: Vec<String>, response: &LassoResponse) -> ThirdPartyHookError {
+fn blocked(deputies: &[String], response: &LassoResponse) -> ThirdPartyHookError {
     let detail = BlockedDetail {
         error: VIOLATED_POLICY,
         detection_message: format!("Blocking violations detected: {}", deputies.join(", ")),

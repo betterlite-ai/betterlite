@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
+use std::slice;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -11,7 +12,9 @@ use secrecy::SecretString;
 use tokio::net::TcpListener;
 use ulid::Ulid;
 
-use super::support::{Call, captured_body, chat_data, list, message, object, serve, text};
+use super::support::{
+    Call, captured_body, chat_data, content_of, list, message, object, serve, text,
+};
 use crate::lasso::{ConversationCache, LassoGuardrail};
 use crate::lasso_masking::wire::ModelResponseShape;
 use crate::third_party_hooks_a::error::ThirdPartyHookError;
@@ -67,7 +70,7 @@ fn masking_answer(messages: &str) -> String {
 }
 
 fn body_of(call: &Call) -> BTreeMap<String, GuardrailValue> {
-    let GuardrailValue::Object(fields) = captured_body(std::slice::from_ref(call), 0) else {
+    let GuardrailValue::Object(fields) = captured_body(slice::from_ref(call), 0) else {
         panic!("the payload is a JSON object");
     };
     fields
@@ -107,7 +110,7 @@ async fn lasso_pre_call_classifies_the_expanded_messages() {
         data,
         chat_data(&[message("system", "be nice"), message("user", "hello")])
     );
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].path, "/classify");
     assert_eq!(header(&calls[0], "lasso-api-key"), "lasso-key");
@@ -164,7 +167,7 @@ async fn lasso_moderation_runs_the_prompt_check() {
     )
     .await
     .expect("allowed");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].path, "/classify");
     assert_eq!(body_of(&calls[0]).get("messageType"), Some(&text("PROMPT")));
@@ -191,7 +194,7 @@ async fn lasso_pre_call_reuses_one_conversation_id_for_a_call() {
     let cache = TestCache::default();
     pre_call_hello(&guardrail, &cache).await;
     pre_call_hello(&guardrail, &cache).await;
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 2);
     assert_eq!(
         header(&calls[0], "lasso-conversation-id"),
@@ -219,7 +222,7 @@ async fn lasso_classifix_writes_the_masked_text_back() {
     )
     .await
     .expect("masked");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].path, "/classifix");
     assert_eq!(
@@ -278,18 +281,18 @@ async fn lasso_classifix_blocks_a_block_finding() {
     let ThirdPartyHookError::Rejection { detail, .. } = &error else {
         panic!("a blocked Lasso verdict is a rejection, got {error}");
     };
-    let GuardrailValue::Object(detail) = detail else {
+    let GuardrailValue::Object(fields) = detail else {
         panic!("the detail is a JSON object");
     };
     assert_eq!(
-        detail.get("error"),
+        fields.get("error"),
         Some(&text("Violated Lasso guardrail policy"))
     );
     assert_eq!(
-        detail.get("detection_message"),
+        fields.get("detection_message"),
         Some(&text("Blocking violations detected: toxicity"))
     );
-    let Some(GuardrailValue::Object(response)) = detail.get("lasso_response") else {
+    let Some(GuardrailValue::Object(response)) = fields.get("lasso_response") else {
         panic!("the detail carries the Lasso response");
     };
     assert_eq!(
@@ -319,7 +322,7 @@ async fn lasso_input_list_forces_the_classify_endpoint() {
     )
     .await
     .expect("allowed");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].path, "/classify");
     assert_eq!(
@@ -349,7 +352,7 @@ async fn lasso_text_input_is_inspected_and_masked_back() {
     )
     .await
     .expect("masked");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].path, "/classifix");
     assert_eq!(
@@ -381,7 +384,7 @@ async fn lasso_multimodal_content_falls_back_to_classify() {
     )
     .await
     .expect("allowed");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].path, "/classify");
     assert_eq!(
@@ -560,16 +563,18 @@ async fn lasso_post_call_classifies_the_assistant_turn() {
     let mut response = response_of(
         r#"{"choices":[{"message":{"role":"assistant","content":"hello","tool_calls":[{"id":"call_1","function":{"name":"lookup","arguments":"{\"city\":\"Paris\"}"}}]}}]}"#,
     );
+    // with a call id the header and the payload share the cached conversation id
+    let data = BTreeMap::from([("litellm_call_id".to_owned(), text("call-1"))]);
     lasso::post_call_success(
         &guardrail,
-        &BTreeMap::new(),
+        &data,
         PostCallResponse::ChatCompletion(&mut response),
         &TestCache::default(),
         true,
     )
     .await
     .expect("allowed");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].path, "/classify");
     let body = body_of(&calls[0]);
@@ -580,22 +585,18 @@ async fn lasso_post_call_classifies_the_assistant_turn() {
     );
     assert_eq!(
         sent_messages(&body),
-        vec![
-            message("assistant", "hello"),
-            object(&[
-                ("role", text("model")),
-                (
-                    "content",
-                    object(&[
-                        ("type", text("tool_use")),
-                        ("id", text("call_1")),
-                        ("name", text("lookup")),
-                        ("input", object(&[("city", text("Paris"))])),
-                    ]),
-                ),
-            ]),
-        ]
+        vec![message("assistant", "hello"), tool_use_message()]
     );
+}
+
+fn tool_use_message() -> GuardrailValue {
+    let content = object(&[
+        ("type", text("tool_use")),
+        ("id", text("call_1")),
+        ("name", text("lookup")),
+        ("input", object(&[("city", text("Paris"))])),
+    ]);
+    object(&[("role", text("model")), ("content", content)])
 }
 
 #[tokio::test]
@@ -617,38 +618,29 @@ async fn lasso_post_call_blocks_with_litellm_detail() {
     assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
     assert!(matches!(
         &error,
-        ThirdPartyHookError::Rejection { detail, .. }
-            if *detail == object(&[
-                ("error", text("Violated Lasso guardrail policy")),
-                (
-                    "detection_message",
-                    text("Blocking violations detected: toxicity")
-                ),
-                (
-                    "lasso_response",
-                    object(&[
-                        ("violations_detected", GuardrailValue::Boolean(true)),
-                        ("deputies", object(&[("toxicity", GuardrailValue::Boolean(true))])),
-                        (
-                            "findings",
-                            object(&[(
-                                "toxicity",
-                                list(&[object(&[("action", text("BLOCK"))])])
-                            )])
-                        ),
-                    ])
-                ),
-            ])
+        ThirdPartyHookError::Rejection { detail, .. } if *detail == blocked_detail()
     ));
-    assert_eq!(
-        response.choices[0]
-            .message
-            .as_ref()
-            .expect("message")
-            .content
-            .as_deref(),
-        Some("rude")
-    );
+    assert_eq!(content_of(&response, 0).as_deref(), Some("rude"));
+}
+
+fn blocked_detail() -> GuardrailValue {
+    let findings = object(&[("toxicity", list(&[object(&[("action", text("BLOCK"))])]))]);
+    let lasso_response = object(&[
+        ("violations_detected", GuardrailValue::Boolean(true)),
+        (
+            "deputies",
+            object(&[("toxicity", GuardrailValue::Boolean(true))]),
+        ),
+        ("findings", findings),
+    ]);
+    object(&[
+        ("error", text("Violated Lasso guardrail policy")),
+        (
+            "detection_message",
+            text("Blocking violations detected: toxicity"),
+        ),
+        ("lasso_response", lasso_response),
+    ])
 }
 
 #[tokio::test]
@@ -667,7 +659,7 @@ async fn lasso_post_call_masks_the_response_text() {
     )
     .await
     .expect("masked");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].path, "/classifix");
     assert_eq!(

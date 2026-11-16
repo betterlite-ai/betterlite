@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use futures_util::future::join_all;
 
 use super::error::ThirdPartyHookError;
 use crate::aim::error::{AimError, CONTENT_POLICY_VIOLATION};
@@ -71,7 +72,7 @@ async fn inspect_choices(
     let calls = outputs
         .iter()
         .map(|output| call_aim_guardrail_on_output(guardrail, data, output, key_alias));
-    futures_util::future::join_all(calls).await
+    join_all(calls).await
 }
 
 fn apply_results(

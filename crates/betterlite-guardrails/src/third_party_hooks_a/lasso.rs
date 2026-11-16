@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde_json::value::RawValue;
+use serde_json::value::{RawValue, to_raw_value};
 
 use super::error::ThirdPartyHookError;
 use crate::content_inspection::{build_inspection_messages, has_non_string_content};
@@ -43,7 +43,7 @@ pub async fn hook<C>(
     should_run: bool,
 ) -> Result<(), ThirdPartyHookError>
 where
-    C: ConversationCache,
+    C: ConversationCache + Sync,
 {
     if !should_run {
         return Ok(());
@@ -64,16 +64,16 @@ pub async fn post_call_success<C>(
     should_run: bool,
 ) -> Result<(), ThirdPartyHookError>
 where
-    C: ConversationCache,
+    C: ConversationCache + Sync,
 {
     if !should_run {
         return Ok(());
     }
-    let PostCallResponse::ChatCompletion(response) = response else {
+    let PostCallResponse::ChatCompletion(chat) = response else {
         tracing::warn!("Unexpected response type for post-call hook");
         return Ok(());
     };
-    let plan = lifecycle::post_call(response, guardrail.settings.mask, None);
+    let plan = lifecycle::post_call(chat, guardrail.settings.mask, None);
     if plan.inspected.is_empty() {
         tracing::warn!("No response messages found to validate");
         return Ok(());
@@ -94,7 +94,7 @@ where
     )
     .await;
     if guardrail.settings.mask {
-        return apply_post_call_masking(response, masked);
+        return apply_post_call_masking(chat, masked);
     }
     masked?;
     Ok(())
@@ -102,9 +102,9 @@ where
 
 fn apply_post_call_masking(
     response: &mut ModelResponseShape,
-    masked: Result<Option<Vec<LassoMessage>>, ThirdPartyHookError>,
+    answer: Result<Option<Vec<LassoMessage>>, ThirdPartyHookError>,
 ) -> Result<(), ThirdPartyHookError> {
-    match masked {
+    match answer {
         Ok(Some(masked)) => {
             *response = lifecycle::post_call(response, true, Some(&masked)).response;
             tracing::debug!("Applied Lasso masking to model response");
@@ -125,7 +125,7 @@ async fn run<C>(
     message_type: MessageType,
 ) -> Result<(), ThirdPartyHookError>
 where
-    C: ConversationCache,
+    C: ConversationCache + Sync,
 {
     let messages: Vec<Message> = match data.get("messages") {
         None | Some(GuardrailValue::Null) => Vec::new(),
@@ -145,7 +145,7 @@ where
             Some(tools) => round_trip("tools", tools)?,
         },
     };
-    let masked = inspect(
+    let answer = inspect(
         guardrail,
         cache,
         Inspection {
@@ -156,7 +156,7 @@ where
         },
     )
     .await?;
-    if let Some(masked) = masked {
+    if let Some(masked) = answer {
         apply_masking(data, &messages, input.as_deref(), &masked)?;
     }
     Ok(())
@@ -190,7 +190,7 @@ async fn inspect<C>(
     inspection: Inspection<'_>,
 ) -> Result<Option<Vec<LassoMessage>>, ThirdPartyHookError>
 where
-    C: ConversationCache,
+    C: ConversationCache + Sync,
 {
     let headers = guardrail
         .prepare_headers(inspection.request_data.litellm_call_id.as_deref(), cache)
@@ -276,7 +276,7 @@ where
 fn raw_messages(messages: &[LassoMessage]) -> Result<Vec<Box<RawValue>>, ThirdPartyHookError> {
     messages
         .iter()
-        .map(serde_json::value::to_raw_value)
+        .map(to_raw_value)
         .collect::<Result<_, _>>()
         .map_err(|error| ThirdPartyHookError::Failure {
             message: format!("the Lasso request messages could not be encoded: {error}"),

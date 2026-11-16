@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::http::StatusCode;
@@ -10,8 +11,10 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use secrecy::SecretString;
 use serde::Deserialize;
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
+use tokio::time::timeout;
 
-use super::support::{Call, list, message, object, serve, text};
+use super::support::{Call, list, message, object, serve, serve_holding_ingest, text};
 use crate::akto::AktoMirroring;
 use crate::akto::error::AktoError;
 use crate::akto::payload::AktoInputs;
@@ -80,6 +83,16 @@ struct CapturedPayload {
     status_code: String,
 }
 
+// the mock holds every background send, so a hook that awaited one would miss this deadline
+async fn before_the_send<F>(call: F) -> F::Output
+where
+    F: Future,
+{
+    timeout(Duration::from_secs(2), call)
+        .await
+        .expect("the hook returned before its background send was answered")
+}
+
 async fn unreachable_base() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("addr");
@@ -128,7 +141,7 @@ async fn akto_request_allowed_mirrors_with_guardrails_only() {
     assert_eq!(returned, inputs);
     guardrail.tasks.close();
     guardrail.tasks.wait().await;
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert!(calls[0].path.contains("guardrails=true"));
     assert!(!calls[0].path.contains("ingest_data"));
@@ -136,16 +149,17 @@ async fn akto_request_allowed_mirrors_with_guardrails_only() {
 
 #[tokio::test]
 async fn akto_request_blocked_answers_403_and_mirrors_the_marker() {
-    let (base, _server, captured) =
-        serve("/api/http-proxy", vec![(StatusCode::OK, blocked_answer())]).await;
+    let held = Arc::new(Semaphore::new(0));
+    let answers = vec![(StatusCode::OK, blocked_answer())];
+    let (base, _server, captured) = serve_holding_ingest("/api/http-proxy", answers, &held).await;
     let guardrail = akto_guardrail(&base, AktoFallback::FailClosed);
-    let error = akto::apply_guardrail(
+    let error = before_the_send(akto::apply_guardrail(
         &guardrail,
         akto_inputs(),
         &akto_request_data(),
         GuardrailInputType::Request,
         &LitellmParamsMode::One("pre_call".to_owned()),
-    )
+    ))
     .await
     .expect_err("blocked");
     assert_eq!(error.status_code(), StatusCode::FORBIDDEN);
@@ -153,9 +167,10 @@ async fn akto_request_blocked_answers_403_and_mirrors_the_marker() {
         &error,
         ThirdPartyHookError::Rejection { detail, .. } if *detail == text("PII detected")
     ));
+    held.add_permits(1);
     guardrail.tasks.close();
     guardrail.tasks.wait().await;
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 2);
     assert_blocked_ingest(&calls[1]);
 }
@@ -220,22 +235,25 @@ async fn akto_request_blocked_without_a_reason_uses_the_default_message() {
 
 #[tokio::test]
 async fn akto_response_side_only_mirrors_in_the_background() {
-    let (base, _server, captured) = serve("/api/http-proxy", Vec::new()).await;
+    let held = Arc::new(Semaphore::new(0));
+    let (base, _server, captured) =
+        serve_holding_ingest("/api/http-proxy", Vec::new(), &held).await;
     let guardrail = akto_guardrail(&base, AktoFallback::FailClosed);
     let inputs = akto_inputs();
-    let returned = akto::apply_guardrail(
+    let returned = before_the_send(akto::apply_guardrail(
         &guardrail,
         inputs.clone(),
         &akto_response_data(),
         GuardrailInputType::Response,
         &LitellmParamsMode::One("post_call".to_owned()),
-    )
+    ))
     .await
     .expect("response");
     assert_eq!(returned, inputs);
+    held.add_permits(1);
     guardrail.tasks.close();
     guardrail.tasks.wait().await;
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert!(calls[0].path.contains("guardrails=true"));
     assert!(calls[0].path.contains("ingest_data=true"));
@@ -274,7 +292,7 @@ async fn akto_skips_an_input_type_its_single_hook_mode_does_not_handle() {
     assert_eq!(allowed, inputs);
     guardrail.tasks.close();
     guardrail.tasks.wait().await;
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert!(calls[0].path.contains("guardrails=true"));
 }
@@ -390,20 +408,22 @@ async fn akto_malformed_answer_follows_the_configured_fallback() {
 
 #[tokio::test]
 async fn akto_response_side_send_errors_never_fail_the_request() {
+    let held = Arc::new(Semaphore::new(0));
     let down = vec![(StatusCode::INTERNAL_SERVER_ERROR, "down".to_owned())];
-    let (base, _server, captured) = serve("/api/http-proxy", down).await;
+    let (base, _server, captured) = serve_holding_ingest("/api/http-proxy", down, &held).await;
     let guardrail = akto_guardrail(&base, AktoFallback::FailClosed);
     let inputs = akto_inputs();
-    let returned = akto::apply_guardrail(
+    let returned = before_the_send(akto::apply_guardrail(
         &guardrail,
         inputs.clone(),
         &akto_response_data(),
         GuardrailInputType::Response,
         &LitellmParamsMode::One("post_call".to_owned()),
-    )
+    ))
     .await
     .expect("response");
     assert_eq!(returned, inputs);
+    held.add_permits(1);
     guardrail.tasks.close();
     guardrail.tasks.wait().await;
     assert_eq!(captured.lock().expect("captured").len(), 1);
@@ -411,22 +431,24 @@ async fn akto_response_side_send_errors_never_fail_the_request() {
 
 #[tokio::test]
 async fn akto_blocked_ingest_errors_still_answer_403() {
+    let held = Arc::new(Semaphore::new(0));
     let answers = vec![
         (StatusCode::OK, blocked_answer()),
         (StatusCode::INTERNAL_SERVER_ERROR, "down".to_owned()),
     ];
-    let (base, _server, captured) = serve("/api/http-proxy", answers).await;
+    let (base, _server, captured) = serve_holding_ingest("/api/http-proxy", answers, &held).await;
     let guardrail = akto_guardrail(&base, AktoFallback::FailClosed);
-    let error = akto::apply_guardrail(
+    let error = before_the_send(akto::apply_guardrail(
         &guardrail,
         akto_inputs(),
         &akto_request_data(),
         GuardrailInputType::Request,
         &LitellmParamsMode::One("pre_call".to_owned()),
-    )
+    ))
     .await
     .expect_err("blocked");
     assert_eq!(error.status_code(), StatusCode::FORBIDDEN);
+    held.add_permits(1);
     guardrail.tasks.close();
     guardrail.tasks.wait().await;
     assert_eq!(captured.lock().expect("captured").len(), 2);

@@ -14,7 +14,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use ulid::Ulid;
 
-use super::scripted::{Hook, Scripted, chat_response, contents, failure, outcome_view};
+use super::scripted::{Hook, Scripted, chat_response, contents, outcome_view};
+use betterlite_oracle_helper_api::error::OrHelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_oracle_runner::case::UpstreamAnswer;
 
@@ -69,7 +70,7 @@ pub(super) async fn run(case: &Case) -> HelperResult {
             mask: case.mask,
         },
         client: reqwest::Client::default(),
-        timeout: Duration::try_from_secs_f64(case.timeout).map_err(failure)?,
+        timeout: Duration::try_from_secs_f64(case.timeout).or_config_error()?,
         new_id: Ulid::generate,
     };
     let mut response = chat_response(&case.outputs)?;

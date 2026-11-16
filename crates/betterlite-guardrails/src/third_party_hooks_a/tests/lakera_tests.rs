@@ -91,7 +91,7 @@ fn lakera_hooks(
         reqwest::Client::default,
     );
     let mut by_name = BTreeMap::new();
-    if let Some(roles) = roles {
+    if let Some(enabled) = roles {
         by_name.insert(
             "prompt_injection".to_owned(),
             GuardrailItem {
@@ -100,7 +100,7 @@ fn lakera_hooks(
                 logging_only: None,
                 guardrail_name: "prompt_injection".to_owned(),
                 callback_args: BTreeMap::new(),
-                enabled_roles: Some(roles),
+                enabled_roles: Some(enabled),
             },
         );
     }
@@ -254,7 +254,7 @@ async fn lakera_posts_system_user_assistant_in_that_order() {
         dynamic_params: &fake,
     };
     hooks.check(&data, &selection).await.expect("checked");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].path, "/v1/prompt_injection");
     assert_eq!(
@@ -300,7 +300,7 @@ async fn lakera_joins_tool_call_arguments_into_the_system_message() {
         dynamic_params: &fake,
     };
     hooks.check(&data, &selection).await.expect("checked");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(
         captured_body(&calls, 0),
         object(&[(
@@ -328,7 +328,7 @@ async fn lakera_drops_the_system_message_when_add_function_to_prompt_is_set() {
         dynamic_params: &fake,
     };
     hooks.check(&data, &selection).await.expect("checked");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(
         captured_body(&calls, 0),
         object(&[("input", list(&[message("user", "u")]))])
@@ -359,7 +359,7 @@ async fn lakera_keeps_only_the_enabled_roles() {
         dynamic_params: &fake,
     };
     hooks.check(&data, &selection).await.expect("checked");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(
         captured_body(&calls, 0),
         object(&[("input", list(&[message("user", "u")]))])
@@ -400,7 +400,7 @@ async fn lakera_joins_an_input_list_with_newlines() {
         dynamic_params: &fake,
     };
     hooks.check(&data, &selection).await.expect("checked");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(captured_body(&calls, 0), object(&[("input", text("a\nb"))]));
 }
 
@@ -421,7 +421,7 @@ async fn lakera_merges_dynamic_request_body_params_into_the_messages_body() {
         .check(&chat_data(&[message("user", "u")]), &selection)
         .await
         .expect("messages body");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(
         captured_body(&calls, 0),
         object(&[
@@ -446,7 +446,7 @@ async fn lakera_merges_dynamic_request_body_params_into_the_input_body() {
     };
     let input = BTreeMap::from([("input".to_owned(), text("hello"))]);
     hooks.check(&input, &selection).await.expect("input body");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(
         captured_body(&calls, 0),
         object(&[
@@ -537,7 +537,7 @@ async fn lakera_bounds_the_answer_it_reads() {
     };
     let answers = vec![
         (StatusCode::OK, padded(5_000)),
-        (StatusCode::OK, padded(1_048_577)),
+        (StatusCode::OK, padded(0x0010_0001)),
     ];
     let (base, _server, _captured) = serve("/v1/prompt_injection", answers).await;
     let hooks = lakera_hooks(&base, ModerationCheck::InParallel, None, false);
@@ -581,7 +581,7 @@ async fn lakera_keeps_the_last_message_of_each_role() {
         dynamic_params: &fake,
     };
     hooks.check(&data, &selection).await.expect("checked");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(
         captured_body(&calls, 0),
         object(&[(
@@ -606,7 +606,7 @@ async fn lakera_posts_an_empty_body_when_there_is_nothing_to_inspect() {
         dynamic_params: &fake,
     };
     hooks.check(&data, &selection).await.expect("empty body");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert!(calls[0].body.is_empty());
 }

@@ -53,7 +53,7 @@ async fn aim_inspects_embeddings_when_inspect_embeddings_is_set() {
     )
     .await
     .expect("pre_call");
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].path, "/fw/v1/analyze");
     assert_eq!(
@@ -103,7 +103,7 @@ async fn aim_moderation_keeps_the_request_data_read_only() {
     .await
     .expect("moderation");
     assert_eq!(data, before);
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(
         calls[0]
@@ -162,7 +162,7 @@ async fn aim_post_call_writes_each_redacted_output_back() {
         .expect("post_call");
     assert_eq!(content_of(&response, 0), Some(CONTENT_REDACTED.to_owned()));
     assert_eq!(content_of(&response, 1), Some(CONTENT_KEPT.to_owned()));
-    let calls = captured.lock().expect("captured");
+    let calls = captured.lock().expect("captured").clone();
     assert_eq!(calls.len(), 2);
     assert!(calls.iter().all(|call| {
         call.headers.get("x-aim-litellm-hook").map(String::as_str) == Some("output")

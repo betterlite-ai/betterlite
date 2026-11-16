@@ -6,21 +6,22 @@ from json import dumps
 from typing import Literal, NotRequired, Protocol, TypedDict, TypeVar
 from urllib.parse import parse_qsl, urlsplit
 
-from fastapi import HTTPException
-from litellm import DualCache
+from litellm.caching.dual_cache import DualCache
 from litellm.proxy._types import ProxyException, UserAPIKeyAuth
-from litellm.types.utils import Choices, LLMResponseTypes, Message, ModelResponse, StreamingChoices
-from pydantic import BaseModel, TypeAdapter
+from litellm.types.utils import Choices, ModelResponse
+from pydantic import TypeAdapter
 from pydantic import JsonValue as Json
+from starlette.exceptions import HTTPException
 
 T = TypeVar("T")
-Returned = Exception | str | dict[str, Json] | None
-PostCallHook = Callable[[dict[str, Json], UserAPIKeyAuth, LLMResponseTypes], Awaitable[LLMResponseTypes]]
+Data = dict[str, Json]
+Returned = Exception | str | Data | None
+PostCallHook = Callable[[Data, UserAPIKeyAuth, ModelResponse], Awaitable[None]]
 
 
 class PreCallHooks(Protocol):
     async def async_pre_call_hook(
-        self, user: UserAPIKeyAuth, cache: DualCache, data: dict[str, Json], call_type: Literal["completion"], /
+        self, key: UserAPIKeyAuth, cache: DualCache, data: Data, call_type: Literal["completion"], /
     ) -> Returned: ...
 
 
@@ -36,11 +37,6 @@ class Seen(TypedDict):
     query: dict[str, str]
     headers: dict[str, str]
     body: Json
-
-
-class HttpFacts(BaseModel):
-    status_code: int
-    detail: Json
 
 
 class Scripted:
@@ -63,7 +59,9 @@ class Scripted:
         self.seen.append(Seen(path=target.path, query=query, headers=headers, body=body))
         answer = self.answers[len(self.seen) - 1]
         events = answer.get("events")
-        payload = dumps(answer["body"]) if events is None else "".join(f"data: {event}\n\n" for event in events)
+        payload = dumps(answer["body"])
+        if events is not None:
+            payload = "".join(f"data: {event}\n\n" for event in events)
         encoded = payload.encode()
         lines = [f"HTTP/1.1 {answer['status']} OK", f"Content-Length: {len(encoded)}"]
         lines.extend(f"{name}: {value}" for name, value in answer["headers"].items())
@@ -93,27 +91,23 @@ async def attempt(call: Awaitable[T]) -> T | BaseException:
 
 
 async def post_call_contents(
-    hook: PostCallHook, data: dict[str, Json], user: UserAPIKeyAuth, outputs: Sequence[str]
-) -> dict[str, Json]:
-    response = ModelResponse(choices=[Choices(message=Message(content=text, role="assistant")) for text in outputs])
+    hook: PostCallHook, data: Data, user: UserAPIKeyAuth, outputs: Sequence[str]
+) -> Data:
+    built: list[Choices] = []
+    for text in outputs:
+        message: dict[str, str | None] = {"role": "assistant", "content": text}
+        built.append(Choices(message=message))
+    response = ModelResponse(choices=built)
     await hook(data, user, response)
-    contents: list[Json] = []
-    for choice in response.choices:
-        match choice:
-            case Choices():
-                contents.append(choice.message.content)
-            case StreamingChoices():
-                raise TypeError("a streaming choice in a complete response")
+    contents: list[Json] = [choice.message.content for choice in response.choices]
     return {"contents": contents}
 
 
 def failure_view(error: BaseException) -> dict[str, Json]:
     match error:
         case HTTPException():
-            http = TypeAdapter(HttpFacts).validate_python(error, from_attributes=True)
-            return {"status": http.status_code, "detail": http.detail, "code": None}
-        case ProxyException():
-            # the proxy turns ProxyException.openai_code into the string the error body carries
+            return {"status": error.status_code, "detail": error.detail, "code": None}
+        case ProxyException():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
             code = None if error.openai_code is None else str(error.openai_code)
             return {"status": int(error.code), "detail": error.message, "code": code}
         case BaseException():
@@ -121,15 +115,16 @@ def failure_view(error: BaseException) -> dict[str, Json]:
 
 
 def outcome_view(
-    server: Scripted, outcome: dict[str, Json] | BaseException, names: Sequence[str], secrets: dict[str, str]
+    server: Scripted, outcome: Data | BaseException, names: Sequence[str], secrets: dict[str, str]
 ) -> Json:
     requests: list[Json] = []
     for call in server.seen:
-        checked: dict[str, Json] = {name: call["headers"].get(name) == value for name, value in secrets.items()}
-        shown: dict[str, Json] = {name: call["headers"][name] for name in names if name in call["headers"]}
+        sent = call["headers"]
+        matched: dict[str, Json] = {key: sent.get(key) == value for key, value in secrets.items()}
+        shown: dict[str, Json] = {name: sent[name] for name in names if name in sent}
         query: dict[str, Json] = {**call["query"]}
-        view: dict[str, Json] = {"path": call["path"], "query": query, "headers": shown, "secrets": checked}
-        requests.append({**view, "body": call["body"]})
+        view: dict[str, Json] = {"path": call["path"], "query": query, "headers": shown}
+        requests.append({**view, "secrets": matched, "body": call["body"]})
     match outcome:
         case BaseException():
             return {"result": None, "error": failure_view(outcome), "requests": requests}

@@ -12,6 +12,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::aim::settings::{AimGuardrail, AimParams};
@@ -81,6 +82,7 @@ struct MockState {
     captured: Captured,
     answers: Arc<Mutex<VecDeque<(StatusCode, String)>>>,
     aim: Option<AimMode>,
+    held: Option<Arc<Semaphore>>,
 }
 
 async fn listen() -> (TcpListener, String, Captured) {
@@ -99,12 +101,14 @@ async fn mock(
     route: &str,
     aim: Option<AimMode>,
     answers: Vec<(StatusCode, String)>,
+    held: Option<Arc<Semaphore>>,
 ) -> (String, Server, Captured) {
     let (listener, base, captured) = listen().await;
     let state = MockState {
         captured: Arc::clone(&captured),
         answers: Arc::new(Mutex::new(VecDeque::from(answers))),
         aim,
+        held,
     };
     let router = Router::new().route(route, post(handle)).with_state(state);
     (base, spawn_server(listener, router), captured)
@@ -114,7 +118,16 @@ pub(super) async fn serve(
     route: &str,
     answers: Vec<(StatusCode, String)>,
 ) -> (String, Server, Captured) {
-    mock(route, None, answers).await
+    mock(route, None, answers, None).await
+}
+
+// an ingest_data=true request waits for a permit, so a caller that awaited the send would hang
+pub(super) async fn serve_holding_ingest(
+    route: &str,
+    answers: Vec<(StatusCode, String)>,
+    held: &Arc<Semaphore>,
+) -> (String, Server, Captured) {
+    mock(route, None, answers, Some(Arc::clone(held))).await
 }
 
 async fn handle(
@@ -124,6 +137,13 @@ async fn handle(
     body: String,
 ) -> (StatusCode, String) {
     record(&state.captured, &uri, &headers, &body);
+    if let Some(held) = &state.held
+        && uri
+            .query()
+            .is_some_and(|query| query.contains("ingest_data=true"))
+    {
+        drop(held.acquire().await.expect("permit"));
+    }
     if let Some(mode) = state.aim {
         let answer = aim_answer(mode, &body);
         return (
@@ -179,7 +199,7 @@ struct AimAnswer {
 }
 
 pub(super) async fn serve_aim(mode: AimMode) -> (String, Server, Captured) {
-    mock("/fw/v1/analyze", Some(mode), Vec::new()).await
+    mock("/fw/v1/analyze", Some(mode), Vec::new(), None).await
 }
 
 fn aim_answer(mode: AimMode, body: &str) -> AimAnswer {
@@ -210,12 +230,13 @@ fn plain_answer(action_type: &str, detection_message: Option<&str>) -> AimAnswer
 
 // the mock redacts the last inspected message, so one choice's output comes back rewritten
 fn redacted_answer(messages: &[MessageRow]) -> AimAnswer {
+    let last = messages.len().saturating_sub(1);
     let redacted = messages
         .iter()
         .enumerate()
         .map(|(index, message)| MessageRow {
             role: message.role.clone(),
-            content: if index + 1 == messages.len() {
+            content: if index == last {
                 format!("redacted:{}", message.content)
             } else {
                 message.content.clone()
@@ -260,8 +281,6 @@ pub(super) fn chat_response(contents: &[&str]) -> ModelResponseShape {
 }
 
 pub(super) fn content_of(response: &ModelResponseShape, index: usize) -> Option<String> {
-    response.choices[index]
-        .message
-        .as_ref()
-        .and_then(|message| message.content.clone())
+    let message = response.choices[index].message.as_ref()?;
+    message.content.clone()
 }

@@ -1,10 +1,10 @@
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, Protocol, TypedDict, cast
 
-from litellm import DualCache
+from litellm.caching.dual_cache import DualCache
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.lasso.lasso import LassoGuardrail
 from litellm.types.guardrails import GuardrailEventHooks
-from litellm.types.utils import LLMResponseTypes
+from litellm.types.utils import ModelResponse
 from pydantic import JsonValue as Json
 
 from .scripted import Answer, PreCallHooks, attempt, outcome_view, post_call_contents, scripted
@@ -27,12 +27,17 @@ class LassoCase(TypedDict):
 
 class LassoHooks(PreCallHooks, Protocol):
     async def async_moderation_hook(
-        self, data: dict[str, Json], user: UserAPIKeyAuth, call_type: Literal["completion"], cache: DualCache, /
+        self,
+        data: dict[str, Json],
+        user: UserAPIKeyAuth,
+        call_type: Literal["completion"],
+        cache: DualCache,
+        /,
     ) -> None: ...
 
     async def async_post_call_success_hook(
-        self, data: dict[str, Json], user: UserAPIKeyAuth, response: LLMResponseTypes, /
-    ) -> LLMResponseTypes: ...
+        self, data: dict[str, Json], user: UserAPIKeyAuth, response: ModelResponse, /
+    ) -> None: ...
 
 
 def event_hook(case: LassoCase) -> GuardrailEventHooks:
@@ -54,13 +59,14 @@ async def call_hook(guardrail: LassoHooks, case: LassoCase) -> dict[str, Json]:
         case "moderation":
             await guardrail.async_moderation_hook(data, user, "completion", DualCache())
         case "post_call":
-            return await post_call_contents(guardrail.async_post_call_success_hook, data, user, case["outputs"])
+            hook = guardrail.async_post_call_success_hook
+            return await post_call_contents(hook, data, user, case["outputs"])
     return {"data": data}
 
 
 async def run_lasso(case: LassoCase) -> Json:
     async with scripted(case["answers"]) as server:
-        guardrail: LassoHooks = LassoGuardrail(
+        guardrail = cast(LassoHooks, LassoGuardrail(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L207-L240
             api_key=case["api_key"],
             api_base=server.base_url,
             conversation_id=case["conversation_id"],
@@ -69,6 +75,6 @@ async def run_lasso(case: LassoCase) -> Json:
             guardrail_name="lasso",
             event_hook=event_hook(case),
             default_on=True,
-        )
+        ))
         outcome = await attempt(call_hook(guardrail, case))
         return outcome_view(server, outcome, HEADER_NAMES, {})
