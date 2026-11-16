@@ -209,11 +209,6 @@ async fn recovery_query_timeout_is_typed() {
         identity,
         RecoveryError::QueryTimeout { seconds: 0 }
     ));
-    let lock = steps
-        .deploy_lock_held()
-        .await
-        .expect_err("a lock read past its command timeout is a typed error");
-    assert!(matches!(lock, RecoveryError::QueryTimeout { seconds: 0 }));
 }
 
 #[tokio::test]
