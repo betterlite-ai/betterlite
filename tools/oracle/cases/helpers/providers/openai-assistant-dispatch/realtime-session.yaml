@@ -1,0 +1,55 @@
+kind: helper
+name: openai-assistant-dispatch-realtime-session
+call:
+  openai_assistant_dispatch:
+    kind: realtime
+    operation: connect
+    api_base: https://example.test/v1
+    api_key: sk-fixture
+    model: realtime-a
+    query_params: {model: realtime-a, intent: transcription}
+    openai_beta: true
+    scope_headers: [["OpenAI-Beta", "realtime=v1"]]
+    ssl_verification: enabled
+    close_error: null
+    max_message_size_bytes: 4096
+calls:
+  - openai_assistant_dispatch:
+      kind: realtime
+      operation: connect
+      api_base: http://127.0.0.1:8080
+      api_key: sk-fixture
+      model: realtime-a
+      query_params: null
+      openai_beta: false
+      scope_headers: []
+      ssl_verification: enabled
+      close_error: null
+      max_message_size_bytes: 4096
+  - openai_assistant_dispatch:
+      kind: realtime
+      operation: connect
+      api_base: https://example.test/v1
+      api_key: null
+      model: realtime-a
+      query_params: null
+      openai_beta: false
+      scope_headers: []
+      ssl_verification: enabled
+      close_error: null
+      max_message_size_bytes: 4096
+  - openai_assistant_dispatch:
+      kind: realtime
+      operation: connect
+      api_base: https://example.test/v1
+      api_key: sk-fixture
+      model: realtime-a
+      query_params: null
+      openai_beta: false
+      scope_headers: []
+      ssl_verification: enabled
+      close_error: socket gone
+      max_message_size_bytes: 4096
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "4096"
+compare: {ignore: []}

@@ -1,0 +1,195 @@
+kind: helper
+name: openai-assistant-dispatch-runs
+call:
+  openai_assistant_dispatch:
+    kind: runs
+    operation: buffered
+    api_base: https://example.test/v1
+    api_key: sk-fixture
+    arun_thread: false
+    request:
+      thread_id: thread_1
+      assistant_id: asst_1
+      additional_instructions: null
+      instructions: null
+      metadata: {k: v}
+      model: gpt-4o
+      tools: null
+    replies:
+      - status: 200
+        body:
+          id: run_1
+          object: thread.run
+          created_at: 1
+          thread_id: thread_1
+          assistant_id: asst_1
+          status: completed
+          required_action: null
+          last_error: null
+          expires_at: null
+          started_at: null
+          cancelled_at: null
+          failed_at: null
+          completed_at: 1
+          model: gpt-4o
+          instructions: ""
+          tools: []
+          metadata: {k: v}
+          temperature: 1.0
+          top_p: 1.0
+          max_prompt_tokens: null
+          max_completion_tokens: null
+          truncation_strategy: {type: auto, last_messages: null}
+          incomplete_details: null
+          usage: null
+          response_format: auto
+          tool_choice: auto
+          parallel_tool_calls: true
+      - status: 200
+        body:
+          id: run_1
+          object: thread.run
+          created_at: 1
+          thread_id: thread_1
+          assistant_id: asst_1
+          status: completed
+          required_action: null
+          last_error: null
+          expires_at: null
+          started_at: null
+          cancelled_at: null
+          failed_at: null
+          completed_at: 1
+          model: gpt-4o
+          instructions: ""
+          tools: []
+          metadata: {k: v}
+          temperature: 1.0
+          top_p: 1.0
+          max_prompt_tokens: null
+          max_completion_tokens: null
+          truncation_strategy: {type: auto, last_messages: null}
+          incomplete_details: null
+          usage: null
+          response_format: auto
+          tool_choice: auto
+          parallel_tool_calls: true
+calls:
+  - openai_assistant_dispatch:
+      kind: runs
+      operation: buffered
+      api_base: https://example.test/v1
+      api_key: sk-fixture
+      arun_thread: true
+      request:
+        thread_id: thread_1
+        assistant_id: asst_1
+        additional_instructions: extra
+        instructions: null
+        metadata: null
+        model: null
+        tools: null
+      replies:
+        - status: 200
+          body:
+            id: run_1
+            object: thread.run
+            created_at: 1
+            thread_id: thread_1
+            assistant_id: asst_1
+            status: completed
+            required_action: null
+            last_error: null
+            expires_at: null
+            started_at: null
+            cancelled_at: null
+            failed_at: null
+            completed_at: 1
+            model: gpt-4o
+            instructions: ""
+            tools: []
+            metadata: {}
+            temperature: 1.0
+            top_p: 1.0
+            max_prompt_tokens: null
+            max_completion_tokens: null
+            truncation_strategy: {type: auto, last_messages: null}
+            incomplete_details: null
+            usage: null
+            response_format: auto
+            tool_choice: auto
+            parallel_tool_calls: true
+        - status: 200
+          body:
+            id: run_1
+            object: thread.run
+            created_at: 1
+            thread_id: thread_1
+            assistant_id: asst_1
+            status: completed
+            required_action: null
+            last_error: null
+            expires_at: null
+            started_at: null
+            cancelled_at: null
+            failed_at: null
+            completed_at: 1
+            model: gpt-4o
+            instructions: ""
+            tools: []
+            metadata: {}
+            temperature: 1.0
+            top_p: 1.0
+            max_prompt_tokens: null
+            max_completion_tokens: null
+            truncation_strategy: {type: auto, last_messages: null}
+            incomplete_details: null
+            usage: null
+            response_format: auto
+            tool_choice: auto
+            parallel_tool_calls: true
+  - openai_assistant_dispatch:
+      kind: runs
+      operation: stream
+      api_base: https://example.test/v1
+      api_key: sk-fixture
+      arun_thread: true
+      request:
+        thread_id: thread_1
+        assistant_id: asst_1
+        additional_instructions: null
+        instructions: null
+        metadata: null
+        model: gpt-4o
+        tools: null
+      replies:
+        - status: 200
+          content_type: text/event-stream
+          text: |
+            event: thread.run.created
+            data: {"id":"run_1","object":"thread.run","created_at":1,"thread_id":"thread_1","assistant_id":"asst_1","status":"in_progress","required_action":null,"last_error":null,"expires_at":null,"started_at":1,"cancelled_at":null,"failed_at":null,"completed_at":null,"model":"gpt-4o","instructions":"","tools":[],"metadata":{},"temperature":1.0,"top_p":1.0,"max_prompt_tokens":null,"max_completion_tokens":null,"truncation_strategy":{"type":"auto","last_messages":null},"incomplete_details":null,"usage":null,"response_format":"auto","tool_choice":"auto","parallel_tool_calls":true}
+
+            event: thread.run.completed
+            data: {"id":"run_1","object":"thread.run","created_at":1,"thread_id":"thread_1","assistant_id":"asst_1","status":"completed","required_action":null,"last_error":null,"expires_at":null,"started_at":1,"cancelled_at":null,"failed_at":null,"completed_at":2,"model":"gpt-4o","instructions":"","tools":[],"metadata":{},"temperature":1.0,"top_p":1.0,"max_prompt_tokens":null,"max_completion_tokens":null,"truncation_strategy":{"type":"auto","last_messages":null},"incomplete_details":null,"usage":null,"response_format":"auto","tool_choice":"auto","parallel_tool_calls":true}
+
+            data: [DONE]
+  - openai_assistant_dispatch:
+      kind: runs
+      operation: buffered
+      api_base: https://example.test/v1
+      api_key: sk-fixture
+      arun_thread: false
+      request:
+        thread_id: thread_1
+        assistant_id: asst_1
+        additional_instructions: null
+        instructions: null
+        metadata: null
+        model: gpt-4o
+        tools: null
+      replies:
+        - status: 500
+          body:
+            error: {message: boom, type: server_error, param: null, code: null}
+env: {}
+compare: {ignore: []}

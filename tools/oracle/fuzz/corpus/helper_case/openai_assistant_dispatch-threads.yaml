@@ -1,0 +1,16 @@
+kind: helper
+name: openai-assistant-dispatch-threads-seed
+call:
+  openai_assistant_dispatch:
+    kind: threads
+    operation: create
+    api_base: "https://example.test/v1"
+    api_key: sk-fixture
+    data:
+      messages: [{role: user, content: hi}]
+      metadata: {k: v}
+    replies:
+      - status: 200
+        body: {id: thread_1, object: thread, created_at: 1, metadata: {k: v}, tool_resources: null}
+env: {}
+compare: {ignore: []}
