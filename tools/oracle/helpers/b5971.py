@@ -1,7 +1,7 @@
 import os
 from collections.abc import Callable, Coroutine
 from contextlib import suppress
-from typing import NotRequired, Protocol, TypeAlias, TypedDict, Unpack
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, overload
 
 import httpx
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
@@ -104,38 +104,6 @@ class Recorder:
         raise StoppedError
 
 
-class CallArguments(TypedDict):
-    model: str
-    messages: list[JsonObject]
-    api_base: str | None
-    custom_llm_provider: str
-    custom_prompt_dict: JsonObject
-    model_response: ModelResponse
-    print_verbose: Callable[[str], None]
-    encoding: None
-    api_key: str | None
-    logging_obj: Recorder
-    optional_params: JsonObject
-    acompletion: NotRequired[bool | None]
-    litellm_params: NotRequired[JsonObject]
-    logger_fn: NotRequired[None]
-    headers: NotRequired[dict[str, str] | None]
-    timeout: NotRequired[float | httpx.Timeout | None]
-    client: NotRequired[HTTPHandler | AsyncHTTPHandler | None]
-    custom_endpoint: NotRequired[bool | None]
-    streaming_decoder: NotRequired[CustomStreamingDecoder | None]
-    fake_stream: NotRequired[bool]
-
-
-class UrlArguments(TypedDict):
-    api_base: str | None
-    api_key: str | None
-    model: str
-    optional_params: JsonObject
-    litellm_params: JsonObject
-    stream: NotRequired[bool | None]
-
-
 class ChatApi(Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
 
@@ -148,7 +116,17 @@ class ChatApi(Protocol):
         drop_params: bool,
     ) -> JsonObject: ...
 
-    def get_complete_url(self, **kwargs: Unpack[UrlArguments]) -> str: ...
+    def get_complete_url(
+        self,
+        _api_base: str | None,
+        _api_key: str | None,
+        _model: str,
+        _optional_params: JsonObject,
+        _litellm_params: JsonObject,
+        /,
+        *,
+        stream: bool | None = None,
+    ) -> str: ...
 
     def provider_info(
         self, api_base: str | None, api_key: str | None
@@ -156,7 +134,49 @@ class ChatApi(Protocol):
 
 
 class Completer(Protocol):
-    def completion(self, **kwargs: Unpack[CallArguments]) -> Completion: ...
+    @overload
+    def completion(
+        self,
+        *,
+        acompletion: Literal[True],
+        model: str,
+        messages: list[JsonObject],
+        api_base: str | None,
+        custom_llm_provider: str,
+        custom_prompt_dict: JsonObject,
+        model_response: ModelResponse,
+        print_verbose: Callable[[str], None],
+        encoding: None,
+        api_key: str | None,
+        logging_obj: Recorder,
+        optional_params: JsonObject,
+        litellm_params: JsonObject = ...,
+        logger_fn: None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+        client: HTTPHandler | AsyncHTTPHandler | None = None,
+        custom_endpoint: bool | None = None,
+        streaming_decoder: CustomStreamingDecoder | None = None,
+        fake_stream: bool = False,
+    ) -> Completion: ...
+
+    @overload
+    def completion(
+        self,
+        *,
+        model: str,
+        messages: list[JsonObject],
+        api_base: str | None,
+        custom_llm_provider: str,
+        custom_prompt_dict: JsonObject,
+        model_response: ModelResponse,
+        print_verbose: Callable[[str], None],
+        encoding: None,
+        api_key: str | None,
+        logging_obj: Recorder,
+        optional_params: JsonObject,
+        headers: dict[str, str] | None = None,
+    ) -> Completion: ...
 
 
 class Config(IBMWatsonXChatConfig):
@@ -193,12 +213,7 @@ def run_info(case: InfoCase) -> JsonValue:
 def run_url(case: UrlCase) -> JsonValue:
     options = dict(case["options"])
     url = CONFIG.get_complete_url(
-        api_base=case["api_base"],
-        api_key=None,
-        model=case["model"],
-        optional_params=options,
-        litellm_params={},
-        stream=case["stream"],
+        case["api_base"], None, case["model"], options, {}, stream=case["stream"]
     )
     return {"url": url, "options": options}
 

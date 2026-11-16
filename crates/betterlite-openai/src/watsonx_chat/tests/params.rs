@@ -37,46 +37,14 @@ fn supported_params_keep_litellm_order() {
 
 #[test]
 fn map_keeps_supported_params_and_drops_the_rest() {
-    let optional = mapped(
-        r#"{
-            "temperature": 0.5,
-            "max_tokens": 64,
-            "top_p": 0.9,
-            "frequency_penalty": 0.1,
-            "stop": ["end"],
-            "seed": 7,
-            "stream": true,
-            "logprobs": true,
-            "top_logprobs": 2,
-            "n": 3,
-            "presence_penalty": 0.2,
-            "response_format": {"type": "json_object"},
-            "reasoning_effort": "low",
-            "user": "caller",
-            "max_completion_tokens": 10,
-            "top_k": 5
-        }"#,
-        "{}",
-    );
+    let supported = r#""temperature": 0.5, "max_tokens": 64, "top_p": 0.9, "frequency_penalty": 0.1,
+        "stop": ["end"], "seed": 7, "stream": true, "logprobs": true, "top_logprobs": 2, "n": 3,
+        "presence_penalty": 0.2, "response_format": {"type": "json_object"}, "reasoning_effort": "low""#;
+    let unsupported = r#""user": "caller", "max_completion_tokens": 10, "top_k": 5"#;
+    let optional = mapped(&format!("{{{supported}, {unsupported}}}"), "{}");
     assert_eq!(
         Value::Object(optional),
-        fixture(
-            r#"{
-                "temperature": 0.5,
-                "max_tokens": 64,
-                "top_p": 0.9,
-                "frequency_penalty": 0.1,
-                "stop": ["end"],
-                "seed": 7,
-                "stream": true,
-                "logprobs": true,
-                "top_logprobs": 2,
-                "n": 3,
-                "presence_penalty": 0.2,
-                "response_format": {"type": "json_object"},
-                "reasoning_effort": "low"
-            }"#
-        )
+        fixture(&format!("{{{supported}}}"))
     );
 }
 
