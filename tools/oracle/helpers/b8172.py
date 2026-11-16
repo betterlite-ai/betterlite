@@ -1,4 +1,5 @@
 import os
+from collections.abc import Callable
 from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
 import httpx
@@ -17,11 +18,11 @@ from litellm.types.utils import ImageResponse
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-IMAGE_MODEL = "qwen-image-2.0-pro"
 EMBEDDING_MODEL = "text-embedding-v4"
-RERANK_MODEL = "qwen3-rerank"
-PROBE_MODEL = "/probe"
+IMAGE_MODEL = "qwen-image-2.0-pro"
 KEEP_PARAMS: Final = False
+PROBE_MODEL = "/probe"
+RERANK_MODEL = "qwen3-rerank"
 
 
 class NoMessages(list[AllMessageValues]): ...
@@ -33,91 +34,68 @@ class Recorder(Logging):
 
     @override
     def post_call(
-        self,
-        original_response: JsonValue,
-        input: JsonValue = None,
-        api_key: str | None = None,
+        self, original_response: JsonValue, input: JsonValue = None, api_key: str | None = None,
         additional_args: dict[str, JsonValue] | None = None,
     ) -> None:
         del original_response, input, api_key, additional_args
 
 
+ImageReplyTransform = Callable[
+    [
+        str,
+        httpx.Response,
+        ImageResponse,
+        Recorder,
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        None,
+        str | None,
+        bool | None,
+    ],
+    ImageResponse,
+]
+
+
 class ImageConfig(Protocol):
     def map_openai_params(
-        self,
-        non_default_params: dict[str, JsonValue],
-        optional_params: dict[str, JsonValue],
-        model: str,
-        drop_params: bool,
-        /,
+        self, non_default_params: dict[str, JsonValue], optional_params: dict[str, JsonValue],
+        model: str, /, *, drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
     def validate_environment(
-        self,
-        headers: dict[str, str],
-        model: str,
-        messages: NoMessages,
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        api_key: str | None,
-        /,
+        self, headers: dict[str, str], model: str, messages: NoMessages,
+        optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue],
+        api_key: str | None, /,
     ) -> dict[str, JsonValue]: ...
 
     def get_complete_url(
-        self,
-        api_base: str | None,
-        api_key: str | None,
-        model: str,
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        /,
+        self, api_base: str | None, api_key: str | None, model: str,
+        optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue], /,
     ) -> str: ...
 
-    def transform_image_generation_request(
-        self,
-        model: str,
-        prompt: str,
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        headers: dict[str, str],
-        /,
+    def transform_image_generation_request(  # ast-grep-ignore: no-long-names
+        self, model: str, prompt: str, optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue], headers: dict[str, str], /,
     ) -> dict[str, JsonValue]: ...
 
-    def transform_image_generation_response(
+    # ruff counts a def's parameters (PLR0913), so the ten-argument call type is a property value
+    @property
+    def transform_image_generation_response(  # ast-grep-ignore: no-long-names
         self,
-        model: str,
-        raw_response: httpx.Response,
-        model_response: ImageResponse,
-        logging_obj: Recorder,
-        request_data: dict[str, JsonValue],
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        encoding: None,
-        api_key: None,
-        json_mode: None,
-        /,
-    ) -> ImageResponse: ...
+    ) -> ImageReplyTransform: ...
 
 
 class EmbeddingUrlConfig(Protocol):
     def get_complete_url(
-        self,
-        api_base: str | None,
-        api_key: str | None,
-        model: str,
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        /,
+        self, api_base: str | None, api_key: str | None, model: str,
+        optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue], /,
     ) -> str: ...
 
 
 class RerankUrlConfig(Protocol):
     def get_complete_url(
-        self,
-        api_base: str | None,
-        model: str,
-        optional_params: dict[str, JsonValue] | None,
-        /,
+        self, api_base: str | None, model: str, optional_params: dict[str, JsonValue] | None, /,
     ) -> str: ...
 
 
@@ -183,21 +161,9 @@ class ImageReplyDump(TypedDict):
     data: list[ImageDatum]
 
 
-class EnvNames(TypedDict):
-    base: str
-    brand_key: str
-    fallback_key: str
-    rerank_base: str
-    image_base: str
-
-
 Input = (
-    ImageParamsAndSizeInput
-    | ImageUrlAndKeyInput
-    | ImageRequestInput
-    | ImageReplyInput
-    | FamilySettingsInput
-    | FamilyKeyAndMessageInput
+    ImageParamsAndSizeInput | ImageUrlAndKeyInput | ImageRequestInput
+    | ImageReplyInput | FamilySettingsInput | FamilyKeyAndMessageInput
 )
 
 
@@ -221,16 +187,14 @@ def image_params_and_size(input_value: ImageParamsAndSizeInput) -> JsonValue:
         input_value["non_default_params"],
         input_value["optional_params"],
         IMAGE_MODEL,
-        KEEP_PARAMS,
+        drop_params=KEEP_PARAMS,
     )
     return {"params": mapped}
 
 
 def image_url_and_key(input_value: ImageUrlAndKeyInput) -> JsonValue:
     config: ImageConfig = DashScopeImageGenerationConfig()
-    url = config.get_complete_url(
-        input_value.get("api_base"), None, IMAGE_MODEL, {}, {}
-    )
+    url = config.get_complete_url(input_value.get("api_base"), None, IMAGE_MODEL, {}, {})
     caller_headers = input_value.get("caller_headers")
     headers = config.validate_environment(
         {} if caller_headers is None else dict(caller_headers),
@@ -246,11 +210,7 @@ def image_url_and_key(input_value: ImageUrlAndKeyInput) -> JsonValue:
 def image_request(input_value: ImageRequestInput) -> JsonValue:
     config: ImageConfig = DashScopeImageGenerationConfig()
     body = config.transform_image_generation_request(
-        input_value["model"],
-        input_value["prompt"],
-        input_value["optional_params"],
-        {},
-        {},
+        input_value["model"], input_value["prompt"], input_value["optional_params"], {}, {}
     )
     return {"body": body}
 
@@ -264,19 +224,14 @@ def image_reply(input_value: ImageReplyInput) -> JsonValue:
         headers={} if headers is None else headers,
     )
     result = config.transform_image_generation_response(
-        IMAGE_MODEL,
-        raw_response,
-        ImageResponse(),
-        Recorder(),
-        {},
-        {},
-        {},
-        None,
-        None,
-        None,
+        IMAGE_MODEL, raw_response, ImageResponse(), Recorder(), {}, {}, {}, None, None, None
     )
     dumped = TypeAdapter(ImageReplyDump).validate_json(result.model_dump_json())
-    return {"data": dumped["data"]}
+    images: list[JsonValue] = []
+    for item in dumped["data"]:
+        image: dict[str, JsonValue] = {"url": item["url"]}
+        images.append(image)
+    return {"data": images}
 
 
 def set_env(name: str, value: str | None) -> None:
@@ -287,41 +242,14 @@ def set_env(name: str, value: str | None) -> None:
         os.environ[name] = value
 
 
-def env_names(family: str) -> EnvNames:
-    if family == "qwencloud":
-        return EnvNames(
-            base="QWENCLOUD_API_BASE",
-            brand_key="QWENCLOUD_API_KEY",
-            fallback_key="DASHSCOPE_API_KEY",
-            rerank_base="QWENCLOUD_API_BASE_RERANK",
-            image_base="QWENCLOUD_API_BASE_IMAGE",
-        )
-    if family == "qwen_ai_platform":
-        return EnvNames(
-            base="QWEN_AI_PLATFORM_API_BASE",
-            brand_key="QWEN_AI_PLATFORM_API_KEY",
-            fallback_key="DASHSCOPE_API_KEY",
-            rerank_base="QWEN_AI_PLATFORM_API_BASE_RERANK",
-            image_base="QWEN_AI_PLATFORM_API_BASE_IMAGE",
-        )
-    return EnvNames(
-        base="DASHSCOPE_API_BASE",
-        brand_key="",
-        fallback_key="DASHSCOPE_API_KEY",
-        rerank_base="DASHSCOPE_API_BASE_RERANK",
-        image_base="DASHSCOPE_API_BASE_IMAGE",
-    )
-
-
 def apply_env(family: str, step: FamilyStep) -> None:
-    names = env_names(family)
-    set_env(names["base"], step.get("base"))
-    set_env(names["fallback_key"], step.get("fallback_key"))
-    set_env(names["rerank_base"], step.get("rerank_base"))
-    set_env(names["image_base"], step.get("image_base"))
-    if names["brand_key"] == "":
-        return
-    set_env(names["brand_key"], step.get("brand_key"))
+    prefix = "DASHSCOPE" if family == "dashscope" else family.upper()
+    set_env(f"{prefix}_API_BASE", step.get("base"))
+    set_env("DASHSCOPE_API_KEY", step.get("fallback_key"))
+    set_env(f"{prefix}_API_BASE_RERANK", step.get("rerank_base"))
+    set_env(f"{prefix}_API_BASE_IMAGE", step.get("image_base"))
+    if prefix != "DASHSCOPE":
+        set_env(f"{prefix}_API_KEY", step.get("brand_key"))
 
 
 def family_value(
@@ -336,15 +264,11 @@ def family_value(
     )
     return {
         "chat": {"api_base": base, "api_key": key},
-        "embedding_url": embedding.get_complete_url(
-            api_base, None, EMBEDDING_MODEL, {}, {}
-        ),
+        "embedding_url": embedding.get_complete_url(api_base, None, EMBEDDING_MODEL, {}, {}),
         "rerank_url": rerank.get_complete_url(api_base, RERANK_MODEL, None),
         "image": {
             "url": image.get_complete_url(api_base, None, IMAGE_MODEL, {}, {}),
-            "headers": image.validate_environment(
-                {}, IMAGE_MODEL, NoMessages(), {}, {}, None
-            ),
+            "headers": image.validate_environment({}, IMAGE_MODEL, NoMessages(), {}, {}, None),
         },
     }
 
@@ -353,46 +277,21 @@ def family_settings(input_value: FamilySettingsInput) -> JsonValue:
     api_base = input_value.get("api_base")
     api_key = input_value.get("api_key")
     return {
-        "dashscope": family_value(
-            "dashscope", input_value["dashscope"], api_base, api_key
-        ),
-        "qwencloud": family_value(
-            "qwencloud", input_value["qwencloud"], api_base, api_key
-        ),
+        "dashscope": family_value("dashscope", input_value["dashscope"], api_base, api_key),
+        "qwencloud": family_value("qwencloud", input_value["qwencloud"], api_base, api_key),
         "qwen_ai_platform": family_value(
             "qwen_ai_platform", input_value["qwen_ai_platform"], api_base, api_key
         ),
     }
 
 
-def key_message(
-    family: str, api_key: str | None, brand_key: str | None, dashscope_key: str | None
-) -> JsonValue:
-    set_env("DASHSCOPE_API_KEY", dashscope_key)
-    set_env("QWENCLOUD_API_KEY", None)
-    set_env("QWEN_AI_PLATFORM_API_KEY", None)
-    if family == "qwencloud":
-        set_env("QWENCLOUD_API_KEY", brand_key)
-    if family == "qwen_ai_platform":
-        set_env("QWEN_AI_PLATFORM_API_KEY", brand_key)
-    return {
-        "key": resolve_dashscope_family_api_key(family, api_key),
-        "message": missing_dashscope_family_key_message(family),
-    }
-
-
 def family_key_and_message(input_value: FamilyKeyAndMessageInput) -> JsonValue:
     api_key = input_value.get("api_key")
-    dashscope_key = input_value.get("dashscope_key")
-    return {
-        "dashscope": key_message("dashscope", api_key, None, dashscope_key),
-        "qwencloud": key_message(
-            "qwencloud", api_key, input_value.get("qwencloud_key"), dashscope_key
-        ),
-        "qwen_ai_platform": key_message(
-            "qwen_ai_platform",
-            api_key,
-            input_value.get("qwen_ai_platform_key"),
-            dashscope_key,
-        ),
-    }
+    set_env("DASHSCOPE_API_KEY", input_value.get("dashscope_key"))
+    set_env("QWENCLOUD_API_KEY", input_value.get("qwencloud_key"))
+    set_env("QWEN_AI_PLATFORM_API_KEY", input_value.get("qwen_ai_platform_key"))
+    result: dict[str, JsonValue] = {}
+    for family in ("dashscope", "qwencloud", "qwen_ai_platform"):
+        key = resolve_dashscope_family_api_key(family, api_key)
+        result[family] = {"key": key, "message": missing_dashscope_family_key_message(family)}
+    return result
