@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-read-view-stored-null-wins
+call:
+  b4307:
+    stored: {host: null}
+    environment: {REDIS_HOST: "environment-host"}
+env: {REDIS_HOST: "environment-host"}
+compare: {ignore: []}

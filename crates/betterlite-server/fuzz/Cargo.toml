@@ -201,6 +201,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "audit_record"
+path = "fuzz_targets/audit_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "spend_totals_query"
 path = "fuzz_targets/spend_totals_query.rs"
 test = false
