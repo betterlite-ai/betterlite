@@ -87,6 +87,7 @@ fn a_target_selecting_field_fails_with_the_bad_request_status() {
     let error = run_error(json!({
         "calls": [{
             "function": "search",
+            "vector_store_id": "store-example",
             "query": "policy",
             "api_base": "https://host/v1",
             "extra_body": {"servingConfig": "other"},
@@ -102,6 +103,7 @@ fn a_null_target_selecting_field_leaves_the_body_alone() {
     let value = run(json!({
         "calls": [{
             "function": "search",
+            "vector_store_id": "store-example",
             "query": "policy",
             "api_base": "https://host/v1",
             "extra_body": {"servingConfig": null, "filter": "active"},
@@ -119,6 +121,7 @@ fn a_search_page_reports_six_decimal_scores_and_the_logged_query() {
     let value = run(json!({
         "calls": [{
             "function": "search",
+            "vector_store_id": "store-example",
             "query": "policy",
             "api_base": "https://host/v1",
             "extra_body": {"query": "native policy"},
@@ -139,6 +142,7 @@ fn a_chunk_score_overrides_the_position() {
     let value = run(json!({
         "calls": [{
             "function": "search",
+            "vector_store_id": "store-example",
             "query": "policy",
             "api_base": "https://host/v1",
             "response": {
@@ -158,6 +162,7 @@ fn a_native_query_that_is_not_text_names_the_field() {
     let error = run_error(json!({
         "calls": [{
             "function": "search",
+            "vector_store_id": "store-example",
             "query": "policy",
             "api_base": "https://host/v1",
             "extra_body": {"query": 7_i64},
@@ -172,6 +177,7 @@ fn a_decode_failure_keeps_the_reply_status() {
     let error = run_error(json!({
         "calls": [{
             "function": "search",
+            "vector_store_id": "store-example",
             "query": "policy",
             "api_base": "https://host/v1",
             "response": {"status": 502_u16, "body": "not json"},
@@ -195,6 +201,7 @@ fn an_unknown_call_field_is_rejected() {
     let unknown = serde_json::from_value::<super::ops::Input>(json!({
         "calls": [{
             "function": "search",
+            "vector_store_id": "store-example",
             "query": "policy",
             "api_base": "https://host/v1",
             "other": 1_i32,
