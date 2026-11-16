@@ -22,6 +22,10 @@ from messages_stream_logging import (
     MessagesStreamLoggingCall,
     run_messages_stream_logging,
 )
+from messages_sync_stream import (
+    MessagesSyncStreamCall,
+    run_messages_sync_stream,
+)
 from openai_chat import ChatCall, run_chat
 from query_embedding_call import QueryEmbeddingCall, run_query
 from responses_agentic_continuation import ContinuationCall, run_continuation
@@ -77,6 +81,12 @@ class MessagesNativeStreamRequest(BaseModel):
     messages_native_stream: MessagesNativeStreamCall
 
 
+class MessagesSyncStreamRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    messages_sync_stream: MessagesSyncStreamCall
+
+
 class ContinuationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -100,6 +110,7 @@ class Request(BaseModel):
         | MessagesHeaderStreamRequest
         | MessagesStreamLoggingRequest
         | MessagesNativeStreamRequest
+        | MessagesSyncStreamRequest
         | ContinuationRequest
         | FileAzureStorageRequest
     )
@@ -132,6 +143,8 @@ def main() -> None:
                 output = run_messages_stream_logging(logging_call, request.api_base)
             case MessagesNativeStreamRequest(messages_native_stream=relay_call):
                 output = run_messages_native_stream(relay_call, request.api_base)
+            case MessagesSyncStreamRequest(messages_sync_stream=sync_call):
+                output = run_messages_sync_stream(sync_call, request.api_base)
             case ContinuationRequest(responses_agentic_continuation=continuation):
                 output = run_continuation(continuation, request.api_base)
             case FileAzureStorageRequest(file_azure_storage=storage_call):
