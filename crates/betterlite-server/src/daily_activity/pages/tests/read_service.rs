@@ -207,6 +207,27 @@ async fn supplied_entity_metadata_reaches_the_results() {
 }
 
 #[tokio::test]
+async fn a_resolver_keeps_supplied_entity_metadata_it_does_not_replace() {
+    let supplied = entity_metadata(&[("Unassigned", fields(&[("plan", "free")]))]);
+    let resolver = |_records: &[DailySpendRecord]| -> EntityMetadataFuture {
+        Box::pin(ready(entity_metadata(&[(
+            "user-9",
+            fields(&[("plan", "pro")]),
+        )])))
+    };
+    let repository = page_repository(vec![row("1", "2025-03-10", "sk-a")], 1);
+    let mut request = request("2025-03-01", "2025-03-31");
+    request.entity_metadata = Some(&supplied);
+    request.callbacks = PageCallbacks {
+        metadata_metrics: None,
+        resolve_entity_metadata: Some(&resolver),
+    };
+    let response = get_daily_activity(&repository, &request).await.unwrap();
+    let entities = &response.results[0].breakdown.entities;
+    assert_eq!(entities["Unassigned"].metadata, fields(&[("plan", "free")]));
+}
+
+#[tokio::test]
 async fn resolved_entity_metadata_overrides_the_supplied_map() {
     let supplied = entity_metadata(&[("Unassigned", fields(&[("plan", "free")]))]);
     let resolver = |records: &[DailySpendRecord]| -> EntityMetadataFuture {
