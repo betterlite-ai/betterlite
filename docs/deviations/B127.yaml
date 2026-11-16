@@ -1,0 +1,21 @@
+task: B127
+deviations:
+  - what: Construction fails with a typed error when neither gcs_bucket_name nor GCS_BUCKET_NAME is set.
+    why: LiteLLM accepts a missing bucket and then requests .../b/None/o/..., which can never work. betterlite refuses to build the cache instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L29
+  - what: Async methods run B3997's synchronous token lookup on the blocking pool and the HTTP call on the async client, and sync methods block on the same async path.
+    why: betterlite-http has one async client, so there is no separate sync transport. The requests, headers and results are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L36-L40
+  - what: Response bodies over B173's 16 MiB buffered limit read as a miss, and body text is decoded as UTF-8 only.
+    why: The bounded-inputs rule caps buffered bodies. httpx's response.text guesses a charset, and Python's json.loads also accepts the bare tokens NaN and Infinity, which serde_json rejects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L72-L73
+  - what: A cached value is never written to a log line, and a sync write does not log a successful set.
+    why: LiteLLM's sync set_cache logs the key and the value at verbose level and get_cache logs the decoded value at debug level. Cached responses hold user content, so betterlite logs the key only on a sync read hit and stays silent on a write.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L44
+  - what: GCS requests do not follow redirects, so a 3xx from the JSON API is a quiet miss on reads and a silent drop on writes.
+    why: LiteLLM's httpx client follows redirects by default. B173's ProxiedClient is used through B3997's PooledGcsClient, which sends one request and never follows a redirect; betterlite-logging belongs to another task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618
+kept_bugs:
+  - what: Writes ignore the response status and the cache's TTL kwargs, so a refused upload is silent and an object never expires through cache metadata.
+    why: A working LiteLLM setup relies on set_cache never raising for a failed upload, and on reads of the stored object until the bucket or its lifecycle rules drop it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L50-L52
