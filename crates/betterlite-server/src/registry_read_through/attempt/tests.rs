@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use tokio::task::yield_now;
 use tokio::time::advance;
 
 use crate::registry_read_through::tests::support::{CountingResync, FailingResync, capture_logs};
@@ -99,11 +100,13 @@ async fn a_resync_error_is_logged_and_not_remembered() {
 #[tokio::test(start_paused = true)]
 async fn the_recent_miss_map_keeps_at_most_a_thousand_keys() {
     let calls = Arc::new(AtomicUsize::new(0));
-    let read_through = RegistryReadThrough::new(CountingResync {
+    let mut read_through = RegistryReadThrough::new(CountingResync {
         calls: Arc::clone(&calls),
         found: false,
     });
-    remember_misses(&read_through, 1000).await;
+    // a thousand resyncs in one window, so the cap fills before the budget does
+    read_through.max_resyncs_per_window = 2000;
+    remember_misses(&read_through, MAX_RECENT_MISSES).await;
     assert_eq!(calls.load(Ordering::SeqCst), 1000);
     assert!(!read_through.attempt("missing-1000").await);
     assert_eq!(calls.load(Ordering::SeqCst), 1001);
@@ -142,7 +145,7 @@ struct YieldingResync {
 impl Resync for YieldingResync {
     async fn resync(&self, _key: &str) -> Result<bool, ResyncError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        tokio::task::yield_now().await;
+        yield_now().await;
         Ok(false)
     }
 }
