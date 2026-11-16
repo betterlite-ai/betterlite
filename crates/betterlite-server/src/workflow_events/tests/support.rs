@@ -428,7 +428,7 @@ impl WorkflowEventStore for FakeStore {
         run_id: &str,
         take: u16,
     ) -> Result<Vec<WorkflowEventRow>, StoreError> {
-        let mut data = self.record_list(SequenceTable::Events, run_id, take)?;
+        let data = self.record_list(SequenceTable::Events, run_id, take)?;
         let mut rows: Vec<WorkflowEventRow> = data
             .events
             .iter()
