@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -218,7 +219,7 @@ impl WorkflowRunStore for FakeStore {
             .cloned()
             .collect();
         drop(state);
-        rows.sort_by_key(|left| std::cmp::Reverse(left.created_at));
+        rows.sort_by_key(|left| Reverse(left.created_at));
         rows.truncate(usize::from(take));
         Ok(rows)
     }
