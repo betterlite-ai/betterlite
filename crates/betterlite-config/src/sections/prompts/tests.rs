@@ -8,7 +8,7 @@ use rstest::rstest;
 use serde_json::Number;
 
 use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::Section;
+use crate::sections::Section as _;
 use crate::sections::prompts::{Raw, Settings};
 
 fn loaded_with(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
@@ -236,8 +236,8 @@ fn a_flag_variable_that_is_not_a_bool_is_a_load_error_naming_it() {
 }
 
 #[rstest]
-#[case::two("2", Json::Number(Number::from(2)))]
-#[case::negative("-3", Json::Number(Number::from(-3)))]
+#[case::two("2", Json::Number(Number::from(2_i64)))]
+#[case::negative("-3", Json::Number(Number::from(-3_i64)))]
 #[case::empty("", Json::Null)]
 fn a_version_reference_reads_as_a_number(#[case] value: &str, #[case] expected: Json) {
     let source = "prompts:\n  - prompt_id: greeting\n    version: os.environ/PROMPT_VERSION\n";
