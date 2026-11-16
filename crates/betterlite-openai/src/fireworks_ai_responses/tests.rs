@@ -514,8 +514,11 @@ fn an_empty_folded_text_adds_no_separator() {
 #[test]
 fn a_non_object_item_passes_through() {
     assert_eq!(
-        folded(r#"[{"role": "user", "content": "u"}, "plain"]"#, None),
-        (None, json(r#"[{"role": "user", "content": "u"}, "plain"]"#),)
+        folded(r#"[{"role": "user", "content": "u"}, "plain", 5]"#, None),
+        (
+            None,
+            json(r#"[{"role": "user", "content": "u"}, "plain", 5]"#),
+        )
     );
 }
 
