@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use betterlite_anthropic::count_tokens::counter::{TokenCountResponse, TokenCounter};
 use betterlite_anthropic::count_tokens::error::CountTokensError;
 use betterlite_anthropic::count_tokens::handler::CountTokensTransport;
@@ -26,6 +28,11 @@ pub struct CountTokensCall<'call> {
     pub system: Option<&'call Json>,
 }
 
+struct ModelNames {
+    request_model: String,
+    model_used: String,
+}
+
 pub struct AzureAnthropicTokenCounter<T> {
     pub handler: FoundryCountHandler<T>,
     pub environment_api_key: Option<SecretString>,
@@ -39,7 +46,30 @@ impl<T> TokenCounter for AzureAnthropicTokenCounter<T> {
 }
 
 impl<T: CountTokensTransport> AzureAnthropicTokenCounter<T> {
-    pub async fn count_tokens(&self, call: &CountTokensCall<'_>) -> Option<TokenCountResponse> {
+    // The call borrows credential sources that are not Sync, so the future only owns the two model names and the handler's future
+    pub fn count_tokens<'counter>(
+        &'counter self,
+        call: &CountTokensCall<'_>,
+    ) -> impl Future<Output = Option<TokenCountResponse>> + Send + use<'counter, T> {
+        let names = ModelNames {
+            request_model: call.request_model.to_owned(),
+            model_used: call.model_to_use.to_owned(),
+        };
+        let started = self.start_count(call);
+        async move {
+            match started?.await {
+                Ok(reply) => success(&names, &reply),
+                Err(error) => Some(failure(&names, &error)),
+            }
+        }
+    }
+
+    // None is LiteLLM's early return: no messages, or no key or base to count with
+    fn start_count<'counter>(
+        &'counter self,
+        call: &CountTokensCall<'_>,
+    ) -> Option<impl Future<Output = Result<FoundryCountReply, ApiError>> + Send + use<'counter, T>>
+    {
         let messages = call.messages?;
         if falsey(messages) {
             return None;
@@ -59,10 +89,7 @@ impl<T: CountTokensTransport> AzureAnthropicTokenCounter<T> {
             token: call.token,
             timeout: None,
         };
-        match self.handler.handle_count_tokens_request(&request).await {
-            Ok(reply) => success(call, &reply),
-            Err(error) => Some(failure(call, &error)),
-        }
+        Some(self.handler.handle_count_tokens_request(&request))
     }
 
     // A deployment key and base win over the environment pair, and neither has a global fallback
@@ -109,22 +136,22 @@ fn falsey(value: &Json) -> bool {
 }
 
 // LiteLLM's counter has no local tokenizer fallback: a null result counts nothing and returns None
-fn success(call: &CountTokensCall<'_>, reply: &FoundryCountReply) -> Option<TokenCountResponse> {
+fn success(names: &ModelNames, reply: &FoundryCountReply) -> Option<TokenCountResponse> {
     let fields = match &reply.document {
         Json::Object(fields) => fields,
         Json::Null => return None,
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            return Some(generic_failure(call, &CountTokensError::NotAnObject));
+            return Some(generic_failure(names, &CountTokensError::NotAnObject));
         }
     };
     let total_tokens = match input_tokens(fields) {
         Ok(total_tokens) => total_tokens,
-        Err(error) => return Some(generic_failure(call, &error)),
+        Err(error) => return Some(generic_failure(names, &error)),
     };
     Some(TokenCountResponse {
         total_tokens,
-        request_model: call.request_model.to_owned(),
-        model_used: call.model_to_use.to_owned(),
+        request_model: names.request_model.clone(),
+        model_used: names.model_used.clone(),
         tokenizer_type: TOKENIZER_TYPE.to_owned(),
         original_response: Some(fields.clone()),
         error: false,
@@ -144,25 +171,25 @@ fn input_tokens(result: &CountResponse) -> Result<i64, CountTokensError> {
 }
 
 // LiteLLM's except AnthropicError branch: the upstream status and the raw response text stay visible
-fn failure(call: &CountTokensCall<'_>, error: &ApiError) -> TokenCountResponse {
+fn failure(names: &ModelNames, error: &ApiError) -> TokenCountResponse {
     let status = error.status_code();
     let message = error.to_string();
     tracing::warn!("Azure AI Anthropic CountTokens API error: status={status}, message={message}");
-    error_record(call, status, &message)
+    error_record(names, status, &message)
 }
 
 // LiteLLM's except Exception branch, reached when the response has no integer input_tokens
-fn generic_failure(call: &CountTokensCall<'_>, error: &CountTokensError) -> TokenCountResponse {
+fn generic_failure(names: &ModelNames, error: &CountTokensError) -> TokenCountResponse {
     let message = error.to_string();
     tracing::warn!("Error calling Azure AI Anthropic CountTokens API: {message}");
-    error_record(call, 500, &message)
+    error_record(names, 500, &message)
 }
 
-fn error_record(call: &CountTokensCall<'_>, status_code: u16, message: &str) -> TokenCountResponse {
+fn error_record(names: &ModelNames, status_code: u16, message: &str) -> TokenCountResponse {
     TokenCountResponse {
         total_tokens: 0,
-        request_model: call.request_model.to_owned(),
-        model_used: call.model_to_use.to_owned(),
+        request_model: names.request_model.clone(),
+        model_used: names.model_used.clone(),
         tokenizer_type: TOKENIZER_TYPE.to_owned(),
         original_response: None,
         error: true,

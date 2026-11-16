@@ -20,16 +20,16 @@ pub struct HeadersRequest<'call> {
 
 // The Foundry messages environment already adds content-type and anthropic-version and merges the Azure auth
 pub fn get_required_headers(
-    request: HeadersRequest<'_>,
+    request: &HeadersRequest<'_>,
     beta_version: &str,
 ) -> Result<Headers, AzureTokenError> {
-    let mut headers = Headers::new();
-    headers.insert(
+    let mut key_headers = Headers::new();
+    key_headers.insert(
         ANTHROPIC_KEY_HEADER.to_owned(),
         request.api_key.expose_secret().to_owned(),
     );
     let environment = EnvironmentRequest {
-        headers,
+        headers: key_headers,
         params_key: request.params_key,
         argument_key: Some(request.api_key),
         configured_key: request.configured_key,

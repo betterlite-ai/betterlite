@@ -16,7 +16,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use http::HeaderMap;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
@@ -128,7 +128,7 @@ pub(crate) fn request_json(seen: &Seen) -> Value {
 }
 
 fn filtered_headers(headers: &BTreeMap<String, String>) -> Value {
-    let mut fields = serde_json::Map::new();
+    let mut fields = Map::new();
     for name in COUNT_HEADERS {
         let value = headers
             .get(name)

@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::time::Duration;
 
 use betterlite_anthropic::count_tokens::error::CountTokensError;
@@ -36,10 +37,33 @@ pub struct FoundryCountHandler<T> {
 }
 
 impl<T: CountTokensTransport> FoundryCountHandler<T> {
-    pub async fn handle_count_tokens_request(
+    // The request borrows credential sources that are not Sync, so the future only owns what was built before it starts
+    pub fn handle_count_tokens_request<'handler>(
+        &'handler self,
+        request: &CountTokensRequest<'_>,
+    ) -> impl Future<Output = Result<FoundryCountReply, ApiError>> + Send + use<'handler, T> {
+        let prepared = self.outbound_request(request);
+        async move {
+            let response = self
+                .transport
+                .send(prepared?)
+                .await
+                .map_err(|source| CountTokensError::Transport { source })?;
+            if response.status != 200 {
+                let status_code = response.status;
+                let text = String::from_utf8(response.body).unwrap_or_else(|error| {
+                    format!("{} bytes that are not UTF-8", error.as_bytes().len())
+                });
+                return Err(ApiError::Upstream { status_code, text });
+            }
+            Ok(decode_foundry_count_reply(&response.body)?)
+        }
+    }
+
+    fn outbound_request(
         &self,
         request: &CountTokensRequest<'_>,
-    ) -> Result<FoundryCountReply, ApiError> {
+    ) -> Result<OutboundRequest, ApiError> {
         // LiteLLM's Foundry handler validates the model and messages only, without system or tools
         validate_request(&CountTokensBody {
             model: request.body.model,
@@ -57,8 +81,8 @@ impl<T: CountTokensTransport> FoundryCountHandler<T> {
             configured_key: self.configured_key.as_ref(),
             token: request.token,
         };
-        let headers = request_header_map(&get_required_headers(auth, &self.beta_version)?)?;
-        let outbound = OutboundRequest {
+        let headers = request_header_map(&get_required_headers(&auth, &self.beta_version)?)?;
+        Ok(OutboundRequest {
             method: Method::POST,
             url,
             query: Vec::new(),
@@ -67,20 +91,7 @@ impl<T: CountTokensTransport> FoundryCountHandler<T> {
                 serde_json::to_vec(&body).map_err(|source| CountTokensError::Encode { source })?,
             ),
             deadline: request.timeout.unwrap_or(self.request_timeout),
-        };
-        let response = self
-            .transport
-            .send(outbound)
-            .await
-            .map_err(|source| CountTokensError::Transport { source })?;
-        if response.status != 200 {
-            let status_code = response.status;
-            let text = String::from_utf8(response.body).unwrap_or_else(|error| {
-                format!("{} bytes that are not UTF-8", error.as_bytes().len())
-            });
-            return Err(ApiError::Upstream { status_code, text });
-        }
-        Ok(decode_foundry_count_reply(&response.body)?)
+        })
     }
 }
 

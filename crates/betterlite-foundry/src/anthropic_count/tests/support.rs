@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -22,6 +22,7 @@ use betterlite_models::decisions::Json;
 use http::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use tokio::runtime::Builder;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
@@ -54,16 +55,13 @@ pub(super) struct Script {
 }
 
 impl Debug for Script {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("Script").finish_non_exhaustive()
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("Script").finish_non_exhaustive()
     }
 }
 
-impl CountTokensTransport for Script {
-    fn send(
-        &self,
-        request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+impl Script {
+    fn record(&self, request: OutboundRequest) {
         let OutboundRequest {
             url,
             headers,
@@ -97,14 +95,23 @@ impl CountTokensTransport for Script {
                 body: payload,
                 timeout: deadline,
             });
+    }
+}
+
+impl CountTokensTransport for Script {
+    fn send(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        self.record(request);
         ready(
             self.reply
                 .clone()
-                .map_or(Err(TransportError::Closed), |(status, body)| {
+                .map_or(Err(TransportError::Closed), |(status, text)| {
                     Ok(UpstreamResponse {
                         status,
                         headers: HeaderMap::new(),
-                        body: body.into_bytes(),
+                        body: text.into_bytes(),
                     })
                 }),
         )
@@ -154,7 +161,7 @@ impl Call {
             model: MODEL.to_owned(),
             request_model: MODEL.to_owned(),
             timeout: None,
-            request_timeout: Duration::from_secs(6000),
+            request_timeout: Duration::from_mins(100),
             environment: BTreeMap::new(),
             reply: Some((200, r#"{"input_tokens":5}"#.to_owned())),
         }
@@ -196,26 +203,25 @@ impl From<&Call> for FoundryCountHandler<Script> {
 }
 
 pub(super) fn run_counter(call: &Call) -> CounterOutcome {
-    let credentials = credential_settings(call.token.as_deref());
-    let token = token_source(&credentials);
-    let params_key = params_key(&call.params);
     let counter = AzureAnthropicTokenCounter {
         handler: FoundryCountHandler::from(call),
         environment_api_key: call.environment_key.clone(),
         environment_api_base: call.environment_base.clone(),
     };
-    let data = CountTokensCall {
-        model_to_use: &call.model,
-        messages: call.messages.as_ref(),
-        contents: None,
-        params_key,
-        api_base: call.api_base.as_deref(),
-        token: &token,
-        request_model: &call.request_model,
-        tools: call.tools.as_ref(),
-        system: call.system.as_ref(),
-    };
-    let (result, warnings) = captured(|| run_blocking(counter.count_tokens(&data)));
+    let (result, warnings) = with_token(call, |token| {
+        let data = CountTokensCall {
+            model_to_use: &call.model,
+            messages: call.messages.as_ref(),
+            contents: None,
+            params_key: params_key(&call.params),
+            api_base: call.api_base.as_deref(),
+            token,
+            request_model: &call.request_model,
+            tools: call.tools.as_ref(),
+            system: call.system.as_ref(),
+        };
+        captured(|| run_blocking(counter.count_tokens(&data)))
+    });
     CounterOutcome {
         selected: [
             counter.should_use_token_counting_api(Some("azure_ai")),
@@ -229,43 +235,50 @@ pub(super) fn run_counter(call: &Call) -> CounterOutcome {
 }
 
 pub(super) fn run_handle(call: &Call) -> HandleOutcome {
-    let credentials = credential_settings(call.token.as_deref());
-    let token = token_source(&credentials);
-    let params_key = params_key(&call.params);
     let messages = call.messages.clone().unwrap_or(Json::Null);
     let handler = FoundryCountHandler::from(call);
-    let request = CountTokensRequest {
-        body: CountTokensBody {
-            model: &call.model,
-            messages: &messages,
-            tools: call.tools.as_ref(),
-            system: call.system.as_ref(),
-            optional_params: &IndexMap::new(),
-        },
-        api_key: &call.api_key,
-        api_base: call.api_base.as_deref().unwrap_or_default(),
-        params_key,
-        token: &token,
-        timeout: call.timeout,
-    };
-    let outcome = run_blocking(handler.handle_count_tokens_request(&request));
+    let outcome = with_token(call, |token| {
+        let request = CountTokensRequest {
+            body: CountTokensBody {
+                model: &call.model,
+                messages: &messages,
+                tools: call.tools.as_ref(),
+                system: call.system.as_ref(),
+                optional_params: &IndexMap::new(),
+            },
+            api_key: &call.api_key,
+            api_base: call.api_base.as_deref().unwrap_or_default(),
+            params_key: params_key(&call.params),
+            token,
+            timeout: call.timeout,
+        };
+        run_blocking(handler.handle_count_tokens_request(&request))
+    });
     HandleOutcome {
         result: outcome.map(|reply| reply.document),
         seen: first_request(&handler.transport),
     }
 }
 
-fn token_source(credentials: &DeploymentSettings) -> TokenSource<'_> {
-    TokenSource {
-        credentials,
+fn with_token<R, B>(call: &Call, body: B) -> R
+where
+    B: FnOnce(&TokenSource<'_>) -> R,
+{
+    let credentials = credential_settings(call.token.as_deref());
+    let token = TokenSource {
+        credentials: &credentials,
         refresh_enabled: false,
         provider: None,
         sources: &Offline,
-    }
+    };
+    body(&token)
 }
 
-fn run_blocking<F: Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
+fn run_blocking<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    Builder::new_current_thread()
         .build()
         .expect("the test runtime")
         .block_on(future)
@@ -305,7 +318,7 @@ pub(super) fn beta_version(environment: &BTreeMap<String, String>) -> String {
 }
 
 fn credential_settings(azure_ad_token: Option<&str>) -> DeploymentSettings {
-    let token = azure_ad_token.map_or("null".to_owned(), |token| format!("{token:?}"));
+    let token = azure_ad_token.map_or_else(|| "null".to_owned(), |token| format!("{token:?}"));
     let source = format!(r#"{{"model_list":[{{"litellm_params":{{"azure_ad_token":{token}}}}}]}}"#);
     let raw: CredentialRaw = serde_json::from_str(&source).expect("the credential fixture");
     let settings = raw
@@ -368,12 +381,12 @@ struct Logs(Arc<Mutex<Vec<String>>>);
 
 impl Logs {
     fn entries(&self) -> Vec<Warning> {
-        let guard = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut entries = Vec::with_capacity(guard.len());
-        for message in guard.iter() {
-            entries.push(warning(message));
-        }
-        entries
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .map(|message| warning(message))
+            .collect()
     }
 }
 

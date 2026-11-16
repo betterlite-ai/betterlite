@@ -1,15 +1,87 @@
 import logging
-from typing import Final, Protocol, runtime_checkable
+from typing import (
+    Final,
+    Literal,
+    NotRequired,
+    Protocol,
+    TypeAlias,
+    TypedDict,
+    runtime_checkable,
+)
 
 import httpx
 import litellm
 from litellm.caching.llm_caching_handler import LLMClientCache
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.types.utils import LlmProviders
-from pydantic import ConfigDict, JsonValue as Json, TypeAdapter
+from pydantic import ConfigDict, TypeAdapter
+from pydantic import JsonValue as Json
 from typing_extensions import override
 
-from foundry_anthropic_count.records import DECODER, Reply
+DECODER: TypeAdapter[Json] = TypeAdapter(Json)
+
+Env: TypeAlias = dict[str, str]
+Params: TypeAlias = dict[str, Json]
+Messages: TypeAlias = list[dict[str, object]]
+
+
+class Reply(TypedDict):
+    status: NotRequired[int]
+    body: str
+
+
+class Globals(TypedDict):
+    api_key: NotRequired[str | None]
+    azure_key: NotRequired[str | None]
+
+
+class HandleCase(TypedDict):
+    model: str
+    messages: Messages
+    api_key: str
+    api_base: str
+    system: NotRequired[Json]
+    tools: NotRequired[Messages]
+    timeout: NotRequired[float]
+    request_timeout: NotRequired[float]
+    litellm_params: NotRequired[Params]
+    globals: NotRequired[Globals]
+    environment: NotRequired[Env]
+    reply: NotRequired[Reply]
+
+
+class CounterCase(TypedDict):
+    model: str
+    messages: NotRequired[Messages | None]
+    contents: NotRequired[Messages | None]
+    system: NotRequired[Json]
+    tools: NotRequired[Messages]
+    request_timeout: NotRequired[float]
+    litellm_params: NotRequired[Params]
+    globals: NotRequired[Globals]
+    environment: NotRequired[Env]
+    provider: NotRequired[str]
+    request_model: NotRequired[str]
+    reply: NotRequired[Reply]
+
+
+class EndpointCall(TypedDict):
+    function: Literal["endpoint"]
+    api_bases: list[str]
+
+
+class HandleCall(TypedDict):
+    function: Literal["handle"]
+    cases: list[HandleCase]
+
+
+class CounterCall(TypedDict):
+    function: Literal["counter"]
+    cases: list[CounterCase]
+
+
+Input: TypeAlias = EndpointCall | HandleCall | CounterCall
+
 
 CLIENT_KEY: Final = "async_httpx_client"
 CACHE_KEY: Final = CLIENT_KEY + LlmProviders.AZURE_AI

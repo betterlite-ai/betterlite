@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs::{read, read_dir};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -94,6 +95,12 @@ fn count_tokens_endpoint() {
 }
 
 fn azure_auth_and_beta() {
+    azure_auth_and_beta_plain();
+    azure_auth_and_beta_other();
+    azure_auth_and_beta_typed();
+}
+
+fn azure_auth_and_beta_plain() {
     let beta = beta_version(&BTreeMap::new());
     assert_eq!(beta, DEFAULT_BETA_VERSION);
 
@@ -110,7 +117,9 @@ fn azure_auth_and_beta() {
     });
     assert_eq!(absent["x-api-key"], ARGUMENT_KEY);
     assert_eq!(absent["api-key"], ARGUMENT_KEY);
+}
 
+fn azure_auth_and_beta_other() {
     let other = Call {
         params: Params::Key(SecretString::from("other-params-key")),
         ..Call::standard()
@@ -137,7 +146,9 @@ fn azure_auth_and_beta() {
     assert_eq!(entranced["x-api-key"], ARGUMENT_KEY);
     assert_eq!(entranced["authorization"], "Bearer azure-token");
     assert!(!entranced.contains_key("api-key"));
+}
 
+fn azure_auth_and_beta_typed() {
     let typed = Call {
         params: Params::Typed(Some(SecretString::from("typed-key"))),
         ..Call::standard()
@@ -165,6 +176,12 @@ fn azure_auth_and_beta() {
 }
 
 fn native_count_result() {
+    native_count_result_success();
+    native_count_result_null_reply();
+    native_count_result_falsey_messages();
+}
+
+fn native_count_result_success() {
     let success = run_counter(&Call::standard());
     assert_eq!(success.selected, [true, false, false]);
     let result = success.result.expect("a token count");
@@ -187,7 +204,9 @@ fn native_count_result() {
         ..Call::standard()
     });
     assert_eq!(missing.result.expect("a token count").total_tokens, 0);
+}
 
+fn native_count_result_null_reply() {
     let nulled = run_counter(&Call {
         reply: Some((200, "null".to_owned())),
         ..Call::standard()
@@ -213,7 +232,9 @@ fn native_count_result() {
         absent.seen.is_none(),
         "contents never stands in for messages"
     );
+}
 
+fn native_count_result_falsey_messages() {
     for falsey_messages in ["null", "false", "0", "\"\"", "[]", "{}"] {
         let skipped = run_counter(&Call {
             messages: Some(
@@ -227,6 +248,14 @@ fn native_count_result() {
 }
 
 fn optional_native_selection() {
+    optional_native_selection_from_environment();
+    optional_native_selection_no_key();
+    optional_native_selection_empty();
+    optional_native_selection_empty_deployment_base();
+    optional_native_selection_credentials_only();
+}
+
+fn optional_native_selection_from_environment() {
     let from_environment = run_counter(&Call {
         params: Params::Absent,
         api_base: None,
@@ -248,7 +277,9 @@ fn optional_native_selection() {
         "https://r.services.ai.azure.com/anthropic/v1/messages/count_tokens"
     );
     assert_eq!(deployment_seen.headers["x-api-key"], PARAMS_KEY);
+}
 
+fn optional_native_selection_no_key() {
     let no_key = run_counter(&Call {
         params: Params::Absent,
         ..Call::standard()
@@ -276,7 +307,9 @@ fn optional_native_selection() {
             status: None,
         }]
     );
+}
 
+fn optional_native_selection_empty() {
     let empty = run_counter(&Call {
         params: Params::Key(SecretString::from("")),
         environment_key: Some(SecretString::from("environment-key")),
@@ -299,7 +332,9 @@ fn optional_native_selection() {
             status: None,
         }]
     );
+}
 
+fn optional_native_selection_empty_deployment_base() {
     let empty_deployment_base = run_counter(&Call {
         api_base: Some(String::new()),
         environment_base: Some("https://env.services.ai.azure.com".to_owned()),
@@ -325,7 +360,9 @@ fn optional_native_selection() {
             status: None,
         }]
     );
+}
 
+fn optional_native_selection_credentials_only() {
     let credentials_only = run_counter(&Call {
         params: Params::Absent,
         token: Some("azure-token".to_owned()),
@@ -354,6 +391,13 @@ fn count_failure_error_result() {
 }
 
 fn counter_error_records() {
+    counter_error_records_rate_limited();
+    counter_error_records_created();
+    counter_error_records_list();
+    counter_error_records_failed_transport();
+}
+
+fn counter_error_records_rate_limited() {
     let rate_limited = run_counter(&Call {
         reply: Some((429, "rate limited".to_owned())),
         ..Call::standard()
@@ -379,7 +423,9 @@ fn counter_error_records() {
         bad_record.error_message.as_deref(),
         Some("{\"error\":\"bad\"}")
     );
+}
 
+fn counter_error_records_created() {
     let created = run_counter(&Call {
         reply: Some((201, "{\"input_tokens\":5}".to_owned())),
         ..Call::standard()
@@ -403,7 +449,9 @@ fn counter_error_records() {
             .as_deref()
             .is_some_and(|message| message.starts_with("CountTokens processing error: "))
     );
+}
 
+fn counter_error_records_list() {
     let list = run_counter(&Call {
         reply: Some((200, "[]".to_owned())),
         ..Call::standard()
@@ -425,7 +473,9 @@ fn counter_error_records() {
         null_tokens.result.expect("an error record").status_code,
         Some(500)
     );
+}
 
+fn counter_error_records_failed_transport() {
     let failed_transport = run_counter(&Call {
         reply: None,
         ..Call::standard()
@@ -440,6 +490,12 @@ fn counter_error_records() {
 }
 
 fn handler_failure_shapes() {
+    handler_failure_shapes_sent();
+    handler_failure_shapes_missing_model();
+    handler_failure_shapes_empty_messages_with_system();
+}
+
+fn handler_failure_shapes_sent() {
     let sent = run_handle(&Call::standard()).seen.expect("a request");
     assert_eq!(
         sent.body,
@@ -448,7 +504,7 @@ fn handler_failure_shapes() {
         )
         .expect("valid fixture JSON")
     );
-    assert_eq!(sent.timeout, Duration::from_secs(6000));
+    assert_eq!(sent.timeout, Duration::from_mins(100));
 
     let zero = run_handle(&Call {
         timeout: Some(Duration::ZERO),
@@ -468,7 +524,9 @@ fn handler_failure_shapes() {
         invalid_header.seen.is_none(),
         "nothing is sent with an unbuildable header"
     );
+}
 
+fn handler_failure_shapes_missing_model() {
     let missing_model = run_handle(&Call {
         model: String::new(),
         ..Call::standard()
@@ -489,7 +547,9 @@ fn handler_failure_shapes() {
         not_a_list.result,
         Err(ApiError::Processing { .. })
     ));
+}
 
+fn handler_failure_shapes_empty_messages_with_system() {
     let empty_messages_with_system = run_handle(&Call {
         messages: Some(Json::List(Vec::new())),
         system: Some(Json::Text("be brief".to_owned())),
@@ -506,6 +566,12 @@ fn handler_failure_shapes() {
 }
 
 fn count_error_warnings() {
+    count_error_warnings_rate_limited();
+    count_error_warnings_not_json();
+    count_error_warnings_missing_key();
+}
+
+fn count_error_warnings_rate_limited() {
     let rate_limited = run_counter(&Call {
         reply: Some((429, "rate limited".to_owned())),
         ..Call::standard()
@@ -521,13 +587,28 @@ fn count_error_warnings() {
         rate_limited.result.is_some(),
         "an error record is not a missing result"
     );
+}
 
+fn count_error_warnings_not_json() {
     let not_json = run_counter(&Call {
         reply: Some((200, "not json".to_owned())),
         ..Call::standard()
     });
     assert_eq!(
         not_json.warnings,
+        [Warning {
+            subject: "Azure AI Anthropic CountTokens API error".to_owned(),
+            status: Some(500),
+        }],
+        "the handler wraps a decode failure in a 500 AnthropicError, which the counter catches first"
+    );
+
+    let not_an_object = run_counter(&Call {
+        reply: Some((200, "[]".to_owned())),
+        ..Call::standard()
+    });
+    assert_eq!(
+        not_an_object.warnings,
         [Warning {
             subject: "Error calling Azure AI Anthropic CountTokens API".to_owned(),
             status: None,
@@ -537,7 +618,9 @@ fn count_error_warnings() {
     let success = run_counter(&Call::standard());
     assert!(success.warnings.is_empty());
     assert!(success.result.is_some_and(|record| !record.error));
+}
 
+fn count_error_warnings_missing_key() {
     let missing_key = run_counter(&Call {
         params: Params::Absent,
         ..Call::standard()
@@ -634,7 +717,7 @@ fn anthropic_count_secret_safe_failure() {
 #[test]
 fn replays_the_foundry_anthropic_count_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/foundry_anthropic_count");
-    let paths: Vec<PathBuf> = std::fs::read_dir(&corpus)
+    let paths: Vec<PathBuf> = read_dir(&corpus)
         .expect("corpus folder")
         .map(|entry| entry.expect("corpus entry").path())
         .collect();
@@ -642,7 +725,7 @@ fn replays_the_foundry_anthropic_count_corpus() {
     let failures: Vec<String> = paths
         .iter()
         .filter_map(|path| {
-            let bytes = std::fs::read(path).expect("corpus file");
+            let bytes = read(path).expect("corpus file");
             let name = path
                 .file_name()
                 .and_then(|name| name.to_str())

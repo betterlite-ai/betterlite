@@ -14,7 +14,7 @@ use betterlite_foundry::anthropic_messages::environment::TokenSource;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::{Value, json};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 
@@ -54,7 +54,7 @@ impl Helper for Op {
 }
 
 fn runtime() -> Result<Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(failure)
