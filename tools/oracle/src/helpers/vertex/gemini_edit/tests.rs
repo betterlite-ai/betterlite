@@ -1,13 +1,13 @@
 #![cfg(test)]
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 use rstest::rstest;
 use serde_json::{Value, json};
-
-use crate::case::HelperCase;
-use crate::helpers::Helper as _;
 
 use super::Op;
 use super::ops::Input;
@@ -15,9 +15,9 @@ use super::ops::Input;
 const PNG: &str = "iVBORw0KGgo=";
 const DIGITS: &str = "MDEyMzQ1Njc4OWFiY2RlZg==";
 
-fn seed_sources() -> Vec<String> {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
-    let mut sources: Vec<String> = fs::read_dir(corpus)
+fn seed_cases() -> Vec<HelperCase> {
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
+    let mut paths: Vec<PathBuf> = fs::read_dir(corpus)
         .expect("helper corpus should exist")
         .filter_map(Result::ok)
         .map(|entry| entry.path())
@@ -26,16 +26,24 @@ fn seed_sources() -> Vec<String> {
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| name.starts_with("vertex_gemini_edit"))
         })
-        .map(|path| fs::read_to_string(path).expect("seed should be readable"))
         .collect();
-    sources.sort();
-    sources
+    paths.sort();
+    paths
+        .iter()
+        .map(|path| {
+            let source = fs::read_to_string(path).expect("seed should be readable");
+            let case: HelperCase = serde_saphyr::from_str(&source).expect("seed should parse");
+            assert_eq!(case.call.operation, "vertex_gemini_edit");
+            validate_helper(path, &case)
+                .map_err(|error| error.to_string())
+                .expect("seed should validate");
+            case
+        })
+        .collect()
 }
 
-fn decode(source: &str) -> Input {
-    let case: HelperCase = serde_saphyr::from_str(source).expect("seed should parse");
-    assert_eq!(case.call.operation, "vertex_gemini_edit");
-    serde_json::from_value(case.call.input).expect("seed input should decode")
+fn decode(case: &HelperCase) -> Input {
+    serde_json::from_value(case.call.input.clone()).expect("seed input should decode")
 }
 
 fn input(value: Value) -> Input {
@@ -59,11 +67,37 @@ fn request(image: Value, prompt: Option<&str>, size: Option<&str>) -> Input {
 
 #[test]
 fn helper_seeds_select_vertex_gemini_edit() {
-    let sources = seed_sources();
-    assert!(!sources.is_empty());
-    let inputs: Vec<Input> = sources.iter().map(|source| decode(source)).collect();
+    let cases = seed_cases();
+    assert!(!cases.is_empty());
+    let inputs: Vec<Input> = cases.iter().map(decode).collect();
     assert!(inputs.iter().any(|input| input.response.is_some()));
     assert!(inputs.iter().any(|input| input.image.is_some()));
+    assert!(cases.iter().all(|case| matches!(
+        run_case(&[crate::GROUP], case, false).expect("the seed should run"),
+        HelperRun::Match
+    )));
+}
+
+#[rstest]
+#[case::user_object_contents("user-object-contents")]
+#[case::images_before_prompt("images-before-prompt")]
+#[case::restored_cursor("restored-cursor")]
+#[case::empty_image_list("empty-image-list")]
+#[case::unsupported_file_record("unsupported-file-record")]
+#[case::complete_custom_base("complete-custom-base")]
+#[case::empty_inline_data("empty-inline-data")]
+fn the_edit_cases_match_litellm(#[case] name: &str) {
+    let path = Path::new(ORACLE_DIR).join(format!("cases/helpers/vertex-gemini-edit/{name}.yaml"));
+    let source = fs::read_to_string(&path).expect("the case should be readable");
+    let case: HelperCase = serde_saphyr::from_str(&source).expect("the case should parse");
+    validate_helper(&path, &case)
+        .map_err(|error| error.to_string())
+        .expect("the case should validate");
+    assert_eq!(case.call.operation, "vertex_gemini_edit");
+    assert!(matches!(
+        run_case(&[crate::GROUP], &case, false).expect("the case should run"),
+        HelperRun::Match
+    ));
 }
 
 #[test]
