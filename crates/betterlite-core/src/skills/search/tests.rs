@@ -87,7 +87,7 @@ impl Embedder for FixedEmbedder {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Effect {
     Availability,
     FindMany {
@@ -409,26 +409,38 @@ fn rank_orders_by_score_and_keeps_ties() {
 
 #[test]
 fn rank_keeps_the_store_order_for_large_ties() {
-    let mut skills = Vec::new();
-    let mut text_vectors = BTreeMap::new();
+    let entries: Vec<(u32, String, String)> = (0..25_u32)
+        .map(|step| {
+            let number = (step * 7) % 25;
+            (
+                step,
+                format!("litellm_skill_{number:02}"),
+                format!("skill-{number:02}"),
+            )
+        })
+        .collect();
+    let skills: Vec<SkillTable> = entries
+        .iter()
+        .map(|entry| skill_row(entry.1.as_str(), Some(entry.2.as_str()), None))
+        .collect();
+    let mut text_vectors: BTreeMap<String, Vector> = entries
+        .iter()
+        .map(|entry| {
+            let vector = if entry.0.is_multiple_of(2) {
+                vec![1.0_f64, 0.0]
+            } else {
+                vec![0.0, 1.0]
+            };
+            (entry.2.clone(), vector)
+        })
+        .collect();
     text_vectors.insert("q".to_owned(), vec![1.0_f64, 0.0]);
-    let mut high = Vec::new();
-    let mut low = Vec::new();
-    for step in 0..25_u32 {
-        let number = (step * 7) % 25;
-        let skill_id = format!("litellm_skill_{number:02}");
-        let text = format!("skill-{number:02}");
-        skills.push(skill_row(&skill_id, Some(&text), None));
-        if step.is_multiple_of(2) {
-            high.push(skill_id);
-            text_vectors.insert(text, vec![1.0_f64, 0.0]);
-        } else {
-            low.push(skill_id);
-            text_vectors.insert(text, vec![0.0, 1.0]);
-        }
-    }
-    let mut expected = high;
-    expected.extend(low);
+    let expected: Vec<String> = entries
+        .iter()
+        .filter(|entry| entry.0.is_multiple_of(2))
+        .chain(entries.iter().filter(|entry| !entry.0.is_multiple_of(2)))
+        .map(|entry| entry.1.clone())
+        .collect();
     let embedder = FixedEmbedder::new(text_vectors);
     let outcome = rank_in(&SkillSearchIndex::new(10), &embedder, &skills, 25, MODEL)
         .expect("a ranked search");

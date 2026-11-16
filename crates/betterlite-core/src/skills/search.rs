@@ -51,6 +51,12 @@ pub enum HostedSkillSearchError {
     Search(#[from] SkillSearchError),
 }
 
+#[derive(Debug, Error)]
+enum RankError {
+    #[error("embedding model {embedding_model} returned a score that is not a finite number")]
+    NonFiniteScore { embedding_model: String },
+}
+
 #[derive(Clone, Copy)]
 pub struct SkillSearchEmbedding<'search> {
     pub embedder: &'search dyn Embedder,
@@ -125,7 +131,9 @@ impl SkillSearchIndex {
         };
         match ranked_hits(skills, scores, top_k, embedding.embedding_model) {
             Ok(hits) => Ok(SkillSearchOutcome::Hits(hits)),
-            Err(reason) => Ok(SkillSearchOutcome::EmbeddingFailed { reason }),
+            Err(error) => Ok(SkillSearchOutcome::EmbeddingFailed {
+                reason: error.to_string(),
+            }),
         }
     }
 }
@@ -136,14 +144,14 @@ fn ranked_hits(
     scores: Vec<f64>,
     top_k: usize,
     embedding_model: &str,
-) -> Result<Vec<SkillSearchHit>, String> {
+) -> Result<Vec<SkillSearchHit>, RankError> {
     let mut ranked: Vec<(&SkillTable, f64)> = skills.iter().zip(scores).collect();
     // Every score is checked before the sort and the slice, so a NaN is never ranked into an answer
     for (_, score) in &ranked {
         if !score.is_finite() {
-            return Err(format!(
-                "embedding model {embedding_model} returned a score that is not a finite number"
-            ));
+            return Err(RankError::NonFiniteScore {
+                embedding_model: embedding_model.to_owned(),
+            });
         }
     }
     ranked.sort_by(|left, right| right.1.partial_cmp(&left.1).unwrap_or(Ordering::Equal));
@@ -188,36 +196,39 @@ pub async fn search_skills(
     top_k: usize,
     runtime: SkillSearchRuntime<'_>,
 ) -> Result<SkillSearchOutcome, SkillSearchError> {
-    let Some(embedding_model) = runtime.embedding_model else {
-        return Ok(SkillSearchOutcome::NotConfigured {
+    match (runtime.embedding_model, runtime.embedder) {
+        (None, _) => Ok(SkillSearchOutcome::NotConfigured {
             reason: "skill search needs litellm_settings.skill_search_embedding_model set to an embedding model from model_list".to_owned(),
-        });
-    };
-    let Some(embedder) = runtime.embedder else {
-        return Ok(SkillSearchOutcome::NotConfigured {
+        }),
+        (Some(_), None) => Ok(SkillSearchOutcome::NotConfigured {
             reason: "skill search needs a model_list so the embedding model can be called"
                 .to_owned(),
-        });
-    };
-    runtime
-        .index
-        .search(
-            query,
-            skills,
-            top_k,
-            SkillSearchEmbedding {
-                embedder,
-                embedding_model,
-            },
-        )
-        .await
+        }),
+        (Some(embedding_model), Some(embedder)) => {
+            runtime
+                .index
+                .search(
+                    query,
+                    skills,
+                    top_k,
+                    SkillSearchEmbedding {
+                        embedder,
+                        embedding_model,
+                    },
+                )
+                .await
+        }
+    }
 }
 
-pub async fn search_hosted_skills<R: SkillRepository>(
+pub async fn search_hosted_skills<R>(
     store: &HostedSkillStore<R>,
     principal: Option<&Principal>,
     search: HostedSkillSearchRequest<'_>,
-) -> Result<SkillSearchOutcome, HostedSkillSearchError> {
+) -> Result<SkillSearchOutcome, HostedSkillSearchError>
+where
+    R: SkillRepository,
+{
     if search.custom_llm_provider != Some(LITELLM_PROXY_PROVIDER) {
         return Ok(SkillSearchOutcome::UnsupportedProvider {
             reason: "query is only supported for custom_llm_provider=litellm_proxy".to_owned(),
