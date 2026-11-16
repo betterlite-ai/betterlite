@@ -311,6 +311,12 @@ fn resolve_image_key_falls_through_to_the_fallback_and_then_the_message() {
     );
     let message = resolve_image_key(&plain_identity(None, None), None).unwrap_err();
     assert_eq!(message.to_string(), MISSING_KEY_MESSAGE);
+    let blank_fallback = ImageIdentity {
+        fallback_key: Some(SecretString::from("")),
+        ..plain_identity(None, None)
+    };
+    let blank_message = resolve_image_key(&blank_fallback, None).unwrap_err();
+    assert_eq!(blank_message.to_string(), MISSING_KEY_MESSAGE);
 }
 
 #[test]
