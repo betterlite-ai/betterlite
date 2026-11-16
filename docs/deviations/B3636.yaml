@@ -25,10 +25,13 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L694-L731
   - what: >-
       A chunk object that carries no usable chunk fields is dropped. An error object such as
-      {"error": {"message": "boom"}} parses through LiteLLM's ModelResponseStream(**chunk) into an empty
-      chunk with a generated id, a wall-clock created time and no choices, so a stream holding only error
-      chunks still logs an empty completion. betterlite's chunk parser reports a provider error for the
-      same object, and the relay drops it; a stream that yields no usable chunk returns None and logs the
+      {"error": {"message": "boom"}} parses through LiteLLM's ModelResponseStream(**chunk) into a chunk with
+      a generated chatcmpl id, a wall-clock created time, a null model and one empty choice, so a stream
+      holding only error chunks still logs a completion with empty content and model null. An error chunk
+      ahead of usable chunks also supplies the built response's id and created, because LiteLLM takes the
+      id from the first non-empty chunk id and created from the first chunk. betterlite's chunk parser
+      reports a provider error for the same object, and the relay drops it, so the response keeps the
+      first usable chunk's id and created; a stream that yields no usable chunk returns None and logs the
       warning instead of a fabricated completion.
     why: >-
       The task says to parse each chunk with the iterator's chunk_parser and filter what does not parse, and
