@@ -1,0 +1,8 @@
+kind: helper
+name: complete-url-requires-api-base
+call:
+  b3331:
+    function: complete_url
+    api_bases: [null, '', https://mock/videos]
+env: {}
+compare: {ignore: []}
