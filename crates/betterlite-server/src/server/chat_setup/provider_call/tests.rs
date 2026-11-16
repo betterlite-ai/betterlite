@@ -84,8 +84,10 @@ async fn call(
     let loader = ConfigLoader {
         lookup: environment.clone(),
     };
-    let config = loader.load(&source).unwrap();
-    let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
+    let executor = {
+        let config = loader.load(&source).unwrap();
+        chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap()
+    };
     let request = Request::post("/v1/chat/completions")
         .header("content-type", "application/json")
         .body(Body::from(sent_body))
