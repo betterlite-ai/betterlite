@@ -79,12 +79,25 @@ impl DatabricksChatError {
 impl From<DatabricksChatError> for ProviderError {
     fn from(error: DatabricksChatError) -> Self {
         let headers: Vec<(String, String)> = match &error {
-            Self::Databricks(inner) => return Self::from(inner.clone()),
-            Self::Response { headers, .. } => headers
+            DatabricksChatError::Databricks(inner) => return Self::from(inner.clone()),
+            DatabricksChatError::Response { headers, .. } => headers
                 .iter()
                 .map(|(name, value)| (name.clone(), value.clone()))
                 .collect(),
-            _ => Vec::new(),
+            DatabricksChatError::Tools(_)
+            | DatabricksChatError::Schema(_)
+            | DatabricksChatError::Reasoning(_)
+            | DatabricksChatError::Thinking(_)
+            | DatabricksChatError::Base(_)
+            | DatabricksChatError::Fetch(_)
+            | DatabricksChatError::MissingFile
+            | DatabricksChatError::Shape { .. }
+            | DatabricksChatError::MissingKey { .. }
+            | DatabricksChatError::ChunkKey { .. }
+            | DatabricksChatError::NullCreated
+            | DatabricksChatError::InvalidEffort { .. }
+            | DatabricksChatError::Encode(_)
+            | DatabricksChatError::Decode(_) => Vec::new(),
         };
         Self::from(ProviderErrorParts {
             status_code: error.status_code(),
