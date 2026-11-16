@@ -1,0 +1,11 @@
+kind: helper
+name: router-runtime-settings-guardrail-single
+call:
+  b9711:
+    function: guardrail
+    guardrails:
+      - {"guardrail_name": "pii", "id": "one", "litellm_params": {"guardrail": "presidio", "mode": "pre_call", "api_key": null, "api_base": null}}
+      - {"guardrail_name": "toxic", "id": "two", "litellm_params": {"guardrail": "presidio", "mode": "pre_call", "api_key": null, "api_base": null}}
+    guardrail_name: "toxic"
+env: {}
+compare: {ignore: []}
