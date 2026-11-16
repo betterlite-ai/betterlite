@@ -1,0 +1,67 @@
+task: B8100
+deviations:
+  - what: >-
+      Token usage is estimated with betterlite's tokenizer (B196) for gpt-3.5-turbo, so the counts match LiteLLM only
+      where B196 matches tiktoken.
+    why: >-
+      LiteLLM calls its own token_counter, which is B196's job; the counts are whatever that task produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L358-L372
+  - what: >-
+      A wrong-typed option is an error naming the field: optional_params stream that is not a bool, an agent
+      custom_llm_provider that is not a string, an agent card url that is not a string, and a stored agent header value
+      that is not a string.
+    why: >-
+      LiteLLM tests truthiness (stream, custom_llm_provider) and passes stored values on (the card url to get_complete_url,
+      header values to httpx), so a wrong type either means something else silently or fails later without naming the
+      field. docs/compatibility.md makes a wrong value of a declared type an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L269-L273
+  - what: >-
+      A reply body that parses as JSON but is not an object is A2AError "the A2A reply is not a JSON object" with the
+      reply status.
+    why: >-
+      LiteLLM runs "if 'error' in response_json" and response_json.get on whatever the body parsed to, so a list,
+      string, number or null raises AttributeError or TypeError and the request ends as an untyped 500 with no A2A
+      status or message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L318-L333
+  - what: >-
+      A reply error whose value is not an object, or whose message is not a string, becomes "A2A error: Unknown error"
+      with the reply status.
+    why: >-
+      LiteLLM raises AttributeError for a non-object error value, and its f-string writes None or the value into the
+      message when message is null or not a string. docs/compatibility.md does not port Python's str text, and a
+      malformed error object carries no message a caller can use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L327-L333
+  - what: >-
+      A stream chunk whose error object has a null or non-string message becomes "A2A error: Unknown error" with status
+      500.
+    why: >-
+      LiteLLM writes None or the value into the message with an f-string; docs/compatibility.md does not port Python's
+      str text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/streaming_iterator.py#L59-L63
+  - what: >-
+      A reply id that is not a string is A2AError "the A2A reply id is not a string" with the reply status.
+    why: >-
+      LiteLLM assigns whatever the body holds to ModelResponse.id, so a number or object id survives into the response
+      untyped. betterlite's reply id is a string, so docs/compatibility.md makes a wrong value an error naming the
+      field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L354
+  - what: >-
+      A reply whose A2A result cannot be read as text (for example a text part whose text is not a string) is A2AError
+      "the A2A reply text cannot be extracted: ..." with the reply status.
+    why: >-
+      LiteLLM lets the extraction TypeError escape transform_response, so the request ends as an untyped 500 with no
+      A2A status or message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/common_utils.py#L86-L93
+  - what: >-
+      A stream chunk whose JSON is not an object yields an empty unfinished chunk, the same as a falsy chunk.
+    why: >-
+      LiteLLM reads chunk.get("error") before its try block, so a truthy non-object chunk raises AttributeError and
+      ends the stream; an empty chunk keeps one malformed line from killing the rest of the stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/streaming_iterator.py#L59
+  - what: >-
+      The text after "Failed to parse A2A response: " is serde_json's error message, not Python's exception text.
+    why: >-
+      docs/compatibility.md keeps output standard JSON and never ports Python's str or repr text; the prefix and the
+      reply status match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L318-L325
+kept_bugs: []
