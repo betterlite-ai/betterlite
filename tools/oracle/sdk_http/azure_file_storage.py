@@ -1,15 +1,13 @@
 import asyncio
-import json
-from typing import Literal
+import time
+from typing import Literal, TypedDict
 
 import httpx
-from azure.core.exceptions import HttpResponseError
 from litellm.integrations.azure_storage.azure_storage import AzureBlobStorageLogger
 from litellm.llms.base_llm.files.azure_blob_storage_backend import AzureBlobStorageBackend
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 from typing_extensions import override
 
-JsonObject = dict[str, JsonValue]
 BEARER = "tok-1"
 
 
@@ -34,6 +32,25 @@ class DownloadCall(BaseModel):
 FileAzureStorageCall = UploadCall | DownloadCall
 
 
+class FileStorageFailure(TypedDict):
+    message: str
+    status: int | None
+
+
+class FileStorageRun(TypedDict):
+    url: str | None
+    downloaded: list[int] | None
+    error: FileStorageFailure | None
+
+
+class FileAzureStorageValue(TypedDict):
+    value: FileStorageRun
+
+
+class FileAzureStorageOutcome(TypedDict):
+    file_azure_storage: FileAzureStorageValue
+
+
 class FixedToken:
     def __call__(self) -> str:
         return BEARER
@@ -47,8 +64,22 @@ class FixedChain:
 class Backend(AzureBlobStorageBackend):
     api_base: str
 
+    # the backend's own initializer is untyped, so the annotated logger initializer parses the environment
     def __init__(self, api_base: str) -> None:
-        AzureBlobStorageLogger.__init__(self, build_credential_chain_token_provider=FixedChain())
+        source = AzureBlobStorageLogger()
+        self.tenant_id = source.tenant_id
+        self.client_id = source.client_id
+        self.client_secret = source.client_secret
+        self.azure_storage_account_key = source.azure_storage_account_key
+        self.azure_storage_account_name = source.azure_storage_account_name
+        self.azure_storage_file_system = source.azure_storage_file_system
+        self.azure_storage_endpoint_suffix = source.azure_storage_endpoint_suffix
+        self.azure_auth_token = None
+        self.token_expiry = None
+        self._service_client = None
+        self._service_client_timeout = None
+        self._clock = time.time
+        self._build_credential_chain_token_provider = FixedChain()
         self.api_base = api_base
 
     # the SDK rewrites ".dfs." to ".blob.", so the mock's prefixes keep both origins apart
@@ -63,7 +94,7 @@ class Backend(AzureBlobStorageBackend):
         return f"{self.api_base}/.blob."
 
 
-def error_view(error: Exception, status: int | None) -> JsonObject:
+def error_view(error: Exception, status: int | None) -> FileStorageRun:
     return {
         "url": None,
         "downloaded": None,
@@ -71,7 +102,7 @@ def error_view(error: Exception, status: int | None) -> JsonObject:
     }
 
 
-async def upload_view(backend: Backend, call: UploadCall) -> JsonObject:
+async def upload_view(backend: Backend, call: UploadCall) -> FileStorageRun:
     url = await backend.upload_file(
         file_content=bytes(call.file_content),
         filename=call.filename,
@@ -82,13 +113,13 @@ async def upload_view(backend: Backend, call: UploadCall) -> JsonObject:
     return {"url": url.removeprefix(backend.api_base), "downloaded": None, "error": None}
 
 
-async def download_view(backend: Backend, call: DownloadCall) -> JsonObject:
+async def download_view(backend: Backend, call: DownloadCall) -> FileStorageRun:
     content = await backend.download_file(call.storage_url)
     return {"url": None, "downloaded": list(content), "error": None}
 
 
-async def execute(call: FileAzureStorageCall, api_base: str) -> JsonObject:
-    value: JsonObject
+async def execute(call: FileAzureStorageCall, api_base: str) -> FileStorageRun:
+    value: FileStorageRun
     try:
         backend = Backend(api_base)
         match call:
@@ -98,8 +129,6 @@ async def execute(call: FileAzureStorageCall, api_base: str) -> JsonObject:
                 value = await download_view(backend, call)
     except ValueError as error:
         return error_view(error, None)
-    except HttpResponseError as error:
-        return error_view(error, error.status_code)
     except httpx.HTTPStatusError as error:
         return error_view(error, error.response.status_code)
     return value
@@ -107,4 +136,5 @@ async def execute(call: FileAzureStorageCall, api_base: str) -> JsonObject:
 
 def run_file_azure_storage(call: FileAzureStorageCall, api_base: str) -> str:
     value = asyncio.run(execute(call, api_base))
-    return json.dumps({"file_azure_storage": {"value": value}}, separators=(",", ":"))
+    outcome: FileAzureStorageOutcome = {"file_azure_storage": {"value": value}}
+    return TypeAdapter(FileAzureStorageOutcome).dump_json(outcome).decode()
