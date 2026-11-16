@@ -6,6 +6,9 @@ deviations:
   - what: A turn_detection duration written as a JSON integer beyond the signed or unsigned 64-bit range is dropped, where LiteLLM forwards it because Python ints are unbounded.
     why: betterlite reads setup numbers as serde_json numbers, and a padding or silence window that large is not a value any working Gemini setup sends.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L295-L298
+  - what: A max_response_output_tokens written as a JSON integer beyond the signed 64-bit range fails the setup decode with InvalidField, where LiteLLM forwards the unbounded Python int to maxOutputTokens.
+    why: betterlite stores the token limit as an i64 or the string inf, and a limit that large is not a value any working Gemini setup sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L321-L322
 kept_bugs:
   - what: session.created copies instructions only when systemInstruction is a string, so a session configured through the first session.update, which stores a content object, never sees its instructions echoed back.
     why: The event shape is what every LiteLLM client, pipecat included, parses today, and the task pins this projection, so betterlite keeps the omission rather than adding a field working clients do not expect.

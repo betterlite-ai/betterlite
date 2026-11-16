@@ -62,6 +62,7 @@ fn decodes_the_valid_gemini_live_setup_seeds(#[case] name: &str, #[case] expecte
 #[rstest]
 #[case::field_type("invalid-field-type.json")]
 #[case::token_limit("invalid-token-limit.json")]
+#[case::token_limit_range("invalid-token-limit-range.json")]
 fn rejects_the_invalid_field_gemini_live_setup_seeds(#[case] name: &str) {
     assert!(matches!(
         decode_gemini_live_setup(&seed(name)),
