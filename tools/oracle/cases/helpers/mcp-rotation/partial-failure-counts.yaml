@@ -1,0 +1,138 @@
+kind: helper
+name: mcp-rotation-partial-failure-counts
+call:
+  mcp_rotation:
+    function: rotate_servers
+    salt_key: b2332-salt-key
+    new_master_key: b2332-new-key
+    nonce_hex: "00112233445566778899aabb"
+    touched_by: rotator-4
+    servers:
+      - server_id: s1
+        static_headers: "\"v2:gcm:ABEiM0RVZneImaq7433EwuHtqF-Fdvqie7VG797sCdFMawOx7kFhon4aXTsYDfGxfd5hrs4tLKBY\""
+      - server_id: s2
+        env: {X-Api-Key: header-secret}
+    oauth_clients:
+      - server_id: o1
+        credentials:
+          client_id: "v2:gcm:ABEiM0RVZneImaq7-zP1is7p7BuqPvPsIP5AW1XJiI-27PCM6TzKrsBxKw=="
+    fail_at_write: 0
+calls:
+  - mcp_rotation:
+      function: rotate_servers
+      salt_key: b2332-salt-key
+      new_master_key: b2332-new-key
+      nonce_hex: "00112233445566778899aabb"
+      touched_by: rotator-4
+      servers:
+        - server_id: s1
+          static_headers: "\"v2:gcm:ABEiM0RVZneImaq7433EwuHtqF-Fdvqie7VG797sCdFMawOx7kFhon4aXTsYDfGxfd5hrs4tLKBY\""
+        - server_id: s2
+          env: {X-Api-Key: header-secret}
+      oauth_clients:
+        - server_id: o1
+          credentials:
+            client_id: "v2:gcm:ABEiM0RVZneImaq7-zP1is7p7BuqPvPsIP5AW1XJiI-27PCM6TzKrsBxKw=="
+      fail_at_write: 1
+  - mcp_rotation:
+      function: rotate_servers
+      salt_key: b2332-salt-key
+      new_master_key: b2332-new-key
+      nonce_hex: "00112233445566778899aabb"
+      touched_by: rotator-4
+      servers:
+        - server_id: s1
+          static_headers: "\"v2:gcm:ABEiM0RVZneImaq7433EwuHtqF-Fdvqie7VG797sCdFMawOx7kFhon4aXTsYDfGxfd5hrs4tLKBY\""
+        - server_id: s2
+          env: {X-Api-Key: header-secret}
+      oauth_clients:
+        - server_id: o1
+          credentials:
+            client_id: "v2:gcm:ABEiM0RVZneImaq7-zP1is7p7BuqPvPsIP5AW1XJiI-27PCM6TzKrsBxKw=="
+      fail_at_write: 2
+  - mcp_rotation:
+      function: rotate_servers
+      salt_key: b2332-salt-key
+      new_master_key: b2332-new-key
+      nonce_hex: "00112233445566778899aabb"
+      touched_by: rotator-4
+      servers:
+        - server_id: s1
+          static_headers: "\"v2:gcm:ABEiM0RVZneImaq7433EwuHtqF-Fdvqie7VG797sCdFMawOx7kFhon4aXTsYDfGxfd5hrs4tLKBY\""
+        - server_id: s2
+          env: {X-Api-Key: header-secret}
+      oauth_clients:
+        - server_id: o1
+          credentials:
+            client_id: "v2:gcm:ABEiM0RVZneImaq7-zP1is7p7BuqPvPsIP5AW1XJiI-27PCM6TzKrsBxKw=="
+      fail_at_write: 3
+  - mcp_rotation:
+      function: rotate_user_credentials
+      salt_key: b2332-salt-key
+      new_master_key: b2332-new-key
+      nonce_hex: "00112233445566778899aabb"
+      rows:
+        - user_id: u1
+          server_id: s1
+          credential_b64: "v2:gcm:ABEiM0RVZneImaq77Sz5nY3-sxeqdu30KPZCp8_kDcoPDXswgUT9x1oJNaxULYckhg=="
+        - user_id: u2
+          server_id: s1
+          credential_b64: "a"
+      fail_at_write: 0
+  - mcp_rotation:
+      function: rotate_user_credentials
+      salt_key: b2332-salt-key
+      new_master_key: b2332-new-key
+      nonce_hex: "00112233445566778899aabb"
+      rows:
+        - user_id: u1
+          server_id: s1
+          credential_b64: "v2:gcm:ABEiM0RVZneImaq77Sz5nY3-sxeqdu30KPZCp8_kDcoPDXswgUT9x1oJNaxULYckhg=="
+        - user_id: u2
+          server_id: s2
+          credential_b64: "bGVnYWN5LWNyZWRlbnRpYWwtcGxhaW4="
+      fail_at_write: 1
+  - mcp_rotation:
+      function: rotate_user_credentials
+      salt_key: b2332-salt-key
+      new_master_key: b2332-new-key
+      nonce_hex: "00112233445566778899aabb"
+      rows:
+        - user_id: u1
+          server_id: s1
+          credential_b64: "v2:gcm:ABEiM0RVZneImaq77Sz5nY3-sxeqdu30KPZCp8_kDcoPDXswgUT9x1oJNaxULYckhg=="
+        - user_id: u2
+          server_id: s2
+          credential_b64: "bGVnYWN5LWNyZWRlbnRpYWwtcGxhaW4="
+        - user_id: u3
+          server_id: s3
+          credential_b64: "a"
+      fail_at_write: 2
+  - mcp_rotation:
+      function: rotate_user_env_vars
+      salt_key: b2332-salt-key
+      new_master_key: b2332-new-key
+      nonce_hex: "00112233445566778899aabb"
+      rows:
+        - user_id: e1
+          server_id: s1
+          values_b64: "v2:gcm:ABEiM0RVZneImaq7433dv-nCijeXMbmiNORL-JL7CcATfRLw4Sh9wS6xFdPj0DGgO5PEeyM="
+        - user_id: e2
+          server_id: s1
+          values_b64: "a"
+      fail_at_write: 1
+  - mcp_rotation:
+      function: rotate_user_env_vars
+      salt_key: b2332-salt-key
+      new_master_key: b2332-new-key
+      nonce_hex: "00112233445566778899aabb"
+      rows:
+        - user_id: e1
+          server_id: s1
+          values_b64: "v2:gcm:ABEiM0RVZneImaq7433dv-nCijeXMbmiNORL-JL7CcATfRLw4Sh9wS6xFdPj0DGgO5PEeyM="
+        - user_id: e2
+          server_id: s2
+          values_b64: "v2:gcm:ABEiM0RVZneImaq7433dv-nCijeXMbmiNORL-JL7CcATfRLw4Sh9wS6xFdPj0DGgO5PEeyM="
+      fail_at_write: 1
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+task: B1605
+deviations:
+  - what: The spend fields of the tool usage and spend records hold an exact Decimal instead of LiteLLM's float, so a stored amount keeps every digit and is written back with its own scale.
+    why: Spend is money, and the project keeps money in Decimal from the first read so an amount never round-trips through binary64.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/tool_management.py#L92-L128
+kept_bugs: []
