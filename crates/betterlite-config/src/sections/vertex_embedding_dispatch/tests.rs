@@ -2,33 +2,16 @@
 
 mod embedding_dispatch_settings {
     use std::collections::BTreeMap;
-    use std::path::PathBuf;
 
-    use crate::loader::{ConfigError, ConfigLoader, EnvironmentLookup};
+    use crate::loader::{ConfigError, ConfigLoader};
     use crate::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
     use crate::sections::vertex_embedding_dispatch::Settings;
 
-    struct Lookup {
-        variables: BTreeMap<String, String>,
-    }
-
-    impl EnvironmentLookup for Lookup {
-        fn lookup(&self, name: &str) -> Option<String> {
-            self.variables.get(name).cloned()
-        }
-
-        fn system_home(&self) -> Option<PathBuf> {
-            None
-        }
-    }
-
     fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
-        let lookup = Lookup {
-            variables: environment
-                .iter()
-                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
-                .collect(),
-        };
+        let lookup: BTreeMap<String, String> = environment
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+            .collect();
         Ok(ConfigLoader { lookup }
             .load(source)?
             .sections
