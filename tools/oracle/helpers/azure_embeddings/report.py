@@ -1,7 +1,6 @@
 import json
 from typing import Literal, NotRequired, TypeAlias, TypedDict
 
-from litellm.llms.azure.common_utils import AzureOpenAIError
 from litellm.types.utils import EmbeddingResponse
 from openai.types import CreateEmbeddingResponse
 from pydantic import JsonValue as Json
@@ -179,7 +178,7 @@ class Recorder:
 
 def reply_value(response: EmbeddingResponse) -> dict[str, Json]:
     view = TypeAdapter(ReplyView).validate_json(response.model_dump_json())
-    private = TypeAdapter(Private).validate_python(response.__pydantic_private__)
+    private = TypeAdapter(Private).validate_python(response, from_attributes=True)
     hidden = private["_hidden_params"]
     hidden_headers: dict[str, Json] | None = None
     if "headers" in hidden:
@@ -200,7 +199,7 @@ def reply_value(response: EmbeddingResponse) -> dict[str, Json]:
     }
 
 
-def azure_value(error: AzureOpenAIError) -> dict[str, Json]:
+def azure_value(error: Exception) -> dict[str, Json]:
     fields = ERROR_FIELDS.validate_python(error, from_attributes=True)
     value: dict[str, Json] = {"kind": "azure", "status": fields["status_code"], "headers": None}
     if "headers" in fields:
