@@ -5,6 +5,7 @@ use crate::api::response_id_traversal::record::Record;
 
 use super::super::access::assert_container_access;
 use super::super::errors::ContainerOwnershipError;
+use super::super::list::allowed_container_ids;
 use super::super::record::{record_container_owner, record_response_containers};
 use super::super::response::synthetic_container;
 use super::super::{CONTAINER_OBJECT_PURPOSE, ContainerCaller, ContainerOwnership};
@@ -213,6 +214,36 @@ async fn record_warms_the_owner_cache_for_the_recorded_container() {
         .unwrap_err();
     assert!(matches!(&error, ContainerOwnershipError::Forbidden));
     assert_eq!(objects.effects().len(), effects);
+}
+
+#[tokio::test]
+async fn record_invalidates_the_callers_allowed_cache() {
+    let objects = ScriptedObjects::default();
+    let ownership = ContainerOwnership::new(objects.clone(), fixed_clock()).unwrap();
+    let alice = principal("alice");
+    let caller = ContainerCaller {
+        principal: Some(&alice),
+        custom_llm_provider: "azure",
+    };
+    assert!(
+        allowed_container_ids(&ownership, Some(&alice))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    record_container_owner(&ownership, &synthetic_container("container-1"), caller)
+        .await
+        .unwrap();
+    let allowed = allowed_container_ids(&ownership, Some(&alice))
+        .await
+        .unwrap();
+    assert!(allowed.contains("container:azure:container-1"));
+    let lookups = objects
+        .effects()
+        .iter()
+        .filter(|effect| matches!(effect, Effect::FindOwned(_)))
+        .count();
+    assert_eq!(lookups, 2);
 }
 
 #[tokio::test]

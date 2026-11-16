@@ -215,6 +215,26 @@ async fn list_stops_when_a_page_has_no_last_id() {
 }
 
 #[tokio::test]
+async fn list_stops_once_it_has_enough_items() {
+    let objects = ScriptedObjects::default();
+    objects.owned_scopes(&allowed_ids(3));
+    let ownership = ContainerOwnership::new(objects.clone(), fixed_clock()).unwrap();
+    let pages = ScriptedPages::new(vec![numbered_page("item", 0, 3, true)]);
+    let alice = principal("alice");
+    let caller = ContainerCaller {
+        principal: Some(&alice),
+        custom_llm_provider: "openai",
+    };
+    let result = list_owned_containers(&ownership, &pages, None, Some(1), caller)
+        .await
+        .unwrap();
+    assert_eq!(result.data.len(), 1);
+    assert_eq!(result.first_id.as_deref(), Some("item0"));
+    assert!(result.has_more);
+    assert_eq!(pages.calls().len(), 1);
+}
+
+#[tokio::test]
 async fn list_stops_on_an_empty_upstream_page() {
     let objects = ScriptedObjects::default();
     objects.owned_scopes(&["container:openai:item0".to_owned()]);
