@@ -37,7 +37,7 @@ pub fn text_field(value: Option<&GuardrailValue>) -> Option<&str> {
 
 impl Chunk {
     #[must_use]
-    pub fn payload(&self) -> Option<&GuardrailValue> {
+    pub const fn payload(&self) -> Option<&GuardrailValue> {
         match self {
             Self::Json(value) => Some(value),
             Self::Bytes(_) => None,
