@@ -77,17 +77,16 @@ fn run_assemble(
         identify: Uuid::nil,
         clock: i64::default,
     };
-    match runtime.block_on(complete_streaming_response(&assembly, &hooks)) {
-        Some(response) => response_view(&response),
-        None => Ok(Value::Null),
-    }
+    runtime
+        .block_on(complete_streaming_response(&assembly, &hooks))
+        .map_or(Ok(Value::Null), |response| response_view(&response))
 }
 
 fn run_count(model: &str, messages: Option<&[Message]>) -> HelperResult {
     let counter = BundledCounter::new()?;
-    let counted = count_relayed_prompt_tokens(&counter, model, messages)
+    let tokens = count_relayed_prompt_tokens(&counter, model, messages)
         .map_err(|error| failure(error.to_string()))?;
-    Ok(json!({ "prompt_tokens": counted }))
+    Ok(json!({ "prompt_tokens": tokens }))
 }
 
 fn response_view(response: &Response) -> HelperResult {
