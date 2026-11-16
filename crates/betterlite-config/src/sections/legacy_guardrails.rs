@@ -40,10 +40,13 @@ pub struct RawSpec {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Settings {
+pub struct GuardrailTable {
     pub items: Vec<GuardrailItem>,
     pub by_name: BTreeMap<String, GuardrailItem>,
 }
+
+// boxed so the loaded Config stays small enough for futures that hold it across an await
+pub type Settings = Box<GuardrailTable>;
 
 impl Section for Raw {
     type Settings = Settings;
