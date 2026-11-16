@@ -16,6 +16,7 @@ fn call(method: &str, url: &str) -> (String, String) {
     (method.to_owned(), url.to_owned())
 }
 
+const BLOB: &str = "https://acct.blob.core.windows.net/files";
 const DFS: &str = "https://acct.dfs.core.windows.net/files";
 
 #[tokio::test]
@@ -42,9 +43,9 @@ async fn account_key_upload() {
     assert_eq!(
         paths(&calls),
         vec![
-            call("GET", &format!("{DFS}?restype=container")),
-            call("PUT", &format!("{DFS}?restype=container")),
-            call("HEAD", &format!("{DFS}/p")),
+            call("GET", &format!("{BLOB}?restype=container")),
+            call("PUT", &format!("{BLOB}?restype=container")),
+            call("HEAD", &format!("{BLOB}/p")),
             call("PUT", &format!("{DFS}/p?resource=directory")),
             call("PUT", &format!("{DFS}/p/a.txt?resource=file")),
             call("PATCH", &format!("{DFS}/p/a.txt?action=append&position=0")),
@@ -92,8 +93,8 @@ async fn account_key_upload_skips_existing_resources() {
     assert_eq!(
         paths(&harness.calls()),
         vec![
-            call("GET", &format!("{DFS}?restype=container")),
-            call("HEAD", &format!("{DFS}/p")),
+            call("GET", &format!("{BLOB}?restype=container")),
+            call("HEAD", &format!("{BLOB}/p")),
             call("PUT", &format!("{DFS}/p/a.txt?resource=file")),
             call("PATCH", &format!("{DFS}/p/a.txt?action=append&position=0")),
             call(
@@ -121,8 +122,8 @@ async fn account_key_upload_root_file() {
     assert_eq!(
         paths(&harness.calls()),
         vec![
-            call("GET", &format!("{DFS}?restype=container")),
-            call("PUT", &format!("{DFS}?restype=container")),
+            call("GET", &format!("{BLOB}?restype=container")),
+            call("PUT", &format!("{BLOB}?restype=container")),
             call("PUT", &format!("{DFS}/a.txt?resource=file")),
             call("PATCH", &format!("{DFS}/a.txt?action=append&position=0")),
             call(
@@ -161,5 +162,21 @@ async fn account_key_upload_propagates_an_existence_error() {
         .await
         .expect_err("a forbidden existence check");
     assert!(error.to_string().contains("403"), "{error}");
+    assert_eq!(harness.calls().len(), 1);
+}
+
+// the SDK's exists() raises on a redirect instead of reporting an existing container
+#[tokio::test]
+async fn account_key_upload_rejects_a_redirect_on_the_existence_check() {
+    let harness = Harness::new(settings_with_account_key(), &[(302, "")]);
+    let error = harness
+        .backend
+        .upload_file(b"abc", "a.txt", "text/plain", options(None))
+        .await
+        .expect_err("a redirected existence check");
+    assert_eq!(
+        error.to_string(),
+        "the Azure storage service answered with status 302 for exists"
+    );
     assert_eq!(harness.calls().len(), 1);
 }

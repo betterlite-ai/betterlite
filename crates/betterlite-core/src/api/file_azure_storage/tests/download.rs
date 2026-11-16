@@ -4,8 +4,8 @@ use super::support::{Harness, paths, settings, settings_with_account_key};
 use crate::api::file_storage_contracts::storage::FileStorageBackend;
 
 const SUPPLIED: &str = "https://foreign.blob.example/other/p/a.txt?sig=ignored";
+const FILES: &str = "https://acct.blob.core.windows.net/files";
 const BLOB: &str = "https://acct.blob.core.windows.net/files/p/a.txt";
-const DFS: &str = "https://acct.dfs.core.windows.net/files";
 
 #[tokio::test]
 async fn azure_download_addressing() {
@@ -64,8 +64,64 @@ async fn account_key_download() {
     assert_eq!(
         paths(&harness.calls()),
         vec![
-            ("GET".to_owned(), format!("{DFS}?restype=container")),
-            ("GET".to_owned(), format!("{DFS}/p/a.txt")),
+            ("GET".to_owned(), format!("{FILES}?restype=container")),
+            ("GET".to_owned(), BLOB.to_owned()),
+        ]
+    );
+}
+
+// LiteLLM's urlparse keeps a raw space and the SDK quotes it once, so the URL parser's own
+// encoding must not be quoted a second time
+#[tokio::test]
+async fn account_key_download_quotes_the_caller_path() {
+    let harness = Harness::new(settings_with_account_key(), &[(200, ""), (200, "abc")]);
+    let content = harness
+        .backend
+        .download_file("https://acct.blob.core.windows.net/files/my dir/a.txt")
+        .await
+        .expect("download");
+    assert_eq!(content, b"abc");
+    assert_eq!(
+        paths(&harness.calls()),
+        vec![
+            ("GET".to_owned(), format!("{FILES}?restype=container")),
+            ("GET".to_owned(), format!("{FILES}/my%20dir/a.txt")),
+        ]
+    );
+}
+
+// a name the upload already quoted is quoted once more, exactly as the SDK does for its URL
+#[tokio::test]
+async fn account_key_download_quotes_a_quoted_name() {
+    let harness = Harness::new(settings_with_account_key(), &[(200, ""), (200, "abc")]);
+    harness
+        .backend
+        .download_file("https://acct.blob.core.windows.net/files/p/a%20b.txt")
+        .await
+        .expect("download");
+    assert_eq!(
+        paths(&harness.calls()),
+        vec![
+            ("GET".to_owned(), format!("{FILES}?restype=container")),
+            ("GET".to_owned(), format!("{FILES}/p/a%2520b.txt")),
+        ]
+    );
+}
+
+// urlparse drops the last segment's ;params before LiteLLM hands the path to the SDK
+#[tokio::test]
+async fn account_key_download_drops_the_last_segment_params() {
+    let harness = Harness::new(settings_with_account_key(), &[(200, ""), (200, "abc")]);
+    harness
+        .backend
+        .download_file("https://acct.blob.core.windows.net/files/p/a;b.txt")
+        .await
+        .expect("download");
+    assert_eq!(
+        paths(&harness.calls()),
+        vec![
+            ("GET".to_owned(), format!("{FILES}?restype=container")),
+            ("GET".to_owned(), format!("{FILES}/p/a")),
         ]
     );
 }
@@ -101,4 +157,20 @@ async fn azure_download_propagates_status() {
         .expect_err("a missing file");
     assert!(error.to_string().contains("404"), "{error}");
     assert_eq!(account.calls().len(), 2);
+}
+
+// httpx's raise_for_status rejects a redirect, so a 302 body never becomes the downloaded file
+#[tokio::test]
+async fn azure_download_rejects_a_redirect() {
+    let harness = Harness::new(settings(), &[(302, "moved")]);
+    let error = harness
+        .backend
+        .download_file(SUPPLIED)
+        .await
+        .expect_err("a redirected download");
+    assert_eq!(
+        error.to_string(),
+        "the Azure storage service answered with status 302 for download"
+    );
+    assert_eq!(harness.calls().len(), 1);
 }
