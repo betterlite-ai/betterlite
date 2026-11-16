@@ -366,6 +366,7 @@ fn key_sentinel_replacement_and_ordered_dedup() {
         get_key_models(&repeated, &team_models, &proxy_model_list, &groups, scope),
         strings(&["b", "a"])
     );
+    assert!(get_key_models(&[], &team_models, &proxy_model_list, &groups, scope).is_empty());
 }
 
 #[test]
