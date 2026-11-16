@@ -130,6 +130,7 @@ fn a_reply_appends_only_the_predictions_with_the_encoded_key() {
                 {"raiFilteredReason": "blocked"},
                 {"bytesBase64Encoded": "AAA"},
                 {"bytesBase64Encoded": ""},
+                {"bytesBase64Encoded": null},
             ],
         },
     }));
@@ -137,7 +138,7 @@ fn a_reply_appends_only_the_predictions_with_the_encoded_key() {
     assert_eq!(
         value["response"]["response"],
         json!({
-            "data": [{"b64_json": "AAA"}, {"b64_json": ""}],
+            "data": [{"b64_json": "AAA"}, {"b64_json": ""}, {}],
             "usage": {
                 "input_tokens": 0_i32,
                 "input_tokens_details": {"image_tokens": 0_i32, "text_tokens": 0_i32},

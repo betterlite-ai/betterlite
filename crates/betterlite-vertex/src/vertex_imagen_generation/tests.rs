@@ -254,6 +254,12 @@ fn an_empty_encoded_image_is_still_appended() {
 }
 
 #[test]
+fn a_null_encoded_image_appends_an_empty_image() {
+    let response = transformed(r#"{"predictions":[{"bytesBase64Encoded":null}]}"#);
+    assert_eq!(encoded(&response), r#"{"data":[{}]}"#);
+}
+
+#[test]
 fn images_append_to_existing_data_and_keep_the_usage() {
     let usage = ImageUsage {
         input_tokens: 3,

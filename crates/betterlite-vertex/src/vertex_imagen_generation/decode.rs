@@ -17,11 +17,15 @@ pub struct ImagenReply {
     pub predictions: Option<Vec<ImagenPrediction>>,
 }
 
-// the key's presence decides whether an image is appended, so absent and null stay None
+// the key's presence decides whether an image is appended, so null is Some(None) and an absent key is None
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImagenPrediction {
-    pub bytes_base64_encoded: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_with::rust::double_option::deserialize"
+    )]
+    pub bytes_base64_encoded: Option<Option<String>>,
 }
 
 pub fn decode_imagen_generation(
