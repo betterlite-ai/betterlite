@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::convert::Infallible;
+use std::future::{Future, ready};
 use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -121,12 +122,8 @@ impl FixtureTransport {
             .unwrap_or_else(PoisonError::into_inner)
             .take()
     }
-}
 
-impl StreamTransport for FixtureTransport {
-    type Failure = FixtureFailure;
-
-    async fn post(
+    fn respond(
         &self,
         post: StreamPost,
     ) -> Result<StreamReply<FixtureFailure>, PostFailure<FixtureFailure>> {
@@ -158,6 +155,18 @@ impl StreamTransport for FixtureTransport {
             headers,
             lines: chunks,
         })
+    }
+}
+
+impl StreamTransport for FixtureTransport {
+    type Failure = FixtureFailure;
+
+    fn post(
+        &self,
+        post: StreamPost,
+    ) -> impl Future<Output = Result<StreamReply<FixtureFailure>, PostFailure<FixtureFailure>>> + Send
+    {
+        ready(self.respond(post))
     }
 }
 

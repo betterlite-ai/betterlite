@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::future::{Future, ready};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -72,12 +73,8 @@ impl FixtureTransport {
         }));
         Self::new(Err(failure), Arc::default())
     }
-}
 
-impl StreamTransport for FixtureTransport {
-    type Failure = HelperFailure;
-
-    async fn post(
+    fn respond(
         &self,
         post: StreamPost,
     ) -> Result<StreamReply<HelperFailure>, PostFailure<HelperFailure>> {
@@ -91,6 +88,18 @@ impl StreamTransport for FixtureTransport {
             .unwrap_or_else(PoisonError::into_inner)
             .take();
         taken.unwrap_or(Err(PostFailure::Unknown(HelperFailure::Exhausted)))
+    }
+}
+
+impl StreamTransport for FixtureTransport {
+    type Failure = HelperFailure;
+
+    fn post(
+        &self,
+        post: StreamPost,
+    ) -> impl Future<Output = Result<StreamReply<HelperFailure>, PostFailure<HelperFailure>>> + Send
+    {
+        ready(self.respond(post))
     }
 }
 
