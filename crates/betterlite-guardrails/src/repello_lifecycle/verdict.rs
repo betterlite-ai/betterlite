@@ -27,7 +27,7 @@ pub fn verdict_blocks(response: Option<&RepelloAIAnalyzeResponse>) -> bool {
     }
 }
 
-// LiteLLM's _format_blocked_detail: only the policies that name an action or a score are listed.
+// LiteLLM's _format_blocked_detail: every policy is listed, and its action and score appear only when present.
 #[must_use]
 pub fn format_blocked_detail(response: &RepelloAIAnalyzeResponse) -> String {
     let policies = response.policies_violated.as_deref().unwrap_or_default();

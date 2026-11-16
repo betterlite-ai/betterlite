@@ -12,6 +12,12 @@ deviations:
   - what: The scan request body and the parsed verdict are not written to the debug log, where LiteLLM logs both.
     why: Both carry the user's prompt and response text unredacted, and a debug log that keeps them leaks the content the guardrail was asked to inspect; the guardrail name and stage still identify the call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L201
+  - what: A 400, 401, 403, 404 or 422 answer from Argus is always the misconfigured 500, where LiteLLM lets fail_open pass the request unscanned.
+    why: LiteLLM's _raise_for_config_error never sees these codes, because AsyncHTTPHandler.post calls raise_for_status first and its MaskedHTTPStatusError reaches _handle_unreachable instead (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L834); a 401 names a broken guardrail rather than an outage, so fail_open must not apply, and the oracle case repello-lifecycle-config-error-fail-open lists the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L202-L209
+  - what: A scan that times out follows unreachable_fallback, where LiteLLM answers the generic 500 under either fallback.
+    why: A timeout is an unreachable API, so fail_open lets the request through as it does for a refused connection; LiteLLM's AsyncHTTPHandler turns httpx.TimeoutException into litellm.Timeout (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L852-L866), which is no httpx.HTTPError, so _call_analyze's generic except answers 500 and the fallback never applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L232-L235
 kept_bugs:
   - what: A response whose verdict is absent, null or unrecognized registers as a block, with a warning that prints the value as None for the first two.
     why: LiteLLM fails safe on an answer it cannot read, and a setup that watches for the warning depends on the block; the warning keeps its wording.

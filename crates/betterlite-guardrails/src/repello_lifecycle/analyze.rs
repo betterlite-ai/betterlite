@@ -147,7 +147,7 @@ impl RepelloAILifecycle {
         };
         let mut key =
             HeaderValue::from_str(self.settings.api_key.expose_secret()).map_err(|source| {
-                PostError::Transient {
+                PostError::Unexpected {
                     reason: source.to_string(),
                 }
             })?;

@@ -2,12 +2,14 @@ use std::time::Duration;
 
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::repello_lifecycle::{
     API_KEY_HEADER, FAILED_MESSAGE, INVALID_JSON_ERROR_TYPE, INVALID_JSON_MESSAGE, PROMPT_STAGE,
     RESPONSE_STAGE, UNREACHABLE_ERROR_TYPE, UNREACHABLE_MESSAGE,
 };
 use rstest::rstest;
+use secrecy::SecretString;
 use tracing::subscriber::set_default;
 
 use crate::support::{
@@ -146,6 +148,45 @@ async fn a_request_timeout_is_an_unreachable_api() {
         detail.get("error_type"),
         Some(&GuardrailValue::Text(String::from(UNREACHABLE_ERROR_TYPE)))
     );
+    let recorded = records(&run.data);
+    assert_eq!(
+        text_field(&recorded[0], "guardrail_status").as_deref(),
+        Some("guardrail_failed_to_respond")
+    );
+}
+
+#[tokio::test]
+async fn a_timed_out_scan_passes_under_fail_open() {
+    let mock = mock_repello_after(Duration::from_secs(5), StatusCode::OK, PASSED_REPLY).await;
+    let mut configured = settings(&mock.base);
+    configured.request_timeout = Duration::from_millis(50);
+    configured.unreachable_fallback = UnreachableFallback::FailOpen;
+    let run = run_pre_call(&guardrail(configured), prompt_data()).await;
+    assert!(run.result.is_ok());
+    let recorded = records(&run.data);
+    assert_eq!(
+        text_field(&recorded[0], "guardrail_status").as_deref(),
+        Some("guardrail_failed_to_respond")
+    );
+}
+
+#[tokio::test]
+async fn a_key_that_cannot_be_a_header_value_is_the_generic_failure_even_under_fail_open() {
+    let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
+    let mut configured = settings(&mock.base);
+    configured.api_key = SecretString::from(String::from("ключ"));
+    configured.unreachable_fallback = UnreachableFallback::FailOpen;
+    let run = run_pre_call(&guardrail(configured), prompt_data()).await;
+    let Err(GuardrailFailure::HttpObject { status, detail }) = run.result else {
+        panic!("expected the generic failure");
+    };
+    assert_eq!(status, 500);
+    assert_eq!(
+        detail.get("error"),
+        Some(&GuardrailValue::Text(String::from(FAILED_MESSAGE)))
+    );
+    assert_eq!(detail.get("error_type"), None);
+    assert_eq!(request_count(&mock), 0);
     let recorded = records(&run.data);
     assert_eq!(
         text_field(&recorded[0], "guardrail_status").as_deref(),
