@@ -54,7 +54,7 @@ fn converted(entry: IndexMap<String, Json>, environment: &[(&str, &str)]) -> Set
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect::<BTreeMap<_, _>>();
     Raw {
-        prompts: Some(Json::List(vec![Json::Object(entry)])),
+        prompts: Some(Box::new(Json::List(vec![Json::Object(entry)]))),
     }
     .convert(&lookup)
     .expect("the entry converts")

@@ -12,7 +12,7 @@ mod tests;
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
-    prompts: Option<Json>,
+    prompts: Option<Box<Json>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -30,7 +30,7 @@ impl Section for Raw {
         let Some(prompts) = self.prompts else {
             return Ok(Settings::default());
         };
-        let entries = match prompts {
+        let entries = match *prompts {
             Json::Null => return Ok(Settings::default()),
             Json::List(entries) => entries,
             Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
