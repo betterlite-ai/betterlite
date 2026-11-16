@@ -114,92 +114,93 @@ fn compaction_delta_event(index: i64, summary: &str) -> Object {
     event
 }
 
-impl<S> StreamState<S> {
-    // A type change opens a block, and so does a new named tool call while a tool block stays open
-    pub fn should_start_new_content_block(
-        &mut self,
-        choices: &[ChoiceRecord],
-        ids: &dyn IdSource,
-    ) -> Result<bool, StreamStateError> {
-        let Some(choice) = choices.first() else {
-            return Err(StreamStateError::from(ChatOutputError::NoChoices));
-        };
-        if choice.finish_reason.is_some() {
-            return Ok(false);
-        }
-        if let Some(text) = refusal_text(&choice.delta) {
-            self.refusal_text.push_str(&text);
-        }
-        let block = content_block(choices, ids)?;
-        let kind = block_kind(&block);
-        let mut start = start_object(&block)?;
-        if kind == BlockKind::ToolUse
-            && let Some(Json::Text(name)) = start.get("name")
-            && !name.is_empty()
-        {
-            let restored = self
-                .tool_name_mapping
-                .get(name)
-                .cloned()
-                .unwrap_or_else(|| name.clone());
-            start.insert("name".to_owned(), Json::Text(restored));
-        }
-        if kind != self.current_content_block_type {
-            self.current_content_block_type = kind;
-            self.current_content_block_start = Json::Object(start);
-            return Ok(true);
-        }
-        if kind == BlockKind::ToolUse && start.get("name").is_some_and(Json::is_truthy) {
-            self.current_content_block_start = Json::Object(start);
-            return Ok(true);
-        }
-        Ok(false)
+// A type change opens a block, and so does a new named tool call while a tool block stays open
+pub fn should_start_new_content_block<S>(
+    state: &mut StreamState<S>,
+    choices: &[ChoiceRecord],
+    ids: &dyn IdSource,
+) -> Result<bool, StreamStateError> {
+    let Some(choice) = choices.first() else {
+        return Err(StreamStateError::from(ChatOutputError::NoChoices));
+    };
+    if choice.finish_reason.is_some() {
+        return Ok(false);
     }
+    if let Some(text) = refusal_text(&choice.delta) {
+        state.refusal_text.push_str(&text);
+    }
+    let block = content_block(choices, ids)?;
+    let kind = block_kind(&block);
+    let mut start = start_object(&block)?;
+    if kind == BlockKind::ToolUse
+        && let Some(Json::Text(name)) = start.get("name")
+        && !name.is_empty()
+    {
+        let restored = state
+            .tool_name_mapping
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| name.clone());
+        start.insert("name".to_owned(), Json::Text(restored));
+    }
+    if kind != state.current_content_block_type {
+        state.current_content_block_type = kind;
+        state.current_content_block_start = Json::Object(start);
+        return Ok(true);
+    }
+    if kind == BlockKind::ToolUse && start.get("name").is_some_and(Json::is_truthy) {
+        state.current_content_block_start = Json::Object(start);
+        return Ok(true);
+    }
+    Ok(false)
+}
 
-    // A refusal is the stop reason unless the provider already ran out of tokens
-    pub fn with_refusal_stop_details(&self, mut event: Object) -> Result<Object, StreamStateError> {
-        let Some(kind) = event.get("type") else {
-            return Err(StreamStateError::MalformedEvent { field: "type" });
-        };
-        if kind.as_str() != Some("message_delta") || self.refusal_text.is_empty() {
-            return Ok(event);
-        }
-        let Some(mut delta) = event.get("delta").and_then(Json::as_object).cloned() else {
-            return Err(StreamStateError::MalformedEvent { field: "delta" });
-        };
-        if delta.get("stop_reason").and_then(Json::as_str) == Some("max_tokens") {
-            return Ok(event);
-        }
-        delta.insert("stop_reason".to_owned(), Json::Text("refusal".to_owned()));
-        delta.insert(
-            "stop_details".to_owned(),
-            json_from_serialize(&refusal_stop_details(Some(self.refusal_text.clone())))?,
-        );
-        event.insert("delta".to_owned(), Json::Object(delta));
-        Ok(event)
+// A refusal is the stop reason unless the provider already ran out of tokens
+pub fn with_refusal_stop_details<S>(
+    state: &StreamState<S>,
+    mut event: Object,
+) -> Result<Object, StreamStateError> {
+    let Some(kind) = event.get("type") else {
+        return Err(StreamStateError::MalformedEvent { field: "type" });
+    };
+    if kind.as_str() != Some("message_delta") || state.refusal_text.is_empty() {
+        return Ok(event);
     }
+    let Some(mut delta) = event.get("delta").and_then(Json::as_object).cloned() else {
+        return Err(StreamStateError::MalformedEvent { field: "delta" });
+    };
+    if delta.get("stop_reason").and_then(Json::as_str) == Some("max_tokens") {
+        return Ok(event);
+    }
+    delta.insert("stop_reason".to_owned(), Json::Text("refusal".to_owned()));
+    delta.insert(
+        "stop_details".to_owned(),
+        json_from_serialize(&refusal_stop_details(Some(state.refusal_text.clone())))?,
+    );
+    event.insert("delta".to_owned(), Json::Object(delta));
+    Ok(event)
+}
 
-    // One event per call, so the index advances only once the terminal stop is handed back
-    pub fn next_compaction_event(&mut self) -> Option<Object> {
-        if self.compaction_block.is_none() || self.sent_compaction_block {
-            return None;
-        }
-        let index = self.current_content_block_index;
-        if !self.compaction_progress.sent_compaction_block_start {
-            self.compaction_progress.sent_compaction_block_start = true;
-            return Some(compaction_start(index));
-        }
-        if !self.compaction_progress.sent_compaction_block_delta {
-            self.compaction_progress.sent_compaction_block_delta = true;
-            let summary = self
-                .compaction_block
-                .as_ref()
-                .and_then(|block| block.content.clone())
-                .unwrap_or_default();
-            return Some(compaction_delta_event(index, &summary));
-        }
-        self.current_content_block_index = self.current_content_block_index.saturating_add(1);
-        self.sent_compaction_block = true;
-        Some(compaction_event("content_block_stop", index))
+// One event per call, so the index advances only once the terminal stop is handed back
+pub fn next_compaction_event<S>(state: &mut StreamState<S>) -> Option<Object> {
+    if state.compaction_block.is_none() || state.sent_compaction_block {
+        return None;
     }
+    let index = state.current_content_block_index;
+    if !state.compaction_progress.sent_compaction_block_start {
+        state.compaction_progress.sent_compaction_block_start = true;
+        return Some(compaction_start(index));
+    }
+    if !state.compaction_progress.sent_compaction_block_delta {
+        state.compaction_progress.sent_compaction_block_delta = true;
+        let summary = state
+            .compaction_block
+            .as_ref()
+            .and_then(|block| block.content.clone())
+            .unwrap_or_default();
+        return Some(compaction_delta_event(index, &summary));
+    }
+    state.current_content_block_index = state.current_content_block_index.saturating_add(1);
+    state.sent_compaction_block = true;
+    Some(compaction_event("content_block_stop", index))
 }

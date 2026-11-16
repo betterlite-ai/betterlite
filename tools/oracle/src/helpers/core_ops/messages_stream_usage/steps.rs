@@ -1,10 +1,15 @@
 use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_core::api::messages_chat_output::error::ChatOutputError;
 use betterlite_core::api::messages_chat_output::records::{ChoiceRecord, UsageRecord};
-use betterlite_core::api::messages_stream_usage::blocks::{delta_has_content, is_blank_delta};
+use betterlite_core::api::messages_stream_usage::blocks::{
+    delta_has_content, is_blank_delta, next_compaction_event, should_start_new_content_block,
+    with_refusal_stop_details,
+};
 use betterlite_core::api::messages_stream_usage::error::StreamStateError;
 use betterlite_core::api::messages_stream_usage::state::{StreamSetup, StreamState};
-use betterlite_core::api::messages_stream_usage::usage::initial_usage;
+use betterlite_core::api::messages_stream_usage::usage::{
+    augment_message_delta_usage, handle_choiceless_chunk, initial_usage, merge_usage_into_held_stop,
+};
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_prompts::arguments::json::Object;
@@ -79,7 +84,7 @@ fn hold_stop(harness: &mut Harness, event: &Object) -> Result<Value, Box<HelperE
 }
 
 fn merge_held_usage(harness: &Harness, usage: &UsageRecord) -> Result<Value, Box<HelperError>> {
-    match harness.state.merge_usage_into_held_stop(usage) {
+    match merge_usage_into_held_stop(&harness.state, usage) {
         Ok(merged) => serde_json::to_value(merged).or_value_error(),
         Err(error) => Err(failure(&error)),
     }
@@ -89,21 +94,21 @@ fn choiceless(
     harness: &mut Harness,
     usage: Option<&UsageRecord>,
 ) -> Result<Value, Box<HelperError>> {
-    match harness.state.handle_choiceless_chunk(usage) {
+    match handle_choiceless_chunk(&mut harness.state, usage) {
         Ok(handled) => Ok(Value::Bool(handled)),
         Err(error) => Err(failure(&error)),
     }
 }
 
 fn augment(harness: &Harness, event: &Object) -> Result<Value, Box<HelperError>> {
-    match harness.state.augment_message_delta_usage(event.clone()) {
+    match augment_message_delta_usage(&harness.state, event.clone()) {
         Ok(chunk) => serde_json::to_value(chunk).or_value_error(),
         Err(error) => Err(failure(&error)),
     }
 }
 
 fn refusal_stop(harness: &Harness, event: &Object) -> Result<Value, Box<HelperError>> {
-    match harness.state.with_refusal_stop_details(event.clone()) {
+    match with_refusal_stop_details(&harness.state, event.clone()) {
         Ok(chunk) => serde_json::to_value(chunk).or_value_error(),
         Err(error) => Err(failure(&error)),
     }
@@ -112,7 +117,7 @@ fn refusal_stop(harness: &Harness, event: &Object) -> Result<Value, Box<HelperEr
 fn compaction(harness: &mut Harness, calls: usize) -> Result<Value, Box<HelperError>> {
     let mut events = Vec::with_capacity(calls);
     for _ in 0..calls {
-        events.push(harness.state.next_compaction_event());
+        events.push(next_compaction_event(&mut harness.state));
     }
     serde_json::to_value(events).or_value_error()
 }
@@ -125,10 +130,7 @@ fn is_blank(choices: &[ChoiceRecord]) -> Result<Value, Box<HelperError>> {
 }
 
 fn start_block(harness: &mut Harness, choices: &[ChoiceRecord]) -> Result<Value, Box<HelperError>> {
-    match harness
-        .state
-        .should_start_new_content_block(choices, &FixedIds)
-    {
+    match should_start_new_content_block(&mut harness.state, choices, &FixedIds) {
         Ok(started) => Ok(Value::Bool(started)),
         Err(error) => Err(failure(&error)),
     }
