@@ -13,6 +13,7 @@ use betterlite_db::migration_recovery::RecoveryError;
 use betterlite_db::worker_heartbeat::{
     PostgresDatabase, ProxyWorkerHeartbeat, SystemWorkerIdentity,
 };
+use secrecy::SecretString;
 
 use super::heartbeat::HeartbeatTask;
 use super::refresh::CredentialRefresh;
@@ -100,7 +101,7 @@ where
     }
 
     pub async fn start(&self) -> Result<Running, StartupError> {
-        let database: Arc<dyn StartupDatabase> = Arc::clone(&self.startup);
+        let database: Arc<dyn StartupDatabase> = Arc::<Startup>::clone(&self.startup);
         let serving = ServingStartup {
             database,
             settings: Arc::clone(&self.settings),
@@ -116,31 +117,13 @@ where
                 pool: None,
             });
         };
-        let pool = match NativePoolProvider.build(url, None) {
-            Ok(pool) => Arc::new(pool),
-            Err(source) => {
+        let (pool, heartbeat) = match open_pool(url).await {
+            Ok(opened) => opened,
+            Err(error) => {
                 startup.shutdown().await;
-                return Err(StartupError::Pool { source });
+                return Err(error);
             }
         };
-        let client = match pool.session().await {
-            Ok(client) => client,
-            Err(source) => {
-                startup.shutdown().await;
-                pool.close();
-                return Err(StartupError::Pool { source });
-            }
-        };
-        let heartbeat = match ProxyWorkerHeartbeat::new(None, &SystemWorkerIdentity) {
-            Ok(heartbeat) => heartbeat,
-            Err(source) => {
-                startup.shutdown().await;
-                pool.close();
-                return Err(StartupError::Heartbeat { source });
-            }
-        };
-        let heartbeat =
-            HeartbeatTask::start(Arc::new(heartbeat), Arc::new(PostgresDatabase { client })).await;
         if let Some(refresh) = &self.refresh {
             refresh.start();
         }
@@ -154,13 +137,38 @@ where
     }
 }
 
+// the pool and its heartbeat start together, and a failure past the pool closes it
+async fn open_pool(url: &SecretString) -> Result<(Arc<NativePool>, HeartbeatTask), StartupError> {
+    let pool = match NativePoolProvider.build(url, None) {
+        Ok(pool) => Arc::new(pool),
+        Err(source) => return Err(StartupError::Pool { source }),
+    };
+    let client = match pool.session().await {
+        Ok(client) => client,
+        Err(source) => {
+            pool.close();
+            return Err(StartupError::Pool { source });
+        }
+    };
+    let heartbeat = match ProxyWorkerHeartbeat::new(None, &SystemWorkerIdentity) {
+        Ok(heartbeat) => heartbeat,
+        Err(source) => {
+            pool.close();
+            return Err(StartupError::Heartbeat { source });
+        }
+    };
+    let heartbeat =
+        HeartbeatTask::start(Arc::new(heartbeat), Arc::new(PostgresDatabase { client })).await;
+    Ok((pool, heartbeat))
+}
+
 // What a finished startup owns. B4448 reads the state; shutdown deregisters, drains and closes.
 pub struct Running {
-    pub state: DatabaseState,
-    pub startup: Option<Startup>,
+    pub(crate) state: DatabaseState,
+    pub(crate) startup: Option<Startup>,
     pub(crate) heartbeat: Option<HeartbeatTask>,
     pub(crate) refresh: Option<Arc<dyn CredentialRefresh>>,
-    pub pool: Option<Arc<NativePool>>,
+    pub(crate) pool: Option<Arc<NativePool>>,
 }
 
 impl Running {
