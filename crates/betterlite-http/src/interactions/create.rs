@@ -13,7 +13,7 @@ use crate::interactions::base::{
     RequestHeaders, UpstreamResponse, api_base, handle_error,
 };
 use crate::interactions::get::EnvironmentRequest;
-use crate::interactions::streaming::StreamingConfig;
+use crate::interactions::streaming::{AsyncStreamingConfig, SyncStreamingConfig};
 
 pub mod asynchronous;
 
@@ -60,7 +60,7 @@ pub enum CreateOutcome<Response, Stream> {
     Stream(Stream),
 }
 
-pub trait CreateInteractionConfig: ErrorClasses + StreamingConfig {
+pub trait CreateInteractionConfig: SyncStreamingConfig + AsyncStreamingConfig {
     type Output;
 
     fn validate_environment(
@@ -111,57 +111,7 @@ pub(crate) fn prepare<C>(
 where
     C: CreateInteractionConfig,
 {
-    let headers = environment_headers(config, request)?;
-    let url = complete_url(config, request)?;
-    let data = request_data(config, request, &headers)?;
-    let logged_input = input_text(request.input).map_err(CreateInteractionError::Input)?;
-    log_pre_call(logging, &logged_input, &url, &headers, &data);
-    Ok(PreparedCreate { headers, url, data })
-}
-
-fn environment_headers<C>(
-    config: &C,
-    request: &CreateInteractionRequest<'_>,
-) -> Result<RequestHeaders, CreateInteractionError<C::Error>>
-where
-    C: CreateInteractionConfig,
-{
-    config
-        .validate_environment(&EnvironmentRequest {
-            headers: &request.extra_headers,
-            model: request.model.unwrap_or_default(),
-            litellm_params: Some(request.litellm_params),
-        })
-        .map_err(CreateInteractionError::Provider)
-}
-
-fn complete_url<C>(
-    config: &C,
-    request: &CreateInteractionRequest<'_>,
-) -> Result<String, CreateInteractionError<C::Error>>
-where
-    C: CreateInteractionConfig,
-{
-    let base = api_base(request.litellm_params).map_err(CreateInteractionError::Parameters)?;
-    config
-        .get_complete_url(&CompleteUrlRequest {
-            api_base: base,
-            model: request.model,
-            agent: request.agent,
-            litellm_params: request.litellm_params,
-            stream: request.stream,
-        })
-        .map_err(CreateInteractionError::Provider)
-}
-
-fn request_data<C>(
-    config: &C,
-    request: &CreateInteractionRequest<'_>,
-    headers: &RequestHeaders,
-) -> Result<Params, CreateInteractionError<C::Error>>
-where
-    C: CreateInteractionConfig,
-{
+    let (headers, url) = provider_requests(config, request)?;
     let mut data = config
         .transform_request(&TransformRequest {
             model: request.model,
@@ -169,22 +119,48 @@ where
             input: request.input,
             optional_params: request.optional_params,
             litellm_params: request.litellm_params,
-            headers,
+            headers: &headers,
         })
         .map_err(CreateInteractionError::Provider)?;
     // dict.update: an extra_body entry replaces the one transform_request built under the same name
     if let Some(extra) = &request.extra_body {
         data.extend(extra.clone());
     }
-    Ok(data)
+    let logged_input = match request.input {
+        None => String::new(),
+        Some(InteractionInput::Text(text)) => text.clone(),
+        Some(input) => serde_json::to_string(input).map_err(CreateInteractionError::Input)?,
+    };
+    log_pre_call(logging, &logged_input, &url, &headers, &data);
+    Ok(PreparedCreate { headers, url, data })
 }
 
-fn input_text(input: Option<&InteractionInput>) -> Result<String, serde_json::Error> {
-    match input {
-        None => Ok(String::new()),
-        Some(InteractionInput::Text(text)) => Ok(text.clone()),
-        Some(input) => serde_json::to_string(input),
-    }
+// LiteLLM asks the config for the environment headers first, then for the complete URL
+fn provider_requests<C>(
+    config: &C,
+    request: &CreateInteractionRequest<'_>,
+) -> Result<(RequestHeaders, String), CreateInteractionError<C::Error>>
+where
+    C: CreateInteractionConfig,
+{
+    let headers = config
+        .validate_environment(&EnvironmentRequest {
+            headers: &request.extra_headers,
+            model: request.model.unwrap_or_default(),
+            litellm_params: Some(request.litellm_params),
+        })
+        .map_err(CreateInteractionError::Provider)?;
+    let base = api_base(request.litellm_params).map_err(CreateInteractionError::Parameters)?;
+    let url = config
+        .get_complete_url(&CompleteUrlRequest {
+            api_base: base,
+            model: request.model,
+            agent: request.agent,
+            litellm_params: request.litellm_params,
+            stream: request.stream,
+        })
+        .map_err(CreateInteractionError::Provider)?;
+    Ok((headers, url))
 }
 
 fn log_pre_call(
@@ -219,7 +195,7 @@ pub(crate) fn handle_failure<C>(
     failure: RequestFailure,
 ) -> CreateInteractionError<C::Error>
 where
-    C: CreateInteractionConfig,
+    C: ErrorClasses,
 {
     match handle_error(config, failure) {
         CallFailure::Provider(error) => CreateInteractionError::Provider(error),

@@ -15,7 +15,7 @@ use crate::interactions::base::transport::response::response_headers;
 use crate::interactions::base::transport::{refuse_unusable_proxy, request_headers};
 use crate::interactions::base::{Logging, MAX_RESPONSE_BYTES, RequestFailure, UpstreamResponse};
 use crate::interactions::lifecycle::check_status;
-use crate::interactions::streaming::{StreamError, create_async_iterator};
+use crate::interactions::streaming::create_async_iterator;
 use crate::proxy::limits::read_bounded;
 
 pub async fn async_create_interaction<C>(
@@ -43,11 +43,9 @@ where
             .map_err(|failure| handle_failure(config, failure))?;
         return finish(config, logging, request.model, &response).map(CreateOutcome::Response);
     }
-    match create_async_iterator(&client, sent, request.model, logging, config).await {
-        Ok(stream) => Ok(CreateOutcome::Stream(stream)),
-        Err(StreamError::Read(failure)) => Err(handle_failure(config, failure)),
-        Err(StreamError::Provider(error)) => Err(CreateInteractionError::Provider(error)),
-    }
+    create_async_iterator(&client, sent, request.model, logging, config)
+        .await
+        .map(CreateOutcome::Stream)
 }
 
 async fn send_async(
