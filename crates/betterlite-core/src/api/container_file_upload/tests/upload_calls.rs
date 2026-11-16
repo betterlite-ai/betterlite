@@ -50,6 +50,17 @@ fn upload_passes_named_credentials_and_kwargs_in_litellm_params() {
     fixture
         .kwargs
         .insert("organization".to_owned(), Json::Text("org-1".to_owned()));
+    fixture.kwargs.insert(
+        "tags".to_owned(),
+        Json::List(vec![Json::Text("one".to_owned()), Json::Bool(true)]),
+    );
+    fixture.kwargs.insert(
+        "extra".to_owned(),
+        Json::Object(IndexMap::from([(
+            "nested".to_owned(),
+            Json::Number(Number::from(7_i64)),
+        )])),
+    );
     let request = fixture.request();
     let executor = StubExecutor::replying(object("file_1"));
 
@@ -75,6 +86,20 @@ fn upload_passes_named_credentials_and_kwargs_in_litellm_params() {
     assert_eq!(
         seen.litellm_params.get("organization"),
         Some(&JsonValue::Text("org-1".to_owned()))
+    );
+    assert_eq!(
+        seen.litellm_params.get("tags"),
+        Some(&JsonValue::Array(vec![
+            JsonValue::Text("one".to_owned()),
+            JsonValue::Bool(true),
+        ]))
+    );
+    assert_eq!(
+        seen.litellm_params.get("extra"),
+        Some(&JsonValue::Object(IndexMap::from([(
+            "nested".to_owned(),
+            JsonValue::Number(Number::from(7_i64)),
+        )])))
     );
     assert_eq!(
         seen.litellm_params.get("litellm_call_id"),

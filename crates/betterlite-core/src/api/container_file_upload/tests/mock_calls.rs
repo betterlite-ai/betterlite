@@ -67,6 +67,22 @@ fn mock_upload_skips_the_provider_lookup_and_the_upload_logging() {
 }
 
 #[test]
+fn mock_upload_with_a_null_response_is_not_a_mock() {
+    let mut fixture = Fixture::new();
+    fixture
+        .kwargs
+        .insert("mock_response".to_owned(), Json::Null);
+    let request = fixture.request();
+    let executor = StubExecutor::replying(object("file_1"));
+
+    let reply =
+        upload_container_file(&executor, fixture.deps(), &request).expect("the upload runs");
+
+    assert_eq!(reply, object("file_1"));
+    assert!(executor.was_called());
+}
+
+#[test]
 fn mock_upload_with_invalid_json_is_a_mapped_failure() {
     let mut fixture = Fixture::new();
     fixture.kwargs.insert(
