@@ -1,0 +1,18 @@
+kind: helper
+name: nested-tool-result-fetch
+call:
+  b9963:
+    urls:
+      "https://example.com/image.png": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABA"
+    calls:
+      - function: count_content
+        content:
+          - type: tool_result
+            tool_use_id: toolu_1
+            content:
+              - type: image_url
+                image_url:
+                  url: https://example.com/image.png
+                  detail: high
+env: {}
+compare: {ignore: []}

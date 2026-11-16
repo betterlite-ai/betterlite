@@ -1,0 +1,15 @@
+kind: helper
+name: remote-high-fetched
+call:
+  b9963:
+    urls:
+      "https://example.com/image.png": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABA"
+    calls:
+      - function: count_content
+        content:
+          - type: image_url
+            image_url:
+              url: https://example.com/image.png
+              detail: high
+env: {}
+compare: {ignore: []}

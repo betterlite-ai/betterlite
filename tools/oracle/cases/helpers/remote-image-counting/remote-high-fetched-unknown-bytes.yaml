@@ -1,0 +1,15 @@
+kind: helper
+name: remote-high-fetched-unknown-bytes
+call:
+  b9963:
+    urls:
+      "https://example.com/image.bin": "data:application/octet-stream;base64,AAAA"
+    calls:
+      - function: count_content
+        content:
+          - type: image_url
+            image_url:
+              url: https://example.com/image.bin
+              detail: high
+env: {}
+compare: {ignore: []}
