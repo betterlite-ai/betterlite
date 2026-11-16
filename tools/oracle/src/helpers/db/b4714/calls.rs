@@ -17,27 +17,6 @@ use serde_json::{Value, json};
 use super::rows::{RowStore, text};
 use super::{Bulk, Delete, Get, Merge};
 
-type EnvStore = UserEnvVarsStore<RowStore, RowStore, OsNonces, TracingDiagnostics>;
-
-fn cipher(salt: &str) -> DbCipher {
-    StoredCipher {
-        settings: CipherSettings {
-            signing_key: Some(SecretString::from(salt.to_owned())),
-            algorithm: Algorithm::XSalsa20Poly1305,
-        },
-        nonces: OsNonces,
-        diagnostics: TracingDiagnostics,
-    }
-}
-
-fn store(rows: &RowStore, cipher: DbCipher) -> EnvStore {
-    UserEnvVarsStore {
-        table: rows.clone(),
-        transactions: rows.clone(),
-        cipher,
-    }
-}
-
 fn exposed(values: &UserEnvVars) -> HelperResult {
     let pairs: BTreeMap<&str, &str> = values
         .iter()
@@ -95,17 +74,39 @@ fn output(rows: &RowStore, cipher: &DbCipher, result: Value) -> HelperResult {
 
 pub(super) async fn get(call: &Get) -> HelperResult {
     let rows = RowStore::new(&call.rows);
-    let env = store(&rows, cipher(&call.salt_key));
+    let env = UserEnvVarsStore {
+        table: rows.clone(),
+        transactions: rows.clone(),
+        cipher: StoredCipher {
+            settings: CipherSettings {
+                signing_key: Some(SecretString::from(call.salt_key.clone())),
+                algorithm: Algorithm::XSalsa20Poly1305,
+            },
+            nonces: OsNonces,
+            diagnostics: TracingDiagnostics,
+        },
+    };
     let values = env
         .get_user_env_vars(&call.user_id, &call.server_id)
         .await
         .or_value_error()?;
-    output(&rows, &cipher(&call.salt_key), exposed(&values)?)
+    output(&rows, &env.cipher, exposed(&values)?)
 }
 
 pub(super) async fn bulk(call: &Bulk) -> HelperResult {
     let rows = RowStore::new(&call.rows);
-    let env = store(&rows, cipher(&call.salt_key));
+    let env = UserEnvVarsStore {
+        table: rows.clone(),
+        transactions: rows.clone(),
+        cipher: StoredCipher {
+            settings: CipherSettings {
+                signing_key: Some(SecretString::from(call.salt_key.clone())),
+                algorithm: Algorithm::XSalsa20Poly1305,
+            },
+            nonces: OsNonces,
+            diagnostics: TracingDiagnostics,
+        },
+    };
     let found = env
         .get_user_env_vars_bulk(&call.user_id, &call.server_ids)
         .await
@@ -116,27 +117,54 @@ pub(super) async fn bulk(call: &Bulk) -> HelperResult {
     }
     output(
         &rows,
-        &cipher(&call.salt_key),
+        &env.cipher,
         serde_json::to_value(result).or_value_error()?,
     )
 }
 
 pub(super) async fn merge(call: &Merge) -> HelperResult {
     let rows = RowStore::new(&call.rows);
-    let env = store(&rows, cipher(&call.salt_key));
+    let env = UserEnvVarsStore {
+        table: rows.clone(),
+        transactions: rows.clone(),
+        cipher: StoredCipher {
+            settings: CipherSettings {
+                signing_key: Some(SecretString::from(call.salt_key.clone())),
+                algorithm: Algorithm::XSalsa20Poly1305,
+            },
+            nonces: OsNonces,
+            diagnostics: TracingDiagnostics,
+        },
+    };
+    let updates: UserEnvVars = call
+        .updates
+        .iter()
+        .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
+        .collect();
     let allowed: BTreeSet<String> = call.allowed_names.iter().cloned().collect();
     let merged = env
-        .merge_user_env_vars(&call.user_id, &call.server_id, &call.updates, &allowed)
+        .merge_user_env_vars(&call.user_id, &call.server_id, &updates, &allowed)
         .await
         .or_value_error()?;
-    output(&rows, &cipher(&call.salt_key), exposed(&merged)?)
+    output(&rows, &env.cipher, exposed(&merged)?)
 }
 
 pub(super) async fn delete(call: &Delete) -> HelperResult {
     let rows = RowStore::new(&call.rows);
-    let env = store(&rows, cipher(&call.salt_key));
+    let env = UserEnvVarsStore {
+        table: rows.clone(),
+        transactions: rows.clone(),
+        cipher: StoredCipher {
+            settings: CipherSettings {
+                signing_key: Some(SecretString::from(call.salt_key.clone())),
+                algorithm: Algorithm::XSalsa20Poly1305,
+            },
+            nonces: OsNonces,
+            diagnostics: TracingDiagnostics,
+        },
+    };
     env.delete_user_env_vars(&call.user_id, &call.server_id)
         .await
         .or_value_error()?;
-    output(&rows, &cipher(&call.salt_key), Value::Null)
+    output(&rows, &env.cipher, Value::Null)
 }
