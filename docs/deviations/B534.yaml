@@ -13,6 +13,3 @@ kept_bugs:
   - what: Truthy headers replace optional_params.extra_headers as a whole instead of merging with it.
     why: A setup that sends both gets the call headers only, and merging would send headers it never sent.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L763
-  - what: The sync catch-all reports response.text as the message once the headers came from the response, and str(error) otherwise.
-    why: Callers read the provider's own error body from the message of a sync failure, and the SDK status errors carry no headers attribute, so every status error takes this branch.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L836
