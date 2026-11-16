@@ -528,6 +528,41 @@ async fn lakera_a_message_of_the_wrong_type_is_an_internal_error() {
 }
 
 #[tokio::test]
+async fn lakera_bounds_the_answer_it_reads() {
+    let padded = |size: usize| {
+        format!(
+            r#"{{"results":[{{"flagged":false}}],"pad":"{}"}}"#,
+            "x".repeat(size)
+        )
+    };
+    let answers = vec![
+        (StatusCode::OK, padded(5_000)),
+        (StatusCode::OK, padded(1_048_577)),
+    ];
+    let (base, _server, _captured) = serve("/v1/prompt_injection", answers).await;
+    let hooks = lakera_hooks(&base, ModerationCheck::InParallel, None, false);
+    let data = chat_data(&[message("user", "u")]);
+    let fake = fake_gate(true);
+    let selection = lakera::LakeraSelection {
+        should_proceed: fake.proceed,
+        dynamic_params: &fake,
+    };
+    hooks
+        .check(&data, &selection)
+        .await
+        .expect("an answer under the limit");
+    let error = hooks
+        .check(&data, &selection)
+        .await
+        .expect_err("an answer over the limit");
+    assert!(matches!(
+        &error,
+        ThirdPartyHookError::Lakera(LakeraHookError::Read { .. })
+    ));
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
 async fn lakera_keeps_the_last_message_of_each_role() {
     let (base, _server, captured) = serve(
         "/v1/prompt_injection",
