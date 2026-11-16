@@ -18,6 +18,7 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
+use tokio::runtime::Builder;
 
 use self::fakes::{Clock, EmptyLookup};
 use self::script::Script;
@@ -153,7 +154,7 @@ fn response(input: &ResponseInput) -> HelperResult {
         data: (!input.data.is_empty()).then_some(input.data.clone()),
         usage: None,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(failure)?;
