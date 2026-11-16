@@ -61,9 +61,9 @@ fn empty_bytes_become_empty_text() {
 #[rstest]
 #[case::no_fraction(moment(0, None), "2024-01-02T03:04:05")]
 #[case::fraction(moment(120_000, None), "2024-01-02T03:04:05.120000")]
-#[case::west_of_utc(moment(0, Some(-19_800)), "2024-01-02T03:04:05-05:30")]
-#[case::utc(moment(0, Some(0)), "2024-01-02T03:04:05+00:00")]
-#[case::offset_with_seconds(moment(0, Some(18_315)), "2024-01-02T03:04:05+05:05:15")]
+#[case::west_of_utc(moment(0, Some(-19_800_i32)), "2024-01-02T03:04:05-05:30")]
+#[case::utc(moment(0, Some(0_i32)), "2024-01-02T03:04:05+00:00")]
+#[case::offset_with_seconds(moment(0, Some(18_315_i32)), "2024-01-02T03:04:05+05:05:15")]
 fn datetimes_render_as_iso_text(#[case] value: SdkValue, #[case] expected: &str) {
     let encoded = encoded_inner(value, 0);
     assert_eq!(encoded, SdkValue::Text(expected.to_owned()));
@@ -158,7 +158,7 @@ fn a_mixed_list_is_left_alone() {
 
 #[test]
 fn encoded_values_project_to_json() {
-    let encoded = encoded_value(moment(0, Some(0)), 0);
+    let encoded = encoded_value(moment(0, Some(0_i32)), 0);
     let object = to_object(&encoded).expect("the encoded value projects");
     assert_eq!(
         Json::Object(object),
@@ -196,5 +196,5 @@ fn a_datetime_decodes_from_its_components() {
         r#"{"year":2024,"month":1,"day":2,"hour":3,"minute":4,"second":5,"microsecond":0,"offset_seconds":-19800}"#,
     )
     .expect("the datetime decodes");
-    assert_eq!(offset.offset_seconds, Some(-19_800));
+    assert_eq!(offset.offset_seconds, Some(-19_800_i32));
 }

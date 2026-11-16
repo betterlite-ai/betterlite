@@ -1,7 +1,7 @@
 import json
 import logging
 from base64 import b64decode
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from logging.handlers import MemoryHandler
 from typing import Literal, NotRequired, Protocol, TypedDict
 
@@ -99,7 +99,7 @@ def moment_of(case: SdkCase) -> datetime:
         spec["minute"],
         spec["second"],
         spec["microsecond"],
-        tzinfo=timezone.utc,
+        tzinfo=UTC,
     )
     offset = spec.get("offset_seconds")
     if offset is None:

@@ -192,17 +192,7 @@ fn sdk(input: &Input) -> Result<Value, Box<HelperError>> {
 }
 
 fn sdk_case(case: &SdkCase) -> Result<Value, Box<HelperError>> {
-    let mut values = SdkObject::new();
-    values.insert("value".to_owned(), raw_value(case)?);
-    let encoded = encode_unserializable_types(values, case.depth, MAX_DEPTH);
-    match to_object(&encoded) {
-        Ok(object) => serde_json::to_value(Json::Object(object)).or_value_error(),
-        Err(SdkError::UnsupportedValue) => Ok(json!("raw")),
-    }
-}
-
-fn raw_value(case: &SdkCase) -> Result<SdkValue, Box<HelperError>> {
-    Ok(match case.shape {
+    let value = match case.shape {
         Shape::Bytes => blob(case)?,
         Shape::Datetime => moment(case)?,
         Shape::BytesList => SdkValue::List(vec![blob(case)?, blob(case)?]),
@@ -212,7 +202,14 @@ fn raw_value(case: &SdkCase) -> Result<SdkValue, Box<HelperError>> {
         Shape::ListObjectBytes => SdkValue::List(vec![object(&[("inner", blob(case)?)])]),
         Shape::ListListBytes => SdkValue::List(vec![SdkValue::List(vec![blob(case)?])]),
         Shape::MixedList => SdkValue::List(vec![blob(case)?, moment(case)?]),
-    })
+    };
+    let mut values = SdkObject::new();
+    values.insert("value".to_owned(), value);
+    let encoded = encode_unserializable_types(values, case.depth, MAX_DEPTH);
+    match to_object(&encoded) {
+        Ok(object) => serde_json::to_value(Json::Object(object)).or_value_error(),
+        Err(SdkError::UnsupportedValue) => Ok(json!("raw")),
+    }
 }
 
 fn blob(case: &SdkCase) -> Result<SdkValue, Box<HelperError>> {

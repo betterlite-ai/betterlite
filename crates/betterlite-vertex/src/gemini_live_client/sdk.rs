@@ -17,7 +17,7 @@ pub enum SdkValue {
     Text(String),
     Bytes(Vec<u8>),
     DateTime(SdkDateTime),
-    List(Vec<SdkValue>),
+    List(Vec<Self>),
     Object(SdkObject),
 }
 
@@ -44,10 +44,7 @@ impl SdkDateTime {
         } else {
             format!(".{:06}", self.microsecond)
         };
-        let offset = match self.offset_seconds {
-            Some(seconds) => offset_text(seconds),
-            None => String::new(),
-        };
+        let offset = self.offset_seconds.map_or_else(String::new, offset_text);
         format!("{date}T{time}{fraction}{offset}")
     }
 }
@@ -61,7 +58,7 @@ fn offset_text(offset: i32) -> String {
     let seconds = magnitude
         .saturating_sub(hours.saturating_mul(3_600))
         .saturating_sub(minutes.saturating_mul(60));
-    let sign = if offset < 0 { '-' } else { '+' };
+    let sign = if offset < 0_i32 { '-' } else { '+' };
     let tail = if seconds == 0 {
         String::new()
     } else {
@@ -114,35 +111,20 @@ fn encode_list(items: Vec<SdkValue>, depth: i64, max_depth: i64) -> Vec<SdkValue
             .into_iter()
             .map(|item| match item {
                 SdkValue::DateTime(moment) => SdkValue::Text(moment.isoformat()),
-                other @ (SdkValue::Null
-                | SdkValue::Bool(_)
-                | SdkValue::Number(_)
-                | SdkValue::Text(_)
-                | SdkValue::Bytes(_)
-                | SdkValue::List(_)
-                | SdkValue::Object(_)) => other,
+                other => other,
             })
             .collect();
     }
+    // every other list item goes to the source's dict-only encoder, so bytes and nested lists stay as they are
     items
         .into_iter()
-        .map(|item| encode_list_item(item, depth, max_depth))
+        .map(|item| match item {
+            SdkValue::Object(fields) => {
+                SdkValue::Object(encode_unserializable_types(fields, depth, max_depth))
+            }
+            other => other,
+        })
         .collect()
-}
-
-fn encode_list_item(item: SdkValue, depth: i64, max_depth: i64) -> SdkValue {
-    match item {
-        SdkValue::Object(fields) => {
-            SdkValue::Object(encode_unserializable_types(fields, depth, max_depth))
-        }
-        other @ (SdkValue::Null
-        | SdkValue::Bool(_)
-        | SdkValue::Number(_)
-        | SdkValue::Text(_)
-        | SdkValue::Bytes(_)
-        | SdkValue::DateTime(_)
-        | SdkValue::List(_)) => other,
-    }
 }
 
 pub fn to_object(values: &SdkObject) -> Result<Object, SdkError> {

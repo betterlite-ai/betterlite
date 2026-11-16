@@ -31,8 +31,8 @@ pub(crate) fn json(source: &str) -> Json {
 
 pub(crate) fn assert_messages(encoded: &[String], expected: &[&str]) {
     let actual: Vec<Json> = encoded.iter().map(|message| json(message)).collect();
-    let expected: Vec<Json> = expected.iter().map(|source| json(source)).collect();
-    assert_eq!(actual, expected);
+    let wanted: Vec<Json> = expected.iter().map(|source| json(source)).collect();
+    assert_eq!(actual, wanted);
 }
 
 pub(crate) fn with_warnings<F>(run: F) -> String

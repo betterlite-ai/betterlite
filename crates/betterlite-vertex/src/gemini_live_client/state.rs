@@ -16,9 +16,7 @@ impl ToolCallNames {
         }
         if self.entries.shift_remove(call_id).is_none() {
             while self.entries.len() >= MAX_TOOL_CALL_NAMES {
-                if self.entries.shift_remove_index(0).is_none() {
-                    break;
-                }
+                self.entries.shift_remove_index(0);
             }
         }
         self.entries.insert(call_id.to_owned(), name.to_owned());
