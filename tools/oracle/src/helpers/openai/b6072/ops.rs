@@ -1,15 +1,17 @@
 use std::collections::BTreeMap;
 
+use betterlite_models::decisions::HiddenParams;
 use betterlite_models::entry::ModelFields;
 use betterlite_models::fireworks_catalog_metadata::Catalog;
 use betterlite_openai::chat::ToolCall;
 use betterlite_openai::chat_choices::stream::StreamError;
+use betterlite_openai::chat_choices::wire::StreamReply;
 use betterlite_openai::chat_content::RefuseDownloads;
 use betterlite_openai::fireworks_ai_chat::auth::{FireworksChatEnv, validate_environment};
 use betterlite_openai::fireworks_ai_chat::chunk::chunk_parser;
 use betterlite_openai::fireworks_ai_chat::error::FireworksChatError;
 use betterlite_openai::fireworks_ai_chat::models::{decode_models_response, get_models_request};
-use betterlite_openai::fireworks_ai_chat::reply::{ReplyInput, transform_response};
+use betterlite_openai::fireworks_ai_chat::reply::{Reply, ReplyInput, transform_response};
 use betterlite_openai::fireworks_ai_chat::request::{RequestInput, transform_request};
 use betterlite_openai::fireworks_ai_common::{FireworksEnv, resolve_api_key};
 use betterlite_oracle_helper_api::error::HelperError;
@@ -124,7 +126,6 @@ fn request_value(call: &RequestCall, catalog: &Catalog) -> Result<Value, Operati
     Ok(serde_json::to_value(&body)?)
 }
 
-// the completion fields a case compares, with the usage counts and the Fireworks hidden params
 fn reply_value(call: &ReplyCall) -> Result<Value, OperationError> {
     let input = ReplyInput {
         status: call.status,
@@ -135,6 +136,11 @@ fn reply_value(call: &ReplyCall) -> Result<Value, OperationError> {
         clock: || FIXED_TIME,
     };
     let reply = transform_response(&input)?;
+    reply_json(&reply)
+}
+
+// the completion fields a case compares, with the usage counts and the Fireworks hidden params
+fn reply_json(reply: &Reply) -> Result<Value, OperationError> {
     let response = &reply.response;
     let mut choices = Vec::with_capacity(response.choices.len());
     for choice in &response.choices {
@@ -161,10 +167,17 @@ fn reply_value(call: &ReplyCall) -> Result<Value, OperationError> {
     }))
 }
 
-// the chunk fields a case compares, plus the provider details the handler keeps off the reply
 fn chunk_value(call: &ChunkCall) -> Result<Value, OperationError> {
     let chunk = chunk_parser(&call.chunk, || Uuid::from_u128(FIXED_UUID), || FIXED_TIME)?;
     let reply = &chunk.reply;
+    chunk_json(reply, chunk.provider_specific_fields.as_ref())
+}
+
+// the chunk fields a case compares, plus the provider details the handler keeps off the reply
+fn chunk_json(
+    reply: &StreamReply,
+    provider_fields: Option<&HiddenParams>,
+) -> Result<Value, OperationError> {
     let choices: Vec<Value> = reply
         .choices
         .iter()
@@ -183,7 +196,7 @@ fn chunk_value(call: &ChunkCall) -> Result<Value, OperationError> {
         "created": reply.created,
         "model": reply.model,
         "choices": choices,
-        "provider_specific_fields": serde_json::to_value(&chunk.provider_specific_fields)?,
+        "provider_specific_fields": serde_json::to_value(provider_fields)?,
     }))
 }
 
