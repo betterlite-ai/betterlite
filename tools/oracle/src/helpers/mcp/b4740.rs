@@ -1,14 +1,21 @@
 mod session;
 mod tests;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_mcp::tools::pagination::{Timeouts, ToolFormat, load_mcp_tools};
 use betterlite_mcp::tools::schemas::{
     McpTool, mcp_tool_to_anthropic, mcp_tool_to_openai, mcp_tool_to_responses_api,
 };
 use betterlite_mcp::tools::tool_calls::{OpenAiToolCall, call_mcp_tool, openai_tool_call_to_mcp};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
+use std::fmt::Display;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
+use tokio::runtime::Builder;
+use tracing::subscriber;
+use tracing_subscriber::layer::SubscriberExt;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation")]
@@ -35,7 +42,7 @@ pub(crate) struct Op;
 impl Helper for Op {
     type Input = Input;
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .start_paused(true)
             .build()
@@ -62,12 +69,9 @@ async fn run(input: &Input) -> HelperResult {
         } => {
             let mut session = session::Fixture::from_pages(pages.clone(), *generated_pages);
             let warnings = session::Warnings::default();
-            let count = std::sync::Arc::clone(&warnings.0);
-            let subscriber = tracing_subscriber::layer::SubscriberExt::with(
-                tracing_subscriber::registry(),
-                warnings,
-            );
-            let _guard = tracing::subscriber::set_default(subscriber);
+            let count = Arc::clone(&warnings.0);
+            let subscriber = SubscriberExt::with(tracing_subscriber::registry(), warnings);
+            let _guard = subscriber::set_default(subscriber);
             let timeouts = Timeouts {
                 client: Duration::from_millis(*client_ms),
                 listing: Duration::from_millis(*listing_ms),
@@ -77,7 +81,7 @@ async fn run(input: &Input) -> HelperResult {
                 .await
                 .map_err(failure)?;
             Ok(
-                serde_json::json!({"tools":tools,"cursors":session.cursors,"warnings":count.load(std::sync::atomic::Ordering::Relaxed)}),
+                serde_json::json!({"tools":tools,"cursors":session.cursors,"warnings":count.load(Ordering::Relaxed)}),
             )
         }
     }
@@ -85,7 +89,7 @@ async fn run(input: &Input) -> HelperResult {
 
 fn failure<Source>(error: Source) -> Box<HelperError>
 where
-    Source: std::fmt::Display,
+    Source: Display,
 {
     let message = error.to_string();
     Box::new(HelperError {

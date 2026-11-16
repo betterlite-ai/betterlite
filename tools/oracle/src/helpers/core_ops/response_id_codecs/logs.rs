@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use std::mem;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
@@ -22,8 +23,8 @@ impl Visit for Message {
 impl Logs {
     pub(super) fn take(&self) -> Vec<String> {
         match self.0.lock() {
-            Ok(mut messages) => std::mem::take(&mut messages),
-            Err(poisoned) => std::mem::take(&mut poisoned.into_inner()),
+            Ok(mut messages) => mem::take(&mut messages),
+            Err(poisoned) => mem::take(&mut poisoned.into_inner()),
         }
     }
 }

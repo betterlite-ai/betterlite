@@ -95,6 +95,27 @@ fn the_default_size_is_1024_square_when_size_is_absent() {
 }
 
 #[test]
+fn an_x_spelled_size_finds_the_dash_x_catalog_key() {
+    let lookup = catalog(&[
+        ("1024-x-1024/dall-e-3", "output_cost_per_image", "0.04"),
+        ("1024x1024/dall-e-3", "output_cost_per_image", "0.9"),
+    ]);
+    let cost = default_image_cost_calculator(
+        &DefaultImageCostRequest {
+            model: "dall-e-3",
+            custom_llm_provider: None,
+            quality: None,
+            n_images: Some(1),
+            size: Some("1024x1024"),
+            model_info: None,
+        },
+        &lookup,
+    )
+    .expect("the normalized base candidate matches");
+    assert_eq!(cost, Decimal::new(4, 2));
+}
+
+#[test]
 fn a_quality_candidate_is_tried_before_the_base_candidate() {
     let lookup = catalog(&[
         ("hd/1024-x-1024/dall-e-3", "output_cost_per_image", "0.08"),

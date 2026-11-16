@@ -24,12 +24,13 @@ use betterlite_models::decisions::Json;
 use betterlite_models::full_model_metadata::record::ModelInfo;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
 use super::fixture::Fixture;
 use super::input::{Flag, Input};
-use crate::helpers::{HelperError, HelperResult};
 
 // The budget section only reads the environment, so the case's variables reach it through the loader.
 const FIXTURE_CONFIG: &str =

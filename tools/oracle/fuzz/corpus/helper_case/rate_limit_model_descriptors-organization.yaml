@@ -1,0 +1,11 @@
+kind: helper
+name: rate-limit_model_descriptors-organization-seed
+call:
+  b3038:
+    function: organization
+    auth: {org_id: org-1, organization_rpm_limit: 10}
+    requested: null
+    groups: {}
+    window_size: 60
+env: {}
+compare: {ignore: []}

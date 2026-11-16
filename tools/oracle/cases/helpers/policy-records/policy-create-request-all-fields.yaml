@@ -1,0 +1,28 @@
+kind: helper
+name: policy-create-request-all-fields
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyCreateRequest
+    value:
+      policy_name: healthcare
+      inherit: baseline
+      description: HIPAA
+      guardrails_add: [hipaa]
+      guardrails_remove: [pii]
+      condition:
+        model: "gpt-4.*"
+      pipeline:
+        mode: pre_call
+        steps:
+          - guardrail: hipaa
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyCreateRequest
+      value:
+        policy_name: bare
+env: {}
+compare: {ignore: []}

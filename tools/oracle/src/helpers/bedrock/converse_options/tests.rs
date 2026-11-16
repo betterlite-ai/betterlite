@@ -3,9 +3,9 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 use super::Op;
 use super::input::Input;
@@ -15,7 +15,7 @@ const SEED_PREFIX: &str = "bedrock_converse_options";
 
 #[test]
 fn helper_seeds_select_bedrock_converse_options() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<_> = fs::read_dir(corpus)
         .expect("the corpus folder is readable")
         .map(|entry| entry.expect("a corpus entry").path())

@@ -30,8 +30,8 @@ description: >-
 
   ManagedFile/ManagedObject/singular ManagedVectorStore gain nullable team_id and (team_id,created_at
   DESC) indexes. Existing rows keep team_id NULL; no inferred ownership backfill is allowed. This
-  leaves legacy rows without a team owner for team-only runtime listings, whose hook activation remains
-  B087's open decision. ProxyModel.blocked, MCP.delegate_auth_to_upstream and MCP.oauth_passthrough are
+  leaves legacy rows without a team owner for team-only runtime listings, whose hook activation
+  stays with B087. ProxyModel.blocked, MCP.delegate_auth_to_upstream and MCP.oauth_passthrough are
   required false. MCP env_vars is nullable JSONB default []; MCPUserEnvVars requires id/user_id/server_id/
   values_b64 TEXT and both timestamps now, with unique (user_id,server_id) and user/server indexes.
   This SQL does not decrypt or re-encrypt values_b64, nor add user/server foreign keys.

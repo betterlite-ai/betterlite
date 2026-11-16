@@ -245,7 +245,7 @@ oracle_cases:
 - tools/oracle/cases/api/batch-read-routes/auth-invalid.yaml
 deviations:
 - what: Managed-file ownership and executed-batch retrieval remain unavailable; required managed ownership returns 500 internal_server_error/null/"500", and executed batch retrieval with that requirement off returns 404 invalid_request_error/null/"404".
-  why: Pending Max's managed-files/batches decision, retain the open-source no-enterprise behavior rather than recreate the proprietary hook.
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1324-L1351
 out_of_scope:
 - 'litellm/proxy/batches_endpoints/endpoints.py: B1112 owns _request_tags L82-L86, _litellm_executed_batch_runner

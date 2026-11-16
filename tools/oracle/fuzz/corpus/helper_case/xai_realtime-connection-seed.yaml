@@ -1,0 +1,14 @@
+kind: helper
+name: xai-realtime-connection-seed
+call:
+  xai_realtime:
+    kind: connection
+    events: []
+    sessions: []
+    model: grok-4-1-fast-non-reasoning
+    api_key: sk-xai-realtime-1234567890
+    scope_headers: []
+    max_message_size_bytes: 1048576
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "1048576"
+compare: {ignore: []}

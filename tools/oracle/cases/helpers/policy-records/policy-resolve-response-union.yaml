@@ -1,0 +1,23 @@
+kind: helper
+name: policy-resolve-response-union
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyResolveResponse
+    value:
+      effective_guardrails: [hipaa, pii]
+      matched_policies:
+        - policy_name: healthcare
+          matched_via: "team:healthcare-team"
+          guardrails_added: [hipaa]
+        - policy_name: baseline
+          matched_via: "scope:*"
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyResolveResponse
+      value: {}
+env: {}
+compare: {ignore: []}

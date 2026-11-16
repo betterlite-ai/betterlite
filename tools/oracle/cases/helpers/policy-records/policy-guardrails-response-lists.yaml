@@ -1,0 +1,23 @@
+kind: helper
+name: policy-guardrails-response-lists
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyGuardrailsResponse
+    value:
+      add: [pii, phi]
+      remove: [phi]
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: project_guardrails
+      guardrails:
+        add: [pii]
+        remove: null
+  - b3242:
+      group: policy_records_records
+      operation: project_guardrails
+      guardrails: {}
+env: {}
+compare: {ignore: []}

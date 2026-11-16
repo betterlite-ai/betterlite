@@ -21,10 +21,10 @@ description: >-
   L504-L514.
 
 
-  remote-url-current-rejection supplies an http:// image or PDF URL requiring local bytes and expects ImageFetchError
-  status 400 before transport under the current open request-download decision; inject the same failed-download
-  seam into the pinned helper. Inline bytes continue to compare normally; provider-forwardable URL descriptors remain
-  unchanged where the source forwards them.
+  remote-url-inlined supplies an http:// image URL and fixture bytes; both the pinned helper and the Rust adapter
+  fetch through the injected seam, so the compared bodies carry the same data URL. A refusing fetcher fails before
+  transport with its typed error. Provider-forwardable URL descriptors remain unchanged where the source forwards
+  them: the non-runtime OpenAI Invoke body performs no fetch.
 
 
   Reuse BaseAWSLLM.__init__ from B590 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that
@@ -92,16 +92,18 @@ description: >-
   key; preserve the exact same metadata cases as base Invoke. Signing delegates B595 _sign_request(service_name=bedrock)
   with every input unchanged. runtime_body_and_supported: Sync and async validate optional_params as dict[str,object],
   remove only B590 authentication names into a copy, strip region/routing model prefixes through B2203, inline media
-  through B183 with should_inline=inline_remote_image_urls, then call the matching B038 parent transform. Unlike
-  Invoke, stream is not removed here. Supported params preserve parent order minus n and B620 family-refused fields,
+  through B183 with should_inline=inline_remote_image_urls (sync inline_remote_media, async async_inline_remote_media),
+  then call the matching B038 parent transform. Unlike Invoke, stream is not removed here. Supported params preserve
+  parent order minus n and B620 family-refused fields,
   then append reasoning_effort only when absent and B688 supports_reasoning(model,bedrock) is true. get_model_response_iterator
   always constructs B620 BedrockRuntimeChatCompletionsStreamingHandler with stream,sync_stream,json_mode unchanged.
 
 
   Global litellm.drop_params is loaded by B2201 with default False; use its existing loader. Add standalone Rust
-  test bedrock_openai_never_fetches_request_urls for an otherwise valid public image URL that B183 would need to
-  inline: ImageFetchError 400 and zero outbound attempts. Preserve forwardable descriptors and inline data. The
-  helper oracle remote_url_current_rejection uses blocked loopback input at the pinned B183 seam.
+  test bedrock_openai_media_fetch: the runtime sync and async transforms inline an http image URL through a
+  map-backed fetcher, and a refusing fetcher fails with its typed error before upstream transport. Preserve
+  forwardable descriptors on the non-runtime OpenAI Invoke body, which performs no fetch, and inline data
+  everywhere. The helper oracle remote_url_inlined injects the same fixture bytes at the pinned B183 seam.
 
 
   Write standalone Rust test bedrock_openai_credential_identity_isolation in betterlite-bedrock: Distinct configured
@@ -136,7 +138,7 @@ description: >-
 
   Write rstest function openai_invoke_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   openai_invoke_model_id, runtime_chat_completions_url, region_in_path, max_completion_tokens, refused_options_drop_or_error,
-  bedrock_openai_auth, remote_url_current_rejection, openai_invoke_body, runtime_body_and_supported. Each case exercises
+  bedrock_openai_auth, remote_url_inlined, openai_invoke_body, runtime_body_and_supported. Each case exercises
   its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
   route registration; this task must not register a duplicate axum route.
 
@@ -246,9 +248,9 @@ dod:
   - case-bedrock-openai-auth
   - oracle
   - helper-python
-- text: 'remote url current rejection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-openai-invoke/remote-url-current-rejection.yaml.'
+- text: 'remote url inlined: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-openai-invoke/remote-url-inlined.yaml.'
   proof:
-  - case-remote-url-current-rejection
+  - case-remote-url-inlined
   - oracle
   - helper-python
 - text: New bedrock_openai_invoke seeds parse as the intended call variant and replay through the shared production
@@ -266,17 +268,19 @@ dod:
   - helper-python
 - text: 'runtime_body_and_supported: Sync and async validate optional_params as dict[str,object], remove only B590
     authentication names into a copy, strip region/routing model prefixes through B2203, inline media through B183
-    with should_inline=inline_remote_image_urls, then call the matching B038 parent transform. Unlike Invoke, stream
-    is not removed here. Supported params preserve parent order minus n and B620 family-refused fields, then append
+    with should_inline=inline_remote_image_urls (sync inline_remote_media, async async_inline_remote_media), then
+    call the matching B038 parent transform. Unlike Invoke, stream is not removed here. Supported params preserve
+    parent order minus n and B620 family-refused fields, then append
     reasoning_effort only when absent and B688 supports_reasoning(model,bedrock) is true. get_model_response_iterator
     always constructs B620 BedrockRuntimeChatCompletionsStreamingHandler with stream,sync_stream,json_mode unchanged.'
   proof:
   - case-runtime-body-and-supported
   - oracle
   - helper-python
-- text: Runtime media inlining obeys the no-fetch deviation for public URLs.
+- text: Runtime media inlining fetches an http image URL through the injected fetcher on both the sync and async
+    transforms; a refusing fetcher fails with its typed error before transport.
   proof:
-  - no-request-download
+  - media-fetch
 - text: Distinct configured identities cannot share credentials, headers or cache entries.
   proof:
   - credential-identity-isolation
@@ -332,9 +336,9 @@ checks:
       B682 BedrockError with supplied message/status/headers, without another wrapper. Use the same bearer and credential-isolation
       cases as B590/B595.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::openai_invoke_cases::case_[0-9]+_bedrock_openai_auth$/)'
-  - id: case-remote-url-current-rejection
-    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-openai-invoke/remote-url-current-rejection.yaml.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::openai_invoke_cases::case_[0-9]+_remote_url_current_rejection$/)'
+  - id: case-remote-url-inlined
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-openai-invoke/remote-url-inlined.yaml.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::openai_invoke_cases::case_[0-9]+_remote_url_inlined$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
     run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_openai_invoke.py tools/oracle/helpers/bedrock_openai_invoke)" && uv run
@@ -355,15 +359,16 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::openai_invoke_cases::case_[0-9]+_openai_invoke_body$/)'
   - id: case-runtime-body-and-supported
     why: Sync and async validate optional_params as dict[str,object], remove only B590 authentication names into
-      a copy, strip region/routing model prefixes through B2203, inline media through B183 with should_inline=inline_remote_image_urls,
-      then call the matching B038 parent transform. Unlike Invoke, stream is not removed here. Supported params
+      a copy, strip region/routing model prefixes through B2203, inline media through B183 with
+      should_inline=inline_remote_image_urls (sync inline_remote_media, async async_inline_remote_media), then call
+      the matching B038 parent transform. Unlike Invoke, stream is not removed here. Supported params
       preserve parent order minus n and B620 family-refused fields, then append reasoning_effort only when absent
       and B688 supports_reasoning(model,bedrock) is true. get_model_response_iterator always constructs B620 BedrockRuntimeChatCompletionsStreamingHandler
       with stream,sync_stream,json_mode unchanged.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::openai_invoke_cases::case_[0-9]+_runtime_body_and_supported$/)'
-  - id: no-request-download
-    why: The no-fetch decision lacks a production assertion.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_openai_never_fetches_request_urls$/)'
+  - id: media-fetch
+    why: The runtime media fetch through the injected fetcher lacks a production assertion.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_openai_media_fetch$/)'
   - id: credential-identity-isolation
     why: Distinct configured identities cannot share credentials, headers or cache entries.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_openai_credential_identity_isolation$/)'
@@ -377,16 +382,10 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-openai-invoke/max-completion-tokens.yaml
 - tools/oracle/cases/helpers/providers/bedrock-openai-invoke/refused-options-drop-or-error.yaml
 - tools/oracle/cases/helpers/providers/bedrock-openai-invoke/bedrock-openai-auth.yaml
-- tools/oracle/cases/helpers/providers/bedrock-openai-invoke/remote-url-current-rejection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-openai-invoke/remote-url-inlined.yaml
 - tools/oracle/cases/helpers/providers/bedrock-openai-invoke/openai-invoke-body.yaml
 - tools/oracle/cases/helpers/providers/bedrock-openai-invoke/runtime-body-and-supported.yaml
-deviations:
-- what: 'Open, waiting for Max: keep request image/PDF/file URLs unfetched (current behavior), or permit controlled
-    request-URL downloads. This task keeps URLs as provider-forwardable descriptors and rejects a URL when local
-    bytes are required; only supplied bytes or already authorized local file handles may be read.'
-  why: The URL-download product decision is open. Build no downloader, request-path filesystem access or follow-on
-    feature that depends on fetching.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_openai_transformation.py#L47-L185
+deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.

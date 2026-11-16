@@ -20,9 +20,10 @@ use betterlite_core::api::messages_context_clear::result::PolyfillResult;
 use betterlite_models::decisions::Json;
 use serde::Serialize;
 use serde_json::json;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::failure;
 use super::input::{CounterInput, EditorInput, Input, VisibleEditsInput};
@@ -112,7 +113,7 @@ fn recorded_editor(
 }
 
 fn runtime() -> Result<Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_multi_thread()
+    Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
         .build()

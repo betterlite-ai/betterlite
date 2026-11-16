@@ -5,7 +5,8 @@ use betterlite_context::anthropic_catalog_lookup::{
 };
 use serde_json::json;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 
@@ -35,10 +36,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let outcome = match input {
             Input::Candidates { model } => {
                 CandidatePatterns::new().map(|patterns| json!(patterns.candidates(model)))

@@ -17,8 +17,10 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
 use serde_json::to_value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fake::FlaggedModels;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
@@ -151,7 +153,7 @@ impl MidSystem {
         let mut predicates = FlaggedModels {
             models: self.supported.clone(),
         };
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|source| failure("RuntimeError", None, source.to_string()))?;
         Ok(runtime.block_on(mid_system_supported(

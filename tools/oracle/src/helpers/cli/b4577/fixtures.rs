@@ -12,13 +12,14 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::Input;
 use super::agents::{FakeEnvironment, FakeTerminal, RecordingProbe, ScriptedLogin, ScriptedStop};
 use super::fakes::{
     DisabledVault, FixedClock, NoSleeper, ScriptedFiles, State, UnusedHttp, ZeroEntropy, json_file,
 };
+use std::fmt::Display;
 
 pub(crate) const BASE_URL: &str = "http://gateway.test:4000";
 
@@ -186,7 +187,7 @@ fn write_seed(path: &Path, bytes: &[u8]) -> Result<(), Box<HelperError>> {
 
 pub(crate) fn helper_failure<M>(message: &M) -> Box<HelperError>
 where
-    M: std::fmt::Display,
+    M: Display,
 {
     Box::new(HelperError {
         class: "Fixture".to_owned(),

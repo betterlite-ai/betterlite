@@ -17,7 +17,8 @@ use serde_json::{Value, json};
 
 use super::fixtures;
 use super::{Call, Endpoint, Probe, invalid_input};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn run(call: &Call) -> HelperResult {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)

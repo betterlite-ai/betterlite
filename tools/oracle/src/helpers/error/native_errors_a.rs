@@ -6,6 +6,7 @@ use betterlite_error::native_errors_a::ai21::map_ai21_exception;
 use betterlite_error::native_errors_a::cloudflare::map_cloudflare_with_status;
 use betterlite_error::native_errors_a::cohere::map_cohere_exception;
 use betterlite_error::native_errors_a::huggingface::map_huggingface_exception;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 
 // mirrors BaseLLMException's own response=httpx.Response(status_code, request=httpx.Request(...))
@@ -66,10 +67,10 @@ pub(crate) struct Ai21Input {
     status_code: Option<u16>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mapped = match input {
             Input::Cloudflare(fields) => map_cloudflare_with_status(
                 &fields.error_str,

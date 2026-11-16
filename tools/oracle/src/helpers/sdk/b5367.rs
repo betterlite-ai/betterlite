@@ -36,16 +36,18 @@ use self::support::Rules;
 use self::support::global_callback;
 use self::support::helper_error;
 use self::support::lists_value;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod input;
 mod support;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.action {
             Action::Setup => setup(input),
             Action::Credentials => credentials(input),
@@ -64,7 +66,7 @@ struct Session {
 }
 
 impl Session {
-    fn new(input: &Input) -> Result<Self, Box<crate::helpers::HelperError>> {
+    fn new(input: &Input) -> Result<Self, Box<HelperError>> {
         let markers = Markers::default();
         let callbacks: Vec<Arc<dyn DeploymentHook>> = input
             .callbacks
@@ -87,16 +89,13 @@ impl Session {
     }
 }
 
-fn setup(input: &Input) -> crate::helpers::HelperResult {
+fn setup(input: &Input) -> HelperResult {
     let mut session = Session::new(input)?;
-    let call = invoke(input, &mut session)?;
+    let call = invoke_sdk_call(input, &mut session)?;
     setup_value(&call, &session.providers, &session.lists)
 }
 
-fn invoke(
-    input: &Input,
-    session: &mut Session,
-) -> Result<CallSetup, Box<crate::helpers::HelperError>> {
+fn invoke_sdk_call(input: &Input, session: &mut Session) -> Result<CallSetup, Box<HelperError>> {
     let resolver = Resolver {
         outcomes: &input.resolver,
         markers: &session.markers,
@@ -138,7 +137,7 @@ fn invoke(
         .map_err(|error| setup_failure(&error))
 }
 
-fn setup_failure(error: &CallSetupError) -> Box<crate::helpers::HelperError> {
+fn setup_failure(error: &CallSetupError) -> Box<HelperError> {
     let status = match error {
         CallSetupError::Rule(RuleError::Rejected { .. }) => Some(500),
         CallSetupError::Rule(RuleError::MissingInput)
@@ -158,7 +157,7 @@ fn setup_value(
     call: &CallSetup,
     providers: &ProviderRegistry,
     lists: &CallbackLists,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     Ok(json!({
         "request": serde_json::to_value(&call.request)
             .map_err(|error| helper_error("InvalidInput", error.to_string()))?,
@@ -193,7 +192,7 @@ fn dynamic_value(dynamic: &DynamicCallbacks) -> Value {
     })
 }
 
-fn credentials(input: &Input) -> crate::helpers::HelperResult {
+fn credentials(input: &Input) -> HelperResult {
     let mut request = request_map(&input.request)?;
     let lookup = CredentialList {
         entries: input
@@ -211,7 +210,7 @@ fn credentials(input: &Input) -> crate::helpers::HelperResult {
     }))
 }
 
-fn request_flags(input: &Input) -> crate::helpers::HelperResult {
+fn request_flags(input: &Input) -> HelperResult {
     let request = request_map(&input.request)?;
     Ok(json!({
         "async": is_async_request(&request, input.is_pass_through.unwrap_or(false)),
