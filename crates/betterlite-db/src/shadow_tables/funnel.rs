@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::mem;
 use std::sync::{Mutex, PoisonError};
 
 use super::rows::{FunnelCounters, FunnelStage, ShadowTables};
@@ -12,9 +13,12 @@ pub struct FunnelQueue {
 impl FunnelQueue {
     // synchronous on purpose: a read-modify-write here cannot interleave with a flush snapshot
     pub fn record(&self, job_id: &str, stage: FunnelStage) {
-        let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
-        let counters = pending.entry(job_id.to_owned()).or_default();
-        counters.record(stage);
+        self.pending
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(job_id.to_owned())
+            .or_default()
+            .record(stage);
     }
 
     #[must_use]
@@ -24,6 +28,7 @@ impl FunnelQueue {
         for counters in pending.values() {
             total = total.saturating_add(counters.total());
         }
+        drop(pending);
         total
     }
 
@@ -37,7 +42,7 @@ impl FunnelQueue {
             if pending.is_empty() {
                 return;
             }
-            std::mem::take(&mut *pending)
+            mem::take(&mut *pending)
         };
         for (job_id, counters) in batch {
             if let Err(error) = database.upsert_funnel(&job_id, counters).await {

@@ -45,6 +45,50 @@ pub struct PostgresShadowTables<Client> {
     pub client: Client,
 }
 
+impl<Client> PostgresShadowTables<Client>
+where
+    Client: GenericClient + Send + Sync,
+{
+    async fn query_attempt_stats(
+        &self,
+        job_ids: &[String],
+    ) -> Result<Vec<JobAttemptStats>, tokio_postgres::Error> {
+        let ids = job_ids.to_vec();
+        let rows = self.client.query(ATTEMPT_STATS_SQL, &[&ids]).await?;
+        let mut stats = Vec::with_capacity(rows.len());
+        for row in &rows {
+            stats.push(attempt_stats_row(row)?);
+        }
+        Ok(stats)
+    }
+
+    async fn store_attempt(&self, attempt: &ShadowAttemptRow) -> Result<(), tokio_postgres::Error> {
+        let id = Uuid::new_v4().to_string();
+        let outcome = attempt.outcome.as_str();
+        let parameters = attempt_parameters(&id, outcome, attempt);
+        self.client
+            .execute_raw(INSERT_ATTEMPT_SQL, parameters)
+            .await?;
+        Ok(())
+    }
+
+    async fn store_funnel(
+        &self,
+        job_id: &str,
+        counters: FunnelCounters,
+    ) -> Result<(), tokio_postgres::Error> {
+        let stages: [&(dyn ToSql + Sync); 5] = [
+            &job_id,
+            &counters.not_sampled,
+            &counters.unjudgeable,
+            &counters.shed,
+            &counters.withheld,
+        ];
+        self.client.execute(UPSERT_FUNNEL_SQL, &stages).await?;
+        Ok(())
+    }
+}
+
 impl<Client> ShadowTables for PostgresShadowTables<Client>
 where
     Client: GenericClient + Send + Sync,
@@ -66,43 +110,14 @@ where
         &'database self,
         job_ids: &'database [String],
     ) -> ShadowFuture<'database, Vec<JobAttemptStats>, Self::Error> {
-        Box::pin(async move {
-            let ids = job_ids.to_vec();
-            let rows = self.client.query(ATTEMPT_STATS_SQL, &[&ids]).await?;
-            rows.iter().map(attempt_stats_row).collect()
-        })
+        Box::pin(self.query_attempt_stats(job_ids))
     }
 
     fn insert_attempt<'database>(
         &'database self,
         attempt: &'database ShadowAttemptRow,
     ) -> ShadowFuture<'database, (), Self::Error> {
-        Box::pin(async move {
-            let id = Uuid::new_v4().to_string();
-            let outcome = attempt.outcome.as_str();
-            let parameters: [&(dyn ToSql + Sync); 16] = [
-                &id,
-                &attempt.job_id,
-                &attempt.request_id,
-                &attempt.router_name,
-                &outcome,
-                &attempt.tier,
-                &attempt.real_model,
-                &attempt.shadow_model,
-                &attempt.confidence,
-                &attempt.judge_cost,
-                &attempt.shadow_cost,
-                &attempt.shadow_classifier_cost,
-                &attempt.real_cost,
-                &attempt.real_classifier_cost,
-                &attempt.real_cache_hit,
-                &attempt.error,
-            ];
-            self.client
-                .execute_raw(INSERT_ATTEMPT_SQL, parameters)
-                .await?;
-            Ok(())
-        })
+        Box::pin(self.store_attempt(attempt))
     }
 
     fn upsert_funnel<'database>(
@@ -110,20 +125,33 @@ where
         job_id: &'database str,
         counters: FunnelCounters,
     ) -> ShadowFuture<'database, (), Self::Error> {
-        Box::pin(async move {
-            let parameters: [&(dyn ToSql + Sync); 5] = [
-                &job_id,
-                &counters.not_sampled,
-                &counters.unjudgeable,
-                &counters.shed,
-                &counters.withheld,
-            ];
-            self.client
-                .execute_raw(UPSERT_FUNNEL_SQL, parameters)
-                .await?;
-            Ok(())
-        })
+        Box::pin(self.store_funnel(job_id, counters))
     }
+}
+
+fn attempt_parameters<'attempt>(
+    id: &'attempt str,
+    outcome: &'attempt str,
+    attempt: &'attempt ShadowAttemptRow,
+) -> [&'attempt (dyn ToSql + Sync); 16] {
+    [
+        id,
+        &attempt.job_id,
+        &attempt.request_id,
+        &attempt.router_name,
+        outcome,
+        &attempt.tier,
+        &attempt.real_model,
+        &attempt.shadow_model,
+        &attempt.confidence,
+        &attempt.judge_cost,
+        &attempt.shadow_cost,
+        &attempt.shadow_classifier_cost,
+        &attempt.real_cost,
+        &attempt.real_classifier_cost,
+        &attempt.real_cache_hit,
+        &attempt.error,
+    ]
 }
 
 fn active_job_row(row: &Row) -> Result<ShadowJobRow, tokio_postgres::Error> {
