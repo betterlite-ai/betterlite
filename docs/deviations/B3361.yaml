@@ -7,7 +7,7 @@ deviations:
       parameter list and the OpenAI identity mapping from that name.
     why: >-
       The concrete config objects carry credentials, the logging globals and a container cost source
-      that this core layer doesn't hold; the caller that has them builds the config from the name,
-      as B522's OpenAI config and B547's Azure config do.
+      that this core layer doesn't hold, so the caller that has them builds the config from the name;
+      the OpenAI config in betterlite-openai does that, and the Azure config is B547's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9727-L9743
 kept_bugs: []
