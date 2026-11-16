@@ -13,6 +13,7 @@ call:
       user_api_key_team_id: team-1
       user_api_key_org_id: org-1
       user_api_key_project_id: proj-1
+    request_user: caller
     model_group: alias-name
     groups: {alias-name: alias-group}
     window_size: 60

@@ -57,10 +57,10 @@ fn reserved_agent_scopes_are_appended_to_the_logging_targets() {
         success_increments(&parts_with(state)),
         vec![
             ("{api_key:key-1}:tokens".to_owned(), 15.0_f64, Some(60)),
-            ("{agent:agent-1}:tokens".to_owned(), 15.0, Some(60)),
+            ("{agent:agent-1}:tokens".to_owned(), 15.0_f64, Some(60)),
             (
                 "{agent_session:agent-1:sess-1}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
         ]
@@ -99,12 +99,27 @@ fn a_reserved_agent_scope_already_in_the_targets_is_not_duplicated() {
         success_increments(&parts),
         vec![
             ("{api_key:key-1}:tokens".to_owned(), 15.0_f64, Some(60)),
-            ("{agent:agent-1}:tokens".to_owned(), 15.0, Some(60)),
+            ("{agent:agent-1}:tokens".to_owned(), 15.0_f64, Some(60)),
             (
                 "{agent_session:agent-1:sess-1}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
+        ]
+    );
+}
+
+#[test]
+fn the_request_user_names_the_end_user_scope() {
+    let parts = SuccessParts {
+        request_user: Some("caller".to_owned()),
+        ..parts_with(StashState::default())
+    };
+    assert_eq!(
+        success_increments(&parts),
+        vec![
+            ("{api_key:key-1}:tokens".to_owned(), 15.0_f64, Some(60)),
+            ("{end_user:caller}:tokens".to_owned(), 15.0_f64, Some(60)),
         ]
     );
 }
@@ -133,8 +148,8 @@ fn stash_tags_are_charged_in_sorted_order() {
         success_increments(&parts_with(state)),
         vec![
             ("{api_key:key-1}:tokens".to_owned(), 15.0_f64, Some(60)),
-            ("{tag:alpha}:tokens".to_owned(), 15.0, Some(60)),
-            ("{tag:beta}:tokens".to_owned(), 15.0, Some(60)),
+            ("{tag:alpha}:tokens".to_owned(), 15.0_f64, Some(60)),
+            ("{tag:beta}:tokens".to_owned(), 15.0_f64, Some(60)),
         ]
     );
 }
