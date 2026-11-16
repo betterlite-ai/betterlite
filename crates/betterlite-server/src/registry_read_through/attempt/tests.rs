@@ -64,6 +64,23 @@ async fn a_miss_is_remembered_until_the_ttl_ends() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn an_expired_miss_is_dropped_when_another_miss_is_remembered() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let read_through = RegistryReadThrough::new(CountingResync {
+        calls: Arc::clone(&calls),
+        found: false,
+    });
+    assert!(!read_through.attempt("first-miss").await);
+    advance(READ_THROUGH_MISS_TTL).await;
+    assert!(!read_through.attempt("first-miss").await);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(!read_through.attempt("second-miss").await);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(!read_through.attempt("first-miss").await);
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_resync_error_is_logged_and_not_remembered() {
     let calls = Arc::new(AtomicUsize::new(0));
     let read_through = RegistryReadThrough::new(FailingResync {
