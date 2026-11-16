@@ -81,26 +81,26 @@ pub fn count_relayed_prompt_tokens(
     model: &str,
     messages: Option<&[Message]>,
 ) -> Result<i64, RelayedCountError> {
-    let Some(messages) = messages else {
+    let Some(list) = messages else {
         return Ok(0);
     };
-    let mut local = Vec::with_capacity(messages.len());
+    let mut local = Vec::with_capacity(list.len());
     let mut remote_images = 0_u64;
-    for message in messages {
+    for message in list {
         let (kept, remote) = without_remote_images(message);
         local.push(kept);
         remote_images = remote_images.saturating_add(remote);
     }
-    let counted = counter.count_messages(model, &local)?;
+    let local_tokens = counter.count_messages(model, &local)?;
     let bound = high_detail_upper_bound(DEFAULT_BASE_TOKENS, &Settings::default())
         .map_err(RelayedCountError::UpperBound)?;
     let per_image = i64::try_from(bound).map_err(|_error| RelayedCountError::Overflow)?;
-    let images = i64::try_from(remote_images).map_err(|_error| RelayedCountError::Overflow)?;
-    let remote_tokens = per_image
-        .checked_mul(images)
+    let image_count = i64::try_from(remote_images).map_err(|_error| RelayedCountError::Overflow)?;
+    let image_tokens = per_image
+        .checked_mul(image_count)
         .ok_or(RelayedCountError::Overflow)?;
-    counted
-        .checked_add(remote_tokens)
+    local_tokens
+        .checked_add(image_tokens)
         .ok_or(RelayedCountError::Overflow)
 }
 
@@ -216,8 +216,7 @@ fn parse_chunk(raw: &str, identify: fn() -> Uuid, clock: fn() -> i64) -> Option<
     relay_chunk(&value, &reply)
 }
 
-// The relay's parser is ModelResponseStream(**chunk), where Delta maps reasoning onto reasoning_content only when
-// reasoning_content is None. The streaming handler's chunk_parser lets reasoning win, so the raw value is put back.
+// LiteLLM's relay parser maps reasoning onto reasoning_content only when reasoning_content is None, while the streaming parser lets reasoning win, so the raw value goes back.
 fn keep_reasoning_content(raw: &Value, reply: &mut StreamReply) {
     let Some(Value::Array(raw_choices)) = raw.get("choices") else {
         return;
