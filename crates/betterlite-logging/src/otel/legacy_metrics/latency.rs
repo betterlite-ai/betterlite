@@ -56,10 +56,6 @@ pub fn record_seconds(histogram: &Histogram<f64>, value: Decimal, attributes: &[
     }
 }
 
-fn elapsed(from: Decimal, to: Decimal) -> Result<Decimal, LegacyMetricsError> {
-    to.checked_sub(from).ok_or(LegacyMetricsError::TimeRange)
-}
-
 pub fn record_ttft_metric(
     histogram: &Histogram<f64>,
     context: &LatencyContext<'_>,
@@ -77,7 +73,9 @@ pub fn record_ttft_metric(
     if let (true, (Stamp::At(call_start), Stamp::At(first_token))) = (streaming, moments) {
         record_seconds(
             histogram,
-            elapsed(call_start, first_token)?,
+            first_token
+                .checked_sub(call_start)
+                .ok_or(LegacyMetricsError::TimeRange)?,
             context.attributes,
         );
     }
@@ -93,9 +91,10 @@ pub fn record_tpot_metric(
         stamp(context.kwargs, "completion_start_time", context.resolver)?,
         stamp(context.kwargs, "api_call_start_time", context.resolver)?,
     ) {
-        (Stamp::At(started), _) | (Stamp::Absent, Stamp::At(started)) => {
-            elapsed(started, context.end_time)?
-        }
+        (Stamp::At(started), _) | (Stamp::Absent, Stamp::At(started)) => context
+            .end_time
+            .checked_sub(started)
+            .ok_or(LegacyMetricsError::TimeRange)?,
         (Stamp::Unparsed, _) | (Stamp::Absent, Stamp::Unparsed | Stamp::Absent) => context.duration,
     };
     let per_token = generation
@@ -115,8 +114,13 @@ pub fn record_api_latency_metric(
         stamp(context.kwargs, "api_call_start_time", context.resolver)?,
         stamp(context.kwargs, "end_time", context.resolver)?,
     ) {
-        (Stamp::At(call_start), Stamp::Absent) => elapsed(call_start, context.end_time)?,
-        (Stamp::At(call_start), Stamp::At(finished)) => elapsed(call_start, finished)?,
+        (Stamp::At(call_start), Stamp::Absent) => context
+            .end_time
+            .checked_sub(call_start)
+            .ok_or(LegacyMetricsError::TimeRange)?,
+        (Stamp::At(call_start), Stamp::At(finished)) => finished
+            .checked_sub(call_start)
+            .ok_or(LegacyMetricsError::TimeRange)?,
         (Stamp::Absent | Stamp::Unparsed, _) | (Stamp::At(_), Stamp::Unparsed) => return Ok(()),
     };
     if span > Decimal::ZERO {
