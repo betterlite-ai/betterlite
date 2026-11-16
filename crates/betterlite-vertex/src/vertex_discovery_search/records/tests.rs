@@ -38,7 +38,7 @@ fn expected_json(text: &str) -> Json {
 fn all_text(names: &[&str]) -> BTreeMap<String, Json> {
     names
         .iter()
-        .map(|name| ((*name).to_owned(), Json::Text("value".to_owned())))
+        .map(|name| ((*name).to_owned(), Json::Text((*name).to_owned())))
         .collect()
 }
 
@@ -331,22 +331,73 @@ fn every_native_extra_body_field_is_accepted_in_its_mode() {
     let no_params = object("{}");
     let engine_params = object(r#"{"vertex_engine_id":"app"}"#);
     let datastore_extra = all_text(&datastore_fields);
-    assert!(
-        transform_search_request(
-            &request(&query, &optional, Some(&datastore_extra), &no_params),
-            &mut BTreeMap::new(),
-        )
-        .is_ok()
-    );
+    let call = transform_search_request(
+        &request(&query, &optional, Some(&datastore_extra), &no_params),
+        &mut BTreeMap::new(),
+    )
+    .unwrap();
+    let body = serde_json::to_value(call.body).unwrap();
+    assert_eq!(body, serde_json::to_value(&datastore_extra).unwrap());
+
     let mut engine_extra = all_text(&datastore_fields);
     engine_extra.extend(all_text(&engine_only));
-    assert!(
-        transform_search_request(
-            &request(&query, &optional, Some(&engine_extra), &engine_params),
-            &mut BTreeMap::new(),
-        )
-        .is_ok()
+    let call = transform_search_request(
+        &request(&query, &optional, Some(&engine_extra), &engine_params),
+        &mut BTreeMap::new(),
+    )
+    .unwrap();
+    let body = serde_json::to_value(call.body).unwrap();
+    assert_eq!(body, serde_json::to_value(&engine_extra).unwrap());
+
+    let mut datastore_unknown = datastore_extra;
+    datastore_unknown.insert(
+        "notANativeField".to_owned(),
+        Json::Text("unknown".to_owned()),
     );
+    let error = transform_search_request(
+        &request(&query, &optional, Some(&datastore_unknown), &no_params),
+        &mut BTreeMap::new(),
+    )
+    .unwrap_err();
+    let VertexDiscoverySearchError::UnsupportedFields {
+        fields, supported, ..
+    } = error
+    else {
+        panic!("a name outside the data store allowlist is rejected");
+    };
+    assert_eq!(fields, ["notANativeField"]);
+    let mut datastore_supported: Vec<String> = datastore_fields
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect();
+    datastore_supported.sort_unstable();
+    assert_eq!(supported, datastore_supported);
+
+    let mut engine_fields = datastore_fields.to_vec();
+    engine_fields.extend(engine_only);
+    let mut engine_unknown = engine_extra;
+    engine_unknown.insert(
+        "notANativeField".to_owned(),
+        Json::Text("unknown".to_owned()),
+    );
+    let error = transform_search_request(
+        &request(&query, &optional, Some(&engine_unknown), &engine_params),
+        &mut BTreeMap::new(),
+    )
+    .unwrap_err();
+    let VertexDiscoverySearchError::UnsupportedFields {
+        fields, supported, ..
+    } = error
+    else {
+        panic!("a name outside the engine allowlist is rejected");
+    };
+    assert_eq!(fields, ["notANativeField"]);
+    let mut engine_supported: Vec<String> = engine_fields
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect();
+    engine_supported.sort_unstable();
+    assert_eq!(supported, engine_supported);
 }
 
 #[test]
