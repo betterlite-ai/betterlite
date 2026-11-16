@@ -134,8 +134,9 @@ def outcome(call: Callable[[], JsonValue]) -> JsonValue:
 
 
 def mapped_params(
-    config: FalAIVideoConfig, params: dict[str, JsonValue], model: str
+    config: FalAIVideoConfig, key: str, value: JsonValue, model: str
 ) -> JsonValue:
+    params: dict[str, JsonValue] = {key: value}
     request = cast("VideoCreateOptionalRequestParams", params)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L301
     mapped = config.map_openai_params(request, model, drop_params=False)
     return {"params": PARAMS.validate_python(mapped)}
@@ -147,7 +148,7 @@ def mapping_report(
     results: list[JsonValue] = []
     for model in models:
         cases = [
-            outcome(partial(mapped_params, config, {key: value}, model))
+            outcome(partial(mapped_params, config, key, value, model))
             for value in values
         ]
         results.append({"model": model, "cases": cases})
@@ -224,8 +225,12 @@ def environment_report(
     config: FalAIVideoConfig, environment: dict[str, str], call: QueueBaseLiteral
 ) -> JsonValue:
     apply_environment(environment)
-    urls = [config.get_complete_url("", base, {}) for base in call["api_bases"]]
-    headers = [outcome(partial(key_headers, config, case)) for case in call["cases"]]
+    urls: list[JsonValue] = [
+        config.get_complete_url("", base, {}) for base in call["api_bases"]
+    ]
+    headers: list[JsonValue] = [
+        outcome(partial(key_headers, config, case)) for case in call["cases"]
+    ]
     return {"urls": urls, "headers": headers}
 
 
@@ -236,16 +241,13 @@ def job_url(
     api_base: str,
 ) -> JsonValue:
     params = GenericLiteLLMParams()
-    match kind:
-        case "status":
-            request = config.transform_video_status_retrieve_request(
-                video_id, api_base, params, {}
-            )
-        case "content":
-            request = config.transform_video_content_request(
-                video_id, api_base, params, {}
-            )
-    return {"url": request[0]}
+    if kind == "status":
+        url = config.transform_video_status_retrieve_request(
+            video_id, api_base, params, {}
+        )[0]
+    else:
+        url = config.transform_video_content_request(video_id, api_base, params, {})[0]
+    return {"url": url}
 
 
 def job_report(config: FalAIVideoConfig, call: WorkflowJobPath) -> JsonValue:

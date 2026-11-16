@@ -262,7 +262,7 @@ fn h3_sizes_use_the_h3_bands(
 #[case::signs("-10x20")]
 #[case::plus_width("+10x20")]
 #[case::plus_height("10x+20")]
-#[case::unicode_digits("١٢x٣٤")]
+#[case::unicode_digits("\u{661}\u{662}x\u{663}\u{664}")]
 #[case::overflow("340282366920938463463374607431768211456x2")]
 #[case::empty("")]
 fn malformed_sizes_map_no_params(#[case] raw: &str) {

@@ -78,5 +78,5 @@ fn json_integer(text: &str) -> Result<Json, FalVideoError> {
     // the text is digits with an optional sign, so it reads back as the same JSON number
     text.parse::<Number>()
         .map(Json::Number)
-        .map_err(|_| FalVideoError::SecondsNotNumeric)
+        .map_err(|_parse_error| FalVideoError::SecondsNotNumeric)
 }
