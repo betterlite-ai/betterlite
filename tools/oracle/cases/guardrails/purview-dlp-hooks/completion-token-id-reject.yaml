@@ -1,0 +1,16 @@
+kind: helper
+name: completion-token-id-reject
+call:
+  b3740:
+    function: pre_call
+    guardrail: {guardrail_name: purview, tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, purview_app_name: LiteLLM, user_id_field: user_id, timeout_seconds: 5}
+    replies: []
+    identity: {user_id: user-1, end_user_id: null}
+    call_type: text_completion
+    data:
+      model: gpt-4o
+      prompt: [1, 2, 3]
+    result: null
+    chunks: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: responses-texts-write-back-by-mapping
+call:
+  b3671: {"function": "input", "scenarios": [{"data": {"instructions": "i", "input": "hi"}, "skip_system": false, "covers_full": false, "reply": {"texts": ["I", "HI"]}}, {"data": {"input": [{"role": "user", "content": "a"}, {"role": "user", "content": [{"type": "input_text", "text": "b"}, {"type": "input_text", "text": "c"}]}]}, "skip_system": false, "covers_full": false, "reply": {"texts": ["A", "B", "C"]}}, {"data": {"input": [{"role": "user", "content": null}, {"role": "user", "content": "z"}]}, "skip_system": false, "covers_full": false, "reply": {"texts": ["Z"]}}, {"data": {"input": [{"role": "user", "content": [{"type": "input_text", "text": ""}, {"type": "input_text", "text": "a"}]}]}, "skip_system": false, "covers_full": false, "reply": {"texts": ["X", "A"]}}, {"data": {"input": ""}, "skip_system": false, "covers_full": false, "reply": {"texts": ["X"]}}]}
+env: {}
+compare: {ignore: []}

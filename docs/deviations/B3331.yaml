@@ -1,0 +1,15 @@
+task: B3331
+deviations:
+  - what: get_error_class returns the error value where LiteLLM raises it.
+    why: A Rust function reports a failure it builds by returning it, and the caller decides whether to propagate it. The message, status code and headers are the ones LiteLLM puts in the BaseLLMException.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L410-L417
+  - what: The character, edit and extension defaults return the typed error VideoContractError with LiteLLM's exact "video {operation} is not supported for this provider" text, and do not raise NotImplementedError.
+    why: Rust has no exception to raise, so each default returns the error through the provider's own error type, which converts from VideoContractError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L291-L408
+  - what: validate_environment and get_complete_url have default bodies in the trait, so a provider may leave them out.
+    why: LiteLLM marks both abstract but still writes a body (an empty mapping, and api_base or "api_base is required"). Keeping those bodies as trait defaults makes the inherited behavior callable and tested, as the sibling provider contracts do.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L66-L97
+  - what: The sync and async HTTP clients that LiteLLM passes to the status transforms are the associated types SyncClient and AsyncClient.
+    why: The transport tasks own the client types, so the contract names the slot and leaves the type to the implementor. The async default still calls the sync transform without a client, as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L252-L289
+kept_bugs: []
