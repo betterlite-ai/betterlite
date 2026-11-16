@@ -8,7 +8,7 @@ use betterlite_logging::otel::legacy_metrics::recorder::MetricCall;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::plumbing::metrics::recorder::GenAiMetricRecorder;
 use betterlite_logging::otel_provider_assembly::metric_instruments::create_instruments;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use chrono::FixedOffset;
 use opentelemetry::metrics::MeterProvider as _;

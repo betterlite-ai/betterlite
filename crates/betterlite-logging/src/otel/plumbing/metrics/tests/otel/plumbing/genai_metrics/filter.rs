@@ -60,9 +60,9 @@ fn the_filter_is_read_on_the_first_record_not_at_construction() {
     recorder
         .record(&call_of(&call_kwargs, None))
         .expect("record");
-    let recorded = flush(&provider, &exporter);
+    let points = flush(&provider, &exporter);
     let expected = BTreeMap::from([("gen_ai.system".to_owned(), "openai".to_owned())]);
-    assert_eq!(attributes_of(&recorded, DURATION), expected);
+    assert_eq!(attributes_of(&points, DURATION), expected);
 }
 
 #[test]
@@ -81,9 +81,9 @@ fn a_bad_filter_raises_on_the_first_record_and_a_corrected_one_is_used_afterward
     );
     settings.set(Some(r#"{"include_list": ["gen_ai.system"]}"#));
     recorder.record(&call).expect("corrected filter");
-    let recorded = flush(&provider, &exporter);
+    let points = flush(&provider, &exporter);
     let expected = BTreeMap::from([("gen_ai.system".to_owned(), "openai".to_owned())]);
-    assert_eq!(attributes_of(&recorded, DURATION), expected);
+    assert_eq!(attributes_of(&points, DURATION), expected);
 }
 
 #[test]

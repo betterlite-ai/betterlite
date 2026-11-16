@@ -44,8 +44,11 @@ fn the_ceiling_drops_metadata_keys_the_common_attributes_built() {
     }}}"#;
     let call_kwargs = kwargs(extra);
     let unbounded = common_attributes(&call_kwargs).expect("attributes");
-    let unbounded_keys: Vec<&str> = unbounded.iter().map(|(key, _)| key.as_str()).collect();
-    assert!(unbounded_keys.contains(&"metadata.user_api_key_user_email"));
+    assert!(
+        unbounded
+            .iter()
+            .any(|(key, _)| key == "metadata.user_api_key_user_email")
+    );
     let bounded = bounded_attributes(&call_kwargs).expect("attributes");
     let bounded_keys: Vec<&str> = bounded.iter().map(|(key, _)| key.as_str()).collect();
     assert!(bounded_keys.contains(&"metadata.user_api_key_alias"));
