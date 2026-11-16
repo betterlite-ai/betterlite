@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 use super::VideoHeaders;
 use super::error::FalVideoError;
 
-pub const MAX_FAL_VIDEO_REPLY_BYTES: usize = 16_777_216;
+pub const MAX_FAL_VIDEO_REPLY_BYTES: usize = 0x0100_0000;
 
 // the fields B1533 turns into status replies and error text, kept typed so neither task re-parses the body
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -89,13 +89,16 @@ fn video_result(value: Option<&Json>) -> Option<FalVideoResult> {
 }
 
 fn detail(value: Option<&Json>) -> Option<FalVideoDetail> {
-    match value? {
-        Json::Text(text) => Some(FalVideoDetail::Text(text.clone())),
-        Json::List(items) => Some(FalVideoDetail::Items(
-            items.iter().filter_map(detail_item).collect(),
-        )),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => None,
+    let present = value?;
+    if let Json::Text(text) = present {
+        return Some(FalVideoDetail::Text(text.clone()));
     }
+    let Json::List(entries) = present else {
+        return None;
+    };
+    Some(FalVideoDetail::Items(
+        entries.iter().filter_map(detail_item).collect(),
+    ))
 }
 
 fn detail_item(item: &Json) -> Option<FalVideoDetailItem> {

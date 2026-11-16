@@ -16,6 +16,7 @@ enum Exponent {
     TooSmall,
 }
 
+#[must_use]
 pub fn duration_value(value: &Json) -> Option<DurationValue> {
     match value {
         Json::Text(text) if text == "auto" => Some(DurationValue::Auto),
@@ -25,8 +26,9 @@ pub fn duration_value(value: &Json) -> Option<DurationValue> {
     }
 }
 
+#[must_use]
 pub fn numeric_duration(value: Option<&Json>) -> Option<String> {
-    match duration_value(value?) {
+    match duration_value(value?)? {
         DurationValue::Auto => None,
         DurationValue::Numeric(text) => Some(text),
     }

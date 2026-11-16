@@ -1,5 +1,6 @@
 import os
 import time
+from collections.abc import Callable
 from functools import partial
 from typing import Final, Literal, TypeAlias, TypedDict, cast
 
@@ -17,6 +18,7 @@ ENVIRONMENT_NAMES: Final[tuple[str, ...]] = (
     "FAL_AI_QUEUE_API_BASE",
 )
 PARAMS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+REJECTED: Final[JsonValue] = {"error": {"status": None}}
 
 
 class ErrorCase(TypedDict):
@@ -87,11 +89,14 @@ class WorkflowJobPath(TypedDict):
     jobs: list[JobCase]
 
 
-MappingCall: TypeAlias = (
-    H3AutoDuration | SeedanceDecimalDuration | ResolutionShortSide | ReferenceType
-)
 Input: TypeAlias = (
-    MappingCall | ProviderOverride | QueueBaseLiteral | WorkflowJobPath
+    H3AutoDuration
+    | SeedanceDecimalDuration
+    | ResolutionShortSide
+    | ReferenceType
+    | ProviderOverride
+    | QueueBaseLiteral
+    | WorkflowJobPath
 )
 
 
@@ -121,37 +126,32 @@ def apply_environment(environment: dict[str, str]) -> None:
         os.environ[name] = value
 
 
-def mapping_outcome(
+def outcome(call: Callable[[], JsonValue]) -> JsonValue:
+    try:
+        return call()
+    except ValueError:
+        return REJECTED
+
+
+def mapped_params(
     config: FalAIVideoConfig, params: dict[str, JsonValue], model: str
 ) -> JsonValue:
-    try:
-        mapped = config.map_openai_params(
-            cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L301
-                "VideoCreateOptionalRequestParams",
-                params,
-            ),
-            model,
-            drop_params=False,
-        )
-    except ValueError:
-        return {"error": {"status": None}}
+    request = cast("VideoCreateOptionalRequestParams", params)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L301
+    mapped = config.map_openai_params(request, model, drop_params=False)
     return {"params": PARAMS.validate_python(mapped)}
 
 
 def mapping_report(
     config: FalAIVideoConfig, models: list[str], key: str, values: list[JsonValue]
 ) -> JsonValue:
-    return {
-        "results": [
-            {
-                "model": model,
-                "cases": [
-                    mapping_outcome(config, {key: value}, model) for value in values
-                ],
-            }
-            for model in models
+    results: list[JsonValue] = []
+    for model in models:
+        cases = [
+            outcome(partial(mapped_params, config, {key: value}, model))
+            for value in values
         ]
-    }
+        results.append({"model": model, "cases": cases})
+    return {"results": results}
 
 
 def video_fields(video: VideoObject) -> JsonValue:
@@ -173,7 +173,7 @@ def video_fields(video: VideoObject) -> JsonValue:
     }
 
 
-def create_outcome(
+def created_video(
     config: FalAIVideoConfig, model: str, provider: str | None, case: CreateCase
 ) -> JsonValue:
     raw = httpx.Response(
@@ -181,16 +181,13 @@ def create_outcome(
         content=case["body"].encode(),
         request=httpx.Request("POST", f"https://queue.fal.run/{model}"),
     )
-    try:
-        video = config.transform_video_create_response(
-            model,
-            raw,
-            None,
-            custom_llm_provider=provider,
-            request_data=case["request_data"],
-        )
-    except ValueError:
-        return {"error": {"status": None}}
+    video = config.transform_video_create_response(
+        model,
+        raw,
+        None,
+        custom_llm_provider=provider,
+        request_data=case["request_data"],
+    )
     return video_fields(video)
 
 
@@ -205,7 +202,7 @@ def provider_report(config: FalAIVideoConfig, call: ProviderOverride) -> JsonVal
     time.time = partial(float, call["now"])
     return {
         "videos": [
-            create_outcome(config, call["model"], provider, case)
+            outcome(partial(created_video, config, call["model"], provider, case))
             for provider in call["providers"]
             for case in call["cases"]
         ],
@@ -213,89 +210,56 @@ def provider_report(config: FalAIVideoConfig, call: ProviderOverride) -> JsonVal
     }
 
 
-def key_outcome(config: FalAIVideoConfig, case: KeyCase) -> JsonValue:
-    try:
-        headers = config.validate_environment(
-            dict(case["headers"]),
-            "",
-            api_key=case["api_key"],
-            litellm_params=GenericLiteLLMParams(api_key=case["litellm_api_key"]),
-        )
-    except ValueError:
-        return {"error": {"status": None}}
-    return {"headers": headers}
-
-
-def queue_environment(
-    config: FalAIVideoConfig, api_bases: list[str | None], cases: list[KeyCase]
-) -> JsonValue:
-    return {
-        "urls": [
-            config.get_complete_url("", api_base, {}) for api_base in api_bases
-        ],
-        "headers": [key_outcome(config, case) for case in cases],
-    }
-
-
-def queue_report(config: FalAIVideoConfig, call: QueueBaseLiteral) -> JsonValue:
-    return {
-        "environments": [
-            environment_report(config, environment, call)
-            for environment in call["environments"]
-        ]
-    }
+def key_headers(config: FalAIVideoConfig, case: KeyCase) -> JsonValue:
+    headers = config.validate_environment(
+        dict(case["headers"]),
+        "",
+        api_key=case["api_key"],
+        litellm_params=GenericLiteLLMParams(api_key=case["litellm_api_key"]),
+    )
+    return {"headers": PARAMS.validate_python(headers)}
 
 
 def environment_report(
     config: FalAIVideoConfig, environment: dict[str, str], call: QueueBaseLiteral
 ) -> JsonValue:
     apply_environment(environment)
-    return queue_environment(config, call["api_bases"], call["cases"])
+    urls = [config.get_complete_url("", base, {}) for base in call["api_bases"]]
+    headers = [outcome(partial(key_headers, config, case)) for case in call["cases"]]
+    return {"urls": urls, "headers": headers}
 
 
-def status_outcome(
-    config: FalAIVideoConfig, video_id: str, api_base: str
+def job_url(
+    config: FalAIVideoConfig,
+    kind: Literal["status", "content"],
+    video_id: str,
+    api_base: str,
 ) -> JsonValue:
-    try:
-        url = config.transform_video_status_retrieve_request(
-            video_id, api_base, GenericLiteLLMParams(), {}
-        )[0]
-    except ValueError:
-        return {"error": {"status": None}}
-    return {"url": url}
-
-
-def content_outcome(
-    config: FalAIVideoConfig, video_id: str, api_base: str
-) -> JsonValue:
-    try:
-        url = config.transform_video_content_request(
-            video_id, api_base, GenericLiteLLMParams(), {}
-        )[0]
-    except ValueError:
-        return {"error": {"status": None}}
-    return {"url": url}
-
-
-def job_outcome(
-    config: FalAIVideoConfig, api_base: str | None, job: JobCase
-) -> JsonValue:
-    base = config.get_complete_url("", api_base, {})
-    video_id = encode_video_id_with_provider(job["request_id"], PROVIDER, job["model"])
-    return {
-        "status": status_outcome(config, video_id, base),
-        "content": content_outcome(config, video_id, base),
-    }
+    params = GenericLiteLLMParams()
+    match kind:
+        case "status":
+            request = config.transform_video_status_retrieve_request(
+                video_id, api_base, params, {}
+            )
+        case "content":
+            request = config.transform_video_content_request(
+                video_id, api_base, params, {}
+            )
+    return {"url": request[0]}
 
 
 def job_report(config: FalAIVideoConfig, call: WorkflowJobPath) -> JsonValue:
-    return {
-        "jobs": [
-            job_outcome(config, api_base, job)
-            for api_base in call["api_bases"]
-            for job in call["jobs"]
-        ]
-    }
+    jobs: list[JsonValue] = []
+    for api_base in call["api_bases"]:
+        base = config.get_complete_url("", api_base, {})
+        for job in call["jobs"]:
+            video_id = encode_video_id_with_provider(
+                job["request_id"], PROVIDER, job["model"]
+            )
+            status = outcome(partial(job_url, config, "status", video_id, base))
+            content = outcome(partial(job_url, config, "content", video_id, base))
+            jobs.append({"status": status, "content": content})
+    return {"jobs": jobs}
 
 
 def run(input_value: Input) -> JsonValue:
@@ -319,6 +283,11 @@ def run(input_value: Input) -> JsonValue:
         case "provider_override":
             return provider_report(config, input_value)
         case "queue_base_literal":
-            return queue_report(config, input_value)
+            return {
+                "environments": [
+                    environment_report(config, environment, input_value)
+                    for environment in input_value["environments"]
+                ]
+            }
         case "workflow_job_path":
             return job_report(config, input_value)

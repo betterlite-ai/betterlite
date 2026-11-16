@@ -13,6 +13,7 @@ pub fn queue_request_base_path(model: &str) -> String {
     kept.join("/")
 }
 
+#[must_use]
 pub fn model_path_from_request_url(path: &str) -> Option<String> {
     let segments: Vec<&str> = path
         .split('/')
@@ -37,6 +38,7 @@ pub fn model_path_from_request_url(path: &str) -> Option<String> {
     Some(model_segments.get(start..)?.join("/"))
 }
 
+#[must_use]
 pub fn request_id_from_request_url(path: &str) -> Option<String> {
     let segments: Vec<&str> = path
         .split('/')

@@ -12,25 +12,25 @@ use super::profile::profile_for_model;
 
 pub const FAL_AI_PROVIDER: &str = "fal_ai";
 
-pub struct CreateResponseInput<'a> {
-    pub model: &'a str,
-    pub reply: &'a FalVideoReply,
-    pub custom_llm_provider: Option<&'a str>,
-    pub request_data: &'a VideoParams,
+pub struct CreateResponseInput<'input> {
+    pub model: &'input str,
+    pub reply: &'input FalVideoReply,
+    pub custom_llm_provider: Option<&'input str>,
+    pub request_data: &'input VideoParams,
     pub created_at: i64,
 }
 
 #[derive(Serialize)]
-struct CreateWire<'a> {
+struct CreateWire<'wire> {
     id: String,
     object: VideoObjectType,
-    status: &'a str,
+    status: &'wire str,
     created_at: i64,
-    model: &'a str,
+    model: &'wire str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    seconds: Option<&'a str>,
+    seconds: Option<&'wire str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    size: Option<&'a str>,
+    size: Option<&'wire str>,
     usage: UsageWire,
 }
 
