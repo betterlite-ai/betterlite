@@ -3,6 +3,9 @@ deviations:
   - what: A text value for a count, dimension, step, seed, safety tolerance or guidance that Python's int() or float() would convert but standard JSON cannot carry is rejected with an error naming the parameter, so a non-ASCII decimal digit such as "٥" and a non-finite spelling such as "inf" or "nan" fail where LiteLLM converts them.
     why: betterlite emits standard JSON, so a guidance of infinity has no representation, and its number parser reads ASCII digits with an optional sign and grouping underscores only, which docs/compatibility.md makes the rule for text outside the declared value forms.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/flux_transformation.py#L98-L102
+  - what: "The debug line for the GPT fallback is a tracing event with the original model as a field and a message reading using the GPT image generation config, not LiteLLM's single formatted message naming the normalized model and the gpt-image-1 format."
+    why: "betterlite logs through tracing with structured fields, and docs/compatibility.md keeps Python's formatted message text out of parity, so only the fact that a debug event is emitted at that branch is kept."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/__init__.py#L34-L36
 kept_bugs:
   - what: A model named flux2-flex without the separating hyphen is recognized as FLUX 2 but its provider-model path is flux-2-pro, not flux-2-flex.
     why: The flex-path matcher looks for the normalized substring flux-2-flex, and a working LiteLLM setup that sends flux2-flex relies on the pro path it has always received, so betterlite keeps routing it there.
