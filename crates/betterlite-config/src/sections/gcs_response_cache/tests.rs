@@ -6,8 +6,9 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use crate::loader::{ConfigError, ConfigLoader};
+use crate::types::Config;
 
-fn load(source: &str) -> Result<crate::types::Config, ConfigError> {
+fn load(source: &str) -> Result<Config, ConfigError> {
     ConfigLoader {
         lookup: BTreeMap::new(),
     }
@@ -199,7 +200,7 @@ fn missing_cache_params_yields_none() {
 
 #[test]
 fn other_cache_type_yields_none() {
-    let config = load("litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    gcs_bucket_name: responses\n")
+    let config = load("litellm_settings:\n  cache: true\n  cache_params:\n    type: redis\n    gcs_bucket_name: responses\n")
         .expect("another backend");
     assert!(config.sections.gcs_response_cache.is_none());
 }
