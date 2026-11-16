@@ -1,5 +1,6 @@
 use betterlite_config::sections::studio_identity::Settings;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_vertex::google_token_counter::counter::TokenCounter as _;
 use betterlite_vertex::google_token_counter::model_info::{GeminiModelInfo, VertexModelInfo};
 use serde::Deserialize;
@@ -13,10 +14,10 @@ pub(crate) struct Input {
     providers: Vec<Option<String>>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let vertex = VertexModelInfo {
             settings: VertexSettings::default(),
         }

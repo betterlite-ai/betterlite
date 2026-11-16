@@ -16,7 +16,8 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct CacheEntry {
@@ -78,10 +79,10 @@ pub(crate) enum Operation {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Operation;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Operation::ToolOutputContent { items } => {
                 let cache = new_cache(&[]).or_value_error()?;
@@ -134,7 +135,7 @@ fn new_cache(entries: &[CacheEntry]) -> Result<DualLocalCache, RedactionError> {
     Ok(cache)
 }
 
-fn output_call_identity(case: &IdentityCase) -> crate::helpers::HelperResult {
+fn output_call_identity(case: &IdentityCase) -> HelperResult {
     let identity = CallIdentity::new().or_value_error()?;
     let ids: Vec<String> = case
         .identities

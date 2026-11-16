@@ -20,7 +20,7 @@ use super::{
     AffinityCall, ApiKeyCall, EmbeddingCall, HeadersCall, MixinCall, PricingCall, RequestCall,
     ResponseCall, UrlCall,
 };
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn collect<T>(
     items: &[T],

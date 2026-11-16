@@ -17,7 +17,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 mod tests;
 
@@ -46,9 +48,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .or_value_error()?;
+        let runtime = Builder::new_current_thread().build().or_value_error()?;
         runtime
             .block_on(async { Ok(json!({"target": target(input).await?, "rank": rank(input)?})) })
     }

@@ -5,7 +5,9 @@ mod taxonomy;
 
 use std::fmt::Display;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -13,7 +15,7 @@ impl Helper for Op {
     type Input = input::Call;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(failure)?;

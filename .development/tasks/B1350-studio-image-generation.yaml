@@ -63,7 +63,7 @@ checks:
       run: test -f tools/oracle/helpers/studio_images.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Pure Studio image methods are exercised with injected catalog and secret values.
     - id: studio-image-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_images*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::studio_images::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_images*')" && cargo nextest run --locked -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^studio_images::/)'
       why: Seed decoding must reach the new Studio generation and usage projections.
 oracle_cases:
   - tools/oracle/cases/helpers/studio-images/factory-ignores-model.yaml

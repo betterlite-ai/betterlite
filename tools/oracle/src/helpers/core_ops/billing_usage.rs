@@ -8,10 +8,12 @@ use betterlite_core::cost::usage::{BillingResponse, ResponseKind, get_usage_obje
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use model::{decimal_value, optional_mapping, optional_usage, parse_usage, usage_projection};
 mod model;
 
-type Failure = Box<crate::helpers::HelperError>;
+type Failure = Box<HelperError>;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -65,10 +67,10 @@ enum UsageKindInput {
     Mapping,
 }
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let outcomes = input.calls.iter().map(run_call).collect::<Vec<_>>();
         Ok(Value::Array(outcomes))
     }
@@ -142,7 +144,7 @@ fn failure<Error>(error: Error) -> Failure
 where
     Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

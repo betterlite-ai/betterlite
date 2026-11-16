@@ -8,7 +8,7 @@ use betterlite_provider::petals::error::get_error_class;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::petals_config;
 

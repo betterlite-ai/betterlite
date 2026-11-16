@@ -1,13 +1,15 @@
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
 mod generic;
 mod grayswan;
 mod support;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = serde_json::Value;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         if input.get("generic_call").is_some() {
             generic::call(input)
         } else if input.get("grayswan_call").is_some() {

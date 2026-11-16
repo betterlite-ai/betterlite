@@ -8,6 +8,9 @@ on:
     types: [checks_requested]
   push:
     branches: [main]
+  # a main push tests and lints what it affects, so once a night everything runs and refills the cargo cache (Max, 11-16)
+  schedule:
+    - cron: "0 1 * * *"
 
 permissions: {}
 
@@ -18,8 +21,8 @@ env:
   MUTANTS_SHARDS: 6
 
 concurrency:
-  group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+  group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref || (github.event_name == 'schedule' && 'nightly') || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' && github.event_name != 'schedule' }}
 
 defaults:
   run:
@@ -33,12 +36,14 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # a merge queue run looks up the queued PR's branch to find its task
+      actions: read # a main push looks up the last main push run that ran
     outputs:
       base: ${{ steps.find.outputs.base }}
       task: ${{ steps.find.outputs.task }}
       parts: ${{ steps.find.outputs.parts }}
       first: ${{ steps.find.outputs.first }}
       mutants: ${{ steps.find.outputs.mutants }}
+      all-tests: ${{ steps.find.outputs.all-tests }}
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -56,13 +61,25 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          all_tests=""
           if [[ $EVENT == merge_group ]]; then
             base=$QUEUE_BASE
             number=$(sed -E 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-.*$#\1#' <<<"$QUEUE_REF")
             branch=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
+          elif [[ $EVENT == push ]]; then
+            # a waiting push run gives way to the next push (11-15: 193 merges, 49 push runs, 21 cancelled), so a push covers everything since the last push run that ran
+            base=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/actions/workflows/gate.yml/runs?branch=main&event=push&status=completed&per_page=100" | jq -r '[.workflow_runs[] | select(.conclusion != "cancelled")][0].head_sha // empty')
+            if [[ -z $base ]] || ! git merge-base --is-ancestor "$base" HEAD; then
+              base=$(git rev-parse HEAD^1)
+              all_tests=true
+            fi
+            branch=""
           else
             base=$(git rev-parse HEAD^1)
             branch=$PR_BRANCH
+          fi
+          if [[ $EVENT == schedule ]]; then
+            all_tests=true
           fi
           task=""
           if [[ $branch =~ ^task/(B[0-9]+)(-|$) ]]; then
@@ -83,7 +100,7 @@ jobs:
           elif [[ $EVENT == merge_group && -n $task ]]; then
             # the pull request run passed the task's own checks, and edited runs every test of the crates the queued change edits (Max, 11-15)
             parts='["lint","edited"]'
-          elif [[ $EVENT == merge_group ]]; then
+          elif [[ ($EVENT == merge_group || $EVENT == push) && -z $all_tests ]]; then
             # a tests runner took 2.8 minutes to print that the change affects no package, so the paths rules.toml marks for no package decide here
             changed=$(git diff --name-only --no-renames "$base" HEAD)
             rules=$(yq -p toml -o json '.' .development/gate/src/affected/rules.toml)
@@ -91,14 +108,15 @@ jobs:
               parts='["lint"]'
             fi
           fi
-          # a tests part builds only its own packages, so on main one part builds every test target for the cache
-          if [[ $EVENT == push ]]; then
+          # a tests part builds only its own packages, so one part builds every test target for the cargo cache; rust-cache keys on the manifests, and on 11-15 run 43776330827 built for 17 minutes and saved nothing
+          changed=$(git diff --name-only "$base" HEAD)
+          if [[ $EVENT == schedule ]] || { [[ $EVENT == push ]] && grep -qE '(^|/)Cargo\.(toml|lock)$|^rust-toolchain' <<<"$changed"; }; then
             parts=$(jq -c '. + ["cache"]' <<<"$parts")
           fi
-          echo "branch $branch, base $base, task ${task:-none}, parts $parts"
+          echo "branch $branch, base $base, task ${task:-none}, all tests ${all_tests:-no}, parts $parts"
           first=$(jq -c '[.[] | select(startswith("mutants-") | not)]' <<<"$parts")
           mutants=$(jq -c '[.[] | select(startswith("mutants-"))]' <<<"$parts")
-          printf 'base=%s\ntask=%s\nparts=%s\nfirst=%s\nmutants=%s\n' "$base" "$task" "$parts" "$first" "$mutants" >> "$GITHUB_OUTPUT"
+          printf 'base=%s\ntask=%s\nparts=%s\nfirst=%s\nmutants=%s\nall-tests=%s\n' "$base" "$task" "$parts" "$first" "$mutants" "$all_tests" >> "$GITHUB_OUTPUT"
 
   checks:
     name: checks
@@ -111,6 +129,7 @@ jobs:
       all-parts: ${{ needs.find.outputs.parts }}
       base: ${{ needs.find.outputs.base }}
       task: ${{ needs.find.outputs.task }}
+      all-tests: ${{ needs.find.outputs.all-tests }}
 
   # 79% of mutant runner time on 11-15 went to pushes whose lint or task part had already failed
   mutants:
@@ -125,6 +144,7 @@ jobs:
       all-parts: ${{ needs.find.outputs.parts }}
       base: ${{ needs.find.outputs.base }}
       task: ${{ needs.find.outputs.task }}
+      all-tests: ${{ needs.find.outputs.all-tests }}
 
   gate:
     name: gate
