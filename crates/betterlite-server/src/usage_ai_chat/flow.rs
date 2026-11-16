@@ -71,7 +71,10 @@ where
     if reply.tool_calls.is_empty() {
         return answer_without_tools(reply, sink).await;
     }
-    let ModelReply { content, tool_calls } = reply;
+    let ModelReply {
+        content,
+        tool_calls,
+    } = reply;
     chat.push(ChatMessage::AssistantToolCalls {
         content,
         tool_calls: tool_calls.clone(),
@@ -147,7 +150,10 @@ where
             team_ids,
         } => {
             let ids = parse_csv_ids(team_ids.as_deref());
-            parts.data.teams(start_date, end_date, ids.as_deref()).await?
+            parts
+                .data
+                .teams(start_date, end_date, ids.as_deref())
+                .await?
         }
         FetchArguments::Tag {
             start_date,
@@ -155,7 +161,10 @@ where
             tags,
         } => {
             let ids = parse_csv_ids(tags.as_deref());
-            parts.data.tags(start_date, end_date, ids.as_deref()).await?
+            parts
+                .data
+                .tags(start_date, end_date, ids.as_deref())
+                .await?
         }
     };
     summarise(tool, &page)
@@ -205,10 +214,7 @@ async fn answer_without_tools(
     send_event(sink, &SseEvent::Done).await
 }
 
-async fn send_event(
-    sink: &mpsc::Sender<String>,
-    event: &SseEvent,
-) -> Result<(), UsageChatError> {
+async fn send_event(sink: &mpsc::Sender<String>, event: &SseEvent) -> Result<(), UsageChatError> {
     match sink.send(sse_frame(event)).await {
         Ok(()) => Ok(()),
         Err(_) => Err(UsageChatError::ClientDisconnected),

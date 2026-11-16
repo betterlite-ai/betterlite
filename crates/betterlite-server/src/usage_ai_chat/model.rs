@@ -43,6 +43,7 @@ pub trait UsageChatModel: Sync {
     fn stream(
         &self,
         request: &ModelRequest<'_>,
-    ) -> impl Future<Output = Result<impl Stream<Item = Result<String, ModelError>> + Send, ModelError>>
-    + Send;
+    ) -> impl Future<
+        Output = Result<impl Stream<Item = Result<String, ModelError>> + Send, ModelError>,
+    > + Send;
 }

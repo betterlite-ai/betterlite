@@ -23,10 +23,7 @@ fn summary_usage_ranks_models_and_providers_by_spend() {
     let first = day(
         on(2026, 1, 1),
         breakdown(
-            vec![
-                ("gpt-4o", entry("3", 2, 20)),
-                ("claude", entry("5", 1, 10)),
-            ],
+            vec![("gpt-4o", entry("3", 2, 20)), ("claude", entry("5", 1, 10))],
             vec![("openai", entry("8", 3, 30))],
             Vec::new(),
         ),
@@ -80,14 +77,19 @@ fn summary_usage_cuts_the_lists_to_fifteen_and_ten() {
         .enumerate()
         .map(|(index, name)| (name.as_str(), entry(&spend_of(index), 0, 0)))
         .collect();
-    let provider_names: Vec<String> = (0..11).map(|index| format!("provider-{index:02}")).collect();
+    let provider_names: Vec<String> = (0..11)
+        .map(|index| format!("provider-{index:02}"))
+        .collect();
     let providers: Vec<(&str, MetricWithMetadata)> = provider_names
         .iter()
         .enumerate()
         .map(|(index, name)| (name.as_str(), entry(&spend_of(index), 0, 0)))
         .collect();
     let text = summarise_usage_data(&page(
-        vec![day(on(2026, 1, 1), breakdown(models, providers, Vec::new()))],
+        vec![day(
+            on(2026, 1, 1),
+            breakdown(models, providers, Vec::new()),
+        )],
         metadata("0", 0, 0, 0, 0),
     ))
     .unwrap();
@@ -193,10 +195,7 @@ fn summary_entity_keeps_first_seen_order_on_a_spend_tie() {
                 breakdown(
                     Vec::new(),
                     Vec::new(),
-                    vec![
-                        ("second", entry("1", 1, 0)),
-                        ("first", entry("1", 1, 0)),
-                    ],
+                    vec![("second", entry("1", 1, 0)), ("first", entry("1", 1, 0))],
                 ),
             )],
             metadata("2", 2, 2, 0, 0),

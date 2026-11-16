@@ -134,7 +134,10 @@ fn accumulate_breakdowns(
     let mut providers: IndexMap<String, Totals> = IndexMap::new();
     for day in &page.results {
         for (name, entry) in &day.breakdown.models {
-            models.entry(name.clone()).or_default().add(&entry.metrics)?;
+            models
+                .entry(name.clone())
+                .or_default()
+                .add(&entry.metrics)?;
         }
         for (name, entry) in &day.breakdown.providers {
             providers
@@ -146,9 +149,7 @@ fn accumulate_breakdowns(
     Ok((models, providers))
 }
 
-fn entity_totals(
-    page: &DailySpendPage,
-) -> Result<IndexMap<String, EntityTotals>, UsageChatError> {
+fn entity_totals(page: &DailySpendPage) -> Result<IndexMap<String, EntityTotals>, UsageChatError> {
     let mut per_entity: IndexMap<String, EntityTotals> = IndexMap::new();
     for day in &page.results {
         for (id, entry) in &day.breakdown.entities {
@@ -178,10 +179,7 @@ fn entity_totals(
     Ok(per_entity)
 }
 
-fn entity_alias(
-    metadata: &IndexMap<String, Json>,
-    entity: &str,
-) -> Result<String, UsageChatError> {
+fn entity_alias(metadata: &IndexMap<String, Json>, entity: &str) -> Result<String, UsageChatError> {
     match metadata.get("alias") {
         None | Some(Json::Null) => Ok(entity.to_owned()),
         Some(Json::Text(alias)) => Ok(alias.clone()),
@@ -209,11 +207,7 @@ where
 }
 
 fn usage_sections(header: String, models: Vec<String>, providers: Vec<String>) -> String {
-    let mut sections: Vec<String> = vec![
-        header,
-        String::new(),
-        "Top Models by Spend:".to_owned(),
-    ];
+    let mut sections: Vec<String> = vec![header, String::new(), "Top Models by Spend:".to_owned()];
     sections.extend(listing(models));
     sections.push(String::new());
     sections.push("Top Providers by Spend:".to_owned());

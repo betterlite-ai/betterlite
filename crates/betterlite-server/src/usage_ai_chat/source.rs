@@ -2,15 +2,15 @@ use std::future::Future;
 
 use betterlite_analytics::canonical_date::PublicError;
 use betterlite_analytics::daily_metrics::DailySpendPage;
+use betterlite_db::daily_activity_contracts::DailyActivityProxyReads;
 use betterlite_db::daily_activity_contracts::DailyActivityScope;
 use betterlite_db::daily_activity_contracts::identifiers::DailyActivityTable;
-use betterlite_db::daily_activity_contracts::DailyActivityProxyReads;
 use betterlite_db::daily_activity_repository::DailyActivityRepository;
 use betterlite_db::daily_activity_repository::database::DailyActivityDatabase;
 use chrono::{DateTime, Utc};
 
 use super::constants::{
-    ENTITY_FIELD_TEAM, ENTITY_FIELD_TAG, ENTITY_FIELD_USER, PAGINATED_PAGE_SIZE,
+    ENTITY_FIELD_TAG, ENTITY_FIELD_TEAM, ENTITY_FIELD_USER, PAGINATED_PAGE_SIZE,
     USAGE_TOP_API_KEYS_DEFAULT,
 };
 use super::error::UsageChatError;

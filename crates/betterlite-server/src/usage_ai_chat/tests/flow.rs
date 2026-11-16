@@ -143,7 +143,9 @@ async fn flow_runs_every_admin_tool_call_in_order() {
     let tag_page = empty_page();
     let parts = chat_parts(
         fake_model().replying(reply).streaming(&["done"]),
-        fake_source().serving(team_page.clone()).serving(tag_page.clone()),
+        fake_source()
+            .serving(team_page.clone())
+            .serving(tag_page.clone()),
     );
     let messages = [ChatMessage::User {
         content: "teams and tags".to_owned(),
@@ -154,11 +156,21 @@ async fn flow_runs_every_admin_tool_call_in_order() {
     assert_eq!(frames.len(), 8);
     assert_eq!(
         frames[1],
-        frame_tool("get_team_usage_data", "team usage data", &id_days, "running")
+        frame_tool(
+            "get_team_usage_data",
+            "team usage data",
+            &id_days,
+            "running"
+        )
     );
     assert_eq!(
         frames[2],
-        frame_tool("get_team_usage_data", "team usage data", &id_days, "complete")
+        frame_tool(
+            "get_team_usage_data",
+            "team usage data",
+            &id_days,
+            "complete"
+        )
     );
     assert_eq!(
         frames[3],
@@ -281,10 +293,7 @@ async fn flow_ends_with_a_generic_error_on_bad_tool_arguments() {
 
 #[tokio::test]
 async fn flow_ends_with_a_generic_error_when_the_model_fails() {
-    let parts = chat_parts(
-        fake_model().failing_completion("boom"),
-        fake_source(),
-    );
+    let parts = chat_parts(fake_model().failing_completion("boom"), fake_source());
     let messages = [ChatMessage::User {
         content: "hi".to_owned(),
     }];
@@ -393,7 +402,10 @@ async fn flow_skips_an_empty_stream_delta() {
     let frames = drive(&parts, &chat_request(&messages, None, Some("alice"), false)).await;
     assert_eq!(frames.last().unwrap(), &done_frame());
     assert_eq!(
-        frames.iter().filter(|frame| frame.contains("chunk")).count(),
+        frames
+            .iter()
+            .filter(|frame| frame.contains("chunk"))
+            .count(),
         1
     );
     assert_eq!(frames[4], chunk_frame("x"));
@@ -401,7 +413,8 @@ async fn flow_skips_an_empty_stream_delta() {
 
 #[tokio::test]
 async fn flow_replaces_the_models_user_id_for_a_non_admin() {
-    let arguments = "{\"start_date\":\"2026-01-01\",\"end_date\":\"2026-01-31\",\"user_id\":\"mallory\"}";
+    let arguments =
+        "{\"start_date\":\"2026-01-01\",\"end_date\":\"2026-01-31\",\"user_id\":\"mallory\"}";
     let model = fake_model()
         .replying(tool_call("get_usage_data", arguments))
         .streaming(&["ok"]);

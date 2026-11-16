@@ -7,7 +7,11 @@ fn tools_admin_gets_the_three_usage_tools() {
         .collect();
     assert_eq!(
         names,
-        ["get_usage_data", "get_team_usage_data", "get_tag_usage_data"]
+        [
+            "get_usage_data",
+            "get_team_usage_data",
+            "get_tag_usage_data"
+        ]
     );
     assert!(tools.iter().all(|tool| tool.kind == ToolKind::Function));
     assert!(
@@ -56,7 +60,11 @@ fn tools_schemas_match_litellm() {
     let tools = tools_for_role(true);
     let global = &tools[0].function.parameters;
     assert_eq!(
-        global.properties.keys().map(String::as_str).collect::<Vec<_>>(),
+        global
+            .properties
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
         ["start_date", "end_date", "user_id"]
     );
     assert_eq!(global.required, ["start_date", "end_date"]);

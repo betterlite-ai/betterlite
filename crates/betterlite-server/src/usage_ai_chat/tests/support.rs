@@ -15,10 +15,10 @@ use betterlite_db::daily_activity_contracts::{
 };
 use betterlite_db::daily_activity_repository::DailyActivityRepository;
 use betterlite_db::daily_activity_repository::database::{DailyActivityDatabase, DatabaseFuture};
+use betterlite_db::daily_activity_repository::rows::DatabaseRow;
 use betterlite_db::daily_activity_repository::rows::records::{
     DeletedVerificationTokenRow, VerificationTokenRow,
 };
-use betterlite_db::daily_activity_repository::rows::DatabaseRow;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, NaiveDate, Utc};
 use futures_util::Stream;
@@ -251,11 +251,12 @@ impl FakeModel {
     }
 
     pub(crate) fn failing_completion(self, message: &str) -> Self {
-        self.completions.lock().unwrap().push_back(ReplyStep::Fail(
-            ModelError::Completion {
+        self.completions
+            .lock()
+            .unwrap()
+            .push_back(ReplyStep::Fail(ModelError::Completion {
                 message: message.to_owned(),
-            },
-        ));
+            }));
         self
     }
 

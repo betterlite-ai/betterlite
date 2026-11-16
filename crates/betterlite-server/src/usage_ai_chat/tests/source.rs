@@ -70,7 +70,11 @@ async fn source_teams_pages_first_with_the_team_table() {
 #[tokio::test]
 async fn source_tags_keep_no_filter_apart_from_an_empty_list() {
     let source = DailyActivityUsageData {
-        repository: Some(recording_repository().serving(empty_page()).serving(empty_page())),
+        repository: Some(
+            recording_repository()
+                .serving(empty_page())
+                .serving(empty_page()),
+        ),
     };
     source.tags("2026-03-01", "2026-03-31", None).await.unwrap();
     let empty: Vec<String> = Vec::new();
@@ -99,7 +103,12 @@ async fn source_without_a_repository_fails_with_the_database_error() {
         error.to_string(),
         CommonProxyErrors::DbNotConnectedError.as_str()
     );
-    assert!(source.teams("2026-01-01", "2026-01-31", None).await.is_err());
+    assert!(
+        source
+            .teams("2026-01-01", "2026-01-31", None)
+            .await
+            .is_err()
+    );
     assert!(source.tags("2026-01-01", "2026-01-31", None).await.is_err());
 }
 
@@ -144,8 +153,14 @@ async fn source_global_adapter_issues_one_aggregated_query() {
         .await
         .unwrap();
     assert!(page.results.is_empty());
-    assert_eq!(page.metadata.api_key_limit, Some(USAGE_TOP_API_KEYS_DEFAULT));
-    assert_eq!(source.repository.as_ref().unwrap().database.queries().len(), 1);
+    assert_eq!(
+        page.metadata.api_key_limit,
+        Some(USAGE_TOP_API_KEYS_DEFAULT)
+    );
+    assert_eq!(
+        source.repository.as_ref().unwrap().database.queries().len(),
+        1
+    );
 }
 
 #[tokio::test]
