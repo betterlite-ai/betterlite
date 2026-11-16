@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::support::{json, state};
-use crate::logging_streams::assembler::{ChatStreamAssembler, NormalizeLoggingResult};
+use crate::logging_streams::assembler::ChatStreamAssembler;
 use crate::logging_success::ports::StreamAssembler as _;
 use crate::logging_success::types::{SuccessMode, SuccessResult};
 
@@ -30,10 +30,6 @@ fn plain_object() -> Json {
 
 fn assembled(result: &SuccessResult, stream: Option<bool>) -> Option<Json> {
     ChatStreamAssembler.assemble(&state(stream), result, SuccessMode::Sync)
-}
-
-fn normalized(result: SuccessResult) -> SuccessResult {
-    ChatStreamAssembler.normalize_logging_result(result)
 }
 
 fn returns_a_streamed_chat_result() {
@@ -136,29 +132,6 @@ fn drops_a_plain_object_with_stream_false() {
     );
 }
 
-fn leaves_a_chat_result_alone() {
-    let result = SuccessResult::Chat(chat_response());
-    assert_eq!(normalized(result.clone()), result);
-}
-
-fn leaves_an_embedding_result_alone() {
-    let result = SuccessResult::Embeddings(json(r#"{"object":"list","data":[]}"#));
-    assert_eq!(normalized(result.clone()), result);
-}
-
-struct ReplacingNormalizer;
-
-impl NormalizeLoggingResult for ReplacingNormalizer {
-    fn normalize_logging_result(&self, _result: SuccessResult) -> SuccessResult {
-        SuccessResult::Chunk(json(r#"{"normalized":true}"#))
-    }
-}
-
-fn uses_the_endpoint_override() {
-    let result = ReplacingNormalizer.normalize_logging_result(SuccessResult::Chat(chat_response()));
-    assert_eq!(result, SuccessResult::Chunk(json(r#"{"normalized":true}"#)));
-}
-
 #[rstest]
 #[case::chat_stream_assembler_returns_a_streamed_chat_result(returns_a_streamed_chat_result)]
 #[case::chat_stream_assembler_returns_a_streamed_text_completion(
@@ -193,9 +166,6 @@ fn uses_the_endpoint_override() {
 #[case::chat_stream_assembler_drops_a_plain_object_with_stream_false(
     drops_a_plain_object_with_stream_false
 )]
-#[case::normalize_leaves_a_chat_result_alone(leaves_a_chat_result_alone)]
-#[case::normalize_leaves_an_embedding_result_alone(leaves_an_embedding_result_alone)]
-#[case::normalize_uses_the_endpoint_override(uses_the_endpoint_override)]
 fn logging_streams_behavior_tests_behavior(#[case] behavior: fn()) {
     behavior();
 }

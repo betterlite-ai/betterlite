@@ -31,15 +31,6 @@ impl StreamAssembler for ChatStreamAssembler {
     }
 }
 
-// LiteLLM's normalize_logging_result; a chat or embedding result is already what logging reads.
-pub trait NormalizeLoggingResult {
-    fn normalize_logging_result(&self, result: SuccessResult) -> SuccessResult {
-        result
-    }
-}
-
-impl NormalizeLoggingResult for ChatStreamAssembler {}
-
 fn is_text_completion(response: &Json) -> bool {
     match response {
         Json::Object(fields) => matches!(

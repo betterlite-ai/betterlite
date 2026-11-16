@@ -70,11 +70,13 @@ fn builds_after_an_empty_finish_reason() {
 
 fn builds_after_any_finish_value() {
     let chunk = finished("0");
-    let mut chunks = FakeChunks::new(None);
+    let built = json(r#"{"id":"chatcmpl-1","object":"chat.completion","choices":[]}"#);
+    let mut chunks = FakeChunks::new(Some(built.clone()));
     let complete =
         assemble_complete_stream(&SuccessResult::Chunk(chunk.clone()), &chunk, &mut chunks);
-    assert_eq!(complete, None);
+    assert_eq!(complete, Some(built));
     assert_eq!(chunks.pushes(), vec![chunk]);
+    assert_eq!(chunks.build_calls(), 1);
 }
 
 fn keeps_a_builder_failure_out_of_the_cache() {

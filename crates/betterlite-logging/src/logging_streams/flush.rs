@@ -28,7 +28,20 @@ where
     let Some(result) = collector.build_logged_response(state)? else {
         return Ok(());
     };
-    success_handler(handler, state, correlation, &request(result));
+    success_handler(
+        handler,
+        state,
+        correlation,
+        &SuccessRequest {
+            result,
+            start_time: None,
+            end_time: None,
+            cache_hit: None,
+            prefer_async_handlers: false,
+            standard_logging_object: None,
+            guardrail_snapshot: None,
+        },
+    );
     Ok(())
 }
 
@@ -45,19 +58,20 @@ where
     let Some(result) = collector.build_logged_response(state)? else {
         return Ok(());
     };
-    async_success_handler(handler, state, correlation, &request(result)).await;
+    async_success_handler(
+        handler,
+        state,
+        correlation,
+        &SuccessRequest {
+            result,
+            start_time: None,
+            end_time: None,
+            cache_hit: None,
+            prefer_async_handlers: false,
+            standard_logging_object: None,
+            guardrail_snapshot: None,
+        },
+    )
+    .await;
     Ok(())
-}
-
-// The flush passes no times and no cache hit, so LiteLLM's helper fills in the call start and now.
-fn request(result: SuccessResult) -> SuccessRequest {
-    SuccessRequest {
-        result,
-        start_time: None,
-        end_time: None,
-        cache_hit: None,
-        prefer_async_handlers: false,
-        standard_logging_object: None,
-        guardrail_snapshot: None,
-    }
 }
