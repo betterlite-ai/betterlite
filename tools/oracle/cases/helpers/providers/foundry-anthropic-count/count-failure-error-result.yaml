@@ -1,0 +1,89 @@
+kind: helper
+name: count-failure-error-result
+call:
+  foundry_anthropic_count:
+    function: handle
+    cases:
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+        reply: {status: 429, body: rate limited}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+        reply: {status: 201, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+        reply: {status: 200, body: not json}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+        timeout: 0.0
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+        request_timeout: 45.0
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: []
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+        reply: {status: 200, body: 'null'}
+calls:
+  - foundry_anthropic_count:
+      function: counter
+      cases:
+        - model: claude-sonnet-4-5
+          messages: [{role: user, content: hi}]
+          provider: azure_ai
+          request_model: requested-model
+          litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+          reply: {status: 429, body: rate limited}
+        - model: claude-sonnet-4-5
+          messages: [{role: user, content: hi}]
+          provider: azure_ai
+          request_model: requested-model
+          litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+          reply: {status: 500, body: server down}
+        - model: claude-sonnet-4-5
+          messages: [{role: user, content: hi}]
+          provider: azure_ai
+          request_model: requested-model
+          litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+          reply: {status: 200, body: not json}
+        - model: claude-sonnet-4-5
+          messages: [{role: user, content: hi}]
+          provider: azure_ai
+          request_model: requested-model
+          litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+        - model: claude-sonnet-4-5
+          messages: [{role: user, content: hi}]
+          provider: azure_ai
+          request_model: requested-model
+          litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+          reply: {status: 201, body: '{"input_tokens":5}'}
+        - model: claude-sonnet-4-5
+          messages: [{role: user, content: hi}]
+          provider: azure_ai
+          request_model: requested-model
+          request_timeout: 30.0
+          litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+          reply: {status: 200, body: '{"input_tokens":5}'}
+env: {}
+compare: {ignore: []}
