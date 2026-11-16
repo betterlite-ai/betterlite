@@ -8,10 +8,10 @@ use crate::api::rerank_contracts::Params;
 
 pub fn transform_rerank_request(
     model: &str,
-    params: Params,
+    params: &Params,
     environment: &WatsonxEnvironment,
 ) -> Result<Params, WatsonxRerankError> {
-    let mut wire: WatsonxParams = serde_json::from_value(serde_json::to_value(&params)?)?;
+    let mut wire: WatsonxParams = serde_json::from_value(serde_json::to_value(params)?)?;
     let api_params = get_api_params(&mut wire, Some(model), environment)?;
     let identity = prepare_payload(model, &api_params);
     let mut merged: Params = serde_json::from_value(serde_json::to_value(&wire)?)?;

@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_openai::embedding::EmbeddingInput;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_provider::api::rerank_contracts::Headers;
+use secrecy::SecretString;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -31,7 +32,7 @@ pub(crate) struct Step {
     pub(crate) options: Object,
     pub(crate) headers: Headers,
     pub(crate) api_base: Option<String>,
-    pub(crate) api_key: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
     pub(crate) file: Option<AudioFile>,
     pub(crate) reply: Option<String>,
     pub(crate) status: Option<u16>,

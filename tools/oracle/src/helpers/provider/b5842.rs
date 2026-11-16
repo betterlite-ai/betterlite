@@ -63,8 +63,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Input) -> HelperResult {
-        let mut builder = Builder::new_current_thread();
-        let runtime = builder.enable_time().build().or_config_error()?;
+        let runtime = Builder::new_current_thread().build().or_config_error()?;
         let auth = WatsonxAuth::new(environment(&input.env), NoTransport, Arc::new(|| 0.0_f64))
             .or_config_error()?;
         Ok(match input.family {

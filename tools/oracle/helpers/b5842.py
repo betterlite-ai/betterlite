@@ -18,7 +18,6 @@ from litellm.types.llms.openai import AllEmbeddingInputValues
 from litellm.types.rerank import RerankResponse
 from litellm.types.utils import EmbeddingResponse, TranscriptionResponse
 from pydantic import BaseModel, JsonValue, TypeAdapter
-from pydantic.main import IncEx
 
 Object: TypeAlias = dict[str, JsonValue]
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -135,7 +134,7 @@ class Input(TypedDict):
     step: JsonValue
 
 
-CONVERTED: IncEx = {
+CONVERTED: dict[str, bool | dict[str, bool]] = {
     "object": True,
     "data": True,
     "usage": {"prompt_tokens": True, "completion_tokens": True, "total_tokens": True},
@@ -185,7 +184,7 @@ def rerank(step: RerankStep) -> JsonValue:
     return {
         "map": mapped,
         "auth": {
-            "headers": {name: value for name, value in headers.items()},
+            "headers": dict(headers),
             "options": auth_options,
         },
         "request": request,

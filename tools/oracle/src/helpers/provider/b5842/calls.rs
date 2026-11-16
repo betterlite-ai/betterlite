@@ -16,37 +16,45 @@ use betterlite_provider::api::rerank_contracts::{
 };
 use betterlite_provider::watsonx_embed::WatsonxEmbeddingConfig;
 use betterlite_provider::watsonx_embed::reply::decode_watsonx_embedding_reply;
+use betterlite_provider::watsonx_embed::request::WatsonxEmbeddingBody;
 use betterlite_provider::watsonx_rerank::WatsonxRerankConfig;
 use betterlite_provider::watsonx_rerank::params::map_cohere_rerank_params;
 use betterlite_provider::watsonx_rerank::request::transform_rerank_request;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use super::input::{AudioFile, Step};
+use super::input::Step;
 use super::raised::Raised;
 
 type Outcome = Result<Value, Raised>;
 
 pub(super) fn embed<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> Outcome {
-    let config = WatsonxEmbeddingConfig {
-        environment: &auth.environment,
-    };
+    let (url, request) = embed_request(auth, step)?;
+    Ok(json!({"url": url, "request": request, "reply": embed_reply(step)?}))
+}
+
+fn embed_request<T: WatsonxTransport>(
+    auth: &WatsonxAuth<T>,
+    step: &Step,
+) -> Result<(String, WatsonxEmbeddingBody), Raised> {
+    let environment = &auth.environment;
+    let config = WatsonxEmbeddingConfig { environment };
     let input = step.input.as_ref().ok_or_else(Raised::default)?;
     let mut options: WatsonxParams = step.options.clone().into_iter().collect();
     let url = config.get_complete_url(step.api_base.as_deref(), &mut options)?;
-    let body = config.transform_embedding_request(&step.model, input, options)?;
-    let reply = step
-        .reply
-        .as_deref()
-        .map(|text| embedding_reply(&step.model, text))
-        .transpose()?;
-    Ok(json!({"url": url, "request": body, "reply": reply}))
+    Ok((
+        url,
+        config.transform_embedding_request(&step.model, input, options)?,
+    ))
 }
 
-fn embedding_reply(model: &str, text: &str) -> Outcome {
+fn embed_reply(step: &Step) -> Outcome {
+    let Some(text) = &step.reply else {
+        return Ok(Value::Null);
+    };
     let decoded = decode_watsonx_embedding_reply(text.as_bytes())?;
-    let response = WatsonxEmbeddingConfig::transform_embedding_response(model, decoded);
+    let response = WatsonxEmbeddingConfig::transform_embedding_response(&step.model, decoded);
     let usage = response.usage;
     Ok(json!({
         "object": response.object,
@@ -66,8 +74,28 @@ pub(super) async fn rerank<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &St
     };
     let mut options: Params = serde_json::from_value(Value::Object(step.options.clone()))
         .map_err(|_error| Raised::default())?;
-    let mapped = map_cohere_rerank_params(&MapCohereRerankParams {
-        non_default_params: &mut options,
+    let mapped = map_rerank_params(step, &mut options)?;
+    let mut auth_options = options.clone();
+    let headers = config
+        .validate_environment(
+            step.headers.clone(),
+            step.api_key.as_ref(),
+            &mut auth_options,
+        )
+        .await?;
+    let request = transform_rerank_request(&step.model, &mapped, &auth.environment)?;
+    let reply = rerank_reply(&config, step)?;
+    Ok(json!({
+        "map": mapped,
+        "auth": {"headers": headers, "options": auth_options},
+        "request": request,
+        "reply": reply,
+    }))
+}
+
+fn map_rerank_params(step: &Step, options: &mut Params) -> Result<Params, Raised> {
+    Ok(map_cohere_rerank_params(&MapCohereRerankParams {
+        non_default_params: options,
         model: &step.model,
         drop_params: false,
         query: "",
@@ -79,54 +107,35 @@ pub(super) async fn rerank<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &St
         max_chunks_per_doc: None,
         max_tokens_per_doc: None,
         instruction: None,
-    })?;
-    let mut auth_options = options.clone();
-    let api_key = step.api_key.clone().map(SecretString::from);
-    let headers = config
-        .validate_environment(step.headers.clone(), api_key.as_ref(), &mut auth_options)
-        .await?;
-    let request = transform_rerank_request(&step.model, mapped.clone(), &auth.environment)?;
-    let reply = step
-        .reply
-        .as_deref()
-        .zip(step.status)
-        .map(|(text, status)| {
-            config.transform_rerank_response(&RerankProviderResponse {
-                status_code: status,
-                headers: Headers::new(),
-                body: text.as_bytes().to_vec(),
-            })
-        })
-        .transpose()?;
-    Ok(json!({
-        "map": mapped,
-        "auth": {"headers": headers, "options": auth_options},
-        "request": request,
-        "reply": reply,
-    }))
+    })?)
+}
+
+fn rerank_reply<T: WatsonxTransport>(config: &WatsonxRerankConfig<'_, T>, step: &Step) -> Outcome {
+    let Some(text) = step.reply.as_deref() else {
+        return Ok(Value::Null);
+    };
+    let Some(status) = step.status else {
+        return Ok(Value::Null);
+    };
+    let raw = RerankProviderResponse {
+        status_code: status,
+        headers: Headers::new(),
+        body: text.as_bytes().to_vec(),
+    };
+    Ok(json!(config.transform_rerank_response(&raw)?))
 }
 
 pub(super) fn audio<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> Outcome {
     let config = WatsonxAudioConfig { auth };
     let url = config.get_complete_url(step.api_base.as_deref(), &step.options)?;
-    let request = step
-        .file
-        .as_ref()
-        .map(|file| audio_request(&config, step, file))
-        .transpose()?;
-    let reply = step
-        .reply
-        .as_deref()
-        .map(|text| decode_audio(text.as_bytes()))
-        .transpose()?;
-    Ok(json!({"url": url, "request": request, "reply": reply}))
+    let request = audio_request(&config, step)?;
+    Ok(json!({"url": url, "request": request, "reply": audio_reply(step)?}))
 }
 
-fn audio_request<T: WatsonxTransport>(
-    config: &WatsonxAudioConfig<'_, T>,
-    step: &Step,
-    file: &AudioFile,
-) -> Outcome {
+fn audio_request<T: WatsonxTransport>(config: &WatsonxAudioConfig<'_, T>, step: &Step) -> Outcome {
+    let Some(file) = &step.file else {
+        return Ok(Value::Null);
+    };
     let processed = ProcessedAudioFile {
         file_content: file.content.as_bytes().to_vec(),
         filename: file.filename.clone(),
@@ -144,10 +153,28 @@ fn audio_request<T: WatsonxTransport>(
     }))
 }
 
+fn audio_reply(step: &Step) -> Outcome {
+    let reply = step
+        .reply
+        .as_deref()
+        .map(|text| decode_audio(text.as_bytes()))
+        .transpose()?;
+    Ok(json!(reply))
+}
+
 pub(super) fn passthrough<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> Outcome {
     let config = WatsonxPassthroughConfig {
         environment: &auth.environment,
     };
+    let url = passthrough_url(&config, step)?;
+    Ok(json!({
+        "url": url,
+        "stream": config.is_streaming_request(&step.endpoint, &step.data),
+        "key": config.get_api_key(step.api_key.as_ref())?.expose_secret(),
+    }))
+}
+
+fn passthrough_url(config: &WatsonxPassthroughConfig<'_>, step: &Step) -> Outcome {
     let empty = Object::new();
     let request = PassthroughUrlRequest {
         api_base: step.api_base.as_deref(),
@@ -161,11 +188,5 @@ pub(super) fn passthrough<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Ste
         litellm_params: &empty,
     };
     let (url, base) = config.get_complete_url(&request)?;
-    let api_key = step.api_key.clone().map(SecretString::from);
-    let key = config.get_api_key(api_key.as_ref())?;
-    Ok(json!({
-        "url": {"url": url.as_str(), "base": base},
-        "stream": config.is_streaming_request(&step.endpoint, &step.data),
-        "key": key.expose_secret(),
-    }))
+    Ok(json!({"url": url.as_str(), "base": base}))
 }

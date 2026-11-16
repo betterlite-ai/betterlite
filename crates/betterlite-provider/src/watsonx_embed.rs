@@ -61,6 +61,7 @@ impl WatsonxEmbeddingConfig<'_> {
         })
     }
 
+    #[must_use]
     pub fn transform_embedding_response(
         model: &str,
         reply: WatsonxEmbeddingReply,

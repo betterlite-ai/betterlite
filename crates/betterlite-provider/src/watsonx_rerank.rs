@@ -57,8 +57,8 @@ impl<T: WatsonxTransport> WatsonxRerankConfig<'_, T> {
             env_zen.filter(|secret| !secret.expose_secret().is_empty())
         });
         let authorization = match (token, zen_api_key) {
-            (Some(token), _) => format!("Bearer {}", token.expose_secret()),
-            (None, Some(zen_api_key)) => format!("ZenApiKey {}", zen_api_key.expose_secret()),
+            (Some(bearer), _) => format!("Bearer {}", bearer.expose_secret()),
+            (None, Some(zen)) => format!("ZenApiKey {}", zen.expose_secret()),
             (None, None) => {
                 let generated = self.auth.generate_iam_token(api_key).await?;
                 format!("Bearer {}", generated.expose_secret())
@@ -154,7 +154,7 @@ fn transform_result(
                 });
             }
         },
-        Some(None) | Some(Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_))) => {
+        Some(None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_))) => {
             return Err(WatsonxRerankError::ReplyField {
                 field: "results[].input",
             });

@@ -130,15 +130,12 @@ fn score(value: f64) -> Score {
     Score::try_from(Number::from_f64(value).unwrap()).unwrap()
 }
 
-fn tokens(input_tokens: Option<Option<i64>>) -> Option<RerankResponseMeta> {
-    Some(RerankResponseMeta {
+fn meta(tokens: RerankTokens) -> RerankResponseMeta {
+    RerankResponseMeta {
         api_version: None,
         billed_units: None,
-        tokens: Some(Some(RerankTokens {
-            input_tokens,
-            output_tokens: None,
-        })),
-    })
+        tokens: Some(Some(tokens)),
+    }
 }
 
 #[test]
@@ -208,9 +205,9 @@ fn params_map_rejects_wrong_document_shapes(#[case] value: &str) {
     r#"{"api_version":null}"#,
     "https://host/ml/v1/text/rerank?version=2024-03-13"
 )]
-fn url_reads_version_without_popping(#[case] options: &str, #[case] expected: &str) {
+fn url_reads_version_without_popping(#[case] wire: &str, #[case] expected: &str) {
     let auth = auth(WatsonxEnvironment::default());
-    let options = params(options);
+    let options = params(wire);
     let before = options.clone();
     let url = config(&auth)
         .get_complete_url(Some("https://host/"), Some(&options))
@@ -308,13 +305,13 @@ async fn auth_uses_environment_token() {
 #[case::environment( "{}", Some(("WATSONX_ZENAPIKEY", "envzen")), "ZenApiKey envzen")]
 #[tokio::test]
 async fn auth_uses_zen_api_key(
-    #[case] options: &str,
+    #[case] wire: &str,
     #[case] variable: Option<(&str, &str)>,
     #[case] expected: &str,
 ) {
     let values: Vec<(&str, &str)> = variable.into_iter().collect();
     let auth = auth(environment(&values));
-    let mut options = params(options);
+    let mut options = params(wire);
     let resolved = config(&auth)
         .validate_environment(Headers::new(), None, &mut options)
         .await
@@ -373,7 +370,7 @@ fn request_pops_ids_and_adds_payload() {
     assert_eq!(
         transform_rerank_request(
             "granite",
-            params(
+            &params(
                 r#"{"query":"q","inputs":["a"],"project_id":"p","space_id":"s","api_version":"v"}"#
             ),
             &WatsonxEnvironment::default(),
@@ -390,7 +387,7 @@ fn request_for_deployment_model_keeps_params() {
     assert_eq!(
         transform_rerank_request(
             "deployment/d",
-            params(r#"{"query":"q","space_id":"s"}"#),
+            &params(r#"{"query":"q","space_id":"s"}"#),
             &WatsonxEnvironment::default(),
         )
         .unwrap(),
@@ -402,7 +399,7 @@ fn request_for_deployment_model_keeps_params() {
 fn request_without_ids_is_401() {
     let error = transform_rerank_request(
         "granite",
-        params(r#"{"query":"q"}"#),
+        &params(r#"{"query":"q"}"#),
         &WatsonxEnvironment::default(),
     )
     .unwrap_err();
@@ -435,7 +432,10 @@ fn response_maps_results_and_meta() {
                     }),
                 },
             ]),
-            meta: tokens(Some(Some(4))),
+            meta: Some(meta(RerankTokens {
+                input_tokens: Some(Some(4)),
+                output_tokens: None,
+            })),
             hidden_params: BTreeMap::new(),
         }
     );
@@ -449,7 +449,13 @@ fn response_without_id_generates_one() {
         .unwrap();
     assert_eq!(response.id, Some(Uuid::nil().to_string()));
     assert_eq!(response.results, Some(Vec::new()));
-    assert_eq!(response.meta, tokens(Some(Some(0))));
+    assert_eq!(
+        response.meta,
+        Some(meta(RerankTokens {
+            input_tokens: Some(Some(0)),
+            output_tokens: None,
+        }))
+    );
 }
 
 #[rstest]
@@ -472,7 +478,13 @@ fn response_null_token_count_stays_null() {
             br#"{"results":[],"input_token_count":null}"#,
         ))
         .unwrap();
-    assert_eq!(response.meta, tokens(Some(None)));
+    assert_eq!(
+        response.meta,
+        Some(meta(RerankTokens {
+            input_tokens: Some(None),
+            output_tokens: None,
+        }))
+    );
 }
 
 #[test]

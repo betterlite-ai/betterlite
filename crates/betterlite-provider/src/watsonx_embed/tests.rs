@@ -68,35 +68,25 @@ fn body_map(body: &super::request::WatsonxEmbeddingBody) -> WatsonxParams {
 #[rstest]
 #[case::trailing_slash(
     "https://host/",
-    "granite",
-    "{}",
-    "https://host/ml/v1/text/embeddings?version=2024-03-13"
-)]
-#[case::deployment_model(
-    "https://host",
-    "deployment/abc",
     "{}",
     "https://host/ml/v1/text/embeddings?version=2024-03-13"
 )]
 #[case::version_used(
     "https://host",
-    "granite",
     r#"{"api_version":"2024-01-01"}"#,
     "https://host/ml/v1/text/embeddings?version=2024-01-01"
 )]
 #[case::empty_version(
     "https://host",
-    "granite",
     r#"{"api_version":""}"#,
     "https://host/ml/v1/text/embeddings?version=2024-03-13"
 )]
 fn url_is_base_plus_embeddings_path(
     #[case] api_base: &str,
-    #[case] model: &str,
-    #[case] options: &str,
+    #[case] wire: &str,
     #[case] expected: &str,
 ) {
-    let mut options = params(options);
+    let mut options = params(wire);
     let url = config(&WatsonxEnvironment::default())
         .get_complete_url(Some(api_base), &mut options)
         .unwrap();
@@ -143,8 +133,8 @@ fn url_with_non_text_version_names_the_field() {
 #[case::text(r#""hello""#, r#"["hello"]"#)]
 #[case::list(r#"["a","b"]"#, r#"["a","b"]"#)]
 #[case::empty_list("[]", "[]")]
-fn request_copies_text_input(#[case] input: &str, #[case] inputs: &str) {
-    let input: EmbeddingInput = serde_json::from_str(input).unwrap();
+fn request_copies_text_input(#[case] wire: &str, #[case] inputs: &str) {
+    let input: EmbeddingInput = serde_json::from_str(wire).unwrap();
     let body = config(&project_environment())
         .transform_embedding_request("granite", &input, WatsonxParams::new())
         .unwrap();
@@ -218,8 +208,8 @@ fn request_without_project_or_space_is_401() {
 #[rstest]
 #[case::token_ids("[1,2]")]
 #[case::token_lists("[[1],[2]]")]
-fn request_rejects_token_input(#[case] input: &str) {
-    let input: EmbeddingInput = serde_json::from_str(input).unwrap();
+fn request_rejects_token_input(#[case] wire: &str) {
+    let input: EmbeddingInput = serde_json::from_str(wire).unwrap();
     let error = config(&project_environment())
         .transform_embedding_request("granite", &input, WatsonxParams::new())
         .unwrap_err();

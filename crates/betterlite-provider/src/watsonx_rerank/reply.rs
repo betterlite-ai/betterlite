@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::score::Score;
 use serde::Deserialize;
-use serde::de::IgnoredAny;
 use serde_json::error::Category;
 
 use super::error::WatsonxRerankError;
@@ -32,6 +31,6 @@ pub fn decode_watsonx_rerank_reply(bytes: &[u8]) -> Result<WatsonxRerankReply, W
         Category::Data => WatsonxRerankError::Reply(source),
         Category::Io | Category::Syntax | Category::Eof => WatsonxRerankError::Parse(source),
     };
-    serde_json::from_slice::<BTreeMap<String, IgnoredAny>>(bytes).map_err(classify)?;
+    serde_json::from_slice::<BTreeMap<String, Json>>(bytes).map_err(classify)?;
     serde_json::from_slice(bytes).map_err(classify)
 }

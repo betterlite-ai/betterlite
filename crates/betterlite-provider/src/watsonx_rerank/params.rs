@@ -17,8 +17,8 @@ pub fn map_cohere_rerank_params(
             }
             "documents" => match value {
                 Json::Null => {}
-                Json::List(_) => {
-                    mapped.insert(String::from("inputs"), inputs(value)?);
+                Json::List(items) => {
+                    mapped.insert(String::from("inputs"), inputs(items)?);
                 }
                 Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
                     return Err(WatsonxRerankError::InvalidDocuments);
@@ -45,28 +45,24 @@ pub fn map_cohere_rerank_params(
     Ok(mapped)
 }
 
-fn inputs(value: &Json) -> Result<Json, WatsonxRerankError> {
-    let Json::List(items) = value else {
-        return Err(WatsonxRerankError::InvalidDocuments);
-    };
-    let mut converted = Vec::with_capacity(items.len());
-    for item in items {
-        match item {
-            Json::Text(text) => {
-                let mut fields = IndexMap::new();
-                fields.insert(String::from("text"), Json::Text(text.clone()));
-                converted.push(Json::Object(fields));
-            }
-            Json::Object(fields) => converted.push(Json::Object(fields.clone())),
+fn inputs(items: &[Json]) -> Result<Json, WatsonxRerankError> {
+    let converted = items
+        .iter()
+        .map(|item| match item {
+            Json::Text(text) => Ok(Json::Object(IndexMap::from([(
+                String::from("text"),
+                Json::Text(text.clone()),
+            )]))),
+            Json::Object(fields) => Ok(Json::Object(fields.clone())),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
-                return Err(WatsonxRerankError::InvalidDocuments);
+                Err(WatsonxRerankError::InvalidDocuments)
             }
-        }
-    }
+        })
+        .collect::<Result<_, _>>()?;
     Ok(Json::List(converted))
 }
 
-fn as_object(value: &mut Json) -> Option<&mut IndexMap<String, Json>> {
+const fn as_object(value: &mut Json) -> Option<&mut IndexMap<String, Json>> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
