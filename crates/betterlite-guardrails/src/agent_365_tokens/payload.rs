@@ -60,16 +60,10 @@ pub fn build_evaluate_payload(
 
 #[must_use]
 pub fn resolve_conversation_id(data: &RequestData) -> String {
-    if let Some(session) = tool_metadata_session(data) {
-        return session;
-    }
-    if let Some(session) = header_session(data) {
-        return session;
-    }
-    if let Some(call_id) = call_id(data) {
-        return call_id;
-    }
-    Uuid::new_v4().to_string()
+    tool_metadata_session(data)
+        .or_else(|| header_session(data))
+        .or_else(|| call_id(data))
+        .unwrap_or_else(|| Uuid::new_v4().to_string())
 }
 
 fn text_field(

@@ -98,10 +98,10 @@ impl Agent365Poster for ScriptedReplies {
         _timeout: Duration,
     ) -> Result<PostReply, Agent365PosterError> {
         self.record(url, headers, body);
-        self.next_reply()
-            .ok_or_else(|| Agent365PosterError::NoReply {
-                url: url.to_owned(),
-            })
+        let reply = self.next_reply();
+        reply.ok_or_else(|| Agent365PosterError::NoReply {
+            url: url.to_owned(),
+        })
     }
 }
 

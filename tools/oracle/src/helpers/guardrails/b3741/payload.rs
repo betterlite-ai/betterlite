@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_guardrails::agent_365_tokens::payload::{EvaluatePayload, build_evaluate_payload};
+use betterlite_guardrails::agent_365_tokens::payload::build_evaluate_payload;
 use serde_json::json;
 
 use super::{Data, PayloadAssemblyArgs, UUID_MARKER};
@@ -30,10 +30,7 @@ fn request_data(args: &PayloadAssemblyArgs) -> Data {
             "mcp_session_id".to_owned(),
             GuardrailValue::Text(session.clone()),
         )]);
-        let _previous = data.insert(
-            "mcp_tool_call_metadata".to_owned(),
-            GuardrailValue::Object(metadata),
-        );
+        insert_metadata(&mut data, "mcp_tool_call_metadata", Some(&metadata));
     }
     insert_metadata(&mut data, "metadata", args.metadata.as_ref());
     let litellm_metadata = args.litellm_metadata.as_ref();
@@ -50,14 +47,10 @@ pub(super) fn payload_result(args: &PayloadAssemblyArgs) -> HelperResult {
     let payload = build_evaluate_payload(&data, args.key_alias.as_deref()).or_value_error()?;
     let generated = uuid::Uuid::parse_str(&payload.conversation_id)
         .is_ok_and(|parsed| parsed.get_version_num() == 4);
-    let rendered = if generated {
-        EvaluatePayload {
-            conversation_id: UUID_MARKER.to_owned(),
-            ..payload
-        }
-    } else {
-        payload
-    };
+    let mut rendered = payload;
+    if generated {
+        rendered.conversation_id = UUID_MARKER.to_owned();
+    }
     Ok(json!({
         "payload": serde_json::to_value(&rendered).or_value_error()?,
         "conversation_id_is_uuid4": generated,

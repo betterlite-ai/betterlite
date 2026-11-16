@@ -42,9 +42,7 @@ fn token_outcome(result: Result<SecretString, Agent365TokenError>) -> Value {
         Err(Agent365TokenError::BadAccessToken) => {
             json!({"kind": "token", "error": "malformed", "variant": "bad_access_token"})
         }
-        Err(Agent365TokenError::TokenExpiry) => {
-            json!({"kind": "token", "error": "expiry"})
-        }
+        Err(Agent365TokenError::TokenExpiry) => json!({"kind": "token", "error": "expiry"}),
         Err(Agent365TokenError::HttpStatus { status }) => {
             json!({"kind": "token", "error": "http_status", "status_code": status})
         }
