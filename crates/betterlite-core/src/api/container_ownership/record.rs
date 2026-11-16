@@ -5,8 +5,8 @@ use super::errors::ContainerOwnershipError;
 use super::repository::{ContainerObjectTable, ContainerOwnerUpdate, ContainerOwnerWrite};
 use super::response::{owner_file_object, response_provider, synthetic_container};
 use super::{
-    CONTAINER_OBJECT_PURPOSE, ContainerCaller, ContainerOwnership, container_model_object_id,
-    decode_for_ownership, owner_scope_strings,
+    CONTAINER_OBJECT_PURPOSE, ContainerCaller, ContainerOwnership, decode_for_ownership,
+    owner_scope_strings,
 };
 use crate::api::managed_resource_store::{
     OwnerScope, get_primary_owner_scope, user_can_access_resource_owner,
@@ -54,9 +54,9 @@ fn owner_write(
     owner: &OwnerScope,
 ) -> (String, ContainerOwnerWrite) {
     let identity = decode_for_ownership(container_id, caller.custom_llm_provider);
-    let model_object_id = container_model_object_id(
-        &identity.original_container_id,
-        &identity.custom_llm_provider,
+    let model_object_id = format!(
+        "{CONTAINER_OBJECT_PURPOSE}:{}:{}",
+        identity.custom_llm_provider, identity.original_container_id
     );
     let write = ContainerOwnerWrite {
         unified_object_id: container_id.to_owned(),

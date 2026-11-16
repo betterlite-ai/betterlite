@@ -2,9 +2,7 @@ use crate::api::response_id_codecs::container::build_container_id;
 
 use super::super::access::container_owner;
 use super::super::forwarding::{forwarding_params, stored_container_id};
-use super::super::{
-    CONTAINER_OBJECT_PURPOSE, ContainerOwnership, container_model_object_id, decode_for_ownership,
-};
+use super::super::{CONTAINER_OBJECT_PURPOSE, ContainerOwnership, decode_for_ownership};
 use super::support::{Effect, ScriptedObjects, fixed_clock};
 
 #[tokio::test]
@@ -26,7 +24,7 @@ async fn forwarding_uses_the_decoded_model_id() {
 async fn forwarding_recovers_the_model_from_the_stored_id() {
     let objects = ScriptedObjects::default();
     let native = "container-native";
-    let key = container_model_object_id(native, "azure");
+    let key = format!("{CONTAINER_OBJECT_PURPOSE}:azure:{native}");
     let stored = build_container_id(Some("azure"), Some("deployment-2"), native);
     objects.row_for(&key, CONTAINER_OBJECT_PURPOSE, Some("alice"));
     objects.set_stored_id(&key, Some(&stored));
@@ -43,7 +41,7 @@ async fn forwarding_recovers_the_model_from_the_stored_id() {
 async fn forwarding_ignores_a_stored_id_equal_to_the_supplied_id() {
     let objects = ScriptedObjects::default();
     let native = "container-native";
-    let key = container_model_object_id(native, "azure");
+    let key = format!("{CONTAINER_OBJECT_PURPOSE}:azure:{native}");
     objects.row_for(&key, CONTAINER_OBJECT_PURPOSE, Some("alice"));
     objects.set_stored_id(&key, Some(native));
     let ownership = ContainerOwnership::new(objects.clone(), fixed_clock()).unwrap();
@@ -80,7 +78,7 @@ async fn forwarding_caches_an_absent_stored_id() {
 async fn forwarding_returns_no_model_when_the_stored_id_has_none() {
     let objects = ScriptedObjects::default();
     let native = "container-native";
-    let key = container_model_object_id(native, "azure");
+    let key = format!("{CONTAINER_OBJECT_PURPOSE}:azure:{native}");
     let stored = build_container_id(Some("azure"), None, native);
     objects.row_for(&key, CONTAINER_OBJECT_PURPOSE, Some("alice"));
     objects.set_stored_id(&key, Some(&stored));
@@ -122,7 +120,7 @@ async fn forwarding_skips_the_stored_lookup_when_unavailable() {
 async fn forwarding_reuses_the_stored_id_from_an_owner_lookup() {
     let objects = ScriptedObjects::default();
     let native = "container-native";
-    let key = container_model_object_id(native, "azure");
+    let key = format!("{CONTAINER_OBJECT_PURPOSE}:azure:{native}");
     let stored = build_container_id(Some("azure"), Some("deployment-3"), native);
     objects.row_for(&key, CONTAINER_OBJECT_PURPOSE, Some("alice"));
     objects.set_stored_id(&key, Some(&stored));

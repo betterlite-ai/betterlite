@@ -6,9 +6,9 @@ use super::cache::allowed_ids_cache_key;
 use super::errors::{ContainerListError, ContainerOwnershipError};
 use super::repository::ContainerObjectTable;
 use super::{
-    ContainerCaller, ContainerListPage, ContainerListSource, ContainerOwnership,
-    DEFAULT_CONTAINER_LIST_LIMIT, OWNED_CONTAINER_LIST_MAX_PAGES, OWNED_CONTAINER_LIST_PAGE_SIZE,
-    container_model_object_id, decode_for_ownership, owner_scope_strings,
+    CONTAINER_OBJECT_PURPOSE, ContainerCaller, ContainerListPage, ContainerListSource,
+    ContainerOwnership, DEFAULT_CONTAINER_LIST_LIMIT, OWNED_CONTAINER_LIST_MAX_PAGES,
+    OWNED_CONTAINER_LIST_PAGE_SIZE, decode_for_ownership, owner_scope_strings,
 };
 use crate::api::response_id_traversal::record::Record;
 
@@ -139,8 +139,8 @@ fn is_owned_container(
         return false;
     };
     let identity = decode_for_ownership(container_id, custom_llm_provider);
-    allowed.contains(&container_model_object_id(
-        &identity.original_container_id,
-        &identity.custom_llm_provider,
+    allowed.contains(&format!(
+        "{CONTAINER_OBJECT_PURPOSE}:{}:{}",
+        identity.custom_llm_provider, identity.original_container_id
     ))
 }

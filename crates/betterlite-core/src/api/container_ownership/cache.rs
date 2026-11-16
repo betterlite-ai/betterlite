@@ -143,7 +143,13 @@ impl ContainerCaches {
     }
 
     pub(crate) fn forget_allowed(&self, cache_key: &str) {
-        self.allowed.with(|cache| cache.delete(cache_key));
+        let mut guard = self
+            .allowed
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        guard.delete(cache_key);
+        drop(guard);
     }
 }
 

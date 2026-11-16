@@ -3,7 +3,7 @@ use super::errors::ContainerOwnershipError;
 use super::repository::ContainerObjectTable;
 use super::{
     CONTAINER_OBJECT_PURPOSE, ContainerCaller, ContainerIdentity, ContainerOwnership,
-    container_model_object_id, decode_for_ownership,
+    decode_for_ownership,
 };
 use crate::api::managed_resource_store::{is_proxy_admin, user_can_access_resource_owner};
 
@@ -34,9 +34,9 @@ pub(crate) async fn container_owner<Rows>(
 where
     Rows: ContainerObjectTable,
 {
-    let model_object_id = container_model_object_id(
-        &identity.original_container_id,
-        &identity.custom_llm_provider,
+    let model_object_id = format!(
+        "{CONTAINER_OBJECT_PURPOSE}:{}:{}",
+        identity.custom_llm_provider, identity.original_container_id
     );
     match ownership.caches.owner.read(&model_object_id)? {
         CachedText::Absent => return Ok(None),

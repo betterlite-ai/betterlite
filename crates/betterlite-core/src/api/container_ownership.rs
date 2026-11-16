@@ -108,15 +108,6 @@ impl<Rows: ContainerObjectTable> ContainerOwnership<Rows> {
     }
 }
 
-// the model-object key LiteLLM stamps on every ownership row: purpose, provider, upstream id
-#[must_use]
-pub(crate) fn container_model_object_id(
-    original_container_id: &str,
-    custom_llm_provider: &str,
-) -> String {
-    format!("{CONTAINER_OBJECT_PURPOSE}:{custom_llm_provider}:{original_container_id}")
-}
-
 // LiteLLM's decode_container_id_for_ownership: a managed id carries the provider, a native one keeps the caller's
 #[must_use]
 pub(crate) fn decode_for_ownership(

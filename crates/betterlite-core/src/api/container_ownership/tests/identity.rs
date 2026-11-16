@@ -1,8 +1,6 @@
 use crate::api::response_id_codecs::container::build_container_id;
 
-use super::super::{
-    ContainerIdentity, container_model_object_id, decode_for_ownership, owner_scope_strings,
-};
+use super::super::{ContainerIdentity, decode_for_ownership, owner_scope_strings};
 use super::support::{anonymous, principal};
 
 #[test]
@@ -39,14 +37,6 @@ fn decode_keeps_the_openai_caller_when_the_managed_id_has_no_provider() {
     let identity = decode_for_ownership(&managed, "openai");
     assert_eq!(identity.original_container_id, "container-raw");
     assert_eq!(identity.custom_llm_provider, "openai");
-}
-
-#[test]
-fn model_object_id_joins_purpose_provider_and_id() {
-    assert_eq!(
-        container_model_object_id("container-raw", "anthropic"),
-        "container:anthropic:container-raw"
-    );
 }
 
 #[test]
