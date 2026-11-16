@@ -1,2 +1,1 @@
-// the agent route advertises only stream and copies no non-default parameter, so there is no mapping step to build
-pub const SUPPORTED_OPENAI_PARAMS: [&str; 1] = ["stream"];
+pub const SUPPORTED_OPENAI_PARAMS: [&str; 1] = ["stream"]; // the route copies no parameter, so optional_params passes through unmapped

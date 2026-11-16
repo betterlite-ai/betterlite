@@ -74,7 +74,10 @@ fn json(source: &str) -> Json {
     serde_json::from_str(source).unwrap()
 }
 
-fn serialized<T: Serialize>(value: &T) -> Json {
+fn serialized<T>(value: &T) -> Json
+where
+    T: Serialize,
+{
     serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
 }
 
@@ -345,7 +348,7 @@ fn existing_thread() {
     thread_preparation();
 }
 
-fn message_scalar_content() {
+fn message_content_shapes() {
     let messages = [
         object(r#"{"role":"user","content":"hello"}"#),
         object(r#"{"content":"no role"}"#),
@@ -356,25 +359,6 @@ fn message_scalar_content() {
         object(r#"{"role":"user","content":1.5}"#),
         object(r#"{"role":"user","content":""}"#),
         object(r#"{"role":null,"content":"x"}"#),
-    ];
-    let empty: Headers = BTreeMap::new();
-    let payload = transform_request(&request(
-        "azure_ai/agents/a",
-        &Object::new(),
-        &messages,
-        &empty,
-    ))
-    .unwrap();
-    assert_eq!(
-        serialized(&payload.messages),
-        json(
-            r#"[{"role":"user","content":"hello"},{"role":"user","content":"no role"},{"role":"assistant","content":""},{"role":"user","content":"None"},{"role":"user","content":"5"},{"role":"user","content":"True"},{"role":"user","content":"1.5"},{"role":"user","content":""},{"role":null,"content":"x"}]"#,
-        )
-    );
-}
-
-fn message_list_content() {
-    let messages = [
         object(
             r#"{"role":"user","content":[{"type":"text","text":"one"},{"type":"text","text":"two"}]}"#,
         ),
@@ -395,7 +379,7 @@ fn message_list_content() {
     assert_eq!(
         serialized(&payload.messages),
         json(
-            r#"[{"role":"user","content":"onetwo"},{"role":"user","content":""},{"role":"user","content":""},{"role":"user","content":""}]"#,
+            r#"[{"role":"user","content":"hello"},{"role":"user","content":"no role"},{"role":"assistant","content":""},{"role":"user","content":"None"},{"role":"user","content":"5"},{"role":"user","content":"True"},{"role":"user","content":"1.5"},{"role":"user","content":""},{"role":null,"content":"x"},{"role":"user","content":"onetwo"},{"role":"user","content":""},{"role":"user","content":""},{"role":"user","content":""}]"#,
         )
     );
 }
@@ -418,8 +402,7 @@ fn message_search_results() {
 }
 
 fn message_content_conversion() {
-    message_scalar_content();
-    message_list_content();
+    message_content_shapes();
     message_search_results();
 }
 
@@ -583,8 +566,8 @@ fn preparation_fields() {
 }
 
 fn response_checks() {
-    assert!(check_response(200, "ok", &[200], "create-thread").is_ok());
-    assert!(check_response(202, "accepted", &[200, 202], "add-message").is_ok());
+    check_response(200, "ok", &[200], "create-thread").unwrap();
+    check_response(202, "accepted", &[200, 202], "add-message").unwrap();
     let failed = check_response(404, "not-found", &[200], "create-thread").unwrap_err();
     assert_eq!(failed.to_string(), "create-thread: not-found");
     assert_eq!(failed.status(), Some(404));
@@ -621,9 +604,12 @@ fn agent_auth_and_response_checks() {
 }
 
 fn agent_stream_flags() {
-    assert!(SHOULD_FAKE_STREAM);
-    assert!(!HAS_CUSTOM_STREAM_WRAPPER);
-    assert!(!SUPPORTS_STREAM_PARAM_IN_BODY);
+    let flags = [
+        SHOULD_FAKE_STREAM,
+        HAS_CUSTOM_STREAM_WRAPPER,
+        SUPPORTS_STREAM_PARAM_IN_BODY,
+    ];
+    assert_eq!(flags, [true, false, false]);
 }
 
 #[rstest]
