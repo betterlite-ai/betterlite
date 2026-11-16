@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::http::HeaderMap;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -220,7 +220,13 @@ impl MemoryRepository {
 
     fn read(&self, name: &str) -> Result<Option<JsonData>, MemoryError> {
         (!self.refuse_reads)
-            .then(|| self.params.lock().unwrap().get(name).cloned())
+            .then(|| {
+                self.params
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .get(name)
+                    .cloned()
+            })
             .ok_or(MemoryError::Unreadable)
     }
 
@@ -228,8 +234,10 @@ impl MemoryRepository {
         if self.refuse_writes {
             return Err(MemoryError::Refused);
         }
-        let mut writes = self.writes.lock().unwrap();
-        writes.push((name.to_owned(), value));
+        self.writes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((name.to_owned(), value));
         Ok(())
     }
 
