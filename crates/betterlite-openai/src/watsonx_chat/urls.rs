@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use super::error::WatsonxChatError;
 use crate::watsonx_auth::environment::WatsonxEnvironment;
-use crate::watsonx_auth::types::{WatsonxEndpoint, WatsonxParams};
+use crate::watsonx_auth::types::WatsonxParams;
 use crate::watsonx_auth::urls::{add_api_version_to_url, get_base_url};
 
 pub fn get_complete_url(
@@ -13,15 +13,10 @@ pub fn get_complete_url(
     environment: &WatsonxEnvironment,
 ) -> Result<String, WatsonxChatError> {
     let base = get_base_url(api_base, environment)?;
-    let endpoint = match (model.strip_prefix("deployment/"), stream) {
-        (Some(deployment_id), false) => WatsonxEndpoint::DeploymentChat
-            .path()
-            .replace("{deployment_id}", deployment_id),
-        (Some(deployment_id), true) => WatsonxEndpoint::DeploymentChatStream
-            .path()
-            .replace("{deployment_id}", deployment_id),
-        (None, false) => WatsonxEndpoint::Chat.path().to_owned(),
-        (None, true) => WatsonxEndpoint::ChatStream.path().to_owned(),
+    let suffix = if stream { "chat_stream" } else { "chat" };
+    let endpoint = match model.strip_prefix("deployment/") {
+        Some(deployment_id) => format!("/ml/v1/deployments/{deployment_id}/text/{suffix}"),
+        None => format!("/ml/v1/text/{suffix}"),
     };
     let api_version = match options.remove("api_version") {
         None | Some(Value::Null) => None,

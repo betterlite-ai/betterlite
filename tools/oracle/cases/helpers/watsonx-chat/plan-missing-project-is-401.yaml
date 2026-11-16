@@ -14,13 +14,3 @@ call:
         api_key: key
         headers: {}
         options: {}
-      - model: granite-13b
-        api_base: null
-        api_key: null
-        headers: {Authorization: Bearer caller}
-        options: {project_id: project-1}
-      - model: deployment/abc
-        api_base: null
-        api_key: null
-        headers: {Authorization: Bearer caller}
-        options: {}

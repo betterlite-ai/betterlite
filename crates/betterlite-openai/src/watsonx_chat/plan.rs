@@ -28,10 +28,13 @@ pub struct WatsonxChatPlan {
 }
 
 impl WatsonxChatPlan {
-    pub async fn prepare<T: WatsonxTransport>(
+    pub async fn prepare<T>(
         auth: &WatsonxAuth<T>,
         request: WatsonxChatRequest<'_>,
-    ) -> Result<Self, WatsonxChatError> {
+    ) -> Result<Self, WatsonxChatError>
+    where
+        T: WatsonxTransport,
+    {
         let WatsonxChatRequest {
             model,
             api_base,

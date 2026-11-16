@@ -122,12 +122,23 @@ fn watsonx_environment(values: &BTreeMap<String, String>) -> WatsonxEnvironment 
     }
 }
 
-fn error_value(error: &WatsonxChatError) -> Result<Value, Box<HelperError>> {
-    if let WatsonxChatError::Auth(WatsonxError::Api { status_code, .. }) = error {
-        Ok(json!({"error": "watsonx", "status": status_code}))
+// LiteLLM raises WatsonXAIError with the status, and the runner compares the status of a failed call
+fn error_failure(error: &WatsonxChatError) -> Box<HelperError> {
+    let status = if let WatsonxChatError::Auth(inner) = error
+        && let WatsonxError::Api { status_code, .. } = inner.as_ref()
+    {
+        Some(*status_code)
     } else {
-        Err(failure("UnexpectedError", error.to_string()))
-    }
+        None
+    };
+    Box::new(HelperError {
+        class: "WatsonxChatError".to_owned(),
+        status,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
 }
 
 fn map_case(case: &MapCase) -> Result<Value, Box<HelperError>> {
@@ -145,16 +156,15 @@ fn info_case(case: &InfoCase, environment: &ProviderEnvironment) -> Value {
 
 fn url_case(case: &UrlCase, environment: &WatsonxEnvironment) -> Result<Value, Box<HelperError>> {
     let mut options = case.options.clone();
-    match get_complete_url(
+    let url = get_complete_url(
         case.api_base.as_deref(),
         &case.model,
         case.stream,
         &mut options,
         environment,
-    ) {
-        Ok(url) => Ok(json!({"url": url, "options": options})),
-        Err(error) => error_value(&error),
-    }
+    )
+    .map_err(|error| error_failure(&error))?;
+    Ok(json!({"url": url, "options": options}))
 }
 
 fn header_map(headers: &BTreeMap<String, String>) -> Result<HeaderMap, Box<HelperError>> {
@@ -181,27 +191,29 @@ async fn plan_case(
         headers: header_map(&case.headers)?,
         options: case.options.clone(),
     };
-    match WatsonxChatPlan::prepare(auth, request).await {
-        Ok(plan) => {
-            let headers: BTreeMap<String, String> = plan
-                .headers
-                .iter()
-                .map(|(name, value)| {
-                    (
-                        name.as_str().to_owned(),
-                        value.to_str().unwrap_or_default().to_owned(),
-                    )
-                })
-                .collect();
-            Ok(json!({"plan": {
-                "model": plan.model,
-                "url": plan.url,
-                "headers": headers,
-                "options": plan.options,
-            }}))
-        }
-        Err(error) => error_value(&error),
-    }
+    let plan = WatsonxChatPlan::prepare(auth, request)
+        .await
+        .map_err(|error| error_failure(&error))?;
+    let headers: BTreeMap<String, String> = plan
+        .headers
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.as_str().to_owned(),
+                value.to_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect();
+    // OpenAILikeChatHandler.completion writes stream as a boolean before it builds the body
+    let mut options = plan.options;
+    let streaming = options.get("stream") == Some(&Value::Bool(true));
+    options.insert("stream".to_owned(), Value::Bool(streaming));
+    Ok(json!({"plan": {
+        "model": plan.model,
+        "url": plan.url,
+        "headers": headers,
+        "options": options,
+    }}))
 }
 
 async fn execute(input: &Input) -> HelperResult {

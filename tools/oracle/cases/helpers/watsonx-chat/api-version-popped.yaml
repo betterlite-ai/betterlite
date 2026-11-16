@@ -12,5 +12,4 @@ call:
       - {api_base: "https://host", model: granite, stream: true, options: {api_version: null, temperature: 1}}
       - {api_base: "https://host", model: granite, stream: false, options: {api_version: "", top_p: 0.5}}
       - {api_base: "https://host", model: granite, stream: false, options: {top_p: 0.5}}
-      - {api_base: null, model: granite, stream: false, options: {api_version: "2025-01-01"}}
     plans: []

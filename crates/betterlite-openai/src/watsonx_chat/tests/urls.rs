@@ -1,7 +1,6 @@
 use rstest::rstest;
-use serde_json::{Value, json};
 
-use super::support::{environment, options};
+use super::support::{auth_failure, environment, options};
 use crate::watsonx_auth::error::WatsonxError;
 use crate::watsonx_chat::error::WatsonxChatError;
 use crate::watsonx_chat::urls::get_complete_url;
@@ -12,7 +11,7 @@ fn url_for(
     api_base: Option<&str>,
     model: &str,
     stream: bool,
-    given: Value,
+    given: &str,
 ) -> (String, Vec<String>) {
     let mut found = options(given);
     let url = get_complete_url(
@@ -37,7 +36,7 @@ fn url_for(
 #[case::prefix_is_not_a_substring("my-deployment/abc", false, "/ml/v1/text/chat")]
 #[case::provider_prefixed("ibm/granite", true, "/ml/v1/text/chat_stream")]
 fn url_picks_the_endpoint(#[case] model: &str, #[case] stream: bool, #[case] path: &str) {
-    let (url, _) = url_for(Some(HOST), model, stream, json!({}));
+    let (url, _) = url_for(Some(HOST), model, stream, "{}");
     assert_eq!(url, format!("{HOST}{path}?version=2024-03-13"));
 }
 
@@ -46,7 +45,7 @@ fn url_picks_the_endpoint(#[case] model: &str, #[case] stream: bool, #[case] pat
 #[case::many("https://host.example////")]
 #[case::none("https://host.example")]
 fn url_strips_trailing_slashes_from_the_base(#[case] api_base: &str) {
-    let (url, _) = url_for(Some(api_base), "granite", false, json!({}));
+    let (url, _) = url_for(Some(api_base), "granite", false, "{}");
     assert_eq!(
         url,
         "https://host.example/ml/v1/text/chat?version=2024-03-13"
@@ -55,12 +54,7 @@ fn url_strips_trailing_slashes_from_the_base(#[case] api_base: &str) {
 
 #[test]
 fn url_keeps_a_path_in_the_base() {
-    let (url, _) = url_for(
-        Some("https://host.example/prefix/"),
-        "granite",
-        true,
-        json!({}),
-    );
+    let (url, _) = url_for(Some("https://host.example/prefix/"), "granite", true, "{}");
     assert_eq!(
         url,
         "https://host.example/prefix/ml/v1/text/chat_stream?version=2024-03-13"
@@ -73,28 +67,28 @@ fn url_pops_the_api_version_and_uses_it() {
         Some(HOST),
         "granite",
         false,
-        json!({"api_version": "2025-01-01", "temperature": 1}),
+        r#"{"api_version": "2025-01-01", "temperature": 1}"#,
     );
     assert_eq!(url, format!("{HOST}/ml/v1/text/chat?version=2025-01-01"));
     assert_eq!(left, ["temperature"]);
 }
 
 #[rstest]
-#[case::null(json!({"api_version": null}))]
-#[case::empty(json!({"api_version": ""}))]
-#[case::absent(json!({}))]
-fn url_defaults_the_version(#[case] given: Value) {
+#[case::null(r#"{"api_version": null}"#)]
+#[case::empty(r#"{"api_version": ""}"#)]
+#[case::absent("{}")]
+fn url_defaults_the_version(#[case] given: &str) {
     let (url, left) = url_for(Some(HOST), "granite", false, given);
     assert_eq!(url, format!("{HOST}/ml/v1/text/chat?version=2024-03-13"));
     assert!(left.is_empty());
 }
 
 #[rstest]
-#[case::number(json!({"api_version": 3}))]
-#[case::boolean(json!({"api_version": true}))]
-#[case::list(json!({"api_version": ["2025"]}))]
-#[case::object(json!({"api_version": {}}))]
-fn url_rejects_a_version_that_is_not_text(#[case] given: Value) {
+#[case::number(r#"{"api_version": 3}"#)]
+#[case::boolean(r#"{"api_version": true}"#)]
+#[case::list(r#"{"api_version": ["2025"]}"#)]
+#[case::object(r#"{"api_version": {}}"#)]
+fn url_rejects_a_version_that_is_not_text(#[case] given: &str) {
     let mut found = options(given);
     let error = get_complete_url(
         Some(HOST),
@@ -114,7 +108,7 @@ fn url_rejects_a_version_that_is_not_text(#[case] given: Value) {
 
 #[test]
 fn url_reads_the_environment_base() {
-    let mut found = options(json!({}));
+    let mut found = options("{}");
     let url = get_complete_url(
         None,
         "granite",
@@ -131,15 +125,15 @@ fn url_reads_the_environment_base() {
 
 #[test]
 fn url_without_any_base_fails_with_401_before_the_version_pop() {
-    let mut found = options(json!({"api_version": 3}));
+    let mut found = options(r#"{"api_version": 3}"#);
     let error =
         get_complete_url(None, "granite", false, &mut found, &environment(None, None)).unwrap_err();
     assert!(matches!(
-        error,
-        WatsonxChatError::Auth(WatsonxError::Api {
+        auth_failure(&error),
+        WatsonxError::Api {
             status_code: 401,
             ..
-        })
+        }
     ));
     assert!(found.contains_key("api_version"));
 }

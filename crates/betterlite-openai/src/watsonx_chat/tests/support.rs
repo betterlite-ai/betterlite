@@ -12,8 +12,10 @@ use serde_json::Value;
 use crate::openai_base_config::Object;
 use crate::watsonx_auth::WatsonxAuth;
 use crate::watsonx_auth::environment::WatsonxEnvironment;
+use crate::watsonx_auth::error::WatsonxError;
 use crate::watsonx_auth::transport::WatsonxTransport;
 use crate::watsonx_auth::types::WatsonxParams;
+use crate::watsonx_chat::error::WatsonxChatError;
 
 pub(super) const TOKEN_BODY: &str = r#"{"access_token":"iam-token","expires_in":3600}"#;
 
@@ -90,17 +92,28 @@ pub(super) fn auth(
     WatsonxAuth::new(environment, transport, Arc::new(|| 0.0_f64)).unwrap()
 }
 
-pub(super) fn object(value: Value) -> Object {
-    let Value::Object(fields) = value else {
+pub(super) fn fixture(text: &str) -> Value {
+    serde_json::from_str(text).expect("test fixture must be valid JSON")
+}
+
+pub(super) fn object(text: &str) -> Object {
+    let Value::Object(fields) = fixture(text) else {
         panic!("the test value must be an object");
     };
     fields
 }
 
-pub(super) fn options(value: Value) -> WatsonxParams {
-    object(value).into_iter().collect()
+pub(super) fn options(text: &str) -> WatsonxParams {
+    object(text).into_iter().collect()
 }
 
 pub(super) fn secret(value: &str) -> SecretString {
     SecretString::from(value.to_owned())
+}
+
+pub(super) fn auth_failure(error: &WatsonxChatError) -> &WatsonxError {
+    let WatsonxChatError::Auth(inner) = error else {
+        panic!("expected an auth failure, got {error}");
+    };
+    inner
 }
