@@ -345,4 +345,29 @@ pub(super) fn azure_text_client_errors() {
     assert_eq!(error.status, Some(500));
     assert_eq!(error.message, "the client custom query has no api-version");
     assert!(seen.creates().is_empty());
+
+    // a failing log callback is reported as a 500 with its own text, before any request is sent
+    let failing = [
+        (ClientKind::AzureOpenAi, "{}", false),
+        (ClientKind::AsyncAzureOpenAi, "{}", true),
+        (ClientKind::AsyncAzureOpenAi, r#"{"stream":true}"#, true),
+        (ClientKind::AzureOpenAi, r#"{"stream":true}"#, false),
+    ];
+    for (kind, options, asynchronous) in failing {
+        let mut params = object(options);
+        let mut hooks = super::recorder();
+        hooks.fail_pre = true;
+        let source = ScriptedSource::new(kind, buffered());
+        let seen = source.clone();
+        let error = completion(
+            source,
+            parts.call(Some(&messages), &mut params, asynchronous),
+            &fixed,
+            &mut hooks,
+        )
+        .unwrap_err();
+        assert_eq!(error.status, Some(500));
+        assert_eq!(error.message, "hook failed");
+        assert!(seen.creates().is_empty());
+    }
 }
