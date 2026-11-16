@@ -29,7 +29,7 @@ async fn run(
     client: &FilesClient,
     call: Call<'_>,
 ) -> Result<OpenAiResourceResult, OpenAiResourceError> {
-    let operation = OpenAiResourceOperation::files(Dispatch { api, client, call });
+    let operation = OpenAiResourceOperation::Files(Box::pin(Dispatch { api, client, call }.run()));
     dispatch(operation).await
 }
 

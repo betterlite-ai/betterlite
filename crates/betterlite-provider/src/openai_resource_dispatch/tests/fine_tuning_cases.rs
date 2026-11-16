@@ -11,12 +11,12 @@ use crate::openai_resource_dispatch::{
 };
 
 fn create_data() -> FineTuneCreate {
-    FineTuneCreate {
-        model: String::from("gpt-test"),
-        training_file: String::from("file-1"),
-        suffix: Some(String::from("v2")),
-        ..FineTuneCreate::default()
-    }
+    serde_json::from_value(serde_json::json!({
+        "model": "gpt-test",
+        "training_file": "file-1",
+        "suffix": "v2"
+    }))
+    .expect("a fine-tune create request")
 }
 
 fn connection<'a>(

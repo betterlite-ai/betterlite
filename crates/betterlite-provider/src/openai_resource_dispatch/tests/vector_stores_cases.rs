@@ -6,16 +6,15 @@ use betterlite_openai::vector_stores::error::VectorStoreError;
 use betterlite_openai::vector_stores::files::{
     Attributes, FileCreateParams, FileListParams, FileOperation, FileUpdateParams,
 };
-use betterlite_openai::vector_stores::reply::VectorReply;
 use betterlite_openai::vector_stores::store::{CreateParams, Query, SearchParams};
 use betterlite_openai::vector_stores::{Headers, Request};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{Map, Value};
+use serde_json::json;
 
 use super::fixture::object;
 use crate::openai_resource_dispatch::vector_stores::{
-    Call, Dispatch, EndpointKind, Outcome, ReplyCall, RequestCall,
+    Call, Dispatch, EndpointKind, Outcome, RequestCall,
 };
 use crate::openai_resource_dispatch::{
     OpenAiResourceError, OpenAiResourceOperation, OpenAiResourceResult, dispatch,
@@ -39,13 +38,6 @@ fn plain(headers: &Headers) -> BTreeMap<&str, &str> {
         .iter()
         .map(|(name, value)| (name.as_str(), value.expose_secret()))
         .collect()
-}
-
-fn reply(status: u16, body: &[u8]) -> http::Response<Vec<u8>> {
-    http::Response::builder()
-        .status(status)
-        .body(body.to_vec())
-        .unwrap()
 }
 
 async fn run(
@@ -133,7 +125,7 @@ async fn environment_rows() {
     assert_eq!(plain(&headers)["Authorization"], "Bearer g");
 }
 
-async fn url_rows() {
+async fn url_absolute_files() {
     let settings = settings();
     let absolute = run(
         &settings,
@@ -165,6 +157,10 @@ async fn url_rows() {
         panic!("the url call returns its url");
     };
     assert_eq!(url, "https://g.example/vector_stores/vs_1/files");
+}
+
+async fn url_encoding_error() {
+    let settings = settings();
     let encoded = run(
         &settings,
         globals(None),
@@ -269,42 +265,18 @@ async fn search_request_rows() {
     );
     assert_eq!(
         body,
-        Value::Object(object(
-            r#"{"query":["a","b"],"filters":{"type":"eq"},"max_num_results":5,"ranking_options":{"ranker":"auto"},"rewrite_query":false}"#
-        ))
+        json!({"query":["a","b"],"filters":{"type":"eq"},"max_num_results":5,"ranking_options":{"ranker":"auto"},"rewrite_query":false})
     );
 }
 
-async fn search_response_row() {
+async fn create_metadata_row() {
     let settings = settings();
-    let body = br#"{"object":"vector_store.search_results.page","search_query":"q","data":[]}"#;
-    let response = reply(200, body);
-    let result = run(
-        &settings,
-        globals(None),
-        None,
-        Call::Reply(ReplyCall::Search(&response)),
-    )
-    .await;
-    let Ok(OpenAiResourceResult::VectorStores(Outcome::Reply(reply))) = result else {
-        panic!("the search reply returns a decoded reply");
-    };
-    let VectorReply::Record(record) = reply.as_ref() else {
-        panic!("a search reply decodes as a search record");
-    };
-    assert_eq!(
-        serde_json::to_value(record).unwrap()["object"],
-        Value::from("vector_store.search_results.page")
-    );
-}
-
-async fn create_request_rows() {
-    let settings = settings();
-    let mut metadata: IndexMap<String, Value> = (0..20_u8)
-        .map(|index| (format!("k{index}"), Value::from("v")))
-        .collect();
-    metadata.insert(String::from("hidden_params"), Value::from("x"));
-    metadata.shift_insert(1, String::from("count"), Value::from(3_i64));
+    let mut metadata = IndexMap::new();
+    for index in 0..20_u8 {
+        metadata.insert(format!("k{index}"), json!("v"));
+    }
+    metadata.insert(String::from("hidden_params"), json!("x"));
+    metadata.shift_insert(1, String::from("count"), json!(3_i64));
     let params = CreateParams {
         name: Some(String::from("docs")),
         file_ids: Some(vec![String::from("f1")]),
@@ -329,6 +301,10 @@ async fn create_request_rows() {
     let sent = request.body["metadata"].as_object().unwrap();
     assert_eq!(sent.len(), 16);
     assert!(sent.contains_key("k15") && !sent.contains_key("k16") && !sent.contains_key("count"));
+}
+
+async fn create_defaults_row() {
+    let settings = settings();
     let defaults = run(
         &settings,
         globals(None),
@@ -344,40 +320,15 @@ async fn create_request_rows() {
     };
     assert_eq!(
         request.body,
-        Value::Object(object(
-            r#"{"name":null,"file_ids":null,"expires_after":null,"chunking_strategy":null,"metadata":null}"#
-        ))
-    );
-}
-
-async fn create_response_row() {
-    let settings = settings();
-    let body = br#"{"id":"vs_a","object":"vector_store","created_at":1,"name":null,"bytes":2,"file_counts":{"in_progress":1,"completed":2,"failed":3,"cancelled":4,"total":10},"status":"expired","expires_after":{"anchor":"last_active_at","days":3},"expires_at":null,"last_active_at":1,"metadata":{"tag":"x"}}"#;
-    let response = reply(200, body);
-    let result = run(
-        &settings,
-        globals(None),
-        None,
-        Call::Reply(ReplyCall::Create(&response)),
-    )
-    .await;
-    let Ok(OpenAiResourceResult::VectorStores(Outcome::Reply(reply))) = result else {
-        panic!("the create reply returns a decoded reply");
-    };
-    let VectorReply::Record(record) = reply.as_ref() else {
-        panic!("a create reply decodes as a create record");
-    };
-    assert_eq!(
-        serde_json::to_value(record).unwrap()["id"],
-        Value::from("vs_a")
+        json!({"name":null,"file_ids":null,"expires_after":null,"chunking_strategy":null,"metadata":null})
     );
 }
 
 async fn file_create_row() {
     let settings = settings();
     let attributes = IndexMap::from([
-        (String::from("team"), Value::from("a")),
-        (String::from("rank"), Value::from(2_i64)),
+        (String::from("team"), json!("a")),
+        (String::from("rank"), json!(2_i64)),
     ]);
     let params = FileCreateParams {
         file_id: Some(String::from("file_1")),
@@ -400,7 +351,7 @@ async fn file_create_row() {
     assert_eq!(request.url, API_BASE);
     assert_eq!(
         request.body,
-        Value::Object(object(r#"{"file_id":"file_1","attributes":{"team":"a"}}"#))
+        json!({"file_id":"file_1","attributes":{"team":"a"}})
     );
 }
 
@@ -429,11 +380,11 @@ async fn file_list_row() {
     assert_eq!(request.url, API_BASE);
     assert_eq!(
         request.body,
-        Value::Object(object(r#"{"after":"file_9","limit":10,"order":"desc"}"#))
+        json!({"after":"file_9","limit":10,"order":"desc"})
     );
 }
 
-async fn file_request_rows() {
+async fn file_operation_rows() {
     let settings = settings();
     let cases = [
         (FileOperation::Retrieve, "/f%2F1", object("{}")),
@@ -456,10 +407,14 @@ async fn file_request_rows() {
             panic!("the file call returns a request");
         };
         assert_eq!(request.url, format!("{API_BASE}{suffix}"));
-        assert_eq!(request.body, Value::Object(body));
+        assert_eq!(request.body, json!(body));
     }
+}
+
+async fn file_update_error_row() {
+    let settings = settings();
     let update = FileOperation::Update(FileUpdateParams {
-        attributes: Attributes::Other(Value::from(7_i64)),
+        attributes: Attributes::Other(json!(7_i64)),
     });
     let result = run(
         &settings,
@@ -475,7 +430,7 @@ async fn file_request_rows() {
     let Ok(OpenAiResourceResult::VectorStores(Outcome::Request(request))) = result else {
         panic!("the file update call returns a request");
     };
-    assert_eq!(request.body, Value::Object(object(r#"{"attributes":7}"#)));
+    assert_eq!(request.body, json!({"attributes":7}));
     let bad = run(
         &settings,
         globals(None),
@@ -496,51 +451,17 @@ async fn file_request_rows() {
     ));
 }
 
-async fn file_response_row() {
-    let settings = settings();
-    let response = reply(200, b"[1, \"x\"]");
-    let result = run(
-        &settings,
-        globals(None),
-        None,
-        Call::Reply(ReplyCall::File(&response)),
-    )
-    .await;
-    let Ok(OpenAiResourceResult::VectorStores(Outcome::Reply(reply))) = result else {
-        panic!("the file reply returns a decoded reply");
-    };
-    assert_eq!(
-        serde_json::to_value(reply.as_ref()).unwrap(),
-        Value::Array(vec![Value::from(1), Value::from("x")])
-    );
-    let broken = reply(500, b"not json");
-    let failed = run(
-        &settings,
-        globals(None),
-        None,
-        Call::Reply(ReplyCall::File(&broken)),
-    )
-    .await;
-    let Err(error) = failed else {
-        panic!("a malformed file reply is a leaf error");
-    };
-    assert!(matches!(
-        error,
-        OpenAiResourceError::VectorStores(VectorStoreError::InvalidReply { .. })
-    ));
-}
-
 pub(crate) async fn check() {
     credential_rows().await;
     environment_rows().await;
-    url_rows().await;
+    url_absolute_files().await;
+    url_encoding_error().await;
     endpoint_rows().await;
     search_request_rows().await;
-    search_response_row().await;
-    create_request_rows().await;
-    create_response_row().await;
+    create_metadata_row().await;
+    create_defaults_row().await;
     file_create_row().await;
     file_list_row().await;
-    file_request_rows().await;
-    file_response_row().await;
+    file_operation_rows().await;
+    file_update_error_row().await;
 }

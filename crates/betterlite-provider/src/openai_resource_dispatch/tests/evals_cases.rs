@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::evals::error::EvalsError;
-use betterlite_openai::evals::transformation::{
-    BaseEvalsAPIConfig, EvalsHttpResponse, EvalsRequestContext,
-};
+use betterlite_openai::evals::transformation::{BaseEvalsAPIConfig, EvalsRequestContext};
 use betterlite_openai::evals::types::{
     CreateEvalRequest, CreateRunRequest, DataSourceConfig, DataSourceConfigCustom, EvalOrder,
     EvalOrderBy, GraderConfig, LLMAsJudgeGraderConfig, ListEvalsParams, ListRunsParams,
@@ -12,9 +10,7 @@ use betterlite_openai::evals::types::{
 use betterlite_openai::openai_base_config::{Headers, Object};
 
 use super::fixture::{evals_config, object};
-use crate::openai_resource_dispatch::evals::{
-    Call, Dispatch, EvalCall, EvalReply, Outcome, ReplyCall, RunCall, RunReply,
-};
+use crate::openai_resource_dispatch::evals::{Call, Dispatch, EvalCall, Outcome, RunCall, RunId};
 use crate::openai_resource_dispatch::{
     OpenAiResourceError, OpenAiResourceOperation, OpenAiResourceResult, dispatch,
 };
@@ -73,32 +69,13 @@ fn create_data() -> CreateEvalRequest {
     }
 }
 
-fn reply<'a>(text: &'a str, headers: &'a Headers) -> EvalsHttpResponse<'a> {
-    EvalsHttpResponse {
-        status_code: 200,
-        headers,
-        text,
-    }
-}
-
-fn eval_body(id: &str) -> String {
-    format!(
-        r#"{{"id":"{id}","object":"eval","created_at":1700000000,"name":"smoke","data_source_config":{{"type":"custom"}},"testing_criteria":[]}}"#
-    )
-}
-
 async fn eval_requests() {
     let config = evals_config();
     let params = params();
     let headers = headers();
     let context = context(&params, &headers);
     let data = create_data();
-    let created = run(
-        &config,
-        context,
-        Call::Eval(EvalCall::Create { request: &data }),
-    )
-    .await;
+    let created = run(&config, context, Call::Eval(EvalCall::Create(&data))).await;
     let Ok(OpenAiResourceResult::Evals(Outcome::Body(body))) = created else {
         panic!("the create eval transform returns its body");
     };
@@ -108,20 +85,14 @@ async fn eval_requests() {
             r#"{"name":"smoke","data_source_config":{"type":"custom","item_schema":{"type":"object"},"include_sample_schema":true},"testing_criteria":[{"type":"llm_as_judge","model":"gpt-test"}]}"#
         )
     );
-    let listed = run(
-        &config,
-        context,
-        Call::Eval(EvalCall::List {
-            params: &ListEvalsParams {
-                limit: Some(3),
-                after: Some(String::from("eval_0")),
-                before: None,
-                order: Some(EvalOrder::Desc),
-                order_by: Some(EvalOrderBy::UpdatedAt),
-            },
-        }),
-    )
-    .await;
+    let list_params = ListEvalsParams {
+        limit: Some(3),
+        after: Some(String::from("eval_0")),
+        before: None,
+        order: Some(EvalOrder::Desc),
+        order_by: Some(EvalOrderBy::UpdatedAt),
+    };
+    let listed = run(&config, context, Call::Eval(EvalCall::List(&list_params))).await;
     let Ok(OpenAiResourceResult::Evals(Outcome::Url { url, body })) = listed else {
         panic!("the list evals transform returns its url and body");
     };
@@ -266,36 +237,45 @@ async fn run_requests() {
     );
 }
 
+fn run_id() -> RunId<'static> {
+    RunId {
+        eval_id: "eval_1",
+        run_id: "run_1",
+        api_base: API_BASE,
+    }
+}
+
 async fn run_paths() {
     let config = evals_config();
     let params = params();
     let headers = headers();
     let context = context(&params, &headers);
-    let fetched = run(
-        &config,
-        context,
-        Call::Run(RunCall::Get {
-            eval_id: "eval_1",
-            run_id: "run_1",
-            api_base: API_BASE,
-        }),
-    )
-    .await;
+    let fetched = run(&config, context, Call::Run(RunCall::Get(run_id()))).await;
     let Ok(OpenAiResourceResult::Evals(Outcome::Headers { url, headers: sent })) = fetched else {
         panic!("the get run transform returns its url and headers");
     };
     assert_eq!(url, "https://api.evals.test/v1/evals/eval_1/runs/run_1");
     assert_eq!(sent, headers);
-    let cancelled = run(
-        &config,
-        context,
-        Call::Run(RunCall::Cancel {
-            eval_id: "eval_1",
-            run_id: "run_1",
-            api_base: API_BASE,
-        }),
-    )
-    .await;
+    let deleted = run(&config, context, Call::Run(RunCall::Delete(run_id()))).await;
+    let Ok(OpenAiResourceResult::Evals(Outcome::HeadersAndBody {
+        url,
+        headers: sent,
+        body,
+    })) = deleted
+    else {
+        panic!("the delete run transform returns its url, headers and body");
+    };
+    assert_eq!(url, "https://api.evals.test/v1/evals/eval_1/runs/run_1");
+    assert_eq!(sent, headers);
+    assert_eq!(body, object("{}"));
+}
+
+async fn cancelled_run() {
+    let config = evals_config();
+    let params = params();
+    let headers = headers();
+    let context = context(&params, &headers);
+    let cancelled = run(&config, context, Call::Run(RunCall::Cancel(run_id()))).await;
     let Ok(OpenAiResourceResult::Evals(Outcome::HeadersAndBody {
         url,
         headers: sent,
@@ -310,107 +290,6 @@ async fn run_paths() {
     );
     assert_eq!(sent, headers);
     assert_eq!(body, object("{}"));
-    let deleted = run(
-        &config,
-        context,
-        Call::Run(RunCall::Delete {
-            eval_id: "eval_1",
-            run_id: "run_1",
-            api_base: API_BASE,
-        }),
-    )
-    .await;
-    let Ok(OpenAiResourceResult::Evals(Outcome::HeadersAndBody {
-        url,
-        headers: sent,
-        body,
-    })) = deleted
-    else {
-        panic!("the delete run transform returns its url, headers and body");
-    };
-    assert_eq!(url, "https://api.evals.test/v1/evals/eval_1/runs/run_1");
-    assert_eq!(sent, headers);
-    assert_eq!(body, object("{}"));
-}
-
-async fn eval_responses() {
-    let config = evals_config();
-    let params = params();
-    let headers = headers();
-    let context = context(&params, &headers);
-    let body = eval_body("eval_reply");
-    let created = run(
-        &config,
-        context,
-        Call::Reply(ReplyCall::Eval(EvalReply::Create(reply(&body, &headers)))),
-    )
-    .await;
-    let Ok(OpenAiResourceResult::Evals(Outcome::Eval(eval))) = created else {
-        panic!("the create eval reply decodes to an eval");
-    };
-    assert_eq!(eval.id, "eval_reply");
-    let listed_body = format!(
-        r#"{{"object":"list","data":[{}],"first_id":"eval_reply","last_id":"eval_reply","has_more":false}}"#,
-        eval_body("eval_reply")
-    );
-    let listed = run(
-        &config,
-        context,
-        Call::Reply(ReplyCall::Eval(EvalReply::List(reply(
-            &listed_body,
-            &headers,
-        )))),
-    )
-    .await;
-    let Ok(OpenAiResourceResult::Evals(Outcome::Evals(page))) = listed else {
-        panic!("the list evals reply decodes to a page");
-    };
-    assert_eq!(page.data[0].id, "eval_reply");
-    let deleted = run(
-        &config,
-        context,
-        Call::Reply(ReplyCall::Eval(EvalReply::Delete(reply(
-            r#"{"eval_id":"eval_1","object":"eval.deleted","deleted":true}"#,
-            &headers,
-        )))),
-    )
-    .await;
-    let Ok(OpenAiResourceResult::Evals(Outcome::EvalDeleted(deleted))) = deleted else {
-        panic!("the delete eval reply decodes to a deleted eval");
-    };
-    assert!(deleted.deleted);
-    assert_eq!(deleted.eval_id, "eval_1");
-}
-
-async fn run_responses() {
-    let config = evals_config();
-    let params = params();
-    let headers = headers();
-    let context = context(&params, &headers);
-    let body = r#"{"id":"run_reply","object":"eval.run","created_at":1700000000,"status":"cancelled","data_source":{"type":"completions"},"eval_id":"eval_1"}"#;
-    let cancelled = run(
-        &config,
-        context,
-        Call::Reply(ReplyCall::Run(RunReply::Cancel(reply(body, &headers)))),
-    )
-    .await;
-    let Ok(OpenAiResourceResult::Evals(Outcome::RunCancelled(cancelled))) = cancelled else {
-        panic!("the cancel run reply decodes to a cancelled run");
-    };
-    assert_eq!(cancelled.id, "run_reply");
-    let deleted = run(
-        &config,
-        context,
-        Call::Reply(ReplyCall::Run(RunReply::Delete(reply(
-            r#"{"run_id":"run_1","deleted":true}"#,
-            &headers,
-        )))),
-    )
-    .await;
-    let Ok(OpenAiResourceResult::Evals(Outcome::RunDeleted(deleted))) = deleted else {
-        panic!("the delete run reply decodes to a deleted run");
-    };
-    assert_eq!(deleted.run_id, "run_1");
 }
 
 async fn error_row() {
@@ -418,19 +297,21 @@ async fn error_row() {
     let params = params();
     let headers = headers();
     let context = context(&params, &headers);
-    let malformed = reply("not an eval", &headers);
     let result = run(
         &config,
         context,
-        Call::Reply(ReplyCall::Eval(EvalReply::Create(malformed))),
+        Call::Eval(EvalCall::Get {
+            eval_id: "..",
+            api_base: API_BASE,
+        }),
     )
     .await;
     let Err(error) = result else {
-        panic!("a malformed eval reply is a leaf error");
+        panic!("a dot eval id is a leaf error");
     };
     assert!(matches!(
         error,
-        OpenAiResourceError::Evals(EvalsError::ReplyJson { .. })
+        OpenAiResourceError::Evals(EvalsError::PathSegment { .. })
     ));
 }
 
@@ -439,7 +320,6 @@ pub(crate) async fn check() {
     eval_mutations().await;
     run_requests().await;
     run_paths().await;
-    eval_responses().await;
-    run_responses().await;
+    cancelled_run().await;
     error_row().await;
 }

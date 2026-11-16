@@ -409,8 +409,10 @@ pub(crate) fn container_config() -> OpenAiContainerConfig {
     OpenAiContainerConfig {
         settings: Settings::default(),
         globals: LiteLlmGlobals {
+            api_base: None,
             api_key: Some(SecretString::from("sk-container")),
-            ..LiteLlmGlobals::default()
+            openai_key: None,
+            organization: None,
         },
         env_api_key: None,
         costs: Arc::new(ZeroCosts),
@@ -420,6 +422,7 @@ pub(crate) fn container_config() -> OpenAiContainerConfig {
 pub(crate) fn evals_config() -> OpenAiEvalsConfig {
     OpenAiEvalsConfig {
         api_key: Some(SecretString::from("sk-evals")),
-        ..OpenAiEvalsConfig::default()
+        openai_key: None,
+        env_api_key: None,
     }
 }

@@ -34,11 +34,14 @@ async fn run(
         settings: batch_settings(),
         client: None,
     };
-    let operation = OpenAiResourceOperation::batches(Dispatch {
-        api,
-        connection,
-        call,
-    });
+    let operation = OpenAiResourceOperation::Batches(Box::pin(
+        Dispatch {
+            api,
+            connection,
+            call,
+        }
+        .run(),
+    ));
     dispatch(operation).await
 }
 
@@ -136,7 +139,7 @@ async fn list_row() {
     let Ok(OpenAiResourceResult::Batches(Outcome::Page(page))) = result else {
         panic!("the list reply is the SDK page");
     };
-    assert_eq!(page, batch_page());
+    assert_eq!(*page, batch_page());
     let recorded = calls.lock().unwrap();
     let BatchCall::List { after, limit } = &recorded[0] else {
         panic!("the list call reaches the SDK");
@@ -155,7 +158,7 @@ async fn error_row() {
     };
     assert!(matches!(
         error,
-        OpenAiResourceError::Batches(BatchesError::Sdk(_))
+        OpenAiResourceError::Batches(BatchesError::Sdk { .. })
     ));
 }
 
