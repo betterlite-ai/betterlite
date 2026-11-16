@@ -178,10 +178,8 @@ fn start_write<L, C, Memory>(
         let value = value.clone();
         let future: CacheWriteFuture = Box::pin(async move {
             let mut envelope = request.envelope();
-            let dynamic: Option<&dyn EnvelopeBackend> = match &dual {
-                Some(store) => Some(store),
-                None => None,
-            };
+            let dynamic: Option<&dyn EnvelopeBackend> =
+                dual.as_ref().map(|store| store as &dyn EnvelopeBackend);
             cache.async_add_cache(dynamic, &mut envelope, &value).await;
             Ok(())
         });
@@ -212,10 +210,8 @@ fn start_pipeline_write<L, C, Memory>(
         let result = result.clone();
         let future: CacheWriteFuture = Box::pin(async move {
             let mut envelope = request.envelope();
-            let dynamic: Option<&dyn CacheBackend> = match &dual {
-                Some(store) => Some(store),
-                None => None,
-            };
+            let dynamic: Option<&dyn CacheBackend> =
+                dual.as_ref().map(|store| store as &dyn CacheBackend);
             async_add_cache_pipeline(&cache, dynamic, None, &mut envelope, &result).await;
             Ok(())
         });

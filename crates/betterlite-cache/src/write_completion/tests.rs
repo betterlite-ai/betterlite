@@ -11,11 +11,13 @@ use betterlite_context::local_ttl_cache::{CacheError, CacheValue};
 use rstest::rstest;
 use tokio::sync::Notify;
 
+use crate::backend::CacheBackend;
 use crate::cache_key::value::KeyValue;
 use crate::handler::call_types::call_type_name;
 use crate::handler::value::to_cache_value;
 use crate::types::cache_type::LiteLlmCacheType;
 use crate::types::call_type::CachingSupportedCallType;
+use crate::write_completion::dual::SharedDualCache;
 use crate::write_completion::store::{
     CacheContext, StoreRequest, WriteContext, store_response, store_response_sync,
 };
@@ -724,6 +726,18 @@ fn stream_wrap_decision_cases(
     let decision = wrap_streaming_result_for_cache(result_kind, call_type, &handler)
         .expect("the decision reads the request");
     assert_eq!(decision, expected);
+}
+
+#[test]
+fn shared_dual_cache_uses_the_memory_default_ttl() {
+    let recorder = Arc::new(Recorder::default());
+    let dual = recording_dual(&recorder);
+    let shared = SharedDualCache::shared(&dual);
+    assert_eq!(
+        shared.default_ttl(),
+        600,
+        "the shared tier keeps the memory cache's default ttl"
+    );
 }
 
 fn single_write(recorder: &Recorder) -> RecordedWrite {

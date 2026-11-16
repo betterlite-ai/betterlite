@@ -19,7 +19,7 @@ use betterlite_cache::write_completion::wrap::{
     // ast-grep-ignore: no-long-names
     wrap_streaming_result_for_cache,
 };
-use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
+use betterlite_logging::verbose_hooks::VerboseHooks;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -28,30 +28,23 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use super::input::{
-    Body, Input, ResultKindInput, StoreInput, StoreResult, StoreScenario, WrapInput, WrapScenario,
-};
+use super::input::{Body, Input, ResultKindInput, StoreResult, StoreScenario, WrapScenario};
 use super::record::{Recorder, RecordingBackend, RecordingMemory};
+use crate::b4297::{HelperCache, SilentConsole, SilentLogger};
 
 pub(crate) async fn run(input: &Input) -> HelperResult {
+    let mut records = Vec::new();
     match input {
-        Input::Store(store_input) => store(store_input).await,
-        Input::Wrap(wrap_input) => wrap(wrap_input),
-    }
-}
-
-async fn store(input: &StoreInput) -> HelperResult {
-    let mut records = Vec::with_capacity(input.scenarios.len());
-    for scenario in &input.scenarios {
-        records.push(store_scenario(scenario).await?);
-    }
-    Ok(Value::Array(records))
-}
-
-fn wrap(input: &WrapInput) -> HelperResult {
-    let mut records = Vec::with_capacity(input.scenarios.len());
-    for scenario in &input.scenarios {
-        records.push(wrap_scenario(scenario)?);
+        Input::Store(input) => {
+            for scenario in &input.scenarios {
+                records.push(store_scenario(scenario).await?);
+            }
+        }
+        Input::Wrap(input) => {
+            for scenario in &input.scenarios {
+                records.push(wrap_scenario(scenario)?);
+            }
+        }
     }
     Ok(Value::Array(records))
 }
@@ -161,8 +154,6 @@ const fn dual_settings() -> DualCacheSettings {
     }
 }
 
-type HelperCache = ResponseCache<SilentLogger, SilentConsole>;
-
 fn response_cache(
     recorder: &Arc<Recorder>,
     cache_type: LiteLlmCacheType,
@@ -178,10 +169,7 @@ fn response_cache(
             semantic_cache_scope: SemanticCacheScope::Key,
             include_provider_params: false,
         },
-        settings: EnvelopeSettings {
-            ttl: None,
-            redis_flush_size: None,
-        },
+        settings: EnvelopeSettings::default(),
         hooks: VerboseHooks {
             logger: SilentLogger,
             console: SilentConsole,
@@ -190,32 +178,4 @@ fn response_cache(
         },
         clock,
     }))
-}
-
-struct SilentLogger;
-
-impl LoggerSink for SilentLogger {
-    fn debug(&self, _payload: &Payload) -> bool {
-        false
-    }
-
-    fn info(&self, _payload: &Payload) -> bool {
-        false
-    }
-
-    fn error(&self, _payload: &Payload) -> bool {
-        false
-    }
-
-    fn debug_enabled(&self) -> bool {
-        false
-    }
-}
-
-struct SilentConsole;
-
-impl ConsoleSink for SilentConsole {
-    fn print(&self, _payload: &Payload) -> bool {
-        false
-    }
 }

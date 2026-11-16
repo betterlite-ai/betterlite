@@ -54,12 +54,6 @@ class NamedFunction:
     def __call__(self, model: JsonValue, messages: JsonValue) -> None: ...
 
 
-class OriginalFunction(Protocol):
-    __name__: str
-
-    def __call__(self, model: JsonValue, messages: JsonValue) -> None: ...
-
-
 class DualCacheLike(Protocol):
     async def async_set_cache(
         self, key: str, value: dict[str, JsonValue], **_kwargs: JsonValue
@@ -80,7 +74,7 @@ class Handler(Protocol):
     async def async_set_cache(
         self,
         result: CacheResult,
-        original_function: OriginalFunction,
+        original_function: NamedFunction,
         kwargs: dict[str, JsonValue],
         args: tuple[JsonValue, ...] | None = None,
     ) -> None: ...
@@ -91,28 +85,15 @@ class Handler(Protocol):
 
 
 HANDLER_FACTORY: Callable[
-    [OriginalFunction, dict[str, JsonValue], dt.datetime], Handler
+    [NamedFunction, dict[str, JsonValue], dt.datetime], Handler
 ] = TypeAdapter(
-    Callable[[OriginalFunction, dict[str, JsonValue], dt.datetime], Handler]
+    Callable[[NamedFunction, dict[str, JsonValue], dt.datetime], Handler]
 ).validate_python(LLMCachingHandler)
 
 
-class ChatResult(TypedDict):
-    kind: Literal["chat"]
+class StoreResult(TypedDict):
+    kind: Literal["chat", "embedding", "raw"]
     body: dict[str, JsonValue]
-
-
-class EmbeddingResult(TypedDict):
-    kind: Literal["embedding"]
-    body: dict[str, JsonValue]
-
-
-class RawResult(TypedDict):
-    kind: Literal["raw"]
-    body: dict[str, JsonValue]
-
-
-StoreResult: TypeAlias = ChatResult | EmbeddingResult | RawResult
 
 
 class StoreScenario(TypedDict):
@@ -160,11 +141,7 @@ def response_kind(response: JsonValue) -> str:
 
 
 def write_record(sink: str, key: str, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    return {
-        "sink": sink,
-        "kind": response_kind(value["response"]),
-        "key": key,
-    }
+    return {"sink": sink, "kind": response_kind(value["response"]), "key": key}
 
 
 class RecordingBackend(BaseCache):
