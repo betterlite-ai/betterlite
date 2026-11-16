@@ -58,16 +58,16 @@ fn map_openai_params_copies_only_supported_names_and_keeps_null_values() {
     assert_eq!(
         answers[1],
         json!({
-            "existing": 1,
-            "max_tokens": 10,
+            "existing": 1_i32,
+            "max_tokens": 10_i32,
             "logprobs": true,
             "echo": false,
-            "temperature": 0.2,
-            "top_p": 0.9,
-            "top_k": 40,
-            "frequency_penalty": 0.5,
-            "presence_penalty": 0.1,
-            "n": 2,
+            "temperature": 0.2_f64,
+            "top_p": 0.9_f64,
+            "top_k": 40_i32,
+            "frequency_penalty": 0.5_f64,
+            "presence_penalty": 0.1_f64,
+            "n": 2_i32,
             "stop": ["\n"],
             "response_format": {"type": "json_object"},
             "stream": true,
@@ -75,7 +75,7 @@ fn map_openai_params_copies_only_supported_names_and_keeps_null_values() {
         })
     );
     assert_eq!(answers[2], json!({"max_tokens": null, "temperature": null}));
-    assert_eq!(answers[3], json!({"temperature": 0.3}));
+    assert_eq!(answers[3], json!({"temperature": 0.3_f64}));
     assert_eq!(answers[4], json!({"logprobs": null}));
 }
 
@@ -84,17 +84,17 @@ fn the_strip_and_move_steps_clean_the_extra_body() {
     let answers = run_case_file("completion-extra-body.yaml");
     assert_eq!(
         answers[0],
-        json!({"temperature": 0.5, "extra_body": {"custom": {"kept": true}}})
+        json!({"temperature": 0.5_f64, "extra_body": {"custom": {"kept": true}}})
     );
     assert_eq!(answers[1], json!({"extra_body": {"custom": "kept"}}));
-    assert_eq!(answers[2], json!({"temperature": 0.1}));
-    assert_eq!(answers[3], json!({"temperature": 0.1}));
+    assert_eq!(answers[2], json!({"temperature": 0.1_f64}));
+    assert_eq!(answers[3], json!({"temperature": 0.1_f64}));
     assert_eq!(
         answers[4],
         json!({"extra_body": {
             "response_format": {"type": "json_object"},
             "thinking": {"type": "enabled"},
-            "kept": 1,
+            "kept": 1_i32,
             "reasoning_effort": "low",
         }})
     );
@@ -124,11 +124,11 @@ fn chat_template_kwargs_that_cannot_apply_are_dropped() {
     );
     assert_eq!(
         answers[11],
-        json!({"extra_body": {"custom": 1, "reasoning_effort": "high"}})
+        json!({"extra_body": {"custom": 1_i32, "reasoning_effort": "high"}})
     );
     assert_eq!(
         answers[12],
-        json!({"extra_body": {"thinking": {"type": "enabled"}, "custom": 1}})
+        json!({"extra_body": {"thinking": {"type": "enabled"}, "custom": 1_i32}})
     );
     assert_eq!(answers[13], json!({}));
 }
@@ -136,7 +136,10 @@ fn chat_template_kwargs_that_cannot_apply_are_dropped() {
 #[test]
 fn a_reasoning_model_turns_the_kwarg_effort_into_reasoning_effort() {
     let answers = run_case_file("completion-template-kwargs.yaml");
-    assert_eq!(answers[0], json!({"extra_body": {"reasoning_effort": 100}}));
+    assert_eq!(
+        answers[0],
+        json!({"extra_body": {"reasoning_effort": 100_i32}})
+    );
     assert_eq!(
         answers[1],
         json!({"extra_body": {"reasoning_effort": "none"}})
@@ -149,8 +152,14 @@ fn a_reasoning_model_turns_the_kwarg_effort_into_reasoning_effort() {
         answers[3],
         json!({"extra_body": {"reasoning_effort": "none"}})
     );
-    assert_eq!(answers[4], json!({"extra_body": {"reasoning_effort": 0}}));
-    assert_eq!(answers[5], json!({"extra_body": {"reasoning_effort": 2}}));
+    assert_eq!(
+        answers[4],
+        json!({"extra_body": {"reasoning_effort": 0_i32}})
+    );
+    assert_eq!(
+        answers[5],
+        json!({"extra_body": {"reasoning_effort": 2_i32}})
+    );
     assert_eq!(answers[6], json!({}));
     assert_eq!(answers[7], json!({}));
     assert_eq!(
@@ -162,7 +171,15 @@ fn a_reasoning_model_turns_the_kwarg_effort_into_reasoning_effort() {
         answers[10],
         json!({"extra_body": {"custom": "kept", "reasoning_effort": "none"}})
     );
-    assert_eq!(answers[17], json!({"extra_body": {"reasoning_effort": 3}}));
+}
+
+#[test]
+fn the_budget_keys_win_over_the_low_effort_flag() {
+    let answers = run_case_file("completion-template-kwargs.yaml");
+    assert_eq!(
+        answers[17],
+        json!({"extra_body": {"reasoning_effort": 3_i32}})
+    );
     assert_eq!(
         answers[18],
         json!({"extra_body": {"reasoning_effort": "low"}})
@@ -209,7 +226,7 @@ fn guided_params_become_one_response_format() {
     assert_eq!(
         answers[0],
         json!({"extra_body": {
-            "custom": 1,
+            "custom": 1_i32,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -222,17 +239,22 @@ fn guided_params_become_one_response_format() {
             },
         }})
     );
+}
+
+#[test]
+fn guided_grammar_and_choice_become_response_formats() {
+    let answers = run_case_file("completion-guided.yaml");
     assert_eq!(
         answers[1],
         json!({"extra_body": {
-            "custom": 1,
+            "custom": 1_i32,
             "response_format": {"type": "grammar", "grammar": "root ::= \"a\""},
         }})
     );
     assert_eq!(
         answers[2],
         json!({"extra_body": {
-            "custom": 1,
+            "custom": 1_i32,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -242,10 +264,15 @@ fn guided_params_become_one_response_format() {
             },
         }})
     );
+}
+
+#[test]
+fn guided_key_precedence_and_existing_formats_shape_the_body() {
+    let answers = run_case_file("completion-guided.yaml");
     assert_eq!(
         answers[3],
         json!({"extra_body": {
-            "custom": 1,
+            "custom": 1_i32,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -258,26 +285,31 @@ fn guided_params_become_one_response_format() {
     assert_eq!(
         answers[4],
         json!({"extra_body": {
-            "custom": 1,
+            "custom": 1_i32,
             "response_format": {"type": "grammar", "grammar": "root ::= x"},
         }})
     );
-    assert_eq!(answers[5], json!({"extra_body": {"custom": 1}}));
+    assert_eq!(answers[5], json!({"extra_body": {"custom": 1_i32}}));
     assert_eq!(
         answers[6],
         json!({"extra_body": {
-            "custom": 1,
+            "custom": 1_i32,
             "response_format": {"type": "json_object"},
         }})
     );
     assert_eq!(
         answers[7],
-        json!({"extra_body": {"response_format": "x", "custom": 1}})
+        json!({"extra_body": {"response_format": "x", "custom": 1_i32}})
     );
+}
+
+#[test]
+fn an_empty_choice_and_a_false_json_keep_their_translated_format() {
+    let answers = run_case_file("completion-guided.yaml");
     assert_eq!(
         answers[8],
         json!({"extra_body": {
-            "custom": 1,
+            "custom": 1_i32,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -290,7 +322,7 @@ fn guided_params_become_one_response_format() {
     assert_eq!(
         answers[9],
         json!({"extra_body": {
-            "custom": 1,
+            "custom": 1_i32,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "response", "schema": false},
@@ -307,11 +339,11 @@ fn the_completion_request_resolves_the_model_and_projects_the_prompt() {
         json!({
             "model": "accounts/fireworks/models/llama-v3p1-8b-instruct",
             "prompt": "hello",
-            "temperature": 0.2,
-            "max_tokens": 5,
+            "temperature": 0.2_f64,
+            "max_tokens": 5_i32,
             "stop": ["\n"],
             "extra_body": {
-                "custom": 1,
+                "custom": 1_i32,
                 "response_format": {"type": "json_object"},
             },
         })
@@ -324,13 +356,18 @@ fn the_completion_request_resolves_the_model_and_projects_the_prompt() {
         answers[2],
         json!({"model": "accounts/fireworks/models/y", "prompt": ""})
     );
+}
+
+#[test]
+fn token_prompts_and_routed_models_keep_the_projected_prompt() {
+    let answers = run_case_file("completion-request.yaml");
     assert_eq!(
         answers[3],
-        json!({"model": "accounts/fireworks/models/z", "prompt": [1, 2]})
+        json!({"model": "accounts/fireworks/models/z", "prompt": [1_i32, 2_i32]})
     );
     assert_eq!(
         answers[4],
-        json!({"model": "accounts/fireworks/routers/auto", "prompt": [[1, 2], [3]]})
+        json!({"model": "accounts/fireworks/routers/auto", "prompt": [[1_i32, 2_i32], [3_i32]]})
     );
     assert_eq!(
         answers[5],
@@ -347,9 +384,14 @@ fn the_completion_request_resolves_the_model_and_projects_the_prompt() {
         answers[7],
         json!({"model": "FW-foundry#route", "prompt": "x"})
     );
+}
+
+#[test]
+fn the_completion_request_carries_the_stream_and_extra_params() {
+    let answers = run_case_file("completion-request.yaml");
     assert_eq!(
         answers[8],
-        json!({"model": "accounts/fireworks/routers/auto", "prompt": [0]})
+        json!({"model": "accounts/fireworks/routers/auto", "prompt": [0_i32]})
     );
     assert_eq!(
         answers[9],
@@ -361,7 +403,7 @@ fn the_completion_request_resolves_the_model_and_projects_the_prompt() {
             "model": "accounts/fireworks/models/stream-model",
             "prompt": "s",
             "stream": true,
-            "seed": 7,
+            "seed": 7_i32,
             "user": "u",
         })
     );
@@ -447,7 +489,7 @@ fn instruction_items_fold_into_the_instructions() {
         json!({
             "model": "accounts/fireworks/models/bare-name",
             "input": "hi",
-            "temperature": 0.5,
+            "temperature": 0.5_f64,
             "instructions": "sys",
         })
     );
@@ -475,6 +517,11 @@ fn instruction_items_fold_into_the_instructions() {
             {"role": "user", "content": "u"},
         ])
     );
+}
+
+#[test]
+fn a_developer_item_that_stays_is_renamed_to_system() {
+    let answers = run_case_file("responses-instruction-folding.yaml");
     assert_eq!(
         answers[4],
         json!({
@@ -506,7 +553,7 @@ fn folded_texts_skip_empty_chunks_and_leave_no_instructions() {
     assert_eq!(answers[8]["input"], json!([]));
     assert!(answers[9].get("instructions").is_none());
     assert_eq!(answers[9]["input"], json!([]));
-    assert_eq!(answers[10]["instructions"], 5);
+    assert_eq!(answers[10]["instructions"], 5_i32);
     assert_eq!(
         answers[10]["input"],
         json!([{"role": "system", "content": "d", "type": "message"}])
@@ -515,7 +562,7 @@ fn folded_texts_skip_empty_chunks_and_leave_no_instructions() {
     assert_eq!(answers[11]["input"], json!([]));
     assert_eq!(
         answers[12]["input"],
-        json!([{"role": "user", "content": "u", "custom": 2}])
+        json!([{"role": "user", "content": "u", "custom": 2_i32}])
     );
     assert_eq!(
         answers[13],
@@ -524,7 +571,7 @@ fn folded_texts_skip_empty_chunks_and_leave_no_instructions() {
             "input": "hi",
         })
     );
-    assert_eq!(answers[14]["instructions"], 5);
+    assert_eq!(answers[14]["instructions"], 5_i32);
 }
 
 #[test]
@@ -579,6 +626,11 @@ fn the_closing_assistant_stops_later_instruction_items_from_folding() {
             "instructions": "d",
         })
     );
+}
+
+#[test]
+fn a_system_item_after_the_assistant_stays_while_developers_are_renamed() {
+    let answers = run_case_file("responses-closing-assistant.yaml");
     assert_eq!(
         answers[2],
         json!({
@@ -603,6 +655,11 @@ fn the_closing_assistant_stops_later_instruction_items_from_folding() {
             "instructions": "s",
         })
     );
+}
+
+#[test]
+fn a_developer_after_a_leading_assistant_still_folds() {
+    let answers = run_case_file("responses-closing-assistant.yaml");
     assert_eq!(
         answers[4],
         json!({
@@ -625,6 +682,11 @@ fn the_closing_assistant_stops_later_instruction_items_from_folding() {
             "instructions": "d",
         })
     );
+}
+
+#[test]
+fn the_leading_block_folds_even_with_no_conversation() {
+    let answers = run_case_file("responses-closing-assistant.yaml");
     assert_eq!(
         answers[6],
         json!({
@@ -643,6 +705,11 @@ fn the_closing_assistant_stops_later_instruction_items_from_folding() {
             ],
         })
     );
+}
+
+#[test]
+fn an_assistant_text_part_is_kept_and_developer_text_parts_fold() {
+    let answers = run_case_file("responses-closing-assistant.yaml");
     assert_eq!(
         answers[8],
         json!({
@@ -662,6 +729,11 @@ fn the_closing_assistant_stops_later_instruction_items_from_folding() {
             "instructions": "d\n\ns\n\ne",
         })
     );
+}
+
+#[test]
+fn a_late_system_stays_and_later_developers_are_renamed() {
+    let answers = run_case_file("responses-closing-assistant.yaml");
     assert_eq!(
         answers[10],
         json!({
