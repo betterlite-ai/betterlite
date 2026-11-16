@@ -2,7 +2,7 @@ use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use betterlite_db::mcp_stored_contracts::JsonValue;
 
 use super::support::cipher::{SALT, cipher, opened_credentials, seeded_credentials};
-use super::support::database::{Harness, SEED_SERVER_SQL, database};
+use super::support::database::{Harness, database};
 use super::support::update_payload;
 use crate::mcp::server_writes::UpdatedServer;
 use crate::mcp::server_writes::store::PostgresServerWrites;
@@ -12,40 +12,9 @@ const CREDENTIALS_SQL: &str =
     r#"SELECT "credentials"::text FROM "LiteLLM_MCPServerTable" WHERE "server_id" = $1"#;
 const AUTH_TYPE_SQL: &str =
     r#"SELECT "auth_type"::text FROM "LiteLLM_MCPServerTable" WHERE "server_id" = $1"#;
-const FLOW_SQL: &str = r#"UPDATE "LiteLLM_MCPServerTable" SET "url" = $2, "issuer" = $3, "token_url" = $4, "oauth2_flow" = $5, "token_exchange_endpoint" = $6, "audience" = $7 WHERE "server_id" = $1"#;
+// A discovered flow for the server: token_url sits under the url, the rest is fixed.
+const FLOW_SQL: &str = r#"UPDATE "LiteLLM_MCPServerTable" SET "url" = $2, "issuer" = $3, "token_url" = $2::text || '/token', "oauth2_flow" = 'client_credentials', "token_exchange_endpoint" = 'https://exchange', "audience" = 'the-audience' WHERE "server_id" = $1"#;
 const TOKEN_EXCHANGE_SQL: &str = r#"SELECT "token_exchange_endpoint"::text FROM "LiteLLM_MCPServerTable" WHERE "server_id" = $1"#;
-
-async fn seed_row(
-    harness: &Harness,
-    server_id: &str,
-    auth_type: Option<&str>,
-    credentials: Option<&str>,
-) {
-    let server_name = format!("name-{server_id}");
-    harness
-        .execute(
-            SEED_SERVER_SQL,
-            &[&server_id, &server_name, &auth_type, &credentials],
-        )
-        .await;
-}
-
-async fn seed_flow(harness: &Harness, server_id: &str, url: &str, issuer: Option<&str>) {
-    harness
-        .execute(
-            FLOW_SQL,
-            &[
-                &server_id,
-                &url,
-                &issuer,
-                &Some(format!("{url}/token")),
-                &Some("client_credentials"),
-                &Some("https://exchange"),
-                &Some("the-audience"),
-            ],
-        )
-        .await;
-}
 
 // The update the edit form sends, applied to a row that exists.
 async fn updated_row(store: &PostgresServerWrites<'_>, payload: &str) -> McpServerTable {
@@ -98,8 +67,12 @@ async fn update_auth_type_change_replaces_cross_class_credentials_and_clears_flo
         ],
         &cipher(SALT),
     );
-    seed_row(&harness, "srv-1", Some("oauth2"), Some(&seeded)).await;
-    seed_flow(&harness, "srv-1", "https://a", Some("https://issuer")).await;
+    harness
+        .seed_server("srv-1", Some("oauth2"), Some(seeded.as_str()))
+        .await;
+    harness
+        .execute(FLOW_SQL, &[&"srv-1", &"https://a", &Some("https://issuer")])
+        .await;
     let server = updated_row(
         &store,
         r#"{"server_id": "srv-1", "auth_type": "api_key",
@@ -122,7 +95,9 @@ async fn update_auth_type_change_without_credentials_nulls_the_blob() {
     let harness = database().await;
     let store = harness.writes();
     let seeded = seeded_credentials(&[("client_id", "cid")], &cipher(SALT));
-    seed_row(&harness, "srv-1", Some("oauth2"), Some(&seeded)).await;
+    harness
+        .seed_server("srv-1", Some("oauth2"), Some(seeded.as_str()))
+        .await;
     let server = updated_row(&store, r#"{"server_id": "srv-1", "auth_type": "api_key"}"#).await;
     assert!(server.credentials.is_none());
     assert_eq!(harness.raw_column(CREDENTIALS_SQL, "srv-1").await, None);
@@ -134,8 +109,10 @@ async fn update_auth_type_change_without_credentials_nulls_the_blob() {
 async fn update_clears_a_resubmitted_stale_issuer_but_keeps_a_new_one() {
     let harness = database().await;
     let store = harness.writes();
-    seed_row(&harness, "srv-1", Some("oauth2"), None).await;
-    seed_flow(&harness, "srv-1", "https://a", Some("https://old")).await;
+    harness.seed_server("srv-1", Some("oauth2"), None).await;
+    harness
+        .execute(FLOW_SQL, &[&"srv-1", &"https://a", &Some("https://old")])
+        .await;
     let resubmitted = updated_row(
         &store,
         r#"{"server_id": "srv-1", "auth_type": "api_key", "issuer": "https://old",
@@ -157,14 +134,21 @@ async fn update_clears_a_resubmitted_stale_issuer_but_keeps_a_new_one() {
 async fn update_url_change_clears_flow_fields_only_when_the_url_moves() {
     let harness = database().await;
     let store = harness.writes();
-    seed_row(&harness, "srv-1", Some("oauth2"), None).await;
-    seed_flow(&harness, "srv-1", "https://a", Some("https://old")).await;
+    harness.seed_server("srv-1", Some("oauth2"), None).await;
+    harness
+        .execute(FLOW_SQL, &[&"srv-1", &"https://a", &Some("https://old")])
+        .await;
     let moved = updated_row(&store, r#"{"server_id": "srv-1", "url": "https://b"}"#).await;
     assert_eq!(moved.url.as_deref(), Some("https://b"));
     assert_eq!(moved.issuer, None);
     assert_eq!(moved.audience, None);
-    seed_row(&harness, "srv-2", Some("oauth2"), None).await;
-    seed_flow(&harness, "srv-2", "https://same", Some("https://kept")).await;
+    harness.seed_server("srv-2", Some("oauth2"), None).await;
+    harness
+        .execute(
+            FLOW_SQL,
+            &[&"srv-2", &"https://same", &Some("https://kept")],
+        )
+        .await;
     let kept = updated_row(&store, r#"{"server_id": "srv-2", "url": "https://same"}"#).await;
     assert_eq!(kept.issuer.as_deref(), Some("https://kept"));
     assert_eq!(kept.audience.as_deref(), Some("the-audience"));
@@ -175,8 +159,10 @@ async fn update_url_change_clears_flow_fields_only_when_the_url_moves() {
 async fn update_issuer_change_requires_a_stored_issuer_to_clear() {
     let harness = database().await;
     let store = harness.writes();
-    seed_row(&harness, "srv-1", Some("oauth2"), None).await;
-    seed_flow(&harness, "srv-1", "https://a", None).await;
+    harness.seed_server("srv-1", Some("oauth2"), None).await;
+    harness
+        .execute(FLOW_SQL, &[&"srv-1", &"https://a", &None::<&str>])
+        .await;
     let discovered = updated_row(
         &store,
         r#"{"server_id": "srv-1", "issuer": "https://first-discovery"}"#,
@@ -202,8 +188,10 @@ async fn update_issuer_change_requires_a_stored_issuer_to_clear() {
 async fn update_clearing_the_issuer_clears_the_discovered_endpoints() {
     let harness = database().await;
     let store = harness.writes();
-    seed_row(&harness, "srv-1", Some("oauth2"), None).await;
-    seed_flow(&harness, "srv-1", "https://a", Some("https://old")).await;
+    harness.seed_server("srv-1", Some("oauth2"), None).await;
+    harness
+        .execute(FLOW_SQL, &[&"srv-1", &"https://a", &Some("https://old")])
+        .await;
     let cleared = updated_row(&store, r#"{"server_id": "srv-1", "issuer": null}"#).await;
     assert_eq!(cleared.issuer, None);
     assert_eq!(cleared.token_url, None);
@@ -223,7 +211,9 @@ async fn update_merges_partial_credentials_and_keeps_minted_tokens_without_a_rot
         ],
         &cipher(SALT),
     );
-    seed_row(&harness, "srv-1", Some("api_key"), Some(&seeded)).await;
+    harness
+        .seed_server("srv-1", Some("api_key"), Some(seeded.as_str()))
+        .await;
     updated_row(
         &store,
         r#"{"server_id": "srv-1", "credentials": {"auth_value": "new-secret"}}"#,
@@ -260,7 +250,9 @@ async fn update_client_rotation_drops_minted_tokens() {
         ],
         &cipher(SALT),
     );
-    seed_row(&harness, "srv-1", Some("oauth2"), Some(&seeded)).await;
+    harness
+        .seed_server("srv-1", Some("oauth2"), Some(seeded.as_str()))
+        .await;
     updated_row(
         &store,
         r#"{"server_id": "srv-1", "credentials": {"client_id": "cid-new",
@@ -282,7 +274,9 @@ async fn update_within_client_forwarded_class_merges_credentials() {
         &[("client_id", "cid"), ("client_secret", "sec")],
         &cipher(SALT),
     );
-    seed_row(&harness, "srv-1", Some("true_passthrough"), Some(&seeded)).await;
+    harness
+        .seed_server("srv-1", Some("true_passthrough"), Some(seeded.as_str()))
+        .await;
     updated_row(
         &store,
         r#"{"server_id": "srv-1", "auth_type": "oauth_delegate",
@@ -311,7 +305,9 @@ async fn update_lifts_legacy_token_exchange_settings_out_of_the_blob() {
         ],
         &cipher(SALT),
     );
-    seed_row(&harness, "srv-1", Some("oauth2"), Some(&seeded)).await;
+    harness
+        .seed_server("srv-1", Some("oauth2"), Some(seeded.as_str()))
+        .await;
     let server = updated_row(
         &store,
         r#"{"server_id": "srv-1", "credentials": {"client_secret": "sec"}}"#,
@@ -339,8 +335,12 @@ async fn update_keeps_a_stored_token_exchange_column_over_the_blob_copy() {
         ],
         &cipher(SALT),
     );
-    seed_row(&harness, "srv-1", Some("oauth2"), Some(&seeded)).await;
-    seed_flow(&harness, "srv-1", "https://a", None).await;
+    harness
+        .seed_server("srv-1", Some("oauth2"), Some(seeded.as_str()))
+        .await;
+    harness
+        .execute(FLOW_SQL, &[&"srv-1", &"https://a", &None::<&str>])
+        .await;
     updated_row(
         &store,
         r#"{"server_id": "srv-1", "credentials": {"client_secret": "sec"}}"#,
@@ -367,7 +367,9 @@ async fn update_cleared_token_exchange_columns_do_not_repopulate() {
         ],
         &cipher(SALT),
     );
-    seed_row(&harness, "srv-1", Some("oauth2"), Some(&seeded)).await;
+    harness
+        .seed_server("srv-1", Some("oauth2"), Some(seeded.as_str()))
+        .await;
     updated_row(
         &store,
         r#"{"server_id": "srv-1", "token_exchange_endpoint": null}"#,
@@ -391,7 +393,9 @@ async fn update_token_exchange_write_without_blob_copies_keeps_the_blob() {
     let harness = database().await;
     let store = harness.writes();
     let seeded = seeded_credentials(&[("client_id", "cid")], &cipher(SALT));
-    seed_row(&harness, "srv-1", Some("oauth2"), Some(&seeded)).await;
+    harness
+        .seed_server("srv-1", Some("oauth2"), Some(seeded.as_str()))
+        .await;
     let before = harness.raw_column(CREDENTIALS_SQL, "srv-1").await;
     updated_row(
         &store,
@@ -414,8 +418,12 @@ async fn update_url_change_alone_leaves_the_legacy_blob_untouched() {
         ],
         &cipher(SALT),
     );
-    seed_row(&harness, "srv-1", Some("oauth2"), Some(&seeded)).await;
-    seed_flow(&harness, "srv-1", "https://a", Some("https://old")).await;
+    harness
+        .seed_server("srv-1", Some("oauth2"), Some(seeded.as_str()))
+        .await;
+    harness
+        .execute(FLOW_SQL, &[&"srv-1", &"https://a", &Some("https://old")])
+        .await;
     let server = updated_row(&store, r#"{"server_id": "srv-1", "url": "https://b"}"#).await;
     assert_eq!(server.token_exchange_endpoint, None);
     let column = harness.raw_column(CREDENTIALS_SQL, "srv-1").await.unwrap();
@@ -430,7 +438,7 @@ const FULL_FLOW_SQL: &str = r#"UPDATE "LiteLLM_MCPServerTable" SET "issuer" = 'h
 async fn update_auth_type_change_clears_every_resubmitted_flow_field() {
     let harness = database().await;
     let store = harness.writes();
-    seed_row(&harness, "srv-1", Some("oauth2"), None).await;
+    harness.seed_server("srv-1", Some("oauth2"), None).await;
     harness.execute(FULL_FLOW_SQL, &[&"srv-1"]).await;
     let server = updated_row(
         &store,

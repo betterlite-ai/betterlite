@@ -3,8 +3,7 @@ use uuid::Uuid;
 
 use super::support::cipher::{SALT, cipher};
 use super::support::database::{
-    AGE_SERVER_SQL, CHILD_COUNT_SQL, ENV_VAR_COUNT_SQL, Harness, OAUTH_COUNT_SQL, SEED_DRAFT_SQL,
-    SEED_SERVER_SQL, SERVER_COUNT_SQL, database,
+    CHILD_COUNT_SQL, ENV_VAR_COUNT_SQL, OAUTH_COUNT_SQL, SERVER_COUNT_SQL, database,
 };
 use super::support::fake::{FakeStore, Fault, RecordingInvalidation, active_row, draft_row};
 use super::support::{json, request};
@@ -15,39 +14,6 @@ use crate::mcp::server_writes::{DraftOptions, ServerWriteError};
 
 const APPROVAL_SQL: &str =
     r#"SELECT "approval_status"::text FROM "LiteLLM_MCPServerTable" WHERE "server_id" = $1"#;
-
-async fn seed_draft(harness: &Harness, server_id: &str, age_seconds: f64) {
-    let server_name = format!("name-{server_id}");
-    harness
-        .execute(
-            SEED_DRAFT_SQL,
-            &[&server_id.to_owned(), &server_name, &"[]".to_owned()],
-        )
-        .await;
-    if age_seconds > 0.0 {
-        harness
-            .execute(AGE_SERVER_SQL, &[&server_id.to_owned(), &age_seconds])
-            .await;
-    }
-}
-
-async fn seed_real_server(harness: &Harness, server_id: &str, age_seconds: f64) {
-    let server_name = format!("name-{server_id}");
-    harness
-        .execute(
-            SEED_SERVER_SQL,
-            &[
-                &server_id.to_owned(),
-                &server_name,
-                &None::<String>,
-                &None::<String>,
-            ],
-        )
-        .await;
-    harness
-        .execute(AGE_SERVER_SQL, &[&server_id.to_owned(), &age_seconds])
-        .await;
-}
 
 fn options(ttl_seconds: i64, server_id: Option<&str>) -> DraftOptions {
     DraftOptions {
@@ -120,9 +86,10 @@ async fn prune_on_write_removes_expired_drafts_their_children_and_their_tokens()
     let store = harness.writes();
     let cipher = cipher(SALT);
     let invalidation = RecordingInvalidation::new();
-    seed_draft(&harness, "old-draft", 600.0).await;
-    seed_draft(&harness, "fresh-draft", 0.0).await;
-    seed_real_server(&harness, "real", 600.0).await;
+    harness.seed_draft("old-draft", 600.0).await;
+    harness.seed_draft("fresh-draft", 0.0).await;
+    harness.seed_server("real", None, None).await;
+    harness.age("real", 600.0).await;
     harness.seed_children("old-draft", &["u1"]).await;
     harness.seed_children("real", &["u2"]).await;
     create_draft_mcp_server(
@@ -155,8 +122,8 @@ async fn prune_on_write_removes_expired_drafts_their_children_and_their_tokens()
 async fn prune_treats_a_ttl_below_one_as_one_second() {
     let harness = database().await;
     let store = harness.writes();
-    seed_draft(&harness, "old", 2.0).await;
-    seed_draft(&harness, "fresh", 0.0).await;
+    harness.seed_draft("old", 2.0).await;
+    harness.seed_draft("fresh", 0.0).await;
     let pruned = prune_expired_drafts(&store, 0, &RecordingInvalidation::new())
         .await
         .unwrap();
@@ -301,9 +268,9 @@ async fn get_draft_reads_only_live_draft_rows() {
     let harness = database().await;
     let store = harness.writes();
     let cipher = cipher(SALT);
-    seed_draft(&harness, "draft", 0.0).await;
-    seed_draft(&harness, "expired", 600.0).await;
-    seed_real_server(&harness, "real", 0.0).await;
+    harness.seed_draft("draft", 0.0).await;
+    harness.seed_draft("expired", 600.0).await;
+    harness.seed_server("real", None, None).await;
     let found = get_draft_mcp_server(&store, &cipher, "draft", 300)
         .await
         .unwrap();

@@ -11,7 +11,7 @@ use super::identity::IdentityChanges;
 pub(super) fn apply_credential_merge(
     changes: &IdentityChanges,
     existing: Option<&ExistingRow>,
-    explicit_te: bool,
+    explicit_token_exchange: bool,
     data: &mut PreparedServerData,
 ) -> Result<(), ServerWriteError> {
     let Some(row) = existing else {
@@ -33,7 +33,7 @@ pub(super) fn apply_credential_merge(
             store_blob(data, &merged)
         }
         // A column write still strips the legacy blob copies, so a cleared column cannot come back.
-        None if explicit_te => {
+        None if explicit_token_exchange => {
             let mut blob = credentials_blob_to_dict(stored)?;
             if !TOKEN_EXCHANGE_COLUMNS
                 .iter()

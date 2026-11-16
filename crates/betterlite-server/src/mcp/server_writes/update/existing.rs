@@ -33,7 +33,7 @@ pub(super) struct ExistingRow {
     #[serde(default)]
     pub(super) auth_type: Option<MCPAuth>,
     #[serde(default)]
-    issuer: Option<String>,
+    pub(super) issuer: Option<String>,
     #[serde(default)]
     authorization_url: Option<String>,
     #[serde(default)]

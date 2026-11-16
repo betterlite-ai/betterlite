@@ -2,7 +2,7 @@ import asyncio
 import sys
 from collections import UserDict
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import ModuleType, TracebackType
 from typing import Final, Literal, Self, TypedDict
 
@@ -80,6 +80,9 @@ class Answer(TypedDict):
     deleted_children: list[str]
 
 
+Outcome = tuple[str | None, ConflictView | None]
+
+
 class Call(TypedDict):
     function: Literal["create", "create_if_free", "create_draft", "get_draft", "update", "delete"]
     salt_key: str
@@ -139,7 +142,7 @@ class FakeTable(PrismaWrapper):
 
     async def create(self, data: Where) -> FakeRow:
         stored = FakeRow(parsed_columns(data))
-        stored["updated_at"] = datetime.now(timezone.utc)
+        stored["updated_at"] = datetime.now(UTC)
         self.rows.append(stored)
         return FakeRow(deepcopy(stored.data))
 
@@ -256,10 +259,13 @@ def where_matches(values: FakeRow, where: Where) -> bool:
     return True
 
 
-def conflict_view(conflict: mcp_db.McpIdentifierConflict | None) -> ConflictView | None:
-    if conflict is None:
-        return None
-    return {"field": conflict.field, "value": conflict.value, "server_id": conflict.server_id}
+def written(outcome: LiteLLM_MCPServerTable | mcp_db.McpIdentifierConflict | None) -> Outcome:
+    match outcome:
+        case mcp_db.McpIdentifierConflict(field=field, value=value, server_id=server_id):
+            return None, {"field": field, "value": value, "server_id": server_id}
+        case LiteLLM_MCPServerTable(server_id=server_id):
+            return server_id, None
+    return None, None
 
 
 def server_view(server: LiteLLM_MCPServerTable) -> ServerView:
@@ -299,62 +305,42 @@ def row_views(client: FakeClient) -> list[ServerView]:
     return views
 
 
+async def create(client: FakeClient, call: Call) -> Outcome:
+    request = NewMCPServerRequest.model_validate(call["payload"])
+    by = call["touched_by"]
+    match call["function"]:
+        case "create":
+            return (await mcp_db.create_mcp_server(client, request, by)).server_id, None
+        case "create_if_free":
+            return written(await mcp_db.create_mcp_server_if_identifier_free(client, request, by))
+    ttl, draft_id = call["ttl_seconds"], call["server_id"]
+    draft = await mcp_db.create_draft_mcp_server(client, request, by, ttl, draft_id)
+    return draft.server_id, None
+
+
+async def dispatch(client: FakeClient, call: Call) -> Outcome:
+    match call["function"]:
+        case "get_draft":
+            ttl = call["ttl_seconds"]
+            return written(await mcp_db.get_draft_mcp_server(client, call["server_id"], ttl))
+        case "update":
+            changes = UpdateMCPServerRequest.model_validate(call["payload"])
+            return written(await mcp_db.update_mcp_server(client, changes, call["touched_by"]))
+        case "delete":
+            invalidate = client.record_invalidation
+            deleted = await mcp_db.delete_mcp_server(client, call["server_id"], invalidate)
+            return (None if deleted is None else deleted.server_id), None
+    return await create(client, call)
+
+
 def run(call: Call) -> Answer:
     sys.modules[PROXY_SERVER] = ProxyServerStub()
     client = FakeClient(call["rows"], call["users"], call["server_id"])
-    payload = call["payload"]
-    answer: Answer = {
-        "server_id": None,
-        "conflict": None,
-        "rows": [],
-        "invalidated": [],
-        "deleted_children": [],
+    server_id, conflict = asyncio.run(dispatch(client, call))
+    return {
+        "server_id": server_id,
+        "conflict": conflict,
+        "rows": row_views(client),
+        "invalidated": [user for user, _server in client.invalidated],
+        "deleted_children": client.fake_db.deleted,
     }
-    match call["function"]:
-        case "create":
-            request = NewMCPServerRequest.model_validate(payload)
-            created = asyncio.run(mcp_db.create_mcp_server(client, request, call["touched_by"]))
-            answer["server_id"] = created.server_id
-        case "create_if_free":
-            request = NewMCPServerRequest.model_validate(payload)
-            created = asyncio.run(
-                mcp_db.create_mcp_server_if_identifier_free(client, request, call["touched_by"])
-            )
-            match created:
-                case mcp_db.McpIdentifierConflict() as conflict:
-                    answer["conflict"] = conflict_view(conflict)
-                case LiteLLM_MCPServerTable() as server:
-                    answer["server_id"] = server.server_id
-        case "create_draft":
-            request = NewMCPServerRequest.model_validate(payload)
-            created = asyncio.run(
-                mcp_db.create_draft_mcp_server(
-                    client, request, call["touched_by"], call["ttl_seconds"], call["server_id"]
-                )
-            )
-            answer["server_id"] = created.server_id
-        case "get_draft":
-            found = asyncio.run(
-                mcp_db.get_draft_mcp_server(client, call["server_id"], call["ttl_seconds"])
-            )
-            answer["server_id"] = None if found is None else found.server_id
-        case "update":
-            request = UpdateMCPServerRequest.model_validate(payload)
-            updated = asyncio.run(mcp_db.update_mcp_server(client, request, call["touched_by"]))
-            if updated is None:
-                answer["server_id"] = None
-            else:
-                match updated:
-                    case mcp_db.McpIdentifierConflict() as conflict:
-                        answer["conflict"] = conflict_view(conflict)
-                    case LiteLLM_MCPServerTable() as server:
-                        answer["server_id"] = server.server_id
-        case "delete":
-            deleted = asyncio.run(
-                mcp_db.delete_mcp_server(client, call["server_id"], client.record_invalidation)
-            )
-            answer["server_id"] = None if deleted is None else deleted.server_id
-    answer["rows"] = row_views(client)
-    answer["invalidated"] = [user for user, _server in client.invalidated]
-    answer["deleted_children"] = client.fake_db.deleted
-    return answer

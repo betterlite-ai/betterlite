@@ -10,6 +10,7 @@ use betterlite_db::mcp::table_access::types::{
 use chrono::{DateTime, Utc};
 
 use super::json;
+use crate::mcp::outbound_credentials::iso_to_epoch;
 use crate::mcp::server_writes::{
     ChildTable, ServerWriteStore, TokenCacheError, TokenCacheInvalidation,
 };
@@ -126,19 +127,15 @@ impl ServerWriteStore for FakeStore {
         server_id: &str,
         cutoff: DateTime<Utc>,
     ) -> Result<Option<JsonData>, McpTableError> {
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(state
-            .rows
-            .iter()
+        let drafts = self.find_drafts().await?;
+        Ok(drafts
+            .into_iter()
+            .filter(|row| server_id_of(row).as_deref() == Some(server_id))
             .find(|row| {
-                server_id_of(row).as_deref() == Some(server_id)
-                    && text(row, "approval_status") == Some("draft")
-                    && text(row, "updated_at").is_some_and(|stamp| {
-                        DateTime::parse_from_rfc3339(stamp)
-                            .is_ok_and(|aware| aware.with_timezone(&Utc) >= cutoff)
-                    })
-            })
-            .cloned())
+                text(row, "updated_at")
+                    .and_then(iso_to_epoch)
+                    .is_some_and(|stamp| stamp >= cutoff)
+            }))
     }
 
     async fn create_server(&self, data: RowFields) -> Result<JsonData, McpTableError> {

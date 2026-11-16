@@ -7,6 +7,7 @@ use betterlite_db::mcp::table_access::rows::{RowFields, ServerUpdate};
 use betterlite_db::mcp::table_access::types::{
     IdentifierField, LockedWrite, LockedWriteOutcome, McpTableError, ServerWrite,
 };
+use betterlite_server::mcp::outbound_credentials::iso_to_epoch;
 use betterlite_server::mcp::server_writes::{
     ChildTable, ServerWriteStore, TokenCacheError, TokenCacheInvalidation,
 };
@@ -124,10 +125,9 @@ impl ServerWriteStore for MemoryStore {
             .find(|row| {
                 text(row, "server_id") == Some(server_id)
                     && text(row, "approval_status") == Some("draft")
-                    && text(row, "updated_at").is_some_and(|stamp| {
-                        DateTime::parse_from_rfc3339(stamp)
-                            .is_ok_and(|parsed| parsed.with_timezone(&Utc) >= cutoff)
-                    })
+                    && text(row, "updated_at")
+                        .and_then(iso_to_epoch)
+                        .is_some_and(|stamp| stamp >= cutoff)
             })
             .cloned())
     }

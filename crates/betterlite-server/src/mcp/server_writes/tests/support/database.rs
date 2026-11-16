@@ -176,6 +176,29 @@ impl Harness {
         self.client.execute(sql, params).await.unwrap();
     }
 
+    pub(crate) async fn seed_server(
+        &self,
+        server_id: &str,
+        auth_type: Option<&str>,
+        credentials: Option<&str>,
+    ) {
+        let server_name = format!("name-{server_id}");
+        let params: [&(dyn ToSql + Sync); 4] = [&server_id, &server_name, &auth_type, &credentials];
+        self.execute(SEED_SERVER_SQL, &params).await;
+    }
+
+    pub(crate) async fn seed_draft(&self, server_id: &str, age_seconds: f64) {
+        let server_name = format!("name-{server_id}");
+        self.execute(SEED_DRAFT_SQL, &[&server_id, &server_name, &"[]"])
+            .await;
+        self.age(server_id, age_seconds).await;
+    }
+
+    pub(crate) async fn age(&self, server_id: &str, age_seconds: f64) {
+        self.execute(AGE_SERVER_SQL, &[&server_id, &age_seconds])
+            .await;
+    }
+
     pub(crate) async fn seed_children(&self, server_id: &str, users: &[&str]) {
         for user_id in users {
             let key = format!("{user_id}-{server_id}");

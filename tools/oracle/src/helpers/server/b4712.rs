@@ -13,7 +13,7 @@ use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
 use betterlite_server::mcp::server_writes::create::create_mcp_server;
 // ast-grep-ignore: no-long-names
-use betterlite_server::mcp::server_writes::create::create_mcp_server_if_identifier_free;
+use betterlite_server::mcp::server_writes::create::create_mcp_server_if_identifier_free as create_if_free_row;
 use betterlite_server::mcp::server_writes::decode::decode_server_row;
 use betterlite_server::mcp::server_writes::delete::delete_mcp_server;
 use betterlite_server::mcp::server_writes::draft::{create_draft_mcp_server, get_draft_mcp_server};
@@ -112,12 +112,18 @@ async fn run_call(call: &Call) -> HelperResult {
         fields,
     };
     let (server_id, conflict) = match call.function {
-        Function::Create => create(call, &session).await?,
-        Function::CreateIfFree => create_if_free(call, &session).await?,
-        Function::CreateDraft => create_draft(call, &session).await?,
-        Function::GetDraft => get_draft(call, &session).await?,
-        Function::Update => update(call, &session).await?,
-        Function::Delete => delete(call, &session).await?,
+        Function::Create => session.create(call).await?,
+        Function::CreateIfFree => match session.create_if_free(call).await? {
+            CreatedServer::Created(server) => (Some(server.server_id), None),
+            CreatedServer::Conflict(found) => (None, Some(conflict_view(&found))),
+        },
+        Function::CreateDraft => session.create_draft(call).await?,
+        Function::GetDraft => session.get_draft(call).await?,
+        Function::Update => match session.update(call).await? {
+            UpdatedServer::Updated(server) => (server.map(|row| row.server_id), None),
+            UpdatedServer::Conflict(found) => (None, Some(conflict_view(&found))),
+        },
+        Function::Delete => session.delete(call).await?,
     };
     let answer = Answer {
         server_id,
@@ -129,85 +135,64 @@ async fn run_call(call: &Call) -> HelperResult {
     serde_json::to_value(answer).or_value_error()
 }
 
-async fn create(call: &Call, session: &Session) -> Outcome {
-    let server = create_mcp_server(
-        &session.store,
-        &session.cipher,
-        &session.request,
-        &call.touched_by,
-    )
-    .await
-    .or_value_error()?;
-    Ok((Some(server.server_id), None))
-}
-
-async fn create_if_free(call: &Call, session: &Session) -> Outcome {
-    // ast-grep-ignore: no-long-names
-    let created = create_mcp_server_if_identifier_free(
-        &session.store,
-        &session.cipher,
-        &session.request,
-        &call.touched_by,
-    )
-    .await
-    .or_value_error()?;
-    match created {
-        CreatedServer::Created(server) => Ok((Some(server.server_id), None)),
-        CreatedServer::Conflict(conflict) => Ok((None, Some(conflict_view(&conflict)))),
+impl Session {
+    async fn create(&self, call: &Call) -> Outcome {
+        let server = create_mcp_server(&self.store, &self.cipher, &self.request, &call.touched_by)
+            .await
+            .or_value_error()?;
+        Ok((Some(server.server_id), None))
     }
-}
 
-async fn create_draft(call: &Call, session: &Session) -> Outcome {
-    let options = DraftOptions {
-        touched_by: call.touched_by.clone(),
-        ttl_seconds: call.ttl_seconds,
-        server_id: (!call.server_id.is_empty()).then_some(call.server_id.clone()),
-    };
-    let draft = create_draft_mcp_server(
-        &session.store,
-        &session.cipher,
-        &session.request,
-        &options,
-        &session.invalidated,
-    )
-    .await
-    .or_value_error()?;
-    Ok((Some(draft.server_id), None))
-}
-
-async fn get_draft(call: &Call, session: &Session) -> Outcome {
-    let found = get_draft_mcp_server(
-        &session.store,
-        &session.cipher,
-        &call.server_id,
-        call.ttl_seconds,
-    )
-    .await
-    .or_value_error()?;
-    Ok((found.map(|draft| draft.server_id), None))
-}
-
-async fn update(call: &Call, session: &Session) -> Outcome {
-    let updated = update_mcp_server(
-        &session.store,
-        &session.cipher,
-        &session.request,
-        &call.touched_by,
-        &session.fields,
-    )
-    .await
-    .or_value_error()?;
-    match updated {
-        UpdatedServer::Updated(server) => Ok((server.map(|row| row.server_id), None)),
-        UpdatedServer::Conflict(conflict) => Ok((None, Some(conflict_view(&conflict)))),
+    async fn create_if_free(&self, call: &Call) -> Result<CreatedServer, Box<HelperError>> {
+        create_if_free_row(&self.store, &self.cipher, &self.request, &call.touched_by)
+            .await
+            .or_value_error()
     }
-}
 
-async fn delete(call: &Call, session: &Session) -> Outcome {
-    let deleted = delete_mcp_server(&session.store, &call.server_id, &session.invalidated)
+    async fn create_draft(&self, call: &Call) -> Outcome {
+        let options = DraftOptions {
+            touched_by: call.touched_by.clone(),
+            ttl_seconds: call.ttl_seconds,
+            server_id: (!call.server_id.is_empty()).then_some(call.server_id.clone()),
+        };
+        let draft = create_draft_mcp_server(
+            &self.store,
+            &self.cipher,
+            &self.request,
+            &options,
+            &self.invalidated,
+        )
         .await
         .or_value_error()?;
-    Ok((deleted.map(|gone| gone.server_id), None))
+        Ok((Some(draft.server_id), None))
+    }
+
+    async fn get_draft(&self, call: &Call) -> Outcome {
+        let found =
+            get_draft_mcp_server(&self.store, &self.cipher, &call.server_id, call.ttl_seconds)
+                .await
+                .or_value_error()?;
+        Ok((found.map(|draft| draft.server_id), None))
+    }
+
+    async fn update(&self, call: &Call) -> Result<UpdatedServer, Box<HelperError>> {
+        update_mcp_server(
+            &self.store,
+            &self.cipher,
+            &self.request,
+            &call.touched_by,
+            &self.fields,
+        )
+        .await
+        .or_value_error()
+    }
+
+    async fn delete(&self, call: &Call) -> Outcome {
+        let deleted = delete_mcp_server(&self.store, &call.server_id, &self.invalidated)
+            .await
+            .or_value_error()?;
+        Ok((deleted.map(|gone| gone.server_id), None))
+    }
 }
 
 // The update path needs the caller's own field set, which the typed request no longer carries.

@@ -35,13 +35,19 @@ where
     };
     let mut data = prepare_update_data(request, fields_set, cipher)?;
     // Decided before the identity clearing below writes nulls into those token-exchange columns.
-    let explicit_te = TOKEN_EXCHANGE_COLUMNS
+    let explicit_token_exchange = TOKEN_EXCHANGE_COLUMNS
         .iter()
         .any(|field| data.contains_key(*field));
-    let existing = load_existing(store, &server_id, request, &data, explicit_te).await?;
+    let existing =
+        load_existing(store, &server_id, request, &data, explicit_token_exchange).await?;
     let changes = IdentityChanges::detect(request, existing.as_ref(), &data);
     apply_identity_changes(&changes, existing.as_ref(), &mut data);
-    apply_credential_merge(&changes, existing.as_ref(), explicit_te, &mut data)?;
+    apply_credential_merge(
+        &changes,
+        existing.as_ref(),
+        explicit_token_exchange,
+        &mut data,
+    )?;
     data.insert(
         "updated_by".to_owned(),
         JsonValue::String(touched_by.to_owned()),
@@ -77,7 +83,7 @@ async fn load_existing<S>(
     server_id: &str,
     request: &McpServerRequest,
     data: &PreparedServerData,
-    explicit_te: bool,
+    explicit_token_exchange: bool,
 ) -> Result<Option<ExistingRow>, ServerWriteError>
 where
     S: ServerWriteStore,
@@ -91,7 +97,7 @@ where
     let issuer_provided = data.contains_key("issuer");
     if !(request.auth_type.is_some()
         || has_credentials
-        || explicit_te
+        || explicit_token_exchange
         || url_provided
         || issuer_provided)
     {
