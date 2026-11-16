@@ -164,7 +164,7 @@ class Wrapper(AnthropicStreamWrapper):
         )
         chunks = self.chunks
         logged = None if logging_obj is None else logging_obj.streamed_anthropic_message_id
-        snapshot: dict[str, object] = {
+        snapshot: dict[str, JsonValue] = {
             "message_id": normalized_id(self._message_id),
             "logged_message_id": None if logged is None else normalized_id(logged),
             "logged_is_message_id": logged == self._message_id,
@@ -180,19 +180,20 @@ class Wrapper(AnthropicStreamWrapper):
             "sent_compaction_block_start": self.sent_compaction_block_start,
             "sent_compaction_block_delta": self.sent_compaction_block_delta,
             "refusal_text": self._refusal_text,
-            "tool_name_mapping": self.tool_name_mapping,
-            "applied_edits": self.applied_edits,
-            "compaction_block": self.compaction_block,
-            "iterations_usage": self.iterations_usage,
+            "tool_name_mapping": ANSWER.validate_json(json.dumps(self.tool_name_mapping)),
+            "applied_edits": ANSWER.validate_json(json.dumps(self.applied_edits)),
+            "compaction_block": ANSWER.validate_json(json.dumps(self.compaction_block)),
+            "iterations_usage": ANSWER.validate_json(json.dumps(self.iterations_usage)),
             "held_content": held_content,
-            "held_stop": self.holding_stop_reason_chunk,
+            "held_stop": ANSWER.validate_json(json.dumps(self.holding_stop_reason_chunk)),
             "chunks_len": None if chunks is None else len(chunks),
             "messages": messages,
         }
         return ANSWER.validate_json(json.dumps(snapshot))
 
-    def hold_stop(self, event: MessageBlockDelta) -> None:
-        self.holding_stop_reason_chunk = event
+    def hold_stop(self, event: MessageBlockDelta | None) -> None:
+        if event is not None:
+            self.holding_stop_reason_chunk = event
 
     def initial_usage(self) -> JsonValue:
         return ANSWER.validate_json(json.dumps(self._create_initial_usage_delta()))
@@ -206,7 +207,9 @@ class Wrapper(AnthropicStreamWrapper):
         chunk = ModelResponseStream(id=CHUNK_ID, created=0, choices=[], usage=usage)
         return self._handle_choiceless_chunk(chunk)
 
-    def event_step(self, name: str, event: MessageBlockDelta) -> JsonValue:
+    def event_step(self, name: str, event: MessageBlockDelta | None) -> JsonValue:
+        if event is None:
+            return None
         if name == "augment":
             return ANSWER.validate_json(json.dumps(self._augment_message_delta_usage(event)))
         chunk = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L1049-L1067
@@ -214,14 +217,18 @@ class Wrapper(AnthropicStreamWrapper):
         )
         return ANSWER.validate_json(json.dumps(chunk))
 
-    def compaction(self, calls: int) -> JsonValue:
+    def compaction(self, calls: int | None) -> JsonValue:
+        if calls is None:
+            return None
         events = [self._next_compaction_event() for _ in range(calls)]
         return ANSWER.validate_json(json.dumps(events))
 
-    def delta_has_content(self, event: MessageBlockDelta) -> bool:
-        return self._delta_has_content(event)
+    def delta_has_content(self, event: MessageBlockDelta | None) -> bool | None:
+        return None if event is None else self._delta_has_content(event)
 
-    def choice_step(self, name: str, choices: list[StreamChoiceInput]) -> bool:
+    def choice_step(self, name: str, choices: list[StreamChoiceInput] | None) -> bool | None:
+        if choices is None:
+            return None
         chunk = stream_chunk(choices)
         if name == "is_blank":
             return self._is_blank_delta(chunk)
@@ -257,33 +264,27 @@ def build(input_value: Input) -> tuple[Wrapper, Logging | None]:
 
 
 def answer_step(wrapper: Wrapper, logging_obj: Logging | None, step: Step) -> JsonValue:
-    answer: JsonValue = None
     name = step.get("step")
     match name:
         case "snapshot":
-            answer = wrapper.stream_state(logging_obj)
+            return wrapper.stream_state(logging_obj)
         case "hold_stop":
-            if (event := step.get("event")) is not None:
-                wrapper.hold_stop(event)
+            wrapper.hold_stop(step.get("event"))
+            return None
         case "initial_usage":
-            answer = wrapper.initial_usage()
+            return wrapper.initial_usage()
         case "merge_held_usage" | "choiceless":
-            answer = wrapper.usage_step(name, step.get("usage"))
+            return wrapper.usage_step(name, step.get("usage"))
         case "augment" | "refusal_stop":
-            if (event := step.get("event")) is not None:
-                answer = wrapper.event_step(name, event)
+            return wrapper.event_step(name, step.get("event"))
         case "compaction":
-            if (calls := step.get("calls")) is not None:
-                answer = wrapper.compaction(calls)
+            return wrapper.compaction(step.get("calls"))
         case "delta_has_content":
-            if (event := step.get("event")) is not None:
-                answer = wrapper.delta_has_content(event)
+            return wrapper.delta_has_content(step.get("event"))
         case "is_blank" | "start_block":
-            if (choices := step.get("choices")) is not None:
-                answer = wrapper.choice_step(name, choices)
+            return wrapper.choice_step(name, step.get("choices"))
         case _:
-            pass
-    return answer
+            return None
 
 
 def run(input_value: Input) -> JsonValue:
