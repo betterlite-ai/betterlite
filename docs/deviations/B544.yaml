@@ -1,8 +1,5 @@
 task: B544
 deviations:
-  - what: "A tool whose function key holds a non-object is rejected with a named invalid-tool error and no HTTP status, instead of the bare TypeError that LiteLLM's dictionary update raises for the same input."
-    why: "docs/compatibility.md makes a value of the wrong type an error that names the field, so the flattened-tool copy refuses a non-mapping function instead of surfacing Python's untyped update failure."
-    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L132-L136"
   - what: "A cancel reply that is not a JSON response record fails with the record decoder's error, where LiteLLM raises pydantic's ValidationError; both carry no status and leave the HTTP status untouched."
     why: "betterlite validates the same body with the shared serde response record rather than a pydantic model, so the error class differs while the observable status of the failure is the same."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L347-L353"
