@@ -35,7 +35,7 @@ use crate::anthropic_count::handler::{CountTokensRequest, FoundryCountHandler};
 use crate::anthropic_messages::environment::{ParamsKey, TokenSource};
 
 pub(super) const MODEL: &str = "claude-sonnet-4-5";
-const API_BASE: &str = "https://r.services.ai.azure.com";
+pub(super) const API_BASE: &str = "https://r.services.ai.azure.com";
 const USER_MESSAGE: &str = r#"[{"role":"user","content":"hi"}]"#;
 pub(super) const ARGUMENT_KEY: &str = "argument-key";
 pub(super) const PARAMS_KEY: &str = "params-key";
@@ -203,53 +203,67 @@ impl From<&Call> for FoundryCountHandler<Script> {
 }
 
 pub(super) fn run_counter(call: &Call) -> CounterOutcome {
-    let counter = AzureAnthropicTokenCounter {
-        handler: FoundryCountHandler::from(call),
-        environment_api_key: call.environment_key.clone(),
-        environment_api_base: call.environment_base.clone(),
-    };
+    let counter = counter_for(call);
     let (result, warnings) = with_token(call, |token| {
         captured(|| run_blocking(counter.count_tokens(&counter_call(call, token))))
     });
     CounterOutcome {
-        selected: [
-            counter.should_use_token_counting_api(Some("azure_ai")),
-            counter.should_use_token_counting_api(Some("anthropic")),
-            counter.should_use_token_counting_api(None),
-        ],
+        selected: [Some("azure_ai"), Some("anthropic"), None]
+            .map(|provider| counter.should_use_token_counting_api(provider)),
         result,
         seen: first_request(&counter.handler.transport),
         warnings,
     }
 }
 
+fn counter_for(call: &Call) -> AzureAnthropicTokenCounter<Script> {
+    AzureAnthropicTokenCounter {
+        handler: FoundryCountHandler::from(call),
+        environment_api_key: call.environment_key.clone(),
+        environment_api_base: call.environment_base.clone(),
+    }
+}
+
 pub(super) fn run_handle(call: &Call) -> HandleOutcome {
     let messages = call.messages.clone().unwrap_or(Json::Null);
+    let params = IndexMap::new();
     let handler = FoundryCountHandler::from(call);
-    let outcome = with_token(call, |token| {
-        let request = CountTokensRequest {
-            body: CountTokensBody {
-                model: &call.model,
-                messages: &messages,
-                tools: call.tools.as_ref(),
-                system: call.system.as_ref(),
-                optional_params: &IndexMap::new(),
-            },
-            api_key: &call.api_key,
-            api_base: call.api_base.as_deref().unwrap_or_default(),
-            params_key: params_key(&call.params),
-            token,
-            timeout: call.timeout,
-        };
+    let reply = with_token(call, |token| {
+        let request = handle_request(call, &messages, &params, token);
         run_blocking(handler.handle_count_tokens_request(&request))
     });
     HandleOutcome {
-        result: outcome.map(|reply| reply.document),
+        result: reply.map(|found| found.document),
         seen: first_request(&handler.transport),
     }
 }
 
-fn counter_call<'a>(call: &'a Call, token: &'a TokenSource<'a>) -> CountTokensCall<'a> {
+fn handle_request<'call>(
+    call: &'call Call,
+    messages: &'call Json,
+    optional_params: &'call IndexMap<String, Json>,
+    token: &'call TokenSource<'call>,
+) -> CountTokensRequest<'call> {
+    CountTokensRequest {
+        body: CountTokensBody {
+            model: &call.model,
+            messages,
+            tools: call.tools.as_ref(),
+            system: call.system.as_ref(),
+            optional_params,
+        },
+        api_key: &call.api_key,
+        api_base: call.api_base.as_deref().unwrap_or_default(),
+        params_key: params_key(&call.params),
+        token,
+        timeout: call.timeout,
+    }
+}
+
+fn counter_call<'call>(
+    call: &'call Call,
+    token: &'call TokenSource<'call>,
+) -> CountTokensCall<'call> {
     CountTokensCall {
         model_to_use: &call.model,
         messages: call.messages.as_ref(),

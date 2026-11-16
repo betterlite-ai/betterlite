@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_anthropic::count_tokens::handler::CountTokensTransport;
-use betterlite_config::sections::Section;
+use betterlite_config::sections::Section as _;
 use betterlite_config::sections::anthropic_count_tokens::Raw as BetaRaw;
 use betterlite_config::sections::azure_credentials::{DeploymentSettings, Raw as CredentialRaw};
 use betterlite_config::sections::azure_url_policy::Raw as KeyRaw;

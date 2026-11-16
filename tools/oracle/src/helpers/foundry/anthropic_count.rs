@@ -138,14 +138,14 @@ fn handle_case(case: &HandleCase, runtime: &Runtime) -> Result<Value, Box<Helper
 
 fn counter_call<'call>(
     case: &'call CounterCase,
-    secret: &'call Option<SecretString>,
+    secret: Option<&'call SecretString>,
     source: &'call TokenSource<'call>,
 ) -> CountTokensCall<'call> {
     CountTokensCall {
         model_to_use: &case.model,
         messages: case.messages.as_ref(),
         contents: case.contents.as_ref(),
-        params_key: key_shape(&case.litellm_params, secret.as_ref()),
+        params_key: key_shape(&case.litellm_params, secret),
         api_base: case
             .litellm_params
             .get("api_base")
@@ -172,7 +172,7 @@ fn counter_case(case: &CounterCase, runtime: &Runtime) -> Result<Value, Box<Help
         environment_api_base: environment.api_base,
     };
     let secret = params_secret(&case.litellm_params);
-    let call = counter_call(case, &secret, &source);
+    let call = counter_call(case, secret.as_ref(), &source);
     let selected = counter.should_use_token_counting_api(case.provider.as_deref());
     let logs = Logs::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());

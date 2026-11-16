@@ -21,12 +21,13 @@ use crate::anthropic_count::reply::decode_foundry_count_reply;
 mod support;
 
 use support::{
-    ARGUMENT_KEY, Call, MODEL, PARAMS_KEY, Params, Script, TOKENIZER_TYPE, Warning, beta_version,
-    handle_headers, run_counter, run_handle,
+    API_BASE, ARGUMENT_KEY, Call, MODEL, PARAMS_KEY, Params, Script, TOKENIZER_TYPE, Warning,
+    beta_version, handle_headers, run_counter, run_handle,
 };
 
 const KEY_SUBJECT: &str = "No Azure AI API key found for token counting";
 const BASE_SUBJECT: &str = "No Azure AI API base found for token counting";
+const ENV_KEY: &str = "environment-key";
 const ENV_BASE: &str = "https://env.services.ai.azure.com";
 const ENV_URL: &str = "https://env.services.ai.azure.com/anthropic/v1/messages/count_tokens";
 const DEPLOYMENT_URL: &str = "https://r.services.ai.azure.com/anthropic/v1/messages/count_tokens";
@@ -103,7 +104,6 @@ fn count_tokens_endpoint() {
 fn azure_auth_and_beta() {
     azure_auth_and_beta_static();
     azure_auth_and_beta_keys();
-    azure_auth_and_beta_typed_keys();
     azure_auth_and_beta_bearer();
 }
 
@@ -127,53 +127,38 @@ fn assert_key_headers(call: &Call, azure_key: &str) {
 }
 
 fn azure_auth_and_beta_keys() {
-    assert_key_headers(
-        &Call {
-            params: Params::Absent,
+    let cases = [
+        (Params::Absent, None, ARGUMENT_KEY),
+        (
+            Params::Key(SecretString::from("other-params-key")),
+            None,
+            "other-params-key",
+        ),
+        (Params::Null, Some("configured-key"), "configured-key"),
+        (
+            Params::Typed(Some(SecretString::from("typed-key"))),
+            None,
+            "typed-key",
+        ),
+        (
+            Params::Typed(Some(SecretString::from(""))),
+            None,
+            ARGUMENT_KEY,
+        ),
+        (
+            Params::Key(SecretString::from("")),
+            Some("configured-key"),
+            "configured-key",
+        ),
+    ];
+    for (params, configured, azure_key) in cases {
+        let call = Call {
+            params,
+            configured_key: configured.map(SecretString::from),
             ..Call::standard()
-        },
-        ARGUMENT_KEY,
-    );
-    assert_key_headers(
-        &Call {
-            params: Params::Key(SecretString::from("other-params-key")),
-            ..Call::standard()
-        },
-        "other-params-key",
-    );
-    assert_key_headers(
-        &Call {
-            params: Params::Null,
-            configured_key: Some(SecretString::from("configured-key")),
-            ..Call::standard()
-        },
-        "configured-key",
-    );
-}
-
-fn azure_auth_and_beta_typed_keys() {
-    assert_key_headers(
-        &Call {
-            params: Params::Typed(Some(SecretString::from("typed-key"))),
-            ..Call::standard()
-        },
-        "typed-key",
-    );
-    assert_key_headers(
-        &Call {
-            params: Params::Typed(Some(SecretString::from(""))),
-            ..Call::standard()
-        },
-        ARGUMENT_KEY,
-    );
-    assert_key_headers(
-        &Call {
-            params: Params::Key(SecretString::from("")),
-            configured_key: Some(SecretString::from("configured-key")),
-            ..Call::standard()
-        },
-        "configured-key",
-    );
+        };
+        assert_key_headers(&call, azure_key);
+    }
 }
 
 fn azure_auth_and_beta_bearer() {
@@ -260,10 +245,9 @@ fn native_count_result_falsey_messages() {
 }
 
 fn optional_native_selection() {
-    optional_native_selection_environment();
-    optional_native_selection_empty_values();
-    optional_native_selection_missing_key();
-    optional_native_selection_missing_base();
+    optional_native_selection_requested();
+    optional_native_selection_skipped_keys();
+    optional_native_selection_skipped_bases();
 }
 
 // The call reaches the transport with the given endpoint and x-api-key
@@ -287,92 +271,69 @@ fn assert_skipped(call: &Call, subject: &str) {
     );
 }
 
-fn optional_native_selection_environment() {
-    assert_requested(
-        &Call {
-            params: Params::Absent,
-            api_base: None,
-            environment_key: Some(SecretString::from("environment-key")),
-            environment_base: Some(ENV_BASE.to_owned()),
-            ..Call::standard()
-        },
-        ENV_URL,
-        "environment-key",
-    );
-    assert_requested(&Call::standard(), DEPLOYMENT_URL, PARAMS_KEY);
+// Columns: deployment key, deployment base, environment key, environment base, endpoint, x-api-key
+fn optional_native_selection_requested() {
+    let cases = [
+        (
+            Some(PARAMS_KEY),
+            Some(API_BASE),
+            None,
+            None,
+            DEPLOYMENT_URL,
+            PARAMS_KEY,
+        ),
+        (None, None, Some(ENV_KEY), Some(ENV_BASE), ENV_URL, ENV_KEY),
+        (
+            Some(""),
+            Some(API_BASE),
+            Some(ENV_KEY),
+            None,
+            DEPLOYMENT_URL,
+            ENV_KEY,
+        ),
+        (
+            Some(PARAMS_KEY),
+            Some(""),
+            None,
+            Some(ENV_BASE),
+            ENV_URL,
+            PARAMS_KEY,
+        ),
+    ];
+    for (params, api_base, env_key, env_base, url, key) in cases {
+        let mut call = Call::standard();
+        call.params = params.map_or(Params::Absent, |text| Params::Key(SecretString::from(text)));
+        call.api_base = api_base.map(str::to_owned);
+        call.environment_key = env_key.map(SecretString::from);
+        call.environment_base = env_base.map(str::to_owned);
+        assert_requested(&call, url, key);
+    }
 }
 
-fn optional_native_selection_empty_values() {
-    assert_requested(
-        &Call {
-            params: Params::Key(SecretString::from("")),
-            environment_key: Some(SecretString::from("environment-key")),
-            ..Call::standard()
-        },
-        DEPLOYMENT_URL,
-        "environment-key",
-    );
-    assert_requested(
-        &Call {
-            api_base: Some(String::new()),
-            environment_base: Some(ENV_BASE.to_owned()),
-            ..Call::standard()
-        },
-        ENV_URL,
-        PARAMS_KEY,
-    );
+// None of the environment key, an Entra token or the configured key stands in for the deployment key
+fn optional_native_selection_skipped_keys() {
+    let mut call = Call::standard();
+    call.params = Params::Absent;
+    assert_skipped(&call, KEY_SUBJECT);
+    call.environment_key = Some(SecretString::from(""));
+    assert_skipped(&call, KEY_SUBJECT);
+    call.environment_key = None;
+    call.token = Some("azure-token".to_owned());
+    assert_skipped(&call, KEY_SUBJECT);
+    call.token = None;
+    call.configured_key = Some(SecretString::from("configured-key"));
+    assert_skipped(&call, KEY_SUBJECT);
 }
 
-fn optional_native_selection_missing_key() {
-    assert_skipped(
-        &Call {
-            params: Params::Absent,
-            ..Call::standard()
-        },
-        KEY_SUBJECT,
-    );
-    assert_skipped(
-        &Call {
-            params: Params::Absent,
-            environment_key: Some(SecretString::from("")),
-            ..Call::standard()
-        },
-        KEY_SUBJECT,
-    );
-    assert_skipped(
-        &Call {
-            params: Params::Absent,
-            token: Some("azure-token".to_owned()),
-            ..Call::standard()
-        },
-        KEY_SUBJECT,
-    );
-    assert_skipped(
-        &Call {
-            params: Params::Absent,
-            configured_key: Some(SecretString::from("configured-key")),
-            ..Call::standard()
-        },
-        KEY_SUBJECT,
-    );
-}
-
-fn optional_native_selection_missing_base() {
-    assert_skipped(
-        &Call {
+fn optional_native_selection_skipped_bases() {
+    for env_base in [None, Some("")] {
+        let call = Call {
             api_base: None,
+            environment_base: env_base.map(str::to_owned),
             ..Call::standard()
-        },
-        BASE_SUBJECT,
-    );
-    assert_skipped(
-        &Call {
-            api_base: None,
-            environment_base: Some(String::new()),
-            ..Call::standard()
-        },
-        BASE_SUBJECT,
-    );
+        };
+        assert_skipped(&call, BASE_SUBJECT);
+    }
 }
 
 fn count_failure_error_result() {
