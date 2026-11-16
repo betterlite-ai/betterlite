@@ -79,71 +79,53 @@ pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
 }
 
 fn dispatch(call: &Call, settings: &LiveSetupSettings<'_>) -> Result<Value, Box<HelperError>> {
+    let request = call.session_configuration_request.as_deref();
     match call.op {
-        Operation::SessionUpdate => session_update(call, settings),
-        Operation::Automatic => automatic(call, settings),
-        Operation::Created => created(call),
-        Operation::Endpoint => endpoint(call),
+        Operation::SessionUpdate => {
+            let session_value = serde_json::to_value(&call.session).or_value_error()?;
+            let update = serde_json::from_value::<SessionUpdate>(session_value).or_value_error()?;
+            let messages = transform_session_update(&update, &call.model, request, settings)
+                .or_value_error()?;
+            let parsed = messages
+                .iter()
+                .map(|message| serde_json::from_str::<Value>(message).or_value_error())
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(json!({"messages": parsed}))
+        }
+        Operation::Automatic => {
+            let automatic =
+                session_configuration_request(&call.model, settings).or_value_error()?;
+            let setup = match automatic.as_deref() {
+                Some(text) => serde_json::from_str::<Value>(text)
+                    .or_value_error()?
+                    .get("setup")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                None => Value::Null,
+            };
+            Ok(json!({"required": automatic.is_some(), "setup": setup}))
+        }
+        Operation::Created => {
+            let event_id = call.event_id.as_deref().unwrap_or(DEFAULT_EVENT_ID);
+            let event = session_created(&call.model, &call.logging_session_id, request, event_id)
+                .or_value_error()?;
+            serde_json::to_value(event).or_value_error()
+        }
+        Operation::Endpoint => {
+            let identity = studio_identity::Raw::default()
+                .convert(&call.env)
+                .or_value_error()?;
+            let explicit = call
+                .api_key
+                .as_deref()
+                .map(|key| SecretString::from(key.to_owned()));
+            let url = connect_url(
+                call.api_base.as_deref(),
+                explicit.as_ref(),
+                identity.environment_key.as_ref(),
+            )
+            .or_value_error()?;
+            Ok(json!({"url": url.expose_secret()}))
+        }
     }
-}
-
-fn session_update(
-    call: &Call,
-    settings: &LiveSetupSettings<'_>,
-) -> Result<Value, Box<HelperError>> {
-    let session_value = serde_json::to_value(&call.session).or_value_error()?;
-    let update = serde_json::from_value::<SessionUpdate>(session_value).or_value_error()?;
-    let messages = transform_session_update(
-        &update,
-        &call.model,
-        call.session_configuration_request.as_deref(),
-        settings,
-    )
-    .or_value_error()?;
-    let parsed = messages
-        .iter()
-        .map(|message| serde_json::from_str::<Value>(message).or_value_error())
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(json!({"messages": parsed}))
-}
-
-fn automatic(call: &Call, settings: &LiveSetupSettings<'_>) -> Result<Value, Box<HelperError>> {
-    let request = session_configuration_request(&call.model, settings).or_value_error()?;
-    let setup = match request.as_deref() {
-        Some(text) => serde_json::from_str::<Value>(text)
-            .or_value_error()?
-            .get("setup")
-            .cloned()
-            .unwrap_or(Value::Null),
-        None => Value::Null,
-    };
-    Ok(json!({"required": request.is_some(), "setup": setup}))
-}
-
-fn created(call: &Call) -> Result<Value, Box<HelperError>> {
-    let event = session_created(
-        &call.model,
-        &call.logging_session_id,
-        call.session_configuration_request.as_deref(),
-        call.event_id.as_deref().unwrap_or(DEFAULT_EVENT_ID),
-    )
-    .or_value_error()?;
-    serde_json::to_value(event).or_value_error()
-}
-
-fn endpoint(call: &Call) -> Result<Value, Box<HelperError>> {
-    let identity = studio_identity::Raw::default()
-        .convert(&call.env)
-        .or_value_error()?;
-    let explicit = call
-        .api_key
-        .as_deref()
-        .map(|key| SecretString::from(key.to_owned()));
-    let url = connect_url(
-        call.api_base.as_deref(),
-        explicit.as_ref(),
-        identity.environment_key.as_ref(),
-    )
-    .or_value_error()?;
-    Ok(json!({"url": url.expose_secret()}))
 }
