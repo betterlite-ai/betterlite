@@ -2,7 +2,7 @@
 
 use betterlite_error::error::ErrorClass;
 
-use super::test_support::{CONTAINER_ID, Fixture, FixtureFailure, StubExecutor, object};
+use super::test_support::{CONTAINER_ID, Fixture, FixtureFailure, StubExecutor};
 use super::upload_container_file;
 use crate::api::response_id_codecs::container::build_container_id;
 
