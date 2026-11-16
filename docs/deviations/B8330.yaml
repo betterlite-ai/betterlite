@@ -9,12 +9,15 @@ deviations:
   - what: The chat arms write the post_call stream record with a null original_response.
     why: LiteLLM passes the returned iterator as original_response. A null keeps the hook firing, which is what a logging callback observes, without rendering a stream object.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5300-L5340
-  - what: The OCI stream helper compares the request URL, the prepared headers and the decoded content, not the signature headers.
-    why: The signature covers the request body and a timestamp, and the body transform belongs to B5843. Signing and its header values stay with the provider transform that this arm hands the request to.
+  - what: The OCI stream helper compares the request URL and the prepared headers, not the decoded events or the signature headers.
+    why: The signature covers the request body and a timestamp, and the body and event transforms belong to B5843. Signing and its header values stay with the provider transform that this arm hands the request to.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py
   - what: The chat cases compare the request URL and the headers both sides prepare, not the request body.
     why: The databricks, snowflake and oci request bodies are built by B5841, B5844 and B5843 after the arm resolves its values. The arm owns the resolution order, the base URL choice and the headers, and those are what the cases compare.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py
+  - what: The embedding cases compare the request URL, the headers and the body, not the reply.
+    why: The embedding reply transforms belong to B5980, B5844 and B5941, and the arm only hands the upstream answer to them; the request it prepares is what this task owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6556-L6657
   - what: The dispatch arms take one path for the sync and async completions.
     why: LiteLLM's acompletion resolves the same values and calls the same base handler in an async task. The resolution order, the values and the logged record are the same, so a second copy would only repeat them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5800-L5900
