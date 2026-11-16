@@ -290,72 +290,84 @@ fn an_engine_rejection_allows_the_store_fields_and_names_its_mode() {
     assert!(supported.iter().any(|field| field == "dataStoreSpecs"));
 }
 
+const NATIVE_DATASTORE_FIELDS: [&str; 30] = [
+    "query",
+    "pageSize",
+    "pageToken",
+    "offset",
+    "oneBoxPageSize",
+    "pageCategories",
+    "imageQuery",
+    "filter",
+    "canonicalFilter",
+    "orderBy",
+    "userInfo",
+    "languageCode",
+    "facetSpecs",
+    "boostSpec",
+    "params",
+    "queryExpansionSpec",
+    "spellCorrectionSpec",
+    "userPseudoId",
+    "contentSearchSpec",
+    "rankingExpression",
+    "rankingExpressionBackend",
+    "safeSearch",
+    "userLabels",
+    "naturalLanguageQueryUnderstandingSpec",
+    "searchAsYouTypeSpec",
+    "displaySpec",
+    "crowdingSpecs",
+    "relevanceThreshold",
+    "relevanceScoreSpec",
+    "customRankingParams",
+];
+const NATIVE_ENGINE_FIELDS: [&str; 2] = ["dataStoreSpecs", "numResultsPerDataStore"];
+
 // the exact allowlist LiteLLM derives from VertexSearchDataStoreExtraBody's annotations
 #[test]
-fn every_native_extra_body_field_is_accepted_in_its_mode() {
-    let datastore_fields = [
-        "query",
-        "pageSize",
-        "pageToken",
-        "offset",
-        "oneBoxPageSize",
-        "pageCategories",
-        "imageQuery",
-        "filter",
-        "canonicalFilter",
-        "orderBy",
-        "userInfo",
-        "languageCode",
-        "facetSpecs",
-        "boostSpec",
-        "params",
-        "queryExpansionSpec",
-        "spellCorrectionSpec",
-        "userPseudoId",
-        "contentSearchSpec",
-        "rankingExpression",
-        "rankingExpressionBackend",
-        "safeSearch",
-        "userLabels",
-        "naturalLanguageQueryUnderstandingSpec",
-        "searchAsYouTypeSpec",
-        "displaySpec",
-        "crowdingSpecs",
-        "relevanceThreshold",
-        "relevanceScoreSpec",
-        "customRankingParams",
-    ];
-    let engine_only = ["dataStoreSpecs", "numResultsPerDataStore"];
+fn every_native_data_store_extra_body_field_reaches_the_body() {
     let query = SearchQuery::Text("hello".to_owned());
     let optional = object("{}");
     let no_params = object("{}");
+    let extra = all_text(&NATIVE_DATASTORE_FIELDS);
+    let call = transform_search_request(
+        &request(&query, &optional, Some(&extra), &no_params),
+        &mut BTreeMap::new(),
+    )
+    .unwrap();
+    let body = serde_json::to_value(call.body).unwrap();
+    assert_eq!(body, serde_json::to_value(&extra).unwrap());
+}
+
+#[test]
+fn every_native_engine_extra_body_field_reaches_the_body() {
+    let query = SearchQuery::Text("hello".to_owned());
+    let optional = object("{}");
     let engine_params = object(r#"{"vertex_engine_id":"app"}"#);
-    let datastore_extra = all_text(&datastore_fields);
+    let mut extra = all_text(&NATIVE_DATASTORE_FIELDS);
+    extra.extend(all_text(&NATIVE_ENGINE_FIELDS));
     let call = transform_search_request(
-        &request(&query, &optional, Some(&datastore_extra), &no_params),
+        &request(&query, &optional, Some(&extra), &engine_params),
         &mut BTreeMap::new(),
     )
     .unwrap();
     let body = serde_json::to_value(call.body).unwrap();
-    assert_eq!(body, serde_json::to_value(&datastore_extra).unwrap());
+    assert_eq!(body, serde_json::to_value(&extra).unwrap());
+}
 
-    let mut engine_extra = all_text(&datastore_fields);
-    engine_extra.extend(all_text(&engine_only));
-    let call = transform_search_request(
-        &request(&query, &optional, Some(&engine_extra), &engine_params),
-        &mut BTreeMap::new(),
-    )
-    .unwrap();
-    let body = serde_json::to_value(call.body).unwrap();
-    assert_eq!(body, serde_json::to_value(&engine_extra).unwrap());
-
-    let mut datastore_unknown = datastore_extra;
-    datastore_unknown.insert(
+#[test]
+fn a_data_store_rejects_a_name_outside_the_native_allowlist() {
+    let query = SearchQuery::Text("hello".to_owned());
+    let optional = object("{}");
+    let no_params = object("{}");
+    let mut extra = all_text(&NATIVE_DATASTORE_FIELDS);
+    extra.insert(
         "notANativeField".to_owned(),
         Json::Text("unknown".to_owned()),
     );
     let error = transform_search_request(
-        &request(&query, &optional, Some(&datastore_unknown), &no_params),
+        &request(&query, &optional, Some(&extra), &no_params),
         &mut BTreeMap::new(),
     )
     .unwrap_err();
@@ -366,22 +378,27 @@ fn every_native_extra_body_field_is_accepted_in_its_mode() {
         panic!("a name outside the data store allowlist is rejected");
     };
     assert_eq!(fields, ["notANativeField"]);
-    let mut datastore_supported: Vec<String> = datastore_fields
+    let mut expected: Vec<String> = NATIVE_DATASTORE_FIELDS
         .iter()
         .map(|name| (*name).to_owned())
         .collect();
-    datastore_supported.sort_unstable();
-    assert_eq!(supported, datastore_supported);
+    expected.sort_unstable();
+    assert_eq!(supported, expected);
+}
 
-    let mut engine_fields = datastore_fields.to_vec();
-    engine_fields.extend(engine_only);
-    let mut engine_unknown = engine_extra;
-    engine_unknown.insert(
+#[test]
+fn an_engine_rejects_a_name_outside_the_native_allowlist() {
+    let query = SearchQuery::Text("hello".to_owned());
+    let optional = object("{}");
+    let engine_params = object(r#"{"vertex_engine_id":"app"}"#);
+    let mut extra = all_text(&NATIVE_DATASTORE_FIELDS);
+    extra.extend(all_text(&NATIVE_ENGINE_FIELDS));
+    extra.insert(
         "notANativeField".to_owned(),
         Json::Text("unknown".to_owned()),
     );
     let error = transform_search_request(
-        &request(&query, &optional, Some(&engine_unknown), &engine_params),
+        &request(&query, &optional, Some(&extra), &engine_params),
         &mut BTreeMap::new(),
     )
     .unwrap_err();
@@ -392,12 +409,13 @@ fn every_native_extra_body_field_is_accepted_in_its_mode() {
         panic!("a name outside the engine allowlist is rejected");
     };
     assert_eq!(fields, ["notANativeField"]);
-    let mut engine_supported: Vec<String> = engine_fields
+    let mut expected: Vec<String> = NATIVE_DATASTORE_FIELDS
         .iter()
         .map(|name| (*name).to_owned())
         .collect();
-    engine_supported.sort_unstable();
-    assert_eq!(supported, engine_supported);
+    expected.extend(NATIVE_ENGINE_FIELDS.iter().map(|name| (*name).to_owned()));
+    expected.sort_unstable();
+    assert_eq!(supported, expected);
 }
 
 #[test]
