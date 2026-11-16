@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import os
 from typing import Final, Literal, Protocol, TypedDict, cast
 
@@ -13,20 +12,11 @@ from litellm.proxy.guardrails.guardrail_hooks.repelloai.repelloai import Repello
 from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.utils import CallTypesLiteral
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import override
 
 BODY_ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
-CONTENT_TYPE_HEADER: Final = "content-type"
 API_KEY_HEADER: Final = "x-api-key"
-LOGGER_NAME: Final = "LiteLLM Proxy"
-CLEARED_ENVIRONMENT: Final = (
-    "ARGUS_API_KEY",
-    "REPELLOAI_API_KEY",
-    "REPELLOAI_API_BASE",
-)
-
-Mode = Literal["init", "pre_call"]
+CLEARED_ENVIRONMENT = ("ARGUS_API_KEY", "REPELLOAI_API_KEY", "REPELLOAI_API_BASE")
 
 
 class Answer(TypedDict):
@@ -37,7 +27,6 @@ class Answer(TypedDict):
 class RequestRecord(TypedDict):
     path: str
     api_key_present: bool
-    content_type: str | None
     body: JsonValue
 
 
@@ -46,13 +35,9 @@ class Caught(TypedDict):
     detail: JsonValue
 
 
-class RecordedInfo(TypedDict):
-    guardrail_status: str
-
-
 class HookMetadata(TypedDict, total=False):
     applied_guardrails: list[str]
-    standard_logging_guardrail_information: list[RecordedInfo]
+    standard_logging_guardrail_information: list[dict[str, str]]
 
 
 class HookData(TypedDict, total=False):
@@ -66,12 +51,10 @@ class Output(TypedDict):
     api_base: str | None
     asset_id: str | None
     key_source: str | None
-    event_hooks: list[str]
     requests: list[RequestRecord]
     applied: list[str]
     status: str | None
     caught: Caught | None
-    warned: bool
 
 
 class Guardrail(Protocol):
@@ -89,12 +72,9 @@ class Guardrail(Protocol):
         call_type: CallTypesLiteral,
     ) -> Exception | str | dict[str, JsonValue] | None: ...
 
-    @classmethod
-    def get_supported_event_hooks(cls) -> list[GuardrailEventHooks]: ...
-
 
 class Input(TypedDict):
-    mode: Mode
+    mode: Literal["init", "pre_call"]
     env: dict[str, str]
     api_key: str | None
     api_base: str | None
@@ -114,28 +94,15 @@ class Script:
             {
                 "path": request.url.path,
                 "api_key_present": API_KEY_HEADER in request.headers,
-                "content_type": request.headers.get(CONTENT_TYPE_HEADER),
                 "body": BODY_ADAPTER.validate_json(request.content),
             }
         )
         return httpx.Response(self.answer["status"], json=self.answer["body"], request=request)
 
 
-class WarningCounter(logging.Handler):
-    def __init__(self) -> None:
-        super().__init__(level=logging.WARNING)
-        self.warned = False
-
-    @override
-    def emit(self, record: logging.LogRecord) -> None:
-        if record.levelno >= logging.WARNING:
-            self.warned = True
-
-
 def build_guardrail(call: Input) -> Guardrail:
     for name in CLEARED_ENVIRONMENT:
-        if name in os.environ:
-            del os.environ[name]
+        os.environ.pop(name, None)
     os.environ.update(call["env"])
     fallback: Literal["fail_closed", "fail_open"] = (
         "fail_open" if call["unreachable_fallback"] == "fail_open" else "fail_closed"
@@ -153,38 +120,26 @@ def build_guardrail(call: Input) -> Guardrail:
 
 
 def key_source(call: Input, key: str) -> str:
-    explicit = call["api_key"]
-    if explicit is not None and explicit != "" and explicit == key:
+    explicit = call["api_key"] or ""
+    if explicit != "" and explicit == key:
         return "explicit"
-    argus = call["env"].get("ARGUS_API_KEY")
-    if argus is not None and argus != "" and argus == key:
+    argus = call["env"].get("ARGUS_API_KEY") or ""
+    if argus != "" and argus == key:
         return "argus"
     return "repelloai"
-
-
-def event_hooks() -> list[str]:
-    return [hook.name for hook in RepelloAIGuardrail.get_supported_event_hooks()]
 
 
 def metadata_bucket(data: HookData) -> HookMetadata | None:
     return data.get("litellm_metadata") or data.get("metadata")
 
 
-def recorded_status(data: HookData) -> str | None:
+def hook_facts(data: HookData) -> tuple[list[str], str | None]:
     bucket = metadata_bucket(data)
     if bucket is None:
-        return None
+        return [], None
+    applied = list(bucket.get("applied_guardrails") or [])
     recorded = bucket.get("standard_logging_guardrail_information")
-    if not recorded:
-        return None
-    return recorded[-1]["guardrail_status"]
-
-
-def applied(data: HookData) -> list[str]:
-    bucket = metadata_bucket(data)
-    if bucket is None:
-        return []
-    return list(bucket.get("applied_guardrails") or [])
+    return applied, recorded[-1]["guardrail_status"] if recorded else None
 
 
 def empty_output() -> Output:
@@ -193,26 +148,28 @@ def empty_output() -> Output:
         "api_base": None,
         "asset_id": None,
         "key_source": None,
-        "event_hooks": event_hooks(),
         "requests": [],
         "applied": [],
         "status": None,
         "caught": None,
-        "warned": False,
     }
 
 
-def init_output(call: Input) -> Output:
+def created_output(call: Input, guardrail: Guardrail) -> Output:
     output = empty_output()
-    try:
-        guardrail = build_guardrail(call)
-    except (repelloai.RepelloAIGuardrailMissingSecrets, ValueError):
-        return output
     output["created"] = True
     output["api_base"] = guardrail.api_base
     output["asset_id"] = guardrail.asset_id
     output["key_source"] = key_source(call, guardrail.repelloai_api_key)
     return output
+
+
+def init_output(call: Input) -> Output:
+    try:
+        guardrail = build_guardrail(call)
+    except (repelloai.RepelloAIGuardrailMissingSecrets, ValueError):
+        return empty_output()
+    return created_output(call, guardrail)
 
 
 def hook_output(call: Input) -> Output:
@@ -223,12 +180,6 @@ def hook_output(call: Input) -> Output:
     script = Script(answer)
     guardrail.async_handler = AsyncHTTPHandler(transport=httpx.MockTransport(script))
     data = call["data"]
-    logger = logging.getLogger(LOGGER_NAME)
-    counter = WarningCounter()
-    level = logger.level
-    handlers = logger.handlers[:]
-    logger.handlers = [counter]
-    logger.setLevel(logging.DEBUG)
     caught: Caught | None = None
     try:
         asyncio.run(
@@ -241,19 +192,12 @@ def hook_output(call: Input) -> Output:
         )
     except HTTPException as error:
         caught = {"status": error.status_code, "detail": error.detail}
-    finally:
-        logger.handlers = handlers
-        logger.setLevel(level)
-    output = empty_output()
-    output["created"] = True
-    output["api_base"] = guardrail.api_base
-    output["asset_id"] = guardrail.asset_id
-    output["key_source"] = key_source(call, guardrail.repelloai_api_key)
+    output = created_output(call, guardrail)
+    applied, status = hook_facts(data)
     output["requests"] = script.calls
-    output["applied"] = applied(data)
-    output["status"] = recorded_status(data)
+    output["applied"] = applied
+    output["status"] = status
     output["caught"] = caught
-    output["warned"] = counter.warned
     return output
 
 
