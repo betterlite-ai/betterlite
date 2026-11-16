@@ -15,6 +15,15 @@ from openai_containers import ContainerConfig, container_config
 from openai_evals.config import CONFIG as EVALS
 
 JSON: Final = TypeAdapter(JsonValue)
+BATCH_FIELDS: Final = {
+    "id",
+    "object",
+    "endpoint",
+    "completion_window",
+    "status",
+    "input_file_id",
+    "metadata",
+}
 
 
 class VectorConfig(Protocol):
@@ -109,7 +118,10 @@ def files_create(case: FilesCase) -> JsonValue:
         "purpose": "batch",
     }
     reply = asyncio.run(
-        OpenAIFilesAPI().acreate_file(create_file_data=data, openai_client=client)
+        OpenAIFilesAPI().acreate_file(
+            create_file_data=data,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L472
+            openai_client=client,
+        )
     )
     return {"result": JSON.validate_json(reply.model_dump_json(exclude_none=True))}
 
@@ -121,22 +133,13 @@ def batches_create(case: BatchesCase) -> JsonValue:
             create_batch_data=case["create"], openai_client=client
         )
     )
-    result: dict[str, JsonValue] = {
-        "id": batch.id,
-        "object": batch.object,
-        "endpoint": batch.endpoint,
-        "completion_window": batch.completion_window,
-        "status": batch.status,
-        "input_file_id": batch.input_file_id,
-        "metadata": JSON.validate_python(batch.metadata),
-    }
-    return {"result": result}
+    return {"result": JSON.validate_json(batch.model_dump_json(include=BATCH_FIELDS))}
 
 
 def fine_tuning_create(case: FineTuningCase) -> JsonValue:
     client = async_client(case["api_base"], Answer(case["status"], case["reply"]))
     job = asyncio.run(
-        OpenAIFineTuningAPI().acreate_fine_tuning_job(
+        OpenAIFineTuningAPI().acreate_fine_tuning_job(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L95
             create_fine_tuning_job_data=case["create"], openai_client=client
         )
     )
@@ -174,7 +177,9 @@ def evals_get(case: EvalsGetCase) -> JsonValue:
 
 
 def vector_stores_create(case: VectorStoresCreateCase) -> JsonValue:
-    url, body = VECTOR.transform_create_vector_store_request(case["params"], case["api_base"])
+    url, body = VECTOR.transform_create_vector_store_request(  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_stores/transformation.py#L130
+        case["params"], case["api_base"]
+    )
     return {"url": url, "body": body}
 
 

@@ -11,119 +11,65 @@ use crate::openai_resource_dispatch::{
 };
 
 fn create_data() -> FineTuneCreate {
-    serde_json::from_value(serde_json::json!({
-        "model": "gpt-test",
-        "training_file": "file-1",
-        "suffix": "v2"
-    }))
-    .expect("a fine-tune create request")
-}
-
-fn connection<'a>(
-    calls: &Arc<Mutex<Vec<JobCall>>>,
-    builder: &'a NoBuilder,
-    answer: &Result<Vec<u8>, String>,
-) -> Connection<'a> {
-    Connection {
-        settings: ClientSettings::default(),
-        litellm_params: None,
-        client: Some(Box::new(JobSdk {
-            calls: Arc::clone(calls),
-            answer: answer.clone(),
-        })),
-        is_async: false,
-        builder,
-    }
+    serde_json::from_str(r#"{"model":"gpt-test","training_file":"file-1","suffix":"v2"}"#)
+        .expect("a fine-tune create request")
 }
 
 async fn run(
-    connection: Connection<'_>,
     call: Call<'_>,
-) -> Result<OpenAiResourceResult, OpenAiResourceError> {
+    answer: Result<Vec<u8>, String>,
+) -> (
+    Result<OpenAiResourceResult, OpenAiResourceError>,
+    Vec<JobCall>,
+) {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let builder = NoBuilder;
+    let connection = Connection {
+        settings: ClientSettings::default(),
+        litellm_params: None,
+        client: Some(Box::new(JobSdk {
+            calls: Arc::clone(&calls),
+            answer,
+        })),
+        is_async: false,
+        builder: &builder,
+    };
     let operation = OpenAiResourceOperation::FineTuning(Box::new(Dispatch { connection, call }));
-    dispatch(operation).await
+    let result = dispatch(operation).await;
+    let recorded = calls.lock().unwrap().clone();
+    (result, recorded)
 }
 
-async fn create_row() {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let builder = NoBuilder;
-    let answer = Ok(job_body("ftjob-created"));
-    let connection = connection(&calls, &builder, &answer);
-    let data = create_data();
-    let result = run(connection, Call::Create(&data)).await;
+async fn job_row(call: Call<'_>, id: &str, sent: JobCall) {
+    let (result, recorded) = run(call, Ok(job_body(id))).await;
     let Ok(OpenAiResourceResult::FineTuning(Outcome::Job(job))) = result else {
-        panic!("the create reply decodes to a job");
+        panic!("the reply decodes to a job");
     };
-    assert_eq!(job.id, "ftjob-created");
-    let recorded = calls.lock().unwrap();
-    let JobCall::Create(sent) = &recorded[0] else {
-        panic!("the create call reaches the SDK");
-    };
-    assert_eq!(sent.model, "gpt-test");
-    assert_eq!(sent.training_file, "file-1");
-    assert_eq!(sent.suffix.as_deref(), Some("v2"));
-}
-
-async fn retrieve_row() {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let builder = NoBuilder;
-    let answer = Ok(job_body("ftjob-retrieved"));
-    let connection = connection(&calls, &builder, &answer);
-    let result = run(connection, Call::Retrieve("ftjob-1")).await;
-    let Ok(OpenAiResourceResult::FineTuning(Outcome::Job(job))) = result else {
-        panic!("the retrieve reply decodes to a job");
-    };
-    assert_eq!(job.id, "ftjob-retrieved");
-    let recorded = calls.lock().unwrap();
-    assert!(matches!(&recorded[0], JobCall::Retrieve(id) if id == "ftjob-1"));
-}
-
-async fn cancel_row() {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let builder = NoBuilder;
-    let answer = Ok(job_body("ftjob-cancelled"));
-    let connection = connection(&calls, &builder, &answer);
-    let result = run(connection, Call::Cancel("ftjob-1")).await;
-    let Ok(OpenAiResourceResult::FineTuning(Outcome::Job(job))) = result else {
-        panic!("the cancel reply decodes to a job");
-    };
-    assert_eq!(job.id, "ftjob-cancelled");
-    let recorded = calls.lock().unwrap();
-    assert!(matches!(&recorded[0], JobCall::Cancel(id) if id == "ftjob-1"));
+    assert_eq!(job.id, id);
+    assert_eq!(recorded, [sent]);
 }
 
 async fn list_row() {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let builder = NoBuilder;
     let page = br#"{"object":"list","data":[],"has_more":false}"#.to_vec();
-    let answer = Ok(page.clone());
-    let connection = connection(&calls, &builder, &answer);
-    let result = run(
-        connection,
-        Call::List {
-            after: Some("ftjob-0"),
-            limit: Some(4),
-        },
-    )
-    .await;
+    let call = Call::List {
+        after: Some("ftjob-0"),
+        limit: Some(4),
+    };
+    let (result, recorded) = run(call, Ok(page.clone())).await;
     let Ok(OpenAiResourceResult::FineTuning(Outcome::Page(bytes))) = result else {
         panic!("the list reply stays the SDK page bytes");
     };
     assert_eq!(bytes, page);
-    let recorded = calls.lock().unwrap();
-    let JobCall::List { after, limit } = &recorded[0] else {
-        panic!("the list call reaches the SDK");
+    let listed = JobCall::List {
+        after: Some(String::from("ftjob-0")),
+        limit: Some(4),
     };
-    assert_eq!(after.as_deref(), Some("ftjob-0"));
-    assert_eq!(*limit, Some(4));
+    assert_eq!(recorded, [listed]);
 }
 
 async fn error_row() {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let builder = NoBuilder;
     let answer = Err(String::from("the training file is missing"));
-    let connection = connection(&calls, &builder, &answer);
-    let result = run(connection, Call::Retrieve("ftjob-1")).await;
+    let (result, recorded) = run(Call::Retrieve("ftjob-1"), answer).await;
     let Err(error) = result else {
         panic!("the SDK status error is a leaf error");
     };
@@ -131,12 +77,21 @@ async fn error_row() {
         error,
         OpenAiResourceError::FineTuning(FineTuneError::Sdk { .. })
     ));
+    assert_eq!(recorded, [JobCall::Retrieve(String::from("ftjob-1"))]);
 }
 
 pub(crate) async fn check() {
-    create_row().await;
-    retrieve_row().await;
-    cancel_row().await;
+    let data = create_data();
+    let created = JobCall::Create {
+        model: String::from("gpt-test"),
+        training_file: String::from("file-1"),
+        suffix: Some(String::from("v2")),
+    };
+    job_row(Call::Create(&data), "ftjob-created", created).await;
+    let retrieved = JobCall::Retrieve(String::from("ftjob-1"));
+    job_row(Call::Retrieve("ftjob-1"), "ftjob-retrieved", retrieved).await;
+    let cancelled = JobCall::Cancel(String::from("ftjob-1"));
+    job_row(Call::Cancel("ftjob-1"), "ftjob-cancelled", cancelled).await;
     list_row().await;
     error_row().await;
 }

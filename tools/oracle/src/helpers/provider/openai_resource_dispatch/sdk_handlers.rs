@@ -5,6 +5,7 @@ use betterlite_openai::files::records::{CreatePurpose, FileCreate, FileUpload};
 use betterlite_openai::files::{FilesApi, FilesClient};
 use betterlite_openai::fine_tuning::client::ClientSettings as JobSettings;
 use betterlite_openai::fine_tuning::client::Connection as JobConnection;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_provider::openai_resource_dispatch::batches::{
     Call as BatchCall, Dispatch as BatchDispatch, Outcome as BatchOutcome,
@@ -20,7 +21,7 @@ use betterlite_provider::openai_resource_dispatch::{
 };
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde_json::json;
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::fixtures::{Fixture, NoClient};
@@ -41,6 +42,11 @@ fn file_create(case: &FilesCreate) -> FileCreate {
     }
 }
 
+fn fixture(status: u16, reply: &Value) -> Result<Fixture, Box<HelperError>> {
+    let body = serde_json::to_vec(reply).map_err(|error| failure("ReplyEncode", error))?;
+    Ok(Fixture { status, body })
+}
+
 pub(super) async fn files_create(case: &FilesCreate) -> HelperResult {
     let client = FilesClient {
         api_key: SecretString::from("sk-fixture"),
@@ -53,10 +59,7 @@ pub(super) async fn files_create(case: &FilesCreate) -> HelperResult {
         max_retries: 0,
     };
     let api = FilesApi {
-        transport: Fixture {
-            status: case.status,
-            body: serde_json::to_vec(&case.reply).map_err(|error| failure("ReplyEncode", error))?,
-        },
+        transport: fixture(case.status, &case.reply)?,
         boundaries: || Uuid::from_u128(1),
     };
     let data = file_create(case);
@@ -80,10 +83,7 @@ pub(super) async fn batches_create(case: &BatchesCreate) -> HelperResult {
     let connection = BatchConnection {
         is_async: false,
         settings: ClientSettings::default(),
-        client: Some(Fixture {
-            status: case.status,
-            body: serde_json::to_vec(&case.reply).map_err(|error| failure("ReplyEncode", error))?,
-        }),
+        client: Some(fixture(case.status, &case.reply)?),
     };
     let call = BatchDispatch {
         api: &api,
@@ -110,10 +110,7 @@ pub(super) async fn fine_tuning_create(case: &FineTuningCreate) -> HelperResult 
     let connection = JobConnection {
         settings: JobSettings::default(),
         litellm_params: None,
-        client: Some(Box::new(Fixture {
-            status: case.status,
-            body: serde_json::to_vec(&case.reply).map_err(|error| failure("ReplyEncode", error))?,
-        })),
+        client: Some(Box::new(fixture(case.status, &case.reply)?)),
         is_async: false,
         builder: &NoClient,
     };

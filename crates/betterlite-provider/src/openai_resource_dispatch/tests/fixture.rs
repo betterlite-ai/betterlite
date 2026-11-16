@@ -24,10 +24,12 @@ use betterlite_openai::fine_tuning::client::{
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use betterlite_openai::openai_base_config::Object;
 use futures_util::StreamExt as _;
+use futures_util::stream::iter;
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
 use rust_decimal::Decimal;
 use secrecy::SecretString;
+use serde_json::Value;
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,6 +142,11 @@ impl Fixture {
     pub(crate) fn seen(&self) -> Vec<Wire> {
         self.seen.lock().unwrap().clone()
     }
+
+    fn answer(&self, request: &OutboundRequest) -> (u16, HeaderMap) {
+        self.seen.lock().unwrap().push(project(request));
+        (self.status, header_map(&self.headers))
+    }
 }
 
 fn header_map(pairs: &[(String, String)]) -> HeaderMap {
@@ -154,26 +161,29 @@ fn header_map(pairs: &[(String, String)]) -> HeaderMap {
 }
 
 impl FileTransport for Fixture {
-    async fn send_buffered(
+    fn send_buffered(
         &self,
         request: OutboundRequest,
-    ) -> Result<UpstreamResponse, TransportError> {
-        self.seen.lock().unwrap().push(project(&request));
-        Ok(UpstreamResponse {
-            status: self.status,
-            headers: header_map(&self.headers),
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        let (status, headers) = self.answer(&request);
+        ready(Ok(UpstreamResponse {
+            status,
+            headers,
             body: self.body.clone(),
-        })
+        }))
     }
 
-    async fn send_stream(&self, request: OutboundRequest) -> Result<StreamReply, TransportError> {
-        self.seen.lock().unwrap().push(project(&request));
+    fn send_stream(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {
+        let (status, headers) = self.answer(&request);
         let chunks: Vec<Result<Vec<u8>, HttpError>> = self.chunks.iter().cloned().map(Ok).collect();
-        Ok(StreamReply {
-            status: self.status,
-            headers: header_map(&self.headers),
-            body: futures_util::stream::iter(chunks).boxed(),
-        })
+        ready(Ok(StreamReply {
+            status,
+            headers,
+            body: iter(chunks).boxed(),
+        }))
     }
 }
 
@@ -323,9 +333,17 @@ pub(crate) fn object(json: &str) -> Object {
     serde_json::from_str(json).unwrap()
 }
 
-#[derive(Debug, Clone)]
+pub(crate) fn value(json: &str) -> Value {
+    serde_json::from_str(json).unwrap()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum JobCall {
-    Create(FineTuneCreate),
+    Create {
+        model: String,
+        training_file: String,
+        suffix: Option<String>,
+    },
     List {
         after: Option<String>,
         limit: Option<i64>,
@@ -340,8 +358,11 @@ pub(crate) struct JobSdk {
 }
 
 impl JobSdk {
-    fn record(&self, call: JobCall) -> Result<Vec<u8>, JobSdkError> {
+    fn log(&self, call: JobCall) {
         self.calls.lock().unwrap().push(call);
+    }
+
+    fn reply(&self) -> Result<Vec<u8>, JobSdkError> {
         self.answer.clone().map_err(|message| JobSdkError {
             status: 400,
             error_type: Some(String::from("invalid_request_error")),
@@ -358,22 +379,30 @@ impl JobsApi for JobSdk {
     }
 
     fn create(&self, data: &FineTuneCreate) -> Result<Vec<u8>, JobSdkError> {
-        self.record(JobCall::Create(data.clone()))
+        self.log(JobCall::Create {
+            model: data.model.clone(),
+            training_file: data.training_file.clone(),
+            suffix: data.suffix.clone(),
+        });
+        self.reply()
     }
 
     fn list(&self, after: Option<&str>, limit: Option<i64>) -> Result<Vec<u8>, JobSdkError> {
-        self.record(JobCall::List {
+        self.log(JobCall::List {
             after: after.map(str::to_owned),
             limit,
-        })
+        });
+        self.reply()
     }
 
     fn retrieve(&self, job_id: &str) -> Result<Vec<u8>, JobSdkError> {
-        self.record(JobCall::Retrieve(job_id.to_owned()))
+        self.log(JobCall::Retrieve(job_id.to_owned()));
+        self.reply()
     }
 
     fn cancel(&self, job_id: &str) -> Result<Vec<u8>, JobSdkError> {
-        self.record(JobCall::Cancel(job_id.to_owned()))
+        self.log(JobCall::Cancel(job_id.to_owned()));
+        self.reply()
     }
 }
 

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::api::container_contracts::config::{
-    BaseContainerConfig, ContainerListQuery, ContainerRequestContext,
+    ContainerListQuery, ContainerRequestContext,
 };
 use betterlite_openai::api::container_contracts::error::ContainerError;
 use betterlite_openai::openai_base_config::Object;
@@ -15,201 +15,111 @@ use crate::openai_resource_dispatch::{
 const API_BASE: &str = "https://api.containers.test/v1";
 
 async fn run(
-    config: &dyn BaseContainerConfig,
-    context: ContainerRequestContext<'_>,
     call: Call<'_>,
+    litellm_params: &Object,
 ) -> Result<OpenAiResourceResult, OpenAiResourceError> {
+    let config = container_config();
+    let headers = BTreeMap::new();
+    let context = ContainerRequestContext {
+        litellm_params,
+        headers: &headers,
+    };
     let operation = OpenAiResourceOperation::Containers(Box::new(Dispatch {
-        config,
+        config: &config,
         context,
         call,
     }));
     dispatch(operation).await
 }
 
-fn request_result(result: Result<OpenAiResourceResult, OpenAiResourceError>) -> (String, Object) {
-    let Ok(OpenAiResourceResult::Containers(Outcome::Request { url, query })) = result else {
+async fn request_row(call: Call<'_>, url: &str, query: &str) {
+    let result = run(call, &object("{}")).await;
+    let Ok(OpenAiResourceResult::Containers(Outcome::Request((sent_url, sent_query)))) = result
+    else {
         panic!("the request transform returns its url and query");
     };
-    (url, query)
+    assert_eq!(sent_url, url);
+    assert_eq!(sent_query, object(query));
 }
 
 async fn create_row() {
-    let config = container_config();
     let params = object(r#"{"file_ids":["file-1"]}"#);
-    let headers = BTreeMap::new();
-    let context = ContainerRequestContext {
-        litellm_params: &params,
-        headers: &headers,
+    let call = Call::Create {
+        name: "box",
+        params: &params,
     };
-    let request = run(
-        &config,
-        context,
-        Call::Create {
-            name: "box",
-            params: &params,
-        },
-    )
-    .await;
-    let Ok(OpenAiResourceResult::Containers(Outcome::Create(body))) = request else {
+    let result = run(call, &params).await;
+    let Ok(OpenAiResourceResult::Containers(Outcome::Create(body))) = result else {
         panic!("the create request transform returns its body");
     };
     assert_eq!(body, object(r#"{"name":"box","file_ids":["file-1"]}"#));
 }
 
-async fn list_row() {
-    let config = container_config();
-    let params = object("{}");
-    let headers = BTreeMap::new();
-    let context = ContainerRequestContext {
-        litellm_params: &params,
-        headers: &headers,
-    };
+async fn list_rows() {
     let extra = object(r#"{"filter":"mine"}"#);
-    let query = ContainerListQuery {
+    let full = ContainerListQuery {
         after: Some("cntr_0"),
         limit: Some(2),
         order: Some("desc"),
         extra_query: Some(&extra),
     };
-    let request = run(
-        &config,
-        context,
-        Call::List {
-            api_base: API_BASE,
-            query,
-        },
-    )
-    .await;
-    let (url, query) = request_result(request);
-    assert_eq!(url, API_BASE);
-    assert_eq!(
-        query,
-        object(r#"{"after":"cntr_0","limit":"2","order":"desc","filter":"mine"}"#)
-    );
-}
-
-async fn retrieve_row() {
-    let config = container_config();
-    let params = object("{}");
-    let headers = BTreeMap::new();
-    let context = ContainerRequestContext {
-        litellm_params: &params,
-        headers: &headers,
+    let call = Call::List {
+        api_base: API_BASE,
+        query: full,
     };
-    let request = run(
-        &config,
-        context,
-        Call::Retrieve {
-            id: "cntr_1",
-            api_base: API_BASE,
-        },
-    )
-    .await;
-    let (url, query) = request_result(request);
-    assert_eq!(url, "https://api.containers.test/v1/cntr_1");
-    assert_eq!(query, object("{}"));
-}
-
-async fn delete_row() {
-    let config = container_config();
-    let params = object("{}");
-    let headers = BTreeMap::new();
-    let context = ContainerRequestContext {
-        litellm_params: &params,
-        headers: &headers,
-    };
-    let request = run(
-        &config,
-        context,
-        Call::Delete {
-            id: "cntr_1",
-            api_base: API_BASE,
-        },
-    )
-    .await;
-    let (url, query) = request_result(request);
-    assert_eq!(url, "https://api.containers.test/v1/cntr_1");
-    assert_eq!(query, object("{}"));
-}
-
-async fn file_list_row() {
-    let config = container_config();
-    let params = object("{}");
-    let headers = BTreeMap::new();
-    let context = ContainerRequestContext {
-        litellm_params: &params,
-        headers: &headers,
-    };
-    let query = ContainerListQuery {
+    let sent = r#"{"after":"cntr_0","limit":"2","order":"desc","filter":"mine"}"#;
+    request_row(call, API_BASE, sent).await;
+    let limited = ContainerListQuery {
         after: None,
         limit: Some(1),
         order: None,
         extra_query: None,
     };
-    let request = run(
-        &config,
-        context,
-        Call::FileList {
-            container_id: "cntr_1",
-            api_base: API_BASE,
-            query,
-        },
-    )
-    .await;
-    let (url, query) = request_result(request);
-    assert_eq!(url, "https://api.containers.test/v1/cntr_1/files");
-    assert_eq!(query, object(r#"{"limit":"1"}"#));
+    let files = Call::FileList {
+        container_id: "cntr_1",
+        api_base: API_BASE,
+        query: limited,
+    };
+    let files_url = "https://api.containers.test/v1/cntr_1/files";
+    request_row(files, files_url, r#"{"limit":"1"}"#).await;
 }
 
-async fn file_content_row() {
-    let config = container_config();
-    let params = object("{}");
-    let headers = BTreeMap::new();
-    let context = ContainerRequestContext {
-        litellm_params: &params,
-        headers: &headers,
+async fn path_rows() {
+    let container_url = "https://api.containers.test/v1/cntr_1";
+    let retrieve = Call::Retrieve {
+        id: "cntr_1",
+        api_base: API_BASE,
     };
-    let request = run(
-        &config,
-        context,
-        Call::FileContent {
-            container_id: "cntr_1",
-            file_id: "cfile_1",
-            api_base: API_BASE,
-        },
-    )
-    .await;
-    let (url, query) = request_result(request);
-    assert_eq!(
-        url,
-        "https://api.containers.test/v1/cntr_1/files/cfile_1/content"
-    );
-    assert_eq!(query, object("{}"));
-    let reply = run(&config, context, Call::FileContentReply(b"\x00\x01raw\xff")).await;
-    let Ok(OpenAiResourceResult::Containers(Outcome::FileContent(content))) = reply else {
+    request_row(retrieve, container_url, "{}").await;
+    let delete = Call::Delete {
+        id: "cntr_1",
+        api_base: API_BASE,
+    };
+    request_row(delete, container_url, "{}").await;
+    let content = Call::FileContent {
+        container_id: "cntr_1",
+        file_id: "cfile_1",
+        api_base: API_BASE,
+    };
+    let content_url = "https://api.containers.test/v1/cntr_1/files/cfile_1/content";
+    request_row(content, content_url, "{}").await;
+}
+
+async fn content_reply_row() {
+    let raw = b"\x00\x01raw\xff";
+    let result = run(Call::FileContentReply(raw), &object("{}")).await;
+    let Ok(OpenAiResourceResult::Containers(Outcome::FileContent(content))) = result else {
         panic!("the file content reply keeps its bytes");
     };
-    assert_eq!(content.as_ref(), b"\x00\x01raw\xff");
+    assert_eq!(content.as_ref(), raw);
 }
 
 async fn error_row() {
-    let config = container_config();
-    let params = object("{}");
-    let headers = BTreeMap::new();
-    let context = ContainerRequestContext {
-        litellm_params: &params,
-        headers: &headers,
+    let call = Call::Retrieve {
+        id: "..",
+        api_base: API_BASE,
     };
-    let result = run(
-        &config,
-        context,
-        Call::Retrieve {
-            id: "..",
-            api_base: API_BASE,
-        },
-    )
-    .await;
+    let result = run(call, &object("{}")).await;
     let Err(error) = result else {
         panic!("a dot path segment is a leaf error");
     };
@@ -221,10 +131,8 @@ async fn error_row() {
 
 pub(crate) async fn check() {
     create_row().await;
-    list_row().await;
-    retrieve_row().await;
-    delete_row().await;
-    file_list_row().await;
-    file_content_row().await;
+    list_rows().await;
+    path_rows().await;
+    content_reply_row().await;
     error_row().await;
 }

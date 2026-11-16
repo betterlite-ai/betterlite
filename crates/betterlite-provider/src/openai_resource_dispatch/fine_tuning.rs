@@ -3,18 +3,18 @@ use betterlite_openai::fine_tuning::error::FineTuneError;
 use betterlite_openai::fine_tuning::job::{FineTuneCreate, FineTuneJob};
 use betterlite_openai::fine_tuning::{JobRequest, list_fine_tuning_jobs, request_fine_tuning_job};
 
-pub struct Dispatch<'a> {
-    pub connection: Connection<'a>,
-    pub call: Call<'a>,
+pub struct Dispatch<'call> {
+    pub connection: Connection<'call>,
+    pub call: Call<'call>,
 }
 
 // B518's four lifecycle calls; list hands back the SDK page bytes it decoded nothing in
-pub enum Call<'a> {
-    Create(&'a FineTuneCreate),
-    Retrieve(&'a str),
-    Cancel(&'a str),
+pub enum Call<'call> {
+    Create(&'call FineTuneCreate),
+    Retrieve(&'call str),
+    Cancel(&'call str),
     List {
-        after: Option<&'a str>,
+        after: Option<&'call str>,
         limit: Option<i64>,
     },
 }
@@ -26,7 +26,6 @@ pub enum Outcome {
 }
 
 impl Dispatch<'_> {
-    #[must_use]
     pub fn run(self) -> Result<Outcome, FineTuneError> {
         let Self { connection, call } = self;
         Ok(match call {

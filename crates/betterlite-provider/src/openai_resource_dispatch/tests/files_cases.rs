@@ -17,7 +17,7 @@ use crate::openai_resource_dispatch::{
     OpenAiResourceError, OpenAiResourceOperation, OpenAiResourceResult, dispatch,
 };
 
-fn api(fixture: Fixture) -> FilesApi<Fixture> {
+fn api_with(fixture: Fixture) -> FilesApi<Fixture> {
     FilesApi {
         transport: fixture,
         boundaries: Uuid::nil,
@@ -58,7 +58,7 @@ fn create_data() -> FileCreate {
 
 async fn create_row() {
     let fixture = Fixture::replied(200, &file_object());
-    let api = api(fixture);
+    let api = api_with(fixture);
     let client = files_client();
     let data = create_data();
     let result = run(&api, &client, Call::Create(&data)).await;
@@ -75,7 +75,11 @@ async fn create_row() {
     assert_eq!(wire.header("openai-organization"), Some("org-files"));
     assert_eq!(wire.header("accept"), Some("application/json"));
     assert_eq!(wire.header("x-trace"), Some("t1"));
-    let WireBody::Multipart(parts) = &wire.body else {
+    check_upload_parts(&wire.body);
+}
+
+fn check_upload_parts(body: &WireBody) {
+    let WireBody::Multipart(parts) = body else {
         panic!("a file upload is multipart");
     };
     let names: Vec<&str> = parts.iter().map(|part| part.name.as_str()).collect();
@@ -96,12 +100,11 @@ async fn create_row() {
     assert_eq!(parts[4].data, b"{\"x\":1}\n".to_vec());
 }
 
-async fn retrieve_row() {
-    let fixture = Fixture::replied(200, &file_object());
-    let api = api(fixture);
+async fn id_rows() {
+    let api = api_with(Fixture::replied(200, &file_object()));
     let client = files_client();
-    let result = run(&api, &client, Call::Retrieve("file-1")).await;
-    let Ok(OpenAiResourceResult::Files(Outcome::Object(file))) = result else {
+    let fetched = run(&api, &client, Call::Retrieve("file-1")).await;
+    let Ok(OpenAiResourceResult::Files(Outcome::Object(file))) = fetched else {
         panic!("the retrieve reply decodes to a file object");
     };
     assert_eq!(file.filename, "batch.jsonl");
@@ -109,25 +112,21 @@ async fn retrieve_row() {
     assert_eq!(seen[0].method, "GET");
     assert_eq!(seen[0].path, "/v1/files/file-1");
     assert_eq!(seen[0].body, WireBody::Empty);
-}
-
-async fn delete_row() {
-    let fixture = Fixture::replied(200, br#"{"id":"file-1","object":"file","deleted":true}"#);
-    let api = api(fixture);
-    let client = files_client();
-    let result = run(&api, &client, Call::Delete("file-1")).await;
-    let Ok(OpenAiResourceResult::Files(Outcome::Deleted(deleted))) = result else {
+    let gone = br#"{"id":"file-1","object":"file","deleted":true}"#;
+    let removal = api_with(Fixture::replied(200, gone));
+    let removed = run(&removal, &client, Call::Delete("file-1")).await;
+    let Ok(OpenAiResourceResult::Files(Outcome::Deleted(deleted))) = removed else {
         panic!("the delete reply decodes to a deleted file");
     };
     assert!(deleted.deleted);
-    let seen = api.transport.seen();
-    assert_eq!(seen[0].method, "DELETE");
-    assert_eq!(seen[0].path, "/v1/files/file-1");
+    let calls = removal.transport.seen();
+    assert_eq!(calls[0].method, "DELETE");
+    assert_eq!(calls[0].path, "/v1/files/file-1");
 }
 
 async fn list_row() {
     let fixture = Fixture::replied(200, &page_body());
-    let api = api(fixture);
+    let api = api_with(fixture);
     let client = files_client();
     let query = FileQuery {
         purpose: Some(String::from("batch")),
@@ -147,7 +146,7 @@ async fn list_row() {
 
 async fn content_row() {
     let fixture = Fixture::replied(200, b"line one\nline two\n");
-    let api = api(fixture);
+    let api = api_with(fixture);
     let client = files_client();
     let request = FileContentRequest {
         file_id: String::from("file-1"),
@@ -168,7 +167,7 @@ async fn content_row() {
 
 async fn streaming_row() {
     let fixture = Fixture::streamed(vec![b"ab".to_vec(), b"cdef".to_vec()]);
-    let api = api(fixture);
+    let api = api_with(fixture);
     let client = files_client();
     let request = FileContentRequest {
         file_id: String::from("file-1"),
@@ -204,7 +203,7 @@ async fn streaming_row() {
 async fn error_row() {
     let body = br#"{"error":{"message":"bad file","type":"invalid_request_error","param":"file_id","code":"invalid"}}"#;
     let fixture = Fixture::replied(400, body);
-    let api = api(fixture);
+    let api = api_with(fixture);
     let client = files_client();
     let result = run(&api, &client, Call::Retrieve("file-1")).await;
     let Err(error) = result else {
@@ -218,8 +217,7 @@ async fn error_row() {
 
 pub(crate) async fn check() {
     create_row().await;
-    retrieve_row().await;
-    delete_row().await;
+    id_rows().await;
     list_row().await;
     content_row().await;
     streaming_row().await;

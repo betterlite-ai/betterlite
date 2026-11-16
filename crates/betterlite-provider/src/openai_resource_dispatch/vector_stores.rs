@@ -16,30 +16,30 @@ use betterlite_openai::vector_stores::{
 };
 use secrecy::SecretString;
 
-pub struct Dispatch<'a> {
-    pub settings: &'a Settings,
+pub struct Dispatch<'call> {
+    pub settings: &'call Settings,
     pub globals: LiteLlmGlobals,
     pub env_api_key: Option<SecretString>,
-    pub call: Call<'a>,
+    pub call: Call<'call>,
 }
 
 // B527's credential, URL, endpoint, request and reply calls, each calling its leaf
-pub enum Call<'a> {
-    Auth(Option<&'a SecretString>),
+pub enum Call<'call> {
+    Auth(Option<&'call SecretString>),
     Environment {
         headers: Headers,
         explicit_key: Option<SecretString>,
     },
     Url {
-        api_base: Option<&'a str>,
-        litellm_api_base: Option<&'a str>,
-        vector_store_id: Option<&'a str>,
+        api_base: Option<&'call str>,
+        litellm_api_base: Option<&'call str>,
+        vector_store_id: Option<&'call str>,
     },
     Endpoints(EndpointKind),
-    Request(RequestCall<'a>),
+    Request(RequestCall<'call>),
     Reply {
         kind: ReplyKind,
-        response: &'a http::Response<Vec<u8>>,
+        response: &'call http::Response<Vec<u8>>,
     },
 }
 
@@ -49,29 +49,29 @@ pub enum EndpointKind {
     File,
 }
 
-pub enum RequestCall<'a> {
+pub enum RequestCall<'call> {
     Search {
-        vector_store_id: &'a str,
-        query: &'a Query,
-        params: &'a SearchParams,
-        api_base: &'a str,
+        vector_store_id: &'call str,
+        query: &'call Query,
+        params: &'call SearchParams,
+        api_base: &'call str,
     },
     Create {
-        params: &'a CreateParams,
-        api_base: &'a str,
+        params: &'call CreateParams,
+        api_base: &'call str,
     },
     FileCreate {
-        params: &'a FileCreateParams,
-        api_base: &'a str,
+        params: &'call FileCreateParams,
+        api_base: &'call str,
     },
     FileList {
-        params: &'a FileListParams,
-        api_base: &'a str,
+        params: &'call FileListParams,
+        api_base: &'call str,
     },
     File {
-        operation: &'a FileOperation,
-        file_id: &'a str,
-        api_base: &'a str,
+        operation: &'call FileOperation,
+        file_id: &'call str,
+        api_base: &'call str,
     },
 }
 
@@ -85,7 +85,6 @@ pub enum Outcome {
 }
 
 impl Dispatch<'_> {
-    #[must_use]
     pub fn run(self) -> Result<Outcome, VectorStoreError> {
         let Self {
             settings,
@@ -115,7 +114,7 @@ impl Dispatch<'_> {
                 vector_store_id,
             )?)),
             Call::Endpoints(kind) => Ok(Outcome::Endpoints(Box::new(endpoints(kind)))),
-            Call::Request(request) => Ok(Outcome::Request(request_outcome(request)?)),
+            Call::Request(request) => Ok(Outcome::Request(request_outcome(&request)?)),
             Call::Reply { kind, response } => {
                 Ok(Outcome::Reply(transform_response(kind, response)?))
             }
@@ -130,7 +129,7 @@ fn endpoints(kind: EndpointKind) -> VectorStoreIndexEndpoints {
     }
 }
 
-fn request_outcome(call: RequestCall<'_>) -> Result<Request, VectorStoreError> {
+fn request_outcome(call: &RequestCall<'_>) -> Result<Request, VectorStoreError> {
     Ok(match call {
         RequestCall::Search {
             vector_store_id,

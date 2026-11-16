@@ -26,20 +26,20 @@ pub struct OpenAiResourceRequest;
 pub struct OpenAiResourcePrepared;
 
 // One executable operation per leaf call; the two generic leaves are boxed as the future they run
-type FilesFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<files::Outcome, FilesError>> + Send + 'a>>;
-type BatchesFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<batches::Outcome, BatchesError>> + Send + 'a>>;
-type DispatchFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<OpenAiResourceResult, OpenAiResourceError>> + Send + 'a>>;
+type FilesFuture<'call> =
+    Pin<Box<dyn Future<Output = Result<files::Outcome, FilesError>> + Send + 'call>>;
+type BatchesFuture<'call> =
+    Pin<Box<dyn Future<Output = Result<batches::Outcome, BatchesError>> + Send + 'call>>;
+type DispatchFuture<'call> =
+    Pin<Box<dyn Future<Output = Result<OpenAiResourceResult, OpenAiResourceError>> + Send + 'call>>;
 
-pub enum OpenAiResourceOperation<'a> {
-    Files(FilesFuture<'a>),
-    Batches(BatchesFuture<'a>),
-    FineTuning(Box<fine_tuning::Dispatch<'a>>),
-    Containers(Box<containers::Dispatch<'a>>),
-    Evals(Box<evals::Dispatch<'a>>),
-    VectorStores(Box<vector_stores::Dispatch<'a>>),
+pub enum OpenAiResourceOperation<'call> {
+    Files(FilesFuture<'call>),
+    Batches(BatchesFuture<'call>),
+    FineTuning(Box<fine_tuning::Dispatch<'call>>),
+    Containers(Box<containers::Dispatch<'call>>),
+    Evals(Box<evals::Dispatch<'call>>),
+    VectorStores(Box<vector_stores::Dispatch<'call>>),
     Unsupported { operation: &'static str },
 }
 
@@ -74,8 +74,8 @@ pub enum OpenAiResourceError {
 
 // The four sync leaves run before the future, so it carries only Send values
 #[must_use]
-pub fn dispatch(operation: OpenAiResourceOperation<'_>) -> DispatchFuture<'_> {
-    match operation {
+pub fn dispatch(resource: OpenAiResourceOperation<'_>) -> DispatchFuture<'_> {
+    match resource {
         OpenAiResourceOperation::Files(future) => {
             Box::pin(async move { Ok(OpenAiResourceResult::Files(future.await?)) })
         }

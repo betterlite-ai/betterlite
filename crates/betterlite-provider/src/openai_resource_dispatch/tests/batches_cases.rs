@@ -73,86 +73,43 @@ fn query() -> BatchQuery {
     }
 }
 
-async fn create_row() {
+async fn batch_row(call: Call<'_>, id: &str, sent: BatchCall) {
     let calls = Arc::new(Mutex::new(Vec::new()));
-    let api = api(&calls, BatchAnswer::Body(batch_body("batch_created")));
-    let data = create_data();
-    let result = run(&api, Call::Create(&data)).await;
+    let api = api(&calls, BatchAnswer::Body(batch_body(id)));
+    let result = run(&api, call).await;
     let Ok(OpenAiResourceResult::Batches(Outcome::Batch(batch))) = result else {
-        panic!("the create reply decodes to a batch");
+        panic!("the reply decodes to a batch");
     };
-    assert_eq!(batch.id, "batch_created");
+    assert_eq!(batch.id, id);
     assert_eq!(batch.endpoint, "/v1/embeddings");
     assert_eq!(batch.completion_window, "24h");
-    let recorded = calls.lock().unwrap();
-    let BatchCall::Create(sent) = &recorded[0] else {
-        panic!("the create call reaches the SDK");
-    };
-    assert_eq!(sent.completion_window, CompletionWindow::Day);
-    assert_eq!(sent.endpoint, BatchEndpoint::Embeddings);
-    assert_eq!(sent.input_file_id, "file-1");
-    assert_eq!(
-        sent.output_expires_after
-            .as_ref()
-            .map(|expiry| expiry.seconds),
-        Some(3600)
-    );
-}
-
-async fn retrieve_row() {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let api = api(&calls, BatchAnswer::Body(batch_body("batch_retrieved")));
-    let data = query();
-    let result = run(&api, Call::Retrieve(&data)).await;
-    let Ok(OpenAiResourceResult::Batches(Outcome::Batch(batch))) = result else {
-        panic!("the retrieve reply decodes to a batch");
-    };
-    assert_eq!(batch.id, "batch_retrieved");
-    let recorded = calls.lock().unwrap();
-    assert!(matches!(&recorded[0], BatchCall::Retrieve(sent) if sent.batch_id == "batch_1"));
-}
-
-async fn cancel_row() {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let api = api(&calls, BatchAnswer::Body(batch_body("batch_cancelled")));
-    let data = query();
-    let result = run(&api, Call::Cancel(&data)).await;
-    let Ok(OpenAiResourceResult::Batches(Outcome::Batch(batch))) = result else {
-        panic!("the cancel reply decodes to a batch");
-    };
-    assert_eq!(batch.id, "batch_cancelled");
-    let recorded = calls.lock().unwrap();
-    assert!(matches!(&recorded[0], BatchCall::Cancel(sent) if sent.batch_id == "batch_1"));
+    assert_eq!(*calls.lock().unwrap(), [sent]);
 }
 
 async fn list_row() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let api = api(&calls, BatchAnswer::Body(batch_body("batch_listed")));
-    let result = run(
-        &api,
-        Call::List {
-            after: Some("batch_0"),
-            limit: Some(5),
-        },
-    )
-    .await;
+    let call = Call::List {
+        after: Some("batch_0"),
+        limit: Some(5),
+    };
+    let result = run(&api, call).await;
     let Ok(OpenAiResourceResult::Batches(Outcome::Page(page))) = result else {
         panic!("the list reply is the SDK page");
     };
     assert_eq!(*page, batch_page());
-    let recorded = calls.lock().unwrap();
-    let BatchCall::List { after, limit } = &recorded[0] else {
-        panic!("the list call reaches the SDK");
+    let listed = BatchCall::List {
+        after: Some(String::from("batch_0")),
+        limit: Some(5),
     };
-    assert_eq!(after.as_deref(), Some("batch_0"));
-    assert_eq!(*limit, Some(5));
+    assert_eq!(*calls.lock().unwrap(), [listed]);
 }
 
 async fn error_row() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let api = api(&calls, BatchAnswer::Failure);
-    let data = query();
-    let result = run(&api, Call::Retrieve(&data)).await;
+    let lookup = query();
+    let result = run(&api, Call::Retrieve(&lookup)).await;
     let Err(error) = result else {
         panic!("the SDK status error is a leaf error");
     };
@@ -163,9 +120,14 @@ async fn error_row() {
 }
 
 pub(crate) async fn check() {
-    create_row().await;
-    retrieve_row().await;
-    cancel_row().await;
+    let data = create_data();
+    let lookup = query();
+    let created = BatchCall::Create(data.clone());
+    batch_row(Call::Create(&data), "batch_created", created).await;
+    let retrieved = BatchCall::Retrieve(lookup.clone());
+    batch_row(Call::Retrieve(&lookup), "batch_retrieved", retrieved).await;
+    let cancelled = BatchCall::Cancel(lookup.clone());
+    batch_row(Call::Cancel(&lookup), "batch_cancelled", cancelled).await;
     list_row().await;
     error_row().await;
 }

@@ -13,6 +13,7 @@ use betterlite_openai::fine_tuning::client::{
 };
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use futures_util::StreamExt as _;
+use futures_util::stream::iter;
 use http::HeaderMap;
 use serde_json::Map;
 
@@ -20,6 +21,8 @@ pub(super) struct Fixture {
     pub(super) status: u16,
     pub(super) body: Vec<u8>,
 }
+
+const FAILURE: &str = "the fixture upstream failed";
 
 impl Fixture {
     fn answer(&self) -> Result<Vec<u8>, BatchSdkError> {
@@ -31,42 +34,43 @@ impl Fixture {
             error_type: None,
             param: None,
             code: None,
-            message: String::from("the fixture upstream failed"),
+            message: String::from(FAILURE),
         })
     }
 
     fn job_answer(&self) -> Result<Vec<u8>, JobSdkError> {
-        if (200..300).contains(&self.status) {
-            return Ok(self.body.clone());
-        }
-        Err(JobSdkError {
-            status: self.status,
-            error_type: None,
-            param: None,
-            code: None,
-            message: String::from("the fixture upstream failed"),
-        })
+        let succeeded = (200..300).contains(&self.status);
+        succeeded
+            .then(|| self.body.clone())
+            .ok_or_else(|| JobSdkError {
+                status: self.status,
+                error_type: None,
+                param: None,
+                code: None,
+                message: String::from(FAILURE),
+            })
     }
 }
 
 impl FileTransport for Fixture {
-    async fn send_buffered(
+    fn send_buffered(
         &self,
         _request: OutboundRequest,
-    ) -> Result<UpstreamResponse, TransportError> {
-        Ok(UpstreamResponse {
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        ready(Ok(UpstreamResponse {
             status: self.status,
             headers: HeaderMap::new(),
             body: self.body.clone(),
-        })
+        }))
     }
 
-    async fn send_stream(&self, _request: OutboundRequest) -> Result<StreamReply, TransportError> {
-        let chunks = futures_util::stream::iter(Vec::<Result<Vec<u8>, HttpError>>::new());
+    async fn send_stream(&self, request: OutboundRequest) -> Result<StreamReply, TransportError> {
+        let buffered = self.send_buffered(request).await?;
+        let chunks: Vec<Result<Vec<u8>, HttpError>> = vec![Ok(buffered.body)];
         Ok(StreamReply {
-            status: self.status,
-            headers: HeaderMap::new(),
-            body: chunks.boxed(),
+            status: buffered.status,
+            headers: buffered.headers,
+            body: iter(chunks).boxed(),
         })
     }
 }

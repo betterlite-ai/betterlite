@@ -8,24 +8,24 @@ use betterlite_openai::files::stream::FileContentStreamingResult;
 use betterlite_openai::files::transport::FileTransport;
 use betterlite_openai::files::{FilesApi, FilesClient};
 
-pub struct Dispatch<'a, T>
+pub struct Dispatch<'call, T>
 where
     T: FileTransport,
 {
-    pub api: &'a FilesApi<T>,
-    pub client: &'a FilesClient,
-    pub call: Call<'a>,
+    pub api: &'call FilesApi<T>,
+    pub client: &'call FilesClient,
+    pub call: Call<'call>,
 }
 
 // B516's six lifecycle calls; the streaming call keeps its chunk size and leaves the stream to the caller
-pub enum Call<'a> {
-    Create(&'a FileCreate),
-    Retrieve(&'a str),
-    Delete(&'a str),
-    List(&'a FileQuery),
-    Content(&'a FileContentRequest),
+pub enum Call<'call> {
+    Create(&'call FileCreate),
+    Retrieve(&'call str),
+    Delete(&'call str),
+    List(&'call FileQuery),
+    Content(&'call FileContentRequest),
     StreamingContent {
-        request: &'a FileContentRequest,
+        request: &'call FileContentRequest,
         chunk_size: Option<NonZeroUsize>,
     },
 }
@@ -39,7 +39,6 @@ pub enum Outcome {
 }
 
 impl<T: FileTransport> Dispatch<'_, T> {
-    #[must_use]
     pub async fn run(self) -> Result<Outcome, FilesError> {
         let Self { api, client, call } = self;
         Ok(match call {

@@ -3,23 +3,23 @@ use betterlite_openai::batches::records::{BatchCreate, BatchObject, BatchPage, B
 use betterlite_openai::batches::sdk::{BatchesSdk, ClientConstructor, Connection};
 use betterlite_openai::batches::{BatchOperation, BatchesApi};
 
-pub struct Dispatch<'a, C>
+pub struct Dispatch<'call, C>
 where
     C: ClientConstructor,
     C::Client: BatchesSdk<Page = BatchPage>,
 {
-    pub api: &'a BatchesApi<C>,
+    pub api: &'call BatchesApi<C>,
     pub connection: Connection<C::Client>,
-    pub call: Call<'a>,
+    pub call: Call<'call>,
 }
 
 // B517's four lifecycle calls; list keeps the cursor and limit it was given
-pub enum Call<'a> {
-    Create(&'a BatchCreate),
-    Retrieve(&'a BatchQuery),
-    Cancel(&'a BatchQuery),
+pub enum Call<'call> {
+    Create(&'call BatchCreate),
+    Retrieve(&'call BatchQuery),
+    Cancel(&'call BatchQuery),
     List {
-        after: Option<&'a str>,
+        after: Option<&'call str>,
         limit: Option<i64>,
     },
 }
@@ -34,7 +34,6 @@ impl<C: ClientConstructor> Dispatch<'_, C>
 where
     C::Client: BatchesSdk<Page = BatchPage>,
 {
-    #[must_use]
     pub async fn run(self) -> Result<Outcome, BatchesError> {
         let Self {
             api,

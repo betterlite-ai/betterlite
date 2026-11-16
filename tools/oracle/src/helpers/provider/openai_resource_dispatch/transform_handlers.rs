@@ -48,12 +48,12 @@ pub(super) async fn containers_list(case: &ContainersList) -> HelperResult {
         costs: Arc::new(ZeroCosts),
     };
     let litellm_params = Object::new();
-    let headers = BTreeMap::new();
+    let request_headers = BTreeMap::new();
     let context = ContainerRequestContext {
         litellm_params: &litellm_params,
-        headers: &headers,
+        headers: &request_headers,
     };
-    let query = ContainerListQuery {
+    let filter = ContainerListQuery {
         after: case.after.as_deref(),
         limit: case.limit,
         order: case.order.as_deref(),
@@ -61,7 +61,7 @@ pub(super) async fn containers_list(case: &ContainersList) -> HelperResult {
     };
     let call = ContainerCall::List {
         api_base: &case.api_base,
-        query,
+        query: filter,
     };
     let operation = OpenAiResourceOperation::Containers(Box::new(ContainerDispatch {
         config: &config,
@@ -69,7 +69,7 @@ pub(super) async fn containers_list(case: &ContainersList) -> HelperResult {
         call,
     }));
     let outcome = dispatch(operation).await.map_err(leaf_failure)?;
-    let OpenAiResourceResult::Containers(ContainerOutcome::Request { url, query }) = outcome else {
+    let OpenAiResourceResult::Containers(ContainerOutcome::Request((url, query))) = outcome else {
         return Err(failure("Variant", OTHER_OUTCOME));
     };
     Ok(json!({ "url": url, "query": query }))
@@ -82,10 +82,10 @@ pub(super) async fn evals_get(case: &EvalsGet) -> HelperResult {
         env_api_key: None,
     };
     let litellm_params = Object::new();
-    let headers = Headers::new();
+    let request_headers = Headers::new();
     let context = EvalsRequestContext {
         litellm_params: &litellm_params,
-        headers: &headers,
+        headers: &request_headers,
     };
     let call = EvalsCall::Eval(EvalCall::Get {
         eval_id: &case.eval_id,
