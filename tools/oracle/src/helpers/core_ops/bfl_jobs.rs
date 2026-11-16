@@ -8,8 +8,10 @@ use std::error::Error;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
 use self::input::Input;
-use crate::helpers::{Helper, HelperError, HelperResult};
 
 pub(crate) struct Op;
 

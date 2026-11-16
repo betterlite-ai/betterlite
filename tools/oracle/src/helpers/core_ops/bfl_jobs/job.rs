@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::mem::take;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -19,7 +20,7 @@ use super::effects::{Effects, Script, Timeline};
 use super::failure;
 use super::input::Job;
 use super::logging::{QuietSink, logging_env, logging_state, pre_call_effect};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn run_job(job: &Job, runtime: &Runtime) -> HelperResult {
     let effects = Effects::default();
@@ -56,7 +57,7 @@ pub(super) fn run_job(job: &Job, runtime: &Runtime) -> HelperResult {
     .map_err(|error| failure(&error))?;
     let result =
         runtime.block_on(executor.image_generation(&call, &prepared, supplied, Vec::new()));
-    let recorded = std::mem::take(&mut *effects.0.lock().unwrap_or_else(PoisonError::into_inner));
+    let recorded = take(&mut *effects.0.lock().unwrap_or_else(PoisonError::into_inner));
     Ok(json!({"effects": recorded, "outcome": outcome(result)}))
 }
 
