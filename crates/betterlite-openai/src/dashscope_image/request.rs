@@ -11,10 +11,6 @@ pub fn transform_image_generation_request(
     prompt: &str,
     optional_params: &ImageParams,
 ) -> ImageParams {
-    let mut parameters = ImageParams::new();
-    for (name, value) in optional_params {
-        parameters.insert(name.clone(), value.clone());
-    }
     let mut content = IndexMap::new();
     content.insert("text".to_owned(), Json::Text(prompt.to_owned()));
     let mut message = IndexMap::new();
@@ -31,6 +27,9 @@ pub fn transform_image_generation_request(
     let mut body = ImageParams::new();
     body.insert("model".to_owned(), Json::Text(model.to_owned()));
     body.insert("input".to_owned(), Json::Object(input));
-    body.insert("parameters".to_owned(), Json::Object(parameters));
+    body.insert(
+        "parameters".to_owned(),
+        Json::Object(optional_params.clone()),
+    );
     body
 }

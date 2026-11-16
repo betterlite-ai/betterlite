@@ -49,7 +49,7 @@ pub enum DashscopeFamily {
 }
 
 // the environment values the caller resolved for one family; a brand reads its own key before the DashScope one
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FamilyEnv {
     pub base: Option<String>,
     pub brand_key: Option<SecretString>,
