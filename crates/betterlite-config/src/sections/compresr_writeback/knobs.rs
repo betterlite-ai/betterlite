@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
-use secrecy::SecretString;
 use serde::Deserialize;
 
+use super::Parameters;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_float, resolve_number, resolve_secret, resolve_string};
+use crate::resolve::{parse_float, resolve_number, resolve_string};
 use crate::sections::guardrail_identity::item::GuardrailValue;
 
 #[derive(Debug, Deserialize)]
@@ -15,27 +15,8 @@ pub(super) enum RawFlag {
     Text(String),
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-pub(super) struct Knobs {
-    pub(super) target_compression_ratio: Option<RawNumber>,
-    pub(super) coarse: Option<RawFlag>,
-    pub(super) min_chars_to_compress: Option<RawNumber>,
-    pub(super) compress_tool_outputs: Option<RawFlag>,
-    pub(super) compress_system: Option<RawFlag>,
-    pub(super) compress_history: Option<RawFlag>,
-    pub(super) compress_last_user: Option<RawFlag>,
-    pub(super) enable_retrieval: Option<RawFlag>,
-    pub(super) max_bytes_per_call: Option<RawNumber>,
-    pub(super) allow_bypass_header: Option<RawFlag>,
-    pub(super) dynamic: Option<RawFlag>,
-    pub(super) dynamic_min_ratio: Option<RawNumber>,
-    pub(super) dynamic_max_ratio: Option<RawNumber>,
-    pub(super) compression_params: Option<BTreeMap<String, GuardrailValue>>,
-}
-
 // A knob left out stays None here, and the guardrail's constructor applies LiteLLM's default
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct Tuning {
     pub target_compression_ratio: Option<f64>,
     pub coarse: Option<bool>,
@@ -94,15 +75,6 @@ where
         Ok(betterlite_env::flag(&variable, &resolved)?)
     }
 
-    pub(super) fn secret(
-        &self,
-        raw: Option<SecretString>,
-        name: &str,
-    ) -> Result<Option<SecretString>, ConfigError> {
-        let path = format!("{}.{name}", self.prefix);
-        resolve_secret(raw, &path, self.lookup)
-    }
-
     // An environment reference that resolves to an empty value counts as not set
     pub(super) fn text(
         &self,
@@ -122,29 +94,37 @@ where
     }
 }
 
-impl Knobs {
-    pub(super) fn resolve<L>(self, resolver: &Resolver<'_, L>) -> Result<Tuning, ConfigError>
+impl Parameters {
+    // Takes the knob fields out, so the rest of the params stay to be read
+    pub(super) fn tuning<L>(&mut self, resolver: &Resolver<'_, L>) -> Result<Tuning, ConfigError>
     where
         L: EnvironmentLookup,
     {
         Ok(Tuning {
-            target_compression_ratio: resolver
-                .float(self.target_compression_ratio, "target_compression_ratio")?,
-            coarse: resolver.flag(self.coarse, "coarse")?,
+            target_compression_ratio: resolver.float(
+                self.target_compression_ratio.take(),
+                "target_compression_ratio",
+            )?,
+            coarse: resolver.flag(self.coarse.take(), "coarse")?,
             min_chars_to_compress: resolver
-                .integer(self.min_chars_to_compress, "min_chars_to_compress")?,
+                .integer(self.min_chars_to_compress.take(), "min_chars_to_compress")?,
             compress_tool_outputs: resolver
-                .flag(self.compress_tool_outputs, "compress_tool_outputs")?,
-            compress_system: resolver.flag(self.compress_system, "compress_system")?,
-            compress_history: resolver.flag(self.compress_history, "compress_history")?,
-            compress_last_user: resolver.flag(self.compress_last_user, "compress_last_user")?,
-            enable_retrieval: resolver.flag(self.enable_retrieval, "enable_retrieval")?,
-            max_bytes_per_call: resolver.integer(self.max_bytes_per_call, "max_bytes_per_call")?,
-            allow_bypass_header: resolver.flag(self.allow_bypass_header, "allow_bypass_header")?,
-            dynamic: resolver.flag(self.dynamic, "dynamic")?,
-            dynamic_min_ratio: resolver.float(self.dynamic_min_ratio, "dynamic_min_ratio")?,
-            dynamic_max_ratio: resolver.float(self.dynamic_max_ratio, "dynamic_max_ratio")?,
-            compression_params: self.compression_params,
+                .flag(self.compress_tool_outputs.take(), "compress_tool_outputs")?,
+            compress_system: resolver.flag(self.compress_system.take(), "compress_system")?,
+            compress_history: resolver.flag(self.compress_history.take(), "compress_history")?,
+            compress_last_user: resolver
+                .flag(self.compress_last_user.take(), "compress_last_user")?,
+            enable_retrieval: resolver.flag(self.enable_retrieval.take(), "enable_retrieval")?,
+            max_bytes_per_call: resolver
+                .integer(self.max_bytes_per_call.take(), "max_bytes_per_call")?,
+            allow_bypass_header: resolver
+                .flag(self.allow_bypass_header.take(), "allow_bypass_header")?,
+            dynamic: resolver.flag(self.dynamic.take(), "dynamic")?,
+            dynamic_min_ratio: resolver
+                .float(self.dynamic_min_ratio.take(), "dynamic_min_ratio")?,
+            dynamic_max_ratio: resolver
+                .float(self.dynamic_max_ratio.take(), "dynamic_max_ratio")?,
+            compression_params: self.compression_params.take(),
         })
     }
 }

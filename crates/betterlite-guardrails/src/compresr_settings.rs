@@ -28,8 +28,6 @@ pub const UI_FRIENDLY_NAME: &str = "Compresr (context compression)";
 
 const API_BASE_ENV: &str = "COMPRESR_API_BASE";
 const API_KEY_ENV: &str = "COMPRESR_API_KEY";
-const PROXY_SERVER_REQUEST_FIELD: &str = "proxy_server_request";
-const HEADERS_FIELD: &str = "headers";
 
 pub type Clock = Box<dyn Fn() -> Duration + Send + Sync>;
 
@@ -58,7 +56,6 @@ pub struct CompresrGuardrail {
     pub guardrail_name: String,
     pub settings: CompresrSettings,
     pub transport: CompresrTransport,
-    // Present exactly when enable_retrieval is on
     pub recovery: Option<RecoveryStore>,
     pub runtime: CompresrRuntime,
     pub no_scope_warning_until: Mutex<Duration>,
@@ -160,11 +157,10 @@ impl CompresrGuardrail {
         if !self.settings.allow_bypass_header {
             return false;
         }
-        let Some(GuardrailValue::Object(request)) = request_data.get(PROXY_SERVER_REQUEST_FIELD)
-        else {
+        let Some(GuardrailValue::Object(request)) = request_data.get("proxy_server_request") else {
             return false;
         };
-        let Some(GuardrailValue::Object(headers)) = request.get(HEADERS_FIELD) else {
+        let Some(GuardrailValue::Object(headers)) = request.get("headers") else {
             return false;
         };
         matches!(
@@ -183,29 +179,27 @@ impl CompresrSettings {
                 usize::try_from(cap).map_err(|source| CompresrSettingsError::ByteCap { source })?
             }
         };
-        let mut targets = BTreeSet::new();
-        for (target, enabled) in [
-            (
-                Compressible::ToolOutputs,
-                tuning.compress_tool_outputs.unwrap_or(true),
-            ),
-            (
-                Compressible::System,
-                tuning.compress_system.unwrap_or(false),
-            ),
-            (
-                Compressible::History,
-                tuning.compress_history.unwrap_or(false),
-            ),
-            (
-                Compressible::LastUser,
-                tuning.compress_last_user.unwrap_or(false),
-            ),
-        ] {
-            if enabled {
-                targets.insert(target);
-            }
-        }
+        let targets = [
+            tuning
+                .compress_tool_outputs
+                .unwrap_or(true)
+                .then_some(Compressible::ToolOutputs),
+            tuning
+                .compress_system
+                .unwrap_or_default()
+                .then_some(Compressible::System),
+            tuning
+                .compress_history
+                .unwrap_or_default()
+                .then_some(Compressible::History),
+            tuning
+                .compress_last_user
+                .unwrap_or_default()
+                .then_some(Compressible::LastUser),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
         // A negative minimum never skips a message, so it reads as no minimum
         let min_chars_to_compress = tuning
             .min_chars_to_compress

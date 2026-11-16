@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
+use super::Compressed;
 use super::results::Applied;
 use crate::compresr_settings::CompresrGuardrail;
 use crate::guardrail_base::GuardrailBase;
@@ -23,12 +23,6 @@ impl GuardrailSpanSink for NoSpan {
     fn emit(&self, _record: &GuardrailInvocationRecord) -> Result<(), GuardrailSpanError> {
         Ok(())
     }
-}
-
-// The window the compression call took, as the clock read it before and after
-pub(super) struct Window {
-    pub(super) started: Duration,
-    pub(super) ended: Duration,
 }
 
 fn compression_stats(model: &str, applied: &Applied) -> GuardrailValue {
@@ -58,14 +52,8 @@ impl CompresrGuardrail {
         request_data: &mut BTreeMap<String, GuardrailValue>,
         log_target: Option<&mut GuardrailLogTarget>,
         applied: &Applied,
-        window: &Window,
+        window: &Compressed<'_>,
     ) {
-        tracing::debug!(
-            "Compresr: compressed {} message(s), {} -> {} tokens",
-            applied.messages_compressed,
-            applied.tokens_before,
-            applied.tokens_after
-        );
         let mut settings = GuardrailSettings::default();
         let guardrail_name = Some(self.guardrail_name.clone());
         settings.guardrail_name.clone_from(&guardrail_name);

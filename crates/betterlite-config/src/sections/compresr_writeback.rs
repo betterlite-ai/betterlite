@@ -4,11 +4,12 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::Error as DeserializeError;
 
-use self::knobs::{Knobs, Resolver, Tuning};
+use self::knobs::{RawFlag, Resolver, Tuning};
 use super::Section;
 use super::guardrail_identity::item::GuardrailValue;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
+use crate::resolve::resolve_secret;
 
 pub mod knobs;
 mod tests;
@@ -38,20 +39,20 @@ struct Parameters {
     unreachable_fallback: Option<String>,
     timeout: Option<RawNumber>,
     target_compression_ratio: Option<RawNumber>,
-    coarse: Option<knobs::RawFlag>,
+    coarse: Option<RawFlag>,
     min_chars_to_compress: Option<RawNumber>,
-    compress_tool_outputs: Option<knobs::RawFlag>,
-    compress_system: Option<knobs::RawFlag>,
-    compress_history: Option<knobs::RawFlag>,
-    compress_last_user: Option<knobs::RawFlag>,
-    enable_retrieval: Option<knobs::RawFlag>,
+    compress_tool_outputs: Option<RawFlag>,
+    compress_system: Option<RawFlag>,
+    compress_history: Option<RawFlag>,
+    compress_last_user: Option<RawFlag>,
+    enable_retrieval: Option<RawFlag>,
     max_bytes_per_call: Option<RawNumber>,
-    allow_bypass_header: Option<knobs::RawFlag>,
-    dynamic: Option<knobs::RawFlag>,
+    allow_bypass_header: Option<RawFlag>,
+    dynamic: Option<RawFlag>,
     dynamic_min_ratio: Option<RawNumber>,
     dynamic_max_ratio: Option<RawNumber>,
     compression_params: Option<BTreeMap<String, GuardrailValue>>,
-    optional_params: Option<Knobs>,
+    optional_params: Option<Box<Self>>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -112,51 +113,30 @@ impl UnreachableFallback {
     }
 }
 
-impl Parameters {
-    fn take_knobs(&mut self) -> Knobs {
-        Knobs {
-            target_compression_ratio: self.target_compression_ratio.take(),
-            coarse: self.coarse.take(),
-            min_chars_to_compress: self.min_chars_to_compress.take(),
-            compress_tool_outputs: self.compress_tool_outputs.take(),
-            compress_system: self.compress_system.take(),
-            compress_history: self.compress_history.take(),
-            compress_last_user: self.compress_last_user.take(),
-            enable_retrieval: self.enable_retrieval.take(),
-            max_bytes_per_call: self.max_bytes_per_call.take(),
-            allow_bypass_header: self.allow_bypass_header.take(),
-            dynamic: self.dynamic.take(),
-            dynamic_min_ratio: self.dynamic_min_ratio.take(),
-            dynamic_max_ratio: self.dynamic_max_ratio.take(),
-            compression_params: self.compression_params.take(),
-        }
-    }
-}
-
 impl Entry {
     fn resolve<L>(self, index: usize, lookup: &L) -> Result<Configured, ConfigError>
     where
         L: EnvironmentLookup,
     {
         let prefix = format!("guardrails.{index}.litellm_params");
-        let mut parameters = self.litellm_params;
-        let flat = parameters.take_knobs();
-        let nested = parameters.optional_params.take().unwrap_or_default();
-        let nested_prefix = format!("{prefix}.optional_params");
         let resolver = Resolver {
             prefix: &prefix,
             lookup,
         };
-        let tuning = nested
-            .resolve(&Resolver {
+        let mut parameters = self.litellm_params;
+        let mut tuning = parameters.tuning(&resolver)?;
+        if let Some(mut nested) = parameters.optional_params.take() {
+            let nested_prefix = format!("{prefix}.optional_params");
+            let nested_resolver = Resolver {
                 prefix: &nested_prefix,
                 lookup,
-            })?
-            .or(flat.resolve(&resolver)?);
+            };
+            tuning = nested.tuning(&nested_resolver)?.or(tuning);
+        }
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_base: resolver.text(parameters.api_base, "api_base")?,
-            api_key: resolver.secret(parameters.api_key, "api_key")?,
+            api_key: resolve_secret(parameters.api_key, &format!("{prefix}.api_key"), lookup)?,
             model: resolver.text(parameters.model, "model")?,
             unreachable_fallback: UnreachableFallback::resolve(
                 parameters.unreachable_fallback,

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-use super::select::Plan;
+use super::Compressed;
 use crate::compresr_recovery::hash::{content_hash, recovery_marker};
 use crate::compresr_recovery::store::{Originals, entry_bytes};
 use crate::compresr_settings::CompresrGuardrail;
@@ -82,17 +82,12 @@ impl Applied {
     }
 }
 
-pub(super) struct Batch<'batch> {
-    pub(super) plan: &'batch Plan,
-    pub(super) results: &'batch [CompressionResult],
-}
-
 impl CompresrGuardrail {
     // A result counts only when it is non-empty text that differs from the original; recovery None turns markers off
     pub(super) fn apply_compression_results(
         &self,
         messages: Vec<GuardrailMessage>,
-        batch: &Batch<'_>,
+        answer: &Compressed<'_>,
         recovery: Option<&Originals>,
     ) -> Applied {
         let mut applied = Applied {
@@ -104,8 +99,8 @@ impl CompresrGuardrail {
             tokens_after: 0,
             recovery_bytes: recovery.map_or(0, entry_bytes),
         };
-        let planned = batch.plan.indices.iter().zip(&batch.plan.targets);
-        for ((&target_idx, target), result) in planned.zip(batch.results) {
+        let planned = answer.plan.indices.iter().zip(&answer.plan.targets);
+        for ((&target_idx, target), result) in planned.zip(answer.results) {
             let original = target.context.as_str();
             let Some(compressed) = result
                 .compressed_context

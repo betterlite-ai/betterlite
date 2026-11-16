@@ -3,7 +3,6 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use crate::guardrail_base::inputs::GuardrailLogTarget;
 
 const CALL_ID_KEY: &str = "litellm_call_id";
-const LITELLM_PARAMS_KEY: &str = "litellm_params";
 const METADATA_KEYS: [&str; 2] = ["metadata", "litellm_metadata"];
 
 // The call id comes from the logging object only; a body or kwargs call id is client-settable and never consulted
@@ -28,14 +27,12 @@ pub(super) fn caller_scope(target: Option<&GuardrailLogTarget>) -> String {
     let Some(logging) = target else {
         return String::new();
     };
-    let details = logging.model_call_params.as_ref();
-    let nested = match details.and_then(|fields| fields.get(LITELLM_PARAMS_KEY)) {
-        Some(GuardrailValue::Object(fields)) => Some(fields),
-        _ => None,
-    };
-    for container in [logging.litellm_params.as_ref(), nested, details]
-        .into_iter()
-        .flatten()
+    for container in [
+        logging.litellm_params.as_ref(),
+        logging.model_call_params.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
     {
         for metadata_key in METADATA_KEYS {
             let Some(GuardrailValue::Object(metadata)) = container.get(metadata_key) else {

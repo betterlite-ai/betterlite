@@ -4,13 +4,11 @@ use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use indexmap::IndexMap;
-use records::Window;
-use results::Batch;
 use select::Plan;
 
 use crate::compresr_recovery::store::{Originals, RecoveryStore, StoreKey};
 use crate::compresr_recovery::tools::merged_tools;
-use crate::compresr_settings::{BYPASS_HEADER, CompresrGuardrail, UI_FRIENDLY_NAME};
+use crate::compresr_settings::{CompresrGuardrail, UI_FRIENDLY_NAME};
 use crate::compresr_transport::error::CompresrTransportError;
 use crate::compresr_transport::{CompressOutcome, CompressionResult};
 use crate::generic_guardrail_contracts::GuardrailInputType;
@@ -28,11 +26,12 @@ mod tests;
 const NO_SCOPE_WARNING_INTERVAL: Duration = Duration::from_mins(15);
 const CONFIG_MODEL: &str = "CompresrGuardrailConfigModel";
 
-// The service's answer for one batch, the plan it answered and the window the call took
+// The service's answer for one batch, the plan it answered and the clock readings around the call
 struct Compressed<'call> {
     plan: &'call Plan,
     results: &'call [CompressionResult],
-    window: Window,
+    started: Duration,
+    ended: Duration,
 }
 
 struct Recovery<'store> {
@@ -60,11 +59,7 @@ impl CompresrGuardrail {
         request_data: &BTreeMap<String, GuardrailValue>,
         input_type: GuardrailInputType,
     ) -> Option<Plan> {
-        if input_type != GuardrailInputType::Request {
-            return None;
-        }
-        if self.should_bypass(request_data) {
-            tracing::debug!("Compresr: {BYPASS_HEADER} header set; skipping compression");
+        if input_type != GuardrailInputType::Request || self.should_bypass(request_data) {
             return None;
         }
         let messages = inputs
@@ -72,11 +67,7 @@ impl CompresrGuardrail {
             .as_deref()
             .filter(|rows| !rows.is_empty())?;
         let plan = self.plan_targets(messages);
-        if plan.targets.is_empty() {
-            tracing::debug!("Compresr: no messages eligible for compression");
-            return None;
-        }
-        Some(plan)
+        (!plan.targets.is_empty()).then_some(plan)
     }
 
     pub async fn apply(
@@ -102,7 +93,8 @@ impl CompresrGuardrail {
         let compressed = Compressed {
             plan: &plan,
             results: &results,
-            window: Window { started, ended },
+            started,
+            ended,
         };
         self.finish(inputs, request_data, logging_obj, &compressed)
     }
@@ -116,13 +108,9 @@ impl CompresrGuardrail {
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
         let now = (self.runtime.clock)();
         let recovery = self.recovery_for(logging_obj.as_deref(), now);
-        let batch = Batch {
-            plan: compressed.plan,
-            results: compressed.results,
-        };
         let rows = inputs.structured_messages.take().unwrap_or_default();
         let existing = recovery.as_ref().map(|active| &active.existing);
-        let applied = self.apply_compression_results(rows, &batch, existing);
+        let applied = self.apply_compression_results(rows, compressed, existing);
         // Untouched inputs go back as they came, so a handler that detects edits by comparison sees none
         if applied.messages_compressed == 0 {
             tracing::debug!("Compresr: service returned no compressed content; request unchanged");
@@ -131,7 +119,7 @@ impl CompresrGuardrail {
                 ..inputs
             });
         }
-        self.record_success(request_data, logging_obj, &applied, &compressed.window);
+        self.record_success(request_data, logging_obj, &applied, compressed);
         let mirrored = mirror::mirror_texts_channel(inputs.texts.as_deref(), &applied.replacements);
         let mut tools = inputs.tools.take();
         if let Some(active) = &recovery
@@ -206,15 +194,12 @@ impl GuardrailContract for CompresrGuardrail {
     }
 
     fn get_config_model(&self) -> Option<GuardrailValue> {
-        Some(GuardrailValue::Object(BTreeMap::from([
-            (
-                "model".to_owned(),
-                GuardrailValue::Text(CONFIG_MODEL.to_owned()),
-            ),
-            (
-                "ui_friendly_name".to_owned(),
-                GuardrailValue::Text(UI_FRIENDLY_NAME.to_owned()),
-            ),
-        ])))
+        let names = [
+            ("model", CONFIG_MODEL),
+            ("ui_friendly_name", UI_FRIENDLY_NAME),
+        ];
+        Some(GuardrailValue::Object(BTreeMap::from(names.map(
+            |(key, name)| (key.to_owned(), GuardrailValue::Text(name.to_owned())),
+        ))))
     }
 }

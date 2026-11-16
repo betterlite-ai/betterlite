@@ -6,6 +6,7 @@ use super::support::{
     TOOL_CONVERSATION, content_of, conversation, field, guardrail, reply, sent, serve,
 };
 use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::guardrail_base::contract::GuardrailContract as _;
 
 const NO_RECOVERY: &str = "      enable_retrieval: false\n";
 const TWO_TOOLS: &str = r#"[{"role":"user","content":"find the answer"},{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"search","arguments":"{\"q\":\"x\"}"}},{"id":"c2","type":"function","function":{"name":"fetch","arguments":"{\"u\":\"y\"}"}}]},{"role":"tool","tool_call_id":"c1","content":"long tool output one"},{"role":"tool","tool_call_id":"c2","content":"long tool output two"}]"#;
@@ -277,4 +278,32 @@ async fn the_header_does_not_apply_bypass(#[case] params: &str, #[case] value: &
         .unwrap();
     assert_eq!(content_of(&output, 2), text("short"));
     assert_eq!(sent(&server).len(), 1);
+}
+
+#[tokio::test]
+async fn the_contract_entry_point_compresses_apply_guardrail() {
+    let server = serve(200, &reply(&[("short", 10, 4)])).await;
+    let guardrail = guardrail(&server.base, NO_RECOVERY);
+    let output = guardrail
+        .apply_guardrail(
+            conversation(TOOL_CONVERSATION, ""),
+            &mut BTreeMap::new(),
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(content_of(&output, 2), text("short"));
+}
+
+#[test]
+fn the_config_model_names_the_form_apply_guardrail() {
+    let model = guardrail("http://127.0.0.1:9", "")
+        .get_config_model()
+        .unwrap();
+    assert_eq!(field(&model, "model"), text("CompresrGuardrailConfigModel"));
+    assert_eq!(
+        field(&model, "ui_friendly_name"),
+        text("Compresr (context compression)")
+    );
 }
