@@ -15,7 +15,7 @@ use crate::interactions::base::transport::response::response_headers;
 use crate::interactions::base::transport::{refuse_unusable_proxy, request_headers};
 use crate::interactions::base::{Logging, MAX_RESPONSE_BYTES, RequestFailure, UpstreamResponse};
 use crate::interactions::lifecycle::check_status;
-use crate::interactions::streaming::create_async_iterator;
+use crate::interactions::streaming::asynchronous::create_async_iterator;
 use crate::proxy::limits::read_bounded;
 
 pub async fn async_create_interaction<C>(

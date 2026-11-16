@@ -13,7 +13,7 @@ use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::transport::{refuse_unusable_proxy, request_headers};
 use crate::interactions::base::{Logging, RequestFailure};
 use crate::interactions::lifecycle::synchronous::finish_blocking;
-use crate::interactions::streaming::create_sync_iterator;
+use crate::interactions::streaming::synchronous::create_sync_iterator;
 
 pub fn create_interaction<C>(
     config: &C,

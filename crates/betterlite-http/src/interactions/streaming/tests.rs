@@ -14,7 +14,8 @@ use rstest::rstest;
 use crate::interactions::base::Logging;
 use crate::interactions::base::tests::support as base;
 use crate::interactions::create::tests::support::{Fixture, FixtureError, provider_error};
-use crate::interactions::streaming::{create_async_iterator, create_sync_iterator};
+use crate::interactions::streaming::asynchronous::create_async_iterator;
+use crate::interactions::streaming::synchronous::create_sync_iterator;
 use crate::proxy::base_builder;
 
 type Sent = (base::Serving, BlockingClient, BlockingResponse);
