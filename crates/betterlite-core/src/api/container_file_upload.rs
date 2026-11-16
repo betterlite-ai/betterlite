@@ -85,7 +85,12 @@ where
     let adapter = BlockingAsAsync { executor };
     match poll_once(aupload_container_file(&adapter, deps, request)) {
         Some(outcome) => outcome,
-        None => Err(suspended(caller, deps.redactor)),
+        // the adapter cannot park, so the sync entry reaches this only if the poll contract breaks
+        None => Err(error::failure(
+            ContainerFileUploadError::Suspended,
+            caller.provider,
+            deps.redactor,
+        )),
     }
 }
 
@@ -152,21 +157,6 @@ where
         Poll::Ready(outcome) => Some(outcome),
         Poll::Pending => None,
     }
-}
-
-// the adapter cannot park, so the sync entry reaches this only if the poll contract breaks
-fn suspended<Failure>(
-    caller: Caller<'_>,
-    redactor: &Redactor,
-) -> ContainerFileUploadFailure<Failure>
-where
-    Failure: UploadFailure,
-{
-    error::failure(
-        ContainerFileUploadError::Suspended,
-        caller.provider,
-        redactor,
-    )
 }
 
 // exception_type(model="", custom_llm_provider=..., original_exception=...)
