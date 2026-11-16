@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{ChunkAssembler, StreamChunkAssembler, rebuild_per_choice};
+use super::{ChunkAssembler as _, StreamChunkAssembler, rebuild_per_choice};
 use crate::guardrails::chat_guardrail_translation::rewrites::error::RewriteError;
 use crate::guardrails::chat_guardrail_translation::rewrites::response::{
     ChatResponse, MessageContent,
@@ -12,9 +12,9 @@ use crate::guardrails::chat_guardrail_translation::rewrites::tests::support::chu
 
 const INTERLEAVED: &str = r#"[
     {"choices": [{"index": 0, "delta": {"content": "He"}}]},
-    {"choices": [{"index": 1, "delta": {"content": "Ot"}}]},
+    {"choices": [{"index": 1, "delta": {"content": "W"}}]},
     {"choices": [{"index": 0, "delta": {"content": "llo"}}]},
-    {"choices": [{"index": 1, "delta": {"content": "her"}}]},
+    {"choices": [{"index": 1, "delta": {"content": "orld"}}]},
     {"usage": {"total_tokens": 7}}]"#;
 
 fn texts(rebuilt: &ChatResponse) -> Vec<(i64, Option<String>)> {
@@ -36,7 +36,7 @@ async fn rebuild_ended_stream_rebuilds_each_choice_alone_from_every_chunk() {
         .unwrap();
     assert_eq!(
         texts(&rebuilt),
-        [(0, Some("Hello".to_owned())), (1, Some("Other".to_owned()))]
+        [(0, Some("Hello".to_owned())), (1, Some("World".to_owned()))]
     );
     assert_eq!(assembler.chunk_counts(), [5, 5]);
 }

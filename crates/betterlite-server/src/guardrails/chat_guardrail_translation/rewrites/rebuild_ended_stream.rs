@@ -45,32 +45,27 @@ where
     L: LoggerSink + Sync,
     C: ConsoleSink + Sync,
 {
-    fn assemble(
-        &self,
-        chunks: &[Object],
-    ) -> impl Future<Output = Result<ChatResponse, RewriteError>> + Send {
-        async move {
-            let records = chunk_records(chunks)?;
-            let request = Request {
-                chunks: Some(&records),
-                messages: None,
-                count_prompt_tokens: None,
-                logging: None,
-                costs: self.costs,
-                counter: self.counter,
-                metadata: None,
-                now: self.now,
-            };
-            let built = stream_chunk_builder(&request, self.hooks)
-                .await
-                .map_err(|source| RewriteError::Assembly {
-                    source: Box::new(source),
-                })?;
-            let Some(Response::Chat(chat)) = built else {
-                return Err(RewriteError::NotAChatResponse);
-            };
-            Ok(serde_json::from_str(&serde_json::to_string(&*chat)?)?)
-        }
+    async fn assemble(&self, chunks: &[Object]) -> Result<ChatResponse, RewriteError> {
+        let records = chunk_records(chunks)?;
+        let request = Request {
+            chunks: Some(&records),
+            messages: None,
+            count_prompt_tokens: None,
+            logging: None,
+            costs: self.costs,
+            counter: self.counter,
+            metadata: None,
+            now: self.now,
+        };
+        let built = stream_chunk_builder(&request, self.hooks)
+            .await
+            .map_err(|source| RewriteError::Assembly {
+                source: Box::new(source),
+            })?;
+        let Some(Response::Chat(chat)) = built else {
+            return Err(RewriteError::NotAChatResponse);
+        };
+        Ok(serde_json::from_str(&serde_json::to_string(&*chat)?)?)
     }
 }
 

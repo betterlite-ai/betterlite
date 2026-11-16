@@ -20,9 +20,9 @@ fn string_choice_contents_keeps_one_entry_per_choice(
     #[case] source: &str,
     #[case] expected: &[Option<&str>],
 ) {
-    let expected: Vec<Option<String>> = expected
+    let owned: Vec<Option<String>> = expected
         .iter()
         .map(|content| content.map(str::to_owned))
         .collect();
-    assert_eq!(string_choice_contents(&response(source)), expected);
+    assert_eq!(string_choice_contents(&response(source)), owned);
 }

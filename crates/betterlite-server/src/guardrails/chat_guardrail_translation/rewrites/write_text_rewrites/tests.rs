@@ -37,23 +37,23 @@ fn write_text_rewrites_keep_one_rewrite_per_changed_string_choice(
     #[case] before: &[Option<&str>],
     #[case] expected: &[(i64, &str)],
 ) {
-    let before: Vec<Option<String>> = before.iter().map(|text| text.map(str::to_owned)).collect();
-    let rewrites = text_rewrites_by_choice(&response(guardrailed), &before);
-    let expected: Vec<(i64, String)> = expected
+    let pre: Vec<Option<String>> = before.iter().map(|text| text.map(str::to_owned)).collect();
+    let rewrites = text_rewrites_by_choice(&response(guardrailed), &pre);
+    let wanted: Vec<(i64, String)> = expected
         .iter()
         .map(|&(index, text)| (index, text.to_owned()))
         .collect();
-    assert_eq!(rewrites.into_iter().collect::<Vec<_>>(), expected);
+    assert_eq!(rewrites.into_iter().collect::<Vec<_>>(), wanted);
 }
 
 fn rewrite(stream: &str, guardrailed: &str) -> Vec<String> {
     let mut stream_chunks = chunks(stream);
-    let guardrailed = response(guardrailed);
+    let guardrailed_response = response(guardrailed);
     let before = string_choice_contents(&response(
-        r#"{"choices": [{"index": 0, "message": {"content": "Hello"}}, {"index": 1, "message": {"content": "Other"}}]}"#,
+        r#"{"choices": [{"index": 0, "message": {"content": "Hello"}}, {"index": 1, "message": {"content": "World"}}]}"#,
     ));
-    let pre = &before[..guardrailed.choices.len()];
-    write_ended_text_rewrites(&mut stream_chunks, &guardrailed, pre).unwrap();
+    let pre = &before[..guardrailed_response.choices.len()];
+    write_ended_text_rewrites(&mut stream_chunks, &guardrailed_response, pre).unwrap();
     stream_chunks
         .iter()
         .map(|chunk| serde_json::to_string(chunk).unwrap())
@@ -84,9 +84,9 @@ fn write_text_rewrites_leave_the_stream_alone_when_the_text_is_unchanged() {
 #[test]
 fn write_text_rewrites_match_choices_by_their_index_not_their_position() {
     let stream = r#"[
-        {"choices": [{"index": 1, "delta": {"content": "Ot"}}]},
+        {"choices": [{"index": 1, "delta": {"content": "W"}}]},
         {"choices": [{"index": 0, "delta": {"content": "He"}}]},
-        {"choices": [{"index": 1, "delta": {"content": "her"}}]},
+        {"choices": [{"index": 1, "delta": {"content": "orld"}}]},
         {"choices": [{"index": 0, "delta": {"content": "llo"}}]}]"#;
     let written = rewrite(
         stream,

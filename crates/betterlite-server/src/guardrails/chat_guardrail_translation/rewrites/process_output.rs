@@ -70,19 +70,22 @@ pub fn extract_response(response: &ChatResponse) -> ExtractedContent {
 // An empty images or tool_calls list is left out, as LiteLLM only sets those keys when it found something.
 #[must_use]
 pub fn output_inputs(response: &ChatResponse, extracted: &ExtractedContent) -> GuardrailApiInputs {
+    let model = response.model.clone().filter(|model| !model.is_empty());
+    let images = (!extracted.images.is_empty()).then(|| extracted.images.clone());
+    let tool_calls = (!extracted.tool_calls.is_empty()).then(|| {
+        extracted
+            .tool_calls
+            .iter()
+            .map(|call| GuardrailValue::Object(call.clone()))
+            .collect()
+    });
     GuardrailApiInputs {
         texts: Some(extracted.texts.clone()),
-        images: (!extracted.images.is_empty()).then(|| extracted.images.clone()),
+        images,
         tools: None,
-        tool_calls: (!extracted.tool_calls.is_empty()).then(|| {
-            extracted
-                .tool_calls
-                .iter()
-                .map(|call| GuardrailValue::Object(call.clone()))
-                .collect()
-        }),
+        tool_calls,
         structured_messages: None,
-        model: response.model.clone().filter(|model| !model.is_empty()),
+        model,
         stream_holdback_chars: None,
     }
 }

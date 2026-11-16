@@ -8,7 +8,6 @@ use rstest::rstest;
 
 use super::{extract_response, response_has_text};
 use crate::guardrails::chat_guardrail_translation::rewrites::process_output_response;
-use crate::guardrails::chat_guardrail_translation::rewrites::response::ChatResponse;
 use crate::guardrails::chat_guardrail_translation::rewrites::tests::support::{
     FakeGuardrail, object, principal, response,
 };
@@ -105,7 +104,7 @@ async fn process_output_response_rewrites_each_choice_in_place() {
     process_output_response(&mut subject, &guardrail, &principal())
         .await
         .unwrap();
-    let expected: ChatResponse = response(
+    let expected = response(
         &TWO_CHOICES
             .replace("hello", "HELLO")
             .replace("part one", "PART ONE"),

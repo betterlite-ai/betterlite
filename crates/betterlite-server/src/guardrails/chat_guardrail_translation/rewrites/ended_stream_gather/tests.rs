@@ -39,17 +39,16 @@ fn upper_cased(inputs: GuardrailApiInputs) -> GuardrailApiInputs {
     }
 }
 
-fn renamed(inputs: GuardrailApiInputs) -> GuardrailApiInputs {
-    let call = r#"{"function": {"name": "renamed", "arguments": "{\"q\":1}"}}"#;
-    GuardrailApiInputs {
-        tool_calls: inputs.tool_calls.map(|calls| {
-            calls
-                .iter()
-                .map(|_| GuardrailValue::Object(object(call)))
-                .collect()
-        }),
-        ..inputs
+fn renamed(mut inputs: GuardrailApiInputs) -> GuardrailApiInputs {
+    let call = GuardrailValue::Object(object(
+        r#"{"function": {"name": "renamed", "arguments": "{\"q\":1}"}}"#,
+    ));
+    if let Some(calls) = inputs.tool_calls.as_mut() {
+        for slot in calls {
+            *slot = call.clone();
+        }
     }
+    inputs
 }
 
 async fn process(

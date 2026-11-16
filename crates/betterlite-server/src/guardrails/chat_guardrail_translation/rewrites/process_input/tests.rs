@@ -221,7 +221,7 @@ async fn input_messages_replace_the_whole_list_when_the_guardrail_covers_the_ful
             .map(|messages| messages.into_iter().map(redacted).collect()),
         ..inputs
     });
-    let guardrail = FakeGuardrail::covering_full_request(reply);
+    let guardrail = FakeGuardrail::answering(reply).covering_full_request();
     let (result, data) = run(REQUEST, &guardrail, WITHOUT_SYSTEM).await;
     result.unwrap();
     let expected = r#"{"model": "gpt-4o", "messages": [

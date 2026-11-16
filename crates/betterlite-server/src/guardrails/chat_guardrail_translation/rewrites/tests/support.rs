@@ -55,13 +55,9 @@ impl FakeGuardrail {
         }
     }
 
-    pub(crate) fn covering_full_request(reply: Reply) -> Self {
-        Self {
-            reply,
-            failure: None,
-            covers_full_request: true,
-            calls: Mutex::new(Vec::new()),
-        }
+    pub(crate) fn covering_full_request(mut self) -> Self {
+        self.covers_full_request = true;
+        self
     }
 
     pub(crate) fn calls(&self) -> Vec<Recorded> {
@@ -82,10 +78,10 @@ impl GuardrailContract for FakeGuardrail {
             input_type,
             request_data: request_data.clone(),
         });
-        let outcome = match &self.failure {
-            Some(failure) => Err(failure.clone()),
-            None => Ok((self.reply)(inputs)),
-        };
+        let outcome = self
+            .failure
+            .as_ref()
+            .map_or_else(|| Ok((self.reply)(inputs)), |failure| Err(failure.clone()));
         async move { outcome }
     }
 
@@ -110,7 +106,13 @@ pub(crate) fn chunks(source: &str) -> Vec<Object> {
         .into_iter()
         .map(|chunk| match chunk {
             GuardrailValue::Object(fields) => fields,
-            other => panic!("expected an object, got {other:?}"),
+            other @ (GuardrailValue::Null
+            | GuardrailValue::Boolean(_)
+            | GuardrailValue::SignedInteger(_)
+            | GuardrailValue::UnsignedInteger(_)
+            | GuardrailValue::Decimal(_)
+            | GuardrailValue::Text(_)
+            | GuardrailValue::Array(_)) => panic!("expected an object, got {other:?}"),
         })
         .collect()
 }
