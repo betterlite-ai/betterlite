@@ -1,0 +1,7 @@
+kind: helper
+name: vertex-batch-page-seed
+call:
+  vertex_batch_page:
+    body: '{"batchPredictionJobs":[{"name":"projects/p/locations/l/batchPredictionJobs/42","state":"JOB_STATE_RUNNING"}],"nextPageToken":"cursor"}'
+env: {}
+compare: {ignore: []}

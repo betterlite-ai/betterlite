@@ -1,0 +1,26 @@
+kind: helper
+name: messages-responses-input-thinking-summary-group
+call:
+  messages_responses_input:
+    messages:
+    - role: assistant
+      content:
+      - type: thinking
+        thinking: first
+        signature: sig-one
+      - type: thinking
+        thinking: second
+      - type: tool_use
+        id: toolu_think
+        name: lookup
+        input: {}
+      - type: redacted_thinking
+        data: litellm_encrypted_reasoning:opaque-item
+      - type: text
+        text: done
+    - role: assistant
+      content: plain
+    usage: null
+env: {}
+compare:
+  ignore: []
