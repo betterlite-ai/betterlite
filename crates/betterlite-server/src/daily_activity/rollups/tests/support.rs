@@ -49,7 +49,6 @@ pub(crate) const fn blank_metrics() -> RollupMetricsRow {
     }
 }
 
-#[derive(Default)]
 pub(crate) struct RowParts<'row> {
     pub(crate) level: i64,
     pub(crate) date: Option<&'row str>,
@@ -82,7 +81,28 @@ impl<'row> RowParts<'row> {
         Self {
             level,
             date,
-            ..Self::default()
+            api_key: None,
+            model: None,
+            model_group: None,
+            provider: None,
+            mcp: None,
+            endpoint: None,
+            spend: None,
+            flat_cost: None,
+            compression_savings_spend: None,
+            prompt_caching_savings_spend: None,
+            gateway_cache_savings_spend: None,
+            autorouter_savings_spend: None,
+            prompt_tokens: None,
+            completion_tokens: None,
+            cache_read_input_tokens: None,
+            cache_creation_input_tokens: None,
+            compression_saved_tokens: None,
+            api_requests: None,
+            successful_requests: None,
+            failed_requests: None,
+            total_response_time_ms: None,
+            timed_requests: None,
         }
     }
 }
@@ -119,7 +139,6 @@ pub(crate) fn row(parts: &RowParts<'_>) -> GroupingSetsRow {
     }
 }
 
-#[derive(Default)]
 pub(crate) struct EntityParts<'row> {
     pub(crate) date: Option<&'row str>,
     pub(crate) entity_id: Option<&'row str>,
@@ -134,7 +153,10 @@ impl<'row> EntityParts<'row> {
         Self {
             date,
             entity_id,
-            ..Self::default()
+            api_key: None,
+            rolled: false,
+            distinct_api_keys: None,
+            spend: None,
         }
     }
 }
@@ -178,13 +200,19 @@ pub(crate) fn day(date: &str) -> DailySpendData {
 }
 
 pub(crate) fn key_row(api_key: &str, key_exists: bool) -> KeyMetadataRow {
-    let metadata = key_metadata_for(api_key, key_exists);
+    let KeyMetadata {
+        key_alias,
+        team_id,
+        user_id,
+        user_email,
+        ..
+    } = key_metadata_for(api_key, key_exists);
     KeyMetadataRow {
         api_key: api_key.to_owned(),
-        key_alias: metadata.key_alias,
-        team_id: metadata.team_id,
-        user_id: metadata.user_id,
-        user_email: metadata.user_email,
+        key_alias,
+        team_id,
+        user_id,
+        user_email,
         key_exists,
         tags: Vec::new(),
     }

@@ -8,7 +8,8 @@ use betterlite_db::daily_activity_sql::PTU_SENTINEL_API_KEY;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::EntityMetadata;
+use super::{AggregatedActivityRepository, DailyActivityAggregateError, EntityMetadata};
+use crate::daily_activity::recovery::window::spend_logs_window;
 
 pub(super) const UNASSIGNED_ENTITY: &str = "Unassigned";
 
@@ -43,25 +44,45 @@ pub(super) fn non_sentinel_key(metrics: &RollupMetricsRow) -> Option<&str> {
     }
 }
 
-pub(super) fn metadata_keys<Record>(records: &[Record]) -> BTreeSet<String>
-where
-    Record: RecordMetrics,
-{
-    records
-        .iter()
-        .filter_map(|record| non_sentinel_key(record.metrics_row()))
-        .map(str::to_owned)
-        .collect()
+pub(super) struct KeyLookup {
+    pub(super) api_keys: BTreeSet<String>,
+    pub(super) dates: BTreeSet<String>,
 }
 
-pub(super) fn record_dates<Record>(records: &[Record]) -> BTreeSet<String>
+pub(super) fn key_lookup<Record>(records: &[Record]) -> KeyLookup
 where
     Record: RecordMetrics,
 {
-    records
-        .iter()
-        .filter_map(|record| record.metrics_row().date.clone())
-        .collect()
+    let mut lookup = KeyLookup {
+        api_keys: BTreeSet::new(),
+        dates: BTreeSet::new(),
+    };
+    for record in records {
+        let metrics = record.metrics_row();
+        if let Some(api_key) = non_sentinel_key(metrics) {
+            lookup.api_keys.insert(api_key.to_owned());
+        }
+        if let Some(date) = metrics.date.as_ref() {
+            lookup.dates.insert(date.clone());
+        }
+    }
+    lookup
+}
+
+pub(super) async fn fetch_key_metadata<Repository>(
+    repository: &Repository,
+    lookup: &KeyLookup,
+) -> Result<BTreeMap<String, KeyMetadataRow>, DailyActivityAggregateError>
+where
+    Repository: AggregatedActivityRepository,
+{
+    if lookup.api_keys.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let window = spend_logs_window(&lookup.dates);
+    Ok(repository
+        .read_key_metadata(&lookup.api_keys, window)
+        .await?)
 }
 
 pub(super) fn key_metadata(

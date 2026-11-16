@@ -12,9 +12,8 @@ use rust_decimal::Decimal;
 use tokio::task::JoinSet;
 
 use super::levels::{Dimension, RollupLevel, rollup_level};
-use super::metadata::{key_metadata, metadata_keys, non_sentinel_key, record_dates};
+use super::metadata::{fetch_key_metadata, key_lookup, key_metadata, non_sentinel_key};
 use super::{AggregatedActivityRepository, AggregatedSpendData, DailyActivityAggregateError};
-use crate::daily_activity::recovery::window::spend_logs_window;
 
 #[derive(Debug, Default)]
 pub(super) struct GroupedDay {
@@ -67,13 +66,8 @@ pub(super) async fn aggregate_grouping_rows<Repository>(
 where
     Repository: AggregatedActivityRepository,
 {
-    let api_keys = metadata_keys(&records);
-    let api_key_metadata = if api_keys.is_empty() {
-        BTreeMap::new()
-    } else {
-        let window = spend_logs_window(&record_dates(&records));
-        repository.read_key_metadata(&api_keys, window).await?
-    };
+    let lookup = key_lookup(&records);
+    let api_key_metadata = fetch_key_metadata(repository, &lookup).await?;
     run_worker(move || aggregate_grouping_rows_sync(&records, &api_key_metadata)).await?
 }
 

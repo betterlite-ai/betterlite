@@ -9,10 +9,9 @@ use indexmap::map::Entry;
 
 use super::dispatch::record_to_spend_metrics;
 use super::metadata::{
-    entity_metadata, entity_name, key_metadata, metadata_keys, non_sentinel_key, record_dates,
+    entity_metadata, entity_name, fetch_key_metadata, key_lookup, key_metadata, non_sentinel_key,
 };
 use super::{AggregatedActivityRepository, DailyActivityAggregateError, EntityMetadata};
-use crate::daily_activity::recovery::window::spend_logs_window;
 
 pub(super) async fn fold_entity_rollups<Repository>(
     repository: &Repository,
@@ -23,13 +22,8 @@ pub(super) async fn fold_entity_rollups<Repository>(
 where
     Repository: AggregatedActivityRepository,
 {
-    let api_keys = metadata_keys(entity_rows);
-    let api_key_metadata = if api_keys.is_empty() {
-        BTreeMap::new()
-    } else {
-        let window = spend_logs_window(&record_dates(entity_rows));
-        repository.read_key_metadata(&api_keys, window).await?
-    };
+    let lookup = key_lookup(entity_rows);
+    let api_key_metadata = fetch_key_metadata(repository, &lookup).await?;
     fold_entity_rollups_sync(
         results,
         entity_rows,

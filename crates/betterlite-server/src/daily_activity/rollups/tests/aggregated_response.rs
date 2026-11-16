@@ -109,7 +109,7 @@ async fn metadata_carries_the_grand_total_metrics() {
 }
 
 #[tokio::test]
-async fn metadata_copies_every_grand_total_column() {
+async fn metadata_copies_the_savings_columns() {
     let repository = fake(AggregatedRows {
         grouping_rows: vec![row(&RowParts {
             spend: Some(1),
@@ -118,6 +118,26 @@ async fn metadata_copies_every_grand_total_column() {
             prompt_caching_savings_spend: Some(9),
             gateway_cache_savings_spend: Some(10),
             autorouter_savings_spend: Some(11),
+            ..RowParts::new(GROUP_GRAND_TOTAL, None)
+        })],
+        entity_rows: None,
+        distinct_api_keys: 0,
+    });
+    let page = get_daily_activity_aggregated(&repository, &scope(), None, false, 5)
+        .await
+        .unwrap();
+    assert_eq!(page.metadata.total_spend, amount(1));
+    assert_eq!(page.metadata.total_flat_cost, amount(2));
+    assert_eq!(page.metadata.total_compression_savings, amount(8));
+    assert_eq!(page.metadata.total_prompt_caching_savings, amount(9));
+    assert_eq!(page.metadata.total_gateway_caching_savings, amount(10));
+    assert_eq!(page.metadata.total_autorouter_savings_spend, amount(11));
+}
+
+#[tokio::test]
+async fn metadata_copies_the_token_and_request_columns() {
+    let repository = fake(AggregatedRows {
+        grouping_rows: vec![row(&RowParts {
             prompt_tokens: Some(3),
             completion_tokens: Some(4),
             cache_read_input_tokens: Some(5),
@@ -136,21 +156,15 @@ async fn metadata_copies_every_grand_total_column() {
     let page = get_daily_activity_aggregated(&repository, &scope(), None, false, 5)
         .await
         .unwrap();
-    assert_eq!(page.metadata.total_spend, amount(1));
-    assert_eq!(page.metadata.total_flat_cost, amount(2));
     assert_eq!(page.metadata.total_prompt_tokens, 3);
     assert_eq!(page.metadata.total_completion_tokens, 4);
     assert_eq!(page.metadata.total_tokens, 7);
-    assert_eq!(page.metadata.total_api_requests, 12);
-    assert_eq!(page.metadata.total_successful_requests, 13);
-    assert_eq!(page.metadata.total_failed_requests, 14);
     assert_eq!(page.metadata.total_cache_read_input_tokens, 5);
     assert_eq!(page.metadata.total_cache_creation_tokens, 6);
     assert_eq!(page.metadata.total_compression_saved_tokens, 7);
-    assert_eq!(page.metadata.total_compression_savings, amount(8));
-    assert_eq!(page.metadata.total_prompt_caching_savings, amount(9));
-    assert_eq!(page.metadata.total_gateway_caching_savings, amount(10));
-    assert_eq!(page.metadata.total_autorouter_savings_spend, amount(11));
+    assert_eq!(page.metadata.total_api_requests, 12);
+    assert_eq!(page.metadata.total_successful_requests, 13);
+    assert_eq!(page.metadata.total_failed_requests, 14);
     assert_eq!(page.metadata.total_response_time_ms, 15);
     assert_eq!(page.metadata.total_timed_requests, 16);
 }
