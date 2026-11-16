@@ -1,0 +1,36 @@
+kind: helper
+name: token-count-mixed-content
+call:
+  b3636:
+    function: count
+    model: gpt-3.5-turbo
+    messages:
+    - {role: system, content: You are terse.}
+    - role: user
+      content:
+      - {type: text, text: hello world}
+      - {type: text, text: and more text}
+      - type: image_url
+        image_url: {url: 'https://example.com/a.png', detail: high}
+      - type: image_url
+        image_url: {url: 'https://example.com/b.png', detail: high}
+calls:
+- b3636:
+    function: count
+    model: gpt-3.5-turbo
+    messages:
+    - {role: system, content: You are terse.}
+    - role: user
+      content:
+      - {type: text, text: hello world}
+      - {type: text, text: and more text}
+- b3636:
+    function: count
+    model: gpt-3.5-turbo
+    messages:
+    - {role: system, content: You are terse.}
+    - role: user
+      content:
+      - {type: text, text: hello world}
+env: {}
+compare: {ignore: []}
