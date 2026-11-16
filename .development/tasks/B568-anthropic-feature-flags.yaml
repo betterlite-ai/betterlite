@@ -293,7 +293,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_feature_flags*")"
       && grep -lq 'anthropic_feature_flags' tools/oracle/fuzz/corpus/helper_case/anthropic_feature_flags* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_feature_flags$/)'
+      nextest run --locked -p betterlite-oracle-anthropic --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_feature_flags$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-conversation-feature-flags
     why: Thinking display needs a dict with type enabled/adaptive and display updates. Mid-conversation tool changes

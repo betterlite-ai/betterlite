@@ -1,0 +1,12 @@
+task: B1357
+deviations:
+  - what: A model without the Speech-to-Text realtime catalog capability is rejected by complete_url, which returns a Result; the frozen get_complete_url can only return a string, so it answers an empty URL for that model instead of raising.
+    why: B1004's realtime contract fixes get_complete_url's return type at String, and the relay only reaches it for a model the caller already resolved, so no working setup sees the empty URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py#L351-L354
+  - what: A backend frame over 1 MiB is refused before it is decoded, where LiteLLM hands any size to the streaming event adapter.
+    why: Rule bounded-inputs caps every input from outside; the ceiling is the shared realtime event limit that B1123 applies to provider events.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py#L401-L407
+  - what: The location token is matched against the whole string, so a trailing newline is rejected, where LiteLLM's end anchor accepts one newline at the end.
+    why: A location is interpolated into the Speech-to-Text host, and the whole-string match is the stricter reading of the same lowercase token rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L440
+kept_bugs: []

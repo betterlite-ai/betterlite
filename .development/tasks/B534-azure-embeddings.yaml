@@ -177,7 +177,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_embeddings*")"
       && grep -lq 'azure_embeddings' tools/oracle/fuzz/corpus/helper_case/azure_embeddings* && cargo nextest run
-      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_embeddings$/)' && cargo
+      --locked -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_embeddings$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-azure-embedding-client-types
     why: Sync accepts AzureOpenAI/OpenAI, otherwise AzureOpenAIError 500 azure_client is not an instance of AzureOpenAI
