@@ -1,0 +1,15 @@
+task: B4714
+deviations:
+  - what: A stored object holding a value that is not a string decodes to an empty map and logs one warning, where LiteLLM coerces every value with str() and returns {"NAME": "3"} for {"NAME": 3}.
+    why: str() is Python's repr of the value, so a forward proxy would hand "3", "True" or "[1, 2]" to a server while the user typed something else; declaring the map unset makes the user re-enter the value instead of forwarding a coerced one. No working LiteLLM setup can rely on the coerced form because the same column always round-trips strings it wrote itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2239
+  - what: Env var values are secrecy::SecretString in a BTreeMap, so Debug and Display redact them, and every warning this task writes names only the field and the failure class, never a name or a value.
+    why: LiteLLM stores the same plain str values and its warning text happens to omit them, but nothing in the type keeps a future log line from printing one; SecretString makes the redaction a property of the type instead of a convention.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2222-L2229
+  - what: The merge runs through our own UserEnvVarsTransaction, UserEnvVarsMergeStep and UserEnvVarsTransactions traits on B4711's LockedTable and McpTableStore, instead of LiteLLM's _UserEnvVarsTransaction and _UserEnvVarsTransactionClient Protocol declarations.
+    why: The Protocols declare a surface with an async-with context manager and a table attribute that Rust states as a concrete locked transaction; the lock, the read, the merge and the upsert run in the same order inside the same PostgreSQL transaction, as they do through Prisma's tx in LiteLLM. This follows B4711, which bound its own locked table the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L65-L75
+  - what: A database failure or a cipher failure surfaces as UserEnvVarsError (Database, Encode, Encrypt, NotText), where LiteLLM lets the Prisma or encryption exception propagate.
+    why: The proxy's error middleware maps a typed Rust error to the same 500 the propagated Python exception produces, and the type keeps the two failures apart for callers that must tell them apart; no message from the cipher error carries a value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2272-L2312
+kept_bugs: []
