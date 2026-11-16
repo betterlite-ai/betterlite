@@ -18,8 +18,12 @@ pub struct EnvironmentRequest<'request> {
 pub async fn validate_environment(
     request: EnvironmentRequest<'_>,
     mint: &dyn MintAccessToken,
-) -> Result<BTreeMap<String, String>, VertexFilesError> {
-    let mut headers = request.headers;
+) -> Result<BTreeMap<String, SecretString>, VertexFilesError> {
+    let mut headers: BTreeMap<String, SecretString> = request
+        .headers
+        .into_iter()
+        .map(|(name, value)| (name, SecretString::from(value)))
+        .collect();
     if request
         .api_key
         .is_some_and(|key| !key.expose_secret().is_empty())
@@ -31,7 +35,10 @@ pub async fn validate_environment(
     if token.is_empty() {
         return Err(VertexFilesError::MissingApiKey);
     }
-    headers.insert("Authorization".to_owned(), format!("Bearer {token}"));
+    headers.insert(
+        "Authorization".to_owned(),
+        SecretString::from(format!("Bearer {token}")),
+    );
     Ok(headers)
 }
 

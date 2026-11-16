@@ -17,7 +17,7 @@ use betterlite_vertex::vertex_files::targets::upload_url;
 use betterlite_vertex::vertex_gcs_access::bucket::BucketCandidates;
 use betterlite_vertex::vertex_interactions::mint::{MintAccessToken, MintFuture};
 use jiff::tz::TimeZone;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -144,7 +144,11 @@ fn environment_headers(headers: &BTreeMap<String, String>, api_key: &str) -> Hel
     let validated = runtime
         .block_on(validate_environment(request, &NoMint))
         .map_err(files_error)?;
-    Ok(json!({ "headers": validated }))
+    let exposed = validated
+        .into_iter()
+        .map(|(name, value)| (name, value.expose_secret().to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    Ok(json!({ "headers": exposed }))
 }
 
 fn file_reply(body: &str, shape: MetadataShape) -> HelperResult {

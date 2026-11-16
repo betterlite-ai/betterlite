@@ -5,7 +5,7 @@ use std::future::{Future, ready};
 use std::sync::Mutex;
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::Builder;
 
 use crate::token_cache::error::CredentialCacheError;
@@ -79,6 +79,13 @@ fn caller_headers() -> BTreeMap<String, String> {
     BTreeMap::from([("x-test".to_owned(), "yes".to_owned())])
 }
 
+fn exposed(headers: &BTreeMap<String, SecretString>) -> BTreeMap<String, String> {
+    headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
+        .collect()
+}
+
 #[test]
 fn an_explicit_key_leaves_the_headers_untouched() {
     let mint = FixedMint::new("minted");
@@ -92,7 +99,7 @@ fn an_explicit_key_leaves_the_headers_untouched() {
         &mint,
     ))
     .unwrap();
-    assert_eq!(headers, caller_headers());
+    assert_eq!(exposed(&headers), caller_headers());
     assert_eq!(mint.calls(), 0);
 }
 
@@ -111,7 +118,7 @@ fn an_explicit_key_keeps_a_caller_authorization_header() {
         &mint,
     ))
     .unwrap();
-    assert_eq!(headers, given);
+    assert_eq!(exposed(&headers), given);
     assert_eq!(mint.calls(), 0);
 }
 
@@ -129,7 +136,9 @@ fn an_empty_key_counts_as_unset() {
     ))
     .unwrap();
     assert_eq!(
-        headers.get("Authorization").map(String::as_str),
+        headers
+            .get("Authorization")
+            .map(|value| value.expose_secret()),
         Some("Bearer minted")
     );
     assert_eq!(mint.calls(), 1);
@@ -149,10 +158,12 @@ fn a_missing_key_gets_the_minted_bearer_token() {
     ))
     .unwrap();
     assert_eq!(
-        headers.remove("Authorization").as_deref(),
-        Some("Bearer minted")
+        headers
+            .remove("Authorization")
+            .map(|value| value.expose_secret().to_owned()),
+        Some("Bearer minted".to_owned())
     );
-    assert_eq!(headers, caller_headers());
+    assert_eq!(exposed(&headers), caller_headers());
     assert_eq!(mint.calls(), 1);
 }
 
