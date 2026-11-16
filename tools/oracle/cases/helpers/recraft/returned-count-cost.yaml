@@ -1,0 +1,30 @@
+kind: helper
+name: recraft-returned-count-cost
+call:
+  recraft:
+    calls:
+      - function: cost
+        model: recraft/oracle-unknown
+        output_cost_per_image: 0.25
+        image_count: 2
+        other: false
+      - function: cost
+        model: recraft/oracle-unknown
+        output_cost_per_image: 0.25
+        image_count: 0
+        other: false
+      - function: cost
+        model: recraft/oracle-unknown
+        output_cost_per_image: null
+        image_count: 3
+        other: false
+calls:
+  - recraft:
+      calls:
+        - function: cost
+          model: recraft/oracle-unknown
+          output_cost_per_image: 0.25
+          image_count: 2
+          other: true
+env: {}
+compare: {ignore: []}
