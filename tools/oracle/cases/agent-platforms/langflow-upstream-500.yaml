@@ -1,0 +1,21 @@
+kind: helper
+name: langflow-upstream-500
+call:
+  b050:
+    op: dispatch
+    platform: langflow
+    model: flow-1
+    messages: [{role: user, content: hi}]
+    stream: null
+    api_base: null
+    api_key: null
+    headers: null
+    optionals: {}
+    globals: {api_base: null, api_key: null, headers: null}
+    environment:
+      LANGFLOW_API_BASE: 'http://env-lf.test'
+      LANGFLOW_API_KEY: env-lf-key
+    registry: []
+    upstream: {status: 500, body: '{"detail": "boom"}'}
+env: {}
+compare: {ignore: []}

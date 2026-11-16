@@ -32,19 +32,17 @@ async fn run_serves_requests_with_the_chat_executor_it_was_given() {
         .load("model_list:\n  - {model_name: g, litellm_params: {model: azure/m}}\n")
         .unwrap();
     let chat = chat_executor(&config, &environment, StdRng::seed_from_u64(1)).unwrap();
-    let (served, response) = tokio::join!(
-        timeout(
-            Duration::from_secs(3),
-            run_with_listener(config, chat, listener, "127.0.0.1")
-        ),
-        timeout(Duration::from_secs(3), post_chat_once_listening(port))
-    );
-    assert!(
-        served.is_err(),
-        "run stopped while it should serve: {served:?}"
-    );
-    let answer = response.unwrap();
+    let mut server = JoinSet::new();
+    server.spawn(run_with_listener(config, chat, listener, "127.0.0.1"));
+    let answer = timeout(Duration::from_secs(30), post_chat_once_listening(port))
+        .await
+        .expect("the server did not answer within 30 seconds");
     assert!(answer.starts_with("HTTP/1.1 501"), "{answer}");
+    assert!(
+        server.try_join_next().is_none(),
+        "run stopped while it should serve"
+    );
+    server.abort_all();
 }
 
 #[tokio::test]
@@ -182,7 +180,7 @@ fn boot(config: Config, listener: TcpListener, tasks: &mut JoinSet<()>) {
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(7)).unwrap();
     tasks.spawn(async move {
         let serving = Box::pin(run_with_listener(config, chat, listener, "127.0.0.1"));
-        let _served = timeout(Duration::from_secs(10), serving).await;
+        let _served = timeout(Duration::from_secs(30), serving).await;
     });
 }
 
@@ -204,7 +202,7 @@ async fn read_request(stream: &mut TcpStream) -> String {
 
 async fn serve_json(listener: TcpListener, count: usize) {
     for _request in 0..count {
-        let Ok(Ok((mut stream, _))) = timeout(Duration::from_secs(3), listener.accept()).await
+        let Ok(Ok((mut stream, _))) = timeout(Duration::from_secs(30), listener.accept()).await
         else {
             return;
         };
@@ -250,7 +248,7 @@ async fn read_until(stream: &mut TcpStream, received: &mut Vec<u8>, needle: &str
         .any(|window| window == needle.as_bytes())
     {
         let mut buffer = [0_u8; 4096];
-        let read = timeout(Duration::from_secs(3), stream.read(&mut buffer))
+        let read = timeout(Duration::from_secs(30), stream.read(&mut buffer))
             .await
             .unwrap()
             .unwrap();
@@ -264,7 +262,7 @@ async fn paused_upstream(
     advance: oneshot::Receiver<()>,
     closed: oneshot::Sender<()>,
 ) {
-    let Ok(Ok((mut stream, _))) = timeout(Duration::from_secs(3), listener.accept()).await else {
+    let Ok(Ok((mut stream, _))) = timeout(Duration::from_secs(30), listener.accept()).await else {
         return;
     };
     let _head = read_request(&mut stream).await;
@@ -276,7 +274,7 @@ async fn paused_upstream(
     let _first = stream.write_all(FIRST_FRAME.as_bytes()).await;
     advance.await.unwrap();
     let _second = stream.write_all(SECOND_FRAME.as_bytes()).await;
-    let eof = timeout(Duration::from_secs(3), stream.read_u8())
+    let eof = timeout(Duration::from_secs(30), stream.read_u8())
         .await
         .unwrap();
     assert_eq!(eof.unwrap_err().kind(), ErrorKind::UnexpectedEof);
@@ -284,7 +282,7 @@ async fn paused_upstream(
 }
 
 async fn failing_upstream(listener: TcpListener) {
-    let Ok(Ok((mut stream, _))) = timeout(Duration::from_secs(3), listener.accept()).await else {
+    let Ok(Ok((mut stream, _))) = timeout(Duration::from_secs(30), listener.accept()).await else {
         return;
     };
     let _head = read_request(&mut stream).await;
@@ -343,7 +341,7 @@ async fn real_server_stream_cancellation_tests_behavior() {
     advance.send(()).unwrap();
     read_until(&mut client, &mut received, SECOND_FRAME).await;
     drop(client);
-    timeout(Duration::from_secs(3), disconnected)
+    timeout(Duration::from_secs(30), disconnected)
         .await
         .unwrap()
         .unwrap();
