@@ -29,6 +29,19 @@ pub(super) struct VerdictRecord<'record> {
     pub reason: Option<&'record str>,
 }
 
+impl<'record> VerdictRecord<'record> {
+    // The same decision under another verdict, as when fail_open records an unavailable call as unscanned
+    pub(super) fn relabelled(&self, verdict: Verdict) -> Self {
+        Self {
+            verdict,
+            defender_status: self.defender_status,
+            correlation_id: self.correlation_id,
+            latency: self.latency,
+            reason: self.reason,
+        }
+    }
+}
+
 struct NoSpan;
 
 impl GuardrailSpanSink for NoSpan {

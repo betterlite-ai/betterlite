@@ -78,19 +78,11 @@ struct EvaluateWire {
     correlation_id: TextField,
 }
 
+// One key as LiteLLM reads it with isinstance: a value of the key's type, any other value, or an absent key
 #[derive(Debug, Default, Deserialize)]
 #[serde(untagged)]
-enum AllowedField {
-    Boolean(bool),
-    Other(IgnoredAny),
-    #[default]
-    Missing,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(untagged)]
-enum DefenderField {
-    Object(DefenderWire),
+enum Field<T> {
+    Value(T),
     Other(IgnoredAny),
     #[default]
     Missing,
@@ -103,14 +95,9 @@ struct DefenderWire {
     message: Option<TextField>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(untagged)]
-enum TextField {
-    Text(String),
-    Other(IgnoredAny),
-    #[default]
-    Missing,
-}
+type AllowedField = Field<bool>;
+type DefenderField = Field<DefenderWire>;
+type TextField = Field<String>;
 
 pub fn decode_evaluate_response(body: &[u8]) -> Result<EvaluateVerdict, EvaluateResponseError> {
     let wire: EvaluateWire = serde_json::from_slice(body).map_err(|source| {
@@ -121,17 +108,17 @@ pub fn decode_evaluate_response(body: &[u8]) -> Result<EvaluateVerdict, Evaluate
             EvaluateResponseError::NonJsonBody { source }
         }
     })?;
-    let AllowedField::Boolean(allowed) = wire.allowed else {
+    let Field::Value(allowed) = wire.allowed else {
         return Err(EvaluateResponseError::MissingAllowed);
     };
     let defender = match wire.defender {
-        DefenderField::Object(defender) => DefenderResult {
+        Field::Value(defender) => DefenderResult {
             status: defender.status.and_then(TextField::into_text),
             verdict: defender.verdict.and_then(TextField::into_text),
             message: defender.message.and_then(TextField::into_text),
         },
         // LiteLLM reads a defender that is not an object as an empty one
-        DefenderField::Other(_) | DefenderField::Missing => DefenderResult::default(),
+        Field::Other(_) | Field::Missing => DefenderResult::default(),
     };
     Ok(EvaluateVerdict {
         allowed,
@@ -140,10 +127,10 @@ pub fn decode_evaluate_response(body: &[u8]) -> Result<EvaluateVerdict, Evaluate
     })
 }
 
-impl TextField {
+impl Field<String> {
     fn into_text(self) -> Option<String> {
         match self {
-            Self::Text(text) => Some(text),
+            Self::Value(text) => Some(text),
             Self::Other(_) | Self::Missing => None,
         }
     }
@@ -191,31 +178,39 @@ impl Verdict {
 impl UnavailableDetail {
     #[must_use]
     pub fn detail(&self) -> IndexMap<String, GuardrailValue> {
-        let mut detail = IndexMap::new();
-        detail.insert("error".to_owned(), GuardrailValue::Text(self.error.clone()));
-        detail.insert(
-            "message".to_owned(),
-            GuardrailValue::Text(self.message.clone()),
-        );
-        detail.insert("tool".to_owned(), GuardrailValue::Text(self.tool.clone()));
-        detail
+        IndexMap::from([
+            ("error".to_owned(), GuardrailValue::Text(self.error.clone())),
+            (
+                "message".to_owned(),
+                GuardrailValue::Text(self.message.clone()),
+            ),
+            ("tool".to_owned(), GuardrailValue::Text(self.tool.clone())),
+        ])
+    }
+}
+
+impl From<&BlockedDetail> for UnavailableDetail {
+    fn from(detail: &BlockedDetail) -> Self {
+        Self {
+            error: detail.error.clone(),
+            message: detail.message.clone(),
+            tool: detail.tool.clone(),
+        }
+    }
+}
+
+fn correlation_value(correlation_id: Option<&str>) -> GuardrailValue {
+    match correlation_id {
+        Some(correlation_id) => GuardrailValue::Text(correlation_id.to_owned()),
+        None => GuardrailValue::Null,
     }
 }
 
 impl BlockedDetail {
     #[must_use]
     pub fn detail(&self) -> IndexMap<String, GuardrailValue> {
-        let mut detail = IndexMap::new();
-        detail.insert("error".to_owned(), GuardrailValue::Text(self.error.clone()));
-        detail.insert(
-            "message".to_owned(),
-            GuardrailValue::Text(self.message.clone()),
-        );
-        detail.insert("tool".to_owned(), GuardrailValue::Text(self.tool.clone()));
-        let correlation = match &self.correlation_id {
-            Some(correlation_id) => GuardrailValue::Text(correlation_id.clone()),
-            None => GuardrailValue::Null,
-        };
+        let mut detail = UnavailableDetail::from(self).detail();
+        let correlation = correlation_value(self.correlation_id.as_deref());
         detail.insert("correlation_id".to_owned(), correlation);
         detail
     }

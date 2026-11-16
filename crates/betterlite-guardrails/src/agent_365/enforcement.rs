@@ -7,8 +7,6 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::agent_365::enforcement::handlers::EvaluateError;
-use crate::agent_365::enforcement::record::VerdictRecord;
-use crate::agent_365::enforcement_types::Verdict;
 use crate::agent_365_tokens::error::{Agent365TokenError, Agent365TokenExchangeError};
 use crate::agent_365_tokens::exchange::entra_assertion;
 use crate::agent_365_tokens::payload::{Agent365PayloadError, build_evaluate_payload};
@@ -46,12 +44,14 @@ pub async fn pre_mcp_call_hook(
     }
     let tool_name = tool_name(data)?;
     let Some(assertion) = resolve_assertion(data) else {
-        return handlers::caller_fault(
+        return handlers::refuse(
             guardrail,
             data,
-            &tool_name,
-            STATUS_UNAUTHORIZED,
-            MISSING_BEARER_REASON,
+            &handlers::Refusal::CallerFault {
+                status: STATUS_UNAUTHORIZED,
+                tool_name: tool_name.as_str(),
+                reason: MISSING_BEARER_REASON,
+            },
         );
     };
     let Some(token) = obo_token(guardrail, data, &tool_name, assertion.expose_secret()).await?
@@ -120,12 +120,24 @@ fn token_failure(
 ) -> Result<(), GuardrailFailure> {
     let reason = token_failure_reason(&error);
     match error {
-        Agent365TokenError::Exchange(exchange) if !exchange.gateway_owned() => {
-            handlers::caller_fault(guardrail, data, tool_name, STATUS_UNAUTHORIZED, &reason)
-        }
-        Agent365TokenError::Throttled { .. } => {
-            handlers::throttled(guardrail, data, tool_name, &reason, None)
-        }
+        Agent365TokenError::Exchange(exchange) if !exchange.gateway_owned() => handlers::refuse(
+            guardrail,
+            data,
+            &handlers::Refusal::CallerFault {
+                status: STATUS_UNAUTHORIZED,
+                tool_name,
+                reason: &reason,
+            },
+        ),
+        Agent365TokenError::Throttled { .. } => handlers::refuse(
+            guardrail,
+            data,
+            &handlers::Refusal::Throttled {
+                tool_name,
+                reason: &reason,
+                latency: None,
+            },
+        ),
         Agent365TokenError::Exchange(_)
         | Agent365TokenError::NonJsonBody { .. }
         | Agent365TokenError::NonObjectBody { .. }
@@ -133,7 +145,12 @@ fn token_failure(
         | Agent365TokenError::BadAccessToken
         | Agent365TokenError::HttpStatus { .. }
         | Agent365TokenError::TokenExpiry
-        | Agent365TokenError::Poster(_) => unavailable(guardrail, data, tool_name, &reason),
+        | Agent365TokenError::Poster(_) => handlers::unavailable(
+            guardrail,
+            data,
+            tool_name,
+            &handlers::unavailable_record(&reason),
+        ),
     }
 }
 
@@ -167,26 +184,6 @@ fn exchange_reason(error: &Agent365TokenExchangeError) -> String {
     )
 }
 
-fn unavailable(
-    guardrail: &Agent365Guardrail,
-    data: &mut RequestData,
-    tool_name: &str,
-    reason: &str,
-) -> Result<(), GuardrailFailure> {
-    handlers::unavailable(
-        guardrail,
-        data,
-        tool_name,
-        &VerdictRecord {
-            verdict: Verdict::Unavailable,
-            defender_status: None,
-            correlation_id: None,
-            latency: None,
-            reason: Some(reason),
-        },
-    )
-}
-
 // Ok(None) means a fail_open fallback already allowed the call
 async fn evaluate(
     guardrail: &Agent365Guardrail,
@@ -205,7 +202,12 @@ async fn evaluate(
         Ok(reply) => reply,
         Err(error) => {
             let reason = format!("the Agent 365 endpoint could not be reached ({error})");
-            unavailable(guardrail, data, tool_name, &reason)?;
+            handlers::unavailable(
+                guardrail,
+                data,
+                tool_name,
+                &handlers::unavailable_record(&reason),
+            )?;
             return Ok(None);
         }
     };
