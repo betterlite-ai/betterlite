@@ -26,8 +26,10 @@ use super::langflow::complete_langflow;
 use super::langgraph::complete_langgraph;
 use super::table::dispatch;
 use crate::a2a_chat::auth::EntraResolver;
-use crate::a2a_chat::error::A2aFailure;
+use crate::a2a_chat::error::{A2aError, A2aFailure};
 use crate::a2a_chat::registry::{A2aAgentLookup, RegisteredA2aAgent};
+use crate::langflow_chat::error::LangFlowError;
+use crate::langgraph_chat::error::{LangGraphError, LangGraphFailure};
 
 const MISSING_BASE: &str = "api_base is required for A2A provider. Either provide api_base parameter, set A2A_API_BASE environment variable, or register the agent in the proxy with model='a2a/<agent-name>'.";
 
@@ -349,6 +351,18 @@ fn a2a_without_any_base_raises_the_litellm_text() {
 }
 
 #[test]
+fn a2a_treats_an_empty_global_base_as_unset() {
+    let mut harness = Harness::new("a2a", "my-agent");
+    harness.globals_base = Some(String::new());
+    harness
+        .environment
+        .insert(String::from(API_BASE_ENV), String::from("http://env.test"));
+    let recorder = Recorder::answer("hi");
+    complete_a2a(&harness.context(), &recorder).expect("the call resolves");
+    assert_eq!(recorder.calls()[0].api_base, "http://env.test");
+}
+
+#[test]
 fn a2a_treats_an_empty_environment_base_as_unset() {
     let mut harness = Harness::new("a2a", "my-agent");
     harness
@@ -554,6 +568,33 @@ fn langflow_passes_a_handler_error_through_unchanged() {
         }
         other => panic!("the handler error is hidden: {other}"),
     }
+}
+
+#[test]
+fn handler_error_reports_the_provider_status() {
+    let upstream = HandlerError::Upstream { status_code: 502 };
+    assert_eq!(upstream.status_code(), Some(502));
+    let a2a_reply = HandlerError::A2aReply(A2aError {
+        status_code: 503,
+        message: String::from("the agent answered an error"),
+        headers: BTreeMap::new(),
+    });
+    assert_eq!(a2a_reply.status_code(), Some(503));
+    let langgraph_reply = HandlerError::LangGraphReply(LangGraphError {
+        status_code: 504,
+        message: String::from("the runtime answered an error"),
+    });
+    assert_eq!(langgraph_reply.status_code(), Some(504));
+    let langflow = HandlerError::LangFlow(LangFlowError::Api {
+        status_code: 505,
+        message: String::from("the flow answered an error"),
+    });
+    assert_eq!(langflow.status_code(), Some(505));
+    let a2a = HandlerError::A2a(A2aFailure::MessagesRequired);
+    assert_eq!(a2a.status_code(), None);
+    let langgraph = HandlerError::LangGraph(LangGraphFailure::MissingApiBase);
+    assert_eq!(langgraph.status_code(), None);
+    assert_eq!(HandlerError::EmptyReply.status_code(), None);
 }
 
 #[test]
