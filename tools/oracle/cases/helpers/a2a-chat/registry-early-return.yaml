@@ -1,0 +1,29 @@
+kind: helper
+name: a2a-chat-registry-early-return
+call:
+  b8100:
+    op: registry
+    agents:
+      - name: entra
+        card: {}
+        params:
+          azure_ad_token: entra-token
+          temperature: 0.5
+    probes:
+      - agent_name: ""
+        api_base: null
+        api_key: null
+        headers: null
+        optional_params: {k: 1}
+      - agent_name: entra
+        api_base: http://explicit
+        api_key: explicit-key
+        headers: {h: v}
+        optional_params: {}
+      - agent_name: entra
+        api_base: http://explicit
+        api_key: explicit-key
+        headers: {}
+        optional_params: {temperature: 9}
+env: {}
+compare: {ignore: []}

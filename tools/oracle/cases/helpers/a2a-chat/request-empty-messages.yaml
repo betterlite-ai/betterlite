@@ -1,0 +1,7 @@
+kind: helper
+name: a2a-chat-request-empty-messages
+call:
+  b8100:
+    op: request_empty
+env: {}
+compare: {ignore: []}

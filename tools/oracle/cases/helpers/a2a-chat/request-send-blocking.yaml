@@ -1,0 +1,25 @@
+kind: helper
+name: a2a-chat-request-send-blocking
+call:
+  b8100:
+    op: request
+    cases:
+      - model: my-agent
+        api_base: http://a2a.test//
+        api_key: sk-1
+        headers: {X-Extra: kept}
+        non_default_params: {stream: false, temperature: 0.2}
+        optional_params: {}
+      - model: my-agent
+        api_base: http://a2a.test
+        api_key: null
+        headers: {content-type: text/plain}
+        non_default_params: {stream: false, max_tokens: 5}
+        optional_params: {top_p: 0.5}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/cases/0/body/id, why: transform_request draws a fresh uuid4}
+    - {pointer: /value/cases/0/body/params/message/messageId, why: transform_request draws a fresh uuid4}
+    - {pointer: /value/cases/1/body/id, why: transform_request draws a fresh uuid4}
+    - {pointer: /value/cases/1/body/params/message/messageId, why: transform_request draws a fresh uuid4}

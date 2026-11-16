@@ -1,0 +1,55 @@
+kind: helper
+name: a2a-chat-registry-card-no-streaming
+call:
+  b8100:
+    op: registry
+    agents:
+      - name: nostream
+        card:
+          url: http://n.test
+          capabilities: {streaming: false}
+        params: {api_key: k2, timeout: 7}
+      - name: caps
+        card:
+          url: http://c.test
+          capabilities: {streaming: true}
+        params: {}
+      - name: nocaps
+        card: {url: http://nc.test}
+        params: {fake_stream: false}
+      - name: emptycaps
+        card: {capabilities: {}}
+        params: {}
+    probes:
+      - agent_name: nostream
+        api_base: null
+        api_key: null
+        headers: null
+        optional_params: {stream: true, temperature: 0.1}
+      - agent_name: nostream
+        api_base: null
+        api_key: null
+        headers: null
+        optional_params: {stream: false}
+      - agent_name: nostream
+        api_base: null
+        api_key: null
+        headers: null
+        optional_params: {}
+      - agent_name: caps
+        api_base: null
+        api_key: null
+        headers: null
+        optional_params: {stream: true}
+      - agent_name: nocaps
+        api_base: null
+        api_key: null
+        headers: null
+        optional_params: {stream: true}
+      - agent_name: emptycaps
+        api_base: null
+        api_key: null
+        headers: null
+        optional_params: {stream: true}
+env: {}
+compare: {ignore: []}

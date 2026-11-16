@@ -1,0 +1,17 @@
+kind: helper
+name: a2a-chat-stream-chunk-finish
+call:
+  b8100:
+    op: stream
+    chunks:
+      - chunk: {jsonrpc: "2.0", result: {status: {state: completed}, parts: [{kind: text, text: done}]}}
+      - chunk: {jsonrpc: "2.0", result: {status: {state: failed}, parts: []}}
+      - chunk: {jsonrpc: "2.0", result: {status: {state: running}, parts: [{kind: text, text: tick}]}}
+      - chunk: {jsonrpc: "2.0", result: {parts: [{kind: text, text: plain}]}}
+      - chunk: {jsonrpc: "2.0", done: true}
+      - chunk: {jsonrpc: "2.0", done: 1, result: {status: {state: running}}}
+      - chunk: {jsonrpc: "2.0", error: {code: 1, message: boom}}
+      - chunk: {jsonrpc: "2.0", error: {}}
+      - chunk: {jsonrpc: "2.0", error: ignored, result: {parts: [{kind: text, text: still}]}}
+env: {}
+compare: {ignore: []}
