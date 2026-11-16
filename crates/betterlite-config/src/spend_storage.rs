@@ -159,7 +159,7 @@ fn budget_number(configured: JsonValue) -> Result<RawNumber, ConfigError> {
         JsonValue::Bool(flag) => Some(RawNumber::Boolean(flag)),
         JsonValue::Null | JsonValue::Array(_) | JsonValue::Object(_) => None,
     };
-    number.ok_or(ConfigError::InvalidScalar {
+    number.ok_or_else(|| ConfigError::InvalidScalar {
         path: MAX_BUDGET_PATH.to_owned(),
         value: false,
     })
