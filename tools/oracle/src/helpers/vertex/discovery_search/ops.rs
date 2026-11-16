@@ -9,12 +9,11 @@ use betterlite_vertex::vertex_discovery_search::authorization::get_complete_url;
 use betterlite_vertex::vertex_discovery_search::error::VertexDiscoverySearchError;
 use betterlite_vertex::vertex_discovery_search::options::VertexSearchOptions;
 use betterlite_vertex::vertex_discovery_search::records::cost::calculate_vector_store_cost;
-use betterlite_vertex::vertex_discovery_search::records::payload::{
-    Reply, transform_search_response,
-};
+use betterlite_vertex::vertex_discovery_search::records::payload::transform_search_response;
 use betterlite_vertex::vertex_discovery_search::records::search::{
     SearchRequest, transform_search_request,
 };
+use betterlite_vertex::vertex_rag_store::records::payload::Reply;
 use betterlite_vertex::vertex_rag_store::records::search::SearchQuery;
 use rust_decimal::Decimal;
 use rust_decimal::RoundingStrategy;
