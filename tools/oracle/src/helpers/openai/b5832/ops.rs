@@ -68,7 +68,7 @@ async fn step_value(step: &Step, fixture: &mut Fixture) -> HelperResult {
             optional_params,
         } => match transform_completion_request(fixture, model, messages, optional_params).await {
             Ok(request) => Ok(Value::Object(request)),
-            Err(error) => Ok(raised(error.status_code())),
+            Err(error) => Ok(json!({"raised": error.status_code()})),
         },
         Step::Headers {
             headers,
@@ -82,8 +82,8 @@ async fn step_value(step: &Step, fixture: &mut Fixture) -> HelperResult {
                 litellm_metadata: session.litellm_metadata.clone(),
             };
             match validate_environment(headers, key.as_ref(), &source, &responses_env(env)) {
-                Ok(authorized) => encode(&authorized),
-                Err(_) => Ok(raised(None)),
+                Ok(authorized) => Ok(serde_json::to_value(&authorized)?),
+                Err(_) => Ok(json!({"raised": null})),
             }
         }
         Step::Url { api_base, env } => Ok(Value::String(get_complete_url(
@@ -95,12 +95,12 @@ async fn step_value(step: &Step, fixture: &mut Fixture) -> HelperResult {
             input,
             optional_params,
         } => match transform_responses_request(model, input, optional_params, None) {
-            Ok(body) => encode(&body),
-            Err(error) => Ok(raised(error.status_code())),
+            Ok(body) => Ok(serde_json::to_value(&body)?),
+            Err(error) => Ok(json!({"raised": error.status_code()})),
         },
         Step::Delete { path } => match transform_delete_response(path) {
-            Ok(deleted) => encode(&deleted),
-            Err(error) => Ok(raised(error.status_code())),
+            Ok(deleted) => Ok(serde_json::to_value(&deleted)?),
+            Err(error) => Ok(json!({"raised": error.status_code()})),
         },
     }
 }
@@ -122,14 +122,6 @@ fn responses_env(env: &EnvCall) -> FireworksResponsesEnv {
         },
         api_base: env.api_base.clone(),
     }
-}
-
-fn raised(status: Option<u16>) -> Value {
-    json!({"raised": status})
-}
-
-fn encode<T: serde::Serialize>(value: &T) -> HelperResult {
-    serde_json::to_value(value).map_err(|source| failure(source.to_string()))
 }
 
 fn failure(message: String) -> Box<HelperError> {
