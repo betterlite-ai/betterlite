@@ -1,0 +1,31 @@
+kind: helper
+name: batch-provider-read-bedrock-arn-seed
+call:
+  batch_provider_read:
+    request:
+      batch_id: arn:aws:bedrock:us-east-1:111122223333:async-invoke/seed
+      provider: bedrock
+      model: anthropic.claude-3-5-sonnet
+      aretrieve_batch: true
+      optional_params:
+        aws_region_name: eu-west-1
+        aws_access_key_id: SEEDKEY
+        aws_secret_access_key: seed-secret
+        aws_session_token: seed-token
+        aws_session_name: seed-session
+        aws_profile_name: seed-profile
+        aws_role_name: seed-role
+        aws_web_identity_token: seed-identity
+        aws_sts_endpoint: https://sts.seed.example
+        aws_external_id: seed-external
+        aws_session_tags:
+          - Key: seed-tag
+            Value: seed-value
+        aws_bedrock_runtime_endpoint: https://runtime.seed.example
+        aws_bedrock_project_id: seed-project
+    litellm_settings: {}
+    environment: {}
+    script:
+      status: 500
+env: {}
+compare: {ignore: []}

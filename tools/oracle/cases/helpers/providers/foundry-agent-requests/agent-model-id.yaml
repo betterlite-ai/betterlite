@@ -1,0 +1,27 @@
+kind: helper
+name: foundry-agent-requests-agent-model-id
+call:
+  foundry_agent_requests:
+    agent_ids:
+      - {model: azure_ai/agents/agent-one, optional_params: {}}
+      - {model: agents/first/second, optional_params: {}}
+      - {model: plain-model, optional_params: {}}
+      - {model: azure_ai/Agents/Upper, optional_params: {}}
+      - {model: agents/aagents/b, optional_params: {}}
+      - {model: azure_ai/agents/ghost, optional_params: {agent_id: chosen, assistant_id: other}}
+      - {model: azure_ai/agents/ghost, optional_params: {agent_id: "", assistant_id: assistant-one}}
+      - {model: azure_ai/agents/ghost, optional_params: {agent_id: 0, assistant_id: from-assistant}}
+      - {model: azure_ai/agents/ghost, optional_params: {agent_id: null, assistant_id: null}}
+calls:
+  - foundry_agent_requests:
+      agent_ids:
+        - {model: azure_ai/agents/ghost, optional_params: {agent_id: false, assistant_id: assistant-one}}
+        - {model: azure_ai/agents/ghost, optional_params: {agent_id: [], assistant_id: assistant-one}}
+        - {model: azure_ai/agents/ghost, optional_params: {agent_id: {}, assistant_id: assistant-one}}
+        - {model: azure_ai/agents/ghost, optional_params: {assistant_id: ""}}
+  - foundry_agent_requests:
+      params:
+        - {model: azure_ai/agents/agent-one, non_default_params: {temperature: 0.2, stream: true}, optional_params: {agent_id: kept}}
+        - {model: azure_ai/agents/agent-one, non_default_params: {}, optional_params: {}}
+env: {}
+compare: {ignore: []}

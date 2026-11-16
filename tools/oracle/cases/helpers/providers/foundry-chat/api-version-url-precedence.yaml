@@ -1,0 +1,21 @@
+kind: helper
+name: foundry-chat-api-version-url-precedence
+call:
+  foundry_chat:
+    model_cost: {}
+    chat_models: []
+    text_models: []
+    urls:
+      - {api_base: "https://studio.example.test/v1?api-version=2024-05-01-preview", api_version: ignored}
+      - {api_base: "https://studio.example.test/v1?api-version=", api_version: v}
+      - {api_base: "https://studio.example.test/v1?a=1&b=2", api_version: v}
+      - {api_base: "https://studio.example.test/v1?a=1&a=2", api_version: null}
+      - {api_base: "https://studio.example.test/v1", api_version: ""}
+      - {api_base: "https://studio.example.test/v1/chat/completions", api_version: v}
+      - {api_base: "https://studio.example.test/v1?x=hello world", api_version: null}
+      - {api_base: "https://studio.example.test/v1?x=a*b~", api_version: null}
+      - {api_base: "https://studio.example.test/v1?z=1#frag", api_version: v}
+      - {api_base: "https://studio.example.test/v1?", api_version: null}
+      - {api_base: "https://studio.example.test/v1?a", api_version: null}
+env: {}
+compare: {ignore: []}

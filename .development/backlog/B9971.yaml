@@ -1,0 +1,13 @@
+id: B9971
+milestone: R2 bug fixes
+title: Image token counting caps remote fetches per count
+status: todo
+depends_on: [B9963]
+file: tasks/B9971-token-count-fetch-cap.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

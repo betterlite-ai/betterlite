@@ -1,0 +1,1 @@
+{"id":"cmpl-3","object":"text_completion","created":1700000002,"model":"gpt-3.5-turbo-instruct","choices":[{"text":" hi","index":0,"logprobs":{"tokens":[" hi"],"token_logprobs":[-0.25],"top_logprobs":[{" hi":-0.25}],"text_offset":[0]},"finish_reason":"length"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2},"system_fingerprint":"fp-1"}

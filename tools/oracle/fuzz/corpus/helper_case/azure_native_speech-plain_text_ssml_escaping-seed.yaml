@@ -1,0 +1,5 @@
+kind: helper
+name: azure_native_speech-plain_text_ssml_escaping-seed
+call: {azure_native_speech: {plain_text_ssml_escaping: {inputs: ['a & b < c', 'seeded']}}}
+env: {}
+compare: {ignore: []}
