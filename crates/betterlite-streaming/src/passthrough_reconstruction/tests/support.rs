@@ -242,9 +242,9 @@ impl UsageCalculator for FixtureCalculator {
         usage_object: &Json,
         speed: Option<&str>,
     ) -> Result<Usage, Self::Failure> {
-        let encoded = serde_json::to_string(usage_object).expect("fixture usage object encodes");
-        *self.seen_object.lock().expect("fixture usage object") = Some(encoded);
-        *self.seen_speed.lock().expect("fixture usage speed") = speed.map(str::to_owned);
+        let encoded = serde_json::to_string(usage_object).map_err(|_error| ScriptFailure)?;
+        *self.seen_object.lock().map_err(|_error| ScriptFailure)? = Some(encoded);
+        *self.seen_speed.lock().map_err(|_error| ScriptFailure)? = speed.map(str::to_owned);
         if self.fail {
             return Err(ScriptFailure);
         }

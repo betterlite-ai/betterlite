@@ -174,6 +174,12 @@ fn overwrite(target: &mut i64, usage: &Json, key: &str) {
     }
 }
 
+fn overwrite_some(target: &mut Option<i64>, usage: &Json, key: &str) {
+    if let Some(value) = integer_field(usage, key) {
+        *target = Some(value);
+    }
+}
+
 impl UsageTotals {
     fn message_start(&mut self, data: &Json) {
         let message = object_field(data, "message");
@@ -182,7 +188,7 @@ impl UsageTotals {
                 .and_then(|fields| text_field(fields, "model"))
                 .filter(|model| !model.is_empty());
             if let Some(model) = streamed {
-                self.model = model.to_owned();
+                model.clone_into(&mut self.model);
             }
         }
         if let Some(usage) = message.and_then(|fields| object_field(fields, "usage")) {
@@ -197,12 +203,7 @@ impl UsageTotals {
                 self.cache_creation_5m = integer_field(splits, "ephemeral_5m_input_tokens");
                 self.cache_creation_1h = integer_field(splits, "ephemeral_1h_input_tokens");
             }
-            if let Some(geo) = text_field(usage, "inference_geo") {
-                self.inference_geo = Some(geo.to_owned());
-            }
-            if let Some(speed) = text_field(usage, "speed") {
-                self.speed = Some(speed.to_owned());
-            }
+            self.take_labels(usage);
             overwrite(&mut self.output_tokens, usage, "output_tokens");
         }
         self.found = true;
@@ -219,22 +220,26 @@ impl UsageTotals {
         if let Some(usage) = object_field(data, "usage") {
             overwrite(&mut self.output_tokens, usage, "output_tokens");
             if let Some(server) = object_field(usage, "server_tool_use") {
-                if let Some(value) = integer_field(server, "web_search_requests") {
-                    self.web_search_requests = Some(value);
-                }
-                if let Some(value) = integer_field(server, "tool_search_requests") {
-                    self.tool_search_requests = Some(value);
-                }
+                overwrite_some(&mut self.web_search_requests, server, "web_search_requests");
+                overwrite_some(
+                    &mut self.tool_search_requests,
+                    server,
+                    "tool_search_requests",
+                );
             }
             overwrite(&mut self.cache_read, usage, "cache_read_input_tokens");
-            if let Some(geo) = text_field(usage, "inference_geo") {
-                self.inference_geo = Some(geo.to_owned());
-            }
-            if let Some(speed) = text_field(usage, "speed") {
-                self.speed = Some(speed.to_owned());
-            }
+            self.take_labels(usage);
         }
         self.found = true;
+    }
+
+    fn take_labels(&mut self, usage: &Json) {
+        if let Some(geo) = text_field(usage, "inference_geo") {
+            self.inference_geo = Some(geo.to_owned());
+        }
+        if let Some(speed) = text_field(usage, "speed") {
+            self.speed = Some(speed.to_owned());
+        }
     }
 
     fn usage_object(&self) -> Result<Json, serde_json::Error> {

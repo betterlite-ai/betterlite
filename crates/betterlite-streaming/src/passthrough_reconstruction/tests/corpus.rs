@@ -1,4 +1,5 @@
 use std::fs;
+use std::io;
 use std::path::Path;
 
 use crate::passthrough_reconstruction::collapse::collapse_pure_text_chunks;
@@ -32,7 +33,7 @@ fn replays_the_anthropic_relay_reconstruction_corpus() {
                 | "malformed-frame" => assert!(collapsed.is_none(), "{path:?}"),
                 name => panic!("missing outcome for corpus input {name}"),
             }
-            Ok::<(), std::io::Error>(())
+            Ok::<(), io::Error>(())
         })
         .unwrap();
 }

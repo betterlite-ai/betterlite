@@ -66,10 +66,8 @@ fn answers_none_without_a_usage_event() {
     assert!(built(&chunks, &calculator).is_none());
 }
 
-#[test]
-fn builds_the_usage_object_from_the_stream() {
-    let calculator = FixtureCalculator::default();
-    let chunks = [
+fn full_stream() -> [RawSseChunk; 2] {
+    [
         text_chunk(&start_event(
             "{\"input_tokens\":10,\"cache_read_input_tokens\":3,\"cache_creation_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":2,\"ephemeral_1h_input_tokens\":4},\"inference_geo\":\"us\",\"speed\":\"fast\",\"output_tokens\":1}",
         )),
@@ -77,13 +75,24 @@ fn builds_the_usage_object_from_the_stream() {
             "end_turn",
             "{\"output_tokens\":9,\"server_tool_use\":{\"web_search_requests\":2}}",
         )),
-    ];
-    let chat = chat_of(built(&chunks, &calculator));
+    ]
+}
+
+#[test]
+fn builds_the_usage_object_from_the_stream() {
+    let calculator = FixtureCalculator::default();
+    assert!(built(&full_stream(), &calculator).is_some());
     assert_eq!(
         calculator.seen_object(),
         "{\"input_tokens\":10,\"output_tokens\":9,\"cache_read_input_tokens\":3,\"cache_creation_input_tokens\":6,\"cache_creation\":{\"ephemeral_5m_input_tokens\":2,\"ephemeral_1h_input_tokens\":4},\"server_tool_use\":{\"web_search_requests\":2},\"inference_geo\":\"us\",\"speed\":\"fast\"}"
     );
     assert_eq!(calculator.seen_speed(), None);
+}
+
+#[test]
+fn builds_the_chat_response_around_the_calculated_usage() {
+    let calculator = FixtureCalculator::default();
+    let chat = chat_of(built(&full_stream(), &calculator));
     assert_eq!(chat.id, "chatcmpl-00000000-0000-0000-0000-000000000001");
     assert_eq!(chat.object, "chat.completion");
     assert_eq!(chat.created, FIXED_NOW);
@@ -134,21 +143,21 @@ fn resolves_an_empty_or_unknown_model_from_the_message(#[case] model: &str) {
 fn keeps_the_model_when_the_message_has_none() {
     let calculator = FixtureCalculator::default();
     let nameless = [text_chunk(&start_event_without_model(NO_USAGE))];
-    let response =
+    let from_nameless =
         build_usage_only_response(&request(&nameless, &calculator, "unknown", None)).unwrap();
-    assert_eq!(chat_of(response).model, "unknown");
+    assert_eq!(chat_of(from_nameless).model, "unknown");
     let numeric = [text_chunk(
         "data: {\"type\":\"message_start\",\"message\":{\"model\":5}}",
     )];
-    let response =
+    let from_numeric =
         build_usage_only_response(&request(&numeric, &calculator, "unknown", None)).unwrap();
-    assert_eq!(chat_of(response).model, "unknown");
+    assert_eq!(chat_of(from_numeric).model, "unknown");
     let empty = [text_chunk(
         "data: {\"type\":\"message_start\",\"message\":{\"model\":\"\"}}",
     )];
-    let response =
+    let from_empty =
         build_usage_only_response(&request(&empty, &calculator, "unknown", None)).unwrap();
-    assert_eq!(chat_of(response).model, "unknown");
+    assert_eq!(chat_of(from_empty).model, "unknown");
 }
 
 #[rstest::rstest]
@@ -199,12 +208,12 @@ fn carries_server_tool_use_only_when_a_count_is_present() {
             "{\"server_tool_use\":{\"tool_search_requests\":1}}",
         )),
     ];
-    let chat = chat_of(built(&partial, &calculator));
+    let partial_chat = chat_of(built(&partial, &calculator));
     assert_eq!(
         calculator.seen_object(),
         "{\"input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"tool_search_requests\":1}}"
     );
-    assert_eq!(chat.choices[0].finish_reason, "tool_calls");
+    assert_eq!(partial_chat.choices[0].finish_reason, "tool_calls");
     let zero = [
         text_chunk(&start_event(NO_USAGE)),
         text_chunk(&delta_event(
@@ -212,12 +221,12 @@ fn carries_server_tool_use_only_when_a_count_is_present() {
             "{\"server_tool_use\":{\"web_search_requests\":0,\"tool_search_requests\":null}}",
         )),
     ];
-    let chat = chat_of(built(&zero, &calculator));
+    let zero_chat = chat_of(built(&zero, &calculator));
     assert_eq!(
         calculator.seen_object(),
         "{\"input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0}}"
     );
-    assert_eq!(chat.choices[0].finish_reason, "stop");
+    assert_eq!(zero_chat.choices[0].finish_reason, "stop");
 }
 
 #[test]

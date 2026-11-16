@@ -43,31 +43,30 @@ pub fn extract_sse_data(event: &str) -> Option<Json> {
     serde_json::from_str(payload).ok()
 }
 
+fn field<'value>(value: &'value Json, key: &str) -> Option<&'value Json> {
+    if let Json::Object(fields) = value {
+        fields.get(key)
+    } else {
+        None
+    }
+}
+
 pub(crate) fn object_field<'value>(value: &'value Json, key: &str) -> Option<&'value Json> {
-    let Json::Object(fields) = value else {
-        return None;
-    };
-    match fields.get(key) {
-        Some(field @ Json::Object(_)) => Some(field),
-        _ => None,
+    match field(value, key)? {
+        found @ Json::Object(_) => Some(found),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
 
 pub(crate) fn text_field<'value>(value: &'value Json, key: &str) -> Option<&'value str> {
-    let Json::Object(fields) = value else {
-        return None;
-    };
-    match fields.get(key)? {
+    match field(value, key)? {
         Json::Text(text) => Some(text.as_str()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
 
 pub(crate) fn integer_field(value: &Json, key: &str) -> Option<i64> {
-    let Json::Object(fields) = value else {
-        return None;
-    };
-    match fields.get(key)? {
+    match field(value, key)? {
         Json::Number(number) => number.as_i64(),
         Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
     }

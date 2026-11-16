@@ -140,7 +140,7 @@ fn refuses_malformed_and_non_object_data() {
     let non_object = [text_chunk("data: [1,2]")];
     assert_eq!(collapse_pure_text_chunks(&non_object).unwrap(), None);
     let broken_bytes = [RawSseChunk::Bytes(vec![0xff])];
-    assert!(collapse_pure_text_chunks(&broken_bytes).is_err());
+    collapse_pure_text_chunks(&broken_bytes).unwrap_err();
 }
 
 #[test]
