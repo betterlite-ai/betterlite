@@ -30,7 +30,6 @@ pub(super) struct Prepared {
     pub(super) prompt: String,
     // the prompt as the body carries it, which pre_call reads
     pub(super) body_prompt: String,
-    // the client's endpoint fields, which the URL is built from after the async leg takes over
     pub(super) azure_endpoint: Option<String>,
     pub(super) base_url: Option<String>,
     pub(super) headers: Vec<(String, String)>,

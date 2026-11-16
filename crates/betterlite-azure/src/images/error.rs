@@ -7,7 +7,6 @@ use crate::credentials::source::ProviderFailure;
 use crate::endpoints::initialize::EndpointError;
 use crate::image_transport::error::ImageTransportError;
 
-// An error another ported layer classifies itself
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{message}")]
 pub struct ClassifiedError {
@@ -58,7 +57,6 @@ pub enum ImageError {
 }
 
 impl ImageError {
-    // the Python class and HTTP status LiteLLM's caller sees for this failure
     #[must_use]
     pub fn classification(&self) -> (&str, Option<u16>) {
         match self {

@@ -25,7 +25,6 @@ pub fn create_azure_base_url(
     if is_mai_model(mai_model) {
         return Ok(mai_image_generation_url(base, params.api_version));
     }
-    // FLUX 2 reads the deployment model alone, with dots and underscores read as hyphens
     let flux = model.to_lowercase().replace(['.', '_'], "-");
     if flux.contains("flux-2") || flux.contains("flux2") {
         return Ok(flux2_image_generation_url(base, &flux, params.api_version));
@@ -42,7 +41,6 @@ pub fn create_azure_base_url(
     ))
 }
 
-// The marker ignores case and the separators a deployment name may carry
 #[must_use]
 pub fn is_mai_model(model: &str) -> bool {
     model

@@ -667,10 +667,16 @@ fn body_options_table() {
 fn retry_table() {
     retry_accepted();
     retry_rejected();
+    extra_body_rejected();
 }
 
 fn retry_accepted() {
-    for accepted in [r#"{"max_retries":3}"#, r#"{"max_retries":true}"#] {
+    // any int passes, a negative one and a bool included
+    for accepted in [
+        r#"{"max_retries":3}"#,
+        r#"{"max_retries":-1}"#,
+        r#"{"max_retries":true}"#,
+    ] {
         let mut harness = Harness::new(&[]).with_reply(ok_reply());
         let outcome = harness.run(&Scenario {
             optional: accepted.to_owned(),
@@ -711,7 +717,10 @@ fn retry_rejected() {
         assert!(outcome.calls.is_empty(), "{rejected}");
         assert!(outcome.logger.post.is_empty(), "{rejected}");
     }
-    // LiteLLM unpacks extra_body as a mapping, so null fails like any other non-object
+}
+
+// LiteLLM unpacks extra_body as a mapping, so null fails like any other non-object
+fn extra_body_rejected() {
     for rejected in [r#"{"extra_body":"nope"}"#, r#"{"extra_body":null}"#] {
         let mut harness = Harness::new(&[]).with_reply(ok_reply());
         let outcome = harness.run(&Scenario {
@@ -730,6 +739,7 @@ fn retry_rejected() {
 pub(super) fn azure_image_auth() {
     auth_table();
     provider_table();
+    provider_failures();
 }
 
 fn auth_table() {
@@ -789,7 +799,9 @@ fn provider_table() {
     });
     assert_eq!(outcome.header("api-key"), Some("custom"));
     assert_eq!(outcome.sent_headers().len(), 1);
+}
 
+fn provider_failures() {
     let mut harness = Harness::new(&[]).with_reply(ok_reply());
     let outcome = harness.run(&Scenario {
         api_key: None,
@@ -800,7 +812,18 @@ fn provider_table() {
         outcome.failure().classification(),
         ("AzureOpenAIError", Some(500))
     );
+    assert_eq!(outcome.failure().to_string(), "boom");
     assert!(outcome.calls.is_empty());
+
+    // an empty provider token counts as no token, so no bearer header goes out
+    let mut harness = Harness::new(&[]).with_reply(ok_reply());
+    let outcome = harness.run(&Scenario {
+        api_key: None,
+        provider: Some(ProviderScript::Token("")),
+        ..scenario("dall-e-3")
+    });
+    assert_eq!(outcome.header("authorization"), None);
+    assert_eq!(outcome.header("api-key"), None);
 }
 
 pub(super) fn azure_image_errors() {

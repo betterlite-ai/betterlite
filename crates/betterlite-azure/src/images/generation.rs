@@ -141,15 +141,12 @@ where
     })
 }
 
-// the async leg routes by the body's model, the sync leg by the deployment's base model
 fn target_url(prepared: &Prepared, body_model: Option<&str>) -> Result<String, ImageError> {
+    let deployment = prepared.deployment.as_deref();
     let (model, base_model) = if prepared.async_mode {
-        (prepared.deployment.as_deref().or(body_model), body_model)
+        (deployment.or(body_model), body_model)
     } else {
-        (
-            prepared.deployment.as_deref(),
-            prepared.hidden_model.as_deref(),
-        )
+        (deployment, prepared.hidden_model.as_deref())
     };
     let params = AzureClientParams {
         azure_endpoint: prepared.azure_endpoint.as_deref(),

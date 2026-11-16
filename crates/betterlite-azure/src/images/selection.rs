@@ -22,7 +22,6 @@ impl AzureImageConfig {
         }
     }
 
-    // The LiteLLM class name each selection stands for, as a debug log line or a trace reports it
     #[must_use]
     pub const fn class_name(self) -> &'static str {
         match self {
@@ -34,7 +33,6 @@ impl AzureImageConfig {
     }
 }
 
-// Lowercase and strip the separators first; an empty model is DALL-E 2 and the selector never returns None
 #[must_use]
 pub fn get_azure_image_generation_config(model: Option<&str>) -> AzureImageConfig {
     let original = model.unwrap_or_default();
