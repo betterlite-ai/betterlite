@@ -4,7 +4,6 @@ use std::convert::Infallible;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use betterlite_config::sections::database_startup::job::{BuildFuture, IndexBuild};
 use betterlite_db::migration_drift::comparison::SchemaCheck;
 use betterlite_db::migration_recovery::RecoveryError;
 use betterlite_db::worker_heartbeat::{
@@ -86,55 +85,6 @@ impl StartupDatabase for ScriptedStartup {
                 })
             }
         }
-    }
-}
-
-// The signals a test reads while the job's build blocks: start, release and completion.
-#[derive(Default)]
-pub(crate) struct BuildSignals {
-    pub(crate) started: Arc<Notify>,
-    pub(crate) release: Arc<Notify>,
-    pub(crate) finished: Arc<AtomicBool>,
-}
-
-// The migration job's build port: it signals when it starts, then blocks until the test releases it.
-pub(crate) struct JobBuild {
-    pub(crate) signals: BuildSignals,
-    pub(crate) answer: bool,
-    pub(crate) wait: bool,
-}
-
-impl JobBuild {
-    pub(crate) fn immediate(answer: bool) -> Self {
-        Self {
-            signals: BuildSignals::default(),
-            answer,
-            wait: false,
-        }
-    }
-
-    pub(crate) fn waiting() -> Self {
-        Self {
-            wait: true,
-            ..Self::immediate(true)
-        }
-    }
-}
-
-impl IndexBuild for JobBuild {
-    fn build(&self) -> BuildFuture<'_> {
-        self.signals.started.notify_one();
-        let release = Arc::clone(&self.signals.release);
-        let finished = Arc::clone(&self.signals.finished);
-        let answer = self.answer;
-        let wait = self.wait;
-        Box::pin(async move {
-            if wait {
-                release.notified().await;
-            }
-            finished.store(true, Ordering::SeqCst);
-            answer
-        })
     }
 }
 

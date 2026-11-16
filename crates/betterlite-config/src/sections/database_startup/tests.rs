@@ -5,15 +5,19 @@ use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_db::migration_drift::comparison::SchemaCheck;
 use rstest::rstest;
 use secrecy::ExposeSecret;
 use tempfile::NamedTempFile;
 use tracing::subscriber::with_default;
 
 use super::IGNORED_BOOTSTRAP_INPUTS;
-use super::startup::StartupSettings;
+use super::startup::{StartupSettings, StartupSwitch, check_schema_diff};
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::types::Config;
+
+mod migrations;
+mod postgres;
 
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -361,4 +365,39 @@ fn load_error(source: &str, pairs: &[(&str, &str)]) -> ConfigError {
     }
     .load(source)
     .expect_err("the config should fail")
+}
+
+#[test]
+fn bootstrap_inputs_warn_once_and_an_empty_set_warns_nothing() {
+    let pairs = [
+        ("PRISMA_OFFLINE_MODE", "true"),
+        ("LITELLM_MIGRATION_DIR", "/migrations"),
+    ];
+    let loaded = config("general_settings: {}\n", &pairs);
+    let (_startup, log) = logged(|| StartupSettings::from_config(&loaded));
+    assert_eq!(log.matches("accepted but have no effect").count(), 1);
+    assert!(
+        log.contains("PRISMA_OFFLINE_MODE, LITELLM_MIGRATION_DIR"),
+        "the warning names the accepted inputs: {log}"
+    );
+
+    let quiet = config("general_settings: {}\n", &[]);
+    let (_startup, quiet_log) = logged(|| StartupSettings::from_config(&quiet));
+    assert_eq!(quiet_log.matches("accepted but have no effect").count(), 0);
+}
+
+#[tokio::test]
+async fn the_schema_comparison_only_runs_with_updates_disabled() {
+    let enabled = StartupSettings::from_config(&config("general_settings: {}\n", &[]));
+    assert_eq!(
+        check_schema_diff(&enabled).await,
+        SchemaCheck::UpdatesEnabled
+    );
+
+    let disabled = StartupSettings {
+        updates_enabled: StartupSwitch(false),
+        ..enabled
+    };
+    // this build ships no schema contract, so the comparison reports it cannot run and never fails startup
+    assert_eq!(check_schema_diff(&disabled).await, SchemaCheck::Unavailable);
 }

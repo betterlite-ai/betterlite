@@ -51,8 +51,10 @@ betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-vertex = { path = "../betterlite-vertex" }
 deadpool-postgres.workspace = true
+hex.workspace = true
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
+sha2.workspace = true
 tempfile = "3.27.0"
 tokio.workspace = true
 tracing-subscriber.workspace = true
