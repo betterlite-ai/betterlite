@@ -1,7 +1,6 @@
 use betterlite_openai::api::image_contracts::records::ImageParams;
-use betterlite_openai::dashscope_chat::DashscopeChatConfig;
 use betterlite_openai::dashscope_family::{
-    DashscopeFamily, FamilyEnv, RerankConfig, chat_policy, embedding_config, image_config,
+    DashscopeFamily, FamilyEnv, RerankConfig, chat_config, embedding_config, image_config,
     missing_family_key_message, rerank_config, resolve_family_api_key,
 };
 use betterlite_openai::dashscope_image::error::DashscopeImageError;
@@ -194,16 +193,7 @@ fn family_value(
         rerank_env_value: rerank_settings.env_value,
         default_rerank_url: rerank_settings.default_rerank_url,
     };
-    let env_key = resolve_family_api_key(
-        family,
-        None,
-        env.brand_key.as_ref(),
-        env.fallback_key.as_ref(),
-    );
-    let chat = DashscopeChatConfig {
-        policy: chat_policy(family, &env),
-        env_api_key: env_key,
-    };
+    let chat = chat_config(family, &env);
     let argument_key = api_key.map(SecretString::from);
     let info = chat.provider_info(api_base, argument_key.as_ref());
     let chat_key = info.api_key.map(|key| key.expose_secret().clone());

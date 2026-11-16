@@ -2,7 +2,7 @@ mod tests;
 
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::dashscope_chat::ChatBasePolicy;
+use crate::dashscope_chat::{ChatBasePolicy, DashscopeChatConfig};
 use crate::dashscope_embedding::DashscopeEmbeddingConfig;
 use crate::dashscope_embedding::identity::FamilyIdentity;
 use crate::dashscope_image::DashscopeImageConfig;
@@ -117,6 +117,20 @@ pub fn chat_policy(family: DashscopeFamily, env: &FamilyEnv) -> ChatBasePolicy {
         default_base: defaults.chat_base.to_owned(),
         env_base: env.base.clone(),
         env_in_complete_url: defaults.env_in_complete_url,
+    }
+}
+
+// the chat config a family hands B8170's chat path: the policy above plus the key the environment resolved
+#[must_use]
+pub fn chat_config(family: DashscopeFamily, env: &FamilyEnv) -> DashscopeChatConfig {
+    DashscopeChatConfig {
+        policy: chat_policy(family, env),
+        env_api_key: resolve_family_api_key(
+            family,
+            None,
+            env.brand_key.as_ref(),
+            env.fallback_key.as_ref(),
+        ),
     }
 }
 
