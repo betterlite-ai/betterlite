@@ -2,7 +2,9 @@ from typing import NotRequired, Protocol, TypeAlias, TypedDict
 
 import httpx
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
-from litellm.types.llms.openai import ResponseInputParam, ResponsesAPIOptionalRequestParams
+from litellm.types.llms.openai import (  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L59
+    ResponseInputParam,
+)
 from litellm.types.router import GenericLiteLLMParams
 from pydantic import JsonValue
 
@@ -35,7 +37,7 @@ class SigningCase(TypedDict):
 
 
 class OptionCase(TypedDict):
-    params: ResponsesAPIOptionalRequestParams
+    params: Object
     drop_params: NotRequired[bool]
 
 
@@ -82,17 +84,9 @@ class Calls(Protocol):
         self, error_message: str, status_code: int, headers: httpx.Headers, /
     ) -> BaseLLMException: ...
 
-    def map_openai_params(
-        self,
-        response_api_optional_params: ResponsesAPIOptionalRequestParams,
-        model: str,
-        /,
-        *,
-        drop_params: bool,
-    ) -> Object: ...
-
     def get_complete_url(self, api_base: str | None, litellm_params: Object, /) -> str: ...
 
+    # ast-grep-ignore: no-long-names
     def transform_responses_api_request(
         self,
         model: str,
@@ -103,6 +97,7 @@ class Calls(Protocol):
         /,
     ) -> Object: ...
 
+    # ast-grep-ignore: no-long-names
     async def async_transform_responses_api_request(
         self,
         model: str,
@@ -111,6 +106,12 @@ class Calls(Protocol):
         litellm_params: GenericLiteLLMParams,
         headers: Object,
         /,
+    ) -> Object: ...
+
+
+class OptionCalls(Protocol):
+    def map_openai_params(
+        self, params: Object, model: str, /, *, drop_params: bool
     ) -> Object: ...
 
     def supports_native_file_search(self) -> bool: ...

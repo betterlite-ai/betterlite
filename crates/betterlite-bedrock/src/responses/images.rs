@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::slice::from_ref;
 
 use betterlite_openai::response_input::{ResponsesInput, ResponsesItem};
 use betterlite_prompts::arguments::json::Json;
@@ -23,7 +24,7 @@ fn remote_image_url(block: &Json) -> Option<&str> {
 fn blocks_under(value: &Json) -> &[Json] {
     match value {
         Json::List(blocks) => blocks,
-        Json::Object(_) => std::slice::from_ref(value),
+        Json::Object(_) => from_ref(value),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => &[],
     }
 }
@@ -68,24 +69,27 @@ fn inline_block(block: &Json, inlined: &BTreeMap<String, String>) -> Result<Json
     Ok(Json::Object(replaced))
 }
 
+fn inline_value(value: &Json, inlined: &BTreeMap<String, String>) -> Result<Json, ResponsesError> {
+    match value {
+        Json::List(blocks) => blocks
+            .iter()
+            .map(|block| inline_block(block, inlined))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Json::List),
+        Json::Object(_) => inline_block(value, inlined),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => Ok(value.clone()),
+    }
+}
+
 fn inline_item(item: &Json, inlined: &BTreeMap<String, String>) -> Result<Json, ResponsesError> {
     let Json::Object(fields) = item else {
         return Ok(item.clone());
     };
     let mut replaced = fields.clone();
     for key in IMAGE_BLOCK_KEYS {
-        let value = match fields.get(key) {
-            Some(Json::List(blocks)) => {
-                let mut inlined_blocks = Vec::with_capacity(blocks.len());
-                for block in blocks {
-                    inlined_blocks.push(inline_block(block, inlined)?);
-                }
-                Json::List(inlined_blocks)
-            }
-            Some(single @ Json::Object(_)) => inline_block(single, inlined)?,
-            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_)) | None => continue,
-        };
-        replaced.insert(key.to_owned(), value);
+        if let Some(value) = fields.get(key) {
+            replaced.insert(key.to_owned(), inline_value(value, inlined)?);
+        }
     }
     Ok(Json::Object(replaced))
 }

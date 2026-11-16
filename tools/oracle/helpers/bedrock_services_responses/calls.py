@@ -3,7 +3,6 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Final
 
-from litellm.exceptions import ImageFetchError
 from pydantic import JsonValue
 
 from .models import Object
@@ -22,6 +21,11 @@ SIGNED_SCHEME: Final = "AWS4-HMAC-SHA256 "
 TIME_DEPENDENT: Final = ("Authorization", "X-Amz-Date")
 
 
+class FixtureRefusalError(Exception):
+    def __init__(self, url: str) -> None:
+        super().__init__(f"no fixture for {url}")
+
+
 class Fixture:
     def __init__(self, data_urls: dict[str, str]) -> None:
         self.data_urls = data_urls
@@ -31,14 +35,14 @@ class Fixture:
         self.fetched.append(url)
         data_url = self.data_urls.get(url)
         if data_url is None:
-            raise ImageFetchError(message=f"no fixture for {url}")
+            raise FixtureRefusalError(url)
         return data_url
 
     async def fetch_async(self, url: str) -> str:
         self.fetched.append(url)
         data_url = self.data_urls.get(url)
         if data_url is None:
-            raise ImageFetchError(message=f"no fixture for {url}")
+            raise FixtureRefusalError(url)
         return data_url
 
 

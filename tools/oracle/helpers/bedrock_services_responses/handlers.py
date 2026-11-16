@@ -2,7 +2,6 @@ import asyncio
 from base64 import b64encode
 
 import httpx
-from litellm.exceptions import ImageFetchError
 from litellm.llms.bedrock.responses.transformation import (
     BedrockOpenAIResponsesConfig,
     collect_remote_image_urls,
@@ -13,13 +12,14 @@ from pydantic import JsonValue, TypeAdapter
 
 from bedrock_mantle_responses.calls import warnings_recorded
 
-from .calls import API_BASE, MODEL, Fixture, environment, signed_summary
+from .calls import API_BASE, MODEL, Fixture, FixtureRefusalError, environment, signed_summary
 from .models import (
     AuthCase,
     Calls,
     CodexCase,
     FetchCase,
     InputCase,
+    OptionCalls,
     OptionCase,
     ReplacementCase,
     RouteCase,
@@ -71,21 +71,26 @@ def sigv4_cases(calls: Calls, payload: JsonValue) -> JsonValue:
             error = {
                 "status": raised.status_code,
                 "message": raised.message,
-                "request_id": raised.response.headers.get("x-amzn-requestid"),
+                "request_id": raised.response.headers["x-amzn-requestid"],
             }
         encoded = None if body is None else b64encode(body).decode()
         results.append({"signed": signed_summary(headers), "body": encoded, "error": error})
     return {"results": results}
 
 
-def option_cases(calls: Calls, payload: JsonValue) -> JsonValue:
+def option_outcome(calls: OptionCalls, case: OptionCase) -> JsonValue:
+    with warnings_recorded() as messages:
+        drop_params = case.get("drop_params") is True
+        mapped = calls.map_openai_params(case["params"], MODEL, drop_params=drop_params)
+    native = calls.supports_native_file_search()
+    return {"params": mapped, "warnings": messages, "native_file_search": native}
+
+
+def option_cases(_calls: Calls, payload: JsonValue) -> JsonValue:
     results: list[JsonValue] = []
     for case in TypeAdapter(list[OptionCase]).validate_python(payload):
-        with warnings_recorded() as messages:
-            drop_params = case.get("drop_params") is True
-            mapped = calls.map_openai_params(case["params"], MODEL, drop_params=drop_params)
-        native = calls.supports_native_file_search()
-        results.append({"params": mapped, "warnings": messages, "native_file_search": native})
+        config = BedrockOpenAIResponsesConfig()
+        results.append(option_outcome(config, case))  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L258-L263
     return {"results": results}
 
 
@@ -107,12 +112,9 @@ def replacement_cases(_calls: Calls, payload: JsonValue) -> JsonValue:
     return {"results": results}
 
 
-def fetch_outcome(case: FetchCase, *, asynchronous: bool) -> JsonValue:
-    fixture = Fixture(case["data_urls"])
-    config = BedrockOpenAIResponsesConfig(
-        fetch_image=fixture.fetch, async_fetch_image=fixture.fetch_async
-    )
-    calls: Calls = config
+def fetch_outcome(
+    calls: Calls, fixture: Fixture, case: FetchCase, *, asynchronous: bool
+) -> JsonValue:
     params = GenericLiteLLMParams()
     try:
         if asynchronous:
@@ -121,20 +123,28 @@ def fetch_outcome(case: FetchCase, *, asynchronous: bool) -> JsonValue:
             )
         else:
             body = calls.transform_responses_api_request(MODEL, case["input"], {}, params, {})
-    except ImageFetchError as error:
-        return {"error": {"status": error.status_code}, "fetched": [*fixture.fetched]}
+    except FixtureRefusalError:
+        return {"error": "fetch", "fetched": [*fixture.fetched]}
     return {"body": body, "fetched": [*fixture.fetched]}
 
 
 def fetch_cases(_calls: Calls, payload: JsonValue) -> JsonValue:
-    cases = TypeAdapter(list[FetchCase]).validate_python(payload)
-    results: list[JsonValue] = [
-        {
-            "sync": fetch_outcome(case, asynchronous=False),
-            "async": fetch_outcome(case, asynchronous=True),
-        }
-        for case in cases
-    ]
+    results: list[JsonValue] = []
+    for case in TypeAdapter(list[FetchCase]).validate_python(payload):
+        sync_fixture = Fixture(case["data_urls"])
+        sync_config = BedrockOpenAIResponsesConfig(
+            fetch_image=sync_fixture.fetch, async_fetch_image=sync_fixture.fetch_async
+        )
+        async_fixture = Fixture(case["data_urls"])
+        async_config = BedrockOpenAIResponsesConfig(
+            fetch_image=async_fixture.fetch, async_fetch_image=async_fixture.fetch_async
+        )
+        results.append(
+            {
+                "sync": fetch_outcome(sync_config, sync_fixture, case, asynchronous=False),
+                "async": fetch_outcome(async_config, async_fixture, case, asynchronous=True),
+            }
+        )
     return {"results": results}
 
 

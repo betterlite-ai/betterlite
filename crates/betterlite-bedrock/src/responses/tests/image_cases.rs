@@ -2,11 +2,10 @@ use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_openai::response_input::ResponsesInput;
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::media::error::MediaError;
 use betterlite_prompts::media::limits::MAX_REMOTE_URLS;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
-use serde_json::Value;
 
 use crate::responses::config::BedrockResponsesConfig;
 use crate::responses::error::ResponsesError;
@@ -140,7 +139,7 @@ pub(super) fn inline_image_replacement() {
     );
     assert!(matches!(
         missing,
-        Err(ResponsesError::MissingInlined { ref url }) if url == "http://a.example/1.png"
+        Err(ResponsesError::MissingInlined { url }) if url == "http://a.example/1.png"
     ));
 }
 
@@ -152,11 +151,16 @@ fn batch_log(calls: &Mutex<Vec<Vec<String>>>) -> Vec<Vec<String>> {
     calls.lock().unwrap_or_else(PoisonError::into_inner).clone()
 }
 
-fn image_at(body: &Object, pointer: &str) -> Option<Value> {
-    serde_json::to_value(body)
-        .expect("the body encodes")
-        .pointer(pointer)
-        .cloned()
+fn image_at(body: &Object, pointer: &str) -> Option<String> {
+    let mut current = Json::Object(body.clone());
+    for segment in pointer.split('/').skip(1) {
+        current = match &current {
+            Json::Object(fields) => fields.get(segment)?.clone(),
+            Json::List(items) => items.get(segment.parse::<usize>().ok()?)?.clone(),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => return None,
+        };
+    }
+    current.as_str().map(str::to_owned)
 }
 
 pub(super) fn remote_url_inlined() {
@@ -202,7 +206,7 @@ fn assert_inlined(body: &Object) {
         ("/input/0/content/2/image_url", "data:image/png;base64,QQ=="),
         ("/input/1/output/image_url", "data:image/png;base64,Qw=="),
     ] {
-        assert_eq!(image_at(body, pointer), Some(Value::from(expected)));
+        assert_eq!(image_at(body, pointer), Some(expected.to_owned()));
     }
 }
 
@@ -255,7 +259,7 @@ pub(super) fn responses_media_fetch() {
     .expect("async fetch");
     assert_eq!(
         image_at(&sync, "/input/0/content/0/image_url"),
-        Some(Value::from("data:image/png;base64,QQ=="))
+        Some("data:image/png;base64,QQ==".to_owned())
     );
     assert_eq!(sync, parallel);
     let refused = block_on(transform_responses_request(
@@ -305,7 +309,7 @@ pub(super) fn remote_url_limit() {
         &object("{}"),
         None,
     ));
-    assert!(within.is_ok());
+    within.expect("the limit itself is allowed");
     let over = block_on(async_transform_responses(
         &fetcher,
         MODEL,

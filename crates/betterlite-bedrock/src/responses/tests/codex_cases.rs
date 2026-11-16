@@ -1,5 +1,4 @@
 use betterlite_prompts::arguments::json::Json;
-use serde_json::Value;
 
 use crate::responses::request::transform_inlined_request;
 
@@ -25,14 +24,13 @@ pub(super) fn codex_input_rewrite() {
     let doubled = format!("chat_completions/chat_completions/{MODEL}");
     let body = transform_inlined_request(&doubled, &input(CODEX_INPUT), &params, None)
         .expect("the request transforms");
-    let sent = serde_json::to_value(&body).expect("the body encodes");
-    let expected: Value = serde_json::from_str(NORMALIZED).expect("fixture items");
-    assert_eq!(sent.get("input"), Some(&expected));
+    let expected: Json = serde_json::from_str(NORMALIZED).expect("fixture items");
+    assert_eq!(body.get("input"), Some(&expected));
     assert_eq!(
-        sent.get("model"),
-        Some(&Value::from(format!("chat_completions/{MODEL}")))
+        body.get("model").and_then(Json::as_str),
+        Some(format!("chat_completions/{MODEL}").as_str())
     );
-    assert_eq!(sent.get("temperature"), Some(&Value::from(0.5)));
+    assert_eq!(body.get("temperature"), params.get("temperature"));
     assert_eq!(messages.warnings(), vec![REWRITE_WARNING.to_owned()]);
     let single =
         r#"[{"type": "agent_message", "content": [{"type": "output_text", "text": "x"}]}]"#;

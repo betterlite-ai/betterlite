@@ -26,6 +26,17 @@ fn remote_urls_within_limit(input: &ResponsesInput) -> Result<Vec<String>, Respo
     Ok(urls)
 }
 
+fn inlined_request(
+    model: &str,
+    input: &ResponsesInput,
+    inlined: &BTreeMap<String, String>,
+    params: &Object,
+    model_info: Option<&Object>,
+) -> Result<Object, ResponsesError> {
+    let inlined_input = inline_remote_image_urls(input, inlined)?;
+    transform_inlined_request(model, &inlined_input, params, model_info)
+}
+
 pub async fn transform_responses_request<Source>(
     fetcher: &Source,
     model: &str,
@@ -34,15 +45,14 @@ pub async fn transform_responses_request<Source>(
     model_info: Option<&Object>,
 ) -> Result<Object, ResponsesError>
 where
-    Source: RemoteMediaFetcher,
+    Source: RemoteMediaFetcher + Sync,
 {
     let mut inlined = BTreeMap::new();
     for url in remote_urls_within_limit(input)? {
         let data_url = fetcher.convert_url(&url).await?;
         inlined.insert(url, data_url);
     }
-    let inlined_input = inline_remote_image_urls(input, &inlined)?;
-    transform_inlined_request(model, &inlined_input, params, model_info)
+    inlined_request(model, input, &inlined, params, model_info)
 }
 
 pub async fn async_transform_responses<Source>(
@@ -53,17 +63,15 @@ pub async fn async_transform_responses<Source>(
     model_info: Option<&Object>,
 ) -> Result<Object, ResponsesError>
 where
-    Source: RemoteMediaFetcher,
+    Source: RemoteMediaFetcher + Sync,
 {
     let urls = remote_urls_within_limit(input)?;
-    let data_urls = if urls.is_empty() {
-        Vec::new()
-    } else {
-        fetcher.convert_urls(&urls).await?
-    };
-    let inlined: BTreeMap<String, String> = urls.into_iter().zip(data_urls).collect();
-    let inlined_input = inline_remote_image_urls(input, &inlined)?;
-    transform_inlined_request(model, &inlined_input, params, model_info)
+    let mut inlined = BTreeMap::new();
+    if !urls.is_empty() {
+        let data_urls = fetcher.convert_urls(&urls).await?;
+        inlined.extend(urls.into_iter().zip(data_urls));
+    }
+    inlined_request(model, input, &inlined, params, model_info)
 }
 
 pub fn transform_inlined_request(

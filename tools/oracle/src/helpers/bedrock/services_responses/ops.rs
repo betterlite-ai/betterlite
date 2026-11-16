@@ -44,7 +44,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::ResponsesSigv4(cases) => cases.iter().map(sigv4_case).collect::<Result<_, _>>()?,
         Input::ResponseOptionGates(cases) | Input::NativeFileSearchFlag(cases) => cases
             .iter()
-            .map(|case| option_case(&warnings, case))
+            .map(|case| recorded(&warnings, || option_case(case)))
             .collect::<Result<_, _>>()?,
         Input::InlineImageTraversal(cases) => cases
             .iter()
@@ -58,7 +58,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
             .collect::<Result<_, _>>()?,
         Input::CodexInputRewrite(cases) => cases
             .iter()
-            .map(|case| codex_case(&warnings, case))
+            .map(|case| recorded(&warnings, || codex_case(case)))
             .collect::<Result<_, _>>()?,
     };
     Ok(json!({"results": results}))
@@ -68,6 +68,19 @@ pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
     let mut builder = Builder::new_current_thread();
     builder.enable_all();
     builder.build().or_value_error()
+}
+
+// LiteLLM's warnings are part of the answer, so the log is emptied first and read after the case ran
+fn recorded<Run>(warnings: &Warnings, run_case: Run) -> Case
+where
+    Run: FnOnce() -> Case,
+{
+    drop(warnings.take());
+    let mut value = run_case()?;
+    if let Value::Object(fields) = &mut value {
+        fields.insert("warnings".to_owned(), json!(warnings.take()));
+    }
+    Ok(value)
 }
 
 fn route_case(case: &RouteCase) -> Case {
@@ -83,8 +96,7 @@ fn route_case(case: &RouteCase) -> Case {
     }))
 }
 
-fn option_case(warnings: &Warnings, case: &OptionCase) -> Case {
-    drop(warnings.take());
+fn option_case(case: &OptionCase) -> Case {
     let drop_params = DropParams {
         global: false,
         request: case.drop_params,
@@ -100,7 +112,6 @@ fn option_case(warnings: &Warnings, case: &OptionCase) -> Case {
         .or_value_error()?;
     Ok(json!({
         "params": serde_json::to_value(mapped).or_value_error()?,
-        "warnings": warnings.take(),
         "native_file_search": SUPPORTS_NATIVE_FILE_SEARCH,
     }))
 }
@@ -141,8 +152,7 @@ fn fetch_outcome(case: &FetchCase, asynchronous: bool) -> Case {
             "body": serde_json::to_value(body).or_value_error()?,
             "fetched": fetched,
         })),
-        // ImageFetchError is LiteLLM's BadRequestError, so the caller answers 400
-        Err(ResponsesError::Fetch(_)) => Ok(json!({"error": {"status": 400}, "fetched": fetched})),
+        Err(ResponsesError::Fetch(_)) => Ok(json!({"error": "fetch", "fetched": fetched})),
         Err(error) => Err(error).or_value_error(),
     }
 }
@@ -170,12 +180,10 @@ fn url_case(case: &UrlCase) -> Value {
     outcome.map_or_else(|_| json!({"error": true}), |url| json!({"url": url}))
 }
 
-fn codex_case(warnings: &Warnings, case: &CodexCase) -> Case {
-    drop(warnings.take());
+fn codex_case(case: &CodexCase) -> Case {
     let body =
         transform_inlined_request(&case.model, &case.input, &case.params, None).or_value_error()?;
     Ok(json!({
         "body": serde_json::to_value(body).or_value_error()?,
-        "warnings": warnings.take(),
     }))
 }

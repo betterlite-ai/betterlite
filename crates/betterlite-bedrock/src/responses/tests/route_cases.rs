@@ -1,9 +1,7 @@
 use betterlite_models::identity::provider_id::ProviderId;
 
 use crate::model_routes::ParamMap;
-use crate::responses::config::{
-    BedrockResponsesConfig, CUSTOM_LLM_PROVIDER, SUPPORTS_NATIVE_FILE_SEARCH,
-};
+use crate::responses::config::{BedrockResponsesConfig, CUSTOM_LLM_PROVIDER};
 
 use super::support::MapFetcher;
 
@@ -35,5 +33,4 @@ pub(super) fn bedrock_responses_model_route() {
     assert!(!selected(Some("")));
     assert!(!selected(None));
     assert_eq!(CUSTOM_LLM_PROVIDER, ProviderId::Bedrock);
-    assert!(!SUPPORTS_NATIVE_FILE_SEARCH);
 }

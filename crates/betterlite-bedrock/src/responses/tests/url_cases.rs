@@ -5,7 +5,14 @@ use crate::signing::target::RegionInputs;
 const US_WEST: &str = "https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1/responses";
 
 // (api_base, runtime endpoint from litellm_params, runtime endpoint from the environment, expected URL)
-const OVERRIDES: [(Option<&str>, Option<&str>, Option<&str>, &str); 14] = [
+type Override = (
+    Option<&'static str>,
+    Option<&'static str>,
+    Option<&'static str>,
+    &'static str,
+);
+
+const OVERRIDES: [Override; 14] = [
     (None, None, None, US_WEST),
     (
         Some("https://a.example"),
@@ -82,6 +89,16 @@ const OVERRIDES: [(Option<&str>, Option<&str>, Option<&str>, &str); 14] = [
     ),
 ];
 
+pub(super) fn blank() -> CompleteUrlParams<'static> {
+    CompleteUrlParams {
+        api_base: None,
+        aws_region_name: None,
+        aws_bedrock_runtime_endpoint: None,
+        environment_endpoint: None,
+        region_inputs: RegionInputs::default(),
+    }
+}
+
 fn url_for(params: CompleteUrlParams<'_>) -> String {
     complete_url(params).expect("the URL builds")
 }
@@ -92,7 +109,7 @@ pub(super) fn responses_runtime_url() {
             api_base,
             aws_bedrock_runtime_endpoint: configured,
             environment_endpoint: environment,
-            ..CompleteUrlParams::default()
+            ..blank()
         };
         assert_eq!(url_for(params), expected);
     }
@@ -109,7 +126,7 @@ fn region_cases() {
     let explicit = CompleteUrlParams {
         aws_region_name: Some("eu-west-1"),
         region_inputs: ENVIRONMENT,
-        ..CompleteUrlParams::default()
+        ..blank()
     };
     assert_eq!(
         url_for(explicit),
@@ -117,7 +134,7 @@ fn region_cases() {
     );
     let from_name = CompleteUrlParams {
         region_inputs: ENVIRONMENT,
-        ..CompleteUrlParams::default()
+        ..blank()
     };
     assert_eq!(
         url_for(from_name),
@@ -129,7 +146,7 @@ fn region_cases() {
             environment_region: None,
             ..ENVIRONMENT
         },
-        ..CompleteUrlParams::default()
+        ..blank()
     };
     assert_eq!(
         url_for(from_session),
@@ -141,7 +158,7 @@ fn region_cases() {
 fn partition_cases() {
     let china = CompleteUrlParams {
         aws_region_name: Some("cn-north-1"),
-        ..CompleteUrlParams::default()
+        ..blank()
     };
     assert_eq!(
         url_for(china),
@@ -149,7 +166,7 @@ fn partition_cases() {
     );
     let invalid = CompleteUrlParams {
         aws_region_name: Some("US-EAST-1"),
-        ..CompleteUrlParams::default()
+        ..blank()
     };
     assert!(matches!(
         complete_url(invalid),

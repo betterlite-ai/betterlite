@@ -20,6 +20,7 @@ use crate::responses::url::{CompleteUrlParams, complete_url};
 use crate::signing::target::RegionInputs;
 
 use super::support::{block_on, secret};
+use super::url_cases::blank;
 
 const API_BASE: &str = "https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1/responses";
 const NOW_SECONDS: u64 = 1_767_225_600;
@@ -304,7 +305,7 @@ pub(super) fn secret_safe_failure() {
     assert_eq!(signed.headers, supplied);
     let region_error = complete_url(CompleteUrlParams {
         aws_region_name: Some("US-EAST-1"),
-        ..CompleteUrlParams::default()
+        ..blank()
     })
     .expect_err("an uppercase region is invalid");
     let no_token = Request {

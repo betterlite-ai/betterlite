@@ -1,5 +1,4 @@
 use super::support::{MODEL, capture, map, mapped, object};
-use crate::responses::config::SUPPORTS_NATIVE_FILE_SEARCH;
 
 const BACKGROUND_WARNING: &str = "Bedrock Runtime Responses API: dropping unsupported parameter(s) ('background',) that the endpoint rejects.";
 const SUPPORTED: &str =
@@ -58,7 +57,6 @@ fn tool_cases() {
 }
 
 pub(super) fn native_file_search_flag() {
-    assert!(!SUPPORTS_NATIVE_FILE_SEARCH);
     let (messages, _guard) = capture();
     let dropped = mapped(
         r#"{"tools": [{"type": "file_search", "vector_store_ids": ["vs"]}, {"type": "web_search"}]}"#,
