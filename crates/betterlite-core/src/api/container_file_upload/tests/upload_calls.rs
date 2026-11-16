@@ -69,6 +69,25 @@ fn upload_passes_named_credentials_in_litellm_params() {
 }
 
 #[test]
+fn a_named_credential_replaces_the_same_kwarg() {
+    let mut fixture = Fixture::new();
+    fixture.api_key = Some(SecretString::from(API_KEY));
+    fixture
+        .kwargs
+        .insert("api_key".to_owned(), Json::Text("from-kwargs".to_owned()));
+    let request = fixture.request();
+    let executor = StubExecutor::replying(object("file_1"));
+
+    upload_container_file(&executor, fixture.deps(), &request).expect("the upload succeeds");
+
+    let seen = executor.seen().expect("the executor ran");
+    assert_eq!(
+        seen.litellm_params.get("api_key"),
+        Some(&JsonValue::Text(API_KEY.to_owned()))
+    );
+}
+
+#[test]
 fn upload_passes_scalar_kwargs_in_litellm_params() {
     let mut fixture = Fixture::new();
     fixture
