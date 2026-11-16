@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_openai::embedding::EmbeddingVector;
 use betterlite_openai::mongodb_vector_store::Params;
 use betterlite_openai::vector_stores::store::{Query, SearchParams};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -84,10 +85,10 @@ struct StatusCall {
     status_code: u16,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(Value::Array(
             input.calls.iter().map(calls::run_call).collect(),
         ))

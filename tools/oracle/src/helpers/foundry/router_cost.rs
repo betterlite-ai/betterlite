@@ -11,10 +11,11 @@ use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 mod input;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::{ClassifyCall, CostCall, FlatCall, Input};
 
 // Mirrors get_model_info: the provider-prefixed key first, then the bare model name.
@@ -61,10 +62,10 @@ impl PriceLookup for CatalogLookup {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         match input {
             Input::Classify { calls } => Ok(classify(calls)),
             Input::Flat { catalog, calls } => {
@@ -99,7 +100,7 @@ fn classify(calls: &[ClassifyCall]) -> Value {
     Value::Array(reports)
 }
 
-fn flat(lookup: &CatalogLookup, calls: &[FlatCall]) -> crate::helpers::HelperResult {
+fn flat(lookup: &CatalogLookup, calls: &[FlatCall]) -> HelperResult {
     let mut reports = Vec::with_capacity(calls.len());
     for call in calls {
         let fee = router_flat_cost(&call.model, call.prompt_tokens, lookup)
@@ -109,7 +110,7 @@ fn flat(lookup: &CatalogLookup, calls: &[FlatCall]) -> crate::helpers::HelperRes
     Ok(Value::Array(reports))
 }
 
-fn cost(lookup: &CatalogLookup, calls: &[CostCall]) -> crate::helpers::HelperResult {
+fn cost(lookup: &CatalogLookup, calls: &[CostCall]) -> HelperResult {
     let database = TimeZoneDatabase::from_env();
     let prompt_extras = PromptExtras::default();
     let mut reports = Vec::with_capacity(calls.len());

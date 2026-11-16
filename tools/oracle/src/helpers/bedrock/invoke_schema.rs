@@ -12,11 +12,12 @@ use betterlite_models::model_capability_predicates::CapabilityRequest;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tracing::{Event, Level, Subscriber};
+use tracing::{Event, Level, Subscriber, subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use crate::helpers::HelperResult;
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::{Builder, Runtime};
 
 mod tests;
 
@@ -93,20 +94,20 @@ impl<S: Subscriber> Layer<S> for Warnings {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
         let mut catalog = ModelCost {
             entries: &input.model_cost,
         };
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .or_config_error()?;
         let warnings = Warnings::default();
         let subscriber = tracing_subscriber::registry().with(warnings.clone());
-        let subscriber_guard = tracing::subscriber::set_default(subscriber);
+        let subscriber_guard = subscriber::set_default(subscriber);
         let mut answers = Vec::with_capacity(input.steps.len());
         for step in &input.steps {
             answers.push(answer(step, &mut catalog, &runtime, &warnings));
@@ -119,7 +120,7 @@ impl crate::helpers::Helper for Op {
 fn answer(
     step: &Step,
     catalog: &mut ModelCost<'_>,
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
     warnings: &Warnings,
 ) -> Value {
     match step {

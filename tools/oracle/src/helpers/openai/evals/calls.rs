@@ -15,7 +15,8 @@ use super::requests::{
     list_runs_value,
 };
 use super::{Call, LitellmParams, Probe, ReplyOperation, invalid_input};
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) type HeaderMap = BTreeMap<String, String>;
 

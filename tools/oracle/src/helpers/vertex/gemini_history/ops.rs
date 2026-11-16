@@ -7,7 +7,10 @@ use betterlite_vertex::gemini_history::convert::convert_messages_with_history;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::io::Error;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,7 +44,7 @@ impl RemoteMediaFetcher for NoFetch {
 }
 
 pub(super) fn run(input: &Input) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| runtime_error(&error))?;
     let mut results = Vec::with_capacity(input.cases.len());
@@ -71,7 +74,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
     Ok(json!({"results": results}))
 }
 
-fn runtime_error(error: &std::io::Error) -> Box<HelperError> {
+fn runtime_error(error: &Error) -> Box<HelperError> {
     Box::new(HelperError {
         class: "RuntimeError".to_owned(),
         status: None,

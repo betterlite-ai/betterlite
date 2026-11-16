@@ -1,4 +1,5 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::message_content::{ContentPart, Message};
 use betterlite_prompts::reasoning_fields::base64_data::extract_base64_data;

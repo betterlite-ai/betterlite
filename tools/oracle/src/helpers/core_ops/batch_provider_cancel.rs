@@ -9,10 +9,13 @@ use betterlite_core::api::batch_provider_cancel::{
     BatchCancelDispatch, BatchProviderCancelError, BatchProviderCancelInput, CancelTarget,
 };
 use betterlite_openai::batches::records::BatchObject;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
 use thiserror::Error;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -125,15 +128,13 @@ impl BatchCancelDispatch for Scripted {
     }
 }
 
-fn helper_error(
-    error: &BatchProviderCancelError<ScriptFailure>,
-) -> Box<crate::helpers::HelperError> {
+fn helper_error(error: &BatchProviderCancelError<ScriptFailure>) -> Box<HelperError> {
     let (class, status) = error
         .error_fields()
         .map_or(("ProviderError", None), |fields| {
             ("BadRequestError", Some(fields.status))
         });
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: class.to_owned(),
         status,
         error_type: None,
@@ -145,10 +146,10 @@ fn helper_error(
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = CaseInput;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let now = input.now;
         let service = BatchProviderCancel {
             clock: Arc::new(move || now),
@@ -162,18 +163,16 @@ impl crate::helpers::Helper for Op {
                 .unwrap_or_default()
                 .configured(&input.env),
         };
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .map_err(|error| {
-                Box::new(crate::helpers::HelperError {
-                    class: "RuntimeError".to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })
-            })?;
+        let runtime = Builder::new_current_thread().build().map_err(|error| {
+            Box::new(HelperError {
+                class: "RuntimeError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
         let result = runtime.block_on(service.run(&input.input));
         match result {
             Ok(answer) => Ok(json!({
