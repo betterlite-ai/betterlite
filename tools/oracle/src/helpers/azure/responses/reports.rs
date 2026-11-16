@@ -25,7 +25,7 @@ use betterlite_openai::response_params::params::ResponsesOptions;
 use betterlite_openai::response_resources::request::{
     InputItemsOrder, ListInputItemsQuery, ResourceOperation, ResourceRequest,
 };
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::{Value, json};

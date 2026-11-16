@@ -39,7 +39,6 @@ def install(source: Install) -> None:
     litellm.open_ai_text_completion_models = set(source["text_models"])
     models = set(source["chat_models"]) | set(source["text_models"])
     litellm.model_list_set = models
-    litellm.drop_params = source["drop_params"]
 
 
 def logging_object() -> Logging:

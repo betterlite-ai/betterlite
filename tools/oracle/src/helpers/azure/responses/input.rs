@@ -96,8 +96,6 @@ pub(crate) struct Install {
     pub(crate) chat_models: Vec<String>,
     #[serde(default)]
     pub(crate) text_models: Vec<String>,
-    #[serde(default)]
-    pub(crate) drop_params: bool,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

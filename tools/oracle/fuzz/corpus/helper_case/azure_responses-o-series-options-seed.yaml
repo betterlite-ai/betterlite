@@ -11,7 +11,6 @@ call:
         o3: {supports_reasoning: true}
       chat_models: [azure/o3, o3]
       text_models: []
-      drop_params: false
     models: [o3]
     o_series_steps:
       - {model: o3, params: {temperature: 0.2}, drop_params: true}

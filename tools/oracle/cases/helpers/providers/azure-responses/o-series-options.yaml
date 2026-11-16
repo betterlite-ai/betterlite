@@ -18,7 +18,6 @@ call:
         deepseek-r1: {supports_reasoning: true}
       chat_models: [azure/gpt-5, azure/gpt-5-plain, azure/o3, o3, o3-mini, deepseek-r1]
       text_models: []
-      drop_params: false
     models: [o3, o3-mini, azure/O_SERIES-x, gpt-4o, deepseek-r1, azure/o3]
     map_steps: []
     o_series_steps:
