@@ -25,25 +25,26 @@ use url::Url;
 use crate::api::bfl::generation_call::submit::{SubmitError, SubmitRequest, SubmitTransport};
 use crate::api::bfl::poll::{PollClock, PollSleeper, PollTransport};
 
-pub const MODEL: &str = "black_forest_labs/flux-pro-1.1";
-pub const PROMPT: &str = "a cat";
-pub const BASE: &str = "https://api.bfl.ai";
-pub const SUBMITTED: &str =
+pub(super) const MODEL: &str = "black_forest_labs/flux-pro-1.1";
+pub(super) const PROMPT: &str = "a cat";
+pub(super) const BASE: &str = "https://api.bfl.ai";
+pub(super) const SUBMITTED: &str =
     r#"{"id":"job-1","polling_url":"https://gateway.bfl.ai/v1/get_result?id=1"}"#;
-pub const READY: &str = r#"{"status":"Ready","result":{"sample":"https://delivery.test/a.png"}}"#;
+pub(super) const READY: &str =
+    r#"{"status":"Ready","result":{"sample":"https://delivery.test/a.png"}}"#;
 
 #[derive(Clone)]
-pub struct Reply {
-    pub status: u16,
-    pub body: &'static str,
+pub(super) struct Reply {
+    pub(super) status: u16,
+    pub(super) body: &'static str,
 }
 
-pub fn reply(status: u16, body: &'static str) -> Reply {
+pub(super) fn reply(status: u16, body: &'static str) -> Reply {
     Reply { status, body }
 }
 
 impl Reply {
-    pub fn response(&self) -> UpstreamResponse {
+    pub(super) fn response(&self) -> UpstreamResponse {
         UpstreamResponse {
             status: self.status,
             headers: HeaderMap::new(),
@@ -53,31 +54,31 @@ impl Reply {
 }
 
 #[derive(Clone)]
-pub struct RecordedPost {
-    pub url: String,
-    pub headers: HeaderMap,
-    pub body: Json,
-    pub timeout: Option<Duration>,
+pub(super) struct RecordedPost {
+    pub(super) url: String,
+    pub(super) headers: HeaderMap,
+    pub(super) body: Json,
+    pub(super) timeout: Option<Duration>,
 }
 
-pub struct RecordedGet {
-    pub url: String,
-    pub headers: HeaderMap,
+pub(super) struct RecordedGet {
+    pub(super) url: String,
+    pub(super) headers: HeaderMap,
 }
 
-pub struct Script {
-    pub submission: Reply,
-    pub polls: Mutex<VecDeque<Reply>>,
-    pub posts: Mutex<Vec<RecordedPost>>,
-    pub gets: Mutex<Vec<RecordedGet>>,
-    pub hang_post: bool,
-    pub hang_get: bool,
-    pub fail_post: bool,
-    pub cancelled: Arc<AtomicBool>,
+pub(super) struct Script {
+    pub(super) submission: Reply,
+    pub(super) polls: Mutex<VecDeque<Reply>>,
+    pub(super) posts: Mutex<Vec<RecordedPost>>,
+    pub(super) gets: Mutex<Vec<RecordedGet>>,
+    pub(super) hang_post: bool,
+    pub(super) hang_get: bool,
+    pub(super) fail_post: bool,
+    pub(super) cancelled: Arc<AtomicBool>,
 }
 
 impl Script {
-    pub fn new(submission: Reply, polls: Vec<Reply>) -> Self {
+    pub(super) fn new(submission: Reply, polls: Vec<Reply>) -> Self {
         Self {
             submission,
             polls: Mutex::new(VecDeque::from(polls)),
@@ -90,11 +91,11 @@ impl Script {
         }
     }
 
-    pub fn ready() -> Self {
+    pub(super) fn ready() -> Self {
         Self::new(reply(200, SUBMITTED), vec![reply(200, READY)])
     }
 
-    pub fn last_post(&self) -> RecordedPost {
+    pub(super) fn last_post(&self) -> RecordedPost {
         self.posts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -103,7 +104,7 @@ impl Script {
             .expect("a submission is recorded")
     }
 
-    pub fn post_count(&self) -> usize {
+    pub(super) fn post_count(&self) -> usize {
         self.posts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -162,13 +163,13 @@ impl PollTransport for Script {
     }
 }
 
-pub struct StepClock {
+pub(super) struct StepClock {
     millis: AtomicU64,
     step: u64,
 }
 
 impl StepClock {
-    pub fn stepping(step: u64) -> Self {
+    pub(super) fn stepping(step: u64) -> Self {
         Self {
             millis: AtomicU64::new(0),
             step,
@@ -182,13 +183,13 @@ impl PollClock for StepClock {
     }
 }
 
-pub struct Recorder<'clock> {
-    pub clock: &'clock StepClock,
-    pub slept: Mutex<Vec<Duration>>,
+pub(super) struct Recorder<'clock> {
+    pub(super) clock: &'clock StepClock,
+    pub(super) slept: Mutex<Vec<Duration>>,
 }
 
 impl<'clock> Recorder<'clock> {
-    pub fn new(clock: &'clock StepClock) -> Self {
+    pub(super) fn new(clock: &'clock StepClock) -> Self {
         Self {
             clock,
             slept: Mutex::default(),
@@ -209,7 +210,7 @@ impl PollSleeper for Recorder<'_> {
 }
 
 #[derive(Default)]
-pub struct Sink(pub Mutex<Vec<LogRecord>>);
+pub(super) struct Sink(pub(super) Mutex<Vec<LogRecord>>);
 
 impl LogSink for Sink {
     fn emit(&self, record: LogRecord) {
@@ -220,7 +221,7 @@ impl LogSink for Sink {
     }
 }
 
-pub fn logging_state() -> (Redactor, LoggingState) {
+pub(super) fn logging_state() -> (Redactor, LoggingState) {
     let init: LoggingInit = serde_json::from_str(
         r#"{"model":"flux-pro-1.1","call_type":"image_generation","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
     )
@@ -240,7 +241,10 @@ pub fn logging_state() -> (Redactor, LoggingState) {
     (redactor, state)
 }
 
-pub fn logging_env<'setup>(redactor: &'setup Redactor, sink: &'setup Sink) -> PrePostEnv<'setup> {
+pub(super) fn logging_env<'setup>(
+    redactor: &'setup Redactor,
+    sink: &'setup Sink,
+) -> PrePostEnv<'setup> {
     PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
@@ -257,7 +261,7 @@ pub fn logging_env<'setup>(redactor: &'setup Redactor, sink: &'setup Sink) -> Pr
     }
 }
 
-pub fn poll_once<F>(future: Pin<&mut F>) -> Poll<F::Output>
+pub(super) fn poll_once<F>(future: Pin<&mut F>) -> Poll<F::Output>
 where
     F: Future,
 {
