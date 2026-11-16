@@ -113,16 +113,16 @@ async fn pre_call_outcome(
     match outcome {
         Ok(()) => json!({"kind": "pre_call", "outcome": "admitted"}),
         Err(SessionBudgetError::Exceeded(error)) => {
-            let error = *error;
-            let status_code = error.clone().into_response().status().as_u16();
+            let rejection = *error;
+            let status_code = rejection.clone().into_response().status().as_u16();
             json!({
                 "kind": "pre_call",
                 "outcome": "exceeded",
                 "status_code": status_code,
-                "category": error.category,
-                "rate_limit_type": error.rate_limit_type,
-                "model": error.model,
-                "llm_provider": error.llm_provider,
+                "category": rejection.category,
+                "rate_limit_type": rejection.rate_limit_type,
+                "model": rejection.model,
+                "llm_provider": rejection.llm_provider,
             })
         }
         Err(other) => json!({"kind": "pre_call", "outcome": "error", "message": other.to_string()}),
