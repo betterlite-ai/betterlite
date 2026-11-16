@@ -83,6 +83,7 @@ where
     Repository: UsageActivityRepository,
 {
     async fn global(&self, start_date: &str, end_date: &str, user_id: Option<&str>) -> PageResult {
+        let repository = self.connected()?;
         let scope = daily_activity_scope(ScopeRequest {
             table: DailyActivityTable::User,
             entity_id_field: ENTITY_FIELD_USER,
@@ -95,7 +96,7 @@ where
             timezone_offset_minutes: None,
             include_current_utc_day: false,
         })?;
-        self.connected()?.aggregated(&scope).await
+        repository.aggregated(&scope).await
     }
 
     async fn teams(&self, start_date: &str, end_date: &str, team_ids: Ids<'_>) -> PageResult {
