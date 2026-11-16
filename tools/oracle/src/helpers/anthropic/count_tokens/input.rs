@@ -13,7 +13,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]

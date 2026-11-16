@@ -1,6 +1,6 @@
 #![no_main]
 
-use betterlite_oracle::case::helper::validate_helper;
+use betterlite_oracle_runner::case::helper::validate_helper;
 use std::path::Path;
 use std::str;
 

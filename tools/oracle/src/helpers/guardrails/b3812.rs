@@ -9,7 +9,8 @@ use betterlite_guardrails::tool_permission::config::ToolPermissionConfigModel;
 use betterlite_guardrails::tool_permission_requests::pre_call_hook;
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 const GUARDRAIL_NAME: &str = "tool-permissions";
 const FORWARDED_KEYS: [&str; 4] = ["tools", "functions", "tool_choice", "function_call"];

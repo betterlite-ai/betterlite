@@ -21,7 +21,8 @@ use serde_json::{Value, json};
 use super::output::{body_json, headers_json, project_payload, token_json};
 use super::recording::{FakeAuth, RecordingClient};
 use super::{Session, failure, open};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) enum HeaderMode {
     Async,

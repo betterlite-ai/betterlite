@@ -12,7 +12,9 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_logging::opik::uuid7;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -81,7 +83,7 @@ impl Helper for Op {
 }
 
 fn run_uuid() -> HelperResult {
-    let created = betterlite_logging::opik::uuid7::create_uuid7();
+    let created = uuid7::create_uuid7();
     let Ok(parsed) = uuid::Uuid::parse_str(&created) else {
         return Err(Box::new(HelperError {
             class: "Uuid".to_owned(),

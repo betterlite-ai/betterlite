@@ -1,0 +1,46 @@
+[package]
+name = "betterlite-oracle-guardrails"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+async-trait = "0.1.92"
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+base64 = "0.23.1"
+betterlite-config = { path = "../../../../../crates/betterlite-config" }
+betterlite-context = { path = "../../../../../crates/betterlite-context" }
+betterlite-core = { path = "../../../../../crates/betterlite-core" }
+betterlite-guardrails = { path = "../../../../../crates/betterlite-guardrails" }
+betterlite-http = { path = "../../../../../crates/betterlite-http" }
+betterlite-models = { path = "../../../../../crates/betterlite-models" }
+betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-oracle-runner = { path = "../../../runner" }
+betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
+betterlite-server = { path = "../../../../../crates/betterlite-server" }
+chrono.workspace = true
+futures-util = { version = "0.3.34", default-features = false }
+indexmap = { version = "2.14.2", features = ["serde"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking"] }
+rust_decimal.workspace = true
+secrecy = { version = "0.10.3", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
+tempfile = "3.27.0"
+tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
+ulid = "3.0.0"
+url = "2.5.8"
+uuid = { version = "1.28.0", default-features = false }
+
+[dev-dependencies]
+rstest = "=0.27.0"
+serde-saphyr = "2.0.0"
+
+[lints]
+workspace = true

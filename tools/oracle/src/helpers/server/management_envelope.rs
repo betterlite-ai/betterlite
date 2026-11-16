@@ -1,6 +1,8 @@
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::management_envelopes::{
-    FacetListResponse, ListResponse, PageLinks, PageMeta, ProblemDetail, ProblemDocument,
-    ResourceResponse,
+    FacetListResponse, ListLinks, ListMeta, ListResponse, PageLinks, PageMeta, ProblemDetail,
+    ProblemDocument, ResourceResponse,
 };
 use serde::Deserialize;
 use serde::Serialize;
@@ -21,8 +23,8 @@ pub(crate) enum Input {
     },
     List {
         data: Vec<Value>,
-        meta: betterlite_server::management_envelopes::ListMeta,
-        links: betterlite_server::management_envelopes::ListLinks,
+        meta: ListMeta,
+        links: ListLinks,
     },
     Resource {
         data: Value,
@@ -41,10 +43,10 @@ enum Output {
     Resource(ResourceResponse<Value>),
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::Problem { problem, document } => match document {
                 true => Output::ProblemDocument(ProblemDocument::from(problem)),
@@ -63,7 +65,7 @@ impl crate::helpers::Helper for Op {
             Input::Resource { data } => Output::Resource(ResourceResponse { data: data.clone() }),
         };
         serde_json::to_value(output).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "SerializationError".to_owned(),
                 status: None,
                 error_type: None,

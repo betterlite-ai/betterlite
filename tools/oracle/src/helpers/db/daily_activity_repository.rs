@@ -4,6 +4,7 @@ use betterlite_db::daily_activity_repository::USAGE_EXPORT_BATCH_SIZE;
 use betterlite_db::daily_activity_repository::export::next_cursor;
 use betterlite_db::daily_activity_repository::metadata::{metadata_row, metadata_tags};
 use betterlite_db::daily_activity_repository::rows::records::VerificationTokenRow;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -34,10 +35,10 @@ enum Case {
     },
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let answers: serde_json::Map<String, serde_json::Value> = input
             .cases
             .iter()

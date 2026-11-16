@@ -3,8 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_provider::api::file_contracts::config::FileParams;
 use serde::Deserialize;
 
-use crate::helpers::Helper;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod fixture;
 mod ops;
