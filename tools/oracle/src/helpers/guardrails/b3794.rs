@@ -41,7 +41,8 @@ pub(crate) struct Call {
     api_key: Option<String>,
     api_base: Option<String>,
     asset_id: Option<String>,
-    unreachable_fallback: Option<String>,
+    #[serde(default)]
+    unreachable_fallback: UnreachableFallback,
     #[serde(default)]
     data: BTreeMap<String, GuardrailValue>,
     answer: Option<UpstreamAnswer>,
@@ -116,10 +117,7 @@ fn build_params(call: &Call) -> RepelloAIParams {
         api_key: call.api_key.clone().map(SecretString::from),
         api_base: call.api_base.clone(),
         asset_id: call.asset_id.clone(),
-        unreachable_fallback: match call.unreachable_fallback.as_deref() {
-            Some("fail_open") => UnreachableFallback::FailOpen,
-            _ => UnreachableFallback::FailClosed,
-        },
+        unreachable_fallback: call.unreachable_fallback,
         timeout: None,
         mode: LitellmParamsMode::One("pre_call".to_owned()),
         default_on: true,
@@ -142,7 +140,10 @@ fn base_output(call: &Call, settings: &RepelloAISettings) -> Output {
         api_base: Some(settings.api_base.clone()),
         asset_id: Some(settings.asset_id.clone()),
         key_source: Some(key_source(call, settings.api_key.expose_secret())),
-        ..Output::default()
+        requests: Vec::new(),
+        applied: Vec::new(),
+        status: None,
+        caught: None,
     }
 }
 
