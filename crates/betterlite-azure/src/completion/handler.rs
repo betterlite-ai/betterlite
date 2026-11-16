@@ -18,7 +18,7 @@ mod records;
 pub mod streaming;
 
 pub enum TextCompletionOutcome {
-    Buffered(ChatReply),
+    Buffered(Box<ChatReply>),
     Stream(CompletionStream),
 }
 
@@ -87,7 +87,7 @@ where
     }
     if call.acompletion {
         let reply = buffered::acompletion(source, &sent, call, runtime, hooks).await?;
-        return Ok(TextCompletionOutcome::Buffered(reply));
+        return Ok(TextCompletionOutcome::Buffered(Box::new(reply)));
     }
     if stream_requested {
         let empty = LiteLlmParams::default();
@@ -100,7 +100,7 @@ where
         return Ok(TextCompletionOutcome::Stream(stream));
     }
     let reply = buffered::complete_buffered(source, &sent, call, runtime, hooks).await?;
-    Ok(TextCompletionOutcome::Buffered(reply))
+    Ok(TextCompletionOutcome::Buffered(Box::new(reply)))
 }
 
 // the cloudflare branch swaps the caller's client for one whose base url carries the deployment

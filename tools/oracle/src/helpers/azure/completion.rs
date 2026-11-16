@@ -4,6 +4,7 @@ use betterlite_oracle_helper_api::error::OrHelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::builtin::Message;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 mod call;
 mod hooks;
@@ -52,7 +53,7 @@ pub(crate) struct CallCase {
     #[serde(default)]
     pub(super) client: Option<String>,
     #[serde(default)]
-    pub(super) headers: Option<std::collections::BTreeMap<String, String>>,
+    pub(super) headers: Option<BTreeMap<String, String>>,
     #[serde(default)]
     pub(super) data: Extra,
     #[serde(default)]

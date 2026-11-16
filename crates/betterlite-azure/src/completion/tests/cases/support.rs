@@ -201,7 +201,7 @@ impl Scenario {
             hooks,
         };
         match outcome {
-            Ok(TextCompletionOutcome::Buffered(reply)) => result.reply = Some(reply),
+            Ok(TextCompletionOutcome::Buffered(reply)) => result.reply = Some(*reply),
             Ok(TextCompletionOutcome::Stream(stream)) => result.chunks = run(collect(stream)),
             Err(error) => result.error = Some(error),
         }
