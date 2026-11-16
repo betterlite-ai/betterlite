@@ -15,14 +15,15 @@ use serde_json::{Value, json};
 use tokio::task::yield_now;
 
 use super::input::{ResponseKind, ResponseSpec};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use std::io::Error;
 
 pub(super) struct ManualClock(pub(super) Mutex<DateTime<Utc>>);
 
 impl ManualClock {
     pub(super) fn set(&self, now_ms: i64) -> Result<(), Box<HelperError>> {
         let instant = DateTime::from_timestamp_millis(now_ms)
-            .ok_or_else(|| std::io::Error::other("now_ms is outside the supported range"))?;
+            .ok_or_else(|| Error::other("now_ms is outside the supported range"))?;
         *self.0.lock().unwrap_or_else(PoisonError::into_inner) = instant;
         Ok(())
     }

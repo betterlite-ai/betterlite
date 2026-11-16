@@ -20,10 +20,12 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::{Map, Value, json};
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::{MockProvider, ProviderRequest};
-use crate::routing_mock_scripts::{MockScript, redact};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
+use betterlite_oracle_runner::routing_mock_scripts::{MockScript, redact_credentials};
+use tokio::runtime::Builder;
 
 mod tests;
 
@@ -142,7 +144,7 @@ fn key_source(seen: &ProviderRequest, request: &CountRequest) -> Option<&'static
     let found = sources.into_iter().find_map(|(name, key)| {
         let mut expected = BTreeMap::new();
         expected.insert(String::from("authorization"), format!("Bearer {}", key?));
-        redact(&mut expected);
+        redact_credentials(&mut expected);
         (expected.get("authorization") == Some(sent)).then_some(name)
     });
     Some(found.unwrap_or("other"))
@@ -227,12 +229,12 @@ fn prepare(request: &PrepareRequest) -> HelperResult {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Count(request) => tokio::runtime::Builder::new_current_thread()
+            Input::Count(request) => Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .map_err(|error| fail("OSError", &error))?

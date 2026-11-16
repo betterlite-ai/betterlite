@@ -19,7 +19,8 @@ use jiff::Timestamp;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod inputs;
 mod probe;
@@ -28,6 +29,7 @@ use inputs::{
     BackoffInput, EnvironmentInput, HeaderInput, Input, KeyInput, ModelSetsInput, ValidModelInput,
 };
 use probe::RecordingProbe;
+use tokio::runtime::{Builder, Runtime};
 
 pub(crate) struct Op;
 
@@ -96,8 +98,8 @@ fn header_value(headers: Option<&BTreeMap<String, String>>) -> Option<&str> {
         .map(String::as_str)
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .build()
         .map_err(|source| invalid(source.to_string()))
 }
@@ -210,7 +212,7 @@ fn answers<Case>(cases: &[Case], answer: fn(&Case) -> HelperResult) -> HelperRes
         .map(Value::Array)
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

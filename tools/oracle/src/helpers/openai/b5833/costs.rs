@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
 use super::{Call, helper_error};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn cost_values(calls: &[Call]) -> Result<Vec<Value>, Box<HelperError>> {
     let mut values = Vec::with_capacity(calls.len());

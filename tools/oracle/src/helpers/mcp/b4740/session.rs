@@ -9,6 +9,8 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 use std::time::Duration;
+use std::{future, io};
+use tokio::time;
 use tracing_subscriber::{Layer, layer::Context};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -48,22 +50,22 @@ impl Fixture {
 }
 
 impl McpSession for Fixture {
-    type Error = std::io::Error;
+    type Error = io::Error;
     type Output = CallRequest;
     async fn list_tools(&mut self, cursor: Option<&str>) -> Result<Page, Self::Error> {
         self.cursors.push(cursor.map(str::to_owned));
         let frame = self
             .pages
             .pop_front()
-            .ok_or_else(|| std::io::Error::other("missing page"))?;
-        tokio::time::sleep(Duration::from_millis(frame.delay_ms)).await;
+            .ok_or_else(|| io::Error::other("missing page"))?;
+        time::sleep(Duration::from_millis(frame.delay_ms)).await;
         Ok(frame.page)
     }
     fn call_tool(
         &mut self,
         request: CallRequest,
     ) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send {
-        std::future::ready(Ok(request))
+        future::ready(Ok(request))
     }
 }
 

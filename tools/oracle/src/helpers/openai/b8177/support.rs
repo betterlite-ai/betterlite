@@ -12,7 +12,8 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use tokio::runtime::{Builder, Runtime};
 
 pub(crate) const FIXED_UUID: u128 = 0x0123_4567_89ab_4def_8123_4567_89ab_cdef;
 
@@ -49,19 +50,17 @@ impl GigachatImageUploader for Uploader {
     }
 }
 
-pub(crate) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .map_err(|error| {
-            Box::new(HelperError {
-                class: String::from("Runtime"),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
+pub(crate) fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread().build().map_err(|error| {
+        Box::new(HelperError {
+            class: String::from("Runtime"),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
         })
+    })
 }
 
 pub(crate) fn chat_reply_value(response: &ChatResponse) -> Value {
