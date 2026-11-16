@@ -13,7 +13,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use thiserror::Error;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_config::types::Config;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use url::form_urlencoded;
 
 pub(crate) struct Op;
 
@@ -89,7 +92,7 @@ impl Helper for Op {
     }
 }
 
-fn load(cache_params: &Value) -> Result<betterlite_config::types::Config, ConfigError> {
+fn load(cache_params: &Value) -> Result<Config, ConfigError> {
     let config = json!({
         "litellm_settings": {
             "cache_params": cache_params,
@@ -148,7 +151,7 @@ fn elasticache_sig_generation(cache_name: &str, serverless: bool) -> Result<Valu
                 provider.get_credentials(&StaticAwsCredentials, SystemTime::UNIX_EPOCH)?;
             let signed_url = signed.expose_secret();
             let (host, query) = signed_url.split_once("/?").unwrap_or((signed_url, ""));
-            let params: BTreeMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
+            let params: BTreeMap<String, String> = form_urlencoded::parse(query.as_bytes())
                 .map(|(name, value)| (name.into_owned(), value.into_owned()))
                 .collect();
             let mut result = serde_json::Map::new();

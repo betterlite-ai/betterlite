@@ -244,7 +244,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_messages_beta*")"
       && grep -lq 'bedrock_messages_beta' tools/oracle/fuzz/corpus/helper_case/bedrock_messages_beta* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_messages_beta$/)'
+      run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_messages_beta$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-provider-beta-identity
     why: custom_llm_provider returns bedrock; beta_headers_provider returns that value or bedrock when a subclass

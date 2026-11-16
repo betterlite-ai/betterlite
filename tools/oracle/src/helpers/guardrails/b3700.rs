@@ -21,7 +21,8 @@ use tokio::runtime::Builder;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod projection;
 
@@ -137,6 +138,10 @@ fn stream_settings(input: &Input) -> StreamFilterSettings {
     }
 }
 
+#[expect(
+    clippy::map_err_ignore,
+    reason = "a timeout only says the time ran out, and the answer names it TimeoutError"
+)]
 async fn stream_output(
     input: &Input,
     settings: &StreamFilterSettings,

@@ -7,6 +7,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::RerankDocument;
 use betterlite_openai::fireworks_ai_common::{SessionParams, get_session_id};
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -114,10 +115,10 @@ pub(crate) struct Input {
     rerank_requests: Vec<RequestCall>,
     rerank_responses: Vec<ResponseCall>,
 }
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(json!({
             "api_keys": answers::api_keys_answer(&input.api_keys),
             "sessions": answers::map_answers(&input.sessions, |call| {

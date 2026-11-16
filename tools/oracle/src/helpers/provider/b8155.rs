@@ -2,8 +2,7 @@ use betterlite_provider::ollama_chat::config::OllamaChatConfig;
 use serde::Deserialize;
 
 use self::script::{ParamCase, ReplyCase, RequestCase, ValidateCase};
-use crate::helpers::Helper;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod ops;
 mod script;

@@ -16,12 +16,14 @@ use serde::Deserialize;
 use tokio::runtime::Builder;
 use tokio_util::task::TaskTracker;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod report;
 mod scripted;
 
 use scripted::{ScriptedClock, ScriptedSleeps, ScriptedTransport};
+use std::fmt::Display;
 
 const FLUSH_INTERVAL_SECONDS: u64 = 3600;
 const SCRIPTED_KEY: &str = "team-key";
@@ -121,7 +123,7 @@ const fn default_status() -> u16 {
 
 pub(super) fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "NewRelicMetricsError".to_owned(),

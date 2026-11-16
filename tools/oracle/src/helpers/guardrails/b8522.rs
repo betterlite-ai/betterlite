@@ -10,7 +10,7 @@ use betterlite_guardrails::lakera_v2::scope::inspection_messages;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct HumanizedItem {

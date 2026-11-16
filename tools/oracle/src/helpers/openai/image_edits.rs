@@ -2,7 +2,7 @@ mod input;
 mod run;
 mod tests;
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
@@ -13,7 +13,7 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

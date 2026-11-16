@@ -9,7 +9,11 @@ use betterlite_logging::private_json::safe_json::{
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
+use std::os::unix;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -26,7 +30,7 @@ pub(crate) enum Input {
     EnsurePrivateDir { name: String },
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -40,9 +44,7 @@ impl crate::helpers::Helper for Op {
             | Input::SymlinkedParent { .. }
             | Input::EnsurePrivateDir { .. } => {
                 let root = tempfile::tempdir().map_err(failure)?;
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .build()
-                    .map_err(failure)?;
+                let runtime = Builder::new_current_thread().build().map_err(failure)?;
                 let fixture = Fixture {
                     root,
                     files: PrivateFiles::default(),
@@ -114,7 +116,7 @@ impl Fixture {
     }
 
     // The overwrite case starts from an existing file whose mode is wider than the private one
-    fn seed_readable(&self, name: &str) -> Result<PathBuf, Box<crate::helpers::HelperError>> {
+    fn seed_readable(&self, name: &str) -> Result<PathBuf, Box<HelperError>> {
         let target = self.root.path().join(name);
         fs::write(&target, "{\"old\": true}").map_err(failure)?;
         fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).map_err(failure)?;
@@ -145,7 +147,7 @@ impl Fixture {
         let real = self.root.path().join("real");
         fs::create_dir_all(&real).map_err(failure)?;
         let link = self.root.path().join("link");
-        std::os::unix::fs::symlink(&real, &link).map_err(failure)?;
+        unix::fs::symlink(&real, &link).map_err(failure)?;
         let document = PrivateDocument::json(data).map_err(failure)?;
         let written = self.files.write_private(&link.join(name), document).await;
         written.map_err(failure)?;
@@ -209,11 +211,11 @@ fn file_view(target: &Path) -> Value {
     })
 }
 
-fn failure<M>(message: M) -> Box<crate::helpers::HelperError>
+fn failure<M>(message: M) -> Box<HelperError>
 where
-    M: std::fmt::Display,
+    M: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "PrivateJsonError".to_owned(),
         status: None,
         error_type: None,

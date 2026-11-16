@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::user_repository::projection::user_record_to_model;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::{Map, Value};
 
 pub(crate) struct Op;
@@ -12,10 +14,10 @@ pub(crate) struct Input {
     records: BTreeMap<String, JsonData>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut output = Map::new();
         for (name, record) in &input.records {
             let decoded = user_record_to_model(Some(record)).ok().flatten();
@@ -29,9 +31,9 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn decoded_user(user: &LiteLLMUserTable) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn decoded_user(user: &LiteLLMUserTable) -> Result<Value, Box<HelperError>> {
     let mut serialized = serde_json::to_value(user).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "ValueError".to_owned(),
             status: None,
             error_type: None,

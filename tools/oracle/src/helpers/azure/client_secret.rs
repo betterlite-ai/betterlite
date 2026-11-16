@@ -15,8 +15,10 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fixture::{FixtureClock, FixtureResolver, FixtureTransport, NOW, failure, input_of, pairs};
+use std::iter;
 use steps::{Call, Step};
 
 mod fixture;
@@ -101,7 +103,7 @@ fn attempts(step: &Step) -> Result<Attempts, Box<HelperError>> {
     let host = step.authority_host.as_deref();
     let provider = provider_for(&mut cache, &input_of(step), &resolver, host).ok();
     let mut tokens = Vec::new();
-    for offset in std::iter::once(0).chain(step.advance) {
+    for offset in iter::once(0).chain(step.advance) {
         let later = NOW.saturating_add(offset);
         clock.now.store(later, Ordering::SeqCst);
         tokens.push(provider.as_ref().and_then(|ready| ready.token().ok()));

@@ -13,7 +13,7 @@ use super::error::ScenarioError;
 use super::model::{CapturedValue, HttpScenario};
 use crate::case::Request;
 use crate::http::Response;
-use crate::mock::ProviderRequest;
+use betterlite_oracle_runner::mock::ProviderRequest;
 
 mod peer;
 

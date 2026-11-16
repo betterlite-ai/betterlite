@@ -1,9 +1,7 @@
 #![expect(
-    clippy::absolute_paths,
     clippy::disallowed_methods,
     clippy::disallowed_types,
-    clippy::pub_use,
-    reason = "The operation files name crate::helpers paths, build provider JSON with serde_json::json!, and reach the trait through the re-export the shared macro generates."
+    reason = "Helper operations take and return arbitrary provider JSON as serde_json::Value and build it with serde_json::json!."
 )]
 
 betterlite_oracle_helper_api::helper_group! {
