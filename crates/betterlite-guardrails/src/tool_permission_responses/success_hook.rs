@@ -13,7 +13,7 @@ use crate::tool_permission_requests::header_mutation::record_applied_guardrail;
 use super::anthropic_conversion::{anthropic_content_blocks, anthropic_to_tool_call};
 use super::anthropic_rewrite::rewrite_anthropic_responses;
 use super::evaluate::evaluate_tool_calls;
-use super::extraction::extract_response_tools;
+use super::extraction::{ToolCallInfo, extract_response_tools};
 use super::openai_rewrite::rewrite_openai_responses;
 
 // Which response body the caller handed the hook, LiteLLM's isinstance(response, ModelResponse) and its dict fallback
@@ -31,58 +31,29 @@ pub fn post_call_success_hook(
     suppressed: &BTreeSet<String>,
     response: &mut GuardrailValue,
 ) -> Result<(), GuardrailFailure> {
-    match format {
-        ResponseFormat::OpenAi => post_call_openai(guardrail, data, suppressed, response),
-        ResponseFormat::Anthropic => post_call_anthropic(guardrail, data, suppressed, response),
-    }
-}
-
-fn post_call_openai(
-    guardrail: &ToolPermissionGuardrail,
-    data: &mut Object,
-    suppressed: &BTreeSet<String>,
-    response: &mut GuardrailValue,
-) -> Result<(), GuardrailFailure> {
-    let GuardrailValue::Object(fields) = response else {
+    // LiteLLM reads the Anthropic content blocks before the guardrail check and returns a body without them.
+    if format == ResponseFormat::Anthropic && anthropic_content_blocks(response).is_none() {
         return Ok(());
-    };
+    }
+    if !matches!(response, GuardrailValue::Object(_)) {
+        return Ok(());
+    }
     if !should_run(guardrail, data, suppressed)? {
         return Ok(());
     }
-    let calls = extract_response_tools(fields);
-    if calls.is_empty() {
-        tracing::debug!("Tool Permission Guardrail: No tool uses found");
-        return Ok(());
-    }
-    tracing::debug!(
-        count = calls.len(),
-        "Tool Permission Guardrail: Found tool calls"
-    );
-    let denied = evaluate_tool_calls(guardrail, &calls)?;
-    if denied.is_empty() {
-        tracing::debug!("Tool Permission Guardrail Post-Call Hook: All tools allowed");
-    } else {
-        rewrite_openai_responses(fields, &denied);
-    }
-    record_applied_guardrail(data, &guardrail.args.name);
-    Ok(())
-}
-
-fn post_call_anthropic(
-    guardrail: &ToolPermissionGuardrail,
-    data: &mut Object,
-    suppressed: &BTreeSet<String>,
-    response: &mut GuardrailValue,
-) -> Result<(), GuardrailFailure> {
-    // LiteLLM returns before the guardrail check when the body is not an Anthropic message with content blocks.
-    let Some(content) = anthropic_content_blocks(response) else {
-        return Ok(());
+    let calls: Vec<ToolCallInfo> = match format {
+        ResponseFormat::OpenAi => {
+            let GuardrailValue::Object(fields) = response else {
+                return Ok(());
+            };
+            extract_response_tools(fields)
+        }
+        ResponseFormat::Anthropic => anthropic_content_blocks(response)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(anthropic_to_tool_call)
+            .collect(),
     };
-    if !should_run(guardrail, data, suppressed)? {
-        return Ok(());
-    }
-    // LiteLLM's _extract_tool_calls_from_anthropic_content: every named tool_use block, in content order.
-    let calls = content.iter().filter_map(anthropic_to_tool_call).collect();
     if calls.is_empty() {
         tracing::debug!("Tool Permission Guardrail: No tool uses found");
         return Ok(());
@@ -98,7 +69,10 @@ fn post_call_anthropic(
     if denied.is_empty() {
         tracing::debug!("Tool Permission Guardrail Post-Call Hook: All tools allowed");
     } else {
-        rewrite_anthropic_responses(fields, &denied);
+        match format {
+            ResponseFormat::OpenAi => rewrite_openai_responses(fields, &denied),
+            ResponseFormat::Anthropic => rewrite_anthropic_responses(fields, &denied),
+        }
     }
     record_applied_guardrail(data, &guardrail.args.name);
     Ok(())
