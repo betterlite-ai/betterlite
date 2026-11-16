@@ -309,18 +309,19 @@ async fn object_name_percent_encoding(
             serve(&listener, &response("404 Not Found", b""))
         );
         assert!(read.is_none());
-        let text = String::from_utf8(read_request).unwrap();
-        let target = format!("GET /storage/v1/b/responses/o/{expected}?alt=media HTTP/1.1\r\n");
-        assert!(text.starts_with(&target), "{text}");
+        let read_text = String::from_utf8(read_request).unwrap();
+        let read_target =
+            format!("GET /storage/v1/b/responses/o/{expected}?alt=media HTTP/1.1\r\n");
+        assert!(read_text.starts_with(&read_target), "{read_text}");
         let ((), write_request) = tokio::join!(
             cache.async_set_cache(key, &value),
             serve(&listener, &response("200 OK", b""))
         );
-        let text = String::from_utf8(write_request).unwrap();
-        let target = format!(
+        let write_text = String::from_utf8(write_request).unwrap();
+        let write_target = format!(
             "POST /upload/storage/v1/b/responses/o?uploadType=media&name={expected} HTTP/1.1\r\n"
         );
-        assert!(text.starts_with(&target), "{text}");
+        assert!(write_text.starts_with(&write_target), "{write_text}");
     };
     timeout(Duration::from_secs(5), operation).await.unwrap();
 }
