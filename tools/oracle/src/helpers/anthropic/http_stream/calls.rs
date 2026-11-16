@@ -10,7 +10,9 @@ use betterlite_anthropic::anthropic_http_stream::transport::StreamPost;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use tokio::runtime::Builder;
 
-use super::fixture::{FixedCounter, FixedIds, FixtureTransport, HelperFailure, Verdict};
+use super::fixture::{
+    FixedCounter, FixedIds, FixtureTransport, HelperFailure, SilentLogger, Verdict,
+};
 use super::support::header_map;
 use super::{Input, MAX_EVENT_BYTES};
 
@@ -70,10 +72,12 @@ pub(crate) fn attempt(
     outcome: Outcome,
 ) -> Result<Attempt, Box<HelperError>> {
     let client = transport(input, outcome)?;
+    let logger = SilentLogger;
     let clients = StreamClients {
         supplied: Some(&client),
         module_level_aclient: &client,
         module_level_client: &client,
+        logger: &logger,
     };
     let call = StreamCall {
         api_base: &input.api_base,
@@ -90,6 +94,7 @@ pub(crate) fn attempt(
         ids: &FixedIds,
         counter: FixedCounter,
         max_event_bytes: MAX_EVENT_BYTES,
+        max_error_body_bytes: MAX_EVENT_BYTES,
     };
     let result = runtime.block_on(async move {
         if synchronous {

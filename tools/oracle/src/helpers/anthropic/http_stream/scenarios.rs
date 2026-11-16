@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 use super::calls::{Outcome, TIMEOUT, attempt, transport};
-use super::fixture::{FixedCounter, FixedIds, HelperFailure};
+use super::fixture::{FixedCounter, FixedIds, HelperFailure, SilentLogger};
 use super::support::{HelperValue, header_map, options_value, post_value, selected};
 use super::{Input, MAX_EVENT_BYTES, value_error};
 
@@ -106,15 +106,18 @@ fn failure_value(input: &Input, synchronous: bool, outcome: Outcome) -> HelperVa
 
 pub(super) fn stream_flag_and_context(input: &Input) -> HelperResult {
     let client = transport(input, Outcome::Reply)?;
+    let logger = SilentLogger;
     let clients = StreamClients {
         supplied: Some(&client),
         module_level_aclient: &client,
         module_level_client: &client,
+        logger: &logger,
     };
     let build = StreamBuild {
         ids: &FixedIds,
         counter: FixedCounter,
         max_event_bytes: MAX_EVENT_BYTES,
+        max_error_body_bytes: MAX_EVENT_BYTES,
     };
     let runtime = Builder::new_current_thread().build().or_value_error()?;
     let wrapper = runtime

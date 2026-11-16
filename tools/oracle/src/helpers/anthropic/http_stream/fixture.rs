@@ -3,6 +3,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_anthropic::anthropic_http_stream::call::{StreamLogger, StreamPostCall};
 use betterlite_anthropic::anthropic_http_stream::error::{PostFailure, StatusFailure};
 use betterlite_anthropic::anthropic_http_stream::transport::{
     StreamPost, StreamReply, StreamTransport,
@@ -120,6 +121,12 @@ impl IdSource for FixedIds {
     fn next_id(&self) -> Uuid {
         Uuid::from_u128(1)
     }
+}
+
+pub(crate) struct SilentLogger;
+
+impl StreamLogger for SilentLogger {
+    fn post_call(&self, _call: StreamPostCall<'_>) {}
 }
 
 pub(crate) struct FixedCounter;
