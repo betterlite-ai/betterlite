@@ -1,0 +1,88 @@
+kind: helper
+name: retrieval-missing-hash-falls-back
+call:
+  b3764: {
+      "seed": {
+        "scope": "hash-a",
+        "call_id": "call-1",
+        "originals": {
+          "h1": "text 1",
+          "h2": "text 2",
+          "h3": "text 3",
+          "h4": "text 4",
+          "h5": "text 5",
+          "h6": "text 6",
+          "h7": "text 7",
+          "h8": "text 8",
+          "h9": "text 9"
+        }
+      },
+      "call": {
+        "scope": "hash-a",
+        "call_id": "call-1",
+        "model": "gpt-4o",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello"
+          }
+        ],
+        "response": {
+          "content": [
+            {
+              "type": "text",
+              "text": "let me look"
+            },
+            {
+              "type": "tool_use",
+              "id": "toolu_0",
+              "name": "compresr_retrieve",
+              "input": {
+                "hash": "nope"
+              }
+            },
+            {
+              "type": "tool_use",
+              "id": "toolu_1",
+              "name": "compresr_retrieve",
+              "input": {
+                "hash": "h1"
+              }
+            },
+            {
+              "type": "tool_use",
+              "id": "toolu_other",
+              "name": "search",
+              "input": {}
+            }
+          ]
+        },
+        "request_tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "compresr_retrieve",
+              "description": "Retrieve original content.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "hash"
+                ]
+              }
+            }
+          }
+        ],
+        "optional_params": {},
+        "kwargs": {
+          "litellm_call_id": "call-1"
+        }
+      }
+    }
+env: {}
+compare:
+  ignore: []
