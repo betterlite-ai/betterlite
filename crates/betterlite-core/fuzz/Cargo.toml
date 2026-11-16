@@ -373,3 +373,10 @@ path = "fuzz_targets/batch_output_usage.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fal_video_reply"
+path = "fuzz_targets/fal_video_reply.rs"
+test = false
+doc = false
+bench = false
