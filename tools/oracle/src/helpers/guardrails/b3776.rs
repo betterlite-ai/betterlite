@@ -21,10 +21,13 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, ProviderCall, redact};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{
+    MockScript, ProviderCall, redact_credentials,
+};
 
 const SAAS_HOST: &str = "api.hiddenlayer.ai";
 const FIXED_ID: [u8; 16] = [0x11; 16];
@@ -240,7 +243,7 @@ fn bearer(headers: &BTreeMap<String, String>, tokens: &[String]) -> Value {
     };
     for (index, token) in tokens.iter().enumerate() {
         let mut probe = BTreeMap::from([("authorization".to_owned(), format!("Bearer {token}"))]);
-        redact(&mut probe);
+        redact_credentials(&mut probe);
         if probe.get("authorization") == Some(value) {
             return json!(format!("bearer:{index}"));
         }
