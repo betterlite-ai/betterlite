@@ -1,7 +1,7 @@
 use betterlite_http::interactions::base::{ClientError, Params};
 use betterlite_http::interactions::get::GetInteractionRequest;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::updates::{CallUpdate, update_from_kwargs};
+use betterlite_logging::logging_state::{LoggingState, LoggingStateError};
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
@@ -42,19 +42,11 @@ where
             return Err(failure(fault, None, redactor));
         }
     };
-    // the config lookup is the support check LiteLLM runs, and its answer keys the async client
-    let client = match select_interactions_provider(Some(provider.as_str())) {
-        Some(InteractionsProvider::GoogleAiStudio) => ProviderId::Gemini,
-        Some(InteractionsProvider::VertexAi) if provider == "vertex_ai_beta" => {
-            ProviderId::VertexAiBeta
-        }
-        Some(InteractionsProvider::VertexAi) => ProviderId::VertexAi,
-        None => {
-            let fault = InteractionGetError::Unsupported {
-                provider: provider.clone(),
-            };
-            return Err(failure(fault, Some(provider.as_str()), redactor));
-        }
+    let Some(client) = client_for(&provider) else {
+        let fault = InteractionGetError::Unsupported {
+            provider: provider.clone(),
+        };
+        return Err(failure(fault, Some(provider.as_str()), redactor));
     };
     let mut kwargs = request.kwargs.clone();
     let _flag = kwargs.shift_remove(ASYNC_FLAG);
@@ -65,6 +57,39 @@ where
         .iter()
         .map(|(name, value)| (name.clone(), json_value(value)))
         .collect();
+    record_call(logging, &kwargs, request, &provider).map_err(|error| {
+        failure(
+            InteractionGetError::Logging(error),
+            Some(provider.as_str()),
+            redactor,
+        )
+    })?;
+    Ok(Prepared {
+        provider,
+        client,
+        params,
+    })
+}
+
+// the config lookup is the support check LiteLLM runs, and its answer keys the async client
+fn client_for(provider: &str) -> Option<ProviderId> {
+    match select_interactions_provider(Some(provider)) {
+        Some(InteractionsProvider::GoogleAiStudio) => Some(ProviderId::Gemini),
+        Some(InteractionsProvider::VertexAi) if provider == "vertex_ai_beta" => {
+            Some(ProviderId::VertexAiBeta)
+        }
+        Some(InteractionsProvider::VertexAi) => Some(ProviderId::VertexAi),
+        None => None,
+    }
+}
+
+// LiteLLM's update_from_kwargs call: the call id and the interaction id, then the merged metadata
+fn record_call(
+    logging: &mut LoggingState,
+    kwargs: &IndexMap<String, Json>,
+    request: &InteractionGetRequest<'_>,
+    provider: &str,
+) -> Result<(), LoggingStateError> {
     let mut litellm_params = IndexMap::new();
     litellm_params.insert(
         "litellm_call_id".to_owned(),
@@ -82,11 +107,11 @@ where
     let mut additional_params = IndexMap::new();
     additional_params.insert(
         "custom_llm_provider".to_owned(),
-        Json::Text(provider.clone()),
+        Json::Text(provider.to_owned()),
     );
     update_from_kwargs(
         logging,
-        &kwargs,
+        kwargs,
         Some(&litellm_params),
         CallUpdate {
             model: None,
@@ -95,18 +120,6 @@ where
             additional_params,
         },
     )
-    .map_err(|error| {
-        failure(
-            InteractionGetError::Logging(error),
-            Some(provider.as_str()),
-            redactor,
-        )
-    })?;
-    Ok(Prepared {
-        provider,
-        client,
-        params,
-    })
 }
 
 // `custom_llm_provider or kwargs.custom_llm_provider or "gemini"`, with the declared type checked
