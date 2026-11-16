@@ -10,7 +10,7 @@ struct BaseParts<'base> {
     fragment: &'base str,
 }
 
-// LiteLLM routes a Foundry model-inference base through /models, an unchanged path keeps the original string
+// LiteLLM routes a Foundry model-inference base through /models, keeping an unchanged path
 #[must_use]
 pub fn models_route_base(api_base: Option<&str>) -> Option<String> {
     let base = api_base?;
@@ -25,10 +25,12 @@ pub fn models_route_base(api_base: Option<&str>) -> Option<String> {
     Some(rebuilt(&parts, path))
 }
 
-// urlsplit/urlunsplit keep the netloc verbatim, lowercase the scheme and drop an empty query or fragment
+// urlsplit keeps the netloc verbatim, lowercases the scheme and drops an empty query or fragment
 fn split_base(base: &str) -> BaseParts<'_> {
     let (before_fragment, fragment) = base.split_once('#').unwrap_or((base, ""));
-    let (scheme, rest) = scheme_prefix(before_fragment);
+    let (scheme, rest) = before_fragment
+        .split_once(':')
+        .unwrap_or(("", before_fragment));
     let (netloc, after_netloc) = rest.strip_prefix("//").map_or(("", rest), |authority| {
         authority
             .find(['/', '?'])
@@ -41,25 +43,6 @@ fn split_base(base: &str) -> BaseParts<'_> {
         path,
         query,
         fragment,
-    }
-}
-
-fn scheme_prefix(base: &str) -> (&str, &str) {
-    let Some(colon) = base.find(':') else {
-        return ("", base);
-    };
-    let scheme = &base[..colon];
-    let named = scheme
-        .chars()
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic())
-        && scheme.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
-        });
-    if named {
-        (scheme, &base[colon + 1..])
-    } else {
-        ("", base)
     }
 }
 
