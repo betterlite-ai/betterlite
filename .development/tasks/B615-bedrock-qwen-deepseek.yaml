@@ -280,7 +280,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_qwen_deepseek*")"
       && grep -lq 'bedrock_qwen_deepseek' tools/oracle/fuzz/corpus/helper_case/bedrock_qwen_deepseek* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_qwen_deepseek$/)'
+      run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_qwen_deepseek$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
