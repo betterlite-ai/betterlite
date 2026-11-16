@@ -1,7 +1,7 @@
 id: B670
 milestone: M3 providers
 title: OpenAI resource operation composition
-status: done
+status: todo
 depends_on: [B516, B517, B518, B522, B523, B527, B171]
 file: tasks/B670-openai-resource-dispatch.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/llms/openai/vector_stores/transformation.py"
 parent: B024
 split_from: null
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2085
+pr: null
