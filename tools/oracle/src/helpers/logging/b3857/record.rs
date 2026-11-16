@@ -82,15 +82,15 @@ fn any_json(value: &AnyValue) -> Value {
                 .map(|(key, item)| (key.as_str().to_owned(), any_json(item)))
                 .collect(),
         ),
-        _ => Value::Null,
+        AnyValue::Bytes(_) | _ => Value::Null,
     }
 }
 
 fn attribute_json(value: &AnyValue) -> Value {
-    match value {
-        AnyValue::String(text) => text_json(text.as_str()),
-        _ => any_json(value),
+    if let AnyValue::String(text) = value {
+        return text_json(text.as_str());
     }
+    any_json(value)
 }
 
 fn collect_metrics(exporter: &InMemoryMetricExporter) -> Result<Vec<Value>, Box<HelperError>> {
@@ -149,10 +149,10 @@ fn collect_events(input: &Input) -> Result<Vec<Value>, Box<HelperError>> {
             capture_mode: capture_mode(input.config.capture_mode.as_deref()),
         })
         .map_err(|error| invalid(&error.to_string()))?;
-    let emitted = exporter
+    let recorded = exporter
         .get_emitted_logs()
         .map_err(|error| invalid(&error.to_string()))?;
-    Ok(emitted
+    Ok(recorded
         .iter()
         .map(|data| {
             let attributes: Map<String, Value> = data

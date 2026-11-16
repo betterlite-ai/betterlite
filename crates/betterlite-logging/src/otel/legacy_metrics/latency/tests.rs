@@ -10,11 +10,15 @@ use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::time::FixedLocalTimeResolver;
 
 fn read(text: &str) -> Result<Stamp, LegacyMetricsError> {
-    let kwargs: MetadataMap = serde_json::from_str(text).expect("kwargs");
+    let kwargs = kwargs_of(text);
     let resolver = FixedLocalTimeResolver {
         offset: FixedOffset::east_opt(3600).expect("offset"),
     };
     stamp(&kwargs, "moment", &resolver)
+}
+
+fn kwargs_of(text: &str) -> MetadataMap {
+    serde_json::from_str(text).expect("kwargs")
 }
 
 #[rstest]

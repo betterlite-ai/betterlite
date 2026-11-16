@@ -1,4 +1,3 @@
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Final, Literal, NotRequired, TypedDict, cast
 
@@ -8,13 +7,12 @@ from litellm.integrations.opentelemetry_utils.gen_ai_semconv import OTELSemconvC
 from litellm.integrations.otel.model.request_io import request_input, response_output, stream_output
 from litellm.types.llms.openai import ResponseCompletedEvent, ResponsesAPIResponse
 from litellm.types.utils import ModelResponse, ModelResponseStream
-from opentelemetry.sdk._logs import LoggerProvider, ReadableLogRecord
-from opentelemetry.sdk._logs.export import LogRecordExporter, LogRecordExportResult, SimpleLogRecordProcessor
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter, SimpleLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 from pydantic import JsonValue, TypeAdapter, ValidationError
-from typing_extensions import override
 
 
 class RecordSuccessCall(TypedDict):
@@ -39,9 +37,14 @@ class ResponseOutputCall(TypedDict):
     response: dict[str, JsonValue]
 
 
+class Chunk(TypedDict):
+    type: Literal["chat", "completed", "other"]
+    value: dict[str, JsonValue]
+
+
 class StreamOutputCall(TypedDict):
     function: Literal["stream_output"]
-    chunks: list[dict[str, JsonValue]]
+    chunks: list[Chunk]
     data: dict[str, JsonValue]
 
 
@@ -100,24 +103,6 @@ STREAM_CHUNK: Final[TypeAdapter[ModelResponseStream]] = TypeAdapter(ModelRespons
 COMPLETED_EVENT: Final[TypeAdapter[ResponseCompletedEvent]] = TypeAdapter(ResponseCompletedEvent)
 
 
-class RecordingExporter(LogRecordExporter):
-    def __init__(self) -> None:
-        self.records: list[ReadableLogRecord] = []
-
-    @override
-    def export(self, batch: Sequence[ReadableLogRecord]) -> LogRecordExportResult:
-        self.records.extend(batch)
-        return LogRecordExportResult.SUCCESS
-
-    @override
-    def shutdown(self) -> None:
-        pass
-
-    @override
-    def force_flush(self, timeout_millis: int = 30000) -> bool:
-        return True
-
-
 def metric_key(line: MetricLine) -> str:
     token_type = line["attributes"].get("gen_ai.token.type")
     return f"{line['name']} {token_type}"
@@ -157,8 +142,14 @@ def metric_lines(reader: InMemoryMetricReader) -> list[MetricLine]:
     return sorted(lines, key=metric_key)
 
 
-def new_logger(request: RecordSuccessCall, reader: InMemoryMetricReader, logger_provider: LoggerProvider) -> OpenTelemetry:
-    settings: dict[str, JsonValue] = request["config"] if "config" in request else {}
+def new_logger(
+    request: RecordSuccessCall,
+    reader: InMemoryMetricReader,
+    logger_provider: LoggerProvider,
+) -> OpenTelemetry:
+    settings: dict[str, JsonValue] = {}
+    if "config" in request:
+        settings = request["config"]
     categories: set[OTELSemconvCategory] = set()
     if settings.get("semconv") is True:
         categories.add(OTELSemconvCategory.GEN_AI_LATEST_EXPERIMENTAL)
@@ -182,7 +173,7 @@ def new_logger(request: RecordSuccessCall, reader: InMemoryMetricReader, logger_
 
 def record_success(request: RecordSuccessCall) -> Recorded:
     reader = InMemoryMetricReader()
-    log_exporter = RecordingExporter()
+    log_exporter = InMemoryLogRecordExporter()
     logger_provider = LoggerProvider()
     logger_provider.add_log_record_processor(SimpleLogRecordProcessor(log_exporter))
     callback_settings = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L184
@@ -195,16 +186,20 @@ def record_success(request: RecordSuccessCall) -> Recorded:
     try:
         logger = new_logger(request, reader, logger_provider)
         logger.log_success_event(  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L756
-            request["kwargs"], request.get("response"),
-            datetime.fromtimestamp(request["start_time"], tz=UTC), datetime.fromtimestamp(request["end_time"], tz=UTC),
+            request["kwargs"],
+            request.get("response"),
+            datetime.fromtimestamp(request["start_time"], tz=UTC),
+            datetime.fromtimestamp(request["end_time"], tz=UTC),
         )
     finally:
         callback_settings.clear()
         callback_settings.update(previous)
     events: list[EventLine] = []
-    for log in log_exporter.records:
+    for log in log_exporter.get_finished_logs():
         raw = log.log_record.attributes
-        attributes: dict[str, str | int] = {} if raw is None else TEXTS.validate_python(dict(raw))
+        attributes: dict[str, str | int] = {}
+        if raw is not None:
+            attributes = TEXTS.validate_python(dict(raw))
         values = {key: attribute_value(value) for key, value in attributes.items()}
         body = JSON.validate_python(log.log_record.body)
         events.append(EventLine(body=body, attributes=values))
@@ -227,8 +222,11 @@ def parsed(text: str | None) -> JsonValue:
     return JSON.validate_json(text)
 
 
-def relayed(chunks: list[dict[str, JsonValue]]) -> list[ModelResponseStream | ResponseCompletedEvent | dict[str, JsonValue]]:
-    typed: list[ModelResponseStream | ResponseCompletedEvent | dict[str, JsonValue]] = []
+Relayed = ModelResponseStream | ResponseCompletedEvent | dict[str, JsonValue]
+
+
+def relayed(chunks: list[Chunk]) -> list[Relayed]:
+    typed: list[Relayed] = []
     for chunk in chunks:
         match chunk["type"]:
             case "chat":
@@ -240,7 +238,9 @@ def relayed(chunks: list[dict[str, JsonValue]]) -> list[ModelResponseStream | Re
     return typed
 
 
-def run(input_value: RecordSuccessCall | RequestInputCall | ResponseOutputCall | StreamOutputCall) -> JsonValue:
+def run(
+    input_value: RecordSuccessCall | RequestInputCall | ResponseOutputCall | StreamOutputCall,
+) -> JsonValue:
     if input_value["function"] == "record_success":
         return JSON.validate_python(record_success(input_value))
     if input_value["function"] == "request_input":

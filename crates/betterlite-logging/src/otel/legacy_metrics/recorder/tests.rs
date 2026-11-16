@@ -118,7 +118,7 @@ fn record_with(
         .expect("record");
     provider.force_flush().expect("flush");
     let finished = exporter.get_finished_metrics().expect("finished metrics");
-    let mut recorded = Vec::new();
+    let mut lines = Vec::new();
     for metric in finished
         .iter()
         .flat_map(ResourceMetrics::scope_metrics)
@@ -128,7 +128,7 @@ fn record_with(
             continue;
         };
         for point in histogram.data_points() {
-            recorded.push(Recorded {
+            lines.push(Recorded {
                 name: metric.name().to_owned(),
                 attributes: point
                     .attributes()
@@ -139,7 +139,7 @@ fn record_with(
             });
         }
     }
-    recorded
+    lines
 }
 
 fn record(extra: &str, response: Option<&str>) -> Vec<Recorded> {

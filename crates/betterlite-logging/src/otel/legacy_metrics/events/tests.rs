@@ -62,9 +62,8 @@ pub(crate) fn try_emit(
         enable_events: mode != Mode::Disabled,
         semconv_latest: mode == Mode::Details,
     };
-    let kwargs: MetadataMap = serde_json::from_str(kwargs_text).expect("kwargs");
-    let response: Option<OtelModelValue> =
-        response_text.map(|text| serde_json::from_str(text).expect("response"));
+    let kwargs = kwargs_of(kwargs_text);
+    let response = response_text.map(response_of);
     let context = span_context();
     emitter.emit_semantic_logs(&EventCall {
         kwargs: &kwargs,
@@ -72,8 +71,24 @@ pub(crate) fn try_emit(
         span_context: &context,
         capture_mode,
     })?;
-    let emitted = exporter.get_emitted_logs().expect("emitted logs");
-    Ok(emitted.into_iter().map(|data| data.record).collect())
+    Ok(emitted_records(&exporter))
+}
+
+fn kwargs_of(text: &str) -> MetadataMap {
+    serde_json::from_str(text).expect("kwargs")
+}
+
+fn response_of(text: &str) -> OtelModelValue {
+    serde_json::from_str(text).expect("response")
+}
+
+fn emitted_records(exporter: &InMemoryLogExporter) -> Vec<SdkLogRecord> {
+    exporter
+        .get_emitted_logs()
+        .expect("emitted logs")
+        .into_iter()
+        .map(|data| data.record)
+        .collect()
 }
 
 pub(crate) fn attributes_of(record: &SdkLogRecord) -> BTreeMap<String, AnyValue> {

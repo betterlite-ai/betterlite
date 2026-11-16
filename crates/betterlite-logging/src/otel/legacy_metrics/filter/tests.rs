@@ -96,7 +96,7 @@ fn every_base_name_and_every_metadata_variant_is_valid() {
 #[rstest]
 #[case::dict(r#"{"include_list": ["gen_ai.system"]}"#, Some(names(&["gen_ai.system"])), None)]
 #[case::exclude(r#"{"exclude_list": ["hidden_params"]}"#, None, Some(names(&["hidden_params"])))]
-#[case::empty(r#"{}"#, None, None)]
+#[case::empty("{}", None, None)]
 #[case::null_lists(r#"{"include_list": null, "exclude_list": null}"#, None, None)]
 #[case::extra_keys_are_ignored(r#"{"other": 1, "include_list": []}"#, Some(vec![]), None)]
 fn a_mapping_builds_a_filter(
@@ -117,8 +117,8 @@ fn a_mapping_builds_a_filter(
 #[rstest]
 #[case::text(r#""gen_ai.system""#)]
 #[case::list(r#"["gen_ai.system"]"#)]
-#[case::number(r#"3"#)]
-#[case::bool(r#"true"#)]
+#[case::number("3")]
+#[case::bool("true")]
 fn a_value_that_is_not_a_mapping_is_rejected(#[case] value: &str) {
     let error = build_metric_attribute_filter(&typed(value)).expect_err("not a mapping");
     assert!(matches!(error, LegacyMetricsError::AttributesNotMapping));
@@ -302,8 +302,8 @@ fn a_bad_setting_fails_every_record_and_is_not_cached() {
     let settings = CountingSettings::new(Some(r#"{"include_list": ["nope"]}"#));
     let state = MetricFilterState::new(None, None, Arc::<CountingSettings>::clone(&settings))
         .expect("state");
-    assert!(state.ensure().is_err());
-    assert!(state.ensure().is_err());
+    state.ensure().unwrap_err();
+    state.ensure().unwrap_err();
     assert_eq!(settings.reads.load(Ordering::SeqCst), 2);
 }
 
