@@ -265,6 +265,24 @@ async fn keeps_the_parse_error_of_an_unreadable_amount() {
 }
 
 #[tokio::test]
+async fn reads_an_exponent_amount_through_the_scientific_fallback() {
+    let (fixture, pool) = database().await;
+    execute(
+        &pool,
+        r#"
+        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, startTime, endTime, model, "user") VALUES
+            ('r1', 'completion', 'sk-one', 1e20, CURRENT_DATE, CURRENT_DATE, 'gpt-4o', 'u1');
+        "#,
+    )
+    .await;
+    let store = postgres_store(&pool);
+    let total = store.global_total_spend().await.unwrap();
+    assert_eq!(total[0].total_spend, Some(decimal("100000000000000000000")));
+    pool.close();
+    fixture.close_async().await.unwrap();
+}
+
+#[tokio::test]
 async fn reports_no_database_without_a_pool() {
     let store = PostgresTotalsStore {
         store: PostgresStore { pool: None },
