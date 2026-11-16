@@ -34,7 +34,7 @@ const QWENCLOUD_FAMILY_MESSAGE: &str = concat!(
     "Missing API key for QwenCloud. Set QWENCLOUD_API_KEY or ",
     "DASHSCOPE_API_KEY environment variable or pass api_key parameter."
 );
-const QWEN_AI_PLATFORM_FAMILY_MESSAGE: &str = concat!(
+const QWEN_PLATFORM_FAMILY_MESSAGE: &str = concat!(
     "Missing API key for Qianwen AI Platform. Set ",
     "QWEN_AI_PLATFORM_API_KEY or DASHSCOPE_API_KEY environment variable or pass api_key parameter."
 );
@@ -215,6 +215,6 @@ pub const fn missing_family_key_message(family: DashscopeFamily) -> &'static str
     match family {
         DashscopeFamily::Dashscope => DASHSCOPE_FAMILY_MESSAGE,
         DashscopeFamily::QwenCloud => QWENCLOUD_FAMILY_MESSAGE,
-        DashscopeFamily::QwenAiPlatform => QWEN_AI_PLATFORM_FAMILY_MESSAGE,
+        DashscopeFamily::QwenAiPlatform => QWEN_PLATFORM_FAMILY_MESSAGE,
     }
 }

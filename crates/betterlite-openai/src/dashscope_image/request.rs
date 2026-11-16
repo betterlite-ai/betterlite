@@ -5,6 +5,7 @@ use crate::api::image_contracts::records::ImageParams;
 
 // LiteLLM nests the prompt in a user message and sends every optional parameter back untouched
 #[must_use]
+// ast-grep-ignore: no-long-names
 pub fn transform_image_generation_request(
     model: &str,
     prompt: &str,

@@ -8,8 +8,10 @@ use betterlite_openai::dashscope_image::error::DashscopeImageError;
 use betterlite_openai::dashscope_image::identity::ImageIdentity;
 use betterlite_openai::dashscope_image::{
     DEFAULT_API_BASE, DashscopeImageConfig, MISSING_KEY_MESSAGE, decode_dashscope_image_reply,
-    map_openai_params, transform_image_generation_request,
+    map_openai_params,
 };
+// ast-grep-ignore: no-long-names
+use betterlite_openai::dashscope_image::transform_image_generation_request as transform_request;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_provider::api::rerank_contracts::BaseRerankConfig as _;
 use betterlite_provider::dashscope_rerank::DashscopeRerankConfig;
@@ -134,8 +136,7 @@ fn image_url_and_key(input: &ImageUrlAndKeyInput) -> HelperResult {
 }
 
 fn image_request(input: &ImageRequestInput) -> HelperResult {
-    let body =
-        transform_image_generation_request(&input.model, &input.prompt, &input.optional_params);
+    let body = transform_request(&input.model, &input.prompt, &input.optional_params);
     let encoded = serde_json::to_value(body)?;
     Ok(json!({"body": encoded}))
 }
