@@ -166,12 +166,6 @@ def url_entry(family: Family, model: str, api_base: str | None) -> dict[str, Jso
     return {"model": model, "api_base": api_base, "url": url}
 
 
-def url_outcomes(
-    family: Family, models: list[str], api_bases: list[str | None]
-) -> list[JsonValue]:
-    return [url_entry(family, model, api_base) for model in models for api_base in api_bases]
-
-
 def request_outcome(family: Family, prompt: str, case: MappingCase) -> JsonValue:
     config = CONFIGS[family]
     try:
@@ -182,10 +176,6 @@ def request_outcome(family: Family, prompt: str, case: MappingCase) -> JsonValue
     except ValueError:
         return {"error": {"status": None}}
     return {"request": body}
-
-
-def request_outcomes(family: Family, prompt: str, cases: list[MappingCase]) -> list[JsonValue]:
-    return [request_outcome(family, prompt, case) for case in cases]
 
 
 def size_outcome(family: Family, size: JsonValue) -> JsonValue:
@@ -212,8 +202,8 @@ def ratio_algorithms_differ(call: RatioAlgorithmsDiffer) -> JsonValue:
 def bytedance_entry(call: BytedanceEndpoints, family: Family) -> dict[str, JsonValue]:
     return {
         "family": family,
-        "urls": url_outcomes(family, [MODEL], call["api_bases"]),
-        "cases": request_outcomes(family, call["prompt"], call["cases"]),
+        "urls": [url_entry(family, MODEL, api_base) for api_base in call["api_bases"]],
+        "cases": [request_outcome(family, call["prompt"], case) for case in call["cases"]],
     }
 
 
@@ -267,25 +257,38 @@ def run(input_value: Input) -> JsonValue:
     if input_value["operation"] == "imagen_fixed_preview":
         answer: dict[str, JsonValue] = {
             "endpoint": CONFIGS["imagen"].IMAGE_GENERATION_ENDPOINT,
-            "urls": url_outcomes("imagen", input_value["models"], input_value["api_bases"]),
-            "cases": request_outcomes("imagen", input_value["prompt"], input_value["cases"]),
+            "urls": [
+                url_entry("imagen", model, api_base)
+                for model in input_value["models"]
+                for api_base in input_value["api_bases"]
+            ],
+            "cases": [
+                request_outcome("imagen", input_value["prompt"], case)
+                for case in input_value["cases"]
+            ],
         }
         return answer
     if input_value["operation"] == "ratio_algorithms_differ":
         return ratio_algorithms_differ(input_value)
     if input_value["operation"] == "banana_destination_wins":
         banana: dict[str, JsonValue] = {
-            "urls": url_outcomes("nano_banana", input_value["models"], input_value["api_bases"]),
-            "cases": request_outcomes(
-                "nano_banana", input_value["prompt"], input_value["cases"]
-            ),
+            "urls": [
+                url_entry("nano_banana", model, api_base)
+                for model in input_value["models"]
+                for api_base in input_value["api_bases"]
+            ],
+            "cases": [
+                request_outcome("nano_banana", input_value["prompt"], case)
+                for case in input_value["cases"]
+            ],
         }
         return banana
     if input_value["operation"] == "banana_resolution_passthrough":
         passthrough: dict[str, JsonValue] = {
-            "cases": request_outcomes(
-                "nano_banana", input_value["prompt"], input_value["cases"]
-            ),
+            "cases": [
+                request_outcome("nano_banana", input_value["prompt"], case)
+                for case in input_value["cases"]
+            ],
         }
         return passthrough
     if input_value["operation"] == "bytedance_endpoints":
