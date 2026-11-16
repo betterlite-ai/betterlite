@@ -127,7 +127,7 @@ oracle_cases:
 - tools/oracle/cases/api/file-read-route/read-headers-and-errors.yaml
 deviations:
 - what: Unrouted managed-file retrieval returns 500 internal_server_error/code="500" without a hook; listing defaults to provider files and ignores limit/after on that MIT path.
-  why: Preserve the current observable behavior while Max decides managed files and batches; this adds no enterprise hook or license gate.
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1350-L1370
 out_of_scope:
 - B1031 owns upload helpers, B1032 create_file, B1033 get_file_content and B087 delete_file. B1017 owns list-page records and B1019 limit/ID codecs.

@@ -17,7 +17,9 @@ use serde::Deserialize;
 use serde_json::json;
 use url::Url;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Headers {
@@ -196,7 +198,7 @@ fn poll(input: &Poll) -> HelperResult {
         kind: input.kind,
         timeout_seconds: input.timeout_seconds,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(failure)?;

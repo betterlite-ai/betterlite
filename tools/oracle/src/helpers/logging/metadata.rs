@@ -18,6 +18,8 @@ use betterlite_logging::logging_metadata::setup::{
 };
 use betterlite_logging::logging_metadata::tags::{TagSettings, get_request_tags};
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use serde_json::json;
@@ -98,10 +100,10 @@ struct ErrorPolicy {
     expected_client_error: bool,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::MergeLitellmMetadata(values) => Ok(merge(values)),
             Input::StandardMetadata(values) => standard_metadata(values),
@@ -113,11 +115,11 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn invalid<E>(error: E) -> Box<crate::helpers::HelperError>
+fn invalid<E>(error: E) -> Box<HelperError>
 where
     E: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,
@@ -133,7 +135,7 @@ fn merge(input: &MergeInput) -> serde_json::Value {
     json!({"merged": merged, "scrubbed": scrubbed})
 }
 
-fn standard_metadata(input: &StandardMetadataInput) -> crate::helpers::HelperResult {
+fn standard_metadata(input: &StandardMetadataInput) -> HelperResult {
     let request = StandardMetadataRequest {
         metadata: input.metadata.as_ref(),
         params: input.litellm_params.as_ref(),
@@ -149,7 +151,7 @@ fn standard_metadata(input: &StandardMetadataInput) -> crate::helpers::HelperRes
     Ok(json!({"record": record, "public_record": public_record}))
 }
 
-fn error_information(input: &ErrorInformationInput) -> crate::helpers::HelperResult {
+fn error_information(input: &ErrorInformationInput) -> HelperResult {
     let normalizer = Normalizer::new().map_err(invalid)?;
     let redactor = input
         .redact
@@ -179,7 +181,7 @@ fn error_information(input: &ErrorInformationInput) -> crate::helpers::HelperRes
     }))
 }
 
-fn request_tags(input: &RequestTagsInput) -> crate::helpers::HelperResult {
+fn request_tags(input: &RequestTagsInput) -> HelperResult {
     let settings = TagSettings {
         disable_user_agent_tags: input.disable_add_user_agent,
         extra_spend_tag_headers: &input.extra_spend_tag_headers,
@@ -203,7 +205,7 @@ fn trace_session(input: &TraceSessionInput) -> serde_json::Value {
     })
 }
 
-fn truncate_base64(input: &TruncateBase64Input) -> crate::helpers::HelperResult {
+fn truncate_base64(input: &TruncateBase64Input) -> HelperResult {
     let truncator = Base64Truncator::new(input.max_base64_length).map_err(invalid)?;
     let truncated = truncator
         .truncate_messages(&input.messages)

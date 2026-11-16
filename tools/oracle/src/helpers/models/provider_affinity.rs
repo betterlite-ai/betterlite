@@ -5,7 +5,8 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
@@ -30,10 +31,10 @@ pub(crate) struct StableInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         match input {
             Input::Add(fields) => {
                 let headers = add_provider_affinity_header(&fields.headers, &fields.params)

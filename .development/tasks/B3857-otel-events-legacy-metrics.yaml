@@ -110,7 +110,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::content_projections::(.*::)?stream_output::/)' && grep -rqs 'trait StreamOutputAssembler' crates/betterlite-logging/src/otel/content_projections.rs crates/betterlite-logging/src/otel/content_projections
     - id: helper-python
       why: The independently invoked MIT helper semantics must match the production functions
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3857::/)'
+      run: cargo nextest run --locked -p betterlite-oracle-logging --no-tests=fail -E 'test(/^b3857::/)'
     - id: helper-case-corpus
       why: Oracle helper cases and corpus must replay with the new metric recording and content projection decoders
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/metric-recording/ "tools/oracle/fuzz/corpus/helper_case/metric-recording-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_error::facts::{ProviderErrorFacts, RequestFacts, ResponseFacts};
 use betterlite_error::openai_like::map_openai_like_exception;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 
 // mirrors BaseLLMException's own response=httpx.Response(status_code, request=httpx.Request(...))
@@ -28,10 +29,10 @@ pub(crate) struct Input {
     status_code: Option<u16>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let facts = ProviderErrorFacts {
             status_code: input.status_code,
             status_code_is_synthesized: false,

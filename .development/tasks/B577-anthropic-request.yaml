@@ -314,13 +314,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-request/inline-media-only.yaml
 - tools/oracle/cases/helpers/providers/anthropic-request/beta-merge-casing-order.yaml
 - tools/oracle/cases/helpers/providers/anthropic-request/assembly-option-cleanup.yaml
-deviations:
-- what: Until Max decides request-URL downloads, betterlite never fetches request URLs. An http:// image selected
-    for local inlining fails before provider transport with ImageFetchError status 400; HTTPS/provider-supported
-    URL descriptors are forwarded without gateway fetching, and supplied inline bytes remain usable.
-  why: Keep the current no-download behavior while the request-URL product decision remains open. Do not implement
-    a downloader or implicit request-path file reads.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1877-L1894
+deviations: []
 out_of_scope:
 - B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.

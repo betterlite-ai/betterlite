@@ -11,9 +11,10 @@ use betterlite_a2a::watsonx_transform::extract::WxoSendParams;
 use betterlite_core::agents::json::AgentJson;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use report::{CallError, Outcome, Output, PacedEvent, helper_error, kind};
 use script::{Clock, Script, Source};
+use tokio::runtime::Builder;
 
 mod report;
 mod script;
@@ -105,7 +106,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| helper_error("RuntimeError", error))?;
         let script = Script::new(input.steps.clone());

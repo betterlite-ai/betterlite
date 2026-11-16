@@ -1,7 +1,7 @@
 id: B577
 milestone: M3 providers
 title: Anthropic chat request assembly
-status: todo
+status: done
 depends_on: [B576, B573, B571, B180, B221, B183, B171, B575, B568, B569, B2201, B2202, B688, B174, B206, B567, B2221]
 file: tasks/B577-anthropic-request.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/anthropic.py"
 parent: B027
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1967

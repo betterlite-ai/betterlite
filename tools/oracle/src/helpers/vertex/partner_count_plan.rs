@@ -6,7 +6,8 @@ use betterlite_vertex::partner_count::plan::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

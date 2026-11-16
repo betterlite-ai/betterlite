@@ -23,9 +23,10 @@ use betterlite_prompts::media_fetch::limits::transport_limits;
 use betterlite_prompts::message_content::Message;
 use serde::Deserialize;
 use serde_json::json;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 // LiteLLM's default MAX_IMAGE_URL_DOWNLOAD_SIZE_MB; the cases never set the variable
 const LIMIT_MB: f64 = 50.0;
@@ -132,7 +133,7 @@ fn media_error(error: &MediaError) -> Box<HelperError> {
 }
 
 fn runtime() -> Result<Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| invalid_input(error.to_string()))

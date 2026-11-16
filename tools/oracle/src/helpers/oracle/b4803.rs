@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 use std::ops::RangeInclusive;
 use uuid::Uuid;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 

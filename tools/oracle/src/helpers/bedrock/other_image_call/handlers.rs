@@ -13,6 +13,7 @@ use serde_json::{Map, Value, json};
 
 use super::fixtures::{DiscardingSink, logging_state, prepost_env};
 use super::{Failure, Harness, Probe};
+use tokio::runtime::{Builder, Runtime};
 
 pub(super) enum Shape {
     Prepare,
@@ -39,7 +40,7 @@ fn run(probe: &Probe) -> Result<(Run, Outcome), Failure> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
     let sink = DiscardingSink;
     let env = prepost_env(&state, &redactor, &sink);
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let mut prepared = None;
     let outcome = run_stages(
         &harness,
@@ -64,7 +65,7 @@ fn run(probe: &Probe) -> Result<(Run, Outcome), Failure> {
 
 fn run_stages(
     harness: &Harness<'_>,
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
     log: &mut LogContext<'_, '_>,
     created: i64,
     snapshot: &mut Option<Value>,
