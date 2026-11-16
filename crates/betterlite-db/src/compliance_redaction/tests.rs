@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::thread::Builder;
+
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -174,9 +176,17 @@ fn returns_a_copy_that_leaves_the_payload_alone() {
 
 #[test]
 fn redacts_a_payload_nested_two_thousand_levels_deep() {
-    let payload = nested(2_000, object(vec![(key("match"), text("secret"))]));
-    let expected = nested(2_000, object(vec![(key("match"), text("[REDACTED]"))]));
-    assert_eq!(redacted(&payload), expected);
+    // the derived copy and drop recurse, so a debug build needs more stack than the test thread's 2 MiB at this depth
+    Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(|| {
+            let payload = nested(2_000, object(vec![(key("match"), text("secret"))]));
+            let expected = nested(2_000, object(vec![(key("match"), text("[REDACTED]"))]));
+            assert_eq!(redacted(&payload), expected);
+        })
+        .expect("the deep payload runs on its own thread")
+        .join()
+        .expect("the deep payload is redacted without a stack overflow");
 }
 
 #[test]
