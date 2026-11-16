@@ -5,6 +5,7 @@ use crate::repello_content::wire::RepelloAIAnalyzeResponse;
 // serde_json's arbitrary_precision hands an untagged GuardrailValue every float as this one-entry map
 const PRIVATE_NUMBER_KEY: &str = "$serde_json::private::Number";
 
+// LiteLLM reads an Argus number as a number, so each map becomes the value serde could not build.
 pub(super) fn repair(response: &mut RepelloAIAnalyzeResponse) {
     for policy in response.policies_violated.iter_mut().flatten() {
         let Some(details) = policy.details.as_mut() else {
