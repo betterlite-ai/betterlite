@@ -28,8 +28,7 @@ use indexmap::IndexMap;
 use tokio::runtime::{Builder, Runtime};
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::Layer;
-use tracing_subscriber::layer::Context;
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use crate::bedrock_model_capabilities::ModelInfoLookup;
