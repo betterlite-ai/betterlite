@@ -66,7 +66,7 @@ pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
     let mut calls = Vec::with_capacity(input.calls.len());
     for call in &input.calls {
         let settings = LiveSetupSettings {
-            catalog: &catalog,
+            catalog: catalog.as_ref(),
             schema: &schema,
             defer_setup: call.defer_setup,
         };
