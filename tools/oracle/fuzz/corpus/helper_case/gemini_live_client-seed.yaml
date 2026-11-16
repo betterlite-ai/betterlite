@@ -1,0 +1,20 @@
+kind: helper
+name: gemini-live-client-seed
+call:
+  gemini_live_client:
+    op: client
+    steps:
+      - kind: mime
+        format: pcm16
+      - kind: message
+        tool_calls:
+          - {call_id: call_1, name: get_weather}
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "{\"a\": 1}"}}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.append", "audio": "QUJD"}'
+      - kind: audio_pending
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"disabled": true}}}}'
+env: {}
+compare: {ignore: []}

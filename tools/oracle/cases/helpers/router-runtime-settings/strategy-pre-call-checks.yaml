@@ -1,0 +1,11 @@
+kind: helper
+name: router-runtime-settings-strategy-pre-call-checks
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["optional_pre_call_checks", ["prompt_caching"]]
+      - ["routing_strategy", "least-busy"]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: foundry-model-router-selection-seed
+call:
+  foundry_model_router:
+    strips:
+      - {model: azure_ai/model_router/deployment}
+      - {model: deployment}
+    responses:
+      - model: model-router/seed
+        body: '{"id":"seed","object":"chat.completion","created":1,"model":"underlying-model","choices":[],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'
+    readers:
+      - {model: model_router/seed, hidden_params: {azure_model_router_selected_model: azure_ai/underlying-model}}
+      - {model: null, hidden_params: null}
+    catalog:
+      - {api_key: null, api_base: null}
+    token_models: [null, claude-3]
+env: {}
+compare: {ignore: []}
