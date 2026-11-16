@@ -1,14 +1,14 @@
 id: B3495
 milestone: M5 api families
 title: Retrieve interactions through the public call pipeline
-status: done
+status: todo
 depends_on: [B3490, B3492, B185, B186, B198, B247]
 file: tasks/B3495-interaction-get-call.yaml
 covers:
   - "litellm/interactions/main.py"
 parent: B098
 split_from: B098
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2049
+pr: null
