@@ -108,7 +108,7 @@ fn options(case: &Case) -> Object {
 }
 
 // None runs the embedding arm; a tag runs that chat arm through dispatch
-fn invoke(
+fn run_arm(
     case: &Case,
     tag: Option<ChatConfigTag>,
     deps: &DispatchDeps<'_>,
@@ -210,17 +210,17 @@ fn call(
     match case.op {
         Operation::HuggingfaceChat => {
             let chat = Some(ChatConfigTag::HuggingFaceChat);
-            let completion = invoke(case, chat, &deps, log, runtime)?;
+            let completion = run_arm(case, chat, &deps, log, runtime)?;
             keep_prepared(&fixture.recorder, completion);
             Ok(())
         }
-        Operation::HuggingfaceEmbedding => invoke(case, None, &deps, log, runtime).map(drop),
+        Operation::HuggingfaceEmbedding => run_arm(case, None, &deps, log, runtime).map(drop),
         Operation::HuggingfaceRerank => rerank(case, &fixture.recorder, &globals),
         Operation::Replicate => {
-            invoke(case, Some(ChatConfigTag::Replicate), &deps, log, runtime).map(drop)
+            run_arm(case, Some(ChatConfigTag::Replicate), &deps, log, runtime).map(drop)
         }
         Operation::Predibase => {
-            invoke(case, Some(ChatConfigTag::Predibase), &deps, log, runtime).map(drop)
+            run_arm(case, Some(ChatConfigTag::Predibase), &deps, log, runtime).map(drop)
         }
     }
 }

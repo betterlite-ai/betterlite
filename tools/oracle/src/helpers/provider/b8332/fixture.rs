@@ -112,9 +112,9 @@ impl PostTransport for Recorder {
 
     async fn post_stream(
         &self,
-        wire: &WireRequest<'_>,
+        request: &WireRequest<'_>,
     ) -> Result<StreamResponse, HubDispatchError> {
-        self.keep_request(wire);
+        self.keep_request(request);
         Err(HubDispatchError::BodyNotObject)
     }
 }

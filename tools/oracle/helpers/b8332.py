@@ -98,7 +98,9 @@ class Recorder:
             if name in KEPT_HEADERS or name.startswith("x-")
         }
         url = str(request.url)
-        self.requests.append({"method": request.method, "url": url, "headers": headers, "body": body})
+        self.requests.append(
+            {"method": request.method, "url": url, "headers": headers, "body": body}
+        )
         reply = self.replies.pop(0)
         return httpx.Response(reply["status"], content=reply["body"].encode())
 
@@ -109,7 +111,8 @@ def rerank_request(case: Case) -> JsonValue:
     documents: list[str | dict[str, JsonValue]] = [*case["input"]]
     asked: dict[str, JsonValue] = {"query": query, "documents": [*case["input"]]}
     asked["return_documents"] = True
-    mapped = view.map_cohere_rerank_params(asked, case["model"], False, query, documents)
+    drop_params = False
+    mapped = view.map_cohere_rerank_params(asked, case["model"], drop_params, query, documents)
     headers = view.validate_environment({}, case["model"], None, None, None, None)
     kept: dict[str, JsonValue] = {
         name.lower(): value
