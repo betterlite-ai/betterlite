@@ -51,7 +51,7 @@ pub(crate) struct ApplyScenario {
 
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
-pub(crate) enum Request {
+pub(crate) enum Function {
     RequestView { scenarios: Vec<DataScenario> },
     Input { scenarios: Vec<DataScenario> },
     Output { scenarios: Vec<OutputScenario> },
@@ -135,13 +135,12 @@ fn input_answer(
     let outcome = runtime.block_on(process_input_messages(
         &mut data, &guardrail, &context, None,
     ));
-    let mut answer = json!({"data": serde_json::to_value(&data).or_value_error()?});
-    answer["calls"] = Value::Array(guardrail.recorded());
+    let data = serde_json::to_value(&data).or_value_error()?;
+    let calls = guardrail.recorded();
     match outcome {
-        Ok(()) => Ok(answer),
+        Ok(()) => Ok(json!({"data": data, "calls": calls})),
         Err(RequestRewriteError::Unappliable(_)) => {
-            answer["error"] = json!("unappliable_request_rewrite");
-            Ok(answer)
+            Ok(json!({"data": data, "calls": calls, "error": "unappliable_request_rewrite"}))
         }
         Err(other) => Err(other).or_value_error(),
     }
@@ -196,25 +195,25 @@ fn apply_answer(scenario: &ApplyScenario) -> HelperResult {
 }
 
 impl Helper for Op {
-    type Input = Request;
+    type Input = Function;
 
     fn run(input: &Self::Input) -> HelperResult {
         let runtime = Builder::new_current_thread().build().or_value_error()?;
         let cache = empty_cache()?;
         let answers: Result<Vec<Value>, Box<HelperError>> = match input {
-            Request::RequestView { scenarios } => scenarios
+            Function::RequestView { scenarios } => scenarios
                 .iter()
                 .map(|scenario| request_view_answer(&cache, scenario))
                 .collect(),
-            Request::Input { scenarios } => scenarios
+            Function::Input { scenarios } => scenarios
                 .iter()
                 .map(|scenario| input_answer(&runtime, &cache, scenario))
                 .collect(),
-            Request::Output { scenarios } => scenarios
+            Function::Output { scenarios } => scenarios
                 .iter()
                 .map(|scenario| output_answer(&runtime, scenario))
                 .collect(),
-            Request::ApplyOutput { scenarios } => scenarios.iter().map(apply_answer).collect(),
+            Function::ApplyOutput { scenarios } => scenarios.iter().map(apply_answer).collect(),
         };
         answers.map(Value::Array)
     }
