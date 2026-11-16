@@ -25,7 +25,9 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
-            Input::CacheParamsEqual { params1, params2 } => Value::Bool(params_equal(params1, params2)),
+            Input::CacheParamsEqual { params1, params2 } => {
+                Value::Bool(params_equal(params1, params2))
+            }
             Input::RedactSettings { settings } => {
                 let empty = Map::new();
                 Value::Object(redact_settings(settings.as_ref().unwrap_or(&empty)))
