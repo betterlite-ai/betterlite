@@ -104,6 +104,16 @@ tests:
           path: 'spec.triggers[2].metadata.query'
           value: sum(rate(litellm_total_tokens_metric_total{namespace="llm",job="rel-betterlite-metrics"}[1m]))
 
+  - it: ignores the per-minute keys, which the chart never shipped
+    set:
+      keda.enabled: true
+      keda.prometheus.serverAddress: http://prom:9090
+      keda.prometheus.requestsPerMinute: 5400
+      keda.prometheus.tokensPerMinute: 360000000
+    asserts:
+      - isKind: { of: ScaledObject }
+      - isNullOrEmpty: { path: spec.triggers }
+
   - it: refuses a request target without a prometheus server address
     set:
       keda.enabled: true
