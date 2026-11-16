@@ -1,0 +1,6 @@
+kind: helper
+name: responses-structured-messages-empty-is-none
+call:
+  b3671: {"function": "request_view", "scenarios": [{"data": {}, "skip_system": false, "covers_full": false, "reply": null}, {"data": {"input": null}, "skip_system": false, "covers_full": false, "reply": null}, {"data": {"input": []}, "skip_system": false, "covers_full": false, "reply": null}, {"data": {"input": [{"role": "user"}]}, "skip_system": false, "covers_full": false, "reply": null}]}
+env: {}
+compare: {ignore: []}

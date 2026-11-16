@@ -1,0 +1,33 @@
+kind: helper
+name: image-edit-deployment-url
+call:
+  azure_images:
+    forms:
+      - data: {prompt: a cat, model: dall-e-3, n: 1, size: 1024x1024}
+        request_url: https://example.openai.azure.com/openai/deployments/dall-e-3/images/edits?api-version=2025-02-01-preview
+      - data: {prompt: a cat, model: dall-e-3, n: 1}
+        request_url: https://example.openai.azure.com/openai/images/edits?api-version=2025-02-01-preview
+      - data: {prompt: a cat, model: dall-e-3}
+        request_url: https://example.openai.azure.com/openai/deployments/dall-e-3/images/variations
+    urls:
+      - model: dall-e-3
+        api_base: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+      - model: dall-e-3
+        api_base: https://example.openai.azure.com
+        global_version: "2025-02-01-preview"
+      - model: dall-e-3
+        api_base: https://example.openai.azure.com/openai/deployments/dall-e-3
+        global_version: "2025-02-01-preview"
+      - model: dall-e-3
+        api_base: https://example.openai.azure.com?foo=1
+        global_version: "2025-02-01-preview"
+      - model: dall-e-3
+        api_base: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        global_version: "2024-02-01"
+      - model: dall-e-3
+        api_base: https://example.openai.azure.com?api-version=kept
+        api_version: "2025-02-01-preview"
+env: {}
+compare: {ignore: []}
