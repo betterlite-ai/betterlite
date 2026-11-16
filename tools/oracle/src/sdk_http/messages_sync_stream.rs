@@ -1,27 +1,18 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::collections::{BTreeMap, VecDeque};
 
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::ProxyTrust;
-use betterlite_core::mock::{chat::response as mock_chat, embedding::response as mock_embedding};
-use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::chat::ChatRequest;
-use betterlite_openai::chat::MockSettings;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatExecutor;
-use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_openai::stream::SseParser;
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::StreamExt as _;
-use rand::SeedableRng as _;
-use rand::rngs::StdRng;
 use serde::Serialize;
-use uuid::Uuid;
 
 use super::error::SdkHttpError;
 use super::result::{SdkResult, SyncRun};
-use super::{ChatMessage, MessagesSyncStreamCall, OpenaiChat, native};
+use super::{ChatMessage, OpenaiChat, native};
+use call::MessagesSyncStreamCall;
 
+pub mod call;
 mod diagnostics;
 mod run;
 mod source;
@@ -58,9 +49,6 @@ fn executor(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<ChatExecutor, SdkHttpError> {
-    let policy = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
-    );
     // the same deployment the native chat call builds, so base URLs, keys and timeouts resolve alike
     let chat = OpenaiChat {
         model: call.model.clone(),
@@ -68,23 +56,7 @@ fn executor(
         api_key: call.api_key.clone(),
         timeout_seconds: call.timeout_seconds,
     };
-    Ok(ChatExecutor {
-        client: ProxiedClient::outbound(&policy)
-            .map_err(|error| SdkHttpError::Client(Box::new(error)))?,
-        deployments: native::deployments(&chat, api_base, env)?,
-        catalog: CatalogCapabilities {
-            chat_models: BTreeSet::new(),
-            text_models: BTreeSet::new(),
-        },
-        random: Mutex::new(StdRng::seed_from_u64(0)),
-        clock: || 0,
-        next_id: Uuid::new_v4,
-        mock: MockSettings::default(),
-        mock_chat,
-        mock_embedding,
-        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
-            .map_err(|error| SdkHttpError::Invalid(error.to_string()))?,
-    })
+    native::executor(&chat, api_base, env)
 }
 
 // One POST per run, with the body the synchronous wrapper would send for the same case

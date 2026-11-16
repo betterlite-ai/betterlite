@@ -18,8 +18,10 @@ use super::diagnostics::Diagnostics;
 use super::source::Prefetched;
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::messages_stream_logging::outcome::Flag;
+use crate::sdk_http::messages_sync_stream::call::{
+    MessagesSyncStreamCall, SyncInitial, SyncRunSpec, SyncStep,
+};
 use crate::sdk_http::result::{SyncRunOutcome, SyncState, SyncStepOutcome};
-use crate::sdk_http::{MessagesSyncStreamCall, SyncInitial, SyncRunSpec, SyncStep};
 
 const NORMALIZED_ID: &str = "msg_00000000-0000-0000-0000-000000000000";
 
@@ -136,8 +138,6 @@ fn observed(state: &StreamState<Prefetched>) -> SyncState {
         sent_content_block_finish: Flag(state.block_progress.sent_content_block_finish),
         sent_last_message: Flag(state.message_progress.sent_last_message),
         queued_usage_chunk: Flag(state.queued_usage_chunk),
-        queued: state.chunk_queue.len(),
-        holding_chunk: Flag(state.holding_chunk.is_some()),
         holding_stop_reason: Flag(state.holding_stop_reason_chunk.is_some()),
         sent_compaction_block: Flag(state.sent_compaction_block),
         sent_compaction_block_start: Flag(state.compaction_progress.sent_compaction_block_start),

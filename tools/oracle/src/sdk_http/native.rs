@@ -117,15 +117,15 @@ pub(crate) fn openai_defaults(config: &LoadedConfig) -> OpenAiDefaults {
     }
 }
 
-pub(crate) async fn send(
+pub(crate) fn executor(
     chat: &OpenaiChat,
     api_base: &str,
     env: &BTreeMap<String, String>,
-) -> Result<SdkResult, SdkHttpError> {
+) -> Result<ChatExecutor, SdkHttpError> {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
     );
-    let executor = ChatExecutor {
+    Ok(ChatExecutor {
         client: ProxiedClient::outbound(&policy)
             .map_err(|error| SdkHttpError::Client(Box::new(error)))?,
         deployments: deployments(chat, api_base, env)?,
@@ -141,7 +141,15 @@ pub(crate) async fn send(
         mock_embedding,
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
             .map_err(|error| SdkHttpError::Invalid(error.to_string()))?,
-    };
+    })
+}
+
+pub(crate) async fn send(
+    chat: &OpenaiChat,
+    api_base: &str,
+    env: &BTreeMap<String, String>,
+) -> Result<SdkResult, SdkHttpError> {
+    let executor = executor(chat, api_base, env)?;
     let wire = WireChat {
         model: &chat.model,
         messages: &chat.messages,
