@@ -7,16 +7,25 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 use rstest::rstest;
 
-use crate::tool_permission_responses::tests::support::services;
-
 use super::{SilentConsole, SilentLogger};
+
+fn silent_hooks() -> VerboseHooks<SilentLogger, SilentConsole> {
+    VerboseHooks {
+        logger: SilentLogger,
+        console: SilentConsole,
+        set_verbose: Payload::Bool(false),
+        redactor: Arc::new(
+            Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor patterns compile"),
+        ),
+    }
+}
 
 #[rstest]
 #[case::debug("DEBUG")]
 #[case::info("INFO")]
 #[case::error("ERROR")]
 fn silent_logger_keeps_every_level_in_the_hook_result(#[case] level: &str) {
-    let result = services().hooks().utils_print_verbose(
+    let result = silent_hooks().utils_print_verbose(
         Payload::String("hello".to_owned()),
         level,
         &Payload::Bool(false),
@@ -26,7 +35,7 @@ fn silent_logger_keeps_every_level_in_the_hook_result(#[case] level: &str) {
 
 #[test]
 fn silent_logger_reports_no_verbose_output() {
-    assert!(!services().hooks().is_active());
+    assert!(!silent_hooks().is_active());
 }
 
 #[test]

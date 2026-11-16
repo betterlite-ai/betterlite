@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -13,6 +14,7 @@ use betterlite_streaming::streamed_response_assembly::cost::{
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
 use rust_decimal::Decimal;
+use uuid::Uuid;
 
 use super::super::stream_services::StreamServices;
 use crate::guardrail_initializers::tool_permission::{
@@ -127,6 +129,16 @@ impl UsageTokenCounter for NoCounter {
 static NO_COSTS: NoCosts = NoCosts;
 static NO_COUNTER: NoCounter = NoCounter;
 
+struct FixedIds;
+
+impl IdSource for FixedIds {
+    fn next_id(&self) -> Uuid {
+        Uuid::from_u128(0x3813)
+    }
+}
+
+static FIXED_IDS: FixedIds = FixedIds;
+
 #[must_use]
 pub(crate) fn services() -> StreamServices<'static> {
     StreamServices {
@@ -135,6 +147,7 @@ pub(crate) fn services() -> StreamServices<'static> {
         redactor: Arc::new(
             Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor patterns compile"),
         ),
+        ids: &FIXED_IDS,
         now: 1_700_000_000,
     }
 }

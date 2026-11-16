@@ -161,6 +161,25 @@ fn post_call_success_hook_rewrites_anthropic_tool_use_blocks() {
 }
 
 #[test]
+fn post_call_success_hook_checks_an_anthropic_response_only_through_named_tool_use_blocks() {
+    let guardrail = rewrite_guardrail(vec![rule("allow-read", "allow", "read")]);
+    let mut data = Object::new();
+    let mut response = GuardrailValue::Object(object(
+        r#"{"content":[{"type":"text","text":"hi"},{"type":"tool_use","id":"t1","name":"read"},{"type":"tool_use","id":"t2"}]}"#,
+    ));
+    let before = response.clone();
+    run(
+        &guardrail,
+        &mut data,
+        ResponseFormat::Anthropic,
+        &mut response,
+    )
+    .expect("read is allowed");
+    assert_eq!(response, before);
+    assert_eq!(applied(&data), vec![GUARDRAIL_NAME.to_owned()]);
+}
+
+#[test]
 fn post_call_success_hook_passes_a_non_object_openai_response() {
     let guardrail = guardrail(vec![rule("block-shell", "deny", "shell")]);
     let mut data = Object::new();

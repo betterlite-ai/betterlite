@@ -36,7 +36,10 @@ async fn buffer_stream_accepts_the_chunk_that_fills_the_limit() {
     drop(sender);
     let chunks = buffer_stream(
         &guardrail(Vec::new()),
-        StreamBufferLimits { max_chunks: 2 },
+        StreamBufferLimits {
+            max_chunks: 2,
+            max_bytes: 1_000,
+        },
         &mut receiver,
     )
     .await
@@ -58,41 +61,18 @@ async fn buffer_stream_rejects_the_chunk_after_the_limit() {
     drop(sender);
     let error = buffer_stream(
         &guardrail(Vec::new()),
-        StreamBufferLimits { max_chunks: 1 },
+        StreamBufferLimits {
+            max_chunks: 1,
+            max_bytes: 1_000,
+        },
         &mut receiver,
     )
     .await
     .expect_err("the second chunk exceeds the limit");
     assert_eq!(
         raised(error),
-        "Streamed response exceeded the 1 chunk buffer limit for tool permission checks, blocking it"
+        "Streamed response exceeded the 1 chunk or 1000 byte buffer limit for tool permission checks, blocking it"
     );
-}
-
-#[tokio::test]
-async fn post_call_streaming_iterator_hook_blocks_a_stream_past_the_limit() {
-    let (sender, receiver) = mpsc::channel(2);
-    sender
-        .send(StreamItem::Json(GuardrailValue::Null))
-        .await
-        .expect("send");
-    sender
-        .send(StreamItem::Json(GuardrailValue::Null))
-        .await
-        .expect("send");
-    drop(sender);
-    let (output, mut output_receiver) = mpsc::channel(4);
-    let error = post_call_streaming_iterator_hook(
-        &guardrail(Vec::new()),
-        StreamBufferLimits { max_chunks: 1 },
-        &services(),
-        receiver,
-        output,
-    )
-    .await
-    .expect_err("the stream exceeds the buffer");
-    assert!(raised(error).contains("1 chunk buffer limit"));
-    assert!(output_receiver.try_recv().is_err());
 }
 
 #[tokio::test]
@@ -240,6 +220,27 @@ async fn run_anthropic(
     items
 }
 
+fn anthropic_thinking_tool_stream(tool_name: &str) -> String {
+    let frames = [
+        r#"{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-test","usage":{"input_tokens":10,"output_tokens":1}}}"#.to_owned(),
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"#.to_owned(),
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hmm"}}"#.to_owned(),
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-abc"}}"#.to_owned(),
+        r#"{"type":"content_block_stop","index":0}"#.to_owned(),
+        format!(
+            r#"{{"type":"content_block_start","index":1,"content_block":{{"type":"tool_use","id":"toolu_1","name":"{tool_name}","input":{{}}}}}}"#
+        ),
+        r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"cmd\":\"ls\"}"}}"#.to_owned(),
+        r#"{"type":"content_block_stop","index":1}"#.to_owned(),
+        r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}"#.to_owned(),
+        r#"{"type":"message_stop"}"#.to_owned(),
+    ];
+    frames
+        .iter()
+        .map(|data| format!("data: {data}\n\n"))
+        .collect()
+}
+
 fn emitted_text(items: &[StreamItem]) -> String {
     items
         .iter()
@@ -263,6 +264,22 @@ async fn post_call_streaming_iterator_hook_rewrites_a_denied_anthropic_stream() 
         "Permission denied: Tool 'shell' denied by rule 'block-shell' (Rule: block-shell)"
     ));
     assert!(text.contains(r#""stop_reason":"end_turn""#));
+    assert!(!text.contains(r#""type":"tool_use""#));
+}
+
+#[tokio::test]
+async fn post_call_streaming_iterator_hook_keeps_thinking_blocks_of_a_denied_anthropic_stream() {
+    let stream = anthropic_thinking_tool_stream("shell");
+    let items = run_anthropic(
+        &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
+        stream,
+    )
+    .await;
+    let text = emitted_text(&items);
+    assert!(text.contains(r#""type":"thinking""#));
+    assert!(text.contains(r#""thinking":"hmm""#));
+    assert!(text.contains(r#""signature":"sig-abc""#));
+    assert!(text.contains("Permission denied:"));
     assert!(!text.contains(r#""type":"tool_use""#));
 }
 

@@ -15,14 +15,4 @@ pub enum ResponseToolError {
     Sse(#[from] AnthropicSseError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-    // LiteLLM's parse_tool_call_arguments ValueError, re-raised while an Anthropic response is re-encoded
-    #[error(
-        "Failed to parse tool call arguments for tool '{tool}' ({context}). Error: {message}. Arguments: {arguments}"
-    )]
-    ToolArguments {
-        tool: String,
-        context: String,
-        message: String,
-        arguments: String,
-    },
 }

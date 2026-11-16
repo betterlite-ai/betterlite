@@ -1,8 +1,15 @@
 #![cfg(test)]
 
-use crate::guardrail_base::failure::GuardrailFailure;
+use tokio::sync::mpsc;
 
-use super::{UNPARSEABLE_STREAM_MESSAGE, unparseable_stream_failure};
+use crate::guardrail_base::failure::GuardrailFailure;
+use crate::guardrail_message_scope::StreamItem;
+use crate::tool_permission_responses::buffer_overflow::StreamBufferLimits;
+use crate::tool_permission_responses::error::ResponseToolError;
+use crate::tool_permission_responses::streaming::post_call_streaming_iterator_hook;
+use crate::tool_permission_responses::tests::support::{GUARDRAIL_NAME, guardrail, services};
+
+use super::UNPARSEABLE_STREAM_MESSAGE;
 
 #[test]
 fn unparseable_stream_message_matches_litellm() {
@@ -12,22 +19,38 @@ fn unparseable_stream_message_matches_litellm() {
     );
 }
 
-#[test]
-fn unparseable_stream_failure_names_the_guardrail_and_blocks() {
-    let failure = unparseable_stream_failure("tools-check");
-    let GuardrailFailure::GuardrailRaised {
+#[tokio::test]
+async fn an_unparseable_raw_stream_raises_a_400_failure_naming_the_guardrail() {
+    let (sender, receiver) = mpsc::channel(1);
+    sender
+        .send(StreamItem::Bytes(b"data: {not json\n\n".to_vec()))
+        .await
+        .expect("send");
+    drop(sender);
+    let (output, mut output_receiver) = mpsc::channel(4);
+    let error = post_call_streaming_iterator_hook(
+        &guardrail(Vec::new()),
+        StreamBufferLimits::default(),
+        &services(),
+        receiver,
+        output,
+    )
+    .await
+    .expect_err("an unparseable raw stream is blocked");
+    let ResponseToolError::Guardrail(GuardrailFailure::GuardrailRaised {
         guardrail_name,
         message,
         wrap_default_message,
         status_code,
         blocked_content,
-    } = failure
+    }) = error
     else {
         panic!("expected a raised guardrail failure");
     };
-    assert_eq!(guardrail_name.as_deref(), Some("tools-check"));
+    assert_eq!(guardrail_name.as_deref(), Some(GUARDRAIL_NAME));
     assert_eq!(message, UNPARSEABLE_STREAM_MESSAGE);
     assert!(wrap_default_message);
     assert_eq!(status_code, 400);
     assert!(!blocked_content);
+    assert!(output_receiver.try_recv().is_err());
 }

@@ -10,7 +10,7 @@ use crate::tool_permission::ToolPermissionGuardrail;
 use crate::tool_permission_requests::early_return::guardrail_base;
 use crate::tool_permission_requests::header_mutation::record_applied_guardrail;
 
-use super::anthropic_conversion::{anthropic_content_blocks, extract_anthropic_tools};
+use super::anthropic_conversion::{anthropic_content_blocks, anthropic_to_tool_call};
 use super::anthropic_rewrite::rewrite_anthropic_responses;
 use super::evaluate::evaluate_tool_calls;
 use super::extraction::extract_response_tools;
@@ -81,7 +81,8 @@ fn post_call_anthropic(
     if !should_run(guardrail, data, suppressed)? {
         return Ok(());
     }
-    let calls = extract_anthropic_tools(content);
+    // LiteLLM's _extract_tool_calls_from_anthropic_content: every named tool_use block, in content order.
+    let calls = content.iter().filter_map(anthropic_to_tool_call).collect();
     if calls.is_empty() {
         tracing::debug!("Tool Permission Guardrail: No tool uses found");
         return Ok(());

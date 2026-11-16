@@ -40,12 +40,4 @@ pub fn anthropic_to_tool_call(block: &GuardrailValue) -> Option<ToolCallInfo> {
     })
 }
 
-// LiteLLM's _extract_tool_calls_from_anthropic_content: every tool_use block, in content order
-#[must_use]
-pub fn extract_anthropic_tools(content: &[GuardrailValue]) -> Vec<ToolCallInfo> {
-    let mut calls = Vec::new();
-    calls.extend(content.iter().filter_map(anthropic_to_tool_call));
-    calls
-}
-
 mod tests;

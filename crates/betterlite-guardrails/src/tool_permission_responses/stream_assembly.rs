@@ -1,14 +1,18 @@
+use std::collections::BTreeSet;
 use std::convert::Infallible;
 use std::future::Future;
+use std::sync::Arc;
 
 use betterlite_anthropic::stream_events::StreamEventConverter;
-use betterlite_anthropic::stream_state::state::{StreamOptions, StreamState, UuidV4};
+use betterlite_anthropic::stream_state::state::{StreamOptions, StreamState};
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::api::messages_chat_output::records::{
     ChoiceRecord, ResponseRecord, ToolCallRecord,
 };
+use betterlite_logging::verbose_hooks::VerboseHooks;
 use betterlite_models::decisions::Json;
+use betterlite_redact::structured::Payload;
 use betterlite_streaming::streamed_response_assembly::response::Response;
 use betterlite_streaming::streamed_response_assembly::{Request, stream_chunk_builder};
 
@@ -17,9 +21,11 @@ use crate::anthropic_sse::assemble_anthropic_sse_stream::{
 };
 use crate::anthropic_sse::sse_stream::parsed_sse_events;
 use crate::guardrail_message_scope::{Object, StreamItem};
+use crate::tool_permission::types::mapping_value;
 
 use super::error::ResponseToolError;
-use super::stream_services::StreamServices;
+use super::extraction::id_text;
+use super::stream_services::{SilentConsole, SilentLogger, StreamServices};
 
 // LiteLLM's stream_chunk_builder over parsed OpenAI chunks; a text or empty response has nothing to check.
 pub(crate) async fn assemble_openai_chunks(
@@ -48,7 +54,12 @@ pub(crate) async fn assemble_openai_chunks(
         metadata: None,
         now: services.now,
     };
-    let hooks = services.hooks();
+    let hooks = VerboseHooks {
+        logger: SilentLogger,
+        console: SilentConsole,
+        set_verbose: Payload::Bool(false),
+        redactor: Arc::clone(&services.redactor),
+    };
     match stream_chunk_builder(&request, &hooks).await {
         Ok(Some(Response::Chat(chat))) => {
             let value = serde_json::to_value(&chat)?;
@@ -76,17 +87,39 @@ pub(crate) async fn assemble_anthropic_stream(
     Some(AssembledAnthropicStream { response, record })
 }
 
-// The rewrite works on the OpenAI shape, so the stream's identity and usage go back onto the record the re-encoder reads.
-pub(crate) fn rewritten_record(
-    response: &Object,
-    original: &ResponseRecord,
-) -> Result<ResponseRecord, ResponseToolError> {
-    let value = serde_json::to_value(response)?;
-    let mut record: ResponseRecord = serde_json::from_value(value)?;
-    record.id.clone_from(&original.id);
-    record.model.clone_from(&original.model);
-    record.usage.clone_from(&original.usage);
-    Ok(record)
+// LiteLLM rewrites the assembled response in place, so only the fields a denial changes come back onto the record.
+pub(crate) fn rewritten_record(response: &Object, original: &ResponseRecord) -> ResponseRecord {
+    let mut record = original.clone();
+    let Some(GuardrailValue::Array(choices)) = response.get("choices") else {
+        return record;
+    };
+    for (choice, rewritten) in record.choices.iter_mut().zip(choices) {
+        let Some(message) = mapping_value(rewritten, "message") else {
+            continue;
+        };
+        choice.message.content = match mapping_value(message, "content") {
+            Some(GuardrailValue::Text(text)) => Some(text.clone()),
+            None | Some(_) => None,
+        };
+        let kept = kept_tool_call_ids(message);
+        choice
+            .message
+            .tool_calls
+            .retain(|call| kept.contains(call.id.as_deref().unwrap_or("")));
+        choice.finish_reason = match mapping_value(rewritten, "finish_reason") {
+            Some(GuardrailValue::Text(reason)) => Some(reason.clone()),
+            None | Some(_) => None,
+        };
+    }
+    record
+}
+
+// The ids of the calls the rewrite left in the message, which are the only record calls that stay.
+fn kept_tool_call_ids(message: &GuardrailValue) -> BTreeSet<&str> {
+    match mapping_value(message, "tool_calls") {
+        Some(GuardrailValue::Array(calls)) => calls.iter().map(id_text).collect(),
+        None | Some(_) => BTreeSet::new(),
+    }
 }
 
 struct AnthropicAssembler<'services, 'a> {
@@ -118,7 +151,7 @@ impl SseAssembler for AnthropicAssembler<'_, '_> {
 // The passthrough handler's event decoder over the parsed frames, then B2227's builder over its chunks.
 async fn assemble_events(events: &[Json], services: &StreamServices<'_>) -> Option<ResponseRecord> {
     let mut converter = StreamEventConverter {
-        state: StreamState::new(StreamOptions::default(), &UuidV4),
+        state: StreamState::new(StreamOptions::default(), services.ids),
         counter: ZeroReasoning,
         json_could_close: false,
     };
@@ -141,7 +174,12 @@ async fn assemble_events(events: &[Json], services: &StreamServices<'_>) -> Opti
         metadata: None,
         now: services.now,
     };
-    let hooks = services.hooks();
+    let hooks = VerboseHooks {
+        logger: SilentLogger,
+        console: SilentConsole,
+        set_verbose: Payload::Bool(false),
+        redactor: Arc::clone(&services.redactor),
+    };
     match stream_chunk_builder(&request, &hooks).await {
         Ok(Some(Response::Chat(chat))) => {
             let encoded = serde_json::to_string(&chat).ok()?;
@@ -151,14 +189,9 @@ async fn assemble_events(events: &[Json], services: &StreamServices<'_>) -> Opti
     }
 }
 
-// The rewrite helpers read the OpenAI message shape; the record keeps the stream identity, tools and reasons.
+// The rewrite helpers read the OpenAI message shape; every other record field stays with the assembler.
 fn record_view(record: &ResponseRecord) -> Object {
     let mut fields = Object::new();
-    fields.insert("id".to_owned(), GuardrailValue::Text(record.id.clone()));
-    fields.insert(
-        "model".to_owned(),
-        GuardrailValue::Text(record.model.clone()),
-    );
     let choices = record.choices.iter().map(choice_view).collect();
     fields.insert("choices".to_owned(), GuardrailValue::Array(choices));
     fields

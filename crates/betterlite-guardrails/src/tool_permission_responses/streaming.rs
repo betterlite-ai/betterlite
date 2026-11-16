@@ -1,4 +1,5 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_core::api::messages_native_stream::retention::RetentionBudget;
 use tokio::sync::mpsc;
 
 use crate::anthropic_sse::is_raw_sse_stream::is_raw_sse_stream;
@@ -7,7 +8,7 @@ use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::{Object, StreamItem};
 use crate::tool_permission::ToolPermissionGuardrail;
 
-use super::buffer_overflow::{StreamBufferLimits, buffer_overflow_failure};
+use super::buffer_overflow::StreamBufferLimits;
 use super::error::ResponseToolError;
 use super::evaluate::{DeniedToolCall, evaluate_tool_calls};
 use super::extraction::extract_response_tools;
@@ -15,7 +16,7 @@ use super::openai_rewrite::rewrite_openai_responses;
 use super::reconstruct::reconstruct_chunk;
 use super::stream_assembly::{assemble_anthropic_stream, assemble_openai_chunks, rewritten_record};
 use super::stream_services::StreamServices;
-use super::unparseable::unparseable_stream_failure;
+use super::unparseable::UNPARSEABLE_STREAM_MESSAGE;
 
 // LiteLLM's async_post_call_streaming_iterator_hook: every chunk is buffered before the response is checked
 pub async fn post_call_streaming_iterator_hook(
@@ -46,9 +47,15 @@ pub async fn post_call_streaming_iterator_hook(
     // A raw stream is assembled as Anthropic SSE; any assembly failure reads as no response to check.
     let Some(mut assembled) = assemble_anthropic_stream(&chunks, services).await else {
         if raw {
-            return Err(ResponseToolError::Guardrail(unparseable_stream_failure(
-                &guardrail.args.name,
-            )));
+            return Err(ResponseToolError::Guardrail(
+                GuardrailFailure::GuardrailRaised {
+                    guardrail_name: Some(guardrail.args.name.clone()),
+                    message: UNPARSEABLE_STREAM_MESSAGE.to_owned(),
+                    wrap_default_message: true,
+                    status_code: 400,
+                    blocked_content: false,
+                },
+            ));
         }
         return relay(&output, chunks).await;
     };
@@ -58,24 +65,42 @@ pub async fn post_call_streaming_iterator_hook(
     }
     // The assembled Anthropic stream is OpenAI-shaped, so LiteLLM rewrites it before translating it back to SSE.
     rewrite_openai_responses(&mut assembled.response, &denied);
-    let record = rewritten_record(&assembled.response, &assembled.record)?;
+    let record = rewritten_record(&assembled.response, &assembled.record);
     let frames = sse_chunks_from_response(&record)?;
     relay(&output, frames.into_iter().map(StreamItem::Bytes).collect()).await
 }
 
-// LiteLLM collects every chunk; the configured ceiling refuses the chunk that would exceed it.
+// LiteLLM collects every chunk; the configured ceilings refuse the chunk that would exceed either one.
 async fn buffer_stream(
     guardrail: &ToolPermissionGuardrail,
     limits: StreamBufferLimits,
     input: &mut mpsc::Receiver<StreamItem>,
 ) -> Result<Vec<StreamItem>, ResponseToolError> {
+    let mut budget = RetentionBudget {
+        max_bytes: limits.max_bytes,
+        max_chunks: limits.max_chunks,
+        bytes: 0,
+        chunks: 0,
+    };
     let mut chunks = Vec::new();
     while let Some(item) = input.recv().await {
-        if chunks.len() == limits.max_chunks {
-            return Err(ResponseToolError::Guardrail(buffer_overflow_failure(
-                &guardrail.args.name,
-                limits.max_chunks,
-            )));
+        let bytes = match &item {
+            StreamItem::Bytes(bytes) => bytes.len(),
+            StreamItem::Json(value) => serde_json::to_vec(value)?.len(),
+        };
+        if budget.accept(bytes).is_err() {
+            return Err(ResponseToolError::Guardrail(
+                GuardrailFailure::GuardrailRaised {
+                    guardrail_name: Some(guardrail.args.name.clone()),
+                    message: format!(
+                        "Streamed response exceeded the {} chunk or {} byte buffer limit for tool permission checks, blocking it",
+                        limits.max_chunks, limits.max_bytes
+                    ),
+                    wrap_default_message: true,
+                    status_code: 400,
+                    blocked_content: false,
+                },
+            ));
         }
         chunks.push(item);
     }

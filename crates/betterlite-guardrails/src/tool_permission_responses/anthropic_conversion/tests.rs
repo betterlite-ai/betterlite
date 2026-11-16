@@ -1,7 +1,6 @@
 #![cfg(test)]
 
-use super::{anthropic_content_blocks, anthropic_to_tool_call, extract_anthropic_tools};
-use crate::tool_permission::types::{mapping_value, object_list};
+use super::{anthropic_content_blocks, anthropic_to_tool_call};
 use crate::tool_permission_responses::tests::support::{json, text};
 
 #[test]
@@ -56,18 +55,4 @@ fn anthropic_content_blocks_needs_an_object_with_a_content_list() {
     assert!(anthropic_content_blocks(&json(r#"{"content":"hi"}"#)).is_none());
     assert!(anthropic_content_blocks(&json(r#"{}"#)).is_none());
     assert!(anthropic_content_blocks(&json(r#"{"content":null}"#)).is_none());
-}
-
-#[test]
-fn extract_anthropic_tools_keeps_only_named_tool_use_blocks() {
-    let content = json(
-        r#"{"blocks":[{"type":"text","text":"hi"},{"type":"tool_use","id":"t1","name":"read"},{"type":"tool_use","id":"t2"}]}"#,
-    );
-    let blocks = mapping_value(&content, "blocks")
-        .and_then(object_list)
-        .expect("blocks");
-    let calls = extract_anthropic_tools(blocks);
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].id, "t1");
-    assert_eq!(calls[0].name.as_deref(), Some("read"));
 }
