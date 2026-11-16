@@ -7,7 +7,6 @@ use betterlite_foundry::agent_requests::request::{
     AgentCallRequest, provider_info, transform_request,
 };
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
-use betterlite_oracle_helper_api::helper::HelperResult;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -16,14 +15,6 @@ use super::input::{PathCall, PathFunction, PreparationCall, ProviderInfoCall, Re
 use super::secrets;
 
 pub(super) type CallAnswer = Result<Value, Box<HelperError>>;
-
-pub(super) fn answer<T, F>(calls: &[T], one: F) -> HelperResult
-where
-    F: Fn(&T) -> CallAnswer,
-{
-    let answers = calls.iter().map(one).collect::<Result<Vec<_>, _>>()?;
-    Ok(json!({"calls": answers}))
-}
 
 // the answer shape the Python helper uses: ok with a value, or not ok with the error's status
 pub(super) fn outcome<T: Serialize>(result: Result<T, AgentRequestError>) -> CallAnswer {
