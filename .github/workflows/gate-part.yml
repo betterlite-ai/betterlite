@@ -101,9 +101,9 @@ jobs:
           rm -rf /runner-android/*
           df -h /
 
-      # g++: libfuzzer-sys compiles libFuzzer from C++ even under cargo check; python3-dev: betterlite-python links libpython through PyO3, whose build script needs an interpreter
+      # g++: libfuzzer-sys compiles libFuzzer from C++ even under cargo check; python3-dev: betterlite-python links libpython through PyO3, whose build script needs an interpreter; unzip: hashicorp/setup-terraform unpacks the Terraform release with it
       - name: Install system packages
-        run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq procps zstd g++ python3 python3-dev
+        run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq procps zstd g++ python3 python3-dev unzip
 
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -304,6 +304,8 @@ jobs:
               # a shard that stops at its first failure hides the rest: on 11-13 shard 3 ran 30 of 22702 tests in run 43451345497
               UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --max-fail 20 "${packages[@]}" ;;
             cache)
+              # every other part builds the gate first, and without its dependencies in this cache each job spent about 110 s on them (run 43847942706)
+              cargo build --locked --quiet --manifest-path .development/gate/Cargo.toml || exit 1
               export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"
               exec cargo test --locked --no-run --workspace ;;
             task)

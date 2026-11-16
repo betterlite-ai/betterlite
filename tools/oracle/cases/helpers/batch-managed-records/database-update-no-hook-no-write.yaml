@@ -1,0 +1,20 @@
+kind: helper
+name: batch-managed-records-database-update-no-hook-no-write
+call:
+  batch_managed_records:
+    plan:
+      op: database_update
+      batch_id: batch-1
+      unified_batch_id: "litellm_proxy:batch:1"
+      files:
+        input_file_id: file-raw-in
+        output_file_id: file-raw-out
+        error_file_id: null
+    database:
+      present: true
+      found:
+        file-raw-in: "litellm_proxy:file:unified-in"
+        file-raw-out: "litellm_proxy:file:unified-out"
+      failures: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,36 @@
+task: B8144
+deviations:
+  - what: The serverless VPC connector is named from the first 20 characters of `<tenant>-<env>-betterlite` (a trailing hyphen dropped) plus `-conn`, so it never passes the 25 characters GCP allows.
+    why: LiteLLM names it `<name>-conn` with no cut, and its shorter `<tenant>-litellm-<env>` name fits for inputs that betterlite's 3 characters longer name would push over, so those inputs would fail to apply. No betterlite deployment exists, so there is no connector name to keep.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/network.tf#L50
+  - what: Every resource is named `<tenant>-<env>-betterlite`, cut to 30 characters, and the only label the module always adds is `managed_by = "terraform"`.
+    why: betterlite names its own stack after itself, and the 30-character cut keeps the shared prefix inside the GCP limit for service account ids while leaving room for the suffixes the later parts add. LiteLLM names the stack `<tenant>-litellm-<env>` and also stamps a `litellm-stack` label.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/locals.tf#L5-L22
+  - what: A created VPC reaches the connector, Cloud SQL and Memorystore as its self_link, where LiteLLM passes the network's resource id (`projects/<project>/global/networks/<name>`); a caller-supplied network_id is passed through unchanged in both modules.
+    why: The google provider accepts either form for those three arguments and both name the same network, and betterlite's later parts read the same local.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudsql.tf#L39
+  - what: The variables live in variables_data.tf, and later parts add variables_identity.tf and variables_service.tf, instead of one variables.tf.
+    why: Three parallel tasks write the variables, and a Terraform module reads every .tf file in its folder, so the split changes nothing for a caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/variables.tf#L1-L30
+  - what: Defaults differ from LiteLLM's, and tenant and env default to demo and dev instead of being required. The subnet is 10.20.0.0/24, the connector CIDR is 10.20.1.0/28, and the database and its user are named betterlite.
+    why: betterlite ships its own demo defaults. A caller who wants LiteLLM's values sets the same variables, and the tenant and env regex validations still apply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/variables.tf#L110-L120
+  - what: The module sits in packaging/terraform/gcp/, not terraform/litellm/gcp/.
+    why: The repository keeps distribution files under packaging/, the same place as the Docker and provider files.
+    link: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp
+  - what: The module requires Terraform 1.13.0 or newer and only the google and random providers, where LiteLLM requires 1.6.0 and also google-beta.
+    why: Terraform 1.13.0 is the version the tests and the example are written for, and nothing in this module uses a google-beta resource.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/versions.tf#L1-L18
+  - what: redis_transit_encryption defaults to false, where LiteLLM turns TLS on.
+    why: With TLS the client needs the server CA in REDIS_SSL_CA_CERTS, and no betterlite task wires that file yet. The variable stays so a caller can opt in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/variables.tf#L102-L106
+  - what: create_redis lets a caller skip Memorystore and point betterlite at a Redis it runs, and local.redis_enabled carries that choice to the runtime. LiteLLM always creates the instance.
+    why: The AWS module already lets a caller supply a Redis URL, and a deps-only deployment may not want a managed instance.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/redis.tf#L1-L22
+  - what: Memorystore is created with auth_enabled = true, so clients have to send AUTH, where LiteLLM leaves AUTH off.
+    why: An instance in a shared private services access range should not answer every client that can reach it. The export task that runs the service has to pass the auth string to betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/redis.tf#L1-L22
+  - what: Cloud SQL uses password authentication from a generated secret, as LiteLLM does.
+    why: IAM database authentication on Cloud SQL needs a connector or token refresh that betterlite does not have; the AWS module uses IAM tokens because B1232 and the gateway support them there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudsql.tf#L1-L9
+kept_bugs: []

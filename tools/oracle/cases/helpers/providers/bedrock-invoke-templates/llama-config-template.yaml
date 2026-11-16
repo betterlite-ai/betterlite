@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-invoke-templates-llama-config-template
+call:
+  b9962:
+    cases:
+      - model: meta.llama3-8b-instruct-v1:0
+        messages: [{role: user, content: hi}]
+        provider: meta
+        hf_model: meta-llama/Meta-Llama-3-8B-Instruct
+        tokenizer_config:
+          chat_template: "{{ bos_token }}{% for message in messages %}{{ message['role'] }}: {{ message['content'] }}\n{% endfor %}{{ eos_token }}"
+          bos_token: "<|begin_of_text|>"
+          eos_token: "<|end_of_text|>"
+env: {}
+compare: {ignore: []}

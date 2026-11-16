@@ -354,7 +354,9 @@ case "${result}" in
     failed_log=$(cut -f3- <<< "${failed_log}")
     failed_log=$(sed -E 's/^\xEF\xBB\xBF//; s/^[0-9TZ:.-]+ //; s/(\x1b|\^\[)\[[0-9;]*m//g' <<< "${failed_log}")
     failed_log=$(grep -v '^##\[' <<< "${failed_log}")
-    lines=$(grep -m 60 -E '^FAIL |^     ' <<< "${failed_log}")
+    # a tests part prints thousands of nextest PASS lines before the one that failed, and its crash cause sits on a four-space thread line
+    failed_log=$(grep -v -E '^ +(PASS|SLOW|SKIP) \[' <<< "${failed_log}")
+    lines=$(grep -m 60 -E "^FAIL |^     |^    thread '" <<< "${failed_log}")
     # a step outside the gate (the gate's own tests, a tool install) prints no FAIL line, so its last lines go instead
     [[ -n "${lines}" ]] || lines=$(tail -n 40 <<< "${failed_log}")
     missed=$(find "${logs}" -path '*/mutants.out/missed.txt' -exec cat {} + 2> /dev/null)

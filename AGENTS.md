@@ -4,7 +4,7 @@ betterlite is a Rust workspace. The binary crate lives in `crates/betterlite`;
 later gateway, configuration, provider, and routing crates live beside it.
 
 Run `cargo gate run <ID>` for the complete task gate. It runs only the tests the
-task's own commands name; a push to main runs the whole suite. During development,
+task's own commands name; main's scheduled runs test the rest. During development,
 `cargo fmt --all` and `cargo clippy -p <crate> --lib --locked -- -D warnings`
 on the crates you changed cover formatting and linting; use `--tests` instead of
 `--lib` when you changed a tests.rs too. The gate's clippy check lints all targets,
@@ -21,6 +21,13 @@ Run the oracle with `cargo run --locked -p betterlite-oracle -- --self-check too
 `--self-check` runs LiteLLM on both sides against the same mock provider, so it checks
 the cases only. Omit it to compare a built betterlite gateway or the native helpers
 with LiteLLM; a task check on helper cases never uses it.
+
+A helper case only needs the group crates that own its operations.
+`cargo gate oracle-groups <case files or folders>` prints the package for each case
+file, and `cargo run --locked -p betterlite-oracle-groups --features <those packages> -- <files>`
+runs them without building the whole oracle or the gateway. The helper corpus replay,
+`replays_the_helper_case_corpus`, runs the same way with
+`-p betterlite-oracle-groups --features <group package>`.
 
 Helper cases cache LiteLLM's answers in two folders. Runs read
 `~/.cache/betterlite-oracle` first, then the worktree's `target/oracle-answers`,

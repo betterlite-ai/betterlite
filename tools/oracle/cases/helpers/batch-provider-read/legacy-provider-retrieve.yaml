@@ -1,0 +1,47 @@
+kind: helper
+name: legacy-provider-retrieve
+call:
+  batch_provider_read:
+    request:
+      batch_id: batch_1
+      provider: azure
+      optional_params:
+        api_base: https://request-azure.example
+        max_retries: 2
+    litellm_settings: {}
+    environment:
+      AZURE_API_BASE: https://azure-env.example
+      AZURE_API_VERSION: "2024-06-01"
+      AZURE_API_KEY: env-azure-key
+    script: {}
+calls:
+  - batch_provider_read:
+      request:
+        batch_id: batch_1
+        provider: xai
+        optional_params:
+          api_key: sk-xai
+      litellm_settings: {}
+      environment: {}
+      script: {}
+  - batch_provider_read:
+      request:
+        batch_id: batch_1
+        provider: vertex_ai
+      litellm_settings: {}
+      environment:
+        VERTEXAI_PROJECT: env-project
+        VERTEXAI_LOCATION: env-location
+        VERTEXAI_CREDENTIALS: env-vertex.json
+      script: {}
+  - batch_provider_read:
+      request:
+        batch_id: batch_1
+        provider: anthropic
+      litellm_settings: {}
+      environment:
+        ANTHROPIC_API_BASE: https://anthropic-env.example
+        ANTHROPIC_API_KEY: env-anthropic-key
+      script: {}
+env: {}
+compare: {ignore: []}

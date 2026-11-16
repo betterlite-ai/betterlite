@@ -96,7 +96,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/managed_resource_ids/vector-file-*)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_ids::tests::replays_corpus$/)'
   - id: helper-corpus
     why: the new projection variant has no case-parser input
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector-file-resolution-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector-file-resolution-*)" && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/vector-file-resolution/unified-file-routing.yaml
 - tools/oracle/cases/helpers/vector-file-resolution/restore-file-identifiers.yaml
