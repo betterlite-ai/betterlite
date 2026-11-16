@@ -1196,6 +1196,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
@@ -1621,6 +1622,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-semantic",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "caseless",
@@ -2687,6 +2689,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-oracle-helper-api",
@@ -2703,6 +2706,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -2866,6 +2870,7 @@ dependencies = [
  "betterlite-provider",
  "betterlite-redact",
  "betterlite-secret-managers",
+ "betterlite-semantic",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
