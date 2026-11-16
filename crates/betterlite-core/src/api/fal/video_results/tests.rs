@@ -30,7 +30,8 @@ use super::text::{error_text, result_error, terminal_result_error};
 use super::transport::{ClientKind, SuppliedTransport, VideoClients, VideoTransport, header_map};
 use super::unsupported::{ALL, UnsupportedOperation};
 use crate::api::fal::video_prepare::VideoHeaders;
-use crate::api::fal::video_prepare::decode::{FalVideoError, decode_fal_video_reply};
+use crate::api::fal::video_prepare::decode::decode_fal_video_reply;
+use crate::api::fal::video_prepare::error::FalVideoError;
 
 const STATUS_URL: &str = "https://queue.fal.run/fal-ai/kling-video/requests/req-1/status";
 const MODEL_PATH: &str = "fal-ai/kling-video";
@@ -814,7 +815,7 @@ fn the_extracted_video_url_comes_from_the_reply_only() {
 
 #[test]
 fn a_supplied_transport_of_the_matching_kind_answers_the_probe() {
-    let default = FakeTransport::new(vec![Step::Fail]);
+    let default = FakeTransport::new(answered(400, "default failure"));
     let supplied = FakeTransport::new(answered(400, "supplied failure"));
     let clients = VideoClients {
         sync: &default,
@@ -840,7 +841,7 @@ fn a_supplied_transport_of_the_matching_kind_answers_the_probe() {
 #[test]
 fn a_supplied_transport_of_the_other_kind_is_ignored() {
     let default = FakeTransport::new(answered(400, "default failure"));
-    let supplied = FakeTransport::new(vec![Step::Fail]);
+    let supplied = FakeTransport::new(answered(400, "supplied failure"));
     let clients = VideoClients {
         sync: &default,
         asynchronous: &default,
