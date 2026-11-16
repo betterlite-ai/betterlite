@@ -1,11 +1,16 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use indexmap::IndexMap;
+use tracing::subscriber::set_default;
+use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use uuid::Uuid;
 
 use crate::api::messages_context_clear::result::{
@@ -57,6 +62,17 @@ struct FixedIds;
 impl IdSource for FixedIds {
     fn next_id(&self) -> Uuid {
         Uuid::from_u128(7)
+    }
+}
+
+#[derive(Clone, Default)]
+struct ErrorCount(Arc<AtomicUsize>);
+
+impl<S: Subscriber> Layer<S> for ErrorCount {
+    fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
+        if *event.metadata().level() == Level::ERROR {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -257,6 +273,26 @@ fn text_thinking_tool_transitions() {
 }
 
 #[test]
+fn a_block_after_a_closed_message_skips_the_transition() {
+    let reasoning = chunk(
+        r#"{"choices":[{"index":0,"delta":{"reasoning_content":"R"},"finish_reason":null}]}"#,
+    );
+    let mut stream = driver(vec![text("A"), finish("stop"), reasoning]);
+    assert_message(&next(&mut stream));
+    assert_events(
+        &mut stream,
+        &[
+            TEXT_START,
+            DELTA_A,
+            STOP_0,
+            THINKING_DELTA,
+            MESSAGE_DELTA,
+            MESSAGE_STOP,
+        ],
+    );
+}
+
+#[test]
 fn a_named_tool_with_empty_arguments_starts_at_once() {
     let tool = chunk(
         r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_2","type":"function","function":{"name":"lookup","arguments":""}}]},"finish_reason":null}]}"#,
@@ -268,6 +304,7 @@ fn a_named_tool_with_empty_arguments_starts_at_once() {
         stream.state.completion_stream.source.pulls, 1,
         "the empty delta flushed the start"
     );
+    assert_events(&mut stream, &[MESSAGE_STOP]);
 }
 
 #[test]
@@ -367,6 +404,16 @@ fn finish_without_usage_flushes() {
         ],
     );
     assert!(stream.next_event().is_none());
+}
+
+#[test]
+fn hidden_usage_closes_a_chunk_without_one() {
+    let hidden = chunk(
+        r#"{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"hidden_params":{"usage":{"prompt_tokens":9,"completion_tokens":3}}}"#,
+    );
+    let mut stream = driver(vec![hidden]);
+    assert_message(&next(&mut stream));
+    assert_events(&mut stream, &[TEXT_START, STOP_0, HELD_STOP, MESSAGE_STOP]);
 }
 
 #[test]
@@ -471,6 +518,8 @@ fn the_stop_iteration_path_closes_an_open_block_first() {
 
 #[test]
 fn sync_stream_failure_ends_iteration() {
+    let errors = ErrorCount::default();
+    let _subscriber = set_default(tracing_subscriber::registry().with(errors.clone()));
     let source = Scripted {
         items: VecDeque::from(vec![
             Ok(text("A")),
@@ -497,5 +546,10 @@ fn sync_stream_failure_ends_iteration() {
     assert!(
         stream.next_event().is_none(),
         "a reported failed pull ends the iteration too"
+    );
+    assert_eq!(
+        errors.0.load(Ordering::Relaxed),
+        2,
+        "each failed pull logs one adapter error line"
     );
 }

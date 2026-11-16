@@ -57,11 +57,11 @@ pub fn update<S>(
         return Ok(None);
     };
     let held_usage = state.holding_stop_reason_chunk.as_ref().and(usage.as_ref());
-    // the merge path attaches applied_edits itself, so the translated frame carries none
+    // the merge path attaches applied_edits itself, so only a frame that can be held needs them
     let final_chunk = choices
         .first()
         .is_some_and(|choice| choice.finish_reason.is_some());
-    let edits = if final_chunk && held_usage.is_none() {
+    let edits = if final_chunk {
         state.applied_edits.clone()
     } else {
         Vec::new()
