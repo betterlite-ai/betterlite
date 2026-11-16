@@ -7,8 +7,7 @@ use crate::mai_images::reply::{ImageLogging, PostCall, decode_mai_image_reply};
 
 use super::error::ImageEditError;
 
-// The MAI edit reply normalizes a present usage through B554 and then B004 projects it; unlike generation, nothing
-// here invents a response size or reads the request's width and height
+// B554 normalizes a present usage and B004 projects it; unlike generation, no size is invented from the request
 pub fn decode_mai_edit_reply(
     body: &[u8],
     status_code: u16,

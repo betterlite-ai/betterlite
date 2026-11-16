@@ -86,7 +86,7 @@ fn model_step(model: &str) -> Value {
 fn supported_step(model: &str) -> Value {
     match ImageEditVariant::select(model) {
         Ok(ImageEditVariant::Flux2) => json!(flux2::supported_params(model)),
-        Ok(ImageEditVariant::Mai) => json!(mai::supported_params()),
+        Ok(ImageEditVariant::Mai) => json!(&mai::MAI_EDIT_OPENAI_PARAMS),
         Ok(ImageEditVariant::Flux1) | Err(_) => Value::Null,
     }
 }

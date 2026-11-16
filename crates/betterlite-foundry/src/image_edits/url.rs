@@ -18,8 +18,7 @@ pub struct CompleteUrlRequest<'data> {
     pub environment: &'data VersionSettings,
 }
 
-// The base is resolved first, then the version chain: FLUX 1 requires one, FLUX 2 defaults to preview, and MAI never
-// reads litellm.api_version, matching the config class each variant stands for
+// FLUX 1 requires a version, FLUX 2 defaults to preview, and MAI never reads litellm.api_version, matching its config
 pub fn complete_url(request: CompleteUrlRequest<'_>) -> Result<String, ImageEditError> {
     let variant = ImageEditVariant::select(request.model)?;
     let base = request
@@ -64,8 +63,7 @@ fn first_version<'data>(sources: &[Option<&'data str>]) -> Option<&'data str> {
     sources.iter().find_map(|source| *source)
 }
 
-// B668 appends /images/edits to a deployment base and a full deployment path otherwise, then the caller's query, if
-// any, is replaced by the api-version alone
+// B668 appends /images/edits to a deployment base, and the caller's query, if any, is replaced by the api-version alone
 fn flux1_edit_url(
     api_base: &str,
     model: &str,

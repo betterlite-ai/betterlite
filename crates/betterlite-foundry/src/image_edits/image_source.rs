@@ -3,8 +3,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 
 use super::error::ImageEditError;
 
-// _convert_image_to_base64 tells a BufferedReader apart from every other read-capable object, and only that one is
-// rewound; a tuple or a URL string is one such value, not a list of references and never a fetch
+// Only a BufferedReader is rewound; a tuple or URL string is one image value, never a list of references or a fetch
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImageSource {
     Bytes(Vec<u8>),

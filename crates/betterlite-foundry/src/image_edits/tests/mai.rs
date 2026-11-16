@@ -2,9 +2,7 @@ use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_openai::image_edits::file::ImageEditFile;
 use betterlite_openai::image_edits::request::ImageEditForm;
 
-use crate::image_edits::mai::{
-    MAI_EDIT_OPENAI_PARAMS, MaiEditRequest, supported_params, transform_request,
-};
+use crate::image_edits::mai::{MAI_EDIT_OPENAI_PARAMS, MaiEditRequest, transform_request};
 
 use super::support::{self, JPEG, MAI, PNG};
 
@@ -29,8 +27,7 @@ fn form(
 }
 
 pub(super) fn mai_edit_prompt_images() {
-    assert_eq!(supported_params(), MAI_EDIT_OPENAI_PARAMS.as_slice());
-    assert_eq!(supported_params(), &["prompt", "image", "model", "n"]);
+    assert_eq!(&MAI_EDIT_OPENAI_PARAMS, &["prompt", "image", "model", "n"]);
     prompt_and_first_image();
     prompt_ordering();
     missing_values_are_not_rejected();

@@ -25,8 +25,7 @@ pub fn supported_params(model: &str) -> &'static [&'static str] {
     generation_supported_params(model)
 }
 
-// map_openai_params filters the None values before it delegates to B553, so an unsupported key sent as null is not
-// reported and never reaches the provider
+// B553's map_openai_params filters out None values, so an unsupported key sent as null is not reported
 pub fn map_edit_params(
     options: &ImageParams,
     model: &str,
@@ -45,8 +44,7 @@ pub fn map_edit_params(
     )?)
 }
 
-// Only a Python list expands into references, and a missing or None entry is an unsupported image; the param overlay
-// comes last so it overrides the prompt, the model or an image field
+// Only a Python list expands into references, a None entry is an unsupported image, and the param overlay comes last
 pub fn transform_request(request: Flux2EditRequest<'_>) -> Result<ImageEditForm, ImageEditError> {
     let prompt = request.prompt.ok_or(ImageEditError::Flux2PromptRequired)?;
     let images = request.images.ok_or(ImageEditError::Flux2ImageRequired)?;

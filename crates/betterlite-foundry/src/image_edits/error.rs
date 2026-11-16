@@ -43,8 +43,7 @@ pub enum ImageEditError {
 }
 
 impl ImageEditError {
-    // the FLUX 1 and FLUX 2 transforms raise ValueError, whose mapped params errors carry their own 400s, and a
-    // non-JSON MAI reply keeps the provider status through B668's OpenAIError
+    // FLUX raises ValueError with its own 400s, and a non-JSON MAI reply keeps the provider status through B668
     #[must_use]
     pub fn status_code(&self) -> Option<u16> {
         match self {

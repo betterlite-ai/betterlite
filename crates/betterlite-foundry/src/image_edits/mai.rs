@@ -12,13 +12,7 @@ pub struct MaiEditRequest<'data> {
     pub options: &'data ImageParams,
 }
 
-#[must_use]
-pub fn supported_params() -> &'static [&'static str] {
-    &MAI_EDIT_OPENAI_PARAMS
-}
-
-// The options override the positional model, the non-None positional prompt overrides the options, image and mask
-// leave the form data, and only the first non-None listed image becomes the uploaded file
+// A prompt overrides the options, image and mask leave the form data, and only the first non-None listed image is uploaded
 pub fn transform_request(request: MaiEditRequest<'_>) -> ImageEditForm {
     let mut data = ImageParams::new();
     data.insert(String::from("model"), Json::Text(request.model.to_owned()));

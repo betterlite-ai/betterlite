@@ -6,8 +6,7 @@ use serde::Deserialize;
 
 pub const API_VERSION_VAR: &str = "AZURE_AI_API_VERSION";
 
-// AZURE_AI_API_VERSION enters from the environment only; litellm_settings.api_version stays with
-// resource_sdk_settings and a deployment's api_version stays in its litellm_params
+// AZURE_AI_API_VERSION comes from the environment only, never litellm_settings or a deployment's litellm_params
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(skip)]

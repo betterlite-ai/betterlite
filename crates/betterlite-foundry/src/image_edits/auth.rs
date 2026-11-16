@@ -27,8 +27,7 @@ pub struct ValidateEnvironmentRequest<'data> {
     pub sources: &'data dyn CredentialSources,
 }
 
-// All three configs resolve the key through B549 and fall back to Entra; FLUX 2 then adds its JSON content type,
-// overwriting whatever the caller sent, while FLUX 1 and MAI keep the multipart headers untouched
+// All three configs resolve the key through B549 and fall back to Entra; only FLUX 2 overwrites Content-Type with JSON
 pub fn validate_environment(
     request: ValidateEnvironmentRequest<'_>,
 ) -> Result<Headers, ImageEditError> {
