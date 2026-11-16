@@ -110,15 +110,15 @@ fn should_run(
     suppressed: &BTreeSet<String>,
 ) -> Result<bool, GuardrailFailure> {
     tracing::debug!("Tool Permission Guardrail Post-Call Hook: Checking response");
-    let should_run = guardrail_base(guardrail).should_run_guardrail(
+    if guardrail_base(guardrail).should_run_guardrail(
         data,
         GuardrailEventHooks::PostCall,
         suppressed,
-    )?;
-    if !should_run {
-        tracing::debug!("Tool Permission Guardrail: Skipping check (not enabled)");
+    )? {
+        return Ok(true);
     }
-    Ok(should_run)
+    tracing::debug!("Tool Permission Guardrail: Skipping check (not enabled)");
+    Ok(false)
 }
 
 mod tests;

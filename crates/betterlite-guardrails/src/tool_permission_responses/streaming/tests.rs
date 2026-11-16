@@ -5,10 +5,11 @@ use tokio::sync::mpsc;
 
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::StreamItem;
+use crate::tool_permission::types::{mapping_value, object_list};
 use crate::tool_permission_responses::buffer_overflow::StreamBufferLimits;
 use crate::tool_permission_responses::error::ResponseToolError;
 use crate::tool_permission_responses::tests::support::{
-    guardrail, object, rewrite_guardrail, rule, services, skipping_guardrail,
+    guardrail, object, rewrite_guardrail, rule, services, skipping_guardrail, text,
 };
 
 use super::{buffer_stream, check_assembled_stream, post_call_streaming_iterator_hook, relay};
@@ -274,6 +275,59 @@ async fn post_call_streaming_iterator_hook_passes_an_allowed_anthropic_stream_th
     )
     .await;
     assert_eq!(items, vec![StreamItem::Bytes(stream.into_bytes())]);
+}
+
+fn openai_tool_stream() -> Vec<StreamItem> {
+    [
+        r#"{"id":"chatcmpl-1","model":"gpt-test","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":""}}]},"finish_reason":null}]}"#,
+        r#"{"id":"chatcmpl-1","model":"gpt-test","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]},"finish_reason":null}]}"#,
+        r#"{"id":"chatcmpl-1","model":"gpt-test","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#,
+    ]
+    .iter()
+    .map(|chunk| StreamItem::Json(GuardrailValue::Object(object(chunk))))
+    .collect()
+}
+
+#[tokio::test]
+async fn post_call_streaming_iterator_hook_rewrites_a_denied_openai_stream() {
+    let (sender, receiver) = mpsc::channel(4);
+    for item in openai_tool_stream() {
+        sender.send(item).await.expect("send");
+    }
+    drop(sender);
+    let (output, mut output_receiver) = mpsc::channel(8);
+    post_call_streaming_iterator_hook(
+        &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
+        StreamBufferLimits::default(),
+        &services(),
+        receiver,
+        output,
+    )
+    .await
+    .expect("the stream rewrites");
+    let Some(StreamItem::Json(GuardrailValue::Object(chunk))) = output_receiver.recv().await else {
+        panic!("one reconstructed json chunk");
+    };
+    assert!(output_receiver.recv().await.is_none());
+    assert_eq!(chunk.get("id"), Some(&text("chatcmpl-1")));
+    assert_eq!(chunk.get("object"), Some(&text("chat.completion.chunk")));
+    let choice = chunk
+        .get("choices")
+        .and_then(object_list)
+        .and_then(|choices| choices.first())
+        .expect("choice");
+    assert_eq!(mapping_value(choice, "finish_reason"), Some(&text("stop")));
+    let delta = mapping_value(choice, "delta").expect("delta");
+    assert_eq!(
+        mapping_value(delta, "tool_calls"),
+        Some(&GuardrailValue::Null)
+    );
+    assert_eq!(
+        mapping_value(delta, "content"),
+        Some(&text(
+            "Permission denied: Tool 'shell' denied by rule 'block-shell' (Rule: block-shell)"
+        ))
+    );
 }
 
 #[tokio::test]

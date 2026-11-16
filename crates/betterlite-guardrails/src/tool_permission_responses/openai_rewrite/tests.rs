@@ -129,6 +129,18 @@ fn rewrite_openai_responses_appends_errors_after_existing_content() {
 }
 
 #[test]
+fn rewrite_openai_responses_starts_the_content_when_it_is_empty() {
+    let mut response = object(
+        r#"{"choices":[{"finish_reason":"tool_calls","message":{"content":"","tool_calls":[{"id":"c1","function":{"name":"shell"}}]}}]}"#,
+    );
+    rewrite_openai_responses(&mut response, &[denied("c1", "shell")]);
+    assert_eq!(
+        text_of(mapping_value(message(&response), "content")),
+        Some("Permission denied: Tool 'shell' denied by rule 'block-shell' (Rule: block-shell)")
+    );
+}
+
+#[test]
 fn rewrite_openai_responses_removes_a_denied_legacy_function_call() {
     let mut response = object(
         r#"{"choices":[{"finish_reason":"function_call","message":{"function_call":{"name":"shell","arguments":"{}"}}}]}"#,

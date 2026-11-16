@@ -234,3 +234,5 @@ fn response_object(response: &ChatResponse) -> Result<Object, ResponseToolError>
     let value = serde_json::to_value(response)?;
     Ok(serde_json::from_value::<Object>(value)?)
 }
+
+mod tests;

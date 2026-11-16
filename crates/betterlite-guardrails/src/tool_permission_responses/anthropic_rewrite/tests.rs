@@ -87,6 +87,17 @@ fn rewrite_anthropic_responses_keeps_a_tool_use_block_without_an_id() {
 }
 
 #[test]
+fn rewrite_anthropic_responses_keeps_a_non_tool_block_whose_id_matches() {
+    let mut response = object(
+        r#"{"stop_reason":"tool_use","content":[{"type":"text","id":"t1","text":"hi"},{"type":"tool_use","id":"t1","name":"shell","input":{}}]}"#,
+    );
+    rewrite_anthropic_responses(&mut response, &[denied("t1", "shell")]);
+    let blocks = content_blocks(&response);
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(text_of(&blocks[0]), Some("hi"));
+}
+
+#[test]
 fn rewrite_anthropic_responses_ignores_a_non_text_id() {
     let mut response =
         object(r#"{"content":[{"type":"tool_use","id":5,"name":"shell","input":{}}]}"#);

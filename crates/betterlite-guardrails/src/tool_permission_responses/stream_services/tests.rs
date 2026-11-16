@@ -1,0 +1,43 @@
+#![cfg(test)]
+
+use std::sync::Arc;
+
+use betterlite_logging::verbose_hooks::VerboseHooks;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_redact::structured::Payload;
+
+use crate::tool_permission_responses::tests::support::services;
+
+use super::{SilentConsole, SilentLogger};
+
+#[test]
+fn silent_logger_keeps_every_level_in_the_hook_result() {
+    let hooks = services().hooks();
+    for level in ["DEBUG", "INFO", "ERROR"] {
+        let result = hooks.utils_print_verbose(
+            Payload::String("hello".to_owned()),
+            level,
+            &Payload::Bool(false),
+        );
+        assert_eq!(result.logs.len(), 1);
+    }
+}
+
+#[test]
+fn silent_logger_reports_no_verbose_output() {
+    assert!(!services().hooks().is_active());
+}
+
+#[test]
+fn silent_console_accepts_a_payload() {
+    let hooks = VerboseHooks {
+        logger: SilentLogger,
+        console: SilentConsole,
+        set_verbose: Payload::Bool(true),
+        redactor: Arc::new(
+            Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor patterns compile"),
+        ),
+    };
+    let result = hooks.main_print_verbose(Payload::String("hello".to_owned()));
+    assert_eq!(result.console.len(), 1);
+}

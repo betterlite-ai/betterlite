@@ -28,11 +28,14 @@ pub async fn post_call_streaming_iterator_hook(
     let chunks = buffer_stream(guardrail, limits, &mut input).await?;
     // LiteLLM only builds a chunk list when no chunk is raw wire data; one raw chunk makes the whole stream raw.
     let raw = is_raw_sse_stream(&chunks);
-    if !raw && let Some(mut response) = assemble_openai_chunks(&chunks, services).await? {
+    let assembled = if raw {
+        None
+    } else {
+        assemble_openai_chunks(&chunks, services).await?
+    };
+    if let Some(mut response) = assembled {
         let denied = check_assembled_stream(guardrail, &response)?;
-        if !denied.is_empty() {
-            rewrite_openai_responses(&mut response, &denied);
-        }
+        rewrite_openai_responses(&mut response, &denied);
         let reconstructed = reconstruct_chunk(&response);
         return relay(
             &output,
