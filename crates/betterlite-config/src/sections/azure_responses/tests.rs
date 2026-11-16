@@ -28,20 +28,29 @@ fn azure_responses_config_cases(#[case] case: u8) {
         0 => {
             let configured = load("", &[(VERSION_VARIABLE, "2025-04-01-preview")]).unwrap();
             assert_eq!(
-                configured.default_responses_api_version,
+                configured.resolved.default_responses_api_version,
                 "2025-04-01-preview"
             );
             let default = load("", &[]).unwrap();
-            assert_eq!(default.default_responses_api_version, DEFAULT_VERSION);
-            assert_eq!(Settings::default().default_responses_api_version, "preview");
+            assert_eq!(
+                default.resolved.default_responses_api_version,
+                DEFAULT_VERSION
+            );
+            assert_eq!(
+                Settings::default().resolved.default_responses_api_version,
+                "preview"
+            );
         }
         1 => {
             let loaded = load("model_list: []", &[]).unwrap();
-            assert_eq!(loaded.default_responses_api_version, "preview");
+            assert_eq!(loaded.resolved.default_responses_api_version, "preview");
         }
         2 => {
             let loaded = load("", &[(VERSION_VARIABLE, "")]).unwrap();
-            assert_eq!(loaded.default_responses_api_version, DEFAULT_VERSION);
+            assert_eq!(
+                loaded.resolved.default_responses_api_version,
+                DEFAULT_VERSION
+            );
         }
         _ => {
             let error = load(
@@ -56,4 +65,9 @@ fn azure_responses_config_cases(#[case] case: u8) {
             );
         }
     }
+}
+
+#[test]
+fn settings_stay_one_pointer_wide() {
+    assert_eq!(size_of::<Settings>(), size_of::<usize>());
 }

@@ -20,7 +20,7 @@ pub fn complete_url(
     get_base_azure_url(
         api_base,
         api_version,
-        Some(&settings.default_responses_api_version),
+        Some(&settings.resolved.default_responses_api_version),
         ROUTE,
     )
 }

@@ -13,15 +13,23 @@ pub struct Raw {
     _no_yaml_keys: (),
 }
 
+// one pointer in Sections: the loader keeps every section's settings on the stack under a deep YAML walk (B9972)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
+    pub resolved: Box<Resolved>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolved {
     pub default_responses_api_version: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            default_responses_api_version: DEFAULT_VERSION.to_owned(),
+            resolved: Box::new(Resolved {
+                default_responses_api_version: DEFAULT_VERSION.to_owned(),
+            }),
         }
     }
 }
@@ -34,7 +42,9 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            default_responses_api_version: version(lookup),
+            resolved: Box::new(Resolved {
+                default_responses_api_version: version(lookup),
+            }),
         })
     }
 }

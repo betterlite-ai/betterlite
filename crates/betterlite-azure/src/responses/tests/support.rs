@@ -3,7 +3,7 @@ use std::future::{Future, ready};
 use std::sync::Arc;
 
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
-use betterlite_config::sections::azure_responses::Settings;
+use betterlite_config::sections::azure_responses::{Resolved, Settings};
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::model_capability_predicates::CapabilityRequest;
 use betterlite_openai::reasoning_models::{
@@ -150,7 +150,9 @@ pub(super) fn runtime() -> Runtime {
 
 pub(super) fn settings(version: &str) -> Settings {
     Settings {
-        default_responses_api_version: version.to_owned(),
+        resolved: Box::new(Resolved {
+            default_responses_api_version: version.to_owned(),
+        }),
     }
 }
 

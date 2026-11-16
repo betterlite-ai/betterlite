@@ -16,7 +16,7 @@ use betterlite_azure::responses::url::{
     MODEL_IN_WEBSOCKET_URL, SUPPORTS_NATIVE_WEBSOCKET, complete_url, websocket_url,
 };
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
-use betterlite_config::sections::azure_responses::Settings;
+use betterlite_config::sections::azure_responses::{Resolved, Settings};
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::reasoning_models::DropParams;
 use betterlite_openai::response_events::RawResponse;
@@ -34,7 +34,9 @@ const DEFAULT_INPUT_ITEMS_LIMIT: i64 = 20;
 const PROJECTED: [&str; 3] = ["model", "input", "tools"];
 pub(super) fn base_rows(call: &UrlCall) -> Vec<Value> {
     let settings = Settings {
-        default_responses_api_version: call.default_api_version.clone(),
+        resolved: Box::new(Resolved {
+            default_responses_api_version: call.default_api_version.clone(),
+        }),
     };
     call.steps
         .iter()
