@@ -66,11 +66,11 @@ pub(super) fn get_request(
 // LiteLLM inserts limit_params before after_params, so pageSize precedes pageToken
 pub(super) fn list_query(after: Option<&str>, limit: Option<i64>) -> Vec<(String, String)> {
     let mut query = Vec::with_capacity(2);
-    if let Some(limit) = limit {
-        query.push(("pageSize".to_owned(), limit.to_string()));
+    if let Some(page_size) = limit {
+        query.push(("pageSize".to_owned(), page_size.to_string()));
     }
-    if let Some(after) = after {
-        query.push(("pageToken".to_owned(), after.to_owned()));
+    if let Some(page_token) = after {
+        query.push(("pageToken".to_owned(), page_token.to_owned()));
     }
     query
 }
