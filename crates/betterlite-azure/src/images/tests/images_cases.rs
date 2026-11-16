@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use super::scenarios;
+use super::{generation_scenarios, scenarios};
 
 #[rstest]
 #[case::deployment_body_drops_model(scenarios::deployment_body_drops_model)]
@@ -12,9 +12,9 @@ use super::scenarios;
 #[case::preview_image_path(scenarios::preview_image_path)]
 #[case::flux2_and_mai_target(scenarios::flux2_and_mai_target)]
 #[case::configured_base_query(scenarios::configured_base_query)]
-#[case::azure_image_body_and_retry(scenarios::azure_image_body_and_retry)]
-#[case::azure_image_auth(scenarios::azure_image_auth)]
-#[case::azure_image_errors(scenarios::azure_image_errors)]
+#[case::azure_image_body_and_retry(generation_scenarios::azure_image_body_and_retry)]
+#[case::azure_image_auth(generation_scenarios::azure_image_auth)]
+#[case::azure_image_errors(generation_scenarios::azure_image_errors)]
 fn images_cases(#[case] scenario: fn()) {
     scenario();
 }

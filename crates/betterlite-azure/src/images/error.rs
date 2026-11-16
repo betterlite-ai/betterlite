@@ -88,8 +88,11 @@ impl ImageError {
         if class == "AzureOpenAIError" {
             return self;
         }
-        let status = status.unwrap_or(500);
+        let response_status = status.unwrap_or(500);
         let message = self.to_string();
-        Self::Azure { status, message }
+        Self::Azure {
+            status: response_status,
+            message,
+        }
     }
 }

@@ -1,32 +1,32 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::sections::azure_credentials::DEFAULT_SCOPE;
 use betterlite_config::sections::azure_url_policy::AzureCredentials;
 use betterlite_models::decisions::Json;
 use betterlite_openai::image_generation::family::ImageFamily;
+use secrecy::ExposeSecret as _;
 
 use super::support::{
-    API_KEY, AZURE, BEARER, Harness, MAI_BODY, Outcome, PROMPT, ProviderScript, Scenario, VERSION,
+    API_KEY, AZURE, BEARER, Harness, MAI_BODY, PROMPT, RecordingSources, Scenario, VERSION,
     edit_form, ok_reply, reply, scenario,
 };
 use crate::azure_urls::AuthParams;
 use crate::credentials::selection::AzureTokenError;
 use crate::images::edit::{
-    EditAuth, EditParams, EditUrl, finalize_image_edit_request_data, get_complete_url,
-    validate_environment,
+    EditAuth, EditParams, EditUrl, finalize_edit_data, get_complete_url, validate_environment,
 };
-use crate::images::error::ImageError;
-use crate::images::selection::{AzureImageConfig, get_azure_image_generation_config};
+use crate::images::selection::{AzureImageConfig, image_config};
 use crate::images::target::{AzureClientParams, create_azure_base_url};
 
 pub(super) fn deployment_body_drops_model() {
     let data = edit_form(Some("dall-e-3"));
     let deployment_edits =
         format!("{AZURE}/openai/deployments/dall-e-3/images/edits?api-version={VERSION}");
-    assert!(!finalize_image_edit_request_data(&data, &deployment_edits).contains_key("model"));
+    assert!(!finalize_edit_data(&data, &deployment_edits).contains_key("model"));
     let edits = format!("{AZURE}/openai/images/edits");
-    assert!(finalize_image_edit_request_data(&data, &edits).contains_key("model"));
+    assert!(finalize_edit_data(&data, &edits).contains_key("model"));
     let generations = format!("{AZURE}/openai/deployments/dall-e-3/images/generations");
-    assert!(finalize_image_edit_request_data(&data, &generations).contains_key("model"));
+    assert!(finalize_edit_data(&data, &generations).contains_key("model"));
 
     let deployment = format!("{AZURE}/openai/deployments/dall-e-3");
     let mut harness = Harness::new(&[]).with_reply(ok_reply());
@@ -86,11 +86,7 @@ fn selection_table() {
         (Some("azure/gpt-4o"), AzureImageConfig::GptImage),
     ];
     for (model, expected) in cases {
-        assert_eq!(
-            get_azure_image_generation_config(model),
-            expected,
-            "{model:?}"
-        );
+        assert_eq!(image_config(model), expected, "{model:?}");
     }
     assert_eq!(AzureImageConfig::Mai.family(), None);
     assert_eq!(AzureImageConfig::DallE3.family(), Some(ImageFamily::DallE3));
@@ -106,10 +102,10 @@ fn async_transforms() {
         delegate_async: true,
         ..scenario("dall-e-3")
     });
-    let reply = &outcome.success().reply;
-    assert_eq!(reply.size.as_deref(), Some("1024x1024"));
-    assert_eq!(reply.quality.as_deref(), Some("hd"));
-    assert_eq!(reply.output_format.as_deref(), Some("png"));
+    let image = &outcome.success().reply;
+    assert_eq!(image.size.as_deref(), Some("1024x1024"));
+    assert_eq!(image.quality.as_deref(), Some("hd"));
+    assert_eq!(image.output_format.as_deref(), Some("png"));
 
     let mut harness = Harness::new(&[]).with_reply(ok_reply());
     let outcome = harness.run(&Scenario {
@@ -117,9 +113,9 @@ fn async_transforms() {
         optional: r#"{"size":"1792x1024","quality":"standard"}"#.to_owned(),
         ..scenario("dall-e-3")
     });
-    let reply = &outcome.success().reply;
-    assert_eq!(reply.size.as_deref(), Some("1792x1024"));
-    assert_eq!(reply.quality.as_deref(), Some("standard"));
+    let image = &outcome.success().reply;
+    assert_eq!(image.size.as_deref(), Some("1792x1024"));
+    assert_eq!(image.quality.as_deref(), Some("standard"));
 
     let mut harness = Harness::new(&[]).with_reply(reply(200, MAI_BODY));
     let outcome = harness.run(&Scenario {
@@ -139,10 +135,10 @@ fn async_transforms() {
 fn sync_transform() {
     let mut harness = Harness::new(&[]).with_reply(ok_reply());
     let outcome = harness.run(&scenario("dall-e-3"));
-    let reply = &outcome.success().reply;
-    assert_eq!(reply.size, None);
-    assert_eq!(reply.quality, None);
-    assert_eq!(reply.output_format, None);
+    let image = &outcome.success().reply;
+    assert_eq!(image.size, None);
+    assert_eq!(image.quality, None);
+    assert_eq!(image.output_format, None);
     assert_eq!(outcome.logger.post.len(), 1);
     assert_eq!(outcome.logger.post[0].input, PROMPT);
 
@@ -206,6 +202,72 @@ fn edit_auth_table() {
     edit_key_and_token();
     edit_header_and_environment();
     edit_credentials_key();
+    edit_client_secret_grant();
+    edit_default_scope_grant();
+}
+
+fn client_secret_params(scope: Option<&str>) -> EditParams {
+    EditParams {
+        api_key: None,
+        azure_ad_token: None,
+        auth: AuthParams {
+            tenant_id: Some("tenant-id".to_owned()),
+            client_id: Some("client-id".to_owned()),
+            client_secret: Some(secrecy::SecretString::from("client-secret")),
+            azure_username: None,
+            azure_password: None,
+            azure_scope: scope.map(str::to_owned),
+        },
+    }
+}
+
+// litellm_params.auth reaches the credential sources as a client-secret grant with its scope
+fn edit_client_secret_grant() {
+    let credentials = AzureCredentials::default();
+    let environment = BTreeMap::new();
+    let sources = RecordingSources::new("recorded-token");
+    let params = client_secret_params(Some("https://scope.example/.default"));
+    let headers = validate_environment(&EditAuth {
+        headers: BTreeMap::new(),
+        api_key: None,
+        params: &params,
+        credentials: &credentials,
+        environment: &environment,
+        sources: &sources,
+        refresh_enabled: false,
+        provider: None,
+    })
+    .expect("client secret auth");
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        Some("Bearer recorded-token")
+    );
+    let recorded = sources.recorded();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].tenant_id, "tenant-id");
+    assert_eq!(recorded[0].client_id, "client-id");
+    assert_eq!(recorded[0].client_secret.expose_secret(), "client-secret");
+    assert_eq!(recorded[0].scope, "https://scope.example/.default");
+}
+
+// an absent scope reaches the grant as the Azure default, not as an empty string
+fn edit_default_scope_grant() {
+    let credentials = AzureCredentials::default();
+    let environment = BTreeMap::new();
+    let sources = RecordingSources::new("recorded-token");
+    let params = client_secret_params(None);
+    validate_environment(&EditAuth {
+        headers: BTreeMap::new(),
+        api_key: None,
+        params: &params,
+        credentials: &credentials,
+        environment: &environment,
+        sources: &sources,
+        refresh_enabled: false,
+        provider: None,
+    })
+    .expect("default scope auth");
+    assert_eq!(sources.recorded()[0].scope, DEFAULT_SCOPE);
 }
 
 // the deployment-settings key fills in when neither the argument nor litellm_params carries one
@@ -441,6 +503,22 @@ pub(super) fn flux2_and_mai_target() {
     base_selection();
     flux2_table();
     mai_table();
+    async_flux2_target();
+}
+
+// the async leg passes data's model on both sides, so an empty model argument still reaches FLUX 2
+fn async_flux2_target() {
+    let mut harness = Harness::new(&[]).with_reply(ok_reply());
+    let outcome = harness.run(&Scenario {
+        model: Some(String::new()),
+        base_model: Some("FLUX.2-pro".to_owned()),
+        delegate_async: true,
+        ..scenario("dall-e-3")
+    });
+    assert_eq!(
+        outcome.url(),
+        format!("{AZURE}/providers/blackforestlabs/v1/flux-2-pro?api-version={VERSION}")
+    );
 }
 
 fn base_selection() {
@@ -580,364 +658,6 @@ pub(super) fn configured_base_query() {
         edit_url(Some(AZURE), Some("preview"), &credentials),
         format!("{AZURE}/openai/v1/images/edits?api-version=preview")
     );
-}
-
-pub(super) fn azure_image_body_and_retry() {
-    body_table();
-    retry_table();
-}
-
-fn body_table() {
-    body_model_table();
-    body_options_table();
-}
-
-fn body_model_table() {
-    body_absent_model();
-    body_base_model();
-}
-
-fn body_absent_model() {
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        model: Some(String::new()),
-        ..scenario("dall-e-3")
-    });
-    // the deployment route drops the model from the wire, so the logged request data carries it
-    assert_eq!(outcome.logger.pre[0].data.get("model"), Some(&Json::Null));
-    assert!(outcome.calls[0].body_field("model").is_none());
-    assert_eq!(outcome.success().hidden_model, None);
-}
-
-fn body_base_model() {
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        base_model: Some("hidden-dall-e-3".to_owned()),
-        ..scenario("my-deployment")
-    });
-    assert_eq!(
-        outcome.logger.pre[0].data.get("model"),
-        Some(&Json::Text("hidden-dall-e-3".to_owned()))
-    );
-    assert!(outcome.calls[0].body_field("model").is_none());
-    assert_eq!(
-        outcome.success().hidden_model.as_deref(),
-        Some("hidden-dall-e-3")
-    );
-    assert_eq!(
-        outcome.url(),
-        format!(
-            "{AZURE}/openai/deployments/my-deployment/images/generations?api-version={VERSION}"
-        )
-    );
-
-    // an empty base model counts as absent, so the deployment's own name fills the request data
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        base_model: Some(String::new()),
-        ..scenario("my-deployment")
-    });
-    assert_eq!(
-        outcome.logger.pre[0].data.get("model"),
-        Some(&Json::Text("my-deployment".to_owned()))
-    );
-}
-
-fn body_options_table() {
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        optional: r#"{"size":"1024x1024","extra_body":{"size":"512x512","foo":"bar"}}"#.to_owned(),
-        ..scenario("dall-e-3")
-    });
-    assert_eq!(
-        outcome.calls[0].body_field("size"),
-        Some(&Json::Text("512x512".to_owned()))
-    );
-    assert_eq!(
-        outcome.calls[0].body_field("foo"),
-        Some(&Json::Text("bar".to_owned()))
-    );
-    assert!(outcome.calls[0].body_field("extra_body").is_none());
-    assert_eq!(
-        outcome.calls[0].body_field("prompt"),
-        Some(&Json::Text(PROMPT.to_owned()))
-    );
-}
-
-fn retry_table() {
-    retry_accepted();
-    retry_rejected();
-    extra_body_rejected();
-}
-
-fn retry_accepted() {
-    // any int passes, a negative one and a bool included
-    for accepted in [
-        r#"{"max_retries":3}"#,
-        r#"{"max_retries":-1}"#,
-        r#"{"max_retries":true}"#,
-    ] {
-        let mut harness = Harness::new(&[]).with_reply(ok_reply());
-        let outcome = harness.run(&Scenario {
-            optional: accepted.to_owned(),
-            ..scenario("dall-e-3")
-        });
-        assert!(outcome.result.is_ok(), "{accepted}");
-        assert!(outcome.calls[0].body_field("max_retries").is_none());
-    }
-}
-
-fn retry_rejected() {
-    for rejected in [
-        r#"{"max_retries":null}"#,
-        r#"{"max_retries":"3"}"#,
-        r#"{"max_retries":3.5}"#,
-    ] {
-        let mut harness = Harness::new(&[]).with_reply(ok_reply());
-        let outcome = harness.run(&Scenario {
-            optional: rejected.to_owned(),
-            ..scenario("dall-e-3")
-        });
-        let error = outcome.failure();
-        assert_eq!(
-            error.classification(),
-            ("AzureOpenAIError", Some(422)),
-            "{rejected}"
-        );
-        assert_eq!(
-            error.to_string(),
-            "max retries must be an int",
-            "{rejected}"
-        );
-        // LiteLLM re-raises its own image error, so the sync leg must not wrap this one again
-        assert!(
-            matches!(outcome.result, Err(ImageError::MaxRetries)),
-            "{rejected}"
-        );
-        assert!(outcome.calls.is_empty(), "{rejected}");
-        assert!(outcome.logger.post.is_empty(), "{rejected}");
-    }
-}
-
-// LiteLLM unpacks extra_body as a mapping, so null fails like any other non-object
-fn extra_body_rejected() {
-    for rejected in [r#"{"extra_body":"nope"}"#, r#"{"extra_body":null}"#] {
-        let mut harness = Harness::new(&[]).with_reply(ok_reply());
-        let outcome = harness.run(&Scenario {
-            optional: rejected.to_owned(),
-            ..scenario("dall-e-3")
-        });
-        assert_eq!(
-            outcome.failure().classification(),
-            ("AzureOpenAIError", Some(500)),
-            "{rejected}"
-        );
-        assert!(outcome.calls.is_empty(), "{rejected}");
-    }
-}
-
-pub(super) fn azure_image_auth() {
-    auth_table();
-    provider_table();
-    provider_failures();
-}
-
-fn auth_table() {
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&scenario("dall-e-3"));
-    assert_eq!(outcome.header("api-key"), Some(API_KEY));
-    assert_eq!(outcome.header("authorization"), None);
-    assert_eq!(
-        outcome.pre_headers().get("api-key"),
-        Some(&Json::Text("***REDACTED***".to_owned()))
-    );
-    assert_eq!(outcome.constructed, 1);
-
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        api_key: None,
-        azure_ad_token: Some(BEARER.to_owned()),
-        ..scenario("dall-e-3")
-    });
-    assert_eq!(
-        outcome.header("authorization"),
-        Some(format!("Bearer {BEARER}").as_str())
-    );
-    assert_eq!(
-        outcome.pre_headers().get("authorization"),
-        Some(&Json::Text("***REDACTED***".to_owned()))
-    );
-
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        azure_ad_token: Some(BEARER.to_owned()),
-        params: r#"{"azure_ad_token":"params-token"}"#.to_owned(),
-        ..scenario("dall-e-3")
-    });
-    assert_eq!(
-        outcome.header("authorization"),
-        Some(format!("Bearer {BEARER}").as_str())
-    );
-}
-
-fn provider_table() {
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        api_key: None,
-        provider: Some(ProviderScript::Token("provider-token")),
-        ..scenario("dall-e-3")
-    });
-    assert_eq!(
-        outcome.header("authorization"),
-        Some("Bearer provider-token")
-    );
-
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        headers: vec![("API-KEY".to_owned(), "custom".to_owned())],
-        ..scenario("dall-e-3")
-    });
-    assert_eq!(outcome.header("api-key"), Some("custom"));
-    assert_eq!(outcome.sent_headers().len(), 1);
-}
-
-fn provider_failures() {
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        api_key: None,
-        provider: Some(ProviderScript::Failure("RuntimeError", "boom")),
-        ..scenario("dall-e-3")
-    });
-    assert_eq!(
-        outcome.failure().classification(),
-        ("AzureOpenAIError", Some(500))
-    );
-    assert_eq!(outcome.failure().to_string(), "boom");
-    assert!(outcome.calls.is_empty());
-
-    // an empty provider token counts as no token, so no bearer header goes out
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        api_key: None,
-        provider: Some(ProviderScript::Token("")),
-        ..scenario("dall-e-3")
-    });
-    assert_eq!(outcome.header("authorization"), None);
-    assert_eq!(outcome.header("api-key"), None);
-}
-
-pub(super) fn azure_image_errors() {
-    sync_failure_table();
-    async_failure_table();
-}
-
-// the reply's HTTP status decides the error, whatever code its body names
-const RATE_LIMITED: &str = r#"{"error":{"code":"429","message":"rate limited"}}"#;
-const BODY_ERROR: &str = r#"{"error":{"message":"boom","code":400}}"#;
-
-fn failed(status: u16, body: &'static str, delegate_async: bool) -> Outcome {
-    let mut harness = Harness::new(&[]).with_reply(reply(status, body));
-    harness.run(&Scenario {
-        delegate_async,
-        ..scenario("dall-e-3")
-    })
-}
-
-fn sync_failure_table() {
-    for (status, body) in [(429, RATE_LIMITED), (503, "Service Unavailable")] {
-        let outcome = failed(status, body, false);
-        assert_eq!(
-            outcome.failure().classification(),
-            ("AzureOpenAIError", Some(status))
-        );
-        assert_eq!(outcome.failure().to_string(), body);
-        assert_eq!(outcome.logger.pre.len(), 1);
-        assert!(outcome.logger.post.is_empty(), "{status}");
-    }
-
-    let outcome = failed(200, BODY_ERROR, false);
-    assert_eq!(
-        outcome.failure().classification(),
-        ("AzureOpenAIError", Some(400))
-    );
-    assert_eq!(outcome.logger.post.len(), 1);
-    assert_eq!(outcome.logger.post[0].input, PROMPT);
-
-    let outcome = failed(200, "not json", false);
-    assert_eq!(
-        outcome.failure().classification(),
-        ("AzureOpenAIError", Some(500))
-    );
-    assert!(outcome.logger.post.is_empty());
-
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        optional: r#"{"max_retries":null}"#.to_owned(),
-        ..scenario("dall-e-3")
-    });
-    assert_eq!(outcome.failure().classification().1, Some(422));
-    assert!(outcome.calls.is_empty());
-    assert!(outcome.logger.pre.is_empty());
-}
-
-// the async leg logs each failure once as text and re-raises it as it was
-fn async_failure_table() {
-    for (status, body) in [(429, RATE_LIMITED), (503, "Service Unavailable")] {
-        let outcome = failed(status, body, true);
-        assert_eq!(
-            outcome.failure().classification(),
-            ("MaskedHTTPStatusError", Some(status))
-        );
-        assert_eq!(outcome.logger.post.len(), 1, "{status}");
-        assert_eq!(
-            outcome.logger.post[0].original_response,
-            Json::Text(body.to_owned())
-        );
-    }
-
-    let outcome = failed(200, "not json", true);
-    assert_eq!(outcome.failure().classification(), ("Exception", None));
-    assert_eq!(outcome.logger.post.len(), 1);
-
-    let outcome = failed(200, BODY_ERROR, true);
-    assert_eq!(outcome.failure().classification(), ("Exception", Some(400)));
-    assert_eq!(outcome.logger.post.len(), 2);
-    match &outcome.logger.post[1].original_response {
-        Json::Text(text) => assert!(text.contains("boom")),
-        _ => panic!("the async leg logs the failure as text"),
-    }
-    url_failures();
-
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        delegate_async: true,
-        ..scenario("dall-e-3")
-    });
-    assert_eq!(outcome.success().reply.size.as_deref(), Some("1024x1024"));
-}
-
-// the async leg builds its URL inside the step that logs and re-raises, the sync leg inside the wrapper
-fn url_failures() {
-    let unusable = Scenario {
-        api_base: Some(format!("{AZURE}:port")),
-        api_version: Some("preview".to_owned()),
-        delegate_async: true,
-        ..scenario("dall-e-3")
-    };
-    let outcome = Harness::new(&[]).with_reply(ok_reply()).run(&unusable);
-    assert!(matches!(outcome.result, Err(ImageError::Url(_))));
-    assert!(outcome.calls.is_empty());
-    assert_eq!(outcome.logger.post.len(), 1);
-
-    let outcome = Harness::new(&[]).with_reply(ok_reply()).run(&Scenario {
-        delegate_async: false,
-        ..unusable
-    });
-    assert_eq!(
-        outcome.failure().classification(),
-        ("AzureOpenAIError", Some(500))
-    );
-    assert!(outcome.logger.post.is_empty());
 }
 
 fn target(

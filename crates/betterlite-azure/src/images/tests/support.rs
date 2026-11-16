@@ -23,7 +23,7 @@ use crate::endpoints::projection::LiteLlmParams;
 use crate::image_transport::request::{ImageClientConstructor, TimeoutPhases};
 use crate::image_transport::{ImageClock, ImageReply, ImageRequest, ImageTransport};
 use crate::images::error::ImageError;
-use crate::images::generation::{GeneratedImage, Generation, Runtime, image_generation};
+use crate::images::generation::{GeneratedImage, Generation, Runtime, begin, finish, send};
 use crate::oidc_exchange::OidcExchangeInput;
 
 pub(super) const API_KEY: &str = "fixture-secret-key";
@@ -38,6 +38,21 @@ pub(super) fn driver() -> TokioRuntime {
 
 pub(super) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+// the three production steps around the one await, in the order an endpoint drives them
+fn exchange(
+    call: Generation<'_>,
+    runtime: &mut Runtime<'_, FixtureConstructor, FixtureClock>,
+) -> Result<GeneratedImage, ImageError> {
+    let begun = begin(call, runtime)?;
+    let sent = driver().block_on(send(
+        &begun,
+        runtime.constructor,
+        runtime.clock,
+        runtime.polling_timeout,
+    ));
+    finish(&begun, sent, runtime.logger)
 }
 
 pub(super) struct Reply {
@@ -107,6 +122,62 @@ impl CredentialSources for NoSources {
         _record: &ClientSecretRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
         Err(unavailable("client secret"))
+    }
+
+    fn username_password<'source>(
+        &'source self,
+        _record: &UsernamePasswordRecord,
+    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
+        Err(unavailable("username and password"))
+    }
+
+    fn sdk_refresh<'source>(
+        &'source self,
+        _scope: &str,
+    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
+        Err(unavailable("SDK refresh"))
+    }
+
+    fn default_credential<'source>(
+        &'source self,
+        _scope: &'source str,
+    ) -> Option<Arc<dyn CallableTokenProvider + 'source>> {
+        None
+    }
+
+    fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
+        Err(unavailable("OIDC"))
+    }
+}
+
+// records the grant the edit auth builds and answers it with a fixed token
+pub(super) struct RecordingSources {
+    records: Mutex<Vec<ClientSecretRecord>>,
+    token: &'static str,
+}
+
+impl RecordingSources {
+    pub(super) fn new(token: &'static str) -> Self {
+        Self {
+            records: Mutex::default(),
+            token,
+        }
+    }
+
+    pub(super) fn recorded(&self) -> Vec<ClientSecretRecord> {
+        lock(&self.records).clone()
+    }
+}
+
+impl CredentialSources for RecordingSources {
+    fn client_secret<'source>(
+        &'source self,
+        record: &ClientSecretRecord,
+    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
+        lock(&self.records).push(record.clone());
+        Ok(Arc::new(FixtureProvider {
+            script: ProviderScript::Token(self.token),
+        }))
     }
 
     fn username_password<'source>(
@@ -363,7 +434,9 @@ impl Harness {
         let provider = scenario
             .provider
             .clone()
-            .map(|script| FixtureProvider { script });
+            .map(|script| -> Arc<dyn CallableTokenProvider> {
+                Arc::new(FixtureProvider { script })
+            });
         let call = Generation {
             model: scenario.model.as_deref(),
             prompt: &scenario.prompt,
@@ -374,15 +447,14 @@ impl Harness {
             api_base: scenario.api_base.as_deref(),
             api_version: scenario.api_version.as_deref(),
             azure_ad_token: azure_ad_token.as_ref(),
-            azure_ad_token_provider: provider
-                .map(|provider| Arc::new(provider) as Arc<dyn CallableTokenProvider>),
+            azure_ad_token_provider: provider,
             base_model: scenario.base_model.as_deref(),
             params: scenario.litellm_params(),
             delegate_async: scenario.delegate_async,
             now_seconds: 1_700_000_000,
         };
         let mut state = self.runtime(&constructor, &sources, &clock, &mut logger);
-        let result = driver().block_on(image_generation(call, &mut state));
+        let result = exchange(call, &mut state);
         Outcome {
             result,
             calls: lock(&constructor.transport.state.calls).clone(),
@@ -403,13 +475,13 @@ impl Harness {
         }
     }
 
-    fn runtime<'a>(
-        &'a self,
-        constructor: &'a FixtureConstructor,
-        sources: &'a NoSources,
-        clock: &'a FixtureClock,
-        logger: &'a mut RecordingLogger,
-    ) -> Runtime<'a, FixtureConstructor, FixtureClock> {
+    fn runtime<'run>(
+        &'run self,
+        constructor: &'run FixtureConstructor,
+        sources: &'run NoSources,
+        clock: &'run FixtureClock,
+        logger: &'run mut RecordingLogger,
+    ) -> Runtime<'run, FixtureConstructor, FixtureClock> {
         let endpoints = &self.config.sections.azure_endpoints;
         let polling_timeout = self
             .config

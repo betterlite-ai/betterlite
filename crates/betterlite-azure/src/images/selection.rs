@@ -34,7 +34,7 @@ impl AzureImageConfig {
 }
 
 #[must_use]
-pub fn get_azure_image_generation_config(model: Option<&str>) -> AzureImageConfig {
+pub fn image_config(model: Option<&str>) -> AzureImageConfig {
     let original = model.unwrap_or_default();
     let normalized = original.to_lowercase().replace(['-', '_'], "");
     if normalized.is_empty() || normalized.contains("dalle2") {

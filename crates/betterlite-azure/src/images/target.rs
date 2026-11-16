@@ -20,12 +20,14 @@ pub fn create_azure_base_url(
         .or(params.base_url)
         .unwrap_or_default()
         .trim_end_matches('/');
-    let model = model.unwrap_or("");
-    let mai_model = base_model.filter(|name| !name.is_empty()).unwrap_or(model);
+    let deployment = model.unwrap_or("");
+    let mai_model = base_model
+        .filter(|name| !name.is_empty())
+        .unwrap_or(deployment);
     if is_mai_model(mai_model) {
         return Ok(mai_image_generation_url(base, params.api_version));
     }
-    let flux = model.to_lowercase().replace(['.', '_'], "-");
+    let flux = deployment.to_lowercase().replace(['.', '_'], "-");
     if flux.contains("flux-2") || flux.contains("flux2") {
         return Ok(flux2_image_generation_url(base, &flux, params.api_version));
     }
@@ -36,7 +38,7 @@ pub fn create_azure_base_url(
     }
     Ok(dated_image_generation_url(
         base,
-        model,
+        deployment,
         params.api_version.unwrap_or_default(),
     ))
 }

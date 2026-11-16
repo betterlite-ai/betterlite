@@ -7,5 +7,4 @@ pub mod target;
 mod prepare;
 mod wire;
 
-#[cfg(test)]
 mod tests;

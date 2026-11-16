@@ -1,3 +1,5 @@
+use std::mem::take;
+
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
 use betterlite_models::decisions::Json;
@@ -6,7 +8,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::credentials::cache::RefreshProviderCache;
 use crate::credentials::headers::{ClientAuthParams, get_azure_request_auth_headers};
-use crate::credentials::source::{CallableTokenProvider, CredentialSources, TokenReply};
+use crate::credentials::source::{CredentialSources, TokenReply};
 use crate::endpoints::initialize::{InitializeRequest, initialize_azure_sdk_client};
 use crate::endpoints::projection::{
     AzureClientInputs, CallableProvider, SessionKind, TokenProvider,
@@ -46,7 +48,7 @@ pub(super) fn prepare(
     mut call: Generation<'_>,
     context: &PrepareContext<'_>,
 ) -> Result<Prepared, ImageError> {
-    let mut optional_params = std::mem::take(&mut call.optional_params);
+    let mut optional_params = take(&mut call.optional_params);
     let model = call.model.filter(|name| !name.is_empty());
     let data = request_data(&call, model, &mut optional_params)?;
     let inputs = client_inputs(&call, model, context)?;
@@ -54,9 +56,9 @@ pub(super) fn prepare(
     Ok(Prepared {
         prompt: call.prompt.to_owned(),
         body_prompt: text_value(&data, "prompt")?.unwrap_or_default(),
-        azure_endpoint: inputs.endpoint.azure_endpoint.clone(),
-        base_url: inputs.endpoint.base_url.clone(),
-        resolved_version: inputs.api_version.clone(),
+        azure_endpoint: inputs.endpoint.azure_endpoint,
+        base_url: inputs.endpoint.base_url,
+        resolved_version: inputs.api_version,
         argument_version: call.api_version.unwrap_or_default().to_owned(),
         deployment: model.map(str::to_owned),
         hidden_model: call.base_model.map(str::to_owned),
@@ -137,6 +139,10 @@ fn request_headers(
     call: &Generation<'_>,
     inputs: &AzureClientInputs<'_>,
 ) -> Result<Vec<(String, String)>, ImageError> {
+    // B529 returns headers that already carry auth before the stored token or the provider is read
+    if carries_auth(&call.headers) {
+        return Ok(call.headers.clone());
+    }
     let token = resolve_token(
         inputs.azure_ad_token.clone(),
         inputs.token_provider.as_ref(),
@@ -156,18 +162,25 @@ fn request_headers(
     .map_err(|failure| ImageError::Classified(ClassifiedError::from(failure)))
 }
 
+// the two header names B529 looks for, matched case-insensitively
+fn carries_auth(headers: &[(String, String)]) -> bool {
+    headers.iter().any(|(name, _)| {
+        name.eq_ignore_ascii_case("api-key") || name.eq_ignore_ascii_case("authorization")
+    })
+}
+
 // B529 resolves the same way, but it takes the provider as a 'static Arc while B531 hands back a borrowed one
 fn resolve_token(
-    token: Option<SecretString>,
+    stored: Option<SecretString>,
     provider: Option<&TokenProvider<'_>>,
 ) -> Result<Option<SecretString>, ClassifiedError> {
-    if let Some(token) = token.filter(|value| !value.expose_secret().is_empty()) {
+    if let Some(token) = stored.filter(|value| !value.expose_secret().is_empty()) {
         return Ok(Some(token));
     }
-    let Some(provider) = provider else {
+    let Some(selected) = provider else {
         return Ok(None);
     };
-    match provider.0.token().map_err(ClassifiedError::from)? {
+    match selected.0.token().map_err(ClassifiedError::from)? {
         TokenReply::Text(token) if !token.expose_secret().is_empty() => Ok(Some(token)),
         TokenReply::Text(_) | TokenReply::NonText { .. } => Ok(None),
     }

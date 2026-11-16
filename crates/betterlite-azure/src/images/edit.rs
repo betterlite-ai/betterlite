@@ -20,15 +20,15 @@ const EDITS_ROUTE: &str = "/openai/images/edits";
 
 // Azure routes an edit by the deployment in the URL, so the form never repeats the model there
 #[must_use]
-pub fn finalize_image_edit_request_data(
+pub fn finalize_edit_data(
     data: &IndexMap<String, Json>,
     request_url: &str,
 ) -> IndexMap<String, Json> {
-    let mut data = data.clone();
+    let mut finalized = data.clone();
     if request_url.contains("images/edits") && request_url.contains(DEPLOYMENTS) {
-        data.shift_remove("model");
+        finalized.shift_remove("model");
     }
-    data
+    finalized
 }
 
 // the litellm_params keys the edit auth reads; the positional api_key fills its key only when unset
@@ -117,11 +117,13 @@ pub fn get_complete_url(request: &EditUrl<'_>) -> Result<String, AzureUrlError> 
     let api_version = request
         .api_version
         .filter(|text| !text.is_empty())
-        .or(request
-            .credentials
-            .api_version
-            .as_deref()
-            .filter(|text| !text.is_empty()))
+        .or_else(|| {
+            request
+                .credentials
+                .api_version
+                .as_deref()
+                .filter(|text| !text.is_empty())
+        })
         .unwrap_or(request.default_api_version);
     if let Some(url) = get_azure_v1_image_url(api_base, Some(api_version), EDITS_ROUTE)? {
         return Ok(url);
