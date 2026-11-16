@@ -12,19 +12,22 @@ use betterlite_config::sections::database_startup::job::{
 };
 use betterlite_config::sections::database_startup::packaged;
 use betterlite_config::sections::database_startup::startup::{
-    StartupSettings, build_request_log_indexes, setup_database,
+    StartupSettings, StartupSwitch, build_request_log_indexes, setup_database,
 };
 use betterlite_config::types::Config;
 use betterlite_db::migration_drift::comparison::SchemaCheck;
 use betterlite_db::migration_recovery::RecoveryError;
-use betterlite_db::request_log_index_catalog::definitions::REQUEST_LOG_INDEXES;
 use betterlite_db::worker_heartbeat::HostnameError;
+use rstest::rstest;
 use secrecy::SecretString;
 use tempfile::NamedTempFile;
 use tokio::task::JoinSet;
 use tracing::subscriber::{DefaultGuard, set_default};
 
-use self::postgres::{NoJitter, ledger_rows, migration, row_count, table_exists, with_schema};
+use self::postgres::{
+    NoJitter, catalog_request_log_indexes, ledger_rows, migration, present_request_log_indexes,
+    row_count, table_exists, with_schema,
+};
 use super::fixtures::{
     BuildAnswer, HeartbeatCall, JobBuild, MigrationAnswer, ScriptedHeartbeat, ScriptedRefresh,
     ScriptedStartup, heartbeat,
@@ -84,12 +87,12 @@ fn fallback_warnings(log: &str) -> usize {
 
 fn pinned() -> StartupSettings {
     StartupSettings {
-        updates_enabled: true,
+        updates_enabled: StartupSwitch(true),
         database_url: Some(SecretString::from(UNUSABLE_URL)),
         direct_url: None,
-        use_v2_migration_resolver: true,
-        use_prisma_db_push: false,
-        set_replica_identity_full: false,
+        use_v2_migration_resolver: StartupSwitch(true),
+        use_prisma_db_push: StartupSwitch(false),
+        set_replica_identity_full: StartupSwitch(false),
         command_timeout: Duration::from_secs(60),
         lock_timeout: Duration::from_secs(600),
         deploy_timeout: Duration::from_secs(600),
@@ -124,95 +127,107 @@ async fn policy_error(answer: MigrationAnswer) -> StartupError {
         .expect("the startup policy fails")
 }
 
+#[rstest]
+#[case::setting_false_beats_enabled_environment(
+    "general_settings:\n  disable_prisma_schema_update: false\n",
+    &[("DISABLE_SCHEMA_UPDATE", "true")],
+    true
+)]
+#[case::setting_true_beats_disabled_environment(
+    "general_settings:\n  disable_prisma_schema_update: true\n",
+    &[("DISABLE_SCHEMA_UPDATE", "false")],
+    false
+)]
+#[case::explicit_null_reads_the_environment(
+    "general_settings:\n  disable_prisma_schema_update: null\n",
+    &[("DISABLE_SCHEMA_UPDATE", "yes")],
+    false
+)]
+#[case::absent_reads_the_environment(
+    "general_settings: {}\n",
+    &[("DISABLE_SCHEMA_UPDATE", "true")],
+    false
+)]
+#[case::nothing_set_enables_updates("general_settings: {}\n", &[], true)]
+#[case::quoted_true_disables_updates(
+    "general_settings:\n  disable_prisma_schema_update: \"TRUE\"\n",
+    &[],
+    false
+)]
 #[tokio::test]
-async fn schema_update_setting_precedence() {
-    let matrix = [
-        (
-            "general_settings:\n  disable_prisma_schema_update: false\n",
-            &[("DISABLE_SCHEMA_UPDATE", "true")][..],
-            true,
-        ),
-        (
-            "general_settings:\n  disable_prisma_schema_update: true\n",
-            &[("DISABLE_SCHEMA_UPDATE", "false")][..],
-            false,
-        ),
-        (
-            "general_settings:\n  disable_prisma_schema_update: null\n",
-            &[("DISABLE_SCHEMA_UPDATE", "yes")][..],
-            false,
-        ),
-        (
-            "general_settings:\n  disable_prisma_schema_update: \"TRUE\"\n",
-            &[][..],
-            false,
-        ),
-        (
-            "general_settings: {}\n",
-            &[("DISABLE_SCHEMA_UPDATE", "true")][..],
-            false,
-        ),
-        ("general_settings: {}\n", &[][..], true),
-    ];
-    for (source, pairs, expected) in matrix {
-        let mut settings = settings_from(source, pairs);
-        assert_eq!(settings.updates_enabled, expected, "{source} {pairs:?}");
-        settings.database_url = Some(SecretString::from(UNUSABLE_URL));
-        let scripted = Arc::new(ScriptedStartup::new());
-        let started = start_scripted(settings, Arc::clone(&scripted))
-            .await
-            .expect("the policy runs");
-        if expected {
-            assert_eq!(&started.outcome, &StartupOutcome::Migrated);
-        } else {
-            assert!(matches!(
-                &started.outcome,
-                StartupOutcome::UpdatesDisabled(_)
-            ));
-        }
-        started.shutdown().await;
-        let calls = if expected {
-            vec!["migrate", "build"]
-        } else {
-            vec!["check"]
-        };
-        assert_eq!(scripted.calls(), calls, "{source} {pairs:?}");
+async fn schema_update_setting_precedence(
+    #[case] source: &str,
+    #[case] pairs: &[(&str, &str)],
+    #[case] updates_enabled: bool,
+) {
+    let mut settings = settings_from(source, pairs);
+    assert_eq!(
+        settings.updates_enabled.0, updates_enabled,
+        "{source} {pairs:?}"
+    );
+    settings.database_url = Some(SecretString::from(UNUSABLE_URL));
+    let scripted = Arc::new(ScriptedStartup::new());
+    let started = start_scripted(settings, Arc::clone(&scripted))
+        .await
+        .expect("the policy runs");
+    if updates_enabled {
+        assert_eq!(&started.outcome, &StartupOutcome::Migrated);
+    } else {
+        assert!(matches!(
+            &started.outcome,
+            StartupOutcome::UpdatesDisabled(_)
+        ));
     }
+    started.shutdown().await;
+    let calls = if updates_enabled {
+        vec!["migrate", "build"]
+    } else {
+        vec!["check"]
+    };
+    assert_eq!(
+        scripted.calls.lock().expect("calls").clone(),
+        calls,
+        "{source} {pairs:?}"
+    );
 }
 
+#[rstest]
+#[case::text("abc")]
+#[case::zero("0")]
+#[case::negative("-5")]
+#[case::infinite("inf")]
+#[case::not_a_number("NaN")]
 #[tokio::test]
-async fn invalid_timeout_warning() {
-    for invalid in ["abc", "0", "-5", "inf", "NaN"] {
-        let (settings, log) = logged(|| {
-            settings_from(
-                "general_settings: {}\n",
-                &[
-                    ("LITELLM_PRISMA_COMMAND_TIMEOUT", invalid),
-                    ("LITELLM_MIGRATION_LOCK_TIMEOUT", invalid),
-                    ("LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT", invalid),
-                ],
-            )
-        });
-        assert_eq!(
-            settings.command_timeout,
-            Duration::from_secs(60),
-            "{invalid}"
-        );
-        assert_eq!(settings.lock_timeout, Duration::from_secs(600), "{invalid}");
-        assert_eq!(
-            settings.deploy_timeout,
-            Duration::from_secs(600),
-            "{invalid}"
-        );
-        assert_eq!(fallback_warnings(&log), 3, "warnings for {invalid}");
-        for name in [
-            "LITELLM_PRISMA_COMMAND_TIMEOUT",
-            "LITELLM_MIGRATION_LOCK_TIMEOUT",
-            "LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT",
-        ] {
-            assert!(log.contains(name), "the warning names {name}: {log}");
-        }
-    }
+async fn invalid_timeout_warning(#[case] invalid: &str) {
+    let (settings, log) = logged(|| {
+        settings_from(
+            "general_settings: {}\n",
+            &[
+                ("LITELLM_PRISMA_COMMAND_TIMEOUT", invalid),
+                ("LITELLM_MIGRATION_LOCK_TIMEOUT", invalid),
+                ("LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT", invalid),
+            ],
+        )
+    });
+    assert_eq!(
+        settings.command_timeout,
+        Duration::from_secs(60),
+        "{invalid}"
+    );
+    assert_eq!(settings.lock_timeout, Duration::from_secs(600), "{invalid}");
+    assert_eq!(
+        settings.deploy_timeout,
+        Duration::from_secs(600),
+        "{invalid}"
+    );
+    // the migration_ledger section reads the same three variables, so each unusable value warns twice
+    assert_eq!(fallback_warnings(&log), 6, "warnings for {invalid}");
+    assert!(log.contains("LITELLM_PRISMA_COMMAND_TIMEOUT"), "{log}");
+    assert!(log.contains("LITELLM_MIGRATION_LOCK_TIMEOUT"), "{log}");
+    assert!(
+        log.contains("LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT"),
+        "{log}"
+    );
 }
 
 #[tokio::test]
@@ -244,7 +259,8 @@ async fn deploy_timeout_precedence() {
     });
     // an unusable deploy value never inherits the command budget, unlike an absent one
     assert_eq!(invalid_deploy.deploy_timeout, Duration::from_secs(600));
-    assert_eq!(fallback_warnings(&log), 1);
+    // the migration_ledger section reads the deploy variable too, so the warning appears twice
+    assert_eq!(fallback_warnings(&log), 2);
 }
 
 #[tokio::test]
@@ -259,15 +275,13 @@ async fn obsolete_bootstrap_warning() {
     let (settings, log) = logged(|| settings_from("general_settings: {}\n", &pairs));
     assert_eq!(settings.bootstrap_inputs.len(), 5);
     assert_eq!(log.matches("accepted but have no effect").count(), 1);
-    for name in [
-        "PRISMA_OFFLINE_MODE",
-        "PRISMA_CLI_PATH",
-        "PRISMA_NODEENV_CACHE_DIR",
-        "LITELLM_PRISMA_BOOTSTRAP_TIMEOUT",
-        "LITELLM_MIGRATION_DIR",
-    ] {
-        assert!(log.contains(name), "the warning names {name}: {log}");
-    }
+    assert!(
+        log.contains(
+            "PRISMA_OFFLINE_MODE, PRISMA_CLI_PATH, PRISMA_NODEENV_CACHE_DIR, \
+             LITELLM_PRISMA_BOOTSTRAP_TIMEOUT, LITELLM_MIGRATION_DIR"
+        ),
+        "the one warning names every accepted input: {log}"
+    );
 }
 
 #[tokio::test]
@@ -289,7 +303,7 @@ async fn native_prisma_bootstrap_variables_and_litellm_migration_dir_are_accepte
     });
     assert_eq!(settings.bootstrap_inputs.len(), 5);
     assert_eq!(log.matches("accepted but have no effect").count(), 1);
-    assert!(!settings.updates_enabled);
+    assert!(!settings.updates_enabled.0);
     assert!(settings.direct_url.is_some());
     // the obsolete inputs change no setting and start no Node toolchain: the schema check alone runs
     let startup = NativeStartup::packaged(settings.clone()).expect("the native startup builds");
@@ -314,7 +328,7 @@ async fn native_prisma_bootstrap_variables_and_litellm_migration_dir_are_accepte
 #[tokio::test]
 async fn disabled_updates_warn_only() {
     let settings = StartupSettings {
-        updates_enabled: false,
+        updates_enabled: StartupSwitch(false),
         ..pinned()
     };
     let startup = NativeStartup::packaged(settings.clone()).expect("the native startup builds");
@@ -362,7 +376,7 @@ async fn startup_migration_failure() {
     );
     assert!(std::error::Error::source(&error).is_some());
     // a failed migration schedules no request-log index build
-    assert_eq!(scripted.calls(), vec!["migrate"]);
+    assert_eq!(*scripted.calls.lock().expect("calls"), vec!["migrate"]);
 }
 
 #[tokio::test]
@@ -387,7 +401,7 @@ async fn migration_exit_codes() {
 #[tokio::test]
 async fn db_push_is_refused_before_connecting() {
     let push = StartupSettings {
-        use_prisma_db_push: true,
+        use_prisma_db_push: StartupSwitch(true),
         ..pinned()
     };
     let error = setup_database(&push, &[], packaged::SCHEMA_PRISMA, &NoJitter)
@@ -439,13 +453,13 @@ async fn heartbeat_beats_immediately_and_deregisters_on_stop() {
     let task = HeartbeatTask::start(Arc::new(heartbeat("worker-a")), Arc::clone(&fake)).await;
     tokio::task::yield_now().await;
     assert_eq!(
-        fake.calls(),
+        *fake.calls.lock().expect("calls"),
         vec![HeartbeatCall::Upsert, HeartbeatCall::Prune]
     );
     tokio::time::advance(Duration::from_secs(60)).await;
     tokio::task::yield_now().await;
     assert_eq!(
-        fake.calls(),
+        *fake.calls.lock().expect("calls"),
         vec![
             HeartbeatCall::Upsert,
             HeartbeatCall::Prune,
@@ -454,7 +468,10 @@ async fn heartbeat_beats_immediately_and_deregisters_on_stop() {
         ]
     );
     task.stop().await.expect("the heartbeat task stops");
-    assert_eq!(fake.calls().last(), Some(&HeartbeatCall::Deregister));
+    assert_eq!(
+        fake.calls.lock().expect("calls").last(),
+        Some(&HeartbeatCall::Deregister)
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -473,7 +490,10 @@ async fn shutdown_drains() {
         .await
         .expect("startup returns without the background build");
     tokio::task::yield_now().await;
-    assert_eq!(scripted.calls(), vec!["migrate", "build"]);
+    assert_eq!(
+        *scripted.calls.lock().expect("calls"),
+        vec!["migrate", "build"]
+    );
     assert!(!finished.load(Ordering::SeqCst));
 
     let refresh = Arc::new(ScriptedRefresh::default());
@@ -504,33 +524,34 @@ async fn shutdown_drains() {
     );
     assert!(refresh.stopped.load(Ordering::SeqCst));
     assert_eq!(
-        fake_heartbeat.calls().last(),
+        fake_heartbeat.calls.lock().expect("calls").last(),
         Some(&HeartbeatCall::Deregister)
     );
 }
 
+#[rstest]
+#[case::without_any_url(None)]
+#[case::with_only_a_direct_url(Some(UNUSABLE_URL))]
 #[tokio::test]
-async fn native_database_reports_no_database_without_a_url() {
+async fn native_database_reports_no_database_without_a_url(#[case] direct_url: Option<&str>) {
     // proxy_server builds prisma_client only from DATABASE_URL, so a lone DIRECT_URL is no database
-    for direct_url in [None, Some(SecretString::from(UNUSABLE_URL))] {
-        let settings = StartupSettings {
-            database_url: None,
-            direct_url,
-            ..pinned()
-        };
-        let scripted = Arc::new(ScriptedStartup::new());
-        let database =
-            NativeDatabase::<ScriptedStartup>::with_startup(Arc::clone(&scripted), settings, None);
-        let running = database.start().await.expect("a database-less startup");
-        assert!(!running.state.configured);
-        assert_eq!(
-            running.startup.as_ref().map(|startup| &startup.outcome),
-            Some(&StartupOutcome::NoDatabase)
-        );
-        assert!(running.pool.is_none());
-        running.shutdown().await;
-        assert!(scripted.calls().is_empty());
-    }
+    let settings = StartupSettings {
+        database_url: None,
+        direct_url: direct_url.map(SecretString::from),
+        ..pinned()
+    };
+    let scripted = Arc::new(ScriptedStartup::new());
+    let database =
+        NativeDatabase::<ScriptedStartup>::with_startup(Arc::clone(&scripted), settings, None);
+    let running = database.start().await.expect("a database-less startup");
+    assert!(!running.state.configured);
+    assert_eq!(
+        running.startup.as_ref().map(|startup| &startup.outcome),
+        Some(&StartupOutcome::NoDatabase)
+    );
+    assert!(running.pool.is_none());
+    running.shutdown().await;
+    assert!(scripted.calls.lock().expect("calls").is_empty());
 }
 
 #[tokio::test]
@@ -546,7 +567,10 @@ async fn native_database_with_a_url_is_configured() {
     assert!(matches!(error, StartupError::Pool { .. }), "{error}");
     assert_eq!(error.exit_code(), 1);
     // the configured state ran the migration before the pool failed
-    assert_eq!(scripted.calls().first(), Some(&"migrate"));
+    assert_eq!(
+        scripted.calls.lock().expect("calls").first(),
+        Some(&"migrate")
+    );
 }
 
 #[tokio::test]
@@ -584,18 +608,18 @@ async fn existing_schema_no_rewrite() {
 async fn migration_job_waits() {
     with_schema(|database| async move {
         let build = JobBuild::waiting();
-        let started = Arc::clone(&build.started);
-        let finished = Arc::clone(&build.finished);
-        let release = Arc::clone(&build.release);
+        let started = Arc::clone(&build.signals.started);
+        let finished = Arc::clone(&build.signals.finished);
+        let release = Arc::clone(&build.signals.release);
         let catalog = [migration(
             "20260101000000_b051_job",
             "CREATE TABLE \"B051_Job\" (id integer);",
         )];
+        let job_catalog = catalog.clone();
         let mut tasks = JoinSet::new();
         let job_database = database.clone();
         tasks.spawn(async move {
             let settings = job_database.settings();
-            let job_catalog = catalog.clone();
             run_migration_job(
                 &settings,
                 &job_catalog,
@@ -654,13 +678,29 @@ async fn postgres_pinned_rows() {
         .expect("the packaged migrations apply");
         let catalog = packaged::migrations();
         let rows = ledger_rows(&database).await;
-        assert_eq!(rows.len(), catalog.len());
-        for (row, pinned) in rows.iter().zip(catalog.iter()) {
-            assert_eq!(row.name, pinned.name);
-            assert_eq!(row.checksum, pinned.checksum);
-            assert!(row.finished, "{} is finished", pinned.name);
-            assert!(!row.rolled_back, "{} is not rolled back", pinned.name);
-        }
+        let ledger: Vec<(String, String, bool, bool)> = rows
+            .iter()
+            .map(|row| {
+                (
+                    row.name.clone(),
+                    row.checksum.clone(),
+                    row.finished,
+                    row.rolled_back,
+                )
+            })
+            .collect();
+        let pinned: Vec<(String, String, bool, bool)> = catalog
+            .iter()
+            .map(|migration| {
+                (
+                    migration.name.clone(),
+                    migration.checksum.clone(),
+                    true,
+                    false,
+                )
+            })
+            .collect();
+        assert_eq!(ledger, pinned, "the ledger records every packaged migration");
 
         let client = database.pool.get().await.expect("a fixture connection");
         client
@@ -682,18 +722,11 @@ async fn postgres_pinned_rows() {
         assert_eq!(row_count(&database, "LiteLLM_SpendLogs").await, 1);
 
         assert!(build_request_log_indexes(&settings).await);
-        for index in REQUEST_LOG_INDEXES {
-            let name = index.name.to_owned();
-            let exists: bool = client
-                .query_one(
-                    "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = $1 AND indexname = $2)",
-                    &[&database.schema, &name],
-                )
-                .await
-                .expect("the index catalog reads")
-                .get(0);
-            assert!(exists, "the build created {name}");
-        }
+        assert_eq!(
+            present_request_log_indexes(&database).await,
+            catalog_request_log_indexes(),
+            "the build created every request-log index"
+        );
 
         let replica_identity: String = client
             .query_one(
@@ -707,7 +740,7 @@ async fn postgres_pinned_rows() {
             .get(0);
         assert_eq!(replica_identity, "d");
         let mut full_identity = settings;
-        full_identity.set_replica_identity_full = true;
+        full_identity.set_replica_identity_full = StartupSwitch(true);
         setup_database(
             &full_identity,
             &packaged::migrations(),
@@ -792,7 +825,8 @@ async fn postgres_failure_effects() {
 }
 
 #[tokio::test]
-async fn native_betterlite_db_admin_migrate_replaces_python_migrations_run_py_and_pris() {
+async fn native_betterlite_db_admin_migrate_replaces_python_migrations_run_py_and_prisma_migration()
+{
     with_schema(|database| async move {
         let mut settings = database.settings();
         settings.bootstrap_inputs = vec!["PRISMA_OFFLINE_MODE", "LITELLM_MIGRATION_DIR"];
@@ -813,19 +847,11 @@ async fn native_betterlite_db_admin_migrate_replaces_python_migrations_run_py_an
         assert_eq!(rows.len(), packaged::migrations().len());
         assert!(rows.iter().all(|row| row.finished && !row.rolled_back));
 
-        let client = database.pool.get().await.expect("a fixture connection");
-        for index in REQUEST_LOG_INDEXES {
-            let name = index.name.to_owned();
-            let exists: bool = client
-                .query_one(
-                    "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = $1 AND indexname = $2)",
-                    &[&database.schema, &name],
-                )
-                .await
-                .expect("the index catalog reads")
-                .get(0);
-            assert!(exists, "the migration job built {name}");
-        }
+        assert_eq!(
+            present_request_log_indexes(&database).await,
+            catalog_request_log_indexes(),
+            "the migration job built every request-log index"
+        );
 
         // a failed index build reports the index-job exit instead of reverting the migrations
         let failing = JobBuild::immediate(false);

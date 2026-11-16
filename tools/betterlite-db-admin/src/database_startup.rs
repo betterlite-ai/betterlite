@@ -2,7 +2,7 @@ use betterlite_config::sections::database_startup::job::{
     JobOutcome, RequestLogIndexBuild, run_migration_job,
 };
 use betterlite_config::sections::database_startup::packaged;
-use betterlite_config::sections::database_startup::startup::StartupSettings;
+use betterlite_config::sections::database_startup::startup::{StartupSettings, StartupSwitch};
 use betterlite_db::migration_ledger::lock::SystemJitter;
 use betterlite_db::migration_recovery::RecoveryError;
 use betterlite_db_admin::command_shell::{DbAdminFuture, DbAdminService, ResolvedConfig};
@@ -24,8 +24,8 @@ impl DbAdminService for DatabaseStartupService {
             };
             let mut settings = StartupSettings::from_config(&config.settings);
             settings.database_url = Some(config.database_url);
-            settings.use_prisma_db_push = !options.use_migrate;
-            settings.use_v2_migration_resolver = options.use_v2_resolver;
+            settings.use_prisma_db_push = StartupSwitch(!options.use_migrate);
+            settings.use_v2_migration_resolver = StartupSwitch(options.use_v2_resolver);
             let jitter = SystemJitter::try_new()
                 .map_err(|source| MigrationError::Recovery(RecoveryError::from(source)))?;
             let build = RequestLogIndexBuild {

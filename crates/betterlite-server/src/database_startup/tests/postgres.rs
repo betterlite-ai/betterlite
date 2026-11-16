@@ -1,9 +1,10 @@
 use std::future::Future;
 use std::time::Duration;
 
-use betterlite_config::sections::database_startup::startup::StartupSettings;
+use betterlite_config::sections::database_startup::startup::{StartupSettings, StartupSwitch};
 use betterlite_db::migration_deploy::catalog::Migration;
 use betterlite_db::migration_ledger::lock::JitterSource;
+use betterlite_db::request_log_index_catalog::definitions::REQUEST_LOG_INDEXES;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
@@ -11,6 +12,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
+use tokio_postgres::types::{FromSql, ToSql};
 use tokio_postgres::{Config, NoTls};
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(240);
@@ -43,16 +45,16 @@ pub(crate) struct SchemaDatabase {
 impl SchemaDatabase {
     pub(crate) fn settings(&self) -> StartupSettings {
         StartupSettings {
-            updates_enabled: true,
+            updates_enabled: StartupSwitch(true),
             database_url: Some(SecretString::from(format!(
                 "{}&schema={}",
                 self.url.expose_secret(),
                 self.schema
             ))),
             direct_url: None,
-            use_v2_migration_resolver: true,
-            use_prisma_db_push: false,
-            set_replica_identity_full: false,
+            use_v2_migration_resolver: StartupSwitch(true),
+            use_prisma_db_push: StartupSwitch(false),
+            set_replica_identity_full: StartupSwitch(false),
             command_timeout: COMMAND_TIMEOUT,
             lock_timeout: LOCK_TIMEOUT,
             deploy_timeout: DEPLOY_TIMEOUT,
@@ -124,11 +126,57 @@ pub(crate) fn migration(name: &str, sql: &str) -> Migration {
     }
 }
 
+// The schema-qualified name a fixture query addresses, with the quoting PostgreSQL needs.
+fn qualified(database: &SchemaDatabase, name: &str) -> String {
+    format!("\"{}\".\"{name}\"", database.schema.replace('"', "\"\""))
+}
+
+async fn scalar<T>(database: &SchemaDatabase, statement: &str, params: &[&(dyn ToSql + Sync)]) -> T
+where
+    T: for<'row> FromSql<'row>,
+{
+    database
+        .pool
+        .get()
+        .await
+        .expect("a fixture connection")
+        .query_one(statement, params)
+        .await
+        .expect("the scalar query runs")
+        .get(0)
+}
+
+// The request-log indexes the catalog promises, sorted so a missing one shows in the diff.
+pub(crate) fn catalog_request_log_indexes() -> Vec<String> {
+    let mut names: Vec<String> = REQUEST_LOG_INDEXES
+        .iter()
+        .map(|index| index.name.to_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+// The request-log indexes this schema actually carries, sorted to compare against the catalog.
+pub(crate) async fn present_request_log_indexes(database: &SchemaDatabase) -> Vec<String> {
+    let names: Vec<&str> = REQUEST_LOG_INDEXES.iter().map(|index| index.name).collect();
+    let client = database.pool.get().await.expect("a fixture connection");
+    let mut present: Vec<String> = client
+        .query(
+            "SELECT indexname::text FROM pg_indexes \
+             WHERE schemaname = $1 AND indexname::text = ANY($2)",
+            &[&database.schema, &names],
+        )
+        .await
+        .expect("the index catalog reads")
+        .iter()
+        .map(|row| row.get(0))
+        .collect();
+    present.sort();
+    present
+}
+
 pub(crate) async fn ledger_rows(database: &SchemaDatabase) -> Vec<LedgerRow> {
-    let table = format!(
-        "\"{}\".\"_prisma_migrations\"",
-        database.schema.replace('"', "\"\"")
-    );
+    let table = qualified(database, "_prisma_migrations");
     let client = database.pool.get().await.expect("a fixture connection");
     let rows = client
         .query(
@@ -152,21 +200,11 @@ pub(crate) async fn ledger_rows(database: &SchemaDatabase) -> Vec<LedgerRow> {
 }
 
 pub(crate) async fn table_exists(database: &SchemaDatabase, name: &str) -> bool {
-    let table = format!("\"{}\".\"{name}\"", database.schema.replace('"', "\"\""));
-    let client = database.pool.get().await.expect("a fixture connection");
-    client
-        .query_one("SELECT to_regclass($1) IS NOT NULL", &[&table])
-        .await
-        .expect("the table lookup runs")
-        .get(0)
+    let table = qualified(database, name);
+    scalar(database, "SELECT to_regclass($1) IS NOT NULL", &[&table]).await
 }
 
 pub(crate) async fn row_count(database: &SchemaDatabase, table: &str) -> i64 {
-    let qualified = format!("\"{}\".\"{table}\"", database.schema.replace('"', "\"\""));
-    let client = database.pool.get().await.expect("a fixture connection");
-    client
-        .query_one(&format!("SELECT count(*) FROM {qualified}"), &[])
-        .await
-        .expect("the row count reads")
-        .get(0)
+    let target = qualified(database, table);
+    scalar(database, &format!("SELECT count(*) FROM {target}"), &[]).await
 }

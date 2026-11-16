@@ -5,6 +5,7 @@ use betterlite_db::migration_ledger::timeouts::{
     MIGRATION_LOCK_TIMEOUT_ENV_VAR, PRISMA_COMMAND_TIMEOUT_ENV_VAR, PRISMA_DEPLOY_TIMEOUT_ENV_VAR,
     prisma_migrate_deploy_timeout, timeout_from_env,
 };
+use betterlite_db::migration_recovery::extras_boolean;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -50,7 +51,7 @@ struct RawGeneralSettings {
 enum RawDisable {
     Boolean(bool),
     Text(String),
-    Other(serde::de::IgnoredAny),
+    Other(IgnoredAny),
 }
 
 #[derive(Debug, Clone)]
@@ -113,13 +114,14 @@ where
 {
     match raw {
         // the pinned default is the environment's "false" when nothing sets the key
-        None => environment_disable(lookup),
+        None => disable_from(&[DISABLE_SCHEMA_UPDATE_ENV_VAR], lookup),
         Some(RawDisable::Boolean(disable)) => Ok(disable),
-        // LiteLLM's str_to_bool reads only true and false, and every other literal string enables updates
-        Some(RawDisable::Text(text)) => match text.strip_prefix(ENV_PREFIX) {
-            Some(variable) => referenced_disable(variable, lookup),
-            None => Ok(text.trim().eq_ignore_ascii_case("true")),
-        },
+        // LiteLLM's str_to_bool reads the literal value, and every word it doesn't read leaves updates enabled
+        Some(RawDisable::Text(text)) => text.strip_prefix(ENV_PREFIX).map_or_else(
+            || Ok(extras_boolean(Some(text.as_str()))),
+            // an unset or empty reference behaves like an absent key and reads DISABLE_SCHEMA_UPDATE
+            |variable| disable_from(&[variable, DISABLE_SCHEMA_UPDATE_ENV_VAR], lookup),
+        ),
         Some(RawDisable::Other(_)) => Err(ConfigError::InvalidScalar {
             path: DISABLE_SCHEMA_UPDATE_PATH.to_owned(),
             value: false,
@@ -127,22 +129,13 @@ where
     }
 }
 
-fn environment_disable<L>(lookup: &L) -> Result<bool, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let text = lookup
-        .lookup(DISABLE_SCHEMA_UPDATE_ENV_VAR)
-        .unwrap_or_default();
+fn disable_from(names: &[&str], lookup: &dyn EnvironmentLookup) -> Result<bool, ConfigError> {
+    for name in names {
+        let text = lookup.lookup(name).unwrap_or_default();
+        if let Some(disable) = betterlite_env::flag(name, &text)? {
+            return Ok(disable);
+        }
+    }
     // an unset or empty variable is the pinned "false" default
-    Ok(betterlite_env::flag(DISABLE_SCHEMA_UPDATE_ENV_VAR, &text)?.unwrap_or(false))
-}
-
-fn referenced_disable<L>(variable: &str, lookup: &L) -> Result<bool, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let text = lookup.lookup(variable).unwrap_or_default();
-    // an unset or empty reference behaves like an absent key and reads DISABLE_SCHEMA_UPDATE
-    betterlite_env::flag(variable, &text)?.map_or_else(|| environment_disable(lookup), Ok)
+    Ok(false)
 }

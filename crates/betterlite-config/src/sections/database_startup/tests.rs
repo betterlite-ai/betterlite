@@ -5,6 +5,7 @@ use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use tempfile::NamedTempFile;
 use tracing::subscriber::with_default;
@@ -77,7 +78,7 @@ fn loads_settings() {
     assert_eq!(settings.bootstrap_inputs, IGNORED_BOOTSTRAP_INPUTS.to_vec());
 
     let startup = StartupSettings::from_config(&loaded);
-    assert!(startup.updates_enabled);
+    assert!(startup.updates_enabled.0);
     assert_eq!(
         startup.database_url.as_ref().map(|url| url.expose_secret()),
         Some("postgresql://writer/db?schema=tenant")
@@ -86,17 +87,82 @@ fn loads_settings() {
         startup.direct_url.as_ref().map(|url| url.expose_secret()),
         Some("postgresql://direct/db")
     );
-    assert!(!startup.use_v2_migration_resolver);
-    assert!(startup.use_prisma_db_push);
-    assert!(startup.set_replica_identity_full);
+    assert!(!startup.use_v2_migration_resolver.0);
+    assert!(startup.use_prisma_db_push.0);
+    assert!(startup.set_replica_identity_full.0);
     assert_eq!(startup.command_timeout, Duration::from_secs(90));
     assert_eq!(startup.lock_timeout, Duration::from_secs(450));
     assert_eq!(startup.deploy_timeout, Duration::from_secs(1200));
     assert_eq!(startup.bootstrap_inputs, IGNORED_BOOTSTRAP_INPUTS.to_vec());
 }
 
-#[test]
-fn defaults_and_precedence() {
+#[rstest]
+#[case::setting_false_beats_enabled_environment(
+    "general_settings:\n  disable_prisma_schema_update: false\n",
+    &[("DISABLE_SCHEMA_UPDATE", "true")],
+    true
+)]
+#[case::setting_true_beats_disabled_environment(
+    "general_settings:\n  disable_prisma_schema_update: true\n",
+    &[("DISABLE_SCHEMA_UPDATE", "false")],
+    false
+)]
+#[case::explicit_null_reads_the_environment(
+    "general_settings:\n  disable_prisma_schema_update: null\n",
+    &[("DISABLE_SCHEMA_UPDATE", "yes")],
+    false
+)]
+#[case::absent_reads_the_environment(
+    "general_settings: {}\n",
+    &[("DISABLE_SCHEMA_UPDATE", "true")],
+    false
+)]
+#[case::nothing_set_enables_updates("general_settings: {}\n", &[], true)]
+#[case::quoted_true_disables_updates(
+    "general_settings:\n  disable_prisma_schema_update: \"TRUE\"\n",
+    &[],
+    false
+)]
+#[case::quoted_yes_disables_updates(
+    "general_settings:\n  disable_prisma_schema_update: \"yes\"\n",
+    &[],
+    false
+)]
+#[case::literal_on_is_not_true(
+    "general_settings:\n  disable_prisma_schema_update: \"on\"\n",
+    &[],
+    true
+)]
+#[case::literal_unreadable_text_enables_updates(
+    "general_settings:\n  disable_prisma_schema_update: \"maybe\"\n",
+    &[],
+    true
+)]
+#[case::environment_on_is_true(
+    "general_settings: {}\n",
+    &[("DISABLE_SCHEMA_UPDATE", "on")],
+    false
+)]
+#[case::referenced_setting_reads_its_variable(
+    "general_settings:\n  disable_prisma_schema_update: \"os.environ/SCHEMA_UPDATES_OFF\"\n",
+    &[("SCHEMA_UPDATES_OFF", "1")],
+    false
+)]
+#[case::reference_without_a_value_reads_the_setting_variable(
+    "general_settings:\n  disable_prisma_schema_update: \"os.environ/SCHEMA_UPDATES_OFF\"\n",
+    &[("DISABLE_SCHEMA_UPDATE", "true")],
+    false
+)]
+#[case::unset_reference_enables_updates(
+    "general_settings:\n  disable_prisma_schema_update: \"os.environ/SCHEMA_UPDATES_OFF\"\n",
+    &[],
+    true
+)]
+fn defaults_and_precedence(
+    #[case] source: &str,
+    #[case] pairs: &[(&str, &str)],
+    #[case] updates_enabled: bool,
+) {
     let defaults = config("general_settings: {}\n", &[])
         .sections
         .database_startup;
@@ -106,6 +172,15 @@ fn defaults_and_precedence() {
     assert_eq!(defaults.deploy_timeout, Duration::from_secs(600));
     assert!(defaults.bootstrap_inputs.is_empty());
 
+    let loaded = config(source, pairs).sections.database_startup;
+    assert_eq!(
+        loaded.updates_enabled, updates_enabled,
+        "{source} with {pairs:?}"
+    );
+}
+
+#[test]
+fn timeout_defaults_and_precedence() {
     let empty_environment = environment(&[("DISABLE_SCHEMA_UPDATE", "")]);
     let loaded = ConfigLoader {
         lookup: empty_environment,
@@ -115,53 +190,6 @@ fn defaults_and_precedence() {
     .sections
     .database_startup;
     assert!(loaded.updates_enabled);
-
-    let settings_overrides_environment = [
-        (
-            "general_settings:\n  disable_prisma_schema_update: false\n",
-            &[("DISABLE_SCHEMA_UPDATE", "true")][..],
-            true,
-        ),
-        (
-            "general_settings:\n  disable_prisma_schema_update: true\n",
-            &[("DISABLE_SCHEMA_UPDATE", "false")][..],
-            false,
-        ),
-        (
-            "general_settings:\n  disable_prisma_schema_update: null\n",
-            &[("DISABLE_SCHEMA_UPDATE", "yes")][..],
-            false,
-        ),
-        (
-            "general_settings:\n  disable_prisma_schema_update: \"TRUE\"\n",
-            &[][..],
-            false,
-        ),
-        (
-            "general_settings:\n  disable_prisma_schema_update: \"os.environ/SCHEMA_UPDATES_OFF\"\n",
-            &[("SCHEMA_UPDATES_OFF", "1")][..],
-            false,
-        ),
-        (
-            "general_settings:\n  disable_prisma_schema_update: \"os.environ/SCHEMA_UPDATES_OFF\"\n",
-            &[][..],
-            true,
-        ),
-        (
-            "general_settings:\n  disable_prisma_schema_update: \"os.environ/SCHEMA_UPDATES_OFF\"\n",
-            &[("DISABLE_SCHEMA_UPDATE", "true")][..],
-            false,
-        ),
-        (
-            "general_settings:\n  disable_prisma_schema_update: \"yes\"\n",
-            &[][..],
-            true,
-        ),
-    ];
-    for (source, pairs, expected) in settings_overrides_environment {
-        let loaded = config(source, pairs).sections.database_startup;
-        assert_eq!(loaded.updates_enabled, expected, "{source} with {pairs:?}");
-    }
 
     let inherited = config(
         "general_settings: {}\n",
@@ -208,49 +236,56 @@ fn defaults_and_precedence() {
     });
     // an unusable deploy value never inherits the command budget, unlike an absent one
     assert_eq!(invalid_deploy.deploy_timeout, Duration::from_secs(600));
-    assert_eq!(fallback_warnings(&log), 1);
+    // the migration_ledger section reads the deploy variable too, so the warning appears twice
+    assert_eq!(fallback_warnings(&log), 2);
+}
+
+#[rstest]
+#[case::text("abc")]
+#[case::zero("0")]
+#[case::negative("-5")]
+#[case::infinite("inf")]
+#[case::not_a_number("NaN")]
+fn invalid_value_fallback(#[case] invalid: &str) {
+    let (settings, log) = logged(|| {
+        config(
+            "general_settings: {}\n",
+            &[
+                ("LITELLM_PRISMA_COMMAND_TIMEOUT", invalid),
+                ("LITELLM_MIGRATION_LOCK_TIMEOUT", invalid),
+                ("LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT", invalid),
+            ],
+        )
+        .sections
+        .database_startup
+    });
+    assert_eq!(
+        settings.command_timeout,
+        Duration::from_secs(60),
+        "command timeout for {invalid}"
+    );
+    assert_eq!(
+        settings.lock_timeout,
+        Duration::from_secs(600),
+        "lock timeout for {invalid}"
+    );
+    assert_eq!(
+        settings.deploy_timeout,
+        Duration::from_secs(600),
+        "deploy timeout for {invalid}"
+    );
+    // the migration_ledger section reads the same three variables, so each unusable value warns twice
+    assert_eq!(fallback_warnings(&log), 6, "warnings for {invalid}");
+    assert!(log.contains("LITELLM_PRISMA_COMMAND_TIMEOUT"), "{log}");
+    assert!(log.contains("LITELLM_MIGRATION_LOCK_TIMEOUT"), "{log}");
+    assert!(
+        log.contains("LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT"),
+        "{log}"
+    );
 }
 
 #[test]
-fn invalid_value_fallback() {
-    for invalid in ["abc", "0", "-5", "inf", "NaN"] {
-        let (settings, log) = logged(|| {
-            config(
-                "general_settings: {}\n",
-                &[
-                    ("LITELLM_PRISMA_COMMAND_TIMEOUT", invalid),
-                    ("LITELLM_MIGRATION_LOCK_TIMEOUT", invalid),
-                    ("LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT", invalid),
-                ],
-            )
-            .sections
-            .database_startup
-        });
-        assert_eq!(
-            settings.command_timeout,
-            Duration::from_secs(60),
-            "command timeout for {invalid}"
-        );
-        assert_eq!(
-            settings.lock_timeout,
-            Duration::from_secs(600),
-            "lock timeout for {invalid}"
-        );
-        assert_eq!(
-            settings.deploy_timeout,
-            Duration::from_secs(600),
-            "deploy timeout for {invalid}"
-        );
-        assert_eq!(fallback_warnings(&log), 3, "warnings for {invalid}");
-        for name in [
-            "LITELLM_PRISMA_COMMAND_TIMEOUT",
-            "LITELLM_MIGRATION_LOCK_TIMEOUT",
-            "LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT",
-        ] {
-            assert!(log.contains(name), "the warning names {name}: {log}");
-        }
-    }
-
+fn invalid_values_name_their_source() {
     let (inherited, log) = logged(|| {
         config(
             "general_settings: {}\n",
@@ -260,7 +295,8 @@ fn invalid_value_fallback() {
         .database_startup
     });
     assert_eq!(inherited.deploy_timeout, Duration::from_secs(600));
-    assert_eq!(fallback_warnings(&log), 2);
+    // the deploy read inherits the command budget, so an unusable command warns twice per section
+    assert_eq!(fallback_warnings(&log), 4);
 
     let error = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),

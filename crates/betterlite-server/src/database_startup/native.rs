@@ -69,8 +69,11 @@ impl NativeDatabase<NativeStartup> {
         settings: StartupSettings,
         refresh: Option<Arc<dyn CredentialRefresh>>,
     ) -> Result<Self, LockError> {
-        let startup = NativeStartup::packaged(settings.clone())?;
-        Ok(Self::with_startup(Arc::new(startup), settings, refresh))
+        Ok(Self::with_startup(
+            Arc::new(NativeStartup::packaged(settings.clone())?),
+            settings,
+            refresh,
+        ))
     }
 }
 
@@ -97,8 +100,9 @@ where
     }
 
     pub async fn start(&self) -> Result<Running, StartupError> {
+        let database: Arc<dyn StartupDatabase> = Arc::clone(&self.startup);
         let serving = ServingStartup {
-            database: Arc::clone(&self.startup),
+            database,
             settings: Arc::clone(&self.settings),
             state: self.state,
         };

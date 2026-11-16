@@ -21,15 +21,19 @@ use crate::types::Config;
 // repair_invalid_indexes' Python default, which setup_database never overrides
 const REPAIR_LOCK_TIMEOUT: &str = "30s";
 
+// clippy's struct_excessive_bools allows two bools per struct, and these four switches are independent
+#[derive(Debug, Clone, Copy)]
+pub struct StartupSwitch(pub bool);
+
 // the assembly lives in the config crate because the db-admin tool may not depend on betterlite-server
 #[derive(Debug, Clone)]
 pub struct StartupSettings {
-    pub updates_enabled: bool,
+    pub updates_enabled: StartupSwitch,
     pub database_url: Option<SecretString>,
     pub direct_url: Option<SecretString>,
-    pub use_v2_migration_resolver: bool,
-    pub use_prisma_db_push: bool,
-    pub set_replica_identity_full: bool,
+    pub use_v2_migration_resolver: StartupSwitch,
+    pub use_prisma_db_push: StartupSwitch,
+    pub set_replica_identity_full: StartupSwitch,
     pub command_timeout: Duration,
     pub lock_timeout: Duration,
     pub deploy_timeout: Duration,
@@ -48,7 +52,7 @@ impl StartupSettings {
             );
         }
         Self {
-            updates_enabled: settings.updates_enabled,
+            updates_enabled: StartupSwitch(settings.updates_enabled),
             database_url: endpoints
                 .database_url
                 .clone()
@@ -57,9 +61,9 @@ impl StartupSettings {
                 .direct_url
                 .clone()
                 .filter(|url| !url.expose_secret().is_empty()),
-            use_v2_migration_resolver: recovery.modes.use_v2_migration_resolver,
-            use_prisma_db_push: recovery.modes.use_prisma_db_push,
-            set_replica_identity_full: recovery.set_replica_identity_full,
+            use_v2_migration_resolver: StartupSwitch(recovery.modes.use_v2_migration_resolver),
+            use_prisma_db_push: StartupSwitch(recovery.modes.use_prisma_db_push),
+            set_replica_identity_full: StartupSwitch(recovery.set_replica_identity_full),
             command_timeout: settings.command_timeout,
             lock_timeout: settings.lock_timeout,
             deploy_timeout: settings.deploy_timeout,
@@ -87,8 +91,8 @@ pub async fn setup_database(
         next_id: Uuid::new_v4,
     };
     let request = SetupRequest {
-        use_v2_resolver: settings.use_v2_migration_resolver,
-        db_push_requested: settings.use_prisma_db_push,
+        use_v2_resolver: settings.use_v2_migration_resolver.0,
+        db_push_requested: settings.use_prisma_db_push.0,
     };
     setup_database_v2(&inputs, request).await?;
     // both best-effort steps log their own failure and never fail the setup
@@ -97,7 +101,7 @@ pub async fn setup_database(
         direct_url: settings.direct_url.clone(),
     };
     let _repaired = repair_invalid_indexes(&drift, REPAIR_LOCK_TIMEOUT).await;
-    let _identity = replica_identity_if_requested(settings.set_replica_identity_full, || {
+    let _identity = replica_identity_if_requested(settings.set_replica_identity_full.0, || {
         apply_identity(settings)
     })
     .await;
@@ -134,12 +138,12 @@ pub async fn check_schema_diff(settings: &StartupSettings) -> SchemaCheck {
             database_url: settings.database_url.clone(),
             direct_url: settings.direct_url.clone(),
         },
-        !settings.updates_enabled,
+        !settings.updates_enabled.0,
         None,
         &settings
             .database_url
             .as_ref()
-            .map_or_else(|| DEFAULT_SCHEMA.to_owned(), |url| schema_of(url)),
+            .map_or_else(|| DEFAULT_SCHEMA.to_owned(), schema_of),
         settings.command_timeout,
     )
     .await

@@ -10,6 +10,7 @@ pub const SCHEMA_PRISMA: &[u8] =
     include_bytes!("../../../../betterlite-db/src/schema_contract/fixtures/proxy/schema.prisma");
 
 // The migration files the crates ship, in the timestamp order prisma migrate applies them.
+#[must_use]
 pub fn migrations() -> Vec<Migration> {
     let catalogs = [
         schema_baseline::MIGRATION_CATALOG,

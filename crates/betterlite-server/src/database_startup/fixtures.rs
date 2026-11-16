@@ -49,10 +49,6 @@ impl ScriptedStartup {
             calls: Mutex::new(Vec::new()),
         }
     }
-
-    pub(crate) fn calls(&self) -> Vec<&'static str> {
-        self.calls.lock().expect("calls").clone()
-    }
 }
 
 impl StartupDatabase for ScriptedStartup {
@@ -93,11 +89,17 @@ impl StartupDatabase for ScriptedStartup {
     }
 }
 
-// The migration job's build port: it signals when it starts, then blocks until the test releases it.
-pub(crate) struct JobBuild {
+// The signals a test reads while the job's build blocks: start, release and completion.
+#[derive(Default)]
+pub(crate) struct BuildSignals {
     pub(crate) started: Arc<Notify>,
     pub(crate) release: Arc<Notify>,
     pub(crate) finished: Arc<AtomicBool>,
+}
+
+// The migration job's build port: it signals when it starts, then blocks until the test releases it.
+pub(crate) struct JobBuild {
+    pub(crate) signals: BuildSignals,
     pub(crate) answer: bool,
     pub(crate) wait: bool,
 }
@@ -105,9 +107,7 @@ pub(crate) struct JobBuild {
 impl JobBuild {
     pub(crate) fn immediate(answer: bool) -> Self {
         Self {
-            started: Arc::new(Notify::new()),
-            release: Arc::new(Notify::new()),
-            finished: Arc::new(AtomicBool::new(false)),
+            signals: BuildSignals::default(),
             answer,
             wait: false,
         }
@@ -123,9 +123,9 @@ impl JobBuild {
 
 impl IndexBuild for JobBuild {
     fn build(&self) -> BuildFuture<'_> {
-        self.started.notify_one();
-        let release = Arc::clone(&self.release);
-        let finished = Arc::clone(&self.finished);
+        self.signals.started.notify_one();
+        let release = Arc::clone(&self.signals.release);
+        let finished = Arc::clone(&self.signals.finished);
         let answer = self.answer;
         let wait = self.wait;
         Box::pin(async move {
@@ -168,12 +168,9 @@ pub(crate) struct ScriptedHeartbeat {
 }
 
 impl ScriptedHeartbeat {
-    pub(crate) fn calls(&self) -> Vec<HeartbeatCall> {
-        self.calls.lock().expect("calls").clone()
-    }
-
-    fn record(&self, call: HeartbeatCall) {
+    fn record(&self, call: HeartbeatCall) -> HeartbeatFuture<'_, (), Infallible> {
         self.calls.lock().expect("calls").push(call);
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -185,21 +182,18 @@ impl HeartbeatDatabase for ScriptedHeartbeat {
         _worker_id: &'database str,
         _hostname: &'database str,
     ) -> HeartbeatFuture<'database, (), Self::Error> {
-        self.record(HeartbeatCall::Upsert);
-        Box::pin(async { Ok(()) })
+        self.record(HeartbeatCall::Upsert)
     }
 
     fn prune(&self, _retention_seconds: f64) -> HeartbeatFuture<'_, (), Self::Error> {
-        self.record(HeartbeatCall::Prune);
-        Box::pin(async { Ok(()) })
+        self.record(HeartbeatCall::Prune)
     }
 
     fn deregister<'database>(
         &'database self,
         _worker_id: &'database str,
     ) -> HeartbeatFuture<'database, (), Self::Error> {
-        self.record(HeartbeatCall::Deregister);
-        Box::pin(async { Ok(()) })
+        self.record(HeartbeatCall::Deregister)
     }
 
     fn count_live_workers(

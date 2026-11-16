@@ -127,20 +127,29 @@ async fn dispatches_native_operation() {
         .expect("the migration ledger reads");
     assert_eq!(rows.len(), packaged::migrations().len());
     assert!(rows.iter().all(|row| row.get::<_, bool>(1)));
-    for index in REQUEST_LOG_INDEXES {
-        let name = index.name.to_owned();
-        let exists: bool = database
-            .client
-            .query_one(
-                "SELECT EXISTS (SELECT 1 FROM pg_indexes \
-                 WHERE schemaname = current_schema() AND indexname = $1)",
-                &[&name],
-            )
-            .await
-            .expect("the index catalog reads")
-            .get(0);
-        assert!(exists, "the migration job built {name}");
-    }
+    let names: Vec<&str> = REQUEST_LOG_INDEXES.iter().map(|index| index.name).collect();
+    let mut present: Vec<String> = database
+        .client
+        .query(
+            "SELECT indexname::text FROM pg_indexes \
+             WHERE schemaname = current_schema() AND indexname::text = ANY($1)",
+            &[&names],
+        )
+        .await
+        .expect("the index catalog reads")
+        .iter()
+        .map(|row| row.get(0))
+        .collect();
+    present.sort();
+    let mut expected: Vec<String> = REQUEST_LOG_INDEXES
+        .iter()
+        .map(|index| index.name.to_owned())
+        .collect();
+    expected.sort();
+    assert_eq!(
+        present, expected,
+        "the migration job built every request-log index"
+    );
 
     // a repeated command finds the schema current and leaves the ledger alone
     let (second_status, second_lines) =
@@ -162,32 +171,29 @@ async fn dispatches_native_operation() {
     database.close().await;
 }
 
+#[rstest::rstest]
+#[case::unknown_flag(&["migrate", "--bogus"])]
+#[case::unexpected_positional(&["migrate", "extra"])]
+#[case::unknown_flag_after_config(&[
+    "--config",
+    "/nonexistent/betterlite.yaml",
+    "migrate",
+    "--bogus"
+])]
 #[tokio::test]
-async fn rejects_bad_arguments() {
+async fn rejects_bad_arguments(#[case] arguments: &[&str]) {
     let backend = crate::backend();
-    for arguments in [
-        &["migrate", "--bogus"][..],
-        &["migrate", "extra"][..],
-        &[
-            "--config",
-            "/nonexistent/betterlite.yaml",
-            "migrate",
-            "--bogus",
-        ][..],
-    ] {
-        let (status, lines) =
-            run_command(arguments, "postgresql://pinned.example/db", &backend).await;
-        assert_eq!(status, ExitStatus::Usage, "{arguments:?}");
-        assert_eq!(status.code(), 2);
-        assert!(!lines.is_empty());
-        assert!(lines.iter().all(|line| line.starts_with("err|")));
-        assert!(
-            !lines
-                .iter()
-                .any(|line| line.contains("Starting migration job")),
-            "{arguments:?} reached the service"
-        );
-    }
+    let (status, lines) = run_command(arguments, "postgresql://pinned.example/db", &backend).await;
+    assert_eq!(status, ExitStatus::Usage, "{arguments:?}");
+    assert_eq!(status.code(), 2);
+    assert!(!lines.is_empty());
+    assert!(lines.iter().all(|line| line.starts_with("err|")));
+    assert!(
+        !lines
+            .iter()
+            .any(|line| line.contains("Starting migration job")),
+        "{arguments:?} reached the service"
+    );
 }
 
 #[tokio::test]

@@ -105,7 +105,7 @@ impl ServingStartup {
                 tasks: JoinSet::new(),
             });
         }
-        if !self.settings.updates_enabled {
+        if !self.settings.updates_enabled.0 {
             let check = self.database.check().await;
             return Ok(Startup {
                 outcome: StartupOutcome::UpdatesDisabled(check),

@@ -1,4 +1,3 @@
-// The status vocabulary readiness reports; the probe owns the transitions, this module owns the words
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DatabaseStatus {
     #[default]
@@ -18,7 +17,7 @@ impl DatabaseStatus {
     }
 }
 
-// The database state B4448's readiness probe reads; this module never implements its HTTP route.
+// The database state B4448's readiness probe reads; the probe owns the transitions and its route, this module owns the words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DatabaseState {
     pub configured: bool,
