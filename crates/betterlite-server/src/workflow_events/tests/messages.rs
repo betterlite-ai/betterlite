@@ -36,7 +36,7 @@ async fn a_message_appends_after_the_highest_sequence_of_its_run() {
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     let row: WorkflowMessageRow = serde_json::from_str(&reply.body).unwrap();
-    assert_eq!(row.sequence_number, 4);
+    assert_eq!(row.sequence_number, 4_i32);
     assert_eq!(row.run_id, run_id);
     assert_eq!(row.role, "assistant");
     assert_eq!(row.content, "the build passed");
@@ -60,7 +60,7 @@ async fn a_message_has_its_own_sequence_beside_the_event_log() {
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     let row: WorkflowMessageRow = serde_json::from_str(&reply.body).unwrap();
-    assert_eq!(row.sequence_number, 0);
+    assert_eq!(row.sequence_number, 0_i32);
 }
 
 #[tokio::test]
@@ -101,7 +101,7 @@ async fn a_message_without_a_session_stores_none() {
 async fn a_message_stores_its_content_in_full() {
     let store = Arc::new(FakeStore::default());
     let run_id = store.seed_run(Some("hash-1"));
-    let content = "line one\nline two, ünïcode and a tab\t".repeat(64);
+    let content = "line one\nline two, \u{fc}n\u{ef}code and a tab\t".repeat(64);
     let body = format!(
         r#"{{"role":"user","content":{}}}"#,
         serde_json::to_string(&content).unwrap()
@@ -158,13 +158,13 @@ async fn a_message_asks_for_a_fresh_number_after_a_collision() {
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     let row: WorkflowMessageRow = serde_json::from_str(&reply.body).unwrap();
-    assert_eq!(row.sequence_number, 6);
+    assert_eq!(row.sequence_number, 6_i32);
     let numbers: Vec<i32> = store
         .attempts()
         .iter()
         .map(|attempt| attempt.sequence_number)
         .collect();
-    assert_eq!(numbers, [0, 3, 6]);
+    assert_eq!(numbers, [0_i32, 3_i32, 6_i32]);
     assert_eq!(store.message_writes().len(), 1);
 }
 
@@ -188,7 +188,7 @@ async fn five_message_collisions_answer_409_without_a_sixth_attempt() {
         .iter()
         .map(|attempt| attempt.sequence_number)
         .collect();
-    assert_eq!(numbers, [0, 3, 6, 9, 12]);
+    assert_eq!(numbers, [0_i32, 3_i32, 6_i32, 9_i32, 12_i32]);
     assert!(store.message_writes().is_empty());
 }
 

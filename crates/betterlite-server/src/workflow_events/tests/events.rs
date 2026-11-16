@@ -37,7 +37,7 @@ async fn an_event_appends_after_the_highest_sequence_of_its_run() {
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     let row: WorkflowEventRow = serde_json::from_str(&reply.body).unwrap();
-    assert_eq!(row.sequence_number, 5);
+    assert_eq!(row.sequence_number, 5_i32);
     assert_eq!(row.run_id, run_id);
     assert_eq!(row.event_type, "hook.waiting");
     assert_eq!(row.step_name, "build");
@@ -60,7 +60,7 @@ async fn an_event_on_an_empty_run_starts_at_zero() {
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(store.event_writes().first().unwrap().sequence_number, 0);
+    assert_eq!(store.event_writes().first().unwrap().sequence_number, 0_i32);
 }
 
 #[tokio::test]
@@ -170,13 +170,13 @@ async fn an_event_asks_for_a_fresh_number_after_a_collision() {
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     let row: WorkflowEventRow = serde_json::from_str(&reply.body).unwrap();
-    assert_eq!(row.sequence_number, 3);
+    assert_eq!(row.sequence_number, 3_i32);
     let numbers: Vec<i32> = store
         .attempts()
         .iter()
         .map(|attempt| attempt.sequence_number)
         .collect();
-    assert_eq!(numbers, [0, 3]);
+    assert_eq!(numbers, [0_i32, 3_i32]);
     assert_eq!(store.event_writes().len(), 1);
 }
 
@@ -194,13 +194,13 @@ async fn four_collisions_still_land_on_the_fifth_attempt() {
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     let row: WorkflowEventRow = serde_json::from_str(&reply.body).unwrap();
-    assert_eq!(row.sequence_number, 12);
+    assert_eq!(row.sequence_number, 12_i32);
     let numbers: Vec<i32> = store
         .attempts()
         .iter()
         .map(|attempt| attempt.sequence_number)
         .collect();
-    assert_eq!(numbers, [0, 3, 6, 9, 12]);
+    assert_eq!(numbers, [0_i32, 3_i32, 6_i32, 9_i32, 12_i32]);
 }
 
 #[tokio::test]
@@ -223,7 +223,7 @@ async fn five_collisions_answer_409_without_a_sixth_attempt() {
         .iter()
         .map(|attempt| attempt.sequence_number)
         .collect();
-    assert_eq!(numbers, [0, 3, 6, 9, 12]);
+    assert_eq!(numbers, [0_i32, 3_i32, 6_i32, 9_i32, 12_i32]);
     assert!(store.event_writes().is_empty());
     assert_eq!(store.run_status(&run_id).as_deref(), Some("running"));
 }

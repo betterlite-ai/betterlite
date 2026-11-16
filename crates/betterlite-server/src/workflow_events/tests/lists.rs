@@ -42,7 +42,7 @@ async fn events_come_back_ascending_by_sequence() {
         .iter()
         .map(|event| event.sequence_number)
         .collect();
-    assert_eq!(numbers, [0, 2, 4]);
+    assert_eq!(numbers, [0_i32, 2_i32, 4_i32]);
     assert_eq!(parsed.count, 3);
 }
 
@@ -62,7 +62,7 @@ async fn messages_come_back_ascending_by_sequence() {
         .iter()
         .map(|message| message.sequence_number)
         .collect();
-    assert_eq!(numbers, [1, 3]);
+    assert_eq!(numbers, [1_i32, 3_i32]);
     assert_eq!(parsed.count, 2);
 }
 
@@ -75,15 +75,15 @@ async fn a_list_holds_only_its_own_run_and_its_own_table() {
     let reply = get(Some(&store), Some(&member("hash-1")), &events_uri(&run_id)).await;
     let parsed: EventListReply = serde_json::from_str(&reply.body).unwrap();
     assert!(parsed.events.iter().all(|event| event.run_id == run_id));
-    let reply = get(
+    let message_reply = get(
         Some(&store),
         Some(&member("hash-1")),
         &messages_uri(&run_id),
     )
     .await;
-    let parsed: MessageListReply = serde_json::from_str(&reply.body).unwrap();
+    let message_parsed: MessageListReply = serde_json::from_str(&message_reply.body).unwrap();
     assert!(
-        parsed
+        message_parsed
             .messages
             .iter()
             .all(|message| message.run_id == run_id)
@@ -201,13 +201,13 @@ async fn a_list_validates_the_limit_before_it_looks_for_a_database() {
     )
     .await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
-    let reply = get(
+    let message_reply = get(
         None,
         Some(&master()),
         "/v1/workflows/runs/run-0/messages?limit=501",
     )
     .await;
-    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(message_reply.status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[rstest]
@@ -221,10 +221,10 @@ async fn an_admin_view_caller_reads_a_foreign_runs_events_and_messages(#[case] c
     assert_eq!(reply.status, StatusCode::OK);
     let parsed: EventListReply = serde_json::from_str(&reply.body).unwrap();
     assert_eq!(parsed.count, 3);
-    let reply = get(Some(&store), Some(&caller), &messages_uri(&run_id)).await;
-    assert_eq!(reply.status, StatusCode::OK);
-    let parsed: MessageListReply = serde_json::from_str(&reply.body).unwrap();
-    assert_eq!(parsed.count, 2);
+    let message_reply = get(Some(&store), Some(&caller), &messages_uri(&run_id)).await;
+    assert_eq!(message_reply.status, StatusCode::OK);
+    let message_parsed: MessageListReply = serde_json::from_str(&message_reply.body).unwrap();
+    assert_eq!(message_parsed.count, 2);
 }
 
 #[rstest]

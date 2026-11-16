@@ -219,7 +219,7 @@ impl FakeStore {
         self.data.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn check(&self, message: Option<&'static str>) -> Result<(), StoreError> {
+    fn check(message: Option<&'static str>) -> Result<(), StoreError> {
         let Some(text) = message else {
             return Ok(());
         };
@@ -263,7 +263,7 @@ impl FakeStore {
         run_id: &str,
         take: u16,
     ) -> Result<MutexGuard<'_, Data>, StoreError> {
-        self.check(self.failure.list)?;
+        Self::check(self.failure.list)?;
         let mut data = self.lock();
         data.lists.push((table, run_id.to_owned(), take));
         Ok(data)
@@ -344,7 +344,7 @@ impl WorkflowRunStore for FakeStore {
     }
 
     async fn find_unique(&self, run_id: &str) -> Result<Option<WorkflowRunRow>, StoreError> {
-        self.check(self.failure.read)?;
+        Self::check(self.failure.read)?;
         Ok(self
             .lock()
             .runs
@@ -373,7 +373,7 @@ impl WorkflowRunStore for FakeStore {
         run_id: &str,
         table: SequenceTable,
     ) -> Result<Option<SequenceRow>, StoreError> {
-        self.check(self.failure.read)?;
+        Self::check(self.failure.read)?;
         let data = self.lock();
         let sequence_number = match table {
             SequenceTable::Events => data
@@ -388,7 +388,10 @@ impl WorkflowRunStore for FakeStore {
                 .and_then(|held| held.last())
                 .map(|message| message.sequence_number),
         };
-        Ok(sequence_number.map(|sequence_number| SequenceRow { sequence_number }))
+        drop(data);
+        Ok(sequence_number.map(|number| SequenceRow {
+            sequence_number: number,
+        }))
     }
 }
 
@@ -399,7 +402,7 @@ impl WorkflowEventStore for FakeStore {
         data: &EventCreateData,
         new_status: Option<WorkflowRunStatus>,
     ) -> Result<WorkflowEventRow, WriteError> {
-        self.check(self.failure.write)?;
+        Self::check(self.failure.write)?;
         let (mut inner, collides) =
             self.record_attempt(SequenceTable::Events, data.sequence_number, new_status);
         if collides {
@@ -407,7 +410,7 @@ impl WorkflowEventStore for FakeStore {
                 &data.run_id,
                 &data.event_type,
                 &data.step_name,
-                data.sequence_number + COMPETING_GAP,
+                data.sequence_number.saturating_add(COMPETING_GAP),
                 None,
             );
             inner.events.push(taken);
@@ -436,7 +439,7 @@ impl WorkflowEventStore for FakeStore {
         &self,
         data: &MessageCreateData,
     ) -> Result<WorkflowMessageRow, WriteError> {
-        self.check(self.failure.write)?;
+        Self::check(self.failure.write)?;
         let (mut inner, collides) =
             self.record_attempt(SequenceTable::Messages, data.sequence_number, None);
         if collides {
@@ -444,7 +447,7 @@ impl WorkflowEventStore for FakeStore {
                 run_id: data.run_id.clone(),
                 role: data.role.clone(),
                 content: data.content.clone(),
-                sequence_number: data.sequence_number + COMPETING_GAP,
+                sequence_number: data.sequence_number.saturating_add(COMPETING_GAP),
                 session_id: data.session_id.clone(),
             };
             push_message(&mut inner, &ahead);
@@ -483,7 +486,9 @@ impl WorkflowEventStore for FakeStore {
         let Some(held) = data.messages.get(run_id) else {
             return Ok(Vec::new());
         };
-        Ok(held.iter().take(usize::from(take)).cloned().collect())
+        let rows: Vec<WorkflowMessageRow> = held.iter().take(usize::from(take)).cloned().collect();
+        drop(data);
+        Ok(rows)
     }
 }
 

@@ -8,7 +8,7 @@ use crate::error_body::json_error;
 use crate::workflow_runs::error::{RunsError, ValidationFailure};
 use crate::workflow_runs::store::StoreError;
 
-pub const CONFLICT_DETAIL: &str = "Concurrent write conflict — please retry";
+pub const CONFLICT_DETAIL: &str = "Concurrent write conflict \u{2014} please retry";
 
 #[derive(Debug, Error)]
 pub enum EventsError {
@@ -27,7 +27,13 @@ impl EventsError {
     pub(super) fn run_lookup(error: RunsError) -> Self {
         match error {
             RunsError::Store(source) => Self::RunLookup(source),
-            other => Self::Runs(other),
+            other @ (RunsError::NotFound { .. }
+            | RunsError::NoFieldsToUpdate
+            | RunsError::DbNotConnected
+            | RunsError::Unauthenticated
+            | RunsError::Validation(_)
+            | RunsError::Encode(_)
+            | RunsError::SequenceOverflow) => Self::Runs(other),
         }
     }
 }

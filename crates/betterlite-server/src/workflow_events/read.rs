@@ -28,7 +28,7 @@ fn parse_limit(raw: Option<&str>) -> Result<u16, EventsError> {
         Ok(limit) => u16::try_from(limit)
             .ok()
             .filter(|bounded| *bounded <= MAX_LIMIT)
-            .ok_or(EventsError::from(LimitIssue::TooLarge)),
+            .ok_or_else(|| EventsError::from(LimitIssue::TooLarge)),
     }
 }
 
