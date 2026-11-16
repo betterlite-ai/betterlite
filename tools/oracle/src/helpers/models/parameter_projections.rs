@@ -8,6 +8,8 @@ use betterlite_models::projections::reasoning_effort::{
     ThinkingBudgetThresholds, effort_from_thinking_budget,
 };
 use betterlite_models::projections::service_tier::resolved_service_tier;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::value::to_raw_value;
 use serde_json::{Value, json};
@@ -47,9 +49,9 @@ enum RunError {
     Parameters(#[from] serde_json::Error),
 }
 
-impl From<RunError> for Box<crate::helpers::HelperError> {
+impl From<RunError> for Box<HelperError> {
     fn from(error: RunError) -> Self {
-        Self::new(crate::helpers::HelperError {
+        Self::new(HelperError {
             class: "SerializationError".to_owned(),
             status: None,
             error_type: Some(None),
@@ -108,10 +110,10 @@ impl Step {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut results = Vec::new();
         for step in &input.steps {
             results.push(step.run()?);

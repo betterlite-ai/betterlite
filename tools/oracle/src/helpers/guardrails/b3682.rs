@@ -1,7 +1,7 @@
 use betterlite_guardrails::guardrail_registry::stable_id::stable_guardrail_id;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

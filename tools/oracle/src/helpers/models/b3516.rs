@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -11,9 +12,12 @@ use futures_util::{StreamExt as _, stream};
 use secrecy::SecretString;
 use serde::Serialize;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::{ContainerFields, ContainerInput, Input, Operation};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 mod input;
 
@@ -63,10 +67,10 @@ impl SandboxHttp for RecordingHttp {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let sandbox = E2bSandbox {
             http: RecordingHttp {
                 status: input.response_status,
@@ -220,11 +224,11 @@ fn request_output(request: &SandboxRequest) -> Result<RequestOutput, Box<HelperE
     })
 }
 
-fn block_on<Output, Future>(future: Future) -> Result<Output, Box<HelperError>>
+fn block_on<Output, Task>(future: Task) -> Result<Output, Box<HelperError>>
 where
-    Future: std::future::Future<Output = Result<Output, E2bError>>,
+    Task: Future<Output = Result<Output, E2bError>>,
 {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| helper_error("RuntimeError", error))?;
     match runtime.block_on(future) {
@@ -235,7 +239,7 @@ where
 
 fn helper_error<Message>(class: &str, message: Message) -> Box<HelperError>
 where
-    Message: std::fmt::Display,
+    Message: Display,
 {
     Box::new(HelperError {
         class: class.to_owned(),

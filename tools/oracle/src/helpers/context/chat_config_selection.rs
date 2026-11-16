@@ -1,12 +1,13 @@
 use betterlite_models::identity::provider_id::ProviderId;
 use serde::Deserialize;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 mod fixtures;
 mod reports;
 mod tests;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fixtures::{Fixtures, VertexLists};
 use reports::{chat_call, foundry_call, image_report, json_reports, report_each};
 
@@ -77,10 +78,10 @@ pub(crate) struct JsonProviderEntry {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::OpenAiFamilySelection { catalog, calls } => {
                 let vertex = VertexLists::default();

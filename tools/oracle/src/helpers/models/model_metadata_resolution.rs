@@ -18,14 +18,16 @@ use secrecy::SecretString;
 use serde_json::value::RawValue;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fixture::{FixtureContext, FixtureError, NORMALIZERS};
 use input::{Input, Query, Scenario};
+use tokio::runtime::Builder;
 use transport::{ScriptedDynamic, ScriptedHf};
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -136,7 +138,7 @@ fn block_on<FutureType>(future: FutureType) -> Result<FutureType::Output, Box<He
 where
     FutureType: Future,
 {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|source| failure(&FixtureError::Runtime { source }))?;

@@ -83,7 +83,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_rag_chunking.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Python calls the source chunk transformer and captures its warning.
     - id: rag-chunk-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_rag_chunking*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::rag_chunking::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_rag_chunking*')" && cargo nextest run --locked -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^rag_chunking::/)'
       why: Added seeds must identify call.vertex_rag_chunking through the existing HelperCase decoder.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-rag-chunking/defaults.yaml

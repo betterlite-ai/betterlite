@@ -1,8 +1,9 @@
 use super::fixture::{Answer, assume_role_answer, denied_identity, web_identity_answer};
 use super::input::{Case, ReplyCredentials, WebIdentityReply};
 use super::ops::{FixtureError, failure, fixture, irsa_json, tags_of};
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_bedrock::web_identity::irsa::{CrossAccountIrsa, handle_irsa_cross_account};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use std::collections::BTreeMap;
 fn answers(reply: &ReplyCredentials, irsa_reply: &WebIdentityReply) -> BTreeMap<String, Answer> {
     BTreeMap::from([

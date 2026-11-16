@@ -2,17 +2,18 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_logging::worker::{
-    Admission, Callback, FlushReport, LoggingWorker, ShutdownReport, WorkerSettings,
+    Admission, Callback, FlushReport, LoggingWorker, ShutdownReport, WorkerError, WorkerSettings,
 };
 use serde_json::{Value, json};
 use tracing::Span;
 
 use super::{EventInput, Input, Outcome, Step};
+use tokio::task;
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum TraceError {
     #[error(transparent)]
-    Worker(#[from] betterlite_logging::worker::WorkerError),
+    Worker(#[from] WorkerError),
     #[error("the logging worker rejected the event: {0:?}")]
     Rejected(Admission),
     #[error("the scripted steps use the logging worker after it was stopped")]
@@ -76,7 +77,7 @@ impl Callback for ScriptedCallback {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(self.name.clone(), context);
-        tokio::task::yield_now().await;
+        task::yield_now().await;
         if matches!(self.outcome, Outcome::Failure) {
             self.record
                 .failed

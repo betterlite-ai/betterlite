@@ -1,11 +1,14 @@
 #![cfg(test)]
 
+use betterlite_oracle_helper_api::helper::Helper;
+use betterlite_oracle_runner::case::load_helper_cases;
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
+use std::path::Path;
+
 #[test]
 fn helper_functions_dispatch() {
     let input = serde_json::json!({"function":"cache_token_value","values":[0_i64,4_i64]});
-    let result =
-        <super::Op as crate::helpers::Helper>::run(&serde_json::from_value(input).unwrap())
-            .unwrap();
+    let result = <super::Op as Helper>::run(&serde_json::from_value(input).unwrap()).unwrap();
     assert_eq!(result, serde_json::json!({"result":4_i64}));
 }
 
@@ -53,15 +56,15 @@ fn helper_functions_dispatch() {
 #[case::usage_cache_creation("usage-cache-creation.yaml")]
 #[case::usage_cache_hit("usage-cache-hit.yaml")]
 fn payload_case_matches_litellm(#[case] name: &str) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/payload-primitives")
         .join(name);
-    let cases = crate::case::load_cases(&[path]).unwrap();
-    let Some(crate::case::LoadedCase::Helper(case)) = cases.first() else {
+    let cases = load_helper_cases(&[path]).unwrap();
+    let Some(case) = cases.first() else {
         panic!("expected a helper case");
     };
     assert!(matches!(
-        crate::helpers::run_case(case, false).unwrap(),
-        crate::helpers::HelperRun::Match
+        run_case(&[crate::GROUP], case, false).unwrap(),
+        HelperRun::Match
     ));
 }

@@ -26,7 +26,8 @@ use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 const START_SECONDS: u64 = 1_700_000_000;
 const TOKEN_SUFFIX: &str = "/oauth2/v2.0/token";

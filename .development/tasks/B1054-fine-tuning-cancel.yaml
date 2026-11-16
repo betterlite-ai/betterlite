@@ -10,7 +10,7 @@ description: >-
   handle_exception_on_proxy. No route parses query custom_llm_provider despite the docstring advertising it.
 
   Honor the README no-paid-tier decision: remove only premium_user gating. Preserve MIT managed-id
-  behavior and mark it below pending Max. Use B1100 read_raw_json_body for the body, recovering {} on any
+  behavior and mark it below. Use B1100 read_raw_json_body for the body, recovering {} on any
   decode failure; parsed non-object bodies still fail when queried. There is no new decoder. 123 owned
   nonblank/non-comment lines budget 160 code, 170 tests, 160 HTTP fixtures and 45 corpus/wiring, 535 total.
 scope:
@@ -88,7 +88,7 @@ deviations:
   why: README Decisions removes enterprise license gates. Exercise parity after setting the reference premium flag only, without installing enterprise code, and keep a separate deviation case for the default.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L536-L538
 - what: Managed jobs keep MIT behavior for now, including raw-id 400 and missing-ownership-hook 500 when require_managed_files=true.
-  why: Max has not decided the managed-files/batches policy; this does not install its enterprise hook.
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1062-L1118
 out_of_scope:
 - B088 owns create/retrieve/list HTTP handlers; B1141 owns config and complete cancellation SDK functions. Remove fine_tuning/main.py coverage from this route entry.

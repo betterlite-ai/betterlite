@@ -12,6 +12,7 @@ use tracing_subscriber::layer::{Context, Layer};
 
 use super::fakes::{Effect, Effects, FakeError, record};
 use super::{LockMode, LockScript};
+use betterlite_oracle_helper_api::error::HelperError;
 
 struct ClockScript {
     offsets: VecDeque<Duration>,
@@ -25,11 +26,11 @@ pub(super) struct ScriptedClock {
 }
 
 impl ScriptedClock {
-    pub(super) fn from_values(values: &[f64]) -> Result<Self, Box<crate::helpers::HelperError>> {
+    pub(super) fn from_values(values: &[f64]) -> Result<Self, Box<HelperError>> {
         let mut offsets = VecDeque::new();
         for value in values {
             let offset = Duration::try_from_secs_f64(*value).map_err(|_error| {
-                Box::new(crate::helpers::HelperError {
+                Box::new(HelperError {
                     class: "ValueError".to_owned(),
                     status: None,
                     error_type: None,

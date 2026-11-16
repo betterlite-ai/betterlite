@@ -3,12 +3,6 @@ macro_rules! helper_group {
     ($($operation:literal => $module:ident),* $(,)?) => {
         $(mod $module;)*
 
-        pub mod helpers {
-            pub use $crate::error::HelperError;
-            pub use $crate::error::OrHelperError;
-            pub use $crate::helper::{Helper, HelperResult};
-        }
-
         pub const GROUP: $crate::group::Group = $crate::group::Group { invoke, check };
 
         fn invoke(

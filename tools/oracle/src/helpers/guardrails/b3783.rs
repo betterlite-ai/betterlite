@@ -8,10 +8,14 @@ use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
 use serde_json::json;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::MockScript;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::MockScript;
+use std::io::Error;
+use std::slice;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -36,7 +40,7 @@ struct Settings {
     timeout: Option<f64>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = OnyxCall;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -50,7 +54,7 @@ type Recorded = (Option<String>, Option<serde_json::Value>, Option<String>);
 fn call(input: &OnyxCall) -> HelperResult {
     let (mock, silent, base) = start_mock(input.answer.as_ref())?;
     let guardrail = build_guardrail(input, &base)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("OSError", None, error.to_string()))?;
@@ -82,13 +86,11 @@ fn call(input: &OnyxCall) -> HelperResult {
 }
 
 fn start_mock(answer: Option<&UpstreamAnswer>) -> Result<Prepared, Box<HelperError>> {
-    let io = |error: std::io::Error| failure("OSError", None, error.to_string());
+    let io = |error: Error| failure("OSError", None, error.to_string());
     // with no answer the listener accepts the connection and never replies, so the call times out
     let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
     let mock = answer
-        .map(|reply| {
-            MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start)
-        })
+        .map(|reply| MockScript::try_from(slice::from_ref(reply)).and_then(MockProvider::start))
         .transpose()
         .map_err(|error| failure("MockError", None, error.to_string()))?;
     let base = match &mock {

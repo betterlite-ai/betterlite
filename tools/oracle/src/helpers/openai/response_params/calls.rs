@@ -11,7 +11,8 @@ use serde_json::{Value, json};
 
 use super::fixture::Fixture;
 use super::{Call, Probe, Probes};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) async fn run(call: &Call) -> HelperResult {
     let mut bundled = BundledReasoningModels::default();
@@ -71,7 +72,7 @@ fn capability_value(probe: &Probe) -> HelperResult {
     if let Some(body) = &probe.body {
         let bytes = serde_json::to_vec(body)?;
         let decoded = decode_body(&bytes).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: String::from("ResponseDecodeError"),
                 status: None,
                 error_type: None,

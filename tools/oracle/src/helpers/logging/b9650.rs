@@ -8,14 +8,15 @@ use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::registry;
 
-use crate::compare::helper::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = input::Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()

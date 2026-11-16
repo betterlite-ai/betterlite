@@ -25,6 +25,7 @@ use betterlite_bedrock::request_policy::{
 use betterlite_bedrock::signing::target::RegionInputs;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
+use betterlite_oracle_helper_api::{error::HelperError, helper::HelperResult};
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::hub::{Hub, builtin_entries};
 use chrono::{DateTime, TimeZone as _, Utc};
@@ -34,7 +35,6 @@ use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
 use super::input::{ErrorCase, Input, MergeCase, PromptCase, SigningCase, UrlCase};
-use crate::helpers::{HelperError, HelperResult};
 
 pub(crate) fn run(input: &Input) -> HelperResult {
     match input {
