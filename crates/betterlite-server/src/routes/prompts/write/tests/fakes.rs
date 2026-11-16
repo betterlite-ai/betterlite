@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::cmp::Reverse;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -97,7 +98,7 @@ impl PromptTableActions for FakeTable {
             .cloned()
             .collect();
         if !query.order.is_empty() {
-            found.sort_by(|left, right| right.version.cmp(&left.version));
+            found.sort_by_key(|row| Reverse(row.version));
         }
         if let Some(take) = query.take {
             found.truncate(usize::try_from(take).expect("take"));
@@ -129,16 +130,16 @@ impl PromptTableActions for FakeTable {
     fn update(
         &self,
         filter: PromptRowFilter,
-        changes: PromptRowUpdate,
+        data: PromptRowUpdate,
     ) -> impl Future<Output = Result<Option<PromptRow>, FakeFailure>> + Send {
         let updated = {
             let mut rows = self.rows.lock().expect("rows");
             rows.iter_mut()
                 .find(|row| row_matches(row, &filter))
                 .map(|row| {
-                    row.litellm_params = changes.litellm_params;
-                    row.prompt_info = Some(changes.prompt_info);
-                    row.created_by = changes.created_by.or(row.created_by.take());
+                    row.litellm_params = data.litellm_params;
+                    row.prompt_info = Some(data.prompt_info);
+                    row.created_by = data.created_by.or_else(|| row.created_by.take());
                     row.clone()
                 })
         };

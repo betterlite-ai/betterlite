@@ -159,10 +159,10 @@ async fn oneshot_patch_rejects_ambiguous_prompt_data_only_when_litellm_params_ar
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(detail(&response), AMBIGUOUS_PROMPT_DATA_ERROR);
     let info_only = r#"{"prompt_info":{"prompt_type":"db"}}"#;
-    let (status, _) = harness
+    let (info_status, _) = harness
         .send(Method::PATCH, "/prompts/greeting", info_only)
         .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(info_status, StatusCode::OK);
 }
 
 #[rstest]
@@ -217,9 +217,11 @@ async fn oneshot_create_allocates_version_one_and_initializes_the_registry() {
     assert_eq!(created.litellm_params.prompt_integration, "dotprompt");
     assert_eq!(created.prompt_info.prompt_type, "db");
     assert_eq!(harness.recorded_calls(), vec!["added"]);
-    let registry = harness.registry.lock().await;
     assert!(
-        registry
+        harness
+            .registry
+            .lock()
+            .await
             .in_memory_prompts
             .contains_key("greeting.v1::development")
     );
@@ -235,10 +237,10 @@ async fn oneshot_create_allocates_the_next_version_inside_each_environment() {
         .await;
     assert_eq!(spec(&first).prompt_id, "greeting.v1");
     assert_eq!(spec(&second).prompt_id, "greeting.v2");
-    let production = spec(&production);
-    assert_eq!(production.prompt_id, "greeting.v1");
-    assert_eq!(production.environment, "production");
-    assert_eq!(production.prompt_info.environment, "production");
+    let production_spec = spec(&production);
+    assert_eq!(production_spec.prompt_id, "greeting.v1");
+    assert_eq!(production_spec.environment, "production");
+    assert_eq!(production_spec.prompt_info.environment, "production");
 }
 
 #[tokio::test]
@@ -265,10 +267,8 @@ async fn oneshot_create_stores_the_key_in_the_row_and_masks_it_in_the_response()
         created.litellm_params.dotprompt_content.as_deref(),
         Some("hello")
     );
-    let rows = harness.rows.lock().expect("rows");
-    let stored = stored_text(&rows[0].litellm_params);
     assert_eq!(
-        stored,
+        stored_text(&harness.rows.lock().expect("rows")[0].litellm_params),
         r#"{"prompt_id":null,"prompt_integration":"dotprompt","api_base":null,"api_key":"sk-secret","provider_specific_query_params":null,"ignore_prompt_manager_model":false,"ignore_prompt_manager_optional_params":false,"dotprompt_content":"hello"}"#
     );
 }
@@ -280,10 +280,13 @@ async fn oneshot_create_stores_db_prompt_info_when_the_request_has_none() {
     let (status, response) = harness.send(Method::POST, "/prompts", body).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(spec(&response).prompt_info.prompt_type, "db");
-    let rows = harness.rows.lock().expect("rows");
-    let info = rows[0].prompt_info.as_ref().expect("prompt_info");
     assert_eq!(
-        stored_text(info),
+        stored_text(
+            harness.rows.lock().expect("rows")[0]
+                .prompt_info
+                .as_ref()
+                .expect("prompt_info")
+        ),
         r#"{"prompt_type":"db","environment":"development"}"#
     );
 }
@@ -342,13 +345,13 @@ async fn oneshot_update_strips_the_version_suffix_and_creates_the_next_version(
     let updated = spec(&response);
     assert_eq!(updated.prompt_id, "greeting.v2");
     assert_eq!(updated.version, Some(2));
-    let rows = harness.rows.lock().expect("rows");
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows[1].prompt_id, "greeting");
-    drop(rows);
-    let registry = harness.registry.lock().await;
+    assert_eq!(harness.rows.lock().expect("rows").len(), 2);
+    assert_eq!(harness.rows.lock().expect("rows")[1].prompt_id, "greeting");
     assert!(
-        registry
+        harness
+            .registry
+            .lock()
+            .await
             .in_memory_prompts
             .contains_key("greeting.v2::development")
     );
@@ -365,9 +368,9 @@ async fn oneshot_update_allocates_versions_in_the_requested_environment() {
     let (_, development) = harness
         .send(Method::PUT, "/prompts/greeting", PROMPT_BODY)
         .await;
-    let production = spec(&production);
-    assert_eq!(production.prompt_id, "greeting.v1");
-    assert_eq!(production.environment, "production");
+    let production_spec = spec(&production);
+    assert_eq!(production_spec.prompt_id, "greeting.v1");
+    assert_eq!(production_spec.environment, "production");
     assert_eq!(spec(&development).prompt_id, "greeting.v3");
 }
 
@@ -392,14 +395,14 @@ async fn oneshot_patch_answers_404_for_a_missing_row_and_defaults_to_development
         detail(&response),
         "Prompt with ID greeting not found in environment development"
     );
-    let (status, _) = harness
+    let (production_status, _) = harness
         .send(
             Method::PATCH,
             "/prompts/greeting?environment=production",
             "{}",
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(production_status, StatusCode::OK);
 }
 
 #[tokio::test]
@@ -432,8 +435,10 @@ async fn oneshot_patch_targets_one_row_by_version_and_changes_no_other(
     let (status, response) = harness.send(Method::PATCH, &uri, body).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(spec(&response).prompt_id, patched_id);
-    let rows = harness.rows.lock().expect("rows");
-    let changed: Vec<i64> = rows
+    let changed: Vec<i64> = harness
+        .rows
+        .lock()
+        .expect("rows")
         .iter()
         .filter(|row| stored_text(&row.litellm_params).contains(r#""dotprompt_content":"new""#))
         .map(|row| row.version)
@@ -456,16 +461,16 @@ async fn oneshot_patch_keeps_the_stored_value_of_a_field_the_request_leaves_out(
     assert!(response.contains(r#""owner":"team""#));
     let params =
         r#"{"litellm_params":{"prompt_integration":"dotprompt","dotprompt_content":"fresh"}}"#;
-    let (_, response) = harness
+    let (_, fresh_response) = harness
         .send(Method::PATCH, "/prompts/greeting", params)
         .await;
-    let patched = spec(&response);
+    let fresh = spec(&fresh_response);
     assert_eq!(
-        patched.litellm_params.dotprompt_content.as_deref(),
+        fresh.litellm_params.dotprompt_content.as_deref(),
         Some("fresh")
     );
-    assert!(response.contains(r#""owner":"team""#));
-    assert_eq!(patched.created_by.as_deref(), Some("alice"));
+    assert!(fresh_response.contains(r#""owner":"team""#));
+    assert_eq!(fresh.created_by.as_deref(), Some("alice"));
 }
 
 #[tokio::test]
@@ -502,15 +507,17 @@ async fn oneshot_patch_reloads_the_prompt_in_the_registry() {
     let (status, _) = harness.send(Method::PATCH, "/prompts/greeting", body).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(harness.recorded_calls(), vec!["removed", "added"]);
-    let registry = harness.registry.lock().await;
-    let reloaded = registry
+    let reloaded_content = harness
+        .registry
+        .lock()
+        .await
         .in_memory_prompts
         .get("greeting.v1::development")
-        .expect("reloaded prompt");
-    assert_eq!(
-        reloaded.litellm_params.dotprompt_content.as_deref(),
-        Some("reloaded")
-    );
+        .expect("reloaded prompt")
+        .litellm_params
+        .dotprompt_content
+        .clone();
+    assert_eq!(reloaded_content.as_deref(), Some("reloaded"));
 }
 
 #[tokio::test]
@@ -521,8 +528,10 @@ async fn oneshot_patch_keeps_the_database_update_when_the_reload_fails() {
     let (status, response) = harness.send(Method::PATCH, "/prompts/greeting", body).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(detail(&response), "Unsupported prompt: unknown");
-    let rows = harness.rows.lock().expect("rows");
-    assert!(stored_text(&rows[0].litellm_params).contains(r#""prompt_integration":"unknown""#));
+    assert!(
+        stored_text(&harness.rows.lock().expect("rows")[0].litellm_params)
+            .contains(r#""prompt_integration":"unknown""#)
+    );
 }
 
 #[tokio::test]
@@ -571,10 +580,8 @@ async fn oneshot_delete_removes_every_row_of_the_base_id_and_syncs_the_registry(
     assert_eq!(status, StatusCode::OK);
     let body: MessageBody = serde_json::from_str(&response).expect("message");
     assert_eq!(body.message, "Prompt greeting deleted successfully");
-    let rows = harness.rows.lock().expect("rows");
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].prompt_id, "other");
-    drop(rows);
+    assert_eq!(harness.rows.lock().expect("rows").len(), 1);
+    assert_eq!(harness.rows.lock().expect("rows")[0].prompt_id, "other");
     assert!(harness.registry.lock().await.in_memory_prompts.is_empty());
     assert_eq!(harness.recorded_calls(), vec!["removed", "removed"]);
 }
@@ -603,18 +610,24 @@ async fn oneshot_delete_scopes_rows_and_registry_to_the_requested_environment() 
         body.message,
         "Prompt greeting deleted successfully from production"
     );
-    let rows = harness.rows.lock().expect("rows");
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].environment, "development");
-    drop(rows);
-    let registry = harness.registry.lock().await;
+    assert_eq!(harness.rows.lock().expect("rows").len(), 1);
+    assert_eq!(
+        harness.rows.lock().expect("rows")[0].environment,
+        "development"
+    );
     assert!(
-        registry
+        harness
+            .registry
+            .lock()
+            .await
             .in_memory_prompts
             .contains_key("greeting.v1::development")
     );
     assert!(
-        !registry
+        !harness
+            .registry
+            .lock()
+            .await
             .in_memory_prompts
             .contains_key("greeting.v1::production")
     );
@@ -644,9 +657,11 @@ async fn oneshot_delete_leaves_the_registry_alone_when_the_database_delete_fails
     let (status, response) = harness.send(Method::DELETE, "/prompts/greeting", "").await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(detail(&response), "the fake table failed");
-    let registry = harness.registry.lock().await;
     assert!(
-        registry
+        harness
+            .registry
+            .lock()
+            .await
             .in_memory_prompts
             .contains_key("greeting.v1::development")
     );
