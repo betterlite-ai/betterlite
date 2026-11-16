@@ -118,13 +118,29 @@ pub(super) struct CreateCall {
     pub(super) overrides: DestinationOverrides,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) enum CreateOutcome {
+    #[default]
+    Builds,
+    Rejects,
+}
+
 #[derive(Clone, Default)]
 pub(super) struct RecordingFactory {
     calls: Arc<Mutex<Vec<CreateCall>>>,
     destination: RecordingDestination,
+    outcome: CreateOutcome,
 }
 
 impl RecordingFactory {
+    pub(super) fn rejecting() -> Self {
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            destination: RecordingDestination::default(),
+            outcome: CreateOutcome::Rejects,
+        }
+    }
+
     pub(super) fn calls(&self) -> Vec<CreateCall> {
         self.calls
             .lock()
@@ -155,22 +171,10 @@ impl DestinationProvider for RecordingFactory {
             prefix: prefix.to_owned(),
             overrides: overrides.clone(),
         });
-        Ok(self.destination)
-    }
-}
-
-pub(super) struct FailingFactory;
-
-impl DestinationProvider for FailingFactory {
-    type Destination = RecordingDestination;
-
-    fn create(
-        self,
-        _provider: &str,
-        _prefix: &str,
-        _overrides: &DestinationOverrides,
-    ) -> Result<RecordingDestination, FactoryError> {
-        Err(FactoryError::MissingS3BucketName)
+        match self.outcome {
+            CreateOutcome::Builds => Ok(self.destination),
+            CreateOutcome::Rejects => Err(FactoryError::MissingS3BucketName),
+        }
     }
 }
 

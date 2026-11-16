@@ -15,7 +15,7 @@ use crate::focus_records::table::FocusTable;
 use crate::focus_records::transformer::transform;
 
 use super::support::{
-    FailingFactory, FixedClock, PREFIX, RecordingFactory, RecordingSource, data_row, harness,
+    FixedClock, PREFIX, RecordingFactory, RecordingSource, data_row, harness,
     harness_with_transform, number, overrides_with_bucket_name, refusing_transform, settings, text,
     timestamp, usage_row, window,
 };
@@ -66,7 +66,7 @@ fn init_selects_the_parquet_serializer() {
 fn init_creates_the_destination_before_checking_the_format() {
     let result = FocusExportEngine::new(
         settings("json"),
-        FailingFactory,
+        RecordingFactory::rejecting(),
         RecordingSource::default(),
         FixedClock {
             now: timestamp("2026-03-04T05:06:07Z"),
