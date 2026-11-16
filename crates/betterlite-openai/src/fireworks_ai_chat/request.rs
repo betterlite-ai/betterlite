@@ -53,19 +53,16 @@ fn apply_stream_options(optional_params: &mut Object) -> Result<(), FireworksCha
     if !matches!(optional_params.get(STREAM), Some(Json::Bool(true))) {
         return Ok(());
     }
-    match optional_params.get(STREAM_OPTIONS).cloned() {
-        None | Some(Json::Null) => {
-            let options = Object::from([(INCLUDE_USAGE.to_owned(), Json::Bool(true))]);
-            optional_params.insert(STREAM_OPTIONS.to_owned(), Json::Object(options));
-            Ok(())
-        }
-        Some(Json::Object(mut options)) => {
-            if !matches!(options.get(INCLUDE_USAGE), Some(Json::Bool(false))) {
-                options.insert(INCLUDE_USAGE.to_owned(), Json::Bool(true));
+    let options = match optional_params.get(STREAM_OPTIONS).cloned() {
+        None | Some(Json::Null) => Object::from([(INCLUDE_USAGE.to_owned(), Json::Bool(true))]),
+        Some(Json::Object(mut given)) => {
+            if !matches!(given.get(INCLUDE_USAGE), Some(Json::Bool(false))) {
+                given.insert(INCLUDE_USAGE.to_owned(), Json::Bool(true));
             }
-            optional_params.insert(STREAM_OPTIONS.to_owned(), Json::Object(options));
-            Ok(())
+            given
         }
-        Some(_) => Err(FireworksChatError::StreamOptions),
-    }
+        Some(_) => return Err(FireworksChatError::StreamOptions),
+    };
+    optional_params.insert(STREAM_OPTIONS.to_owned(), Json::Object(options));
+    Ok(())
 }

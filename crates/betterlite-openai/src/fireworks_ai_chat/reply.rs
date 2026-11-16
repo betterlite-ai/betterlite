@@ -63,14 +63,7 @@ pub fn transform_response(input: &ReplyInput<'_>) -> Result<Reply, FireworksChat
         choice.finish_reason = Some(mapped);
         choice.provider_specific_fields = native;
         // Message() reads an empty tool_calls list as none, so the repair still sees the content
-        if choice
-            .message
-            .tool_calls
-            .as_ref()
-            .is_some_and(Vec::is_empty)
-        {
-            choice.message.tool_calls = None;
-        }
+        choice.message.tool_calls.take_if(|calls| calls.is_empty());
     }
     repair_content_tool_calls(&mut response, input.tools, input.identifier);
     let hidden_params = hidden_params(input.headers, fireworks);
