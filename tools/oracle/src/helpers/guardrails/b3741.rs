@@ -71,11 +71,11 @@ pub(crate) struct PayloadAssemblyArgs {
 #[serde(tag = "function")]
 pub(crate) enum Input {
     #[serde(rename = "agent_365_token_exchange")]
-    Agent365TokenExchange(Box<TokenExchangeArgs>),
+    TokenExchange(Box<TokenExchangeArgs>),
     #[serde(rename = "agent_365_assertion")]
-    Agent365Assertion(AssertionArgs),
+    Assertion(AssertionArgs),
     #[serde(rename = "agent_365_payload_assembly")]
-    Agent365PayloadAssembly(Box<PayloadAssemblyArgs>),
+    PayloadAssembly(Box<PayloadAssemblyArgs>),
 }
 
 pub(crate) struct Op;
@@ -85,9 +85,9 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Agent365TokenExchange(args) => outcome::exchange_result(args),
-            Input::Agent365Assertion(args) => outcome::assertion_result(&args.values),
-            Input::Agent365PayloadAssembly(args) => payload::payload_result(args),
+            Input::TokenExchange(args) => outcome::exchange_result(args),
+            Input::Assertion(args) => Ok(outcome::assertion_result(&args.values)),
+            Input::PayloadAssembly(args) => payload::payload_result(args),
         }
     }
 }

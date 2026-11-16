@@ -57,7 +57,7 @@ async fn range_outcome(guardrail: &Agent365Guardrail, prefix: &str, count: usize
     let mut token = String::new();
     for index in 0..count {
         match guardrail.get_obo_token(&format!("{prefix}{index}")).await {
-            Ok(fetched) => token = fetched.expose_secret().to_owned(),
+            Ok(fetched) => fetched.expose_secret().clone_into(&mut token),
             Err(error) => return token_outcome(Err(error)),
         }
     }
@@ -74,6 +74,14 @@ fn request_headers(entries: &BTreeMap<String, String>) -> Result<HeaderMap, Box<
     Ok(headers)
 }
 
+fn form_body(data: &BTreeMap<String, String>) -> String {
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
+    for (name, value) in data {
+        serializer.append_pair(name, value);
+    }
+    serializer.finish()
+}
+
 async fn post_outcome(
     guardrail: &Agent365Guardrail,
     url: &str,
@@ -81,11 +89,7 @@ async fn post_outcome(
     data: &BTreeMap<String, String>,
 ) -> Result<Value, Box<HelperError>> {
     let built = request_headers(headers)?;
-    let mut serializer = form_urlencoded::Serializer::new(String::new());
-    for (name, value) in data {
-        serializer.append_pair(name, value);
-    }
-    let body = serializer.finish();
+    let body = form_body(data);
     match guardrail
         .post_allowing_error_status(url, &built, body.as_bytes())
         .await
@@ -158,7 +162,7 @@ pub(super) fn exchange_result(args: &TokenExchangeArgs) -> HelperResult {
     }))
 }
 
-pub(super) fn assertion_result(values: &[String]) -> HelperResult {
+pub(super) fn assertion_result(values: &[String]) -> Value {
     let mut accepted = Vec::new();
     for value in values {
         let guard = GuardrailValue::Text(value.clone());
@@ -166,5 +170,5 @@ pub(super) fn assertion_result(values: &[String]) -> HelperResult {
             accepted.push(value);
         }
     }
-    Ok(json!({"accepted": accepted}))
+    json!({"accepted": accepted})
 }

@@ -12,6 +12,7 @@ use betterlite_guardrails::agent_365_tokens::{Agent365Guardrail, Agent365Setting
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderMap};
 use secrecy::SecretString;
+use tokio::runtime::{Builder, Runtime};
 use url::form_urlencoded;
 
 use super::{FIXED_NOW_SECONDS, ScriptedReply};
@@ -126,8 +127,8 @@ pub(super) fn guardrail(
     Agent365Guardrail::new(settings, poster, true, clock).or_config_error()
 }
 
-pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .or_value_error()
