@@ -25,7 +25,10 @@ impl IdeogramError {
                 | FalImageError::ReplyNotAnObject { status, .. },
             ) => Some(*status),
             Self::Fal(
-                FalImageError::MissingApiKey | FalImageError::UnsupportedParameters { .. },
+                FalImageError::MissingApiKey
+                | FalImageError::UnsupportedParameters { .. }
+                | FalImageError::SizeNotText
+                | FalImageError::FieldNotText { .. },
             )
             | Self::UnsupportedParameters { .. }
             | Self::InvalidImageUrl { .. } => None,
