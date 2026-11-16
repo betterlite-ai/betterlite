@@ -142,10 +142,10 @@ pub fn unbilled_call(
 // metadata wins over litellm_metadata, and only the cost poll keeps a read billed
 fn cost_poll_origin(litellm_params: &MetadataMap) -> Option<Origin> {
     let found = ["metadata", "litellm_metadata"].iter().find_map(|name| {
-        litellm_params
+        let fields = litellm_params
             .get(*name)
-            .and_then(OtelModelValue::as_object)
-            .and_then(|fields| fields.get("internal_call_origin"))
+            .and_then(OtelModelValue::as_object)?;
+        fields.get("internal_call_origin")
     });
     (found.and_then(OtelModelValue::as_str)? == BACKGROUND_COST_POLL_ORIGIN)
         .then_some(Origin::BackgroundResponseCostPoll)
