@@ -148,12 +148,15 @@ fn output_object(output: OptionalOutput) -> Object {
     let value = match output {
         None => return Object::new(),
         Some(None) => Json::Null,
-        Some(Some(text)) => match serde_json::from_str::<Json>(&text) {
-            Ok(Json::Object(object)) => return object,
-            Ok(other) => other,
-            Err(_) => Json::Text(text),
-        },
+        // LiteLLM parses a string output as JSON and keeps the text when it is not JSON
+        Some(Some(Json::Text(text))) => {
+            serde_json::from_str::<Json>(&text).unwrap_or_else(|_| Json::Text(text))
+        }
+        Some(Some(value)) => value,
     };
+    if let Json::Object(object) = value {
+        return object;
+    }
     let mut object = Object::new();
     object.insert("result".to_owned(), value);
     object
@@ -163,10 +166,8 @@ fn base64_byte_estimate(data: &str) -> u64 {
     let length = u64::try_from(data.chars().count()).unwrap_or(u64::MAX);
     let padding = if data.ends_with("==") {
         2
-    } else if data.ends_with('=') {
-        1
     } else {
-        0
+        u64::from(data.ends_with('='))
     };
     length
         .saturating_mul(3)

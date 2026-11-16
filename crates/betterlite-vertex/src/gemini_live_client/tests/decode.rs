@@ -1,13 +1,14 @@
 #![cfg(test)]
 
+use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
 
 use crate::gemini_live_client::decode::{Audio, ClientEvent, ItemCreate};
 use crate::gemini_live_client::error::LiveClientError;
 
-use super::support::{decode, decode_bytes};
+use super::support::{decode, decode_bytes, json};
 
-type ExpectedOutput = Option<Option<&'static str>>;
+type ExpectedOutput = Option<Option<Json>>;
 
 fn tool_item(body: &str) -> String {
     format!(
@@ -91,10 +92,14 @@ fn an_event_without_a_known_type_is_unknown(#[case] source: &str) {
 #[case::output_text(
     r#","call_id":"call_1","output":"{\"a\":1}""#,
     Some("call_1"),
-    Some(Some("{\"a\":1}"))
+    Some(Some(Json::Text("{\"a\":1}".to_owned())))
 )]
-#[case::call_missing(r#","output":"5""#, None, Some(Some("5")))]
-#[case::call_null(r#","call_id":null,"output":"5""#, None, Some(Some("5")))]
+#[case::call_missing(r#","output":"5""#, None, Some(Some(Json::Text("5".to_owned()))))]
+#[case::call_null(
+    r#","call_id":null,"output":"5""#,
+    None,
+    Some(Some(Json::Text("5".to_owned())))
+)]
 fn a_function_call_output_keeps_absent_and_null_values(
     #[case] body: &str,
     #[case] call_id: Option<&str>,
@@ -104,7 +109,20 @@ fn a_function_call_output_keeps_absent_and_null_values(
         panic!("the item is a tool result");
     };
     assert_eq!(result.call_id.as_deref(), call_id);
-    assert_eq!(result.output.as_ref().map(|value| value.as_deref()), output);
+    assert_eq!(result.output, output);
+}
+
+#[rstest]
+#[case::object(r#"{"a":1}"#, r#"{"a":1}"#)]
+#[case::list("[1,2]", "[1,2]")]
+#[case::number("5", "5")]
+#[case::boolean("true", "true")]
+fn a_raw_tool_output_value_decodes_as_json(#[case] output: &str, #[case] expected: &str) {
+    let body = format!(r#","call_id":"call_1","output":{output}"#);
+    let ClientEvent::ItemCreate(ItemCreate::ToolResult(result)) = decode(&tool_item(&body)) else {
+        panic!("the item is a tool result");
+    };
+    assert_eq!(result.output, Some(Some(json(expected))));
 }
 
 #[rstest]
@@ -181,7 +199,7 @@ fn the_size_bound_counts_the_bytes_exactly() {
     let source = r#"{"type":"input_audio_buffer.commit"}"#;
     let limit = source.len();
     let too_small = limit.saturating_sub(1);
-    assert!(decode_bytes(source.as_bytes(), limit).is_ok());
+    decode_bytes(source.as_bytes(), limit).expect("the event fits the limit exactly");
     let error = decode_bytes(source.as_bytes(), too_small).expect_err("the event is too large");
     assert!(
         matches!(error, LiveClientError::TooLarge { limit: reported } if reported == too_small)

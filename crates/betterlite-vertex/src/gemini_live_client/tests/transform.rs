@@ -232,6 +232,10 @@ fn a_tool_reply_carries_the_known_name_and_the_call_id() {
 #[case::json_text(r#""\"x\"""#, r#"{"result":"x"}"#)]
 #[case::malformed(r#""not json""#, r#"{"result":"not json"}"#)]
 #[case::null("null", r#"{"result":null}"#)]
+#[case::raw_object(r#"{"a":1}"#, r#"{"a":1}"#)]
+#[case::raw_number("5", r#"{"result":5}"#)]
+#[case::raw_list("[1,2]", r#"{"result":[1,2]}"#)]
+#[case::raw_boolean("true", r#"{"result":true}"#)]
 fn a_tool_output_is_parsed_or_wrapped_as_a_result(#[case] output: &str, #[case] response: &str) {
     let mut session = Session::new();
     session.register("call_1", "get_weather");
@@ -288,9 +292,9 @@ fn a_missing_or_empty_call_id_leaves_out_the_id() {
             &messages,
             &[r#"{"toolResponse":{"functionResponses":[{"response":{"result":true}}]}}"#],
         );
-        let messages = session.send(&tool_reply("", r#""{}""#));
+        let second = session.send(&tool_reply("", r#""{}""#));
         assert_messages(
-            &messages,
+            &second,
             &[r#"{"toolResponse":{"functionResponses":[{"response":{}}]}}"#],
         );
     });

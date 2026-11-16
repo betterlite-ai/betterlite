@@ -4,15 +4,15 @@ use std::str::from_utf8;
 
 use betterlite_prompts::arguments::json::Json;
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
+use serde::de::{DeserializeOwned, IgnoredAny};
 use serde_json::error::Category;
 use serde_json::value::RawValue;
 
 use super::error::LiveClientError;
 use crate::gemini_live_setup::session::SessionUpdate;
 
-// an absent output is None, an explicit null is Some(None) and a JSON string is Some(Some(text))
-pub type OptionalOutput = Option<Option<String>>;
+// an absent output is None, an explicit null is Some(None) and any JSON value is Some(Some(value))
+pub type OptionalOutput = Option<Option<Json>>;
 
 #[derive(Debug)]
 pub enum ClientEvent {
@@ -43,7 +43,7 @@ pub enum ItemCreate {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ToolResult {
     pub call_id: Option<String>,
-    // absent wraps into an empty response, null into a null result, and a string is parsed as JSON
+    // absent wraps into an empty response, null into a null result and a string is parsed as JSON
     pub output: OptionalOutput,
 }
 
@@ -77,12 +77,12 @@ enum PartType {
     InputText,
 }
 
-// a type name betterlite does not know keeps whatever JSON it held
+// LiteLLM compares the type against known names and ignores the rest, so an unknown tag is read and dropped
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum Tag<T> {
     Known(T),
-    Other(Json),
+    Other(IgnoredAny),
 }
 
 #[derive(Deserialize)]
