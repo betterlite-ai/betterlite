@@ -30,7 +30,12 @@ pub fn websocket_url(api_base: Option<&str>) -> Result<String, ResponsesError> {
         return Err(ResponsesError::MissingWebsocketApiBase);
     };
     let parsed = HttpxUrl::parse(base)?;
-    let path = strip_responses_suffix(parsed.path.trim_end_matches('/'));
+    // one suffix comes off, in LiteLLM's order, so a base already at the websocket route is not appended twice
+    let trimmed = parsed.path.trim_end_matches('/');
+    let path = trimmed
+        .strip_suffix(WEBSOCKET_ROUTE)
+        .or_else(|| trimmed.strip_suffix(ROUTE))
+        .unwrap_or(trimmed);
     let mut authority = parsed.clone();
     authority.path = String::new();
     authority.query = None;
@@ -45,14 +50,4 @@ pub fn websocket_url(api_base: Option<&str>) -> Result<String, ResponsesError> {
     websocket.query = None;
     websocket.fragment = parsed.fragment;
     Ok(websocket.href())
-}
-
-// One suffix comes off, in LiteLLM's order, so a base already at the websocket route is not appended twice
-fn strip_responses_suffix(path: &str) -> &str {
-    for suffix in [WEBSOCKET_ROUTE, ROUTE] {
-        if let Some(stripped) = path.strip_suffix(suffix) {
-            return stripped;
-        }
-    }
-    path
 }

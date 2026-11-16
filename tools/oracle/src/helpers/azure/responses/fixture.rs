@@ -1,19 +1,15 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::future::{Future, ready};
-
+use super::input::Install;
 use betterlite_models::model_capability_predicates::CapabilityRequest;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_openai::reasoning_models::{ReasoningCapabilities, catalogue_declares_default};
 use betterlite_openai::response_params::capabilities::{ModelInfo, ResponsesCapabilities};
 use serde_json::Value;
-
-use super::input::Install;
-
+use std::collections::{BTreeMap, BTreeSet};
+use std::future::{Future, ready};
 pub(crate) struct MapFixture {
     pub(crate) catalog: CatalogCapabilities,
     entries: BTreeMap<String, Value>,
 }
-
 impl MapFixture {
     pub(crate) fn new(install: &Install) -> Self {
         Self {
@@ -24,7 +20,6 @@ impl MapFixture {
             entries: install.model_cost.clone(),
         }
     }
-
     fn field(&self, request: &CapabilityRequest<'_>, key: &str) -> Option<&Value> {
         let entry = match request.custom_llm_provider {
             None => {
@@ -37,7 +32,6 @@ impl MapFixture {
         entry?.get(key)
     }
 }
-
 impl ReasoningCapabilities for MapFixture {
     fn supports_factory(
         &mut self,
@@ -46,7 +40,6 @@ impl ReasoningCapabilities for MapFixture {
     ) -> impl Future<Output = bool> + Send {
         ready(self.field(request, key).and_then(Value::as_bool) == Some(true))
     }
-
     fn declared_value_factory(
         &mut self,
         request: &CapabilityRequest<'_>,
@@ -58,7 +51,6 @@ impl ReasoningCapabilities for MapFixture {
                 .map(str::to_owned),
         )
     }
-
     fn is_explicitly_disabled_factory(
         &mut self,
         request: &CapabilityRequest<'_>,
@@ -66,7 +58,6 @@ impl ReasoningCapabilities for MapFixture {
     ) -> impl Future<Output = bool> + Send {
         ready(self.field(request, key).and_then(Value::as_bool) == Some(false))
     }
-
     fn supports_response_schema(
         &mut self,
         request: &CapabilityRequest<'_>,
@@ -77,13 +68,11 @@ impl ReasoningCapabilities for MapFixture {
                 == Some(true),
         )
     }
-
     fn catalogue_declares_default(&mut self) -> bool {
         let entries: Vec<String> = self.entries.values().map(Value::to_string).collect();
         catalogue_declares_default(entries.iter().map(String::as_str))
     }
 }
-
 impl ResponsesCapabilities for MapFixture {
     fn model_info(&mut self, model: &str) -> impl Future<Output = ModelInfo> + Send {
         let key = model.to_owned();

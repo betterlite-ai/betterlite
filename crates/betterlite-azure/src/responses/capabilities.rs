@@ -40,33 +40,25 @@ pub struct AzureResponses<'capabilities, Capabilities> {
     inner: AzureCapabilities<'capabilities, Capabilities>,
 }
 
+macro_rules! forward_lookup {
+    ($method:ident -> $answer:ty) => {
+        fn $method(
+            &mut self,
+            request: &CapabilityRequest<'_>,
+            key: &str,
+        ) -> impl Future<Output = $answer> + Send {
+            self.inner.$method(request, key)
+        }
+    };
+}
+
 impl<Capabilities> ReasoningCapabilities for AzureResponses<'_, Capabilities>
 where
     Capabilities: ResponsesCapabilities + Send,
 {
-    fn supports_factory(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-        key: &str,
-    ) -> impl Future<Output = bool> + Send {
-        self.inner.supports_factory(request, key)
-    }
-
-    fn declared_value_factory(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-        key: &str,
-    ) -> impl Future<Output = Option<String>> + Send {
-        self.inner.declared_value_factory(request, key)
-    }
-
-    fn is_explicitly_disabled_factory(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-        key: &str,
-    ) -> impl Future<Output = bool> + Send {
-        self.inner.is_explicitly_disabled_factory(request, key)
-    }
+    forward_lookup!(supports_factory -> bool);
+    forward_lookup!(declared_value_factory -> Option<String>);
+    forward_lookup!(is_explicitly_disabled_factory -> bool);
 
     fn supports_response_schema(
         &mut self,

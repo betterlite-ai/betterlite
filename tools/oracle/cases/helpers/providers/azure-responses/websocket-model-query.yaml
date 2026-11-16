@@ -5,7 +5,7 @@ compare: {ignore: []}
 call:
   azure_responses:
     function: websocket_model_query
-    websockets:
+    steps:
       - api_base: null
       - api_base: https://res.openai.azure.com
       - api_base: https://res.openai.azure.com/

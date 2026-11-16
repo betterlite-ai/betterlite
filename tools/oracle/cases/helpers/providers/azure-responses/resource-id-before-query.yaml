@@ -5,7 +5,7 @@ compare: {ignore: []}
 call:
   azure_responses:
     function: resource_id_before_query
-    resources:
+    steps:
       - endpoint: get
         api_base: "https://res.openai.azure.com/openai/responses?api-version=2024-10-21"
         response_id: resp_1

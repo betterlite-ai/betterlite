@@ -5,6 +5,6 @@ compare: {ignore: []}
 call:
   azure_responses:
     function: websocket_model_query
-    websockets:
+    steps:
       - {api_base: null}
       - {api_base: "https://h/deployments/d?x=1#y"}

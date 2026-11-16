@@ -7,6 +7,6 @@ call:
   azure_responses:
     function: base_and_api_version
     default_api_version: preview
-    urls:
+    steps:
       - {api_base: https://res.openai.azure.com, api_version: null, headers: {}, api_key: null}
       - {api_base: null, api_version: null, headers: {}, api_key: null}

@@ -35,10 +35,22 @@ pub(super) const MODEL_COST: &str = r#"{
   },
   "azure/gpt-5-plain": {"supports_reasoning": true},
   "azure/gpt-5-unknown": {},
+  "azure/gpt-5-nolabel": {
+    "supports_reasoning": true,
+    "supports_none_reasoning_effort": true
+  },
   "azure/o3": {"supports_reasoning": true},
   "o3": {"supports_reasoning": true},
   "o3-mini": {"supports_reasoning": false},
   "deepseek-r1": {"supports_reasoning": true}
+}"#;
+
+// A catalogue that declares no default effort at all, so the none-support flag answers on its own
+pub(super) const NO_DEFAULT_MODEL_COST: &str = r#"{
+  "azure/gpt-5-nolabel": {
+    "supports_reasoning": true,
+    "supports_none_reasoning_effort": true
+  }
 }"#;
 
 pub(super) struct CapabilityFixture {
@@ -165,7 +177,17 @@ pub(super) fn mapped(
     options: &ResponsesOptions,
     drop: DropParams,
 ) -> Result<serde_json::Value, ResponseParamsError> {
-    let mut capabilities = fixture();
+    mapped_with(MODEL_COST, options, drop)
+}
+
+pub(super) fn mapped_with(
+    cost: &str,
+    options: &ResponsesOptions,
+    drop: DropParams,
+) -> Result<serde_json::Value, ResponseParamsError> {
+    let mut capabilities = CapabilityFixture {
+        entries: serde_json::from_str(cost).unwrap(),
+    };
     let mut bundled = BundledReasoningModels::default();
     runtime()
         .block_on(map_params(&mut capabilities, options, drop, &mut bundled))

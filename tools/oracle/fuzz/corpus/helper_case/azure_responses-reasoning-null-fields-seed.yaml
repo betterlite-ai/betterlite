@@ -5,7 +5,7 @@ compare: {ignore: []}
 call:
   azure_responses:
     function: reasoning_null_fields
-    transforms:
+    steps:
       - model: azure/o_series/gpt-5
         input:
           - {type: reasoning, id: rs_1, status: completed, encrypted_content: null}

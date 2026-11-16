@@ -1,6 +1,3 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
-
 use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
 use betterlite_azure::azure_urls::{EnvironmentHeadersRequest, validate_azure_environment};
 use betterlite_azure::credentials::selection::AzureTokenError;
@@ -10,9 +7,9 @@ use betterlite_azure::credentials::source::{
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use secrecy::SecretString;
-
+use std::collections::BTreeMap;
+use std::sync::Arc;
 pub(crate) struct NoSources;
-
 fn unavailable(kind: &str) -> SourceFailure {
     SourceFailure {
         class: String::from("ValueError"),
@@ -20,7 +17,6 @@ fn unavailable(kind: &str) -> SourceFailure {
         message: format!("no {kind} source is configured"),
     }
 }
-
 impl CredentialSources for NoSources {
     fn client_secret<'source>(
         &'source self,
@@ -28,33 +24,28 @@ impl CredentialSources for NoSources {
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
         Err(unavailable("client secret"))
     }
-
     fn username_password<'source>(
         &'source self,
         _record: &UsernamePasswordRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
         Err(unavailable("username and password"))
     }
-
     fn sdk_refresh<'source>(
         &'source self,
         _scope: &str,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
         Err(unavailable("SDK refresh"))
     }
-
     fn default_credential<'source>(
         &'source self,
         _scope: &'source str,
     ) -> Option<Arc<dyn CallableTokenProvider + 'source>> {
         None
     }
-
     fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
         Err(unavailable("OIDC"))
     }
 }
-
 fn deployment_settings() -> DeploymentSettings {
     DeploymentSettings {
         azure_ad_token: None,
@@ -66,7 +57,6 @@ fn deployment_settings() -> DeploymentSettings {
         azure_password: None,
     }
 }
-
 pub(crate) fn environment_headers(
     headers: &BTreeMap<String, String>,
     api_key: Option<&SecretString>,

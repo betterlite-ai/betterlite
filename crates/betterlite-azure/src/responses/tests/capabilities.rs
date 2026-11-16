@@ -96,6 +96,17 @@ fn mapping() {
         support::mapped(&floor, NO_DROP).unwrap(),
         json!({"max_output_tokens": 16})
     );
+    // a label-less entry falls back on the catalogue's declared default, so the sampling stays gated
+    let unlabeled = azure_options("gpt-5-nolabel", r#"{"temperature":0.2}"#);
+    assert!(matches!(
+        support::mapped(&unlabeled, NO_DROP).unwrap_err(),
+        ResponseParamsError::UnsupportedTemperature { .. }
+    ));
+    // and a catalogue with no declared default lets the none-support flag answer, keeping the sampling
+    assert_eq!(
+        support::mapped_with(support::NO_DEFAULT_MODEL_COST, &unlabeled, NO_DROP).unwrap(),
+        json!({"temperature": 0.2})
+    );
     // the O-series mapper copies values and only drops temperature when allowed
     let params = support::params(r#"{"temperature":0.2,"top_p":0.9}"#);
     let kept: Value = serde_json::to_value(o_series_map_params("o3", &params, NO_DROP)).unwrap();

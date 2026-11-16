@@ -1,25 +1,19 @@
-use serde_json::json;
-use tokio::runtime::Builder;
-
 use crate::helpers::{Helper, HelperResult};
-
 use input::Input;
 use reports::{
     base_rows, capability_report, invalid_input, reply_rows, resource_rows, transform_rows,
     websocket_report,
 };
-
+use serde_json::json;
+use tokio::runtime::Builder;
 mod fixture;
 mod input;
 mod reports;
 mod sources;
 mod tests;
-
 pub(crate) struct Op;
-
 impl Helper for Op {
     type Input = Input;
-
     fn run(input: &Self::Input) -> HelperResult {
         let runtime = Builder::new_current_thread()
             .build()
