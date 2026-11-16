@@ -13,6 +13,7 @@ use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::runtime::{Builder, Runtime};
 
 mod fixture;
 
@@ -63,14 +64,14 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| failure(error.to_string()))?;
         assemble_input(&runtime, input)
     }
 }
 
-fn assemble_input(runtime: &tokio::runtime::Runtime, input: &Input) -> HelperResult {
+fn assemble_input(runtime: &Runtime, input: &Input) -> HelperResult {
     if input.function != ASSEMBLE {
         return Err(failure(format!(
             "the function {} is not {ASSEMBLE}",
