@@ -1,0 +1,48 @@
+kind: helper
+name: oci-embedding
+call:
+  b8330:
+    op: embedding
+    provider: oci
+    model: cohere.embed-english-v3.0
+    input: hello
+    api_base: "{{upstream}}"
+    env:
+      OCI_REGION: us-ashburn-1
+      OCI_USER: ocid1.user.oc1..oracle
+      OCI_FINGERPRINT: "aa:bb:cc:dd"
+      OCI_TENANCY: ocid1.tenancy.oc1..oracle
+      OCI_COMPARTMENT_ID: ocid1.compartment.oc1..oracle
+      OCI_KEY: |
+        -----BEGIN PRIVATE KEY-----
+        MIIBVAIBADANBgkqhkiG9w0BAQEFAASCAT4wggE6AgEAAkEAv6Qg2eSkw+GeFRyD
+        t0cMPjg6YbDcNLl09K5LJDDFHa4SWgA6aVSiNPH27gtCTfcXPdkrxo0ofxL3ixkM
+        cd4lTwIDAQABAkByU37Jnm5w8RL2szkcyITURYUGrJTh21WbdrMbFwExD5RV9dYd
+        ohsWqkMKR2mMtdz2Vf+7gvKWd9erpWPOoIZZAiEA4A+M2DHHdiAhFdKqltZCdw1w
+        pS2jaiEu5REK6qlB5zsCIQDa9YSSOPbebqf/Jr3dsfIZSieSK6bYC2lq5TJdV6vg
+        /QIgcNCjk/+MdLe8sOY/qm77TEJiI2kVTMykdgXcv0a1vh0CIQDQ2WSVUI5wxd2q
+        KxrpDmVdJ/UsoERpSCFKG8n5bLl+RQIgRUzAfY1gqqW07paFf+zHn94XgI5qcc95
+        04BXX4RypBE=
+        -----END PRIVATE KEY-----
+    answer:
+      status: 200
+      body: '{"embeddings":[[0.1,0.2]],"model_id":"cohere.embed-english-v3.0","model_version":"1.0"}'
+env:
+  OCI_REGION: us-ashburn-1
+  OCI_USER: ocid1.user.oc1..oracle
+  OCI_FINGERPRINT: "aa:bb:cc:dd"
+  OCI_TENANCY: ocid1.tenancy.oc1..oracle
+  OCI_COMPARTMENT_ID: ocid1.compartment.oc1..oracle
+  OCI_KEY: |
+    -----BEGIN PRIVATE KEY-----
+    MIIBVAIBADANBgkqhkiG9w0BAQEFAASCAT4wggE6AgEAAkEAv6Qg2eSkw+GeFRyD
+    t0cMPjg6YbDcNLl09K5LJDDFHa4SWgA6aVSiNPH27gtCTfcXPdkrxo0ofxL3ixkM
+    cd4lTwIDAQABAkByU37Jnm5w8RL2szkcyITURYUGrJTh21WbdrMbFwExD5RV9dYd
+    ohsWqkMKR2mMtdz2Vf+7gvKWd9erpWPOoIZZAiEA4A+M2DHHdiAhFdKqltZCdw1w
+    pS2jaiEu5REK6qlB5zsCIQDa9YSSOPbebqf/Jr3dsfIZSieSK6bYC2lq5TJdV6vg
+    /QIgcNCjk/+MdLe8sOY/qm77TEJiI2kVTMykdgXcv0a1vh0CIQDQ2WSVUI5wxd2q
+    KxrpDmVdJ/UsoERpSCFKG8n5bLl+RQIgRUzAfY1gqqW07paFf+zHn94XgI5qcc95
+    04BXX4RypBE=
+    -----END PRIVATE KEY-----
+compare:
+  ignore: []
