@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
-use std::sync::PoisonError;
+use std::sync::{Mutex, PoisonError};
 
+use betterlite_openai::response_input::ResponsesInput;
+use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::media::error::MediaError;
 use betterlite_prompts::media::limits::MAX_REMOTE_URLS;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
@@ -142,6 +144,21 @@ pub(super) fn inline_image_replacement() {
     ));
 }
 
+fn fetch_log(calls: &Mutex<Vec<String>>) -> Vec<String> {
+    calls.lock().unwrap_or_else(PoisonError::into_inner).clone()
+}
+
+fn batch_log(calls: &Mutex<Vec<Vec<String>>>) -> Vec<Vec<String>> {
+    calls.lock().unwrap_or_else(PoisonError::into_inner).clone()
+}
+
+fn image_at(body: &Object, pointer: &str) -> Option<Value> {
+    serde_json::to_value(body)
+        .expect("the body encodes")
+        .pointer(pointer)
+        .cloned()
+}
+
 pub(super) fn remote_url_inlined() {
     let source = input(FETCHED);
     let sync = BedrockResponsesConfig {
@@ -155,20 +172,8 @@ pub(super) fn remote_url_inlined() {
         None,
     ))
     .expect("the sync transform fetches");
-    let singles = sync
-        .fetcher
-        .singles
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    assert_eq!(singles, strings(&FETCHED_ORDER));
-    assert!(
-        sync.fetcher
-            .batches
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .is_empty()
-    );
+    assert_eq!(fetch_log(&sync.fetcher.singles), strings(&FETCHED_ORDER));
+    assert!(batch_log(&sync.fetcher.batches).is_empty());
     let parallel = BedrockResponsesConfig {
         fetcher: MapFetcher::with(&DATA_URLS),
     };
@@ -180,42 +185,33 @@ pub(super) fn remote_url_inlined() {
         None,
     ))
     .expect("the async transform fetches");
-    let batches = parallel
-        .fetcher
-        .batches
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    assert_eq!(batches, vec![strings(&FETCHED_ORDER)]);
-    assert!(
-        parallel
-            .fetcher
-            .singles
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .is_empty()
+    assert_eq!(
+        batch_log(&parallel.fetcher.batches),
+        vec![strings(&FETCHED_ORDER)]
     );
+    assert!(fetch_log(&parallel.fetcher.singles).is_empty());
     assert_eq!(sync_body, async_body);
-    let sent = serde_json::to_value(&sync_body).expect("the body encodes");
-    assert_eq!(
-        sent.pointer("/input/0/content/0/image_url"),
-        Some(&Value::from("data:image/png;base64,QQ=="))
-    );
-    assert_eq!(
-        sent.pointer("/input/0/content/2/image_url"),
-        Some(&Value::from("data:image/png;base64,QQ=="))
-    );
-    assert_eq!(
-        sent.pointer("/input/1/output/image_url"),
-        Some(&Value::from("data:image/png;base64,Qw=="))
-    );
-    let refusing = BedrockResponsesConfig {
-        fetcher: MapFetcher::with(&[]),
-    };
+    assert_inlined(&sync_body);
+    refusals(&source);
+}
+
+fn assert_inlined(body: &Object) {
+    for (pointer, expected) in [
+        ("/input/0/content/0/image_url", "data:image/png;base64,QQ=="),
+        ("/input/0/content/1/image_url", "data:image/png;base64,Qg=="),
+        ("/input/0/content/2/image_url", "data:image/png;base64,QQ=="),
+        ("/input/1/output/image_url", "data:image/png;base64,Qw=="),
+    ] {
+        assert_eq!(image_at(body, pointer), Some(Value::from(expected)));
+    }
+}
+
+fn refusals(source: &ResponsesInput) {
+    let refusing = MapFetcher::with(&[]);
     let refused = block_on(transform_responses_request(
-        &refusing.fetcher,
+        &refusing,
         MODEL,
-        &source,
+        source,
         &object("{}"),
         None,
     ));
@@ -224,9 +220,9 @@ pub(super) fn remote_url_inlined() {
         Err(ResponsesError::Fetch(ImageFetchError::Rejected { .. }))
     ));
     let refused_async = block_on(async_transform_responses(
-        &refusing.fetcher,
+        &refusing,
         MODEL,
-        &source,
+        source,
         &object("{}"),
         None,
     ));
@@ -240,11 +236,9 @@ pub(super) fn responses_media_fetch() {
     let source = input(
         r#"[{"type": "message", "role": "user", "content": [{"type": "input_image", "image_url": "http://a.example/1.png"}]}]"#,
     );
-    let config = BedrockResponsesConfig {
-        fetcher: MapFetcher::with(&DATA_URLS),
-    };
+    let fetcher = MapFetcher::with(&DATA_URLS);
     let sync = block_on(transform_responses_request(
-        &config.fetcher,
+        &fetcher,
         MODEL,
         &source,
         &object("{}"),
@@ -252,24 +246,20 @@ pub(super) fn responses_media_fetch() {
     ))
     .expect("sync fetch");
     let parallel = block_on(async_transform_responses(
-        &config.fetcher,
+        &fetcher,
         MODEL,
         &source,
         &object("{}"),
         None,
     ))
     .expect("async fetch");
-    let sent = serde_json::to_value(&sync).expect("the body encodes");
     assert_eq!(
-        sent.pointer("/input/0/content/0/image_url"),
-        Some(&Value::from("data:image/png;base64,QQ=="))
+        image_at(&sync, "/input/0/content/0/image_url"),
+        Some(Value::from("data:image/png;base64,QQ=="))
     );
     assert_eq!(sync, parallel);
-    let refusing = BedrockResponsesConfig {
-        fetcher: MapFetcher::with(&[]),
-    };
     let refused = block_on(transform_responses_request(
-        &refusing.fetcher,
+        &MapFetcher::with(&[]),
         MODEL,
         &source,
         &object("{}"),
@@ -278,18 +268,19 @@ pub(super) fn responses_media_fetch() {
     assert!(matches!(refused, Err(ResponsesError::Fetch(_))));
 }
 
-pub(super) fn remote_url_limit() {
-    let blocks = |count: usize| {
-        let images: Vec<String> = (0..count)
-            .map(|index| {
-                format!(r#"{{"type": "input_image", "image_url": "http://m.example/{index}.png"}}"#)
-            })
-            .collect();
-        input(&format!(
-            r#"[{{"type": "message", "role": "user", "content": [{}]}}]"#,
-            images.join(",")
-        ))
-    };
+fn many_images(count: usize) -> ResponsesInput {
+    let images: Vec<String> = (0..count)
+        .map(|index| {
+            format!(r#"{{"type": "input_image", "image_url": "http://m.example/{index}.png"}}"#)
+        })
+        .collect();
+    input(&format!(
+        r#"[{{"type": "message", "role": "user", "content": [{}]}}]"#,
+        images.join(",")
+    ))
+}
+
+fn limit_fetcher() -> MapFetcher {
     let all: Vec<(String, String)> = (0..=MAX_REMOTE_URLS)
         .map(|index| {
             (
@@ -302,48 +293,38 @@ pub(super) fn remote_url_limit() {
         .iter()
         .map(|(url, data)| (url.as_str(), data.as_str()))
         .collect();
-    let config = BedrockResponsesConfig {
-        fetcher: MapFetcher::with(&pairs),
-    };
+    MapFetcher::with(&pairs)
+}
+
+pub(super) fn remote_url_limit() {
+    let fetcher = limit_fetcher();
     let within = block_on(transform_responses_request(
-        &config.fetcher,
+        &fetcher,
         MODEL,
-        &blocks(MAX_REMOTE_URLS),
+        &many_images(MAX_REMOTE_URLS),
         &object("{}"),
         None,
     ));
     assert!(within.is_ok());
     let over = block_on(async_transform_responses(
-        &config.fetcher,
+        &fetcher,
         MODEL,
-        &blocks(MAX_REMOTE_URLS + 1),
+        &many_images(MAX_REMOTE_URLS + 1),
         &object("{}"),
         None,
     ));
-    assert!(
-        matches!(over, Err(ResponsesError::Media(MediaError::TooManyRemoteUrls { limit })) if limit == MAX_REMOTE_URLS)
-    );
+    assert!(matches!(
+        over,
+        Err(ResponsesError::Media(MediaError::TooManyRemoteUrls { limit })) if limit == MAX_REMOTE_URLS
+    ));
     let over_sync = block_on(transform_responses_request(
-        &config.fetcher,
+        &fetcher,
         MODEL,
-        &blocks(MAX_REMOTE_URLS + 1),
+        &many_images(MAX_REMOTE_URLS + 1),
         &object("{}"),
         None,
     ));
     assert!(matches!(over_sync, Err(ResponsesError::Media(_))));
-    let calls = config
-        .fetcher
-        .singles
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .len();
-    assert_eq!(calls, MAX_REMOTE_URLS);
-    assert!(
-        config
-            .fetcher
-            .batches
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .is_empty()
-    );
+    assert_eq!(fetch_log(&fetcher.singles).len(), MAX_REMOTE_URLS);
+    assert!(batch_log(&fetcher.batches).is_empty());
 }

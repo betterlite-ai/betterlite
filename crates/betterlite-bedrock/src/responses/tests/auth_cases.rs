@@ -257,6 +257,17 @@ pub(super) fn credential_identity_isolation() {
     assert!(first_auth.contains("Credential=AKIDFIRST/20260101/us-west-2/"));
     assert!(second_auth.contains("Credential=AKIDSECOND/20260101/eu-west-1/"));
     assert!(!first_auth.contains("AKIDSECOND") && !second_auth.contains("AKIDFIRST"));
+    let bearer_key = secret("first-identity-token");
+    let bearer = Request {
+        api_key: Some(&bearer_key),
+        ..first
+    };
+    let bearer_signed = signed_with(&bearer, never_resolved).expect("a bearer token skips signing");
+    assert!(header_value(&bearer_signed, "authorization").is_none());
+    bearer_identities();
+}
+
+fn bearer_identities() {
     let first_key = secret("first-identity-token");
     let second_key = secret("second-identity-token");
     let mut first_headers: IndexMap<String, String> = IndexMap::new();
@@ -271,12 +282,6 @@ pub(super) fn credential_identity_isolation() {
         second_headers.get("Authorization").map(String::as_str),
         Some("Bearer second-identity-token")
     );
-    let bearer = Request {
-        api_key: Some(&first_key),
-        ..first
-    };
-    let bearer_signed = signed_with(&bearer, never_resolved).expect("a bearer token skips signing");
-    assert!(header_value(&bearer_signed, "authorization").is_none());
 }
 
 pub(super) fn secret_safe_failure() {

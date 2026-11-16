@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::ready;
+use std::future::{Ready, ready};
 use std::time::{Duration, UNIX_EPOCH};
 
 use base64::Engine as _;
@@ -9,6 +9,7 @@ use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_bedrock::responses::auth::{SignInputs, sign_request, validate_environment};
 use betterlite_bedrock::responses::error::error_from_reply;
 use betterlite_bedrock::signing::target::RegionInputs;
+use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -18,6 +19,22 @@ use super::ops::{API_BASE, Case, runtime};
 
 const CLOCK_SECONDS: u64 = 1_767_225_600;
 const BEARER_VARIABLE: &str = "AWS_BEARER_TOKEN_BEDROCK";
+
+fn static_credentials(
+    settings: &AwsSettings,
+    _region: &str,
+) -> Ready<Result<Credentials, CredentialError>> {
+    ready(
+        match (&settings.access_key_id, &settings.secret_access_key) {
+            (Some(access), Some(secret)) => Ok(Credentials {
+                access_key_id: access.clone(),
+                secret_access_key: secret.clone(),
+                session_token: None,
+            }),
+            _ => Err(CredentialError::MissingCredentials),
+        },
+    )
+}
 
 fn secret_of(text: Option<&String>) -> Option<SecretString> {
     text.cloned().map(SecretString::from)
@@ -107,18 +124,7 @@ pub(super) fn sigv4_case(case: &SigningCase) -> Case {
             .or_value_error()?,
     };
     let signed = runtime()?
-        .block_on(sign_request(inputs, |settings, _region| {
-            ready(
-                match (&settings.access_key_id, &settings.secret_access_key) {
-                    (Some(access), Some(secret)) => Ok(Credentials {
-                        access_key_id: access.clone(),
-                        secret_access_key: secret.clone(),
-                        session_token: None,
-                    }),
-                    _ => Err(CredentialError::MissingCredentials),
-                },
-            )
-        }))
+        .block_on(sign_request(inputs, static_credentials))
         .or_value_error()?;
     let signed_headers: BTreeMap<String, Option<String>> = signed.headers.into_iter().collect();
     Ok(json!({

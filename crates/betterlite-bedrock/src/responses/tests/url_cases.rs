@@ -99,14 +99,16 @@ pub(super) fn responses_runtime_url() {
     region_cases();
 }
 
+const ENVIRONMENT: RegionInputs<'static> = RegionInputs {
+    environment_region_name: Some("ap-south-1"),
+    environment_region: Some("ca-central-1"),
+    session_region: Some("sa-east-1"),
+};
+
 fn region_cases() {
     let explicit = CompleteUrlParams {
         aws_region_name: Some("eu-west-1"),
-        region_inputs: RegionInputs {
-            environment_region_name: Some("ap-south-1"),
-            environment_region: Some("ca-central-1"),
-            session_region: Some("sa-east-1"),
-        },
+        region_inputs: ENVIRONMENT,
         ..CompleteUrlParams::default()
     };
     assert_eq!(
@@ -114,11 +116,7 @@ fn region_cases() {
         "https://bedrock-runtime.eu-west-1.amazonaws.com/openai/v1/responses"
     );
     let from_name = CompleteUrlParams {
-        region_inputs: RegionInputs {
-            environment_region_name: Some("ap-south-1"),
-            environment_region: Some("ca-central-1"),
-            session_region: Some("sa-east-1"),
-        },
+        region_inputs: ENVIRONMENT,
         ..CompleteUrlParams::default()
     };
     assert_eq!(
@@ -129,7 +127,7 @@ fn region_cases() {
         region_inputs: RegionInputs {
             environment_region_name: None,
             environment_region: None,
-            session_region: Some("sa-east-1"),
+            ..ENVIRONMENT
         },
         ..CompleteUrlParams::default()
     };
@@ -137,6 +135,10 @@ fn region_cases() {
         url_for(from_session),
         "https://bedrock-runtime.sa-east-1.amazonaws.com/openai/v1/responses"
     );
+    partition_cases();
+}
+
+fn partition_cases() {
     let china = CompleteUrlParams {
         aws_region_name: Some("cn-north-1"),
         ..CompleteUrlParams::default()
