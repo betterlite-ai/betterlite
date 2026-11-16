@@ -23,22 +23,22 @@ impl Default for RedactionKeys {
 // ast-grep-ignore: no-long-names
 pub fn redact_nested_match_and_regex_keys(payload: &Json, keys: &RedactionKeys) -> Json {
     let mut redacted = payload.clone();
-    {
-        let mut stack = vec![&mut redacted];
-        // an owned Json tree cannot reference itself, so no node is reachable twice and no seen set is needed
-        while let Some(node) = stack.pop() {
-            match node {
-                Json::Object(fields) => {
-                    for (name, value) in fields.iter_mut() {
-                        if keys.names.iter().any(|key| key == name) {
-                            *value = Json::Text(REDACTED_VALUE.to_owned());
-                        } else {
-                            stack.push(value);
-                        }
-                    }
-                }
-                Json::List(items) => stack.extend(items.iter_mut()),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {}
+    let mut stack = vec![&mut redacted];
+    // an owned Json tree cannot reference itself, so no node is reachable twice and no seen set is needed
+    while let Some(node) = stack.pop() {
+        let object = match node {
+            Json::Object(fields) => fields,
+            Json::List(items) => {
+                stack.extend(items.iter_mut());
+                continue;
+            }
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => continue,
+        };
+        for (name, value) in object.iter_mut() {
+            if keys.names.iter().any(|key| key == name) {
+                *value = Json::Text(REDACTED_VALUE.to_owned());
+            } else {
+                stack.push(value);
             }
         }
     }

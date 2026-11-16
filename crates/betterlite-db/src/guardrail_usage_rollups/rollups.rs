@@ -6,8 +6,8 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use super::payload::{
-    billed_cost_by_unit, ids_by_name, information_entries, payload_stamp, resolved_id, unit_count,
-    unit_guardrail_id,
+    GuardrailEntry, PayloadStamp, billed_cost_by_unit, ids_by_name, information_entries,
+    payload_stamp, resolved_id, unit_count, unit_guardrail_id,
 };
 use super::{
     GuardrailAction, GuardrailCounts, GuardrailSpendLog, MAX_PENDING_ROWS, MetricsKey, RollupRow,
@@ -63,34 +63,44 @@ pub(crate) fn fresh_units(
         let team_id = payload.team_id.clone().unwrap_or_default();
         let api_key = payload.api_key.clone().unwrap_or_default();
         for entry in information_entries(payload) {
-            let Some(guardrail_id) = unit_guardrail_id(entry) else {
-                continue;
-            };
-            let Some(usage) = entry.guardrail_usage.as_ref() else {
-                continue;
-            };
-            let costs = billed_cost_by_unit(entry);
-            for (unit_name, value) in usage {
-                let Some(count) = unit_count(value) else {
-                    continue;
-                };
-                let key = UsageUnitKey {
-                    guardrail_id: guardrail_id.clone(),
-                    date: stamp.date.clone(),
-                    team_id: team_id.clone(),
-                    api_key: api_key.clone(),
-                    usage_unit: unit_name.clone(),
-                };
-                let cost = costs
-                    .as_ref()
-                    .and_then(|costs| costs.get(unit_name))
-                    .copied()
-                    .flatten();
-                units.entry(key).or_default().add_usage(count, cost);
-            }
+            add_entry_units(&mut units, entry, &stamp, &team_id, &api_key);
         }
     }
     units.into_iter().collect()
+}
+
+fn add_entry_units(
+    units: &mut BTreeMap<UsageUnitKey, UsageUnitIncrement>,
+    entry: &GuardrailEntry,
+    stamp: &PayloadStamp,
+    team_id: &str,
+    api_key: &str,
+) {
+    let Some(guardrail_id) = unit_guardrail_id(entry) else {
+        return;
+    };
+    let Some(usage) = entry.guardrail_usage.as_ref() else {
+        return;
+    };
+    let costs = billed_cost_by_unit(entry);
+    for (unit_name, value) in usage {
+        let Some(count) = unit_count(value) else {
+            continue;
+        };
+        let key = UsageUnitKey {
+            guardrail_id: guardrail_id.clone(),
+            date: stamp.date.clone(),
+            team_id: team_id.to_owned(),
+            api_key: api_key.to_owned(),
+            usage_unit: unit_name.clone(),
+        };
+        let cost = costs
+            .as_ref()
+            .and_then(|costs| costs.get(unit_name))
+            .copied()
+            .flatten();
+        units.entry(key).or_default().add_usage(count, cost);
+    }
 }
 
 impl UsageUnitIncrement {

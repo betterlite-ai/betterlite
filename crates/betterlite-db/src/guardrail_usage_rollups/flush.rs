@@ -3,7 +3,9 @@ use std::time::Duration;
 use crate::spend_batches::{StatementLimits, spend_log_write_batches};
 use crate::tool_spend::RetryPause;
 
-use super::{GuardrailIndexRow, GuardrailRollupSink, RollupRow, UPSERT_RETRY_TIMES};
+use super::{
+    GuardrailIndexRow, GuardrailRollupFailure, GuardrailRollupSink, RollupRow, UPSERT_RETRY_TIMES,
+};
 
 // Attempts every row once per round, and only a connection-safe failure survives into the next round
 pub(crate) async fn rows<Sink>(

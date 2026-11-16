@@ -37,7 +37,7 @@ pub struct GuardrailEntry {
     pub policy_id: Option<String>,
     pub guardrail_usage: Option<IndexMap<String, Json>>,
     #[serde(flatten)]
-    raw: IndexMap<String, Json>,
+    pub raw: IndexMap<String, Json>,
 }
 
 // LiteLLM's metadata is either the object itself or a JSON string holding it
@@ -192,5 +192,5 @@ fn start_from_text(text: &str) -> Option<DateTime<Utc>> {
     NaiveDate::parse_from_str(text, DATE_FORMAT)
         .ok()
         .and_then(|date| date.and_hms_opt(0, 0, 0))
-        .map(NaiveDateTime::and_utc)
+        .map(|naive| NaiveDateTime::and_utc(&naive))
 }
