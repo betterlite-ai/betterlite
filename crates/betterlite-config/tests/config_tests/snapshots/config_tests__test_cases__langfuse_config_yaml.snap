@@ -51,6 +51,7 @@ Ok(
             drop_params: Some(
                 true,
             ),
+            gemini_live_defer_setup: false,
             proxy_trust: ProxyTrust {
                 aiohttp_trust_env: false,
                 disable_aiohttp_trust_env: false,

@@ -256,7 +256,7 @@ checks:
     run: test -f tools/oracle/helpers/messages_response_events.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: corpus
     why: The shared helper parser has no valid messages_response_events seed or cannot replay it.
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_response_events-*)" && grep -qE '^[[:space:]]+messages_response_events:' tools/oracle/fuzz/corpus/helper_case/messages_response_events-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_response_events-*)" && grep -qE '^[[:space:]]+messages_response_events:' tools/oracle/fuzz/corpus/helper_case/messages_response_events-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-cases
     why: No independent transition fixture was added for this task.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-response-events)"
