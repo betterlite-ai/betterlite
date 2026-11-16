@@ -40,25 +40,13 @@ pub(super) fn header_map(headers: &[(String, String)]) -> Result<HeaderMap, Imag
     Ok(map)
 }
 
-pub(super) fn text_field(
+pub(super) fn text_value(
     fields: &IndexMap<String, Json>,
     field: &'static str,
-) -> Result<String, ImageError> {
+) -> Result<Option<String>, ImageError> {
     match fields.get(field) {
-        None | Some(Json::Null) => Ok(String::new()),
-        Some(Json::Text(text)) => Ok(text.clone()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(ImageError::Field { field })
-        }
-    }
-}
-
-pub(super) fn body_model(fields: &IndexMap<String, Json>) -> Result<Option<&str>, ImageError> {
-    match fields.get("model") {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(ImageError::Field { field: "model" })
-        }
+        Some(Json::Text(text)) => Ok(Some(text.clone())),
+        Some(_) => Err(ImageError::Field { field }),
     }
 }

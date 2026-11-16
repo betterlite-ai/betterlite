@@ -26,7 +26,6 @@ call:
         api_base: https://example.openai.azure.com
         api_version: "2025-02-01-preview"
         optional: {n: 1}
-        reply:
-          body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
 env: {}
 compare: {ignore: []}

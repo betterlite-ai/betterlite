@@ -2,9 +2,6 @@
 use crate::azure_urls::{AzureUrlError, get_azure_v1_image_url};
 
 const MAI_DEFAULT_API_VERSION: &str = "preview";
-const DEPLOYMENTS: &str = "/openai/deployments/";
-const FLUX2_PROVIDERS: &str = "/providers/";
-const GENERATION_ROUTE: &str = "/openai/images/generations";
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AzureClientParams<'data> {
@@ -32,7 +29,9 @@ pub fn create_azure_base_url(
     if is_flux2_model(model) {
         return Ok(flux2_image_generation_url(base, model, params.api_version));
     }
-    if let Some(url) = get_azure_v1_image_url(base, params.api_version, GENERATION_ROUTE)? {
+    if let Some(url) =
+        get_azure_v1_image_url(base, params.api_version, "/openai/images/generations")?
+    {
         return Ok(url);
     }
     Ok(dated_image_generation_url(
@@ -46,21 +45,15 @@ pub fn create_azure_base_url(
 #[must_use]
 pub fn is_mai_model(model: &str) -> bool {
     model
-        .chars()
-        .filter(|character| !matches!(character, '-' | '_'))
-        .flat_map(char::to_lowercase)
-        .collect::<String>()
+        .replace(['-', '_'], "")
+        .to_lowercase()
         .contains("maiimage")
 }
 
 #[must_use]
 pub fn is_flux2_model(model: &str) -> bool {
-    let normalized = normalized_flux2(model);
+    let normalized = model.to_lowercase().replace(['.', '_'], "-");
     normalized.contains("flux-2") || normalized.contains("flux2")
-}
-
-fn normalized_flux2(model: &str) -> String {
-    model.to_lowercase().replace(['.', '_'], "-")
 }
 
 // An api_base that already holds /mai/ is cut at its first /images/; otherwise /mai/v1/images/ is appended
@@ -90,14 +83,18 @@ fn flux2_image_generation_url(base: &str, model: &str, api_version: Option<&str>
     let version = api_version
         .filter(|text| !text.is_empty())
         .unwrap_or(MAI_DEFAULT_API_VERSION);
-    if base.contains(FLUX2_PROVIDERS) {
+    if base.contains("/providers/") {
         return if base.contains('?') {
             base.to_owned()
         } else {
             format!("{base}?api-version={version}")
         };
     }
-    let path = if normalized_flux2(model).contains("flux-2-flex") {
+    let path = if model
+        .to_lowercase()
+        .replace(['.', '_'], "-")
+        .contains("flux-2-flex")
+    {
         "flux-2-flex"
     } else {
         "flux-2-pro"
@@ -107,7 +104,7 @@ fn flux2_image_generation_url(base: &str, model: &str, api_version: Option<&str>
 
 // The dated route is plain concatenation: an existing query on the base is kept as part of the base text
 fn dated_image_generation_url(base: &str, model: &str, api_version: &str) -> String {
-    let with_deployment = if base.contains(DEPLOYMENTS) {
+    let with_deployment = if base.contains("/openai/deployments/") {
         base.to_owned()
     } else {
         format!("{base}/openai/deployments/{model}")

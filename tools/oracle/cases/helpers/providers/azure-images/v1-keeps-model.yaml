@@ -15,15 +15,13 @@ call:
         api_key: fixture-api-key
         api_base: https://example.openai.azure.com
         api_version: preview
-        reply:
-          body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
       - prompt: a cat
         model: deployment-x
         base_model: gpt-image-1
         api_key: fixture-api-key
         api_base: https://example.openai.azure.com
         api_version: preview
-        reply:
-          body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
 env: {}
 compare: {ignore: []}

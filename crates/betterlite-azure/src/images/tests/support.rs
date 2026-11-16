@@ -11,7 +11,6 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::image_generation::logging::{
     ImageGenerationLogger, PostCallRecord, PreCallRecord,
 };
-use betterlite_openai::image_generation::reply::{ImageGenerationReply, ImageUsage};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::runtime::{Builder, Runtime as TokioRuntime};
@@ -25,7 +24,6 @@ use crate::image_transport::request::{ImageClientConstructor, TimeoutPhases};
 use crate::image_transport::{ImageClock, ImageReply, ImageRequest, ImageTransport};
 use crate::images::error::ImageError;
 use crate::images::generation::{GeneratedImage, Generation, Runtime, image_generation};
-use crate::images::mai::{MaiProjection, MaiReply};
 use crate::oidc_exchange::OidcExchangeInput;
 
 pub(super) const API_KEY: &str = "fixture-secret-key";
@@ -243,62 +241,6 @@ impl ImageGenerationLogger for RecordingLogger {
     }
 }
 
-pub(super) struct RecordedMai {
-    pub body: Vec<u8>,
-    pub status_code: u16,
-    pub data: IndexMap<String, Json>,
-}
-
-pub(super) struct MaiRecorder {
-    seen: Mutex<Vec<RecordedMai>>,
-    reply: ImageGenerationReply,
-}
-
-impl MaiRecorder {
-    fn new(reply: ImageGenerationReply) -> Self {
-        Self {
-            seen: Mutex::default(),
-            reply,
-        }
-    }
-
-    pub(super) fn seen(&self) -> Vec<RecordedMai> {
-        std::mem::take(&mut *lock(&self.seen))
-    }
-}
-
-impl MaiProjection for MaiRecorder {
-    fn project(
-        &self,
-        reply: MaiReply<'_>,
-        logger: &mut dyn ImageGenerationLogger,
-    ) -> Result<ImageGenerationReply, crate::images::error::ClassifiedError> {
-        lock(&self.seen).push(RecordedMai {
-            body: reply.body.to_vec(),
-            status_code: reply.status_code,
-            data: reply.data.clone(),
-        });
-        logger.post_call(PostCallRecord {
-            input: String::new(),
-            original_response: Json::Text(String::from("projected")),
-            data: Some(reply.data.clone()),
-        });
-        Ok(self.reply.clone())
-    }
-}
-
-pub(super) fn mai_reply(size: &str) -> ImageGenerationReply {
-    ImageGenerationReply {
-        created: 1_700_000_000,
-        data: Vec::new(),
-        usage: ImageUsage::default(),
-        background: None,
-        quality: None,
-        output_format: None,
-        size: Some(size.to_owned()),
-    }
-}
-
 #[derive(Default)]
 pub(super) struct Scenario {
     pub model: Option<String>,
@@ -354,7 +296,6 @@ pub(super) struct Outcome {
     pub calls: Vec<RecordedCall>,
     pub constructed: usize,
     pub logger: RecordingLogger,
-    pub mai: Vec<RecordedMai>,
 }
 
 impl Outcome {
@@ -387,7 +328,6 @@ pub(super) struct Harness {
     pub config: Config,
     pub environment: BTreeMap<String, String>,
     pub replies: Vec<Reply>,
-    pub mai_reply: ImageGenerationReply,
 }
 
 impl Harness {
@@ -405,7 +345,6 @@ impl Harness {
             config,
             environment,
             replies: Vec::new(),
-            mai_reply: mai_reply("1024x1024"),
         }
     }
 
@@ -427,7 +366,6 @@ impl Harness {
         let clock = FixtureClock;
         let sources = NoSources;
         let mut logger = RecordingLogger::default();
-        let mai = MaiRecorder::new(self.mai_reply.clone());
         let api_key = scenario.api_key.as_deref().map(SecretString::from);
         let azure_ad_token = scenario.azure_ad_token.as_deref().map(SecretString::from);
         let provider = scenario
@@ -471,7 +409,6 @@ impl Harness {
             constructor: &constructor,
             clock: &clock,
             logger: &mut logger,
-            mai: &mai,
         };
         let result = driver().block_on(image_generation(call, &mut state));
         Outcome {
@@ -479,7 +416,6 @@ impl Harness {
             calls: lock(&constructor.transport.state.calls).clone(),
             constructed: lock(&constructor.constructed).len(),
             logger,
-            mai: mai.seen(),
         }
     }
 }

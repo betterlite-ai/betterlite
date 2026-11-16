@@ -22,11 +22,10 @@ use crate::image_transport::request::{
 };
 use crate::image_transport::{ImageClock, ImageResponse};
 
-use super::error::ImageError;
-use super::mai::{MaiProjection, MaiReply};
+use super::error::{ClassifiedError, ImageError};
 use super::prepare::{PrepareContext, Prepared, prepare};
 use super::selection::{AzureImageConfig, get_azure_image_generation_config};
-use super::wire::{body_model, header_map, wire_map};
+use super::wire::{header_map, text_value, wire_map};
 
 // AzureChatCompletion.image_generation's inputs, with litellm_params split into the keys the client reads
 pub struct Generation<'data> {
@@ -55,7 +54,6 @@ pub struct Runtime<'data, C, K> {
     pub constructor: &'data C,
     pub clock: &'data K,
     pub logger: &'data mut dyn ImageGenerationLogger,
-    pub mai: &'data dyn MaiProjection,
 }
 
 // B004's reply carries no hidden-params field, so the deployment's base model travels beside it
@@ -63,17 +61,6 @@ pub struct Runtime<'data, C, K> {
 pub struct GeneratedImage {
     pub reply: ImageGenerationReply,
     pub hidden_model: Option<String>,
-}
-
-impl<'data, C, K> Runtime<'data, C, K> {
-    fn context(&self) -> PrepareContext<'data> {
-        PrepareContext {
-            endpoints: self.endpoints,
-            environment: self.environment,
-            sources: self.sources,
-            refresh_enabled: self.refresh_enabled,
-        }
-    }
 }
 
 pub async fn image_generation<C, K>(
@@ -84,67 +71,34 @@ where
     C: ImageClientConstructor,
     K: ImageClock,
 {
-    let prepared = prepare(call, &runtime.context()).map_err(ImageError::into_sync)?;
-    if prepared.async_mode {
-        // the async leg logs and re-raises, and this wrapper then wraps everything it did not raise itself
-        return async_reply(&prepared, runtime)
-            .await
-            .map_err(ImageError::into_sync);
-    }
-    sync_reply(&prepared, runtime)
-        .await
-        .map_err(ImageError::into_sync)
-}
-
-// The sync leg applies the MAI transform only; every other family keeps B004's generic projection
-async fn sync_reply<C, K>(
-    prepared: &Prepared,
-    runtime: &mut Runtime<'_, C, K>,
-) -> Result<GeneratedImage, ImageError>
-where
-    C: ImageClientConstructor,
-    K: ImageClock,
-{
-    let response = send(prepared, runtime, CallStyle::Sync).await?;
-    if get_azure_image_generation_config(body_model(&prepared.data)?) == AzureImageConfig::Mai {
-        return project_mai(prepared, &response, runtime);
-    }
-    runtime.logger.post_call(PostCallRecord {
-        input: prepared.prompt.clone(),
-        original_response: serde_json::from_slice(&response.body)?,
-        data: Some(prepared.data.clone()),
-    });
-    let reply = decode_image_reply(&response.body, prepared.now_seconds)?;
-    Ok(GeneratedImage {
-        reply,
-        hidden_model: prepared.hidden_model.clone(),
-    })
-}
-
-// The async leg re-throws the original failure after logging it, and image_generation wraps it afterwards
-async fn async_reply<C, K>(
-    prepared: &Prepared,
-    runtime: &mut Runtime<'_, C, K>,
-) -> Result<GeneratedImage, ImageError>
-where
-    C: ImageClientConstructor,
-    K: ImageClock,
-{
-    match async_send(prepared, runtime).await {
-        Ok(reply) => Ok(reply),
+    let prepared = prepare(
+        call,
+        &PrepareContext {
+            endpoints: runtime.endpoints,
+            environment: runtime.environment,
+            sources: runtime.sources,
+            refresh_enabled: runtime.refresh_enabled,
+        },
+    )
+    .map_err(ImageError::into_sync)?;
+    match reply(&prepared, runtime).await {
+        Ok(image) => Ok(image),
         Err(error) => {
-            runtime.logger.post_call(PostCallRecord {
-                input: prepared.prompt.clone(),
-                original_response: Json::Text(error.to_string()),
-                data: Some(prepared.data.clone()),
-            });
-            Err(error)
+            // the async leg logs its failure and re-raises, and this wrapper then wraps what it did not raise itself
+            if prepared.async_mode {
+                runtime.logger.post_call(PostCallRecord {
+                    input: prepared.prompt.clone(),
+                    original_response: Json::Text(error.to_string()),
+                    data: Some(prepared.data.clone()),
+                });
+            }
+            Err(ImageError::into_sync(error))
         }
     }
 }
 
-// The async leg applies the selected family's transform, which logs its own post_call before converting
-async fn async_send<C, K>(
+// The async leg applies the selected family's reply transform; the sync leg special-cases only MAI
+async fn reply<C, K>(
     prepared: &Prepared,
     runtime: &mut Runtime<'_, C, K>,
 ) -> Result<GeneratedImage, ImageError>
@@ -152,19 +106,31 @@ where
     C: ImageClientConstructor,
     K: ImageClock,
 {
-    let response = send(prepared, runtime, CallStyle::Async).await?;
-    let config = get_azure_image_generation_config(body_model(&prepared.data)?);
+    let style = if prepared.async_mode {
+        CallStyle::Async
+    } else {
+        CallStyle::Sync
+    };
+    let response = send(prepared, runtime, style).await?;
+    let config = get_azure_image_generation_config(text_value(&prepared.data, "model")?.as_deref());
     if config == AzureImageConfig::Mai {
-        return project_mai(prepared, &response, runtime);
+        // B554 owns the MAI reply transform, and a provider leaf cannot depend on betterlite-foundry
+        return Err(ImageError::Classified(ClassifiedError {
+            class: String::from("NotBuilt"),
+            status: None,
+            message: String::from("the MAI reply transform is B554"),
+        }));
     }
     runtime.logger.post_call(PostCallRecord {
         input: prepared.prompt.clone(),
         original_response: serde_json::from_slice(&response.body)?,
         data: Some(prepared.data.clone()),
     });
-    let family = config.family().unwrap_or(ImageFamily::GptImage);
     let mut reply = decode_image_reply(&response.body, prepared.now_seconds)?;
-    apply_family_defaults(family, &mut reply, &prepared.data)?;
+    if prepared.async_mode {
+        let family = config.family().unwrap_or(ImageFamily::GptImage);
+        apply_family_defaults(family, &mut reply, &prepared.data)?;
+    }
     Ok(GeneratedImage {
         reply,
         hidden_model: prepared.hidden_model.clone(),
@@ -216,23 +182,4 @@ where
     )
     .await
     .map_err(ImageError::from)
-}
-
-fn project_mai<C, K>(
-    prepared: &Prepared,
-    response: &ImageResponse,
-    runtime: &mut Runtime<'_, C, K>,
-) -> Result<GeneratedImage, ImageError> {
-    let reply = runtime.mai.project(
-        MaiReply {
-            body: &response.body,
-            status_code: response.status,
-            data: &prepared.data,
-        },
-        runtime.logger,
-    )?;
-    Ok(GeneratedImage {
-        reply,
-        hidden_model: prepared.hidden_model.clone(),
-    })
 }

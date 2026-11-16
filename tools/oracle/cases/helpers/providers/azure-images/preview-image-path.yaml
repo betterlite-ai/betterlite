@@ -20,7 +20,6 @@ call:
         api_key: fixture-api-key
         api_base: https://example.openai.azure.com
         api_version: "2023-12-01-preview"
-        reply:
-          body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
 env: {}
 compare: {ignore: []}

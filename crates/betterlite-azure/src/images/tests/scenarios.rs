@@ -8,6 +8,7 @@ use super::support::{
     API_KEY, AZURE, BEARER, Harness, MAI_BODY, PROMPT, ProviderScript, Scenario, VERSION,
     edit_form, ok_reply, reply, scenario,
 };
+use crate::credentials::selection::AzureTokenError;
 use crate::images::edit::{
     EditAuth, EditParams, EditUrl, finalize_image_edit_request_data, get_complete_url,
     validate_environment,
@@ -127,12 +128,9 @@ fn async_transforms() {
         outcome.url(),
         format!("{AZURE}/mai/v1/images/generations?api-version={VERSION}")
     );
-    assert_eq!(outcome.mai.len(), 1);
-    assert_eq!(outcome.mai[0].status_code, 200);
-    assert_eq!(
-        outcome.mai[0].data.get("model"),
-        Some(&Json::Text("MAI-Image-1".to_owned()))
-    );
+    assert_eq!(outcome.failure().class(), "AzureOpenAIError");
+    assert_eq!(outcome.failure().status(), Some(500));
+    assert!(outcome.failure().to_string().contains("B554"));
     assert_eq!(outcome.logger.post.len(), 1);
 }
 
@@ -148,8 +146,14 @@ fn sync_transform() {
 
     let mut harness = Harness::new(&[]).with_reply(reply(200, MAI_BODY));
     let outcome = harness.run(&scenario("MAI-Image-1"));
-    assert_eq!(outcome.mai.len(), 1);
-    assert_eq!(outcome.logger.post.len(), 1);
+    assert_eq!(
+        outcome.url(),
+        format!("{AZURE}/mai/v1/images/generations?api-version={VERSION}")
+    );
+    assert_eq!(outcome.failure().class(), "AzureOpenAIError");
+    assert_eq!(outcome.failure().status(), Some(500));
+    assert!(outcome.failure().to_string().contains("B554"));
+    assert!(outcome.logger.post.is_empty());
 }
 
 pub(super) fn image_edit_deployment_url() {
@@ -179,7 +183,7 @@ impl<'data> EditCase<'data> {
         }
     }
 
-    fn run(self) -> Result<BTreeMap<String, String>, crate::images::edit::EditError> {
+    fn run(self) -> Result<BTreeMap<String, String>, AzureTokenError> {
         validate_environment(&EditAuth {
             headers: self.headers.into_iter().collect(),
             api_key: self.argument,

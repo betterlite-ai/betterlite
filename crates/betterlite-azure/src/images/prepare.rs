@@ -15,7 +15,7 @@ use crate::endpoints::projection::{
 use super::error::{ClassifiedError, ImageError};
 use super::generation::Generation;
 use super::target::{AzureClientParams, create_azure_base_url};
-use super::wire::{body_model, text_field};
+use super::wire::text_value;
 
 pub(super) struct PrepareContext<'data> {
     pub(super) endpoints: &'data EndpointSettings,
@@ -49,11 +49,11 @@ pub(super) fn prepare(
     let mut optional_params = std::mem::take(&mut call.optional_params);
     let model = call.model.filter(|name| !name.is_empty());
     let data = request_data(&call, model, &mut optional_params)?;
-    let inputs = client_inputs(&call, context)?;
+    let inputs = client_inputs(&call, model, context)?;
     let headers = request_headers(&call, &inputs)?;
-    let body = body_model(&data)?;
+    let body = text_value(&data, "model")?;
     let (selected, substitute) = if call.delegate_async {
-        (model.or(body), body)
+        (model.or(body.as_deref()), body.as_deref())
     } else {
         (model, call.base_model)
     };
@@ -68,7 +68,7 @@ pub(super) fn prepare(
     )?;
     Ok(Prepared {
         prompt: call.prompt.to_owned(),
-        body_prompt: text_field(&data, "prompt")?,
+        body_prompt: text_value(&data, "prompt")?.unwrap_or_default(),
         url,
         resolved_version: inputs.api_version.clone(),
         argument_version: call.api_version.unwrap_or_default().to_owned(),
@@ -82,18 +82,16 @@ pub(super) fn prepare(
     })
 }
 
-// extra_body is not an Azure parameter: its keys are flattened over the rest of the request body
+// extra_body is not an Azure parameter: its keys flatten over the rest of the request body
 fn request_data(
     call: &Generation<'_>,
     model: Option<&str>,
     optional_params: &mut IndexMap<String, Json>,
 ) -> Result<IndexMap<String, Json>, ImageError> {
     let extra = match optional_params.shift_remove("extra_body") {
-        None | Some(Json::Null) => IndexMap::new(),
         Some(Json::Object(fields)) => fields,
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(ImageError::ExtraBody);
-        }
+        Some(Json::Null) | None => IndexMap::new(),
+        Some(_) => return Err(ImageError::ExtraBody),
     };
     let model = call.base_model.filter(|name| !name.is_empty()).or(model);
     let mut data = IndexMap::new();
@@ -104,23 +102,17 @@ fn request_data(
     data.insert("prompt".to_owned(), Json::Text(call.prompt.to_owned()));
     data.extend(optional_params.clone());
     data.extend(extra);
-    reject_non_int_max_retries(&mut data)?;
-    Ok(data)
-}
-
-// LiteLLM pops the value and only checks that it is an int, where Python counts bool as one
-fn reject_non_int_max_retries(data: &mut IndexMap<String, Json>) -> Result<(), ImageError> {
     match data.shift_remove("max_retries") {
-        None | Some(Json::Bool(_)) => Ok(()),
-        Some(Json::Number(number)) if number.is_i64() || number.is_u64() => Ok(()),
-        Some(Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) | Json::Number(_)) => {
-            Err(ImageError::MaxRetries)
-        }
+        None | Some(Json::Bool(_)) => {}
+        Some(Json::Number(number)) if number.is_i64() || number.is_u64() => {}
+        Some(_) => return Err(ImageError::MaxRetries),
     }
+    Ok(data)
 }
 
 fn client_inputs<'data>(
     call: &Generation<'_>,
+    model: Option<&str>,
     context: &PrepareContext<'data>,
 ) -> Result<AzureClientInputs<'data>, ImageError> {
     let mut params = call.params.clone();
@@ -142,12 +134,7 @@ fn client_inputs<'data>(
             provider,
             api_key: call.api_key.cloned(),
             api_base: call.api_base.map(str::to_owned),
-            model_name: Some(
-                call.model
-                    .filter(|name| !name.is_empty())
-                    .unwrap_or_default()
-                    .to_owned(),
-            ),
+            model_name: Some(model.unwrap_or_default().to_owned()),
             api_version: call.api_version.map(str::to_owned),
             is_async: false,
             session: SessionKind::Shared,

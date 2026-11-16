@@ -7,7 +7,6 @@ use betterlite_config::sections::azure_url_policy::AzureCredentials;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use thiserror::Error;
 
 use crate::azure_urls::{
     AuthParams, AzureUrlError, EnvironmentHeadersRequest, get_azure_v1_image_url,
@@ -19,38 +18,17 @@ use crate::credentials::source::{CallableTokenProvider, CredentialSources};
 const DEPLOYMENTS: &str = "/openai/deployments/";
 const EDITS_ROUTE: &str = "/openai/images/edits";
 
-#[derive(Debug, Error)]
-pub enum EditError {
-    #[error(transparent)]
-    Url(#[from] AzureUrlError),
-    #[error(transparent)]
-    Token(#[from] AzureTokenError),
-}
-
-impl EditError {
-    #[must_use]
-    pub const fn kind(&self) -> &'static str {
-        match self {
-            Self::Url(_) => "value_error",
-            Self::Token(_) => "token_error",
-        }
-    }
-}
-
 // Azure routes an edit by the deployment in the URL, so the form never repeats the model there
 #[must_use]
 pub fn finalize_image_edit_request_data(
     data: &IndexMap<String, Json>,
     request_url: &str,
 ) -> IndexMap<String, Json> {
+    let mut data = data.clone();
     if request_url.contains("images/edits") && request_url.contains(DEPLOYMENTS) {
-        return data
-            .iter()
-            .filter(|(name, _)| name.as_str() != "model")
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect();
+        data.shift_remove("model");
     }
-    data.clone()
+    data
 }
 
 // the litellm_params keys the edit auth reads; the positional api_key fills its key only when unset
@@ -72,13 +50,14 @@ pub struct EditAuth<'data> {
     pub provider: Option<Arc<dyn CallableTokenProvider + 'data>>,
 }
 
-pub fn validate_environment(request: &EditAuth<'_>) -> Result<BTreeMap<String, String>, EditError> {
-    let filled = request
+pub fn validate_environment(
+    request: &EditAuth<'_>,
+) -> Result<BTreeMap<String, String>, AzureTokenError> {
+    let api_key = request
         .params
         .api_key
         .clone()
-        .or_else(|| request.api_key.cloned());
-    let api_key = filled
+        .or_else(|| request.api_key.cloned())
         .filter(|key| !key.expose_secret().is_empty())
         .or_else(|| {
             request
@@ -105,10 +84,9 @@ pub fn validate_environment(request: &EditAuth<'_>) -> Result<BTreeMap<String, S
         provider: request.provider.clone(),
         sources: request.sources,
     })
-    .map_err(EditError::from)
 }
 
-// LiteLLM reads `litellm_params.azure_ad_token or AZURE_AD_TOKEN`, so an empty value falls through
+// LiteLLM reads litellm_params.azure_ad_token or AZURE_AD_TOKEN, so an empty value falls through
 fn azure_ad_token(request: &EditAuth<'_>) -> Option<SecretString> {
     request
         .params
@@ -132,7 +110,7 @@ pub struct EditUrl<'data> {
     pub default_api_version: &'data str,
 }
 
-pub fn get_complete_url(request: &EditUrl<'_>) -> Result<String, EditError> {
+pub fn get_complete_url(request: &EditUrl<'_>) -> Result<String, AzureUrlError> {
     let api_base = request
         .api_base
         .filter(|text| !text.is_empty())
@@ -141,13 +119,11 @@ pub fn get_complete_url(request: &EditUrl<'_>) -> Result<String, EditError> {
     let api_version = request
         .api_version
         .filter(|text| !text.is_empty())
-        .or_else(|| {
-            request
-                .credentials
-                .api_version
-                .as_deref()
-                .filter(|text| !text.is_empty())
-        })
+        .or(request
+            .credentials
+            .api_version
+            .as_deref()
+            .filter(|text| !text.is_empty()))
         .unwrap_or(request.default_api_version);
     if let Some(url) = get_azure_v1_image_url(api_base, Some(api_version), EDITS_ROUTE)? {
         return Ok(url);
@@ -157,5 +133,5 @@ pub fn get_complete_url(request: &EditUrl<'_>) -> Result<String, EditError> {
     } else {
         format!("{DEPLOYMENTS}{}/images/edits", request.model)
     };
-    get_base_azure_url(Some(api_base), Some(api_version), None, &route).map_err(EditError::from)
+    get_base_azure_url(Some(api_base), Some(api_version), None, &route)
 }

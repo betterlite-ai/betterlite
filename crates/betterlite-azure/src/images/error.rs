@@ -7,7 +7,7 @@ use crate::credentials::source::ProviderFailure;
 use crate::endpoints::initialize::EndpointError;
 use crate::image_transport::error::ImageTransportError;
 
-// An error another ported layer classifies itself, such as an MAI reply failure
+// An error another ported layer classifies itself
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{message}")]
 pub struct ClassifiedError {
@@ -55,6 +55,7 @@ pub enum ImageError {
 }
 
 impl ImageError {
+    // the Python class LiteLLM's caller sees for this failure
     #[must_use]
     pub fn class(&self) -> &str {
         match self {
@@ -63,7 +64,8 @@ impl ImageError {
             Self::Url(_) => "ValueError",
             Self::Client(error) => error.class(),
             Self::Classified(error) => &error.class,
-            Self::Transport(error) if azure_transport_error(error) => "AzureOpenAIError",
+            // the transport errors that carry an HTTP status are the ones LiteLLM's request helper raises itself
+            Self::Transport(error) if error.status_code().is_some() => "AzureOpenAIError",
             Self::Transport(_) | Self::Reply(_) | Self::Json(_) | Self::Logging(_) => "Exception",
         }
     }
@@ -72,16 +74,12 @@ impl ImageError {
     pub fn status(&self) -> Option<u16> {
         match self {
             Self::MaxRetries => Some(422),
-            Self::Url(_)
-            | Self::ExtraBody
-            | Self::Field { .. }
-            | Self::Header { .. }
-            | Self::Json(_)
-            | Self::Logging(_) => None,
+            Self::Url(_) | Self::ExtraBody | Self::Field { .. } | Self::Header { .. } => None,
+            Self::Json(_) | Self::Logging(_) | Self::Reply(_) => None,
             Self::Client(error) => error.status(),
             Self::Classified(error) => error.status,
             Self::Transport(error) => error.status_code(),
-            Self::Reply(error) => reply_status(error),
+            Self::Reply(ImageReplyError::ResponseObject { status, .. }) => Some(*status),
             Self::Azure { status, .. } => Some(*status),
         }
     }
@@ -95,26 +93,5 @@ impl ImageError {
         let status = self.status().unwrap_or(500);
         let message = self.to_string();
         Self::Azure { status, message }
-    }
-}
-
-// The failures the Azure send helpers raise as AzureOpenAIError; a transport failure keeps its own class
-fn azure_transport_error(error: &ImageTransportError) -> bool {
-    matches!(
-        error,
-        ImageTransportError::RejectedPollingUrl { .. }
-            | ImageTransportError::MissingOperationLocation { .. }
-            | ImageTransportError::MissingStatusInitial
-            | ImageTransportError::PollingTimeout
-            | ImageTransportError::OperationFailed { .. }
-    )
-}
-
-fn reply_status(error: &ImageReplyError) -> Option<u16> {
-    match error {
-        ImageReplyError::ResponseObject { status, .. } => Some(*status),
-        ImageReplyError::Json(_) | ImageReplyError::TotalTokens | ImageReplyError::Text { .. } => {
-            None
-        }
     }
 }
