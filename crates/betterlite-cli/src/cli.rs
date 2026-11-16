@@ -55,6 +55,7 @@ pub struct Cli<'cli> {
     stdin_is_terminal: bool,
 }
 
+#[must_use]
 #[cfg_attr(test, mutants::skip)]
 pub fn run(arguments: &[String]) -> u8 {
     let variables = process_environment();
@@ -70,18 +71,18 @@ pub fn run(arguments: &[String]) -> u8 {
             return 1;
         }
     };
-    let cli = Cli {
+    let mut cli = Cli {
         environment: &environment,
         vault: &mut vault,
         streams,
         base_env: variables,
         stdin_is_terminal: io::stdin().is_terminal(),
     };
-    run_with(arguments, cli)
+    run_with(arguments, &mut cli)
 }
 
-fn run_with(arguments: &[String], mut cli: Cli<'_>) -> u8 {
-    match start(arguments, &mut cli) {
+fn run_with(arguments: &[String], cli: &mut Cli<'_>) -> u8 {
+    match start(arguments, cli) {
         Ok(code) => code,
         Err(failure) => {
             let _unused = writeln!(cli.streams.stderr, "{}", failure_line(&failure));
@@ -98,17 +99,19 @@ fn failure_line(failure: &Failure) -> String {
 }
 
 fn start(arguments: &[String], cli: &mut Cli<'_>) -> Result<u8, Failure> {
-    let mut argv = Vec::with_capacity(1);
-    argv.push(String::from("lite"));
+    let mut argv = vec![String::from("lite")];
     argv.extend_from_slice(arguments);
     let matches = match root_command(cli.environment).try_get_matches_from(argv) {
         Ok(matches) => matches,
         Err(error) => return Ok(finish_clap(&error, &mut cli.streams)),
     };
     let subcommand = matches.subcommand().map(|(name, _sub)| name.to_owned());
-    let token_path = cli.environment.system_home();
-    let token_path = token_path.as_deref().map(token_file_path);
-    let context = context::resolve_for_run(context::Request {
+    let token_path = cli
+        .environment
+        .system_home()
+        .as_deref()
+        .map(token_file_path);
+    let context = context::resolve_for_run(&mut context::Request {
         environment: cli.environment,
         globals: context::globals(&matches),
         subcommand: subcommand.as_deref(),

@@ -8,20 +8,17 @@ struct Recorder(Arc<Mutex<Vec<String>>>);
 
 impl Recorder {
     fn events(&self) -> Vec<String> {
-        self.0
-            .lock()
-            .map(|events| events.clone())
-            .unwrap_or_default()
+        let events = self.0.lock().unwrap();
+        events.clone()
     }
 
     fn record(&self, event: String) {
-        if let Ok(mut events) = self.0.lock() {
-            events.push(event);
-        }
+        let mut events = self.0.lock().unwrap();
+        events.push(event);
     }
 }
 
-impl Write for Recorder {
+impl io::Write for Recorder {
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
         self.record(format!(
             "write:{}",

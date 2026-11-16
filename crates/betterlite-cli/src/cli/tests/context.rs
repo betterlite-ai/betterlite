@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use betterlite_logging::private_json::files::PrivateFiles;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use tokio::runtime::Builder;
 
 use crate::cli::Failure;
@@ -41,7 +41,7 @@ fn resolve(
 ) -> Result<CliContext, Failure> {
     let mut vault = FakeVault;
     let stderr = Captured::default();
-    context::resolve_for_run(Request {
+    context::resolve_for_run(&mut Request {
         environment,
         globals: flags,
         subcommand,
@@ -143,7 +143,7 @@ fn explicit_api_keys_are_kept_secret_and_used_as_given() {
     )
     .unwrap();
     assert_eq!(
-        context.api_key.as_ref().map(|key| key.expose_secret()),
+        context.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("flag-key")
     );
     assert!(!context.api_key_from_token_file);
@@ -155,7 +155,7 @@ fn environment_api_key_is_used_when_no_flag_gives_one() {
         FakeEnvironment::default().with_variable("LITELLM_PROXY_API_KEY", "environment-key");
     let context = resolve(&environment, flags(None, None), Some("models")).unwrap();
     assert_eq!(
-        context.api_key.as_ref().map(|key| key.expose_secret()),
+        context.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("environment-key")
     );
     assert!(!context.api_key_from_token_file);
@@ -230,7 +230,7 @@ fn a_stored_login_supplies_the_api_key() {
     assert!(matches!(outcome, SecretSave::SecretStored));
     let environment = FakeEnvironment::with_home(home.path().to_path_buf());
     let stderr = Captured::default();
-    let context = context::resolve_for_run(Request {
+    let context = context::resolve_for_run(&mut Request {
         environment: &environment,
         globals: flags(None, None),
         subcommand: Some("models"),
@@ -241,7 +241,7 @@ fn a_stored_login_supplies_the_api_key() {
     })
     .unwrap();
     assert_eq!(
-        context.api_key.as_ref().map(|key| key.expose_secret()),
+        context.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-secret")
     );
 }

@@ -62,9 +62,9 @@ fn starts_with_the_banner_and_connection_line() {
 #[test]
 fn the_listing_comes_from_the_shared_commands_listing() {
     let environment = FakeEnvironment::default();
-    let mut expected = Vec::new();
-    show_commands(&mut expected, &environment).unwrap();
-    let expected = String::from_utf8(expected).unwrap();
+    let mut rendered = Vec::new();
+    show_commands(&mut rendered, &environment).unwrap();
+    let expected = String::from_utf8(rendered).unwrap();
     let outcome = run_shell(&["help", "exit"]);
     assert!(outcome.stdout.contains(&expected));
 }

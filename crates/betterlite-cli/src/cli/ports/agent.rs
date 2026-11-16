@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use betterlite_logging::private_json::files::PrivateFiles;
+use betterlite_logging::private_json::files::LocalFiles;
 
 use crate::agent_dispatch::{AgentCommandArgs, AgentPorts, run_agent_command};
 use crate::agent_launch::Platform;
@@ -28,7 +28,7 @@ pub(crate) fn run(
     binary: &str,
     args: AgentCommandArgs,
 ) -> Result<u8, Failure> {
-    let mut setup = Wiring::new(session)?;
+    let setup = Wiring::new(session)?;
     let mut entropy = SystemEntropy;
     let mut selection = SelectionTerminal::default();
     let home = session.home.as_deref();
@@ -86,12 +86,12 @@ impl<'prepared> Preparation<'prepared> {
         Self {
             pi: PiPreparer {
                 get: client,
-                files: &setup.private_files,
+                files: &LocalFiles,
             },
             codex: CodexPreparer {
                 install: &setup.installer,
             },
-            sync: model_sync(client, &setup.debug, &setup.private_files, home),
+            sync: model_sync(client, &setup.debug, home),
             messages: StreamMessages {
                 notices: streams.stdout.clone(),
                 warnings: streams.stderr.clone(),
@@ -104,14 +104,13 @@ impl<'prepared> Preparation<'prepared> {
 fn model_sync<'sync>(
     client: &'sync Client,
     debug: &'sync StdDebugModels,
-    files: &'sync PrivateFiles,
     home: Option<&'sync Path>,
 ) -> AgentModelSync<'sync> {
     AgentModelSync {
         context: SyncContext {
             get: client,
             debug,
-            files,
+            files: &LocalFiles,
             home,
             instructions: CODEX_BASE_INSTRUCTIONS,
         },

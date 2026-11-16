@@ -48,16 +48,16 @@ pub(crate) fn path_resolver(session: &Session<'_>) -> PathResolver {
 }
 
 pub(crate) struct Wiring {
-    pub files: ManagedTokenFile,
-    pub private_files: PrivateFiles,
-    pub token_path: PathBuf,
-    pub terminal: AgentTerminal,
-    pub resolver: PathResolver,
-    pub installer: StdStatuslineInstaller,
-    pub debug: StdDebugModels,
-    pub sleeper: ThreadSleeper,
-    pub launcher: StdLauncher,
-    pub interrupt: NeverInterrupted,
+    pub(crate) files: ManagedTokenFile,
+    pub(crate) private_files: PrivateFiles,
+    pub(crate) token_path: PathBuf,
+    pub(crate) terminal: AgentTerminal,
+    pub(crate) resolver: PathResolver,
+    pub(crate) installer: StdStatuslineInstaller,
+    pub(crate) debug: StdDebugModels,
+    pub(crate) sleeper: ThreadSleeper,
+    pub(crate) launcher: StdLauncher,
+    pub(crate) interrupt: NeverInterrupted,
 }
 
 impl Wiring {

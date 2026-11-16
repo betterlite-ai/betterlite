@@ -11,6 +11,7 @@ use crate::cli_context::CliContext;
 use crate::commands::Client;
 use crate::keyring::SecretVault;
 use crate::pkce_login::models::PkceFailure;
+use crate::pkce_login::{Clock, Entropy, WallClock};
 use crate::token_records::file::token_file_path;
 
 use super::Failure;
@@ -24,13 +25,13 @@ const EXPIRATION_ENV: [&str; 2] = [
 
 pub(crate) struct CliClock;
 
-impl crate::pkce_login::Clock for CliClock {
+impl Clock for CliClock {
     fn now(&self) -> Instant {
         Instant::now()
     }
 }
 
-impl crate::pkce_login::WallClock for CliClock {
+impl WallClock for CliClock {
     fn now_seconds(&self) -> i64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -42,7 +43,7 @@ impl crate::pkce_login::WallClock for CliClock {
 
 pub(crate) struct SystemEntropy;
 
-impl crate::pkce_login::Entropy for SystemEntropy {
+impl Entropy for SystemEntropy {
     fn fill(&mut self, bytes: &mut [u8]) -> Result<(), PkceFailure> {
         getrandom::fill(bytes).map_err(|source| {
             PkceFailure::Protocol(format!(
@@ -53,30 +54,30 @@ impl crate::pkce_login::Entropy for SystemEntropy {
 }
 
 pub(crate) struct SessionParts<'parts> {
-    pub context: &'parts CliContext,
-    pub environment: &'parts (dyn EnvironmentLookup + Send + Sync),
-    pub vault: &'parts mut (dyn SecretVault + Send + Sync),
-    pub streams: Streams,
-    pub client: Arc<Client>,
-    pub clock: Arc<CliClock>,
-    pub base_env: EnvVars,
-    pub stdin_is_terminal: bool,
+    pub(crate) context: &'parts CliContext,
+    pub(crate) environment: &'parts (dyn EnvironmentLookup + Send + Sync),
+    pub(crate) vault: &'parts mut (dyn SecretVault + Send + Sync),
+    pub(crate) streams: Streams,
+    pub(crate) client: Arc<Client>,
+    pub(crate) clock: Arc<CliClock>,
+    pub(crate) base_env: EnvVars,
+    pub(crate) stdin_is_terminal: bool,
 }
 
 pub(crate) struct Session<'session> {
-    pub context: CliContext,
-    pub environment: &'session (dyn EnvironmentLookup + Send + Sync),
-    pub vault: &'session mut (dyn SecretVault + Send + Sync),
-    pub streams: Streams,
-    pub client: Arc<Client>,
-    pub clock: Arc<CliClock>,
-    pub redactor: Redactor,
-    pub home: Option<PathBuf>,
-    pub token_path: Option<PathBuf>,
-    pub binary_path: Option<PathBuf>,
-    pub expiration_hours: i64,
-    pub base_env: EnvVars,
-    pub stdin_is_terminal: bool,
+    pub(crate) context: CliContext,
+    pub(crate) environment: &'session (dyn EnvironmentLookup + Send + Sync),
+    pub(crate) vault: &'session mut (dyn SecretVault + Send + Sync),
+    pub(crate) streams: Streams,
+    pub(crate) client: Arc<Client>,
+    pub(crate) clock: Arc<CliClock>,
+    pub(crate) redactor: Redactor,
+    pub(crate) home: Option<PathBuf>,
+    pub(crate) token_path: Option<PathBuf>,
+    pub(crate) binary_path: Option<PathBuf>,
+    pub(crate) expiration_hours: i64,
+    pub(crate) base_env: EnvVars,
+    pub(crate) stdin_is_terminal: bool,
 }
 
 impl<'session> Session<'session> {

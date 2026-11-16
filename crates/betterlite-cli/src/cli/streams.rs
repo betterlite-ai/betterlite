@@ -18,8 +18,8 @@ impl Write for Channel {
 
 #[derive(Clone)]
 pub(crate) struct Streams {
-    pub stdout: Channel,
-    pub stderr: Channel,
+    pub(crate) stdout: Channel,
+    pub(crate) stderr: Channel,
 }
 
 impl Streams {

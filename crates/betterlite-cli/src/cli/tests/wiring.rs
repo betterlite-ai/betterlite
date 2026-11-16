@@ -1,3 +1,4 @@
+use crate::cli::Failure;
 use crate::cli::ports::wiring::token_path;
 use crate::cli::tests::support::{Captured, FakeEnvironment, FakeVault, proxy_context, session};
 
@@ -25,5 +26,6 @@ fn a_session_without_a_home_has_no_token_path() {
     let err = Captured::default();
     let context = proxy_context("http://proxy.example");
     let session = session(&context, &environment, &mut vault, &out, &err);
-    assert!(token_path(&session).is_err());
+    let failure = token_path(&session).unwrap_err();
+    assert!(matches!(failure, Failure::Plain(_)));
 }

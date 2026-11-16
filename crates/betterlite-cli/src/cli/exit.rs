@@ -49,15 +49,26 @@ macro_rules! failure_from {
             }
         }
     };
-    ($error:ty, usage = [$($usage:pat),* $(,)?] $(, aborted = [$($aborted:pat),* $(,)?])?) => {
+    ($error:ty, usage = [$($usage:pat),* $(,)?], aborted = [$($aborted:pat),* $(,)?]) => {
         impl From<$error> for Failure {
             fn from(error: $error) -> Self {
                 let message = error.to_string();
-                let aborted = false $(|| matches!(&error, $($aborted)|*))?;
                 if matches!(&error, $($usage)|*) {
                     Self::Usage(message)
-                } else if aborted {
+                } else if matches!(&error, $($aborted)|*) {
                     Self::Aborted(message)
+                } else {
+                    Self::Plain(message)
+                }
+            }
+        }
+    };
+    ($error:ty, usage = [$($usage:pat),* $(,)?]) => {
+        impl From<$error> for Failure {
+            fn from(error: $error) -> Self {
+                let message = error.to_string();
+                if matches!(&error, $($usage)|*) {
+                    Self::Usage(message)
                 } else {
                     Self::Plain(message)
                 }
@@ -71,27 +82,38 @@ failure_from!(aborted TeamsError);
 failure_from!(
     ModelsError,
     usage = [
-        Regex { .. },
-        RegexMatch { .. },
-        Pair { .. },
-        Duplicate { .. },
-        MissingSelector,
-        BothSelectors,
+        ModelsError::Regex { .. },
+        ModelsError::RegexMatch { .. },
+        ModelsError::Pair { .. },
+        ModelsError::Duplicate { .. },
+        ModelsError::MissingSelector,
+        ModelsError::BothSelectors,
     ]
 );
 failure_from!(
     CredentialsError,
-    usage = [InvalidJson { .. }],
-    aborted = [Aborted]
+    usage = [CredentialsError::InvalidJson { .. }],
+    aborted = [CredentialsError::Aborted]
 );
-failure_from!(KeysError, usage = [Usage(_)], aborted = [Aborted]);
+failure_from!(
+    KeysError,
+    usage = [KeysError::Usage(_)],
+    aborted = [KeysError::Aborted]
+);
 failure_from!(
     HttpError,
-    usage = [HeaderFormat { .. }, InvalidJson { .. }, Method { .. }],
-    aborted = [Aborted]
+    usage = [
+        HttpError::HeaderFormat { .. },
+        HttpError::InvalidJson { .. },
+        HttpError::Method { .. }
+    ],
+    aborted = [HttpError::Aborted]
 );
-failure_from!(ConfigError, usage = [Usage(_)]);
-failure_from!(ConfigureCommandError, usage = [Usage(_)]);
+failure_from!(ConfigError, usage = [ConfigError::Usage(_)]);
+failure_from!(
+    ConfigureCommandError,
+    usage = [ConfigureCommandError::Usage(_)]
+);
 
 failure_from!(plain
     ClientError,

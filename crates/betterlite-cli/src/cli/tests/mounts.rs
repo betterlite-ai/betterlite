@@ -1,3 +1,4 @@
+use clap::Command;
 use rstest::rstest;
 
 use crate::agent_launch::KNOWN_AGENTS;
@@ -29,20 +30,14 @@ use crate::cli::tests::support::FakeEnvironment;
 #[case::whoami("whoami")]
 fn every_family_command_is_mounted(#[case] command: &str) {
     let root = root_command(&FakeEnvironment::default());
-    let names: Vec<&str> = root
-        .get_subcommands()
-        .map(|subcommand| subcommand.get_name())
-        .collect();
+    let names: Vec<&str> = root.get_subcommands().map(Command::get_name).collect();
     assert!(names.contains(&command), "{command} is not mounted");
 }
 
 #[test]
 fn every_known_agent_is_mounted() {
     let root = root_command(&FakeEnvironment::default());
-    let names: Vec<&str> = root
-        .get_subcommands()
-        .map(|subcommand| subcommand.get_name())
-        .collect();
+    let names: Vec<&str> = root.get_subcommands().map(Command::get_name).collect();
     let missing: Vec<&str> = KNOWN_AGENTS
         .iter()
         .map(|(binary, _display, _profiles, _hidden)| *binary)
@@ -54,9 +49,6 @@ fn every_known_agent_is_mounted() {
 #[test]
 fn statusline_is_mounted() {
     let root = root_command(&FakeEnvironment::default());
-    let names: Vec<&str> = root
-        .get_subcommands()
-        .map(|subcommand| subcommand.get_name())
-        .collect();
+    let names: Vec<&str> = root.get_subcommands().map(Command::get_name).collect();
     assert!(names.contains(&"statusline"));
 }

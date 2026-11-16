@@ -7,6 +7,7 @@ use rstest::rstest;
 use crate::cli::context::{self, GlobalArgs, Request};
 use crate::cli::session::CliClock;
 use crate::cli::tests::support::{Captured, FakeEnvironment, FakeVault, channel};
+use crate::cli_context::CliContext;
 
 fn store_base_url(home: &Path, base_url: &str) {
     let directory = home.join(".litellm");
@@ -22,10 +23,10 @@ fn resolve(
     environment: &FakeEnvironment,
     base_url: Option<&str>,
     subcommand: Option<&str>,
-) -> crate::cli_context::CliContext {
+) -> CliContext {
     let mut vault = FakeVault;
     let stderr = Captured::default();
-    context::resolve_for_run(Request {
+    context::resolve_for_run(&mut Request {
         environment,
         globals: GlobalArgs {
             base_url: base_url.map(str::to_owned),

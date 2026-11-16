@@ -95,7 +95,7 @@ pub(crate) struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl Captured {
     pub(crate) fn text(&self) -> String {
-        let bytes = self.0.lock().map(|bytes| bytes.clone()).unwrap_or_default();
+        let bytes = self.0.lock().unwrap().clone();
         String::from_utf8(bytes).unwrap_or_default()
     }
 }
@@ -120,11 +120,7 @@ pub(crate) struct Served {
 
 impl Served {
     pub(crate) fn request(&self) -> String {
-        let bytes = self
-            .request
-            .lock()
-            .map(|recorded| recorded.clone())
-            .unwrap_or_default();
+        let bytes = self.request.lock().unwrap().clone();
         String::from_utf8(bytes).unwrap_or_default()
     }
 }
@@ -146,7 +142,7 @@ fn accept_once(listener: &TcpListener, answer: &Answer, request: &Mutex<Vec<u8>>
     let deadline = Instant::now().checked_add(ACCEPT_DEADLINE).unwrap();
     while Instant::now() < deadline {
         match listener.accept() {
-            Ok((stream, _peer)) => return respond(stream, answer, request),
+            Ok((mut stream, _peer)) => return respond(&mut stream, answer, request),
             Err(error) if error.kind() == ErrorKind::WouldBlock => {
                 thread::park_timeout(POLL_PAUSE);
             }
@@ -155,15 +151,13 @@ fn accept_once(listener: &TcpListener, answer: &Answer, request: &Mutex<Vec<u8>>
     }
 }
 
-fn respond(mut stream: TcpStream, answer: &Answer, request: &Mutex<Vec<u8>>) {
+fn respond(stream: &mut TcpStream, answer: &Answer, request: &Mutex<Vec<u8>>) {
     stream
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
     let mut buffer = [0_u8; 4096];
     let read = stream.read(&mut buffer).unwrap_or(0);
-    if let Ok(mut recorded) = request.lock() {
-        recorded.extend_from_slice(&buffer[..read]);
-    }
+    request.lock().unwrap().extend_from_slice(&buffer[..read]);
     let head = format!(
         "HTTP/1.1 {} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
         answer.status,
@@ -185,10 +179,10 @@ pub(crate) fn unused_base_url() -> String {
 
 impl Write for Captured {
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        match self.0.lock() {
-            Ok(mut bytes) => bytes.extend_from_slice(buffer),
-            Err(_poisoned) => return Err(io::Error::other("the capture lock was poisoned")),
-        }
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("the capture lock was poisoned"))?
+            .extend_from_slice(buffer);
         Ok(buffer.len())
     }
 
@@ -219,18 +213,18 @@ impl Harness {
     }
 
     pub(crate) fn run(&mut self, arguments: &[&str]) -> u8 {
-        let arguments: Vec<String> = arguments
+        let owned: Vec<String> = arguments
             .iter()
             .map(|argument| (*argument).to_owned())
             .collect();
-        let cli = Cli {
+        let mut cli = Cli {
             environment: &self.environment,
             vault: &mut self.vault,
             streams: self.streams.clone(),
             base_env: EnvVars::new(),
             stdin_is_terminal: false,
         };
-        run_with(&arguments, cli)
+        run_with(&owned, &mut cli)
     }
 
     pub(crate) fn stdout(&self) -> String {

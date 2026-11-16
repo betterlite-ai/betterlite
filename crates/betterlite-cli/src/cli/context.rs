@@ -27,18 +27,18 @@ pub(crate) const API_KEY_ENV: &str = "LITELLM_PROXY_API_KEY";
 const SETUP_COMMANDS: [&str; 3] = ["configure", "reconfigure", "unconfigure"];
 
 pub(crate) struct GlobalArgs {
-    pub base_url: Option<String>,
-    pub api_key: Option<SecretString>,
+    pub(crate) base_url: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
 }
 
 pub(crate) struct Request<'request> {
-    pub environment: &'request (dyn EnvironmentLookup + Send + Sync),
-    pub globals: GlobalArgs,
-    pub subcommand: Option<&'request str>,
-    pub vault: &'request mut (dyn SecretVault + Send + Sync),
-    pub clock: Arc<CliClock>,
-    pub token_path: Option<&'request Path>,
-    pub stderr: Channel,
+    pub(crate) environment: &'request (dyn EnvironmentLookup + Send + Sync),
+    pub(crate) globals: GlobalArgs,
+    pub(crate) subcommand: Option<&'request str>,
+    pub(crate) vault: &'request mut (dyn SecretVault + Send + Sync),
+    pub(crate) clock: Arc<CliClock>,
+    pub(crate) token_path: Option<&'request Path>,
+    pub(crate) stderr: Channel,
 }
 
 struct StoredKey<'stored> {
@@ -56,11 +56,12 @@ pub(crate) fn globals(matches: &ArgMatches) -> GlobalArgs {
         base_url: matches.get_one::<String>(BASE_URL_ARG).cloned(),
         api_key: matches
             .get_one::<String>(API_KEY_ARG)
+            .cloned()
             .map(SecretString::from),
     }
 }
 
-pub(crate) fn resolve_for_run(mut request: Request<'_>) -> Result<CliContext, Failure> {
+pub(crate) fn resolve_for_run(request: &mut Request<'_>) -> Result<CliContext, Failure> {
     let setup = request
         .subcommand
         .is_some_and(|name| SETUP_COMMANDS.contains(&name));
@@ -81,7 +82,7 @@ pub(crate) fn resolve_for_run(mut request: Request<'_>) -> Result<CliContext, Fa
         api_key_from_token_file: from_token_file,
     };
     if from_token_file {
-        return with_stored_key(context, &mut request);
+        return with_stored_key(context, request);
     }
     Ok(context)
 }

@@ -20,7 +20,7 @@ struct Readiness {
 #[derive(Debug, thiserror::Error)]
 enum ServerVersionError {
     #[error(transparent)]
-    Client(#[from] ClientError),
+    Client(#[from] Box<ClientError>),
     #[error("the proxy answered HTTP {status}")]
     Status { status: u16 },
     #[error("the readiness response is not valid JSON")]
@@ -45,13 +45,15 @@ pub(crate) fn print_version(
 }
 
 fn server_version(client: &Client) -> Result<Option<String>, ServerVersionError> {
-    let url = client.resolve(READINESS_PATH)?;
-    let response = client.send(Request {
-        method: Method::GET,
-        url,
-        headers: Vec::new(),
-        payload: Payload::Empty,
-    })?;
+    let url = client.resolve(READINESS_PATH).map_err(Box::new)?;
+    let response = client
+        .send(Request {
+            method: Method::GET,
+            url,
+            headers: Vec::new(),
+            payload: Payload::Empty,
+        })
+        .map_err(Box::new)?;
     if !(200..300).contains(&response.status) {
         return Err(ServerVersionError::Status {
             status: response.status,

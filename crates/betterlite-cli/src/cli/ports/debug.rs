@@ -5,7 +5,7 @@ use crate::commands::debug::{
 use super::super::Failure;
 use super::super::session::Session;
 
-pub(crate) fn run(session: &mut Session<'_>, command: DebugCommand) -> Result<(), Failure> {
+pub(crate) fn run(session: &Session<'_>, command: DebugCommand) -> Result<(), Failure> {
     let clock = DebugClock;
     let mut stdout = session.streams.stdout.clone();
     let mut stderr = session.streams.stderr.clone();

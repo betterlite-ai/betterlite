@@ -4,6 +4,7 @@ use std::time::Duration;
 use http::Method;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use serde_json::Error as JsonError;
 use url::Url;
 
 use crate::agent_launch::KeyProbe;
@@ -89,7 +90,7 @@ struct ModelListing {
 impl ModelDiscoveryClient for Client {
     fn list_models(&self) -> Result<Vec<RawModelListing>, ModelDiscoveryError> {
         let url = self.resolve("models").map_err(|source| {
-            ModelDiscoveryError::NotAList(serde_json::Error::io(io::Error::other(source)))
+            ModelDiscoveryError::NotAList(JsonError::io(io::Error::other(source)))
         })?;
         let response = self
             .send(Request {
@@ -99,7 +100,7 @@ impl ModelDiscoveryClient for Client {
                 payload: Payload::Empty,
             })
             .map_err(|source| {
-                ModelDiscoveryError::NotAList(serde_json::Error::io(io::Error::other(source)))
+                ModelDiscoveryError::NotAList(JsonError::io(io::Error::other(source)))
             })?;
         serde_json::from_slice::<ModelListing>(&response.body)
             .map(|listing| listing.data)

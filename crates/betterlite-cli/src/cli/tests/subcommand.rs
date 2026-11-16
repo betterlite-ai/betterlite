@@ -1,5 +1,6 @@
 use rstest::rstest;
 
+use crate::cli::dispatch::forwarded_args;
 use crate::cli::root::root_command;
 use crate::cli::tests::support::FakeEnvironment;
 
@@ -57,7 +58,7 @@ fn agent_forwarded_arguments_parse() {
     let (name, sub) = matches.subcommand().unwrap();
     assert_eq!(name, "codex");
     assert_eq!(
-        crate::cli::dispatch::forwarded_args(sub),
+        forwarded_args(sub),
         [String::from("exec"), String::from("hello")]
     );
 }
