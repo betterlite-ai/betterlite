@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-update-redact-settings-empty
+call:
+  b8502:
+    function: redact_settings
+    settings: {}
+env: {}
+compare: {ignore: []}

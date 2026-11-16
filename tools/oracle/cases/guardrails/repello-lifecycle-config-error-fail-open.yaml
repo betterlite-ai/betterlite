@@ -1,0 +1,24 @@
+kind: helper
+name: repello-lifecycle-config-error-fail-open
+call:
+  b3794:
+    mode: pre_call
+    env: {}
+    api_key: explicit-key
+    api_base: https://argus.example.test
+    asset_id: asset-1
+    unreachable_fallback: fail_open
+    data:
+      messages:
+        - {role: user, content: hello}
+    answer:
+      status: 401
+      headers: {}
+      body: {error: bad key}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/caught
+      why: betterlite answers the misconfigured 500 for a 401 under fail_open; LiteLLM never reaches _raise_for_config_error, so its request passes unscanned (docs/deviations/B3794.yaml)
+    - pointer: /value/applied
+      why: LiteLLM adds the applied-guardrails header after that fail_open pass; betterlite fails the request before recording it
