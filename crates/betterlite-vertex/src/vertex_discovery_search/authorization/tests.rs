@@ -241,6 +241,22 @@ fn an_api_base_is_only_trimmed() {
 }
 
 #[test]
+fn an_empty_api_base_falls_through_to_the_discovery_engine_host() {
+    let settings = settings(None, None);
+    let url = get_complete_url(
+        Some(""),
+        params(Some("proj"), Some("us-central1")),
+        &settings,
+        &options("collection", None, Some("store")),
+    )
+    .unwrap();
+    assert_eq!(
+        url,
+        "https://discoveryengine.googleapis.com/v1/projects/proj/locations/us-central1/collections/collection/dataStores/store/servingConfigs/default_config"
+    );
+}
+
+#[test]
 fn an_engine_target_uses_the_default_serving_config() {
     let settings = settings(None, None);
     let url = get_complete_url(
