@@ -1,0 +1,12 @@
+task: B9711
+deviations:
+  - what: The closing debug line "Updated Router settings" prints the stored setting values, not the get_settings answer.
+    why: update_settings takes no SettingsView, so it cannot build the routing groups and the latency args that get_settings adds. The line is a debug log and no client sees it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12290-L12291
+kept_bugs:
+  - what: A retry_policy that is neither an object nor null (a list, a string, a number) is ignored with no error and the old policy stays.
+    why: A saved router setting with such a value loads today and a setup may carry one, so rejecting it would break that setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12249-L12256
+  - what: There is no rollback. When the routing group rebuild fails, every pair before it stays applied and the stored groups input keeps its old value.
+    why: A working setup that sends one bad routing_groups value alongside other settings sees the other settings applied; undoing them would change that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12286-L12290
