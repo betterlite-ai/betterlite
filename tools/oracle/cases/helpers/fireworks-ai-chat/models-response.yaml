@@ -1,0 +1,68 @@
+kind: helper
+name: fireworks-ai-chat-models-response
+call:
+  b6072:
+    catalog: []
+    headers: []
+    keys: []
+    requests: []
+    replies: []
+    chunks: []
+    models:
+      - api_base: null
+        api_key: key
+        environment: {FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[{"name":"llama-v3"},{"name":"qwen3"}]}'
+      - api_base: null
+        api_key: key
+        environment: {FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: null
+        api_key: key
+        environment: {FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[{"name":"accounts/fireworks/models/deepseek-v3","display_name":"DeepSeek"}]}'
+calls:
+  - b6072:
+      catalog: []
+      headers: []
+      keys: []
+      requests: []
+      replies: []
+      chunks: []
+      models:
+        - api_base: null
+          api_key: key
+          environment: {FIREWORKS_ACCOUNT_ID: acct}
+          status: 500
+          body: down
+  - b6072:
+      catalog: []
+      headers: []
+      keys: []
+      requests: []
+      replies: []
+      chunks: []
+      models:
+        - api_base: null
+          api_key: key
+          environment: {FIREWORKS_ACCOUNT_ID: acct}
+          status: 200
+          body: '{"models":[{"id":"missing-name"}]}'
+  - b6072:
+      catalog: []
+      headers: []
+      keys: []
+      requests: []
+      replies: []
+      chunks: []
+      models:
+        - api_base: null
+          api_key: key
+          environment: {FIREWORKS_ACCOUNT_ID: acct}
+          status: 200
+          body: '{"models":"x"}'
+env: {}
+compare: {ignore: []}

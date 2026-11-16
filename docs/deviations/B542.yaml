@@ -1,0 +1,17 @@
+task: B542
+deviations:
+  - what: >-
+      A list call whose client construction returns nothing reports the Azure missing-client message, where LiteLLM's
+      inherited list_fine_tuning_jobs raises the OpenAI message about OPENAI_API_KEY.
+    why: >-
+      betterlite carries one missing-client error for all four Azure operations, so an Azure caller is never told to set
+      a key this provider does not read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L227-L249
+kept_bugs:
+  - what: >-
+      The trainingType default is written into the caller's create data before the client is built, so a create whose
+      client construction fails still leaves the request mutated.
+    why: >-
+      LiteLLM mutates the dict before get_openai_client, and a caller that inspects its dict after a failed create sees
+      the defaulted extra_body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/fine_tuning/handler.py#L58-L99

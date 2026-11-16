@@ -1099,6 +1099,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-redact",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",
@@ -3380,6 +3381,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde-saphyr",
@@ -4452,6 +4454,7 @@ dependencies = [
  "betterlite-auth",
  "betterlite-core",
  "betterlite-server",
+ "form_urlencoded",
  "libfuzzer-sys",
  "serde_json",
 ]
