@@ -14,13 +14,13 @@ use betterlite_models::price_lookup::PriceRecord;
 use betterlite_openai::api::image_contracts::records::{
     ImageData, ImageHeaders, ImageHttpResponse, ImageParams, ImageResponse,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
 
 use self::fakes::{Clock, EmptyLookup};
 use self::script::Script;
-use crate::helpers::{Helper, HelperError, HelperResult};
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MappingCall {
