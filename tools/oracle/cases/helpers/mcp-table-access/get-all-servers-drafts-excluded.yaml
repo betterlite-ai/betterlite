@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-table-access-get-all-servers-drafts-excluded
+call:
+  b4711:
+    function: get_all
+    salt_key: b4711-salt
+    approval_status: null
+    server_ids: null
+    rows:
+      - {server_id: srv-draft, server_name: old, transport: sse, approval_status: draft}
+      - {server_id: srv-live, server_name: live, transport: sse, approval_status: active}
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}
