@@ -1,0 +1,12 @@
+kind: helper
+name: stream-output-no-completed-event
+call:
+  b3857:
+    function: stream_output
+    chunks:
+    - type: other
+      value: {type: response.output_text.delta}
+    data: {}
+env: {}
+compare:
+  ignore: []

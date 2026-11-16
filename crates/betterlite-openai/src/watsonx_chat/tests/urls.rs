@@ -31,7 +31,11 @@ fn url_for(
 #[case::deployment("deployment/abc", false, "/ml/v1/deployments/abc/text/chat")]
 #[case::deployment_stream("deployment/abc", true, "/ml/v1/deployments/abc/text/chat_stream")]
 #[case::deployment_keeps_slashes("deployment/a/b", false, "/ml/v1/deployments/a/b/text/chat")]
-#[case::deployment_keeps_empty_id("deployment/", true, "/ml/v1/deployments//text/chat_stream")]
+#[case::deployment_encodes_the_query(
+    "deployment/x?y#z",
+    true,
+    "/ml/v1/deployments/x%3Fy%23z/text/chat_stream"
+)]
 #[case::prefix_needs_the_slash("deployment", false, "/ml/v1/text/chat")]
 #[case::prefix_is_not_a_substring("my-deployment/abc", false, "/ml/v1/text/chat")]
 #[case::provider_prefixed("ibm/granite", true, "/ml/v1/text/chat_stream")]
@@ -102,6 +106,26 @@ fn url_rejects_a_version_that_is_not_text(#[case] given: &str) {
         error,
         WatsonxChatError::InvalidField {
             field: "api_version"
+        }
+    ));
+}
+
+#[test]
+fn url_refuses_a_deployment_id_that_leaves_its_path() {
+    let mut found = options("{}");
+    let error = get_complete_url(
+        Some(HOST),
+        "deployment/x/../other",
+        false,
+        &mut found,
+        &environment(None, None),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        auth_failure(&error),
+        WatsonxError::Api {
+            status_code: 400,
+            ..
         }
     ));
 }

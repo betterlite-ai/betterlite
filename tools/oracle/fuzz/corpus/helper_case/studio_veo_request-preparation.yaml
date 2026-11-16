@@ -1,0 +1,12 @@
+kind: helper
+name: studio-veo-request-preparation
+call:
+  studio_veo_request:
+    requests:
+      - model: veo-3
+        prompt: a seed prompt
+        api_key: seed-key
+        params: {size: 1280x720, seconds: '8', negativePrompt: blurry}
+        image: {kind: file, data: iVBORw0KGgpzdHVkaW8gaW1hZ2U=, position: 4}
+env: {}
+compare: {ignore: []}

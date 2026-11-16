@@ -2,6 +2,9 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use crate::otel::model::metadata::wire::MetadataMap;
+use crate::otel::model::utils::coercion::OtelModelValue;
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Origin {
@@ -114,4 +117,36 @@ pub const fn is_unbilled(category: CallCategory, origin: Option<Origin>, backgro
             !background && !matches!(origin, Some(Origin::BackgroundResponseCostPoll))
         }
     }
+}
+
+const BACKGROUND_COST_POLL_ORIGIN: &str = "background_response_cost_poll";
+
+#[must_use]
+pub fn unbilled_call(
+    call_type: Option<&str>,
+    litellm_params: Option<&MetadataMap>,
+    response: Option<&OtelModelValue>,
+) -> bool {
+    let background = response
+        .and_then(OtelModelValue::as_object)
+        .and_then(|fields| fields.get("background"))
+        .and_then(OtelModelValue::as_bool)
+        == Some(true);
+    is_unbilled(
+        call_category(call_type),
+        litellm_params.and_then(cost_poll_origin),
+        background,
+    )
+}
+
+// metadata wins over litellm_metadata, and only the cost poll keeps a read billed
+fn cost_poll_origin(litellm_params: &MetadataMap) -> Option<Origin> {
+    let found = ["metadata", "litellm_metadata"].iter().find_map(|name| {
+        let fields = litellm_params
+            .get(*name)
+            .and_then(OtelModelValue::as_object)?;
+        fields.get("internal_call_origin")
+    });
+    (found.and_then(OtelModelValue::as_str)? == BACKGROUND_COST_POLL_ORIGIN)
+        .then_some(Origin::BackgroundResponseCostPoll)
 }

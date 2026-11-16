@@ -2,7 +2,7 @@ use betterlite_openai::watsonx_auth::credentials::get_api_params;
 use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
 use betterlite_openai::watsonx_auth::payload::prepare_payload;
 use betterlite_openai::watsonx_auth::types::{WatsonxEndpoint, WatsonxParams};
-use betterlite_openai::watsonx_auth::urls::{add_api_version_to_url, get_base_url};
+use betterlite_openai::watsonx_auth::urls::{add_api_version_to_url, deployment_id, get_base_url};
 use serde::Serialize;
 
 use super::error::WatsonxTextError;
@@ -134,13 +134,13 @@ pub fn complete_url(
     stream: bool,
 ) -> Result<String, WatsonxTextError> {
     let base = get_base_url(api_base, environment)?;
-    let endpoint = match (model.strip_prefix("deployment/"), stream) {
+    let endpoint = match (deployment_id(model)?, stream) {
         (Some(deployment), true) => WatsonxEndpoint::DeploymentTextGenerationStream
             .path()
-            .replace("{deployment_id}", deployment),
+            .replace("{deployment_id}", deployment.as_str()),
         (Some(deployment), false) => WatsonxEndpoint::DeploymentTextGeneration
             .path()
-            .replace("{deployment_id}", deployment),
+            .replace("{deployment_id}", deployment.as_str()),
         (None, true) => String::from(WatsonxEndpoint::TextGenerationStream.path()),
         (None, false) => String::from(WatsonxEndpoint::TextGeneration.path()),
     };
