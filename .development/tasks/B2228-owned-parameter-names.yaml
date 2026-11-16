@@ -223,7 +223,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/owned_parameter_names*")"
       && grep -lq 'owned_parameter_names' tools/oracle/fuzz/corpus/helper_case/owned_parameter_names* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_owned_parameter_names$/)'
+      run --locked -p betterlite-oracle-context --no-tests=fail -E 'test(/::helper_seeds_select_owned_parameter_names$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-wire-name-projection
     why: wire(name) returns immutable metadata with key wire_name. wire_names walks dataclass fields in declaration

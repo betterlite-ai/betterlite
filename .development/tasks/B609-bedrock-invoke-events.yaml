@@ -274,7 +274,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_events*")"
       && grep -lq 'bedrock_invoke_events' tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_events* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_invoke_events$/)'
+      run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_invoke_events$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-stream-selector-variants
     why: '_stream_decoder selects Anthropic for exact anthropic with model/sync/json_mode; DeepSeek for deepseek_r1

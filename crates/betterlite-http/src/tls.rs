@@ -190,6 +190,21 @@ fn client_config(policy: &TlsPolicy) -> Result<ClientConfig, TlsError> {
     Ok(builder.with_root_certificates(roots).with_no_client_auth())
 }
 
+// a websocket handshake carries no ALPN, curve, client certificate or user agent, so only ssl_verify shapes it
+pub fn websocket_client_config(verification: &Verification) -> Result<ClientConfig, TlsError> {
+    client_config(&TlsPolicy {
+        verification: verification.clone(),
+        ca_file: match verification {
+            Verification::CaFile(path) => Some(path.clone()),
+            Verification::Enabled | Verification::Disabled => None,
+        },
+        certificate: None,
+        http2: false,
+        ecdh_curve: None,
+        user_agent: String::new(),
+    })
+}
+
 #[derive(Debug)]
 struct InsecureCertificateVerifier {
     signatures: Arc<WebPkiServerVerifier>,
