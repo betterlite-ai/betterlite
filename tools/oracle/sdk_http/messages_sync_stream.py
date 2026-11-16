@@ -1,6 +1,6 @@
 import logging
 from collections.abc import AsyncIterator, Iterator
-from typing import Literal, Protocol
+from typing import Final, Literal, Protocol
 
 import httpx
 from litellm.llms.anthropic.pass_through.adapters.streaming_iterator import (
@@ -32,7 +32,7 @@ from messages_sync_stream_outcome import (
 ADAPTER_PREFIX = "Anthropic Adapter - "
 NORMALIZED_ID = "msg_00000000-0000-0000-0000-000000000000"
 PAYLOAD = TypeAdapter(dict[str, Json])
-CHUNK = TypeAdapter(ModelResponseStream)
+CHUNK: Final[TypeAdapter[ModelResponseStream]] = TypeAdapter(ModelResponseStream)
 
 
 class Message(BaseModel):
