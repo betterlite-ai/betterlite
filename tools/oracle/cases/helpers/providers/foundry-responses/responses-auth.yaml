@@ -40,5 +40,9 @@ call:
         params: {azure_ad_token: ad-token}
       - kind: auth
         api_base: https://res.services.ai.azure.com
+      - kind: auth
+        api_base: https://res.services.ai.azure.com
+        params: {tenant_id: tenant, client_id: client, client_secret: foundry-secret}
+        environment: {AZURE_AI_API_KEY: ""}
 env: {}
 compare: {ignore: []}
