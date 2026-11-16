@@ -164,35 +164,32 @@ class Wrapper(AnthropicStreamWrapper):
         )
         chunks = self.chunks
         logged = None if logging_obj is None else logging_obj.streamed_anthropic_message_id
-        return ANSWER.validate_json(
-            json.dumps(
-                {
-                    "message_id": normalized_id(self._message_id),
-                    "logged_message_id": None if logged is None else normalized_id(logged),
-                    "logged_is_message_id": logged == self._message_id,
-                    "model": self.model, "index": self.current_content_block_index,
-                    "type": self.current_content_block_type,
-                    "start": start,
-                    "sent_first_chunk": self.sent_first_chunk,
-                    "sent_last_message": self.sent_last_message,
-                    "sent_content_block_start": self.sent_content_block_start,
-                    "sent_content_block_finish": self.sent_content_block_finish,
-                    "queued_usage_chunk": self.queued_usage_chunk,
-                    "sent_compaction_block": self.sent_compaction_block,
-                    "sent_compaction_block_start": self.sent_compaction_block_start,
-                    "sent_compaction_block_delta": self.sent_compaction_block_delta,
-                    "refusal_text": self._refusal_text,
-                    "tool_name_mapping": self.tool_name_mapping,
-                    "applied_edits": self.applied_edits,
-                    "compaction_block": self.compaction_block,
-                    "iterations_usage": self.iterations_usage,
-                    "held_content": held_content,
-                    "held_stop": self.holding_stop_reason_chunk,
-                    "chunks_len": None if chunks is None else len(chunks),
-                    "messages": messages,
-                }
-            )
-        )
+        snapshot: dict[str, object] = {
+            "message_id": normalized_id(self._message_id),
+            "logged_message_id": None if logged is None else normalized_id(logged),
+            "logged_is_message_id": logged == self._message_id,
+            "model": self.model, "index": self.current_content_block_index,
+            "type": self.current_content_block_type,
+            "start": start,
+            "sent_first_chunk": self.sent_first_chunk,
+            "sent_last_message": self.sent_last_message,
+            "sent_content_block_start": self.sent_content_block_start,
+            "sent_content_block_finish": self.sent_content_block_finish,
+            "queued_usage_chunk": self.queued_usage_chunk,
+            "sent_compaction_block": self.sent_compaction_block,
+            "sent_compaction_block_start": self.sent_compaction_block_start,
+            "sent_compaction_block_delta": self.sent_compaction_block_delta,
+            "refusal_text": self._refusal_text,
+            "tool_name_mapping": self.tool_name_mapping,
+            "applied_edits": self.applied_edits,
+            "compaction_block": self.compaction_block,
+            "iterations_usage": self.iterations_usage,
+            "held_content": held_content,
+            "held_stop": self.holding_stop_reason_chunk,
+            "chunks_len": None if chunks is None else len(chunks),
+            "messages": messages,
+        }
+        return ANSWER.validate_json(json.dumps(snapshot))
 
     def hold_stop(self, event: MessageBlockDelta) -> None:
         self.holding_stop_reason_chunk = event
@@ -261,23 +258,30 @@ def build(input_value: Input) -> tuple[Wrapper, Logging | None]:
 
 def answer_step(wrapper: Wrapper, logging_obj: Logging | None, step: Step) -> JsonValue:
     answer: JsonValue = None
-    match step["step"]:
+    name = step.get("step")
+    match name:
         case "snapshot":
             answer = wrapper.stream_state(logging_obj)
         case "hold_stop":
-            wrapper.hold_stop(step["event"])
+            if (event := step.get("event")) is not None:
+                wrapper.hold_stop(event)
         case "initial_usage":
             answer = wrapper.initial_usage()
         case "merge_held_usage" | "choiceless":
-            answer = wrapper.usage_step(step["step"], step["usage"])
+            answer = wrapper.usage_step(name, step.get("usage"))
         case "augment" | "refusal_stop":
-            answer = wrapper.event_step(step["step"], step["event"])
+            if (event := step.get("event")) is not None:
+                answer = wrapper.event_step(name, event)
         case "compaction":
-            answer = wrapper.compaction(step["calls"])
+            answer = wrapper.compaction(step.get("calls", 0))
         case "delta_has_content":
-            answer = wrapper.delta_has_content(step["event"])
+            if (event := step.get("event")) is not None:
+                answer = wrapper.delta_has_content(event)
         case "is_blank" | "start_block":
-            answer = wrapper.choice_step(step["step"], step["choices"])
+            if (choices := step.get("choices")) is not None:
+                answer = wrapper.choice_step(name, choices)
+        case _:
+            pass
     return answer
 
 
