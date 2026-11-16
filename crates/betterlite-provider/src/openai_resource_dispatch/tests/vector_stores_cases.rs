@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::openai_credentials::Settings;
+use betterlite_openai::api::vector_store_records::records::basic::VectorStoreStatus;
 use betterlite_openai::api::vector_store_records::records::union::VectorStoreRecord;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::vector_stores::error::VectorStoreError;
@@ -483,8 +484,49 @@ async fn search_reply_row() {
         .map(|hit| hit.file_id.as_deref())
         .collect();
     assert_eq!(file_ids, [Some("f")]);
-    let sent: serde_json::Value = serde_json::from_str(body).unwrap();
-    assert_eq!(serde_json::to_value(&*record).unwrap(), sent);
+    let sent = object(body);
+    assert_eq!(serde_json::to_value(&*record).unwrap(), json!(sent));
+}
+
+async fn create_reply_row() {
+    let settings = settings();
+    let body = r#"{"id":"vs_1","object":"vector_store","created_at":1700000000,"name":"docs","bytes":2048,"file_counts":{"in_progress":0,"completed":1,"failed":0,"cancelled":0,"total":1},"status":"completed","expires_after":{"anchor":"last_active_at","days":7},"expires_at":1700604800,"last_active_at":1700000000,"metadata":{"team":"core"}}"#;
+    let response = reply(200, body);
+    let call = Call::Reply {
+        kind: ReplyKind::Create,
+        response: &response,
+    };
+    let result = run(&settings, globals(None), None, call).await;
+    let Ok(OpenAiResourceResult::VectorStores(Outcome::Reply(VectorReply::Record(record)))) =
+        result
+    else {
+        panic!("the create reply decodes to a record");
+    };
+    let VectorStoreRecord::CreateResponse(created) = &*record else {
+        panic!("a create reply is a create response record");
+    };
+    assert_eq!(created.id.as_deref(), Some("vs_1"));
+    assert_eq!(created.name.as_deref(), Some("docs"));
+    assert_eq!(created.status, Some(VectorStoreStatus::Completed));
+    let sent = object(body);
+    assert_eq!(serde_json::to_value(&*record).unwrap(), json!(sent));
+}
+
+async fn file_reply_row() {
+    let settings = settings();
+    let body = r#"{"id":"file_1","object":"vector_store.file","created_at":1700000000,"usage_bytes":12,"vector_store_id":"vs_1","status":"completed","last_error":null,"chunking_strategy":{"type":"static","static":{"max_chunk_size_tokens":800,"chunk_overlap_tokens":400}},"attributes":{"team":"core"}}"#;
+    let response = reply(200, body);
+    let call = Call::Reply {
+        kind: ReplyKind::File,
+        response: &response,
+    };
+    let result = run(&settings, globals(None), None, call).await;
+    let Ok(OpenAiResourceResult::VectorStores(Outcome::Reply(VectorReply::Json(value)))) = result
+    else {
+        panic!("the attached-file reply stays JSON");
+    };
+    let sent = object(body);
+    assert_eq!(value, json!(sent));
 }
 
 async fn reply_error_row() {
@@ -519,5 +561,7 @@ pub(crate) async fn check() {
     file_operation_rows().await;
     file_update_error_row().await;
     search_reply_row().await;
+    create_reply_row().await;
+    file_reply_row().await;
     reply_error_row().await;
 }
