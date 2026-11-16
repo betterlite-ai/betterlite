@@ -47,4 +47,14 @@ deviations:
       The synthesized pydantic __init__ of the first base class makes strict basedpyright reject a
       super().__init__(**kwargs) call that forwards untyped keywords. A before-validator needs no call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1262-L1269
+  - what: >-
+      guardrailConfig is the TypedDict class _GuardrailConfig and the module binds the LiteLLM name to it
+      with a TypeAlias, and GUARDRAIL_DEFINITION_LOCATION is built with the functional StrEnum call, where
+      LiteLLM declares both as classes with lowercase or underscore names. The TypedDict's __name__ is
+      _GuardrailConfig.
+    why: >-
+      Ruff N801 rejects both class names and the task's max_new_expects is 0, so neither can carry a noqa.
+      Ruff UP013 rewrites a functional TypedDict back to class syntax, so the alias is the form that
+      passes. Keys, required keys, members and values are identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1301
 kept_bugs: []

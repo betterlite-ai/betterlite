@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import ClassVar, Final, Literal, Required, Self
+from typing import ClassVar, Final, Literal, Required, Self, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from typing_extensions import ReadOnly, TypedDict
@@ -285,8 +285,12 @@ class Guardrail(TypedDict, total=False):
     updated_at: datetime | None
 
 
-class guardrailConfig(TypedDict):  # noqa: N801  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1301
+class _GuardrailConfig(TypedDict):
     guardrails: list[Guardrail]
+
+
+# https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1301
+guardrailConfig: TypeAlias = _GuardrailConfig
 
 
 class GuardrailEventHooks(StrEnum):
