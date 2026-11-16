@@ -1,0 +1,13 @@
+task: B9971
+deviations:
+  - what: >-
+      A token count that would download more than 256 remote images (high detail, exact mode) is refused with
+      "the content asks for more than 256 remote image downloads" after the 256th download, wherever the items sit in
+      the content. The cap is MAX_REMOTE_URLS, the same 256 B183 puts on remote media in chat requests.
+    why: >-
+      LiteLLM downloads every high-detail remote image a count names, so the outbound downloads, each up to the
+      MAX_IMAGE_URL_DOWNLOAD_SIZE_MB cap, grow with one request. Bounding them keeps a single token count from making the
+      gateway fetch without limit.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L889-L893
+kept_bugs: []

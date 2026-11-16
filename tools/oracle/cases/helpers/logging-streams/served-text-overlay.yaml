@@ -1,0 +1,28 @@
+kind: helper
+name: logging-streams-served-text-overlay
+call:
+  logging_streams:
+    probes:
+      - operation: overlay
+        response: {id: chatcmpl-1, choices: [{index: 0, message: {role: assistant, content: old}}, {index: 1, message: {role: assistant, content: kept}}]}
+        texts: [new, null]
+      - operation: overlay
+        response: {choices: [{message: {content: old}}]}
+        texts: null
+      - operation: overlay
+        response: [not, a, chat, response]
+        texts: [new]
+      - operation: overlay
+        response: {id: chatcmpl-1}
+        texts: [new]
+      - operation: overlay
+        response: {choices: ["raw", {message: "text"}, {message: {role: assistant}}]}
+        texts: [new, new, replaced]
+      - operation: overlay
+        response: {choices: [{message: {content: same}}]}
+        texts: [same]
+      - operation: overlay
+        response: {choices: [{message: {content: old}}, {message: {content: later}}]}
+        texts: [first, second, third]
+env: {}
+compare: {ignore: []}

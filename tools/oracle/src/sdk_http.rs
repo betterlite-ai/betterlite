@@ -10,6 +10,7 @@ use betterlite_provider::api::vector_store_contracts::config::Params;
 use crate::case::Compare;
 use betterlite_oracle_runner::case::UpstreamAnswer;
 use error::SdkHttpError;
+use file_azure_storage::FileAzureStorageCall;
 use messages_stream_logging::call::MessagesStreamLoggingCall;
 use messages_stream_logging::relay::call::MessagesNativeStreamCall;
 use responses_agentic_continuation::AgenticContinuationCall;
@@ -20,6 +21,7 @@ pub(crate) mod capture;
 mod child;
 pub(crate) mod embedding_executor;
 pub mod error;
+pub mod file_azure_storage;
 pub(crate) mod messages_header_stream;
 pub mod messages_stream_logging;
 pub(crate) mod native;
@@ -74,6 +76,7 @@ pub enum SdkHttpCall {
     MessagesStreamLogging(MessagesStreamLoggingCall),
     MessagesNativeStream(MessagesNativeStreamCall),
     ResponsesAgenticContinuation(Box<AgenticContinuationCall>),
+    FileAzureStorage(FileAzureStorageCall),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -253,7 +256,8 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
         SdkHttpCall::ResponsesAgenticContinuation(_)
         | SdkHttpCall::VectorQueryEmbedding(_)
         | SdkHttpCall::AnthropicBetaConfig(_)
-        | SdkHttpCall::MessagesStreamLogging(_) => {}
+        | SdkHttpCall::MessagesStreamLogging(_)
+        | SdkHttpCall::FileAzureStorage(_) => {}
     }
     Ok(())
 }

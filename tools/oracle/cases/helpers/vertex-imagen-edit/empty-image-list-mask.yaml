@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-imagen-edit-empty-image-list-mask
+call:
+  vertex_imagen_edit:
+    model: imagen-3.0-capability-001
+    prompt: fill the sky
+    image: []
+    mask: {kind: bytes, data_base64: bWFzay1ieXRlcw==}
+    optional_params: {}
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}

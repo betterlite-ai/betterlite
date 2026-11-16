@@ -1,0 +1,6 @@
+kind: helper
+name: responses-patch-changes-one-item-only
+call:
+  b3671: {"function": "input", "scenarios": [{"data": {"input": [{"role": "user", "content": "a", "extra": 1}, {"role": "assistant", "content": "b"}]}, "skip_system": false, "covers_full": false, "reply": {"structured_messages": [{"role": "user", "content": "a"}, {"role": "assistant", "content": "B"}]}}, {"data": {"input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "a"}]}]}, "skip_system": false, "covers_full": false, "reply": {"structured_messages": [{"role": "user", "content": [{"type": "text", "text": "A"}]}]}}]}
+env: {}
+compare: {ignore: []}
