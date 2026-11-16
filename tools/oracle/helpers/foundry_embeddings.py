@@ -20,12 +20,8 @@ AEMBEDDING: Final = True
 # a fixed start time keeps the helper off the clock; Logging only stores it in its details
 LOG_START: Final = datetime(1970, 1, 1, tzinfo=UTC)
 BODY_KEYS: Final = frozenset({"model", "input"})
-NONE_MESSAGES: Final = frozenset(
-    {
-        "/image/embeddings route returned None Embeddings.",
-        "/v1/embeddings route returned None Embeddings.",
-    }
-)
+NONE_IMAGE_MESSAGE: Final = "/image/embeddings route returned None Embeddings."
+NONE_TEXT_MESSAGE: Final = "/v1/embeddings route returned None Embeddings."
 
 JSON_OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 TIMEOUT: TypeAdapter[float] = TypeAdapter(float)
@@ -147,42 +143,36 @@ def reply_response(reply: ReplyCall, request: httpx.Request) -> httpx.Response:
     return answer
 
 
-class ImageTransport(httpx.MockTransport):
-    def __init__(self, state: FlowState, reply: ReplyCall) -> None:
+class Transport(httpx.MockTransport):
+    def __init__(
+        self, state: FlowState, reply: ReplyCall, kind: Literal["image", "text"]
+    ) -> None:
         super().__init__(self.respond)
         self.state = state
         self.reply = reply
+        self.kind = kind
 
     def respond(self, request: httpx.Request) -> httpx.Response:
         body = JSON_OBJECT.validate_json(request.content)
-        call: dict[str, JsonValue] = {
-            "kind": "image",
-            "url": str(request.url),
-            "authorization": request.headers.get("authorization"),
-            "body": body,
-        }
-        self.state.calls.append(call)
-        return reply_response(self.reply, request)
-
-
-class TextTransport(httpx.MockTransport):
-    def __init__(self, state: FlowState, reply: ReplyCall) -> None:
-        super().__init__(self.respond)
-        self.state = state
-        self.reply = reply
-
-    def respond(self, request: httpx.Request) -> httpx.Response:
-        body = JSON_OBJECT.validate_json(request.content)
-        text = TEXT_BODY.validate_json(request.content)
-        options: dict[str, JsonValue] = {
-            name: value for name, value in body.items() if name not in BODY_KEYS
-        }
-        call: dict[str, JsonValue] = {
-            "kind": "text",
-            "model": text["model"],
-            "input": text["input"],
-            "options": options,
-        }
+        call: dict[str, JsonValue]
+        if self.kind == "image":
+            call = {
+                "kind": "image",
+                "url": str(request.url),
+                "authorization": request.headers.get("authorization"),
+                "body": body,
+            }
+        else:
+            text = TEXT_BODY.validate_json(request.content)
+            options: dict[str, JsonValue] = {
+                name: value for name, value in body.items() if name not in BODY_KEYS
+            }
+            call = {
+                "kind": "text",
+                "model": text["model"],
+                "input": text["input"],
+                "options": options,
+            }
         self.state.calls.append(call)
         return reply_response(self.reply, request)
 
@@ -213,7 +203,7 @@ def build_async_client(
     return AsyncHTTPHandler(transport=transport, timeout=params["timeout"])
 
 
-def build_client(flow: FlowCall, image: ImageTransport, text: TextTransport) -> Client:
+def build_client(flow: FlowCall, image: Transport, text: Transport) -> Client:
     kind = flow["client"]
     if kind == "none":
         return None
@@ -289,8 +279,8 @@ def flow_response(flow: FlowCall, client: Client) -> EmbeddingResponse:
 
 def flow_outcome(flow: FlowCall) -> dict[str, JsonValue]:
     state = FlowState()
-    image = ImageTransport(state, flow["image_reply"])
-    text = TextTransport(state, flow["text_reply"])
+    image = Transport(state, flow["image_reply"], "image")
+    text = Transport(state, flow["text_reply"], "text")
     RecordingHandler.recorder = state
     RecordingHandler.transport = image
     embed_handler.get_async_httpx_client = partial(build_async_client, state, image)
@@ -309,7 +299,7 @@ def flow_outcome(flow: FlowCall) -> dict[str, JsonValue]:
     except ValueError:
         failure = failure_outcome(state, "ValueError", None)
     except Exception as error:
-        if str(error) not in NONE_MESSAGES:
+        if str(error) not in (NONE_IMAGE_MESSAGE, NONE_TEXT_MESSAGE):
             raise
         failure = failure_outcome(state, "Exception", None)
     else:

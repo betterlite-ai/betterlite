@@ -57,36 +57,32 @@ impl Reply {
         }
     }
 
-    fn header_map(&self) -> HeaderMap {
-        let mut map = HeaderMap::new();
+    fn image_reply(&self) -> ImageReply {
+        let mut headers = HeaderMap::new();
         for (name, value) in &self.headers {
             if let (Ok(name), Ok(value)) = (
                 HeaderName::from_bytes(name.as_bytes()),
                 HeaderValue::from_str(value),
             ) {
-                map.insert(name, value);
+                headers.insert(name, value);
             }
         }
-        map
-    }
-
-    fn image_reply(&self) -> ImageReply {
         ImageReply {
             status: self.status,
-            headers: self.header_map(),
+            headers,
             body: self.body.as_bytes().to_vec(),
         }
     }
 }
 
-// the transport the route builds or reuses: it records the request it was handed
+// the route's image transport and B173's text call share one fixture, and it records each request
 #[derive(Clone)]
-struct Fixture {
+struct Recorder {
     state: Shared,
     reply: Reply,
 }
 
-impl ImageTransport for Fixture {
+impl ImageTransport for Recorder {
     fn send(
         &self,
         request: ImageRequest,
@@ -118,14 +114,14 @@ struct Factory {
 }
 
 impl Factory {
-    fn build(&self, kind: &str, timeout: Duration) -> Fixture {
+    fn build(&self, kind: &str, timeout: Duration) -> Recorder {
         self.state
             .trail
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .constructed
             .push(json!({"kind": kind, "timeout": timeout.as_secs_f64()}));
-        Fixture {
+        Recorder {
             state: Arc::clone(&self.state),
             reply: self.reply.clone(),
         }
@@ -133,7 +129,7 @@ impl Factory {
 }
 
 impl EmbeddingClientFactory for Factory {
-    type Client = Fixture;
+    type Client = Recorder;
 
     fn sync_client(&self, timeout: Duration) -> Self::Client {
         self.build("sync", timeout)
@@ -144,13 +140,7 @@ impl EmbeddingClientFactory for Factory {
     }
 }
 
-// the inherited OpenAI embedding call: B173 owns its transport, so the fixture answers with the reply
-struct TextFake {
-    state: Shared,
-    reply: Reply,
-}
-
-impl TextEmbedding for TextFake {
+impl TextEmbedding for Recorder {
     fn embed(
         &self,
         call: TextEmbeddingCall<'_>,
@@ -172,7 +162,7 @@ impl TextEmbedding for TextFake {
             Ok(reply) => reply,
             Err(error) => return ready(Err(error)),
         };
-        reply.additional_headers = projected_headers(&self.reply.header_map());
+        reply.additional_headers = projected_headers(&self.reply.image_reply().headers);
         ready(Ok(reply))
     }
 }
@@ -267,13 +257,13 @@ fn flow_error(
 // the caller's client, when it hands the route one, answers the image call and records it
 struct Fixtures {
     state: Shared,
-    held: Option<Fixture>,
+    held: Option<Recorder>,
     factory: Factory,
 }
 
 fn fixtures(flow: &FlowCall) -> Fixtures {
     let state = Shared::default();
-    let held = matches!(flow.client, ClientName::Handler).then(|| Fixture {
+    let held = matches!(flow.client, ClientName::Handler).then(|| Recorder {
         state: Arc::clone(&state),
         reply: Reply::from_call(&flow.image_reply),
     });
@@ -296,7 +286,7 @@ fn flow_outcome(
         held,
         factory,
     } = fixtures(flow);
-    let text = TextFake {
+    let text = Recorder {
         state: Arc::clone(&state),
         reply: Reply::from_call(&flow.text_reply),
     };
