@@ -121,7 +121,7 @@ fn test_drops_content_that_is_not_text() {
 fn test_keeps_empty_chat_content() {
     assert_eq!(
         served_output_texts(&json(r#"{"choices":[{"message":{"content":""}}]}"#)),
-        Some(vec![Some("".to_owned())])
+        Some(vec![Some(String::new())])
     );
 }
 
@@ -246,7 +246,7 @@ fn test_skips_stream_content_that_is_not_text() {
 
 fn test_keeps_empty_stream_text() {
     let pieces = vec![chunk("0", "")];
-    assert_eq!(stream_texts(&pieces), Some(vec![Some("".to_owned())]));
+    assert_eq!(stream_texts(&pieces), Some(vec![Some(String::new())]));
 }
 
 fn test_ignores_tool_call_stream_deltas() {
