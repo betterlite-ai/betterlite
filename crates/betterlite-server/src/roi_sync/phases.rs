@@ -12,7 +12,7 @@ use futures_util::future::join_all;
 
 use crate::roi_cache::key::cache_key;
 use crate::roi_cache::processed::processed_records;
-use crate::roi_cache::repositories::read_repositories;
+use crate::roi_cache::repositories::{RepositoryBatch, read_repositories};
 use crate::roi_cache::store::{ReportRepository, previous_report};
 use crate::roi_estimator::{CompletionCaller, Estimator};
 use crate::roi_github::client::GitHub;
@@ -64,20 +64,7 @@ where
     context.status.apply(StatusChange::Repositories);
     let repositories =
         read_repositories(context.github, &context.settings.repos, start, end).await?;
-    let previous = previous_report(repository)
-        .await
-        .map_err(RunError::Repository)?;
-    let plan = index_pulls(
-        context.settings,
-        context.models,
-        previous,
-        &repositories.queue,
-        context.capabilities,
-    )
-    .await
-    .map_err(RunError::Key)?;
-    let total = i64::try_from(plan.queue.len()).map_err(RunError::Count)?;
-    context.status.apply(StatusChange::Estimates { total });
+    let plan = plan_estimates(context, repository, &repositories).await?;
     let processed = process_pulls(context, repository, &plan).await?;
     let report = build_report(ReportParts {
         settings: context.settings,
@@ -93,6 +80,32 @@ where
         report,
         stage: repositories.stage,
     })
+}
+
+async fn plan_estimates<T, Repository>(
+    context: &RunContext<'_, T>,
+    repository: &Repository,
+    repositories: &RepositoryBatch,
+) -> Result<EstimatePlan, RunError<Repository::Error>>
+where
+    T: Transport,
+    Repository: ReportRepository + Sync,
+{
+    let previous = previous_report(repository)
+        .await
+        .map_err(RunError::Repository)?;
+    let plan = index_pulls(
+        context.settings,
+        context.models,
+        previous,
+        &repositories.queue,
+        context.capabilities,
+    )
+    .await
+    .map_err(RunError::Key)?;
+    let total = i64::try_from(plan.queue.len()).map_err(RunError::Count)?;
+    context.status.apply(StatusChange::Estimates { total });
+    Ok(plan)
 }
 
 async fn index_pulls(

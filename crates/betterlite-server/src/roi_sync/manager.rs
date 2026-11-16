@@ -112,23 +112,7 @@ impl<T: Transport + 'static> SyncManager<T> {
             return false;
         }
         let owner = (self.next_id)().to_string();
-        let now = (self.reporter.clock)();
-        let initial = ROISyncStatus {
-            running: true,
-            phase: ROISyncPhase::Spend,
-            stage: SPEND_STAGE.to_owned(),
-            done: 0,
-            total: 0,
-            estimated: 0,
-            reused: 0,
-            needs_attention: 0,
-            error: None,
-            started_at: Some(isoformat(now)),
-            finished_at: None,
-            next_update: None,
-            elapsed_seconds: 0,
-            remaining_seconds: None,
-        };
+        let initial = initial_status(isoformat((self.reporter.clock)()));
         let lease = run.coordinator.as_ref();
         let acquired = acquire_lease(lease, &owner, &initial, run.scheduled_interval).await;
         if !acquired {
@@ -254,5 +238,24 @@ async fn acquire_lease(
     match coordinator {
         Some(lease) => lease.acquire(owner, initial, scheduled_interval).await,
         None => true,
+    }
+}
+
+fn initial_status(started_at: String) -> ROISyncStatus {
+    ROISyncStatus {
+        running: true,
+        phase: ROISyncPhase::Spend,
+        stage: SPEND_STAGE.to_owned(),
+        done: 0,
+        total: 0,
+        estimated: 0,
+        reused: 0,
+        needs_attention: 0,
+        error: None,
+        started_at: Some(started_at),
+        finished_at: None,
+        next_update: None,
+        elapsed_seconds: 0,
+        remaining_seconds: None,
     }
 }
