@@ -3,18 +3,19 @@ use std::collections::BTreeMap;
 use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
 use serde::Deserialize;
+use tokio::runtime::{Builder, Runtime};
 
 use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Deserialize)]
-pub(super) struct AgentCase {
+pub(crate) struct AgentCase {
     pub(super) name: String,
     pub(super) card: Object,
     pub(super) params: Object,
 }
 
 #[derive(Deserialize)]
-pub(super) struct ProbeCase {
+pub(crate) struct ProbeCase {
     pub(super) agent_name: String,
     pub(super) api_base: Option<String>,
     pub(super) api_key: Option<SecretString>,
@@ -23,8 +24,7 @@ pub(super) struct ProbeCase {
 }
 
 #[derive(Deserialize)]
-pub(super) struct RequestCase {
-    pub(super) model: String,
+pub(crate) struct RequestCase {
     pub(super) api_base: Option<String>,
     pub(super) api_key: Option<SecretString>,
     pub(super) headers: BTreeMap<String, String>,
@@ -33,14 +33,14 @@ pub(super) struct RequestCase {
 }
 
 #[derive(Deserialize)]
-pub(super) struct ResponseCase {
+pub(crate) struct ResponseCase {
     pub(super) model: String,
     pub(super) status: u16,
     pub(super) body: String,
 }
 
 #[derive(Deserialize)]
-pub(super) struct StreamCase {
+pub(crate) struct StreamCase {
     pub(super) chunk: Object,
 }
 
@@ -55,8 +55,8 @@ pub(super) fn helper_error(class: &str, message: String) -> Box<HelperError> {
     })
 }
 
-pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|source| helper_error("Runtime", source.to_string()))
