@@ -322,7 +322,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_edits*")"
       && grep -lq 'bedrock_other_canvas_edits' tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_edits*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_canvas_edits$/)'
+      && cargo nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_canvas_edits$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-canvas-task-errors
     why: 'OUTPAINTING with neither mask raises ValueError OUTPAINTING requires either a mask image or a mask prompt.

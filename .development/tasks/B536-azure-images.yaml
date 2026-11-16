@@ -238,7 +238,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_images*")"
       && grep -lq 'azure_images' tools/oracle/fuzz/corpus/helper_case/azure_images* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_images$/)' && cargo nextest run
+      -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_images$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-azure-image-body-and-retry
     why: Normalize falsy model to None. If response and litellm_params.base_model are non-None set hidden model;

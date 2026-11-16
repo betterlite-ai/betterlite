@@ -183,7 +183,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_invoke_agent*")"
       && grep -lq 'bedrock_services_invoke_agent' tools/oracle/fuzz/corpus/helper_case/bedrock_services_invoke_agent*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_invoke_agent$/)'
+      && cargo nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_invoke_agent$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-agent-id-alias-path
     why: 'Require exactly3 slash segments and leading agent or ValueError Invalid model format. Expected format:

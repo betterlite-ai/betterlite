@@ -11,7 +11,7 @@ checks:
   - id: helper-case-corpus
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/cloud_storage*")"
       && grep -lq 'cloud_storage' tools/oracle/fuzz/corpus/helper_case/cloud_storage* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_cloud_storage$/)' && cargo nextest run
+      -p betterlite-oracle-context --no-tests=fail -E 'test(/::helper_seeds_select_cloud_storage$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
   - id: case-cloud-uri-detection

@@ -130,7 +130,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_thread_messages*")"
       && grep -lq 'azure_thread_messages' tools/oracle/fuzz/corpus/helper_case/azure_thread_messages* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_thread_messages$/)'
+      run --locked -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_thread_messages$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-assistants-beta-default
     why: 'OpenAI-Beta: assistants=v2 is supplied for thread create/retrieve by the same SDK namespace used in B519/B520/B527;
