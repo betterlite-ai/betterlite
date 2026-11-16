@@ -11,12 +11,8 @@ from litellm.types.videos.main import VideoObject
 from pydantic import JsonValue, TypeAdapter
 
 CONTENT_URL: Final = "https://queue.fal.run/fal-ai/kling-video/requests/req-1"
-BLOCKED_HEADERS: Final[frozenset[str]] = frozenset(
-    {"host", "content-length", "transfer-encoding"}
-)
-CREDENTIAL_HEADERS: Final[frozenset[str]] = frozenset(
-    {"authorization", "proxy-authorization", "x-api-key", "api-key"}
-)
+BLOCKED_HEADERS: Final[frozenset[str]] = frozenset({"host", "content-length", "transfer-encoding"})
+CREDENTIAL_HEADERS: Final[frozenset[str]] = frozenset({"authorization", "proxy-authorization", "x-api-key", "api-key"})
 ClientKind: TypeAlias = Literal["sync", "async"]
 T = TypeVar("T")
 
@@ -113,17 +109,13 @@ def answer(script: Script, request: httpx.Request) -> httpx.Response:
     script.requests.append(request)
     if script.status is None:
         raise httpx.ConnectError("the scripted transport failed", request=request)
-    return httpx.Response(
-        status_code=script.status, content=script.body.encode(), request=request
-    )
+    return httpx.Response(status_code=script.status, content=script.body.encode(), request=request)
 
 
 def configured(script: Script) -> FalAIVideoConfig:
     transport = httpx.MockTransport(partial(answer, script))
     return FalAIVideoConfig(
-        sync_client_factory=partial(
-            HTTPHandler, client=httpx.Client(transport=transport)
-        ),
+        sync_client_factory=partial(HTTPHandler, client=httpx.Client(transport=transport)),
         async_client_factory=partial(AsyncHTTPHandler, transport=transport),
     )
 
@@ -147,23 +139,15 @@ def video_fields(video: VideoObject) -> JsonValue:
     }
 
 
-def projected_headers(
-    request: httpx.Request, names: frozenset[str]
-) -> dict[str, JsonValue]:
-    return {
-        name: value
-        for name, value in request.headers.multi_items()
-        if name in names and name not in BLOCKED_HEADERS
-    }
-
-
 def request_values(script: Script, names: frozenset[str]) -> list[JsonValue]:
     values: list[JsonValue] = []
     for request in script.requests:
-        recorded: JsonValue = {
-            "url": str(request.url),
-            "headers": projected_headers(request, names),
+        headers: dict[str, JsonValue] = {
+            name: value
+            for name, value in request.headers.multi_items()
+            if name in names and name not in BLOCKED_HEADERS
         }
+        recorded: JsonValue = {"url": str(request.url), "headers": headers}
         values.append(recorded)
     return values
 
@@ -176,9 +160,7 @@ def status_video(
 ) -> VideoObject:
     if kind == "sync":
         return config.transform_video_status_retrieve_response(raw, None, provider)
-    return asyncio.run(
-        config.async_transform_video_status_retrieve_response(raw, None, provider)
-    )
+    return asyncio.run(config.async_transform_video_status_retrieve_response(raw, None, provider))
 
 
 def status_outcome(kind: ClientKind, case: StatusCase) -> JsonValue:
@@ -210,9 +192,7 @@ def status_report(cases: list[StatusCase]) -> JsonValue:
     return answer_value
 
 
-def content_bytes(
-    config: FalAIVideoConfig, kind: ClientKind, raw: httpx.Response
-) -> bytes:
+def content_bytes(config: FalAIVideoConfig, kind: ClientKind, raw: httpx.Response) -> bytes:
     if kind == "sync":
         return config.transform_video_content_response(raw, None)
     return asyncio.run(config.async_transform_video_content_response(raw, None))
