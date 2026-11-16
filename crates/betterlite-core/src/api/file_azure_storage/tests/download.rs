@@ -131,6 +131,25 @@ async fn account_key_download_keeps_a_lone_slash() {
     );
 }
 
+// LiteLLM's token branch builds its URL from the path as parsed, with no SDK strip to apply
+#[rstest]
+#[case::trailing("https://acct.blob.core.windows.net/files/p/a.txt/")]
+#[case::leading("https://acct.blob.core.windows.net/files//p/a.txt")]
+#[tokio::test]
+async fn token_download_keeps_the_raw_path(#[case] supplied: &str) {
+    let harness = Harness::new(settings(), &[(200, "abc")]);
+    let content = harness
+        .backend
+        .download_file(supplied)
+        .await
+        .expect("download");
+    assert_eq!(content, b"abc");
+    assert_eq!(
+        paths(&harness.calls()),
+        vec![("GET".to_owned(), supplied.to_owned())]
+    );
+}
+
 // LiteLLM's urlparse keeps a raw space and the SDK quotes it once, so the URL parser's own
 // encoding must not be quoted a second time
 #[tokio::test]
@@ -170,19 +189,25 @@ async fn account_key_download_quotes_a_quoted_name() {
 }
 
 // urlparse drops the last segment's ;params before LiteLLM hands the path to the SDK
+#[rstest]
+#[case::one_letter("https://acct.blob.core.windows.net/files/p/a;b.txt", "a")]
+#[case::several_letters("https://acct.blob.core.windows.net/files/p/ab;cd.txt", "ab")]
 #[tokio::test]
-async fn account_key_download_drops_the_last_segment_params() {
+async fn account_key_download_drops_the_last_segment_params(
+    #[case] supplied: &str,
+    #[case] file_name: &str,
+) {
     let harness = Harness::new(settings_with_account_key(), &[(200, ""), (200, "abc")]);
     harness
         .backend
-        .download_file("https://acct.blob.core.windows.net/files/p/a;b.txt")
+        .download_file(supplied)
         .await
         .expect("download");
     assert_eq!(
         paths(&harness.calls()),
         vec![
             ("GET".to_owned(), format!("{FILES}?restype=container")),
-            ("GET".to_owned(), format!("{FILES}/p/a")),
+            ("GET".to_owned(), format!("{FILES}/p/{file_name}")),
         ]
     );
 }

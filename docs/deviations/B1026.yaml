@@ -17,6 +17,15 @@ deviations:
       the download loop the SDK provides.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L282-L286
   - what: >-
+      An account-key download whose parsed path is nothing but slashes, such as
+      https://acct.blob.core.windows.net/files///, fails with AzureFileStorageError::InvalidUrlFormat after the
+      filesystem check. LiteLLM hands the path to get_file_client, whose _PathClient.__init__ raises
+      ValueError("Please specify a file system name and file path.") at the same point.
+    why: >-
+      The SDK's ValueError class cannot cross into B1025's typed Rust error, and the invalid URL names the
+      failure the caller can act on; the filesystem check and the absent download request match LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L282
+  - what: >-
       On the token path the create and flush requests carry no content-type; LiteLLM's httpx client adds
       content-type application/octet-stream to those empty bodies. The append carries application/octet-stream as
       LiteLLM sets it, and every request carries x-ms-version and Authorization.
