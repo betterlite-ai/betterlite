@@ -14,10 +14,10 @@ pub fn get_complete_url(
 ) -> Result<String, WatsonxChatError> {
     let base = get_base_url(api_base, environment)?;
     let suffix = if stream { "chat_stream" } else { "chat" };
-    let endpoint = match deployment_id(model)? {
-        Some(deployment) => format!("/ml/v1/deployments/{deployment}/text/{suffix}"),
-        None => format!("/ml/v1/text/{suffix}"),
-    };
+    let endpoint = deployment_id(model)?.map_or_else(
+        || format!("/ml/v1/text/{suffix}"),
+        |deployment| format!("/ml/v1/deployments/{deployment}/text/{suffix}"),
+    );
     let api_version = match options.remove("api_version") {
         None | Some(Value::Null) => None,
         Some(Value::String(version)) => Some(version),
