@@ -126,7 +126,14 @@ fn token_failure(
         Agent365TokenError::Throttled { .. } => {
             handlers::throttled(guardrail, data, tool_name, &reason, None)
         }
-        _ => unavailable(guardrail, data, tool_name, &reason),
+        Agent365TokenError::Exchange(_)
+        | Agent365TokenError::NonJsonBody { .. }
+        | Agent365TokenError::NonObjectBody { .. }
+        | Agent365TokenError::MissingAccessToken
+        | Agent365TokenError::BadAccessToken
+        | Agent365TokenError::HttpStatus { .. }
+        | Agent365TokenError::TokenExpiry
+        | Agent365TokenError::Poster(_) => unavailable(guardrail, data, tool_name, &reason),
     }
 }
 

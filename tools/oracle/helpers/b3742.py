@@ -86,7 +86,7 @@ class ScriptedReplies:
         elif self.repeat_last_reply and self.replies:
             reply = self.replies[-1]
         else:
-            raise AssertionError("the scripted replies are exhausted")
+            raise ValueError("the scripted replies are exhausted")
         if reply["kind"] == "unreachable":
             raise httpx.ReadTimeout("the scripted Agent 365 endpoint did not answer")
         if reply["raw"] is not None:

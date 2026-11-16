@@ -155,9 +155,13 @@ fn request_data() -> Data {
 fn harness(fallback: UnreachableFallback) -> Harness {
     let now = Arc::new(AtomicU64::new(FIXED_NOW_NANOS));
     let poster = Arc::new(FakePoster::new(Arc::clone(&now)));
-    let guardrail =
-        Agent365Guardrail::new(settings(fallback), poster.clone(), true, clock_handle(now))
-            .unwrap();
+    let guardrail = Agent365Guardrail::new(
+        settings(fallback),
+        Arc::clone(&poster),
+        true,
+        clock_handle(now),
+    )
+    .unwrap();
     Harness {
         guardrail,
         poster,
