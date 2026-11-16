@@ -21,6 +21,9 @@ deviations:
   - what: cancel takes the same start lock start takes, where LiteLLM's cancel does not.
     why: The lock only orders a cancel against a concurrent start; both paths end with the same cancelled status, the same finished_at and the same coordinator notification, and serializing them keeps the stored slot from being replaced between the check and the cancel.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L418-L429
+  - what: When one pull worker fails, the other two run to the end of the queue before the run reports the error, where LiteLLM's asyncio.gather raises at once and the finally cancels the unfinished workers.
+    why: join_all polls every worker to completion, so the run still ends in the same error phase with the same message, but the error status can count more estimates and the failure waits for the rest of the queue; the cache entries the extra workers write are keyed by pull content and are the ones a later run writes anyway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L552-L560
 kept_bugs:
   - what: A cancelled run notifies the coordinator twice, once from the run task's finally and once from cancel itself.
     why: Both calls carry the cancelled status, and the second one is what LiteLLM's cancel does after awaiting the task, so a coordinator that records every finish sees the same two entries.
