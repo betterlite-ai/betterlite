@@ -4,33 +4,33 @@ call:
   b8172:
     function: family_key_and_message
     api_key: sk-arg
-    dashscope_key: sk-dash
-    qwencloud_key: sk-qwen
-    qwen_ai_platform_key: sk-cn
+    dashscope: sk-dash
+    qwencloud: sk-qwen
+    qwen_ai_platform: sk-cn
 calls:
   - b8172:
       function: family_key_and_message
       api_key: null
-      dashscope_key: sk-dash
-      qwencloud_key: sk-qwen
-      qwen_ai_platform_key: sk-cn
+      dashscope: sk-dash
+      qwencloud: sk-qwen
+      qwen_ai_platform: sk-cn
   - b8172:
       function: family_key_and_message
       api_key: null
-      dashscope_key: sk-dash
-      qwencloud_key: null
-      qwen_ai_platform_key: ''
+      dashscope: sk-dash
+      qwencloud: null
+      qwen_ai_platform: ''
   - b8172:
       function: family_key_and_message
       api_key: null
-      dashscope_key: null
-      qwencloud_key: null
-      qwen_ai_platform_key: null
+      dashscope: null
+      qwencloud: null
+      qwen_ai_platform: null
   - b8172:
       function: family_key_and_message
       api_key: ''
-      dashscope_key: sk-dash
-      qwencloud_key: sk-qwen
-      qwen_ai_platform_key: sk-cn
+      dashscope: sk-dash
+      qwencloud: sk-qwen
+      qwen_ai_platform: sk-cn
 env: {}
 compare: {ignore: []}

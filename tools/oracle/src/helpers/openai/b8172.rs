@@ -31,7 +31,7 @@ pub(crate) enum Input {
     ImageUrlAndKey(ImageUrlAndKeyInput),
     ImageRequest(ImageRequestInput),
     ImageReply(ImageReplyInput),
-    FamilySettings(FamilySettingsInput),
+    FamilySettings(Box<FamilySettingsInput>),
     FamilyKeyAndMessage(FamilyKeyAndMessageInput),
 }
 
@@ -88,9 +88,9 @@ pub(crate) struct FamilySettingsInput {
 #[derive(Debug, Deserialize)]
 pub(crate) struct FamilyKeyAndMessageInput {
     api_key: Option<String>,
-    dashscope_key: Option<String>,
-    qwencloud_key: Option<String>,
-    qwen_ai_platform_key: Option<String>,
+    dashscope: Option<String>,
+    qwencloud: Option<String>,
+    qwen_ai_platform: Option<String>,
 }
 
 pub(crate) struct Op;
@@ -105,7 +105,7 @@ impl Helper for Op {
             Input::ImageRequest(inner) => image_request(inner),
             Input::ImageReply(inner) => image_reply(inner),
             Input::FamilySettings(inner) => family_settings(inner),
-            Input::FamilyKeyAndMessage(inner) => family_key_and_message(inner),
+            Input::FamilyKeyAndMessage(inner) => Ok(family_key_and_message(inner)),
         }
     }
 }
@@ -223,19 +223,16 @@ fn family_env(step: &FamilyStep) -> FamilyEnv {
     }
 }
 
-fn family_key_and_message(input: &FamilyKeyAndMessageInput) -> HelperResult {
+fn family_key_and_message(input: &FamilyKeyAndMessageInput) -> serde_json::Value {
     let api_key = input.api_key.as_deref();
-    let dashscope_key = input.dashscope_key.as_deref().map(SecretString::from);
-    let qwencloud_key = input.qwencloud_key.as_deref().map(SecretString::from);
-    let platform_key = input
-        .qwen_ai_platform_key
-        .as_deref()
-        .map(SecretString::from);
-    Ok(json!({
+    let dashscope_key = input.dashscope.as_deref().map(SecretString::from);
+    let qwencloud_key = input.qwencloud.as_deref().map(SecretString::from);
+    let platform_key = input.qwen_ai_platform.as_deref().map(SecretString::from);
+    json!({
         "dashscope": key_and_message(DashscopeFamily::Dashscope, api_key, None, dashscope_key.as_ref()),
         "qwencloud": key_and_message(DashscopeFamily::QwenCloud, api_key, qwencloud_key.as_ref(), dashscope_key.as_ref()),
         "qwen_ai_platform": key_and_message(DashscopeFamily::QwenAiPlatform, api_key, platform_key.as_ref(), dashscope_key.as_ref()),
-    }))
+    })
 }
 
 fn key_and_message(

@@ -101,7 +101,7 @@ fn map_openai_params_rewrites_x_for_an_unlisted_size(
 #[test]
 fn map_openai_params_copies_n_and_drops_every_other_key() {
     let non_default = params(&[
-        ("n", Json::Number(Number::from(2))),
+        ("n", Json::Number(Number::from(2_i32))),
         ("quality", text("hd")),
         ("size", text("512x512")),
     ]);
@@ -109,7 +109,7 @@ fn map_openai_params_copies_n_and_drops_every_other_key() {
     assert_eq!(
         mapped,
         params(&[
-            ("n", Json::Number(Number::from(2))),
+            ("n", Json::Number(Number::from(2_i32))),
             ("size", text("512*512")),
         ])
     );
@@ -118,22 +118,22 @@ fn map_openai_params_copies_n_and_drops_every_other_key() {
 #[test]
 fn map_openai_params_returns_only_the_mapped_entries() {
     let mapped = map_openai_params(
-        &params(&[("n", Json::Number(Number::from(1)))]),
+        &params(&[("n", Json::Number(Number::from(1_i32)))]),
         &params(&[("user", text("max"))]),
     )
     .unwrap();
-    assert_eq!(mapped, params(&[("n", Json::Number(Number::from(1)))]));
+    assert_eq!(mapped, params(&[("n", Json::Number(Number::from(1_i32)))]));
 }
 
 #[test]
 fn map_openai_params_skips_a_key_the_caller_already_set() {
     let optional = params(&[
-        ("n", Json::Number(Number::from(1))),
+        ("n", Json::Number(Number::from(1_i32))),
         ("size", text("1024x1024")),
     ]);
     let mapped = map_openai_params(
         &params(&[
-            ("n", Json::Number(Number::from(3))),
+            ("n", Json::Number(Number::from(3_i32))),
             ("size", text("512x512")),
         ]),
         &optional,
@@ -145,7 +145,7 @@ fn map_openai_params_skips_a_key_the_caller_already_set() {
 #[test]
 fn map_openai_params_rejects_a_size_that_is_not_text() {
     let error = map_openai_params(
-        &params(&[("size", Json::Number(Number::from(1024)))]),
+        &params(&[("size", Json::Number(Number::from(1024_i32)))]),
         &ImageParams::new(),
     )
     .unwrap_err();
@@ -326,7 +326,7 @@ fn transform_image_generation_request_nests_the_prompt_and_copies_the_parameters
         "a red fox",
         &params(&[
             ("size", text("1024*1024")),
-            ("n", Json::Number(Number::from(1))),
+            ("n", Json::Number(Number::from(1_i32))),
         ]),
     );
     let Some(Json::Object(input)) = body.get("input") else {
@@ -352,7 +352,7 @@ fn transform_image_generation_request_nests_the_prompt_and_copies_the_parameters
         body.get("parameters"),
         Some(&Json::Object(params(&[
             ("size", text("1024*1024")),
-            ("n", Json::Number(Number::from(1))),
+            ("n", Json::Number(Number::from(1_i32))),
         ])))
     );
     assert_eq!(body.get("model"), Some(&text("qwen-image-2.0-pro")));
