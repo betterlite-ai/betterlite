@@ -157,3 +157,10 @@ path = "fuzz_targets/dashscope_rerank_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "watsonx_embed_rerank_reply"
+path = "fuzz_targets/watsonx_embed_rerank_reply.rs"
+test = false
+doc = false
+bench = false
