@@ -1,0 +1,12 @@
+kind: helper
+name: request-input-system-turns
+call:
+  b3857:
+    function: request_input
+    data:
+      system: be brief
+      instructions: answer in French
+      messages: []
+env: {}
+compare:
+  ignore: []

@@ -22,14 +22,16 @@ betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-server = { path = "../../../../../crates/betterlite-server" }
+betterlite-streaming = { path = "../../../../../crates/betterlite-streaming" }
+betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
 chrono.workspace = true
 flate2 = "1.1.5"
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
-opentelemetry = { version = "0.33.1", default-features = false }
+opentelemetry = { version = "0.33.1", default-features = false, features = ["logs", "metrics"] }
 opentelemetry-http = { version = "0.33.1", default-features = false }
-opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace", "testing"] }
+opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["logs", "metrics", "testing", "trace"] }
 regex.workspace = true
 rust_decimal.workspace = true
 secrecy = { version = "0.10.3", features = ["serde"] }
