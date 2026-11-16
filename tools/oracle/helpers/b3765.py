@@ -1,24 +1,18 @@
 import asyncio
 import os
-from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypedDict
-from unittest.mock import patch
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
-
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.compresr.compresr import CompresrGuardrail
+from litellm.types.utils import GenericGuardrailAPIInputs
 from pydantic import JsonValue, TypeAdapter
 
 JSON: Final = TypeAdapter(JsonValue)
+INPUTS: Final = TypeAdapter(GenericGuardrailAPIInputs)
 START_TIME: Final = datetime(2024, 1, 1, tzinfo=UTC)
-
-ApplyGuardrail = Callable[
-    [dict[str, JsonValue], dict[str, JsonValue], Literal["request"], Logging | None],
-    Awaitable[dict[str, JsonValue]],
-]
 
 
 class Config(TypedDict, total=False):
@@ -54,14 +48,12 @@ class ApplyCall(TypedDict):
     caller: Caller | None
 
 
-class Applier(Protocol):
-    @property
-    def apply_guardrail(self) -> ApplyGuardrail: ...
+# LiteLLM keeps live objects in these details, so they carry more than JsonValue allows
+Details: TypeAlias = dict[str, object]
 
 
 class LoggingDetails(Protocol):
-    # LiteLLM keeps live objects in these details, so they carry more than JsonValue allows
-    model_call_details: dict[str, object]
+    model_call_details: Details
 
 
 def logging_for(caller: Caller) -> Logging:
@@ -76,7 +68,7 @@ def logging_for(caller: Caller) -> Logging:
     )
     details: LoggingDetails = logging_obj
     auth = UserAPIKeyAuth(api_key=caller["scope"])
-    params: dict[str, object] = {"metadata": {"user_api_key_auth": auth}}
+    params: Details = {"metadata": {"user_api_key_auth": auth}}
     details.model_call_details.update({"litellm_params": params})
     return logging_obj
 
@@ -84,11 +76,16 @@ def logging_for(caller: Caller) -> Logging:
 def init(call: InitCall) -> JsonValue:
     # an empty variable reads as unset, so a host variable never leaks into the case
     environment = {"COMPRESR_API_KEY": "", "COMPRESR_API_BASE": "", **call["env"]}
-    with patch.dict(os.environ, environment):
-        try:
-            guardrail = CompresrGuardrail(**call["config"])
-        except ValueError:
-            return {"accepted": False}
+    previous = dict(os.environ)
+    os.environ.clear()
+    os.environ.update(environment)
+    try:
+        guardrail = CompresrGuardrail(**call["config"])
+    except ValueError:
+        return {"accepted": False}
+    finally:
+        os.environ.clear()
+        os.environ.update(previous)
     return {
         "accepted": True,
         "api_base": guardrail.compresr_api_base,
@@ -122,14 +119,6 @@ class Recorder:
         return httpx.Response(self.reply["status"], content=self.reply["body"].encode())
 
 
-async def apply_once(
-    agent: Applier, call: ApplyCall, request_data: dict[str, JsonValue]
-) -> dict[str, JsonValue]:
-    caller = call["caller"]
-    logging_obj = None if caller is None else logging_for(caller)
-    return await agent.apply_guardrail(call["inputs"], request_data, "request", logging_obj)
-
-
 def apply(call: ApplyCall) -> JsonValue:
     guardrail = CompresrGuardrail(**call["config"])
     recorder = Recorder(call["reply"])
@@ -139,8 +128,13 @@ def apply(call: ApplyCall) -> JsonValue:
     request_data: dict[str, JsonValue] = {}
     if headers is not None:
         request_data["proxy_server_request"] = {"headers": dict(headers)}
-    output = asyncio.run(apply_once(guardrail, call, request_data))
-    return {"inputs": output, "requests": recorder.requests}
+    caller = call["caller"]
+    logging_obj = None if caller is None else logging_for(caller)
+    inputs = INPUTS.validate_python(call["inputs"])
+    output = asyncio.run(
+        guardrail.apply_guardrail(inputs, request_data, "request", logging_obj)
+    )
+    return {"inputs": JSON.validate_python(output), "requests": recorder.requests}
 
 
 def run(input_value: InitCall | ApplyCall) -> JsonValue:

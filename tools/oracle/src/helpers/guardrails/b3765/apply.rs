@@ -6,6 +6,7 @@ use axum::body::to_bytes;
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_guardrails::compresr_writeback::apply_compression;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 use serde::Deserialize;
@@ -103,7 +104,8 @@ pub(super) fn run(call: &Apply) -> HelperResult {
     };
     let mut target = call.caller.as_ref().map(log_target).transpose()?;
     let output = runtime
-        .block_on(guardrail.apply(
+        .block_on(apply_compression(
+            &guardrail,
             call.inputs.clone(),
             &mut data,
             GuardrailInputType::Request,
