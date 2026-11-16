@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
@@ -106,7 +107,7 @@ fn is_pair(stored: &JsonData, user_id: &str, server_id: &str) -> bool {
 }
 
 fn credential_row(user_id: &str, server_id: &str, credential: &str) -> JsonData {
-    JsonData::Object(std::collections::BTreeMap::from([
+    JsonData::Object(BTreeMap::from([
         ("user_id".to_owned(), JsonData::String(user_id.to_owned())),
         (
             "server_id".to_owned(),
