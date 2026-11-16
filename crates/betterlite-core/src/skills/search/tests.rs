@@ -409,23 +409,31 @@ fn rank_orders_by_score_and_keeps_ties() {
 
 #[test]
 fn rank_keeps_the_store_order_for_large_ties() {
-    let skills = (0..25)
-        .map(|step| {
-            skill_row(
-                &format!("litellm_skill_{:02}", (step * 7) % 25),
-                Some("Tied"),
-                None,
-            )
-        })
-        .collect::<Vec<SkillTable>>();
-    let expected = skills
-        .iter()
-        .map(|skill| skill.skill_id.as_str())
-        .collect::<Vec<&str>>();
-    let embedder = FixedEmbedder::new(vectors(&[("q", [1.0, 0.0]), ("Tied", [1.0, 0.0])]));
+    let mut skills = Vec::new();
+    let mut text_vectors = BTreeMap::new();
+    text_vectors.insert("q".to_owned(), vec![1.0_f64, 0.0]);
+    let mut high = Vec::new();
+    let mut low = Vec::new();
+    for step in 0..25_u32 {
+        let number = (step * 7) % 25;
+        let skill_id = format!("litellm_skill_{number:02}");
+        let text = format!("skill-{number:02}");
+        skills.push(skill_row(&skill_id, Some(&text), None));
+        if step.is_multiple_of(2) {
+            high.push(skill_id);
+            text_vectors.insert(text, vec![1.0_f64, 0.0]);
+        } else {
+            low.push(skill_id);
+            text_vectors.insert(text, vec![0.0, 1.0]);
+        }
+    }
+    let mut expected = high;
+    expected.extend(low);
+    let embedder = FixedEmbedder::new(text_vectors);
     let outcome = rank_in(&SkillSearchIndex::new(10), &embedder, &skills, 25, MODEL)
         .expect("a ranked search");
-    assert_eq!(skill_ids(&outcome), expected);
+    let ranked: Vec<String> = skill_ids(&outcome).into_iter().map(str::to_owned).collect();
+    assert_eq!(ranked, expected);
 }
 
 #[test]
