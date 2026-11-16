@@ -345,3 +345,10 @@ path = "fuzz_targets/muse_frames.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "chirp_backend_event"
+path = "fuzz_targets/chirp_backend_event.rs"
+test = false
+doc = false
+bench = false

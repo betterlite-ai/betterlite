@@ -307,6 +307,7 @@ pub mod vector_stores;
 pub mod vector_tool_selection;
 pub mod vertex_chirp;
 pub mod vertex_chirp_protocol;
+pub mod vertex_location;
 pub mod vertex_media_bindings;
 pub mod vertex_messages;
 pub mod vertex_partner_bindings;

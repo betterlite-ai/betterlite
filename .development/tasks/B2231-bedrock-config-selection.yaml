@@ -132,7 +132,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_config_selection*")"
       && grep -lq 'bedrock_config_selection' tools/oracle/fuzz/corpus/helper_case/bedrock_config_selection* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_config_selection$/)'
+      nextest run --locked -p betterlite-oracle-context --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_config_selection$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-native-messages-route
     why: Native Messages config precedence is explicit claude_platform -> B656, explicit converse -> None (chat

@@ -1,7 +1,7 @@
+use betterlite_core::api::vertex_location::validate_vertex_location;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::model_catalog_keys::strip_stable_vertex_version;
 
-use super::base_url::validate_vertex_location;
 use super::error::VertexUrlError;
 use super::model_name::get_vertex_base_model_name;
 use super::path::{VertexPath, model_path};

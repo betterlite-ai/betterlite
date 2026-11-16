@@ -11,7 +11,7 @@ checks:
   - id: helper-case-corpus
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_inputs*")"
       && grep -lq 'bedrock_mantle_inputs' tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_inputs* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_mantle_inputs$/)'
+      run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_mantle_inputs$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
   - id: case-mantle-bearer-precedence
