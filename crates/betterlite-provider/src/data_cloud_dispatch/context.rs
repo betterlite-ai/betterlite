@@ -65,7 +65,10 @@ pub fn environment_text(
     environment: &BTreeMap<String, String>,
     name: &'static str,
 ) -> Result<Option<String>, DispatchError> {
-    Ok(environment_secret(secrets, environment, name)?.map(|text| text.expose_secret().to_owned()))
+    match environment_secret(secrets, environment, name)? {
+        Some(text) => Ok(Some(text.expose_secret().to_owned())),
+        None => Ok(None),
+    }
 }
 
 pub fn databricks_environment(

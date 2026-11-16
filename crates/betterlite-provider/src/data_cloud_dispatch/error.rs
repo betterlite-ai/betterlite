@@ -53,6 +53,11 @@ pub enum DispatchError {
     SnowflakeEmbedding(#[from] SnowflakeEmbeddingError),
     #[error(transparent)]
     SnowflakeException(#[from] BaseLlmException),
+    #[error("the OCI stream failed: {source}")]
+    Stream {
+        #[source]
+        source: betterlite_http::error::HttpError,
+    },
     #[error(transparent)]
     Transport(#[from] OperationError),
     #[error(transparent)]

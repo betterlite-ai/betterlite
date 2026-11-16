@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -9,9 +11,9 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
-use super::fixture::{FixedClock, NoTokens, Scripted, environment, secrets, substitute};
+use super::fixture::{FixedClock, NoTokens, ORACLE_UPSTREAM, Scripted, environment, secrets};
 use super::input::Case;
-use super::wire::{body_request_view, error_view, reply_view};
+use super::wire::{body_request_view, error_or_null, reply_view};
 
 pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
     let env = environment(case);
@@ -36,9 +38,13 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
             .api_key
             .as_ref()
             .map(|value| SecretString::from(value.clone())),
-        api_base: case.api_base.as_deref().map(substitute),
+        api_base: case
+            .api_base
+            .as_deref()
+            .map(|value| value.replace("{{upstream}}", ORACLE_UPSTREAM)),
         headers: case.headers.clone(),
-        timeout: None,
+        // litellm.embedding()'s default request timeout
+        timeout: Duration::from_secs(600),
     };
     let context = EmbeddingContext {
         globals: DispatchGlobals::default(),
@@ -55,7 +61,7 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
     };
     let (reply, error) = match &outcome {
         Ok(reply) => (reply_view(reply), Value::Null),
-        Err(failure) => (Value::Null, error_view(failure)),
+        Err(_) => (Value::Null, error_or_null(&outcome)),
     };
     Ok(json!({"request": request, "reply": reply, "error": error}))
 }

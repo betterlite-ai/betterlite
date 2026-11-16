@@ -18,9 +18,9 @@ use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
 use super::chat::chat_messages;
-use super::fixture::{Scripted, environment, secrets, substitute};
+use super::fixture::{ORACLE_UPSTREAM, Scripted, environment, secrets};
 use super::input::Case;
-use super::wire::{error_view, kept_headers};
+use super::wire::{error_or_null, kept_headers};
 
 pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
     let env = environment(case);
@@ -39,7 +39,7 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
     )
     .or_value_error()?;
     let api_base = match case.api_base.as_deref() {
-        Some(value) => substitute(value),
+        Some(value) => value.replace("{{upstream}}", ORACLE_UPSTREAM),
         None => {
             return Err(super::input_failure(String::from(
                 "the oci_stream operation needs an api_base",
@@ -79,7 +79,7 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
     };
     let (reply, error) = match &outcome {
         Ok(content) => (json!({"content": content}), Value::Null),
-        Err(failure) => (Value::Null, error_view(failure)),
+        Err(_) => (Value::Null, error_or_null(&outcome)),
     };
     Ok(json!({"request": request, "reply": reply, "error": error}))
 }

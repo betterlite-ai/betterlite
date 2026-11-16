@@ -19,13 +19,10 @@ impl Helper for Op {
             .enable_all()
             .build()
             .or_value_error()?;
-        match input.op.as_str() {
-            "chat" => chat::run(&runtime, input),
-            "embedding" => embed::run(&runtime, input),
-            "oci_stream" => stream::run(&runtime, input),
-            other => Err(input_failure(format!(
-                "the b8330 helper has no {other} operation"
-            ))),
+        match input.op {
+            input::Operation::Chat => chat::run(&runtime, input),
+            input::Operation::Embedding => embed::run(&runtime, input),
+            input::Operation::OciStream => stream::run(&runtime, input),
         }
     }
 }

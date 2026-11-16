@@ -1,6 +1,6 @@
 task: B8330
 deviations:
-  - what: The eleven data-cloud cases are helper cases, so they call the dispatch module directly.
+  - what: The twelve data-cloud cases are helper cases, so they call the dispatch module directly.
     why: No proxy route reaches databricks, snowflake or oci yet; the provider slugs belong to B2230, so an HTTP case has no betterlite entry point. Both sides record the prepared request and the mapped error status.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5145-L5300
   - what: The Databricks OAuth M2M token POST goes through the dispatch transport instead of a Python requests.post.

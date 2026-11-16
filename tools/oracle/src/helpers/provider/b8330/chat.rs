@@ -30,15 +30,16 @@ use betterlite_provider::snowflake::config::{
     Endpoint as SnowflakeEndpoint, get_complete_url as snowflake_url,
     validate_environment as snowflake_headers,
 };
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use http::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{Value, json};
+use serde_json::json;
 use tokio::runtime::Runtime;
 
-use super::fixture::{Scripted, environment, logging, redactor, secrets, substitute};
+use super::fixture::{ORACLE_UPSTREAM, Scripted, environment, logging, secrets};
 use super::input::{Case, Provider};
-use super::wire::{error_or_null, header_map, kept_headers, token_view};
+use super::wire::{error_or_null, header_map, kept_headers};
 
 const ORACLE_TOKEN: &str = "oracle-token";
 
@@ -94,7 +95,7 @@ pub(super) fn chat_messages(messages: &[Message]) -> Result<Vec<ChatMessage>, Bo
 pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
     let env = environment(case);
     let secrets = secrets();
-    let redactor = redactor()?;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
     let (mut state, prepost) = logging(&redactor)?;
     let token_transport = Scripted::with_replies(vec![token_reply(ORACLE_TOKEN)]);
     let tokens = OauthM2m {
@@ -107,7 +108,10 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
         .api_key
         .as_ref()
         .map(|value| SecretString::from(value.clone()));
-    let api_base = case.api_base.as_deref().map(substitute);
+    let api_base = case
+        .api_base
+        .as_deref()
+        .map(|value| value.replace("{{upstream}}", ORACLE_UPSTREAM));
     let context = DispatchContext {
         acompletion: false,
         api_base: api_base.as_deref(),
@@ -127,7 +131,12 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
     };
     let handler = Recorder {
         calls: Mutex::new(Vec::new()),
-        failure: case.answer.as_ref().map(|answer| answer.status),
+        // litellm's handler succeeds on a 2xx answer and raises on any other status
+        failure: case
+            .answer
+            .as_ref()
+            .map(|answer| answer.status)
+            .filter(|status| !(200..300).contains(status)),
     };
     let mut log = CallLogging {
         state: &mut state,
@@ -145,17 +154,12 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
         &tokens,
         &optional_params,
     ))?;
-    let token_request = match token_transport.first() {
-        Some(sent) => token_view(&sent),
-        None => Value::Null,
-    };
     let request = json!({
         "url": url,
         "headers": kept_headers(&headers, case.provider.kept_headers()),
     });
     Ok(json!({
         "request": request,
-        "token_request": token_request,
         "error": error_or_null(&outcome),
     }))
 }

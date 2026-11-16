@@ -7,6 +7,7 @@ from typing import Literal, NotRequired, TypedDict
 import httpx
 import litellm
 import openai
+from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.types.utils import ModelResponse
 from pydantic import BaseModel, JsonValue, TypeAdapter
@@ -19,7 +20,7 @@ TOKEN_BODY = b'{"access_token":"oracle-token"}'
 REPLY: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 KEPT_HEADERS: dict[str, tuple[str, ...]] = {
-    "databricks": ("authorization", "content-type"),
+    "databricks": ("authorization", "content-type", "x-oracle-extra"),
     "snowflake": (
         "authorization",
         "content-type",
@@ -29,7 +30,15 @@ KEPT_HEADERS: dict[str, tuple[str, ...]] = {
     ),
     "oci": ("content-type", "user-agent"),
 }
-RECORDED_HEADERS = ("authorization", "content-type", "user-agent")
+RECORDED_HEADERS = (
+    "authorization",
+    "content-type",
+    "accept",
+    "x-snowflake-authorization-token-type",
+    "anthropic-version",
+    "user-agent",
+    "x-oracle-extra",
+)
 
 
 class Raised(BaseModel):
@@ -48,13 +57,6 @@ class Message(TypedDict):
 
 class Answer(TypedDict):
     status: int
-    body: str
-
-
-class TokenRequest(TypedDict):
-    method: str
-    url: str
-    headers: dict[str, str]
     body: str
 
 
@@ -79,8 +81,12 @@ class Case(TypedDict):
     answer: NotRequired[Answer]
 
 
-def kept(headers: httpx.Headers, names: Iterable[str]) -> dict[str, JsonValue]:
-    return {name: headers[name] for name in names if name in headers}
+def kept_view(
+    headers: dict[str, JsonValue], names: Iterable[str]
+) -> dict[str, JsonValue]:
+    return {
+        name: headers[name] for name in names if name in headers
+    }
 
 
 def parsed(content: bytes) -> JsonValue:
@@ -96,10 +102,15 @@ class Recorder:
         self.requests: list[RequestRecord] = []
 
     def handle(self, request: httpx.Request) -> httpx.Response:
+        headers: dict[str, JsonValue] = {
+            name: request.headers[name]
+            for name in RECORDED_HEADERS
+            if name in request.headers
+        }
         self.requests.append(
             {
                 "url": str(request.url),
-                "headers": kept(request.headers, RECORDED_HEADERS),
+                "headers": headers,
                 "body": parsed(request.content),
             }
         )
@@ -116,45 +127,35 @@ class Recorder:
         recorded = self.requests[0]
         return {
             "url": recorded["url"].replace(upstream, UPSTREAM),
-            "headers": {name: recorded["headers"][name] for name in names if name in recorded["headers"]},
+            "headers": kept_view(recorded["headers"], names),
         }
 
     def embedding_view(self, names: Iterable[str], upstream: str) -> JsonValue:
-        view = self.request_view(names, upstream)
-        if view is None:
+        if not self.requests:
             return None
+        recorded = self.requests[0]
         return {
-            "url": self.requests[0]["url"].replace(upstream, UPSTREAM),
-            "headers": {name: self.requests[0]["headers"][name] for name in names if name in self.requests[0]["headers"]},
-            "body": self.requests[0]["body"],
+            "url": recorded["url"].replace(upstream, UPSTREAM),
+            "headers": kept_view(recorded["headers"], names),
+            "body": recorded["body"],
         }
 
 
-def start_token_server(recorded: list[TokenRequest]) -> ThreadingHTTPServer:
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:
-            length = self.headers.get("Content-Length")
-            body = b"" if length is None else self.rfile.read(int(length))
-            content_type = self.headers.get("Content-Type")
-            authorization = self.headers.get("Authorization")
-            recorded.append(
-                {
-                    "method": "POST",
-                    "url": f"{UPSTREAM}{self.path}",
-                    "headers": {
-                        "content-type": "" if content_type is None else content_type,
-                        "authorization": "" if authorization is None else authorization,
-                    },
-                    "body": body.decode(),
-                }
-            )
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(TOKEN_BODY)))
-            self.end_headers()
-            self.wfile.write(TOKEN_BODY)
+class TokenHandler(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        length = self.headers.get("Content-Length")
+        if length is not None:
+            self.rfile.read(int(length))
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(TOKEN_BODY)))
+        self.end_headers()
+        self.wfile.write(TOKEN_BODY)
 
-    return ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+
+class TokenServer(ThreadingHTTPServer):
+    def __init__(self) -> None:
+        super().__init__(("127.0.0.1", 0), TokenHandler)
 
 
 def substitute_environment(upstream: str) -> None:
@@ -173,6 +174,7 @@ def call_provider(case: Case, client: HTTPHandler) -> JsonValue:
             input=case["input"],
             api_base=api_base,
             api_key=api_key,
+            extra_headers=case.get("headers"),
             client=client,
         )
         shape = EmbeddingShape.model_validate(response, from_attributes=True)
@@ -186,30 +188,27 @@ def call_provider(case: Case, client: HTTPHandler) -> JsonValue:
         client=client,
     )
     if case["op"] == "oci_stream":
-        if isinstance(completion, ModelResponse):
-            return {"content": ""}
-        text = ""
-        for chunk in completion:
-            content = chunk.choices[0].delta.content
-            if content is not None:
-                text += content
-        return {"content": text}
+        match completion:
+            case ModelResponse():
+                return {"content": ""}
+            case CustomStreamWrapper():
+                text = ""
+                for chunk in completion:
+                    content = chunk.choices[0].delta.content
+                    if content is not None:
+                        text += content
+                return {"content": text}
     return None
-
-
-def error_view(raised: openai.APIError) -> JsonValue:
-    return {"status": Raised.model_validate(raised, from_attributes=True).status_code}
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
     case = TypeAdapter(Case).validate_python(input_value)
-    recorded_tokens: list[TokenRequest] = []
-    server = start_token_server(recorded_tokens)
+    server = TokenServer()
     upstream = f"http://127.0.0.1:{server.server_address[1]}"
     threading.Thread(target=server.serve_forever, daemon=True).start()
     substitute_environment(upstream)
     api_base = case.get("api_base")
-    if isinstance(api_base, str):
+    if api_base is not None:
         case["api_base"] = api_base.replace(PLACEHOLDER, upstream)
     answer = case.get("answer")
     if answer is None:
@@ -222,13 +221,12 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
     try:
         reply = call_provider(case, client)
     except openai.APIError as raised:
-        error = error_view(raised)
+        status = Raised.model_validate(raised, from_attributes=True).status_code
+        error = {"status": status}
     names = KEPT_HEADERS[case["provider"]]
     if case["op"] == "chat":
-        token_request: JsonValue = recorded_tokens[0] if recorded_tokens else None
         return {
             "request": recorder.request_view(names, upstream),
-            "token_request": token_request,
             "error": error,
         }
     if case["op"] == "oci_stream":

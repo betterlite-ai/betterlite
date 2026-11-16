@@ -9,6 +9,14 @@ use serde::Deserialize;
 
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub(super) enum Operation {
+    Chat,
+    Embedding,
+    OciStream,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(super) enum Provider {
     Databricks,
     Snowflake,
@@ -43,7 +51,7 @@ impl Provider {
     // only names both sides prepare themselves; the HTTP client adds the rest on its own
     pub(super) const fn kept_headers(self) -> &'static [&'static str] {
         match self {
-            Self::Databricks => &["authorization", "content-type"],
+            Self::Databricks => &["authorization", "content-type", "x-oracle-extra"],
             Self::Snowflake => &[
                 "authorization",
                 "content-type",
@@ -66,7 +74,7 @@ pub(super) struct Answer {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Case {
-    pub(super) op: String,
+    pub(super) op: Operation,
     pub(super) provider: Provider,
     pub(super) model: String,
     #[serde(default)]
@@ -91,7 +99,10 @@ pub(super) struct Case {
 
 impl Case {
     pub(super) fn answer_status(&self) -> u16 {
-        self.answer.as_ref().map_or(200, |answer| answer.status)
+        match &self.answer {
+            Some(answer) => answer.status,
+            None => 200,
+        }
     }
 
     pub(super) fn answer_body(&self) -> String {

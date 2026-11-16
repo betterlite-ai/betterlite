@@ -8,8 +8,6 @@ use serde_json::{Map, Value, json};
 
 use super::fixture::Sent;
 
-const TOKEN_HEADERS: [&str; 2] = ["content-type", "authorization"];
-
 pub(super) fn kept_headers(headers: &HeaderMap, names: &[&str]) -> Value {
     let mut kept = Map::new();
     for name in names {
@@ -44,15 +42,6 @@ pub(super) fn body_request_view(sent: &Sent, names: &[&str]) -> Result<Value, Bo
     }))
 }
 
-pub(super) fn token_view(sent: &Sent) -> Value {
-    json!({
-        "method": sent.method,
-        "url": sent.url,
-        "headers": kept_headers(&sent.headers, &TOKEN_HEADERS),
-        "body": String::from_utf8_lossy(&sent.body),
-    })
-}
-
 // the status LiteLLM's provider exception carries for this failure
 fn status_of(error: &DispatchError) -> Option<u16> {
     match error {
@@ -69,18 +58,15 @@ fn status_of(error: &DispatchError) -> Option<u16> {
         | DispatchError::Decode { .. }
         | DispatchError::Url { .. }
         | DispatchError::Headers { .. }
+        | DispatchError::Stream { .. }
         | DispatchError::Transport(_) => None,
     }
-}
-
-pub(super) fn error_view(error: &DispatchError) -> Value {
-    json!({"status": status_of(error)})
 }
 
 pub(super) fn error_or_null(outcome: &Result<String, DispatchError>) -> Value {
     match outcome {
         Ok(_) => Value::Null,
-        Err(error) => error_view(error),
+        Err(error) => json!({"status": status_of(error)}),
     }
 }
 

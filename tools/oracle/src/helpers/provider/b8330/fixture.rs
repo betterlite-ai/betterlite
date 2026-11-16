@@ -19,7 +19,7 @@ use betterlite_provider::databricks_auth::oauth::{
     OauthReply, OauthTokenRequest, OauthTokenSource,
 };
 use betterlite_provider::oci_common::Clock;
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_redact::secret::Redactor;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_lookup::ports::{
     AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
@@ -80,10 +80,6 @@ impl LogSink for Discard {
     fn emit(&self, _record: LogRecord) {}
 }
 
-pub(super) fn redactor() -> Result<Redactor, Box<HelperError>> {
-    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()
-}
-
 pub(super) fn logging(
     redactor: &Redactor,
 ) -> Result<(LoggingState, PrePostEnv<'_>), Box<HelperError>> {
@@ -121,20 +117,15 @@ pub(super) fn logging(
     Ok((state, env))
 }
 
-pub(super) fn substitute(value: &str) -> String {
-    value.replace("{{upstream}}", ORACLE_UPSTREAM)
-}
-
 pub(super) fn environment(case: &Case) -> BTreeMap<String, String> {
     case.env
         .iter()
-        .map(|(name, value)| (name.clone(), substitute(value)))
+        .map(|(name, value)| (name.clone(), value.replace("{{upstream}}", ORACLE_UPSTREAM)))
         .collect()
 }
 
 #[derive(Clone)]
 pub(super) struct Sent {
-    pub(super) method: String,
     pub(super) url: String,
     pub(super) headers: HeaderMap,
     pub(super) body: Vec<u8>,
@@ -146,7 +137,6 @@ impl Sent {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(Self {
-                method: request.method.to_string(),
                 url: request.url.to_owned(),
                 headers: request.headers.clone(),
                 body: request.body.to_vec(),
@@ -154,7 +144,6 @@ impl Sent {
     }
 }
 
-#[derive(Default)]
 pub(super) struct Scripted {
     replies: Mutex<VecDeque<UpstreamResponse>>,
     streams: Mutex<VecDeque<StreamHead>>,
@@ -165,14 +154,16 @@ impl Scripted {
     pub(super) fn with_replies(replies: Vec<UpstreamResponse>) -> Self {
         Self {
             replies: Mutex::new(VecDeque::from(replies)),
-            ..Self::default()
+            streams: Mutex::new(VecDeque::new()),
+            recorded: Mutex::new(Vec::new()),
         }
     }
 
     pub(super) fn with_stream(head: StreamHead) -> Self {
         Self {
+            replies: Mutex::new(VecDeque::new()),
             streams: Mutex::new(VecDeque::from([head])),
-            ..Self::default()
+            recorded: Mutex::new(Vec::new()),
         }
     }
 

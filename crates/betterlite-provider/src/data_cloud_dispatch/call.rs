@@ -34,7 +34,7 @@ pub struct EmbeddingCall {
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
     pub headers: Option<BTreeMap<String, String>>,
-    pub timeout: Option<Duration>,
+    pub timeout: Duration,
 }
 
 #[derive(Debug, Clone)]

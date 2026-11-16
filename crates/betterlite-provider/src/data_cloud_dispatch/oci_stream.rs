@@ -64,7 +64,7 @@ impl OciStream {
         }
     }
 
-    pub async fn next(&mut self) -> Result<Option<StreamItem>, OciError> {
+    pub async fn next(&mut self) -> Result<Option<StreamItem>, DispatchError> {
         loop {
             if let Some(item) = self.pending.pop_front() {
                 if matches!(item, StreamItem::Done) {
@@ -76,15 +76,10 @@ impl OciStream {
                 return Ok(None);
             }
             match self.chunks.next().await {
-                Some(Ok(bytes)) => self.feed(&bytes)?,
-                Some(Err(error)) => {
-                    return Err(OciError {
-                        status: 500,
-                        message: format!("the OCI stream failed: {error}"),
-                    });
-                }
+                Some(Ok(bytes)) => self.feed(&bytes).map_err(DispatchError::Oci)?,
+                Some(Err(source)) => return Err(DispatchError::Stream { source }),
                 None => {
-                    self.finish()?;
+                    self.finish().map_err(DispatchError::Oci)?;
                     if self.pending.is_empty() {
                         return Ok(None);
                     }
