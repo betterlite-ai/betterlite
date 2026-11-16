@@ -123,6 +123,6 @@ fn push_hex4(out: &mut String, code: u32) {
 
 fn push_surrogate_pair(out: &mut String, character: char) {
     let adjusted = u32::from(character).saturating_sub(0x1_0000);
-    push_hex4(out, 0xd800 | (adjusted >> 10));
-    push_hex4(out, 0xdc00 | (adjusted & 0x3ff));
+    push_hex4(out, 0xd800.saturating_add(adjusted >> 10));
+    push_hex4(out, 0xdc00.saturating_add(adjusted & 0x3ff));
 }
