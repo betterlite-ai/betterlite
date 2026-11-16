@@ -67,7 +67,12 @@ async fn flow_streams_tool_events_in_order() {
     let requests = parts.model.requests();
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].model, "claude-3");
+    assert_eq!(requests[1].model, "claude-3");
     assert_eq!(requests[1].tools, None);
+    assert_eq!(
+        requests[1].temperature.to_bits(),
+        USAGE_AI_TEMPERATURE.to_bits()
+    );
     assert_eq!(requests[1].messages.len(), 4);
     assert_eq!(
         requests[1].messages[2],
