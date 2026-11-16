@@ -5,6 +5,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/routes/prompts/read.rs
+    - crates/betterlite-server/src/routes/prompts/read/**
     - crates/betterlite-server/src/routes/prompts/read/tests.rs
     - tools/oracle/helpers/b4061.py
     - tools/oracle/helpers/b4061/**
@@ -76,6 +77,7 @@ checks:
       why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::prompts::read::tests::oneshot_/)'
 pitfalls:
+  - "Nothing mounts these routes until B8672, so in the non-test build every item in read.rs is dead code and clippy -D warnings fails. Start read.rs with one `#![expect(dead_code, reason = \"B8672 mounts the prompt read routes\")]`: it is this task's one expect, it covers the submodules, and B8672 deletes it."
   - "List allows both `.v` and `_v` version suffixes in base-ID stripping without validating the suffix itself; the route shows base IDs without suffix to users regardless."
   - "Metadata-scoped prompts have an exact-ID allowlist check before returning 400, but the 400 for missing info happens after admin-view is confirmed, not first; order matters for error priority."
   - "Version history is admin-only and queries the DB directly; there is no fallback to in-memory prompts for non-admins, unlike list which shows both."
@@ -101,4 +103,4 @@ out_of_scope:
 review_level: security
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 1

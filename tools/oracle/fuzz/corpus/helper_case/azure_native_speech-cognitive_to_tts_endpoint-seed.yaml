@@ -1,0 +1,5 @@
+kind: helper
+name: azure_native_speech-cognitive_to_tts_endpoint-seed
+call: {azure_native_speech: {cognitive_to_tts_endpoint: {api_bases: ['https://eastus.api.cognitive.microsoft.com', 'https://custom.example/audio', null]}}}
+env: {}
+compare: {ignore: []}

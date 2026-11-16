@@ -9,6 +9,7 @@ use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::headers::failure_headers;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
+use crate::server::connections::{accept_connection, drain_connections};
 use crate::server::filter::filter_route;
 use crate::shutdown::build_shutdown_signal;
 use crate::state::ServerState;
@@ -35,11 +36,8 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
-use tokio::time::{sleep, timeout};
 const MAX_CONNECTIONS: usize = 1024;
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(1);
-const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(100);
-const CONNECTION_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const OUTBOUND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Error)]
@@ -61,6 +59,11 @@ pub enum ServerError {
         #[source]
         source: io::Error,
     },
+    #[error("failed to read the listening address: {source}")]
+    ListenerAddress {
+        #[source]
+        source: io::Error,
+    },
 }
 pub async fn run(
     config: Config,
@@ -68,10 +71,29 @@ pub async fn run(
     host: &str,
     port: u16,
 ) -> Result<(), ServerError> {
+    let listener = bind(host, port).await?;
+    // a taken port stops startup before the application is built
+    Box::pin(run_with_listener(config, chat, listener, host)).await
+}
+
+// tests bind and keep their own listener, so no other test can take its port before the server serves on it
+pub async fn run_with_listener(
+    config: Config,
+    chat: ChatExecutor,
+    listener: TcpListener,
+    host: &str,
+) -> Result<(), ServerError> {
     let shutting_down = Arc::new(AtomicBool::new(false));
     let outbound = chat.client.clone();
     let application = application(&config, chat, Arc::clone(&shutting_down))?;
-    Box::pin(serve(application, shutting_down, outbound, host, port)).await
+    Box::pin(serve(application, shutting_down, outbound, host, listener)).await
+}
+
+async fn bind(host: &str, port: u16) -> Result<TcpListener, ServerError> {
+    let address = format!("{host}:{port}");
+    TcpListener::bind((host, port))
+        .await
+        .map_err(|source| ServerError::Bind { address, source })
 }
 
 async fn serve(
@@ -79,14 +101,14 @@ async fn serve(
     shutting_down: Arc<AtomicBool>,
     outbound: ProxiedClient,
     host: &str,
-    port: u16,
+    listener: TcpListener,
 ) -> Result<(), ServerError> {
     let shutdown_signal = build_shutdown_signal()?;
-    let address = format!("{host}:{port}");
-    let listener = TcpListener::bind((host, port))
-        .await
-        .map_err(|source| ServerError::Bind { address, source })?;
-    tracing::info!(host, port, "betterlite server listening");
+    // a server started with port 0 listens on the port the kernel chose
+    let bound = listener
+        .local_addr()
+        .map_err(|source| ServerError::ListenerAddress { source })?;
+    tracing::info!(host, port = bound.port(), "betterlite server listening");
     let mut connections = JoinSet::new();
     let connection_builder = configure_connection_builder();
     connections.spawn(shutdown_signal.wait(Arc::clone(&shutting_down)));
@@ -158,17 +180,6 @@ pub(crate) fn application(
         },
     )
 }
-async fn accept_connection(listener: &TcpListener) -> Option<(TcpStream, SocketAddr)> {
-    match timeout(ACCEPT_POLL_INTERVAL, listener.accept()).await {
-        Ok(Ok(connection)) => Some(connection),
-        Ok(Err(error)) => {
-            tracing::error!(error = ?error, "HTTP accept failed");
-            sleep(ACCEPT_POLL_INTERVAL).await;
-            None
-        }
-        Err(_) => None,
-    }
-}
 pub(crate) fn configure_connection_builder() -> Builder<TokioExecutor> {
     let mut builder = Builder::new(TokioExecutor::new()).http1_only();
     let mut http1 = builder.http1();
@@ -191,22 +202,6 @@ pub(crate) async fn serve_connection(
         tracing::debug!(address = ?remote_address, error = ?error, "HTTP connection stopped");
     }
 }
-async fn drain_connections(connections: &mut JoinSet<()>) {
-    if timeout(CONNECTION_DRAIN_TIMEOUT, async {
-        while let Some(result) = connections.join_next().await {
-            if let Err(error) = result {
-                tracing::error!(error = ?error, "HTTP connection task stopped during shutdown");
-            }
-        }
-    })
-    .await
-    .is_err()
-    {
-        tracing::warn!("HTTP connection drain timed out");
-        connections.shutdown().await;
-    }
-}
-
 // the OpenAI-shaped error body every route renders, and the projections that fill it
 #[derive(serde::Serialize)]
 pub(crate) struct ErrorBody {
@@ -216,8 +211,9 @@ pub(crate) struct ErrorBody {
 #[derive(serde::Serialize)]
 pub(crate) struct ErrorObject {
     pub(crate) message: String,
+    // a provider exception with no type of its own travels as null, which the completion route hands on
     #[serde(rename = "type")]
-    pub(crate) error_type: String,
+    pub(crate) error_type: Option<String>,
     pub(crate) param: Option<String>,
     pub(crate) code: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -243,7 +239,7 @@ pub(crate) fn plain_failure(
     let body = ErrorBody {
         error: ErrorObject {
             message,
-            error_type: error_type.to_owned(),
+            error_type: Some(error_type.to_owned()),
             param,
             code: status.as_u16().to_string(),
             provider_specific_fields: None,
@@ -273,7 +269,7 @@ pub(crate) fn failure(
     let body = ErrorBody {
         error: ErrorObject {
             message,
-            error_type: redactor.redact_internal_details(&failure.error_type),
+            error_type: Some(redactor.redact_internal_details(&failure.error_type)),
             param: failure
                 .param
                 .map(|param| redactor.redact_internal_details(&param)),
@@ -288,7 +284,10 @@ pub(crate) fn failure(
 }
 
 pub mod component;
+mod connections;
 pub mod filter;
 pub mod inputs;
 pub mod listener;
+#[cfg(any(test, feature = "testing"))]
+pub mod test_support;
 mod tests;

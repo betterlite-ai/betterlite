@@ -1,0 +1,19 @@
+kind: helper
+name: messages_stream_usage-corpus-initial-state
+call:
+  messages_stream_usage:
+    logging: false
+    model: m
+    tool_name_mapping: {}
+    applied_edits: []
+    compaction_block: null
+    iterations_usage: null
+    chunks_attr: null
+    messages_attr: null
+    steps:
+      - step: snapshot
+      - step: initial_usage
+      - {step: delta_has_content, event: {type: content_block_delta, delta: {type: text_delta, text: x}}}
+      - {step: is_blank, choices: [{finish_reason: null, delta: {content: null, tool_calls: [], reasoning_content: null, thinking_blocks: null, refusal: null, provider_specific_fields: null}}]}
+env: {}
+compare: {ignore: []}

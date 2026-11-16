@@ -1,0 +1,10 @@
+kind: helper
+name: streamed-response-assembly-empty
+call:
+  streamed_response_assembly:
+    function: assemble
+    chunks: null
+    messages: []
+    now: 1700000000
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

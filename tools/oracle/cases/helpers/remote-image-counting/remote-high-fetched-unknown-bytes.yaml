@@ -1,0 +1,17 @@
+kind: helper
+name: remote-high-fetched-unknown-bytes
+call:
+  b9963:
+    urls:
+      # a server that declares image/tiff, which the downloader passes through and the dimension parser
+      # cannot place; a generic or missing declared type is refused before the count and is a deviation
+      "https://example.com/image.bin": "data:image/tiff;base64,AAAA"
+    calls:
+      - function: count_content
+        content:
+          - type: image_url
+            image_url:
+              url: https://example.com/image.bin
+              detail: high
+env: {}
+compare: {ignore: []}

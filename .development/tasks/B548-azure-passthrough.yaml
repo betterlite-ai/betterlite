@@ -232,7 +232,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_passthrough*")"
       && grep -lq 'azure_passthrough' tools/oracle/fuzz/corpus/helper_case/azure_passthrough* && cargo nextest run
       --locked -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_passthrough$/)' && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-azure --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-passthrough-auth-inputs
     why: get_api_key is explicit or AZURE_API_KEY only; get_base_model is identity and get_models delegates to the
       inherited model-info owner. Validation overwrites params.api_key with the positional value even when None,
