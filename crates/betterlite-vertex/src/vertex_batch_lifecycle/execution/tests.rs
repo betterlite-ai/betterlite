@@ -5,7 +5,7 @@ mod support;
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::future::ready;
+use std::future::{Ready, ready};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -28,6 +28,7 @@ use tracing::subscriber::set_default;
 use super::BatchLifecycleRequest;
 use crate::provider_metadata::timestamp::LocalTimeContext;
 use crate::token_cache::error::CredentialCacheError;
+use crate::token_cache::probe::AccessToken;
 use crate::vertex_batch_lifecycle::cancel::{execute_batch_cancel, prepare_batch_cancel};
 use crate::vertex_batch_lifecycle::error::VertexBatchLifecycleError;
 use crate::vertex_batch_lifecycle::list::{execute_batch_list, prepare_batch_list};
@@ -58,6 +59,10 @@ fn local() -> LocalTimeContext {
     LocalTimeContext {
         zone: TimeZone::get("UTC").unwrap(),
     }
+}
+
+fn missing_token() -> Ready<Result<AccessToken, CredentialCacheError>> {
+    ready(Err(CredentialCacheError::MissingToken))
 }
 
 #[tokio::test]
@@ -521,25 +526,9 @@ async fn caller_cancel_closes_response() {
 #[tokio::test]
 async fn credentials_failure_stops_before_any_request() {
     let request = base(None, None);
-    let retrieve = prepare_batch_retrieve(
-        &request,
-        "777",
-        ready(Err(CredentialCacheError::MissingToken)),
-    )
-    .await;
-    let list = prepare_batch_list(
-        &request,
-        None,
-        None,
-        ready(Err(CredentialCacheError::MissingToken)),
-    )
-    .await;
-    let cancel = prepare_batch_cancel(
-        &request,
-        "777",
-        ready(Err(CredentialCacheError::MissingToken)),
-    )
-    .await;
+    let retrieve = prepare_batch_retrieve(&request, "777", missing_token()).await;
+    let list = prepare_batch_list(&request, None, None, missing_token()).await;
+    let cancel = prepare_batch_cancel(&request, "777", missing_token()).await;
     let retrieve = retrieve.unwrap_err();
     assert!(matches!(
         retrieve,
