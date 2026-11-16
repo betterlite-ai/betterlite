@@ -83,10 +83,10 @@ pub(super) fn pre_call_effect(details: &Json) -> Value {
 }
 
 fn header_names(headers: Option<&Json>) -> Vec<String> {
-    let Some(Json::Object(headers)) = headers else {
+    let Some(Json::Object(fields)) = headers else {
         return Vec::new();
     };
-    let mut names: Vec<String> = headers.keys().map(|name| name.to_lowercase()).collect();
+    let mut names: Vec<String> = fields.keys().map(|name| name.to_lowercase()).collect();
     names.sort();
     names
 }

@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::future::{Future, ready};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -90,7 +91,7 @@ impl PollTransport for Script<'_> {
 }
 
 pub(super) struct Timeline<'effects> {
-    millis: Mutex<u64>,
+    millis: AtomicU64,
     tick: u64,
     advance: u64,
     effects: &'effects Effects,
@@ -99,7 +100,7 @@ pub(super) struct Timeline<'effects> {
 impl<'effects> Timeline<'effects> {
     pub(super) fn new(settings: &ClockSettings, effects: &'effects Effects) -> Self {
         Self {
-            millis: Mutex::new(settings.start),
+            millis: AtomicU64::new(settings.start),
             tick: settings.tick,
             advance: settings.sleep_advance,
             effects,
@@ -109,10 +110,7 @@ impl<'effects> Timeline<'effects> {
 
 impl PollClock for Timeline<'_> {
     fn now(&self) -> Duration {
-        let mut millis = self.millis.lock().unwrap_or_else(PoisonError::into_inner);
-        let moment = *millis;
-        *millis = millis.saturating_add(self.tick);
-        Duration::from_millis(moment)
+        Duration::from_millis(self.millis.fetch_add(self.tick, Ordering::SeqCst))
     }
 }
 
@@ -123,8 +121,7 @@ impl PollSleeper for Timeline<'_> {
             "effect": "sleep",
             "millis": u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
         }));
-        let mut current = self.millis.lock().unwrap_or_else(PoisonError::into_inner);
-        *current = current.saturating_add(self.advance);
+        self.millis.fetch_add(self.advance, Ordering::SeqCst);
         ready(())
     }
 }
