@@ -1,6 +1,6 @@
 use rstest::rstest;
 
-use crate::cli::tests::support::{FAMILY_COMMANDS, FakeEnvironment, Harness};
+use crate::cli::tests::support::{FakeEnvironment, Harness};
 
 pub(super) fn listed_commands(help: &str) -> Vec<String> {
     let mut names = Vec::new();
@@ -32,7 +32,29 @@ fn help_output() -> String {
 }
 
 #[rstest]
-fn help_lists_every_family_command_alphabetically(#[values(FAMILY_COMMANDS)] command: &str) {
+#[case::auth("auth")]
+#[case::autoroute("autoroute")]
+#[case::chat("chat")]
+#[case::config("config")]
+#[case::configure("configure")]
+#[case::credentials("credentials")]
+#[case::debug("debug")]
+#[case::down("down")]
+#[case::encryption("encryption")]
+#[case::http("http")]
+#[case::keys("keys")]
+#[case::login("login")]
+#[case::logout("logout")]
+#[case::model_groups("model-groups")]
+#[case::models("models")]
+#[case::reconfigure("reconfigure")]
+#[case::teams("teams")]
+#[case::unconfigure("unconfigure")]
+#[case::up("up")]
+#[case::users("users")]
+#[case::version("version")]
+#[case::whoami("whoami")]
+fn help_lists_every_family_command_alphabetically(#[case] command: &str) {
     let names = listed_commands(&help_output());
     let mut sorted = names.clone();
     sorted.sort();

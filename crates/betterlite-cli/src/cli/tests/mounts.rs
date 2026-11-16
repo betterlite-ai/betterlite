@@ -2,10 +2,32 @@ use rstest::rstest;
 
 use crate::agent_launch::KNOWN_AGENTS;
 use crate::cli::root::root_command;
-use crate::cli::tests::support::{FAMILY_COMMANDS, FakeEnvironment};
+use crate::cli::tests::support::FakeEnvironment;
 
 #[rstest]
-fn every_family_command_is_mounted(#[values(FAMILY_COMMANDS)] command: &str) {
+#[case::auth("auth")]
+#[case::autoroute("autoroute")]
+#[case::chat("chat")]
+#[case::config("config")]
+#[case::configure("configure")]
+#[case::credentials("credentials")]
+#[case::debug("debug")]
+#[case::down("down")]
+#[case::encryption("encryption")]
+#[case::http("http")]
+#[case::keys("keys")]
+#[case::login("login")]
+#[case::logout("logout")]
+#[case::model_groups("model-groups")]
+#[case::models("models")]
+#[case::reconfigure("reconfigure")]
+#[case::teams("teams")]
+#[case::unconfigure("unconfigure")]
+#[case::up("up")]
+#[case::users("users")]
+#[case::version("version")]
+#[case::whoami("whoami")]
+fn every_family_command_is_mounted(#[case] command: &str) {
     let root = root_command(&FakeEnvironment::default());
     let names: Vec<&str> = root
         .get_subcommands()

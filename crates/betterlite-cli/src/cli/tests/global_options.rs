@@ -8,8 +8,6 @@ use crate::cli::context::{self, GlobalArgs, Request};
 use crate::cli::session::CliClock;
 use crate::cli::tests::support::{Captured, FakeEnvironment, FakeVault, channel};
 
-const SETUP_COMMANDS: [&str; 3] = ["configure", "reconfigure", "unconfigure"];
-
 fn store_base_url(home: &Path, base_url: &str) {
     let directory = home.join(".litellm");
     fs::create_dir_all(&directory).unwrap();
@@ -70,7 +68,10 @@ fn stored_base_url_is_explicit_for_a_normal_command() {
 }
 
 #[rstest]
-fn stored_base_url_is_implicit_inside_setup_commands(#[values(SETUP_COMMANDS)] command: &str) {
+#[case::configure("configure")]
+#[case::reconfigure("reconfigure")]
+#[case::unconfigure("unconfigure")]
+fn stored_base_url_is_implicit_inside_setup_commands(#[case] command: &str) {
     let home = tempfile::tempdir().unwrap();
     store_base_url(home.path(), "https://stored.example");
     let environment = FakeEnvironment::with_home(home.path().to_path_buf());
@@ -98,7 +99,10 @@ fn normal_commands_read_the_token_file_when_no_key_is_given() {
 }
 
 #[rstest]
-fn setup_commands_never_read_the_token_file(#[values(SETUP_COMMANDS)] command: &str) {
+#[case::configure("configure")]
+#[case::reconfigure("reconfigure")]
+#[case::unconfigure("unconfigure")]
+fn setup_commands_never_read_the_token_file(#[case] command: &str) {
     let context = resolve(&FakeEnvironment::default(), None, Some(command));
     assert!(
         !context.api_key_from_token_file,

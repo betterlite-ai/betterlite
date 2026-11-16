@@ -7,7 +7,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use secrecy::SecretString;
 
 use crate::agent_launch::EnvVars;
-use crate::cli::session::CliClock;
+use crate::cli::session::{CliClock, Session, SessionParts};
 use crate::cli::streams::{Channel, Streams};
 use crate::cli::{Cli, run_with};
 use crate::cli_context::CliContext;
@@ -15,31 +15,6 @@ use crate::commands::Client;
 use crate::keyring::{
     Erase, Read, SecretErase, SecretRead, SecretVault, SecretWrite, Write as VaultWrite,
 };
-
-pub(crate) const FAMILY_COMMANDS: [&str; 22] = [
-    "auth",
-    "autoroute",
-    "chat",
-    "config",
-    "configure",
-    "credentials",
-    "debug",
-    "down",
-    "encryption",
-    "http",
-    "keys",
-    "login",
-    "logout",
-    "model-groups",
-    "models",
-    "reconfigure",
-    "teams",
-    "unconfigure",
-    "up",
-    "users",
-    "version",
-    "whoami",
-];
 
 #[derive(Default)]
 pub(crate) struct FakeEnvironment {
@@ -167,7 +142,7 @@ pub(crate) fn session<'session>(
     base_url: &str,
     out: &Captured,
     err: &Captured,
-) -> crate::cli::session::Session<'session> {
+) -> Session<'session> {
     let context = CliContext {
         base_url: base_url.to_owned(),
         base_url_explicit: false,
@@ -176,7 +151,7 @@ pub(crate) fn session<'session>(
     };
     let client = Arc::new(Client::new(&context, environment).unwrap());
     let streams = Streams::new(Box::new(out.clone()), Box::new(err.clone()));
-    crate::cli::session::Session::new(crate::cli::session::SessionParts {
+    Session::new(SessionParts {
         context: &context,
         environment,
         vault,

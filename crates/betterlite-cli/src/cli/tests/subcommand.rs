@@ -3,39 +3,36 @@ use rstest::rstest;
 use crate::cli::root::root_command;
 use crate::cli::tests::support::FakeEnvironment;
 
-const REMAINING_AGENT_ARGV: [&[&str]; 2] = [&["opencode"], &["pi"]];
-
-const MINIMAL_ARGV: [&[&str]; 26] = [
-    &["login"],
-    &["logout"],
-    &["whoami"],
-    &["auth", "print-token"],
-    &["up"],
-    &["down"],
-    &["models", "list"],
-    &["credentials", "list"],
-    &["users", "list"],
-    &["teams", "list"],
-    &["model-groups", "list"],
-    &["keys", "list"],
-    &["encryption", "migrate"],
-    &["config", "get"],
-    &["configure"],
-    &["reconfigure"],
-    &["unconfigure"],
-    &["autoroute", "configure"],
-    &["chat"],
-    &["http", "request", "GET", "/v1/models"],
-    &["debug", "claude"],
-    &["debug", "install-claude-command"],
-    &["statusline"],
-    &["version"],
-    &["claude"],
-    &["codex"],
-];
-
 #[rstest]
-fn every_family_command_parses_a_minimal_argv(#[values(MINIMAL_ARGV)] argv: &[&str]) {
+#[case::login(&["login"])]
+#[case::logout(&["logout"])]
+#[case::whoami(&["whoami"])]
+#[case::auth_print_token(&["auth", "print-token"])]
+#[case::up(&["up"])]
+#[case::down(&["down"])]
+#[case::models_list(&["models", "list"])]
+#[case::credentials_list(&["credentials", "list"])]
+#[case::users_list(&["users", "list"])]
+#[case::teams_list(&["teams", "list"])]
+#[case::model_groups_list(&["model-groups", "list"])]
+#[case::keys_list(&["keys", "list"])]
+#[case::encryption_migrate(&["encryption", "migrate"])]
+#[case::config_get(&["config", "get"])]
+#[case::configure(&["configure"])]
+#[case::reconfigure(&["reconfigure"])]
+#[case::unconfigure(&["unconfigure"])]
+#[case::autoroute_configure(&["autoroute", "configure"])]
+#[case::chat(&["chat"])]
+#[case::http_request(&["http", "request", "GET", "/v1/models"])]
+#[case::debug_claude(&["debug", "claude"])]
+#[case::debug_install_claude_command(&["debug", "install-claude-command"])]
+#[case::statusline(&["statusline"])]
+#[case::version(&["version"])]
+#[case::claude(&["claude"])]
+#[case::codex(&["codex"])]
+#[case::opencode(&["opencode"])]
+#[case::pi(&["pi"])]
+fn every_mounted_command_parses_a_minimal_argv(#[case] argv: &[&str]) {
     let environment = FakeEnvironment::default();
     let mut full: Vec<&str> = vec!["lite"];
     full.extend_from_slice(argv);
@@ -49,17 +46,6 @@ fn every_family_command_parses_a_minimal_argv(#[values(MINIMAL_ARGV)] argv: &[&s
         name, argv[0],
         "the parsed subcommand must be the one requested"
     );
-}
-
-#[rstest]
-fn every_remaining_agent_parses_a_minimal_argv(#[values(REMAINING_AGENT_ARGV)] argv: &[&str]) {
-    let environment = FakeEnvironment::default();
-    let mut full: Vec<&str> = vec!["lite"];
-    full.extend_from_slice(argv);
-    let matches = root_command(&environment)
-        .try_get_matches_from(full)
-        .unwrap_or_else(|error| panic!("{argv:?} must parse: {error}"));
-    assert!(matches.subcommand().is_some());
 }
 
 #[test]
