@@ -1,0 +1,24 @@
+kind: helper
+name: ids-non-ascii-and-escapes
+call:
+  b4776:
+    config:
+      - agent_name: "béta"
+        agent_card_params:
+          "modèle": "x\u007fy"
+          emoji: "😀"
+          raw: "a\n\t\r\b\f\"\\/"
+    reload: false
+    reload_config: null
+    db_agents: []
+    public_groups: null
+    ids_for:
+      - 635891353974cd5ae4427fe3ea7ed477e8b74f703ad175fa74d29a7c96e869f5
+    stable_ids:
+      - ab79e4913c6aaed7238fce84ab6b3c6db0f27cab4e6e0549dd2061e7e8c5ec17
+    by_id: []
+    by_name: []
+    deregister: []
+env: {}
+compare:
+  ignore: []

@@ -25,7 +25,9 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -230,7 +232,7 @@ impl Helper for Op {
                 rounds,
                 env,
             } => {
-                let runtime = tokio::runtime::Builder::new_current_thread()
+                let runtime = Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .map_err(|error| failure("RuntimeError", error))?;

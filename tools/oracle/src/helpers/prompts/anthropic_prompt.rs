@@ -16,7 +16,8 @@ use betterlite_prompts::media_fetch::error::ImageFetchError;
 use serde::Deserialize;
 use tokio::runtime::Builder;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -1,0 +1,27 @@
+kind: helper
+name: config-load-legacy-map-includes-collision
+call:
+  b4776:
+    config: null
+    reload: true
+    reload_config:
+      - agent_name: dbby
+        agent_card_params:
+          name: dbby-config
+    db_agents:
+      - agent_id: db-dbby
+        agent_name: dbby
+        agent_card_params: {}
+    public_groups: null
+    ids_for:
+      - 227bec3c763b4fc5817163df108f2ecf2bedc2168e3a355491cbc1f651269d73
+      - db-dbby
+    stable_ids:
+      - 3bd9ad8ec6ba7e729ee6a7740ef9d52b8dd9417d5ec1d7913cb58b5c5626e32e
+    by_id: []
+    by_name:
+      - dbby
+    deregister: []
+env: {}
+compare:
+  ignore: []

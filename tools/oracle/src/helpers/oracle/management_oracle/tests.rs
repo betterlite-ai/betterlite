@@ -6,9 +6,14 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use super::{Input, run};
-use crate::case::helper::validate_helper;
-use crate::helpers::HelperCall;
-use crate::helpers::answers::Answers;
+use crate::helpers::GROUPS;
+use betterlite_oracle_runner::case::Ignore;
+use betterlite_oracle_runner::case::helper::validate_helper;
+use betterlite_oracle_runner::compare::compare_helper;
+use betterlite_oracle_runner::compare::helper::{
+    HelperEffect, HelperOutput, HelperWarning, ManagementEffectFields,
+};
+use betterlite_oracle_runner::helpers::{HelperCall, HelperLeft, invoke, left_side, run_pair};
 
 fn decode(value: Value) -> Result<Input, String> {
     serde_json::from_value(value).map_err(|error| error.to_string())
@@ -41,19 +46,15 @@ fn namespace_native_dispatch() {
 #[test]
 fn namespace_python_dispatch() {
     let input = decode(path_encoding_call("segments")).unwrap();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let answers = Answers::from_env(&root).unwrap();
-    let output = answers
-        .answer(&root, &python_call(&input), &BTreeMap::new())
-        .unwrap();
-    assert_eq!(output.value, Some(json!("a/b")));
+    let (_, python) = run_pair(&GROUPS, &python_call(&input), &BTreeMap::new(), false).unwrap();
+    assert_eq!(python.value, Some(json!("a/b")));
 }
 
 #[test]
 fn detects_changed_result() {
     let left = output(json!("left"));
     let right = output(json!("right"));
-    assert!(crate::compare::compare_helper(&left, &right, &[]).is_some());
+    assert!(compare_helper(&left, &right, &[]).is_some());
 }
 
 #[test]
@@ -61,56 +62,56 @@ fn detects_effect_order() {
     let left = output(Value::Null);
     let mut right = left.clone();
     right.effects.reverse();
-    assert!(crate::compare::compare_helper(&left, &right, &[]).is_some());
+    assert!(compare_helper(&left, &right, &[]).is_some());
 }
 
 #[test]
 fn detects_warning_order() {
     let mut left = output(Value::Null);
     left.warnings = vec![
-        crate::compare::helper::HelperWarning {
+        HelperWarning {
             subject: "first".to_owned(),
             message: "first warning".to_owned(),
         },
-        crate::compare::helper::HelperWarning {
+        HelperWarning {
             subject: "second".to_owned(),
             message: "second warning".to_owned(),
         },
     ];
     let mut right = left.clone();
     right.warnings.reverse();
-    assert!(crate::compare::compare_helper(&left, &right, &[]).is_some());
+    assert!(compare_helper(&left, &right, &[]).is_some());
 }
 
 #[test]
 fn exception_null_and_code_types() {
-    let left: crate::compare::helper::HelperOutput = serde_json::from_str(
+    let left: HelperOutput = serde_json::from_str(
         r#"{"ok":false,"error":{"class":"Error","message":"failed","code":null}}"#,
     )
     .unwrap();
-    let missing: crate::compare::helper::HelperOutput =
+    let missing: HelperOutput =
         serde_json::from_str(r#"{"ok":false,"error":{"class":"Error","message":"failed"}}"#)
             .unwrap();
-    let numeric: crate::compare::helper::HelperOutput = serde_json::from_str(
+    let numeric: HelperOutput = serde_json::from_str(
         r#"{"ok":false,"error":{"class":"Error","message":"failed","code":401}}"#,
     )
     .unwrap();
-    let fractional: crate::compare::helper::HelperOutput = serde_json::from_str(
+    let fractional: HelperOutput = serde_json::from_str(
         r#"{"ok":false,"error":{"class":"Error","message":"failed","code":401.5}}"#,
     )
     .unwrap();
-    assert!(crate::compare::compare_helper(&left, &missing, &[]).is_some());
-    assert!(crate::compare::compare_helper(&left, &numeric, &[]).is_some());
-    assert!(crate::compare::compare_helper(&numeric, &fractional, &[]).is_some());
-    serde_json::from_str::<crate::helpers::HelperOutput>(
+    assert!(compare_helper(&left, &missing, &[]).is_some());
+    assert!(compare_helper(&left, &numeric, &[]).is_some());
+    assert!(compare_helper(&numeric, &fractional, &[]).is_some());
+    serde_json::from_str::<HelperOutput>(
         r#"{"ok":false,"error":{"class":"Error","message":"failed","code":true}}"#,
     )
     .unwrap_err();
-    serde_json::from_str::<crate::helpers::HelperOutput>(
+    serde_json::from_str::<HelperOutput>(
         r#"{"ok":false,"error":{"class":"Error","message":"failed","code":{}}}"#,
     )
     .unwrap_err();
-    serde_json::from_str::<crate::helpers::HelperOutput>(
+    serde_json::from_str::<HelperOutput>(
         r#"{"ok":false,"error":{"class":"Error","message":"failed","code":[]}}"#,
     )
     .unwrap_err();
@@ -171,12 +172,12 @@ fn rejects_unknown_ignore() {
         "management_oracle": path_encoding_call("segment")
     }))
     .unwrap();
-    let actual = crate::helpers::invoke(&call);
-    let ignores = vec![crate::case::Ignore {
+    let actual = invoke(&GROUPS, &call);
+    let ignores = vec![Ignore {
         pointer: "/value/not_present".to_owned(),
         why: "an unknown pointer must fail even when the results match".to_owned(),
     }];
-    assert!(crate::compare::compare_helper(&actual, &actual, &ignores).is_some());
+    assert!(compare_helper(&actual, &actual, &ignores).is_some());
 }
 
 #[test]
@@ -185,7 +186,7 @@ fn secret_mismatch_still_fails() {
     left.effects.push(effect("credential", "old-secret"));
     let mut right = left.clone();
     right.effects.last_mut().unwrap().fields = credential("new-secret");
-    assert!(crate::compare::compare_helper(&left, &right, &[]).is_some());
+    assert!(compare_helper(&left, &right, &[]).is_some());
 }
 
 #[test]
@@ -194,7 +195,7 @@ fn redacts_secret_artifacts() {
     left.effects.push(effect("credential", "old-secret"));
     let mut right = left.clone();
     right.effects.last_mut().unwrap().fields = credential("new-secret");
-    let difference = crate::compare::compare_helper(&left, &right, &[]).unwrap();
+    let difference = compare_helper(&left, &right, &[]).unwrap();
     let left_output = serde_json::to_string(&left).unwrap();
     let right_output = serde_json::to_string(&right).unwrap();
     let diagnostic = serde_json::to_string(&difference).unwrap();
@@ -208,7 +209,7 @@ fn redacts_secret_artifacts() {
 
 #[test]
 fn rejects_unknown_effect_fields() {
-    let error = serde_json::from_str::<crate::compare::helper::HelperOutput>(
+    let error = serde_json::from_str::<HelperOutput>(
         r#"{"ok":true,"effects":[{"kind":"marker","fields":{"name":"first"},"unexpected":true}]}"#,
     )
     .unwrap_err();
@@ -217,18 +218,12 @@ fn rejects_unknown_effect_fields() {
 
 #[test]
 fn self_check_is_not_native() {
-    assert_eq!(
-        crate::helpers::left_side(false),
-        crate::helpers::HelperLeft::Native
-    );
-    assert_eq!(
-        crate::helpers::left_side(true),
-        crate::helpers::HelperLeft::Python
-    );
+    assert_eq!(left_side(false), HelperLeft::Native);
+    assert_eq!(left_side(true), HelperLeft::Python);
 }
 
-fn output(value: Value) -> crate::compare::helper::HelperOutput {
-    crate::compare::helper::HelperOutput {
+fn output(value: Value) -> HelperOutput {
+    HelperOutput {
         ok: true,
         value: Some(value),
         error: None,
@@ -237,13 +232,13 @@ fn output(value: Value) -> crate::compare::helper::HelperOutput {
     }
 }
 
-fn effect(kind: &str, value: &str) -> crate::compare::helper::HelperEffect {
-    crate::compare::helper::HelperEffect {
+fn effect(kind: &str, value: &str) -> HelperEffect {
+    HelperEffect {
         kind: kind.to_owned(),
         fields: if kind == "credential" {
             credential(value)
         } else {
-            crate::compare::helper::ManagementEffectFields {
+            ManagementEffectFields {
                 name: Some(value.to_owned()),
                 credential: None,
             }
@@ -251,8 +246,8 @@ fn effect(kind: &str, value: &str) -> crate::compare::helper::HelperEffect {
     }
 }
 
-fn credential(value: &str) -> crate::compare::helper::ManagementEffectFields {
-    crate::compare::helper::ManagementEffectFields {
+fn credential(value: &str) -> ManagementEffectFields {
+    ManagementEffectFields {
         name: None,
         credential: Some(secrecy::SecretString::from(value.to_owned())),
     }

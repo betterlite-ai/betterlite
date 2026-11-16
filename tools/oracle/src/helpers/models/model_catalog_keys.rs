@@ -5,6 +5,7 @@ use betterlite_models::model_catalog_keys::{
     EntryProvider, ModelCostKeys, PotentialModelNames, check_provider_match,
     get_model_info_from_model_cost, strip_model_name,
 };
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -118,10 +119,10 @@ impl Session {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut session = Session {
             model_cost: input.model_cost.iter().cloned().zip(0..).collect(),
             keys: ModelCostKeys::default(),

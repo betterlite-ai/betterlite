@@ -2,7 +2,8 @@ use betterlite_http::url_policy::error::UrlPolicyError;
 use betterlite_http::url_policy::origin::assert_same_origin;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

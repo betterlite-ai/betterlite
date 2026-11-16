@@ -5,6 +5,7 @@ use betterlite_core::api::vector_context_shaping::{
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResponse;
 use betterlite_openai::chat::ChatMessage;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
@@ -33,10 +34,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::QueryUsesLastMessage { messages } => {
                 Ok(json!(extract_query_from_messages(messages)))

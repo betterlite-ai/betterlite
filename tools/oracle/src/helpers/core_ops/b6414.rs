@@ -16,8 +16,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;
 
-use crate::helpers::Helper;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) type MuseConfig = MetaRealtimeConfig<UuidEventIds>;
 

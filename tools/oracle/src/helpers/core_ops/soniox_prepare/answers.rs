@@ -17,7 +17,9 @@ use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::{Value, json};
 
 use super::input::{Operation, PrepareArgs};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::fmt::Display;
 
 type Failure = Box<HelperError>;
 
@@ -229,7 +231,7 @@ fn raised(error: &PrepareError) -> Value {
 
 fn failure<Error>(error: Error) -> Failure
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "ValueError".to_owned(),

@@ -1,0 +1,25 @@
+kind: helper
+name: bedrock-messages-beta-context-filter
+call:
+  bedrock_messages_beta:
+    function: context_filter
+    cases:
+      - request:
+          context_management:
+            keep: true
+            edits:
+              - {type: clear_thinking_20251015}
+              - {type: compact_20260112, trigger: {tokens: 1000}, instructions: sum}
+              - {type: clear_tool_uses_20250919, keep: 2}
+              - not-a-dict
+              - {type: 5}
+          max_tokens: 8
+        betas: [effort-2025-11-24]
+      - request:
+          context_management: {edits: [{type: clear_thinking_20251015}, {type: 5}]}
+          max_tokens: 8
+      - request: {context_management: 5, max_tokens: 8}
+      - request: {context_management: {edits: []}, max_tokens: 8}
+      - request: {max_tokens: 8}
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}

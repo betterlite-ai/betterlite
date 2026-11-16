@@ -3,6 +3,8 @@ use betterlite_models::tiered_pricing::Tier;
 use betterlite_models::token_rates::{
     self, ModelInfo, ModelPricing, RequestContext, TokenRateError, Usage,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
@@ -58,13 +60,13 @@ enum RunError {
     Serialize(#[from] serde_json::Error),
 }
 
-impl From<RunError> for Box<crate::helpers::HelperError> {
+impl From<RunError> for Box<HelperError> {
     fn from(error: RunError) -> Self {
         let class = match &error {
             RunError::Token(_) => "TokenRateError",
             RunError::Serialize(_) => "Serialize",
         };
-        Self::new(crate::helpers::HelperError {
+        Self::new(HelperError {
             class: class.to_owned(),
             status: None,
             error_type: Some(None),
@@ -102,10 +104,10 @@ fn run_base(fields: &BaseInput) -> Result<serde_json::Value, RunError> {
     }))
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let result = match input {
             Input::Base(fields) => run_base(fields),
             Input::Batch {

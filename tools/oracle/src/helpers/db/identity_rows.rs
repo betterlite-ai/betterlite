@@ -5,6 +5,8 @@ use betterlite_db::identity_rows::{
 };
 
 use super::budget_permission_rows::Validated;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -27,10 +29,10 @@ pub(crate) enum Input {
     EndUser { row: Validated<LiteLLMEndUserTable> },
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Key { row } => serde_json::to_value(validated(row)?)
                 .map_err(|error| helper_error("InvalidOutput", &error.to_string())),
@@ -56,15 +58,15 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn validated<T>(row: &Validated<T>) -> Result<&T, Box<crate::helpers::HelperError>> {
+fn validated<T>(row: &Validated<T>) -> Result<&T, Box<HelperError>> {
     match row {
         Validated::Valid(value) => Ok(value),
         Validated::Invalid(_) => Err(helper_error("ValidationError", "invalid row")),
     }
 }
 
-fn helper_error(class: &str, message: &str) -> Box<crate::helpers::HelperError> {
-    let error = crate::helpers::HelperError {
+fn helper_error(class: &str, message: &str) -> Box<HelperError> {
+    let error = HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
