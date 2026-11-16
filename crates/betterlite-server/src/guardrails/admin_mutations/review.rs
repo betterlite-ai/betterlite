@@ -53,7 +53,7 @@ where
         .await
         .map_err(|source| logged(failed, MutationError::ReviewRows { source }))?;
     let warning = match decision {
-        Decision::Approve => activate(database, &row, &guardrail_id).await?,
+        Decision::Approve => start_in_memory(database, &row, &guardrail_id).await?,
         Decision::Reject => None,
     };
     Ok(Json(SubmissionDecision {
@@ -64,8 +64,7 @@ where
     }))
 }
 
-// The warning an approval carries when the guardrail did not start in memory
-async fn activate<R, S>(
+async fn start_in_memory<R, S>(
     database: &MutationDatabase<R, S>,
     row: &ReviewRow,
     guardrail_id: &str,
@@ -98,7 +97,6 @@ where
     }
 }
 
-// The admin gate, the database and the pending_review check both decisions share
 async fn pending_submission<'state, R, S>(
     state: &'state MutationState<R, S>,
     caller: Option<Extension<AuthContext>>,
