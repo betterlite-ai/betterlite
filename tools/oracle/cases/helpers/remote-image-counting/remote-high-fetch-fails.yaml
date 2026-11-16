@@ -1,0 +1,13 @@
+kind: helper
+name: remote-high-fetch-fails
+call:
+  b9963:
+    calls:
+      - function: count_content
+        content:
+          - type: image_url
+            image_url:
+              url: https://example.com/missing.png
+              detail: high
+env: {}
+compare: {ignore: []}

@@ -1,8 +1,11 @@
 #![cfg(test)]
+use betterlite_server::server::test_support::port_in_line;
 use std::env;
+use std::mem::take;
 use std::path::{Path, PathBuf};
-use std::process::{self, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
+use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader, Lines};
 use tokio::net::{TcpListener, TcpStream};
@@ -21,29 +24,23 @@ const CHAT_REPLY: &str = r#"{"id":"chatcmpl-held","object":"chat.completion","cr
 async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
     let upstream = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let upstream_port = upstream.local_addr().unwrap().port();
-    let port = free_port().await;
     let config = format!(
         "{STANDARD_CONFIG}model_list:\n  - model_name: held\n    litellm_params:\n      model: openai/held\n      api_key: sk-held\n      api_base: http://127.0.0.1:{upstream_port}/v1\n"
     );
-    let config_path = fixture(port, &config).await;
-    let mut server = spawn_server(&config_path, port);
-    wait_for_port(port, true).await;
+    let (_directory, config_path) = fixture(&config).await;
+    let (mut server, port) = start_server("--config", &config_path, &[]).await;
     let mut request = start_chat(port).await;
     // the upstream holds the call, so SIGTERM lands while the request is in flight however slow the runner is
     let (mut held, _address) = upstream.accept().await.unwrap();
     read_request(&mut held).await;
-    let (mut logs, mut lines) = server.terminate().await;
+    server.terminate().await;
     answer_chat(&mut held).await;
     let mut bytes = Vec::new();
     request.read_to_end(&mut bytes).await.unwrap();
     let response = String::from_utf8(bytes).unwrap();
     assert!(response.starts_with("HTTP/1.1 200"), "{response}");
     assert!(response.contains(r#""content":"done""#), "{response}");
-    while let Some(line) = lines.next_line().await.unwrap() {
-        logs.push(line);
-    }
-    assert!(server.wait().await.is_empty());
-    assert_json_logs(logs.join("\n").as_bytes());
+    assert_json_logs(&server.finish().await);
 }
 async fn start_chat(port: u16) -> TcpStream {
     let mut request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
@@ -95,32 +92,14 @@ async fn read_request(upstream: &mut TcpStream) {
 }
 #[tokio::test]
 async fn short_config_alias_starts_server() {
-    let port = free_port().await;
-    let config_path = fixture(port, STANDARD_CONFIG).await;
-    let child = Command::new("setpriv")
-        .args(["--pdeathsig", "KILL", "--"])
-        .arg(binary_path())
-        .args([
-            "-c",
-            config_path.to_str().unwrap(),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            &port.to_string(),
-        ])
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let server = ServerGuard { child: Some(child) };
-    wait_for_port(port, true).await;
+    let (_directory, config_path) = fixture(STANDARD_CONFIG).await;
+    let (server, _port) = start_server("-c", &config_path, &[]).await;
     drop(server);
 }
 #[tokio::test]
 async fn dropping_server_guard_kills_server() {
-    let port = free_port().await;
-    let config_path = fixture(port, STANDARD_CONFIG).await;
-    let server = spawn_server(&config_path, port);
-    wait_for_port(port, true).await;
+    let (_directory, config_path) = fixture(STANDARD_CONFIG).await;
+    let (server, port) = start_server("--config", &config_path, &[]).await;
     let connection = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     timeout(Duration::from_secs(30), connection.readable())
         .await
@@ -128,16 +107,14 @@ async fn dropping_server_guard_kills_server() {
         .unwrap();
     assert_eq!(connection.try_read(&mut [0]).unwrap(), 0);
     drop(server);
-    wait_for_port(port, false).await;
+    wait_until_closed(port).await;
 }
 #[tokio::test]
 async fn malformed_config_does_not_log_master_key() {
-    let port = free_port().await;
     let secret = "config-secret-must-not-be-logged";
-    let config_path = fixture(
-        port,
-        &format!("general_settings:\n  master_key: {secret}\n  broken: [\n"),
-    )
+    let (_directory, config_path) = fixture(&format!(
+        "general_settings:\n  master_key: {secret}\n  broken: [\n"
+    ))
     .await;
     let output = Command::new("setpriv")
         .args(["--pdeathsig", "KILL", "--"])
@@ -148,7 +125,7 @@ async fn malformed_config_does_not_log_master_key() {
             "--host",
             "127.0.0.1",
             "--port",
-            &port.to_string(),
+            "0",
         ])
         .output()
         .await
@@ -159,12 +136,8 @@ async fn malformed_config_does_not_log_master_key() {
 }
 #[tokio::test]
 async fn unsupported_config_logs_paths() {
-    let port = free_port().await;
-    let config_path = fixture(
-        port,
-        "general_settings:\n  master_key: test-master\n  unsupported: true\n",
-    )
-    .await;
+    let (_directory, config_path) =
+        fixture("general_settings:\n  master_key: test-master\n  unsupported: true\n").await;
     let output = Command::new("setpriv")
         .args(["--pdeathsig", "KILL", "--"])
         .arg(binary_path())
@@ -174,7 +147,7 @@ async fn unsupported_config_logs_paths() {
             "--host",
             "127.0.0.1",
             "--port",
-            &port.to_string(),
+            "0",
         ])
         .output()
         .await
@@ -186,12 +159,8 @@ async fn unsupported_config_logs_paths() {
 }
 #[tokio::test]
 async fn missing_environment_logs_variable_and_path() {
-    let port = free_port().await;
-    let config_path = fixture(
-        port,
-        "general_settings:\n  master_key: os.environ/MISSING_MASTER_KEY\n",
-    )
-    .await;
+    let (_directory, config_path) =
+        fixture("general_settings:\n  master_key: os.environ/MISSING_MASTER_KEY\n").await;
     let output = Command::new("setpriv")
         .args(["--pdeathsig", "KILL", "--"])
         .arg(binary_path())
@@ -201,7 +170,7 @@ async fn missing_environment_logs_variable_and_path() {
             "--host",
             "127.0.0.1",
             "--port",
-            &port.to_string(),
+            "0",
         ])
         .output()
         .await
@@ -214,29 +183,14 @@ async fn missing_environment_logs_variable_and_path() {
 }
 #[tokio::test]
 async fn reads_config_references_from_the_process_environment() {
-    let port = free_port().await;
-    let config_path = fixture(
-        port,
-        "general_settings:\n  master_key: os.environ/B004_MASTER\n",
+    let (_directory, config_path) =
+        fixture("general_settings:\n  master_key: os.environ/B004_MASTER\n").await;
+    let (server, port) = start_server(
+        "--config",
+        &config_path,
+        &[("B004_MASTER", "environment-master")],
     )
     .await;
-    let child = Command::new("setpriv")
-        .args(["--pdeathsig", "KILL", "--"])
-        .arg(binary_path())
-        .args([
-            "--config",
-            config_path.to_str().unwrap(),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            &port.to_string(),
-        ])
-        .env("B004_MASTER", "environment-master")
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let server = ServerGuard { child: Some(child) };
-    wait_for_port(port, true).await;
     let mut request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     request
         .write_all(b"GET /v1/models HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer environment-master\r\nConnection: close\r\n\r\n")
@@ -249,9 +203,8 @@ async fn reads_config_references_from_the_process_environment() {
 }
 #[tokio::test]
 async fn unusable_chat_deployment_stops_startup() {
-    let port = free_port().await;
     let source = "model_list:\n  - {model_name: g, litellm_params: {model: openai/m, api_base: 'not a url'}}\n";
-    let config_path = fixture(port, source).await;
+    let (_directory, config_path) = fixture(source).await;
     let output = Command::new("setpriv")
         .args(["--pdeathsig", "KILL", "--"])
         .arg(binary_path())
@@ -261,7 +214,7 @@ async fn unusable_chat_deployment_stops_startup() {
             "--host",
             "127.0.0.1",
             "--port",
-            &port.to_string(),
+            "0",
         ])
         .output()
         .await
@@ -273,10 +226,8 @@ async fn unusable_chat_deployment_stops_startup() {
 }
 #[tokio::test]
 async fn partial_headers_are_closed_after_the_read_deadline() {
-    let port = free_port().await;
-    let config_path = fixture(port, STANDARD_CONFIG).await;
-    let server = spawn_server(&config_path, port);
-    wait_for_port(port, true).await;
+    let (_directory, config_path) = fixture(STANDARD_CONFIG).await;
+    let (server, port) = start_server("--config", &config_path, &[]).await;
     let mut connection = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     connection
         .write_all(b"GET /health/liveliness HTTP/1.1\r\nHost: localhost\r\n")
@@ -292,10 +243,9 @@ async fn partial_headers_are_closed_after_the_read_deadline() {
     .unwrap();
     drop(server);
 }
-fn assert_json_logs(stderr: &[u8]) {
-    let events = String::from_utf8(stderr.to_owned())
-        .unwrap()
-        .lines()
+fn assert_json_logs(lines: &[String]) {
+    let events = lines
+        .iter()
         .map(|line| serde_json::from_str::<LogEvent>(line).unwrap())
         .collect::<Vec<_>>();
     assert!(!events.is_empty());
@@ -303,16 +253,11 @@ fn assert_json_logs(stderr: &[u8]) {
         !event.timestamp.is_empty() && !event.level.is_empty() && !event.message.is_empty()
     }));
 }
-async fn fixture(port: u16, source: &str) -> PathBuf {
-    let directory = env::temp_dir().join(format!("betterlite-b003-{}-{port}", process::id()));
-    fs::create_dir_all(&directory).await.unwrap();
-    let config_path = directory.join("config.yaml");
+async fn fixture(source: &str) -> (TempDir, PathBuf) {
+    let directory = tempfile::tempdir().unwrap();
+    let config_path = directory.path().join("config.yaml");
     fs::write(&config_path, source).await.unwrap();
-    config_path
-}
-async fn free_port() -> u16 {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
-    listener.local_addr().unwrap().port()
+    (directory, config_path)
 }
 fn binary_path() -> PathBuf {
     let mut test_binary = env::current_exe().unwrap();
@@ -320,25 +265,35 @@ fn binary_path() -> PathBuf {
     test_binary.set_file_name("betterlite");
     test_binary
 }
-fn spawn_server(config_path: &Path, port: u16) -> ServerGuard {
-    let mut executable = env::current_exe().unwrap();
-    executable.pop();
-    executable.set_file_name("betterlite");
-    let child = Command::new("setpriv")
+// port 0 lets the kernel pick, and the server logs the port it got on its listening line
+async fn start_server(
+    config_flag: &str,
+    config_path: &Path,
+    environment: &[(&str, &str)],
+) -> (ServerGuard, u16) {
+    let mut child = Command::new("setpriv")
         .args(["--pdeathsig", "KILL", "--"])
-        .arg(executable)
+        .arg(binary_path())
         .args([
-            "--config",
+            config_flag,
             config_path.to_str().unwrap(),
             "--host",
             "127.0.0.1",
             "--port",
-            &port.to_string(),
+            "0",
         ])
+        .envs(environment.iter().copied())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    ServerGuard { child: Some(child) }
+    let lines = BufReader::new(child.stderr.take().unwrap()).lines();
+    let mut server = ServerGuard {
+        child: Some(child),
+        lines,
+        logs: Vec::new(),
+    };
+    let port = server.read_listening_port().await;
+    (server, port)
 }
 async fn send_sigterm(process_id: u32) {
     let status = Command::new("kill")
@@ -348,18 +303,20 @@ async fn send_sigterm(process_id: u32) {
         .unwrap();
     assert!(status.success());
 }
-async fn wait_for_port(port: u16, reachable: bool) {
+async fn wait_until_closed(port: u16) {
     let started = Instant::now();
-    while TcpStream::connect(("127.0.0.1", port)).await.is_ok() != reachable {
+    while TcpStream::connect(("127.0.0.1", port)).await.is_ok() {
         assert!(
             started.elapsed() < Duration::from_secs(60),
-            "port {port} did not become reachable={reachable}"
+            "port {port} did not close"
         );
         sleep(Duration::from_millis(10)).await;
     }
 }
 struct ServerGuard {
     child: Option<Child>,
+    lines: Lines<BufReader<ChildStderr>>,
+    logs: Vec<String>,
 }
 impl Drop for ServerGuard {
     fn drop(&mut self) {
@@ -369,28 +326,40 @@ impl Drop for ServerGuard {
     }
 }
 impl ServerGuard {
-    // requests in flight must finish after the server has seen SIGTERM, or they race its shutdown flag
-    async fn terminate(&mut self) -> (Vec<String>, Lines<BufReader<ChildStderr>>) {
-        let child = self.child.as_mut().unwrap();
-        send_sigterm(child.id().unwrap()).await;
-        let mut lines = BufReader::new(child.stderr.take().unwrap()).lines();
-        let mut logs = Vec::new();
-        while !logs
-            .last()
-            .is_some_and(|line: &String| line.contains("betterlite server shutting down"))
-        {
-            let line = timeout(Duration::from_secs(10), lines.next_line())
-                .await
-                .unwrap()
-                .unwrap()
-                .unwrap();
-            logs.push(line);
-        }
-        (logs, lines)
+    async fn next_log_line(&mut self) -> Option<String> {
+        let line = timeout(Duration::from_secs(60), self.lines.next_line())
+            .await
+            .unwrap()
+            .unwrap()?;
+        self.logs.push(line.clone());
+        Some(line)
     }
-    async fn wait(mut self) -> Vec<u8> {
-        let output = self.child.take().unwrap().wait_with_output().await.unwrap();
-        assert!(output.status.success());
-        output.stderr
+    async fn read_listening_port(&mut self) -> u16 {
+        loop {
+            let line = self
+                .next_log_line()
+                .await
+                .expect("the server closed stderr before its listening line");
+            if let Some(port) = port_in_line(&line) {
+                return port;
+            }
+        }
+    }
+    // requests in flight must finish after the server has seen SIGTERM, or they race its shutdown flag
+    async fn terminate(&mut self) {
+        send_sigterm(self.child.as_ref().unwrap().id().unwrap()).await;
+        while !self
+            .logs
+            .last()
+            .is_some_and(|line| line.contains("betterlite server shutting down"))
+        {
+            self.next_log_line().await.unwrap();
+        }
+    }
+    async fn finish(mut self) -> Vec<String> {
+        while self.next_log_line().await.is_some() {}
+        let status = self.child.take().unwrap().wait().await.unwrap();
+        assert!(status.success());
+        take(&mut self.logs)
     }
 }

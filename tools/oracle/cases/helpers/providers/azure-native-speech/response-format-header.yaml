@@ -1,0 +1,17 @@
+kind: helper
+name: response-format-header
+call:
+  azure_native_speech:
+    response_format_header:
+      formats:
+        - null
+        - mp3
+        - aac
+        - flac
+        - opus
+        - wav
+        - pcm
+        - mp4
+        - ''
+env: {}
+compare: {ignore: []}
