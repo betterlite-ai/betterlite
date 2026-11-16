@@ -1,3 +1,5 @@
+const MAPPING: &str = r#"{"inferenceProviderMapping":{"hf-inference":{"status":"live","providerId":"meta-llama/Llama-3-8B-Instruct"}}}"#;
+
 #[test]
 fn the_pipeline_tag_source_reads_pipeline_tag_or_fails_500() {
     let found = PrefetchedTag(hub_reply(200, r#"{"pipeline_tag":"rerank"}"#));
@@ -31,7 +33,7 @@ fn polling_reads_the_replicate_variables_and_reports_a_bad_one() {
         "five",
     )]))
     .expect_err("a text retry count is an environment error");
-    let HubDispatchError::Environment(source) = error else {
+    let HubDispatchError::Environment { source } = error else {
         panic!("a bad polling value is an environment error");
     };
     assert!(
@@ -55,15 +57,6 @@ async fn the_embedding_arm_posts_the_prepared_body_and_logs_both_hooks() {
         ScriptedPost::new(vec![http_reply(200, r#"[{"embedding":[0.5,0.25]}]"#)]),
         ScriptedTransport::new(Vec::new()),
     );
-    let globals = empty_globals();
-    let env = environment(&[("HUGGINGFACE_API_KEY", "hf-key")]);
-    let deps = services.deps(&globals, &env);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, log_env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &log_env,
-    };
     let input = vec![String::from("a"), String::from("b")];
     let options = object(&[
         (
@@ -73,19 +66,15 @@ async fn the_embedding_arm_posts_the_prepared_body_and_logs_both_hooks() {
         ("wait_for_model", PromptJson::Bool(true)),
     ]);
     let headers = Headers::from([(String::from("x-call"), String::from("1"))]);
-    let call = EmbeddingCall {
-        model: "org/model",
-        input: &input,
-        optional_params: &options,
-        api_key: None,
-        api_base: Some("http://mock/embed"),
-        headers: &headers,
-    };
-    let response: EmbeddingResponse = embed(&call, &deps, &mut log).await.unwrap();
+    let call = embedding_call(&input, &options, &headers, Some("http://mock/embed"));
+    let env = environment(&[("HUGGINGFACE_API_KEY", "hf-key")]);
+    let (outcome, state) = embed_with(&services, &env, &call).await;
+    outcome.unwrap();
     assert_eq!(services.hub.calls(), 0);
     let requests = services.post.requests();
-    assert_eq!(requests.len(), 1);
-    let (url, sent_headers, sent_body) = requests.first().unwrap();
+    let [(url, sent_headers, sent_body)] = requests.as_slice() else {
+        panic!("the embedding arm posts once");
+    };
     assert_eq!(url, "http://mock/embed");
     assert_eq!(sent_headers.get("Authorization").unwrap(), "Bearer hf-key");
     assert_eq!(
@@ -94,15 +83,11 @@ async fn the_embedding_arm_posts_the_prepared_body_and_logs_both_hooks() {
     );
     assert_eq!(sent_headers.get("x-call").unwrap(), "1");
     assert_eq!(
-        *sent_body,
-        String::from(r#"{"inputs":["a","b"],"options":{"wait_for_model":true}}"#)
+        sent_body,
+        r#"{"inputs":["a","b"],"options":{"wait_for_model":true}}"#
     );
-    assert_eq!(response.data.len(), 1);
-    assert_eq!(response.usage.prompt_tokens, 2);
-    assert_eq!(
-        state.model_call_details.get("log_event_type"),
-        Some(&Json::Text(String::from("post_api_call")))
-    );
+    let event = state.model_call_details.get("log_event_type");
+    assert_eq!(event, Some(&Json::Text(String::from("post_api_call"))));
     let Some(Json::List(items)) = state.model_call_details.get("original_response") else {
         panic!("the post_call keeps the reply");
     };
@@ -119,36 +104,27 @@ async fn the_embedding_arm_reads_the_pipeline_tag_only_without_input_type() {
         ScriptedPost::new(vec![http_reply(200, r#"[{"embedding":[0.5]}]"#)]),
         ScriptedTransport::new(Vec::new()),
     );
-    let globals = empty_globals();
-    let env = environment(&[]);
-    let deps = services.deps(&globals, &env);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, log_env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &log_env,
-    };
     let input = vec![String::from("a")];
     let options = Object::new();
     let headers = Headers::new();
-    let call = EmbeddingCall {
-        model: "org/model",
-        input: &input,
-        optional_params: &options,
-        api_key: None,
-        api_base: None,
-        headers: &headers,
-    };
-    embed(&call, &deps, &mut log).await.unwrap();
+    let call = embedding_call(&input, &options, &headers, None);
+    let (outcome, _logged) = embed_with(&services, &environment(&[]), &call).await;
+    let response = outcome.unwrap();
+    assert_eq!(response.data.len(), 1);
+    assert_eq!(response.usage.prompt_tokens, 1);
     let requests = services.hub.requests();
-    assert_eq!(requests.len(), 1);
-    let (url, sent_headers, query) = requests.first().unwrap();
+    let [(url, sent_headers, query)] = requests.as_slice() else {
+        panic!("the embedding arm reads the model info once");
+    };
     assert_eq!(url, "https://huggingface.co/api/models/org/model");
     assert!(sent_headers.is_empty());
     assert!(query.is_empty());
     let posted = services.post.requests();
+    let [(posted_url, _, _)] = posted.as_slice() else {
+        panic!("the embedding arm posts once");
+    };
     assert_eq!(
-        posted.first().unwrap().0,
+        posted_url,
         "https://router.huggingface.co/hf-inference/pipeline/feature-extraction/org/model"
     );
 }
@@ -160,45 +136,27 @@ async fn the_embedding_arm_fails_with_500_when_the_reply_has_an_error_key() {
         ScriptedPost::new(vec![http_reply(200, r#"{"error":"boom"}"#)]),
         ScriptedTransport::new(Vec::new()),
     );
-    let globals = empty_globals();
-    let env = environment(&[]);
-    let deps = services.deps(&globals, &env);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, log_env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &log_env,
-    };
     let input = vec![String::from("a")];
     let options = object(&[(
         "input_type",
         PromptJson::Text(String::from("feature-extraction")),
     )]);
     let headers = Headers::new();
-    let call = EmbeddingCall {
-        model: "org/model",
-        input: &input,
-        optional_params: &options,
-        api_key: None,
-        api_base: Some("http://mock/embed"),
-        headers: &headers,
-    };
-    let error = embed(&call, &deps, &mut log)
-        .await
-        .expect_err("the error key fails the call");
-    let HubDispatchError::Embedding(HuggingfaceEmbeddingError::Huggingface(error)) = error else {
+    let call = embedding_call(&input, &options, &headers, Some("http://mock/embed"));
+    let (outcome, state) = embed_with(&services, &environment(&[]), &call).await;
+    let failure = outcome.expect_err("the error key fails the call");
+    let HubDispatchError::Embedding(HuggingfaceEmbeddingError::Huggingface(error)) = failure else {
         panic!("the error key is a Hugging Face error");
     };
     assert_eq!(error.status_code, 500);
     assert_eq!(error.message, "boom");
+    let event = state.model_call_details.get("log_event_type");
+    assert_eq!(event, Some(&Json::Text(String::from("post_api_call"))));
 }
 
 #[tokio::test]
-async fn the_huggingface_arm_prepares_the_chat_request() {
+async fn the_huggingface_arm_prepares_a_stream_request() {
     let services = Services::idle();
-    let globals = empty_globals();
-    let env = environment(&[("HF_TOKEN", "hf-token")]);
-    let deps = services.deps(&globals, &env);
     let mut messages = vec![user_message()];
     let mut options = object(&[
         ("temperature", number(0)),
@@ -207,82 +165,96 @@ async fn the_huggingface_arm_prepares_the_chat_request() {
     let headers = Headers::from([(String::from("x-call"), String::from("1"))]);
     let mut call = ChatContext {
         headers: Some(&headers),
-        api_base: Some("http://mock/v1"),
         ..chat_context(
-            "meta-llama/Llama-3-8B-Instruct",
+            HF_MODEL,
             &mut messages,
             &mut options,
             Some("http://mock/v1"),
             None,
         )
     };
-    let request = huggingface::chat_request(&mut call, &deps).await.unwrap();
-    let PreparedRequest::Stream(prepared) = request else {
+    let env = environment(&[("HF_TOKEN", "hf-token")]);
+    let (outcome, _logged) =
+        dispatch_with(&services, &env, ChatConfigTag::HuggingFaceChat, &mut call).await;
+    let Some(HubCompletion::HuggingFace(request)) = outcome.unwrap() else {
+        panic!("the hugging face tag prepares a request");
+    };
+    let PreparedRequest::Stream(prepared) = *request else {
         panic!("a stream call prepares a stream request");
     };
     assert_eq!(
         prepared.http.url.as_str(),
         "http://mock/v1/chat/completions"
     );
-    assert_eq!(
-        prepared.http.headers.get("Authorization").unwrap(),
-        "Bearer hf-token"
-    );
-    assert_eq!(
-        prepared.http.headers.get("content-type").unwrap(),
-        "application/json"
-    );
-    assert_eq!(prepared.http.headers.get("x-call").unwrap(), "1");
+    let sent = &prepared.http.headers;
+    assert_eq!(sent.get("Authorization").unwrap(), "Bearer hf-token");
+    assert_eq!(sent.get("x-call").unwrap(), "1");
     let body: Object = serde_json::from_slice(&prepared.http.body).unwrap();
     assert_eq!(
         body.get("model"),
-        Some(&PromptJson::Text(String::from(
-            "meta-llama/Llama-3-8B-Instruct"
-        )))
+        Some(&PromptJson::Text(String::from(HF_MODEL)))
     );
     assert_eq!(body.get("stream"), Some(&PromptJson::Bool(true)));
     assert_eq!(body.get("temperature"), Some(&number(0)));
-    assert_eq!(services.hub.calls(), 0);
-    let mut plain_messages = vec![user_message()];
-    let mut plain_options = Object::new();
-    let mut plain = chat_context(
-        "meta-llama/Llama-3-8B-Instruct",
-        &mut plain_messages,
-        &mut plain_options,
+}
+
+#[tokio::test]
+async fn the_huggingface_arm_prepares_the_chat_request() {
+    let services = Services::idle();
+    let mut messages = vec![user_message()];
+    let mut options = Object::new();
+    let mut call = chat_context(
+        HF_MODEL,
+        &mut messages,
+        &mut options,
         Some("http://mock/v1"),
         None,
     );
-    let plain_request = huggingface::chat_request(&mut plain, &deps).await.unwrap();
-    assert!(matches!(plain_request, PreparedRequest::Chat(_)));
+    let env = environment(&[("HUGGINGFACE_API_KEY", "hf-api")]);
+    let (outcome, state) =
+        dispatch_with(&services, &env, ChatConfigTag::HuggingFaceChat, &mut call).await;
+    let Some(HubCompletion::HuggingFace(request)) = outcome.unwrap() else {
+        panic!("the hugging face tag prepares a request");
+    };
+    let PreparedRequest::Chat(prepared) = *request else {
+        panic!("a plain call prepares a chat request");
+    };
+    assert_eq!(
+        prepared.http.url.as_str(),
+        "http://mock/v1/chat/completions"
+    );
+    let sent = &prepared.http.headers;
+    assert_eq!(sent.get("Authorization").unwrap(), "Bearer hf-api");
+    assert_eq!(sent.get("content-type").unwrap(), "application/json");
+    assert_eq!(prepared.client_model.as_deref(), Some(HF_MODEL));
+    assert_eq!(services.hub.calls(), 0);
+    assert!(state.model_call_details.get("log_event_type").is_none());
 }
 
 #[tokio::test]
 async fn the_huggingface_arm_fetches_the_provider_mapping_without_a_base() {
-    let mapping = r#"{"inferenceProviderMapping":{"hf-inference":{"status":"live","providerId":"meta-llama/Llama-3-8B-Instruct"}}}"#;
     let services = Services::new(
-        ScriptedHub::new(vec![hub_reply(200, mapping)]),
+        ScriptedHub::new(vec![hub_reply(200, MAPPING)]),
         ScriptedPost::new(Vec::new()),
         ScriptedTransport::new(Vec::new()),
     );
-    let globals = empty_globals();
-    let env = environment(&[("HUGGINGFACE_API_KEY", "hub-secret")]);
-    let deps = services.deps(&globals, &env);
     let mut messages = vec![user_message()];
     let mut options = Object::new();
-    let mut call = chat_context(
-        "hf-inference/meta-llama/Llama-3-8B-Instruct",
-        &mut messages,
-        &mut options,
-        None,
-        None,
-    );
-    let request = huggingface::chat_request(&mut call, &deps).await.unwrap();
-    let PreparedRequest::Chat(prepared) = request else {
+    let model = "hf-inference/meta-llama/Llama-3-8B-Instruct";
+    let mut call = chat_context(model, &mut messages, &mut options, None, None);
+    let env = environment(&[("HUGGINGFACE_API_KEY", "hub-secret")]);
+    let (outcome, _logged) =
+        dispatch_with(&services, &env, ChatConfigTag::HuggingFaceChat, &mut call).await;
+    let Some(HubCompletion::HuggingFace(request)) = outcome.unwrap() else {
+        panic!("the hugging face tag prepares a request");
+    };
+    let PreparedRequest::Chat(prepared) = *request else {
         panic!("a plain call prepares a chat request");
     };
     let requests = services.hub.requests();
-    assert_eq!(requests.len(), 1);
-    let (url, sent_headers, query) = requests.first().unwrap();
+    let [(url, sent_headers, query)] = requests.as_slice() else {
+        panic!("the arm reads the provider mapping once");
+    };
     assert_eq!(
         url,
         "https://huggingface.co/api/models/meta-llama/Llama-3-8B-Instruct"
@@ -291,20 +263,20 @@ async fn the_huggingface_arm_fetches_the_provider_mapping_without_a_base() {
         sent_headers.get("Authorization").unwrap(),
         "Bearer hub-secret"
     );
-    assert_eq!(query.len(), 1);
-    assert_eq!(query.first().unwrap().0, "expand");
-    assert_eq!(query.first().unwrap().1, "inferenceProviderMapping");
+    let expand = vec![(
+        String::from("expand"),
+        String::from("inferenceProviderMapping"),
+    )];
+    assert_eq!(*query, expand);
     let body: Object = serde_json::from_slice(&prepared.http.body).unwrap();
     assert_eq!(
         body.get("model"),
-        Some(&PromptJson::Text(String::from(
-            "meta-llama/Llama-3-8B-Instruct"
-        )))
+        Some(&PromptJson::Text(String::from(HF_MODEL)))
     );
 }
 
 #[tokio::test]
-async fn the_replicate_arm_creates_and_polls_with_the_strict_policy() {
+async fn the_replicate_arm_uses_the_strict_policy_for_a_sync_call() {
     let services = Services::new(
         ScriptedHub::new(Vec::new()),
         ScriptedPost::new(Vec::new()),
@@ -313,28 +285,17 @@ async fn the_replicate_arm_creates_and_polls_with_the_strict_policy() {
             replicate_reply(200, DONE),
         ]),
     );
-    let globals = empty_globals();
-    let env = environment(&[]);
-    let deps = services.deps(&globals, &env);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, log_env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &log_env,
-    };
-    let key = secret("ctx-key");
     let mut messages = vec![user_message()];
     let mut options = Object::new();
-    let mut call = chat_context(MODEL, &mut messages, &mut options, None, Some(&key));
-    let completion = dispatch(
-        &selection(ChatConfigTag::Replicate),
+    let mut call = chat_context(MODEL, &mut messages, &mut options, None, None);
+    let (outcome, state) = dispatch_with(
+        &services,
+        &environment(&[]),
+        ChatConfigTag::Replicate,
         &mut call,
-        &deps,
-        &mut log,
     )
-    .await
-    .unwrap();
-    let Some(HubCompletion::Replicate(completion)) = completion else {
+    .await;
+    let Some(HubCompletion::Replicate(completion)) = outcome.unwrap() else {
         panic!("the replicate tag returns a replicate completion");
     };
     let ReplicateCompletion::Reply(reply) = *completion else {
@@ -345,34 +306,51 @@ async fn the_replicate_arm_creates_and_polls_with_the_strict_policy() {
     assert_eq!(reply.created, Some(NOW_SECONDS));
     assert_eq!(reply.usage.prompt_tokens, 1);
     assert_eq!(reply.usage.total_tokens, 3);
-    let requests = services.transport.requests();
-    assert_eq!(requests.len(), 2);
-    assert_eq!(
-        requests.first().unwrap().url,
-        "https://api.replicate.com/v1/models/meta-llama/llama-2-70b-chat/predictions"
+    assert!(state.model_call_details.get("log_event_type").is_none());
+}
+
+#[tokio::test]
+async fn the_replicate_arm_creates_then_polls_with_the_context_key() {
+    let services = Services::new(
+        ScriptedHub::new(Vec::new()),
+        ScriptedPost::new(Vec::new()),
+        ScriptedTransport::new(vec![
+            replicate_reply(200, CREATE),
+            replicate_reply(200, DONE),
+        ]),
     );
+    let key = secret("ctx-key");
+    let mut messages = vec![user_message()];
+    let mut options = Object::new();
+    let mut call = chat_context(MODEL, &mut messages, &mut options, None, Some(&key));
+    let (outcome, _logged) = dispatch_with(
+        &services,
+        &environment(&[]),
+        ChatConfigTag::Replicate,
+        &mut call,
+    )
+    .await;
+    outcome.unwrap();
+    let requests = services.transport.requests();
+    let [create, poll] = requests.as_slice() else {
+        panic!("the arm creates the prediction and polls it once");
+    };
+    let create_url = "https://api.replicate.com/v1/models/meta-llama/llama-2-70b-chat/predictions";
+    assert_eq!(create.url, create_url);
     assert_eq!(
-        requests
-            .first()
-            .unwrap()
-            .headers
-            .get("authorization")
-            .unwrap(),
+        create.headers.get("authorization").unwrap(),
         "Token ctx-key"
     );
-    let sent: Object =
-        serde_json::from_slice(requests.first().unwrap().body.as_deref().unwrap()).unwrap();
+    let sent: Object = serde_json::from_slice(create.body.as_deref().unwrap()).unwrap();
     assert_eq!(sent, serde_json::from_str::<Object>(PROMPT).unwrap());
-    assert_eq!(requests.get(1).unwrap().url, "https://poll/1");
-    assert_eq!(
-        services
-            .sleeper
-            .delays()
-            .first()
-            .map(|delay| delay.to_bits()),
-        Some(1.0_f64.to_bits())
-    );
-    assert!(state.model_call_details.get("log_event_type").is_none());
+    assert_eq!(poll.url, "https://poll/1");
+    let delays: Vec<u64> = services
+        .sleeper
+        .delays()
+        .iter()
+        .map(|delay| delay.to_bits())
+        .collect();
+    assert_eq!(delays, vec![1.0_f64.to_bits()]);
 }
 
 #[tokio::test]
@@ -385,30 +363,20 @@ async fn the_replicate_arm_uses_the_lenient_policy_for_an_async_call() {
             replicate_reply(200, r#"{"status":"succeeded","output":5}"#),
         ]),
     );
-    let globals = empty_globals();
-    let env = environment(&[]);
-    let deps = services.deps(&globals, &env);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, log_env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &log_env,
-    };
     let mut messages = vec![user_message()];
     let mut options = Object::new();
     let mut call = ChatContext {
         acompletion: true,
         ..chat_context(MODEL, &mut messages, &mut options, None, None)
     };
-    let completion = dispatch(
-        &selection(ChatConfigTag::Replicate),
+    let (outcome, _logged) = dispatch_with(
+        &services,
+        &environment(&[]),
+        ChatConfigTag::Replicate,
         &mut call,
-        &deps,
-        &mut log,
     )
-    .await
-    .unwrap();
-    let Some(HubCompletion::Replicate(completion)) = completion else {
+    .await;
+    let Some(HubCompletion::Replicate(completion)) = outcome.unwrap() else {
         panic!("the replicate tag returns a replicate completion");
     };
     let ReplicateCompletion::Reply(reply) = *completion else {
@@ -425,31 +393,18 @@ async fn the_replicate_arm_reports_a_missing_prediction_url() {
         ScriptedPost::new(Vec::new()),
         ScriptedTransport::new(vec![replicate_reply(200, "{}")]),
     );
-    let globals = empty_globals();
-    let env = environment(&[]);
-    let deps = services.deps(&globals, &env);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, log_env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &log_env,
-    };
     let mut messages = vec![user_message()];
     let mut options = Object::new();
     let mut call = chat_context(MODEL, &mut messages, &mut options, None, None);
-    let error = match dispatch(
-        &selection(ChatConfigTag::Replicate),
+    let (outcome, _logged) = dispatch_with(
+        &services,
+        &environment(&[]),
+        ChatConfigTag::Replicate,
         &mut call,
-        &deps,
-        &mut log,
     )
-    .await
-    {
-        Ok(_) => panic!("a create reply without a poll url fails"),
-        Err(error) => error,
-    };
-    let HubDispatchError::Replicate(failure) = error else {
-        panic!("the missing url is a replicate failure");
+    .await;
+    let Err(HubDispatchError::Replicate(failure)) = outcome else {
+        panic!("a create reply without a poll url is a replicate failure");
     };
     let Some(api) = failure.api() else {
         panic!("the missing url is a Replicate API error");
@@ -468,34 +423,22 @@ async fn the_replicate_arm_logs_the_post_call_for_a_stream() {
         ScriptedPost::new(Vec::new()),
         ScriptedTransport::new(vec![replicate_reply(200, CREATE)]),
     );
-    let globals = empty_globals();
-    let env = environment(&[]);
-    let deps = services.deps(&globals, &env);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, log_env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &log_env,
-    };
     let mut messages = vec![user_message()];
     let mut options = object(&[("stream", PromptJson::Bool(true))]);
     let mut call = chat_context(MODEL, &mut messages, &mut options, None, None);
-    let completion = dispatch(
-        &selection(ChatConfigTag::Replicate),
+    let (outcome, state) = dispatch_with(
+        &services,
+        &environment(&[]),
+        ChatConfigTag::Replicate,
         &mut call,
-        &deps,
-        &mut log,
     )
-    .await
-    .unwrap();
-    let Some(HubCompletion::Replicate(completion)) = completion else {
+    .await;
+    let Some(HubCompletion::Replicate(completion)) = outcome.unwrap() else {
         panic!("the replicate tag returns a replicate completion");
     };
     assert!(matches!(*completion, ReplicateCompletion::Stream(_)));
-    assert_eq!(
-        state.model_call_details.get("log_event_type"),
-        Some(&Json::Text(String::from("post_api_call")))
-    );
+    let event = state.model_call_details.get("log_event_type");
+    assert_eq!(event, Some(&Json::Text(String::from("post_api_call"))));
     let Some(Json::List(input)) = state.model_call_details.get("input") else {
         panic!("the post_call keeps the messages");
     };
@@ -503,112 +446,94 @@ async fn the_replicate_arm_logs_the_post_call_for_a_stream() {
 }
 
 #[tokio::test]
-async fn the_predibase_arm_sends_the_generate_request_and_wraps_the_reply() {
+async fn the_predibase_arm_wraps_the_generate_reply() {
     let services = Services::new(
         ScriptedHub::new(Vec::new()),
         ScriptedPost::new(vec![http_reply(200, r#"{"generated_text":"hello"}"#)]),
         ScriptedTransport::new(Vec::new()),
     );
-    let globals = empty_globals();
-    let env = environment(&[("PREDIBASE_API_KEY", "pb-env")]);
-    let deps = services.deps(&globals, &env);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, log_env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &log_env,
-    };
     let mut messages = vec![user_message()];
     let mut options = object(&[("tenant_id", PromptJson::Text(String::from("tenant-1")))]);
-    let mut call = ChatContext {
-        acompletion: true,
-        ..chat_context(
-            "meta-llama/llama-2-7b-chat",
-            &mut messages,
-            &mut options,
-            Some("http://mock"),
-            None,
-        )
-    };
-    let completion = dispatch(
-        &selection(ChatConfigTag::Predibase),
-        &mut call,
-        &deps,
-        &mut log,
-    )
-    .await
-    .unwrap();
-    let Some(HubCompletion::Predibase(completion)) = completion else {
+    let mut call = chat_context(
+        PB_MODEL,
+        &mut messages,
+        &mut options,
+        Some("http://mock"),
+        None,
+    );
+    let env = environment(&[("PREDIBASE_API_KEY", "pb-env")]);
+    let (outcome, state) =
+        dispatch_with(&services, &env, ChatConfigTag::Predibase, &mut call).await;
+    let Some(HubCompletion::Predibase(completion)) = outcome.unwrap() else {
         panic!("the predibase tag returns a predibase completion");
     };
     let predibase::Completion::Reply(reply) = *completion else {
         panic!("a non-stream call returns the reply");
     };
-    assert_eq!(reply.model, "meta-llama/llama-2-7b-chat");
+    assert_eq!(reply.model, PB_MODEL);
     assert_eq!(reply.created, NOW_SECONDS);
-    assert_eq!(
-        reply
-            .choices
-            .first()
-            .and_then(|choice| choice.content.as_deref()),
-        Some("hello")
+    let content = reply
+        .choices
+        .first()
+        .and_then(|choice| choice.content.as_deref());
+    assert_eq!(content, Some("hello"));
+    let event = state.model_call_details.get("log_event_type");
+    assert_eq!(event, Some(&Json::Text(String::from("post_api_call"))));
+}
+
+#[tokio::test]
+async fn the_predibase_arm_sends_the_generate_request() {
+    let services = Services::new(
+        ScriptedHub::new(Vec::new()),
+        ScriptedPost::new(vec![http_reply(200, r#"{"generated_text":"hello"}"#)]),
+        ScriptedTransport::new(Vec::new()),
     );
+    let mut messages = vec![user_message()];
+    let mut options = object(&[("tenant_id", PromptJson::Text(String::from("tenant-1")))]);
+    let mut call = chat_context(
+        PB_MODEL,
+        &mut messages,
+        &mut options,
+        Some("http://mock"),
+        None,
+    );
+    let env = environment(&[("PREDIBASE_API_KEY", "pb-env")]);
+    let (outcome, _logged) =
+        dispatch_with(&services, &env, ChatConfigTag::Predibase, &mut call).await;
+    outcome.unwrap();
     let requests = services.post.requests();
-    assert_eq!(requests.len(), 1);
-    let (url, sent_headers, sent_body) = requests.first().unwrap();
-    assert_eq!(
-        url,
-        "http://mock/tenant-1/deployments/v2/llms/meta-llama/llama-2-7b-chat/generate"
-    );
+    let [(url, sent_headers, sent_body)] = requests.as_slice() else {
+        panic!("the predibase arm posts once");
+    };
+    let generate = "http://mock/tenant-1/deployments/v2/llms/meta-llama/llama-2-7b-chat/generate";
+    assert_eq!(url, generate);
     assert_eq!(sent_headers.get("Authorization").unwrap(), "Bearer pb-env");
     assert_eq!(
         sent_headers.get("content-type").unwrap(),
         "application/json"
     );
     let body: Object = serde_json::from_str(sent_body).unwrap();
-    assert_eq!(
-        body.get("inputs"),
-        Some(&PromptJson::Text(String::from("<s>[INST] hi [/INST]\n")))
-    );
-    assert_eq!(
-        body.get("parameters"),
-        Some(&PromptJson::Object(object(&[
-            ("details", PromptJson::Bool(true)),
-            ("max_new_tokens", number(4096)),
-            ("return_full_text", PromptJson::Bool(false)),
-        ])))
-    );
-    assert_eq!(
-        state.model_call_details.get("log_event_type"),
-        Some(&Json::Text(String::from("post_api_call")))
-    );
+    let inputs = PromptJson::Text(String::from("<s>[INST] hi [/INST]\n"));
+    assert_eq!(body.get("inputs"), Some(&inputs));
+    let parameters = PromptJson::Object(object(&[
+        ("details", PromptJson::Bool(true)),
+        ("max_new_tokens", number(4096)),
+        ("return_full_text", PromptJson::Bool(false)),
+    ]));
+    assert_eq!(body.get("parameters"), Some(&parameters));
 }
 
 #[tokio::test]
 async fn the_predibase_arm_fails_with_the_tenant_id_text() {
     let services = Services::idle();
-    let globals = empty_globals();
-    let env = environment(&[("PREDIBASE_API_KEY", "pb-env")]);
-    let deps = services.deps(&globals, &env);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, log_env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &log_env,
-    };
     let mut messages = vec![user_message()];
     let mut options = Object::new();
     let mut call = chat_context("m", &mut messages, &mut options, Some("http://mock"), None);
-    let error = match dispatch(
-        &selection(ChatConfigTag::Predibase),
-        &mut call,
-        &deps,
-        &mut log,
-    )
-    .await
-    {
-        Ok(_) => panic!("a missing tenant id fails the call"),
-        Err(error) => error,
+    let env = environment(&[("PREDIBASE_API_KEY", "pb-env")]);
+    let (outcome, _logged) =
+        dispatch_with(&services, &env, ChatConfigTag::Predibase, &mut call).await;
+    let Err(error) = outcome else {
+        panic!("a missing tenant id fails the call");
     };
     let HubDispatchError::PredibaseSetup(PredibaseSetupError::MissingTenantId) = &error else {
         panic!("the missing tenant id is a setup error");
@@ -623,15 +548,6 @@ async fn the_predibase_arm_fails_with_the_tenant_id_text() {
 #[tokio::test]
 async fn the_predibase_arm_streams_with_the_stream_suffix_and_body_flag() {
     let services = Services::idle();
-    let globals = empty_globals();
-    let env = environment(&[("PREDIBASE_API_KEY", "pb-env")]);
-    let deps = services.deps(&globals, &env);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, log_env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &log_env,
-    };
     let mut messages = vec![user_message()];
     let mut options = object(&[
         ("stream", PromptJson::Bool(true)),
@@ -641,25 +557,19 @@ async fn the_predibase_arm_streams_with_the_stream_suffix_and_body_flag() {
         acompletion: true,
         ..chat_context("m", &mut messages, &mut options, Some("http://mock"), None)
     };
-    let error = match dispatch(
-        &selection(ChatConfigTag::Predibase),
-        &mut call,
-        &deps,
-        &mut log,
-    )
-    .await
-    {
-        Ok(_) => panic!("the scripted stream transport fails"),
-        Err(error) => error,
-    };
-    let HubDispatchError::Operation(OperationError::UnsupportedOperation { provider, .. }) = error
+    let env = environment(&[("PREDIBASE_API_KEY", "pb-env")]);
+    let (outcome, _logged) =
+        dispatch_with(&services, &env, ChatConfigTag::Predibase, &mut call).await;
+    let Err(HubDispatchError::Operation(OperationError::UnsupportedOperation { provider, .. })) =
+        outcome
     else {
         panic!("the stream error comes from the transport");
     };
     assert_eq!(provider, "predibase");
     let streams = services.post.stream_requests();
-    assert_eq!(streams.len(), 1);
-    let (url, _, sent_body) = streams.first().unwrap();
+    let [(url, _, sent_body)] = streams.as_slice() else {
+        panic!("the arm opens one stream");
+    };
     assert_eq!(
         url,
         "http://mock/tenant-1/deployments/v2/llms/m/generate_stream"

@@ -76,7 +76,7 @@ async fn prepare_call(
         Some(_) => None,
     };
     let tag: &dyn PipelineTagSource = match prefetched.as_ref() {
-        Some(prefetched) => prefetched,
+        Some(found) => found,
         None => &NoTag,
     };
     let request = prepare(
@@ -104,12 +104,10 @@ async fn prepare_call(
     })
 }
 
-pub async fn embed(
-    call: &EmbeddingCall<'_>,
-    deps: &DispatchDeps<'_>,
+fn log_pre_call(
     log: &mut CallLogging<'_, '_>,
-) -> Result<EmbeddingResponse, HubDispatchError> {
-    let prepared = prepare_call(call, deps).await?;
+    prepared: &PreparedCall,
+) -> Result<(), HubDispatchError> {
     let headers: IndexMap<String, Json> = prepared
         .request
         .headers
@@ -130,6 +128,16 @@ pub async fn embed(
         log.env,
     )
     .map_err(|source| HubDispatchError::PreCall { source })?;
+    Ok(())
+}
+
+pub async fn embed(
+    call: &EmbeddingCall<'_>,
+    deps: &DispatchDeps<'_>,
+    log: &mut CallLogging<'_, '_>,
+) -> Result<EmbeddingResponse, HubDispatchError> {
+    let prepared = prepare_call(call, deps).await?;
+    log_pre_call(log, &prepared)?;
     let response = deps
         .post
         .post(
@@ -149,7 +157,7 @@ pub async fn embed(
         log.env,
     );
     let reply = decode_embedding_response(&response.body)?;
-    let embedding = process_embedding_response(&reply, call.model, call.input, &deps.encoder)?;
+    let embedding = process_embedding_response(&reply, call.model, call.input, deps.encoder)?;
     Ok(embedding)
 }
 

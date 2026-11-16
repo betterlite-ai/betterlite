@@ -114,7 +114,7 @@ impl LogSink for Discard {
     fn emit(&self, _record: LogRecord) {}
 }
 
-fn helper_failure<Message: Display>(class: &str, message: Message) -> Box<HelperError> {
+fn helper_failure<Text: Display>(class: &str, message: Text) -> Box<HelperError> {
     Box::new(HelperError {
         class: class.to_owned(),
         status: None,
@@ -255,4 +255,3 @@ impl PredibaseTokenCounter for PlainCounting {
         i64::try_from(text.chars().count()).ok()
     }
 }
-

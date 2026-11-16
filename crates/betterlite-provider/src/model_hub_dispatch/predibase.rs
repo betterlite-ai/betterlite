@@ -13,6 +13,7 @@ use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 
 use super::credentials::{predibase_base, predibase_key, predibase_tenant_id};
+use super::hub::headers_from;
 use super::json;
 use super::{CallLogging, ChatContext, CustomPromptTable, DispatchDeps, HubDispatchError};
 use crate::operation::OperationError;
@@ -201,7 +202,7 @@ async fn called(
         .post
         .post(&endpoint.url, &endpoint.headers, &body, deps.timeout)
         .await?;
-    replied(call, deps, log, &response, data, &endpoint.options).await
+    replied(call, deps, log, &response, data).await
 }
 
 async fn streamed(
@@ -242,7 +243,6 @@ async fn replied(
     log: &mut CallLogging<'_, '_>,
     response: &UpstreamResponse,
     data: &RequestBody,
-    options: &Object,
 ) -> Result<Completion, HubDispatchError> {
     let text =
         from_utf8(&response.body).map_err(|source| HubDispatchError::BodyNotUtf8 { source })?;
@@ -255,25 +255,13 @@ async fn replied(
     ) {
         return Err(HubDispatchError::Predibase(error));
     }
-    let headers: BTreeMap<String, String> = response
-        .headers
-        .iter()
-        .filter_map(|(name, value)| {
-            let text = value.to_str().ok()?;
-            Some((name.as_str().to_owned(), text.to_owned()))
-        })
-        .collect();
+    let logged = json::convert(data).map(RawBody::Object)?;
     post_call(
         log.state,
         &PostCall {
             original_response: json::logged_reply(&response.body),
             input: json::convert(call.messages)?,
-            additional_args: args(
-                None,
-                None,
-                Some(json::convert(data).map(RawBody::Object)?),
-                IndexMap::new(),
-            ),
+            additional_args: args(None, None, Some(logged), IndexMap::new()),
         },
         log.env,
     );
@@ -281,9 +269,9 @@ async fn replied(
         &ReplyInput {
             body: &response.body,
             status: response.status,
-            headers: &headers,
+            headers: &headers_from(&response.headers),
             request_body: data,
-            options,
+            options: call.optional_params,
             messages: call.messages,
             model: call.model,
             created: deps.now.timestamp(),

@@ -58,12 +58,13 @@ impl HubGetAsync for PooledHub<'_> {
             .map_err(OperationError::from)?;
         Ok(HubResponse {
             status_code: response.status,
-            headers: headers_from(response.headers),
+            headers: headers_from(&response.headers),
             body: response.body,
         })
     }
 }
-fn headers_from(headers: http::HeaderMap) -> Headers {
+#[must_use]
+pub fn headers_from(headers: &http::HeaderMap) -> Headers {
     headers
         .iter()
         .filter_map(|(name, value)| {
@@ -74,11 +75,11 @@ fn headers_from(headers: http::HeaderMap) -> Headers {
 }
 fn mapping_headers(token: Option<&SecretString>) -> Headers {
     let mut headers = Headers::from([(String::from("Accept"), String::from("application/json"))]);
-    let supplied = token.filter(|token| !token.expose_secret().is_empty());
-    if let Some(token) = supplied {
+    let supplied = token.filter(|candidate| !candidate.expose_secret().is_empty());
+    if let Some(secret) = supplied {
         headers.insert(
             String::from("Authorization"),
-            format!("Bearer {}", token.expose_secret()),
+            format!("Bearer {}", secret.expose_secret()),
         );
     }
     headers

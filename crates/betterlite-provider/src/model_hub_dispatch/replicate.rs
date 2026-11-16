@@ -10,7 +10,7 @@ use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
 use betterlite_prompts::builtin::Message;
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 pub type Completion = ReplicateCompletion;

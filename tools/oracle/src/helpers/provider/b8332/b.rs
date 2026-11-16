@@ -169,7 +169,7 @@ fn log_state() -> Result<(LoggingState, Redactor, Discard), Box<HelperError>> {
         },
         &redactor,
         || String::from("trace"),
-        Duration::default(),
+        Duration::default,
     )
     .map_err(|error| helper_failure("LoggingState", error))?;
     Ok((state, redactor, Discard))
@@ -191,4 +191,3 @@ fn pre_post_env<'env>(redactor: &'env Redactor, sink: &'env Discard) -> PrePostE
         now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").unwrap_or_default(),
     }
 }
-

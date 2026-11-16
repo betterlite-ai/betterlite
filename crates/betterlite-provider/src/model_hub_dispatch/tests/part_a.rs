@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -49,7 +47,7 @@ use super::tokens::Cl100k;
 use super::transport::PostTransport;
 use super::{
     CallLogging, ChatContext, DispatchDeps, HubCompletion, HubDispatchError, HubProvider,
-    ReplicateServices, dispatch, huggingface, polling, predibase, select,
+    ReplicateServices, dispatch, polling, predibase, select,
 };
 use crate::api::rerank_contracts::{BaseRerankConfig, EnvironmentRequest};
 use crate::oci_common::Clock;
@@ -66,6 +64,8 @@ const NOW_SECONDS: i64 = 1_700_000_000;
 const CREATE: &str = r#"{"urls":{"get":"https://poll/1"}}"#;
 const DONE: &str = r#"{"status":"succeeded","output":["ok"]}"#;
 const MODEL: &str = "meta-llama/llama-2-70b-chat";
+const HF_MODEL: &str = "meta-llama/Llama-3-8B-Instruct";
+const PB_MODEL: &str = "meta-llama/llama-2-7b-chat";
 const PROMPT: &str = r#"{"input":{"prompt":"<s>[INST] hi [/INST]\n"}}"#;
 
 struct Discard;
@@ -434,7 +434,7 @@ fn logging(redactor: &Redactor) -> (LoggingState, PrePostEnv<'_>) {
         },
         redactor,
         || "trace".to_owned(),
-        Duration::default(),
+        Duration::default,
     )
     .unwrap();
     let env = PrePostEnv {
@@ -480,6 +480,60 @@ fn selection(tag: ChatConfigTag) -> ConfigSelection<ChatConfigTag> {
     }
 }
 
+fn embedding_call<'call>(
+    input: &'call [String],
+    options: &'call Object,
+    headers: &'call Headers,
+    api_base: Option<&'call str>,
+) -> EmbeddingCall<'call> {
+    EmbeddingCall {
+        model: "org/model",
+        input,
+        optional_params: options,
+        api_key: None,
+        api_base,
+        headers,
+    }
+}
+
+async fn embed_with(
+    services: &Services,
+    env: &BTreeMap<String, String>,
+    call: &EmbeddingCall<'_>,
+) -> (Result<EmbeddingResponse, HubDispatchError>, LoggingState) {
+    let globals = empty_globals();
+    let deps = services.deps(&globals, env);
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let (mut state, log_env) = logging(&redactor);
+    let mut log = CallLogging {
+        state: &mut state,
+        env: &log_env,
+    };
+    let outcome = embed(call, &deps, &mut log).await;
+    (outcome, state)
+}
+
+async fn dispatch_with(
+    services: &Services,
+    env: &BTreeMap<String, String>,
+    tag: ChatConfigTag,
+    call: &mut ChatContext<'_>,
+) -> (
+    Result<Option<HubCompletion>, HubDispatchError>,
+    LoggingState,
+) {
+    let globals = empty_globals();
+    let deps = services.deps(&globals, env);
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let (mut state, log_env) = logging(&redactor);
+    let mut log = CallLogging {
+        state: &mut state,
+        env: &log_env,
+    };
+    let outcome = dispatch(&selection(tag), call, &deps, &mut log).await;
+    (outcome, state)
+}
+
 #[test]
 fn select_maps_only_the_three_hub_tags() {
     assert_eq!(
@@ -501,28 +555,20 @@ fn select_maps_only_the_three_hub_tags() {
 #[tokio::test]
 async fn dispatch_leaves_an_unowned_tag_alone() {
     let services = Services::idle();
-    let globals = empty_globals();
-    let environment = environment(&[]);
-    let deps = services.deps(&globals, &environment);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
     let mut messages = vec![user_message()];
     let mut options = Object::new();
     let mut call = chat_context("m", &mut messages, &mut options, None, None);
-    let completion = dispatch(
-        &selection(ChatConfigTag::OpenAiGpt),
+    let (outcome, state) = dispatch_with(
+        &services,
+        &environment(&[]),
+        ChatConfigTag::OpenAiGpt,
         &mut call,
-        &deps,
-        &mut log,
     )
-    .await
-    .unwrap();
-    assert!(completion.is_none());
+    .await;
+    assert!(outcome.unwrap().is_none());
     assert!(services.post.requests().is_empty());
+    assert!(services.transport.requests().is_empty());
+    assert!(state.model_call_details.get("log_event_type").is_none());
 }
 
 #[test]
@@ -668,7 +714,7 @@ fn huggingface_rerank_base_reads_the_call_then_the_two_variables() {
 }
 
 #[test]
-fn replicate_key_and_base_follow_litellm_order() {
+fn replicate_key_follows_litellm_order() {
     let context = secret("ctx");
     let replicate_global = secret("replicate-global");
     let api = secret("api-global");
@@ -678,7 +724,6 @@ fn replicate_key_and_base_follow_litellm_order() {
     let both = environment(&[
         ("REPLICATE_API_KEY", "replicate-env"),
         ("REPLICATE_API_TOKEN", "replicate-token"),
-        ("REPLICATE_API_BASE", "http://replicate"),
     ]);
     assert_eq!(
         text(replicate_key(Some(&context), &globals, &both).as_ref()),
@@ -704,6 +749,12 @@ fn replicate_key_and_base_follow_litellm_order() {
         Some(String::from("replicate-token"))
     );
     assert!(replicate_key(None, &globals, &environment(&[])).is_none());
+}
+
+#[test]
+fn replicate_base_follows_litellm_order() {
+    let mut globals = empty_globals();
+    let both = environment(&[("REPLICATE_API_BASE", "http://replicate")]);
     assert_eq!(
         replicate_base(Some("http://call"), &globals, &both),
         "http://call"
@@ -716,78 +767,60 @@ fn replicate_key_and_base_follow_litellm_order() {
         replicate_base(None, &globals, &environment(&[])),
         "https://api.replicate.com/v1"
     );
+    let empty = environment(&[("REPLICATE_API_BASE", "")]);
+    assert_eq!(
+        replicate_base(None, &globals, &empty),
+        "https://api.replicate.com/v1"
+    );
 }
 
 #[test]
-fn predibase_pops_tenant_id_before_its_global() {
+fn predibase_pops_tenant_id_before_predibase_tenant_id() {
     let tenant = secret("tenant-global");
     let mut globals = empty_globals();
     globals.predibase_tenant_id = Some(&tenant);
     let env = environment(&[("PREDIBASE_TENANT_ID", "tenant-env")]);
+    let param = PromptJson::Text(String::from("tenant-param"));
     let mut both = object(&[
         ("tenant_id", PromptJson::Text(String::from("tenant-call"))),
-        (
-            "predibase_tenant_id",
-            PromptJson::Text(String::from("tenant-param")),
-        ),
+        ("predibase_tenant_id", param.clone()),
     ]);
-    assert_eq!(
-        text(
-            predibase_tenant_id(&mut both, &globals, &env)
-                .unwrap()
-                .as_ref()
-        ),
-        Some(String::from("tenant-call"))
-    );
+    let first = predibase_tenant_id(&mut both, &globals, &env).unwrap();
+    assert_eq!(text(first.as_ref()).as_deref(), Some("tenant-call"));
     assert!(!both.contains_key("tenant_id"));
     assert!(both.contains_key("predibase_tenant_id"));
-    let mut second = object(&[(
-        "predibase_tenant_id",
-        PromptJson::Text(String::from("tenant-param")),
-    )]);
-    assert_eq!(
-        text(
-            predibase_tenant_id(&mut second, &globals, &env)
-                .unwrap()
-                .as_ref()
-        ),
-        Some(String::from("tenant-param"))
-    );
+    let mut second = object(&[("predibase_tenant_id", param.clone())]);
+    let popped = predibase_tenant_id(&mut second, &globals, &env).unwrap();
+    assert_eq!(text(popped.as_ref()).as_deref(), Some("tenant-param"));
     assert!(second.is_empty());
     let mut nul = object(&[
         ("tenant_id", PromptJson::Null),
-        (
-            "predibase_tenant_id",
-            PromptJson::Text(String::from("tenant-param")),
-        ),
+        ("predibase_tenant_id", param),
     ]);
-    assert_eq!(
-        text(
-            predibase_tenant_id(&mut nul, &globals, &env)
-                .unwrap()
-                .as_ref()
-        ),
-        Some(String::from("tenant-param"))
-    );
-    assert_eq!(
-        text(
-            predibase_tenant_id(&mut Object::new(), &globals, &env)
-                .unwrap()
-                .as_ref()
-        ),
-        Some(String::from("tenant-global"))
-    );
+    let after_null = predibase_tenant_id(&mut nul, &globals, &env).unwrap();
+    assert_eq!(text(after_null.as_ref()).as_deref(), Some("tenant-param"));
+}
+
+#[test]
+fn predibase_tenant_id_falls_back_to_its_global_then_the_variable() {
+    let tenant = secret("tenant-global");
+    let mut globals = empty_globals();
+    globals.predibase_tenant_id = Some(&tenant);
+    let env = environment(&[("PREDIBASE_TENANT_ID", "tenant-env")]);
+    let global = predibase_tenant_id(&mut Object::new(), &globals, &env).unwrap();
+    assert_eq!(text(global.as_ref()).as_deref(), Some("tenant-global"));
     globals.predibase_tenant_id = None;
-    assert_eq!(
-        text(
-            predibase_tenant_id(&mut Object::new(), &globals, &env)
-                .unwrap()
-                .as_ref()
-        ),
-        Some(String::from("tenant-env"))
-    );
+    let variable = predibase_tenant_id(&mut Object::new(), &globals, &env).unwrap();
+    assert_eq!(text(variable.as_ref()).as_deref(), Some("tenant-env"));
+    let empty = environment(&[("PREDIBASE_TENANT_ID", "")]);
     assert!(
-        predibase_tenant_id(&mut Object::new(), &globals, &environment(&[]))
+        predibase_tenant_id(&mut Object::new(), &globals, &empty)
+            .unwrap()
+            .is_none()
+    );
+    let unset = environment(&[]);
+    assert!(
+        predibase_tenant_id(&mut Object::new(), &globals, &unset)
             .unwrap()
             .is_none()
     );
@@ -812,44 +845,38 @@ fn predibase_base_pops_api_base_then_base_url() {
         ("api_base", PromptJson::Text(String::from("http://param"))),
         ("base_url", PromptJson::Text(String::from("http://other"))),
     ]);
-    assert_eq!(
-        predibase_base(Some("http://call"), &globals, &env, &mut both)
-            .unwrap()
-            .as_deref(),
-        Some("http://call")
-    );
+    let call = predibase_base(Some("http://call"), &globals, &env, &mut both).unwrap();
+    assert_eq!(call.as_deref(), Some("http://call"));
     assert!(both.contains_key("api_base"));
     assert!(both.contains_key("base_url"));
-    assert_eq!(
-        predibase_base(None, &globals, &env, &mut both)
-            .unwrap()
-            .as_deref(),
-        Some("http://param")
-    );
+    let param = predibase_base(None, &globals, &env, &mut both).unwrap();
+    assert_eq!(param.as_deref(), Some("http://param"));
     assert!(!both.contains_key("api_base"));
     assert!(both.contains_key("base_url"));
-    assert_eq!(
-        predibase_base(None, &globals, &env, &mut both)
-            .unwrap()
-            .as_deref(),
-        Some("http://other")
-    );
-    assert_eq!(
-        predibase_base(None, &globals, &env, &mut Object::new())
-            .unwrap()
-            .as_deref(),
-        Some("http://env")
-    );
-    let mut with_global = empty_globals();
-    with_global.api_base = Some("http://litellm");
-    assert_eq!(
-        predibase_base(None, &with_global, &environment(&[]), &mut Object::new())
-            .unwrap()
-            .as_deref(),
-        Some("http://litellm")
-    );
+    let other = predibase_base(None, &globals, &env, &mut both).unwrap();
+    assert_eq!(other.as_deref(), Some("http://other"));
+    assert!(both.is_empty());
+}
+
+#[test]
+fn predibase_base_falls_back_to_the_global_then_the_variable() {
+    let mut globals = empty_globals();
+    let env = environment(&[("PREDIBASE_API_BASE", "http://env")]);
+    let variable = predibase_base(None, &globals, &env, &mut Object::new()).unwrap();
+    assert_eq!(variable.as_deref(), Some("http://env"));
+    globals.api_base = Some("http://litellm");
+    let global = predibase_base(None, &globals, &env, &mut Object::new()).unwrap();
+    assert_eq!(global.as_deref(), Some("http://litellm"));
+    globals.api_base = None;
+    let empty = environment(&[("PREDIBASE_API_BASE", "")]);
     assert!(
-        predibase_base(None, &globals, &environment(&[]), &mut Object::new())
+        predibase_base(None, &globals, &empty, &mut Object::new())
+            .unwrap()
+            .is_none()
+    );
+    let unset = environment(&[]);
+    assert!(
+        predibase_base(None, &globals, &unset, &mut Object::new())
             .unwrap()
             .is_none()
     );
