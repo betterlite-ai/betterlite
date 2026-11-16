@@ -1,0 +1,18 @@
+task: B3668
+deviations:
+  - what: process_output_response takes the typed ChatResponse record and a Principal, and builds the guardrail's request data fresh; it has no request_data, logging_obj or user_api_key_dict arguments, so the ended-stream path does not hand the caller's request data to the guardrail.
+    why: The signature is fixed by the task so B3251 can call it. The key metadata comes from the principal's user, team, organization, end user and token fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L383-L488
+  - what: A guardrail that returns a function name or arguments that are not text for a response tool call fails the pass with a message that names the field, and a returned tool call that is not an object fails it too.
+    why: LiteLLM assigns the value to the pydantic object unchecked or raises a TypeError on the dict test; docs/compatibility.md makes a wrong type an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L1078-L1084
+  - what: process_input_messages returns the not-run reason (or nothing) to its caller instead of writing the standard logging guardrail record itself.
+    why: GuardrailContract has no records_own_guardrail_information flag or logging-record writer, so the caller that owns the guardrail records the reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L215-L225
+  - what: A guardrail that returns structured_messages equal to the ones it was sent counts as not having replaced them, so its texts and tool calls are written back.
+    why: LiteLLM compares object identity, which a guardrail returning a fresh copy of unchanged messages would fail; in Rust the equal list is the unchanged one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L158-L170
+kept_bugs:
+  - what: A tool-call rewrite is checked after text rewrites are written, so an undeliverable tool rewrite leaves the chunks with the text rewrite already in them and the caller must release its own copy of the original chunks.
+    why: The pipeline executor that catches UndeliverableStreamRewrite already discards the buffered chunks and releases the originals, and the order is part of what LiteLLM callers see.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L671-L680

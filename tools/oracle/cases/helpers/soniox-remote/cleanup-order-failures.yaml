@@ -1,0 +1,42 @@
+kind: helper
+name: soniox-remote-cleanup-order-failures
+call:
+  soniox_remote:
+    calls:
+    - function: cleanup
+      auth_headers: {Authorization: "Bearer sk-local", x-client: suite}
+      api_base: "https://api.soniox.test"
+      cleanup: [file, transcription]
+      transcription_id: job-7
+      file_id: file-9
+      timeout_ms: 2500
+      answers:
+      - {status: 204, headers: {}, body: '', fail: true}
+      - {status: 500, headers: {}, body: '{"error_message": "gone"}'}
+    - function: cleanup
+      auth_headers: {Authorization: "Bearer sk-local"}
+      api_base: "https://api.soniox.test"
+      cleanup: []
+      transcription_id: job-7
+      file_id: file-9
+      timeout_ms: 2500
+      answers: []
+    - function: cleanup
+      auth_headers: {Authorization: "Bearer sk-local"}
+      api_base: "https://api.soniox.test"
+      cleanup: [transcription, file]
+      transcription_id: null
+      file_id: file-9
+      timeout_ms: 2500
+      answers:
+      - {status: 204, headers: {}, body: ''}
+    - function: cleanup
+      auth_headers: {Authorization: "Bearer sk-local"}
+      api_base: "https://api.soniox.test"
+      cleanup: [transcription]
+      transcription_id: ""
+      file_id: file-9
+      timeout_ms: 2500
+      answers: []
+compare: {ignore: []}
+env: {}
