@@ -40,10 +40,10 @@ fn elapsed_seconds(status: &ROISyncStatus, now: DateTime<Utc>) -> i64 {
         .finished_at
         .as_deref()
         .and_then(|text| DateTime::parse_from_rfc3339(text).ok());
-    let elapsed = finish
-        .unwrap_or(now)
-        .signed_duration_since(started)
-        .num_seconds();
+    let elapsed = finish.map_or_else(
+        || now.signed_duration_since(started).num_seconds(),
+        |finished| finished.signed_duration_since(started).num_seconds(),
+    );
     elapsed.max(0)
 }
 
