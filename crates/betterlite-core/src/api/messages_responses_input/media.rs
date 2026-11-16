@@ -18,7 +18,7 @@ pub(super) fn image_url(source: Option<&ImageSource>) -> Option<String> {
             media_type.as_deref().unwrap_or("image/jpeg"),
             data,
         )),
-        Some(ImageSource::Url { url }) => url.clone().filter(|url| !url.is_empty()),
+        Some(ImageSource::Url { url }) => url.clone().filter(|address| !address.is_empty()),
     }
 }
 
@@ -38,7 +38,7 @@ pub(super) fn document_part(
                 .filter(|media| !media.is_empty())
                 .unwrap_or("application/pdf");
             let filename = title
-                .filter(|title| !title.is_empty())
+                .filter(|name| !name.is_empty())
                 .unwrap_or("document.pdf");
             Some(MessagePart::FileData {
                 filename: filename.to_owned(),
@@ -47,9 +47,9 @@ pub(super) fn document_part(
             })
         }
         DocumentSource::Url { url } => {
-            let url = url.as_deref().filter(|url| !url.is_empty())?;
+            let address = url.as_deref().filter(|value| !value.is_empty())?;
             Some(MessagePart::FileUrl {
-                file_url: url.to_owned(),
+                file_url: address.to_owned(),
                 prompt_cache_breakpoint: marker,
             })
         }

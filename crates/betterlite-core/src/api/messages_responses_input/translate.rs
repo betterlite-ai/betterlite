@@ -136,15 +136,13 @@ fn append_assistant(
     items: &mut Vec<InputItem>,
     content: Option<&Content>,
 ) -> Result<(), MessagesResponsesInputError> {
-    let Some(content) = content else {
-        return Ok(());
-    };
     match content {
-        Content::Text(text) => items.push(InputItem::Message {
+        None => {}
+        Some(Content::Text(text)) => items.push(InputItem::Message {
             role: MessageRole::Assistant,
             content: vec![MessagePart::OutputText { text: text.clone() }],
         }),
-        Content::Blocks(blocks) => append_assistant_blocks(items, blocks)?,
+        Some(Content::Blocks(blocks)) => append_assistant_blocks(items, blocks)?,
     }
     Ok(())
 }
