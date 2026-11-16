@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use rstest::rstest;
 use serde_json::{Value, json};
 
 use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
@@ -34,24 +35,17 @@ fn helper_seeds_select_vertex_files() {
     }));
 }
 
-#[test]
-fn every_preparation_case_matches_litellm() {
-    let cases = Path::new(ORACLE_DIR).join("cases/helpers/vertex-files");
-    let paths: Vec<_> = fs::read_dir(cases)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .collect();
-    assert!(!paths.is_empty());
-    for path in paths {
-        let source = fs::read_to_string(&path).unwrap();
-        let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-        let run = run_case(&[crate::GROUP], &case, false).unwrap();
-        assert!(
-            matches!(run, HelperRun::Match),
-            "{} differs from LiteLLM",
-            path.display()
-        );
-    }
+#[rstest]
+fn matches_pinned_vertex_file_preparation(
+    #[base_dir = "../../.."]
+    #[files("cases/helpers/vertex-files/*.yaml")]
+    path: PathBuf,
+) {
+    let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    assert!(matches!(
+        run_case(&[crate::GROUP], &case, false).unwrap(),
+        HelperRun::Match
+    ));
 }
 
 #[test]
