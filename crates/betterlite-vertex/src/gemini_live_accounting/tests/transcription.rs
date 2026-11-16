@@ -33,6 +33,8 @@ fn estimate(state: &mut LiveSessionState, model: &str) -> Option<TranscriptionUs
 #[case::one_byte(1, 0, 0)]
 #[case::audio_half_below_odd(24_000, 12, 1)]
 #[case::a_minute_of_audio(2_880_000, 1_500, 175)]
+#[case::float_rounds_up_where_the_ratio_ties(104_640, 54, 6)]
+#[case::float_rounds_down_where_the_ratio_ties(110_400, 58, 7)]
 fn the_estimate_rounds_exact_ratios_to_the_even_neighbour(
     #[case] bytes: u64,
     #[case] audio_tokens: i64,

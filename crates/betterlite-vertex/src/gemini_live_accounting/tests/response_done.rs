@@ -238,6 +238,16 @@ fn a_setup_that_is_not_json_fails_before_any_usage_is_consumed() {
 }
 
 #[test]
+fn a_setup_field_litellm_ignores_that_has_the_wrong_type_fails_the_typed_decoder() {
+    let failure = done(
+        &mut LiveSessionState::default(),
+        "{}",
+        &input(Some(r#"{"setup": {"model": 5}}"#), &[]),
+    );
+    assert!(matches!(failure, Err(LiveAccountingError::Setup(_))));
+}
+
+#[test]
 fn usage_metadata_the_chat_calculation_refuses_is_an_error() {
     let source = r#"{"usageMetadata": {"promptTokenCount": 9223372036854775807, "toolUsePromptTokenCount": 1}}"#;
     let failure = done(&mut LiveSessionState::default(), source, &input(None, &[]));
