@@ -60,55 +60,68 @@ pub(crate) fn globals(matches: &ArgMatches) -> GlobalArgs {
     }
 }
 
-pub(crate) fn resolve_for_run(request: Request<'_>) -> Result<CliContext, Failure> {
-    let Request {
-        environment,
-        globals,
-        subcommand,
-        vault,
-        clock,
-        token_path,
-        stderr,
-    } = request;
-    let mut warnings = stderr.clone();
-    let stored_base_url = load_config(environment, &mut warnings)
+pub(crate) fn resolve_for_run(mut request: Request<'_>) -> Result<CliContext, Failure> {
+    let setup = request
+        .subcommand
+        .is_some_and(|name| SETUP_COMMANDS.contains(&name));
+    let (chosen, stored, provided) =
+        base_url_choice(request.environment, &request.globals, &mut request.stderr);
+    let explicit_api_key = request
+        .globals
+        .api_key
+        .take()
+        .or_else(|| env_value(request.environment, API_KEY_ENV).map(SecretString::from));
+    let from_token_file = explicit_api_key.is_none() && !setup;
+    let context = CliContext {
+        base_url: normalize_base_url(&chosen).map_err(Failure::from)?,
+        base_url_explicit: provided.is_some() || (stored.is_some() && !setup),
+        api_key: explicit_api_key,
+        api_key_from_token_file: from_token_file,
+    };
+    if !from_token_file {
+        return Ok(context);
+    }
+    with_stored_key(context, &mut request)
+}
+
+fn base_url_choice(
+    environment: &dyn EnvironmentLookup,
+    globals: &GlobalArgs,
+    warnings: &mut dyn Write,
+) -> (String, Option<String>, Option<String>) {
+    let stored = load_config(environment, warnings)
         .get("base_url")
         .cloned()
         .filter(|value| !value.is_empty());
-    let provided_base_url = globals
+    let provided = globals
         .base_url
-        .or_else(|| env_value(environment, BASE_URL_ENV));
-    let chosen = provided_base_url
         .clone()
-        .or_else(|| stored_base_url.clone())
+        .or_else(|| env_value(environment, BASE_URL_ENV));
+    let chosen = provided
+        .clone()
+        .or_else(|| stored.clone())
         .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned());
-    let setup = subcommand.is_some_and(|name| SETUP_COMMANDS.contains(&name));
-    let explicit_api_key = globals
-        .api_key
-        .or_else(|| env_value(environment, API_KEY_ENV).map(SecretString::from));
-    let api_key_from_token_file = explicit_api_key.is_none() && !setup;
-    let mut context = CliContext {
-        base_url: normalize_base_url(&chosen).map_err(Failure::from)?,
-        base_url_explicit: provided_base_url.is_some() || (stored_base_url.is_some() && !setup),
-        api_key: explicit_api_key,
-        api_key_from_token_file,
-    };
-    if !api_key_from_token_file {
-        return Ok(context);
-    }
-    let Some(token_path) = token_path else {
+    (chosen, stored, provided)
+}
+
+fn with_stored_key(
+    mut context: CliContext,
+    request: &mut Request<'_>,
+) -> Result<CliContext, Failure> {
+    let Some(token_path) = request.token_path else {
         return Ok(context);
     };
+    let stderr = request.stderr.clone();
     let warn = move |message: &str| {
         let mut sink = stderr.clone();
         let _unused = writeln!(sink, "{message}");
     };
-    let client = Arc::new(Client::new(&context, environment).map_err(Failure::from)?);
+    let client = Arc::new(Client::new(&context, request.environment).map_err(Failure::from)?);
     context.api_key = stored_api_key(StoredKey {
         client,
         base_url: &context.base_url,
-        clock,
-        vault,
+        clock: Arc::clone(&request.clock),
+        vault: &mut *request.vault,
         token_path,
         warn: &warn,
     })?;

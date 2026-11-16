@@ -7,6 +7,8 @@ use crate::commands_listing::show_commands;
 
 const BANNER: &str = "   ██████╗ ███████╗████████╗████████╗███████╗██████╗ ██╗     ██╗████████╗███████╗\n   ██╔══██╗██╔════╝╚══██╔══╝╚══██╔══╝██╔════╝██╔══██╗██║     ██║╚══██╔══╝██╔════╝\n   ██████╔╝█████╗     ██║      ██║   █████╗  ██████╔╝██║     ██║   ██║   █████╗\n   ██╔══██╗██╔══╝     ██║      ██║   ██╔══╝  ██╔══██╗██║     ██║   ██║   ██╔══╝\n   ██████╔╝███████╗   ██║      ██║   ███████╗██║  ██║███████╗██║   ██║   ███████╗\n   ╚═════╝ ╚══════╝   ╚═╝      ╚═╝   ╚══════╝╚═╝  ╚═╝╚══════╝╚═╝   ╚═╝   ╚══════╝";
 const WIDTH: usize = 80;
+const BORDER_WIDTH: usize = WIDTH - 2;
+const INNER_WIDTH: usize = WIDTH - 4;
 const MIN_HEIGHT: u16 = 10;
 
 pub trait LineReader {
@@ -30,7 +32,7 @@ impl LineReader for StdinReader {
 pub fn run(session: &mut Session<'_>, reader: &mut dyn LineReader) -> Result<(), Failure> {
     setup(session)?;
     loop {
-        write!(session.streams.stdout, "\n\n")?;
+        writeln!(session.streams.stdout, "\n")?;
         let Some(input) = prompt(session, reader)? else {
             writeln!(session.streams.stdout, "\nGoodbye!")?;
             return Ok(());
@@ -59,7 +61,7 @@ fn setup(session: &mut Session<'_>) -> Result<(), Failure> {
 }
 
 fn show_banner(session: &mut Session<'_>) -> io::Result<()> {
-    write!(session.streams.stdout, "\n{BANNER}\n\n")
+    writeln!(session.streams.stdout, "\n{BANNER}\n")
 }
 
 fn clear_screen(out: &mut dyn io::Write, terminal: bool) -> io::Result<()> {
@@ -144,15 +146,15 @@ fn prompt(session: &mut Session<'_>, reader: &mut dyn LineReader) -> io::Result<
         .size_checked()
         .is_none_or(|(rows, _columns)| rows < MIN_HEIGHT)
     {
-        write!(out, "\n\n\n\n")?;
+        writeln!(out, "\n\n\n")?;
     }
-    let rule = format!("+{}+", "-".repeat(WIDTH - 2));
-    write!(out, "{rule}\n")?;
-    write!(out, "| {} |\n", " ".repeat(WIDTH - 4))?;
-    write!(out, "{rule}\n")?;
+    let rule = format!("+{}+", "-".repeat(BORDER_WIDTH));
+    writeln!(out, "{rule}")?;
+    writeln!(out, "| {} |", " ".repeat(INNER_WIDTH))?;
+    writeln!(out, "{rule}")?;
     write!(out, "\x1b[2A\r| > ")?;
     let line = reader.read_line()?;
-    write!(out, "\x1b[1B\n\n")?;
+    writeln!(out, "\x1b[1B\n")?;
     Ok(line)
 }
 

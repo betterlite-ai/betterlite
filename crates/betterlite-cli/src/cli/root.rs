@@ -75,6 +75,13 @@ pub(crate) fn root_command(environment: &dyn EnvironmentLookup) -> Command {
 }
 
 fn family_commands() -> Vec<Command> {
+    let mut commands = session_commands();
+    commands.extend(management_commands());
+    commands.extend(tool_commands());
+    commands
+}
+
+fn session_commands() -> Vec<Command> {
     vec![
         LoginArgs::augment_args(Command::new("login").about(LOGIN_ABOUT)),
         Command::new("logout").about(LOGOUT_ABOUT),
@@ -96,6 +103,11 @@ fn family_commands() -> Vec<Command> {
         EncryptionCommand::augment_subcommands(
             Command::new("encryption").disable_help_subcommand(true),
         ),
+    ]
+}
+
+fn management_commands() -> Vec<Command> {
+    vec![
         ConfigCommand::augment_subcommands(
             Command::new("config")
                 .about("Manage the stored CLI configuration")
@@ -111,6 +123,11 @@ fn family_commands() -> Vec<Command> {
         Command::new("down")
             .about(DOWN_ABOUT)
             .long_about(DOWN_LONG_ABOUT),
+    ]
+}
+
+fn tool_commands() -> Vec<Command> {
+    vec![
         AutorouteArgs::augment_args(
             Command::new("autoroute")
                 .about(AUTOROUTE_ABOUT)

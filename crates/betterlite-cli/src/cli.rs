@@ -11,6 +11,7 @@ pub(crate) mod version;
 
 pub(crate) mod tests;
 
+use std::env::home_dir;
 use std::io::{self, IsTerminal as _, Write as _};
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ use betterlite_config::loader::startup::process_environment;
 use betterlite_config::sections::chatgpt_token_store::home::HomeEnvironment;
 
 use crate::agent_launch::EnvVars;
+use crate::cli_context::CliContext;
 use crate::commands::Client;
 use crate::keyring::{KeyringVault, SecretVault};
 use crate::shell;
@@ -37,7 +39,7 @@ pub enum Failure {
 
 impl Failure {
     #[must_use]
-    fn code(&self) -> u8 {
+    const fn code(&self) -> u8 {
         match self {
             Self::Usage(_) => 2,
             Self::Plain(_) | Self::Aborted(_) => 1,
@@ -57,7 +59,7 @@ pub fn run(arguments: &[String]) -> u8 {
     let variables = process_environment();
     let environment = HomeEnvironment {
         variables: variables.clone(),
-        home: std::env::home_dir(),
+        home: home_dir(),
     };
     let mut streams = Streams::process();
     let mut vault = match KeyringVault::new(&environment) {
@@ -95,7 +97,7 @@ fn failure_line(failure: &Failure) -> String {
 }
 
 fn start(arguments: &[String], cli: &mut Cli<'_>) -> Result<u8, Failure> {
-    let mut argv = Vec::with_capacity(arguments.len() + 1);
+    let mut argv = Vec::with_capacity(1);
     argv.push(String::from("lite"));
     argv.extend_from_slice(arguments);
     let matches = match root_command(cli.environment).try_get_matches_from(argv) {
@@ -119,8 +121,22 @@ fn start(arguments: &[String], cli: &mut Cli<'_>) -> Result<u8, Failure> {
         version::print_version(&context, &client, &mut cli.streams.stdout)?;
         return Ok(0);
     }
-    let mut session = Session::new(SessionParts {
-        context: &context,
+    let mut session = build_session(&context, client, cli)?;
+    if subcommand.is_none() {
+        let mut reader = shell::StdinReader;
+        shell::run(&mut session, &mut reader)?;
+        return Ok(0);
+    }
+    dispatch::run(&mut session, &matches)
+}
+
+fn build_session<'run>(
+    context: &'run CliContext,
+    client: Arc<Client>,
+    cli: &'run mut Cli<'_>,
+) -> Result<Session<'run>, Failure> {
+    Session::new(SessionParts {
+        context,
         environment: cli.environment,
         vault: &mut *cli.vault,
         streams: cli.streams.clone(),
@@ -128,13 +144,7 @@ fn start(arguments: &[String], cli: &mut Cli<'_>) -> Result<u8, Failure> {
         clock: Arc::new(CliClock),
         base_env: cli.base_env.clone(),
         stdin_is_terminal: cli.stdin_is_terminal,
-    })?;
-    if subcommand.is_none() {
-        let mut reader = shell::StdinReader;
-        shell::run(&mut session, &mut reader)?;
-        return Ok(0);
-    }
-    dispatch::run(&mut session, &matches)
+    })
 }
 
 fn finish_clap(error: &clap::Error, streams: &mut Streams) -> u8 {

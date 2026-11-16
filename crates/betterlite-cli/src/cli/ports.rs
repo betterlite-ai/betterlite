@@ -1,3 +1,4 @@
+use std::env::temp_dir;
 use std::io;
 use std::sync::Arc;
 
@@ -218,14 +219,14 @@ pub(crate) fn statusline(session: &mut Session<'_>, args: StatuslineArgs) -> Res
         .home
         .clone()
         .ok_or_else(|| Failure::Plain(String::from("cannot find your home directory")))?;
-    let temp_dir = std::env::temp_dir();
+    let temp = temp_dir();
     let mut stdin = io::stdin();
     let mut ports = StatuslinePorts {
         stdin: &mut stdin,
         stdout: &mut session.streams.stdout,
         environment: &session.base_env,
         home_dir: &home,
-        temp_dir: &temp_dir,
+        temp_dir: &temp,
     };
     Ok(run_statusline(args, &mut ports)?)
 }

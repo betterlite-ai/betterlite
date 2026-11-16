@@ -1,3 +1,4 @@
+use std::env::current_exe;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -94,7 +95,7 @@ impl<'session> Session<'session> {
             clock: parts.clock,
             redactor,
             token_path: home.as_deref().map(token_file_path),
-            binary_path: std::env::current_exe().ok(),
+            binary_path: current_exe().ok(),
             home,
             expiration_hours,
             base_env: parts.base_env,

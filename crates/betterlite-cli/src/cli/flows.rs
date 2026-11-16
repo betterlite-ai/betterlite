@@ -20,6 +20,7 @@ use crate::commands::Client;
 use crate::commands::configure::{AgentSetupCommand, SetupPorts, run as run_setup};
 use crate::login::ports::{FlowPorts, LoginPorts};
 use crate::login::{LoginArgs, run_login};
+use crate::sso_polling::terminal::Terminal as SelectionTerminal;
 #[cfg(unix)]
 use crate::up::command::run_up;
 #[cfg(unix)]
@@ -29,10 +30,12 @@ use crate::up::signals::SignalStop;
 
 use super::Failure;
 use super::ports::wiring::{Wiring, message_sink, no_browser, path_resolver};
-use super::session::Session;
+use super::session::{Session, SystemEntropy};
 
 pub(crate) fn login(session: &mut Session<'_>, args: LoginArgs) -> Result<(), Failure> {
     let mut wiring = Wiring::new(session)?;
+    let mut entropy = SystemEntropy;
+    let mut selection = SelectionTerminal::default();
     let clock = Arc::clone(&session.clock);
     let mut stdout = session.streams.stdout.clone();
     let mut ports = LoginPorts {
@@ -45,9 +48,9 @@ pub(crate) fn login(session: &mut Session<'_>, args: LoginArgs) -> Result<(), Fa
             http: Arc::clone(&session.client),
             clock: &*clock,
             wall_clock: &*clock,
-            entropy: &mut wiring.entropy,
+            entropy: &mut entropy,
             sleeper: &wiring.sleeper,
-            selection: &mut wiring.selection,
+            selection: &mut selection,
             browser: &no_browser,
             interrupt: &wiring.interrupt,
             token_path: &wiring.token_path,
@@ -61,6 +64,8 @@ pub(crate) fn login(session: &mut Session<'_>, args: LoginArgs) -> Result<(), Fa
 #[cfg(unix)]
 pub(crate) fn up(session: &mut Session<'_>) -> Result<u8, Failure> {
     let mut wiring = Wiring::new(session)?;
+    let mut entropy = SystemEntropy;
+    let mut selection = SelectionTerminal::default();
     let mut login = FlowLogin;
     let signals = SignalStop::default();
     let warn = message_sink(session.streams.stderr.clone());
@@ -74,9 +79,9 @@ pub(crate) fn up(session: &mut Session<'_>) -> Result<u8, Failure> {
         private_files: &wiring.private_files,
         http: Arc::clone(&session.client),
         clock: Arc::clone(&session.clock),
-        entropy: &mut wiring.entropy,
+        entropy: &mut entropy,
         sleeper: &wiring.sleeper,
-        selection: &mut wiring.selection,
+        selection: &mut selection,
         browser: &no_browser,
         interrupt: &wiring.interrupt,
         token_path: &wiring.token_path,
@@ -133,12 +138,6 @@ pub(crate) fn autoroute(session: &mut Session<'_>, args: AutorouteArgs) -> Resul
     let gateway = InstalledGateway {
         resolver: path_resolver(session),
     };
-    let launcher = GatewayLauncher;
-    let port_probe = LoopbackPortProbe;
-    let signals = OsSignals;
-    let signal_port = PathSignals;
-    let tail = StdoutLogTail;
-    let clock = RealClock;
     let mut entropy = OsEntropy;
     let mut ports = AutoroutePorts {
         context: &session.context,
@@ -147,13 +146,13 @@ pub(crate) fn autoroute(session: &mut Session<'_>, args: AutorouteArgs) -> Resul
         prompter: &mut prompter,
         stdin_is_terminal: session.stdin_is_terminal,
         gateway: &gateway,
-        launcher: &launcher,
-        port_probe: &port_probe,
+        launcher: &GatewayLauncher,
+        port_probe: &LoopbackPortProbe,
         liveliness: &liveliness,
-        signals: &signals,
-        signal_port: &signal_port,
-        tail: &tail,
-        clock: &clock,
+        signals: &OsSignals,
+        signal_port: &PathSignals,
+        tail: &StdoutLogTail,
+        clock: &RealClock,
         files: &private_files,
         entropy: &mut entropy,
         binary_path: session.binary_path.as_deref(),

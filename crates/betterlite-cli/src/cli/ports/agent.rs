@@ -11,9 +11,11 @@ use crate::agent_run::prepare::{CodexPreparer, PiPreparer, Preparers};
 use crate::agent_run::sync::{AgentModelSync, SyncContext};
 use crate::codex_catalog::CODEX_BASE_INSTRUCTIONS;
 use crate::commands::Client;
+use crate::sso_polling::terminal::Terminal as SelectionTerminal;
 
 use super::super::Failure;
-use super::super::session::Session;
+use super::super::session::{Session, SystemEntropy};
+use super::super::streams::{Channel, Streams};
 use super::wiring::{Wiring, no_browser};
 
 #[cfg(unix)]
@@ -27,29 +29,14 @@ pub(crate) fn run(
     args: AgentCommandArgs,
 ) -> Result<u8, Failure> {
     let mut setup = Wiring::new(session)?;
-    let client: &Client = &session.client;
-    let pi = PiPreparer {
-        get: client,
-        files: &setup.private_files,
-    };
-    let codex = CodexPreparer {
-        install: &setup.installer,
-    };
+    let mut entropy = SystemEntropy;
+    let mut selection = SelectionTerminal::default();
+    let home = session.home.as_deref();
+    let mut prep = Preparation::new(&session.client, &setup, home, &session.streams);
     let preparers = Preparers {
-        pi: &pi,
-        codex: &codex,
+        pi: &prep.pi,
+        codex: &prep.codex,
     };
-    let sync = model_sync(
-        client,
-        &setup.debug,
-        &setup.private_files,
-        session.home.as_deref(),
-    );
-    let mut messages = StreamMessages {
-        notices: session.streams.stdout.clone(),
-        warnings: session.streams.stderr.clone(),
-    };
-    let mut stdout = session.streams.stdout.clone();
     let mut ports = AgentPorts {
         context: &session.context,
         environment: session.environment,
@@ -58,9 +45,9 @@ pub(crate) fn run(
         private_files: &setup.private_files,
         http: Arc::clone(&session.client),
         clock: Arc::clone(&session.clock),
-        entropy: &mut setup.entropy,
+        entropy: &mut entropy,
         sleeper: &setup.sleeper,
-        selection: &mut setup.selection,
+        selection: &mut selection,
         browser: &no_browser,
         interrupt: &setup.interrupt,
         token_path: &setup.token_path,
@@ -68,17 +55,50 @@ pub(crate) fn run(
         base_env: &session.base_env,
         home: session.home.as_deref(),
         resolver: &setup.resolver,
-        probe: client,
-        sync: &sync,
+        probe: &*session.client,
+        sync: &prep.sync,
         preparers: &preparers,
         launcher: &setup.launcher,
         platform: PLATFORM,
         terminal: Some(&setup.terminal),
-        messages: &mut messages,
-        stdout: &mut stdout,
+        messages: &mut prep.messages,
+        stdout: &mut prep.stdout,
     };
     let code = run_agent_command(binary, args, &mut ports)?;
     Ok(u8::try_from(code).unwrap_or(1))
+}
+
+struct Preparation<'prepared> {
+    pi: PiPreparer<'prepared>,
+    codex: CodexPreparer<'prepared>,
+    sync: AgentModelSync<'prepared>,
+    messages: StreamMessages<Channel, Channel>,
+    stdout: Channel,
+}
+
+impl<'prepared> Preparation<'prepared> {
+    fn new(
+        client: &'prepared Client,
+        setup: &'prepared Wiring,
+        home: Option<&'prepared Path>,
+        streams: &Streams,
+    ) -> Self {
+        Self {
+            pi: PiPreparer {
+                get: client,
+                files: &setup.private_files,
+            },
+            codex: CodexPreparer {
+                install: &setup.installer,
+            },
+            sync: model_sync(client, &setup.debug, &setup.private_files, home),
+            messages: StreamMessages {
+                notices: streams.stdout.clone(),
+                warnings: streams.stderr.clone(),
+            },
+            stdout: streams.stdout.clone(),
+        }
+    }
 }
 
 fn model_sync<'sync>(

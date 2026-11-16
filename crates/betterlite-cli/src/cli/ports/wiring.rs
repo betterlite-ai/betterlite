@@ -1,3 +1,4 @@
+use std::env::current_dir;
 use std::ffi::OsString;
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -11,10 +12,9 @@ use crate::agent_run::resolver::PathResolver;
 use crate::credential_lifecycle::files::ManagedTokenFile;
 use crate::login::NeverInterrupted;
 use crate::sso_polling::polling::ThreadSleeper;
-use crate::sso_polling::terminal::Terminal as SelectionTerminal;
 
 use super::super::Failure;
-use super::super::session::{Session, SystemEntropy};
+use super::super::session::Session;
 use super::super::streams::Channel;
 
 pub(crate) fn token_path(session: &Session<'_>) -> Result<PathBuf, Failure> {
@@ -38,12 +38,12 @@ pub(crate) fn message_sink(channel: Channel) -> impl Fn(&str) + Send + Sync {
     }
 }
 
-pub(crate) fn no_browser(_url: &str) {}
+pub(crate) const fn no_browser(_url: &str) {}
 
 pub(crate) fn path_resolver(session: &Session<'_>) -> PathResolver {
     PathResolver {
         search_path: OsString::from(session.environment.lookup("PATH").unwrap_or_default()),
-        current_dir: std::env::current_dir().unwrap_or_else(|_error| PathBuf::from(".")),
+        current_dir: current_dir().unwrap_or_else(|_error| PathBuf::from(".")),
     }
 }
 
@@ -51,8 +51,6 @@ pub(crate) struct Wiring {
     pub files: ManagedTokenFile,
     pub private_files: PrivateFiles,
     pub token_path: PathBuf,
-    pub selection: SelectionTerminal,
-    pub entropy: SystemEntropy,
     pub terminal: AgentTerminal,
     pub resolver: PathResolver,
     pub installer: StdStatuslineInstaller,
@@ -72,8 +70,6 @@ impl Wiring {
             },
             private_files: PrivateFiles::default(),
             token_path,
-            selection: SelectionTerminal::default(),
-            entropy: SystemEntropy,
             terminal: AgentTerminal,
             resolver: path_resolver(session),
             installer: StdStatuslineInstaller,

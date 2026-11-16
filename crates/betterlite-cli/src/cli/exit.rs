@@ -34,99 +34,67 @@ impl From<clap::Error> for Failure {
     }
 }
 
-impl From<ClientError> for Failure {
-    fn from(error: ClientError) -> Self {
-        Self::Plain(error.to_string())
-    }
-}
-
-impl From<ModelsError> for Failure {
-    fn from(error: ModelsError) -> Self {
-        let message = error.to_string();
-        match &error {
-            ModelsError::Regex { .. }
-            | ModelsError::RegexMatch { .. }
-            | ModelsError::Pair { .. }
-            | ModelsError::Duplicate { .. }
-            | ModelsError::MissingSelector
-            | ModelsError::BothSelectors => Self::Usage(message),
-            _ => Self::Plain(message),
-        }
-    }
-}
-
-impl From<CredentialsError> for Failure {
-    fn from(error: CredentialsError) -> Self {
-        let message = error.to_string();
-        match &error {
-            CredentialsError::InvalidJson { .. } => Self::Usage(message),
-            CredentialsError::Aborted => Self::Aborted(message),
-            _ => Self::Plain(message),
-        }
-    }
-}
-
-impl From<KeysError> for Failure {
-    fn from(error: KeysError) -> Self {
-        let message = error.to_string();
-        match &error {
-            KeysError::Usage(_) => Self::Usage(message),
-            KeysError::Aborted => Self::Aborted(message),
-            _ => Self::Plain(message),
-        }
-    }
-}
-
-impl From<HttpError> for Failure {
-    fn from(error: HttpError) -> Self {
-        let message = error.to_string();
-        match &error {
-            HttpError::HeaderFormat { .. }
-            | HttpError::InvalidJson { .. }
-            | HttpError::Method { .. } => Self::Usage(message),
-            HttpError::Aborted => Self::Aborted(message),
-            _ => Self::Plain(message),
-        }
-    }
-}
-
-impl From<TeamsError> for Failure {
-    fn from(error: TeamsError) -> Self {
-        Self::Aborted(error.to_string())
-    }
-}
-
-impl From<ConfigError> for Failure {
-    fn from(error: ConfigError) -> Self {
-        let message = error.to_string();
-        match &error {
-            ConfigError::Usage(_) => Self::Usage(message),
-            _ => Self::Plain(message),
-        }
-    }
-}
-
-impl From<ConfigureCommandError> for Failure {
-    fn from(error: ConfigureCommandError) -> Self {
-        let message = error.to_string();
-        match &error {
-            ConfigureCommandError::Usage(_) => Self::Usage(message),
-            _ => Self::Plain(message),
-        }
-    }
-}
-
-macro_rules! plain_failures {
-    ($($error:ty),* $(,)?) => {
+macro_rules! failure_from {
+    (plain $($error:ty),* $(,)?) => {
         $(impl From<$error> for Failure {
             fn from(error: $error) -> Self {
                 Self::Plain(error.to_string())
             }
         })*
     };
+    (aborted $error:ty) => {
+        impl From<$error> for Failure {
+            fn from(error: $error) -> Self {
+                Self::Aborted(error.to_string())
+            }
+        }
+    };
+    ($error:ty, usage = [$($usage:pat),* $(,)?] $(, aborted = [$($aborted:pat),* $(,)?])?) => {
+        impl From<$error> for Failure {
+            fn from(error: $error) -> Self {
+                let message = error.to_string();
+                let aborted = false $(|| matches!(&error, $($aborted)|*))?;
+                if matches!(&error, $($usage)|*) {
+                    Self::Usage(message)
+                } else if aborted {
+                    Self::Aborted(message)
+                } else {
+                    Self::Plain(message)
+                }
+            }
+        }
+    };
 }
 
-plain_failures!(
+failure_from!(aborted TeamsError);
+
+failure_from!(
+    ModelsError,
+    usage = [
+        Regex { .. },
+        RegexMatch { .. },
+        Pair { .. },
+        Duplicate { .. },
+        MissingSelector,
+        BothSelectors,
+    ]
+);
+failure_from!(
+    CredentialsError,
+    usage = [InvalidJson { .. }],
+    aborted = [Aborted]
+);
+failure_from!(KeysError, usage = [Usage(_)], aborted = [Aborted]);
+failure_from!(
+    HttpError,
+    usage = [HeaderFormat { .. }, InvalidJson { .. }, Method { .. }],
+    aborted = [Aborted]
+);
+failure_from!(ConfigError, usage = [Usage(_)]);
+failure_from!(ConfigureCommandError, usage = [Usage(_)]);
+
+failure_from!(plain
+    ClientError,
     UsersError,
     ModelGroupsError,
     EncryptionError,
@@ -138,5 +106,5 @@ plain_failures!(
     BackupError,
     CommandsError,
     StatuslineError,
-    AgentDispatchError,
+    AgentDispatchError
 );
