@@ -59,6 +59,10 @@ fn translated(messages: &str) -> Json {
     r#"[{"role": "user", "content": [{"type": "document", "source": {"type": "file", "file_id": "file-1"}}]}]"#,
     "[]"
 )]
+#[case::container_upload_skipped(
+    r#"[{"role": "user", "content": [{"type": "container_upload", "file_id": "file-1"}, {"type": "document", "source": {"type": "base64", "data": "QUJD"}}]}]"#,
+    r#"[{"type": "message", "role": "user", "content": [{"type": "input_file", "filename": "document.pdf", "file_data": "data:application/pdf;base64,QUJD"}]}]"#
+)]
 #[case::marker_carried(
     r#"[{"role": "user", "content": [{"type": "document", "source": {"type": "base64", "data": "QUJD"}, "prompt_cache_breakpoint": {"mode": "explicit"}}]}]"#,
     r#"[{"type": "message", "role": "user", "content": [{"type": "input_file", "filename": "document.pdf", "file_data": "data:application/pdf;base64,QUJD", "prompt_cache_breakpoint": {"mode": "explicit"}}]}]"#
@@ -210,6 +214,10 @@ fn tool_result_output(#[case] messages: &str, #[case] expected: &str) {
 #[case::mixed_encrypted_run(
     r#"[{"role": "assistant", "content": [{"type": "thinking", "thinking": "a"}, {"type": "redacted_thinking", "data": "litellm_encrypted_reasoning:E"}, {"type": "thinking", "thinking": "b"}]}]"#,
     r#"[{"type": "reasoning", "summary": [{"type": "summary_text", "text": "a"}]}, {"type": "reasoning", "summary": [], "encrypted_content": "E"}, {"type": "reasoning", "summary": [{"type": "summary_text", "text": "b"}]}]"#
+)]
+#[case::compaction_splits_run(
+    r#"[{"role": "assistant", "content": [{"type": "thinking", "thinking": "a"}, {"type": "compaction", "content": "sum", "signature": "sig"}, {"type": "thinking", "thinking": "b"}]}]"#,
+    r#"[{"type": "reasoning", "summary": [{"type": "summary_text", "text": "a"}]}, {"type": "reasoning", "summary": [{"type": "summary_text", "text": "b"}]}]"#
 )]
 #[case::text_blocks_become_one_message(
     r#"[{"role": "assistant", "content": [{"type": "text", "text": "first"}, {"type": "thinking", "thinking": "why"}, {"type": "text", "text": "second"}]}]"#,
