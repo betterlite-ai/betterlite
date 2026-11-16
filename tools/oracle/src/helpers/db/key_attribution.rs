@@ -10,6 +10,8 @@ use betterlite_db::key_attribution::rows::{
     DailyOwnerRow, TokenDigestRow, daily_owners, digest_keys, token_metadata, unresolved_digests,
 };
 use betterlite_models::key_digest::is_valid_sha256_hash;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -39,10 +41,10 @@ struct Output {
     export: Vec<BTreeMap<String, JsonData>>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let details = user_details(&input.users);
         let mut attached = input.attach_metadata.clone();
         attach_details(&mut attached, &details);
@@ -59,7 +61,7 @@ impl crate::helpers::Helper for Op {
             export: fill_export(input, &details),
         };
         serde_json::to_value(output).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,

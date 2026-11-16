@@ -16,7 +16,9 @@ use super::script::{
     runtime,
 };
 use super::{HeaderRequest, MapCase, ReplyCase, RequestCase};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Runtime;
 
 pub(super) const fn polling_for(
     retries: i32,
@@ -89,11 +91,7 @@ pub(super) fn headers(requests: &[HeaderRequest]) -> HelperResult {
     Ok(json!({"headers": found}))
 }
 
-fn request_outcome(
-    runtime: &tokio::runtime::Runtime,
-    prompts: &PromptFactory,
-    case: &RequestCase,
-) -> Value {
+fn request_outcome(runtime: &Runtime, prompts: &PromptFactory, case: &RequestCase) -> Value {
     let mut messages = case.messages.clone();
     let mut optional_params = case.optional_params.clone();
     let outcome = runtime.block_on(transform_request(
@@ -131,7 +129,7 @@ pub(super) fn requests(cases: &[RequestCase]) -> HelperResult {
 }
 
 fn reply_outcome(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
     counter: &StandInCounter,
     logger: &SilentLogger,
     case: &ReplyCase,

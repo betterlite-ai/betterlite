@@ -19,7 +19,9 @@ use betterlite_rate_limit::limiter_records::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
@@ -165,7 +167,7 @@ fn lua_answer(
     keys: &[String],
     args: &[i64],
     meta: &[AtomicCounterMeta],
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let raw: Vec<CacheCounterValue> = reply.iter().map(CounterValueInput::counter_value).collect();
     let response = build_atomic_response(&raw, meta).or_value_error()?;
     Ok(json!({
@@ -176,9 +178,9 @@ fn lua_answer(
     }))
 }
 
-fn in_memory_answer(input: &Input, meta: &[AtomicCounterMeta]) -> crate::helpers::HelperResult {
+fn in_memory_answer(input: &Input, meta: &[AtomicCounterMeta]) -> HelperResult {
     let cache = RecordingCache::new(&input.cache);
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let response = runtime
         .block_on(check_in_memory(&cache, meta, input.now))
         .or_value_error()?;
@@ -192,10 +194,10 @@ fn in_memory_answer(input: &Input, meta: &[AtomicCounterMeta]) -> crate::helpers
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let (keys, args, meta) = build_payload(
             &input.descriptor,
             input.increment,

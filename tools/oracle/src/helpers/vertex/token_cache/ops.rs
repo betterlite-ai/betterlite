@@ -12,7 +12,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use super::input::{CredentialCase, Input, ProbeCase, RecordCase, Scenario, StateName};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 const NOW: SystemTime = SystemTime::UNIX_EPOCH;
 

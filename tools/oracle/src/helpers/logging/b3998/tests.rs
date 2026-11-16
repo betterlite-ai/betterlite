@@ -2,17 +2,15 @@
 
 use std::path::Path;
 
-use crate::case::{LoadedCase, load_cases};
-use crate::helpers::{HelperRun, run_case};
+use betterlite_oracle_runner::case::load_helper_cases;
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 
 #[test]
 fn replays_corpus() {
-    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("cases/logging/gcs-bucket-logging");
-    let cases = load_cases(&[folder]).unwrap();
-    assert!(cases.iter().all(|case| {
-        let LoadedCase::Helper(helper) = case else {
-            return false;
-        };
-        matches!(run_case(helper, false).unwrap(), HelperRun::Match)
-    }));
+    let folder = Path::new(ORACLE_DIR).join("cases/logging/gcs-bucket-logging");
+    let cases = load_helper_cases(&[folder]).unwrap();
+    assert!(cases.iter().all(|case| matches!(
+        run_case(&[crate::GROUP], case, false).unwrap(),
+        HelperRun::Match
+    )));
 }

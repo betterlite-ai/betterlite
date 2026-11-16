@@ -93,7 +93,7 @@ impl FixtureStream {
         if self.seek == SeekMode::Fails {
             return Err(io::Error::other("the fixture seek fails"));
         }
-        self.position = usize::try_from(position).map_err(|_| io::Error::other("position"))?;
+        self.position = usize::try_from(position).map_err(io::Error::other)?;
         Ok(())
     }
 }
@@ -117,7 +117,7 @@ impl AudioStream for FixtureStream {
     }
 
     fn tell(&mut self) -> Option<io::Result<u64>> {
-        Some(u64::try_from(self.position).map_err(|_| io::Error::other("position")))
+        Some(u64::try_from(self.position).map_err(io::Error::other))
     }
 
     fn seek(&mut self, position: u64) -> Option<io::Result<()>> {

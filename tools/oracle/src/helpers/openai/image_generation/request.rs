@@ -24,7 +24,9 @@ use serde_json::{Value, json};
 
 use super::input::Probe;
 use super::support::{NOW, invalid};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 struct FakeTransport<'probe> {
     probe: &'probe Probe,
@@ -33,7 +35,7 @@ struct FakeTransport<'probe> {
 }
 
 impl<'probe> FakeTransport<'probe> {
-    fn new(probe: &'probe Probe) -> Result<Self, Box<crate::helpers::HelperError>> {
+    fn new(probe: &'probe Probe) -> Result<Self, Box<HelperError>> {
         let headers = HeaderMap::try_from(&probe.reply.headers)
             .map_err(|error| invalid(error.to_string()))?;
         Ok(Self {
@@ -133,7 +135,7 @@ impl ImageGenerationLogger for Recorder {
 
 pub(crate) fn value(probe: &Probe) -> HelperResult {
     let transport = FakeTransport::new(probe)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| invalid(error.to_string()))?;
@@ -169,7 +171,7 @@ pub(crate) fn value(probe: &Probe) -> HelperResult {
 
 fn outcome_parts(
     outcome: Result<ImageGenerationOutcome, ImageGenerationFailure>,
-) -> Result<(Value, Value, Value), Box<crate::helpers::HelperError>> {
+) -> Result<(Value, Value, Value), Box<HelperError>> {
     match outcome {
         Ok(found) => Ok((
             serde_json::to_value(&found.reply).map_err(|error| invalid(error.to_string()))?,

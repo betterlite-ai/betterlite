@@ -1,6 +1,8 @@
 use betterlite_openai::api::file_type_records::{
     FileType, FileTypeError, extension_from_mime, find_type, gemini_accepts, mime_from_type,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -65,11 +67,11 @@ fn run_conversion(input: &Input) -> Result<Value, String> {
 }
 
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         run_conversion(input).map_err(|message| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: String::from("InvalidInput"),
                 status: None,
                 error_type: None,
