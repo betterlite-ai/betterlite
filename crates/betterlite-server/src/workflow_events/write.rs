@@ -29,12 +29,15 @@ pub(super) trait PendingWrite {
 }
 
 // A collision means another writer committed that number, so the next attempt asks for a fresh MAX+1
-pub(super) async fn append_with_retry<Pending: PendingWrite + Sync>(
+pub(super) async fn append_with_retry<Pending>(
     runs: &dyn WorkflowRunStore,
     store: &dyn WorkflowEventStore,
     run_id: &str,
     pending: &Pending,
-) -> Result<Pending::Row, EventsError> {
+) -> Result<Pending::Row, EventsError>
+where
+    Pending: PendingWrite + Sync,
+{
     let table = pending.table();
     let mut remaining = MAX_SEQUENCE_RETRIES;
     loop {

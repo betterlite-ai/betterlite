@@ -50,7 +50,8 @@ pub(in crate::workflow_events) async fn append_event(
     Path(run_id): Path<String>,
     body: Bytes,
 ) -> Result<Json<WorkflowEventRow>, EventsError> {
-    let (request, runs, writes) = prepare_append(&state, identity, &body, &run_id).await?;
+    let (request, runs, writes) =
+        prepare_append::<WorkflowEventCreateRequest>(&state, identity, &body, &run_id).await?;
     let new_status = EVENT_STATUS_MAP
         .iter()
         .find(|(event_type, _status)| *event_type == request.event_type.as_str())

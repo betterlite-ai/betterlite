@@ -1,6 +1,6 @@
 use axum::Router;
 use axum::extract::Extension;
-use axum::routing::{get, post};
+use axum::routing::post;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::workflow_events::WorkflowEventsState;

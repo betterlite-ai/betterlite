@@ -494,8 +494,8 @@ pub(super) fn state(store: Option<&Arc<FakeStore>>) -> WorkflowEventsState {
             events: None,
         };
     };
-    let runs: Arc<dyn WorkflowRunStore> = Arc::clone(fake);
-    let events: Arc<dyn WorkflowEventStore> = Arc::clone(fake);
+    let runs: Arc<dyn WorkflowRunStore> = Arc::<FakeStore>::clone(fake);
+    let events: Arc<dyn WorkflowEventStore> = Arc::<FakeStore>::clone(fake);
     WorkflowEventsState {
         runs: Some(runs),
         events: Some(events),
