@@ -7,8 +7,8 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::support::{
-    Call, Fixture, FixtureError, api_key_header, dead_address, posted, provider_error, run_async,
-    serve_with_body, transport_error,
+    Call, Fixture, FixtureError, api_key_header, clients, dead_address, posted, provider_error,
+    run_async, serve_with_body, transport_error,
 };
 use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::tests::support as base;
