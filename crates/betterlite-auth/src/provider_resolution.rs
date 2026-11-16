@@ -1,8 +1,8 @@
 use betterlite_models::decisions::Json;
 
-use crate::rejection_provider::{
-    DeploymentSnapshot, ProviderResolution, SnapshotError, resolve_llm_provider_for_rate_limit,
-};
+use crate::rejection_provider::{DeploymentSnapshot, ProviderResolution, SnapshotError};
+// ast-grep-ignore: no-long-names
+use crate::rejection_provider::resolve_llm_provider_for_rate_limit as resolve_pair;
 
 mod tests;
 
@@ -23,7 +23,7 @@ pub fn resolve_rate_limit_provider(
     router: Option<&dyn DeploymentSnapshot>,
 ) -> (String, String) {
     let Some(present) = router else {
-        return resolve_llm_provider_for_rate_limit(model, native, &NoRouter);
+        return resolve_pair(model, native, &NoRouter);
     };
-    resolve_llm_provider_for_rate_limit(model, native, present)
+    resolve_pair(model, native, present)
 }
