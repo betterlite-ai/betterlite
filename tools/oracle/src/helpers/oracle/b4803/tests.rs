@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use crate::case::{LoadedCase, load_cases};
-use crate::helpers::{HelperRun, run_case};
+use crate::helpers::GROUPS;
+use betterlite_oracle_runner::helpers::{HelperRun, run_case};
 use rstest::rstest;
 use std::path::Path;
 
@@ -33,5 +34,8 @@ fn a2a_completion_bridge(#[case] name: &str) {
     let LoadedCase::Helper(case) = &cases[0] else {
         panic!("expected helper");
     };
-    assert!(matches!(run_case(case, false).unwrap(), HelperRun::Match));
+    assert!(matches!(
+        run_case(&GROUPS, case, false).unwrap(),
+        HelperRun::Match
+    ));
 }

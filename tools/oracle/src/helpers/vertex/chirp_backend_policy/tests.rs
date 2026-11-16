@@ -5,13 +5,14 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
-use crate::helpers::{HelperRun, run_case};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperRun, run_case};
 
 #[rstest]
 fn helper_seeds_select_chirp_backend_policy(
-    #[files("fuzz/corpus/helper_case/chirp_backend_policy*")] path: PathBuf,
+    #[base_dir = "../../.."]
+    #[files("fuzz/corpus/helper_case/chirp_backend_policy*")]
+    path: PathBuf,
 ) {
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     validate_helper(&path, &case).unwrap();
@@ -20,8 +21,13 @@ fn helper_seeds_select_chirp_backend_policy(
 
 #[rstest]
 fn matches_pinned_chirp_backend_policy(
-    #[files("cases/helpers/chirp-backend-policy/*.yaml")] path: PathBuf,
+    #[base_dir = "../../.."]
+    #[files("cases/helpers/chirp-backend-policy/*.yaml")]
+    path: PathBuf,
 ) {
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-    assert!(matches!(run_case(&case, false).unwrap(), HelperRun::Match));
+    assert!(matches!(
+        run_case(&[crate::GROUP], &case, false).unwrap(),
+        HelperRun::Match
+    ));
 }

@@ -6,7 +6,9 @@ use betterlite_openai::response_params::params::{ResponsesOptions, ResponsesPara
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 mod calls;
 mod fixture;
@@ -67,7 +69,7 @@ impl Helper for Op {
     type Input = Call;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| {

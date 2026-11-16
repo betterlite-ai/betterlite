@@ -1,4 +1,5 @@
 use betterlite_bedrock::file_content::{FileContentError, RawResponse, transform_file_response};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -10,10 +11,10 @@ pub(crate) struct Input {
     response: RawResponse,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let response = input.response.clone();
         let result = match transform_file_response(response) {
             Ok(content) => json!({

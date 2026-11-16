@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use super::Seed;
 use super::failure;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 mod queries;
 

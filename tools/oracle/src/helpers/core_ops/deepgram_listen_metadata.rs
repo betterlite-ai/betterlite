@@ -10,11 +10,14 @@ use betterlite_core::api::deepgram::listen_metadata::target::{
     parse_listen_target, websocket_target,
 };
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::fmt::Display;
 
-type Failure = Box<crate::helpers::HelperError>;
+type Failure = Box<HelperError>;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -47,10 +50,10 @@ enum Function {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut bundled = BundledCatalog::default();
         let catalog = bundled.get();
         let outcomes = input
@@ -116,9 +119,9 @@ fn required<'call>(value: Option<&'call String>, name: &str) -> Result<&'call st
 
 fn failure<Error>(error: Error) -> Failure
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

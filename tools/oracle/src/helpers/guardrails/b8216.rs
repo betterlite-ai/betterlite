@@ -11,10 +11,15 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, redact};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{
+    MockScript, ProviderCall, redact_credentials,
+};
+use std::slice;
+use tokio::runtime::{Builder, Runtime};
 
 pub(crate) struct Op;
 
@@ -40,7 +45,7 @@ struct Settings {
     timeout: Option<f64>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = ZscalerCall;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -66,13 +71,13 @@ fn call(input: &ZscalerCall) -> HelperResult {
 }
 
 fn start_mock(answer: &UpstreamAnswer) -> Result<MockProvider, Box<HelperError>> {
-    let script = MockScript::try_from(std::slice::from_ref(answer))
+    let script = MockScript::try_from(slice::from_ref(answer))
         .map_err(|error| failure("MockError", None, error.to_string()))?;
     MockProvider::start(script).map_err(|error| failure("MockError", None, error.to_string()))
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("OSError", None, error.to_string()))
@@ -80,7 +85,7 @@ fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
 
 fn output(
     result: Result<Inputs, ZscalerAiGuardError>,
-    recorded: Option<crate::routing_mock_scripts::ProviderCall>,
+    recorded: Option<ProviderCall>,
     api_key: Option<&str>,
 ) -> HelperResult {
     let (method, path, headers, body) = match recorded {
@@ -178,7 +183,7 @@ fn authorization_value(
 ) -> Option<String> {
     let expected = format!("Bearer {}", api_key.unwrap_or_default());
     let mut probe = BTreeMap::from([("authorization".to_owned(), expected.clone())]);
-    redact(&mut probe);
+    redact_credentials(&mut probe);
     (recorded.get("authorization") == probe.get("authorization")).then_some(expected)
 }
 

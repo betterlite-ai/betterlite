@@ -9,7 +9,8 @@ use betterlite_prompts::response_tool_calls::tools::has_tool_with_name;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -121,7 +122,7 @@ fn resolve_calls(calls: &[StructuredCall]) -> Vec<Option<Vec<Message>>> {
     results
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

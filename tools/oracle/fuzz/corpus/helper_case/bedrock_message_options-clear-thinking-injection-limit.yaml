@@ -1,0 +1,32 @@
+kind: helper
+name: bedrock_message_options-clear-thinking-injection-limit
+call:
+  bedrock_message_options:
+    function: ensure_thinking
+    model_cost:
+      fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      bedrock/fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      anthropic.claude-opus-4-5-fixture: {litellm_provider: bedrock}
+      bedrock/anthropic.claude-opus-4-5-fixture: {litellm_provider: bedrock}
+    cases:
+      - model: anthropic.claude-opus-4-5-fixture
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: disabled}
+          max_tokens: 16
+      - model: anthropic.claude-opus-4-5-fixture
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: disabled}
+          max_tokens: 1025
+      - model: anthropic.claude-opus-4-5-fixture
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: disabled}
+          max_tokens: true
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          max_tokens: 2048
+env: {}
+compare: {ignore: []}

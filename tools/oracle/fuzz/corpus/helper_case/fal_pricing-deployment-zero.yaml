@@ -1,0 +1,17 @@
+kind: helper
+name: fal-pricing-deployment-zero-seed
+call:
+  fal_pricing:
+    operation: deployment_zero_wins
+    model: fal_ai/fal-ai/flux/schnell
+    catalog:
+      fal_ai/fal-ai/flux/schnell: {litellm_provider: fal_ai, output_cost_per_image: 0.5}
+      fal_ai/high/1024-x-768/fal-ai/flux/schnell: {litellm_provider: fal_ai, output_cost_per_image: 0.25}
+    cases:
+      - images: [{width: 1024, height: 768}]
+        optional_params: {}
+        model_info: {output_cost_per_image: 0}
+    passthrough_cases: []
+env: {}
+compare:
+  ignore: []

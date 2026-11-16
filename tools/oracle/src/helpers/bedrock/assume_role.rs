@@ -1,4 +1,3 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use aws_smithy_async::{
     rt::sleep::{SharedAsyncSleep, TokioSleep},
     time::{SharedTimeSource, StaticTimeSource},
@@ -16,12 +15,15 @@ use betterlite_bedrock::assume_role::{
     is_already_running_as_role, parse_role_arn,
 };
 use betterlite_bedrock::aws_settings::sources::NativeSources;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::{DateTime, Utc};
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{json, value::RawValue};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{collections::BTreeMap, fmt::Display, io, sync::Arc, time::Duration, time::UNIX_EPOCH};
+use tokio::runtime::Builder;
 
 mod tests;
 
@@ -107,7 +109,7 @@ fn probe(input: &Probe) -> HelperResult {
         sleep: SharedAsyncSleep::new(TokioSleep::new()),
         timeout: Duration::from_secs(5),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(failure)?;

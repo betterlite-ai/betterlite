@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::sentry::pattern::{self, scrub as scrub_text};
 use betterlite_redact::sentry::scrub::{EventValue, walk};
 use betterlite_redact::sentry::settings::{SEND_DEFAULT_PII_ENV, build_sentry_init_options};
@@ -35,10 +37,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let result = match input {
             Input::ScrubText {
                 text,
@@ -77,8 +79,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn as_helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    let error = crate::helpers::HelperError {
+fn as_helper_error(class: &str, message: String) -> Box<HelperError> {
+    let error = HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
@@ -92,7 +94,7 @@ fn as_helper_error(class: &str, message: String) -> Box<crate::helpers::HelperEr
 fn decode_event(
     event: &serde_json::Value,
     event_json: Option<&String>,
-) -> Result<EventValue, Box<crate::helpers::HelperError>> {
+) -> Result<EventValue, Box<HelperError>> {
     if event_json.is_some() && !event.is_null() {
         return Err(as_helper_error(
             "ValueError",
@@ -110,7 +112,7 @@ fn decode_and_scrub_event(
     event: &serde_json::Value,
     event_json: Option<&String>,
     send_default_pii: bool,
-) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
+) -> Result<serde_json::Value, Box<HelperError>> {
     let typed = decode_event(event, event_json)?;
     let scrubbed = pattern::build(
         send_default_pii,

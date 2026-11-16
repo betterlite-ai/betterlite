@@ -1,4 +1,3 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::Sections;
 use betterlite_models::baseten_endpoint;
@@ -7,9 +6,12 @@ use betterlite_openai::hosted_chat_options::baseten::{self, BasetenSettings};
 use betterlite_openai::hosted_chat_options::cerebras::{self, CerebrasSettings};
 use betterlite_openai::hosted_chat_options::featherless::{self, DropParams, FeatherlessSettings};
 use betterlite_openai::hosted_chat_options::{CompatibleChatAlias, aiml, map_renaming_token_limit};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde::de::Error as _;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -149,7 +151,7 @@ fn info(call: &InfoCall, sections: &Sections) -> Value {
 }
 fn token_limit_map<Settings>(call: &MapCall, supported: &[&str]) -> Result<Value, Box<HelperError>>
 where
-    Settings: serde::Serialize + serde::de::DeserializeOwned,
+    Settings: serde::Serialize + DeserializeOwned,
 {
     let mut options = IndexMap::new();
     map_renaming_token_limit(
@@ -189,7 +191,7 @@ fn mapped_value(
 }
 fn class_snapshot<Settings>(config: &BTreeMap<String, Value>) -> Result<Value, Box<HelperError>>
 where
-    Settings: serde::Serialize + serde::de::DeserializeOwned,
+    Settings: serde::Serialize + DeserializeOwned,
 {
     let object = Value::Object(config.clone().into_iter().collect());
     let settings: Settings = serde_json::from_value(object)?;

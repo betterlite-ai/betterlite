@@ -3,7 +3,8 @@ use betterlite_guardrails::unified_dispatch::emit::{HttpErrorDetail, StreamHttpE
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn to_json(value: &GuardrailValue) -> HelperResult {
     match serde_json::to_value(value) {

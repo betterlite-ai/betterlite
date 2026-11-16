@@ -1,7 +1,7 @@
 use betterlite_prompts::anthropic_invokes::documents::FileMessageError;
 use betterlite_prompts::anthropic_results::images::ImageError;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn helper_failure(status: Option<u16>, message: String) -> Box<HelperError> {
     Box::new(HelperError {
