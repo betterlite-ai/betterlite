@@ -373,6 +373,7 @@ async fn write_url_and_body(#[case] bucket: &str) {
 #[rstest]
 #[case::forbidden("403 Forbidden")]
 #[case::server_error("500 Internal Server Error")]
+#[case::redirect("302 Found")]
 #[tokio::test]
 async fn write_ignores_failure_status(#[case] status: &str) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -453,6 +454,7 @@ async fn read_hit_on_200() {
 #[rstest]
 #[case::not_found("404 Not Found")]
 #[case::unauthorized("401 Unauthorized")]
+#[case::redirect("302 Found")]
 #[tokio::test]
 async fn read_miss_on_404_without_log(#[case] status: &str) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -474,6 +476,7 @@ async fn read_miss_on_404_without_log(#[case] status: &str) {
 #[rstest]
 #[case::not_json(b"not json")]
 #[case::invalid_utf8(b"\xff")]
+#[case::nan_token(b"{\"value\": NaN}")]
 #[tokio::test]
 async fn read_miss_on_bad_json_logs_error(#[case] body: &[u8]) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
