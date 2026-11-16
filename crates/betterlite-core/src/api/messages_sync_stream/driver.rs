@@ -35,7 +35,7 @@ where
                 Transition::Event(event) => return Some(event),
                 Transition::Pull => {}
             }
-            match self.state.completion_stream.next_chunk() {
+            match ChunkSource::next_chunk(&mut self.state.completion_stream) {
                 Ok(Some(chunk)) => match engine::update(&mut self.state, &chunk, &self.ids) {
                     Ok(Some(event)) => return Some(event),
                     Ok(None) => {}

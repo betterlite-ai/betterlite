@@ -15,10 +15,10 @@ pub(super) fn chunk_records(
     let Some(usage) = &chunk.usage else {
         return Ok((serde_json::from_str(&choices)?, None));
     };
-    let usage = serde_json::to_string(usage)?;
+    let usage_text = serde_json::to_string(usage)?;
     Ok((
         serde_json::from_str(&choices)?,
-        Some(serde_json::from_str(&usage)?),
+        Some(serde_json::from_str(&usage_text)?),
     ))
 }
 

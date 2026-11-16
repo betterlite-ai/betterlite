@@ -52,7 +52,7 @@ struct Scripted {
 
 impl ChunkSource for Scripted {
     fn next_chunk(&mut self) -> Result<Option<StreamChunk>, StreamFailure> {
-        self.pulls += 1;
+        self.pulls = self.pulls.saturating_add(1);
         self.items.pop_front().transpose()
     }
 }
@@ -115,24 +115,23 @@ fn setup() -> StreamSetup {
 }
 
 fn polyfilled() -> StreamSetup {
-    StreamSetup {
-        applied_edits: vec![AppliedEdit {
-            edit_type: Some("clear_tool_uses_20250919".to_owned()),
-            cleared_input_tokens: None,
-            cleared_tool_uses: Some(1),
-            cleared_thinking_turns: None,
-            summary_input_tokens: None,
-            summary_output_tokens: None,
-            error: None,
-            warnings: None,
-        }],
-        iterations_usage: Some(vec![UsageIteration {
-            kind: UsageKind::Compaction,
-            input_tokens: Some(4),
-            output_tokens: Some(1),
-        }]),
-        ..setup()
-    }
+    let mut filled = setup();
+    filled.applied_edits = vec![AppliedEdit {
+        edit_type: Some("clear_tool_uses_20250919".to_owned()),
+        cleared_input_tokens: None,
+        cleared_tool_uses: Some(1),
+        cleared_thinking_turns: None,
+        summary_input_tokens: None,
+        summary_output_tokens: None,
+        error: None,
+        warnings: None,
+    }];
+    filled.iterations_usage = Some(vec![UsageIteration {
+        kind: UsageKind::Compaction,
+        input_tokens: Some(4),
+        output_tokens: Some(1),
+    }]);
+    filled
 }
 
 fn driver(chunks: Vec<StreamChunk>) -> Driver {
@@ -155,7 +154,9 @@ fn next(driver: &mut Driver) -> Object {
 }
 
 fn take(driver: &mut Driver, count: usize) -> Vec<Object> {
-    (0..count).map(|_| next(driver)).collect()
+    std::iter::repeat_with(|| next(driver))
+        .take(count)
+        .collect()
 }
 
 fn kind(event: &Object) -> &str {

@@ -75,7 +75,7 @@ pub fn update<S>(
         // usage already left the stream, so a trailing provider event would break Anthropic SSE order
         return Ok(None);
     }
-    route(state, processed, block)
+    route(state, processed, &block)
 }
 
 // A choiceless chunk only matters when a held stop is waiting for its usage.
@@ -138,7 +138,7 @@ fn merge<S>(
 fn route<S>(
     state: &mut StreamState<S>,
     processed: Object,
-    block: OpenBlock,
+    block: &OpenBlock,
 ) -> Result<Option<Object>, StreamStateError> {
     if block.starts && !block.opens_first && !state.block_progress.sent_content_block_finish {
         return Ok(transition_events(state, processed));
@@ -219,11 +219,19 @@ pub fn end_of_stream<S>(state: &mut StreamState<S>) -> Result<Option<Object>, St
     } else {
         flush_held(state)?;
     }
-    if !state.message_progress.sent_last_message {
-        state.message_progress.sent_last_message = true;
-        state.chunk_queue.push_back(frames::message_stop());
+    if let Some(stop) = claim_last_message(state) {
+        state.chunk_queue.push_back(stop);
     }
     Ok(state.chunk_queue.pop_front())
+}
+
+// The stream emits message_stop once, so both end-of-stream paths claim it through here.
+fn claim_last_message<S>(state: &mut StreamState<S>) -> Option<Object> {
+    if state.message_progress.sent_last_message {
+        return None;
+    }
+    state.message_progress.sent_last_message = true;
+    Some(frames::message_stop())
 }
 
 // The held content delta outranks the block stop and the held message_delta.
@@ -252,11 +260,7 @@ pub fn stop_iteration<S>(state: &mut StreamState<S>) -> Result<Option<Object>, S
     if let Some(held_stop) = state.holding_stop_reason_chunk.take() {
         return Ok(Some(release_held(state, held_stop)?));
     }
-    if !state.message_progress.sent_last_message {
-        state.message_progress.sent_last_message = true;
-        return Ok(Some(frames::message_stop()));
-    }
-    Ok(None)
+    Ok(claim_last_message(state))
 }
 
 // A held stop whose block never closed queues its delta and hands back the missing stop first.
