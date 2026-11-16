@@ -130,14 +130,14 @@ fn assert_model_info_error(values: &[&str], expected: &str) {
 fn stored_precedes_configured() {
     let stored = deployment("gpt-4", None, true, "");
     let configured_deployment = deployment("other-group", Some("team-b"), true, "");
-    let checked = validate_weight_reference(
+    validate_weight_reference(
         "gpt-4",
         "dep-1",
         Some("team-a"),
         Some(&stored),
         Some(&configured_deployment),
-    );
-    assert!(checked.is_ok());
+    )
+    .unwrap();
 }
 
 #[test]
@@ -172,29 +172,25 @@ fn other_team_hidden() {
 #[test]
 fn same_team_public_name() {
     let stored = deployment("internal", Some("team-a"), false, "gpt-4");
-    let checked = validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None);
-    assert!(checked.is_ok());
+    validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None).unwrap();
 }
 
 #[test]
 fn global_model_in_team() {
     let stored = deployment("gpt-4", None, false, "");
-    let checked = validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None);
-    assert!(checked.is_ok());
+    validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None).unwrap();
 }
 
 #[test]
 fn global_ignores_public_name() {
     let stored = deployment("gpt-4", None, false, "public-name");
-    let checked = validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None);
-    assert!(checked.is_ok());
+    validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None).unwrap();
 }
 
 #[test]
 fn empty_public_name_falls_back() {
     let stored = deployment("gpt-4", Some("team-a"), false, "");
-    let checked = validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None);
-    assert!(checked.is_ok());
+    validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None).unwrap();
 }
 
 #[test]
@@ -237,61 +233,49 @@ fn deployment_fixture_decodes_model_info() {
             },
         }
     );
-    assert!(
-        serde_json::from_str::<RouterWeightDeployment>(
-            r#"{"model_name": "gpt-4", "model_info": {"team_id": 1}}"#
-        )
-        .is_err()
-    );
+    serde_json::from_str::<RouterWeightDeployment>(
+        r#"{"model_name": "gpt-4", "model_info": {"team_id": 1}}"#,
+    )
+    .unwrap_err();
 }
 
 #[tokio::test]
 async fn settings_validation_null_settings() {
-    assert!(
-        validate_settings_weights(None, None, None, None)
-            .await
-            .is_ok()
-    );
+    validate_settings_weights(None, None, None, None)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
 async fn settings_validation_missing_weights() {
     let settings = json(r#"{"num_retries": 2, "callbacks": []}"#);
-    assert!(
-        validate_settings_weights(Some(&settings), Some("team-a"), None, None)
-            .await
-            .is_ok()
-    );
+    validate_settings_weights(Some(&settings), Some("team-a"), None, None)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
 async fn settings_validation_null_weights() {
     let settings = json(r#"{"weights": null}"#);
-    assert!(
-        validate_settings_weights(Some(&settings), None, None, None)
-            .await
-            .is_ok()
-    );
+    validate_settings_weights(Some(&settings), None, None, None)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
 async fn settings_validation_empty_weights() {
     let settings = json(r#"{"weights": {}}"#);
-    assert!(
-        validate_settings_weights(Some(&settings), None, None, None)
-            .await
-            .is_ok()
-    );
+    validate_settings_weights(Some(&settings), None, None, None)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
 async fn settings_validation_empty_groups() {
     let settings = json(r#"{"weights": {"gpt-4": {}, "gpt-4o": {}}}"#);
-    assert!(
-        validate_settings_weights(Some(&settings), None, None, None)
-            .await
-            .is_ok()
-    );
+    validate_settings_weights(Some(&settings), None, None, None)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
