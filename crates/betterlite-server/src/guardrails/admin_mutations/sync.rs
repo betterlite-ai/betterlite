@@ -28,10 +28,14 @@ where
         Ok(_held) => tracing::info!(
             "Immediate sync: Successfully updated guardrail '{name}' (ID: {guardrail_id})"
         ),
-        Err(error) if is_configuration_error(&error) => return Err(error),
-        Err(error) => tracing::warn!(
-            "Immediate sync: Failed to update '{name}' (ID: {guardrail_id}) in memory: {error}"
-        ),
+        Err(error) => {
+            if is_configuration_error(&error) {
+                return Err(error);
+            }
+            tracing::warn!(
+                "Immediate sync: Failed to update '{name}' (ID: {guardrail_id}) in memory: {error}"
+            );
+        }
     }
     Ok(())
 }
