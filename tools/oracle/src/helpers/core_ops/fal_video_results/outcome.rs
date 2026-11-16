@@ -145,6 +145,7 @@ fn error_fields(error: &VideoResultsError) -> Value {
         }
         VideoResultsError::Reply(_)
         | VideoResultsError::ProbeUrl(_)
+        | VideoResultsError::ProbeTransport { .. }
         | VideoResultsError::ArtifactUrl(_)
         | VideoResultsError::HeaderName { .. }
         | VideoResultsError::HeaderValue { .. }
