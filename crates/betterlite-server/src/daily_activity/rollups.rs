@@ -46,6 +46,7 @@ mod support;
 
 pub type EntityMetadata = BTreeMap<String, IndexMap<String, Json>>;
 
+#[derive(Debug)]
 struct AggregatedSpendData {
     results: Vec<DailySpendData>,
     totals: SpendMetrics,
