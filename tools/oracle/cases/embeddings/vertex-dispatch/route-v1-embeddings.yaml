@@ -21,5 +21,6 @@ upstream:
 compare:
   headers: [content-type, x-litellm-call-id]
   headers_present: [x-litellm-model-id]
-  upstream_headers: []
-  ignore: []
+  upstream_headers: [authorization]
+  ignore:
+    - {pointer: /upstream/0/headers/authorization, why: the self-signed JWT carries iat and exp from signing time}
