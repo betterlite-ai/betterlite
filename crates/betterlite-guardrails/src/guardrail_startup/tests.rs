@@ -40,7 +40,7 @@ use super::legacy::{
     LegacyCallbackStarter, LegacyPlan, plan_legacy_callbacks, start_legacy_guardrails,
 };
 use super::poll::poll_database;
-use super::reconcile::GuardrailReconcile;
+use super::reconcile::GuardrailReconcile as _;
 use super::router_list::router_guardrail_list;
 use super::runtime::GuardrailRuntime;
 use super::starter::RegistryStarter;

@@ -30,10 +30,13 @@ const fn skips_startup(error: &RegistryError) -> bool {
 }
 
 // a free function, since the workspace denies a second inherent impl of GuardrailRuntime
-pub async fn start_from_config<R: GuardrailRows>(
+pub async fn start_from_config<R>(
     runtime: &GuardrailRuntime<R>,
     settings: &Settings,
-) -> Result<Vec<RouterGuardrail>, StartupError> {
+) -> Result<Vec<RouterGuardrail>, StartupError>
+where
+    R: GuardrailRows,
+{
     for rejected in &settings.rejected {
         tracing::error!(
             "Skipping guardrail '{}': invalid configuration, proxy is starting WITHOUT this guardrail: {}",

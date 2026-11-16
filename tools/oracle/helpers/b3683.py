@@ -38,9 +38,9 @@ class Recorder:
     def record(
         self,
         value: list[str],
-        premium_user: bool,
-        config_file_path: str,
-        litellm_settings: dict[str, JsonValue],
+        premium_user: bool,  # noqa: FBT001, ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L134-L140
+        config_file_path: str,  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L134-L140
+        litellm_settings: dict[str, JsonValue],  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L134-L140
         callback_specific_params: CallbackArgs | None = None,
     ) -> None:
         # LiteLLM builds the list from a set, so only the sorted list is comparable
@@ -54,8 +54,8 @@ def run(input_value: Input) -> Output:
     started = input_value["started"]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L101-L106
     init_guardrails.all_guardrails.clear()
     litellm.guardrail_name_config_map.clear()
-    litellm.callbacks = [*started]  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L181-L183
-    init_guardrails.initialize_callbacks_on_proxy = recorder.record  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L134-L140
+    litellm.callbacks = [*started]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L181-L183
+    init_guardrails.initialize_callbacks_on_proxy = recorder.record  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L134-L140
     name_map = init_guardrails.initialize_guardrails(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L101-L106
         input_value["guardrails"],  # type: ignore[misc]  # pyright: ignore[reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L101-L106
         premium_user=True,

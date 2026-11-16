@@ -1,11 +1,14 @@
 use std::collections::BTreeSet;
 
-use super::reconcile::GuardrailReconcile;
+use super::reconcile::GuardrailReconcile as _;
 use super::runtime::GuardrailRuntime;
 use crate::guardrail_registry::rows::GuardrailRows;
 
 // a free function, since the workspace denies a second inherent impl of GuardrailRuntime
-pub async fn poll_database<R: GuardrailRows>(runtime: &GuardrailRuntime<R>) {
+pub async fn poll_database<R>(runtime: &GuardrailRuntime<R>)
+where
+    R: GuardrailRows,
+{
     let _serialised = runtime.reconcile_lock.lock().await;
     let guardrails = match runtime.registry.get_all_guardrails_from_db().await {
         Ok(guardrails) => guardrails,

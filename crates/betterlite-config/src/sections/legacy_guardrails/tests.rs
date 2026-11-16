@@ -88,7 +88,7 @@ fn legacy_config_null_logging_only_and_callback_args_read_as_unset() {
 #[case::unknown_role("        callbacks: [a]\n        enabled_roles: [tool]\n")]
 fn legacy_config_rejects_a_bad_spec(#[case] body: &str) {
     let yaml = format!("litellm_settings:\n  guardrails:\n    - g:\n{body}");
-    assert!(serde_saphyr::from_str::<Raw>(&yaml).is_err());
+    serde_saphyr::from_str::<Raw>(&yaml).unwrap_err();
 }
 
 #[test]
