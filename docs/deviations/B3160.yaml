@@ -1,6 +1,6 @@
 task: B3160
 deviations:
-  - what: A store failure answers 500 with the detail "Internal server error" and logs the cause, where LiteLLM puts str(e) of the database exception in the detail on all four routes.
+  - what: A store failure inside a route's try block answers 500 with the detail "Internal server error" and logs the cause, where LiteLLM puts str(e) of the database exception in the detail.
     why: The database error text can carry connection strings, table names and row values, and messages are betterlite's own under rule errors-match-litellm. The status stays 500.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L413-L414
   - what: An event data object that repeats a key is rejected with a 422 that names the field, where Python's JSON parser keeps the last value.
