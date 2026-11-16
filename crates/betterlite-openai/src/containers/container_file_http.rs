@@ -143,7 +143,9 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
         &self,
         call: &ContainerFileHttpCall<'_, Source>,
     ) -> Result<ContainerFileReply, ContainerFileHttpError> {
-        let mut running = pin!(self.run::<BlockingKind>(call));
+        let endpoint = find_endpoint(call.endpoint_name)?;
+        let params = read_params(call.litellm_params)?;
+        let mut running = pin!(self.run::<BlockingKind>(call, &endpoint, &params));
         match running
             .as_mut()
             .poll(&mut Context::from_waker(Waker::noop()))
@@ -157,23 +159,28 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
         &self,
         call: &ContainerFileHttpCall<'_, Source>,
     ) -> Result<ContainerFileReply, ContainerFileHttpError> {
-        self.run::<AsyncKind>(call).await
-    }
-
-    // One body for both paths, in LiteLLM's order: endpoint, client, then the request
-    async fn run<Mode: Channel<Source>>(
-        &self,
-        call: &ContainerFileHttpCall<'_, Source>,
-    ) -> Result<ContainerFileReply, ContainerFileHttpError> {
         let endpoint = find_endpoint(call.endpoint_name)?;
         let params = read_params(call.litellm_params)?;
+        self.run::<AsyncKind>(call, &endpoint, &params).await
+    }
+
+    // One body for both paths, in LiteLLM's order: client, then the request
+    async fn run<Mode>(
+        &self,
+        call: &ContainerFileHttpCall<'_, Source>,
+        endpoint: &ContainerEndpoint,
+        params: &CallParams<'_>,
+    ) -> Result<ContainerFileReply, ContainerFileHttpError>
+    where
+        Mode: Channel<Source>,
+    {
         let supplied = call.client.as_ref().and_then(Mode::supplied);
         let client = Selected::choose(supplied, || {
             Mode::build(&self.clients, params.ssl_verify.as_ref())
         })?;
-        let request = self.prepare(&endpoint, call, &params)?;
+        let request = self.prepare(endpoint, call, params)?;
         let reply = Mode::send(client.get(), &request).await?;
-        transform_reply(call.config, &endpoint, &reply)
+        transform_reply(call.config, endpoint, &reply)
     }
 
     // The steps both paths share, in LiteLLM's order: headers, base URL, path, query, log, then the method and the file
