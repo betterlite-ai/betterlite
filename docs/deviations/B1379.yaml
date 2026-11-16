@@ -9,7 +9,7 @@ deviations:
   - what: decode_gemini_live_client_event refuses an event longer than the caller's byte limit with TooLarge before parsing, where LiteLLM hands the whole message to json.loads with no bound.
     why: The bytes arrive from an untrusted websocket frame, and a parser bound keeps an oversized frame from being decoded and walked before the event type is known.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L597-L598
-  - what: Event bytes that are not UTF-8 fail with an InvalidJson error whose message reads "the event is not UTF-8: ...", where LiteLLM decodes the bytes with errors="replace" and quotes the replaced text in its ValueError message.
+  - what: 'Event bytes that are not UTF-8 fail with an InvalidJson error whose message reads "the event is not UTF-8: ...", where LiteLLM decodes the bytes with errors="replace" and quotes the replaced text in its ValueError message.'
     why: betterlite reads the event as bytes and refuses to replace invalid sequences, so the error names the real failure instead of a mangled message; valid UTF-8 invalid JSON keeps LiteLLM's exact message text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L599-L604
 kept_bugs:
