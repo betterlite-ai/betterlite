@@ -1,0 +1,64 @@
+kind: helper
+name: b5841 url-and-headers
+call:
+  b5841:
+    function: url
+    cases:
+    - model: databricks-meta-llama-3-1-70b
+      api_base: https://adb-1.cloud.databricks.com/serving-endpoints
+    - model: databricks-meta-llama-3.1
+      api_base: https://adb-1.cloud.databricks.com/serving-endpoints/
+    - model: a.b.c
+      api_base: https://adb-1.cloud.databricks.com/serving-endpoints
+    - model: databricks/a.b.c
+      api_base: https://adb-1.cloud.databricks.com/serving-endpoints/
+    - model: databricks/a.b.c
+      api_base: https://adb-1.cloud.databricks.com/
+    - model: databricks/a.b.c
+      api_base: https://adb-1.cloud.databricks.com/ai-gateway/mlflow/v1/
+    - model: databricks/a.b.c
+      api_base: https://adb-1.cloud.databricks.com/custom/path/
+env: {}
+compare:
+  ignore: []
+calls:
+- b5841:
+    function: headers
+    cases:
+    - model: databricks-meta-llama-3-1-70b
+      api_key: dapi123
+      api_base: https://adb-1.cloud.databricks.com
+      headers:
+        X-Extra: '1'
+      optional_params: {}
+      user_agent: null
+    - model: databricks-meta-llama-3-1-70b
+      api_key: dapi123
+      api_base: https://adb-1.cloud.databricks.com
+      headers: null
+      optional_params:
+        user_agent: custom-agent
+        databricks_user_agent: second-agent
+        temperature: 0.2
+      user_agent: null
+    - model: databricks-meta-llama-3-1-70b
+      api_key: dapi123
+      api_base: https://adb-1.cloud.databricks.com
+      headers: null
+      optional_params:
+        user_agent: ''
+        databricks_user_agent: second-agent
+      user_agent: null
+    - model: databricks-meta-llama-3-1-70b
+      api_key: dapi123
+      api_base: https://adb-1.cloud.databricks.com
+      headers: null
+      optional_params:
+        databricks_user_agent: second-agent
+      user_agent: litellm-agent
+    - model: databricks-meta-llama-3-1-70b
+      api_key: dapi123
+      api_base: https://adb-1.cloud.databricks.com
+      headers: null
+      optional_params: {}
+      user_agent: litellm-agent
