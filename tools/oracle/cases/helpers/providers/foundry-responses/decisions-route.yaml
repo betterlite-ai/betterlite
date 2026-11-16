@@ -1,0 +1,68 @@
+kind: helper
+name: decisions-route
+call:
+  foundry_responses:
+    steps:
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/openai/v1
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/openai
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/models
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/v1
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/api/projects/proj
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/api/projects/proj/openai/v1
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/api/projects/proj/openai
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/api/projects/proj/v1
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/api/projects/proj/models/v1
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/api/projects
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/custom
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/openai/v1/extra
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/api/projects/proj/extra
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: "https://res.services.ai.azure.com?x=1#frag"
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: "https://res.services.ai.azure.com/api/projects/proj?x=1#frag"
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com/%6Fpenai%2Fv1
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_key: explicit-key
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://res.services.ai.azure.com
+        api_key: explicit-key
+env: {}
+compare: {ignore: []}
