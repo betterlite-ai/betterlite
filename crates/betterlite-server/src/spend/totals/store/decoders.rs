@@ -18,7 +18,9 @@ impl TryFrom<&Row> for DailySpend {
     fn try_from(row: &Row) -> Result<Self, Self::Error> {
         Ok(Self {
             date: row.try_get("date").map_err(backend)?,
-            spend: required_amount(row, SPEND_COLUMN)?,
+            spend: optional_amount(row, SPEND_COLUMN)?.ok_or(TotalsStoreError::InvalidAmount {
+                column: SPEND_COLUMN,
+            })?,
         })
     }
 }
@@ -29,7 +31,9 @@ impl TryFrom<&Row> for KeyDailySpend {
     fn try_from(row: &Row) -> Result<Self, Self::Error> {
         Ok(Self {
             date: row.try_get("date").map_err(backend)?,
-            spend: required_amount(row, SPEND_COLUMN)?,
+            spend: optional_amount(row, SPEND_COLUMN)?.ok_or(TotalsStoreError::InvalidAmount {
+                column: SPEND_COLUMN,
+            })?,
             api_key: row.try_get("api_key").map_err(backend)?,
         })
     }
@@ -61,9 +65,13 @@ impl TryFrom<&Row> for KeySpend {
         let api_key = row.try_get("api_key").map_err(backend)?;
         let key_alias = row.try_get("key_alias").map_err(backend)?;
         let key_name = row.try_get("key_name").map_err(backend)?;
-        required_amount(row, SPEND_TEXT_COLUMN).map(|total_spend| Self {
+        Ok(Self {
             api_key,
-            total_spend,
+            total_spend: optional_amount(row, SPEND_TEXT_COLUMN)?.ok_or(
+                TotalsStoreError::InvalidAmount {
+                    column: SPEND_TEXT_COLUMN,
+                },
+            )?,
             key_alias,
             key_name,
         })
@@ -76,7 +84,11 @@ impl TryFrom<&Row> for ModelSpend {
     fn try_from(row: &Row) -> Result<Self, Self::Error> {
         Ok(Self {
             model: row.try_get("model").map_err(backend)?,
-            total_spend: required_amount(row, SPEND_TEXT_COLUMN)?,
+            total_spend: optional_amount(row, SPEND_TEXT_COLUMN)?.ok_or(
+                TotalsStoreError::InvalidAmount {
+                    column: SPEND_TEXT_COLUMN,
+                },
+            )?,
         })
     }
 }
@@ -87,7 +99,11 @@ impl TryFrom<&Row> for UserModelSpend {
     fn try_from(row: &Row) -> Result<Self, Self::Error> {
         Ok(Self {
             model: row.try_get("model").map_err(backend)?,
-            total_spend: required_amount(row, SPEND_TEXT_COLUMN)?,
+            total_spend: optional_amount(row, SPEND_TEXT_COLUMN)?.ok_or(
+                TotalsStoreError::InvalidAmount {
+                    column: SPEND_TEXT_COLUMN,
+                },
+            )?,
             total_tokens: row.try_get("total_tokens").map_err(backend)?,
         })
     }
@@ -103,11 +119,6 @@ impl TryFrom<&Row> for TeamSpend {
             total_spend: retained_amount(row, TEAM_SPEND_COLUMN)?,
         })
     }
-}
-
-fn required_amount(row: &Row, column: &'static str) -> Result<Decimal, TotalsStoreError> {
-    optional_amount(row, column)?
-        .map_or_else(|| Err(TotalsStoreError::InvalidAmount { column }), Ok)
 }
 
 fn optional_amount(row: &Row, column: &'static str) -> Result<Option<Decimal>, TotalsStoreError> {
