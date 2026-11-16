@@ -1,0 +1,33 @@
+kind: helper
+name: tool_role_user
+call:
+  copilot_responses:
+    settings: {}
+    steps:
+      - step: auth
+        copilot_key: tid=1
+        headers: {}
+        params: {input: [{role: tool, content: ok}]}
+      - step: auth
+        copilot_key: tid=1
+        headers: {}
+        params: {input: [{role: tool, content: ok}, {role: ASSISTANT, content: hi}]}
+      - step: auth
+        copilot_key: null
+        headers: {}
+        params: {input: [{role: user, content: hi}]}
+      - step: auth
+        copilot_key: ""
+        headers: {}
+        params: {input: [{role: user, content: hi}]}
+      - step: auth
+        copilot_key: tid=1
+        headers: {}
+        params: {input: [{role: user, content: hi}, {content: orphan}]}
+      - step: auth
+        copilot_key: tid=1
+        headers: {}
+        params: {input: [{role: "", content: hi}]}
+env: {}
+compare:
+  ignore: []

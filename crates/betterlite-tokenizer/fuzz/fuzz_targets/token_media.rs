@@ -1,8 +1,11 @@
 #![no_main]
 
+use std::future::{Future, ready};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use betterlite_prompts::media::inline::RemoteMediaFetcher;
+use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_tokenizer::count::settings::Settings as CountSettings;
 use betterlite_tokenizer::count::text::{Counted, Texter};
 use betterlite_tokenizer::engine::Engine;
@@ -35,6 +38,24 @@ impl BlockingCounter for DirectRunner {
 
     async fn convert(&self, job: ConvertJob) -> Result<Vec<u8>, EngineError> {
         job()
+    }
+}
+
+struct RefusingFetcher;
+
+impl RemoteMediaFetcher for RefusingFetcher {
+    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
+        ready(Err(ImageFetchError::Disabled {
+            url: url.to_owned(),
+        }))
+    }
+
+    fn convert_urls(
+        &self,
+        urls: &[String],
+    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
+        let url = urls.first().cloned().unwrap_or_default();
+        ready(Err(ImageFetchError::Disabled { url }))
     }
 }
 
@@ -71,6 +92,11 @@ fuzz_target!(|bytes: &[u8]| {
         max_exact_chars: count_settings.max_exact_chars,
     };
     for mode in [ImageCounting::Exact, ImageCounting::DefaultCount] {
-        drop(runtime.block_on(count_token_media(&texter, &media, &settings(mode))));
+        drop(runtime.block_on(count_token_media(
+            &texter,
+            &media,
+            &settings(mode),
+            &RefusingFetcher,
+        )));
     }
 });

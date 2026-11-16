@@ -37,17 +37,22 @@ impl TryFrom<BTreeMap<String, serde_json::Value>> for HelperCall {
 }
 
 impl HelperCall {
-    // a group crate sees only its own operations, so the oracle checks every call against all groups when it loads a case
-    pub fn check(&self, groups: &[Group]) -> Result<(), String> {
+    // None when none of the groups lists the operation, so a crate built with some groups can leave the other calls alone
+    #[must_use]
+    pub fn owned_check(&self, groups: &[Group]) -> Option<Result<(), String>> {
         groups
             .iter()
             .find_map(|group| (group.check)(&self.operation, &self.input))
-            .unwrap_or_else(|| {
-                Err(format!(
-                    "unknown variant `{}`, expected a registered helper operation",
-                    self.operation
-                ))
-            })
+    }
+
+    // a group crate sees only its own operations, so the oracle checks every call against all groups when it loads a case
+    pub fn check(&self, groups: &[Group]) -> Result<(), String> {
+        self.owned_check(groups).unwrap_or_else(|| {
+            Err(format!(
+                "unknown variant `{}`, expected a registered helper operation",
+                self.operation
+            ))
+        })
     }
 }
 
@@ -104,6 +109,20 @@ pub fn run_case(
     }
     writeln!(io::stdout().lock(), "PASS {}", case.name).map_err(HelperRunError::Output)?;
     Ok(HelperRun::Match)
+}
+
+pub fn run_helper_cases(
+    groups: &[Group],
+    cases: &[HelperCase],
+    self_check: bool,
+) -> Result<HelperRun, HelperRunError> {
+    let mut outcome = HelperRun::Match;
+    for case in cases {
+        if matches!(run_case(groups, case, self_check)?, HelperRun::Difference) {
+            outcome = HelperRun::Difference;
+        }
+    }
+    Ok(outcome)
 }
 
 fn value_at(output: &HelperOutput, pointer: &str) -> String {

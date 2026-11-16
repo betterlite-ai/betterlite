@@ -140,7 +140,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::deployment_redaction($|::)/)'
   - id: helper-corpus
     why: the new helper tag has no branch-added seed
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/proxy-endpoint-support-*)" && grep -qE '^[[:space:]]+proxy_endpoint_support:' tools/oracle/fuzz/corpus/helper_case/proxy-endpoint-support-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/proxy-endpoint-support-*)" && grep -qE '^[[:space:]]+proxy_endpoint_support:' tools/oracle/fuzz/corpus/helper_case/proxy-endpoint-support-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/proxy-endpoint-support/provider-hint-sources.yaml
 - tools/oracle/cases/helpers/proxy-endpoint-support/proxy-error-records.yaml

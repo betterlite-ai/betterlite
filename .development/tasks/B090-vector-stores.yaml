@@ -77,7 +77,7 @@ checks:
     run: test -f tools/oracle/helpers/vector_stores.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
     why: the added post-hook variants have no shared-decoder seed
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_stores-*)" && grep -qE '^[[:space:]]+vector_stores:' tools/oracle/fuzz/corpus/helper_case/vector_stores-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_stores-*)" && grep -qE '^[[:space:]]+vector_stores:' tools/oracle/fuzz/corpus/helper_case/vector_stores-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/vector-stores/chat-retrieval-fields.yaml
 - tools/oracle/cases/helpers/vector-stores/responses-only-receive-failures.yaml

@@ -11,8 +11,8 @@ const CASES: &str = "tools/oracle/cases/";
 const ANSWER_FIELDS: [&str; 5] = ["ok", "value", "error", "warnings", "effects"];
 
 #[derive(Debug, Deserialize)]
-struct CaseHead {
-    kind: Option<String>,
+pub(super) struct CaseHead {
+    pub(super) kind: Option<String>,
     #[serde(default)]
     compare: CompareHead,
 }
