@@ -140,7 +140,7 @@ fn map_aspect_ratio(size: &Json) -> &'static str {
 }
 
 // |ratio - target| scaled by the ratio's height and the target's positive height, so gaps compare without fractions
-fn ratio_gap(ratio: &AspectRatio, width: i128, height: i128) -> i128 {
+const fn ratio_gap(ratio: &AspectRatio, width: i128, height: i128) -> i128 {
     ratio
         .width
         .saturating_mul(height)
