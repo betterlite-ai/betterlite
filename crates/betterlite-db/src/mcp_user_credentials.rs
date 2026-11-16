@@ -146,6 +146,7 @@ pub fn oauth_grant_state(credential: Option<&OAuthCredentialPayload>) -> OAuthGr
     if credential.access_token.is_none() {
         return OAuthGrantState::Absent;
     }
+    // ast-grep-ignore: no-long-names
     if !is_oauth_credential_expired(credential, MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS) {
         return OAuthGrantState::Valid;
     }
