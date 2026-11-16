@@ -1,0 +1,21 @@
+task: B8502
+deviations:
+  - what: "The text after \"Error updating cache settings: \" is betterlite's own error text, not the Python exception text."
+    why: "Python exception strings have no Rust equivalent; the 500 status, the prefix and the string shape of detail match."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L670-L675
+  - what: "params_equal renders a number with Rust's shortest round-trip form, so a float prints 1 where Python's str() prints 1.0, and a float Python prints in exponent form (1e-05) prints 0.00001."
+    why: "Both compared maps came through JSON, so a value renders the same way on both sides; only the equality result matters, and a caller that saves 1 and later sends 1.0 compares equal here where LiteLLM's str() texts differ and the cache is rebuilt."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L340-L369
+  - what: "Inside list and object values, numbers and booleans compare by JSON literal and type, so [1] differs from [1.0], while Python compares them by value (1 == 1.0 and True == 1)."
+    why: "betterlite's Json keeps serde_json's arbitrary-precision number literal, and a typed value cannot be equal to a value of another type; a cache param whose list carries the same number in a different literal form is treated as changed and the cache is rebuilt."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L340-L369
+  - what: "A valid non-admin key answers 403 with a {\"detail\": \"Admin access required to update cache settings\"} body, while LiteLLM's admin-only route check raises a plain Exception that auth_exception_handler turns into a 401 auth_error envelope."
+    why: "betterlite's management routes carry the admin-only check in the route, as B4308's /cache/settings/test does, so a forbidden caller gets the route's own 403 and detail body instead of an authentication failure."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L249-L257
+  - what: "The audit row's before_value and updated_values are compact JSON text ({\"settings\":{...}}), while LiteLLM's json.dumps writes a space after the colon."
+    why: "docs/compatibility.md does not port json.dumps formatting; every reader parses the member as JSON, and the redacted key set matches."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L314-L315
+  - what: "A database failure while writing the audit row logs B2330's \"Failed Creating audit log <error>\" from the sink, not the route's \"Failed to write cache-settings audit log: <error>\" warning."
+    why: "B2330's create_audit_log_for_update owns the insert and logs its failure internally; the spawned task still answers LiteLLM's warning whenever the audit port itself reports an error, which B8502's failing-fake test proves, and the save is never failed by the audit either way."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L294-L328
+kept_bugs: []
