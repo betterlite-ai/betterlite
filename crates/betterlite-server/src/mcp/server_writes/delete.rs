@@ -12,8 +12,7 @@ struct DeletedRow {
     server_name: Option<String>,
 }
 
-// LiteLLM's delete_mcp_server: the row delete is the commit point, every per-user cleanup after it
-// is best effort, because a failure there leaves only orphaned rows pointing at a missing server.
+// LiteLLM's delete_mcp_server: the row delete is the commit point and every cleanup after it is best effort.
 pub async fn delete_mcp_server<S, I>(
     store: &S,
     server_id: &str,
@@ -29,8 +28,7 @@ where
     let deleted: DeletedRow = row_as(&row)?;
     let user_ids = enumerated_credential_users(store, server_id).await;
     drop_children(store, server_id).await;
-    // The caches are keyed by (user_id, server_id), so a server re-created under the same id must
-    // not serve tokens minted for the deleted one.
+    // A server re-created under the same id must not serve tokens cached for the deleted one.
     for user_id in &user_ids {
         if let Err(error) = invalidation.invalidate(user_id, server_id).await {
             tracing::warn!(

@@ -11,6 +11,7 @@ use super::identity::IdentityChanges;
 pub(super) fn apply_credential_merge(
     changes: &IdentityChanges,
     existing: Option<&ExistingRow>,
+    explicit_te: bool,
     data: &mut PreparedServerData,
 ) -> Result<(), ServerWriteError> {
     let Some(row) = existing else {
@@ -19,12 +20,8 @@ pub(super) fn apply_credential_merge(
     let Some(stored) = row.credentials.as_ref() else {
         return Ok(());
     };
-    let explicit_te = TOKEN_EXCHANGE_COLUMNS
-        .iter()
-        .any(|field| data.contains_key(*field));
     match data.get("credentials") {
-        // New values override the stored ones and the stored keys the update omits survive, so a
-        // partial credential edit never wipes the encrypted secrets the UI cannot show again.
+        // New values win and omitted stored keys survive, so a partial edit keeps secrets the UI cannot show.
         Some(JsonValue::String(new_text)) if !changes.auth_type => {
             let new_blob = credentials_blob_to_dict(&JsonValue::String(new_text.clone()))?;
             let mut merged = credentials_blob_to_dict(stored)?;
@@ -35,11 +32,8 @@ pub(super) fn apply_credential_merge(
             lift_token_exchange(row, &mut merged, data);
             store_blob(data, &merged)
         }
-        // An explicit null, or a replacement that a cross-class switch writes as given.
-        Some(_) => Ok(()),
-        // A column write that does not touch credentials still strips the legacy blob copies, so a
-        // cleared column can never be repopulated by a stale copy on the next credentials write.
-        _ if explicit_te => {
+        // A column write still strips the legacy blob copies, so a cleared column cannot come back.
+        None if explicit_te => {
             let mut blob = credentials_blob_to_dict(stored)?;
             if !TOKEN_EXCHANGE_COLUMNS
                 .iter()
@@ -50,7 +44,8 @@ pub(super) fn apply_credential_merge(
             lift_token_exchange(row, &mut blob, data);
             store_blob(data, &blob)
         }
-        _ => Ok(()),
+        // An explicit null, a replacement a cross-class switch writes as given, or no credentials at all.
+        Some(_) | None => Ok(()),
     }
 }
 
@@ -75,7 +70,7 @@ fn lift_token_exchange(
         let Some(legacy) = blob.remove(field) else {
             continue;
         };
-        if column.is_none() && !data.contains_key(field) {
+        if column.is_none() && legacy != JsonValue::Null && !data.contains_key(field) {
             data.insert(field.to_owned(), legacy);
         }
     }

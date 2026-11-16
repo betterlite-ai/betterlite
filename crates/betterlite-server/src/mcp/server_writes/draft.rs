@@ -1,4 +1,3 @@
-use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use betterlite_db::mcp::table_access::rows::server_id_of;
 use betterlite_db::mcp_server_encoding::request::McpServerRequest;
@@ -8,7 +7,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use super::create::create_mcp_server;
-use super::decode::{approval_status, decode_server_row, row_as};
+use super::decode::{decode_server_row, row_as};
 use super::delete::delete_mcp_server;
 use super::{DRAFT, DraftOptions, ServerWriteError, ServerWriteStore, TokenCacheInvalidation};
 
@@ -18,12 +17,17 @@ struct TimestampRow {
     updated_at: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct StatusRow {
+    #[serde(default)]
+    approval_status: Option<String>,
+}
+
 // LiteLLM's create_draft_mcp_server: prune, create-if-absent, adopt the winner of a create race.
 pub async fn create_draft_mcp_server<S, I>(
     store: &S,
     cipher: &DbCipher,
     request: &McpServerRequest,
-    touched_by: &str,
     options: &DraftOptions,
     invalidation: &I,
 ) -> Result<McpServerTable, ServerWriteError>
@@ -37,15 +41,14 @@ where
         .or_else(|| request.server_id.clone())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
     prune_expired_drafts(store, options.ttl_seconds, invalidation).await?;
-    // An existing row is returned untouched: a live draft for this session, or the real server the
-    // edit form re-authorizes, whose id must not be overwritten by a draft.
+    // An existing row, a live draft or the real server the edit form re-authorizes, is never overwritten.
     if let Some(existing) = store.find_server(&draft_id).await? {
         return decode_server_row(existing, cipher);
     }
     let draft = draft_request(request, draft_id.clone());
-    match create_mcp_server(store, cipher, &draft, touched_by).await {
+    match create_mcp_server(store, cipher, &draft, &options.touched_by).await {
         Ok(created) => Ok(created),
-        Err(error) => adopt_draft_created_by_another_worker(store, cipher, &draft_id, error).await,
+        Err(error) => adopt_raced_draft(store, cipher, &draft_id, error).await,
     }
 }
 
@@ -79,7 +82,8 @@ where
     let cutoff = draft_cutoff(ttl_seconds);
     let mut pruned = 0;
     for row in store.find_drafts().await? {
-        let Some(updated_at) = draft_updated_at(&row)? else {
+        let stored: TimestampRow = row_as(&row)?;
+        let Some(updated_at) = stored.updated_at.as_deref().and_then(stored_utc) else {
             // A row without a timestamp has no age to judge, so it is left rather than guessed stale.
             continue;
         };
@@ -98,7 +102,7 @@ where
     Ok(pruned)
 }
 
-async fn adopt_draft_created_by_another_worker<S>(
+async fn adopt_raced_draft<S>(
     store: &S,
     cipher: &DbCipher,
     draft_id: &str,
@@ -107,12 +111,12 @@ async fn adopt_draft_created_by_another_worker<S>(
 where
     S: ServerWriteStore,
 {
-    // The read above and the create are two statements, so the loser of that race adopts the winner's
-    // draft for this same session; anything else still fails with the original error.
+    // The loser of the read-then-create race adopts the winner's draft; anything else keeps its error.
     let Some(row) = store.find_server(draft_id).await? else {
         return Err(error);
     };
-    if approval_status(&row)?.as_deref() != Some(DRAFT) {
+    let status: StatusRow = row_as(&row)?;
+    if status.approval_status.as_deref() != Some(DRAFT) {
         return Err(error);
     }
     decode_server_row(row, cipher)
@@ -125,14 +129,11 @@ fn draft_request(request: &McpServerRequest, draft_id: String) -> McpServerReque
     draft
 }
 
+// A TTL too large to subtract from now keeps every draft, the oldest instant being the cutoff.
 fn draft_cutoff(ttl_seconds: i64) -> DateTime<Utc> {
-    let window = Duration::try_seconds(ttl_seconds.max(1)).unwrap_or_else(|| Duration::seconds(1));
-    Utc::now() - window
-}
-
-fn draft_updated_at(row: &JsonData) -> Result<Option<DateTime<Utc>>, ServerWriteError> {
-    let stored: TimestampRow = row_as(row)?;
-    Ok(stored.updated_at.as_deref().and_then(stored_utc))
+    Duration::try_seconds(ttl_seconds.max(1))
+        .and_then(|window| Utc::now().checked_sub_signed(window))
+        .unwrap_or(DateTime::<Utc>::MIN_UTC)
 }
 
 fn stored_utc(text: &str) -> Option<DateTime<Utc>> {

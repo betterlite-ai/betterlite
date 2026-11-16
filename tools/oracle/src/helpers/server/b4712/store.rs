@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::mcp::table_access::McpIdentifierConflict;
@@ -7,7 +7,6 @@ use betterlite_db::mcp::table_access::rows::{RowFields, ServerUpdate};
 use betterlite_db::mcp::table_access::types::{
     IdentifierField, LockedWrite, LockedWriteOutcome, McpTableError, ServerWrite,
 };
-use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_server::mcp::server_writes::{
     ChildTable, ServerWriteStore, TokenCacheError, TokenCacheInvalidation,
 };
@@ -32,7 +31,10 @@ impl MemoryStore {
     }
 
     pub(super) fn rows(&self) -> Vec<JsonData> {
-        self.locked().clone()
+        self.rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     pub(super) fn deleted_children(&self) -> Vec<&'static str> {
@@ -42,12 +44,8 @@ impl MemoryStore {
             .clone()
     }
 
-    fn locked(&self) -> MutexGuard<'_, Vec<JsonData>> {
-        self.rows.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
     fn update_row(&self, update: &ServerUpdate) -> Result<Option<JsonData>, McpTableError> {
-        let mut rows = self.locked();
+        let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(row) = rows
             .iter_mut()
             .find(|row| text(row, "server_id") == Some(update.server_id.as_str()))
@@ -69,7 +67,8 @@ impl MemoryStore {
                 continue;
             };
             let wanted = value.to_lowercase();
-            let found = self.locked().iter().find_map(|row| {
+            let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+            let found = rows.iter().find_map(|row| {
                 let named = ["server_name", "alias"].iter().any(|column| {
                     text(row, column).is_some_and(|name| name.to_lowercase() == wanted)
                 });
@@ -83,6 +82,7 @@ impl MemoryStore {
                     None
                 }
             });
+            drop(rows);
             if let Some(server_id) = found {
                 return Some(McpIdentifierConflict {
                     field,
@@ -97,16 +97,16 @@ impl MemoryStore {
 
 impl ServerWriteStore for MemoryStore {
     async fn find_server(&self, server_id: &str) -> Result<Option<JsonData>, McpTableError> {
-        Ok(self
-            .locked()
+        let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(rows
             .iter()
             .find(|row| text(row, "server_id") == Some(server_id))
             .cloned())
     }
 
     async fn find_drafts(&self) -> Result<Vec<JsonData>, McpTableError> {
-        Ok(self
-            .locked()
+        let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(rows
             .iter()
             .filter(|row| text(row, "approval_status") == Some("draft"))
             .cloned()
@@ -118,20 +118,26 @@ impl ServerWriteStore for MemoryStore {
         server_id: &str,
         cutoff: DateTime<Utc>,
     ) -> Result<Option<JsonData>, McpTableError> {
-        Ok(self
-            .locked()
+        let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(rows
             .iter()
             .find(|row| {
                 text(row, "server_id") == Some(server_id)
                     && text(row, "approval_status") == Some("draft")
-                    && text(row, "updated_at").is_some_and(|stamp| recent(stamp, cutoff))
+                    && text(row, "updated_at").is_some_and(|stamp| {
+                        DateTime::parse_from_rfc3339(stamp)
+                            .is_ok_and(|parsed| parsed.with_timezone(&Utc) >= cutoff)
+                    })
             })
             .cloned())
     }
 
     async fn create_server(&self, data: RowFields) -> Result<JsonData, McpTableError> {
         let row = stored_row(&data)?;
-        self.locked().push(row.clone());
+        self.rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(row.clone());
         Ok(row)
     }
 
@@ -154,7 +160,7 @@ impl ServerWriteStore for MemoryStore {
     }
 
     async fn delete_server(&self, server_id: &str) -> Result<Option<JsonData>, McpTableError> {
-        let mut rows = self.locked();
+        let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(index) = rows
             .iter()
             .position(|row| text(row, "server_id") == Some(server_id))
@@ -190,7 +196,7 @@ pub(super) struct RecordingInvalidation {
 }
 
 impl RecordingInvalidation {
-    pub(super) fn new() -> Self {
+    pub(super) const fn new() -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
         }
@@ -218,17 +224,10 @@ impl TokenCacheInvalidation for RecordingInvalidation {
 
 // The database stamps updated_at; the draft TTL is measured against it, so the fake does too.
 fn stored_row(data: &RowFields) -> Result<JsonData, McpTableError> {
-    let mut fields = BTreeMap::new();
-    for (name, value) in &data.0 {
-        fields.insert((*name).to_owned(), stored_value(value)?);
-    }
-    if !fields.contains_key("updated_at") {
-        fields.insert(
-            "updated_at".to_owned(),
-            JsonData::String(Utc::now().to_rfc3339()),
-        );
-    }
-    Ok(JsonData::Object(fields))
+    let stamp = JsonData::String(Utc::now().to_rfc3339());
+    let mut row = JsonData::Object(BTreeMap::from([("updated_at".to_owned(), stamp)]));
+    apply(&mut row, data)?;
+    Ok(row)
 }
 
 fn apply(stored: &mut JsonData, data: &RowFields) -> Result<(), McpTableError> {
@@ -236,18 +235,11 @@ fn apply(stored: &mut JsonData, data: &RowFields) -> Result<(), McpTableError> {
         return Ok(());
     };
     for (name, value) in &data.0 {
-        fields.insert((*name).to_owned(), stored_value(value)?);
+        let text = serde_json::to_string(value).map_err(McpTableError::Json)?;
+        let parsed = serde_json::from_str(&text).map_err(McpTableError::Json)?;
+        fields.insert((*name).to_owned(), parsed);
     }
     Ok(())
-}
-
-fn stored_value(value: &JsonValue) -> Result<JsonData, McpTableError> {
-    let text = serde_json::to_string(value).map_err(McpTableError::Json)?;
-    serde_json::from_str(&text).map_err(McpTableError::Json)
-}
-
-fn recent(stamp: &str, cutoff: DateTime<Utc>) -> bool {
-    DateTime::parse_from_rfc3339(stamp).is_ok_and(|parsed| parsed.with_timezone(&Utc) >= cutoff)
 }
 
 fn text<'row>(stored: &'row JsonData, name: &str) -> Option<&'row str> {

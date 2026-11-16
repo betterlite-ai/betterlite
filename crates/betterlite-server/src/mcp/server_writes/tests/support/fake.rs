@@ -14,7 +14,16 @@ use crate::mcp::server_writes::{
     ChildTable, ServerWriteStore, TokenCacheError, TokenCacheInvalidation,
 };
 
-#[derive(Default)]
+// The one failure a fake store plays out, so each test names the situation it needs.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Fault {
+    Nothing,
+    // The first read misses the row and the insert fails, as for the loser of a create race.
+    LostCreateRace,
+    CredentialEnumeration,
+    ChildCleanup,
+}
+
 struct State {
     rows: Vec<JsonData>,
     credential_users: BTreeMap<String, Vec<String>>,
@@ -22,34 +31,29 @@ struct State {
     hidden_find: bool,
 }
 
-// A row store for the cases a live database cannot be made to show: a lost insert race and a
-// cleanup that fails after the row is already gone.
+// A row store for what a live database cannot show: a lost insert race and a cleanup that fails late.
 pub(crate) struct FakeStore {
     state: Mutex<State>,
-    pub fail_create: bool,
-    pub fail_credential_users: bool,
-    pub fail_children: bool,
-    pub hide_first_find: bool,
+    pub(crate) fault: Fault,
 }
 
 impl FakeStore {
-    pub(crate) fn new(rows: Vec<JsonData>) -> Self {
+    pub(crate) const fn new(rows: Vec<JsonData>) -> Self {
         Self {
             state: Mutex::new(State {
                 rows,
-                ..State::default()
+                credential_users: BTreeMap::new(),
+                child_deletes: Vec::new(),
+                hidden_find: false,
             }),
-            fail_create: false,
-            fail_credential_users: false,
-            fail_children: false,
-            hide_first_find: false,
+            fault: Fault::Nothing,
         }
     }
 
-    pub(crate) fn with_credential_users(mut self, server_id: &str, users: &[&str]) -> Self {
-        let users = users.iter().map(|user| (*user).to_owned()).collect();
+    pub(crate) fn with_credential_users(self, server_id: &str, users: &[&str]) -> Self {
+        let owned = users.iter().map(|user| (*user).to_owned()).collect();
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.credential_users.insert(server_id.to_owned(), users);
+        state.credential_users.insert(server_id.to_owned(), owned);
         drop(state);
         self
     }
@@ -66,14 +70,14 @@ impl FakeStore {
 
     fn find(&self, server_id: &str) -> Option<JsonData> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if self.hide_first_find && !state.hidden_find {
+        if self.fault == Fault::LostCreateRace && !state.hidden_find {
             state.hidden_find = true;
             return None;
         }
         state
             .rows
             .iter()
-            .find(|row| server_id_of(row) == Some(server_id.to_owned()))
+            .find(|row| server_id_of(row).as_deref() == Some(server_id))
             .cloned()
     }
 
@@ -82,9 +86,23 @@ impl FakeStore {
         let found = state
             .rows
             .iter_mut()
-            .find(|row| server_id_of(row) == Some(server_id.to_owned()))?;
-        merge(found, data);
+            .find(|row| server_id_of(row).as_deref() == Some(server_id))?;
+        if let JsonData::Object(fields) = found {
+            fields.extend(object(data));
+        }
         Some(found.clone())
+    }
+
+    fn insert(&self, data: &RowFields) -> JsonData {
+        let row = JsonData::Object(object(data));
+        let server_id = server_id_of(&row);
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state
+            .rows
+            .retain(|existing| server_id_of(existing) != server_id);
+        state.rows.push(row.clone());
+        drop(state);
+        row
     }
 }
 
@@ -115,23 +133,19 @@ impl ServerWriteStore for FakeStore {
             .find(|row| {
                 server_id_of(row).as_deref() == Some(server_id)
                     && text(row, "approval_status") == Some("draft")
-                    && updated_at(row).is_some_and(|stamp| stamp >= cutoff)
+                    && text(row, "updated_at").is_some_and(|stamp| {
+                        DateTime::parse_from_rfc3339(stamp)
+                            .is_ok_and(|aware| aware.with_timezone(&Utc) >= cutoff)
+                    })
             })
             .cloned())
     }
 
     async fn create_server(&self, data: RowFields) -> Result<JsonData, McpTableError> {
-        if self.fail_create {
+        if self.fault == Fault::LostCreateRace {
             return Err(McpTableError::Table(TableError::MissingRow));
         }
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let row = JsonData::Object(object(&data));
-        let server_id = server_id_of(&row).unwrap_or_default();
-        state
-            .rows
-            .retain(|existing| server_id_of(existing) != Some(server_id.clone()));
-        state.rows.push(row.clone());
-        Ok(row)
+        Ok(self.insert(&data))
     }
 
     async fn update_server(&self, update: ServerUpdate) -> Result<Option<JsonData>, McpTableError> {
@@ -143,16 +157,7 @@ impl ServerWriteStore for FakeStore {
         request: LockedWrite,
     ) -> Result<LockedWriteOutcome, McpTableError> {
         let written = match request.write {
-            ServerWrite::Create(data) => {
-                let row = JsonData::Object(object(&data));
-                let server_id = server_id_of(&row).unwrap_or_default();
-                let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-                state
-                    .rows
-                    .retain(|existing| server_id_of(existing) != Some(server_id.clone()));
-                state.rows.push(row.clone());
-                Some(row)
-            }
+            ServerWrite::Create(data) => Some(self.insert(&data)),
             ServerWrite::Update(update) => self.apply(&update.data, &update.server_id),
         };
         Ok(LockedWriteOutcome::Written(written))
@@ -168,7 +173,7 @@ impl ServerWriteStore for FakeStore {
     }
 
     async fn credential_user_ids(&self, server_id: &str) -> Result<Vec<String>, McpTableError> {
-        if self.fail_credential_users {
+        if self.fault == Fault::CredentialEnumeration {
             return Err(McpTableError::Table(TableError::MissingRow));
         }
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -184,11 +189,14 @@ impl ServerWriteStore for FakeStore {
         table: ChildTable,
         server_id: &str,
     ) -> Result<(), McpTableError> {
-        if self.fail_children {
+        if self.fault == Fault::ChildCleanup {
             return Err(McpTableError::Table(TableError::MissingRow));
         }
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.child_deletes.push((table, server_id.to_owned()));
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .child_deletes
+            .push((table, server_id.to_owned()));
         Ok(())
     }
 }
@@ -242,20 +250,11 @@ impl TokenCacheInvalidation for RecordingInvalidation {
 fn object(data: &RowFields) -> BTreeMap<String, JsonData> {
     let mut fields = BTreeMap::new();
     for (name, value) in &data.0 {
-        let text = serde_json::to_string(value).expect("a field value is JSON");
-        let decoded = serde_json::from_str(&text).expect("a field value is JSON");
+        let encoded = serde_json::to_string(value).expect("a field value is JSON");
+        let decoded = serde_json::from_str(&encoded).expect("a field value is JSON");
         fields.insert((*name).to_owned(), decoded);
     }
     fields
-}
-
-fn merge(row: &mut JsonData, data: &RowFields) {
-    let JsonData::Object(fields) = row else {
-        return;
-    };
-    for (name, value) in object(data) {
-        fields.insert(name, value);
-    }
 }
 
 fn server_id_of(row: &JsonData) -> Option<String> {
@@ -274,13 +273,6 @@ fn text<'row>(row: &'row JsonData, name: &str) -> Option<&'row str> {
         | JsonData::Array(_)
         | JsonData::Object(_) => None,
     }
-}
-
-fn updated_at(row: &JsonData) -> Option<DateTime<Utc>> {
-    let stamp = text(row, "updated_at")?;
-    DateTime::parse_from_rfc3339(stamp)
-        .ok()
-        .map(|aware| aware.with_timezone(&Utc))
 }
 
 pub(crate) fn draft_row(server_id: &str, updated_at: &str) -> JsonData {

@@ -39,23 +39,26 @@ pub enum ServerWriteError {
     MissingServerId,
 }
 
-// LiteLLM's create_draft_mcp_server takes the TTL and an optional caller-chosen id.
+// LiteLLM's create_draft_mcp_server takes the acting user, the TTL and an optional caller-chosen id.
 #[derive(Debug, Clone, Default)]
 pub struct DraftOptions {
+    pub touched_by: String,
     pub ttl_seconds: i64,
     pub server_id: Option<String>,
 }
 
 // LiteLLM's create_mcp_server_if_identifier_free returns the written row or the collision it found.
+#[derive(Debug)]
 pub enum CreatedServer {
-    Created(McpServerTable),
-    Conflict(McpIdentifierConflict),
+    Created(Box<McpServerTable>),
+    Conflict(Box<McpIdentifierConflict>),
 }
 
 // LiteLLM's update_mcp_server returns the updated row, the collision, or None for a missing row.
+#[derive(Debug)]
 pub enum UpdatedServer {
-    Updated(Option<McpServerTable>),
-    Conflict(McpIdentifierConflict),
+    Updated(Option<Box<McpServerTable>>),
+    Conflict(Box<McpIdentifierConflict>),
 }
 
 // The identity a caller needs after a delete: the registry evicts by server_id and server_name.

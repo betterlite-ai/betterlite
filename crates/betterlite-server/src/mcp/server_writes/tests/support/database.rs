@@ -120,11 +120,11 @@ struct Environment {
 }
 
 pub(crate) struct Harness {
-    pub fixture: PostgresFixture,
-    pub pool: Pool,
-    pub client: Client,
-    pub writer: PostgresStore,
-    pub availability: Availability,
+    fixture: PostgresFixture,
+    pool: Pool,
+    pub(crate) client: Client,
+    writer: PostgresStore,
+    availability: Availability,
     journal: Arc<Mutex<Vec<String>>>,
 }
 

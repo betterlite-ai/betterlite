@@ -6,13 +6,11 @@ use betterlite_db::mcp::table_access::readable_mcp_servers;
 use betterlite_db::mcp::table_access::rows::server_id_of;
 use betterlite_db::mcp::table_access::types::McpTableError;
 use betterlite_db::stored_cipher::DbCipher;
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use super::ServerWriteError;
 
 // LiteLLM writes these through safe_dumps, so a row read back carries their JSON text.
-// Prisma hands every Json column to a model as its text for the same reason.
 const JSON_TEXT_COLUMNS: [&str; 5] = [
     "credentials",
     "env_vars",
@@ -57,15 +55,4 @@ where
     serde_json::to_value(row)
         .and_then(serde_json::from_value)
         .map_err(McpTableError::Json)
-}
-
-#[derive(Deserialize)]
-struct StatusRow {
-    #[serde(default)]
-    approval_status: Option<String>,
-}
-
-// The transient draft rows are told apart from real servers by this one column.
-pub fn approval_status(row: &JsonData) -> Result<Option<String>, McpTableError> {
-    row_as::<StatusRow>(row).map(|status| status.approval_status)
 }

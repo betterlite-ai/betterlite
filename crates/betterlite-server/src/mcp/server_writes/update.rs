@@ -34,19 +34,24 @@ where
         return Err(ServerWriteError::MissingServerId);
     };
     let mut data = prepare_update_data(request, fields_set, cipher)?;
-    let existing = load_existing(store, &server_id, request, &data).await?;
+    // Decided before the identity clearing below writes nulls into those token-exchange columns.
+    let explicit_te = TOKEN_EXCHANGE_COLUMNS
+        .iter()
+        .any(|field| data.contains_key(*field));
+    let existing = load_existing(store, &server_id, request, &data, explicit_te).await?;
     let changes = IdentityChanges::detect(request, existing.as_ref(), &data);
     apply_identity_changes(&changes, existing.as_ref(), &mut data);
-    apply_credential_merge(&changes, existing.as_ref(), &mut data)?;
+    apply_credential_merge(&changes, existing.as_ref(), explicit_te, &mut data)?;
     data.insert(
         "updated_by".to_owned(),
         JsonValue::String(touched_by.to_owned()),
     );
     let written = write_update_row(store, &server_id, row_fields(data)?).await?;
     match written {
-        LockedWriteOutcome::Conflict(conflict) => Ok(UpdatedServer::Conflict(conflict)),
+        LockedWriteOutcome::Conflict(conflict) => Ok(UpdatedServer::Conflict(Box::new(conflict))),
         LockedWriteOutcome::Written(Some(row)) => {
-            decode_server_row(row, cipher).map(|server| UpdatedServer::Updated(Some(server)))
+            let server = decode_server_row(row, cipher)?;
+            Ok(UpdatedServer::Updated(Some(Box::new(server))))
         }
         LockedWriteOutcome::Written(None) => Ok(UpdatedServer::Updated(None)),
     }
@@ -57,8 +62,7 @@ fn prepare_update_data(
     fields_set: &FieldsSet,
     cipher: &DbCipher,
 ) -> Result<PreparedServerData, ServerWriteError> {
-    // The normalizing pass always assigns alias, so it is set on the model even when the caller
-    // omitted it; the caller's own set is what tells an omitted alias from an explicit null.
+    // The normalizing pass always sets alias; the caller's own set tells an omission from a null.
     let mut model_fields = fields_set.clone();
     model_fields.insert("alias".to_owned());
     let mode = PrepareMode::Update {
@@ -73,6 +77,7 @@ async fn load_existing<S>(
     server_id: &str,
     request: &McpServerRequest,
     data: &PreparedServerData,
+    explicit_te: bool,
 ) -> Result<Option<ExistingRow>, ServerWriteError>
 where
     S: ServerWriteStore,
@@ -80,10 +85,6 @@ where
     let has_credentials = data
         .get("credentials")
         .is_some_and(|value| !matches!(value, JsonValue::Null));
-    // An explicit token-exchange column write also migrates the legacy blob copies.
-    let explicit_te = TOKEN_EXCHANGE_COLUMNS
-        .iter()
-        .any(|field| data.contains_key(*field));
     let url_provided = data
         .get("url")
         .is_some_and(|value| !matches!(value, JsonValue::Null));

@@ -40,8 +40,7 @@ where
     Ok(store.write_if_identifier_free(request).await?)
 }
 
-// Clearing the alias drops the prefix to the stored server_name, which may already belong to
-// another row, so that name has to be locked and checked too.
+// Clearing the alias drops the prefix to the stored server_name, so that name is locked and checked too.
 async fn alias_clear_write<S>(
     store: &S,
     server_id: &str,

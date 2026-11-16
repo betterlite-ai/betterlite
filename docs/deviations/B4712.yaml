@@ -12,4 +12,10 @@ deviations:
   - what: The identifier-free write seam is betterlite-db's write_if_identifier_free rather than an inline Prisma transaction; this task hands it the candidate server_name/alias, the excluded server_id and the insert or update closure, and the alias-clear case re-locks the stored server_name before writing.
     why: The advisory-lock transaction, its keys and the conflict query live in the shared MCP table access from B4711, so a server write and a server read answer one implementation of the same rules instead of two that can drift.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L583-L623
+  - what: create_draft_mcp_server returns an existing row, or the draft a concurrent worker won the create race with, with its global env var values decrypted; LiteLLM returns that stored row as read, so its global env var values are still ciphertext.
+    why: Every other read and write path decrypts them, and a caller that forwards the returned row's env vars upstream would send ciphertext in ${NAME} headers, the leak decrypt_global_env_var_values exists to stop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1035-L1053
+  - what: A draft TTL too large to subtract from the current time makes the oldest representable instant the prune cutoff, so every draft is kept; LiteLLM raises OverflowError from timedelta or the datetime subtraction and fails the draft write.
+    why: A TTL past what the clock can represent means no draft can have aged past it, and failing the admin's OAuth draft write over a configuration value is a 500 where nothing is wrong with the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1062
 kept_bugs: []

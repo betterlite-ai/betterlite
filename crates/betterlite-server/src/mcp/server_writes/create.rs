@@ -19,13 +19,13 @@ pub async fn create_mcp_server<S>(
 where
     S: ServerWriteStore,
 {
-    let request = with_server_id(request);
-    let data = create_fields(&request, touched_by, cipher)?;
+    let identified = with_server_id(request);
+    let data = create_fields(&identified, touched_by, cipher)?;
     let row = store.create_server(data).await?;
     decode_server_row(row, cipher)
 }
 
-// LiteLLM's create_mcp_server_if_identifier_free: the same insert, under the per-identifier advisory locks.
+// ast-grep-ignore: no-long-names
 pub async fn create_mcp_server_if_identifier_free<S>(
     store: &S,
     cipher: &DbCipher,
@@ -35,27 +35,28 @@ pub async fn create_mcp_server_if_identifier_free<S>(
 where
     S: ServerWriteStore,
 {
-    let request = with_server_id(request);
-    let data = create_fields(&request, touched_by, cipher)?;
-    let request = LockedWrite {
+    let identified = with_server_id(request);
+    let data = create_fields(&identified, touched_by, cipher)?;
+    let locked = LockedWrite {
         server_name: identifier_field(&data, "server_name"),
         alias: identifier_field(&data, "alias"),
         exclude_server_id: None,
         write: ServerWrite::Create(data),
     };
-    match store.write_if_identifier_free(request).await? {
-        LockedWriteOutcome::Conflict(conflict) => Ok(CreatedServer::Conflict(conflict)),
+    match store.write_if_identifier_free(locked).await? {
+        LockedWriteOutcome::Conflict(conflict) => Ok(CreatedServer::Conflict(Box::new(conflict))),
         LockedWriteOutcome::Written(Some(row)) => {
-            decode_server_row(row, cipher).map(CreatedServer::Created)
+            let server = decode_server_row(row, cipher)?;
+            Ok(CreatedServer::Created(Box::new(server)))
         }
         LockedWriteOutcome::Written(None) => Err(ServerWriteError::InsertedRowMissing),
     }
 }
 
 fn with_server_id(request: &McpServerRequest) -> McpServerRequest {
-    let mut request = request.clone();
-    if request.server_id.is_none() {
-        request.server_id = Some(Uuid::new_v4().to_string());
+    let mut identified = request.clone();
+    if identified.server_id.is_none() {
+        identified.server_id = Some(Uuid::new_v4().to_string());
     }
-    request
+    identified
 }

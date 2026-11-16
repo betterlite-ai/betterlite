@@ -8,6 +8,7 @@ use betterlite_db::mcp::table_access::actions::{
 };
 use betterlite_db::mcp::table_access::db_find_mcp_server_rows;
 use betterlite_db::mcp::table_access::filter::ServerFilter;
+// ast-grep-ignore: no-long-names
 use betterlite_db::mcp::table_access::lock::mcp_server_write_if_identifier_free;
 use betterlite_db::mcp::table_access::rows::{KeyValues, RowFields, ServerUpdate};
 use betterlite_db::mcp::table_access::server_reads::db_find_mcp_server_row;
@@ -34,12 +35,6 @@ pub struct PostgresServerWrites<'db> {
     pub publish: PublishChange<TableError>,
 }
 
-impl<'db> PostgresServerWrites<'db> {
-    fn table_store(&self) -> Result<McpTableStore<'db>, McpTableError> {
-        McpTableStore::new(Some(self.client), Arc::clone(&self.publish))
-    }
-}
-
 #[derive(Deserialize)]
 struct CredentialRow {
     user_id: String,
@@ -47,12 +42,14 @@ struct CredentialRow {
 
 impl ServerWriteStore for PostgresServerWrites<'_> {
     async fn find_server(&self, server_id: &str) -> Result<Option<JsonData>, McpTableError> {
-        db_find_mcp_server_row(&self.table_store()?, server_id).await
+        let store = McpTableStore::new(Some(self.client), Arc::clone(&self.publish))?;
+        db_find_mcp_server_row(&store, server_id).await
     }
 
     async fn find_drafts(&self) -> Result<Vec<JsonData>, McpTableError> {
         let filter = ServerFilter::ApprovalStatus(DRAFT.to_owned());
-        db_find_mcp_server_rows(&self.table_store()?, Some(filter)).await
+        let store = McpTableStore::new(Some(self.client), Arc::clone(&self.publish))?;
+        db_find_mcp_server_rows(&store, Some(filter)).await
     }
 
     async fn find_draft_updated_since(
@@ -62,9 +59,9 @@ impl ServerWriteStore for PostgresServerWrites<'_> {
     ) -> Result<Option<JsonData>, McpTableError> {
         // The draft must be visible to the worker that just wrote it, so this reads the writer.
         let client = self.client.writer.session().await?;
-        let cutoff = cutoff.to_rfc3339_opts(SecondsFormat::Micros, true);
+        let since = cutoff.to_rfc3339_opts(SecondsFormat::Micros, true);
         let rows = client
-            .query(RECENT_DRAFT_SQL, &[&server_id, &cutoff])
+            .query(RECENT_DRAFT_SQL, &[&server_id, &since])
             .await
             .map_err(|source| McpTableError::Database(backend(source)))?;
         let Some(row) = rows.first() else {
@@ -83,14 +80,17 @@ impl ServerWriteStore for PostgresServerWrites<'_> {
     }
 
     async fn update_server(&self, update: ServerUpdate) -> Result<Option<JsonData>, McpTableError> {
-        self.table_store()?.update_server(&update).await
+        let store = McpTableStore::new(Some(self.client), Arc::clone(&self.publish))?;
+        store.update_server(&update).await
     }
 
     async fn write_if_identifier_free(
         &self,
         request: LockedWrite,
     ) -> Result<LockedWriteOutcome, McpTableError> {
-        mcp_server_write_if_identifier_free(&self.table_store()?, &request).await
+        let store = McpTableStore::new(Some(self.client), Arc::clone(&self.publish))?;
+        // ast-grep-ignore: no-long-names
+        mcp_server_write_if_identifier_free(&store, &request).await
     }
 
     async fn delete_server(&self, server_id: &str) -> Result<Option<JsonData>, McpTableError> {
@@ -101,7 +101,8 @@ impl ServerWriteStore for PostgresServerWrites<'_> {
 
     async fn credential_user_ids(&self, server_id: &str) -> Result<Vec<String>, McpTableError> {
         let filter = KeyValues::from([("server_id", server_id.to_owned())]);
-        let rows = db_find_user_credential_rows(&self.table_store()?, Some(&filter)).await?;
+        let store = McpTableStore::new(Some(self.client), Arc::clone(&self.publish))?;
+        let rows = db_find_user_credential_rows(&store, Some(&filter)).await?;
         let mut user_ids = Vec::with_capacity(rows.len());
         for row in &rows {
             user_ids.push(row_as::<CredentialRow>(row)?.user_id);
@@ -115,23 +116,22 @@ impl ServerWriteStore for PostgresServerWrites<'_> {
         server_id: &str,
     ) -> Result<(), McpTableError> {
         let filter = KeyValues::from([("server_id", server_id.to_owned())]);
-        let removed = match table {
+        match table {
             ChildTable::Credential => {
                 let actions =
                     user_credential_actions(Some(self.client), Arc::clone(&self.publish))?;
-                actions.delete_many(filter).await?
+                actions.delete_many(filter).await?;
             }
             ChildTable::EnvVar => {
                 let actions = user_env_var_actions(Some(self.client), Arc::clone(&self.publish))?;
-                actions.delete_many(filter).await?
+                actions.delete_many(filter).await?;
             }
             ChildTable::OAuthClient => {
                 let actions =
                     oauth_client_table_actions(Some(self.client), Arc::clone(&self.publish))?;
-                actions.delete_many(filter).await?
+                actions.delete_many(filter).await?;
             }
-        };
-        drop(removed);
+        }
         Ok(())
     }
 }

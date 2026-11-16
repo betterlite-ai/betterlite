@@ -6,7 +6,7 @@ use super::support::database::{
     AGE_SERVER_SQL, CHILD_COUNT_SQL, ENV_VAR_COUNT_SQL, Harness, OAUTH_COUNT_SQL, SEED_DRAFT_SQL,
     SEED_SERVER_SQL, SERVER_COUNT_SQL, database,
 };
-use super::support::fake::{FakeStore, RecordingInvalidation, active_row, draft_row};
+use super::support::fake::{FakeStore, Fault, RecordingInvalidation, active_row, draft_row};
 use super::support::{json, request};
 use crate::mcp::server_writes::draft::{
     create_draft_mcp_server, get_draft_mcp_server, prune_expired_drafts,
@@ -51,6 +51,7 @@ async fn seed_real_server(harness: &Harness, server_id: &str, age_seconds: f64) 
 
 fn options(ttl_seconds: i64, server_id: Option<&str>) -> DraftOptions {
     DraftOptions {
+        touched_by: "admin".to_owned(),
         ttl_seconds,
         server_id: server_id.map(str::to_owned),
     }
@@ -66,7 +67,6 @@ async fn create_draft_marks_the_status_and_returns_the_existing_row_untouched() 
         &store,
         &cipher,
         &request(r#"{"server_name": "flow"}"#),
-        "admin",
         &options(300, Some("sess-1")),
         &invalidation,
     )
@@ -83,7 +83,6 @@ async fn create_draft_marks_the_status_and_returns_the_existing_row_untouched() 
         &store,
         &cipher,
         &request(r#"{"server_name": "other", "description": "ignored"}"#),
-        "admin",
         &options(300, Some("sess-1")),
         &invalidation,
     )
@@ -104,13 +103,12 @@ async fn create_draft_generates_a_uuid_when_no_id_is_given() {
         &store,
         &cipher,
         &request(r#"{"server_name": "flow"}"#),
-        "admin",
         &DraftOptions::default(),
         &RecordingInvalidation::new(),
     )
     .await
     .unwrap();
-    assert!(Uuid::parse_str(&created.server_id).is_ok());
+    Uuid::parse_str(&created.server_id).expect("the generated id is a uuid");
     assert_eq!(harness.count(SERVER_COUNT_SQL).await, 1);
     harness.close().await;
 }
@@ -131,7 +129,6 @@ async fn prune_on_write_removes_expired_drafts_their_children_and_their_tokens()
         &store,
         &cipher,
         &request(r#"{"server_name": "new"}"#),
-        "admin",
         &options(300, Some("sess")),
         &invalidation,
     )
@@ -184,6 +181,50 @@ async fn prune_skips_a_draft_without_a_timestamp() {
     assert_eq!(store.rows().len(), 1);
 }
 
+// A TTL too large to subtract from now leaves every draft live instead of sweeping it.
+#[tokio::test]
+async fn prune_keeps_every_draft_when_the_ttl_overflows() {
+    let store = FakeStore::new(vec![draft_row("ancient", "2000-01-01T00:00:00Z")]);
+    let pruned = prune_expired_drafts(&store, i64::MAX, &RecordingInvalidation::new())
+        .await
+        .unwrap();
+    assert_eq!(pruned, 0);
+    assert_eq!(store.rows().len(), 1);
+}
+
+// An existing draft comes back like a read does, with its global env vars decrypted.
+#[tokio::test]
+async fn create_draft_returns_an_existing_draft_with_plaintext_env_vars() {
+    let harness = database().await;
+    let store = harness.writes();
+    let cipher = cipher(SALT);
+    let invalidation = RecordingInvalidation::new();
+    let payload = r#"{"server_name": "flow",
+        "env_vars": [{"name": "API_KEY", "value": "global-secret", "scope": "global"}]}"#;
+    create_draft_mcp_server(
+        &store,
+        &cipher,
+        &request(payload),
+        &options(300, Some("sess-1")),
+        &invalidation,
+    )
+    .await
+    .unwrap();
+    let existing = create_draft_mcp_server(
+        &store,
+        &cipher,
+        &request(payload),
+        &options(300, Some("sess-1")),
+        &invalidation,
+    )
+    .await
+    .unwrap();
+    let entries = existing.env_vars.unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].value, "global-secret");
+    harness.close().await;
+}
+
 #[tokio::test]
 async fn create_draft_returns_an_active_server_untouched() {
     let fresh = active_row("srv-1", &Utc::now().to_rfc3339());
@@ -192,7 +233,6 @@ async fn create_draft_returns_an_active_server_untouched() {
         &store,
         &cipher(SALT),
         &request(r#"{"server_name": "flow"}"#),
-        "admin",
         &options(300, Some("srv-1")),
         &RecordingInvalidation::new(),
     )
@@ -208,13 +248,11 @@ async fn create_draft_returns_an_active_server_untouched() {
 async fn create_draft_adopts_a_draft_written_by_another_worker() {
     let fresh = draft_row("sess-1", &Utc::now().to_rfc3339());
     let mut store = FakeStore::new(vec![fresh]);
-    store.fail_create = true;
-    store.hide_first_find = true;
+    store.fault = Fault::LostCreateRace;
     let adopted = create_draft_mcp_server(
         &store,
         &cipher(SALT),
         &request(r#"{"server_name": "flow"}"#),
-        "admin",
         &options(300, Some("sess-1")),
         &RecordingInvalidation::new(),
     )
@@ -228,13 +266,11 @@ async fn create_draft_adopts_a_draft_written_by_another_worker() {
 async fn create_draft_does_not_adopt_an_active_row_from_a_failed_create() {
     let fresh = active_row("sess-1", &Utc::now().to_rfc3339());
     let mut store = FakeStore::new(vec![fresh]);
-    store.fail_create = true;
-    store.hide_first_find = true;
+    store.fault = Fault::LostCreateRace;
     let error = create_draft_mcp_server(
         &store,
         &cipher(SALT),
         &request(r#"{"server_name": "flow"}"#),
-        "admin",
         &options(300, Some("sess-1")),
         &RecordingInvalidation::new(),
     )

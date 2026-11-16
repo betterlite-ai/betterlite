@@ -54,11 +54,12 @@ async fn create_generates_a_uuid_sets_audit_and_returns_plaintext_env_vars() {
     let created = create_mcp_server(&store, &cipher, &request(&payload("", "weather")), "admin")
         .await
         .unwrap();
-    assert!(Uuid::parse_str(&created.server_id).is_ok());
+    Uuid::parse_str(&created.server_id).expect("the generated id is a uuid");
     assert_eq!(created.server_name.as_deref(), Some("weather"));
     assert_eq!(created.created_by.as_deref(), Some("admin"));
     assert_eq!(created.updated_by.as_deref(), Some("admin"));
     let returned = created.env_vars.as_ref().unwrap();
+    assert_eq!(returned.len(), 2);
     assert_eq!(returned[0].value, "global-secret");
     assert_eq!(returned[0].scope, McpEnvVarScope::Global);
     assert_eq!(returned[1].value, "hint");
@@ -115,46 +116,59 @@ async fn create_if_identifier_free_returns_the_created_row() {
     harness.close().await;
 }
 
-// Alias is checked before server_name, both compare case-insensitively, and draft rows never collide.
+// Alias is checked before server_name and both compare case-insensitively.
 #[tokio::test]
 async fn create_if_identifier_free_reports_case_insensitive_conflicts() {
     let harness = database().await;
     let store = harness.writes();
     let cipher = cipher(SALT);
     let first = request(&payload("srv-a", "Weather"));
-    create_if_identifier_free(&store, &cipher, &first, "admin")
+    create_mcp_server_if_identifier_free(&store, &cipher, &first, "admin")
         .await
         .unwrap();
     let by_name = request(&payload("srv-b", "weather"));
-    let conflict = create_mcp_server_if_identifier_free(&store, &cipher, &by_name, "admin")
+    let named = create_mcp_server_if_identifier_free(&store, &cipher, &by_name, "admin")
         .await
         .unwrap();
-    let CreatedServer::Conflict(conflict) = conflict else {
+    let CreatedServer::Conflict(name_conflict) = named else {
         panic!("the server_name collides");
     };
-    assert_eq!(conflict.field, IdentifierField::ServerName);
-    assert_eq!(conflict.value, "weather");
-    assert_eq!(conflict.server_id, "srv-a");
+    assert_eq!(name_conflict.field, IdentifierField::ServerName);
+    assert_eq!(name_conflict.value, "weather");
+    assert_eq!(name_conflict.server_id, "srv-a");
     let mut with_alias = request(&payload("srv-c", "unrelated"));
     with_alias.alias = Some("WEATHER".to_owned());
-    let conflict = create_mcp_server_if_identifier_free(&store, &cipher, &with_alias, "admin")
+    let aliased = create_mcp_server_if_identifier_free(&store, &cipher, &with_alias, "admin")
         .await
         .unwrap();
-    let CreatedServer::Conflict(conflict) = conflict else {
+    let CreatedServer::Conflict(alias_conflict) = aliased else {
         panic!("the alias collides");
     };
-    assert_eq!(conflict.field, IdentifierField::Alias);
-    assert_eq!(conflict.value, "WEATHER");
-    let draft = request(&payload("srv-d", "DRAFTED"));
+    assert_eq!(alias_conflict.field, IdentifierField::Alias);
+    assert_eq!(alias_conflict.value, "WEATHER");
+    assert_eq!(
+        harness.count_param(SERVER_NAME_COUNT_SQL, "Weather").await,
+        1
+    );
+    harness.close().await;
+}
+
+// Draft rows back a transient OAuth session, so their names never block a real server.
+#[tokio::test]
+async fn create_if_identifier_free_ignores_draft_rows() {
+    let harness = database().await;
+    let store = harness.writes();
+    let cipher = cipher(SALT);
     let options = DraftOptions {
+        touched_by: "admin".to_owned(),
         ttl_seconds: 300,
         server_id: Some("srv-draft".to_owned()),
     };
+    let draft = request(&payload("srv-d", "DRAFTED"));
     create_draft_mcp_server(
         &store,
         &cipher,
         &draft,
-        "admin",
         &options,
         &RecordingInvalidation::new(),
     )
@@ -168,10 +182,6 @@ async fn create_if_identifier_free_reports_case_insensitive_conflicts() {
         matches!(created, CreatedServer::Created(_)),
         "drafts are excluded"
     );
-    assert_eq!(
-        harness.count_param(SERVER_NAME_COUNT_SQL, "Weather").await,
-        1
-    );
     harness.close().await;
 }
 
@@ -181,11 +191,11 @@ async fn create_if_identifier_free_serializes_concurrent_inserts() {
     let harness = database().await;
     let store = harness.writes();
     let cipher = cipher(SALT);
-    let left = request(&payload("srv-left", "shared"));
-    let right = request(&payload("srv-right", "shared"));
+    let left_request = request(&payload("srv-left", "shared"));
+    let right_request = request(&payload("srv-right", "shared"));
     let (left, right) = tokio::join!(
-        create_mcp_server_if_identifier_free(&store, &cipher, &left, "admin"),
-        create_mcp_server_if_identifier_free(&store, &cipher, &right, "admin"),
+        create_mcp_server_if_identifier_free(&store, &cipher, &left_request, "admin"),
+        create_mcp_server_if_identifier_free(&store, &cipher, &right_request, "admin"),
     );
     let outcomes = [left.unwrap(), right.unwrap()];
     let created = outcomes
@@ -229,6 +239,7 @@ async fn get_draft_drops_undecryptable_global_env_vars() {
         .unwrap();
     drop(guard);
     let entries = found.env_vars.as_ref().unwrap();
+    assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].name, "BROKEN");
     assert_eq!(entries[0].value, "");
     assert_eq!(entries[1].value, "kept");

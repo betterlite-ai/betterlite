@@ -11,9 +11,9 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
-use betterlite_server::mcp::server_writes::create::{
-    create_mcp_server, create_mcp_server_if_identifier_free,
-};
+use betterlite_server::mcp::server_writes::create::create_mcp_server;
+// ast-grep-ignore: no-long-names
+use betterlite_server::mcp::server_writes::create::create_mcp_server_if_identifier_free;
 use betterlite_server::mcp::server_writes::decode::decode_server_row;
 use betterlite_server::mcp::server_writes::delete::delete_mcp_server;
 use betterlite_server::mcp::server_writes::draft::{create_draft_mcp_server, get_draft_mcp_server};
@@ -59,7 +59,7 @@ pub(crate) struct Call {
     users: Vec<String>,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize)]
 struct Answer {
     server_id: Option<String>,
     conflict: Option<Value>,
@@ -67,6 +67,18 @@ struct Answer {
     invalidated: Vec<String>,
     deleted_children: Vec<&'static str>,
 }
+
+// Everything one helper call works against, built once from the call.
+struct Session {
+    cipher: DbCipher,
+    store: MemoryStore,
+    invalidated: RecordingInvalidation,
+    request: McpServerRequest,
+    fields: FieldsSet,
+}
+
+// The server_id a call answers with and the identifier collision it reported, if any.
+type Outcome = Result<(Option<String>, Option<Value>), Box<HelperError>>;
 
 impl Helper for Op {
     type Input = Call;
@@ -91,77 +103,111 @@ fn cipher(salt: &str) -> DbCipher {
 }
 
 async fn run_call(call: &Call) -> HelperResult {
-    let cipher = cipher(&call.salt_key);
     let (request, fields) = split_payload(&call.payload)?;
-    let store = MemoryStore::new(&call.rows, &call.users, &call.server_id);
-    let invalidated = RecordingInvalidation::new();
-    let mut answer = Answer::default();
-    match call.function {
-        Function::Create => {
-            let server = create_mcp_server(&store, &cipher, &request, &call.touched_by)
-                .await
-                .or_value_error()?;
-            answer.server_id = Some(server.server_id);
-        }
-        Function::CreateIfFree => {
-            let created =
-                create_mcp_server_if_identifier_free(&store, &cipher, &request, &call.touched_by)
-                    .await
-                    .or_value_error()?;
-            match created {
-                CreatedServer::Created(server) => answer.server_id = Some(server.server_id),
-                CreatedServer::Conflict(conflict) => {
-                    answer.conflict = Some(conflict_view(&conflict));
-                }
-            }
-        }
-        Function::CreateDraft => {
-            let options = DraftOptions {
-                ttl_seconds: call.ttl_seconds,
-                server_id: (!call.server_id.is_empty()).then_some(call.server_id.clone()),
-            };
-            let draft = create_draft_mcp_server(
-                &store,
-                &cipher,
-                &request,
-                &call.touched_by,
-                &options,
-                &invalidated,
-            )
-            .await
-            .or_value_error()?;
-            answer.server_id = Some(draft.server_id);
-        }
-        Function::GetDraft => {
-            let found = get_draft_mcp_server(&store, &cipher, &call.server_id, call.ttl_seconds)
-                .await
-                .or_value_error()?;
-            answer.server_id = found.map(|server| server.server_id);
-        }
-        Function::Update => {
-            let updated = update_mcp_server(&store, &cipher, &request, &call.touched_by, &fields)
-                .await
-                .or_value_error()?;
-            match updated {
-                UpdatedServer::Updated(server) => {
-                    answer.server_id = server.map(|server| server.server_id);
-                }
-                UpdatedServer::Conflict(conflict) => {
-                    answer.conflict = Some(conflict_view(&conflict));
-                }
-            }
-        }
-        Function::Delete => {
-            let deleted = delete_mcp_server(&store, &call.server_id, &invalidated)
-                .await
-                .or_value_error()?;
-            answer.server_id = deleted.map(|deleted| deleted.server_id);
-        }
-    }
-    answer.rows = rows_view(&store, &cipher)?;
-    answer.invalidated = invalidated.calls();
-    answer.deleted_children = store.deleted_children();
+    let session = Session {
+        cipher: cipher(&call.salt_key),
+        store: MemoryStore::new(&call.rows, &call.users, &call.server_id),
+        invalidated: RecordingInvalidation::new(),
+        request,
+        fields,
+    };
+    let (server_id, conflict) = match call.function {
+        Function::Create => create(call, &session).await?,
+        Function::CreateIfFree => create_if_free(call, &session).await?,
+        Function::CreateDraft => create_draft(call, &session).await?,
+        Function::GetDraft => get_draft(call, &session).await?,
+        Function::Update => update(call, &session).await?,
+        Function::Delete => delete(call, &session).await?,
+    };
+    let answer = Answer {
+        server_id,
+        conflict,
+        rows: rows_view(&session.store, &session.cipher)?,
+        invalidated: session.invalidated.calls(),
+        deleted_children: session.store.deleted_children(),
+    };
     serde_json::to_value(answer).or_value_error()
+}
+
+async fn create(call: &Call, session: &Session) -> Outcome {
+    let server = create_mcp_server(
+        &session.store,
+        &session.cipher,
+        &session.request,
+        &call.touched_by,
+    )
+    .await
+    .or_value_error()?;
+    Ok((Some(server.server_id), None))
+}
+
+async fn create_if_free(call: &Call, session: &Session) -> Outcome {
+    // ast-grep-ignore: no-long-names
+    let created = create_mcp_server_if_identifier_free(
+        &session.store,
+        &session.cipher,
+        &session.request,
+        &call.touched_by,
+    )
+    .await
+    .or_value_error()?;
+    match created {
+        CreatedServer::Created(server) => Ok((Some(server.server_id), None)),
+        CreatedServer::Conflict(conflict) => Ok((None, Some(conflict_view(&conflict)))),
+    }
+}
+
+async fn create_draft(call: &Call, session: &Session) -> Outcome {
+    let options = DraftOptions {
+        touched_by: call.touched_by.clone(),
+        ttl_seconds: call.ttl_seconds,
+        server_id: (!call.server_id.is_empty()).then_some(call.server_id.clone()),
+    };
+    let draft = create_draft_mcp_server(
+        &session.store,
+        &session.cipher,
+        &session.request,
+        &options,
+        &session.invalidated,
+    )
+    .await
+    .or_value_error()?;
+    Ok((Some(draft.server_id), None))
+}
+
+async fn get_draft(call: &Call, session: &Session) -> Outcome {
+    let found = get_draft_mcp_server(
+        &session.store,
+        &session.cipher,
+        &call.server_id,
+        call.ttl_seconds,
+    )
+    .await
+    .or_value_error()?;
+    Ok((found.map(|draft| draft.server_id), None))
+}
+
+async fn update(call: &Call, session: &Session) -> Outcome {
+    let updated = update_mcp_server(
+        &session.store,
+        &session.cipher,
+        &session.request,
+        &call.touched_by,
+        &session.fields,
+    )
+    .await
+    .or_value_error()?;
+    match updated {
+        UpdatedServer::Updated(server) => Ok((server.map(|row| row.server_id), None)),
+        UpdatedServer::Conflict(conflict) => Ok((None, Some(conflict_view(&conflict)))),
+    }
+}
+
+async fn delete(call: &Call, session: &Session) -> Outcome {
+    let deleted = delete_mcp_server(&session.store, &call.server_id, &session.invalidated)
+        .await
+        .or_value_error()?;
+    Ok((deleted.map(|gone| gone.server_id), None))
 }
 
 // The update path needs the caller's own field set, which the typed request no longer carries.
@@ -195,8 +241,8 @@ fn rows_view(store: &MemoryStore, cipher: &DbCipher) -> Result<Vec<Value>, Box<H
 
 fn server_view(server: &McpServerTable, cipher: &DbCipher) -> HelperResult {
     let credentials = match server.credentials.as_ref() {
-        Some(credentials) => {
-            let value = serde_json::to_value(credentials).or_value_error()?;
+        Some(stored_blob) => {
+            let value = serde_json::to_value(stored_blob).or_value_error()?;
             let stored: JsonValue = serde_json::from_value(value).or_value_error()?;
             let mut blob = credentials_blob_to_dict(&stored).or_value_error()?;
             decrypt_credentials(&mut blob, cipher);

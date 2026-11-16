@@ -44,7 +44,11 @@ pub(crate) fn opened_env_vars(column: &str, cipher: &DbCipher) -> Vec<JsonValue>
         JsonValue::String(text) => {
             serde_json::from_str(&text).expect("the stored env vars text is JSON")
         }
-        other => other,
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_)) => other,
     };
     let JsonValue::Array(mut entries) = inner else {
         panic!("the stored env vars are an array");

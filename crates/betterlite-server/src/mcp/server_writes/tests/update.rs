@@ -124,24 +124,25 @@ async fn update_reports_identifier_conflicts_and_excludes_the_row_itself() {
     )
     .await;
     seed(&store, r#"{"server_id": "srv-b", "server_name": "beta"}"#).await;
-    let (request, fields) = update_payload(r#"{"server_id": "srv-b", "server_name": "ALPHA"}"#);
-    let conflict = update_mcp_server(&store, &cipher, &request, "editor", &fields)
+    let (rename, rename_fields) =
+        update_payload(r#"{"server_id": "srv-b", "server_name": "ALPHA"}"#);
+    let renamed = update_mcp_server(&store, &cipher, &rename, "editor", &rename_fields)
         .await
         .unwrap();
-    let UpdatedServer::Conflict(conflict) = conflict else {
+    let UpdatedServer::Conflict(name_conflict) = renamed else {
         panic!("the server_name collides");
     };
-    assert_eq!(conflict.field, IdentifierField::ServerName);
-    assert_eq!(conflict.value, "ALPHA");
-    assert_eq!(conflict.server_id, "srv-a");
-    let (request, fields) = update_payload(r#"{"server_id": "srv-b", "alias": "Shared"}"#);
-    let conflict = update_mcp_server(&store, &cipher, &request, "editor", &fields)
+    assert_eq!(name_conflict.field, IdentifierField::ServerName);
+    assert_eq!(name_conflict.value, "ALPHA");
+    assert_eq!(name_conflict.server_id, "srv-a");
+    let (realias, realias_fields) = update_payload(r#"{"server_id": "srv-b", "alias": "Shared"}"#);
+    let realiased = update_mcp_server(&store, &cipher, &realias, "editor", &realias_fields)
         .await
         .unwrap();
-    let UpdatedServer::Conflict(conflict) = conflict else {
+    let UpdatedServer::Conflict(alias_conflict) = realiased else {
         panic!("the alias collides");
     };
-    assert_eq!(conflict.field, IdentifierField::Alias);
+    assert_eq!(alias_conflict.field, IdentifierField::Alias);
     let (request, fields) = update_payload(r#"{"server_id": "srv-b", "server_name": "beta"}"#);
     let updated = update_mcp_server(&store, &cipher, &request, "editor", &fields)
         .await
@@ -166,10 +167,10 @@ async fn update_clearing_the_alias_locks_the_stored_server_name() {
     )
     .await;
     let (request, fields) = update_payload(r#"{"server_id": "srv-b", "alias": null}"#);
-    let conflict = update_mcp_server(&store, &cipher, &request, "editor", &fields)
+    let blocked = update_mcp_server(&store, &cipher, &request, "editor", &fields)
         .await
         .unwrap();
-    let UpdatedServer::Conflict(conflict) = conflict else {
+    let UpdatedServer::Conflict(conflict) = blocked else {
         panic!("the stored server_name collides");
     };
     assert_eq!(conflict.field, IdentifierField::ServerName);

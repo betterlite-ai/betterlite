@@ -4,7 +4,7 @@ use super::support::cipher::{SALT, cipher};
 use super::support::database::{
     CHILD_COUNT_SQL, ENV_VAR_COUNT_SQL, OAUTH_COUNT_SQL, SERVER_COUNT_SQL, database,
 };
-use super::support::fake::{FakeStore, RecordingInvalidation, active_row};
+use super::support::fake::{FakeStore, Fault, RecordingInvalidation, active_row};
 use super::support::logs::capture_logs;
 use super::support::request;
 use crate::mcp::server_writes::DeletedServer;
@@ -109,7 +109,7 @@ async fn delete_logs_a_failed_invalidation_and_still_invalidates_the_next_user()
 #[tokio::test]
 async fn delete_warns_when_credential_enumeration_fails_and_still_cleans_up() {
     let mut store = FakeStore::new(vec![active_row("srv-1", &Utc::now().to_rfc3339())]);
-    store.fail_credential_users = true;
+    store.fault = Fault::CredentialEnumeration;
     let invalidation = RecordingInvalidation::new();
     let (logs, guard) = capture_logs();
     let deleted = delete_mcp_server(&store, "srv-1", &invalidation)
@@ -127,7 +127,7 @@ async fn delete_warns_when_credential_enumeration_fails_and_still_cleans_up() {
 async fn delete_warns_on_a_failed_child_cleanup_and_still_invalidates() {
     let mut store = FakeStore::new(vec![active_row("srv-1", &Utc::now().to_rfc3339())])
         .with_credential_users("srv-1", &["u1"]);
-    store.fail_children = true;
+    store.fault = Fault::ChildCleanup;
     let invalidation = RecordingInvalidation::new();
     let (logs, guard) = capture_logs();
     let deleted = delete_mcp_server(&store, "srv-1", &invalidation)
