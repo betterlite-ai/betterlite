@@ -1,14 +1,35 @@
 task: B1539
 deviations:
-  - what: A reply whose token count is negative, above 2^64-1, or whose prompt and completion counts add up past 2^64-1 gets the 422 unexpected-response error, and a count written as a decimal with a nonzero fraction beyond float precision (1.0000000000000000001) is refused where pydantic rounds it through a float.
-    why: The chat record stores usage as unsigned 64-bit counts, so the values LiteLLM would pass on as Python integers or rounded floats cannot be held, and no real Fal reply carries them.
+  - what: >-
+      A count is read from the digits as written and held as an unsigned 64-bit integer, where pydantic
+      reads a count written as a JSON number through a 64-bit float. A negative count, a count above
+      2^64-1, or a prompt and completion pair that add up past 2^64-1 gets the 422 unexpected-response
+      error; a decimal with a nonzero fraction that f64 would round to a whole number (1.0000000000000000001)
+      is refused; and a whole float is read exactly, so 1e19 and 9223372036854775807.0 are accepted where
+      pydantic refuses a float at or beyond 2^63 and rounds one below it that f64 cannot hold.
+    why: >-
+      The usage record holds unsigned 64-bit counts read from exact decimal text, and porting pydantic's
+      float round trip would put f64 arithmetic in production code, which the lint table and the
+      money-is-a-Decimal rule deny; no real Fal reply carries a count with a fraction or one that large.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/chat/transformation.py#L33-L38
+  - what: >-
+      The unexpected-response text decodes the body as UTF-8 and puts one U+FFFD where an invalid sequence
+      sits, where httpx decodes the bytes with the charset its content-type declares and utf-8 when it
+      declares none.
+    why: >-
+      A JSON body is UTF-8 by definition and no Fal reply or error page declares another charset, so both
+      read every body a Fal endpoint sends the same way; a non-UTF-8 error page differs only in its
+      non-ASCII bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/chat/transformation.py#L210-L216
   - what: A reply body that repeats a JSON key (two output members, for example) is refused with the 422 error, where pydantic keeps the last value.
     why: serde rejects a duplicate field, and a body that repeats a key is not something a Fal endpoint sends.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/chat/transformation.py#L40-L49
   - what: The reply's reasoning text comes back beside the chat response as reasoning_content, and the response's assistant message does not carry it, where LiteLLM sets message.reasoning_content.
     why: The shared chat reply record (ChatResponse and AssistantMessage, owned by B004) has no reasoning_content field, and extending it is outside this task's scope.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/chat/transformation.py#L218-L222
+  - what: A starting chat response with no choices gets the typed NoChoices error, where LiteLLM's choices[0] raises IndexError.
+    why: The chat response record can hold an empty choice list and the decoder never assumes a first choice, so a missing one is an error the caller can match instead of a panic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/chat/transformation.py#L223-L226
   - what: A finish_reason that LiteLLM does not map is turned into stop without the "Unmapped finish_reason" warning log.
     why: The decoder is a pure function with no logger injected, and the mapped value is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L253-L258

@@ -17,6 +17,8 @@ call:
       - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": "1_0", "output_tokens": 2.0}}'}
       - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": true, "output_tokens": " 7 "}}'}
       - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": "2.00", "output_tokens": 1e2}}'}
+      - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": "0__1", "output_tokens": "0__0"}}'}
+      - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": "0.0", "output_tokens": "00.00"}}'}
       - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": 18446744073709551614, "output_tokens": 1}}'}
 env: {}
 compare:

@@ -91,8 +91,8 @@ fn complete_url_joins_base_and_endpoint(
     #[case] model: &str,
     #[case] expected: &str,
 ) {
-    let explicit = (!explicit.is_empty()).then_some(explicit);
-    let url = complete_url(&settings(configured, None), explicit, model);
+    let explicit_base = (!explicit.is_empty()).then_some(explicit);
+    let url = complete_url(&settings(configured, None), explicit_base, model);
     assert_eq!(url, expected);
 }
 
@@ -159,11 +159,11 @@ fn the_explicit_key_wins_when_it_is_not_empty(
     #[case] explicit: Option<&str>,
     #[case] expected: &str,
 ) {
-    let explicit = explicit.map(|key| SecretString::from(key.to_owned()));
+    let explicit_key = explicit.map(|key| SecretString::from(key.to_owned()));
     let merged = validate_environment(
         &settings("", Some("env-key")),
         &headers(&[]),
-        explicit.as_ref(),
+        explicit_key.as_ref(),
     )
     .expect("headers");
     assert_eq!(
@@ -176,9 +176,13 @@ fn the_explicit_key_wins_when_it_is_not_empty(
 #[case::no_key(None, None)]
 #[case::empty_environment_key(Some(""), Some(""))]
 fn a_missing_key_is_refused(#[case] configured: Option<&str>, #[case] explicit: Option<&str>) {
-    let explicit = explicit.map(|key| SecretString::from(key.to_owned()));
-    let error = validate_environment(&settings("", configured), &headers(&[]), explicit.as_ref())
-        .expect_err("no key");
+    let explicit_key = explicit.map(|key| SecretString::from(key.to_owned()));
+    let error = validate_environment(
+        &settings("", configured),
+        &headers(&[]),
+        explicit_key.as_ref(),
+    )
+    .expect_err("no key");
     assert!(matches!(error, FalAIError::MissingApiKey(_)));
     assert_eq!(error.status(), None);
 }
@@ -461,7 +465,14 @@ fn reasoning_and_finish_reason_are_optional_and_nullable() {
 #[case::signed_string(r#""+7""#, 7)]
 #[case::underscored_string(r#""1_000""#, 1000)]
 #[case::leading_zeros(r#""00_1""#, 1)]
+#[case::leading_run_before_digits(r#""0__1""#, 1)]
+#[case::leading_run_of_zeros(r#""0__0""#, 0)]
+#[case::minus_exposed_after_the_run(r#""0-0""#, 0)]
+#[case::plus_before_the_run(r#""+0__1""#, 1)]
+#[case::fraction_after_the_run(r#""0_1.0""#, 1)]
 #[case::zero_fraction_string(r#""2.00""#, 2)]
+#[case::zero_fraction_after_the_run(r#""0.0""#, 0)]
+#[case::zero_fraction_after_a_zero_run(r#""00.00""#, 0)]
 #[case::negative_zero_string(r#""-0""#, 0)]
 #[case::unicode_space_string("\"\\u00a05\"", 5)]
 #[case::underscored_with_fraction(r#""1_0.0""#, 10)]
@@ -489,14 +500,35 @@ fn counts_are_read_the_way_pydantic_reads_an_int(#[case] raw: &str, #[case] expe
 #[case::inner_space(r#""1 0""#)]
 #[case::double_underscore(r#""1__0""#)]
 #[case::trailing_underscore(r#""1_""#)]
+#[case::exposed_minus_before_leading_zeros(r#""0-00""#)]
+#[case::zeros_and_underscores_to_the_end(r#""0__""#)]
 #[case::underscored_fraction(r#""1.0_0""#)]
 #[case::double_sign(r#""+-5""#)]
 #[case::arabic_digits("\"\\u0663\"")]
 #[case::null("null")]
 #[case::list("[1]")]
 #[case::object(r#"{"n": 1}"#)]
-fn counts_pydantic_rejects_are_a_422(#[case] raw: &str) {
+fn a_count_that_pydantic_or_the_usage_record_refuses_is_a_422(#[case] raw: &str) {
     let error = decode_fal_chat(&headers(&[]), counts(raw, "0").as_bytes()).expect_err("rejected");
+    assert!(matches!(error, FalAIError::UnexpectedResponse { .. }));
+    assert_eq!(error.status(), Some(422));
+}
+
+#[rstest]
+#[case::exponent_past_the_signed_range("1e19", 10_000_000_000_000_000_000)]
+#[case::decimal_past_the_signed_range("9223372036854775807.0", 9_223_372_036_854_775_807)]
+fn a_whole_float_count_keeps_its_exact_digits(#[case] raw: &str, #[case] expected: u64) {
+    let reply = decode_fal_chat(&headers(&[]), counts(raw, "0").as_bytes()).expect("reply");
+    assert_eq!(reply.prompt_tokens, expected);
+}
+
+#[test]
+fn a_fraction_past_float_precision_is_refused() {
+    let error = decode_fal_chat(
+        &headers(&[]),
+        counts("1.0000000000000000001", "0").as_bytes(),
+    )
+    .expect_err("refused");
     assert!(matches!(error, FalAIError::UnexpectedResponse { .. }));
     assert_eq!(error.status(), Some(422));
 }
@@ -618,8 +650,8 @@ fn the_finish_reason_goes_through_the_shared_mapping(
     #[case] reason: Option<&str>,
     #[case] expected: &str,
 ) {
-    let finish = reason.map_or_else(String::new, |reason| {
-        format!(r#", "finish_reason": "{reason}""#)
+    let finish = reason.map_or_else(String::new, |text| {
+        format!(r#", "finish_reason": "{text}""#)
     });
     let body = format!(
         r#"{{"output": "x", "usage_info": {{"input_tokens": 1, "output_tokens": 1}}{finish}}}"#
