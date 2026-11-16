@@ -8,6 +8,10 @@ use super::error::LakeraHookError;
 const SYSTEM: &str = "system";
 const USER: &str = "user";
 const ASSISTANT: &str = "assistant";
+const TOOL_CALLS: &str = "messages.tool_calls";
+const FUNCTION: &str = "messages.tool_calls.function";
+const ARGUMENTS: &str = "messages.tool_calls.function.arguments";
+const CONTENT: &str = "messages.content";
 
 pub(super) enum CheckBody {
     Skip,
@@ -102,12 +106,10 @@ fn enabled_role(value: Option<&GuardrailValue>, roles: &[Role]) -> Option<Role> 
 }
 
 fn entry(role: &str, content: Option<&GuardrailValue>) -> GuardrailValue {
+    let content = content.cloned().unwrap_or(GuardrailValue::Null);
     GuardrailValue::Object(BTreeMap::from([
         ("role".to_owned(), GuardrailValue::Text(role.to_owned())),
-        (
-            "content".to_owned(),
-            content.cloned().unwrap_or(GuardrailValue::Null),
-        ),
+        ("content".to_owned(), content),
     ]))
 }
 
@@ -116,32 +118,20 @@ fn collect_function_arguments(
     arguments: &mut Vec<String>,
 ) -> Result<(), LakeraHookError> {
     let GuardrailValue::Array(calls) = calls else {
-        return Err(LakeraHookError::InvalidField {
-            field: "messages.tool_calls",
-        });
+        return Err(LakeraHookError::InvalidField { field: TOOL_CALLS });
     };
     for call in calls {
         let GuardrailValue::Object(call) = call else {
-            return Err(LakeraHookError::InvalidField {
-                field: "messages.tool_calls",
-            });
+            return Err(LakeraHookError::InvalidField { field: TOOL_CALLS });
         };
         match call.get("function") {
             None | Some(GuardrailValue::Null) => {}
             Some(GuardrailValue::Object(function)) => match function.get("arguments") {
                 None | Some(GuardrailValue::Null) => {}
                 Some(GuardrailValue::Text(text)) => arguments.push(text.clone()),
-                Some(_) => {
-                    return Err(LakeraHookError::InvalidField {
-                        field: "messages.tool_calls.function.arguments",
-                    });
-                }
+                Some(_) => return Err(LakeraHookError::InvalidField { field: ARGUMENTS }),
             },
-            Some(_) => {
-                return Err(LakeraHookError::InvalidField {
-                    field: "messages.tool_calls.function",
-                });
-            }
+            Some(_) => return Err(LakeraHookError::InvalidField { field: FUNCTION }),
         }
     }
     Ok(())
@@ -155,9 +145,7 @@ fn system_entry(
         return Ok(entry(SYSTEM, Some(&content)));
     }
     let GuardrailValue::Text(mut text) = content else {
-        return Err(LakeraHookError::InvalidField {
-            field: "messages.content",
-        });
+        return Err(LakeraHookError::InvalidField { field: CONTENT });
     };
     text.push_str(" Function Input: ");
     text.push_str(&arguments.join(" "));

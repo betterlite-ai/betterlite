@@ -58,12 +58,8 @@ pub(super) async fn run(case: &Case) -> HelperResult {
         request.body = decoded_body(&request.body)?;
     }
     let secrets = [("authorization", case.akto_api_key.clone())];
-    Ok(outcome_view(
-        &requests,
-        &["content-type"],
-        &secrets,
-        &outcome,
-    ))
+    let names = ["content-type"];
+    Ok(outcome_view(&requests, &names, &secrets, &outcome))
 }
 
 fn mirroring(case: &Case, api_base: String) -> Result<AktoMirroring, Box<HelperError>> {

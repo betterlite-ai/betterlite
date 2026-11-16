@@ -85,10 +85,7 @@ pub(super) async fn run(case: &Case) -> HelperResult {
         .await
         .map(|()| json!({"completed": true}));
     let secrets = [("authorization", format!("Bearer {}", case.api_key))];
-    Ok(outcome_view(
-        &scripted.take_requests()?,
-        &["content-type"],
-        &secrets,
-        &outcome,
-    ))
+    let requests = scripted.take_requests()?;
+    let names = ["content-type"];
+    Ok(outcome_view(&requests, &names, &secrets, &outcome))
 }

@@ -74,12 +74,8 @@ pub(super) async fn run(case: &Case) -> HelperResult {
     };
     let mut response = chat_response(&case.outputs)?;
     let outcome = call_hook(&guardrail, case, &mut response).await;
-    Ok(outcome_view(
-        &scripted.take_requests()?,
-        &HEADER_NAMES,
-        &[],
-        &outcome,
-    ))
+    let requests = scripted.take_requests()?;
+    Ok(outcome_view(&requests, &HEADER_NAMES, &[], &outcome))
 }
 
 async fn call_hook(

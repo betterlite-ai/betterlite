@@ -164,21 +164,15 @@ impl LegacyLakeraHooks {
         dynamic: &BTreeMap<String, GuardrailValue>,
     ) -> Result<CheckBody, ThirdPartyHookError> {
         if let Some(GuardrailValue::Array(messages)) = data.get("messages") {
-            return Ok(messages_body(
-                messages,
-                &self.roles,
-                self.add_function_to_prompt,
-                dynamic,
-            )?);
+            let body = messages_body(messages, &self.roles, self.add_function_to_prompt, dynamic)?;
+            return Ok(body);
         }
         if let Some(GuardrailValue::Text(text)) = data.get("input") {
             return Ok(CheckBody::Json(input_body(text, dynamic)));
         }
         if let Some(GuardrailValue::Array(items)) = data.get("input") {
-            return Ok(CheckBody::Json(input_body(
-                &join_input_texts(items)?,
-                dynamic,
-            )));
+            let joined = join_input_texts(items)?;
+            return Ok(CheckBody::Json(input_body(&joined, dynamic)));
         }
         Ok(CheckBody::Empty)
     }

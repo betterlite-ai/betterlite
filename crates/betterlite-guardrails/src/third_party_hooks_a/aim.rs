@@ -16,15 +16,6 @@ pub enum AimRequestHook {
     Moderation,
 }
 
-impl AimRequestHook {
-    const fn aim_hook(self) -> AimHook {
-        match self {
-            Self::PreCall => AimHook::PreCall,
-            Self::Moderation => AimHook::Moderation,
-        }
-    }
-}
-
 // the during-call dispatch cannot rewrite the request, so moderation inspects a copy and drops the result
 pub async fn hook(
     guardrail: &AimGuardrail,
@@ -39,11 +30,11 @@ pub async fn hook(
     }
     match hook {
         AimRequestHook::PreCall => {
-            call_aim_guardrail(guardrail, data, hook.aim_hook(), key_alias).await?;
+            call_aim_guardrail(guardrail, data, AimHook::PreCall, key_alias).await?;
         }
         AimRequestHook::Moderation => {
             let mut inspected = data.clone();
-            call_aim_guardrail(guardrail, &mut inspected, hook.aim_hook(), key_alias).await?;
+            call_aim_guardrail(guardrail, &mut inspected, AimHook::Moderation, key_alias).await?;
         }
     }
     Ok(())
@@ -77,12 +68,9 @@ async fn inspect_choices(
     outputs: &[String],
     key_alias: Option<&str>,
 ) -> Vec<Result<AimOutput, AimError>> {
-    let mut calls = Vec::with_capacity(outputs.len());
-    for output in outputs {
-        calls.push(call_aim_guardrail_on_output(
-            guardrail, data, output, key_alias,
-        ));
-    }
+    let calls = outputs
+        .iter()
+        .map(|output| call_aim_guardrail_on_output(guardrail, data, output, key_alias));
     futures_util::future::join_all(calls).await
 }
 

@@ -232,8 +232,7 @@ fn append_input_inspection(
     if matches!(input, GuardrailValue::Null | GuardrailValue::Text(_)) {
         return;
     }
-    let mut input_only = BTreeMap::new();
-    input_only.insert("input".to_owned(), input.clone());
+    let input_only = BTreeMap::from([("input".to_owned(), input.clone())]);
     for message in build_inspection_messages(&input_only) {
         inspected.push(LassoMessage {
             role: message.role,
@@ -275,13 +274,11 @@ where
 }
 
 fn raw_messages(messages: &[LassoMessage]) -> Result<Vec<Box<RawValue>>, ThirdPartyHookError> {
-    let mut raw = Vec::with_capacity(messages.len());
-    for message in messages {
-        raw.push(serde_json::value::to_raw_value(message).map_err(|error| {
-            ThirdPartyHookError::Failure {
-                message: format!("the Lasso request messages could not be encoded: {error}"),
-            }
-        })?);
-    }
-    Ok(raw)
+    messages
+        .iter()
+        .map(serde_json::value::to_raw_value)
+        .collect::<Result<_, _>>()
+        .map_err(|error| ThirdPartyHookError::Failure {
+            message: format!("the Lasso request messages could not be encoded: {error}"),
+        })
 }

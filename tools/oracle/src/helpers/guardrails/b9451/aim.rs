@@ -69,7 +69,7 @@ async fn call_hook(
 ) -> Result<Value, ThirdPartyHookError> {
     let key_alias = case.key_alias.as_deref();
     let mut data = case.data.clone();
-    let request_hook = match case.hook {
+    let hook = match case.hook {
         Hook::PreCall => AimRequestHook::PreCall,
         Hook::Moderation => AimRequestHook::Moderation,
         Hook::PostCall => {
@@ -77,15 +77,8 @@ async fn call_hook(
             return Ok(contents(response));
         }
     };
-    aim::hook(
-        guardrail,
-        &mut data,
-        request_hook,
-        &case.call_type,
-        key_alias,
-    )
-    .await?;
-    Ok(match request_hook {
+    aim::hook(guardrail, &mut data, hook, &case.call_type, key_alias).await?;
+    Ok(match hook {
         AimRequestHook::PreCall => json!({"data": data}),
         AimRequestHook::Moderation => json!({"returns_input": data == case.data}),
     })
