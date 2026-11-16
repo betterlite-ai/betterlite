@@ -2,15 +2,17 @@ kind: helper
 name: huggingface-chat-stream
 call:
   b8332:
+    input: []
+    query: ""
     op: huggingface_chat
     model: meta-llama/Llama-3-8B-Instruct
     messages: [{role: user, content: hi}]
-    stream: true
     api_base: http://mock/v1
     api_key: hf-key
-    env: {HF_HUB_OFFLINE: "1"}
+    stream: true
     replies:
       - status: 200
         body: "data: {\"id\":\"chat-1\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"meta-llama/Llama-3-8B-Instruct\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n"
+    env: {HF_HUB_OFFLINE: "1"}
 env: {HF_HUB_OFFLINE: "1"}
 compare: {ignore: []}

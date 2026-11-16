@@ -2,14 +2,16 @@ kind: helper
 name: huggingface-chat
 call:
   b8332:
+    input: []
+    query: ""
     op: huggingface_chat
     model: meta-llama/Llama-3-8B-Instruct
     messages: [{role: user, content: hi}]
     api_base: http://mock/v1
     api_key: hf-key
-    env: {HF_HUB_OFFLINE: "1"}
     replies:
       - status: 200
         body: '{"id":"chat-1","object":"chat.completion","created":1700000000,"model":"meta-llama/Llama-3-8B-Instruct","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+    env: {HF_HUB_OFFLINE: "1"}
 env: {HF_HUB_OFFLINE: "1"}
 compare: {ignore: []}

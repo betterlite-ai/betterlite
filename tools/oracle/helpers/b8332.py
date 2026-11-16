@@ -1,12 +1,14 @@
-import litellm
+from typing import Literal, NotRequired, TypedDict
+from unittest.mock import patch
+
 import httpx
-from litellm.llms.custom_httpx.http_handler import HTTPHandler
-from litellm.llms.huggingface.rerank.transformation import HuggingFaceRerankConfig
-from litellm.llms.replicate.chat import handler as replicate_handler
+import litellm
 from pydantic import JsonValue, TypeAdapter
-from typing import NotRequired, TypedDict
 
 litellm.suppress_debug_info = True
+
+KEPT_HEADERS = ("authorization", "content-type")
+MODEL_INFO_PATH = "/raw/main/config.json"
 
 
 class Reply(TypedDict):
@@ -14,163 +16,93 @@ class Reply(TypedDict):
     body: str
 
 
+class Message(TypedDict):
+    role: Literal["user"]
+    content: str
+
+
 class Case(TypedDict):
-    op: str
+    op: Literal["huggingface_chat", "huggingface_embedding", "huggingface_rerank", "replicate", "predibase"]
     model: str
-    messages: list[dict[str, JsonValue]]
-    optional_params: dict[str, JsonValue]
-    stream: bool
+    messages: list[Message]
+    stream: NotRequired[bool]
     input_type: NotRequired[str]
-    api_base: NotRequired[str | None]
-    api_key: NotRequired[str | None]
-    tenant_id: NotRequired[str]
+    api_base: NotRequired[str]
+    api_key: NotRequired[str]
     input: list[str]
+    query: str
     env: dict[str, str]
     replies: list[Reply]
-    polls: list[Reply]
 
 
-class Responder:
+class Recorder:
     def __init__(self, replies: list[Reply]) -> None:
         self.replies = list(replies)
         self.requests: list[JsonValue] = []
 
     def handle(self, request: httpx.Request) -> httpx.Response:
+        # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5849
+        if request.url.path.endswith(MODEL_INFO_PATH):
+            return httpx.Response(404)
         body: JsonValue = None
         if request.content:
             body = TypeAdapter(JsonValue).validate_json(request.content)
-        self.requests.append(
-            {
-                "method": request.method,
-                "url": str(request.url),
-                "headers": header_value(request.headers),
-                "body": body,
-            }
-        )
+        headers: dict[str, JsonValue] = {}
+        for name, value in request.headers.items():
+            if name in KEPT_HEADERS or name.startswith("x-"):
+                headers[name] = value
+        self.requests.append({"method": request.method, "url": str(request.url), "headers": headers, "body": body})
         reply = self.replies.pop(0)
         return httpx.Response(reply["status"], content=reply["body"].encode())
 
 
-class ClientFactory:
-    def __init__(self, client: HTTPHandler) -> None:
-        self.client = client
-
-    def get(self, params: dict[str, float] | None = None) -> HTTPHandler:
-        return self.client
-
-
-def header_value(headers: httpx.Headers) -> dict[str, str]:
-    return {
-        name: value
-        for name, value in headers.items()
-        if name in ("authorization", "content-type", "accept") or name.startswith("x-")
-    }
-
-
-def responder_for(case: Case) -> Responder:
-    return Responder([*case["replies"], *case["polls"]])
-
-
-def client_for(responder: Responder) -> HTTPHandler:
-    return HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(responder.handle)))
-
-
-def chat_value(case: Case) -> JsonValue:
-    responder = responder_for(case)
-    client = client_for(responder)
-    litellm.module_level_client = client
-    litellm.completion(
-        model=f"huggingface/{case['model']}",
-        messages=case["messages"],
-        api_base=case.get("api_base"),
-        api_key=case.get("api_key"),
-        stream=case["stream"],
-        client=client,
-    )
-    kind = "stream" if case["stream"] else "chat"
-    return {"kind": kind, "requests": responder.requests}
-
-
-def embedding_value(case: Case) -> JsonValue:
-    responder = responder_for(case)
-    client = client_for(responder)
-    litellm.module_level_client = client
-    litellm.embedding(
-        model=f"huggingface/{case['model']}",
-        input=case["input"],
-        input_type=case.get("input_type"),
-        api_base=case.get("api_base"),
-        api_key=case.get("api_key"),
-        client=client,
-    )
-    return {"requests": responder.requests}
-
-
-def rerank_value(case: Case) -> JsonValue:
-    config = HuggingFaceRerankConfig()
+def provider_call(case: Case) -> None:
+    messages = case["messages"]
     api_base = case.get("api_base")
-    headers = config.validate_environment(
-        headers={},
-        model=case["model"],
-        api_key=case.get("api_key"),
-        optional_params=None,
-        litellm_params=None,
-        api_base=api_base,
-    )
-    url = config.get_complete_url(api_base, case["model"], None)
-    return {"url": url, "headers": header_value(httpx.Headers(headers))}
-
-
-def replicate_value(case: Case) -> JsonValue:
-    responder = responder_for(case)
-    client = client_for(responder)
-    factory = ClientFactory(client)
-    replicate_handler._get_httpx_client = factory.get  # type: ignore[assignment]  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/handler.py#L186
-    litellm.completion(
-        model=f"replicate/{case['model']}",
-        messages=case["messages"],
-        api_base=case.get("api_base"),
-        api_key=case.get("api_key"),
-    )
-    return {"requests": responder.requests}
-
-
-def predibase_value(case: Case) -> JsonValue:
-    responder = responder_for(case)
-    client = client_for(responder)
-    litellm.module_level_client = client
-    tenant = case.get("tenant_id")
-    if tenant is None:
-        litellm.completion(
-            model=f"predibase/{case['model']}",
-            messages=case["messages"],
-            api_base=case.get("api_base"),
-            api_key=case.get("api_key"),
-            client=client,
-        )
-    else:
-        litellm.completion(
-            model=f"predibase/{case['model']}",
-            messages=case["messages"],
-            api_base=case.get("api_base"),
-            api_key=case.get("api_key"),
-            client=client,
-            tenant_id=tenant,
-        )
-    return {"requests": responder.requests}
+    api_key = case.get("api_key")
+    match case["op"]:
+        case "huggingface_chat":
+            litellm.completion(
+                model=f"huggingface/{case['model']}",
+                messages=messages,
+                api_base=api_base,
+                api_key=api_key,
+                stream=case.get("stream"),
+            )
+        case "huggingface_embedding":
+            litellm.embedding(
+                model=f"huggingface/{case['model']}",
+                input=case["input"],
+                input_type=case.get("input_type"),
+                api_base=api_base,
+                api_key=api_key,
+            )
+        case "replicate":
+            litellm.completion(model=f"replicate/{case['model']}", messages=messages, api_base=api_base, api_key=api_key)
+        case "huggingface_rerank":
+            litellm.rerank(
+                model=f"huggingface/{case['model']}",
+                query=case["query"],
+                documents=case["input"],
+                api_base=api_base,
+                api_key=api_key,
+            )
+        case "predibase":
+            litellm.completion(
+                model=f"predibase/{case['model']}",
+                messages=messages,
+                api_base=api_base,
+                api_key=api_key,
+            )
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
     case = TypeAdapter(Case).validate_python(input_value)
-    op = case["op"]
-    if op == "huggingface_chat":
-        return chat_value(case)
-    if op == "huggingface_embedding":
-        return embedding_value(case)
-    if op == "huggingface_rerank":
-        return rerank_value(case)
-    if op == "replicate":
-        return replicate_value(case)
-    if op == "predibase":
-        return predibase_value(case)
-    raise ValueError("unknown operation")
+    recorder = Recorder(case["replies"])
+    error: JsonValue = None
+    with patch.object(httpx.HTTPTransport, "handle_request", recorder.handle):
+        try:
+            provider_call(case)
+        except (litellm.APIError, litellm.APIConnectionError, litellm.BadRequestError, litellm.RateLimitError) as raised:
+            error = {"status": raised.status_code}
+    return {"requests": recorder.requests, "error": error}

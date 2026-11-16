@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use crate::loader::{ConfigError, ConfigLoader};
 
@@ -15,10 +15,6 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Result<super::Settings, C
         .load(source)?
         .sections
         .model_hub_credentials)
-}
-
-fn text(value: Option<&secrecy::SecretString>) -> Option<String> {
-    value.map(|secret| secret.expose_secret().to_owned())
 }
 
 #[test]
@@ -35,19 +31,31 @@ fn model_hub_credentials_loads_each_litellm_setting() {
     let source = "litellm_settings:\n  huggingface_key: hf-secret\n  replicate_key: replicate-secret\n  predibase_key: predibase-secret\n  predibase_tenant_id: tenant-1\n";
     let settings = load(source, &[]).expect("the four keys load");
     assert_eq!(
-        text(settings.huggingface_key.as_ref()).as_deref(),
+        settings
+            .huggingface_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
         Some("hf-secret")
     );
     assert_eq!(
-        text(settings.replicate_key.as_ref()).as_deref(),
+        settings
+            .replicate_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
         Some("replicate-secret")
     );
     assert_eq!(
-        text(settings.predibase_key.as_ref()).as_deref(),
+        settings
+            .predibase_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
         Some("predibase-secret")
     );
     assert_eq!(
-        text(settings.predibase_tenant_id.as_ref()).as_deref(),
+        settings
+            .predibase_tenant_id
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
         Some("tenant-1")
     );
 }
@@ -58,7 +66,10 @@ fn model_hub_credentials_resolves_an_environment_reference() {
     let settings =
         load(source, &[("HF_KEY_REFERENCE", "from-env")]).expect("the reference resolves");
     assert_eq!(
-        text(settings.huggingface_key.as_ref()).as_deref(),
+        settings
+            .huggingface_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
         Some("from-env")
     );
 }
@@ -79,7 +90,13 @@ fn model_hub_credentials_reports_a_missing_environment_reference() {
 fn model_hub_credentials_keeps_an_explicit_empty_key() {
     let source = "litellm_settings:\n  replicate_key: \"\"\n";
     let settings = load(source, &[]).expect("an empty key loads");
-    assert_eq!(text(settings.replicate_key.as_ref()).as_deref(), Some(""));
+    assert_eq!(
+        settings
+            .replicate_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("")
+    );
 }
 
 #[test]

@@ -1,8 +1,12 @@
-use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
+use std::str::from_utf8;
+
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::huggingface_chat::error::HuggingfaceError;
+use betterlite_openai::huggingface_embedding::error::HuggingfaceEmbeddingError;
 use betterlite_openai::huggingface_embedding::request::Params;
 use betterlite_openai::huggingface_embedding::response::{
     EmbeddingResponse, decode_embedding_response, process_embedding_response,
@@ -11,12 +15,14 @@ use betterlite_openai::huggingface_embedding::task::PipelineTagSource;
 use betterlite_openai::huggingface_embedding::{PrepareRequest, PreparedRequest, prepare};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object as PromptObject};
+use http::Method;
 use indexmap::IndexMap;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 
-use super::credentials::{huggingface_embedding_key, huggingface_env};
-use super::hub::{self, PrefetchedTag};
-use super::json;
+use super::credentials::{HUGGINGFACE_EMBEDDING_KEY, Sources, huggingface_env, resolve};
+use super::hub::{PrefetchedTag, headers_from, model_info};
+use super::json::{self, additional_args, header_values};
+use super::transport::WireRequest;
 use super::{CallLogging, DispatchDeps, HubDispatchError};
 
 type BodyObject = IndexMap<String, Json>;
@@ -47,34 +53,33 @@ fn body_object(body: &str) -> Result<BodyObject, HubDispatchError> {
     }
 }
 
-fn args(
-    api_base: Option<String>,
-    headers: Option<IndexMap<String, Json>>,
-    body: Option<RawBody>,
-) -> AdditionalArgs {
-    AdditionalArgs {
-        api_base,
-        headers,
-        complete_input_dict: body,
-        request_str: None,
-        openai_sdk: None,
-        passthrough: IndexMap::new(),
+// handler.py reads the model's pipeline_tag only when input_type is absent
+async fn pipeline_tag(
+    call: &EmbeddingCall<'_>,
+    deps: &DispatchDeps<'_>,
+) -> Result<Option<PrefetchedTag>, HubDispatchError> {
+    if !matches!(
+        call.optional_params.get("input_type"),
+        None | Some(PromptJson::Null)
+    ) {
+        return Ok(None);
     }
+    let info = model_info(deps, call.model, &Headers::new(), &[]).await?;
+    Ok(Some(PrefetchedTag(info)))
 }
 
 async fn prepare_call(
     call: &EmbeddingCall<'_>,
     deps: &DispatchDeps<'_>,
 ) -> Result<PreparedCall, HubDispatchError> {
-    let key = huggingface_embedding_key(call.api_key, deps.globals, deps.environment);
-    let environment = huggingface_env(deps.environment);
-    let params: Params = json::convert(call.optional_params)?;
-    let prefetched = match call.optional_params.get("input_type") {
-        None | Some(PromptJson::Null) => Some(PrefetchedTag(
-            hub::fetch_pipeline_tag(deps.hub, call.model).await?,
-        )),
-        Some(_) => None,
+    let sources = Sources {
+        call: call.api_key.map(ExposeSecret::expose_secret),
+        globals: deps.globals,
+        env: deps.environment,
     };
+    let key = resolve(HUGGINGFACE_EMBEDDING_KEY, &sources, None)?;
+    let params: Params = json::convert(call.optional_params)?;
+    let prefetched = pipeline_tag(call, deps).await?;
     let tag: &dyn PipelineTagSource = match prefetched.as_ref() {
         Some(found) => found,
         None => &NoTag,
@@ -87,48 +92,33 @@ async fn prepare_call(
             headers: call.headers,
             api_key: key.as_ref(),
             api_base: call.api_base,
-            env: &environment,
+            env: &huggingface_env(deps.environment),
         },
         tag,
     )?;
     let data = body_object(&request.body)?;
+    let input = Json::List(call.input.iter().cloned().map(Json::Text).collect());
     Ok(PreparedCall {
         request,
         data,
-        input: Json::List(
-            call.input
-                .iter()
-                .map(|text| Json::Text(text.clone()))
-                .collect(),
-        ),
+        input,
     })
 }
 
-fn log_pre_call(
-    log: &mut CallLogging<'_, '_>,
-    prepared: &PreparedCall,
-) -> Result<(), HubDispatchError> {
-    let headers: IndexMap<String, Json> = prepared
-        .request
-        .headers
-        .iter()
-        .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
-        .collect();
-    pre_call(
-        log.state,
-        &PreCall {
-            input: prepared.input.clone(),
-            model: None,
-            additional_args: args(
-                Some(prepared.request.url.clone()),
-                Some(headers),
-                Some(RawBody::Object(prepared.data.clone())),
-            ),
-        },
-        log.env,
-    )
-    .map_err(|source| HubDispatchError::PreCall { source })?;
-    Ok(())
+// HTTPHandler.post raises on any non-2xx before the handler reads the body or logs post_call
+fn status_failure(response: &UpstreamResponse) -> Result<(), HubDispatchError> {
+    if (200..300).contains(&response.status) {
+        return Ok(());
+    }
+    let text =
+        from_utf8(&response.body).map_err(|source| HubDispatchError::BodyNotUtf8 { source })?;
+    Err(HubDispatchError::Embedding(
+        HuggingfaceEmbeddingError::Huggingface(HuggingfaceError {
+            status_code: response.status,
+            message: text.to_owned(),
+            headers: headers_from(&response.headers),
+        }),
+    ))
 }
 
 pub async fn embed(
@@ -137,25 +127,34 @@ pub async fn embed(
     log: &mut CallLogging<'_, '_>,
 ) -> Result<EmbeddingResponse, HubDispatchError> {
     let prepared = prepare_call(call, deps).await?;
-    log_pre_call(log, &prepared)?;
-    let response = deps
-        .post
-        .post(
-            &prepared.request.url,
-            &prepared.request.headers,
-            prepared.request.body.as_bytes(),
-            deps.timeout,
-        )
-        .await?;
-    post_call(
-        log.state,
-        &PostCall {
-            original_response: json::logged_reply(&response.body),
-            input: prepared.input,
-            additional_args: args(None, None, Some(RawBody::Object(prepared.data))),
-        },
-        log.env,
-    );
+    let sent = PreCall {
+        input: prepared.input.clone(),
+        model: None,
+        additional_args: additional_args(
+            Some(prepared.request.url.clone()),
+            Some(header_values(&prepared.request.headers)),
+            Some(RawBody::Object(prepared.data.clone())),
+            IndexMap::new(),
+        ),
+    };
+    pre_call(log.state, &sent, log.env).map_err(|source| HubDispatchError::PreCall { source })?;
+    let request = WireRequest {
+        method: Method::POST,
+        url: &prepared.request.url,
+        query: &[],
+        headers: &prepared.request.headers,
+        body: Some(prepared.request.body.as_bytes()),
+        deadline: deps.timeout,
+    };
+    let response = deps.post.post(&request).await?;
+    status_failure(&response)?;
+    let logged = Some(RawBody::Object(prepared.data));
+    let received = PostCall {
+        original_response: json::logged_reply(&response.body),
+        input: prepared.input,
+        additional_args: additional_args(None, None, logged, IndexMap::new()),
+    };
+    post_call(log.state, &received, log.env);
     let reply = decode_embedding_response(&response.body)?;
     let embedding = process_embedding_response(&reply, call.model, call.input, deps.encoder)?;
     Ok(embedding)

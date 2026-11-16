@@ -8,36 +8,36 @@ use betterlite_openai::huggingface_chat::mapping::{
 use betterlite_openai::huggingface_chat::request::transform_request;
 use betterlite_openai::huggingface_chat::url::get_complete_url;
 use betterlite_openai::openai_base_config::Object as ChatObject;
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Json;
 use http::Method;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use url::Url;
 
-use super::credentials::{huggingface_chat_key, huggingface_env, huggingface_hub_token};
-use super::hub::{self, PrefetchedHub};
+use super::credentials::{
+    HUGGINGFACE_CHAT_KEY, HUGGINGFACE_HUB_TOKEN, Sources, huggingface_env, resolve,
+};
+use super::hub::{EXPAND, PrefetchedHub, mapping_headers, model_info};
 use super::json;
 use super::{ChatContext, DispatchDeps, HubDispatchError};
 use crate::prepared::{PreparedChat, PreparedHttp, PreparedRequest};
 use crate::transform_retry::TransformRetry;
 
 async fn mapping_source(
-    model: &str,
-    api_base: Option<&str>,
+    call: &ChatContext<'_>,
     deps: &DispatchDeps<'_>,
+    token: Option<&SecretString>,
 ) -> Result<Option<PrefetchedHub>, HubDispatchError> {
-    if api_base.is_some_and(|base| !base.is_empty()) {
+    if call.api_base.is_some_and(|base| !base.is_empty()) {
         return Ok(None);
     }
-    let Some((_, rest)) = model.split_once('/') else {
+    let Some((_, rest)) = call.model.split_once('/') else {
         return Ok(None);
     };
     if !rest.contains('/') {
         return Ok(None);
     }
-    let token = huggingface_hub_token(deps.environment);
-    Ok(Some(PrefetchedHub(
-        hub::fetch_mapping(deps.hub, rest, token.as_ref()).await?,
-    )))
+    let info = model_info(deps, rest, &mapping_headers(token), &[EXPAND]).await?;
+    Ok(Some(PrefetchedHub(info)))
 }
 
 async fn request_body(
@@ -50,9 +50,14 @@ async fn request_body(
         .iter()
         .map(|message| json::convert(message))
         .collect::<Result<_, _>>()?;
-    let body = match mapping_source(call.model, call.api_base, deps).await? {
+    let sources = Sources {
+        call: None,
+        globals: deps.globals,
+        env: deps.environment,
+    };
+    let token = resolve(HUGGINGFACE_HUB_TOKEN, &sources, None)?;
+    let body = match mapping_source(call, deps, token.as_ref()).await? {
         Some(prefetched) => {
-            let token = huggingface_hub_token(deps.environment);
             let source = ProviderMappingCache::new(token, prefetched);
             transform_request(call.model, &messages, &params, call.api_base, &source)?
         }
@@ -101,7 +106,12 @@ pub async fn chat_request(
     call: &mut ChatContext<'_>,
     deps: &DispatchDeps<'_>,
 ) -> Result<PreparedRequest, HubDispatchError> {
-    let key = huggingface_chat_key(call.api_key, deps.globals, deps.environment);
+    let sources = Sources {
+        call: call.api_key.map(ExposeSecret::expose_secret),
+        globals: deps.globals,
+        env: deps.environment,
+    };
+    let key = resolve(HUGGINGFACE_CHAT_KEY, &sources, None)?;
     let body = request_body(call, deps).await?;
     prepared(call, deps, key.as_ref(), &body)
 }

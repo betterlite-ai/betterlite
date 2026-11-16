@@ -2,18 +2,20 @@ use std::collections::BTreeMap;
 use std::str::from_utf8;
 
 use betterlite_http::proxy::{StreamResponse, UpstreamResponse};
-use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
+use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
+use http::Method;
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
-use super::credentials::{predibase_base, predibase_key, predibase_tenant_id};
+use super::credentials::{PREDIBASE_BASE, PREDIBASE_KEY, PREDIBASE_TENANT_ID, Sources, resolve};
 use super::hub::headers_from;
-use super::json;
+use super::json::{self, additional_args, header_values};
+use super::transport::WireRequest;
 use super::{CallLogging, ChatContext, CustomPromptTable, DispatchDeps, HubDispatchError};
 use crate::operation::OperationError;
 use crate::predibase::config::{
@@ -51,32 +53,12 @@ fn custom_prompts(table: &CustomPromptTable) -> BTreeMap<String, CustomPrompt> {
         .collect()
 }
 
-fn log_headers(headers: &Headers) -> IndexMap<String, Json> {
-    headers
-        .iter()
-        .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
-        .collect()
-}
-
-fn args(
-    api_base: Option<String>,
-    headers: Option<IndexMap<String, Json>>,
-    body: Option<RawBody>,
-    passthrough: IndexMap<String, Json>,
-) -> AdditionalArgs {
-    AdditionalArgs {
-        api_base,
-        headers,
-        complete_input_dict: body,
-        request_str: None,
-        openai_sdk: None,
-        passthrough,
-    }
-}
-
-fn stream_body(data: &RequestBody) -> Result<String, HubDispatchError> {
+// the async stream posts data with stream=true; the sync stream and the plain call post data as is
+fn encoded_body(data: &RequestBody, stream_flag: bool) -> Result<String, HubDispatchError> {
     let mut fields: IndexMap<String, Json> = json::convert(data)?;
-    fields.insert(String::from("stream"), Json::Bool(true));
+    if stream_flag {
+        fields.insert(String::from("stream"), Json::Bool(true));
+    }
     serde_json::to_string(&fields).map_err(|source| HubDispatchError::Encode { source })
 }
 
@@ -84,24 +66,33 @@ fn endpoint(
     call: &mut ChatContext<'_>,
     deps: &DispatchDeps<'_>,
 ) -> Result<Endpoint, HubDispatchError> {
-    let Some(tenant) = predibase_tenant_id(call.optional_params, deps.globals, deps.environment)?
-    else {
-        return Err(HubDispatchError::PredibaseSetup(
-            PredibaseSetupError::MissingTenantId,
-        ));
+    let lookups = Sources {
+        call: None,
+        globals: deps.globals,
+        env: deps.environment,
     };
-    let base = predibase_base(
-        call.api_base,
-        deps.globals,
-        deps.environment,
-        call.optional_params,
-    )?;
-    let key = predibase_key(call.api_key, deps.globals, deps.environment);
+    let missing = HubDispatchError::PredibaseSetup(PredibaseSetupError::MissingTenantId);
+    let tenant = resolve(
+        PREDIBASE_TENANT_ID,
+        &lookups,
+        Some(&mut *call.optional_params),
+    )?
+    .ok_or(missing)?;
+    let bases = Sources {
+        call: call.api_base,
+        ..lookups
+    };
+    let base = resolve(PREDIBASE_BASE, &bases, Some(&mut *call.optional_params))?;
+    let keys = Sources {
+        call: call.api_key.map(ExposeSecret::expose_secret),
+        ..bases
+    };
+    let key = resolve(PREDIBASE_KEY, &keys, None)?;
     let options: Object = call.optional_params.clone();
     let stream = matches!(options.get("stream"), Some(PromptJson::Bool(true)));
     let url = get_complete_url(
         Some(tenant.expose_secret()),
-        base.as_deref(),
+        base.as_ref().map(ExposeSecret::expose_secret),
         call.model,
         &options,
         Some(stream),
@@ -152,6 +143,27 @@ async fn stream_error(response: StreamResponse) -> HubDispatchError {
     }
 }
 
+fn log_pre_call(
+    call: &ChatContext<'_>,
+    log: &mut CallLogging<'_, '_>,
+    endpoint: &Endpoint,
+    data: &RequestBody,
+) -> Result<(), HubDispatchError> {
+    let acompletion = IndexMap::from([(String::from("acompletion"), Json::Bool(call.acompletion))]);
+    let sent = PreCall {
+        input: Json::Text(data.inputs.clone().unwrap_or_default()),
+        model: None,
+        additional_args: additional_args(
+            Some(endpoint.url.clone()),
+            Some(header_values(&endpoint.headers)),
+            Some(json::convert(data).map(RawBody::Object)?),
+            acompletion,
+        ),
+    };
+    pre_call(log.state, &sent, log.env).map_err(|source| HubDispatchError::PreCall { source })?;
+    Ok(())
+}
+
 pub async fn complete(
     call: &mut ChatContext<'_>,
     deps: &DispatchDeps<'_>,
@@ -159,78 +171,37 @@ pub async fn complete(
 ) -> Result<Completion, HubDispatchError> {
     let endpoint = endpoint(call, deps)?;
     let data = request_body(call, deps, &endpoint.options).await?;
-    pre_call(
-        log.state,
-        &PreCall {
-            input: Json::Text(data.inputs.clone().unwrap_or_default()),
-            model: None,
-            additional_args: args(
-                Some(endpoint.url.clone()),
-                Some(log_headers(&endpoint.headers)),
-                Some(json::convert(&data).map(RawBody::Object)?),
-                IndexMap::from([(String::from("acompletion"), Json::Bool(call.acompletion))]),
-            ),
-        },
-        log.env,
-    )
-    .map_err(|source| HubDispatchError::PreCall { source })?;
-    called(call, deps, log, &endpoint, &data).await
-}
-
-async fn called(
-    call: &ChatContext<'_>,
-    deps: &DispatchDeps<'_>,
-    log: &mut CallLogging<'_, '_>,
-    endpoint: &Endpoint,
-    data: &RequestBody,
-) -> Result<Completion, HubDispatchError> {
-    if endpoint.stream && call.acompletion {
-        return streamed(call, deps, log, endpoint, data).await;
+    log_pre_call(call, log, &endpoint, &data)?;
+    let encoded = encoded_body(&data, endpoint.stream && call.acompletion)?;
+    let request = WireRequest {
+        method: Method::POST,
+        url: &endpoint.url,
+        query: &[],
+        headers: &endpoint.headers,
+        body: Some(encoded.as_bytes()),
+        deadline: deps.timeout,
+    };
+    if !endpoint.stream {
+        let response = deps.post.post(&request).await?;
+        return replied(call, deps, log, &response, &data).await;
     }
-    let body = serde_json::to_vec(data).map_err(|source| HubDispatchError::Encode { source })?;
-    if endpoint.stream {
-        let response = deps
-            .post
-            .post_stream(&endpoint.url, &endpoint.headers, &body, deps.timeout)
-            .await?;
-        return Ok(Completion::Stream(Box::new(response)));
-    }
-    let response = deps
-        .post
-        .post(&endpoint.url, &endpoint.headers, &body, deps.timeout)
-        .await?;
-    replied(call, deps, log, &response, data).await
-}
-
-async fn streamed(
-    call: &ChatContext<'_>,
-    deps: &DispatchDeps<'_>,
-    log: &mut CallLogging<'_, '_>,
-    endpoint: &Endpoint,
-    data: &RequestBody,
-) -> Result<Completion, HubDispatchError> {
-    let body = stream_body(data)?;
-    let response = deps
-        .post
-        .post_stream(
-            &endpoint.url,
-            &endpoint.headers,
-            body.as_bytes(),
-            deps.timeout,
-        )
-        .await?;
+    let response = deps.post.post_stream(&request).await?;
     if response.response.status() != 200 {
         return Err(stream_error(response).await);
     }
-    post_call(
-        log.state,
-        &PostCall {
+    if call.acompletion {
+        let opened = PostCall {
             original_response: Json::Null,
             input: json::convert(call.messages)?,
-            additional_args: args(None, None, Some(RawBody::Text(body)), IndexMap::new()),
-        },
-        log.env,
-    );
+            additional_args: additional_args(
+                None,
+                None,
+                Some(RawBody::Text(encoded)),
+                IndexMap::new(),
+            ),
+        };
+        post_call(log.state, &opened, log.env);
+    }
     Ok(Completion::Stream(Box::new(response)))
 }
 
@@ -258,7 +229,7 @@ async fn replied(
         &PostCall {
             original_response: json::logged_reply(&response.body),
             input: json::convert(call.messages)?,
-            additional_args: args(None, None, Some(logged), IndexMap::new()),
+            additional_args: additional_args(None, None, Some(logged), IndexMap::new()),
         },
         log.env,
     );

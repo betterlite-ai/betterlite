@@ -1,9 +1,3 @@
-use super::HubDispatchError;
-use crate::operation::OperationError;
-use async_trait::async_trait;
-use betterlite_http::proxy::ProxiedClient;
-use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_openai::compatible_wire::header_map;
 use betterlite_openai::huggingface_chat::error::HuggingfaceError;
 use betterlite_openai::huggingface_chat::mapping::{HubGet, HubResponse};
 use betterlite_openai::huggingface_embedding::task::PipelineTagSource;
@@ -11,58 +5,12 @@ use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::Json;
 use http::Method;
 use secrecy::{ExposeSecret as _, SecretString};
-use std::time::Duration;
-use url::Url;
-pub const HUB_URL: &str = "https://huggingface.co";
-const EXPAND: (&str, &str) = ("expand", "inferenceProviderMapping");
+
+use super::transport::WireRequest;
+use super::{DispatchDeps, HubDispatchError};
+const HUB_URL: &str = "https://huggingface.co";
+pub const EXPAND: (&str, &str) = ("expand", "inferenceProviderMapping");
 const PIPELINE_TAG: &str = "pipeline_tag";
-#[async_trait]
-pub trait HubGetAsync: Send + Sync {
-    async fn get(
-        &self,
-        url: &str,
-        headers: &Headers,
-        query: &[(&str, &str)],
-    ) -> Result<HubResponse, HubDispatchError>;
-}
-pub struct PooledHub<'client> {
-    pub client: &'client ProxiedClient,
-    pub deadline: Duration,
-}
-#[async_trait]
-impl HubGetAsync for PooledHub<'_> {
-    async fn get(
-        &self,
-        url: &str,
-        headers: &Headers,
-        query: &[(&str, &str)],
-    ) -> Result<HubResponse, HubDispatchError> {
-        let response = self
-            .client
-            .send_buffered(OutboundRequest {
-                method: Method::GET,
-                url: Url::parse(url).map_err(|source| HubDispatchError::Url {
-                    url: url.to_owned(),
-                    source,
-                })?,
-                query: query
-                    .iter()
-                    .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-                    .collect(),
-                headers: header_map(headers)
-                    .map_err(|source| HubDispatchError::Headers { source })?,
-                body: RequestBody::Empty,
-                deadline: self.deadline,
-            })
-            .await
-            .map_err(OperationError::from)?;
-        Ok(HubResponse {
-            status_code: response.status,
-            headers: headers_from(&response.headers),
-            body: response.body,
-        })
-    }
-}
 #[must_use]
 pub fn headers_from(headers: &http::HeaderMap) -> Headers {
     headers
@@ -73,10 +21,10 @@ pub fn headers_from(headers: &http::HeaderMap) -> Headers {
         })
         .collect()
 }
-fn mapping_headers(token: Option<&SecretString>) -> Headers {
+#[must_use]
+pub fn mapping_headers(token: Option<&SecretString>) -> Headers {
     let mut headers = Headers::from([(String::from("Accept"), String::from("application/json"))]);
-    let supplied = token.filter(|candidate| !candidate.expose_secret().is_empty());
-    if let Some(secret) = supplied {
+    if let Some(secret) = token {
         headers.insert(
             String::from("Authorization"),
             format!("Bearer {}", secret.expose_secret()),
@@ -84,20 +32,23 @@ fn mapping_headers(token: Option<&SecretString>) -> Headers {
     }
     headers
 }
-pub async fn fetch_mapping(
-    hub: &dyn HubGetAsync,
+// GET https://huggingface.co/api/models/{model_id} on the dispatch's Hub client, with no status check
+pub async fn model_info(
+    deps: &DispatchDeps<'_>,
     model_id: &str,
-    token: Option<&SecretString>,
+    headers: &Headers,
+    query: &[(&str, &str)],
 ) -> Result<HubResponse, HubDispatchError> {
     let url = format!("{HUB_URL}/api/models/{model_id}");
-    hub.get(&url, &mapping_headers(token), &[EXPAND]).await
-}
-pub async fn fetch_pipeline_tag(
-    hub: &dyn HubGetAsync,
-    model: &str,
-) -> Result<HubResponse, HubDispatchError> {
-    let url = format!("{HUB_URL}/api/models/{model}");
-    hub.get(&url, &Headers::new(), &[]).await
+    let request = WireRequest {
+        method: Method::GET,
+        url: &url,
+        query,
+        headers,
+        body: None,
+        deadline: deps.timeout,
+    };
+    deps.hub.get(&request).await
 }
 pub struct PrefetchedHub(pub HubResponse);
 impl HubGet for PrefetchedHub {

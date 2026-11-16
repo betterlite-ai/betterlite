@@ -2,8 +2,14 @@ kind: helper
 name: huggingface-rerank
 call:
   b8332:
+    messages: []
     op: huggingface_rerank
     model: BAAI/bge-reranker-v2-m3
-    env: {HF_API_BASE: "http://hf.test", HUGGINGFACE_API_KEY: hf-env}
-env: {HF_API_BASE: "http://hf.test", HUGGINGFACE_API_KEY: hf-env}
+    query: hello
+    input: [first, second]
+    replies:
+      - status: 200
+        body: '[{"index":1,"score":0.9},{"index":0,"score":0.1}]'
+    env: {HF_API_BASE: "http://hf.test", HUGGINGFACE_API_KEY: "hf-env"}
+env: {HF_API_BASE: "http://hf.test", HUGGINGFACE_API_KEY: "hf-env"}
 compare: {ignore: []}

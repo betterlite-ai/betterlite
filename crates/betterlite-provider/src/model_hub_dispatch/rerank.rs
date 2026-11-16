@@ -1,6 +1,6 @@
 use super::HubDispatchError;
 use super::credentials::{
-    Globals, huggingface_env, huggingface_rerank_base, huggingface_rerank_key,
+    Globals, HUGGINGFACE_RERANK_BASE, HUGGINGFACE_RERANK_KEY, Sources, huggingface_env, resolve,
 };
 use super::tokens::Cl100k;
 use crate::api::rerank_contracts::{
@@ -13,7 +13,7 @@ use betterlite_openai::huggingface_rerank::error::HuggingfaceRerankError;
 use betterlite_openai::huggingface_rerank::response::ResponseRequest;
 use betterlite_openai::huggingface_rerank::{Uuid4, headers, params, response, url};
 use betterlite_openai::openai_base_config::Headers;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 pub struct HuggingFaceRerankConfig {
     pub key: Option<SecretString>,
     pub api_base: Option<String>,
@@ -84,9 +84,20 @@ pub fn huggingface_rerank_config(
     globals: &Globals<'_>,
     env: &dyn EnvironmentLookup,
 ) -> Result<HuggingFaceRerankConfig, HubDispatchError> {
+    let keys = Sources {
+        call: api_key.map(ExposeSecret::expose_secret),
+        globals,
+        env,
+    };
+    let bases = Sources {
+        call: api_base,
+        globals,
+        env,
+    };
+    let base = resolve(HUGGINGFACE_RERANK_BASE, &bases, None)?;
     Ok(HuggingFaceRerankConfig {
-        key: huggingface_rerank_key(api_key, globals, env),
-        api_base: huggingface_rerank_base(api_base, env),
+        key: resolve(HUGGINGFACE_RERANK_KEY, &keys, None)?,
+        api_base: base.map(|value| value.expose_secret().to_owned()),
         env: huggingface_env(env),
         counter: Cl100k::new()?,
     })

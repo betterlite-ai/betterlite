@@ -1,13 +1,13 @@
-use super::credentials::{replicate_base, replicate_key};
-use super::json;
+use super::credentials::{REPLICATE_KEY, Sources, resolve};
+use super::json::{self, additional_args};
 use super::{CallLogging, ChatContext, DispatchDeps, HubDispatchError};
 use crate::replicate::poll::ReplicateCompletion;
 use crate::replicate::poll::completion::{Replicate, ReplicateCall};
 use crate::replicate::poll::{OutputPolicy, ReplicatePolling};
 use crate::replicate::request::ReplicateDefaults;
-use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
+use betterlite_prompts::arguments::json::Json as PromptJson;
 use betterlite_prompts::builtin::Message;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret;
@@ -23,14 +23,7 @@ fn stream_post_call(
         &PostCall {
             original_response: Json::Null,
             input: json::convert(messages)?,
-            additional_args: AdditionalArgs {
-                api_base: None,
-                headers: None,
-                complete_input_dict: None,
-                request_str: None,
-                openai_sdk: None,
-                passthrough: IndexMap::new(),
-            },
+            additional_args: additional_args(None, None, None, IndexMap::new()),
         },
         log.env,
     );
@@ -65,14 +58,21 @@ pub async fn complete(
     deps: &DispatchDeps<'_>,
     log: &mut CallLogging<'_, '_>,
 ) -> Result<Completion, HubDispatchError> {
-    let key = replicate_key(call.api_key, deps.globals, deps.environment);
-    let _base = replicate_base(call.api_base, deps.globals, deps.environment);
+    let sources = Sources {
+        call: call.api_key.map(ExposeSecret::expose_secret),
+        globals: deps.globals,
+        env: deps.environment,
+    };
+    let key = resolve(REPLICATE_KEY, &sources, None)?;
     let empty = BTreeMap::new();
     let prompts = call
         .custom_prompt_dict
         .or(deps.globals.custom_prompt_dict)
         .unwrap_or(&empty);
-    let stream = matches!(call.optional_params.get("stream"), Some(Json::Bool(true)));
+    let stream = matches!(
+        call.optional_params.get("stream"),
+        Some(PromptJson::Bool(true))
+    );
     let polling = super::polling(deps.environment)?;
     let completion = module(deps, call.acompletion, polling)
         .complete(ReplicateCall {

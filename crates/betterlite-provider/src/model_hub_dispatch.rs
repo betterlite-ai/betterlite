@@ -58,11 +58,6 @@ pub enum HubDispatchError {
     Operation(#[from] OperationError),
     #[error("the {field} value must be a string")]
     FieldType { field: &'static str },
-    #[error("the chat messages cannot be read for Hugging Face")]
-    Messages {
-        #[source]
-        source: serde_json::Error,
-    },
     #[error("the {url} endpoint is not a valid URL")]
     Url {
         url: String,
@@ -137,7 +132,7 @@ pub struct ReplicateServices<'deps> {
 pub struct DispatchDeps<'deps> {
     pub globals: &'deps Globals<'deps>,
     pub environment: &'deps dyn EnvironmentLookup,
-    pub hub: &'deps dyn hub::HubGetAsync,
+    pub hub: &'deps dyn transport::HubGetAsync,
     pub post: &'deps dyn transport::PostTransport,
     pub encoder: &'deps dyn OrdinaryEncoder,
     pub replicate: ReplicateServices<'deps>,

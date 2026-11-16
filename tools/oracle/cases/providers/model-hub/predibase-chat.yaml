@@ -2,14 +2,15 @@ kind: helper
 name: predibase-chat
 call:
   b8332:
+    input: []
+    query: ""
     op: predibase
     model: meta-llama/llama-2-7b-chat
     messages: [{role: user, content: hi}]
-    tenant_id: tenant-1
     api_base: http://mock
-    env: {PREDIBASE_API_KEY: pb-env}
     replies:
       - status: 200
         body: '{"generated_text":"hello"}'
-env: {PREDIBASE_API_KEY: pb-env}
+    env: {PREDIBASE_API_KEY: "pb-env", PREDIBASE_TENANT_ID: "tenant-1"}
+env: {PREDIBASE_API_KEY: "pb-env", PREDIBASE_TENANT_ID: "tenant-1"}
 compare: {ignore: []}

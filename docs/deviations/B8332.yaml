@@ -6,13 +6,19 @@ deviations:
   - what: The Hugging Face rerank base never takes litellm.api_base, although the rerank config's get_api_credentials includes it.
     why: The rerank HTTP handler passes the caller's api_base to get_complete_url, and that function reads api_base, HF_API_BASE and HUGGINGFACE_API_BASE only. The litellm.api_base value never reaches the request, so the module resolves the effective chain.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1314-L1318
-  - what: The Replicate base is resolved but not used to build the create URL.
-    why: LiteLLM resolves api_base through litellm.api_base, REPLICATE_API_BASE and its default and then calls get_complete_url, which replaces it with https://api.replicate.com/v1/models/{model}/predictions. The module keeps the resolved value for parity but sends the same fixed URL.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/transformation.py#L146-L155
+  - what: The Replicate arm does not resolve the api_base, litellm.api_base, REPLICATE_API_BASE chain.
+    why: LiteLLM resolves that chain and then calls get_complete_url, which builds https://api.replicate.com/v1/models/{model}/predictions without it, so the value never reaches a request or a log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2795
   - what: The Replicate stream arm logs a post_call with a null original_response.
-    why: LiteLLM's stream path returns an iterator over a prediction stream and has no response object at that point. A null keeps the hook firing, which is what a logging callback observes.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/handler.py#L197-L207
-  - what: The nine model-hub cases are helper cases, so they call the dispatch module directly.
-    why: No proxy route reaches the model-hub dispatch yet, so an HTTP case has no betterlite entry point. The helper answers hold the wire requests and errors, and every case is compared with the same LiteLLM call run through the oracle.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3197-L3203
+    why: LiteLLM's stream path passes the returned iterator as original_response. A null keeps the hook firing, which is what a logging callback observes, without rendering a stream object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2816-L2822
+  - what: The async Predibase stream is opened, checked for status 200 and logged with post_call when the arm runs, not when the caller first reads the stream.
+    why: LiteLLM's make_call runs lazily inside CustomStreamWrapper on the first read. The request, the status check, the error and the post_call record are the same; only their moment differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/chat/handler.py#L22-L46
+  - what: A non-2xx Hugging Face embedding reply carries the raw body text as the error message.
+    why: LiteLLM's MaskedHTTPStatusError runs mask_sensitive_info over the body first; secret redaction belongs to the logging and error layers that receive this error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L512-L529
+  - what: The ten model-hub cases are helper cases, so they call the dispatch module directly.
+    why: No proxy route reaches the model-hub dispatch yet, so an HTTP case has no betterlite entry point. Both sides record the provider requests and the mapped error status, and LiteLLM's model-info config.json GETs, which belong to the model info lookup, are answered 404 and left out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5849
 kept_bugs: []
