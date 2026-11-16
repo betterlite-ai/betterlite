@@ -25,7 +25,12 @@ impl From<TableError> for StoredSkillReadError {
     fn from(error: TableError) -> Self {
         match error {
             TableError::Database(DbError::NoDbConnected) => Self::NoDatabase,
-            other => Self::Repository {
+            other @ (TableError::Database(_)
+            | TableError::Batch(_)
+            | TableError::Row(_)
+            | TableError::MissingRow
+            | TableError::RowCount { .. }
+            | TableError::Publish { .. }) => Self::Repository {
                 source: Box::new(other),
             },
         }
