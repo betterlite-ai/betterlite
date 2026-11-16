@@ -1,0 +1,205 @@
+suite: keda
+templates:
+  - keda.yaml
+release:
+  name: rel
+  namespace: llm
+tests:
+  - it: renders no scaled object by default
+    asserts:
+      - hasDocuments: { count: 0 }
+
+  - it: renders a ScaledObject for the deployment when enabled
+    set:
+      keda.enabled: true
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: ScaledObject }
+      - equal: { path: apiVersion, value: keda.sh/v1alpha1 }
+      - equal: { path: metadata.name, value: rel-betterlite }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/name"]', value: betterlite }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: rel }
+      - equal: { path: spec.scaleTargetRef.name, value: rel-betterlite }
+      - equal: { path: spec.pollingInterval, value: 30 }
+      - equal: { path: spec.cooldownPeriod, value: 300 }
+      - equal: { path: spec.minReplicaCount, value: 1 }
+      - equal: { path: spec.maxReplicaCount, value: 100 }
+      - equal: { path: spec.advanced.restoreToOriginalReplicaCount, value: false }
+
+  - it: passes user triggers through and adds no prometheus triggers by default
+    set:
+      keda.enabled: true
+      keda.triggers:
+        - type: cpu
+          metricType: Utilization
+          metadata:
+            value: "60"
+    asserts:
+      - equal:
+          path: spec.triggers
+          value:
+            - type: cpu
+              metricType: Utilization
+              metadata: { value: "60" }
+
+  - it: scales on release-wide requests per second divided by the per-replica target
+    set:
+      keda.enabled: true
+      keda.prometheus.serverAddress: http://prometheus-operated.monitoring.svc:9090
+      keda.prometheus.requestsPerSecond: 90
+    asserts:
+      - lengthEqual: { path: spec.triggers, count: 1 }
+      - equal:
+          path: 'spec.triggers[0]'
+          value:
+            type: prometheus
+            metadata:
+              serverAddress: http://prometheus-operated.monitoring.svc:9090
+              threshold: "90"
+              query: sum(rate(litellm_proxy_total_requests_metric_total{namespace="llm",job="rel-betterlite"}[1m]))
+
+  - it: scales on tokens per second on its own
+    set:
+      keda.enabled: true
+      keda.prometheus.serverAddress: http://prom:9090
+      keda.prometheus.tokensPerSecond: 6000000
+    asserts:
+      - lengthEqual: { path: spec.triggers, count: 1 }
+      - equal: { path: 'spec.triggers[0].type', value: prometheus }
+      - equal: { path: 'spec.triggers[0].metadata.serverAddress', value: http://prom:9090 }
+      - equal: { path: 'spec.triggers[0].metadata.threshold', value: "6000000" }
+      - equal:
+          path: 'spec.triggers[0].metadata.query'
+          value: sum(rate(litellm_total_tokens_metric_total{namespace="llm",job="rel-betterlite"}[1m]))
+
+  - it: keeps a fractional threshold as a quoted string
+    set:
+      keda.enabled: true
+      keda.prometheus.serverAddress: http://prom:9090
+      keda.prometheus.requestsPerSecond: 0.5
+    asserts:
+      - equal: { path: 'spec.triggers[0].metadata.threshold', value: "0.5" }
+
+  - it: appends requests and tokens triggers after user triggers and selects the metrics service job
+    set:
+      keda.enabled: true
+      metricsServer.enabled: true
+      keda.triggers:
+        - type: cpu
+          metricType: Utilization
+          metadata:
+            value: "60"
+      keda.prometheus.serverAddress: http://prom:9090
+      keda.prometheus.requestsPerSecond: 90
+      keda.prometheus.tokensPerSecond: 6000000
+    asserts:
+      - lengthEqual: { path: spec.triggers, count: 3 }
+      - equal: { path: 'spec.triggers[0].type', value: cpu }
+      - equal: { path: 'spec.triggers[1].metadata.threshold', value: "90" }
+      - equal:
+          path: 'spec.triggers[1].metadata.query'
+          value: sum(rate(litellm_proxy_total_requests_metric_total{namespace="llm",job="rel-betterlite-metrics"}[1m]))
+      - equal: { path: 'spec.triggers[2].metadata.threshold', value: "6000000" }
+      - equal:
+          path: 'spec.triggers[2].metadata.query'
+          value: sum(rate(litellm_total_tokens_metric_total{namespace="llm",job="rel-betterlite-metrics"}[1m]))
+
+  - it: refuses a request target without a prometheus server address
+    set:
+      keda.enabled: true
+      keda.prometheus.requestsPerSecond: 90
+    asserts:
+      - failedTemplate:
+          errorMessage: keda.prometheus.serverAddress is required when keda.prometheus.requestsPerSecond or tokensPerSecond is set
+
+  - it: refuses a token target without a prometheus server address
+    set:
+      keda.enabled: true
+      keda.prometheus.tokensPerSecond: 6000000
+    asserts:
+      - failedTemplate:
+          errorMessage: keda.prometheus.serverAddress is required when keda.prometheus.requestsPerSecond or tokensPerSecond is set
+
+  - it: yields to the hpa when both autoscalers are enabled
+    set:
+      autoscaling.enabled: true
+      keda.enabled: true
+      keda.prometheus.serverAddress: http://prom:9090
+      keda.prometheus.requestsPerSecond: 90
+    asserts:
+      - hasDocuments: { count: 0 }
+
+  - it: renders the scaled object annotations
+    set:
+      keda.enabled: true
+      keda.scaledObject.annotations:
+        argocd.argoproj.io/sync-options: Prune=false
+    asserts:
+      - equal: { path: 'metadata.annotations["argocd.argoproj.io/sync-options"]', value: Prune=false }
+
+  - it: renders no annotations when none are set
+    set:
+      keda.enabled: true
+    asserts:
+      - isNull: { path: metadata.annotations }
+
+  - it: defaults the fallback failure threshold to three
+    set:
+      keda.enabled: true
+      keda.fallback.replicas: 7
+    asserts:
+      - equal: { path: spec.fallback.failureThreshold, value: 3 }
+      - equal: { path: spec.fallback.replicas, value: 7 }
+
+  - it: defaults the fallback replicas to the maximum replica count
+    set:
+      keda.enabled: true
+      keda.maxReplicas: 25
+      keda.fallback.failureThreshold: 5
+    asserts:
+      - equal: { path: spec.fallback.failureThreshold, value: 5 }
+      - equal: { path: spec.fallback.replicas, value: 25 }
+
+  - it: renders the fallback values from values
+    set:
+      keda.enabled: true
+      keda.fallback:
+        failureThreshold: 4
+        replicas: 11
+    asserts:
+      - equal:
+          path: spec.fallback
+          value: { failureThreshold: 4, replicas: 11 }
+
+  - it: does not render a fallback when none is set
+    set:
+      keda.enabled: true
+    asserts:
+      - isNull: { path: spec.fallback }
+
+  - it: restores the original replica count when asked
+    set:
+      keda.enabled: true
+      keda.restoreToOriginalReplicaCount: true
+    asserts:
+      - equal: { path: spec.advanced.restoreToOriginalReplicaCount, value: true }
+
+  - it: renders the hpa behavior when set
+    set:
+      keda.enabled: true
+      keda.behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 45
+          policies:
+            - type: Pods
+              value: 3
+              periodSeconds: 30
+    asserts:
+      - equal: { path: spec.advanced.horizontalPodAutoscalerConfig.behavior.scaleUp.stabilizationWindowSeconds, value: 45 }
+      - equal: { path: 'spec.advanced.horizontalPodAutoscalerConfig.behavior.scaleUp.policies[0].value', value: 3 }
+
+  - it: omits the hpa behavior when not set
+    set:
+      keda.enabled: true
+    asserts:
+      - isNull: { path: spec.advanced.horizontalPodAutoscalerConfig }
