@@ -54,6 +54,7 @@ impl Helper for Op {
 
 fn run_assemble(input: &Input) -> HelperResult {
     let runtime = Builder::new_current_thread()
+        .enable_all()
         .build()
         .map_err(|error| failure(error.to_string()))?;
     let costs = NoCosts;
