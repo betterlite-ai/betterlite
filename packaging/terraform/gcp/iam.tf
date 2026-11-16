@@ -2,7 +2,6 @@ resource "google_service_account" "runtime" {
   # GCP caps an account id at 30 characters, so the shared name is cut to 22 before the -runtime suffix
   account_id   = "${trimsuffix(substr(local.name, 0, 22), "-")}-runtime"
   display_name = "betterlite runtime"
-  labels       = local.labels
 }
 
 resource "google_project_iam_member" "runtime_cloudsql" {
