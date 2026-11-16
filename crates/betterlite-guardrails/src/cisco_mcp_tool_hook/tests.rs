@@ -479,3 +479,32 @@ async fn a_redaction_rewrites_the_copy_without_an_original() {
     assert_eq!(original.content, vec![text_item("secret")]);
     assert_eq!(applied_guardrails(&request_data), vec!["cisco-ai-defense"]);
 }
+
+#[tokio::test]
+async fn a_block_leaves_the_originals_structured_mirror_and_error_flag_alone() {
+    let (base, _server) = serve(StatusCode::OK, br#"{"action":"block"}"#.to_vec()).await;
+    let hook = hook(guardrail(InspectionType::Mcp, base), "\"during_mcp_call\"");
+    let kwargs = kwargs(r#"{"mcp_tool_name":"get_weather","original_response":{},"metadata":{}}"#);
+    let mut request_data = prepared(&kwargs);
+    let mut response = response_copy();
+    let mirror: DecisionsJson =
+        serde_json::from_str(r#"{"result":"secret"}"#).expect("mirror parses");
+    let mut original = McpToolResult {
+        content: vec![text_item("secret")],
+        structured_content: Some(mirror.clone()),
+        is_error: false,
+    };
+
+    let result = hook
+        .inspect_tool_output(
+            &mut request_data,
+            call(&kwargs, &mut response, &mut original),
+        )
+        .await
+        .expect("hook");
+
+    let reply = result.expect("blocking reply");
+    assert_eq!(original.content, reply.mcp_tool_call_response);
+    assert_eq!(original.structured_content, Some(mirror));
+    assert!(!original.is_error);
+}
