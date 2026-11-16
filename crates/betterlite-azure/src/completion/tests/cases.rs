@@ -1,9 +1,11 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use betterlite_streaming::stream_chunk_shaping::records::StreamOptions;
 use rstest::rstest;
 
 use crate::completion::handler::TextCompletionOutcome;
+use crate::completion::stream::requested_stream_options;
 use crate::completion::tests::fixture::{Answer, Fixed, Recorder, ScriptedSource, run};
 use crate::endpoints::projection::ClientKind;
 
@@ -199,6 +201,27 @@ fn stream_text_choices() {
         "true"
     );
     assert!(hooks.post.is_empty());
+    stream_options_from_data();
+}
+
+// CustomStreamWrapper reads stream_options from the request data and falls back to the caller's default
+fn stream_options_from_data() {
+    let off = Some(StreamOptions {
+        include_usage: false,
+    });
+    let on = Some(StreamOptions {
+        include_usage: true,
+    });
+    let asked = support::object_json(r#"{"stream_options":{"include_usage":true}}"#);
+    assert_eq!(requested_stream_options(&asked, None), on);
+    let denied = support::object_json(r#"{"stream_options":{"include_usage":false}}"#);
+    assert_eq!(requested_stream_options(&denied, on.clone()), off);
+    let empty = support::object_json(r#"{"stream_options":{}}"#);
+    assert_eq!(requested_stream_options(&empty, on.clone()), off);
+    let scalar = support::object_json(r#"{"stream_options":"yes"}"#);
+    assert_eq!(requested_stream_options(&scalar, on.clone()), on);
+    let absent = support::object_json("{}");
+    assert_eq!(requested_stream_options(&absent, None), None);
 }
 
 fn completion_errors() {

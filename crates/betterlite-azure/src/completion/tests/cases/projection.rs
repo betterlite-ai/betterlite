@@ -2,6 +2,7 @@
 
 use betterlite_models::decisions::Json;
 
+use crate::completion::config::AzureOpenAITextConfig;
 use crate::completion::handler::TextCompletionOutcome;
 use crate::completion::response::ChatReply;
 use crate::completion::tests::fixture::{Answer, CLOCK, Fixed, ScriptedSource, object};
@@ -16,6 +17,36 @@ const TWO_CHOICES: &str = r#"{"id":"cmpl-9","object":"text_completion","created"
 const NO_USAGE: &str = r#"{"id":"cmpl-2","object":"text_completion","created":777,"model":"gpt-35-turbo-instruct","choices":[{"text":"x","index":0,"finish_reason":"content_filter"}],"usage":null}"#;
 
 const EXTRA_USAGE: &str = r#"{"id":"cmpl-3","object":"text_completion","created":888,"model":"gpt-35-turbo-instruct","choices":[{"text":"y","index":0,"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5,"completion_tokens_details":null,"prompt_tokens_details":null,"reasoning_tokens":2,"queue_time":0.25}}"#;
+
+// AzureOpenAITextConfig.__init__ hands the eight parameters to the OpenAI text config, None by default
+fn config_forwards_its_eight_parameters() {
+    let none = AzureOpenAITextConfig::default().settings().unwrap();
+    assert_eq!(serde_json::to_value(none).unwrap(), serde_json::json!({}));
+    let config = AzureOpenAITextConfig {
+        frequency_penalty: Some(Json::Number(1.into())),
+        logit_bias: Some(Json::Number(2.into())),
+        max_tokens: Some(Json::Number(3.into())),
+        n: Some(Json::Number(4.into())),
+        presence_penalty: Some(Json::Number(5.into())),
+        stop: Some(Json::Text("END".to_owned())),
+        temperature: Some(Json::Number(6.into())),
+        top_p: Some(Json::Number(7.into())),
+    };
+    let settings = serde_json::to_value(config.settings().unwrap()).unwrap();
+    assert_eq!(
+        settings,
+        serde_json::json!({
+            "frequency_penalty": 1,
+            "logit_bias": 2,
+            "max_tokens": 3,
+            "n": 4,
+            "presence_penalty": 5,
+            "stop": "END",
+            "temperature": 6,
+            "top_p": 7,
+        })
+    );
+}
 
 fn buffered_reply(kind: ClientKind, body: &str, acompletion: bool, fixed: &Fixed) -> ChatReply {
     let parts = Parts::new();
@@ -36,6 +67,7 @@ fn buffered_reply(kind: ClientKind, body: &str, acompletion: bool, fixed: &Fixed
 }
 
 pub(super) fn azure_text_response_projection() {
+    config_forwards_its_eight_parameters();
     let fixed = Fixed::new();
     let reply = buffered_reply(ClientKind::AzureOpenAi, TWO_CHOICES, false, &fixed);
     let projected = reply_json(&reply);

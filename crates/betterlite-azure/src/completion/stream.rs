@@ -21,7 +21,7 @@ pub struct StreamInput<'a> {
 }
 
 // CustomStreamWrapper(completion_stream=response, model=model, custom_llm_provider="azure_text")
-fn requested_stream_options(
+pub(super) fn requested_stream_options(
     data: &Extra,
     defaults: Option<StreamOptions>,
 ) -> Option<StreamOptions> {

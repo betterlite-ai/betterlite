@@ -1,5 +1,4 @@
 use betterlite_logging::logging_pre_post::error::PrePostError;
-use betterlite_openai::text_completion_transport::error::{ErrorStatus, TextCompletionError};
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 use betterlite_openai::text_completion_transport::sdk::SdkError;
 use thiserror::Error;
@@ -49,20 +48,6 @@ impl AzureTextError {
             SdkError::Decode(_) | SdkError::Sse(_) | SdkError::Other { .. } => {
                 Self::internal(source.to_string())
             }
-        }
-    }
-
-    #[must_use]
-    pub fn from_stream(source: &TextCompletionError) -> Self {
-        let status = match source.status {
-            ErrorStatus::Code(code) => Some(code),
-            ErrorStatus::Missing => Some(500),
-            ErrorStatus::Null => None,
-        };
-        Self {
-            status,
-            message: source.message.clone(),
-            headers: source.headers.clone(),
         }
     }
 
