@@ -40,6 +40,14 @@ deviations:
       this service only passes the typed error on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L306
   - what: >-
+      has_more is false when page * page_size overflows an i64, where LiteLLM multiplies Python's unbounded
+      integers and would report another page for a product past the representable range.
+    why: >-
+      A page whose row offset product does not fit i64 cannot come from a real query result; the checked
+      multiplication says no further page exists rather than wrapping to a negative product and comparing that.
+      total_pages stays the mathematical ceiling of the full total_count for every accepted page_size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L962-L963
+  - what: >-
       A stored date that is not YYYY-MM-DD fails aggregation with the typed PagesError::Date naming the value,
       where Python's datetime.strptime raises ValueError that get_daily_activity's broad except turns into an
       HTTP 500.
