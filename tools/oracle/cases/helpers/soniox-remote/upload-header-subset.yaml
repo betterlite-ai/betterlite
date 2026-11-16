@@ -1,0 +1,17 @@
+kind: helper
+name: soniox-remote-upload-header-subset
+call:
+  soniox_remote:
+    calls:
+    - function: upload
+      auth_headers: {Authorization: "Bearer sk-local", x-client: suite, x-api-key: k-2}
+      api_base: "https://api.soniox.test"
+      filename: audio.mp3
+      content: "RIFF-data"
+      content_type: audio/mpeg
+      filename_override: null
+      timeout_ms: 2500
+      answers:
+      - {status: 200, headers: {}, body: '{"id": "file-123"}'}
+compare: {ignore: []}
+env: {}

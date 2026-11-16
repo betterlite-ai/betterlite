@@ -1,0 +1,26 @@
+kind: helper
+name: created-model-name
+call:
+  gemini_live_setup:
+    calls:
+      - op: created
+        model: vertex_ai/models/gemini-live
+        logging_session_id: sess-1
+        event_id: 00000000-0000-4000-8000-000000000001
+        session_configuration_request: '{"setup": {"model": "models/live-model", "generationConfig": {"responseModalities": ["AUDIO", "TEXT"]}, "systemInstruction": {"role": "user", "parts": [{"text": "ignored"}]}}}'
+      - op: created
+        model: gemini-2.5-flash
+        logging_session_id: sess-2
+        event_id: 00000000-0000-4000-8000-000000000002
+        session_configuration_request: '{"setup": {"model": "models/live-model", "generationConfig": {"responseModalities": ["AUDIO"]}, "systemInstruction": "Be brief."}}'
+      - op: created
+        model: gemini-2.5-flash
+        logging_session_id: sess-3
+        event_id: 00000000-0000-4000-8000-000000000003
+      - op: created
+        model: a/models/b/models/c
+        logging_session_id: sess-4
+        event_id: 00000000-0000-4000-8000-000000000004
+        session_configuration_request: '{"setup": {}}'
+env: {}
+compare: {ignore: []}
