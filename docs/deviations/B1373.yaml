@@ -12,4 +12,7 @@ deviations:
   - what: "The cancel POST and its follow-up GET use betterlite's 10-second connect timeout, where LiteLLM's cached client allows 5 seconds to connect."
     why: "B173 owns the transport limits every provider shares; a per-provider connect timeout would need a pool-level change outside this task, so a host that accepts the connection between 5 and 10 seconds succeeds here where LiteLLM gives up."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167"
-kept_bugs: []
+kept_bugs:
+  - what: "A retrieve, list or cancel follow-up GET that times out or fails on the connection is a 500, while a cancel POST timeout is a 408."
+    why: "LiteLLM's plain get and safe_get leave httpx's timeout exception unmapped, so the proxy answers 500 for a failed read; only HTTPHandler.post turns a timeout into litellm.Timeout with a 408. A working setup reads the read paths' 500 from LiteLLM today, so betterlite keeps it rather than making the three calls disagree in the other direction."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1435-L1456"
