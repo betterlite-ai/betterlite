@@ -1,6 +1,7 @@
 mod input;
 mod project;
 mod run;
+mod tests;
 mod wire;
 
 use betterlite_oracle_helper_api::error::HelperError;

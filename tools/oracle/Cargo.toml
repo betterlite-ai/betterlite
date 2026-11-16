@@ -112,9 +112,6 @@ uuid = { version = "1.28.0", default-features = false }
 rstest = "=0.27.0"
 tokio-postgres.workspace = true
 [[test]]
-name = "openai_assistant_dispatch_seeds"
-path = "src/helpers/provider/openai_assistant_dispatch/tests.rs"
-[[test]]
 name = "otlp_normalization"
 path = "src/helpers/logging/otlp_normalization/tests.rs"
 [[test]]
