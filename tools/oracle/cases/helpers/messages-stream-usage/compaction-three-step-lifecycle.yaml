@@ -1,0 +1,24 @@
+kind: helper
+name: messages-stream-usage-compaction-three-step-lifecycle
+call:
+  messages_stream_usage:
+    logging: false
+    model: claude-sonnet-4-5
+    tool_name_mapping: null
+    applied_edits: null
+    compaction_block:
+      type: compaction
+      content: S
+    iterations_usage: null
+    chunks_attr: null
+    messages_attr: null
+    steps:
+    - step: compaction
+      calls: 5
+    - step: snapshot
+    - step: compaction
+      calls: 1
+    - step: snapshot
+env: {}
+compare:
+  ignore: []

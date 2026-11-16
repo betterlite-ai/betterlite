@@ -1,0 +1,69 @@
+kind: helper
+name: messages-stream-usage-refusal-stop-precedence
+call:
+  messages_stream_usage:
+    logging: false
+    model: claude-sonnet-4-5
+    tool_name_mapping: null
+    applied_edits: null
+    compaction_block: null
+    iterations_usage: null
+    chunks_attr: null
+    messages_attr: null
+    steps:
+    - step: refusal_stop
+      event:
+        type: message_delta
+        delta:
+          stop_reason: end_turn
+    - step: start_block
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: "No"
+          provider_specific_fields: null
+    - step: start_block
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: " thanks"
+          provider_specific_fields: null
+    - step: snapshot
+    - step: refusal_stop
+      event:
+        type: message_delta
+        delta:
+          stop_reason: end_turn
+          stop_sequence: x
+        usage:
+          input_tokens: 1
+    - step: refusal_stop
+      event:
+        type: message_delta
+        delta:
+          stop_reason: max_tokens
+    - step: refusal_stop
+      event:
+        type: message_delta
+        delta:
+          stop_reason: end_turn
+          stop_details:
+            type: other
+    - step: refusal_stop
+      event:
+        type: content_block_delta
+        delta:
+          type: text_delta
+          text: x
+    - step: snapshot
+env: {}
+compare:
+  ignore: []
