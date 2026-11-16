@@ -101,12 +101,12 @@ async fn run_call(
         use_default_image_token_count,
         default_token_count,
     } = call;
-    let content = content
+    let raw = content
         .iter()
         .map(to_raw_value)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| media_tokens::failure(error.to_string()))?;
-    let media = TokenMedia { content };
+    let media = TokenMedia { content: raw };
     let settings = MediaSettings {
         image: *image,
         fallback_token_count: *default_token_count,
