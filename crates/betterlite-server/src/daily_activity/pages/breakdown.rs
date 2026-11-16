@@ -128,14 +128,17 @@ fn update_dimension(
     record: &DailySpendRecord,
     api_key_metadata: Option<&BTreeMap<String, KeyMetadataRow>>,
 ) -> Result<(), PagesError> {
-    let Some(key) = key else {
+    let Some(dimension_key) = key else {
         return Ok(());
     };
     let bucket = dimension
-        .entry(key.to_owned())
+        .entry(dimension_key.to_owned())
         .or_insert_with(|| MetricWithMetadata {
             metrics: SpendMetrics::default(),
-            metadata: metadata_fields.get(key).cloned().unwrap_or_default(),
+            metadata: metadata_fields
+                .get(dimension_key)
+                .cloned()
+                .unwrap_or_default(),
             api_key_breakdown: IndexMap::new(),
         });
     update_metrics(&mut bucket.metrics, record)?;
