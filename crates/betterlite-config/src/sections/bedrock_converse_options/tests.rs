@@ -33,6 +33,15 @@ fn both(key: &str, deployment_value: &str, global_value: &str) -> String {
     )
 }
 
+fn load_both(key: &str, deployment_value: i64, global_value: i64) -> Settings {
+    load(&both(
+        key,
+        &deployment_value.to_string(),
+        &global_value.to_string(),
+    ))
+    .unwrap()
+}
+
 fn assert_i64(
     key: &str,
     deployment_value: i64,
@@ -54,21 +63,7 @@ fn assert_i64(
         Some(global_value),
         "{key} global"
     );
-    assert_i64_merged(key, deployment_value, global_value, read);
-}
-
-fn assert_i64_merged(
-    key: &str,
-    deployment_value: i64,
-    global_value: i64,
-    read: fn(&ConverseOptionValues) -> Option<i64>,
-) {
-    let configured = load(&both(
-        key,
-        &deployment_value.to_string(),
-        &global_value.to_string(),
-    ))
-    .unwrap();
+    let configured = load_both(key, deployment_value, global_value);
     assert_eq!(
         read(configured.deployments.first().unwrap()),
         Some(deployment_value),
