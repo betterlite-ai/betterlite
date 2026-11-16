@@ -2,7 +2,11 @@ from typing import Literal, Protocol, TypedDict
 
 import litellm
 from litellm.llms.bedrock.chat.converse_transformation import AmazonConverseConfig
-from litellm.types.llms.bedrock import BedrockToolBlock
+from litellm.types.llms.bedrock import (
+    GuardrailConfigBlock,
+    PerformanceConfigBlock,
+    ServiceTierBlock,
+)
 from pydantic import JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -53,39 +57,38 @@ class Defaults(TypedDict):
 Input = Flags | Handle | Params | Clamp | Defaults
 
 
+class GroundingTool(TypedDict):
+    name: str
+
+
+# LiteLLM's BedrockToolBlock carries a bare dict in inputSchema; the view keeps the grounding key.
+class Grounding(TypedDict, total=False):
+    systemTool: GroundingTool | None
+
+
+class AutoChoice(TypedDict, total=False):
+    auto: dict[str, JsonValue]
+
+
 # Both class methods have untyped bodies upstream, so the protocol carries their signatures.
 class Declared(Protocol):
     @classmethod
-    def get_config(cls) -> dict[str, JsonValue | property]: ...
+    def get_config(cls) -> dict[str, JsonValue]: ...
+
     @classmethod
-    def get_config_blocks(cls) -> dict[str, type[object]]: ...
+    def get_config_blocks(
+        cls,
+    ) -> dict[str, type[GuardrailConfigBlock | PerformanceConfigBlock | ServiceTierBlock]]: ...
 
 
-# These three helpers take or return a bare dict upstream; the protocol restates them.
+# The two helpers whose upstream return types carry a bare dict; the view restates them.
 class ConverseSurface(Protocol):
-    def _handle_reasoning_effort_parameter(  # ast-grep-ignore: no-long-names
-        self, model: str, reasoning_effort: str, optional_params: dict[str, JsonValue]
-    ) -> None: ...
-
-    def _clamp_thinking_budget_tokens(self, optional_params: dict[str, JsonValue]) -> None: ...
-
     def _map_web_search_options(
         self, web_search_options: dict[str, JsonValue], model: str
-    ) -> BedrockToolBlock | None: ...
+    ) -> Grounding | None: ...
 
-    @classmethod
-    def _supports_sampling_params(cls, model: str) -> bool: ...
-
-    def apply_effort(
-        self, model: str, effort: str, optional_params: dict[str, JsonValue]
-    ) -> None:
-        self._handle_reasoning_effort_parameter(model, effort, optional_params)
-
-    def clamp_budget(self, optional_params: dict[str, JsonValue]) -> None:
-        self._clamp_thinking_budget_tokens(optional_params)
-
-    def grounding(self, model: str) -> BedrockToolBlock | None:
-        return self._map_web_search_options({}, model)
+    @staticmethod
+    def _auto_tool_choice() -> AutoChoice: ...
 
 
 DECLARED: type[Declared] = AmazonConverseConfig
@@ -108,8 +111,19 @@ class ConverseConfig(AmazonConverseConfig, ConverseSurface):
     def supported(self, model: str) -> list[str]:
         return self.get_supported_openai_params(model)
 
+    def apply_effort(self, model: str, effort: str, optional_params: dict[str, JsonValue]) -> None:
+        self._handle_reasoning_effort_parameter(model, effort, optional_params)
+
+    def clamp_budget(self, optional_params: dict[str, JsonValue]) -> None:
+        self._clamp_thinking_budget_tokens(optional_params)
+
+    def grounding(self, model: str) -> Grounding | None:
+        surface: ConverseSurface = self
+        return surface._map_web_search_options({}, model)
+
     def auto_tool_choice(self) -> JsonValue:
-        return JSON.validate_python(self._auto_tool_choice())
+        surface: ConverseSurface = self
+        return JSON.validate_python(surface._auto_tool_choice())
 
 
 def flags(call: Flags) -> JsonValue:
@@ -142,11 +156,10 @@ def handle(call: Handle) -> JsonValue:
 def params(call: Params) -> JsonValue:
     litellm.model_cost = call["model_cost"]
     adapter = ConverseConfig()
-    results: list[JsonValue] = []
-    for model in call["models"]:
-        results.append(JSON.validate_python(adapter.supported(model)))
-    answer: dict[str, JsonValue] = {"results": results, "auto": adapter.auto_tool_choice()}
-    return answer
+    results: list[JsonValue] = [
+        JSON.validate_python(adapter.supported(model)) for model in call["models"]
+    ]
+    return {"results": results, "auto": adapter.auto_tool_choice()}
 
 
 def clamp(call: Clamp) -> JsonValue:
@@ -163,11 +176,11 @@ def defaults(call: Defaults) -> JsonValue:
     instance = AmazonConverseConfig(**call["arguments"])
     encoded: dict[str, JsonValue] = {}
     for name, value in DECLARED.get_config().items():
-        match value:
-            case property():
-                encoded[name] = {"kind": "property"}
-            case None | bool() | int() | float() | str() | list() | dict():
-                encoded[name] = JSON.validate_python(value)
+        encoded[name] = (
+            {"kind": "property"}
+            if name == "custom_llm_provider"
+            else JSON.validate_python(value)
+        )
     blocks: dict[str, JsonValue] = {}
     for name, block in DECLARED.get_config_blocks().items():
         blocks[name] = block.__name__
