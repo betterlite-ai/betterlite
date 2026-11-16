@@ -5,7 +5,7 @@ use std::sync::PoisonError;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use betterlite_openai::containers::container_file_http::ContainerFileReply;
-use serde_json::json;
+use indexmap::IndexMap;
 
 use super::support::{
     DELETED_JSON, FILE_JSON, LIST_JSON, TIMEOUT_SECONDS, deleted_file, file_list, file_object,
@@ -82,10 +82,12 @@ fn mock_content_returns_the_parsed_json_not_bytes() {
             TIMEOUT_SECONDS,
         )
         .expect("the mock answers");
-    assert_eq!(
-        reply,
-        ContainerFileReply::Raw(json!({"object": "file_content", "text": "hello"}))
-    );
+    let raw = serde_json::to_value(Json::Object(IndexMap::from([
+        ("object".to_owned(), Json::Text("file_content".to_owned())),
+        ("text".to_owned(), Json::Text("hello".to_owned())),
+    ])))
+    .expect("the JSON value");
+    assert_eq!(reply, ContainerFileReply::Raw(raw));
 }
 
 #[test]

@@ -67,11 +67,11 @@ where
     Hook: PreCallHook,
 {
     fn handle(&self, call: &ContainerFileHandlerCall<'_>) -> ReplyResult {
-        GenericContainerHandler::handle(self, &http_call::<Source>(call))
+        Self::handle(self, &http_call::<Source>(call))
     }
 
     async fn ahandle(&self, call: &ContainerFileHandlerCall<'_>) -> ReplyResult {
-        GenericContainerHandler::ahandle(self, &http_call::<Source>(call)).await
+        Self::ahandle(self, &http_call::<Source>(call)).await
     }
 }
 

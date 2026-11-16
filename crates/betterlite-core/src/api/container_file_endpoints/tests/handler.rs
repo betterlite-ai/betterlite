@@ -205,8 +205,8 @@ fn handler_returns_bytes_reply() {
 }
 
 #[rstest]
-#[case::absent(None, Duration::from_secs(6000))]
-#[case::zero(Some(Duration::ZERO), Duration::from_secs(6000))]
+#[case::absent(None, Duration::from_mins(100))]
+#[case::zero(Some(Duration::ZERO), Duration::from_mins(100))]
 #[case::given(Some(Duration::from_millis(1500)), Duration::from_millis(1500))]
 fn handler_timeout_falls_back_to_the_default_request_timeout(
     #[case] timeout: Option<Duration>,
