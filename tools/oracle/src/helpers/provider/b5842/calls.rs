@@ -1,6 +1,6 @@
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::openai_base_config::Object;
-use betterlite_openai::passthrough::transformation::BasePassthroughConfig;
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughTarget, PassthroughUrlRequest,
 };
@@ -8,7 +8,6 @@ use betterlite_openai::watsonx_audio::WatsonxAudioConfig;
 // ast-grep-ignore: no-long-names
 use betterlite_openai::watsonx_audio::reply::decode_watsonx_transcription_reply as decode_audio;
 use betterlite_openai::watsonx_auth::WatsonxAuth;
-use betterlite_openai::watsonx_auth::transport::WatsonxTransport;
 use betterlite_openai::watsonx_auth::types::WatsonxParams;
 use betterlite_openai::watsonx_passthrough::WatsonxPassthroughConfig;
 use betterlite_provider::api::rerank_contracts::{
@@ -24,18 +23,19 @@ use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use super::NoTransport;
 use super::input::Step;
 use super::raised::Raised;
 
 type Outcome = Result<Value, Raised>;
 
-pub(super) fn embed<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> Outcome {
+pub(super) fn embed(auth: &WatsonxAuth<NoTransport>, step: &Step) -> Outcome {
     let (url, request) = embed_request(auth, step)?;
     Ok(json!({"url": url, "request": request, "reply": embed_reply(step)?}))
 }
 
-fn embed_request<T: WatsonxTransport>(
-    auth: &WatsonxAuth<T>,
+fn embed_request(
+    auth: &WatsonxAuth<NoTransport>,
     step: &Step,
 ) -> Result<(String, WatsonxEmbeddingBody), Raised> {
     let environment = &auth.environment;
@@ -67,14 +67,27 @@ fn embed_reply(step: &Step) -> Outcome {
     }))
 }
 
-pub(super) async fn rerank<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> Outcome {
+pub(super) async fn rerank(auth: &WatsonxAuth<NoTransport>, step: &Step) -> Outcome {
     let config = WatsonxRerankConfig {
         auth,
         new_id: Uuid::nil,
     };
     let mut options: Params = serde_json::from_value(Value::Object(step.options.clone()))
         .map_err(|_error| Raised::default())?;
-    let mapped = map_rerank_params(step, &mut options)?;
+    let mapped = map_cohere_rerank_params(&MapCohereRerankParams {
+        non_default_params: &mut options,
+        model: &step.model,
+        drop_params: false,
+        query: "",
+        documents: &[],
+        custom_llm_provider: None,
+        top_n: None,
+        rank_fields: None,
+        return_documents: None,
+        max_chunks_per_doc: None,
+        max_tokens_per_doc: None,
+        instruction: None,
+    })?;
     let mut auth_options = options.clone();
     let headers = config
         .validate_environment(
@@ -93,24 +106,7 @@ pub(super) async fn rerank<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &St
     }))
 }
 
-fn map_rerank_params(step: &Step, options: &mut Params) -> Result<Params, Raised> {
-    Ok(map_cohere_rerank_params(&MapCohereRerankParams {
-        non_default_params: options,
-        model: &step.model,
-        drop_params: false,
-        query: "",
-        documents: &[],
-        custom_llm_provider: None,
-        top_n: None,
-        rank_fields: None,
-        return_documents: None,
-        max_chunks_per_doc: None,
-        max_tokens_per_doc: None,
-        instruction: None,
-    })?)
-}
-
-fn rerank_reply<T: WatsonxTransport>(config: &WatsonxRerankConfig<'_, T>, step: &Step) -> Outcome {
+fn rerank_reply(config: &WatsonxRerankConfig<'_, NoTransport>, step: &Step) -> Outcome {
     let Some(text) = step.reply.as_deref() else {
         return Ok(Value::Null);
     };
@@ -125,14 +121,14 @@ fn rerank_reply<T: WatsonxTransport>(config: &WatsonxRerankConfig<'_, T>, step: 
     Ok(json!(config.transform_rerank_response(&raw)?))
 }
 
-pub(super) fn audio<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> Outcome {
+pub(super) fn audio(auth: &WatsonxAuth<NoTransport>, step: &Step) -> Outcome {
     let config = WatsonxAudioConfig { auth };
     let url = config.get_complete_url(step.api_base.as_deref(), &step.options)?;
     let request = audio_request(&config, step)?;
     Ok(json!({"url": url, "request": request, "reply": audio_reply(step)?}))
 }
 
-fn audio_request<T: WatsonxTransport>(config: &WatsonxAudioConfig<'_, T>, step: &Step) -> Outcome {
+fn audio_request(config: &WatsonxAudioConfig<'_, NoTransport>, step: &Step) -> Outcome {
     let Some(file) = &step.file else {
         return Ok(Value::Null);
     };
@@ -162,7 +158,7 @@ fn audio_reply(step: &Step) -> Outcome {
     Ok(json!(reply))
 }
 
-pub(super) fn passthrough<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> Outcome {
+pub(super) fn passthrough(auth: &WatsonxAuth<NoTransport>, step: &Step) -> Outcome {
     let config = WatsonxPassthroughConfig {
         environment: &auth.environment,
     };
