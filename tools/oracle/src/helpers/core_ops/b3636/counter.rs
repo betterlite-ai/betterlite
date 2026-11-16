@@ -64,7 +64,9 @@ impl BundledCounter {
             Arc::new(InlineCounter),
             EncodeLimits::default(),
         ));
-        let client = Arc::new(outbound_client()?);
+        let policy =
+            ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).map_err(failure)?;
+        let client = Arc::new(ProxiedClient::outbound(&Arc::new(policy)).map_err(failure)?);
         let fetcher = Arc::new(TiktokenFetcher::new(
             Arc::clone(&client),
             None,
@@ -113,11 +115,6 @@ impl RelayTokenCounter for BundledCounter {
                 text,
             ))
     }
-}
-
-fn outbound_client() -> Result<ProxiedClient, Box<HelperError>> {
-    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).map_err(failure)?;
-    ProxiedClient::outbound(&Arc::new(policy)).map_err(failure)
 }
 
 fn downloader(client: Arc<ProxiedClient>) -> Arc<HubDownloader> {
