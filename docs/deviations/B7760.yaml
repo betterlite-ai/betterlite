@@ -1,0 +1,12 @@
+task: B7760
+deviations:
+  - what: The Terraform provider module lives at packaging/terraform-provider/ instead of LiteLLM's terraform/provider/.
+    why: betterlite keeps distribution files under packaging/; the module path, go.mod and go.sum are unchanged, so the upstream mirror layout still applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/go.mod
+  - what: Four lines of trailing whitespace inside the acceptance-test Terraform configs are stripped from resource_organization_test.go, resource_organization_member_test.go and resource_organization_member_add_test.go.
+    why: The gate's whitespace check and the trailing-whitespace hook reject trailing whitespace, and HCL ignores the blank line either way, so no config the tests build changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/resource_organization_test.go#L55
+  - what: packaging/terraform-provider/litellm/_typos.toml exempts the deliberately misspelled per-model budget key that resource_key_test.go uses as invalid input.
+    why: That string is what TestKeyModelMaxBudgetValidationRequiresBudgetObjects asserts on, and correcting the key would make the value valid and fail the test, so the dictionary exemption sits beside the copied file instead of the test data changing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/resource_key_test.go#L286
+kept_bugs: []
