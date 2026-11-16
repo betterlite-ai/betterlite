@@ -220,16 +220,22 @@ fn url_step(step: &UrlStep) -> Result<Value, Box<HelperError>> {
     })
 }
 
+// a null entry stays in the list, since FLUX 2 counts it and refuses it as an unsupported image
 fn sources(step: &TransformStep) -> Option<Vec<ImageSource>> {
-    let fields: Vec<&ImageField> = match (&step.image, &step.images) {
-        (_, Some(list)) => list.iter().flatten().collect(),
-        (Some(single), None) => vec![single],
+    let fields: Vec<Option<&ImageField>> = match (&step.image, &step.images) {
+        (_, Some(list)) => list.iter().map(Option::as_ref).collect(),
+        (Some(single), None) => vec![Some(single)],
         (None, None) => return None,
     };
     Some(fields.into_iter().map(image_source).collect())
 }
 
-fn image_source(field: &ImageField) -> ImageSource {
+fn image_source(field: Option<&ImageField>) -> ImageSource {
+    let Some(field) = field else {
+        return ImageSource::Unsupported {
+            kind: String::from("NoneType"),
+        };
+    };
     let content = field.text.clone().into_bytes();
     match field.kind {
         ImageKind::Bytes => ImageSource::Bytes(content),
