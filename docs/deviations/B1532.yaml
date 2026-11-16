@@ -1,0 +1,27 @@
+task: B1532
+deviations:
+  - what: A Fal video reply larger than 16 MiB is refused with a typed error that keeps the upstream status and headers.
+    why: LiteLLM reads the whole reply with no size limit. A body that comes from outside needs a bound, and no working Fal setup relies on a reply that large.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L165-L166
+  - what: A reply that is not JSON, or whose JSON root is not an object, fails with a typed error that keeps the upstream status and headers.
+    why: LiteLLM validates the decoded body with pydantic, whose ValidationError reaches the client as a 500 with the upstream status lost. A working Fal setup always sends a JSON object, so the typed error breaks nobody.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L165-L166
+  - what: A duration is truncated from its decimal text exactly, where LiteLLM converts it through a double. A text such as 9007199254740993 keeps its last digit, and a magnitude past the f64 range, such as 1e309, becomes an exact integer instead of the OverflowError that int(inf) raises. Text whose truncated form would exceed 4096 digits fails with the numeric-value error instead.
+    why: The task requires exact numeric representations and never floating point; the double round-trip also makes LiteLLM report seconds 9007199254740993 beside duration_seconds 9007199254740992.0. No working request sends a duration near the double precision limit or outside its range.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L91-L99
+  - what: A duration written as inf, infinity or -inf fails the seconds mapping with the numeric-value error, and the same text as a queued response's duration option leaves the duration usage out, where LiteLLM's int(float(value)) raises an OverflowError that the except clause does not catch.
+    why: A create call answers 500 in LiteLLM, and the response built from a queued job's request data hits the same helper at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L411 after the job is already queued. betterlite reads decimal text, so a non-finite value is a typed error or no duration instead; a working request never sends a non-finite duration. Proven by duration_reads_exact_integers case infinity and an_infinite_duration_leaves_duration_usage_out in crates/betterlite-core/src/api/fal/video_prepare/tests.rs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L91-L99
+  - what: A duration written with underscores between digits, such as 1_0, fails with the numeric-value error, where Python's float reads it as 10.
+    why: betterlite reads ASCII digits, a sign, a dot and an exponent exactly and leaves out Python's numeric-literal underscores; a working request spells its seconds "10".
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L91-L99
+  - what: A duration written in non-ASCII decimal digits, such as Arabic-Indic, fails with the numeric-value error, where Python's float reads those digits as a number.
+    why: betterlite reads ASCII digits only; a working request spells its seconds in ASCII.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L91-L99
+  - what: A WxH size written in non-ASCII decimal digits maps no resolution and no aspect ratio, where Python's isdigit and int read those digits, and a superscript digit passes isdigit but makes int raise a ValueError that reaches the client as a 500.
+    why: betterlite reads ASCII digits only. A working request spells its size in ASCII, so the ASCII-only reader both keeps those requests and turns the superscript crash into the empty mapping that a malformed size already gets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L131-L155
+  - what: A WxH width or height wider than u128 maps no resolution and no aspect ratio, where LiteLLM keeps any positive Python int.
+    why: betterlite decodes the dimensions as u128; a dimension past about 3.4e38 is not a size any working setup sends, and mapping nothing follows the same rule as a malformed size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L131-L155
+kept_bugs: []

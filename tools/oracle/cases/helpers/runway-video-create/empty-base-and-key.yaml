@@ -1,0 +1,69 @@
+kind: helper
+name: runway-video-create-empty-base-and-key
+call:
+  runway_video_create:
+    operation: create
+    params:
+      model: gen4_turbo
+      prompt: a cat surfing
+      calls:
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment:
+            RUNWAYML_API_SECRET: secret
+            RUNWAYML_API_BASE: 'https://ignored.test/v1'
+          params: {}
+        - api_base: ''
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment:
+            RUNWAYML_API_SECRET: secret
+            RUNWAYML_API_BASE: 'https://ignored.test/v1'
+          params: {}
+        - api_base: 'https://runway.test/v1///'
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {}
+          params: {}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_KEY: ''}
+          params: {}
+        - api_base: null
+          api_key: ''
+          litellm_params_api_key: typed-key
+          global_api_key: null
+          environment: {}
+          params: {}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: ''
+          global_api_key: global-key
+          environment: {}
+          params: {}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: ''
+          environment: {RUNWAYML_API_SECRET: secret, RUNWAYML_API_KEY: key}
+          params: {}
+        - api_base: null
+          api_key: ''
+          litellm_params_api_key: ''
+          global_api_key: ''
+          environment: {RUNWAYML_API_SECRET: '', RUNWAYML_API_KEY: ''}
+          params: {}
+env: {}
+compare: {ignore: []}

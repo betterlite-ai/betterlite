@@ -1,0 +1,24 @@
+kind: helper
+name: encode-direct-sdk-no-routing
+call:
+  b3361:
+    function: encode_container_id
+    container_id: "container_1"
+    custom_llm_provider: "azure"
+    litellm_metadata: {model_info: {}}
+    extra_body: null
+calls:
+  - b3361:
+      function: encode_container_id
+      container_id: "container_1"
+      custom_llm_provider: "azure"
+      litellm_metadata: null
+      extra_body: {other: 1}
+  - b3361:
+      function: encode_container_id
+      container_id: "container_1"
+      custom_llm_provider: "azure"
+      litellm_metadata: null
+      extra_body: null
+env: {}
+compare: {ignore: []}
