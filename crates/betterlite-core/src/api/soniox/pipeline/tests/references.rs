@@ -349,6 +349,98 @@ async fn an_unreadable_audio_path_reports_the_audio_error_without_a_request() {
 }
 
 #[tokio::test]
+async fn an_empty_file_reference_falls_through_to_the_missing_input_error() {
+    let effects = support::Effects::default();
+    let book = support::LogBook::default();
+    let recorder = support::Recorder::new(Vec::new(), &effects);
+    let pipeline = pipeline_with(&recorder, &recorder);
+    let case_params = params(&[("file_id", json!("")), ("audio_url", json!(""))]);
+    let call = call(&case_params, false);
+    let mut response = response();
+    let mut logger = support::Logger::new(&effects, &book);
+    let outcome = pipeline
+        .transcribe::<support::Recorder<'_>>(&call, target(None, &mut response, &mut logger), None)
+        .await;
+
+    let error = outcome.expect_err("an empty reference is not a reference");
+    let exception = error.provider().expect("the rejection is the Soniox 400");
+    assert_eq!(exception.status_code, 400);
+    assert_eq!(exception.message, MISSING_INPUT);
+    assert!(recorder.calls().is_empty());
+}
+
+#[tokio::test]
+async fn a_completed_poll_without_a_duration_leaves_the_hidden_value_null() {
+    let effects = support::Effects::default();
+    let book = support::LogBook::default();
+    let mut answers = vec![
+        answer(200, r#"{"id":"file_1"}"#),
+        answer(200, r#"{"id":"tr_1"}"#),
+        answer(200, r#"{"status":"completed"}"#),
+        answer(200, r#"{"text":"hello"}"#),
+    ];
+    answers.push(answer(200, "{}"));
+    answers.push(answer(200, "{}"));
+    let recorder = support::Recorder::new(answers, &effects);
+    let pipeline = pipeline_with(&recorder, &recorder);
+    let case_params = params(&[("soniox_max_polling_attempts", json!(1))]);
+    let call = call(&case_params, false);
+    let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
+    let mut file = AudioFile::Stream(&mut stream);
+    let mut response = response();
+    let mut logger = support::Logger::new(&effects, &book);
+    let outcome = pipeline
+        .transcribe::<support::Recorder<'_>>(
+            &call,
+            target(Some(&mut file), &mut response, &mut logger),
+            None,
+        )
+        .await;
+
+    assert!(outcome.is_ok(), "{outcome:?}");
+    assert_eq!(
+        response.hidden_params.get("audio_transcription_duration"),
+        Some(&json!(null))
+    );
+    assert_eq!(response.hidden_params.get("model"), Some(&json!(MODEL)));
+}
+
+#[tokio::test]
+async fn a_scientific_duration_is_read_as_its_exact_decimal() {
+    let effects = support::Effects::default();
+    let book = support::LogBook::default();
+    let mut answers = vec![
+        answer(200, r#"{"id":"file_1"}"#),
+        answer(200, r#"{"id":"tr_1"}"#),
+        answer(200, r#"{"status":"completed","audio_duration_ms":1e-7}"#),
+        answer(200, r#"{"text":"hello"}"#),
+    ];
+    answers.push(answer(200, "{}"));
+    answers.push(answer(200, "{}"));
+    let recorder = support::Recorder::new(answers, &effects);
+    let pipeline = pipeline_with(&recorder, &recorder);
+    let case_params = params(&[("soniox_max_polling_attempts", json!(1))]);
+    let call = call(&case_params, false);
+    let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
+    let mut file = AudioFile::Stream(&mut stream);
+    let mut response = response();
+    let mut logger = support::Logger::new(&effects, &book);
+    let outcome = pipeline
+        .transcribe::<support::Recorder<'_>>(
+            &call,
+            target(Some(&mut file), &mut response, &mut logger),
+            None,
+        )
+        .await;
+
+    assert!(outcome.is_ok(), "{outcome:?}");
+    assert_eq!(
+        response.hidden_params.get("audio_transcription_duration"),
+        Some(&json!(1e-10))
+    );
+}
+
+#[tokio::test]
 async fn a_pending_poll_sleeps_the_poll_interval_between_attempts() {
     let effects = support::Effects::default();
     let book = support::LogBook::default();
