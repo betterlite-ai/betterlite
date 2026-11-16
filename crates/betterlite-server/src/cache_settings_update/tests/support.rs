@@ -536,20 +536,20 @@ pub(crate) fn request_body(settings: JsonValue) -> String {
 }
 
 // The request future exceeds clippy's large-futures ceiling, so it is boxed here and callers await a pointer.
-pub(crate) fn post<'a>(
-    harness: &'a Harness,
+pub(crate) fn post<'test>(
+    harness: &'test Harness,
     auth: Option<AuthContext>,
-    body: &'a str,
-) -> Pin<Box<dyn Future<Output = (StatusCode, String)> + Send + 'a>> {
+    body: &'test str,
+) -> Pin<Box<dyn Future<Output = (StatusCode, String)> + Send + 'test>> {
     post_with_header(harness, auth, body, None)
 }
 
-pub(crate) fn post_with_header<'a>(
-    harness: &'a Harness,
+pub(crate) fn post_with_header<'test>(
+    harness: &'test Harness,
     auth: Option<AuthContext>,
-    body: &'a str,
-    changed_by: Option<&'a [u8]>,
-) -> Pin<Box<dyn Future<Output = (StatusCode, String)> + Send + 'a>> {
+    body: &'test str,
+    changed_by: Option<&'test [u8]>,
+) -> Pin<Box<dyn Future<Output = (StatusCode, String)> + Send + 'test>> {
     Box::pin(async move {
         let application = router(harness.state.clone());
         let mut builder = Request::builder()
