@@ -4,14 +4,16 @@ use std::collections::BTreeMap;
 
 use betterlite_openai::error::ProviderError;
 use rstest::rstest;
-use serde_json::{Value, json};
 
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
 
 use crate::databricks_chat::error::DatabricksChatError;
 use crate::databricks_chat::response::tool_calls::repair;
 use crate::databricks_chat::response::{
     Reply, ReplyFunction, ReplyToolCall, ResponseInput, transform_response,
+};
+use crate::databricks_chat::tests::{
+    at, at_mut, dump, fill, has, json, len_of, object, set, text_of, unset,
 };
 use crate::ollama_chat::ids::IdSource;
 
@@ -23,9 +25,9 @@ impl IdSource for FixedIds {
     }
 }
 
-fn call(body: &Value, json_mode: bool) -> Result<Reply, DatabricksChatError> {
-    let text = serde_json::to_string(body).expect("the fixture body encodes");
-    transform_response(ResponseInput {
+fn call(body: &Json, json_mode: bool) -> Result<Reply, DatabricksChatError> {
+    let text = text_of(body);
+    transform_response(&ResponseInput {
         body: &text,
         status_code: 200,
         headers: BTreeMap::new(),
@@ -35,17 +37,17 @@ fn call(body: &Value, json_mode: bool) -> Result<Reply, DatabricksChatError> {
     })
 }
 
-fn success(body: &Value, json_mode: bool) -> Value {
+pub(super) fn success(body: &Json, json_mode: bool) -> Json {
     let reply = call(body, json_mode).expect("the response transform succeeds");
-    serde_json::to_value(&reply).expect("the reply serializes")
+    dump(&reply)
 }
 
-fn failure(body: &Value, json_mode: bool) -> DatabricksChatError {
+pub(super) fn failure(body: &Json, json_mode: bool) -> DatabricksChatError {
     call(body, json_mode).expect_err("the response transform fails")
 }
 
 fn raw_failure(body: &str) -> DatabricksChatError {
-    transform_response(ResponseInput {
+    transform_response(&ResponseInput {
         body,
         status_code: 429,
         headers: BTreeMap::from([(String::from("retry-after"), String::from("3"))]),
@@ -56,35 +58,41 @@ fn raw_failure(body: &str) -> DatabricksChatError {
     .expect_err("the body cannot be parsed")
 }
 
-fn body(message: Value) -> Value {
+pub(super) fn body(message: Json) -> Json {
     body_with(choice(message, json!({})))
 }
 
-fn choice(message: Value, extra: Value) -> Value {
-    let mut choice = json!({"index": 0, "finish_reason": "stop", "message": message});
-    let fields = choice.as_object_mut().expect("the choice is an object");
-    for (name, value) in extra.as_object().expect("the extra fields are an object") {
-        fields.insert(name.clone(), value.clone());
+fn choice(message: Json, extra: Json) -> Json {
+    let mut choice = object([
+        ("index", json!(0)),
+        ("finish_reason", json!("stop")),
+        ("message", message),
+    ]);
+    if let (Json::Object(fields), Json::Object(more)) = (&mut choice, extra) {
+        fields.extend(more);
     }
     choice
 }
 
-fn body_with(choice: Value) -> Value {
-    json!({
-        "id": "chat-1",
-        "created": 1700,
-        "model": "m",
-        "choices": [choice],
-        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
-    })
+fn body_with(choice: Json) -> Json {
+    object([
+        ("id", json!("chat-1")),
+        ("created", json!(1700)),
+        ("model", json!("m")),
+        ("choices", Json::List(vec![choice])),
+        (
+            "usage",
+            json!({"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}),
+        ),
+    ])
 }
 
-fn usage_of(reply: &Value) -> Value {
-    reply.get("usage").expect("the reply carries usage").clone()
+pub(super) fn usage_of(reply: &Json) -> Json {
+    at(reply, "usage").clone()
 }
 
-fn message_of(reply: &Value) -> Value {
-    reply["choices"][0]["message"].clone()
+pub(super) fn message_of(reply: &Json) -> Json {
+    at(reply, "choices.0.message").clone()
 }
 
 #[test]
@@ -132,7 +140,7 @@ fn a_custom_provider_prefixes_the_model_name() {
         json_mode: false,
         ids: &FixedIds,
     };
-    let reply = transform_response(input).expect("the response transform succeeds");
+    let reply = transform_response(&input).expect("the response transform succeeds");
     assert_eq!(reply.model, "my-provider/m");
 }
 
@@ -146,18 +154,15 @@ fn an_empty_provider_falls_back_to_databricks() {
         json_mode: false,
         ids: &FixedIds,
     };
-    let reply = transform_response(input).expect("the response transform succeeds");
+    let reply = transform_response(&input).expect("the response transform succeeds");
     assert_eq!(reply.model, "databricks/m");
 }
 
 #[test]
 fn a_missing_model_becomes_an_empty_name() {
     let mut value = body(json!({"role": "assistant", "content": "x"}));
-    value
-        .as_object_mut()
-        .expect("the body is an object")
-        .remove("model");
-    assert_eq!(success(&value, false)["model"], json!("databricks/"));
+    unset(&mut value, "model");
+    assert_eq!(*at(&success(&value, false), "model"), json!("databricks/"));
 }
 
 #[rstest]
@@ -198,11 +203,9 @@ fn a_response_error_keeps_its_headers_through_the_provider_error() {
 #[case("choices", json!({}))]
 #[case("usage", json!([]))]
 #[case("usage", json!("x"))]
-fn a_broken_top_level_field_is_a_shape_error(#[case] field: &str, #[case] value: Value) {
+fn a_broken_top_level_field_is_a_shape_error(#[case] field: &str, #[case] value: Json) {
     let mut body = body(json!({"role": "assistant", "content": "x"}));
-    body.as_object_mut()
-        .expect("the body is an object")
-        .insert(field.to_owned(), value);
+    set(&mut body, field, value);
     assert_eq!(failure(&body, false).status_code(), 500);
 }
 
@@ -211,7 +214,7 @@ fn a_broken_top_level_field_is_a_shape_error(#[case] field: &str, #[case] value:
 #[case(json!({"message": {"role": "assistant", "content": "x"}}), "index")]
 #[case(json!({"message": {"role": "assistant", "content": "x"}, "index": 0}), "finish_reason")]
 #[case(json!({"message": {"role": "assistant"}, "index": 0, "finish_reason": "stop"}), "content")]
-fn a_missing_choice_field_is_a_shape_error(#[case] choice: Value, #[case] name: &str) {
+fn a_missing_choice_field_is_a_shape_error(#[case] choice: Json, #[case] name: &str) {
     let error = failure(&body_with(choice), false);
     assert_eq!(error.status_code(), 500);
     assert!(error.to_string().contains(name), "{error}");
@@ -220,13 +223,13 @@ fn a_missing_choice_field_is_a_shape_error(#[case] choice: Value, #[case] name: 
 #[rstest]
 #[case(json!(null), json!(0))]
 #[case(json!(3), json!(3))]
-fn the_choice_index_defaults_a_null(#[case] index: Value, #[case] expected: Value) {
+fn the_choice_index_defaults_a_null(#[case] index: Json, #[case] expected: Json) {
     let choice = choice(
         json!({"role": "assistant", "content": "x"}),
-        json!({"index": index}),
+        fill(json!({"index": "$0"}), "$0", &index),
     );
     assert_eq!(
-        success(&body_with(choice), false)["choices"][0]["index"],
+        *at(&success(&body_with(choice), false), "choices.0.index"),
         expected
     );
 }
@@ -239,11 +242,11 @@ fn finish_reasons_are_mapped_and_keep_the_native_value() {
     );
     let output = success(&body_with(choice), false);
     assert_eq!(
-        output["choices"][0]["finish_reason"],
+        *at(&output, "choices.0.finish_reason"),
         json!("content_filter")
     );
     assert_eq!(
-        output["choices"][0]["provider_specific_fields"],
+        *at(&output, "choices.0.provider_specific_fields"),
         json!({"native_finish_reason": "content_filtered"})
     );
 }
@@ -252,29 +255,29 @@ fn finish_reasons_are_mapped_and_keep_the_native_value() {
 #[case(json!(null), json!("stop"))]
 #[case(json!("length"), json!("length"))]
 #[case(json!("tool_calls"), json!("tool_calls"))]
-fn a_known_or_null_finish_reason_adds_no_native_value(#[case] raw: Value, #[case] expected: Value) {
+fn a_known_or_null_finish_reason_adds_no_native_value(#[case] raw: Json, #[case] expected: Json) {
     let choice = choice(
         json!({"role": "assistant", "content": "x"}),
-        json!({"finish_reason": raw}),
+        fill(json!({"finish_reason": "$0"}), "$0", &raw),
     );
     let output = success(&body_with(choice), false);
-    assert_eq!(output["choices"][0]["finish_reason"], expected);
-    assert_eq!(output["choices"][0].get("provider_specific_fields"), None);
+    assert_eq!(*at(&output, "choices.0.finish_reason"), expected);
+    assert!(!has(at(&output, "choices.0"), "provider_specific_fields"));
 }
 
 #[rstest]
 #[case(json!(""))]
 #[case(json!("weird"))]
-fn an_unmapped_finish_reason_defaults_to_stop(#[case] raw: Value) {
+fn an_unmapped_finish_reason_defaults_to_stop(#[case] raw: Json) {
     let choice = choice(
         json!({"role": "assistant", "content": "x"}),
-        json!({"finish_reason": raw}),
+        fill(json!({"finish_reason": "$0"}), "$0", &raw),
     );
     let output = success(&body_with(choice), false);
-    assert_eq!(output["choices"][0]["finish_reason"], json!("stop"));
+    assert_eq!(*at(&output, "choices.0.finish_reason"), json!("stop"));
     assert_eq!(
-        output["choices"][0]["provider_specific_fields"],
-        json!({"native_finish_reason": raw})
+        *at(&output, "choices.0.provider_specific_fields"),
+        fill(json!({"native_finish_reason": "$0"}), "$0", &raw)
     );
 }
 
@@ -299,7 +302,7 @@ fn text_content_blocks_concatenate() {
         ]
     });
     assert_eq!(
-        message_of(&success(&body(message), false))["content"],
+        *at(&message_of(&success(&body(message), false)), "content"),
         json!("ab")
     );
 }
@@ -314,10 +317,10 @@ fn reasoning_blocks_become_reasoning_content_and_thinking_blocks() {
         ]
     });
     let output = message_of(&success(&body(message), false));
-    assert_eq!(output["content"], json!("answer"));
-    assert_eq!(output["reasoning_content"], json!("thinkmore"));
+    assert_eq!(*at(&output, "content"), json!("answer"));
+    assert_eq!(*at(&output, "reasoning_content"), json!("thinkmore"));
     assert_eq!(
-        output["thinking_blocks"],
+        *at(&output, "thinking_blocks"),
         json!([
             {"type": "thinking", "thinking": "think", "signature": "sig"},
             {"type": "thinking", "thinking": "more", "signature": ""}
@@ -332,9 +335,9 @@ fn a_null_signature_stays_null() {
         "content": [{"type": "reasoning", "summary": [{"text": "t", "signature": null}]}]
     });
     let output = message_of(&success(&body(message), false));
-    assert_eq!(output["content"], json!(""));
+    assert_eq!(*at(&output, "content"), json!(""));
     assert_eq!(
-        output["thinking_blocks"],
+        *at(&output, "thinking_blocks"),
         json!([{"type": "thinking", "thinking": "t", "signature": null}])
     );
 }
@@ -357,17 +360,17 @@ fn the_blocks_reasoning_wins_over_a_top_level_reasoning_content() {
         "reasoning_content": "top"
     });
     let output = message_of(&success(&body(message), false));
-    assert_eq!(output["reasoning_content"], json!("blk"));
-    assert!(output.get("thinking_blocks").is_some());
+    assert_eq!(*at(&output, "reasoning_content"), json!("blk"));
+    assert!(has(&output, "thinking_blocks"));
 }
 
 #[test]
 fn a_thinking_tag_is_split_without_a_reasoning_key() {
     let message = json!({"role": "assistant", "content": "<think>inside</think>rest"});
     let output = message_of(&success(&body(message), false));
-    assert_eq!(output["content"], json!("rest"));
-    assert_eq!(output["reasoning_content"], json!("inside"));
-    assert_eq!(output.get("thinking_blocks"), None);
+    assert_eq!(*at(&output, "content"), json!("rest"));
+    assert_eq!(*at(&output, "reasoning_content"), json!("inside"));
+    assert!(!has(&output, "thinking_blocks"));
 }
 
 #[test]
@@ -378,8 +381,8 @@ fn a_top_level_reasoning_content_skips_tag_parsing() {
         "reasoning_content": "top"
     });
     let output = message_of(&success(&body(message), false));
-    assert_eq!(output["content"], json!("<think>inside</think>rest"));
-    assert_eq!(output["reasoning_content"], json!("top"));
+    assert_eq!(*at(&output, "content"), json!("<think>inside</think>rest"));
+    assert_eq!(*at(&output, "reasoning_content"), json!("top"));
 }
 
 #[test]
@@ -390,15 +393,18 @@ fn a_null_reasoning_content_key_blocks_tag_parsing() {
         "reasoning_content": null
     });
     let output = message_of(&success(&body(message), false));
-    assert_eq!(output["content"], json!("<think>inside</think>rest"));
-    assert_eq!(output.get("reasoning_content"), None);
+    assert_eq!(*at(&output, "content"), json!("<think>inside</think>rest"));
+    assert!(!has(&output, "reasoning_content"));
 }
 
 #[test]
 fn a_reasoning_key_is_used_when_no_reasoning_content_is_set() {
     let message = json!({"role": "assistant", "content": "x", "reasoning": "why"});
     assert_eq!(
-        message_of(&success(&body(message), false))["reasoning_content"],
+        *at(
+            &message_of(&success(&body(message), false)),
+            "reasoning_content"
+        ),
         json!("why")
     );
 }
@@ -407,8 +413,12 @@ fn a_reasoning_key_is_used_when_no_reasoning_content_is_set() {
 #[case(json!(5))]
 #[case(json!(true))]
 #[case(json!({"a": 1}))]
-fn a_broken_content_value_is_a_shape_error(#[case] content: Value) {
-    let message = json!({"role": "assistant", "content": content});
+fn a_broken_content_value_is_a_shape_error(#[case] content: Json) {
+    let message = fill(
+        json!({"role": "assistant", "content": "$0"}),
+        "$0",
+        &content,
+    );
     assert_eq!(failure(&body(message), false).status_code(), 500);
 }
 
@@ -420,7 +430,7 @@ fn citations_land_in_provider_specific_fields() {
     });
     let output = message_of(&success(&body(message), false));
     assert_eq!(
-        output["provider_specific_fields"],
+        *at(&output, "provider_specific_fields"),
         json!({"citations": [[{"start": 0, "end": 2, "supported_text": "answer"}]]})
     );
 }
@@ -428,10 +438,14 @@ fn citations_land_in_provider_specific_fields() {
 #[rstest]
 #[case(json!([{"type": "text", "text": "a", "citations": []}]))]
 #[case(json!([{"type": "text", "text": "a"}]))]
-fn empty_citations_do_not_add_provider_specific_fields(#[case] content: Value) {
-    let message = json!({"role": "assistant", "content": content});
+fn empty_citations_do_not_add_provider_specific_fields(#[case] content: Json) {
+    let message = fill(
+        json!({"role": "assistant", "content": "$0"}),
+        "$0",
+        &content,
+    );
     let output = message_of(&success(&body(message), false));
-    assert_eq!(output.get("provider_specific_fields"), None);
+    assert!(!has(&output, "provider_specific_fields"));
 }
 
 #[test]
@@ -457,7 +471,7 @@ fn tool_calls_are_normalized() {
     });
     let output = message_of(&success(&body(message), false));
     assert_eq!(
-        output["tool_calls"],
+        *at(&output, "tool_calls"),
         json!([
             {"function": {"arguments": "{\"a\":1}", "name": "f"}, "id": "t1", "type": "function"},
             {"function": {"arguments": "", "name": "g"}, "id": "generated-id", "type": "function"},
@@ -475,7 +489,7 @@ fn a_dict_arguments_value_is_encoded() {
     });
     let output = message_of(&success(&body(message), false));
     assert_eq!(
-        output["tool_calls"][0]["function"]["arguments"],
+        *at(&output, "tool_calls.0.function.arguments"),
         json!("{\"a\": 1}")
     );
 }
@@ -489,8 +503,12 @@ fn a_dict_arguments_value_is_encoded() {
 #[case(json!({"id": "t1", "function": {"name": 5}}))]
 #[case(json!({"id": "t1", "function": {"name": "f", "arguments": 5}}))]
 #[case(json!({"id": "t1", "function": {"name": "f", "arguments": null, "parameters": "p"}}))]
-fn a_broken_tool_call_is_a_decode_error(#[case] tool_call: Value) {
-    let value = json!({"role": "assistant", "content": null, "tool_calls": [tool_call]});
+fn a_broken_tool_call_is_a_decode_error(#[case] tool_call: Json) {
+    let value = fill(
+        json!({"role": "assistant", "content": null, "tool_calls": ["$0"]}),
+        "$0",
+        &tool_call,
+    );
     let error = failure(&body(value), false);
     assert_eq!(error.status_code(), 500);
     assert!(matches!(error, DatabricksChatError::Decode(_)), "{error}");
@@ -506,13 +524,17 @@ fn a_broken_tool_call_is_a_decode_error(#[case] tool_call: Value) {
     json!({"custom": {"name": "f"}, "function": {"arguments": "", "name": "f"}, "id": "t1", "type": "function"})
 )]
 fn a_custom_payload_on_a_reply_call_passes_through(
-    #[case] tool_call: Value,
-    #[case] expected: Value,
+    #[case] tool_call: Json,
+    #[case] expected: Json,
 ) {
-    let value = json!({"role": "assistant", "content": null, "tool_calls": [tool_call]});
+    let value = fill(
+        json!({"role": "assistant", "content": null, "tool_calls": ["$0"]}),
+        "$0",
+        &tool_call,
+    );
     assert_eq!(
-        message_of(&success(&body(value), false))["tool_calls"],
-        json!([expected])
+        *at(&message_of(&success(&body(value), false)), "tool_calls"),
+        fill(json!(["$0"]), "$0", &expected)
     );
 }
 
@@ -524,17 +546,21 @@ fn a_null_custom_key_passes_through_as_an_extra() {
         "tool_calls": [{"id": "t1", "custom": null, "function": {"name": "f", "arguments": "{}"}}]
     });
     let output = message_of(&success(&body(message), false));
-    assert_eq!(output["tool_calls"][0]["function"]["name"], json!("f"));
-    assert_eq!(output["tool_calls"][0]["custom"], Value::Null);
+    assert_eq!(*at(&output, "tool_calls.0.function.name"), json!("f"));
+    assert_eq!(*at(&output, "tool_calls.0.custom"), Json::Null);
 }
 
 #[rstest]
 #[case(json!(null))]
 #[case(json!([]))]
-fn an_empty_tool_calls_value_becomes_null(#[case] tool_calls: Value) {
-    let message = json!({"role": "assistant", "content": "x", "tool_calls": tool_calls});
+fn an_empty_tool_calls_value_becomes_null(#[case] tool_calls: Json) {
+    let message = fill(
+        json!({"role": "assistant", "content": "x", "tool_calls": "$0"}),
+        "$0",
+        &tool_calls,
+    );
     assert_eq!(
-        message_of(&success(&body(message), false))["tool_calls"],
+        *at(&message_of(&success(&body(message), false)), "tool_calls"),
         json!(null)
     );
 }
@@ -546,13 +572,21 @@ fn an_empty_tool_calls_value_becomes_null(#[case] tool_calls: Value) {
 #[case(json!(true))]
 #[case(json!({}))]
 #[case(json!({"a": 1}))]
-fn a_non_list_tool_calls_value_is_a_shape_error(#[case] tool_calls: Value) {
-    let message = json!({"role": "assistant", "content": "x", "tool_calls": tool_calls});
+fn a_non_list_tool_calls_value_is_a_shape_error(#[case] tool_calls: Json) {
+    let message = fill(
+        json!({"role": "assistant", "content": "x", "tool_calls": "$0"}),
+        "$0",
+        &tool_calls,
+    );
     assert_eq!(failure(&body(message), false).status_code(), 500);
 }
 
-fn json_mode_body(tool_calls: Value) -> Value {
-    body(json!({"role": "assistant", "content": null, "tool_calls": tool_calls}))
+fn json_mode_body(tool_calls: Json) -> Json {
+    body(object([
+        ("role", json!("assistant")),
+        ("content", Json::Null),
+        ("tool_calls", tool_calls),
+    ]))
 }
 
 #[test]
@@ -560,17 +594,17 @@ fn json_mode_turns_a_json_tool_call_into_content() {
     let tool_calls =
         json!([{"id": "t1", "function": {"name": "json_tool_call", "arguments": "{\"a\":1}"}}]);
     let output = success(&json_mode_body(tool_calls), true);
-    assert_eq!(output["choices"][0]["finish_reason"], json!("stop"));
-    assert_eq!(message_of(&output)["content"], json!("{\"a\":1}"));
-    assert_eq!(message_of(&output)["tool_calls"], json!(null));
+    assert_eq!(*at(&output, "choices.0.finish_reason"), json!("stop"));
+    assert_eq!(*at(&message_of(&output), "content"), json!("{\"a\":1}"));
+    assert_eq!(*at(&message_of(&output), "tool_calls"), json!(null));
 }
 
 #[test]
 fn json_mode_keeps_a_call_with_another_name() {
     let tool_calls = json!([{"id": "t1", "function": {"name": "f", "arguments": "{\"a\":1}"}}]);
     let output = success(&json_mode_body(tool_calls), true);
-    assert_eq!(message_of(&output)["content"], json!(null));
-    assert!(message_of(&output)["tool_calls"].is_array());
+    assert_eq!(*at(&message_of(&output), "content"), json!(null));
+    assert!(len_of(at(&message_of(&output), "tool_calls")).is_some());
 }
 
 #[test]
@@ -580,11 +614,8 @@ fn json_mode_keeps_two_calls() {
         {"id": "t2", "function": {"name": "f", "arguments": "x"}}
     ]);
     let output = success(&json_mode_body(tool_calls), true);
-    assert_eq!(message_of(&output)["content"], json!(null));
-    assert_eq!(
-        message_of(&output)["tool_calls"].as_array().map(Vec::len),
-        Some(2)
-    );
+    assert_eq!(*at(&message_of(&output), "content"), json!(null));
+    assert_eq!(len_of(at(&message_of(&output), "tool_calls")), Some(2));
 }
 
 #[test]
@@ -592,15 +623,15 @@ fn json_mode_without_the_flag_does_not_convert() {
     let tool_calls =
         json!([{"id": "t1", "function": {"name": "json_tool_call", "arguments": "{\"a\":1}"}}]);
     let output = success(&json_mode_body(tool_calls), false);
-    assert_eq!(message_of(&output)["content"], json!(null));
+    assert_eq!(*at(&message_of(&output), "content"), json!(null));
 }
 
 #[test]
 fn json_mode_with_empty_arguments_does_not_convert() {
     let tool_calls = json!([{"id": "t1", "function": {"name": "json_tool_call", "arguments": ""}}]);
     let output = success(&json_mode_body(tool_calls), true);
-    assert_eq!(message_of(&output)["content"], json!(null));
-    assert!(message_of(&output)["tool_calls"].is_array());
+    assert_eq!(*at(&message_of(&output), "content"), json!(null));
+    assert!(len_of(at(&message_of(&output), "tool_calls")).is_some());
 }
 
 #[test]
@@ -608,24 +639,25 @@ fn json_mode_does_not_need_a_finish_reason() {
     let mut value = json_mode_body(
         json!([{"id": "t1", "function": {"name": "json_tool_call", "arguments": "{}"}}]),
     );
-    value["choices"][0]
-        .as_object_mut()
-        .expect("the choice is an object")
-        .remove("finish_reason");
+    unset(at_mut(&mut value, "choices.0"), "finish_reason");
     let output = success(&value, true);
-    assert_eq!(output["choices"][0]["finish_reason"], json!("stop"));
+    assert_eq!(*at(&output, "choices.0.finish_reason"), json!("stop"));
 }
 
 #[test]
 fn json_mode_repairs_a_parallel_call_before_converting() {
     let arguments = json!({"tool_uses": [{"recipient_name": "functions.json_tool_call", "parameters": {"a": 1}}]});
-    let tool_calls = json!([{
-        "id": "t1",
-        "function": {"name": "multi_tool_use.parallel", "arguments": arguments.to_string()}
-    }]);
+    let tool_calls = fill(
+        json!([{
+            "id": "t1",
+            "function": {"name": "multi_tool_use.parallel", "arguments": "$0"}
+        }]),
+        "$0",
+        &text_of(&arguments),
+    );
     let output = success(&json_mode_body(tool_calls), true);
-    assert_eq!(message_of(&output)["content"], json!("{\"a\": 1}"));
-    assert_eq!(message_of(&output)["tool_calls"], json!(null));
+    assert_eq!(*at(&message_of(&output), "content"), json!("{\"a\": 1}"));
+    assert_eq!(*at(&message_of(&output), "tool_calls"), json!(null));
 }
 
 #[test]
@@ -635,8 +667,8 @@ fn a_parallel_call_with_invalid_json_is_left_alone() {
         "function": {"name": "multi_tool_use.parallel", "arguments": "not json"}
     }]);
     let output = success(&json_mode_body(tool_calls), true);
-    assert_eq!(message_of(&output)["content"], json!(null));
-    assert_eq!(message_of(&output)["tool_calls"][0]["id"], json!("t1"));
+    assert_eq!(*at(&message_of(&output), "content"), json!(null));
+    assert_eq!(*at(&message_of(&output), "tool_calls.0.id"), json!("t1"));
 }
 
 #[rstest]
@@ -648,8 +680,12 @@ fn a_parallel_call_with_invalid_json_is_left_alone() {
 #[case("{\"tool_uses\": [{\"recipient_name\": 5, \"parameters\": {}}]}")]
 #[case("{\"tool_uses\": [{\"recipient_name\": \"f\"}]}")]
 fn a_broken_parallel_call_is_a_decode_error(#[case] arguments: &str) {
-    let tool_call = json!({"id": "t1", "function": {"name": "multi_tool_use.parallel", "arguments": arguments}});
-    let error = failure(&json_mode_body(json!([tool_call])), true);
+    let tool_call = fill(
+        json!({"id": "t1", "function": {"name": "multi_tool_use.parallel", "arguments": "$0"}}),
+        "$0",
+        &arguments,
+    );
+    let error = failure(&json_mode_body(fill(json!(["$0"]), "$0", &tool_call)), true);
     assert_eq!(error.status_code(), 500);
     assert!(matches!(error, DatabricksChatError::Decode(_)), "{error}");
 }
@@ -674,7 +710,7 @@ fn a_parallel_call_expands_in_place_with_numbered_ids() {
     ]});
     let calls = [
         reply_call("t0", "first", "{}"),
-        reply_call("t1", "multi_tool_use.parallel", &arguments.to_string()),
+        reply_call("t1", "multi_tool_use.parallel", &text_of(&arguments)),
         reply_call("t2", "last", "[]"),
     ];
     let repaired = repair(&calls).expect("the repair succeeds");
@@ -693,15 +729,19 @@ fn a_parallel_call_expands_in_place_with_numbered_ids() {
 fn a_mixed_list_keeps_the_original_calls_in_the_reply() {
     let arguments =
         json!({"tool_uses": [{"recipient_name": "functions.f", "parameters": {"a": 1}}]});
-    let tool_calls = json!([
-        {"id": "t0", "function": {"name": "json_tool_call", "arguments": "{}"}},
-        {"id": "t1", "function": {"name": "multi_tool_use.parallel", "arguments": arguments.to_string()}}
-    ]);
+    let tool_calls = fill(
+        json!([
+            {"id": "t0", "function": {"name": "json_tool_call", "arguments": "{}"}},
+            {"id": "t1", "function": {"name": "multi_tool_use.parallel", "arguments": "$0"}}
+        ]),
+        "$0",
+        &text_of(&arguments),
+    );
     let output = success(&json_mode_body(tool_calls), true);
-    assert_eq!(message_of(&output)["content"], json!(null));
-    assert_eq!(output["choices"][0]["finish_reason"], json!("stop"));
+    assert_eq!(*at(&message_of(&output), "content"), json!(null));
+    assert_eq!(*at(&output, "choices.0.finish_reason"), json!("stop"));
     assert_eq!(
-        message_of(&output)["tool_calls"][1]["function"]["name"],
+        *at(&message_of(&output), "tool_calls.1.function.name"),
         json!("multi_tool_use.parallel")
     );
 }
@@ -713,14 +753,15 @@ fn json_mode_keeps_an_empty_parallel_call_next_to_the_json_tool_call() {
         {"id": "t2", "function": {"name": "json_tool_call", "arguments": "{\"a\":1}"}}
     ]);
     let mut value = json_mode_body(tool_calls);
-    value["choices"][0]["finish_reason"] = json!("tool_calls");
-    let output = success(&value, true);
-    assert_eq!(message_of(&output)["content"], json!(null));
-    assert_eq!(output["choices"][0]["finish_reason"], json!("tool_calls"));
-    assert_eq!(
-        message_of(&output)["tool_calls"].as_array().map(Vec::len),
-        Some(2)
+    set(
+        at_mut(&mut value, "choices.0"),
+        "finish_reason",
+        json!("tool_calls"),
     );
+    let output = success(&value, true);
+    assert_eq!(*at(&message_of(&output), "content"), json!(null));
+    assert_eq!(*at(&output, "choices.0.finish_reason"), json!("tool_calls"));
+    assert_eq!(len_of(at(&message_of(&output), "tool_calls")), Some(2));
 }
 
 #[test]
@@ -739,7 +780,7 @@ fn a_sibling_call_with_invalid_json_stops_the_repair() {
     ]});
     let calls = [
         reply_call("t0", "f", ""),
-        reply_call("t1", "multi_tool_use.parallel", &arguments.to_string()),
+        reply_call("t1", "multi_tool_use.parallel", &text_of(&arguments)),
     ];
     assert_eq!(repair(&calls).expect("the repair succeeds"), calls.to_vec());
 }
@@ -751,10 +792,7 @@ fn a_broken_parallel_call_after_an_invalid_json_call_is_left_alone() {
         {"id": "t1", "function": {"name": "multi_tool_use.parallel", "arguments": "5"}}
     ]);
     let output = success(&json_mode_body(tool_calls), true);
-    assert_eq!(
-        message_of(&output)["tool_calls"].as_array().map(Vec::len),
-        Some(2)
-    );
+    assert_eq!(len_of(at(&message_of(&output), "tool_calls")), Some(2));
 }
 
 #[test]
@@ -770,223 +808,6 @@ fn a_parallel_call_repair_runs_even_without_json_mode() {
 }
 
 #[test]
-fn usage_of_an_empty_block_is_zeroed() {
-    let mut value = body(json!({"role": "assistant", "content": "x"}));
-    value
-        .as_object_mut()
-        .expect("the body is an object")
-        .insert("usage".to_owned(), json!({}));
-    assert_eq!(
-        usage_of(&success(&value, false)),
-        json!({
-            "completion_tokens": 0,
-            "prompt_tokens": 0,
-            "total_tokens": 0,
-            "completion_tokens_details": null,
-            "prompt_tokens_details": null
-        })
-    );
-}
-
-#[test]
-fn reasoning_tokens_fill_the_completion_details() {
-    let mut value = body(json!({"role": "assistant", "content": "x"}));
-    value.as_object_mut().expect("the body is an object").insert(
-        "usage".to_owned(),
-        json!({"prompt_tokens": 1, "completion_tokens": 10, "total_tokens": 11, "reasoning_tokens": 3,
-               "completion_tokens_details": {"image_tokens": 2, "audio_tokens": 1}}),
-    );
-    assert_eq!(
-        usage_of(&success(&value, false)),
-        json!({
-            "completion_tokens": 10,
-            "prompt_tokens": 1,
-            "total_tokens": 11,
-            "completion_tokens_details": {"image_tokens": 2, "audio_tokens": 1, "reasoning_tokens": 3, "text_tokens": 4},
-            "prompt_tokens_details": null
-        })
-    );
-}
-
-#[test]
-fn reasoning_tokens_keep_a_provider_text_tokens_value() {
-    let mut value = body(json!({"role": "assistant", "content": "x"}));
-    value.as_object_mut().expect("the body is an object").insert(
-        "usage".to_owned(),
-        json!({"prompt_tokens": 1, "completion_tokens": 10, "total_tokens": 11, "reasoning_tokens": 3,
-               "completion_tokens_details": {"text_tokens": 99}}),
-    );
-    assert_eq!(
-        usage_of(&success(&value, false))["completion_tokens_details"],
-        json!({"text_tokens": 99, "reasoning_tokens": 3})
-    );
-}
-
-#[test]
-fn reasoning_tokens_without_completion_tokens_skip_text_tokens() {
-    let mut value = body(json!({"role": "assistant", "content": "x"}));
-    value.as_object_mut().expect("the body is an object").insert(
-        "usage".to_owned(),
-        json!({"prompt_tokens": 1, "completion_tokens": null, "total_tokens": 3, "reasoning_tokens": 3}),
-    );
-    assert_eq!(
-        usage_of(&success(&value, false)),
-        json!({
-            "completion_tokens": 0,
-            "prompt_tokens": 1,
-            "total_tokens": 3,
-            "completion_tokens_details": {"reasoning_tokens": 3},
-            "prompt_tokens_details": null
-        })
-    );
-}
-
-#[test]
-fn text_tokens_clamp_at_zero() {
-    let mut value = body(json!({"role": "assistant", "content": "x"}));
-    value.as_object_mut().expect("the body is an object").insert(
-        "usage".to_owned(),
-        json!({"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3, "reasoning_tokens": 5}),
-    );
-    assert_eq!(
-        usage_of(&success(&value, false))["completion_tokens_details"],
-        json!({"reasoning_tokens": 5, "text_tokens": 0})
-    );
-}
-
-#[test]
-fn cache_keys_fold_into_the_prompt_details_and_stay_on_the_usage() {
-    let mut value = body(json!({"role": "assistant", "content": "x"}));
-    value.as_object_mut().expect("the body is an object").insert(
-        "usage".to_owned(),
-        json!({"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3,
-               "cache_read_input_tokens": 9, "cache_creation_input_tokens": 4, "prompt_cache_hit_tokens": 2}),
-    );
-    assert_eq!(
-        usage_of(&success(&value, false)),
-        json!({
-            "completion_tokens": 2,
-            "prompt_tokens": 1,
-            "total_tokens": 3,
-            "completion_tokens_details": null,
-            "prompt_tokens_details": {"cached_tokens": 9, "cache_write_tokens": 4, "cache_creation_tokens": 4},
-            "cache_read_input_tokens": 9,
-            "cache_creation_input_tokens": 4,
-            "prompt_cache_hit_tokens": 2
-        })
-    );
-}
-
-#[test]
-fn a_nested_cache_creation_key_fills_the_write_tokens() {
-    let mut value = body(json!({"role": "assistant", "content": "x"}));
-    value
-        .as_object_mut()
-        .expect("the body is an object")
-        .insert(
-            "usage".to_owned(),
-            json!({"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3,
-               "prompt_tokens_details": {"cache_creation_input_tokens": 3}}),
-        );
-    assert_eq!(
-        usage_of(&success(&value, false))["prompt_tokens_details"],
-        json!({"cache_creation_input_tokens": 3, "cache_write_tokens": 3, "cache_creation_tokens": 3})
-    );
-}
-
-#[test]
-fn prompt_details_drop_their_unset_optional_fields() {
-    let mut value = body(json!({"role": "assistant", "content": "x"}));
-    value
-        .as_object_mut()
-        .expect("the body is an object")
-        .insert(
-            "usage".to_owned(),
-            json!({"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3,
-               "prompt_tokens_details": {"character_count": null, "cached_tokens": 5, "zz": 1}}),
-        );
-    assert_eq!(
-        usage_of(&success(&value, false))["prompt_tokens_details"],
-        json!({"cached_tokens": 5, "zz": 1})
-    );
-}
-
-#[rstest]
-#[case(json!({}))]
-#[case(json!("x"))]
-#[case(json!([1]))]
-fn a_truthy_non_object_details_value_is_dropped(#[case] details: Value) {
-    let mut value = body(json!({"role": "assistant", "content": "x"}));
-    value
-        .as_object_mut()
-        .expect("the body is an object")
-        .insert(
-            "usage".to_owned(),
-            json!({"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3,
-               "completion_tokens_details": details, "prompt_tokens_details": details}),
-        );
-    let output = usage_of(&success(&value, false));
-    assert_eq!(output["completion_tokens_details"], json!(null));
-    assert_eq!(output["prompt_tokens_details"], json!(null));
-}
-
-#[test]
-fn server_tool_use_keeps_its_declared_fields_and_cost_is_forwarded() {
-    let mut value = body(json!({"role": "assistant", "content": "x"}));
-    value
-        .as_object_mut()
-        .expect("the body is an object")
-        .insert(
-            "usage".to_owned(),
-            json!({"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3,
-               "server_tool_use": {"web_search_requests": 2, "zz": 1}, "cost": 0.5, "zz": null}),
-        );
-    let output = usage_of(&success(&value, false));
-    assert_eq!(output["server_tool_use"], json!({"web_search_requests": 2}));
-    assert_eq!(output["cost"], json!(0.5));
-    assert_eq!(output["zz"], json!(null));
-}
-
-#[test]
-fn a_null_server_tool_use_and_cost_are_dropped() {
-    let mut value = body(json!({"role": "assistant", "content": "x"}));
-    value
-        .as_object_mut()
-        .expect("the body is an object")
-        .insert(
-            "usage".to_owned(),
-            json!({"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3,
-               "server_tool_use": null, "cost": null}),
-        );
-    let output = usage_of(&success(&value, false));
-    assert_eq!(output.get("server_tool_use"), None);
-    assert_eq!(output.get("cost"), None);
-}
-
-#[rstest]
-#[case("prompt_tokens", json!("5"))]
-#[case("completion_tokens", json!(2.5))]
-#[case("total_tokens", json!(true))]
-#[case("reasoning_tokens", json!("3"))]
-fn a_wrong_typed_usage_count_is_a_shape_error(#[case] name: &str, #[case] value: Value) {
-    let mut body = body(json!({"role": "assistant", "content": "x"}));
-    let mut usage = json!({"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3});
-    usage
-        .as_object_mut()
-        .expect("the usage is an object")
-        .insert(name.to_owned(), value);
-    body.as_object_mut()
-        .expect("the body is an object")
-        .insert("usage".to_owned(), usage);
-    let error = failure(&body, false);
-    assert_eq!(error.status_code(), 500);
-    assert_eq!(
-        error.to_string(),
-        format!("the {name} of the Databricks usage must be an integer")
-    );
-}
-
-#[test]
 fn a_message_level_function_call_is_dropped() {
     let message = json!({
         "role": "assistant",
@@ -994,5 +815,5 @@ fn a_message_level_function_call_is_dropped() {
         "function_call": {"name": "f", "arguments": "{}"}
     });
     let output = message_of(&success(&body(message), false));
-    assert_eq!(output["function_call"], json!(null));
+    assert_eq!(*at(&output, "function_call"), json!(null));
 }

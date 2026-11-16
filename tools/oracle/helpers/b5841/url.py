@@ -1,9 +1,9 @@
 from litellm.llms.databricks.chat.transformation import DatabricksConfig
 from pydantic import JsonValue, TypeAdapter
 
-from .common import Input, Object, UrlCase, cases_of, chat_api, guarded
+from .common import ARBITRARY, ChatApi, Input, Object, UrlCase, cases_of, guarded
 
-CHAT = chat_api(DatabricksConfig())
+CHAT = TypeAdapter(ChatApi, config=ARBITRARY).validate_python(DatabricksConfig())
 
 
 def url_of(case: UrlCase) -> Object:

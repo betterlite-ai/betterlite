@@ -14,6 +14,7 @@ use crate::databricks_chat::response::usage::usage_from;
 use crate::databricks_chat::response::wire::{
     DatabricksChoice, DatabricksMessage, DatabricksResponse,
 };
+use crate::databricks_chat::slot::Slot;
 use crate::ollama_chat::ids::IdSource;
 
 mod tests;
@@ -31,7 +32,7 @@ pub struct ResponseInput<'value> {
 }
 
 // The OpenAI-shaped reply LiteLLM's transform_response builds, serialized the way model_dump writes it
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Reply {
     pub id: String,
     pub created: i64,
@@ -42,7 +43,7 @@ pub struct Reply {
     pub usage: Usage,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Choice {
     pub finish_reason: String,
     pub index: i64,
@@ -52,7 +53,7 @@ pub struct Choice {
 }
 
 // content, role, tool_calls and function_call are always written; the reasoning keys only when set
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ReplyMessage {
     pub content: Option<String>,
     pub role: String,
@@ -85,7 +86,7 @@ pub struct ReplyFunction {
 }
 
 // Usage(**block): the three counts, the two detail blocks and the keys it forwards
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Usage {
     pub completion_tokens: i64,
     pub prompt_tokens: i64,
@@ -97,8 +98,8 @@ pub struct Usage {
 }
 
 // transform_response: parse the body, then each choice through _transform_dbrx_choices
-pub fn transform_response(input: ResponseInput<'_>) -> Result<Reply, DatabricksChatError> {
-    let body = parse_body(&input)?;
+pub fn transform_response(input: &ResponseInput<'_>) -> Result<Reply, DatabricksChatError> {
+    let body = parse_body(input)?;
     let provider = match input.custom_llm_provider {
         Some(name) if !name.is_empty() => name,
         None | Some(_) => "databricks",
@@ -144,11 +145,11 @@ fn transform_choice(
     ids: &dyn IdSource,
 ) -> Result<Choice, DatabricksChatError> {
     let index = match choice.index {
-        Some(Some(index)) => index,
-        Some(None) => 0,
-        None => return Err(DatabricksChatError::MissingKey { key: "index" }),
+        Slot::Value(index) => index,
+        Slot::Null => 0,
+        Slot::Absent => return Err(DatabricksChatError::MissingKey { key: "index" }),
     };
-    let calls = tool_calls::normalize(choice.message.tool_calls.as_deref(), ids)?;
+    let calls = tool_calls::normalize(choice.message.tool_calls.as_deref(), ids);
     let repaired = match &calls {
         Some(normalized) => tool_calls::repair(normalized)?,
         None => Vec::new(),
@@ -179,13 +180,11 @@ fn transform_choice(
 }
 
 // Choices maps a given finish_reason and keeps the raw one when the mapping changed it
-fn finish_reason_of(
-    raw: Option<Option<String>>,
-) -> Result<(String, Option<Object>), DatabricksChatError> {
+fn finish_reason_of(raw: Slot<String>) -> Result<(String, Option<Object>), DatabricksChatError> {
     let given = match raw {
-        Some(Some(text)) => Some(text),
-        Some(None) => None,
-        None => {
+        Slot::Value(text) => Some(text),
+        Slot::Null => None,
+        Slot::Absent => {
             return Err(DatabricksChatError::MissingKey {
                 key: "finish_reason",
             });
@@ -211,9 +210,9 @@ fn translated_message(
     calls: Option<Vec<ReplyToolCall>>,
 ) -> Result<ReplyMessage, DatabricksChatError> {
     let content = match &message.content {
-        Some(Some(content)) => Some(content),
-        Some(None) => None,
-        None => return Err(DatabricksChatError::MissingKey { key: "content" }),
+        Slot::Value(content) => Some(content),
+        Slot::Null => None,
+        Slot::Absent => return Err(DatabricksChatError::MissingKey { key: "content" }),
     };
     let (block_reasoning, thinking_blocks) = extract_reasoning(content);
     let content_str = extract_content_str(content);
@@ -245,13 +244,13 @@ fn split_reasoning(
         ("reasoning", &message.reasoning),
     ] {
         match value {
-            Some(Some(text)) => {
+            Slot::Value(text) => {
                 fields.insert(name.to_owned(), Json::Text(text.clone()));
             }
-            Some(None) => {
+            Slot::Null => {
                 fields.insert(name.to_owned(), Json::Null);
             }
-            None => {}
+            Slot::Absent => {}
         }
     }
     let synthetic = Message {

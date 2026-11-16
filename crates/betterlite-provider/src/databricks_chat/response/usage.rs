@@ -4,6 +4,8 @@ use serde_json::Number;
 use crate::databricks_chat::error::DatabricksChatError;
 use crate::databricks_chat::response::Usage;
 
+mod tests;
+
 // Usage(**block) consumes these kwargs; every other key is forwarded onto the usage object
 const NAMED: [&str; 8] = [
     "prompt_tokens",
@@ -50,10 +52,10 @@ pub(crate) fn usage_from(block: &Object) -> Result<Usage, DatabricksChatError> {
                 Json::Number(Number::from(reasoning)),
             );
         }
-        if let Some(completion) = completion
+        if let Some(given) = completion
             && matches!(fields.get("text_tokens"), None | Some(Json::Null))
         {
-            let mut text = completion.saturating_sub(reasoning);
+            let mut text = given.saturating_sub(reasoning);
             for name in ["image_tokens", "audio_tokens"] {
                 text = text.saturating_sub(present_count(fields.get(name), name)?.unwrap_or(0));
             }

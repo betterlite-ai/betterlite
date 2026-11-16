@@ -54,10 +54,8 @@ pub(crate) fn build_tool(name: &str, schema: Option<&Json>, description: Option<
         (String::from("name"), Json::Text(name.to_owned())),
         (String::from("parameters"), parameters),
     ]);
-    if let Some(description) = description
-        && !matches!(description, Json::Null)
-    {
-        function.insert(String::from("description"), description.clone());
+    if let Some(text) = description.filter(|given| !matches!(given, Json::Null)) {
+        function.insert(String::from("description"), text.clone());
     }
     Json::Object(Object::from_iter([
         (String::from("type"), Json::Text(String::from("function"))),

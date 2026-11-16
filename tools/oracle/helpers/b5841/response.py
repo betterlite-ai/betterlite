@@ -4,18 +4,19 @@ from litellm.types.utils import ModelResponse
 from pydantic import JsonValue, TypeAdapter
 
 from .common import (
+    ARBITRARY,
     JSON_ADAPTER,
     MODEL,
+    ChatApi,
     Input,
     Object,
     ResponseCase,
     cases_of,
-    chat_api,
     guarded,
     logging_object,
 )
 
-CHAT = chat_api(DatabricksConfig())
+CHAT = TypeAdapter(ChatApi, config=ARBITRARY).validate_python(DatabricksConfig())
 
 
 def reply_of(case: ResponseCase) -> Object:

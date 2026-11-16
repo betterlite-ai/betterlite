@@ -117,7 +117,7 @@ pub(super) fn response_of(case: &ResponseCase) -> serde_json::Value {
     let Ok(body) = serde_json::to_string(&case.body) else {
         return json!({"status": 500});
     };
-    let reply = transform_response(ResponseInput {
+    let reply = transform_response(&ResponseInput {
         body: &body,
         status_code: 200,
         headers: BTreeMap::new(),

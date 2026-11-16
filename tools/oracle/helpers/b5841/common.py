@@ -3,9 +3,7 @@ from collections.abc import Callable
 from typing import Literal, Protocol, TypedDict, TypeVar, runtime_checkable
 
 import httpx
-from litellm.exceptions import BadRequestError
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.databricks.common_utils import DatabricksException
 from litellm.types.utils import CallTypes, ModelResponse, ModelResponseStream
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 
@@ -54,6 +52,11 @@ class StreamCase(TypedDict):
 class Input(TypedDict, total=False):
     function: Literal["url", "headers", "params", "messages", "response", "stream"]
     cases: list[JsonValue]
+
+
+@runtime_checkable
+class StatusError(Protocol):
+    status_code: int
 
 
 @runtime_checkable
@@ -129,10 +132,6 @@ class ChatApi(Protocol):
     ) -> StreamIterator: ...
 
 
-def chat_api(config: object) -> ChatApi:
-    return TypeAdapter(ChatApi, config=ARBITRARY).validate_python(config)
-
-
 def logging_object() -> Logging:
     return Logging(
         model=MODEL,
@@ -155,8 +154,7 @@ def cases_of(input_value: Input) -> list[JsonValue]:
 def guarded(call: Callable[[CaseT], Object], case: CaseT) -> Object:
     try:
         result = call(case)
-    except DatabricksException as error:
-        return {"status": error.status_code}
-    except BadRequestError as error:
-        return {"status": error.status_code}
+    except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/common_utils.py#L21-L22
+        failure = TypeAdapter(StatusError, config=ARBITRARY).validate_python(error)
+        return {"status": failure.status_code}
     return result

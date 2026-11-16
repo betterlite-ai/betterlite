@@ -16,7 +16,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Number, Value, json};
+use serde_json::Number;
 
 use crate::databricks_auth::environment::DatabricksEnv;
 use crate::databricks_auth::error::DatabricksError;
@@ -28,9 +28,15 @@ use crate::databricks_chat::request::{
     EnvironmentRequest, SUPPORTED_OPENAI_PARAMS, get_complete_url, get_config, get_required_params,
     pop_user_agent, pop_user_agent_parameter, should_fake_stream, validate_environment,
 };
+use crate::databricks_chat::tests::{dump, fill, json};
 
-fn object(value: Value) -> Object {
-    serde_json::from_value(value).expect("the fixture is an object")
+fn object(value: Json) -> Object {
+    match value {
+        Json::Object(fields) => fields,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("the fixture is an object")
+        }
+    }
 }
 
 // get_complete_url: two dots in the model after the provider prefix turn the AI gateway on
@@ -42,17 +48,17 @@ fn object(value: Value) -> Object {
 )]
 #[case(
     Some("https://adb-1.cloud.databricks.com/serving-endpoints"),
-    "databricks/anthropic.claude-3-5-sonnet-2",
+    "databricks/anthropic.claude-3.5-sonnet",
     "https://adb-1.cloud.databricks.com/ai-gateway/mlflow/v1/chat/completions"
 )]
 #[case(
     Some("https://adb-1.cloud.databricks.com/"),
-    "databricks/anthropic.claude-3-5-sonnet-2",
+    "databricks/anthropic.claude-3.5-sonnet",
     "https://adb-1.cloud.databricks.com/ai-gateway/mlflow/v1/chat/completions"
 )]
 #[case(
     Some("https://adb-1.cloud.databricks.com/ai-gateway/mlflow/v1/"),
-    "databricks/anthropic.claude-3-5-sonnet-2",
+    "databricks/anthropic.claude-3.5-sonnet",
     "https://adb-1.cloud.databricks.com/ai-gateway/mlflow/v1/chat/completions"
 )]
 #[case(
@@ -104,8 +110,12 @@ fn the_databricks_user_agent_is_popped_when_the_user_agent_is_absent() {
 #[rstest]
 #[case(json!(null))]
 #[case(json!(""))]
-fn an_empty_user_agent_falls_through_to_the_databricks_one(#[case] value: Value) {
-    let mut params = object(json!({"user_agent": value, "databricks_user_agent": "second"}));
+fn an_empty_user_agent_falls_through_to_the_databricks_one(#[case] value: Json) {
+    let mut params = object(fill(
+        json!({"user_agent": "$value", "databricks_user_agent": "second"}),
+        "$value",
+        &value,
+    ));
     assert_eq!(
         pop_user_agent_parameter(&mut params).expect("the user agents pop"),
         Some(String::from("second"))
@@ -117,7 +127,7 @@ fn an_empty_user_agent_falls_through_to_the_databricks_one(#[case] value: Value)
 #[case(json!({"user_agent": 5}), "user_agent")]
 #[case(json!({"user_agent": []}), "user_agent")]
 #[case(json!({"databricks_user_agent": {}}), "databricks_user_agent")]
-fn a_non_string_user_agent_is_a_bad_request(#[case] fixture: Value, #[case] name: &str) {
+fn a_non_string_user_agent_is_a_bad_request(#[case] fixture: Json, #[case] name: &str) {
     let mut params = object(fixture);
     let error = pop_user_agent_parameter(&mut params).expect_err("the user agent is invalid");
     assert_eq!(error.status_code(), 400);
@@ -213,8 +223,8 @@ async fn the_user_agent_falls_through_litellm_then_the_environment() {
 #[case(json!(null), false)]
 #[case(json!({"type": "json_object"}), true)]
 #[case(json!("json"), true)]
-fn should_fake_stream_follows_a_set_response_format(#[case] value: Value, #[case] expected: bool) {
-    let params = object(json!({"response_format": value}));
+fn should_fake_stream_follows_a_set_response_format(#[case] value: Json, #[case] expected: bool) {
+    let params = object(fill(json!({"response_format": "$value"}), "$value", &value));
     assert_eq!(should_fake_stream(&params), expected);
 }
 
@@ -261,7 +271,7 @@ impl ThinkingCapabilities for FakeCapabilities {
         effort: &'seam str,
         _provider: &'seam str,
     ) -> impl Future<Output = Result<Option<Thinking>, ReasoningEffortError>> + Send + 'seam {
-        async move { effort_budget(effort) }
+        ready(effort_budget(effort))
     }
 
     fn validate_effort(
@@ -270,7 +280,7 @@ impl ThinkingCapabilities for FakeCapabilities {
         _effort: Option<&str>,
         _provider: &str,
     ) -> impl Future<Output = Option<String>> + Send {
-        async { None }
+        ready(None)
     }
 
     fn supports_effort_param(
@@ -278,7 +288,7 @@ impl ThinkingCapabilities for FakeCapabilities {
         _model: &str,
         _provider: &str,
     ) -> impl Future<Output = bool> + Send {
-        async { false }
+        ready(false)
     }
 
     fn drop_disabled_thinking(
@@ -287,7 +297,7 @@ impl ThinkingCapabilities for FakeCapabilities {
         _params: &mut OptionalParams,
         _provider: &str,
     ) -> impl Future<Output = bool> + Send {
-        async { false }
+        ready(false)
     }
 
     // B569's adaptive translation: a legacy thinking block becomes an output_config effort
@@ -342,7 +352,7 @@ fn translated_output_config() -> DecisionJson {
     DecisionJson::Object(fields)
 }
 
-async fn mapped(model: &str, non_default: Value, adaptive: bool) -> Object {
+async fn mapped(model: &str, non_default: Json, adaptive: bool) -> Object {
     let mut optional = Object::new();
     let mut capabilities = FakeCapabilities { adaptive };
     map_openai_params(
@@ -357,11 +367,8 @@ async fn mapped(model: &str, non_default: Value, adaptive: bool) -> Object {
     optional
 }
 
-fn assert_params(params: &Object, expected: Value) {
-    assert_eq!(
-        serde_json::to_value(params).expect("the params render"),
-        expected
-    );
+fn assert_params(params: &Object, expected: &Json) {
+    assert_eq!(&dump(params), expected);
 }
 
 #[tokio::test]
@@ -378,7 +385,7 @@ async fn a_claude_tool_gains_an_empty_properties_map_and_its_description() {
     .await;
     assert_params(
         &params,
-        json!({
+        &json!({
             "tools": [{"type": "function", "function": {"name": "f", "parameters": {"type": "object", "properties": {}}, "description": "d"}}],
             "tool_choice": "auto",
             "temperature": 0.2
@@ -398,7 +405,7 @@ async fn a_json_schema_response_format_becomes_the_json_tool() {
     .await;
     assert_params(
         &params,
-        json!({
+        &json!({
             "tools": [{"type": "function", "function": {"name": "json_tool_call", "parameters": {"type": "object", "properties": {"a": {"type": "string"}}}}}],
             "json_mode": true,
             "tool_choice": {"type": "function", "function": {"name": "json_tool_call"}}
@@ -414,7 +421,7 @@ async fn a_json_object_response_format_is_only_removed() {
         false,
     )
     .await;
-    assert_params(&params, json!({"temperature": 0.3}));
+    assert_params(&params, &json!({"temperature": 0.3}));
 }
 
 #[tokio::test]
@@ -430,7 +437,7 @@ async fn a_json_schema_format_with_thinking_installs_no_tool_choice() {
     .await;
     assert_params(
         &params,
-        json!({
+        &json!({
             "thinking": {"type": "enabled", "budget_tokens": 2048},
             "tools": [{"type": "function", "function": {"name": "json_tool_call", "parameters": {"type": "object", "properties": {"a": {"type": "string"}}}}}],
             "json_mode": true,
@@ -454,7 +461,7 @@ async fn a_non_claude_model_keeps_its_tools_and_response_format() {
     .await;
     assert_params(
         &params,
-        json!({
+        &json!({
             "tools": [{"type": "function", "function": {"name": "f", "parameters": {"type": "object"}}}],
             "response_format": {"type": "json_object"},
             "temperature": 0.2,
@@ -473,7 +480,7 @@ async fn an_uppercase_claude_model_keeps_response_format_but_maps_the_effort() {
     .await;
     assert_params(
         &params,
-        json!({
+        &json!({
             "response_format": {"type": "json_object"},
             "thinking": {"type": "enabled", "budget_tokens": 1024},
             "max_tokens": 5120
@@ -496,13 +503,21 @@ async fn a_reasoning_effort_fills_the_thinking_budget(
 ) {
     let params = mapped(
         "databricks-claude-3-5-sonnet",
-        json!({"reasoning_effort": effort}),
+        fill(json!({"reasoning_effort": "$effort"}), "$effort", &effort),
         false,
     )
     .await;
     assert_params(
         &params,
-        json!({"thinking": {"type": "enabled", "budget_tokens": budget}, "max_tokens": max_tokens}),
+        &fill(
+            fill(
+                json!({"thinking": {"type": "enabled", "budget_tokens": "$budget"}, "max_tokens": "$max_tokens"}),
+                "$budget",
+                &budget,
+            ),
+            "$max_tokens",
+            &max_tokens,
+        ),
     );
 }
 
@@ -522,17 +537,29 @@ async fn an_adaptive_model_also_gets_an_output_config_effort(
 ) {
     let params = mapped(
         "databricks-claude-adaptive",
-        json!({"reasoning_effort": effort}),
+        fill(json!({"reasoning_effort": "$effort"}), "$effort", &effort),
         true,
     )
     .await;
     assert_params(
         &params,
-        json!({
-            "thinking": {"type": "enabled", "budget_tokens": budget},
-            "output_config": {"effort": level},
-            "max_tokens": max_tokens
-        }),
+        &fill(
+            fill(
+                fill(
+                    json!({
+                        "thinking": {"type": "enabled", "budget_tokens": "$budget"},
+                        "output_config": {"effort": "$level"},
+                        "max_tokens": "$max_tokens"
+                    }),
+                    "$budget",
+                    &budget,
+                ),
+                "$level",
+                &level,
+            ),
+            "$max_tokens",
+            &max_tokens,
+        ),
     );
 }
 
@@ -544,7 +571,7 @@ async fn an_adaptive_model_translates_a_legacy_thinking_block() {
         true,
     )
     .await;
-    assert_params(&params, json!({"output_config": {"effort": "low"}}));
+    assert_params(&params, &json!({"output_config": {"effort": "low"}}));
 }
 
 #[tokio::test]
@@ -555,7 +582,7 @@ async fn a_none_effort_drops_thinking() {
         false,
     )
     .await;
-    assert_params(&params, json!({}));
+    assert_params(&params, &json!({}));
 }
 
 #[tokio::test]
@@ -596,7 +623,7 @@ async fn max_completion_tokens_wins_over_max_tokens() {
         false,
     )
     .await;
-    assert_params(&params, json!({"max_tokens": 20}));
+    assert_params(&params, &json!({"max_tokens": 20}));
 }
 
 #[tokio::test]
@@ -609,7 +636,7 @@ async fn a_thinking_budget_raises_the_default_max_tokens() {
     .await;
     assert_params(
         &params,
-        json!({"thinking": {"type": "enabled", "budget_tokens": 2048}, "max_tokens": 6144}),
+        &json!({"thinking": {"type": "enabled", "budget_tokens": 2048}, "max_tokens": 6144}),
     );
 }
 
@@ -621,7 +648,7 @@ async fn a_non_claude_model_keeps_its_reasoning_effort() {
         false,
     )
     .await;
-    assert_params(&params, json!({"reasoning_effort": "low"}));
+    assert_params(&params, &json!({"reasoning_effort": "low"}));
 }
 
 // Python's `tool.get("input_schema") or {}` turns any falsy schema into an empty parameters map
@@ -630,7 +657,7 @@ fn a_tool_without_a_truthy_schema_gets_an_empty_parameters_map() {
     let tool = object(json!({"name": "f", "input_schema": null}));
     let converted = convert_anthropic_tool(&Json::Object(tool)).expect("the tool converts");
     assert_eq!(
-        serde_json::to_value(&converted).expect("the tool renders"),
+        dump(&converted),
         json!({"type": "function", "function": {"name": "f", "parameters": {}}})
     );
 }
@@ -645,7 +672,7 @@ fn a_null_description_is_left_out() {
     }));
     let converted = convert_anthropic_tool(&Json::Object(tool)).expect("the tool converts");
     assert_eq!(
-        serde_json::to_value(&converted).expect("the tool renders"),
+        dump(&converted),
         json!({
             "type": "function",
             "function": {

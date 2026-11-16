@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::databricks_chat::error::DatabricksChatError;
 
 // AllDatabricksContentValues: a string or a list of text and reasoning blocks
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum DatabricksContent {
     Text(String),
@@ -15,7 +15,7 @@ pub enum DatabricksContent {
 }
 
 // DatabricksTextContent and DatabricksReasoningContent share one shape; a block reads only its own keys
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ContentBlock {
     #[serde(rename = "type", default)]
     pub kind: Option<String>,
@@ -138,7 +138,7 @@ pub fn extract_citations(
 }
 
 // The function of a reply or delta tool call as Function(**function) reads it
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub(crate) struct DatabricksFunction {
     #[serde(default)]
     pub name: Option<String>,
@@ -149,7 +149,7 @@ pub(crate) struct DatabricksFunction {
     pub parameters: Option<IndexMap<String, EncodedJson>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum Arguments {
     Text(String),

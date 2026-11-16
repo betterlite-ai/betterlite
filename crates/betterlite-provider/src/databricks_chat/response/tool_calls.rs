@@ -29,10 +29,8 @@ struct ToolUse {
 pub(super) fn normalize(
     tool_calls: Option<&[DatabricksToolCall]>,
     ids: &dyn IdSource,
-) -> Result<Option<Vec<ReplyToolCall>>, DatabricksChatError> {
-    let Some(calls) = tool_calls.filter(|calls| !calls.is_empty()) else {
-        return Ok(None);
-    };
+) -> Option<Vec<ReplyToolCall>> {
+    let calls = tool_calls.filter(|calls| !calls.is_empty())?;
     let mut normalized = Vec::with_capacity(calls.len());
     for call in calls {
         normalized.push(ReplyToolCall {
@@ -48,7 +46,7 @@ pub(super) fn normalize(
                 .unwrap_or_else(|| String::from("function")),
         });
     }
-    Ok(Some(normalized))
+    Some(normalized)
 }
 
 // _handle_invalid_parallel_tool_calls: a call whose arguments are not JSON leaves the list as it came

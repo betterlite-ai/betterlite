@@ -1,13 +1,14 @@
 #![cfg(test)]
 
 use betterlite_openai::chat_content::{RefuseDownloads, UrlDownloader};
+use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_prompts::message_content::Message;
 use rstest::rstest;
-use serde_json::{Value, json};
 
 use crate::databricks_chat::error::DatabricksChatError;
 use crate::databricks_chat::messages::transform_messages;
+use crate::databricks_chat::tests::{at, convert, dump, fill, json};
 
 // Answers every download with a data URL that names the URL it was asked for
 struct EchoDownloads;
@@ -21,35 +22,44 @@ impl UrlDownloader for EchoDownloads {
 const CLAUDE_MODEL: &str = "databricks-claude-sonnet-4";
 const OTHER_MODEL: &str = "databricks-meta-llama-3.1-70b";
 
-fn parse(value: Value) -> Vec<Message> {
-    serde_json::from_value(value).expect("the fixture messages parse")
+fn parse(value: Json) -> Vec<Message> {
+    match value {
+        Json::List(items) => items.iter().map(convert).collect(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+            panic!("the fixture is a message list")
+        }
+    }
 }
 
-fn transformed(value: Value, model: &str) -> Value {
+fn transformed(value: Json, model: &str) -> Json {
     let messages =
         transform_messages(&parse(value), model, &EchoDownloads).expect("the messages transform");
-    serde_json::to_value(&messages).expect("the transformed messages serialize")
+    dump(&messages)
 }
 
-fn failure(value: Value, model: &str) -> DatabricksChatError {
+fn failure(value: Json, model: &str) -> DatabricksChatError {
     transform_messages(&parse(value), model, &EchoDownloads)
         .expect_err("the messages transform fails")
 }
 
-fn calls() -> Value {
+fn calls() -> Json {
     json!([
         {"id": "a", "type": "function", "function": {"name": "f", "arguments": "{}"}},
         {"id": "b", "type": "function", "function": {"name": "g", "arguments": "{}"}}
     ])
 }
 
-fn parallel_turn() -> Value {
-    json!([
-        {"role": "assistant", "content": "plan", "tool_calls": calls()},
-        {"role": "tool", "tool_call_id": "a", "content": "ra"},
-        {"role": "tool", "tool_call_id": "b", "content": "rb"},
-        {"role": "user", "content": "next"}
-    ])
+fn parallel_turn() -> Json {
+    fill(
+        json!([
+            {"role": "assistant", "content": "plan", "tool_calls": "$calls"},
+            {"role": "tool", "tool_call_id": "a", "content": "ra"},
+            {"role": "tool", "tool_call_id": "b", "content": "rb"},
+            {"role": "user", "content": "next"}
+        ]),
+        "$calls",
+        &calls(),
+    )
 }
 
 #[test]
@@ -139,7 +149,7 @@ fn drops_a_blank_text_block_that_a_moved_cache_control_created() {
 #[case(json!([{"role": "user", "content": " \n "}]), json!([{"role": "user"}]))]
 #[case(json!([{"role": "user", "content": []}]), json!([{"role": "user"}]))]
 #[case(json!([{"role": "user", "content": null}]), json!([{"role": "user"}]))]
-fn drops_blank_content(#[case] value: Value, #[case] expected: Value) {
+fn drops_blank_content(#[case] value: Json, #[case] expected: Json) {
     assert_eq!(transformed(value, OTHER_MODEL), expected);
 }
 
@@ -149,7 +159,7 @@ fn drops_blank_content(#[case] value: Value, #[case] expected: Value) {
 #[case(json!([{"role": "assistant", "content": ""}]))]
 #[case(json!([{"role": "assistant", "content": [], "tool_calls": []}]))]
 #[case(json!([{"role": "assistant", "content": null, "function_call": {}}]))]
-fn drops_a_bare_assistant_message(#[case] value: Value) {
+fn drops_a_bare_assistant_message(#[case] value: Json) {
     assert_eq!(transformed(value, OTHER_MODEL), json!([]));
 }
 
@@ -258,24 +268,28 @@ fn splits_a_parallel_tool_call_turn_for_non_claude_models() {
             {"role": "user", "content": "next"}
         ])
     );
-    assert_eq!(transformed(value, CLAUDE_MODEL), json!(parallel_turn()));
+    assert_eq!(transformed(value, CLAUDE_MODEL), parallel_turn());
 }
 
 #[test]
 fn the_split_keeps_the_other_assistant_fields_on_the_first_message_only() {
-    let value = json!([
-        {
-            "role": "assistant",
-            "content": "plan",
-            "search_results": [{"title": "t"}],
-            "tool_calls": calls()
-        },
-        {"role": "tool", "tool_call_id": "b", "content": "rb"},
-        {"role": "tool", "tool_call_id": "a", "content": "ra"}
-    ]);
+    let value = fill(
+        json!([
+            {
+                "role": "assistant",
+                "content": "plan",
+                "search_results": [{"title": "t"}],
+                "tool_calls": "$calls"
+            },
+            {"role": "tool", "tool_call_id": "b", "content": "rb"},
+            {"role": "tool", "tool_call_id": "a", "content": "ra"}
+        ]),
+        "$calls",
+        &calls(),
+    );
     let output = transformed(value, OTHER_MODEL);
     assert_eq!(
-        output[0],
+        *at(&output, "0"),
         json!({
             "role": "assistant",
             "content": "plan",
@@ -284,18 +298,18 @@ fn the_split_keeps_the_other_assistant_fields_on_the_first_message_only() {
         })
     );
     assert_eq!(
-        output[2],
+        *at(&output, "2"),
         json!({
             "role": "assistant",
             "tool_calls": [{"id": "a", "type": "function", "function": {"name": "f", "arguments": "{}"}}]
         })
     );
     assert_eq!(
-        output[1],
+        *at(&output, "1"),
         json!({"role": "tool", "tool_call_id": "b", "content": "rb"})
     );
     assert_eq!(
-        output[3],
+        *at(&output, "3"),
         json!({"role": "tool", "tool_call_id": "a", "content": "ra"})
     );
 }
@@ -340,26 +354,26 @@ fn splits_a_turn_with_three_parallel_tool_calls() {
 }
 
 #[rstest]
-#[case(json!([
-    {"role": "assistant", "tool_calls": calls()},
+#[case(fill(json!([
+    {"role": "assistant", "tool_calls": "$calls"},
     {"role": "tool", "tool_call_id": "a", "content": "ra"}
-]))]
-#[case(json!([
-    {"role": "assistant", "tool_calls": calls()},
+]), "$calls", &calls()))]
+#[case(fill(json!([
+    {"role": "assistant", "tool_calls": "$calls"},
     {"role": "tool", "tool_call_id": "a", "content": "ra"},
     {"role": "tool", "tool_call_id": "c", "content": "rc"}
-]))]
-#[case(json!([
-    {"role": "assistant", "tool_calls": calls()},
+]), "$calls", &calls()))]
+#[case(fill(json!([
+    {"role": "assistant", "tool_calls": "$calls"},
     {"role": "tool", "content": "ra"},
     {"role": "tool", "tool_call_id": "b", "content": "rb"}
-]))]
-#[case(json!([
-    {"role": "assistant", "tool_calls": calls()},
+]), "$calls", &calls()))]
+#[case(fill(json!([
+    {"role": "assistant", "tool_calls": "$calls"},
     {"role": "tool", "tool_call_id": "a", "content": "ra"},
     {"role": "user", "content": "stop"},
     {"role": "tool", "tool_call_id": "b", "content": "rb"}
-]))]
+]), "$calls", &calls()))]
 #[case(json!([
     {"role": "assistant", "tool_calls": [
         {"id": "a", "type": "function", "function": {"name": "f", "arguments": "{}"}},
@@ -367,11 +381,11 @@ fn splits_a_turn_with_three_parallel_tool_calls() {
     ]},
     {"role": "tool", "tool_call_id": "a", "content": "ra"}
 ]))]
-#[case(json!([
-    {"role": "assistant", "tool_calls": calls()},
+#[case(fill(json!([
+    {"role": "assistant", "tool_calls": "$calls"},
     {"role": "tool", "tool_call_id": "a", "content": "ra"},
     {"role": "tool", "tool_call_id": "a", "content": "rb"}
-]))]
+]), "$calls", &calls()))]
 #[case(json!([
     {"role": "assistant", "tool_calls": [
         {"type": "function", "function": {"name": "f", "arguments": "{}"}},
@@ -380,7 +394,7 @@ fn splits_a_turn_with_three_parallel_tool_calls() {
     {"role": "tool", "tool_call_id": "a", "content": "ra"},
     {"role": "tool", "tool_call_id": "b", "content": "rb"}
 ]))]
-fn leaves_a_malformed_tool_group_untouched(#[case] value: Value) {
+fn leaves_a_malformed_tool_group_untouched(#[case] value: Json) {
     assert_eq!(transformed(value.clone(), OTHER_MODEL), value);
 }
 
@@ -449,11 +463,19 @@ fn a_truthy_non_list_tool_calls_value_is_a_shape_error() {
     json!({"type": "file", "file": {"format": "pdf"}}),
     json!({"type": "file", "file": {}})
 )]
-fn rewrites_user_content_items(#[case] item: Value, #[case] expected: Value) {
-    let value = json!([{"role": "user", "content": [item]}]);
+fn rewrites_user_content_items(#[case] item: Json, #[case] expected: Json) {
+    let value = fill(
+        json!([{"role": "user", "content": ["$item"]}]),
+        "$item",
+        &item,
+    );
     assert_eq!(
         transformed(value, OTHER_MODEL),
-        json!([{"role": "user", "content": [expected]}])
+        fill(
+            json!([{"role": "user", "content": ["$item"]}]),
+            "$item",
+            &expected
+        )
     );
 }
 
@@ -477,18 +499,15 @@ fn a_pdf_url_in_another_role_is_not_downloaded() {
     }]);
     let messages = transform_messages(&parse(value.clone()), OTHER_MODEL, &RefuseDownloads)
         .expect("only user content is rewritten");
-    assert_eq!(
-        serde_json::to_value(&messages).expect("the messages serialize"),
-        value
-    );
+    assert_eq!(dump(&messages), value);
 }
 
 #[rstest]
 #[case(json!({"role": "user", "content": [{"type": "file"}]}))]
 #[case(json!({"role": "user", "content": [{"type": "file", "file": null}]}))]
 #[case(json!({"role": "user", "content": [{"type": "file", "file": "x"}]}))]
-fn a_file_block_without_a_file_is_a_bad_request(#[case] message: Value) {
-    let error = failure(json!([message]), OTHER_MODEL);
+fn a_file_block_without_a_file_is_a_bad_request(#[case] message: Json) {
+    let error = failure(fill(json!(["$message"]), "$message", &message), OTHER_MODEL);
     assert_eq!(error.status_code(), 400);
     assert_eq!(
         error.to_string(),

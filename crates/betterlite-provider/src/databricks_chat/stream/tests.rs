@@ -1,10 +1,11 @@
 #![cfg(test)]
 
+use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
-use serde_json::{Value, json};
 
 use crate::databricks_chat::error::DatabricksChatError;
 use crate::databricks_chat::stream::{ChunkParser, StreamChunk};
+use crate::databricks_chat::tests::{at, dump, fill, has, json, object, text_of};
 use crate::ollama_chat::ids::IdSource;
 
 struct FixedIds;
@@ -15,8 +16,8 @@ impl IdSource for FixedIds {
     }
 }
 
-fn parse_with(body: &Value, json_mode: bool) -> Result<StreamChunk, DatabricksChatError> {
-    let chunk = serde_json::to_string(body).expect("the fixture chunk encodes");
+fn parse_with(body: &Json, json_mode: bool) -> Result<StreamChunk, DatabricksChatError> {
+    let chunk = text_of(body);
     ChunkParser {
         json_mode,
         last_function_name: None,
@@ -24,34 +25,38 @@ fn parse_with(body: &Value, json_mode: bool) -> Result<StreamChunk, DatabricksCh
     .parse(&chunk, &FixedIds)
 }
 
-fn success_with(body: &Value, json_mode: bool) -> Value {
+fn success_with(body: &Json, json_mode: bool) -> Json {
     let chunk = parse_with(body, json_mode).expect("the chunk parses");
-    serde_json::to_value(&chunk).expect("the chunk serializes")
+    dump(&chunk)
 }
 
-fn success(body: &Value) -> Value {
+fn success(body: &Json) -> Json {
     success_with(body, false)
 }
 
-fn failure(body: &Value) -> DatabricksChatError {
+fn failure(body: &Json) -> DatabricksChatError {
     parse_with(body, false).expect_err("the chunk does not parse")
 }
 
-fn body(delta: Value) -> Value {
-    chunk_with(json!({"index": 0, "delta": delta}), json!({}))
+fn body(delta: Json) -> Json {
+    chunk_with(object([("index", json!(0)), ("delta", delta)]), json!({}))
 }
 
-fn chunk_with(choice: Value, extra: Value) -> Value {
-    let mut chunk = json!({"id": "chat-1", "created": 1700, "model": "m", "choices": [choice]});
-    let fields = chunk.as_object_mut().expect("the chunk is an object");
-    for (name, value) in extra.as_object().expect("the extra fields are an object") {
-        fields.insert(name.clone(), value.clone());
+fn chunk_with(choice: Json, extra: Json) -> Json {
+    let mut chunk = object([
+        ("id", json!("chat-1")),
+        ("created", json!(1700)),
+        ("model", json!("m")),
+        ("choices", Json::List(vec![choice])),
+    ]);
+    if let (Json::Object(fields), Json::Object(more)) = (&mut chunk, extra) {
+        fields.extend(more);
     }
     chunk
 }
 
-fn delta_of(chunk: &Value) -> Value {
-    chunk["choices"][0]["delta"].clone()
+fn delta_of(chunk: &Json) -> Json {
+    at(chunk, "choices.0.delta").clone()
 }
 
 #[test]
@@ -100,15 +105,15 @@ fn a_role_and_top_level_reasoning_are_kept() {
     let delta = delta_of(&success(&body(
         json!({"role": "assistant", "reasoning_content": "because"}),
     )));
-    assert_eq!(delta["role"], json!("assistant"));
-    assert_eq!(delta["reasoning_content"], json!("because"));
+    assert_eq!(*at(&delta, "role"), json!("assistant"));
+    assert_eq!(*at(&delta, "reasoning_content"), json!("because"));
 }
 
 #[test]
 fn a_reasoning_key_becomes_the_reasoning_content() {
     let delta = delta_of(&success(&body(json!({"content": "x", "reasoning": "r"}))));
-    assert_eq!(delta["reasoning_content"], json!("r"));
-    assert!(delta.get("reasoning").is_none());
+    assert_eq!(*at(&delta, "reasoning_content"), json!("r"));
+    assert!(!has(&delta, "reasoning"));
 }
 
 #[test]
@@ -116,8 +121,8 @@ fn a_reasoning_key_stays_an_extra_when_reasoning_content_is_set() {
     let delta = delta_of(&success(&body(
         json!({"content": "x", "reasoning": "r", "reasoning_content": "rc"}),
     )));
-    assert_eq!(delta["reasoning_content"], json!("rc"));
-    assert_eq!(delta["reasoning"], json!("r"));
+    assert_eq!(*at(&delta, "reasoning_content"), json!("rc"));
+    assert_eq!(*at(&delta, "reasoning"), json!("r"));
 }
 
 #[rstest]
@@ -126,12 +131,16 @@ fn a_reasoning_key_stays_an_extra_when_reasoning_content_is_set() {
 #[case(json!("length"), json!("length"))]
 #[case(json!("tool_use"), json!("tool_calls"))]
 #[case(json!("weird"), json!("stop"))]
-fn the_finish_reason_maps_like_the_openai_one(#[case] raw: Value, #[case] expected: Value) {
+fn the_finish_reason_maps_like_the_openai_one(#[case] raw: Json, #[case] expected: Json) {
     let chunk = chunk_with(
-        json!({"index": 0, "delta": {"content": "x"}, "finish_reason": raw}),
+        fill(
+            json!({"index": 0, "delta": {"content": "x"}, "finish_reason": "$raw"}),
+            "$raw",
+            &raw,
+        ),
         json!({}),
     );
-    assert_eq!(success(&chunk)["choices"][0]["finish_reason"], expected);
+    assert_eq!(*at(&success(&chunk), "choices.0.finish_reason"), expected);
 }
 
 #[rstest]
@@ -139,9 +148,13 @@ fn the_finish_reason_maps_like_the_openai_one(#[case] raw: Value, #[case] expect
 #[case(json!({"a": 1}))]
 #[case(json!(true))]
 #[case(json!(5))]
-fn a_non_string_finish_reason_is_a_decode_error(#[case] raw: Value) {
+fn a_non_string_finish_reason_is_a_decode_error(#[case] raw: Json) {
     let chunk = chunk_with(
-        json!({"index": 0, "delta": {"content": "x"}, "finish_reason": raw}),
+        fill(
+            json!({"index": 0, "delta": {"content": "x"}, "finish_reason": "$raw"}),
+            "$raw",
+            &raw,
+        ),
         json!({}),
     );
     assert_eq!(failure(&chunk).status_code(), 500);
@@ -151,9 +164,9 @@ fn a_non_string_finish_reason_is_a_decode_error(#[case] raw: Value) {
 #[case(json!({"index": 0, "delta": {"content": "x"}}), json!(0))]
 #[case(json!({"index": 3, "delta": {"content": "x"}}), json!(3))]
 #[case(json!({"index": null, "delta": {"content": "x"}}), json!(null))]
-fn the_choice_index_passes_through(#[case] choice: Value, #[case] expected: Value) {
+fn the_choice_index_passes_through(#[case] choice: Json, #[case] expected: Json) {
     assert_eq!(
-        success(&chunk_with(choice, json!({})))["choices"][0]["index"],
+        *at(&success(&chunk_with(choice, json!({}))), "choices.0.index"),
         expected
     );
 }
@@ -165,7 +178,10 @@ fn a_missing_choices_key_is_the_databricks_400() {
     assert_eq!(error.status_code(), 400);
     assert_eq!(
         error.to_string(),
-        format!("KeyError: 'choices', Got unexpected response from Databricks: {chunk}")
+        format!(
+            "KeyError: 'choices', Got unexpected response from Databricks: {}",
+            text_of(&chunk)
+        )
     );
 }
 
@@ -180,11 +196,20 @@ fn null_choices_are_a_shape_error() {
 #[case(json!({"id": "i", "created": 1, "model": "m", "choices": [], "usage": "x"}))]
 #[case(json!({"id": "i", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {"tool_calls": {}}}]}))]
 #[case(json!({"id": "i", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {"tool_calls": ""}}]}))]
-#[case(json!([]))]
-fn a_chunk_outside_its_declared_types_is_a_decode_error(#[case] chunk: Value) {
+fn a_chunk_outside_its_declared_types_is_a_decode_error(#[case] chunk: Json) {
     let error = failure(&chunk);
     assert_eq!(error.status_code(), 500);
     assert!(matches!(error, DatabricksChatError::Decode(_)), "{error}");
+}
+
+#[test]
+fn a_chunk_that_is_an_array_is_a_shape_error() {
+    let error = failure(&json!([]));
+    assert_eq!(error.status_code(), 500);
+    assert!(
+        matches!(error, DatabricksChatError::Shape { .. }),
+        "{error}"
+    );
 }
 
 #[rstest]
@@ -193,10 +218,9 @@ fn a_chunk_outside_its_declared_types_is_a_decode_error(#[case] chunk: Value) {
 #[case("model")]
 fn a_missing_chunk_key_is_the_databricks_400(#[case] name: &str) {
     let mut chunk = json!({"id": "i", "created": 1, "model": "m", "choices": []});
-    chunk
-        .as_object_mut()
-        .expect("the chunk is an object")
-        .remove(name);
+    if let Json::Object(fields) = &mut chunk {
+        fields.shift_remove(name);
+    }
     let error = failure(&chunk);
     assert_eq!(error.status_code(), 400);
     assert!(
@@ -218,7 +242,7 @@ fn a_null_id_is_generated_and_a_number_is_a_shape_error() {
         json!({"index": 0, "delta": {"content": "x"}}),
         json!({"id": null}),
     );
-    assert_eq!(success(&chunk)["id"], json!("generated-id"));
+    assert_eq!(*at(&success(&chunk), "id"), json!("generated-id"));
     let broken = json!({"id": 5, "created": 1, "model": "m", "choices": []});
     assert_eq!(failure(&broken).status_code(), 500);
 }
@@ -229,7 +253,7 @@ fn a_null_model_stays_null() {
         json!({"index": 0, "delta": {"content": "x"}}),
         json!({"model": null}),
     );
-    assert_eq!(success(&chunk)["model"], Value::Null);
+    assert_eq!(*at(&success(&chunk), "model"), Json::Null);
 }
 
 #[rstest]
@@ -237,10 +261,10 @@ fn a_null_model_stays_null() {
 #[case(json!("1700"))]
 #[case(json!(true))]
 #[case(json!(null))]
-fn a_created_that_is_not_an_integer_is_an_error(#[case] raw: Value) {
+fn a_created_that_is_not_an_integer_is_an_error(#[case] raw: Json) {
     let chunk = chunk_with(
         json!({"index": 0, "delta": {"content": "x"}}),
-        json!({"created": raw}),
+        fill(json!({"created": "$raw"}), "$raw", &raw),
     );
     assert_eq!(failure(&chunk).status_code(), 500);
 }
@@ -249,21 +273,21 @@ fn a_created_that_is_not_an_integer_is_an_error(#[case] raw: Value) {
 fn usage_is_normalized_when_it_is_an_object() {
     let chunk = body(json!({"content": "x"}));
     let chunk = chunk_with(
-        chunk["choices"][0].clone(),
+        at(&chunk, "choices.0").clone(),
         json!({
             "usage": {"prompt_tokens": 1, "completion_tokens": 4, "total_tokens": 5, "reasoning_tokens": 3, "zz": 1}
         }),
     );
-    let usage = success(&chunk)["usage"].clone();
-    assert_eq!(usage["prompt_tokens"], json!(1));
-    assert_eq!(usage["completion_tokens"], json!(4));
-    assert_eq!(usage["total_tokens"], json!(5));
+    let usage = at(&success(&chunk), "usage").clone();
+    assert_eq!(*at(&usage, "prompt_tokens"), json!(1));
+    assert_eq!(*at(&usage, "completion_tokens"), json!(4));
+    assert_eq!(*at(&usage, "total_tokens"), json!(5));
     assert_eq!(
-        usage["completion_tokens_details"],
+        *at(&usage, "completion_tokens_details"),
         json!({"reasoning_tokens": 3, "text_tokens": 1})
     );
-    assert_eq!(usage["prompt_tokens_details"], Value::Null);
-    assert_eq!(usage["zz"], json!(1));
+    assert_eq!(*at(&usage, "prompt_tokens_details"), Json::Null);
+    assert_eq!(*at(&usage, "zz"), json!(1));
 }
 
 #[test]
@@ -289,17 +313,17 @@ fn a_wrong_typed_usage_count_is_a_usage_error() {
 #[case(json!(""), None)]
 #[case(json!(5), None)]
 fn service_tier_appears_only_when_it_is_a_non_empty_string(
-    #[case] raw: Value,
-    #[case] expected: Option<Value>,
+    #[case] raw: Json,
+    #[case] expected: Option<Json>,
 ) {
     let chunk = chunk_with(
         json!({"index": 0, "delta": {"content": "x"}}),
-        json!({"service_tier": raw}),
+        fill(json!({"service_tier": "$raw"}), "$raw", &raw),
     );
     let chunk = success(&chunk);
     match expected {
-        Some(value) => assert_eq!(chunk["service_tier"], value),
-        None => assert!(chunk.get("service_tier").is_none()),
+        Some(value) => assert_eq!(*at(&chunk, "service_tier"), value),
+        None => assert!(!has(&chunk, "service_tier")),
     }
 }
 
@@ -312,14 +336,14 @@ fn content_blocks_split_into_text_reasoning_and_a_citation() {
             {"type": "text", "text": "b"}
         ]
     }))));
-    assert_eq!(delta["content"], json!("ab"));
-    assert_eq!(delta["reasoning_content"], json!("r"));
+    assert_eq!(*at(&delta, "content"), json!("ab"));
+    assert_eq!(*at(&delta, "reasoning_content"), json!("r"));
     assert_eq!(
-        delta["thinking_blocks"],
+        *at(&delta, "thinking_blocks"),
         json!([{"type": "thinking", "thinking": "r", "signature": "s"}])
     );
     assert_eq!(
-        delta["provider_specific_fields"],
+        *at(&delta, "provider_specific_fields"),
         json!({"citation": {"start": 0}})
     );
 }
@@ -331,7 +355,7 @@ fn a_citation_merges_into_an_existing_provider_specific_fields() {
         "provider_specific_fields": {"zz": 1}
     }))));
     assert_eq!(
-        delta["provider_specific_fields"],
+        *at(&delta, "provider_specific_fields"),
         json!({"zz": 1, "citation": {"start": 0}})
     );
 }
@@ -341,8 +365,8 @@ fn an_empty_citation_list_is_ignored() {
     let delta = delta_of(&success(&body(json!({
         "content": [{"type": "text", "text": "a", "citations": []}]
     }))));
-    assert!(delta.get("provider_specific_fields").is_none());
-    assert_eq!(delta["content"], json!("a"));
+    assert!(!has(&delta, "provider_specific_fields"));
+    assert_eq!(*at(&delta, "content"), json!("a"));
 }
 
 #[test]
@@ -350,13 +374,13 @@ fn images_appear_only_when_non_empty_and_annotations_pass_through() {
     let empty = delta_of(&success(&body(
         json!({"content": "x", "images": [], "annotations": [{"a": 1}], "reasoning_items": [{"b": 2}]}),
     )));
-    assert!(empty.get("images").is_none());
-    assert_eq!(empty["annotations"], json!([{"a": 1}]));
-    assert_eq!(empty["reasoning_items"], json!([{"b": 2}]));
+    assert!(!has(&empty, "images"));
+    assert_eq!(*at(&empty, "annotations"), json!([{"a": 1}]));
+    assert_eq!(*at(&empty, "reasoning_items"), json!([{"b": 2}]));
     let filled = delta_of(&success(&body(
         json!({"content": "x", "images": [{"a": 1}]}),
     )));
-    assert_eq!(filled["images"], json!([{"a": 1}]));
+    assert_eq!(*at(&filled, "images"), json!([{"a": 1}]));
 }
 
 #[test]
@@ -365,7 +389,7 @@ fn the_delta_function_call_keeps_its_extras() {
         json!({"function_call": {"name": "f", "arguments": "x", "zz": 1}}),
     )));
     assert_eq!(
-        delta["function_call"],
+        *at(&delta, "function_call"),
         json!({"arguments": "x", "name": "f", "zz": 1})
     );
 }
@@ -375,9 +399,9 @@ fn a_null_reasoning_and_function_call_are_dropped() {
     let delta = delta_of(&success(&body(
         json!({"content": "x", "reasoning": null, "function_call": null}),
     )));
-    assert!(delta.get("reasoning").is_none());
-    assert!(delta.get("reasoning_content").is_none());
-    assert_eq!(delta["function_call"], json!(null));
+    assert!(!has(&delta, "reasoning"));
+    assert!(!has(&delta, "reasoning_content"));
+    assert_eq!(*at(&delta, "function_call"), json!(null));
 }
 
 #[test]
@@ -395,12 +419,10 @@ fn tool_call_indices_are_assigned_in_order() {
             {"function": {"name": "h", "arguments": "z"}}
         ]
     }))));
-    let calls = delta["tool_calls"]
-        .as_array()
-        .expect("the calls are a list");
-    assert_eq!(calls[0]["index"], json!(0));
-    assert_eq!(calls[1]["index"], json!(3));
-    assert_eq!(calls[2]["index"], json!(1));
+    let calls = at(&delta, "tool_calls");
+    assert_eq!(*at(calls, "0.index"), json!(0));
+    assert_eq!(*at(calls, "1.index"), json!(3));
+    assert_eq!(*at(calls, "2.index"), json!(1));
 }
 
 #[test]
@@ -409,7 +431,7 @@ fn a_tool_call_defaults_its_type_and_dumps_a_null_id() {
         "tool_calls": [{"index": 0, "id": null, "function": {"name": "f", "arguments": "x", "zz": 1}, "zz": 2}]
     }))));
     assert_eq!(
-        delta["tool_calls"],
+        *at(&delta, "tool_calls"),
         json!([{
             "id": null,
             "function": {"arguments": "x", "name": "f"},
@@ -426,7 +448,7 @@ fn a_tool_call_without_an_id_keeps_it_absent() {
         "tool_calls": [{"index": 0, "function": {"name": "f", "arguments": "x"}}]
     }))));
     assert_eq!(
-        delta["tool_calls"],
+        *at(&delta, "tool_calls"),
         json!([{
             "function": {"arguments": "x", "name": "f"},
             "type": "function",
@@ -438,9 +460,13 @@ fn a_tool_call_without_an_id_keeps_it_absent() {
 #[rstest]
 #[case(json!([]), json!([]))]
 #[case(json!(null), json!(null))]
-fn an_empty_or_null_tool_calls_value_passes_through(#[case] raw: Value, #[case] expected: Value) {
-    let delta = delta_of(&success(&body(json!({"content": "x", "tool_calls": raw}))));
-    assert_eq!(delta["tool_calls"], expected);
+fn an_empty_or_null_tool_calls_value_passes_through(#[case] raw: Json, #[case] expected: Json) {
+    let delta = delta_of(&success(&body(fill(
+        json!({"content": "x", "tool_calls": "$raw"}),
+        "$raw",
+        &raw,
+    ))));
+    assert_eq!(*at(&delta, "tool_calls"), expected);
 }
 
 #[test]
@@ -455,7 +481,7 @@ fn a_custom_tool_call_passes_through() {
         "tool_calls": [{"index": null, "type": "custom", "custom": {"name": "f", "zz": 1}, "id": null, "zz": 2}]
     }))));
     assert_eq!(
-        delta["tool_calls"],
+        *at(&delta, "tool_calls"),
         json!([{
             "id": null,
             "type": "custom",
@@ -472,7 +498,7 @@ fn a_custom_tool_call_without_a_type_passes_through() {
         "tool_calls": [{"custom": {"name": "f"}}]
     }))));
     assert_eq!(
-        delta["tool_calls"],
+        *at(&delta, "tool_calls"),
         json!([{"custom": {"name": "f"}, "index": 0}])
     );
 }
@@ -483,7 +509,7 @@ fn a_custom_tool_call_with_a_null_type_dumps_the_null() {
         "tool_calls": [{"type": null, "custom": {"name": "f"}}]
     }))));
     assert_eq!(
-        delta["tool_calls"],
+        *at(&delta, "tool_calls"),
         json!([{"type": null, "custom": {"name": "f"}, "index": 0}])
     );
 }
@@ -491,9 +517,13 @@ fn a_custom_tool_call_with_a_null_type_dumps_the_null() {
 #[rstest]
 #[case::absent(json!({"function": {"name": "f", "arguments": "x"}}))]
 #[case::null(json!({"type": null, "function": {"name": "f", "arguments": "x"}}))]
-fn a_function_tool_call_without_a_type_defaults_to_function(#[case] call: Value) {
-    let delta = delta_of(&success(&body(json!({"tool_calls": [call]}))));
-    assert_eq!(delta["tool_calls"][0]["type"], json!("function"));
+fn a_function_tool_call_without_a_type_defaults_to_function(#[case] call: Json) {
+    let delta = delta_of(&success(&body(fill(
+        json!({"tool_calls": ["$call"]}),
+        "$call",
+        &call,
+    ))));
+    assert_eq!(*at(&delta, "tool_calls.0.type"), json!("function"));
 }
 
 #[test]
@@ -501,7 +531,7 @@ fn a_function_call_without_a_name_leaves_the_name_out() {
     let delta = delta_of(&success(&body(
         json!({"function_call": {"arguments": "x"}}),
     )));
-    assert_eq!(delta["function_call"], json!({"arguments": "x"}));
+    assert_eq!(*at(&delta, "function_call"), json!({"arguments": "x"}));
 }
 
 #[test]
@@ -510,7 +540,7 @@ fn a_function_call_with_a_null_name_dumps_the_null() {
         json!({"function_call": {"name": null, "arguments": "x"}}),
     )));
     assert_eq!(
-        delta["function_call"],
+        *at(&delta, "function_call"),
         json!({"arguments": "x", "name": null})
     );
 }
@@ -518,11 +548,14 @@ fn a_function_call_with_a_null_name_dumps_the_null() {
 #[rstest]
 #[case::empty(json!({}))]
 #[case::null(json!(null))]
-fn an_explicit_provider_specific_fields_value_is_dumped_as_given(#[case] value: Value) {
-    let delta = delta_of(&success(&body(
-        json!({"content": "x", "provider_specific_fields": value}),
-    )));
-    assert_eq!(delta["provider_specific_fields"], value);
+fn an_explicit_provider_specific_fields_value_is_dumped_as_given(#[case] value: Json) {
+    let delta = delta_of(&success(&body(fill(
+        json!({"content": "x", "provider_specific_fields": "$value"}),
+        "$value",
+        &value,
+    ))));
+    assert!(has(&delta, "provider_specific_fields"));
+    assert_eq!(*at(&delta, "provider_specific_fields"), value);
 }
 
 #[test]
@@ -560,13 +593,13 @@ fn empty_arguments_are_cleared_outside_json_mode() {
             {"index": 3, "id": "d", "function": {"name": "i"}}
         ]
     }))));
-    assert_eq!(delta["tool_calls"][0]["function"]["arguments"], json!(""));
+    assert_eq!(*at(&delta, "tool_calls.0.function.arguments"), json!(""));
     assert_eq!(
-        delta["tool_calls"][1]["function"]["arguments"],
+        *at(&delta, "tool_calls.1.function.arguments"),
         json!("{\"a\":1}")
     );
-    assert_eq!(delta["tool_calls"][2]["function"]["arguments"], json!("{}"));
-    assert_eq!(delta["tool_calls"][3]["function"]["arguments"], json!(""));
+    assert_eq!(*at(&delta, "tool_calls.2.function.arguments"), json!("{}"));
+    assert_eq!(*at(&delta, "tool_calls.3.function.arguments"), json!(""));
 }
 
 #[test]
@@ -581,7 +614,7 @@ fn json_mode_keeps_the_empty_arguments_of_another_call() {
         "tool_calls": [{"index": 0, "function": {"name": "other", "arguments": "{}"}}]
     }));
     let delta = delta_of(&success_with(&chunk, true));
-    assert_eq!(delta["tool_calls"][0]["function"]["arguments"], json!("{}"));
+    assert_eq!(*at(&delta, "tool_calls.0.function.arguments"), json!("{}"));
 }
 
 #[test]
@@ -590,9 +623,9 @@ fn json_mode_without_arguments_leaves_the_tool_calls() {
         "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": null}}]
     }));
     let delta = delta_of(&success_with(&chunk, true));
-    assert_eq!(delta["content"], json!(null));
+    assert_eq!(*at(&delta, "content"), json!(null));
     assert_eq!(
-        delta["tool_calls"][0]["function"]["name"],
+        *at(&delta, "tool_calls.0.function.name"),
         json!("json_tool_call")
     );
 }
@@ -612,7 +645,7 @@ fn json_mode_keeps_a_values_key_that_is_null() {
         "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": "{\"values\": null}"}}]
     }));
     assert_eq!(
-        delta_of(&success_with(&chunk, true))["content"],
+        *at(&delta_of(&success_with(&chunk, true)), "content"),
         json!("{\"values\": null}")
     );
 }
@@ -621,8 +654,8 @@ fn json_mode_keeps_a_values_key_that_is_null() {
 fn json_mode_ignores_an_empty_tool_calls_list() {
     let chunk = body(json!({"content": "x", "tool_calls": []}));
     let delta = delta_of(&success_with(&chunk, true));
-    assert_eq!(delta["content"], json!("x"));
-    assert_eq!(delta["tool_calls"], json!([]));
+    assert_eq!(*at(&delta, "content"), json!("x"));
+    assert_eq!(*at(&delta, "tool_calls"), json!([]));
 }
 
 #[test]
@@ -631,8 +664,8 @@ fn json_mode_turns_a_json_tool_call_into_content() {
         "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": "{\"a\": 1}"}}]
     }));
     let delta = delta_of(&success_with(&chunk, true));
-    assert_eq!(delta["content"], json!("{\"a\": 1}"));
-    assert_eq!(delta["tool_calls"], Value::Null);
+    assert_eq!(*at(&delta, "content"), json!("{\"a\": 1}"));
+    assert_eq!(*at(&delta, "tool_calls"), Json::Null);
 }
 
 #[test]
@@ -641,7 +674,7 @@ fn json_mode_unwraps_the_values_key() {
         "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": "{\"values\": {\"a\": 1}}"}}]
     }));
     assert_eq!(
-        delta_of(&success_with(&chunk, true))["content"],
+        *at(&delta_of(&success_with(&chunk, true)), "content"),
         json!("{\"a\": 1}")
     );
 }
@@ -652,7 +685,7 @@ fn json_mode_keeps_an_invalid_json_string_as_content() {
         "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": "{not json"}}]
     }));
     assert_eq!(
-        delta_of(&success_with(&chunk, true))["content"],
+        *at(&delta_of(&success_with(&chunk, true)), "content"),
         json!("{not json")
     );
 }
@@ -662,7 +695,10 @@ fn json_mode_turns_empty_object_arguments_into_empty_content() {
     let chunk = body(json!({
         "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": "{}"}}]
     }));
-    assert_eq!(delta_of(&success_with(&chunk, true))["content"], json!(""));
+    assert_eq!(
+        *at(&delta_of(&success_with(&chunk, true)), "content"),
+        json!("")
+    );
 }
 
 #[test]
@@ -671,20 +707,18 @@ fn json_mode_leaves_another_function_name_alone() {
         "tool_calls": [{"index": 0, "function": {"name": "other", "arguments": "{\"a\": 1}"}}]
     }));
     let delta = delta_of(&success_with(&chunk, true));
-    assert!(delta.get("content").is_none() || delta["content"].is_null());
-    assert_eq!(delta["tool_calls"][0]["function"]["name"], json!("other"));
+    assert!(!has(&delta, "content") || *at(&delta, "content") == Json::Null);
+    assert_eq!(*at(&delta, "tool_calls.0.function.name"), json!("other"));
 }
 
 #[test]
 fn json_mode_remembers_the_function_name_across_chunks() {
-    let first = body(json!({
+    let first = text_of(&body(json!({
         "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": "{\"a\":"}}]
-    }))
-    .to_string();
-    let second = body(json!({
+    })));
+    let second = text_of(&body(json!({
         "tool_calls": [{"index": 0, "function": {"arguments": "{\"b\": 2}"}}]
-    }))
-    .to_string();
+    })));
     let mut parser = ChunkParser {
         json_mode: true,
         last_function_name: None,
@@ -695,17 +729,16 @@ fn json_mode_remembers_the_function_name_across_chunks() {
     let chunk = parser
         .parse(&second, &FixedIds)
         .expect("the second chunk parses");
-    let value = serde_json::to_value(&chunk).expect("the chunk serializes");
-    assert_eq!(delta_of(&value)["content"], json!("{\"b\": 2}"));
+    let value = dump(&chunk);
+    assert_eq!(*at(&delta_of(&value), "content"), json!("{\"b\": 2}"));
 }
 
 #[test]
 fn json_mode_needs_the_function_key_even_for_a_remembered_name() {
-    let first = body(json!({
+    let first = text_of(&body(json!({
         "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": "{}"}}]
-    }))
-    .to_string();
-    let second = body(json!({"tool_calls": [{"index": 0}]})).to_string();
+    })));
+    let second = text_of(&body(json!({"tool_calls": [{"index": 0}]})));
     let mut parser = ChunkParser {
         json_mode: true,
         last_function_name: None,
@@ -726,9 +759,9 @@ fn a_choice_extra_is_kept_and_its_message_is_dropped() {
         json!({"index": 0, "delta": {"content": "x"}, "zz": 1, "message": {"content": "y"}}),
         json!({}),
     );
-    let choice = success(&chunk)["choices"][0].clone();
-    assert_eq!(choice["zz"], json!(1));
-    assert!(choice.get("message").is_none());
+    let choice = at(&success(&chunk), "choices.0").clone();
+    assert_eq!(*at(&choice, "zz"), json!(1));
+    assert!(!has(&choice, "message"));
 }
 
 #[test]
@@ -738,7 +771,7 @@ fn a_logprobs_value_passes_through() {
         json!({}),
     );
     assert_eq!(
-        success(&chunk)["choices"][0]["logprobs"],
+        *at(&success(&chunk), "choices.0.logprobs"),
         json!({"content": []})
     );
 }

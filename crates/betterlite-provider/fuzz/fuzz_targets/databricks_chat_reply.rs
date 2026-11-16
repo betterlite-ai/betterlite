@@ -12,7 +12,7 @@ fuzz_target!(|bytes: &[u8]| {
         return;
     };
     for json_mode in [false, true] {
-        let _reply = transform_response(ResponseInput {
+        let _reply = transform_response(&ResponseInput {
             body: text,
             status_code: 200,
             headers: BTreeMap::new(),

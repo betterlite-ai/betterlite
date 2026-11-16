@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::slice::from_ref;
 
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::{ChatContent, ChatContentError, Mode, UrlDownloader};
@@ -64,7 +65,7 @@ fn rewrite_user_contents(
         let environment: BTreeMap<String, String> = BTreeMap::new();
         let transformed = ChatContent {
             model: "",
-            messages: std::slice::from_ref(&typed),
+            messages: from_ref(&typed),
             optional_params: &optional_params,
             provider: Some(CONTENT_PROVIDER),
             api_base: Some(CONTENT_BASE),
@@ -75,10 +76,10 @@ fn rewrite_user_contents(
         }
         .transform(Mode::Sync)
         .map_err(content_error)?;
-        let Some(message) = transformed.messages.first() else {
+        let Some(first) = transformed.messages.first() else {
             continue;
         };
-        rewritten.push(wire::convert(message)?);
+        rewritten.push(wire::convert(first)?);
     }
     Ok(rewritten)
 }
@@ -86,7 +87,7 @@ fn rewrite_user_contents(
 fn content_error(error: ChatContentError) -> DatabricksChatError {
     match error {
         ChatContentError::MissingFile(_) => DatabricksChatError::MissingFile,
-        ChatContentError::Fetch(error) => DatabricksChatError::Fetch(error),
+        ChatContentError::Fetch(fetch) => DatabricksChatError::Fetch(fetch),
         ChatContentError::MessageShape { source } => DatabricksChatError::Decode(source),
     }
 }
@@ -96,7 +97,7 @@ fn move_cache_control(mut message: Message) -> Message {
     let Some(Content::Text(text)) = &message.content else {
         return message;
     };
-    let text = text.clone();
+    let content_text = text.clone();
     let Some(cache_control) = message
         .provider_specific_fields
         .shift_remove("cache_control")
@@ -104,7 +105,7 @@ fn move_cache_control(mut message: Message) -> Message {
         return message;
     };
     let mut fields = Object::new();
-    fields.insert("text".to_owned(), Json::Text(text));
+    fields.insert("text".to_owned(), Json::Text(content_text));
     fields.insert("cache_control".to_owned(), cache_control);
     message.content = Some(Content::Parts(vec![ContentPart {
         kind: String::from("text"),
@@ -205,15 +206,15 @@ fn expand_group(
     result: &mut Vec<Message>,
 ) {
     for (position, (call, tool_message)) in matched.iter().zip(tool_messages).enumerate() {
-        let call = Json::clone(call);
+        let owned = Json::clone(call);
         if position == 0 {
             let mut first = message.clone();
             first
                 .provider_specific_fields
-                .insert(TOOL_CALLS.to_owned(), Json::List(vec![call]));
+                .insert(TOOL_CALLS.to_owned(), Json::List(vec![owned]));
             result.push(first);
         } else {
-            result.push(later_call_assistant(call));
+            result.push(later_call_assistant(owned));
         }
         result.push(Message::clone(tool_message));
     }

@@ -9,6 +9,7 @@ use crate::databricks_chat::content::{Arguments, DatabricksContent};
 use crate::databricks_chat::error::DatabricksChatError;
 use crate::databricks_chat::response::Usage;
 use crate::databricks_chat::response::usage::usage_from;
+use crate::databricks_chat::slot::Slot;
 use crate::databricks_chat::stream::delta::{Delta, build_delta};
 use crate::databricks_chat::stream::wire::{ChunkChoice, DatabricksChunk, DatabricksDelta};
 use crate::ollama_chat::ids::IdSource;
@@ -20,7 +21,7 @@ pub mod wire;
 const JSON_TOOL_CALL: &str = "json_tool_call";
 
 // ModelResponseStream as DatabricksChatResponseIterator builds it for one chunk
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StreamChunk {
     pub id: String,
     pub created: i64,
@@ -34,7 +35,7 @@ pub struct StreamChunk {
 }
 
 // StreamingChoices: the finish reason maps, index and logprobs pass through, extra keys stay
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StreamChoice {
     pub finish_reason: Option<String>,
     pub index: Option<Number>,
@@ -58,56 +59,20 @@ impl ChunkParser {
         chunk: &str,
         ids: &dyn IdSource,
     ) -> Result<StreamChunk, DatabricksChatError> {
-        let parsed: DatabricksChunk =
-            serde_json::from_str(chunk).map_err(DatabricksChatError::Decode)?;
-        let choices = match parsed.choices {
-            Some(Some(choices)) => choices,
-            Some(None) => {
-                return Err(DatabricksChatError::Shape {
-                    message: String::from("the choices of a Databricks stream chunk are null"),
-                });
+        let parsed = decode_chunk(chunk)?;
+        let choices = chunk_key(parsed.choices, "choices", chunk)?.ok_or_else(|| {
+            DatabricksChatError::Shape {
+                message: String::from("the choices of a Databricks stream chunk are null"),
             }
-            None => {
-                return Err(DatabricksChatError::ChunkKey {
-                    key: "choices",
-                    chunk: chunk.to_owned(),
-                });
-            }
-        };
+        })?;
         let mut transformed = Vec::with_capacity(choices.len());
         for choice in choices {
             transformed.push(transform_choice(choice, self, chunk)?);
         }
-        let id = match parsed.id {
-            Some(Some(id)) => id,
-            Some(None) => ids.next_id(),
-            None => {
-                return Err(DatabricksChatError::ChunkKey {
-                    key: "id",
-                    chunk: chunk.to_owned(),
-                });
-            }
-        };
-        let created = match parsed.created {
-            Some(Some(created)) => created,
-            Some(None) => return Err(DatabricksChatError::NullCreated),
-            None => {
-                return Err(DatabricksChatError::ChunkKey {
-                    key: "created",
-                    chunk: chunk.to_owned(),
-                });
-            }
-        };
-        let model = match parsed.model {
-            Some(Some(model)) => Some(model),
-            Some(None) => None,
-            None => {
-                return Err(DatabricksChatError::ChunkKey {
-                    key: "model",
-                    chunk: chunk.to_owned(),
-                });
-            }
-        };
+        let id = chunk_key(parsed.id, "id", chunk)?.unwrap_or_else(|| ids.next_id());
+        let created =
+            chunk_key(parsed.created, "created", chunk)?.ok_or(DatabricksChatError::NullCreated)?;
+        let model = chunk_key(parsed.model, "model", chunk)?;
         let service_tier = match parsed.service_tier {
             Some(Json::Text(tier)) if !tier.is_empty() => Some(tier),
             None | Some(_) => None,
@@ -125,26 +90,42 @@ impl ChunkParser {
     }
 }
 
+// A JSON array would otherwise decode as an all-default chunk and report a missing key
+fn decode_chunk(chunk: &str) -> Result<DatabricksChunk, DatabricksChatError> {
+    if chunk.trim_start().starts_with('[') {
+        return Err(DatabricksChatError::Shape {
+            message: String::from("a Databricks stream chunk must be a JSON object"),
+        });
+    }
+    serde_json::from_str(chunk).map_err(DatabricksChatError::Decode)
+}
+
+// A key chunk_parser reads with []: absent is the KeyError, null is None for the caller to judge
+fn chunk_key<Item>(
+    slot: Slot<Item>,
+    key: &'static str,
+    chunk: &str,
+) -> Result<Option<Item>, DatabricksChatError> {
+    match slot {
+        Slot::Value(item) => Ok(Some(item)),
+        Slot::Null => Ok(None),
+        Slot::Absent => Err(DatabricksChatError::ChunkKey {
+            key,
+            chunk: chunk.to_owned(),
+        }),
+    }
+}
+
 // One choice: the json mode rewrite, the "{}" cleanup, the citation, then Delta(**delta)
 fn transform_choice(
     given: ChunkChoice,
     parser: &mut ChunkParser,
     chunk: &str,
 ) -> Result<StreamChoice, DatabricksChatError> {
-    let mut delta = match given.delta {
-        Some(Some(delta)) => delta,
-        Some(None) => {
-            return Err(DatabricksChatError::Shape {
-                message: String::from("the delta of a Databricks stream choice is null"),
-            });
-        }
-        None => {
-            return Err(DatabricksChatError::ChunkKey {
-                key: "delta",
-                chunk: chunk.to_owned(),
-            });
-        }
-    };
+    let mut delta =
+        chunk_key(given.delta, "delta", chunk)?.ok_or_else(|| DatabricksChatError::Shape {
+            message: String::from("the delta of a Databricks stream choice is null"),
+        })?;
     if parser.json_mode {
         convert_json_tool_call(&mut delta, parser, chunk)?;
     } else {
@@ -152,9 +133,9 @@ fn transform_choice(
     }
     add_citation(&mut delta)?;
     let index = match given.index {
-        Some(Some(index)) => Some(index),
-        Some(None) => None,
-        None => Some(Number::from(0_i64)),
+        Slot::Value(index) => Some(index),
+        Slot::Null => None,
+        Slot::Absent => Some(Number::from(0_i64)),
     };
     let mut extra = given.extra;
     extra.shift_remove("message");
@@ -174,13 +155,13 @@ fn transform_choice(
 fn clear_empty_arguments(delta: &mut DatabricksDelta) -> Result<(), DatabricksChatError> {
     for call in delta.tool_calls.iter_mut().flatten() {
         let function = match &mut call.function {
-            Some(Some(function)) => function,
-            Some(None) => {
+            Slot::Value(function) => function,
+            Slot::Null => {
                 return Err(DatabricksChatError::Shape {
                     message: String::from("the function of a Databricks stream tool call is null"),
                 });
             }
-            None => continue,
+            Slot::Absent => continue,
         };
         if let Some(Arguments::Text(text)) = &mut function.arguments
             && text.as_str() == "{}"
@@ -200,22 +181,22 @@ fn convert_json_tool_call(
     let Some(first) = delta.tool_calls.as_ref().and_then(|calls| calls.first()) else {
         return Ok(());
     };
-    let function = match &first.function {
-        Some(Some(function)) => Some(function),
-        Some(None) => {
+    let called = match &first.function {
+        Slot::Value(function) => Some(function),
+        Slot::Null => {
             return Err(DatabricksChatError::Shape {
                 message: String::from("the function of a Databricks stream tool call is null"),
             });
         }
-        None => None,
+        Slot::Absent => None,
     };
-    if let Some(name) = function.and_then(|function| function.name.clone()) {
+    if let Some(name) = called.and_then(|function| function.name.clone()) {
         parser.last_function_name = Some(name);
     }
     if parser.last_function_name.as_deref() != Some(JSON_TOOL_CALL) {
         return Ok(());
     }
-    let Some(function) = function else {
+    let Some(function) = called else {
         return Err(DatabricksChatError::ChunkKey {
             key: "function",
             chunk: chunk.to_owned(),
@@ -271,16 +252,14 @@ fn add_citation(delta: &mut DatabricksDelta) -> Result<(), DatabricksChatError> 
         return Ok(());
     };
     match &mut delta.provider_specific_fields {
-        None => {
-            delta.provider_specific_fields = Some(Some(Object::from_iter([(
-                String::from("citation"),
-                citation,
-            )])));
+        Slot::Absent => {
+            delta.provider_specific_fields =
+                Slot::Value(Object::from_iter([(String::from("citation"), citation)]));
         }
-        Some(Some(fields)) => {
+        Slot::Value(fields) => {
             fields.insert(String::from("citation"), citation);
         }
-        Some(None) => {
+        Slot::Null => {
             return Err(DatabricksChatError::Shape {
                 message: String::from(
                     "a delta with a citation cannot take a null provider_specific_fields",

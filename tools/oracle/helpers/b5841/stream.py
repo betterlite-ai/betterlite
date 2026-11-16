@@ -1,9 +1,18 @@
 from litellm.llms.databricks.chat.transformation import DatabricksConfig
 from pydantic import JsonValue, TypeAdapter
 
-from .common import JSON_ADAPTER, Input, Object, StreamCase, cases_of, chat_api, guarded
+from .common import (
+    ARBITRARY,
+    JSON_ADAPTER,
+    ChatApi,
+    Input,
+    Object,
+    StreamCase,
+    cases_of,
+    guarded,
+)
 
-CHAT = chat_api(DatabricksConfig())
+CHAT = TypeAdapter(ChatApi, config=ARBITRARY).validate_python(DatabricksConfig())
 
 
 def chunks_of(case: StreamCase) -> Object:

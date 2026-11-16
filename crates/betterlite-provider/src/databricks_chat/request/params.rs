@@ -118,8 +118,8 @@ where
         ("output_config", params.output_config),
     ] {
         mapped.shift_remove(name);
-        if let Some(value) = value {
-            mapped.insert(name.to_owned(), value);
+        if let Some(present) = value {
+            mapped.insert(name.to_owned(), present);
         }
     }
     Ok(())
@@ -146,6 +146,19 @@ fn apply_response_format(
     Ok(())
 }
 
+// The reasoning_effort a caller sent: null clears thinking, a string names the effort, nothing else is one
+fn requested_effort(value: &Json) -> Result<Option<&str>, DatabricksChatError> {
+    match value {
+        Json::Null => Ok(None),
+        Json::Text(effort) => Ok(Some(effort.as_str())),
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Err(DatabricksChatError::InvalidEffort {
+                value: serde_json::to_string(value).map_err(DatabricksChatError::Encode)?,
+            })
+        }
+    }
+}
+
 // _map_reasoning_effort then the adaptive output_config.effort overlay, with the model's view
 async fn apply_reasoning_effort<Capabilities>(
     model: &str,
@@ -156,15 +169,7 @@ async fn apply_reasoning_effort<Capabilities>(
 where
     Capabilities: ThinkingCapabilities + Send,
 {
-    let effort = match value {
-        Json::Null => None,
-        Json::Text(effort) => Some(effort.as_str()),
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            return Err(DatabricksChatError::InvalidEffort {
-                value: serde_json::to_string(value).map_err(DatabricksChatError::Encode)?,
-            });
-        }
-    };
+    let effort = requested_effort(value)?;
     let mapped_thinking = match effort {
         Some(requested) => capabilities
             .map_effort(model, requested, PROVIDER)
