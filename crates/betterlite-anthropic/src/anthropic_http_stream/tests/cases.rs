@@ -7,7 +7,7 @@ use http::HeaderMap;
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use crate::anthropic_http_stream::call::{StreamClients, make_call, make_sync_call};
+use crate::anthropic_http_stream::call::{StreamCall, StreamClients, make_call, make_sync_call};
 use crate::anthropic_http_stream::completion::{
     CompletionStream, WrappedStream, acompletion_stream_function,
 };
@@ -547,4 +547,36 @@ async fn open_wrapper(
     )
     .await
     .expect("the fixture reply opens the wrapper")
+}
+
+// the api_base is parsed before the request is built, so a malformed one fails as the typed Endpoint error
+#[tokio::test]
+async fn anthropic_http_stream_malformed_api_base() {
+    let messages = messages();
+    let reverse = reverse_map();
+    let transport = FixtureTransport::reply(200, response_headers(), &[FRAME]);
+    let logger = RecordingLogger::new(&messages);
+    let call = StreamCall {
+        api_base: "not a url",
+        headers: request_headers(),
+        data: DATA,
+        messages: &messages,
+        timeout: TIMEOUT,
+        json_mode: false,
+        speed: None,
+        tool_name_reverse_map: &reverse,
+    };
+    let clients = StreamClients {
+        supplied: Some(&transport),
+        module_level_aclient: &transport,
+        module_level_client: &transport,
+        logger: &logger,
+    };
+    let error = match make_call(clients, &call, stream_build(&FixedIds)).await {
+        Ok(_) => panic!("a malformed api_base opens no stream"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, StreamOpenError::Endpoint { .. }));
+    assert!(transport.posts().is_empty());
+    assert_no_post_call(&logger.state());
 }
