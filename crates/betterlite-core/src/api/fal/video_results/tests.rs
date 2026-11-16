@@ -621,6 +621,11 @@ fn the_probe_url_only_loses_a_trailing_status_suffix() {
 #[case::server_error(500, "boom", None)]
 #[case::success(200, "{}", None)]
 #[case::empty_success(204, "", None)]
+#[case::empty_detail_body_text(
+    400,
+    r#"{"detail": "", "error": "boom"}"#,
+    Some(r#"{"detail": "", "error": "boom"}"#)
+)]
 fn a_failed_probe_names_its_body_or_status(
     #[case] status: u16,
     #[case] body: &str,
