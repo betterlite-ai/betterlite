@@ -39,8 +39,8 @@ pub fn image_object(
             object.insert("gcsUri".to_owned(), Json::Text(text));
             Ok(object)
         }
-        ImageInput::Json(Json::Text(text)) => {
-            Err(VeoRequestError::UnsupportedImage { value: text })
+        ImageInput::Json(Json::Text(other)) => {
+            Err(VeoRequestError::UnsupportedImage { value: other })
         }
         ImageInput::Json(_) => Err(VeoRequestError::ImageShape),
         ImageInput::File(reader) => encoded_image(reader, mime),

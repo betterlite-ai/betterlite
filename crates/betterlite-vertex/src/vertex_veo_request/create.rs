@@ -59,31 +59,31 @@ fn merged_options<'media>(
     options.extend(extra.clone());
     // the pipeline pops the extra_body key itself, so a dictionary carrying one sends no such parameter
     options.shift_remove("extra_body");
-    let image = extra.get("image").cloned().map(ImageInput::Json).or(image);
-    (options, image)
+    let chosen_image = extra.get("image").cloned().map(ImageInput::Json).or(image);
+    (options, chosen_image)
 }
 
 // the mapper's options as the request dict holds them, before any extra_body option overrides one
 fn mapped_options(
-    parameters: Option<Object>,
+    nested: Option<Object>,
     resolution: Option<Json>,
     aspect_ratio: Option<String>,
-    duration_seconds: Option<i64>,
+    duration: Option<i64>,
 ) -> Object {
     let mut options = Object::new();
-    if let Some(parameters) = parameters {
-        options.insert("parameters".to_owned(), Json::Object(parameters));
+    if let Some(block) = nested {
+        options.insert("parameters".to_owned(), Json::Object(block));
     }
-    if let Some(resolution) = resolution {
-        options.insert("resolution".to_owned(), resolution);
+    if let Some(value) = resolution {
+        options.insert("resolution".to_owned(), value);
     }
-    if let Some(aspect_ratio) = aspect_ratio {
-        options.insert("aspectRatio".to_owned(), Json::Text(aspect_ratio));
+    if let Some(ratio) = aspect_ratio {
+        options.insert("aspectRatio".to_owned(), Json::Text(ratio));
     }
-    if let Some(duration_seconds) = duration_seconds {
+    if let Some(seconds) = duration {
         options.insert(
             "durationSeconds".to_owned(),
-            Json::Number(Number::from(duration_seconds)),
+            Json::Number(Number::from(seconds)),
         );
     }
     options
@@ -92,10 +92,10 @@ fn mapped_options(
 // a full instances dict replaces the prompt and then skips the image branch
 fn merge_instances(instance: &mut Object, options: &mut Object) -> bool {
     let supplied = options.get("instances").cloned();
-    let Some(Json::Object(instances)) = supplied else {
+    let Some(Json::Object(fields)) = supplied else {
         return false;
     };
-    instance.extend(instances);
+    instance.extend(fields);
     options.shift_remove("instances");
     true
 }
@@ -122,14 +122,17 @@ fn attach_image(
     options: &mut Object,
     mime: &dyn MimeReader,
 ) -> Result<(), VeoRequestError> {
-    let Some(image) = image else {
+    let Some(chosen) = image else {
         return Ok(());
     };
-    if let ImageInput::Json(Json::Null) = &image {
+    if let ImageInput::Json(Json::Null) = &chosen {
         options.insert("image".to_owned(), Json::Null);
         return Ok(());
     }
-    instance.insert("image".to_owned(), Json::Object(image_object(image, mime)?));
+    instance.insert(
+        "image".to_owned(),
+        Json::Object(image_object(chosen, mime)?),
+    );
     options.shift_remove("image");
     Ok(())
 }

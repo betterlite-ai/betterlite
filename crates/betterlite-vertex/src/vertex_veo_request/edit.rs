@@ -94,12 +94,12 @@ fn source_video(source: &SourceVideo) -> Result<Object, VeoRequestError> {
 
 // extra_body's nested parameters are flattened first, then its flat options override them
 fn edit_parameters(extra_body: Option<&Object>) -> Option<Object> {
-    let extra = extra_body?;
-    let mut parameters = match extra.get("parameters") {
+    let given = extra_body?;
+    let mut parameters = match given.get("parameters") {
         Some(Json::Object(nested)) => nested.clone(),
         _ => Object::new(),
     };
-    for (name, value) in extra {
+    for (name, value) in given {
         if name != "parameters" {
             parameters.insert(name.clone(), value.clone());
         }

@@ -85,27 +85,27 @@ pub fn map_openai_params<'media>(
     let MapInput {
         model,
         input_reference,
-        image,
+        image: image_option,
         parameters,
-        resolution,
+        resolution: resolution_option,
         seconds,
         size,
     } = input;
-    let image = input_reference.or(image);
+    let image = input_reference.or(image_option);
     // a resolution the caller set, flat or nested in parameters, blocks the size inference
     let nested_resolution = parameters.as_ref().is_some_and(|nested| {
         nested
             .get("resolution")
             .is_some_and(|value| !matches!(value, Json::Null))
     });
-    let inferable = size.is_some() && resolution.is_none() && !nested_resolution;
+    let inferable = size.is_some() && resolution_option.is_none() && !nested_resolution;
     let inferred = if inferable {
         size.as_deref()
-            .and_then(|size| inferred_resolution(size, model, lookup))
+            .and_then(|requested| inferred_resolution(requested, model, lookup))
     } else {
         None
     };
-    let resolution = inferred.or(resolution);
+    let resolution = inferred.or(resolution_option);
     let aspect_ratio = size
         .as_deref()
         .and_then(size_aspect_ratio)

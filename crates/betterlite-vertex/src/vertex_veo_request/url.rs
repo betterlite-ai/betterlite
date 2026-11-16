@@ -16,16 +16,16 @@ pub fn complete_url(
     params: VertexParams<'_>,
     settings: &VertexSettings,
 ) -> Result<String, VeoRequestError> {
-    let project = params
+    let configured_project = params
         .safe_get_vertex_ai_project(settings)
         .filter(|project| !project.is_empty())
         .ok_or(VeoRequestError::MissingProject)?;
-    let project = validate_vertex_project(project).map_err(VeoRequestError::Project)?;
-    let location = params
+    let project = validate_vertex_project(configured_project).map_err(VeoRequestError::Project)?;
+    let configured_location = params
         .safe_get_vertex_ai_location(settings)
         .filter(|location| !location.is_empty())
         .unwrap_or(DEFAULT_LOCATION);
-    let location = validate_vertex_location(Some(location))
+    let location = validate_vertex_location(Some(configured_location))
         .map_err(VertexUrlError::from)
         .map_err(VeoRequestError::Location)?;
     let base_url = match api_base.filter(|base| !base.is_empty()) {

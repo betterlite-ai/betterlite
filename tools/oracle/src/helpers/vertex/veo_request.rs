@@ -12,7 +12,7 @@ use betterlite_vertex::vertex_veo_request::params::{MapInput, map_openai_params}
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
@@ -60,13 +60,6 @@ struct EditStep {
 // the bundled catalog is the vertex_ai/model metadata B193 resolves, as litellm's local cost map is for LiteLLM
 struct BundledPrices(Arc<ModelCatalog>);
 
-impl BundledPrices {
-    fn bundled() -> Self {
-        let mut bundled = BundledCatalog::default();
-        Self(bundled.get())
-    }
-}
-
 impl PriceLookup for BundledPrices {
     fn effective_model_info(&self, _model: &str, _provider: Option<&str>) -> Option<PriceRecord> {
         None
@@ -103,10 +96,10 @@ fn pipeline_params(step: &CreateStep) -> Params {
 
 fn without_nulls(extra: Option<&Object>) -> Object {
     let mut kept = Object::new();
-    let Some(extra) = extra else {
+    let Some(given) = extra else {
         return kept;
     };
-    for (name, value) in extra {
+    for (name, value) in given {
         if !matches!(value, Json::Null) {
             kept.insert(name.clone(), value.clone());
         }
@@ -160,7 +153,8 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let prices = BundledPrices::bundled();
+        let mut bundled = BundledCatalog::default();
+        let prices = BundledPrices(bundled.get());
         let creates = input
             .creates
             .iter()

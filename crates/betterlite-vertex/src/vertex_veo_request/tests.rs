@@ -132,15 +132,15 @@ fn map_input(model: &str) -> MapInput<'_> {
 fn inferred_resolution_is_added_only_for_a_gated_model() {
     let mut gated = map_input("veo-3.0-fast-generate-001");
     gated.size = Some("1280x720".to_owned());
-    let mapped = map_openai_params(gated, &catalog());
-    assert_eq!(mapped.aspect_ratio.as_deref(), Some("16:9"));
-    assert_eq!(mapped.resolution, Some(text("720p")));
+    let gated_mapped = map_openai_params(gated, &catalog());
+    assert_eq!(gated_mapped.aspect_ratio.as_deref(), Some("16:9"));
+    assert_eq!(gated_mapped.resolution, Some(text("720p")));
 
     let mut ungated = map_input("veo-2.0-generate-001");
     ungated.size = Some("1280x720".to_owned());
-    let mapped = map_openai_params(ungated, &catalog());
-    assert_eq!(mapped.aspect_ratio.as_deref(), Some("16:9"));
-    assert_eq!(mapped.resolution, None);
+    let ungated_mapped = map_openai_params(ungated, &catalog());
+    assert_eq!(ungated_mapped.aspect_ratio.as_deref(), Some("16:9"));
+    assert_eq!(ungated_mapped.resolution, None);
 }
 
 #[test]
@@ -306,10 +306,10 @@ fn instance_image(form: &CreateForm) -> Option<&Json> {
     let Some(Json::List(instances)) = form.body.get("instances") else {
         return None;
     };
-    let Some(Json::Object(instance)) = instances.first() else {
+    let Some(Json::Object(first_instance)) = instances.first() else {
         return None;
     };
-    instance.get("image")
+    first_instance.get("image")
 }
 
 fn parameters(form: &CreateForm) -> Option<&Json> {
@@ -596,17 +596,17 @@ fn edit_requires_a_completed_source(#[case] done: Option<bool>) {
 #[test]
 fn edit_requires_at_least_one_source_video() {
     let empty = prefetched(Some(Vec::new()), Some(true));
-    let error = edit(Some(&empty), None).expect_err("there is no video");
-    assert!(matches!(error, VeoRequestError::NoVideos));
+    let empty_error = edit(Some(&empty), None).expect_err("there is no video");
+    assert!(matches!(empty_error, VeoRequestError::NoVideos));
     let absent_videos = prefetched(None, Some(true));
-    let error = edit(Some(&absent_videos), None).expect_err("there is no video");
-    assert!(matches!(error, VeoRequestError::NoVideos));
+    let absent_error = edit(Some(&absent_videos), None).expect_err("there is no video");
+    assert!(matches!(absent_error, VeoRequestError::NoVideos));
     let missing = PrefetchedOperation {
         done: Some(true),
         response: None,
     };
-    let error = edit(Some(&missing), None).expect_err("there is no response");
-    assert!(matches!(error, VeoRequestError::NoVideos));
+    let missing_error = edit(Some(&missing), None).expect_err("there is no response");
+    assert!(matches!(missing_error, VeoRequestError::NoVideos));
 }
 
 #[test]
@@ -645,11 +645,11 @@ fn edit_base64_sources_take_the_declared_mime(
     let Some(Json::List(instances)) = form.body.get("instances") else {
         panic!("the edit request has instances");
     };
-    let Some(Json::Object(instance)) = instances.first() else {
+    let Some(Json::Object(first_instance)) = instances.first() else {
         panic!("the edit request has one instance");
     };
     assert_eq!(
-        instance.get("video"),
+        first_instance.get("video"),
         Some(&Json::Object(object([
             ("bytesBase64Encoded", text("abc")),
             ("mimeType", text(expected)),
