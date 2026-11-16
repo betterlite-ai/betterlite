@@ -1202,6 +1202,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "caseless",
  "chrono",
  "hex",
  "http 1.5.0",
