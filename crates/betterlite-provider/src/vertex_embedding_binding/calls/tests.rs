@@ -305,6 +305,24 @@ async fn a_vertex_deployment_runs_through_the_dispatch_pipeline() {
     );
 }
 
+#[test]
+fn the_installed_call_names_no_deployment_labels_or_caller_headers() {
+    let wire = Wire::answering(200, TEXT_ANSWER);
+    let caller = calls(&wire, PINNED);
+    let parsed = EmbeddingRequest::parse(TEXT_REQUEST.as_bytes()).expect("an embeddings request");
+    let input = caller
+        .input(&EmbeddingCallInput {
+            deployment: deployment("vertex_ai/text-embedding-005"),
+            request: &parsed,
+        })
+        .expect("a call input");
+    // the core seam carries neither, so LiteLLM's deployment labels and caller headers stop here
+    assert!(input.litellm_params.is_none());
+    assert!(input.extra_headers.is_empty());
+    assert_eq!(input.timeout, Some(Duration::from_secs(30)));
+    assert!(input.pinned.is_some());
+}
+
 #[rstest]
 #[case::text(
     "vertex_ai/text-embedding-005",
