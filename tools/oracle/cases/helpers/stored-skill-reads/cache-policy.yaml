@@ -1,0 +1,28 @@
+kind: helper
+name: stored-skill-reads-cache-policy
+call:
+  b3212:
+    now: "2026-02-03T04:05:06"
+    rows:
+      - {skill_id: litellm_skill_a, display_title: Alpha, created_by: alice}
+      - {skill_id: litellm_skill_b, display_title: Beta, created_by: bob}
+    page:
+      - {skill_id: litellm_skill_a, display_title: Alpha, created_by: alice}
+      - {skill_id: litellm_skill_b, display_title: Beta, created_by: bob}
+    steps:
+      - {action: get, skill_id: litellm_skill_a, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_a, principal: {user_id: bob}}
+      - {action: get, skill_id: litellm_skill_a, principal: {user_id: carol, admin: true}}
+      - {action: get, skill_id: litellm_skill_ghost, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_ghost, principal: {admin: true}}
+      - {action: get, skill_id: litellm_skill_a, principal: {user_id: alice}, available: false}
+      - {action: get, skill_id: litellm_skill_ghost2, principal: {user_id: alice}, available: false}
+      - {action: get, skill_id: litellm_skill_b, principal: {user_id: alice}, available: false}
+      - {action: list, limit: 10, principal: {user_id: alice}, available: false}
+      - {action: list, limit: 10, principal: {}, available: false}
+      - {action: list, limit: 10, principal: {}, available: true}
+      - {action: get, skill_id: litellm_skill_b, principal: {user_id: alice}, available: true}
+      - {action: get, skill_id: litellm_skill_b, principal: {user_id: bob}, available: true}
+      - {action: list, limit: 10, principal: {user_id: bob}, available: true}
+env: {}
+compare: {ignore: []}
