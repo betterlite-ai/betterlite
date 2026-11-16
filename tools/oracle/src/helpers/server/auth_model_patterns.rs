@@ -14,10 +14,10 @@ use betterlite_config::sections::database_reencryption::DEFAULT_RECURSE_DEPTH;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::proxy_error_types::ModelAccessObject;
 use betterlite_models::catalog::BundledCatalog;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-
-use crate::helpers::{Helper, HelperError, HelperResult};
 
 const FORBIDDEN: i64 = 403;
 
