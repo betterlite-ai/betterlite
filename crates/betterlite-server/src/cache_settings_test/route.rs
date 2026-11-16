@@ -107,8 +107,10 @@ async fn resolved_settings(
 ) -> Map<String, Value> {
     let saved = saved_settings(state.saved.as_deref(), &state.cipher).await;
     let resolved = resolve_cache_url_precedence(&merge_over_saved(incoming, &saved));
+    // tracing's field expansion imports a Value trait, so the redacted map is built before the macro names Value.
+    let redacted = Value::Object(redact_credentials(&resolved));
     tracing::debug!(
-        cache_settings = %Value::Object(redact_credentials(&resolved)),
+        cache_settings = %redacted,
         "Testing cache connection with settings"
     );
     resolved
@@ -159,7 +161,7 @@ async fn connection_test(
     let cache_settings = cache_settings_from_map(settings)?;
     let mut callbacks = CacheCallbacks::default();
     let dependencies = CacheDependencies {
-        clock: Arc::new(|| 0.0),
+        clock: Arc::new(|| 0.0_f64),
         redis_factory: Arc::clone(&state.redis_factory),
         redis_store: Arc::new(RedisClientStore::new()),
         redis_hooks: Arc::new(SilentHooks),

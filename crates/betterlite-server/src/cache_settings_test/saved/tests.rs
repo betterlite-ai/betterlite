@@ -59,7 +59,7 @@ async fn saved_settings_decrypts_only_string_values() {
     let (_, repository) = support::fake_saved(SavedReply::Stored(stored));
     let settings = saved_settings(repository.as_deref(), &support::cipher()).await;
     assert_eq!(settings["password"], support::SAVED_SECRET);
-    assert_eq!(settings["port"], 6379);
+    assert_eq!(settings["port"], json!(6379));
     assert_eq!(settings["ssl"], true);
     assert_eq!(settings["redis_startup_nodes"][0]["host"], "127.0.0.1");
     assert_eq!(settings["nested"]["password"], "plain");
@@ -121,7 +121,7 @@ async fn saved_settings_parses_a_stored_json_string() {
     let (_, repository) = support::fake_saved(SavedReply::Stored(json!(text)));
     let settings = saved_settings(repository.as_deref(), &support::cipher()).await;
     assert_eq!(settings["password"], support::SAVED_SECRET);
-    assert_eq!(settings["port"], 6379);
+    assert_eq!(settings["port"], json!(6379));
 }
 
 #[rstest]

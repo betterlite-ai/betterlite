@@ -114,7 +114,7 @@ pub(crate) fn fake_saved(reply: SavedReply) -> (Arc<FakeSaved>, Option<Arc<dyn S
         reply,
         calls: AtomicUsize::new(0),
     });
-    let erased: Arc<dyn SavedCacheConfig> = Arc::clone(&fake);
+    let erased: Arc<dyn SavedCacheConfig> = Arc::<FakeSaved>::clone(&fake);
     (fake, Some(erased))
 }
 

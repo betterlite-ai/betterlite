@@ -32,7 +32,7 @@ const CACHE_ONLY_OPTIONS: &str = "type mode namespace ttl default_in_memory_ttl 
 // The serde error quotes the offending value, so the message names only the option's path and the source stays unformatted.
 #[derive(Debug, Error)]
 pub(super) enum ConnectionTestError {
-    #[error("the redis option {:?} has the wrong type or value", .source.path().to_string())]
+    #[error("the redis option \"{}\" has the wrong type or value", .source.path())]
     Options {
         #[source]
         source: serde_path_to_error::Error<serde_json::Error>,

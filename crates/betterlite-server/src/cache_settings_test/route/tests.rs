@@ -2,16 +2,14 @@
 
 use std::collections::BTreeMap;
 use std::io;
-use std::str::from_utf8;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::PoisonError;
 
 use axum::http::StatusCode;
 use rstest::rstest;
 use serde_json::Value;
 use serde_json::json;
-use tracing_subscriber::fmt::MakeWriter;
+use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::cache_settings_test::support;
 use crate::cache_settings_test::support::FakeRedis;
@@ -34,21 +32,15 @@ fn saved_target(redis: &FakeRedis) -> Value {
     target
 }
 
-fn captured(records: &Arc<Mutex<String>>) -> String {
-    records
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone()
-}
-
-fn capture_logs() -> (Arc<Mutex<String>>, tracing::subscriber::DefaultGuard) {
-    let records = Arc::new(Mutex::new(String::new()));
+fn capture_logs() -> (Captured, DefaultGuard) {
+    let captured = Captured(Arc::new(Mutex::new(Vec::new())));
+    let writer = captured.clone();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
         .with_max_level(tracing::Level::DEBUG)
-        .with_writer(CaptureWriter(Arc::clone(&records)))
+        .with_writer(move || writer.clone())
         .finish();
-    (records, tracing::subscriber::set_default(subscriber))
+    (captured, set_default(subscriber))
 }
 
 async fn rejected(body: &str) -> String {
@@ -84,6 +76,16 @@ async fn route_refuses_a_non_admin_before_touching_the_target() {
     assert_eq!(text, format!(r#"{{"detail":"{ADMIN_REQUIRED}"}}"#));
     assert_eq!(saved_row.calls(), 0);
     assert_eq!(redis.connections(), 0);
+}
+
+#[tokio::test]
+async fn route_refuses_a_non_admin_before_decoding_the_body() {
+    let (saved_row, repository) = support::fake_saved(SavedReply::Missing);
+    let (status, text) =
+        support::post(support::state(repository), Some(support::non_admin()), "{").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(text, format!(r#"{{"detail":"{ADMIN_REQUIRED}"}}"#));
+    assert_eq!(saved_row.calls(), 0);
 }
 
 #[tokio::test]
@@ -517,14 +519,14 @@ async fn route_merges_before_the_url_precedence() {
 
 #[tokio::test]
 async fn route_logs_the_settings_redacted() {
-    let (records, _captured) = capture_logs();
+    let (records, _guard) = capture_logs();
     let redis = FakeRedis::start().await;
     let mut target = redis_target(&redis);
     target["password"] = json!(support::TYPED_SECRET);
     let body = support::request(target);
     let (_, text) = support::post(support::state(None), Some(support::admin()), &body).await;
     assert_eq!(text, SUCCESS_BODY);
-    let logged = captured(&records);
+    let logged = records.text();
     assert!(
         logged.contains("Testing cache connection with settings"),
         "{logged}"
@@ -535,7 +537,7 @@ async fn route_logs_the_settings_redacted() {
 
 #[tokio::test]
 async fn route_logs_the_settings_after_url_precedence() {
-    let (records, _captured) = capture_logs();
+    let (records, _guard) = capture_logs();
     let redis = FakeRedis::start().await;
     let url = format!("redis://{}:{}", redis.host(), redis.port());
     let body = support::request(json!({
@@ -550,7 +552,7 @@ async fn route_logs_the_settings_after_url_precedence() {
     assert_eq!(text, SUCCESS_BODY);
     assert!(redis.auth_passwords().is_empty(), "{text}");
     assert!(!redis.sent_secret(support::TYPED_SECRET));
-    let logged = captured(&records);
+    let logged = records.text();
     assert!(!logged.contains("unused.example"), "{logged}");
     assert!(logged.contains(support::REDACTED), "{logged}");
     assert!(!logged.contains(support::TYPED_SECRET), "{logged}");
@@ -559,7 +561,7 @@ async fn route_logs_the_settings_after_url_precedence() {
 // The merged map holds the decrypted saved secret, so the redaction covers a value no caller typed.
 #[tokio::test]
 async fn route_logs_the_saved_secret_redacted() {
-    let (records, _captured) = capture_logs();
+    let (records, _guard) = capture_logs();
     let redis = FakeRedis::start().await;
     let (_, repository) = support::fake_saved(SavedReply::Stored(saved_target(&redis)));
     let body = support::request(redis_target(&redis));
@@ -569,23 +571,21 @@ async fn route_logs_the_saved_secret_redacted() {
         !redis.auth_passwords().is_empty(),
         "the saved password reached the redis"
     );
-    let logged = captured(&records);
+    let logged = records.text();
     assert!(logged.contains(support::REDACTED), "{logged}");
     assert!(!logged.contains(support::SAVED_SECRET), "{logged}");
 }
 
 #[derive(Clone)]
-struct CaptureWriter(Arc<Mutex<String>>);
+struct Captured(Arc<Mutex<Vec<u8>>>);
 
-impl io::Write for CaptureWriter {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        let text =
-            from_utf8(buffer).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push_str(text);
-        Ok(buffer.len())
+            .map_err(|poisoned| io::Error::other(poisoned.to_string()))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -593,10 +593,8 @@ impl io::Write for CaptureWriter {
     }
 }
 
-impl<'writer> MakeWriter<'writer> for CaptureWriter {
-    type Writer = Self;
-
-    fn make_writer(&'writer self) -> Self::Writer {
-        Self(Arc::clone(&self.0))
+impl Captured {
+    fn text(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
     }
 }
