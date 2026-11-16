@@ -113,7 +113,11 @@ async fn the_route_adds_no_role_check_of_its_own() {
 #[tokio::test]
 async fn the_environment_is_read_on_every_request() {
     let environment = Arc::new(SwitchableEnvironment::new(&[("REDIS_HOST", "first-host")]));
-    let state = CacheSettingsReadState::new(None, cipher_settings(None), Arc::clone(&environment));
+    let state = CacheSettingsReadState::new(
+        None,
+        cipher_settings(None),
+        Arc::<SwitchableEnvironment>::clone(&environment),
+    );
     let application = router(state);
     let (first_status, first_text) = get(application.clone(), master()).await;
     assert_eq!(first_status, StatusCode::OK);

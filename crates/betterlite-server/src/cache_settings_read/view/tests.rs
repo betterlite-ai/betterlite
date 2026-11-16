@@ -148,9 +148,11 @@ fn an_environment_credential_is_redacted_too() {
 
 #[test]
 fn field_values_come_from_the_redacted_current_values() {
-    let current_values = view(
-        r#"{"type": "redis", "password": "secret", "sentinel_nodes": [["localhost", 26379]]}"#,
-        &[],
+    let current_values = effective_values(
+        &obj(
+            r#"{"type": "redis", "password": "secret", "sentinel_nodes": [["localhost", 26379]]}"#,
+        ),
+        &environment(&[]),
     );
     let mut fields = catalog();
     fill_field_values(&mut fields, &current_values);
