@@ -5,6 +5,7 @@ use betterlite_provider::api::image_contracts::edit::BaseImageEditConfig;
 use serde::Deserialize;
 use serde_json::json;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use edit::async_copy;
 use errors::base_errors;
 use fixtures::EditFixture;
@@ -63,10 +64,10 @@ pub(crate) struct BaseErrors {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::TransportDefaults(fields) => Ok(transport_defaults(fields)),
             Input::EditAsyncTransformCopy(fields) => async_copy(fields),

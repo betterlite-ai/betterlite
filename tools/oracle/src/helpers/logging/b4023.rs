@@ -1,15 +1,16 @@
 use betterlite_logging::key_invitation_email::templates::{
     KeyCreatedEmail, UserInvitedEmail, render_key_created_email, render_user_invited_email,
 };
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let html = match input {
             Input::KeyCreated {
                 email_logo_url,

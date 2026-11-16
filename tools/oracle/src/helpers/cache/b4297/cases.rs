@@ -10,7 +10,8 @@ use super::{
     FIXTURE_NOW, GetCacheInput, GetCacheLogicInput, HelperCache, RecordingBackend, WriteInput,
     cache, failure, rebuild, runtime,
 };
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(crate) fn get_cache_logic(input: &GetCacheLogicInput) -> HelperResult {
     let result =
@@ -33,8 +34,7 @@ pub(crate) fn get_cache(input: &GetCacheInput) -> HelperResult {
 
 fn prepare(
     input: &WriteInput,
-) -> Result<(Arc<RecordingBackend>, HelperCache, EnvelopeRequest), Box<crate::helpers::HelperError>>
-{
+) -> Result<(Arc<RecordingBackend>, HelperCache, EnvelopeRequest), Box<HelperError>> {
     let backend = Arc::new(RecordingBackend::new(None, None));
     let facade = cache(Arc::clone(&backend), &input.settings, input.cache_type)?;
     let request = rebuild(&input.request);

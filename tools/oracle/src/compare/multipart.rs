@@ -1,8 +1,8 @@
 use serde_json::Value;
 
-use crate::mock::ProviderRequest;
-use crate::multipart_oracle::Part;
-use crate::multipart_oracle::capture::decode_multipart_capture;
+use betterlite_oracle_runner::mock::ProviderRequest;
+use betterlite_oracle_runner::multipart_oracle::Part;
+use betterlite_oracle_runner::multipart_oracle::capture::decode_multipart_capture;
 
 pub(crate) fn captured_parts(request: &ProviderRequest) -> Option<Vec<Part>> {
     let content_type = request.headers.get("content-type")?;

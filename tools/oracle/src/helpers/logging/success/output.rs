@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use crate::compare::helper::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::scenario::Scenario;
 use super::support::RecordingLogger;

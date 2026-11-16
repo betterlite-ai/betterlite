@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 
-use crate::compare;
 use crate::gateway::{GatewayInput, start as start_gateway};
 use crate::websocket_driver::{
     DriverError, TokioClock, TranscriptObservation, compare_transcript,
@@ -13,12 +12,9 @@ use crate::websocket_driver::{
     service::{ServiceInput, ServiceTag},
 };
 use crate::websocket_oracle::{WebSocketBounds, WebSocketCase, output_matches, upstream_matches};
-use crate::{
-    OracleError,
-    cli::Options,
-    helpers::{self, HelperCall},
-    paths::safe_name,
-};
+use crate::{OracleError, cli::Options, helpers, paths::safe_name};
+use betterlite_oracle_runner::compare::compare_helper;
+use betterlite_oracle_runner::helpers::{HelperCall, run_pair};
 
 pub(super) fn run_cases(
     options: &Options,
@@ -48,9 +44,9 @@ fn run_service_case(
         operation: "websocket_oracle".to_owned(),
         input: serde_json::to_value(service_input.to_wire()).map_err(OracleError::Json)?,
     };
-    let (left, right) = helpers::run_pair(&call, &case.env, options.self_check)?;
+    let (left, right) = run_pair(&helpers::GROUPS, &call, &case.env, options.self_check)?;
     let fixture = output_matches(case, &left).and_then(|()| output_matches(case, &right));
-    let pair = compare::compare_helper(&left, &right, &[]).map(|difference| difference.pointer);
+    let pair = compare_helper(&left, &right, &[]).map(|difference| difference.pointer);
     let Some(pointer) = fixture.err().or(pair) else {
         writeln!(io::stdout().lock(), "PASS {}", case.name).map_err(OracleError::Output)?;
         return Ok(false);

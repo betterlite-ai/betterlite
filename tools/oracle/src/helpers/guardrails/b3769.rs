@@ -22,10 +22,12 @@ use betterlite_http::proxy::base_builder;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, ProviderCall};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{MockScript, ProviderCall};
+use tokio::runtime::{Builder, Runtime};
 
 pub(crate) struct Op;
 
@@ -128,7 +130,7 @@ fn construct(settings: &Settings) -> HelperResult {
 struct Prepared {
     mock: MockProvider,
     guardrail: EnkryptAiGuardrail,
-    runtime: tokio::runtime::Runtime,
+    runtime: Runtime,
 }
 
 struct DetectArgs<'args> {
@@ -156,7 +158,7 @@ fn prepare(args: &DetectArgs<'_>) -> Result<Prepared, Box<HelperError>> {
         true,
     )
     .map_err(|error| helper_error("ValueError", error.to_string()))?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| helper_error("OSError", error.to_string()))?;
@@ -277,7 +279,7 @@ fn statuses(request_data: &BTreeMap<String, GuardrailValue>) -> Vec<String> {
         .collect()
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

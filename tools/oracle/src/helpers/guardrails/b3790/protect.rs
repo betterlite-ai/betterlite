@@ -19,10 +19,14 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::fail;
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, ProviderCall};
+use betterlite_http::proxy;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{MockScript, ProviderCall};
+use std::slice;
+use tokio::runtime::Builder;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -180,7 +184,7 @@ fn deliver(
     data: &mut BTreeMap<String, GuardrailValue>,
     mock: MockProvider,
 ) -> Result<(Option<u16>, Vec<ProviderCall>), Box<HelperError>> {
-    let client = betterlite_http::proxy::base_builder()
+    let client = proxy::base_builder()
         .build()
         .map_err(|error| fail("RequestError", error.to_string(), None))?;
     let catalog = BundledCatalog::default().get();
@@ -193,7 +197,7 @@ fn deliver(
         environment: &environment,
         registry: &registry,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| fail("RuntimeError", error.to_string(), None))?;
@@ -216,7 +220,7 @@ pub(super) fn run(input: &ProtectInput) -> HelperResult {
         body: Some(input.answer.body.clone()),
         events: None,
     };
-    let script = MockScript::try_from(std::slice::from_ref(&reply))
+    let script = MockScript::try_from(slice::from_ref(&reply))
         .map_err(|error| fail("MockError", error.to_string(), None))?;
     let mock =
         MockProvider::start(script).map_err(|error| fail("MockError", error.to_string(), None))?;

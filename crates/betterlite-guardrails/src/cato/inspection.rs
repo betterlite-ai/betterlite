@@ -5,6 +5,24 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use super::schema_strings::schema_string_messages;
 use crate::content_inspection::build_inspection_messages;
 
+pub mod hooks;
+pub mod output;
+
+// the caller identity LiteLLM forwards as Cato headers
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CallerArgs<'caller> {
+    pub key_alias: Option<&'caller str>,
+    pub user_email: Option<&'caller str>,
+}
+
+// the request's litellm_call_id, which ties the input and output inspections together
+pub(super) fn call_id(data: &BTreeMap<String, GuardrailValue>) -> Option<&str> {
+    match data.get("litellm_call_id") {
+        Some(GuardrailValue::Text(call_id)) => Some(call_id),
+        _ => None,
+    }
+}
+
 // the field each extra source came from, so a redaction slice maps back to it
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExtraField {
