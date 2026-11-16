@@ -1,13 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::list_api::plan::build::build_query_plan;
 use betterlite_server::list_api::plan::query::decode_list_query;
 use betterlite_server::list_api::plan::types::{
-    ComparisonOp, FilterOp, FilterSpec, FilterType, FilterValue, ListSpec, Predicate, Scope,
-    SortKey,
+    Compare, ComparisonOp, FilterOp, FilterSpec, FilterType, FilterValue, IsNull, ListSpec,
+    Predicate, Scope, SortKey,
 };
 use betterlite_server::list_api::problem::{ValidationErrorDetail, request_validation_problem};
-use betterlite_server::management_envelopes::ProblemDocument;
+use betterlite_server::management_envelopes::{ProblemDetail, ProblemDocument};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -69,8 +71,8 @@ pub(crate) enum PredicateInput {
 
 pub(crate) struct Op;
 
-fn helper_error(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn helper_error(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,
@@ -80,7 +82,7 @@ fn helper_error(message: String) -> Box<crate::helpers::HelperError> {
     })
 }
 
-fn make_spec(input: SpecInput) -> Result<ListSpec, Box<crate::helpers::HelperError>> {
+fn make_spec(input: SpecInput) -> Result<ListSpec, Box<HelperError>> {
     let mut filters = BTreeMap::new();
     for (field, filter) in input.filters {
         let value_type = filter.value_type;
@@ -114,9 +116,7 @@ fn value_json(filter_value: FilterValue) -> Value {
     }
 }
 
-fn problem_json(
-    problem: &betterlite_server::management_envelopes::ProblemDetail,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn problem_json(problem: &ProblemDetail) -> Result<Value, Box<HelperError>> {
     serde_json::to_value(ProblemDocument::from(problem))
         .map_err(|error| helper_error(error.to_string()))
 }
@@ -138,10 +138,10 @@ fn predicate_json(predicate: Predicate) -> Value {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Decode { raw } => {
                 let decoded = decode_list_query(raw.as_bytes());
@@ -161,7 +161,7 @@ fn plan_result(
     spec: &SpecInput,
     params: &BTreeMap<String, String>,
     caller_scope: &ScopeInput,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let scope = match caller_scope.clone() {
         ScopeInput::All => Scope::All,
         ScopeInput::Denied { reason } => Scope::Denied(reason),
@@ -170,18 +170,13 @@ fn plan_result(
                 .into_iter()
                 .map(|predicate| match predicate {
                     PredicateInput::IsNull { field, negated } => {
-                        Predicate::IsNull(betterlite_server::list_api::plan::types::IsNull {
-                            field,
-                            negated,
-                        })
+                        Predicate::IsNull(IsNull { field, negated })
                     }
-                    PredicateInput::Compare { field, op, value } => {
-                        Predicate::Compare(betterlite_server::list_api::plan::types::Compare {
-                            field,
-                            op,
-                            value: FilterValue::Text(value),
-                        })
-                    }
+                    PredicateInput::Compare { field, op, value } => Predicate::Compare(Compare {
+                        field,
+                        op,
+                        value: FilterValue::Text(value),
+                    }),
                 })
                 .collect(),
         ),

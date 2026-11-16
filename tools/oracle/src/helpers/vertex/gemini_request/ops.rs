@@ -12,7 +12,9 @@ use betterlite_vertex::model_policy::capabilities::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -70,7 +72,7 @@ impl RemoteMediaFetcher for NoFetch {
 }
 
 pub(super) fn run(input: &Input) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let provider = match input.provider.as_str() {
         "vertex_ai" => VertexCapabilityProvider::VertexAi,
         "vertex_ai_beta" => VertexCapabilityProvider::VertexAiBeta,

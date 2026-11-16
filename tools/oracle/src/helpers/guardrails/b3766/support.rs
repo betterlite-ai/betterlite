@@ -13,8 +13,9 @@ use betterlite_guardrails::guardrail_records::record::{
 use serde_json::{Value, json};
 
 use super::SettingsFields;
-use crate::helpers::HelperError;
-use crate::mock::MockProvider;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_runner::mock::MockProvider;
+use std::time::SystemTime;
 
 pub(super) fn fail(message: String) -> Box<HelperError> {
     Box::new(HelperError {
@@ -55,7 +56,7 @@ pub(super) fn dependencies() -> Dependencies {
     Dependencies {
         client: reqwest::Client::default(),
         sink: Box::new(DiscardSink),
-        now: std::time::SystemTime::now,
+        now: SystemTime::now,
     }
 }
 

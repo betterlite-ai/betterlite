@@ -21,6 +21,8 @@ use serde_json::{Value, json};
 mod fixtures;
 
 use self::fixtures::{File, FixtureFiles};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 const HEALTH_DIRECTORY: &str = "/health";
 
@@ -54,10 +56,10 @@ struct LanguageCall {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let outcomes = input
             .calls
             .iter()
@@ -67,7 +69,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn outcome_of(call: &Call) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn outcome_of(call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
         Call::Process(file_call) => with_file(file_call, process_outcome),
         Call::Hash(file_call) => with_file(file_call, |file, files| {
@@ -87,10 +89,7 @@ fn outcome_of(call: &Call) -> Result<Value, Box<crate::helpers::HelperError>> {
     }
 }
 
-fn with_file<Outcome>(
-    call: &FileCall,
-    outcome: Outcome,
-) -> Result<Value, Box<crate::helpers::HelperError>>
+fn with_file<Outcome>(call: &FileCall, outcome: Outcome) -> Result<Value, Box<HelperError>>
 where
     Outcome: FnOnce(&mut File, &FixtureFiles) -> Value,
 {
@@ -123,7 +122,7 @@ fn duration_outcome(file: &mut File, files: &FixtureFiles) -> Value {
     json!({ "ok": true, "value": { "duration": duration, "position": file.stream_position() } })
 }
 
-fn health_outcome() -> Result<Value, Box<crate::helpers::HelperError>> {
+fn health_outcome() -> Result<Value, Box<HelperError>> {
     let resource = Path::new(HEALTH_DIRECTORY).join(HEALTH_AUDIO_FILE_NAME);
     let mut entries = BTreeMap::new();
     entries.insert(resource, HEALTH_CHECK_AUDIO.to_vec());
@@ -135,9 +134,7 @@ fn health_outcome() -> Result<Value, Box<crate::helpers::HelperError>> {
     Ok(json!({ "ok": true, "value": { "content": BASE64.encode(content) } }))
 }
 
-fn fixture_files(
-    entries: &BTreeMap<String, String>,
-) -> Result<FixtureFiles, Box<crate::helpers::HelperError>> {
+fn fixture_files(entries: &BTreeMap<String, String>) -> Result<FixtureFiles, Box<HelperError>> {
     let mut files = BTreeMap::new();
     for (path, content) in entries {
         files.insert(
@@ -148,11 +145,11 @@ fn fixture_files(
     Ok(FixtureFiles(files))
 }
 
-fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
     Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "AudioFileInput".to_owned(),
         status: None,
         error_type: None,

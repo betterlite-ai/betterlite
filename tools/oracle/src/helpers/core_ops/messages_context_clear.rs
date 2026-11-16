@@ -5,9 +5,11 @@ mod scripted;
 
 mod tests;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use input::Input;
+use std::fmt::Display;
 
 pub(crate) struct Op;
 
@@ -21,7 +23,7 @@ impl Helper for Op {
 
 fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "ValueError".to_owned(),

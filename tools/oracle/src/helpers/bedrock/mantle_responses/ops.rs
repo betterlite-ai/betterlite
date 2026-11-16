@@ -22,7 +22,9 @@ use tracing_subscriber::layer::SubscriberExt as _;
 
 use super::capture::{Fixture, Warnings};
 use super::input::{AuthCase, ErrorProbe, HoistCase, Input, MapCase, UrlCase};
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::{Builder, Runtime};
 
 pub(super) fn run(input: &Input) -> HelperResult {
     let warnings = Warnings::default();
@@ -74,7 +76,7 @@ fn index_headers(source: &BTreeMap<String, String>) -> IndexMap<String, String> 
 }
 
 fn map_outcome(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
     case: &MapCase,
     warnings: &Warnings,
 ) -> Result<Result<Object, MantleResponsesError>, Box<HelperError>> {
@@ -119,7 +121,7 @@ fn map_cases(
     cases: &[MapCase],
     body_input: Option<&ResponsesInput>,
 ) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
         let mut value = match (map_outcome(&runtime, case, warnings)?, body_input) {

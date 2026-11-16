@@ -5,6 +5,8 @@ use betterlite_db::daily_activity_export::{
     DailyActivityExportError, build_cache_leakage_keys_sql, build_export_sql, build_key_search_sql,
     build_model_top_keys_sql,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -48,9 +50,9 @@ struct Outcome {
     error: Option<String>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let outcomes: BTreeMap<_, _> = input
             .cases
             .iter()
@@ -72,7 +74,7 @@ impl crate::helpers::Helper for Op {
             })
             .collect();
         serde_json::to_value(outcomes).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,

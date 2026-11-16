@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_provider::api::vector_store_contracts::config::Params;
 use betterlite_rag::valkey_vector_store::params::ValkeyParams;
 use betterlite_rag::valkey_vector_store::ports::{ValkeyDocument, ValkeyTimeout, socket_timeouts};
@@ -94,10 +95,10 @@ enum TimeoutCall {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(Value::Array(input.calls.iter().map(run_call).collect()))
     }
 }

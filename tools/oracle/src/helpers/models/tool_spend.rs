@@ -12,7 +12,8 @@ use betterlite_prompts::tool_spend::{realtime_tool_call_names, response_tool_cal
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -92,10 +93,10 @@ enum MeasuredRow {
     Refused(Refused),
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let rows = input
             .rows
             .iter()
@@ -156,7 +157,7 @@ fn transaction_output(input: Option<&TransactionInput>) -> Option<TransactionOut
     })
 }
 
-fn measured_row(row: &RowInput) -> Result<MeasuredRow, Box<crate::helpers::HelperError>> {
+fn measured_row(row: &RowInput) -> Result<MeasuredRow, Box<HelperError>> {
     if row.refused {
         return Ok(MeasuredRow::Refused(Refused {
             keys: BTreeMap::from([((1, 2), 0)]),

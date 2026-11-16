@@ -13,6 +13,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use answers::{followup_answer, safety_answer, settings_answer};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::convert::Infallible;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -65,10 +68,10 @@ pub(crate) enum CallbackSpec {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::DeploymentHook { .. } => deployment_hook(input),
             Input::Settings { .. } => Ok(settings_answer(input)),
@@ -78,7 +81,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn deployment_hook(input: &Input) -> crate::helpers::HelperResult {
+fn deployment_hook(input: &Input) -> HelperResult {
     let Input::DeploymentHook {
         model,
         input: hook_input,
@@ -120,7 +123,7 @@ fn block_on_hook(
     dispatcher: &ScriptedDispatcher,
     request: ResponsesHookRequest,
 ) -> Result<ResponsesHookOutcome, Box<HelperError>> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| failure("RuntimeError", error.to_string()))?;
     runtime
@@ -184,7 +187,7 @@ fn scripted_result(spec: &CallbackSpec) -> Option<IndexMap<String, Json>> {
 
 #[async_trait]
 impl DeploymentHookDispatcher for ScriptedDispatcher {
-    type Error = std::convert::Infallible;
+    type Error = Infallible;
 
     async fn pre_call_deployment_hook(
         &self,

@@ -1,7 +1,8 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod input;
 mod request;
@@ -32,7 +33,7 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -50,7 +51,7 @@ impl crate::helpers::Helper for Op {
                 | Function::ImageRequestOverlay
                 | Function::ImageRawResponseHeaders => request::value(probe),
             })
-            .collect::<Result<Vec<Value>, Box<crate::helpers::HelperError>>>()
+            .collect::<Result<Vec<Value>, Box<HelperError>>>()
             .map(Value::Array)
     }
 }

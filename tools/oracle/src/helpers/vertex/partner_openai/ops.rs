@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::input::{ExclusionsCase, GptOssCase, Input, ReplyCase, StreamCase, TokenAliasCase};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
     Ok(json!({
