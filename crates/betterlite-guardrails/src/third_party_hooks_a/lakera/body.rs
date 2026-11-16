@@ -165,7 +165,7 @@ fn system_entry(
     Ok(entry(SYSTEM, Some(&GuardrailValue::Text(text))))
 }
 
-fn join_input_texts(items: &[GuardrailValue]) -> Result<String, LakeraHookError> {
+pub(super) fn join_input_texts(items: &[GuardrailValue]) -> Result<String, LakeraHookError> {
     let mut texts = Vec::with_capacity(items.len());
     for item in items {
         let GuardrailValue::Text(text) = item else {
