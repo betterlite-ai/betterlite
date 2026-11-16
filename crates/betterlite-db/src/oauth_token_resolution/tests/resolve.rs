@@ -190,6 +190,28 @@ fn resolve_valid_refreshes_only_inside_the_expiry_buffer(
 }
 
 #[test]
+fn resolve_valid_refreshes_inside_the_caller_supplied_expiry_buffer() {
+    let mut fixture = Fixture::new();
+    fixture.buffer = 120;
+    let server = FakeServer::new("s1").with_token_url(REFRESH_URL);
+    let cred = credential("old-token", Some("ref-1"), Some(&expires_at(90)));
+    let resolved = resolve_valid(&fixture, &server, Some(&cred)).expect("a credential returns");
+    assert_eq!(exposed(resolved.access_token.as_ref()), Some("new-token"));
+    assert_eq!(fixture.post.calls().len(), 1);
+}
+
+#[test]
+fn resolve_valid_keeps_a_token_outside_the_caller_supplied_expiry_buffer() {
+    let mut fixture = Fixture::new();
+    fixture.buffer = 120;
+    let server = FakeServer::new("s1").with_token_url(REFRESH_URL);
+    let cred = credential("old-token", Some("ref-1"), Some(&expires_at(121)));
+    let resolved = resolve_valid(&fixture, &server, Some(&cred)).expect("a credential returns");
+    assert_eq!(exposed(resolved.access_token.as_ref()), Some("old-token"));
+    assert!(fixture.post.calls().is_empty());
+}
+
+#[test]
 fn resolve_valid_returns_none_when_the_refresh_has_no_token_url() {
     let fixture = Fixture::new();
     let server = FakeServer::new("s1");

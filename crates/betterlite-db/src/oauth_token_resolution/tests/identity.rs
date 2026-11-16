@@ -1,9 +1,10 @@
 use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::managed_resource_rows::mcp::{McpOAuth2Flow, McpServerTable};
 use crate::mcp_server_encoding::credentials::CredentialBlob;
 use crate::mcp_stored_contracts::{JsonValue, MCPAuth, MCPCredentials};
-use crate::oauth_token_resolution::identity::decrypted_credential_field;
+use crate::oauth_token_resolution::identity::{DecryptedField, decrypted_credential_field};
 use crate::oauth_token_resolution::mcp_oauth_token_identity;
 use crate::stored_cipher::DbCipher;
 
@@ -44,38 +45,34 @@ fn field(name: &str, value: JsonValue) -> CredentialBlob {
 #[test]
 fn decrypted_credential_field_returns_an_absent_field_as_null() {
     let blob = CredentialBlob::new();
-    assert_eq!(
-        decrypted_credential_field(&blob, "client_id", &cipher()),
-        JsonValue::Null
-    );
+    let decrypted = decrypted_credential_field(&blob, "client_id", &cipher());
+    assert!(matches!(decrypted, DecryptedField::Value(JsonValue::Null)));
 }
 
 #[test]
 fn decrypted_credential_field_keeps_a_non_string_value() {
     let stored = JsonValue::Array(vec![JsonValue::String("value".to_owned())]);
     let blob = field("client_id", stored.clone());
-    assert_eq!(
-        decrypted_credential_field(&blob, "client_id", &cipher()),
-        stored
-    );
+    let decrypted = decrypted_credential_field(&blob, "client_id", &cipher());
+    assert!(matches!(decrypted, DecryptedField::Value(value) if value == stored));
 }
 
 #[test]
 fn decrypted_credential_field_decrypts_a_stored_ciphertext() {
     let cipher = cipher();
     let blob = field("client_id", JsonValue::String(sealed(&cipher, CLIENT_ID)));
-    assert_eq!(
-        decrypted_credential_field(&blob, "client_id", &cipher),
-        JsonValue::String(CLIENT_ID.to_owned())
+    let decrypted = decrypted_credential_field(&blob, "client_id", &cipher);
+    assert!(
+        matches!(&decrypted, DecryptedField::Text(secret) if secret.expose_secret() == CLIENT_ID)
     );
 }
 
 #[test]
 fn decrypted_credential_field_keeps_a_legacy_plaintext_value() {
     let blob = field("client_id", JsonValue::String("plain-client".to_owned()));
-    assert_eq!(
-        decrypted_credential_field(&blob, "client_id", &cipher()),
-        JsonValue::String("plain-client".to_owned())
+    let decrypted = decrypted_credential_field(&blob, "client_id", &cipher());
+    assert!(
+        matches!(&decrypted, DecryptedField::Text(secret) if secret.expose_secret() == "plain-client")
     );
 }
 
@@ -84,10 +81,18 @@ fn decrypted_credential_field_keeps_a_tampered_ciphertext() {
     let cipher = cipher();
     let tampered = format!("{}AAAA", sealed(&cipher, CLIENT_ID));
     let blob = field("client_id", JsonValue::String(tampered.clone()));
-    assert_eq!(
-        decrypted_credential_field(&blob, "client_id", &cipher),
-        JsonValue::String(tampered)
+    let decrypted = decrypted_credential_field(&blob, "client_id", &cipher);
+    assert!(
+        matches!(&decrypted, DecryptedField::Text(secret) if secret.expose_secret() == tampered)
     );
+}
+
+#[test]
+fn decrypted_field_debug_output_redacts_the_plaintext() {
+    let decrypted = DecryptedField::Text(SecretString::from("top-secret"));
+    let debug = format!("{decrypted:?}");
+    assert!(debug.contains("[REDACTED]"));
+    assert!(!debug.contains("top-secret"));
 }
 
 #[test]

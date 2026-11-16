@@ -91,6 +91,8 @@ pub struct TokenServices<'a, A, P, B, H> {
     pub binding: &'a P,
     pub builder: &'a B,
     pub post: &'a H,
+    // LiteLLM's MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS, resolved from config by the caller.
+    pub buffer_seconds: i64,
 }
 
 pub struct AccessTokenRequest<'a, S> {

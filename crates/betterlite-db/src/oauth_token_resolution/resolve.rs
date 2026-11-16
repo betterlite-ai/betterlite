@@ -86,13 +86,13 @@ where
     );
 }
 
-// resolve_valid, then the failure delete and the cache warm that only the non-prefetched path performs.
+// resolve_valid, then the failure delete, the token and the cache warm; the caller passes the user id it already resolved.
 pub(super) async fn resolved<A, P, B, H, C, T>(
     services: &TokenServices<'_, A, P, B, H>,
     cache: &C,
     ttl: &T,
     request: &AccessTokenRequest<'_, P::Server>,
-    cred: &OAuthCredentialPayload,
+    user_id: &str,
 ) -> Option<SecretString>
 where
     A: CredentialRows,
@@ -103,13 +103,13 @@ where
     C: PerUserTokenCache,
     T: PerUserTokenTtl<P::Server>,
 {
-    let user_id = request.user_id?;
     let server_id = request.server.server_id();
+    let cred = credential(services, request, user_id, server_id).await?;
     let resolved = match resolve_valid_user_oauth_token(
         services,
         request.server,
         user_id,
-        Some(cred),
+        Some(&cred),
         request.now,
     )
     .await
@@ -126,7 +126,9 @@ where
     };
     let token = token(&resolved)?;
     if request.prefetched.is_none() {
-        warm(cache, ttl, request, &resolved, &token).await;
+        let remaining = remaining_token_seconds(resolved.expires_at.as_deref(), request.now);
+        let ttl_seconds = ttl.ttl_seconds(request.server, remaining);
+        cache.set(user_id, server_id, &token, ttl_seconds).await;
     }
     Some(token.access_token)
 }
@@ -137,28 +139,6 @@ pub(super) fn token(cred: &OAuthCredentialPayload) -> Option<CachedUserToken> {
         access_token,
         identity_binding_proof: cred.identity_binding_proof.clone(),
     })
-}
-
-// _compute_per_user_token_ttl takes the token's remaining lifetime, which a token without an expiry leaves absent.
-pub(super) async fn warm<C, T, S>(
-    cache: &C,
-    ttl: &T,
-    request: &AccessTokenRequest<'_, S>,
-    cred: &OAuthCredentialPayload,
-    token: &CachedUserToken,
-) where
-    S: TokenServer,
-    C: PerUserTokenCache,
-    T: PerUserTokenTtl<S>,
-{
-    let Some(user_id) = request.user_id else {
-        return;
-    };
-    let remaining = remaining_token_seconds(cred.expires_at.as_deref(), request.now);
-    let ttl_seconds = ttl.ttl_seconds(request.server, remaining);
-    cache
-        .set(user_id, request.server.server_id(), token, ttl_seconds)
-        .await;
 }
 
 // LiteLLM's _remaining_token_seconds: absent, past and unparsable all read as no lifetime, and a naive timestamp is UTC.

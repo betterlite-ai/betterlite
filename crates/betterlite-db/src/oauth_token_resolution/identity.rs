@@ -13,25 +13,32 @@ const DECRYPT_FIELD: DecryptPolicy = DecryptPolicy {
     value: FailureValue::Original,
 };
 
-// LiteLLM's _decrypted_credential_field: a non-string stays as stored, and a string that is not ciphertext comes back unchanged.
+// A decrypted credential field holds a string in a secret, so no Debug output prints it; any other stored value passes through.
+#[derive(Debug)]
+pub enum DecryptedField {
+    Text(SecretString),
+    Value(JsonValue),
+}
+
+// LiteLLM's _decrypted_credential_field: a non-string stays as stored, and a string that is not ciphertext comes back unchanged and still secret.
 #[must_use]
 pub fn decrypted_credential_field(
     creds: &CredentialBlob,
     field: &str,
     cipher: &DbCipher,
-) -> JsonValue {
+) -> DecryptedField {
     let Some(value) = creds.get(field) else {
-        return JsonValue::Null;
+        return DecryptedField::Value(JsonValue::Null);
     };
     let JsonValue::String(text) = value else {
-        return value.clone();
+        return DecryptedField::Value(value.clone());
     };
     let stored = StoredValue::<()>::Text(SecretString::from(text.clone()));
     let Some(StoredValue::Text(plaintext)) = cipher.decrypt_value(stored, field, DECRYPT_FIELD)
     else {
-        return value.clone();
+        return DecryptedField::Text(SecretString::from(text.clone()));
     };
-    JsonValue::String(plaintext.expose_secret().to_owned())
+    DecryptedField::Text(plaintext)
 }
 
 // LiteLLM's tuple of the server fields that decide which upstream token is minted; a change purges the stored per-user tokens.
@@ -95,20 +102,4 @@ pub(super) fn credential_blob(server: &McpServerTable) -> CredentialBlob {
         drop(blob.insert("client_secret".to_owned(), JsonValue::String(sealed)));
     }
     blob
-}
-
-// The decrypted value of a credential field that must be text to matter; absent, null and a non-string all compare as no value.
-pub(super) fn decrypted_text(
-    creds: &CredentialBlob,
-    field: &str,
-    cipher: &DbCipher,
-) -> Option<String> {
-    match decrypted_credential_field(creds, field, cipher) {
-        JsonValue::String(text) => Some(text),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => None,
-    }
 }

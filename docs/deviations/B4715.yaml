@@ -21,8 +21,8 @@ deviations:
   - what: The credential store is passed in, so resolve_valid_user_oauth_token and resolve_user_oauth_access_token never fetch a prisma client themselves and cannot report LiteLLM's "Database not connected" errors; a failing store read or write is a named error from resolve_valid.
     why: betterlite reaches the database through the injected store (Q6) rather than a process-global client, so there is no not-connected state to check. resolve_user_oauth_access_token's outer catch turned LiteLLM's not-connected error into None anyway, and the betterlite path does the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1991-L1994
-  - what: The expiry buffer handed to oauth_grant_state is the constant 60 seconds, where LiteLLM reads MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS from the environment.
-    why: betterlite reads no environment outside its config layer. 60 is LiteLLM's default; passing a configured value belongs to the caller-side wiring that owns the setting (B8622).
+  - what: The expiry buffer handed to oauth_grant_state comes from TokenServices.buffer_seconds, which the caller wiring these functions supplies from betterlite's config, where LiteLLM reads MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS from the environment at the point of use.
+    why: betterlite reads no environment outside its config layer. TOKEN_EXPIRY_BUFFER_SECONDS holds LiteLLM's 60-second default and is only the value the wiring passes when the setting is unset; a configured value reaches oauth_grant_state unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1969-L1974
   - what: refresh_user_oauth_token, resolve_valid_user_oauth_token and resolve_user_oauth_access_token take the current instant as an argument, where LiteLLM calls datetime.now(timezone.utc) inside is_oauth_credential_expired, store_user_oauth_credential and _remaining_token_seconds.
     why: betterlite takes its clock from the caller so one instant serves the whole resolution and tests can pin it.

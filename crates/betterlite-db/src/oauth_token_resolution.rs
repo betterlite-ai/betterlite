@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 use std::future::Future;
 
 use chrono::{DateTime, Utc};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use crate::managed_resource_rows::mcp::McpServerTable;
@@ -27,7 +27,7 @@ use ports::{
     TokenServer, TokenServices,
 };
 
-// LiteLLM's MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS; its 40-character name is longer than the identifier rule allows.
+// LiteLLM's MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS default; the caller passes its configured buffer through TokenServices.
 pub const TOKEN_EXPIRY_BUFFER_SECONDS: i64 = 60;
 
 #[derive(Debug, Error)]
@@ -96,9 +96,14 @@ pub fn mcp_oauth_token_identity(
         authorization_url: server.authorization_url.clone(),
         token_url: server.token_url.clone(),
         registration_url: server.registration_url.clone(),
-        client_id: identity::decrypted_text(&creds, "client_id", cipher),
-        client_secret: identity::decrypted_text(&creds, "client_secret", cipher)
-            .map(SecretString::from),
+        client_id: match identity::decrypted_credential_field(&creds, "client_id", cipher) {
+            identity::DecryptedField::Text(secret) => Some(secret.expose_secret().to_owned()),
+            identity::DecryptedField::Value(_) => None,
+        },
+        client_secret: match identity::decrypted_credential_field(&creds, "client_secret", cipher) {
+            identity::DecryptedField::Text(secret) => Some(secret),
+            identity::DecryptedField::Value(_) => None,
+        },
         scopes: server
             .credentials
             .as_ref()
@@ -221,7 +226,7 @@ where
     let Some(cred) = cred else {
         return Ok(None);
     };
-    let grant = oauth_grant_state(Some(cred), now, TOKEN_EXPIRY_BUFFER_SECONDS);
+    let grant = oauth_grant_state(Some(cred), now, services.buffer_seconds);
     if grant == OAuthGrantState::Absent {
         return Ok(None);
     }
@@ -267,6 +272,5 @@ where
     {
         return Some(token);
     }
-    let cred = resolve::credential(services, request, user_id, server_id).await?;
-    resolve::resolved(services, cache, ttl, request, &cred).await
+    resolve::resolved(services, cache, ttl, request, user_id).await
 }

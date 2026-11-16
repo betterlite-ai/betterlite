@@ -5,6 +5,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use crate::oauth_token_resolution::OauthBindingPort;
+use crate::oauth_token_resolution::TOKEN_EXPIRY_BUFFER_SECONDS;
 use crate::oauth_token_resolution::UserTokenCaches;
 use crate::oauth_token_resolution::ports::{
     CachedUserToken, PerUserTokenCache, PerUserTokenTtl, TokenEndpointPost, TokenRequest,
@@ -20,6 +21,7 @@ pub(super) struct Fixture {
     pub(super) binding: FakeBinding,
     pub(super) builder: FakeBuilder,
     pub(super) post: FakePost,
+    pub(super) buffer: i64,
 }
 
 impl Fixture {
@@ -30,6 +32,7 @@ impl Fixture {
             binding: FakeBinding::default(),
             builder: FakeBuilder::returning(token_request(&[], &[])),
             post: FakePost::returning(text_response(&[("access_token", "new-token")])),
+            buffer: TOKEN_EXPIRY_BUFFER_SECONDS,
         }
     }
 
@@ -42,6 +45,7 @@ impl Fixture {
             binding: &self.binding,
             builder: &self.builder,
             post: &self.post,
+            buffer_seconds: self.buffer,
         }
     }
 }
