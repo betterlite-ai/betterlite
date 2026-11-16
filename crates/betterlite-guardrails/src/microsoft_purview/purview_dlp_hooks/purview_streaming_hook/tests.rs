@@ -8,9 +8,10 @@ use crate::microsoft_purview::purview_dlp_hooks::purview_streaming_hook::{
 };
 use crate::microsoft_purview::purview_dlp_hooks::test_support::{
     Harness, Scan, Script, blocking_actions, data, guardrail_at, hook_context, start,
-    trusted_identity, values,
+    trusted_identity, untrusted_identity, values,
 };
 use crate::purview_dlp_evaluation::error_handling::PurviewDlpHttpError;
+use crate::purview_dlp_evaluation::user_id_blocking::UNTRUSTED_IDENTITY_ERROR;
 use betterlite_logging::verbose_hooks::{ConsoleSink as _, LoggerSink as _};
 use betterlite_redact::structured::Payload;
 use betterlite_streaming::stream_usage_assembly::{UsageTokenCounter as _, wire::Usage};
@@ -274,4 +275,31 @@ async fn seams_stay_silent_and_free() {
             .unwrap(),
         (Decimal::ZERO, Decimal::ZERO)
     );
+}
+
+#[tokio::test]
+async fn rejects_an_identity_the_proxy_did_not_authenticate() {
+    let mock = start(Script::passing());
+    let guardrail = guardrail_at(&mock.base);
+    let mut harness = Harness::new(data(CHAT_REQUEST));
+    let mut context = hook_context(
+        untrusted_identity(),
+        &harness.cache,
+        &harness.redactor,
+        &harness.base,
+        &harness.sink,
+    );
+    let result = async_post_call_streaming_iterator_hook(
+        &guardrail,
+        values(CHAT_CHUNKS),
+        &mut harness.data,
+        &mut context,
+    )
+    .await;
+    let error = http_error(result);
+    assert_eq!(
+        detail(&error, "error").as_deref(),
+        Some(UNTRUSTED_IDENTITY_ERROR)
+    );
+    assert_eq!(mock.process_calls(), 0);
 }
