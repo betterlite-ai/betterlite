@@ -37,7 +37,7 @@ fn records_of(data: &Data) -> Result<Value, Box<HelperError>> {
     }
 }
 
-async fn invoke(
+async fn run_invocation(
     guardrail: &Agent365Guardrail,
     invocation: &Invocation,
     key_alias: Option<&str>,
@@ -69,8 +69,11 @@ pub(super) fn enforcement_result(args: &EnforcementArgs) -> HelperResult {
     let mut outcomes = Vec::new();
     let mut records = Vec::new();
     for invocation in &args.invocations {
-        let (outcome, written) =
-            runtime.block_on(invoke(&guardrail, invocation, args.key_alias.as_deref()))?;
+        let (outcome, written) = runtime.block_on(run_invocation(
+            &guardrail,
+            invocation,
+            args.key_alias.as_deref(),
+        ))?;
         outcomes.push(outcome);
         records.push(written);
     }
