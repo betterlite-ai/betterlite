@@ -1,4 +1,5 @@
 use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_openai::response_input::tools::source_type_name;
 use betterlite_openai::response_input::{ResponsesInput, transform_responses_request};
 use betterlite_prompts::arguments::json::{Json, Object};
 
@@ -41,13 +42,14 @@ fn flattened_tools(options: &Object) -> Result<Object, ResponsesError> {
     };
     let updated = tools
         .iter()
-        .map(flattened_tool)
+        .enumerate()
+        .map(|(index, tool)| flattened_tool(tool, index))
         .collect::<Result<Vec<_>, _>>()?;
     flattened.insert("tools".to_owned(), Json::List(updated));
     Ok(flattened)
 }
 
-fn flattened_tool(tool: &Json) -> Result<Json, ResponsesError> {
+fn flattened_tool(tool: &Json, index: usize) -> Result<Json, ResponsesError> {
     let Json::Object(tool_fields) = tool else {
         return Ok(tool.clone());
     };
@@ -56,7 +58,10 @@ fn flattened_tool(tool: &Json) -> Result<Json, ResponsesError> {
         return Ok(tool.clone());
     };
     let Json::Object(nested_function) = nested else {
-        return Err(ResponsesError::InvalidToolFunction);
+        return Err(ResponsesError::InvalidToolFunction {
+            index,
+            found: source_type_name(&nested),
+        });
     };
     fields.extend(nested_function);
     Ok(Json::Object(fields))

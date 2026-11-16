@@ -1,0 +1,22 @@
+kind: helper
+name: foundry-model-router-unknown-selected-model-fallback
+call:
+  foundry_model_router:
+    readers:
+      - {model: null, hidden_params: null}
+      - {model: null, hidden_params: {azure_model_router_selected_model: azure_ai/provider-sent}}
+      - {model: null, hidden_params: {azure_model_router_selected_model: ""}}
+      - {model: null, hidden_params: {azure_model_router_selected_model: null}}
+      - {model: null, hidden_params: {azure_model_router_selected_model: 7}}
+      - {model: null, hidden_params: {azure_model_router_selected_model: true}}
+      - {model: null, hidden_params: {}}
+      - {model: null, hidden_params: {litellm_model_name: deployment/model_router/underlying}}
+      - {model: null, hidden_params: {model: model-router/hidden}}
+      - {model: null, hidden_params: {litellm_model_name: null, model: model_router/hidden}}
+      - {model: null, hidden_params: {litellm_model_name: 7, model: model_router/hidden}}
+      - {model: model_router/caller, hidden_params: {litellm_model_name: plain-deployment}}
+      - {model: MODEL_ROUTER/caller, hidden_params: null}
+      - {model: agents/model_router/x, hidden_params: null}
+      - {model: plain-deployment, hidden_params: {litellm_model_name: plain-deployment}}
+env: {}
+compare: {ignore: []}
