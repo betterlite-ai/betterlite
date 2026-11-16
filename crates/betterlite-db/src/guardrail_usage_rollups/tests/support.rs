@@ -57,6 +57,25 @@ pub(super) fn shared() -> SharedPendingRollups {
     Arc::new(Mutex::new(PendingRollups::default()))
 }
 
+pub(super) const DATE: &str = "2026-01-02";
+
+pub(super) fn metrics_key(guardrail_id: &str) -> MetricsKey {
+    MetricsKey {
+        guardrail_id: String::from(guardrail_id),
+        date: String::from(DATE),
+    }
+}
+
+pub(super) fn unit_key(guardrail_id: &str, usage_unit: &str) -> UsageUnitKey {
+    UsageUnitKey {
+        guardrail_id: String::from(guardrail_id),
+        date: String::from(DATE),
+        team_id: String::from("team-1"),
+        api_key: String::from("sk-1"),
+        usage_unit: String::from(usage_unit),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("fake rollup failure, retry safe: {retry_safe}")]
 pub(super) struct FakeFailure {
@@ -82,24 +101,25 @@ pub(super) struct FakeSink {
 }
 
 impl FakeSink {
-    pub(super) fn failing_upserts(failures: Vec<Option<FakeFailure>>) -> Self {
+    fn with_failures(
+        upsert_failures: Vec<Option<FakeFailure>>,
+        index_failures: Vec<FakeFailure>,
+    ) -> Self {
         Self {
             index_calls: Mutex::new(Vec::new()),
             metric_calls: Mutex::new(Vec::new()),
             unit_calls: Mutex::new(Vec::new()),
-            upsert_failures: Mutex::new(VecDeque::from(failures)),
-            index_failures: Mutex::new(VecDeque::new()),
+            upsert_failures: Mutex::new(VecDeque::from(upsert_failures)),
+            index_failures: Mutex::new(VecDeque::from(index_failures)),
         }
     }
 
+    pub(super) fn failing_upserts(failures: Vec<Option<FakeFailure>>) -> Self {
+        Self::with_failures(failures, Vec::new())
+    }
+
     pub(super) fn failing_index(failures: Vec<FakeFailure>) -> Self {
-        Self {
-            index_calls: Mutex::new(Vec::new()),
-            metric_calls: Mutex::new(Vec::new()),
-            unit_calls: Mutex::new(Vec::new()),
-            upsert_failures: Mutex::new(VecDeque::new()),
-            index_failures: Mutex::new(VecDeque::from(failures)),
-        }
+        Self::with_failures(Vec::new(), failures)
     }
 
     pub(super) fn index_calls(&self) -> Vec<Vec<GuardrailIndexRow>> {
@@ -119,6 +139,20 @@ impl FakeSink {
 
     fn next_upsert_failure(&self) -> Option<FakeFailure> {
         lock(&self.upsert_failures).pop_front().flatten()
+    }
+
+    fn record_metric(&self, key: &MetricsKey, counts: GuardrailCounts) -> Result<(), FakeFailure> {
+        lock(&self.metric_calls).push((key.clone(), counts));
+        self.next_upsert_failure().map_or(Ok(()), Err)
+    }
+
+    fn record_unit(
+        &self,
+        key: &UsageUnitKey,
+        increment: &UsageUnitIncrement,
+    ) -> Result<(), FakeFailure> {
+        lock(&self.unit_calls).push((key.clone(), *increment));
+        self.next_upsert_failure().map_or(Ok(()), Err)
     }
 }
 
@@ -143,10 +177,7 @@ impl GuardrailRollupSink for FakeSink {
         key: &'row MetricsKey,
         counts: GuardrailCounts,
     ) -> RollupFuture<'row, FakeFailure> {
-        Box::pin(async move {
-            lock(&self.metric_calls).push((key.clone(), counts));
-            self.next_upsert_failure().map_or(Ok(()), Err)
-        })
+        Box::pin(async move { self.record_metric(key, counts) })
     }
 
     fn upsert_units<'row>(
@@ -154,10 +185,7 @@ impl GuardrailRollupSink for FakeSink {
         key: &'row UsageUnitKey,
         increment: &'row UsageUnitIncrement,
     ) -> RollupFuture<'row, FakeFailure> {
-        Box::pin(async move {
-            lock(&self.unit_calls).push((key.clone(), *increment));
-            self.next_upsert_failure().map_or(Ok(()), Err)
-        })
+        Box::pin(async move { self.record_unit(key, increment) })
     }
 }
 

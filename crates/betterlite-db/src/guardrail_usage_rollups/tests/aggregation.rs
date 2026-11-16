@@ -3,24 +3,15 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::guardrail_usage_rollups::{
-    GuardrailCounts, GuardrailSpendLog, MetricsKey, UsageUnitIncrement, UsageUnitKey, rollups,
+    GuardrailCounts, GuardrailSpendLog, MetricsKey, UsageUnitIncrement, rollups,
 };
 
-use super::support::{UnitCall, capture_logs, from_json};
-
-const DATE: &str = "2026-01-02";
+use super::support::{UnitCall, capture_logs, from_json, metrics_key, unit_key};
 
 fn payload_with_entries(entries: &str) -> GuardrailSpendLog {
     from_json(&format!(
         r#"{{"request_id": "req-1", "startTime": "2026-01-02T03:04:05Z", "team_id": "team-1", "api_key": "sk-1", "metadata": {{"guardrail_information": [{entries}]}}}}"#
     ))
-}
-
-fn metrics_key(guardrail_id: &str) -> MetricsKey {
-    MetricsKey {
-        guardrail_id: String::from(guardrail_id),
-        date: String::from(DATE),
-    }
 }
 
 fn counts(requests: i64, passed: i64, blocked: i64, flagged: i64) -> GuardrailCounts {
@@ -29,16 +20,6 @@ fn counts(requests: i64, passed: i64, blocked: i64, flagged: i64) -> GuardrailCo
         passed_count: passed,
         blocked_count: blocked,
         flagged_count: flagged,
-    }
-}
-
-fn unit_key(guardrail_id: &str, usage_unit: &str) -> UsageUnitKey {
-    UsageUnitKey {
-        guardrail_id: String::from(guardrail_id),
-        date: String::from(DATE),
-        team_id: String::from("team-1"),
-        api_key: String::from("sk-1"),
-        usage_unit: String::from(usage_unit),
     }
 }
 

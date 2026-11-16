@@ -2,41 +2,40 @@ use std::time::Duration;
 
 use rust_decimal::Decimal;
 
-use crate::guardrail_usage_rollups::{
-    GuardrailCounts, MetricsKey, RollupRow, UsageUnitIncrement, UsageUnitKey, flush,
+use crate::guardrail_usage_rollups::{GuardrailCounts, RollupRow, UsageUnitIncrement, flush};
+
+use super::support::{
+    FakeSink, NOT_RETRY_SAFE, PauseLog, RETRY_SAFE, capture_logs, metrics_key, unit_key,
 };
 
-use super::support::{FakeSink, NOT_RETRY_SAFE, PauseLog, RETRY_SAFE, capture_logs};
+fn passing_counts() -> GuardrailCounts {
+    GuardrailCounts {
+        requests_evaluated: 1,
+        passed_count: 1,
+        blocked_count: 0,
+        flagged_count: 0,
+    }
+}
+
+fn counted_increment() -> UsageUnitIncrement {
+    UsageUnitIncrement {
+        units: 1,
+        cost: Decimal::ZERO,
+        untracked_units: 1,
+    }
+}
 
 fn metric_row(guardrail_id: &str) -> RollupRow {
     RollupRow::Metrics {
-        key: MetricsKey {
-            guardrail_id: String::from(guardrail_id),
-            date: String::from("2026-01-02"),
-        },
-        counts: GuardrailCounts {
-            requests_evaluated: 1,
-            passed_count: 1,
-            blocked_count: 0,
-            flagged_count: 0,
-        },
+        key: metrics_key(guardrail_id),
+        counts: passing_counts(),
     }
 }
 
 fn unit_row(guardrail_id: &str, usage_unit: &str) -> RollupRow {
     RollupRow::Units {
-        key: UsageUnitKey {
-            guardrail_id: String::from(guardrail_id),
-            date: String::from("2026-01-02"),
-            team_id: String::new(),
-            api_key: String::new(),
-            usage_unit: String::from(usage_unit),
-        },
-        increment: UsageUnitIncrement {
-            units: 1,
-            cost: Decimal::ZERO,
-            untracked_units: 1,
-        },
+        key: unit_key(guardrail_id, usage_unit),
+        increment: counted_increment(),
     }
 }
 
