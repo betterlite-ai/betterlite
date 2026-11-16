@@ -12,7 +12,7 @@ deviations:
   - what: The verbose straiker.webhook_response event logs the raw response text. LiteLLM logs the parsed body re-dumped by json.dumps.
     why: The parsed content is the same; only the JSON formatting of a log line differs, and docs/compatibility.md keeps json.dumps formatting out of the port.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1123-L1127
-  - what: A webhook answer that fails to deserialize carries serde_json's message inside "invalid response schema: ". LiteLLM carries pydantic's ValidationError text.
+  - what: A webhook answer that fails to deserialize carries serde_json's message inside the "invalid response schema" prefix. LiteLLM carries pydantic's ValidationError text.
     why: The failure is still permanent, unreachable false and non-retryable, and the prefix names the same condition. The library's message text is not part of the wire contract.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1119
   - what: The verbose verdict record is written into the request data's response object under _hidden_params.straiker. LiteLLM reads that field with getattr on the response object, so for the dict a proxy call carries it records nothing.
