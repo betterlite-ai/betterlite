@@ -176,15 +176,14 @@ fn get_user_oauth_credential_warns_when_the_row_does_not_decrypt() {
 
 #[test]
 fn byok_guard_allows_a_missing_row() {
-    let guarded = guard_byok_overwrite(&cipher(), None, "u1", "s1");
-    assert!(guarded.is_ok());
+    guard_byok_overwrite(&cipher(), None, "u1", "s1").expect("a missing row passes the guard");
 }
 
 #[test]
 fn byok_guard_allows_an_existing_oauth_payload() {
     let row = credential_row("u1", "s1", ENCRYPTED_OAUTH);
-    let guarded = guard_byok_overwrite(&cipher(), Some(&row), "u1", "s1");
-    assert!(guarded.is_ok());
+    guard_byok_overwrite(&cipher(), Some(&row), "u1", "s1")
+        .expect("an existing OAuth payload passes the guard");
 }
 
 #[test]
@@ -215,8 +214,8 @@ fn byok_guard_refuses_readable_text_that_is_not_a_payload() {
 fn byok_guard_replaces_an_undecryptable_row_with_a_warning() {
     let row = credential_row("u1", "s1", UNDECRYPTABLE);
     let warnings = warnings_during(|| {
-        let guarded = guard_byok_overwrite(&cipher(), Some(&row), "u1", "s1");
-        assert!(guarded.is_ok());
+        guard_byok_overwrite(&cipher(), Some(&row), "u1", "s1")
+            .expect("an undecryptable row passes the guard");
     });
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains("replacing"));
@@ -228,8 +227,8 @@ fn byok_guard_replaces_a_row_that_decodes_to_nothing() {
     block_on(store_user_credential(&table, &cipher(), "u1", "s1", "")).expect("the store runs");
     let row = table.stored().remove(0);
     let warnings = warnings_during(|| {
-        let guarded = guard_byok_overwrite(&cipher(), Some(&row), "u1", "s1");
-        assert!(guarded.is_ok());
+        guard_byok_overwrite(&cipher(), Some(&row), "u1", "s1")
+            .expect("a row that decodes to nothing passes the guard");
     });
     assert_eq!(warnings.len(), 1);
 }
@@ -343,9 +342,9 @@ fn oauth_payload_writes_python_isoformat_timestamps() {
         payload.expires_at.as_deref(),
         Some("2024-01-02T04:04:05.123456+00:00")
     );
-    let payload = super::super::oauth_payload(&request, now()).expect("the payload builds");
+    let whole_second = super::super::oauth_payload(&request, now()).expect("the payload builds");
     assert_eq!(
-        payload.connected_at.as_deref(),
+        whole_second.connected_at.as_deref(),
         Some("2024-01-02T03:04:05+00:00")
     );
 }

@@ -12,7 +12,7 @@ fn credential_type_uses_the_lite_llm_names() {
     let read = serde_json::from_str::<CredentialType>("\"oauth2\"");
     assert_eq!(read.expect("the type reads"), CredentialType::Oauth2);
     let unknown = serde_json::from_str::<CredentialType>("\"anything\"");
-    assert!(unknown.is_err());
+    unknown.expect_err("an unknown credential type is refused");
 }
 
 #[test]

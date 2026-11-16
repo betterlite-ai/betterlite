@@ -69,8 +69,8 @@ fn parse_oauth_payload_returns_none_for_a_byok_key() {
 fn parse_oauth_payload_returns_none_for_values_that_are_not_a_payload_object(
     #[case] decoded: Option<&str>,
 ) {
-    let decoded = decoded.map(secret);
-    let parsed = parse_oauth_payload(decoded.as_ref()).expect("parsing runs");
+    let credential = decoded.map(secret);
+    let parsed = parse_oauth_payload(credential.as_ref()).expect("parsing runs");
     assert!(parsed.is_none());
 }
 

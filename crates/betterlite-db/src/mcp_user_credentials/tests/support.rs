@@ -7,6 +7,8 @@ use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
 use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret, SecretString};
+use tokio::runtime::Builder;
+use tracing::dispatcher::with_default;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::Subscriber;
 use tracing::{Dispatch, Level};
@@ -72,8 +74,11 @@ pub(super) fn credential_row(user_id: &str, server_id: &str, credential: &str) -
     ]))
 }
 
-pub(super) fn block_on<Run: Future>(run: Run) -> Run::Output {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn block_on<Run>(run: Run) -> Run::Output
+where
+    Run: Future,
+{
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("a current-thread runtime builds")
@@ -155,8 +160,7 @@ impl CredentialRows for FakeTable {
 
     #[rustfmt::skip]
     fn delete_credential(&self, user_id: &str, server_id: &str) -> impl Future<Output = Result<(), McpTableError>> + Send {
-        let mut rows = self.rows.lock().expect("the fake rows are not poisoned");
-        rows.retain(|stored| !is_pair(stored, user_id, server_id));
+        self.rows.lock().expect("the fake rows are not poisoned").retain(|stored| !is_pair(stored, user_id, server_id));
         ready(Ok(()))
     }
 }
@@ -218,7 +222,7 @@ where
 {
     let logs = WarnLogs::default();
     let dispatch = Dispatch::new(tracing_subscriber::registry().with(logs.clone()));
-    tracing::dispatcher::with_default(&dispatch, run);
+    with_default(&dispatch, run);
     logs.0
         .lock()
         .expect("the warnings are not poisoned")

@@ -85,8 +85,7 @@ impl CredentialRows for RowStore {
 
     #[rustfmt::skip]
     fn delete_credential(&self, user_id: &str, server_id: &str) -> impl Future<Output = Result<(), McpTableError>> + Send {
-        let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        rows.retain(|stored| !is_pair(stored, user_id, server_id));
+        self.rows.lock().unwrap_or_else(PoisonError::into_inner).retain(|stored| !is_pair(stored, user_id, server_id));
         ready(Ok(()))
     }
 }

@@ -80,11 +80,11 @@ fn tokens() -> (SecretString, SecretString) {
     (SecretString::from("tok-abc"), SecretString::from("ref-1"))
 }
 
-fn oauth_request<'a>(
-    token: &'a SecretString,
-    refresh: &'a SecretString,
+fn oauth_request<'token>(
+    token: &'token SecretString,
+    refresh: &'token SecretString,
     skip_byok_guard: bool,
-) -> StoreOAuthCredential<'a> {
+) -> StoreOAuthCredential<'token> {
     StoreOAuthCredential {
         user_id: "u1",
         server_id: "s1",
@@ -123,7 +123,7 @@ async fn a_byok_credential_round_trips_through_the_table() {
 }
 
 #[tokio::test]
-async fn an_oauth_grant_refuses_a_readable_byok_key_until_the_guard_is_skipped() {
+async fn a_readable_byok_key_is_protected_by_the_byok_guard() {
     let (_fixture, writer) = seeded().await;
     let availability = Availability::default();
     let table = table(&writer, &availability);
@@ -147,6 +147,17 @@ async fn an_oauth_grant_refuses_a_readable_byok_key_until_the_guard_is_skipped()
         .await
         .expect("the read runs");
     assert_eq!(exposed(kept.as_ref()), Some("secret-value"));
+}
+
+#[tokio::test]
+async fn a_skipped_byok_guard_writes_the_oauth_grant_and_lists_it() {
+    let (_fixture, writer) = seeded().await;
+    let availability = Availability::default();
+    let table = table(&writer, &availability);
+    let (token, refresh) = tokens();
+    store_user_credential(&table, &cipher(), "u1", "s1", "secret-value")
+        .await
+        .expect("the BYOK key stores");
     store_user_oauth_credential(
         &table,
         &cipher(),
