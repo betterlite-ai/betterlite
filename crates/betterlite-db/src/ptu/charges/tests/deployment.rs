@@ -6,8 +6,7 @@ use rust_decimal::Decimal;
 use super::support::{data, info, moment};
 use crate::budget_permission_rows::JsonData;
 use crate::ptu::charges::deployment::{
-    RouterEntry, StoredModel, config_deployments, parse_ptu_model, router_deployment,
-    scan_deployments,
+    RouterEntry, StoredModel, config_deployments, parse_ptu_model, scan_deployments,
 };
 
 const TERMS: &str = r#"{"ptu_count": 2, "cost_per_ptu_per_hour": 0.5, "team_id": "team-1", "ptu_effective_from": "2026-01-01T00:00:00Z"}"#;
@@ -85,7 +84,7 @@ fn an_empty_model_id_survives_parsing() {
 #[case::null(r#"{"id": null, "model_name": "n"}"#)]
 #[case::nonobject(r#"{"id": {"value": "x"}}"#)]
 fn router_entries_need_a_nonempty_string_id(#[case] model_info: &str) {
-    assert!(router_deployment(&entry("n", model_info)).is_none());
+    assert!(config_deployments(&[entry("n", model_info)], &BTreeSet::new()).is_empty());
 }
 
 #[test]
@@ -94,7 +93,8 @@ fn router_entries_accept_a_json_text_model_info() {
         model_name: "n".to_owned(),
         model_info: JsonData::String(r#"{"id": "model-a", "ptu_count": 2}"#.to_owned()),
     };
-    let deployment = router_deployment(&router_entry).unwrap();
+    let deployments = config_deployments(&[router_entry], &BTreeSet::new());
+    let deployment = deployments.first().unwrap();
     assert_eq!(deployment.model_id, "model-a");
     assert_eq!(
         deployment.model_info.get("ptu_count"),
@@ -105,7 +105,8 @@ fn router_entries_accept_a_json_text_model_info() {
 #[test]
 fn a_router_snapshot_does_not_follow_later_edits() {
     let mut router_entry = entry("n", r#"{"id": "model-a", "ptu_count": 2}"#);
-    let deployment = router_deployment(&router_entry).unwrap();
+    let deployments = config_deployments(std::slice::from_ref(&router_entry), &BTreeSet::new());
+    let deployment = deployments.first().unwrap();
     router_entry.model_info = data(r#"{"id": "model-a", "ptu_count": 9}"#);
     assert_eq!(
         deployment.model_info.get("ptu_count"),

@@ -102,10 +102,10 @@ pub async fn existing_sentinel_keys<C>(
 where
     C: GenericClient + Sync,
 {
-    let start = start.to_string();
-    let end = end.to_string();
+    let start_text = start.to_string();
+    let end_text = end.to_string();
     let rows = client
-        .query(LOOKUP_SQL, &[&PTU_SENTINEL_API_KEY, &start, &end])
+        .query(LOOKUP_SQL, &[&PTU_SENTINEL_API_KEY, &start_text, &end_text])
         .await
         .map_err(|error| StoreError::Lookup(backend(error)))?;
     rows.iter()

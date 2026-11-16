@@ -47,13 +47,16 @@ pub fn active_hours_on_day(model: &PtuModel, day: NaiveDate) -> Result<Decimal, 
     if end <= start {
         return Ok(Decimal::ZERO);
     }
+    let overflow = || ChargeError::AmountOverflow {
+        team_id: model.team_id.clone(),
+        model_id: model.model_id.clone(),
+        day,
+    };
     let overlap = end.signed_duration_since(start);
-    let micros = overlap
-        .num_microseconds()
-        .ok_or_else(|| ChargeError::amount_overflow(model, day))?;
+    let micros = overlap.num_microseconds().ok_or_else(overflow)?;
     Decimal::from(micros)
         .checked_div(Decimal::from(MICROS_PER_HOUR))
-        .ok_or_else(|| ChargeError::amount_overflow(model, day))
+        .ok_or_else(overflow)
 }
 
 pub fn daily_flat_cost(model: &PtuModel, day: NaiveDate) -> Result<Decimal, ChargeError> {
@@ -61,7 +64,11 @@ pub fn daily_flat_cost(model: &PtuModel, day: NaiveDate) -> Result<Decimal, Char
     Decimal::from(model.ptu_count)
         .checked_mul(model.cost_per_ptu_per_hour)
         .and_then(|amount| amount.checked_mul(hours))
-        .ok_or_else(|| ChargeError::amount_overflow(model, day))
+        .ok_or_else(|| ChargeError::AmountOverflow {
+            team_id: model.team_id.clone(),
+            model_id: model.model_id.clone(),
+            day,
+        })
 }
 
 #[must_use]
@@ -93,19 +100,8 @@ fn day_bounds(day: NaiveDate) -> Result<(DateTime<Utc>, DateTime<Utc>), ChargeEr
     let next = day
         .checked_add_days(Days::new(1))
         .ok_or(ChargeError::DayOverflow { day })?;
-    Ok((utc_midnight(day), utc_midnight(next)))
-}
-
-fn utc_midnight(day: NaiveDate) -> DateTime<Utc> {
-    day.and_time(NaiveTime::MIN).and_utc()
-}
-
-impl ChargeError {
-    fn amount_overflow(model: &PtuModel, day: NaiveDate) -> Self {
-        Self::AmountOverflow {
-            team_id: model.team_id.clone(),
-            model_id: model.model_id.clone(),
-            day,
-        }
-    }
+    Ok((
+        day.and_time(NaiveTime::MIN).and_utc(),
+        next.and_time(NaiveTime::MIN).and_utc(),
+    ))
 }

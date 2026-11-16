@@ -29,11 +29,6 @@ pub struct LoadedDeployments {
     pub scanned_ids: BTreeSet<String>,
 }
 
-pub fn router_deployment(entry: &RouterEntry) -> Option<Deployment> {
-    let model_info = decode_ptu_model_info(&entry.model_info)?;
-    deployment_of(model_info, &entry.model_name)
-}
-
 #[must_use]
 pub fn config_deployments(
     entries: &[RouterEntry],

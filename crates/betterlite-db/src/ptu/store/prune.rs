@@ -57,11 +57,16 @@ where
     let date = day.to_string();
     let mut deleted: u64 = 0;
     for chunk in prune_chunks(&date, cutoff, scanned_ids) {
-        let cutoff = chunk.cutoff.naive_utc();
+        let cutoff_naive = chunk.cutoff.naive_utc();
         let rows = client
             .execute(
                 PRUNE_SQL,
-                &[&chunk.date, &PTU_SENTINEL_API_KEY, &cutoff, &chunk.models],
+                &[
+                    &chunk.date,
+                    &PTU_SENTINEL_API_KEY,
+                    &cutoff_naive,
+                    &chunk.models,
+                ],
             )
             .await
             .map_err(|error| StoreError::Prune(backend(error)))?;

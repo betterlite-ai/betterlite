@@ -1,7 +1,6 @@
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::ptu::charges::deployment::RouterEntry;
-use betterlite_db::ptu::charges::pricing::{ChargeError, PtuCharge, PtuModel};
-use betterlite_db::ptu::store::StoreError;
+use betterlite_db::ptu::charges::pricing::{PtuCharge, PtuModel};
 use betterlite_oracle_helper_api::error::HelperError;
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
@@ -10,10 +9,10 @@ use serde_json::{Value, json};
 
 use super::{EntryInput, ModelInput};
 
-pub(super) fn parsed_models(models: &[ModelInput]) -> Result<Vec<PtuModel>, Box<HelperError>> {
+pub(super) fn parsed_models(inputs: &[ModelInput]) -> Result<Vec<PtuModel>, Box<HelperError>> {
     let mut parsed: Vec<PtuModel> = Vec::new();
-    for model in models {
-        parsed.push(ptu_model(model)?);
+    for input in inputs {
+        parsed.push(ptu_model(input)?);
     }
     Ok(parsed)
 }
@@ -50,7 +49,7 @@ pub(super) fn parsed_value(model: &PtuModel) -> Result<Value, Box<HelperError>> 
         "ptu_count": model.ptu_count,
         "cost_per_ptu_per_hour": rate,
         "effective_from_micros": model.effective_from.timestamp_micros(),
-        "effective_to_micros": model.effective_to.map(micros_of),
+        "effective_to_micros": model.effective_to.map(|instant| instant.timestamp_micros()),
     }))
 }
 
@@ -64,18 +63,6 @@ pub(super) fn charge_value(charge: &PtuCharge) -> Result<Value, Box<HelperError>
     }))
 }
 
-pub(super) fn amount_value(amount: Decimal) -> Result<Value, Box<HelperError>> {
-    Ok(json!(float_value(amount)?))
-}
-
-pub(super) fn charge_failure(error: ChargeError) -> Box<HelperError> {
-    value_error(error.to_string())
-}
-
-pub(super) fn store_failure(error: StoreError) -> Box<HelperError> {
-    value_error(error.to_string())
-}
-
 pub(super) fn utc_instant(micros: i64) -> Result<DateTime<Utc>, Box<HelperError>> {
     DateTime::<Utc>::from_timestamp_micros(micros)
         .ok_or_else(|| value_error(format!("instant {micros} is outside the supported range")))
@@ -86,17 +73,13 @@ pub(super) fn utc_day(text: &str) -> Result<NaiveDate, Box<HelperError>> {
         .map_err(|error| value_error(format!("day '{text}': {error}")))
 }
 
-fn micros_of(instant: DateTime<Utc>) -> i64 {
-    instant.timestamp_micros()
-}
-
-fn float_value(amount: Decimal) -> Result<f64, Box<HelperError>> {
+pub(super) fn float_value(amount: Decimal) -> Result<f64, Box<HelperError>> {
     amount
         .to_f64()
         .ok_or_else(|| value_error(format!("amount {amount} does not fit an f64")))
 }
 
-fn value_error(message: String) -> Box<HelperError> {
+pub(super) fn value_error(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,

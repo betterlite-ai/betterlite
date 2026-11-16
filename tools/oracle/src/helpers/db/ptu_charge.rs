@@ -13,8 +13,8 @@ use betterlite_oracle_helper_api::error::HelperError;
 use serde_json::{Value, json};
 
 use self::values::{
-    amount_value, charge_failure, charge_value, parsed_models, parsed_value, ptu_model,
-    router_entry, store_failure, utc_day, utc_instant,
+    charge_value, float_value, parsed_models, parsed_value, ptu_model, router_entry, utc_day,
+    utc_instant, value_error,
 };
 
 mod values;
@@ -146,21 +146,24 @@ fn parse_answer(
     parsed_value(&model)
 }
 
-fn hours_answer(model: &ModelInput, day: &str) -> Result<Value, Box<HelperError>> {
-    let model = ptu_model(model)?;
-    let hours = active_hours_on_day(&model, utc_day(day)?).map_err(charge_failure)?;
-    amount_value(hours)
+fn hours_answer(input: &ModelInput, day: &str) -> Result<Value, Box<HelperError>> {
+    let model = ptu_model(input)?;
+    let hours = active_hours_on_day(&model, utc_day(day)?)
+        .map_err(|error| value_error(error.to_string()))?;
+    Ok(json!(float_value(hours)?))
 }
 
-fn cost_answer(model: &ModelInput, day: &str) -> Result<Value, Box<HelperError>> {
-    let model = ptu_model(model)?;
-    let cost = daily_flat_cost(&model, utc_day(day)?).map_err(charge_failure)?;
-    amount_value(cost)
+fn cost_answer(input: &ModelInput, day: &str) -> Result<Value, Box<HelperError>> {
+    let model = ptu_model(input)?;
+    let cost =
+        daily_flat_cost(&model, utc_day(day)?).map_err(|error| value_error(error.to_string()))?;
+    Ok(json!(float_value(cost)?))
 }
 
-fn aggregate_answer(models: &[ModelInput], day: &str) -> Result<Value, Box<HelperError>> {
-    let models = parsed_models(models)?;
-    let charges = aggregate_charges(&models, utc_day(day)?).map_err(charge_failure)?;
+fn aggregate_answer(inputs: &[ModelInput], day: &str) -> Result<Value, Box<HelperError>> {
+    let models = parsed_models(inputs)?;
+    let charges = aggregate_charges(&models, utc_day(day)?)
+        .map_err(|error| value_error(error.to_string()))?;
     let mut values: Vec<Value> = Vec::new();
     for charge in &charges {
         values.push(charge_value(charge)?);
@@ -181,14 +184,14 @@ fn config_answer(entries: &[EntryInput], owned_by_db: &[String]) -> Value {
     Value::Array(values)
 }
 
-fn lapsed_answer(models: &[ModelInput], now_micros: i64) -> Result<Value, Box<HelperError>> {
-    let models = parsed_models(models)?;
+fn lapsed_answer(inputs: &[ModelInput], now_micros: i64) -> Result<Value, Box<HelperError>> {
+    let models = parsed_models(inputs)?;
     let names = lapsed_models(&models, utc_instant(now_micros)?);
     Ok(json!(names))
 }
 
-fn backfill_answer(models: &[ModelInput], end: &str) -> Result<Value, Box<HelperError>> {
-    let models = parsed_models(models)?;
+fn backfill_answer(inputs: &[ModelInput], end: &str) -> Result<Value, Box<HelperError>> {
+    let models = parsed_models(inputs)?;
     let days: Vec<String> = backfill_window(&models, utc_day(end)?)
         .iter()
         .map(ToString::to_string)
@@ -201,7 +204,8 @@ fn prune_answer(
     run_started_micros: i64,
     scanned_ids: &[String],
 ) -> Result<Value, Box<HelperError>> {
-    let cutoff = prune_cutoff(utc_instant(run_started_micros)?).map_err(store_failure)?;
+    let cutoff = prune_cutoff(utc_instant(run_started_micros)?)
+        .map_err(|error| value_error(error.to_string()))?;
     let scanned: BTreeSet<String> = scanned_ids.iter().cloned().collect();
     let mut values: Vec<Value> = Vec::new();
     for chunk in prune_chunks(date, cutoff, &scanned) {
