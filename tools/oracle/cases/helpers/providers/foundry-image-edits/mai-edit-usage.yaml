@@ -1,0 +1,13 @@
+kind: helper
+name: foundry-image-edits-mai-edit-usage
+call:
+  foundry_image_edits:
+    replies:
+      - {body: '{"created": 7, "data": [{"b64_json": "aGk="}], "usage": {"num_input_text_tokens": 3, "num_input_image_tokens": 4, "output_image_tokens": 5}}'}
+      - {body: '{"data": []}'}
+      - {body: '{"created": 1, "usage": null}'}
+      - {body: '{"usage": {"input_tokens": 2, "output_tokens": 3}}'}
+      - {body: '{"data": [{"url": "https://example.test/i.png", "revised_prompt": "r"}], "size": "1024x1024"}'}
+      - {body: '<html>bad gateway</html>', status: 502}
+env: {}
+compare: {ignore: []}

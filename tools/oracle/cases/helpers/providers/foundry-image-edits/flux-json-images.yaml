@@ -1,0 +1,18 @@
+kind: helper
+name: foundry-image-edits-flux-json-images
+call:
+  foundry_image_edits:
+    transforms:
+      - {model: FLUX.2-pro, prompt: draw, images: [{kind: bytes, text: "text one"}, {kind: bytes, text: "text two"}, {kind: bytes, text: "text three"}], options: {input_image: null, n: 2, size: 1024x1024}}
+      - {model: FLUX.2-pro, images: [{kind: bytes, text: "one"}], options: {}}
+      - {model: FLUX.2-pro, prompt: draw, options: {}}
+      - {model: FLUX.2-pro, prompt: draw, images: [], options: {}}
+      - {model: FLUX.2-pro, prompt: draw, images: [{kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}], options: {}}
+      - {model: FLUX.2-pro, prompt: draw, images: [{kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}], options: {}}
+      - {model: FLUX-2-flex, prompt: draw, images: [{kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}], options: {}}
+      - {model: FLUX-2-flex, prompt: draw, images: [{kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}, {kind: bytes, text: "image"}], options: {}}
+      - {model: FLUX.2-pro, prompt: draw, image: {kind: bytes, text: only}, options: {num_images: 1}}
+      - {model: FLUX.2-pro, prompt: draw, images: [{kind: bytes, text: "text one"}, {kind: bytes, text: "text two"}, {kind: bytes, text: "text three"}], options: {n: 1, size: 1024x1024}}
+      - {model: gpt-image-1, prompt: draw, images: [{kind: bytes, text: "one"}], options: {}}
+env: {}
+compare: {ignore: []}
