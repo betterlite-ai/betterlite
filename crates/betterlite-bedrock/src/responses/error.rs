@@ -33,7 +33,6 @@ pub enum ResponsesError {
     Signing(#[from] SigningError),
 }
 
-// The OpenAI base builds a blank response, which drops x-amzn-RequestId, so this keeps the reply's headers
 pub fn error_from_reply(
     status_code: u16,
     message: &str,

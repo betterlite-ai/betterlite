@@ -24,7 +24,6 @@ pub fn complete_url(params: CompleteUrlParams<'_>) -> Result<String, ResponsesEr
         environment_region: params.region_inputs.environment_region,
         session_region: params.region_inputs.session_region,
     })?;
-    // The shared builder keeps the partition's DNS suffix: amazonaws.com.cn in China, others in GovCloud and ISO
     let host = [
         params.api_base,
         params.aws_bedrock_runtime_endpoint,

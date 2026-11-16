@@ -7,10 +7,8 @@ use crate::responses::error::ResponsesError;
 
 pub const CUSTOM_LLM_PROVIDER: ProviderId = ProviderId::Bedrock;
 
-// bedrock-runtime runs no server-side tools, so file search is never native
 pub const SUPPORTS_NATIVE_FILE_SEARCH: bool = false;
 
-// One fetcher serves LiteLLM's sync and async image callables: convert_url is the first, convert_urls the second
 pub struct BedrockResponsesConfig<Source> {
     pub fetcher: Source,
 }

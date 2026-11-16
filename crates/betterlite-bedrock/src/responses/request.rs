@@ -26,7 +26,6 @@ fn remote_urls_within_limit(input: &ResponsesInput) -> Result<Vec<String>, Respo
     Ok(urls)
 }
 
-// One convert_url per distinct URL in first-seen order, all before anything reaches the transport
 pub async fn transform_responses_request<Source>(
     fetcher: &Source,
     model: &str,
@@ -46,7 +45,6 @@ where
     transform_inlined_request(model, &inlined_input, params, model_info)
 }
 
-// One convert_urls call carries every distinct URL and answers in input order
 pub async fn async_transform_responses<Source>(
     fetcher: &Source,
     model: &str,
