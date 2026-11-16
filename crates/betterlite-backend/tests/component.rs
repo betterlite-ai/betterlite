@@ -71,7 +71,7 @@ struct Server {
 }
 
 fn terminate(mut server: Server) -> Option<i32> {
-    let mut child = server.child.take().unwrap();
+    let mut child = server.child.take()?;
     kill(
         Pid::from_raw(i32::try_from(child.id()).unwrap()),
         Signal::SIGTERM,
