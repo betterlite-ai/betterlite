@@ -1,0 +1,24 @@
+task: B4062
+deviations:
+  - what: POST, PUT and PATCH answer with the prompt spec with litellm_params.api_key replaced by the mask "********"; the database row keeps the real key.
+    why: LiteLLM returns the stored api_key in clear text in every response of these routes, which hands a secret back to any proxy admin session and into every client log that records the body; the registry and the database still hold the real key, so prompt calls are unaffected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L680-L682
+  - what: The registry, the callback manager and the database table reach the routes through a PromptWriteState built by the caller, where LiteLLM imports the module-level IN_MEMORY_PROMPT_REGISTRY and the proxy_server prisma_client at each request.
+    why: Module-level state is banned; the one registry the server shares with config load and the chat prompt hooks is handed in, and a missing database is the state's table being None, which answers LiteLLM's 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L621-L622
+  - what: A request body that does not fit the Prompt or PatchPromptRequest model answers 422 with a one-item detail list whose type is always value_error and whose loc starts with body, where FastAPI names a more specific type such as missing or json_invalid.
+    why: Clients branch on the 422 status and read the message; betterlite writes its own message text and does not reproduce pydantic's error catalogue.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L193-L196
+  - what: A registry that cannot initialize or reload a prompt answers 500 with the registry's own error text (for example "Unsupported prompt: unknown"), where LiteLLM answers 500 with "Failed to initialize prompt", "Failed to update prompt" or "Failed to patch prompt".
+    why: The registry returns a typed error instead of None, so the cause is kept and reported; the status is the same and the database write stays, as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L677-L682
+kept_bugs:
+  - what: When the registry cannot initialize or reload a prompt after the database write succeeded, the route answers 500 and leaves the new or changed row in the database; the next restart loads it again.
+    why: Working setups can rely on the row surviving a registry failure, since a later fix of the integration makes it load without a second write; rolling back would also hide which row failed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L677-L682
+  - what: POST /prompts never checks has_config_prompt, so it adds a new version row under a prompt id that a config prompt already uses, where PUT, PATCH and DELETE refuse with 400.
+    why: A working setup can create database versions next to a config prompt of the same name, and refusing would break that call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L621-L662
+  - what: Two concurrent POST or PUT calls for the same prompt id and environment read the same latest version and both try to write the next one, so one of them fails on the database's unique key and answers 500.
+    why: LiteLLM allocates the version with a read followed by a create, and the unique key is the only guard; betterlite keeps the same two steps so the stored version numbers match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L635-L641
