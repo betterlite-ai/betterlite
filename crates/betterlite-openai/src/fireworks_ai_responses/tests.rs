@@ -635,7 +635,7 @@ fn a_non_string_instruction_is_kept_and_only_developers_are_renamed() {
 #[test]
 fn the_instructions_entry_moves_to_the_end_of_the_params() {
     let body = transformed(
-        "hello",
+        r#""hello""#,
         r#"{"temperature": 1, "instructions": "i", "max_output_tokens": 3}"#,
     );
     assert_eq!(
