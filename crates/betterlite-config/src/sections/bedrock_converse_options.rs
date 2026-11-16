@@ -7,7 +7,7 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
 // LiteLLM's AmazonConverseConfig annotates every field None and stores only the values a caller passes.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 pub struct ConverseOptionValues {
     #[serde(rename = "maxTokens")]
     pub max_tokens: Option<i64>,
