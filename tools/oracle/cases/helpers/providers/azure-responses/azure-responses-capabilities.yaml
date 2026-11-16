@@ -20,6 +20,7 @@ call:
       text_models: []
       drop_params: false
     models: [azure/gpt-5]
+    o_series_steps: []
     map_steps:
       - model: gpt-5
         params: {temperature: 0.2, reasoning: {effort: high}, top_p: 0.9}

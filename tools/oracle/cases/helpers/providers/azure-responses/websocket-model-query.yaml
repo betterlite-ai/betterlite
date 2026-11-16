@@ -14,3 +14,8 @@ call:
       - api_base: "https://h/deployments/d?x=1#y"
       - api_base: http://host:8080/foo/
       - api_base: wss://host/base
+      - api_base: https://h/a%2Fb
+      - api_base: https://h/openai%2Fresponses
+      - api_base: https://h/a%3Fb
+      - api_base: https://h/a%23b
+      - api_base: http://h/a%252Fb

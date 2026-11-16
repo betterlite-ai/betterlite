@@ -20,6 +20,7 @@ call:
       text_models: []
       drop_params: false
     models: [o3, o3-mini, azure/O_SERIES-x, gpt-4o, deepseek-r1, azure/o3]
+    map_steps: []
     o_series_steps:
       - model: o3
         params: {temperature: 0.2, top_p: 0.9}
