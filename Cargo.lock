@@ -2642,6 +2642,7 @@ name = "betterlite-oracle-auth"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "axum",
  "betterlite-auth",
  "betterlite-cache",
  "betterlite-config",
