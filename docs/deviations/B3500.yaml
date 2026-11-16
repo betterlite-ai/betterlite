@@ -1,0 +1,42 @@
+task: B3500
+deviations:
+  - what: >-
+      adelete and acancel run their own HTTP exchange directly instead of executing the sync delete or cancel in
+      the loop's default executor under contextvars.copy_context.
+    why: >-
+      Rust has neither the GIL nor contextvars, and the request, the transforms and the result are the same on both
+      paths; the two forms exist only because LiteLLM reuses the sync function from its async wrapper.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L486-L491
+  - what: >-
+      adelete sets its adelete_interaction kwarg and acancel its acancel_interaction one only in the sense that a
+      caller-supplied flag is popped before GenericLiteLLMParams sees it; the async and sync entry points are
+      separate functions, so nothing reads the flag to choose a path and no entry point returns either a result or
+      a coroutine.
+    why: >-
+      LiteLLM's sync delete and cancel pop the flag into _is_async and are annotated to return either the model or a
+      coroutine; Rust cannot return either type, so the async transport is chosen by which function the caller calls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L519-L521
+  - what: >-
+      The provider config and its HTTP handler, the logging state, the redactor and adelete's settlement registry
+      and fetch are injected into each entry point, where LiteLLM reads litellm_logging_obj out of kwargs, builds
+      the provider config from a registry table and keeps running polls in the module-level _ACTIVE_POLLS map.
+    why: >-
+      betterlite forbids globals and passes dependencies through constructors; a call without a logging object,
+      which LiteLLM fails on at its update_from_kwargs call, cannot be expressed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L519-L523
+  - what: >-
+      timeout arrives as an already parsed Duration and the fallback as B198's resolved RequestTimeout, where
+      LiteLLM forwards the float or httpx.Timeout and lets the HTTP handler write `timeout or request_timeout`.
+    why: >-
+      httpx.Timeout's per-phase connect, read and write values have no betterlite counterpart; the SDK layer above
+      parses the declared float before the call, and a REQUEST_TIMEOUT that is not a usable duration is refused
+      only when no explicit timeout replaces it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L521-L526
+  - what: >-
+      Both Vertex AI provider names use ProviderId::VertexAi as the async client's cache key, where LiteLLM keys
+      get_async_httpx_client by the exact LlmProviders member and so caches vertex_ai and vertex_ai_beta apart.
+    why: >-
+      Both names build the same client configuration, so the only difference is one cache entry that no caller can
+      observe.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L461-L463
+kept_bugs: []
