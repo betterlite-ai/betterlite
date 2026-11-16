@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::thread::Builder;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -144,15 +145,23 @@ fn loads_settings(
 // serde-saphyr stops a YAML document at 64 nesting levels, below LiteLLM's default depth of 100
 #[test]
 fn resolves_references_through_the_deepest_mapping_yaml_allows() {
-    let environment = [("GATEWAY_URL", "https://gateway.example")];
-    let settings = load(&nested_settings_yaml(60), &environment).unwrap();
-    assert_eq!(
-        settings.managed_settings,
-        Some(nested_expected(
-            60,
-            Json::Text("https://gateway.example".to_owned())
-        ))
-    );
+    // the 60-level parse and the derived copy and drop recurse, and the mutants runner's 2 MiB test thread is too small for them
+    Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(|| {
+            let environment = [("GATEWAY_URL", "https://gateway.example")];
+            let settings = load(&nested_settings_yaml(60), &environment).unwrap();
+            assert_eq!(
+                settings.managed_settings,
+                Some(nested_expected(
+                    60,
+                    Json::Text("https://gateway.example".to_owned())
+                ))
+            );
+        })
+        .expect("the deep document runs on its own thread")
+        .join()
+        .expect("the deep document loads without a stack overflow");
 }
 
 #[test]
