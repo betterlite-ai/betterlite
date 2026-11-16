@@ -50,7 +50,8 @@ pub(super) fn catalog_report(call: &CatalogCall) -> Value {
         api_key: key.as_ref(),
         api_base: call.api_base.as_deref(),
     };
-    json!({"models": get_models(credentials)})
+    let models = get_models(credentials);
+    json!({"models": models})
 }
 
 pub(super) fn token_report(model: Option<&str>) -> Value {
@@ -62,22 +63,29 @@ pub(super) fn token_report(model: Option<&str>) -> Value {
 }
 
 pub(super) fn version_report(call: &VersionCall) -> Value {
-    json!({
-        "api_version": get_api_version(
-            call.api_version.as_deref(),
-            call.global_api_version.as_deref(),
-            version_environment(&call.environment),
-        ),
-    })
+    api_version_report(
+        call.api_version.as_deref(),
+        call.global_api_version.as_deref(),
+        version_environment(&call.environment),
+    )
 }
 
 pub(super) fn property_report(call: &PropertyCall) -> Value {
+    api_version_report(
+        None,
+        call.global_api_version.as_deref(),
+        version_environment(&call.environment),
+    )
+}
+
+// LiteLLM's get_api_version prefers the explicit argument, then litellm.api_version, then the env
+fn api_version_report(
+    explicit: Option<&str>,
+    global: Option<&str>,
+    environment: Option<&str>,
+) -> Value {
     json!({
-        "api_version": get_api_version(
-            None,
-            call.global_api_version.as_deref(),
-            version_environment(&call.environment),
-        ),
+        "api_version": get_api_version(explicit, global, environment),
     })
 }
 
