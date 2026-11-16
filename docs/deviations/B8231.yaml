@@ -12,4 +12,11 @@ deviations:
       error's Display text instead of a Python exception repr.
     why: the line is a log, not a wire contract, and the caller only sees the same false answer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L89-L93
+  - what: >-
+      The budget refusal warning says "registry read-through skipped: the resync budget is exhausted" with three
+      structured fields (key, max_resyncs, window_seconds), not LiteLLM's printf message with %r and %ss.
+    why: >-
+      The same facts reach the log, the grep-friendly fields are the betterlite convention, and no caller sees a
+      difference: a refusal still returns false without remembering the miss.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L81-L88
 kept_bugs: []
