@@ -219,7 +219,7 @@ async fn extra_headers_replace_the_validated_headers_and_the_polling_key() {
 #[rstest]
 #[case("bad name", "value")]
 #[case("x-trace", "bad\nvalue")]
-#[case("x-trace", "caf\u{e9}")]
+#[case("x-trace", "trace-\u{e9}")]
 #[tokio::test]
 async fn an_extra_header_the_wire_cannot_carry_is_a_500_before_the_submission(
     #[case] name: &str,

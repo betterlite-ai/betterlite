@@ -66,7 +66,7 @@ impl SubmitTransport for Script<'_> {
             "effect": "post",
             "url": request.url.to_string(),
             "headers": header_object(&request.headers),
-            "body": request.body.clone(),
+            "body": request.body,
             "timeout_millis": request
                 .timeout
                 .map(|timeout| u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX)),
@@ -98,7 +98,7 @@ pub(super) struct Timeline<'effects> {
 }
 
 impl<'effects> Timeline<'effects> {
-    pub(super) fn new(settings: &ClockSettings, effects: &'effects Effects) -> Self {
+    pub(super) const fn new(settings: &ClockSettings, effects: &'effects Effects) -> Self {
         Self {
             millis: AtomicU64::new(settings.start),
             tick: settings.tick,
