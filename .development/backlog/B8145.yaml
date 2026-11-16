@@ -1,7 +1,7 @@
 id: B8145
 milestone: M11 distribution
 title: "GCP Terraform module: secrets, service accounts and buckets"
-status: todo
+status: done
 depends_on: [B8144]
 file: tasks/B8145-gcp-identity-storage.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "terraform/litellm/gcp/gcs.tf"
 parent: B154
 split_from: B154
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2175

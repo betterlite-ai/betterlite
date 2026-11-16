@@ -1,0 +1,93 @@
+id: B9977
+title: Presidio stream masking is bounded and masks Anthropic tool input
+description: >-
+  B3807's review found two LiteLLM bugs that B3807 copies in crates/betterlite-guardrails/src/presidio_streams.
+  Both are fixed here, each with a deviation row.
+
+
+  First, a PII leak. mask_anthropic_sse_stream (mask_anthropic.rs) decides whether masking changed anything by
+  comparing model_response_text before and after process_response_for_pii, as LiteLLM does at presidio.py
+  L1514-L1518. process_response_for_pii also masks tool call and legacy function_call arguments (presidio.py
+  L1367-L1398), so an Anthropic stream whose text is empty or unchanged while a tool_use input carries an entity
+  counts as unmasked, and the raw frames go to the client with the entity in them. The check compares the whole
+  assembled response before and after masking (a clone and an equality check, or process_response_for_pii
+  reporting whether it changed anything), so tool-argument masking also rebuilds the frames through the
+  anthropic_sse chunks helper.
+
+
+  Second, unbounded buffers. stream_apply_output_masking (mask.rs, all_chunks), stream_pii_unmasking (unmask.rs,
+  remaining) and the Anthropic drain in mask_anthropic.rs keep every provider chunk for the whole stream, so a
+  provider can make the gateway allocate without limit. Each buffer takes betterlite_core's RetentionBudget over
+  ApiLimits::default() (max_json_bytes and max_items), the way noma_lifecycle/streaming.rs buffer_stream does,
+  and PresidioStreamError gains an OverBudget variant that both entry points return instead of flushing what
+  they buffered.
+scope:
+  paths:
+  - crates/betterlite-guardrails/src/presidio_streams.rs
+  - crates/betterlite-guardrails/src/presidio_streams/mask.rs
+  - crates/betterlite-guardrails/src/presidio_streams/mask_anthropic.rs
+  - crates/betterlite-guardrails/src/presidio_streams/unmask.rs
+  - crates/betterlite-guardrails/src/presidio_streams/error.rs
+  - crates/betterlite-guardrails/src/presidio_streams/budget.rs
+  - crates/betterlite-guardrails/src/presidio_streams/tests/**
+  - docs/deviations/B9977.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1514-L1518
+  why: The text-only change check that lets a masked tool_use input through.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1367-L1398
+  why: process_response_for_pii masks tool call and function_call arguments too.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1505-L1507
+  why: LiteLLM buffers the whole Anthropic stream with no limit.
+dod:
+- text: >-
+    A tool-only Anthropic SSE stream whose input_json_delta carries an entity comes back rebuilt with the masked
+    text, and a stream with no change at all still comes back as the original frames.
+  proof: [presidio-stream-tests, tool-input-case]
+- text: >-
+    The mask, unmask and Anthropic buffers stop with an OverBudget error past the API limits, and docs/deviations/B9977.yaml
+    lists both fixes with their pinned LiteLLM links.
+  proof: [presidio-stream-tests, over-budget-cases, deviation-rows]
+checks:
+  optional: []
+  commands:
+  - id: presidio-stream-tests
+    why: A Presidio stream test broke.
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/presidio_streams::/)'
+  - id: tool-input-case
+    why: No test shows a tool-only Anthropic stream rebuilt with its input masked.
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/presidio_streams::.*tool_only_anthropic/)'
+  - id: over-budget-cases
+    why: No test shows a buffer stopping past the API limits.
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/presidio_streams::.*over_budget/)'
+  - id: deviation-rows
+    why: The fixes are not listed as deviations with their LiteLLM links.
+    run: grep -q -F 'presidio.py#L1514-L1518' docs/deviations/B9977.yaml && grep -q -F 'presidio.py#L1505-L1507' docs/deviations/B9977.yaml
+oracle_cases: []
+deviations:
+- what: >-
+    The Anthropic stream masking rebuilds the frames whenever masking changed any part of the assembled response,
+    tool_use input included, not only when the assistant text changed.
+  why: >-
+    LiteLLM compares only the text, so an entity in a tool_use input reaches the client unmasked. No working setup
+    relies on a PII guardrail letting PII through.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1514-L1518
+- what: >-
+    The Presidio mask, unmask and Anthropic stream buffers fail with an OverBudget error once the buffered answer
+    passes the API boundary ceilings (ApiLimits max_json_bytes and max_items), where LiteLLM buffers without a limit.
+  why: >-
+    The buffers hold untrusted provider output, so they stay inside the same limits as a reply body through the
+    shared RetentionBudget, as the Noma stream buffer does (B3781). A real answer reaches neither limit.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1505-L1507
+out_of_scope:
+- Any other Presidio behaviour; B3807 owns the rest.
+pitfalls:
+- Reuse RetentionBudget and ApiLimits from betterlite_core; do not write a second budget type.
+- A stream that masking leaves unchanged still yields its original frames byte for byte.
+- "New test files are declared next to the existing #[path] test modules in presidio_streams.rs."
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
