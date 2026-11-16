@@ -1,0 +1,11 @@
+kind: helper
+name: gcs-no-fetch
+call:
+  vertex_veo_request:
+    creates:
+      - {model: veo-3.0-generate-001, prompt: a prompt, api_base: 'https://mock', params: {image: 'gs://bucket/frame.png'}, extra_body: null}
+      - {model: veo-3.0-generate-001, prompt: a prompt, api_base: 'https://mock', params: {image: {gcsUri: 'gs://bucket/direct.png'}}, extra_body: null}
+      - {model: veo-3.0-generate-001, prompt: a prompt, api_base: 'https://mock', params: {input_reference: 'gs://bucket/reference.png', image: {gcsUri: 'gs://bucket/other.png'}}, extra_body: null}
+    edits: []
+env: {}
+compare: {ignore: []}

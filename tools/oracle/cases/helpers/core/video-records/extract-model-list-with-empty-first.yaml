@@ -1,0 +1,11 @@
+kind: helper
+name: b3330-extract-model-list-with-empty-first
+call:
+  b3330: {function: extract_model, value: ["", foo]}
+calls:
+  - b3330: {function: extract_model, value: [first, second]}
+  - b3330: {function: extract_model, value: [" padded "]}
+  - b3330: {function: extract_model, value: []}
+  - b3330: {function: extract_model, value: [null]}
+env: {}
+compare: {ignore: []}
