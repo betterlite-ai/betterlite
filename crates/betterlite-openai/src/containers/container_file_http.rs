@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use self::request::{
-    CallParams, ParamValue, RequestTarget, SslVerify, assemble_request, build_query, build_url,
+    CallParams, ParamValue, RequestTarget, assemble_request, build_query, build_url,
     pre_call_record, read_params, request_headers,
 };
 use self::response::transform_reply;
@@ -140,11 +140,22 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
     ) -> Result<ContainerFileReply, ContainerFileHttpError> {
         let endpoint = find_endpoint(call.endpoint_name)?;
         let params = read_params(call.litellm_params)?;
-        let client = self.blocking_for(call, params.ssl_verify.as_ref())?;
-        let reply = client
-            .get()
-            .send(&self.prepare(&endpoint, call, &params)?)?;
-        transform_reply(call.config, &endpoint, &reply)
+        // a supplied client is kept only when it is the blocking kind
+        let supplied = match &call.client {
+            Some(SuppliedClient::Blocking(client)) => Some(*client),
+            Some(SuppliedClient::Asynchronous(_)) | None => None,
+        };
+        let client = Selected::choose(supplied, || {
+            self.clients.blocking_client(params.ssl_verify.as_ref())
+        })?;
+        self.prepare(&endpoint, call, &params)
+            .and_then(|request| {
+                client
+                    .get()
+                    .send(&request)
+                    .map_err(ContainerFileHttpError::from)
+            })
+            .and_then(|reply| transform_reply(call.config, &endpoint, &reply))
     }
 
     pub async fn ahandle(
@@ -153,38 +164,17 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
     ) -> Result<ContainerFileReply, ContainerFileHttpError> {
         let endpoint = find_endpoint(call.endpoint_name)?;
         let params = read_params(call.litellm_params)?;
-        let client = self.async_for(call, params.ssl_verify.as_ref())?;
+        // a supplied client is kept only when it is the async kind
+        let supplied = match &call.client {
+            Some(SuppliedClient::Asynchronous(client)) => Some(*client),
+            Some(SuppliedClient::Blocking(_)) | None => None,
+        };
+        let client = Selected::choose(supplied, || {
+            self.clients.async_client(params.ssl_verify.as_ref())
+        })?;
         let request = self.prepare(&endpoint, call, &params)?;
         let answer = client.get().send(&request).await;
         transform_reply(call.config, &endpoint, &answer?)
-    }
-
-    // A supplied client is kept only when it is the blocking kind
-    fn blocking_for<'client>(
-        &self,
-        call: &ContainerFileHttpCall<'client, Source>,
-        ssl_verify: Option<&SslVerify>,
-    ) -> Result<Selected<'client, Source::Blocking>, PoolError> {
-        if let Some(SuppliedClient::Blocking(supplied)) = &call.client {
-            return Ok(Selected::Supplied(*supplied));
-        }
-        self.clients
-            .blocking_client(ssl_verify)
-            .map(Selected::Created)
-    }
-
-    // A supplied client is kept only when it is the async kind
-    fn async_for<'client>(
-        &self,
-        call: &ContainerFileHttpCall<'client, Source>,
-        ssl_verify: Option<&SslVerify>,
-    ) -> Result<Selected<'client, Source::Asynchronous>, PoolError> {
-        match &call.client {
-            Some(SuppliedClient::Asynchronous(supplied)) => Ok(Selected::Supplied(*supplied)),
-            Some(SuppliedClient::Blocking(_)) | None => {
-                self.clients.async_client(ssl_verify).map(Selected::Created)
-            }
-        }
     }
 
     // The steps both paths share, in LiteLLM's order: headers, base URL, path, query, log, then the method and the file
@@ -194,7 +184,8 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
         call: &ContainerFileHttpCall<'_, Source>,
         params: &CallParams<'_>,
     ) -> Result<ContainerHttpRequest, ContainerFileHttpError> {
-        let provider_headers = request_headers(call.config, call.extra_headers, params.api_key);
+        let provider_headers =
+            request_headers(call.config, call.extra_headers, params.api_key.as_ref());
         let api_base = call
             .config
             .get_complete_url(params.api_base, call.litellm_params)

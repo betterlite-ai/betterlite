@@ -92,7 +92,17 @@ pub enum Selected<'client, Client> {
     Created(Client),
 }
 
-impl<Client> Selected<'_, Client> {
+impl<'client, Client> Selected<'client, Client> {
+    pub fn choose<Build>(supplied: Option<&'client Client>, build: Build) -> Result<Self, PoolError>
+    where
+        Build: FnOnce() -> Result<Client, PoolError>,
+    {
+        match supplied {
+            Some(client) => Ok(Self::Supplied(client)),
+            None => build().map(Self::Created),
+        }
+    }
+
     pub const fn get(&self) -> &Client {
         match self {
             Self::Supplied(client) => client,
