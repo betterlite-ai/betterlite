@@ -9,6 +9,9 @@ deviations:
   - what: The streaming hook returns the list of chunks to yield after it has buffered the whole stream, and stream_chunk_builder and MockResponseIterator are an injected StreamAssembly trait instead of a call into LiteLLM's helpers.
     why: LiteLLM yields nothing before the stream is fully buffered, so a list is the same observable output. The chunk assembly and the one-chunk replay belong to the streaming crates and are passed in rather than copied here.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L798-L841
+  - what: The streaming hook fails with an OverBudget error once the buffered answer passes the API boundary ceilings of 16 MiB of chunk content or 64 * 1024 chunks, where LiteLLM buffers the stream without a limit.
+    why: The buffer holds untrusted provider output, so it stays inside the byte and item limits ApiBoundaries applies to a reply body and an item list, through the shared RetentionBudget. A real answer reaches neither limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L806-L808
   - what: The failure record a hook writes when the Noma call fails carries no OTEL span, only the standard logging record in the request data.
     why: The record writer takes its span sink from the hook dispatcher, which does not exist yet, so a no-op sink stands in until the dispatcher passes one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1296-L1302
