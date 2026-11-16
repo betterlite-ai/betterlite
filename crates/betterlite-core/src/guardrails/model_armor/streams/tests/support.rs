@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::Mutex;
 
