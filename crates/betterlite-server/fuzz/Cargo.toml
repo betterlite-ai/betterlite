@@ -205,3 +205,10 @@ path = "fuzz_targets/audit_record.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "guardrail_write_body"
+path = "fuzz_targets/guardrail_write_body.rs"
+test = false
+doc = false
+bench = false
