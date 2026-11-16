@@ -64,7 +64,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cyberark_config_routes::/)'
     - id: cyberark-route-corpora
       why: CyberArk override requests and route transcripts lack new decoder corpus inputs.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/config_override/cyberark-routes-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/cyberark-config-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_override_corpus) | test(replays_the_http_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/config_override/cyberark-routes-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/cyberark-config-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle -p betterlite-oracle-server --no-tests=fail -E 'test(replays_the_config_override_corpus) | test(replays_the_http_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/management/cyberark-config/partial-update-preserves-account.yaml
   - tools/oracle/cases/management/cyberark-config/empty-api-key-needs-certificate-pair.yaml

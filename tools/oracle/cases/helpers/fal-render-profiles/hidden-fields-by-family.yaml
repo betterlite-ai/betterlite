@@ -1,0 +1,39 @@
+kind: helper
+name: fal-render-profiles-hidden-fields-by-family
+call:
+  fal_render_profiles:
+    operation: hidden_fields_by_family
+    replies:
+      - status: 200
+        headers: {}
+        body: '{"seed": 42}'
+        data: []
+        hidden_params: {existing: keep}
+      - status: 200
+        headers: {}
+        body: '{"seed": null, "timings": {"inference": 2.5}, "has_nsfw_concepts": [false], "prompt": "ignored"}'
+        data: []
+        hidden_params: {}
+      - status: 200
+        headers: {}
+        body: '{"images": ["https://a.test/1.png"], "seed": 0, "timings": null, "has_nsfw_concepts": null}'
+        data: []
+        hidden_params: {seed: 9}
+      - status: 200
+        headers: {}
+        body: '{"images": [7], "seed": 42, "timings": {}}'
+        data: []
+        hidden_params: {seed: 7}
+      - status: 200
+        headers: {}
+        body: '{"images": [{"url": "https://a.test/1.png"}], "timings": {"inference": 1}}'
+        data: []
+        hidden_params: {}
+      - status: 200
+        headers: {}
+        body: '{"seed": {"nested": true}, "has_nsfw_concepts": false}'
+        data: []
+        hidden_params: {}
+env: {}
+compare:
+  ignore: []

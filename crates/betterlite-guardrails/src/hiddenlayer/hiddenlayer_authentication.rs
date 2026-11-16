@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -12,7 +13,7 @@ mod tests;
 pub mod token;
 
 use error::HiddenlayerError;
-use settings::{HiddenlayerCredentials, HiddenlayerSettings};
+use settings::{DEFAULT_AUTH_TIMEOUT, HiddenlayerCredentials, HiddenlayerSettings};
 use token::JwtTransport;
 
 #[must_use]
@@ -60,7 +61,17 @@ impl HiddenlayerAuth {
         &self,
         request: &detection::DetectionRequest<'_>,
     ) -> Result<detection::DetectionResponse, HiddenlayerError> {
-        let first = self.send_once(request).await?;
+        self.post_detection_with_timeout(request, DEFAULT_AUTH_TIMEOUT)
+            .await
+    }
+
+    // the guardrails pass their configured timeout here, where LiteLLM hands it to the httpx request
+    pub async fn post_detection_with_timeout(
+        &self,
+        request: &detection::DetectionRequest<'_>,
+        timeout: Duration,
+    ) -> Result<detection::DetectionResponse, HiddenlayerError> {
+        let first = self.send_once(request, timeout).await?;
         // an empty stored token is still "present" for the 401 refresh check, the way a Python "" is not None
         let has_token = self
             .jwt
@@ -71,7 +82,7 @@ impl HiddenlayerAuth {
             return detection::settle(first).await;
         }
         self.refresh().await?;
-        let retried = self.send_once(request).await?;
+        let retried = self.send_once(request, timeout).await?;
         detection::settle(retried).await
     }
 
@@ -91,11 +102,13 @@ impl HiddenlayerAuth {
     async fn send_once(
         &self,
         request: &detection::DetectionRequest<'_>,
+        timeout: Duration,
     ) -> Result<reqwest::Response, HiddenlayerError> {
         let url = format!("{}/{}", self.settings.api_base, request.path);
         let mut builder = self
             .client
             .post(url)
+            .timeout(timeout)
             .headers(request.headers.clone())
             .json(request.body);
         // the Authorization header is only sent for a token with characters, since an empty one is falsy

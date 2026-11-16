@@ -1,0 +1,36 @@
+kind: helper
+name: restored-file-cursor
+call:
+  bfl_edit:
+    operation: restored_file_cursor
+    prompt: keep the cursor
+    image: {kind: file, data: MDEyMw==, position: 2}
+    mask: {kind: absent}
+    options: {}
+calls:
+  - bfl_edit:
+      operation: restored_file_cursor
+      prompt: at the start
+      image: {kind: file, data: AAEC, position: 0}
+      mask: {kind: absent}
+      options: {}
+  - bfl_edit:
+      operation: restored_file_cursor
+      prompt: file behind a list
+      image:
+        kind: list
+        items:
+          - {kind: file, data: AAEC, position: 1}
+          - {kind: bytes, data: AAEC}
+      mask: {kind: absent}
+      options: {}
+  - bfl_edit:
+      operation: restored_file_cursor
+      prompt: image and mask handles
+      image: {kind: file, data: aW1hZ2U=, position: 3}
+      mask:
+        kind: supplied
+        media: {kind: file, data: bWFzaw==, position: 2}
+      options: {}
+env: {}
+compare: {ignore: []}
