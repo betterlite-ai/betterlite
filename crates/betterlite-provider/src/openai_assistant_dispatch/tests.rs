@@ -886,6 +886,29 @@ async fn realtime_missing_key() {
     ));
 }
 
+async fn realtime_default_base() {
+    let transport = Arc::new(Recorder::default());
+    let mut logger = RecordingLogger::default();
+    let call = OpenAiAssistantOperation::Realtime(RealtimeCall::Connect {
+        api_base: None,
+        api_key: Some(SecretString::from(KEY)),
+        model: String::from("realtime-a"),
+        query_params: Some(realtime_params()),
+        beta_realtime: false,
+        ssl_verification: Verification::Enabled,
+        max_message_size_bytes: 4096,
+    });
+    let prepared = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Session(plan) = prepared else {
+        panic!("the default base session did not prepare")
+    };
+    assert_eq!(
+        plan.url,
+        "wss://api.openai.com/v1/realtime?model=realtime-a&intent=transcription"
+    );
+    assert_eq!(plan.ssl, RealtimeSsl::Shared);
+}
+
 async fn realtime_connection_failures() {
     let transport = Arc::new(Recorder::default());
     let mut logger = RecordingLogger::default();
@@ -945,6 +968,7 @@ async fn realtime_session_case() {
     realtime_plain_session().await;
     realtime_insecure_session().await;
     realtime_missing_key().await;
+    realtime_default_base().await;
     realtime_connection_failures().await;
     realtime_close_failures().await;
 }
