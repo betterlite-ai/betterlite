@@ -92,6 +92,7 @@ description: >-
   body the inspect endpoint got, and the applied_guardrails metadata.
 scope:
   paths:
+    - "tools/oracle/helpers/dispatch.py"
     - crates/betterlite-guardrails/src/cisco_stream_scan.rs
     - crates/betterlite-guardrails/src/cisco_stream_scan/**
     - crates/betterlite-guardrails/src/cisco_mcp_tool_hook.rs
