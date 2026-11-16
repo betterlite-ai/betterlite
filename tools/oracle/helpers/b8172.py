@@ -1,6 +1,6 @@
 import os
 from collections.abc import Callable
-from typing import Final, Literal, NotRequired, Protocol, TypedDict
+from typing import Final, Literal, NotRequired, Protocol, TypedDict, runtime_checkable
 
 import httpx
 from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
@@ -12,10 +12,9 @@ from litellm.llms.dashscope.common_utils import (
     missing_dashscope_family_key_message,
     resolve_dashscope_family_api_key,
 )
-from litellm.llms.dashscope.image_generation.transformation import DashScopeImageGenerationConfig
 from litellm.types.llms.openai import AllMessageValues
 from litellm.types.utils import ImageResponse
-from pydantic import JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 from typing_extensions import override
 
 EMBEDDING_MODEL = "text-embedding-v4"
@@ -56,18 +55,29 @@ ImageReplyTransform = Callable[
     ImageResponse,
 ]
 
+ImageEnvTransform = Callable[
+    [
+        dict[str, str],
+        str,
+        NoMessages,
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        str | None,
+    ],
+    dict[str, JsonValue],
+]
 
+
+@runtime_checkable
 class ImageConfig(Protocol):
     def map_openai_params(
         self, non_default_params: dict[str, JsonValue], optional_params: dict[str, JsonValue],
         model: str, /, *, drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
-    def validate_environment(
-        self, headers: dict[str, str], model: str, messages: NoMessages,
-        optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue],
-        api_key: str | None, /,
-    ) -> dict[str, JsonValue]: ...
+    # ruff counts a def's parameters (PLR0913), so the six-argument call type is a property value
+    @property
+    def validate_environment(self) -> ImageEnvTransform: ...
 
     def get_complete_url(
         self, api_base: str | None, api_key: str | None, model: str,
@@ -79,13 +89,13 @@ class ImageConfig(Protocol):
         litellm_params: dict[str, JsonValue], headers: dict[str, str], /,
     ) -> dict[str, JsonValue]: ...
 
-    # ruff counts a def's parameters (PLR0913), so the ten-argument call type is a property value
     @property
     def transform_image_generation_response(  # ast-grep-ignore: no-long-names
         self,
     ) -> ImageReplyTransform: ...
 
 
+@runtime_checkable
 class EmbeddingUrlConfig(Protocol):
     def get_complete_url(
         self, api_base: str | None, api_key: str | None, model: str,
@@ -93,10 +103,31 @@ class EmbeddingUrlConfig(Protocol):
     ) -> str: ...
 
 
+@runtime_checkable
 class RerankUrlConfig(Protocol):
     def get_complete_url(
         self, api_base: str | None, model: str, optional_params: dict[str, JsonValue] | None, /,
     ) -> str: ...
+
+
+class ImageBoundary(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    config: ImageConfig
+
+
+class EmbeddingBoundary(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    config: EmbeddingUrlConfig
+
+
+class RerankBoundary(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    config: RerankUrlConfig
+
+
+def image_config(family: str) -> ImageConfig:
+    values = {"config": get_dashscope_family_image_generation_config(family)}
+    return ImageBoundary.model_validate(values).config
 
 
 class ImageParamsAndSizeInput(TypedDict):
@@ -182,8 +213,7 @@ def run(input_value: Input) -> JsonValue:
 
 
 def image_params_and_size(input_value: ImageParamsAndSizeInput) -> JsonValue:
-    config: ImageConfig = DashScopeImageGenerationConfig()
-    mapped = config.map_openai_params(
+    mapped = image_config("dashscope").map_openai_params(
         input_value["non_default_params"],
         input_value["optional_params"],
         IMAGE_MODEL,
@@ -193,7 +223,7 @@ def image_params_and_size(input_value: ImageParamsAndSizeInput) -> JsonValue:
 
 
 def image_url_and_key(input_value: ImageUrlAndKeyInput) -> JsonValue:
-    config: ImageConfig = DashScopeImageGenerationConfig()
+    config = image_config("dashscope")
     url = config.get_complete_url(input_value.get("api_base"), None, IMAGE_MODEL, {}, {})
     caller_headers = input_value.get("caller_headers")
     headers = config.validate_environment(
@@ -208,15 +238,14 @@ def image_url_and_key(input_value: ImageUrlAndKeyInput) -> JsonValue:
 
 
 def image_request(input_value: ImageRequestInput) -> JsonValue:
-    config: ImageConfig = DashScopeImageGenerationConfig()
-    body = config.transform_image_generation_request(
+    body = image_config("dashscope").transform_image_generation_request(
         input_value["model"], input_value["prompt"], input_value["optional_params"], {}, {}
     )
     return {"body": body}
 
 
 def image_reply(input_value: ImageReplyInput) -> JsonValue:
-    config: ImageConfig = get_dashscope_family_image_generation_config("dashscope")
+    config = image_config("dashscope")
     headers = input_value.get("headers")
     raw_response = httpx.Response(
         input_value["status"],
@@ -256,9 +285,11 @@ def family_value(
     family: str, step: FamilyStep, api_base: str | None, api_key: str | None
 ) -> JsonValue:
     apply_env(family, step)
-    image: ImageConfig = get_dashscope_family_image_generation_config(family)
-    embedding: EmbeddingUrlConfig = get_dashscope_family_embedding_config(family)
-    rerank: RerankUrlConfig = get_dashscope_family_rerank_config(family)
+    image = image_config(family)
+    embedding_values = {"config": get_dashscope_family_embedding_config(family)}
+    embedding: EmbeddingUrlConfig = EmbeddingBoundary.model_validate(embedding_values).config
+    rerank_values = {"config": get_dashscope_family_rerank_config(family)}
+    rerank: RerankUrlConfig = RerankBoundary.model_validate(rerank_values).config
     _model, _provider, key, base = get_llm_provider(
         model=f"{family}{PROBE_MODEL}", api_base=api_base, api_key=api_key
     )

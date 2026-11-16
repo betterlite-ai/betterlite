@@ -5,12 +5,13 @@ use betterlite_openai::dashscope_family::{
 };
 use betterlite_openai::dashscope_image::error::DashscopeImageError;
 use betterlite_openai::dashscope_image::identity::ImageIdentity;
-use betterlite_openai::dashscope_image::{
-    DEFAULT_API_BASE, DashscopeImageConfig, MISSING_KEY_MESSAGE, decode_dashscope_image_reply,
-    map_openai_params,
-};
+use betterlite_openai::dashscope_image::params::map_openai_params;
+use betterlite_openai::dashscope_image::reply::decode_dashscope_image_reply;
 // ast-grep-ignore: no-long-names
-use betterlite_openai::dashscope_image::transform_image_generation_request as transform_request;
+use betterlite_openai::dashscope_image::request::transform_image_generation_request as transform_request;
+use betterlite_openai::dashscope_image::{
+    DEFAULT_API_BASE, DashscopeImageConfig, MISSING_KEY_MESSAGE,
+};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_provider::api::rerank_contracts::BaseRerankConfig as _;
 use betterlite_provider::dashscope_rerank::DashscopeRerankConfig;
@@ -196,7 +197,7 @@ fn family_value(
     let chat = chat_config(family, &env);
     let argument_key = api_key.map(SecretString::from);
     let info = chat.provider_info(api_base, argument_key.as_ref());
-    let chat_key = info.api_key.map(|key| key.expose_secret().clone());
+    let chat_key = info.api_key.map(|key| key.expose_secret().to_owned());
     let image_headers = image
         .validate_environment(None, &Headers::new())
         .map_err(image_failure)?;
@@ -244,7 +245,7 @@ fn key_and_message(
     dashscope_key: Option<&SecretString>,
 ) -> serde_json::Value {
     let key = resolve_family_api_key(family, api_key, brand_key, dashscope_key)
-        .map(|key| key.expose_secret().clone());
+        .map(|key| key.expose_secret().to_owned());
     json!({"key": key, "message": missing_family_key_message(family)})
 }
 
