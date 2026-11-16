@@ -129,7 +129,7 @@ base:
       run: cargo fmt --all --check
       turn: now
     - id: clippy
-      why: the lint table is the code standard and warnings are errors, on this machine and on a pull request in the packages the change edits, in the merge queue in every package it can affect, and a push to main lints the whole workspace; for an openai task the edited 4 packages took 162 s against 490 s for the 87 affected ones on 4 cores (Max, 11-15); --keep-going reports every failing target in one run, not only the first
+      why: the lint table is the code standard and warnings are errors, on this machine and on a pull request in the packages the change edits, in the merge queue and on a main push in every package it can affect, and the nightly run lints the whole workspace; for an openai task the edited 4 packages took 162 s against 490 s for the 87 affected ones on 4 cores (Max, 11-15); --keep-going reports every failing target in one run, not only the first
       run: |-
         if [[ ${GITHUB_ACTIONS} == true && ${GITHUB_EVENT_NAME:-} != pull_request ]]; then packages=$(cargo gate affected) || exit 1; else packages=$(cargo gate affected --edited) || exit 1; fi
         if [[ -z ${packages} ]]; then echo "the change affects no package"; exit 0; fi
