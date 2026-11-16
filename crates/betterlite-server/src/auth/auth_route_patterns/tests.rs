@@ -5,13 +5,14 @@ use crate::routes::tests::state_for;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs::read_to_string;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
-use tokio::time::{sleep, timeout};
+use tokio::time::timeout;
 use tracing::subscriber::with_default;
 
 use axum::Router;
@@ -222,42 +223,32 @@ async fn booted_server(#[case] path: &str, #[case] routes: &str, #[case] status:
 
 #[tokio::test]
 async fn stage_is_registered() {
-    use crate::server::{chat_setup::chat_executor, run};
-    use futures_util::future::{Either, select};
+    use crate::server::{chat_setup::chat_executor, run_with_listener};
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
-    use std::pin::pin;
-    let port = TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
     .load("general_settings: {master_key: secret, public_routes: ['/v1/models']}")
     .unwrap();
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(7)).unwrap();
-    let server = pin!(run(config, chat, "127.0.0.1", port));
-    let client = pin!(timeout(Duration::from_secs(60), request_once_ready(port)));
-    let outcome = match select(server, client).await {
-        Either::Left((stopped, _)) => Err(stopped),
-        Either::Right((response, _)) => Ok(response),
-    };
-    let response = outcome.unwrap().unwrap();
+    let mut server = JoinSet::new();
+    server.spawn(run_with_listener(config, chat, "127.0.0.1", listener));
+    let response = request_models(address).await;
+    assert!(
+        server.try_join_next().is_none(),
+        "the server stopped while it served"
+    );
+    server.abort_all();
     assert!(response.starts_with("HTTP/1.1 200 "), "{response}");
     assert!(response.contains(r#""object":"list""#));
 }
 
-async fn request_once_ready(port: u16) -> String {
+async fn request_models(address: SocketAddr) -> String {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-    let mut stream = loop {
-        match TcpStream::connect(("127.0.0.1", port)).await {
-            Ok(connection) => break connection,
-            Err(_) => sleep(Duration::from_millis(10)).await,
-        }
-    };
+    let mut stream = TcpStream::connect(address).await.unwrap();
     stream
         .write_all(b"GET /v1/models HTTP/1.1\r\nHost: localhost/?x=1\r\nConnection: close\r\n\r\n")
         .await
