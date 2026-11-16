@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -12,66 +12,26 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
-use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
+use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_secret_managers::secret_lookup::SecretLookup;
-use betterlite_secret_managers::secret_lookup::ports::{
-    AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
-    OidcTokenCache,
-};
 use chrono::{DateTime, Utc};
 use http::HeaderMap;
 use secrecy::SecretString;
 
-use crate::data_cloud_dispatch::call::{CompletionCall, EmbeddingCall};
-use crate::data_cloud_dispatch::context::{DispatchContext, DispatchGlobals};
-use crate::data_cloud_dispatch::embed::EmbeddingContext;
+use crate::data_cloud_dispatch::call::CompletionCall;
+use crate::data_cloud_dispatch::context::{DispatchContext, DispatchGlobals, EnvironmentSource};
 use crate::data_cloud_dispatch::error::DispatchError;
 use crate::data_cloud_dispatch::handler::{ChatCompletionHandler, HandlerError};
 use crate::data_cloud_dispatch::transport::{PostTransport, StreamHead, WireRequest};
 use crate::oci_common::Clock;
 
+use super::globals::OwnedGlobals;
+use super::lookup::secrets;
+
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 pub(super) const TEST_KEY: &str = include_str!("../../oci_common/fixtures/test-private.pem");
-
-struct Offline;
-
-impl OidcHttp for Offline {
-    fn get(&self, _request: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
-        Err(OidcHttpError::Request {
-            message: String::from("the dispatch fixture holds no OIDC transport"),
-        })
-    }
-}
-
-impl AzureOidcTokens for Offline {
-    fn token(&self, _scope: &str) -> Result<Option<SecretString>, AzureOidcError> {
-        Err(AzureOidcError::Provider {
-            message: String::from("the dispatch fixture holds no Azure token source"),
-        })
-    }
-}
-
-impl OidcClock for Offline {
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
-    }
-
-    fn unix_seconds(&self) -> i64 {
-        0
-    }
-}
-
-pub(super) fn secrets() -> SecretLookup {
-    SecretLookup {
-        manager: None,
-        oidc_http: Arc::new(Offline),
-        azure_tokens: Arc::new(Offline),
-        clock: Arc::new(Offline),
-        oidc_cache: OidcTokenCache::default(),
-    }
-}
 
 struct Discard;
 
@@ -127,34 +87,6 @@ fn user_message() -> Message {
     serde_json::from_str(r#"{"role":"user","content":"hi"}"#).expect("the fixture message parses")
 }
 
-#[derive(Clone)]
-pub(super) struct OwnedGlobals {
-    pub(super) api_base: Option<String>,
-    pub(super) api_key: Option<SecretString>,
-    pub(super) databricks_key: Option<SecretString>,
-    pub(super) headers: Option<BTreeMap<String, String>>,
-}
-
-impl OwnedGlobals {
-    pub(super) const fn empty() -> Self {
-        Self {
-            api_base: None,
-            api_key: None,
-            databricks_key: None,
-            headers: None,
-        }
-    }
-
-    pub(super) fn borrowed(&self) -> DispatchGlobals<'_> {
-        DispatchGlobals {
-            api_base: self.api_base.as_deref(),
-            api_key: self.api_key.as_ref(),
-            databricks_key: self.databricks_key.as_ref(),
-            headers: self.headers.as_ref(),
-        }
-    }
-}
-
 pub(super) struct Fixture {
     pub(super) secrets: SecretLookup,
     pub(super) environment: BTreeMap<String, String>,
@@ -206,21 +138,10 @@ impl Fixture {
             stream: self.stream,
             timeout: None,
             globals,
-            secrets: &self.secrets,
-            environment: &self.environment,
-        }
-    }
-
-    pub(super) fn embedding_call(&self) -> EmbeddingCall {
-        EmbeddingCall {
-            model: self.model.clone(),
-            input: PromptJson::Text(String::from("hello")),
-            optional_params: self.optional_params.clone(),
-            litellm_params: Object::new(),
-            api_key: self.api_key.clone(),
-            api_base: self.api_base.clone(),
-            headers: self.headers.clone(),
-            timeout: Duration::from_secs(600),
+            env: EnvironmentSource {
+                secrets: &self.secrets,
+                environment: &self.environment,
+            },
         }
     }
 }
@@ -329,24 +250,24 @@ fn no_reply() -> DispatchError {
     }
 }
 
+fn take<T>(queue: &Mutex<VecDeque<T>>) -> Result<T, DispatchError> {
+    queue
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .pop_front()
+        .ok_or_else(no_reply)
+}
+
 #[async_trait]
 impl PostTransport for Scripted {
     async fn post(&self, request: &WireRequest<'_>) -> Result<UpstreamResponse, DispatchError> {
         self.record(request);
-        self.replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .ok_or_else(no_reply)
+        take(&self.replies)
     }
 
     async fn post_stream(&self, request: &WireRequest<'_>) -> Result<StreamHead, DispatchError> {
         self.record(request);
-        self.streams
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .ok_or_else(no_reply)
+        take(&self.streams)
     }
 }
 
@@ -385,23 +306,6 @@ pub(super) fn status(code: u16, body: &str) -> UpstreamResponse {
         status: code,
         headers: HeaderMap::new(),
         body: body.as_bytes().to_vec(),
-    }
-}
-
-pub(super) fn embedding_context<'context>(
-    fixture: &'context Fixture,
-    globals: DispatchGlobals<'context>,
-    transport: &'context Scripted,
-    tokens: &'context NoTokens,
-    clock: &'context FixedClock,
-) -> EmbeddingContext<'context> {
-    EmbeddingContext {
-        globals,
-        secrets: &fixture.secrets,
-        environment: &fixture.environment,
-        transport,
-        tokens,
-        clock,
     }
 }
 

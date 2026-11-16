@@ -1,20 +1,22 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_prompts::arguments::json::Json as PromptJson;
+use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::SecretString;
 
-use crate::data_cloud_dispatch::call::EmbeddingReply;
-use crate::data_cloud_dispatch::context::DispatchGlobals;
-use crate::data_cloud_dispatch::embed::dispatch as embedding_dispatch;
+use crate::data_cloud_dispatch::call::{EmbeddingCall, EmbeddingReply};
+use crate::data_cloud_dispatch::context::{DispatchGlobals, EnvironmentSource};
+use crate::data_cloud_dispatch::embed::{EmbeddingContext, dispatch as embedding_dispatch};
 use crate::data_cloud_dispatch::error::DispatchError;
 use crate::data_cloud_dispatch::select::EmbeddingConfig;
 use crate::snowflake::embedding::transform_embedding_response;
 
+use super::globals::OwnedGlobals;
 use super::support::{
-    FixedClock, Fixture, NoTokens, OwnedGlobals, Scripted, TEST_KEY, databricks_embedding_reply,
-    embedding_context, environment, ok, status,
+    FixedClock, Fixture, NoTokens, Scripted, TEST_KEY, databricks_embedding_reply, environment, ok,
+    status,
 };
 
 #[tokio::test]
@@ -31,7 +33,7 @@ async fn databricks_embedding_sends_the_prepared_request() {
     let transport = Scripted::with_replies(vec![ok(databricks_embedding_reply())]);
     let tokens = NoTokens;
     let clock = FixedClock;
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(
         &fixture,
         DispatchGlobals::default(),
@@ -85,7 +87,7 @@ async fn databricks_embedding_reports_a_status_failure() {
     let transport = Scripted::with_replies(vec![status(500, "boom")]);
     let tokens = NoTokens;
     let clock = FixedClock;
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(
         &fixture,
         DispatchGlobals::default(),
@@ -112,7 +114,7 @@ async fn snowflake_embedding_uses_the_cortex_url_and_snowflake_jwt() {
     )]);
     let tokens = NoTokens;
     let clock = FixedClock;
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(
         &fixture,
         DispatchGlobals::default(),
@@ -171,7 +173,7 @@ async fn snowflake_embedding_reports_the_upstream_status() {
     let transport = Scripted::with_replies(vec![status(400, "bad input")]);
     let tokens = NoTokens;
     let clock = FixedClock;
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(
         &fixture,
         DispatchGlobals::default(),
@@ -200,11 +202,11 @@ async fn oci_embedding_signs_the_request_and_decodes_the_reply() {
         ("OCI_COMPARTMENT_ID", "ocid1.compartment.oc1..aaaa"),
     ]);
     let transport = Scripted::with_replies(vec![ok(
-        r#"{"embeddings":[[0.1,0.2]],"model_id":"cohere.embed-english-v3.0","model_version":"1.0"}"#,
+        r#"{"embeddings":[[0.1,0.2]],"modelId":"cohere.embed-english-v3.0","modelVersion":"1.0"}"#,
     )]);
     let tokens = NoTokens;
     let clock = FixedClock;
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(
         &fixture,
         DispatchGlobals::default(),
@@ -267,7 +269,7 @@ async fn databricks_embedding_ignores_the_caller_headers() {
     let transport = Scripted::with_replies(vec![ok(databricks_embedding_reply())]);
     let tokens = NoTokens;
     let clock = FixedClock;
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(
         &fixture,
         DispatchGlobals::default(),
@@ -296,7 +298,7 @@ async fn snowflake_embedding_ignores_the_caller_headers() {
     )]);
     let tokens = NoTokens;
     let clock = FixedClock;
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(
         &fixture,
         DispatchGlobals::default(),
@@ -323,13 +325,13 @@ async fn oci_embedding_uses_the_global_api_base() {
         ("OCI_COMPARTMENT_ID", "ocid1.compartment.oc1..aaaa"),
     ]);
     let transport = Scripted::with_replies(vec![ok(
-        r#"{"embeddings":[[0.1,0.2]],"model_id":"cohere.embed-english-v3.0","model_version":"1.0"}"#,
+        r#"{"embeddings":[[0.1,0.2]],"modelId":"cohere.embed-english-v3.0","modelVersion":"1.0"}"#,
     )]);
     let tokens = NoTokens;
     let clock = FixedClock;
     let mut globals = OwnedGlobals::empty();
     globals.api_base = Some(String::from("https://global.example.com"));
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(&fixture, globals.borrowed(), &transport, &tokens, &clock);
     embedding_dispatch(&call, EmbeddingConfig::Oci, &context)
         .await
@@ -357,7 +359,7 @@ async fn snowflake_embedding_keeps_the_error_headers() {
     )]);
     let tokens = NoTokens;
     let clock = FixedClock;
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(
         &fixture,
         DispatchGlobals::default(),
@@ -391,7 +393,7 @@ async fn databricks_embedding_treats_an_empty_call_base_as_unset() {
     let clock = FixedClock;
     let mut globals = OwnedGlobals::empty();
     globals.api_base = Some(String::from("https://global.example.com"));
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(&fixture, globals.borrowed(), &transport, &tokens, &clock);
     embedding_dispatch(&call, EmbeddingConfig::Databricks, &context)
         .await
@@ -417,7 +419,7 @@ async fn databricks_embedding_treats_an_empty_call_key_as_unset() {
     let clock = FixedClock;
     let mut globals = OwnedGlobals::empty();
     globals.api_key = Some(SecretString::from("global-key"));
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(&fixture, globals.borrowed(), &transport, &tokens, &clock);
     embedding_dispatch(&call, EmbeddingConfig::Databricks, &context)
         .await
@@ -449,7 +451,7 @@ async fn databricks_embedding_skips_an_empty_global_key() {
     let mut globals = OwnedGlobals::empty();
     globals.api_key = Some(SecretString::from(String::new()));
     globals.databricks_key = Some(SecretString::from("databricks-key"));
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(&fixture, globals.borrowed(), &transport, &tokens, &clock);
     embedding_dispatch(&call, EmbeddingConfig::Databricks, &context)
         .await
@@ -480,7 +482,7 @@ async fn databricks_embedding_skips_an_empty_databricks_key() {
     let clock = FixedClock;
     let mut globals = OwnedGlobals::empty();
     globals.databricks_key = Some(SecretString::from(String::new()));
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(&fixture, globals.borrowed(), &transport, &tokens, &clock);
     embedding_dispatch(&call, EmbeddingConfig::Databricks, &context)
         .await
@@ -509,7 +511,7 @@ async fn snowflake_embedding_skips_an_empty_call_key() {
     )]);
     let tokens = NoTokens;
     let clock = FixedClock;
-    let call = fixture.embedding_call();
+    let call = embedding_call(&fixture);
     let context = embedding_context(
         &fixture,
         DispatchGlobals::default(),
@@ -545,5 +547,37 @@ fn status_with_headers(
         status: code,
         headers,
         body: body.as_bytes().to_vec(),
+    }
+}
+
+fn embedding_call(fixture: &Fixture) -> EmbeddingCall {
+    EmbeddingCall {
+        model: fixture.model.clone(),
+        input: PromptJson::Text(String::from("hello")),
+        optional_params: fixture.optional_params.clone(),
+        litellm_params: Object::new(),
+        api_key: fixture.api_key.clone(),
+        api_base: fixture.api_base.clone(),
+        headers: fixture.headers.clone(),
+        timeout: Duration::from_secs(600),
+    }
+}
+
+fn embedding_context<'context>(
+    fixture: &'context Fixture,
+    globals: DispatchGlobals<'context>,
+    transport: &'context Scripted,
+    tokens: &'context NoTokens,
+    clock: &'context FixedClock,
+) -> EmbeddingContext<'context> {
+    EmbeddingContext {
+        globals,
+        env: EnvironmentSource {
+            secrets: &fixture.secrets,
+            environment: &fixture.environment,
+        },
+        transport,
+        tokens,
+        clock,
     }
 }

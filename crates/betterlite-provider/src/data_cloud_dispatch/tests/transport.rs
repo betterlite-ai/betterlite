@@ -61,7 +61,10 @@ async fn serve_once(listener: &TcpListener, status: &str, body: &str) -> String 
     String::from_utf8(request).expect("the request is UTF-8")
 }
 
-fn post_request(url: &str, headers: &HeaderMap) -> WireRequest<'_> {
+fn post_request<'request>(
+    url: &'request str,
+    headers: &'request HeaderMap,
+) -> WireRequest<'request> {
     WireRequest {
         method: Method::POST,
         url,

@@ -49,16 +49,14 @@ async fn oci_stream_sends_the_signed_body_and_decodes_the_events() {
     let mut contents = Vec::new();
     let mut saw_done = false;
     while let Some(item) = stream.next().await.expect("the stream decodes") {
-        match item {
-            StreamItem::Done => {
-                saw_done = true;
-                break;
-            }
-            StreamItem::Chunk(chunk) => {
-                if let Some(content) = chunk.choice.delta.content {
-                    contents.push(content);
-                }
-            }
+        if matches!(item, StreamItem::Done) {
+            saw_done = true;
+            break;
+        }
+        if let StreamItem::Chunk(chunk) = item
+            && let Some(content) = chunk.choice.delta.content
+        {
+            contents.push(content);
         }
     }
     assert_eq!(contents, vec![String::from("he"), String::from("llo")]);
@@ -109,7 +107,7 @@ async fn oci_stream_maps_a_status_failure_to_the_oci_error() {
     });
     let headers = HeaderMap::new();
     let data = PromptJson::Null;
-    match open_stream(
+    let outcome = open_stream(
         OciStreamRequest {
             api_base: "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com/20231130/actions/chat",
             headers,
@@ -118,14 +116,12 @@ async fn oci_stream_maps_a_status_failure_to_the_oci_error() {
         },
         &transport,
     )
-    .await
-    {
-        Err(DispatchError::Oci(error)) => {
-            assert_eq!(error.status, 500);
-            assert_eq!(error.message, "boom");
-        }
-        other => panic!("expected the OCI status error, got {other:?}"),
-    }
+    .await;
+    let Err(DispatchError::Oci(error)) = outcome else {
+        panic!("expected the OCI status error");
+    };
+    assert_eq!(error.status, 500);
+    assert_eq!(error.message, "boom");
 }
 
 #[tokio::test]

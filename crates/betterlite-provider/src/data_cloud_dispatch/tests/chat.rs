@@ -9,7 +9,8 @@ use crate::data_cloud_dispatch::context::{CallLogging, DispatchGlobals};
 use crate::data_cloud_dispatch::error::DispatchError;
 use crate::data_cloud_dispatch::handler::HandlerError;
 
-use super::support::{Fixture, OwnedGlobals, Recorder, environment, logging, redactor};
+use super::globals::OwnedGlobals;
+use super::support::{Fixture, Recorder, environment, logging, redactor};
 
 #[test]
 fn databricks_completion_prefers_the_context_then_the_globals() {
@@ -337,6 +338,53 @@ fn oci_completion_passes_the_context_values_without_a_fallback() {
     assert!(call.headers.is_none());
     assert_eq!(call.custom_llm_provider, "oci");
     assert!(state.model_call_details.get("original_response").is_none());
+}
+
+#[test]
+fn databricks_completion_falls_back_to_the_global_headers() {
+    let mut fixture = Fixture::new();
+    fixture.environment = environment(&[("DATABRICKS_API_KEY", "env-key")]);
+    let mut globals = OwnedGlobals::empty();
+    globals.headers = Some(BTreeMap::from([(
+        String::from("X-Global"),
+        String::from("one"),
+    )]));
+    let handler = Recorder::succeeding();
+    let redactor = redactor();
+    let (mut state, env) = logging(&redactor);
+    let mut log = CallLogging {
+        state: &mut state,
+        env: &env,
+    };
+    let outcome = complete_databricks(&fixture.context(globals.borrowed()), &handler, &mut log);
+    assert!(outcome.is_ok());
+    assert_eq!(
+        handler.calls()[0]
+            .headers
+            .as_ref()
+            .and_then(|headers| headers.get("X-Global")),
+        Some(&String::from("one"))
+    );
+}
+
+#[test]
+fn databricks_completion_names_the_literal_provider() {
+    let mut fixture = Fixture::new();
+    fixture.provider = String::from("azure");
+    let handler = Recorder::succeeding();
+    let redactor = redactor();
+    let (mut state, env) = logging(&redactor);
+    let mut log = CallLogging {
+        state: &mut state,
+        env: &env,
+    };
+    let outcome = complete_databricks(
+        &fixture.context(DispatchGlobals::default()),
+        &handler,
+        &mut log,
+    );
+    assert!(outcome.is_ok());
+    assert_eq!(handler.calls()[0].custom_llm_provider, "databricks");
 }
 
 #[test]
