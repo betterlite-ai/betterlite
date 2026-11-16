@@ -64,8 +64,8 @@ pub fn read_image_bytes(
         ImagenFileInput::Path(_) => Err(ImagenEditError::FilePath),
         ImagenFileInput::Sequence(items) => read_sequence(items, depth, max_depth),
         ImagenFileInput::Mapping(fields) => read_mapping(fields, depth, max_depth),
-        ImagenFileInput::Seekable(stream) => read_seekable(&mut **stream),
-        ImagenFileInput::Buffered(stream) => read_buffered(&mut **stream),
+        ImagenFileInput::Seekable(stream) => read_stream(&mut **stream, TellPolicy::Required),
+        ImagenFileInput::Buffered(stream) => read_stream(&mut **stream, TellPolicy::MayRefuse),
         ImagenFileInput::Reader(stream) => read_text_stream(&mut **stream),
         ImagenFileInput::Unsupported { kind } => {
             Err(ImagenEditError::UnsupportedImage { kind: *kind })
@@ -115,25 +115,20 @@ fn read_mapping(
     read_image_bytes(path.as_mut(), nested, max_depth)
 }
 
-// LiteLLM rewinds a BytesIO, reads it whole and puts the cursor back where it was
-fn read_seekable(stream: &mut dyn ReadSeek) -> Result<Vec<u8>, ImagenEditError> {
-    let position = stream.stream_position().map_err(ImagenEditError::Stream)?;
-    stream
-        .seek(SeekFrom::Start(0))
-        .map_err(ImagenEditError::Stream)?;
-    let mut content = Vec::new();
-    stream
-        .read_to_end(&mut content)
-        .map_err(ImagenEditError::Stream)?;
-    stream
-        .seek(SeekFrom::Start(position))
-        .map_err(ImagenEditError::Stream)?;
-    Ok(content)
+// a BytesIO's tell must answer, while a BufferedReader's may refuse and leave the read where it stands
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TellPolicy {
+    Required,
+    MayRefuse,
 }
 
-// a BufferedReader whose tell refuses answers is read from where it stands and not rewound
-fn read_buffered(stream: &mut dyn ReadSeek) -> Result<Vec<u8>, ImagenEditError> {
-    let start = stream.stream_position().ok();
+// LiteLLM rewinds the stream it can measure, reads it whole and puts the cursor back where it was
+fn read_stream(stream: &mut dyn ReadSeek, tell: TellPolicy) -> Result<Vec<u8>, ImagenEditError> {
+    let start = match stream.stream_position() {
+        Ok(position) => Some(position),
+        Err(_) if tell == TellPolicy::MayRefuse => None,
+        Err(error) => return Err(ImagenEditError::Stream(error)),
+    };
     if let Some(offset) = start {
         stream
             .seek(SeekFrom::Start(0))

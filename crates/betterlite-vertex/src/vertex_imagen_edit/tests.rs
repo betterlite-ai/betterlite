@@ -232,6 +232,12 @@ fn a_null_size_is_square_and_a_non_string_size_names_the_field() {
 }
 
 #[test]
+fn an_optional_param_outside_the_supported_set_is_dropped() {
+    let mapped = map_openai_params(&params(r#"{"quality":"hd","n":2}"#)).expect("n maps");
+    assert_eq!(Json::Object(mapped), json_value(r#"{"sampleCount":2}"#));
+}
+
+#[test]
 fn the_body_carries_the_inpainting_parameters_and_one_raw_reference() {
     let mut images = [Some(ImagenFileInput::Bytes(b"\x89PNG\r\n\x1a\n".to_vec()))];
     let (text, files) =
@@ -637,6 +643,17 @@ fn a_seekable_stream_is_read_whole_and_left_where_it_was() {
         b"0123456789abcdef".as_slice()
     );
     assert_eq!(content.position(), 7);
+}
+
+#[test]
+fn a_seekable_stream_whose_tell_refuses_is_a_stream_error() {
+    let mut stream = NoTellStream {
+        content: b"0123456789".to_vec(),
+        position: 7,
+    };
+    let mut image = ImagenFileInput::Seekable(&mut stream);
+    let error = read_bytes(&mut image).expect_err("a BytesIO always answers its tell");
+    assert!(matches!(error, ImagenEditError::Stream(_)));
 }
 
 #[test]

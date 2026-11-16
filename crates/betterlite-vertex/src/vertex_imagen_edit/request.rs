@@ -32,6 +32,21 @@ pub fn transform_image_edit_request(
     let mut instance = ImageParams::new();
     instance.insert("prompt".to_owned(), Json::Text(edit_prompt.to_owned()));
     instance.insert("referenceImages".to_owned(), Json::List(references));
+    let mut body = ImageParams::new();
+    body.insert(
+        "instances".to_owned(),
+        Json::List(vec![Json::Object(instance)]),
+    );
+    body.insert(
+        "parameters".to_owned(),
+        Json::Object(request_parameters(mapped)?),
+    );
+    let payload = serde_json::to_string(&body).map_err(ImagenEditError::Serialize)?;
+    Ok((payload, ImageFiles::new()))
+}
+
+// the fixed inpainting parameters, with the sample count the mapped params carry
+fn request_parameters(mapped: &ImageParams) -> Result<ImageParams, ImagenEditError> {
     let mut parameters = ImageParams::new();
     parameters.insert("sampleCount".to_owned(), sample_count(mapped)?);
     parameters.insert(
@@ -54,14 +69,7 @@ pub fn transform_image_edit_request(
         ),
     );
     parameters.insert("seed".to_owned(), Json::Null);
-    let mut body = ImageParams::new();
-    body.insert(
-        "instances".to_owned(),
-        Json::List(vec![Json::Object(instance)]),
-    );
-    body.insert("parameters".to_owned(), Json::Object(parameters));
-    let payload = serde_json::to_string(&body).map_err(ImagenEditError::Serialize)?;
-    Ok((payload, ImageFiles::new()))
+    Ok(parameters)
 }
 
 // _prepare_reference_images: raw references keep their one-based list position, and the mask comes last
