@@ -1,0 +1,29 @@
+kind: helper
+name: messages-responses-input-midturn-system-responses
+call:
+  messages_responses_input:
+    messages:
+    - role: system
+      content: be brief
+    - role: user
+      content: question
+    - role: system
+      content:
+      - type: text
+        text: mid
+      - type: text
+        text: marked
+        prompt_cache_breakpoint:
+          mode: explicit
+    - role: user
+      content:
+      - type: text
+        text: ""
+      - type: image
+        source:
+          type: url
+          url: https://example.com/i.png
+    usage: null
+env: {}
+compare:
+  ignore: []

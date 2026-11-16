@@ -1,0 +1,41 @@
+kind: helper
+name: messages-responses-input-image-url-pass-through
+call:
+  messages_responses_input:
+    messages:
+    - role: user
+      content:
+      - type: image
+        source:
+          type: base64
+          data: QUJD
+      - type: image
+        source:
+          type: base64
+          media_type: image/png
+          data: aGk=
+      - type: image
+        source:
+          type: url
+          url: https://example.com/i.png
+        prompt_cache_breakpoint:
+          mode: explicit
+      - type: image
+        source:
+          type: base64
+          data: ""
+    - role: user
+      content:
+      - type: text
+        text: before
+      - type: tool_result
+        tool_use_id: toolu_img
+        content:
+        - type: image
+          source:
+            type: url
+            url: https://example.com/tool.png
+    usage: null
+env: {}
+compare:
+  ignore: []
