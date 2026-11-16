@@ -135,7 +135,11 @@ fn traversal_cannot_become_an_extension() {
 #[test]
 fn original_names_are_percent_quoted() {
     assert_eq!(
-        generated_name("dir/é.txt", FileNamingStrategy::OriginalFilename, AT_MILLIS),
+        generated_name(
+            "dir/\u{e9}.txt",
+            FileNamingStrategy::OriginalFilename,
+            AT_MILLIS
+        ),
         "%C3%A9.txt"
     );
     assert_eq!(

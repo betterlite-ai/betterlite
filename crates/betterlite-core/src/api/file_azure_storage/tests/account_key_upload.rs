@@ -2,9 +2,9 @@
 
 use rstest::rstest;
 
-use super::support::{Harness, paths, settings_with_account_key};
+use super::support::{Harness, Recorded, paths, settings_with_account_key};
 use crate::api::file_storage_contracts::storage::{
-    FileNamingStrategy, FileStorageBackend, UploadOptions,
+    FileNamingStrategy, FileStorageBackend as _, UploadOptions,
 };
 
 fn options(prefix: Option<&str>) -> UploadOptions<'_> {
@@ -41,9 +41,12 @@ async fn account_key_upload() {
         .await
         .expect("upload");
     assert_eq!(url, "https://acct.blob.core.windows.net/files/p/a.txt");
-    let calls = harness.calls();
+    assert_account_key_requests(&harness.calls());
+}
+
+fn assert_account_key_requests(calls: &[Recorded]) {
     assert_eq!(
-        paths(&calls),
+        paths(calls),
         vec![
             call("GET", &format!("{BLOB}?restype=container")),
             call("PUT", &format!("{BLOB}?restype=container")),

@@ -3,7 +3,7 @@
 use rstest::rstest;
 
 use super::support::{Harness, paths, settings, settings_with_account_key};
-use crate::api::file_storage_contracts::storage::FileStorageBackend;
+use crate::api::file_storage_contracts::storage::FileStorageBackend as _;
 
 const SUPPLIED: &str = "https://foreign.blob.example/other/p/a.txt?sig=ignored";
 const FILES: &str = "https://acct.blob.core.windows.net/files";
@@ -233,12 +233,12 @@ async fn azure_download_propagates_status() {
     assert_eq!(token.calls().len(), 1);
 
     let account = Harness::new(settings_with_account_key(), &[(200, ""), (404, "")]);
-    let error = account
+    let missing = account
         .backend
         .download_file(SUPPLIED)
         .await
         .expect_err("a missing file");
-    assert!(error.to_string().contains("404"), "{error}");
+    assert!(missing.to_string().contains("404"), "{missing}");
     assert_eq!(account.calls().len(), 2);
 }
 

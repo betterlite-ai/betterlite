@@ -7,7 +7,9 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::file_azure_storage::error::AzureFileStorageError;
 use betterlite_core::api::file_azure_storage::naming::naming_strategy;
 use betterlite_core::api::file_azure_storage::{AzureBlobStorageBackend, AzureFileStorageDeps};
-use betterlite_core::api::file_storage_contracts::storage::{FileStorageBackend, UploadOptions};
+use betterlite_core::api::file_storage_contracts::storage::{
+    FileStorageBackend as _, UploadOptions,
+};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::azure_storage_logging::filename::RandomIds;
 use betterlite_logging::azure_storage_logging::token::{
@@ -158,10 +160,8 @@ async fn download_answer(
 }
 
 fn reported(url: &str, api_base: &str) -> String {
-    match url.strip_prefix(api_base) {
-        Some(rest) => rest.to_owned(),
-        None => url.to_owned(),
-    }
+    url.strip_prefix(api_base)
+        .map_or_else(|| url.to_owned(), str::to_owned)
 }
 
 fn failure(error: &AzureFileStorageError) -> FileStorageFailure {

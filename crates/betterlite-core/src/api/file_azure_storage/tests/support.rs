@@ -131,7 +131,7 @@ struct Recorder {
 
 impl Recorder {
     fn new(replies: &[(u16, &str)]) -> Arc<Self> {
-        let replies = replies
+        let scripted = replies
             .iter()
             .map(|(status, body)| StorageResponse {
                 status: *status,
@@ -139,7 +139,7 @@ impl Recorder {
             })
             .collect();
         Arc::new(Self {
-            replies: Mutex::new(replies),
+            replies: Mutex::new(scripted),
             recorded: Mutex::new(Vec::new()),
         })
     }

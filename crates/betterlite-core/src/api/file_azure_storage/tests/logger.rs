@@ -4,10 +4,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_logging::azure_storage_logging::logger::CALLBACK_NAME;
-use betterlite_logging::callback_logger::CallbackLogger;
+use betterlite_logging::callback_logger::CallbackLogger as _;
 
 use super::support::{Harness, event, settings, settings_with_account_key};
-use crate::api::file_storage_contracts::storage::FileStorageBackend;
+use crate::api::file_storage_contracts::storage::FileStorageBackend as _;
 
 const SUPPLIED: &str = "https://acct.blob.core.windows.net/files/a.txt";
 
