@@ -298,6 +298,7 @@ async fn write_url_and_body(#[case] bucket: &str) {
                 .contains("content-type: application/json\r\n"),
             "{text}"
         );
+        assert!(!text.to_lowercase().contains("cache-control"), "{text}");
         assert!(text.ends_with(r#"{"value":true}"#), "{text}");
     };
     timeout(Duration::from_secs(5), operation).await.unwrap();
