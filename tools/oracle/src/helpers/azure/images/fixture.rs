@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
 use betterlite_azure::credentials::source::{
@@ -10,7 +10,9 @@ use betterlite_azure::endpoints::projection::LiteLlmParams;
 use betterlite_azure::image_transport::request::{ImageClientConstructor, TimeoutPhases};
 use betterlite_azure::image_transport::{ImageReply, ImageRequest, ImageTransport, SystemClock};
 use betterlite_azure::images::error::ImageError;
-use betterlite_azure::images::generation::{GeneratedImage, Generation, Runtime, image_generation};
+use betterlite_azure::images::generation::{
+    GeneratedImage, Generation, Runtime, begin, finish, send,
+};
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
 use betterlite_config::sections::azure_image_transport::Settings as TransportSettings;
@@ -84,13 +86,33 @@ pub(super) fn run_generation(step: &Step) -> Option<GenerationRun> {
         clock: &clock,
         logger: &mut logger,
     };
-    let driver = Builder::new_current_thread().enable_all().build().ok()?;
-    let result = driver.block_on(image_generation(call, &mut runtime));
-    Some((result, lock(&state.calls).clone(), logger))
+    let result = exchange(call, &mut runtime)?;
+    let calls = state
+        .calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    Some((result, calls, logger))
 }
 
-pub(super) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+// the three production steps around the one await, driven by a current-thread runtime
+fn exchange(
+    call: Generation<'_>,
+    runtime: &mut Runtime<'_, FixtureTransport, SystemClock>,
+) -> Option<Result<GeneratedImage, ImageError>> {
+    let driver = Builder::new_current_thread().enable_all().build().ok()?;
+    Some(match begin(call, runtime) {
+        Ok(begun) => {
+            let sent = driver.block_on(send(
+                &begun,
+                runtime.constructor,
+                runtime.clock,
+                runtime.polling_timeout,
+            ));
+            finish(&begun, sent, runtime.logger)
+        }
+        Err(error) => Err(error),
+    })
 }
 
 struct FixtureState {
@@ -126,12 +148,21 @@ impl ImageTransport for FixtureTransport {
                 .map(str::to_owned);
             headers.insert(name.to_owned(), value);
         }
-        lock(&self.state.calls).push(RecordedCall {
-            url: request.url.clone(),
-            body: serde_json::from_slice(&request.body).ok(),
-            headers,
-        });
-        let body = lock(&self.state.reply).clone();
+        self.state
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(RecordedCall {
+                url: request.url.clone(),
+                body: serde_json::from_slice(&request.body).ok(),
+                headers,
+            });
+        let body = self
+            .state
+            .reply
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         ready(Ok(ImageReply {
             status: 200,
             headers: HeaderMap::new(),

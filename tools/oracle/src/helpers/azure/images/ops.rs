@@ -3,10 +3,9 @@ use std::fmt::Display;
 
 use betterlite_azure::azure_urls::AuthParams;
 use betterlite_azure::images::edit::{
-    EditAuth, EditParams, EditUrl, finalize_image_edit_request_data, get_complete_url,
-    validate_environment,
+    EditAuth, EditParams, EditUrl, finalize_edit_data, get_complete_url, validate_environment,
 };
-use betterlite_azure::images::selection::get_azure_image_generation_config;
+use betterlite_azure::images::selection::image_config;
 use betterlite_azure::images::target::{AzureClientParams, create_azure_base_url};
 use betterlite_config::sections::azure_url_policy::AzureCredentials;
 use betterlite_openai::image_generation::reply::ImageGenerationReply;
@@ -23,7 +22,7 @@ pub(crate) fn run(input: &Input) -> HelperResult {
         .models
         .iter()
         .map(|model| {
-            let config = get_azure_image_generation_config(Some(model.as_str()));
+            let config = image_config(Some(model.as_str()));
             json!({"class": config.class_name()})
         })
         .collect();
@@ -31,7 +30,7 @@ pub(crate) fn run(input: &Input) -> HelperResult {
         .forms
         .iter()
         .map(|step| {
-            let fields = finalize_image_edit_request_data(&step.data, &step.request_url);
+            let fields = finalize_edit_data(&step.data, &step.request_url);
             json!({"fields": fields})
         })
         .collect();
@@ -39,7 +38,7 @@ pub(crate) fn run(input: &Input) -> HelperResult {
         "targets": input.targets.iter().map(target_value).collect::<Vec<_>>(),
         "models": models,
         "forms": forms,
-        "urls": input.urls.iter().map(url_value).collect::<Vec<_>>(),
+        "urls": input.urls.iter().map(edit_value).collect::<Vec<_>>(),
         "auth": input.auth.iter().map(auth_value).collect::<Vec<_>>(),
         "generations": input.generations.iter().map(generation_value).collect::<Vec<_>>(),
     }))
@@ -56,19 +55,28 @@ fn failure(error: &dyn Display) -> Value {
     })
 }
 
+// both URL readers report the composed URL or the error's message the same way
+fn url_value<E: Display>(result: Result<String, E>) -> Value {
+    match result {
+        Ok(url) => json!({"url": url}),
+        Err(error) => failure(&error),
+    }
+}
+
 fn target_value(step: &Step) -> Value {
     let params = AzureClientParams {
         azure_endpoint: step.azure_endpoint.as_deref(),
         base_url: step.base_url.as_deref(),
         api_version: step.api_version.as_deref(),
     };
-    match create_azure_base_url(&params, step.model.as_deref(), step.base_model.as_deref()) {
-        Ok(url) => json!({"url": url}),
-        Err(error) => failure(&error),
-    }
+    url_value(create_azure_base_url(
+        &params,
+        step.model.as_deref(),
+        step.base_model.as_deref(),
+    ))
 }
 
-fn url_value(step: &Step) -> Value {
+fn edit_value(step: &Step) -> Value {
     let credentials = AzureCredentials {
         api_base: step.global_base.clone(),
         api_version: step.global_version.clone(),
@@ -81,10 +89,7 @@ fn url_value(step: &Step) -> Value {
         credentials: &credentials,
         default_api_version: "2025-02-01-preview",
     };
-    match get_complete_url(&request) {
-        Ok(url) => json!({"url": url}),
-        Err(error) => failure(&error),
-    }
+    url_value(get_complete_url(&request))
 }
 
 fn auth_value(step: &Step) -> Value {

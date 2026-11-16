@@ -46,8 +46,17 @@ fn helper_seeds_select_azure_images() {
 
 #[test]
 fn seeds_run_the_production_adapter() {
-    for (path, case) in seeds() {
-        let output = betterlite_oracle_runner::helpers::invoke(&[crate::GROUP], &case.call);
-        assert!(output.ok, "{path} did not run");
-    }
+    let outcomes: Vec<(String, bool)> = seeds()
+        .into_iter()
+        .map(|(path, case)| {
+            let output = betterlite_oracle_runner::helpers::invoke(&[crate::GROUP], &case.call);
+            (path, output.ok)
+        })
+        .collect();
+    let failed: Vec<&str> = outcomes
+        .iter()
+        .filter(|(_, ran)| !ran)
+        .map(|(path, _)| path.as_str())
+        .collect();
+    assert!(failed.is_empty(), "{failed:?} did not run");
 }
