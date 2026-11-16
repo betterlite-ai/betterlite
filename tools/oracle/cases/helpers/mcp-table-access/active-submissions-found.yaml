@@ -1,0 +1,16 @@
+kind: helper
+name: mcp-table-access-active-submissions-found
+call:
+  b4711:
+    function: active_submissions
+    user_id: user-1
+    rows:
+      - {server_id: srv-1, server_name: one, transport: sse, alias: Match, approval_status: active}
+      - {server_id: srv-2, server_name: match, transport: sse, approval_status: null}
+      - {server_id: srv-3, server_name: old, transport: sse, approval_status: draft}
+      - {server_id: srv-4, server_name: Same, transport: sse, alias: Same, approval_status: pending_review, submitted_by: user-1, submitted_at: "2026-01-01T00:00:00Z", env: 'cmI1ExsFEux-SoG1p_OyXZI7KwxtAAxGlSuXTDgW4egNppMir7m-LoE5nSxIPjaBR_25y3yE4s2fHA=='}
+      - {server_id: srv-5, server_name: bad, transport: sse, approval_status: rejected, submitted_by: user-2, submitted_at: "2026-01-02T00:00:00Z", env: 'T2Ff9O0Cco1Ldtq9uK-12uiib8rHEiHiHu27bbox4tA_SsvhDln8-a1QXdPIj6cAo5AGXG5Y_qC2zGZw=='}
+      - {server_id: srv-6, server_name: live, transport: sse, approval_status: active, submitted_by: user-1, submitted_at: "2026-01-03T00:00:00Z"}
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}
