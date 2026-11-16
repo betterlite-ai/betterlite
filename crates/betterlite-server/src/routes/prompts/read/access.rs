@@ -61,11 +61,11 @@ where
     TableError: StdError + 'static,
 {
     let view = PromptKeyView::from_principal(principal).map_err(PromptReadError::KeyMetadata)?;
-    let allowed = view
+    let allowlist = view
         .metadata
         .as_ref()
         .and_then(|metadata| metadata.prompts.as_deref());
-    if let Some(allowed) = allowed
+    if let Some(allowed) = allowlist
         && !allowed.iter().any(|entry| entry.as_str() == prompt_id)
     {
         return Err(PromptReadError::Denied {

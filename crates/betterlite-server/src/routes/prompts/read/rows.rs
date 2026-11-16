@@ -46,7 +46,7 @@ where
     Table: PromptTableActions,
 {
     let base_prompt_id = get_base_prompt_id(prompt_id);
-    let versions = match state.table.as_deref() {
+    let stored_versions = match state.table.as_deref() {
         None => in_memory_versions(state, &base_prompt_id, environment).await,
         Some(table) => table
             .find_many(rows_query(&base_prompt_id, environment, None, None))
@@ -57,7 +57,7 @@ where
             .collect::<Result<Vec<PromptSpec>, _>>()
             .map_err(PromptReadError::Row)?,
     };
-    let versions = history_or_missing(versions, &base_prompt_id)?;
+    let versions = history_or_missing(stored_versions, &base_prompt_id)?;
     Ok(history_response(&versions))
 }
 

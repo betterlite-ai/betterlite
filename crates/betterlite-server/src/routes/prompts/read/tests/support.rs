@@ -265,10 +265,10 @@ pub(super) fn stored_prompt_with_content(
 }
 
 #[derive(Serialize)]
-struct StoredParams<'a> {
-    prompt_id: &'a str,
-    prompt_integration: &'a str,
-    dotprompt_content: &'a str,
+struct StoredParams<'text> {
+    prompt_id: &'text str,
+    prompt_integration: &'text str,
+    dotprompt_content: &'text str,
 }
 
 fn timestamp() -> DateTime<Utc> {
