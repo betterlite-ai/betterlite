@@ -8,29 +8,29 @@ from .views import CHAT, logging_object
 from .wire import MODEL, Object, ReplyCall
 
 
-class UsageRecord(TypedDict, total=False):
-    prompt_tokens: int | None
-    completion_tokens: int | None
-    total_tokens: int | None
+class UsageRecord(TypedDict):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
 
 
-class ToolFunctionRecord(TypedDict, total=False):
+class ToolFunctionRecord(TypedDict):
     name: str | None
-    arguments: str | None
+    arguments: str
 
 
-class ToolCallRecord(TypedDict, total=False):
-    id: str | None
-    type: str | None
+class ToolCallRecord(TypedDict):
+    id: str
+    type: str
     function: ToolFunctionRecord
 
 
-class MessageRecord(TypedDict, total=False):
+class MessageRecord(TypedDict):
     content: JsonValue
     tool_calls: list[ToolCallRecord] | None
 
 
-class ChoiceRecord(TypedDict, total=False):
+class ChoiceRecord(TypedDict):
     index: int | None
     finish_reason: str | None
     message: MessageRecord
@@ -38,11 +38,11 @@ class ChoiceRecord(TypedDict, total=False):
 
 
 class ReplyRecord(TypedDict):
+    id: str | None
+    object: str | None
+    created: int | None
+    model: str | None
     choices: list[ChoiceRecord]
-    id: NotRequired[str | None]
-    object: NotRequired[str | None]
-    created: NotRequired[int | None]
-    model: NotRequired[str | None]
     usage: NotRequired[UsageRecord | None]
 
 
@@ -58,39 +58,36 @@ def usage_value(usage: UsageRecord | None) -> JsonValue:
     if usage is None:
         return None
     return {
-        "prompt_tokens": usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("completion_tokens"),
-        "total_tokens": usage.get("total_tokens"),
-    }
-
-
-def tool_call_value(call: ToolCallRecord) -> JsonValue:
-    function = call.get("function")
-    name = None if function is None else function.get("name")
-    arguments = None if function is None else function.get("arguments")
-    return {
-        "id": call.get("id"),
-        "type": call.get("type"),
-        "function": {"name": name, "arguments": arguments},
+        "prompt_tokens": usage["prompt_tokens"],
+        "completion_tokens": usage["completion_tokens"],
+        "total_tokens": usage["total_tokens"],
     }
 
 
 def tool_calls_value(calls: list[ToolCallRecord] | None) -> JsonValue:
     if calls is None:
         return None
-    return [tool_call_value(call) for call in calls]
+    values: list[JsonValue] = [
+        {
+            "id": call["id"],
+            "type": call["type"],
+            "function": {
+                "name": call["function"]["name"],
+                "arguments": call["function"]["arguments"],
+            },
+        }
+        for call in calls
+    ]
+    return values
 
 
 def choice_value(choice: ChoiceRecord) -> JsonValue:
-    message = choice.get("message")
-    native = choice.get("provider_specific_fields")
-    content = None if message is None else message.get("content")
-    calls = None if message is None else tool_calls_value(message.get("tool_calls"))
+    native = choice["provider_specific_fields"]
     return {
-        "index": choice.get("index"),
-        "finish_reason": choice.get("finish_reason"),
-        "content": content,
-        "tool_calls": calls,
+        "index": choice["index"],
+        "finish_reason": choice["finish_reason"],
+        "content": choice["message"]["content"],
+        "tool_calls": tool_calls_value(choice["message"]["tool_calls"]),
         "native_finish_reason": None if native is None else native.get("native_finish_reason"),
     }
 
@@ -104,28 +101,26 @@ def reply_value(call: ReplyCall) -> JsonValue:
         stream=httpx.ByteStream(call["body"].encode()),
         request=request,
     )
-    # a streamed response has no text until it is read, and content= would put Content-Length in the headers
+    # a streamed response has no text until it is read
     raw_response.read()
     response: ModelResponse = CHAT.transform_response(
-        model=MODEL,
-        raw_response=raw_response,
-        model_response=ModelResponse(),
-        logging_obj=logging_object(),
-        request_data={},
-        messages=[],
-        optional_params=call["optional_params"],
-        litellm_params={},
-        encoding=None,
-        api_key=None,
-        json_mode=None,
+        MODEL,
+        raw_response,
+        ModelResponse(),
+        logging_object(),
+        {},
+        [],
+        call["optional_params"],
+        {},
+        None,
     )
     record = REPLY_RECORD.validate_json(response.model_dump_json())
     hidden = HiddenCarrier.model_validate(response, from_attributes=True).params
     return {
-        "id": record.get("id"),
-        "object": record.get("object"),
-        "created": record.get("created"),
-        "model": record.get("model"),
+        "id": record["id"],
+        "object": record["object"],
+        "created": record["created"],
+        "model": record["model"],
         "choices": [choice_value(choice) for choice in record["choices"]],
         "usage": usage_value(record.get("usage")),
         "hidden": hidden,

@@ -1,3 +1,4 @@
+import os
 from typing import TypedDict
 
 import litellm
@@ -71,3 +72,10 @@ class Input(TypedDict):
     replies: list[ReplyCall]
     chunks: list[ChunkCall]
     models: list[ModelCall]
+
+
+def activate(environment: dict[str, str]) -> None:
+    for name in MANAGED_ENV:
+        os.environ.pop(name, None)
+    for name, value in environment.items():
+        os.environ[name] = value

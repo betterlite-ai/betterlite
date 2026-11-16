@@ -3,9 +3,8 @@ import litellm
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from pydantic import JsonValue
 
-from .auth import activate
 from .views import CHAT
-from .wire import ModelCall
+from .wire import ModelCall, activate
 
 
 class RecordingTransport(httpx.MockTransport):

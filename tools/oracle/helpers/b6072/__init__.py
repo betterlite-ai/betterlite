@@ -1,13 +1,27 @@
 import litellm
 from pydantic import JsonValue
 
-from .auth import header_value, key_value
-from .chat import request_value
 from .chunks import chunk_value
 from .models import model_value
 from .replies import reply_value
-from .views import pin_clock
-from .wire import Input, Object
+from .views import CHAT, pin_clock
+from .wire import MODEL, HeaderCall, Input, KeyCall, Object, RequestCall, activate
+
+
+def header_value(call: HeaderCall) -> JsonValue:
+    activate(call["environment"])
+    return CHAT.validate_environment(
+        call["headers"], MODEL, [], {}, call["litellm_params"], call["api_key"], None
+    )
+
+
+def key_value(call: KeyCall) -> JsonValue:
+    activate(call["environment"])
+    return CHAT.get_api_key(api_key=call["api_key"])
+
+
+def request_value(call: RequestCall) -> JsonValue:
+    return CHAT.transform_request(call["model"], call["messages"], call["optional_params"], {}, {})
 
 
 def run(input_value: Input) -> JsonValue:

@@ -27,12 +27,13 @@ class ChatConfig(Protocol):
     def validate_environment(
         self,
         headers: dict[str, str],
-        model: str,
-        messages: list[Object],
-        optional_params: Object,
+        _model: str,
+        _messages: list[Object],
+        _optional_params: Object,
         litellm_params: Object,
-        api_key: str | None = None,
-        api_base: str | None = None,
+        api_key: str | None,
+        _api_base: str | None,
+        /,
     ) -> Object: ...
 
     def transform_request(
@@ -46,17 +47,16 @@ class ChatConfig(Protocol):
 
     def transform_response(
         self,
-        model: str,
+        _model: str,
         raw_response: httpx.Response,
         model_response: ModelResponse,
         logging_obj: Logging,
-        request_data: Object,
-        messages: list[Object],
+        _request_data: Object,
+        _messages: list[Object],
         optional_params: Object,
-        litellm_params: Object,
-        encoding: None,
-        api_key: str | None = None,
-        json_mode: bool | None = None,
+        _litellm_params: Object,
+        _encoding: None,
+        /,
     ) -> ModelResponse: ...
 
     def get_api_key(self, *, api_key: str | None = None) -> str | None: ...
@@ -66,8 +66,9 @@ class ChatConfig(Protocol):
     def get_model_response_iterator(
         self,
         streaming_response: Iterator[str],
+        *,
         sync_stream: bool,
-        json_mode: bool = False,
+        json_mode: bool,
     ) -> ChunkHandler: ...
 
 
