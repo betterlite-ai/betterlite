@@ -24,6 +24,9 @@ deviations:
   - what: There is no secretAccessor binding for an OTel headers secret.
     why: betterlite has no OTel headers secret variable; B8146 carries otel_endpoint only, so there is no secret to read.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/iam.tf#L84-L92
+  - what: The runtime service account is named "betterlite runtime" and carries the module labels. LiteLLM calls it a Cloud Run runtime and puts no labels on it.
+    why: betterlite names its own resources after itself and labels every label-supporting resource it creates, as the module's labels variable promises.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/iam.tf#L6-L8
   - what: The identity variables live in variables_identity.tf, the secret accessor bindings sit next to the secrets in secrets.tf, and the variables and resources are split across files instead of one variables.tf and one secrets.tf/iam.tf pair with the bindings in iam.tf.
     why: Three parallel tasks write the module, and a Terraform module reads every .tf file in its folder, so the split changes nothing for a caller.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/variables.tf
