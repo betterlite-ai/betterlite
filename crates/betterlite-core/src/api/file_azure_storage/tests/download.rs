@@ -126,7 +126,7 @@ async fn account_key_download_keeps_a_lone_slash() {
         paths(&harness.calls()),
         vec![
             ("GET".to_owned(), format!("{FILES}?restype=container")),
-            ("GET".to_owned(), format!("{FILES}/")),
+            ("GET".to_owned(), format!("{FILES}//")),
         ]
     );
 }
