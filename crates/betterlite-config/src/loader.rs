@@ -90,11 +90,18 @@ const CONFIG_LOAD_STACK_SIZE: usize = 64 * 1024 * 1024;
 
 impl<L: EnvironmentLookup + Sync> ConfigLoader<L> {
     pub fn load(&self, source: &str) -> Result<Config, ConfigError> {
+        // the subscriber and span are per thread, so the load thread gets the caller's
+        let dispatch = tracing::dispatcher::get_default(Clone::clone);
+        let span = tracing::Span::current();
         thread::scope(|scope| {
             let handle = thread::Builder::new()
                 .name("config-load".to_owned())
                 .stack_size(CONFIG_LOAD_STACK_SIZE)
-                .spawn_scoped(scope, || self.load_document(source))
+                .spawn_scoped(scope, || {
+                    tracing::dispatcher::with_default(&dispatch, || {
+                        span.in_scope(|| self.load_document(source))
+                    })
+                })
                 .map_err(|error| ConfigError::LoadThread { source: error })?;
             match handle.join() {
                 Ok(result) => result,
