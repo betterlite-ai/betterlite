@@ -48,6 +48,19 @@ fn a_page_body_returns_every_field_it_carries() {
 }
 
 #[test]
+fn a_job_keeps_its_state_and_create_time_and_drops_what_the_type_does_not_read() {
+    assert_eq!(
+        run(
+            r#"{"batchPredictionJobs":[{"state":"JOB_STATE_RUNNING","createTime":"t","other":1},{"state":null}]}"#
+        ),
+        json!({"batchPredictionJobs": [
+            {"state": "JOB_STATE_RUNNING", "createTime": "t"},
+            {"state": null}
+        ]})
+    );
+}
+
+#[test]
 fn a_null_job_list_and_an_empty_token_keep_their_keys() {
     assert_eq!(
         run(r#"{"batchPredictionJobs":null}"#),
