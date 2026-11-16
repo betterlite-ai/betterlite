@@ -9,6 +9,9 @@ deviations:
   - what: "A valid non-admin key answers 403 with a {\"detail\": \"...\"} body, while LiteLLM's admin-only route check raises a plain Exception that auth_exception_handler turns into a 401 auth_error envelope."
     why: "betterlite's management routes carry the admin-only check in the route (as guardrails/custom_code_test does), so a forbidden caller gets the route's own 403 and detail body instead of an authentication failure."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L249-L257
+  - what: "An explicit socket_timeout null tests with B4321's 5.0 second default, while LiteLLM only assigns socket_timeout to the redis client when it is not None, so the null leaves the client without that timeout."
+    why: "The bridge drops null keyword arguments, and B4321's connect fills an absent socket_timeout with RedisCache.__init__'s 5.0 default and has no way to build a client without one; a Redis that answers PING after more than 5 seconds passes the test in LiteLLM and fails it in betterlite."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L604-L650
   - what: "A null value for a name no redis client knows is dropped, so the test still runs, while LiteLLM passes the null through Cache's **kwargs and redis.Redis raises TypeError for the unknown name, which the endpoint answers as a failed test."
     why: "B4321's typed option map has no null member, so the bridge drops every null except an explicit url null; the unknown option is then absent instead of rejected, which is the opposite of LiteLLM's outcome for that input."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L213-L219
