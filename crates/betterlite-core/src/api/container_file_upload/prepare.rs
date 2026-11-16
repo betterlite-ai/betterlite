@@ -52,7 +52,13 @@ where
             ));
         }
     }
-    let litellm_params = request_params(request, &kwargs);
+    let litellm_params = request_params(request, &kwargs).map_err(|source| {
+        failure(
+            ContainerFileUploadError::Params(source),
+            caller.provider,
+            deps.redactor,
+        )
+    })?;
     let upload = resolve_call(deps, request, &kwargs, &litellm_params, caller)?;
     Ok(Prepared::Call(upload))
 }
@@ -118,11 +124,10 @@ fn call_kwargs(request: &ContainerFileUploadRequest<'_>) -> IndexMap<String, Jso
 fn request_params(
     request: &ContainerFileUploadRequest<'_>,
     kwargs: &IndexMap<String, Json>,
-) -> IndexMap<String, JsonValue> {
-    let mut params: IndexMap<String, JsonValue> = kwargs
-        .iter()
-        .map(|(name, value)| (name.clone(), JsonValue::from(value)))
-        .collect();
+) -> Result<IndexMap<String, JsonValue>, serde_json::Error> {
+    // Json and JsonValue are the same closed JSON shape in two types, already serialized identically, so one serde pass bridges them
+    let encoded = serde_json::to_string(kwargs)?;
+    let mut params: IndexMap<String, JsonValue> = serde_json::from_str(&encoded)?;
     let credentials = [
         (
             "api_key",
@@ -139,7 +144,7 @@ fn request_params(
             params.insert(name.to_owned(), JsonValue::Text(value));
         }
     }
-    params
+    Ok(params)
 }
 
 // Python's `timeout or DEFAULT_REQUEST_TIMEOUT`: the declared default is already applied, and a zero picks the request timeout

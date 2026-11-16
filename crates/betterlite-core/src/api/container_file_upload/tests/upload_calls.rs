@@ -61,6 +61,11 @@ fn upload_passes_named_credentials_and_kwargs_in_litellm_params() {
             Json::Number(Number::from(7_i64)),
         )])),
     );
+    fixture.kwargs.insert(
+        "top_p".to_owned(),
+        Json::Number(Number::from_f64(0.5).expect("the fixture float is finite")),
+    );
+    fixture.kwargs.insert("stop".to_owned(), Json::Null);
     let request = fixture.request();
     let executor = StubExecutor::replying(object("file_1"));
 
@@ -101,6 +106,13 @@ fn upload_passes_named_credentials_and_kwargs_in_litellm_params() {
             JsonValue::Number(Number::from(7_i64)),
         )])))
     );
+    assert_eq!(
+        seen.litellm_params.get("top_p"),
+        Some(&JsonValue::Number(
+            Number::from_f64(0.5).expect("the fixture float is finite")
+        ))
+    );
+    assert_eq!(seen.litellm_params.get("stop"), Some(&JsonValue::Null));
     assert_eq!(
         seen.litellm_params.get("litellm_call_id"),
         Some(&JsonValue::Text(CALL_ID.to_owned()))

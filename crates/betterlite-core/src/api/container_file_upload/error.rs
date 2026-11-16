@@ -35,6 +35,9 @@ where
     Mock(#[from] MockDecodeError),
     #[error(transparent)]
     Decode(#[from] ContainerFieldTypeError),
+    // the Json-to-JsonValue kwargs bridge in prepare.rs; a failure here is a local ValueError, not a provider answer
+    #[error(transparent)]
+    Params(#[from] serde_json::Error),
     #[error("Container provider config not found for provider: {provider}")]
     ProviderConfigMissing { provider: String },
     #[error(transparent)]
@@ -83,7 +86,8 @@ where
         ),
         ContainerFileUploadError::Mock(_)
         | ContainerFileUploadError::ProviderConfigMissing { .. }
-        | ContainerFileUploadError::Logging(_) => {
+        | ContainerFileUploadError::Logging(_)
+        | ContainerFileUploadError::Params(_) => {
             let mut raw = exception(error.to_string(), provider, None);
             "ValueError".clone_into(&mut raw.exception_type);
             dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
