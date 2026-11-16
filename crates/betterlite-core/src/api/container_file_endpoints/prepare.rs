@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Mutex, PoisonError};
+use std::sync::PoisonError;
 use std::time::Duration;
 
 use betterlite_logging::logging_state::LoggingState;
@@ -18,18 +18,9 @@ use serde::de::DeserializeOwned;
 use serde_json::Number;
 use serde_json::json;
 
-use super::call::ContainerFileCall;
+use super::call::{CallSite, ContainerFileCall};
 use super::error::ContainerFileOpError;
 use super::handler::{ContainerConfigLookup, ContainerFileHandlerCall, ContainerIdDecoder};
-
-// one call's arguments and the provider the error mapping names, updated once the id is decoded
-pub(super) struct CallSite<'call> {
-    pub(super) endpoint_name: &'call str,
-    pub(super) call: &'call ContainerFileCall,
-    pub(super) logging: &'call Mutex<LoggingState>,
-    pub(super) default_timeout_seconds: f64,
-    pub(super) provider: String,
-}
 
 // a mock answer, or everything the handler call needs
 pub(super) enum Prepared<'deps> {

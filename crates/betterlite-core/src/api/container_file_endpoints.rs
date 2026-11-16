@@ -1,3 +1,4 @@
+mod asynchronous;
 pub mod call;
 pub mod error;
 pub mod handler;
@@ -13,10 +14,10 @@ use betterlite_openai::api::container_contracts::catalog::{
 use betterlite_openai::containers::container_file_http::ContainerFileReply;
 use betterlite_redact::secret::Redactor;
 
-use self::call::ContainerFileCall;
+use self::call::{CallSite, ContainerFileCall};
 use self::error::{ContainerFileFailureError, ContainerFileOpError, failure};
 use self::handler::{ContainerConfigLookup, ContainerFileHandler, ContainerIdDecoder};
-use self::prepare::{CallSite, Prepared, prepare as prepare_call};
+use self::prepare::{Prepared, prepare as prepare_call};
 
 // containers/__init__.py re-exports eight of the ten generated names, leaving out upload_container_file, while the router registers all ten; the name lists below are the whole export surface here
 pub struct ContainerFileEndpoints<'deps, Handler, Decoder, Configs> {
@@ -55,13 +56,7 @@ where
         logging: &Mutex<LoggingState>,
         default_timeout_seconds: f64,
     ) -> Result<ContainerFileReply, ContainerFileFailureError> {
-        let mut site = CallSite {
-            endpoint_name,
-            call,
-            logging,
-            default_timeout_seconds,
-            provider: call.custom_llm_provider.clone(),
-        };
+        let mut site = CallSite::new(endpoint_name, call, logging, default_timeout_seconds);
         match prepare_call(&self.endpoints, &mut site, self.decoder, self.configs) {
             Ok(Prepared::Answered(reply)) => Ok(reply),
             Ok(Prepared::Ready(prepared)) => {
@@ -85,49 +80,28 @@ where
         logging: &Mutex<LoggingState>,
         default_timeout_seconds: f64,
     ) -> Result<ContainerFileReply, ContainerFileFailureError> {
-        let mut site = CallSite {
+        asynchronous::acontainer_file_call(
+            self,
             endpoint_name,
             call,
             logging,
             default_timeout_seconds,
-            provider: call.custom_llm_provider.clone(),
-        };
-        match prepare_call(&self.endpoints, &mut site, self.decoder, self.configs) {
-            Ok(Prepared::Answered(reply)) => Ok(reply),
-            Ok(Prepared::Ready(prepared)) => {
-                let reply = self
-                    .handler
-                    .ahandle(&prepared.handler_call(call, logging))
-                    .await;
-                reply.map_err(|error| {
-                    failure(
-                        ContainerFileOpError::Handler(error),
-                        &site.provider,
-                        self.redactor,
-                    )
-                })
-            }
-            Err(error) => Err(failure(error, &site.provider, self.redactor)),
-        }
+        )
+        .await
     }
 }
 
 // generate_container_endpoints' name table: each catalog entry's name, then its async_name
 pub fn all_endpoint_names() -> Result<Vec<String>, CatalogError> {
-    let endpoints = container_endpoints()?;
-    let mut names = Vec::new();
-    for entry in &endpoints {
-        names.push(entry.name.clone());
-        names.push(entry.async_name.clone());
-    }
-    Ok(names)
+    Ok(container_endpoints()?
+        .into_iter()
+        .flat_map(|entry| [entry.name, entry.async_name])
+        .collect())
 }
 
 pub fn async_endpoint_names() -> Result<Vec<String>, CatalogError> {
-    let endpoints = container_endpoints()?;
-    let mut names = Vec::new();
-    for entry in &endpoints {
-        names.push(entry.async_name.clone());
-    }
-    Ok(names)
+    Ok(container_endpoints()?
+        .into_iter()
+        .map(|entry| entry.async_name)
+        .collect())
 }

@@ -16,9 +16,8 @@ use betterlite_openai::api::container_contracts::config::{
 };
 use betterlite_openai::api::container_contracts::error::{BaseLlmException, ContainerError};
 use betterlite_openai::api::container_contracts::records::{
-    ContainerFileListResponse, ContainerFileObject, ContainerFileObjectLiteral,
-    ContainerListResponse, ContainerObject, DeleteContainerFileLiteral,
-    DeleteContainerFileResponse, DeleteContainerResult, ListObjectLiteral,
+    ContainerFileListResponse, ContainerFileObject, ContainerListResponse, ContainerObject,
+    DeleteContainerFileResponse, DeleteContainerResult,
 };
 use betterlite_openai::containers::container_file_http::request::ParamValue;
 use betterlite_openai::containers::container_file_http::{
@@ -66,29 +65,6 @@ fn logging_state() -> LoggingState {
     .unwrap()
 }
 
-pub(super) fn file_object() -> ContainerFileObject {
-    ContainerFileObject {
-        id: "cfile_1".to_owned(),
-        object: ContainerFileObjectLiteral::Dotted,
-        container_id: "cntr_1".to_owned(),
-        bytes: Some(12),
-        created_at: 1_750_000_000,
-        path: "/mnt/data/a.txt".to_owned(),
-        source: "user".to_owned(),
-        hidden_params: Object::new(),
-    }
-}
-
-pub(super) fn file_list() -> ContainerFileListResponse {
-    ContainerFileListResponse {
-        object: ListObjectLiteral::List,
-        data: vec![file_object()],
-        first_id: Some("cfile_1".to_owned()),
-        last_id: Some("cfile_1".to_owned()),
-        has_more: false,
-    }
-}
-
 // the wire documents a caller passes as mock_response, as the Python models declare them
 pub(super) const FILE_JSON: &str = concat!(
     r#"{"id":"cfile_1","object":"container.file","container_id":"cntr_1","bytes":12,"#,
@@ -105,12 +81,17 @@ pub(super) const LIST_JSON: &str = concat!(
 pub(super) const DELETED_JSON: &str =
     r#"{"id":"cfile_1","object":"container.file.deleted","deleted":true}"#;
 
+// the same documents are the models a mock decodes into, so the fixtures cannot drift from the wire
+pub(super) fn file_object() -> ContainerFileObject {
+    serde_json::from_str(FILE_JSON).expect("the file document parses")
+}
+
+pub(super) fn file_list() -> ContainerFileListResponse {
+    serde_json::from_str(LIST_JSON).expect("the list document parses")
+}
+
 pub(super) fn deleted_file() -> DeleteContainerFileResponse {
-    DeleteContainerFileResponse {
-        id: "cfile_1".to_owned(),
-        object: DeletedContainerFileLiteral::Dotted,
-        deleted: true,
-    }
+    serde_json::from_str(DELETED_JSON).expect("the delete document parses")
 }
 
 pub(super) fn upload() -> ContainerFileUpload {
@@ -134,13 +115,14 @@ pub(super) fn list_call() -> ContainerFileCall {
 
 // a call with every typed kwarg the generated functions name
 pub(super) fn credentialed_list_call() -> ContainerFileCall {
-    let mut call = list_call();
-    call.file_id = Some("cfile_7".to_owned());
-    call.api_key = Some(SecretString::from("sk-test"));
-    call.api_base = Some("https://api.example".to_owned());
-    call.api_version = Some("2024-01-01".to_owned());
-    call.extra = IndexMap::from([("model".to_owned(), Json::Text("gpt-4o-mini".to_owned()))]);
-    call
+    ContainerFileCall {
+        file_id: Some("cfile_7".to_owned()),
+        api_key: Some(SecretString::from("sk-test")),
+        api_base: Some("https://api.example".to_owned()),
+        api_version: Some("2024-01-01".to_owned()),
+        extra: IndexMap::from([("model".to_owned(), Json::Text("gpt-4o-mini".to_owned()))]),
+        ..list_call()
+    }
 }
 
 pub(super) fn managed_retrieve_call() -> ContainerFileCall {

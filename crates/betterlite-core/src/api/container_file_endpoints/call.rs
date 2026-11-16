@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
+use std::sync::Mutex;
 use std::time::Duration;
 
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::containers::container_file_http::ContainerFileUpload;
 use betterlite_openai::containers::container_file_http::request::ParamValue;
@@ -36,6 +38,32 @@ pub struct ContainerFileCall {
     pub litellm_call_id: Option<String>,
     // every other keyword, which reads only as litellm_params extras and logging metadata
     pub extra: IndexMap<String, Json>,
+}
+
+// one call's arguments and the provider the error mapping names, updated once the id is decoded
+pub(super) struct CallSite<'call> {
+    pub(super) endpoint_name: &'call str,
+    pub(super) call: &'call ContainerFileCall,
+    pub(super) logging: &'call Mutex<LoggingState>,
+    pub(super) default_timeout_seconds: f64,
+    pub(super) provider: String,
+}
+
+impl<'call> CallSite<'call> {
+    pub(super) fn new(
+        endpoint_name: &'call str,
+        call: &'call ContainerFileCall,
+        logging: &'call Mutex<LoggingState>,
+        default_timeout_seconds: f64,
+    ) -> Self {
+        Self {
+            endpoint_name,
+            call,
+            logging,
+            default_timeout_seconds,
+            provider: call.custom_llm_provider.clone(),
+        }
+    }
 }
 
 impl Default for ContainerFileCall {
