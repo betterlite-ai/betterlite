@@ -211,6 +211,15 @@ fn each<T>(runs: &[T], one: impl Fn(&T) -> HelperResult) -> HelperResult {
     Ok(json!({ "runs": values }))
 }
 pub(super) fn run(input: &Input) -> HelperResult {
+    let bearer_token = match input {
+        Input::Sign { bearer, .. } => bearer.clone().map(SecretString::from),
+        Input::Url { .. } | Input::Reply { .. } | Input::Collect { .. } => None,
+    };
+    let identity = PassthroughIdentity {
+        credentials: None,
+        bearer_token,
+        now: SystemTime::UNIX_EPOCH,
+    };
     match input {
         Input::Url { environment, runs } => {
             let settings = PassthroughEnvironment {
@@ -219,19 +228,19 @@ pub(super) fn run(input: &Input) -> HelperResult {
                 session_region: None,
                 runtime_endpoint: environment.runtime_endpoint.clone(),
             };
-            let plan = plan(settings, identity(None));
+            let plan = plan(settings, identity);
             each(runs, |run| url_run(&plan, run))
         }
-        Input::Sign { bearer, runs } => {
-            let plan = plan(PassthroughEnvironment::default(), identity(bearer.clone()));
+        Input::Sign { runs, .. } => {
+            let plan = plan(PassthroughEnvironment::default(), identity);
             each(runs, |run| sign_run(&plan, run))
         }
         Input::Reply { runs } => {
-            let plan = plan(PassthroughEnvironment::default(), identity(None));
+            let plan = plan(PassthroughEnvironment::default(), identity);
             each(runs, |run| reply_run(&plan, run))
         }
         Input::Collect { runs, stream } => {
-            let plan = plan(PassthroughEnvironment::default(), identity(None));
+            let plan = plan(PassthroughEnvironment::default(), identity);
             let bytes = hex::decode(stream).or_value_error()?;
             each(runs, |run| collect_run(&plan, run, &bytes))
         }
