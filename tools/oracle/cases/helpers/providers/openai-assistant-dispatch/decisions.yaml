@@ -7,6 +7,7 @@ call:
     api_base: https://example.test/v1
     api_key: sk-fixture
     model: gpt-4o
+    environment: {}
     decision:
       input: Check this
       questions:
@@ -25,6 +26,20 @@ calls:
       api_base: null
       api_key: null
       model: gpt-4o
+      environment: {}
+      decision:
+        input: Check this
+        questions:
+          - {type: predicate, instructions: "Is it valid?"}
+  - openai_assistant_dispatch:
+      kind: decisions
+      operation: request
+      api_base: null
+      api_key: null
+      model: gpt-4o
+      environment:
+        OPENAI_API_KEY: sk-env
+        OPENAI_BASE_URL: https://env.test/v1
       decision:
         input: Check this
         questions:
@@ -35,6 +50,7 @@ calls:
       api_base: https://example.test/v1
       api_key: sk-fixture
       model: gpt-4o
+      environment: {}
       decision:
         input: Check this
         questions:
@@ -52,6 +68,7 @@ calls:
       api_base: null
       api_key: null
       model: gpt-4o
+      environment: {}
       decision:
         input: Check this
         questions:

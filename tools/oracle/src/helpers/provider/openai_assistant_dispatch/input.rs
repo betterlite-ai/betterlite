@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::decisions::openai::DecisionRequestBody;
 use betterlite_openai::assistants::records::ListParams;
 use betterlite_openai::realtime::url::QueryParams;
@@ -60,6 +62,15 @@ impl Params {
     }
 }
 
+// The caller's LiteLLM globals, which the decisions leaf consults before it reads the environment.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub(crate) struct Globals {
+    pub api_base: Option<String>,
+    pub api_key: Option<String>,
+    pub openai_key: Option<String>,
+}
+
 // One canned upstream answer: a JSON body, an SSE text body or an error status with either.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct Reply {
@@ -108,4 +119,8 @@ pub(crate) struct Input {
     pub openai_beta: bool,
     pub close_error: Option<String>,
     pub max_message_size_bytes: Option<usize>,
+    #[serde(default)]
+    pub globals: Globals,
+    #[serde(default)]
+    pub environment: BTreeMap<String, String>,
 }

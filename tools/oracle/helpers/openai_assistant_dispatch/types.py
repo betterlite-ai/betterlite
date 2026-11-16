@@ -66,6 +66,7 @@ Input = TypedDict(
         "scope_headers": list[tuple[str, str]],
         "close_error": str | None,
         "max_message_size_bytes": int,
+        "environment": dict[str, str],
     },
 )
 

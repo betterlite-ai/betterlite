@@ -30,7 +30,50 @@ fn status_of(error: &OpenAiAssistantError) -> Option<u16> {
         OpenAiAssistantError::Assistants(AssistantsError::Status { status, .. }) => Some(*status),
         OpenAiAssistantError::Threads(ThreadsError::Status { status, .. }) => Some(*status),
         OpenAiAssistantError::Runs(ThreadRunsError::Status(status, _body)) => Some(*status),
-        _ => None,
+        OpenAiAssistantError::Assistants(
+            AssistantsError::MissingApiKey
+            | AssistantsError::BaseUrl { .. }
+            | AssistantsError::Header { .. }
+            | AssistantsError::EmptyAssistantId
+            | AssistantsError::DotSegment { .. }
+            | AssistantsError::Encode { .. }
+            | AssistantsError::Transport { .. }
+            | AssistantsError::Malformed { .. }
+            | AssistantsError::Truncated { .. }
+            | AssistantsError::Shape { .. },
+        )
+        | OpenAiAssistantError::Threads(
+            ThreadsError::MissingApiKey
+            | ThreadsError::BaseUrl { .. }
+            | ThreadsError::Header { .. }
+            | ThreadsError::EmptyThreadId
+            | ThreadsError::DotSegment { .. }
+            | ThreadsError::Encode { .. }
+            | ThreadsError::Transport { .. }
+            | ThreadsError::Reply { .. },
+        )
+        | OpenAiAssistantError::Runs(
+            ThreadRunsError::MissingApiKey
+            | ThreadRunsError::BaseUrl(_)
+            | ThreadRunsError::Header(_)
+            | ThreadRunsError::EmptyThreadId
+            | ThreadRunsError::EmptyRunId
+            | ThreadRunsError::DotSegment(_)
+            | ThreadRunsError::Transport(_)
+            | ThreadRunsError::Malformed(_)
+            | ThreadRunsError::Truncated(_)
+            | ThreadRunsError::Shape(_)
+            | ThreadRunsError::PollAfter(_)
+            | ThreadRunsError::ProviderError { .. }
+            | ThreadRunsError::StreamTooLarge
+            | ThreadRunsError::Timeout,
+        )
+        | OpenAiAssistantError::DecisionsRequest(_)
+        | OpenAiAssistantError::DecisionsPayload(_)
+        | OpenAiAssistantError::DecisionsResponse(_)
+        | OpenAiAssistantError::Realtime(_)
+        | OpenAiAssistantError::Redaction(_)
+        | OpenAiAssistantError::UnsupportedOperation => None,
     }
 }
 

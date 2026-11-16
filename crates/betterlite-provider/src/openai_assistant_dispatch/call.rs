@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::tls::Verification;
 use betterlite_models::decisions::openai::DecisionRequestBody;
 use betterlite_openai::assistants::client::ClientOptions;
 use betterlite_openai::assistants::records::{AssistantCreate, ListParams};
+use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::realtime::failure::RealtimeFailure;
 use betterlite_openai::realtime::url::QueryParams;
 use betterlite_openai::thread_runs::operations::RunDispatch;
@@ -10,7 +13,7 @@ use betterlite_openai::threads::records::{ThreadCreate, ThreadMessageData};
 use secrecy::SecretString;
 
 // The typed call the composition executes; operation.rs carries the unit marker above it and the caller keeps the call beside it.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum OpenAiAssistantOperation {
     Assistants(AssistantsCall),
     Threads(ThreadsCall),
@@ -97,11 +100,13 @@ pub enum DecisionsOperation {
     },
 }
 
-// An already resolved api_base or api_key wins; otherwise the leaf config resolves the default or the key.
-#[derive(Debug, Clone)]
+// An explicit api_base or api_key wins, then the caller's LiteLLM globals, then the caller's environment map; the leaf config answers the default.
+#[derive(Debug)]
 pub struct DecisionsCall {
     pub api_base: Option<String>,
     pub api_key: Option<SecretString>,
+    pub globals: LiteLlmGlobals,
+    pub environment: BTreeMap<String, String>,
     pub operation: DecisionsOperation,
 }
 

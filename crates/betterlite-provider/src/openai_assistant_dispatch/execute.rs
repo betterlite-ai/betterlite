@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use betterlite_openai::assistants::operations::AssistantsApi;
 use betterlite_openai::assistants::transport::AssistantsTransport;
-use betterlite_openai::decisions::openai::config::OpenAiDecisionsConfig;
+use betterlite_openai::decisions::openai::config::{Credential, OpenAiDecisionsConfig};
 use betterlite_openai::decisions::openai::request::openai_request_to_ir;
 use betterlite_openai::decisions::openai::response::to_openai::ir_to_openai_response;
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
@@ -158,16 +158,21 @@ where
 }
 
 fn decisions(call: DecisionsCall) -> Result<DecisionsReply, OpenAiAssistantError> {
-    let config = OpenAiDecisionsConfig::default();
-    let api_base = config.resolve_api_base(call.api_base.as_deref(), |_name| String::new());
-    let supplied_key = call
-        .api_key
-        .as_ref()
-        .map(|key| key.expose_secret().as_str());
+    let DecisionsCall {
+        api_base,
+        api_key,
+        globals,
+        environment,
+        operation,
+    } = call;
+    let config = OpenAiDecisionsConfig { globals };
+    let get_secret_str = |name: &str| environment.get(name).cloned().unwrap_or_default();
+    let api_base = config.resolve(api_base.as_deref(), Credential::Base, &get_secret_str);
+    let supplied_key = api_key.as_ref().map(|key| key.expose_secret().as_str());
     let api_key = config
-        .resolve_api_key(supplied_key, |_name| String::new())
+        .resolve(supplied_key, Credential::Key, &get_secret_str)
         .map(SecretString::from);
-    let projection = match call.operation {
+    let projection = match operation {
         DecisionsOperation::Request { model, request } => {
             let ir = openai_request_to_ir(&request);
             DecisionsProjection::Request(Box::new(

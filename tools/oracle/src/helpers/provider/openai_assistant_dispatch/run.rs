@@ -5,6 +5,7 @@ use betterlite_config::tls::Verification;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_openai::assistants::client::ClientOptions;
 use betterlite_openai::assistants::records::AssistantCreate;
+use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::realtime::logging::{RealtimeLogRecord, RealtimeLogger};
 use betterlite_openai::thread_runs::operations::RunDispatch;
 use betterlite_openai::threads::records::{ThreadCreate, ThreadMessageData};
@@ -131,7 +132,14 @@ fn assistants(input: &Input) -> Result<OpenAiAssistantOperation, Box<HelperError
             assistant_id: required(input.assistant_id.as_deref(), "assistant_id")?,
             async_requested: true,
         },
-        _ => return Err(wrong_operation(input, "assistants")),
+        Operation::Retrieve
+        | Operation::AddMessage
+        | Operation::ListMessages
+        | Operation::Buffered
+        | Operation::Stream
+        | Operation::Request
+        | Operation::Response
+        | Operation::Connect => return Err(wrong_operation(input, "assistants")),
     };
     Ok(OpenAiAssistantOperation::Assistants(AssistantsCall {
         options: options(input),
@@ -158,7 +166,13 @@ fn threads(input: &Input) -> Result<OpenAiAssistantOperation, Box<HelperError>> 
             thread_id: required(input.thread_id.as_deref(), "thread_id")?,
             async_requested: true,
         },
-        _ => return Err(wrong_operation(input, "threads")),
+        Operation::AsyncList
+        | Operation::Delete
+        | Operation::Buffered
+        | Operation::Stream
+        | Operation::Request
+        | Operation::Response
+        | Operation::Connect => return Err(wrong_operation(input, "threads")),
     };
     Ok(OpenAiAssistantOperation::Threads(ThreadsCall {
         options: options(input),
@@ -180,7 +194,15 @@ fn runs(input: &Input) -> Result<OpenAiAssistantOperation, Box<HelperError>> {
             arun_thread: true,
             stream: true,
         },
-        _ => return Err(wrong_operation(input, "runs")),
+        Operation::AsyncList
+        | Operation::Create
+        | Operation::Delete
+        | Operation::Retrieve
+        | Operation::AddMessage
+        | Operation::ListMessages
+        | Operation::Request
+        | Operation::Response
+        | Operation::Connect => return Err(wrong_operation(input, "runs")),
     };
     Ok(OpenAiAssistantOperation::Runs(RunsCall {
         options: options(input),
@@ -202,11 +224,27 @@ fn decisions(input: &Input) -> Result<OpenAiAssistantOperation, Box<HelperError>
             request,
             payload: required(input.payload.as_deref(), "payload")?.into_bytes(),
         },
-        _ => return Err(wrong_operation(input, "decisions")),
+        Operation::AsyncList
+        | Operation::Create
+        | Operation::Delete
+        | Operation::Retrieve
+        | Operation::AddMessage
+        | Operation::ListMessages
+        | Operation::Buffered
+        | Operation::Stream
+        | Operation::Connect => return Err(wrong_operation(input, "decisions")),
+    };
+    let globals = LiteLlmGlobals {
+        api_base: input.globals.api_base.clone(),
+        api_key: input.globals.api_key.clone().map(SecretString::from),
+        openai_key: input.globals.openai_key.clone().map(SecretString::from),
+        organization: None,
     };
     Ok(OpenAiAssistantOperation::Decisions(DecisionsCall {
         api_base: input.api_base.clone(),
         api_key: input.api_key.clone().map(SecretString::from),
+        globals,
+        environment: input.environment.clone(),
         operation,
     }))
 }
