@@ -120,7 +120,7 @@ fn header_map(headers: &[(&'static str, &'static str)]) -> HeaderMap {
     for &(name, value) in headers {
         map.insert(
             HeaderName::from_static(name),
-            HeaderValue::from_str(value).unwrap(),
+            HeaderValue::from_bytes(value.as_bytes()).unwrap(),
         );
     }
     map

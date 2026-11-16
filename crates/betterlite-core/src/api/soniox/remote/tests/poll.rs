@@ -3,6 +3,7 @@ use std::time::Duration;
 use http::Method;
 use http::header::AUTHORIZATION;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive as _;
 
 use super::support::{
     Clock, Outcome, RecordedBody, Script, TIMEOUT, auth, options, prepared, remote,
@@ -201,6 +202,57 @@ async fn poll_propagates_an_http_failure_without_retrying() {
     );
     assert_eq!(transport.calls().len(), 1);
     assert!(sleeper.sleeps().is_empty());
+}
+
+#[tokio::test]
+async fn poll_prints_the_prepared_interval_at_decimal_precision() {
+    let mut chosen = options();
+    chosen.max_attempts = 1;
+    chosen.poll_interval = Decimal::from_f64(2.500_000_000_000_000_4).expect("interval");
+    let body = Outcome::Reply {
+        status: 200,
+        headers: Vec::new(),
+        body: r#"{"status":"queued"}"#,
+    };
+    let (outcome, _, sleeper) = poll_with(vec![body], chosen, "job-1").await;
+    assert_timeout(outcome, "1", "2.5");
+    assert_eq!(sleeper.sleeps(), vec![Duration::from_millis(2500)]);
+}
+
+#[tokio::test]
+async fn poll_reports_a_header_the_request_cannot_carry() {
+    let transport = Script::new(vec![completed()]);
+    let sleeper = Clock::default();
+    let ready = prepared(
+        options(),
+        &[
+            ("Authorization", "Bearer sk-local"),
+            ("x-bad", "line\nbreak"),
+        ],
+    );
+    let error = remote(&transport, &sleeper, &ready)
+        .poll("job-1")
+        .await
+        .unwrap_err();
+    let RemoteError::HeaderValue { name, .. } = error else {
+        panic!("a header a request cannot carry must fail before the request is sent");
+    };
+    assert_eq!(name, "x-bad");
+    assert!(transport.calls().is_empty());
+}
+
+#[tokio::test]
+async fn poll_reports_a_reply_header_that_is_not_text() {
+    let body = Outcome::Reply {
+        status: 200,
+        headers: vec![("x-note", "café")],
+        body: r#"{"status":"completed"}"#,
+    };
+    let (outcome, _, _) = poll_with(vec![body], options(), "job-1").await;
+    let RemoteError::ReplyHeader { name } = outcome.unwrap_err() else {
+        panic!("a reply header whose bytes are not visible ASCII must fail the decode");
+    };
+    assert_eq!(name, "x-note");
 }
 
 #[tokio::test]
