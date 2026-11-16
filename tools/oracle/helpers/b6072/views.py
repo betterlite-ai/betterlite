@@ -17,7 +17,6 @@ from .wire import FIXED_TIME, FIXED_UUID, MODEL, Object
 ARBITRARY: ConfigDict = ConfigDict(arbitrary_types_allowed=True)
 
 
-@runtime_checkable
 class ChunkHandler(Protocol):
     def chunk_parser(self, chunk: Object) -> ModelResponseStream: ...
 

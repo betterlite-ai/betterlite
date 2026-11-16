@@ -34,7 +34,7 @@ class ChoiceRecord(TypedDict):
     index: int | None
     finish_reason: str | None
     message: MessageRecord
-    provider_specific_fields: Object | None
+    provider_specific_fields: NotRequired[Object | None]
 
 
 class ReplyRecord(TypedDict):
@@ -43,7 +43,7 @@ class ReplyRecord(TypedDict):
     created: int | None
     model: str | None
     choices: list[ChoiceRecord]
-    usage: NotRequired[UsageRecord | None]
+    usage: UsageRecord
 
 
 class HiddenCarrier(BaseModel):
@@ -52,16 +52,6 @@ class HiddenCarrier(BaseModel):
 
 
 REPLY_RECORD: TypeAdapter[ReplyRecord] = TypeAdapter(ReplyRecord)
-
-
-def usage_value(usage: UsageRecord | None) -> JsonValue:
-    if usage is None:
-        return None
-    return {
-        "prompt_tokens": usage["prompt_tokens"],
-        "completion_tokens": usage["completion_tokens"],
-        "total_tokens": usage["total_tokens"],
-    }
 
 
 def tool_calls_value(calls: list[ToolCallRecord] | None) -> JsonValue:
@@ -82,7 +72,7 @@ def tool_calls_value(calls: list[ToolCallRecord] | None) -> JsonValue:
 
 
 def choice_value(choice: ChoiceRecord) -> JsonValue:
-    native = choice["provider_specific_fields"]
+    native = choice.get("provider_specific_fields")
     return {
         "index": choice["index"],
         "finish_reason": choice["finish_reason"],
@@ -122,6 +112,10 @@ def reply_value(call: ReplyCall) -> JsonValue:
         "created": record["created"],
         "model": record["model"],
         "choices": [choice_value(choice) for choice in record["choices"]],
-        "usage": usage_value(record.get("usage")),
+        "usage": {
+            "prompt_tokens": record["usage"]["prompt_tokens"],
+            "completion_tokens": record["usage"]["completion_tokens"],
+            "total_tokens": record["usage"]["total_tokens"],
+        },
         "hidden": hidden,
     }
