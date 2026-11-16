@@ -6,8 +6,9 @@ use betterlite_guardrails::agent_365::enforcement::pre_mcp_call_hook;
 use betterlite_guardrails::agent_365_tokens::Agent365Guardrail;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use serde_json::{Value, json};
+use tokio::runtime::Builder;
 
-use super::poster::{ScriptedReplies, guardrail, runtime};
+use super::poster::{ScriptedReplies, guardrail};
 use super::{Data, EnforcementArgs, Invocation, METADATA_KEY, RECORDS_KEY};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -58,24 +59,21 @@ async fn invoke(
     Ok((outcome, records_of(&data)?))
 }
 
-async fn run_invocations(
-    guardrail: &Agent365Guardrail,
-    args: &EnforcementArgs,
-) -> Result<(Vec<Value>, Vec<Value>), Box<HelperError>> {
-    let mut outcomes = Vec::new();
-    let mut records = Vec::new();
-    for invocation in &args.invocations {
-        let (outcome, written) = invoke(guardrail, invocation, args.key_alias.as_deref()).await?;
-        outcomes.push(outcome);
-        records.push(written);
-    }
-    Ok((outcomes, records))
-}
-
 pub(super) fn enforcement_result(args: &EnforcementArgs) -> HelperResult {
     let poster = Arc::new(ScriptedReplies::new(&args.replies, args.repeat_last_reply)?);
     let guardrail = guardrail(Arc::clone(&poster), args.unreachable_fallback)?;
-    let (outcomes, records) = runtime()?.block_on(run_invocations(&guardrail, args))?;
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .or_value_error()?;
+    let mut outcomes = Vec::new();
+    let mut records = Vec::new();
+    for invocation in &args.invocations {
+        let (outcome, written) =
+            runtime.block_on(invoke(&guardrail, invocation, args.key_alias.as_deref()))?;
+        outcomes.push(outcome);
+        records.push(written);
+    }
     Ok(json!({
         "outcomes": outcomes,
         "records": records,

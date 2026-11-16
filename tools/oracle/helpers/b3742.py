@@ -94,15 +94,11 @@ class ScriptedReplies:
         return httpx.Response(reply["status"], json=reply["body"])
 
 
-def form_fields(request: httpx.Request) -> dict[str, str]:
-    parsed = urllib.parse.parse_qs(request.content.decode(), keep_blank_values=True)
-    return {name: values[0] for name, values in parsed.items()}
-
-
 def capture_request(request: httpx.Request) -> Captured:
     content_type = request.headers.get("content-type")
     if content_type == FORM_CONTENT_TYPE:
-        fields = form_fields(request)
+        parsed = urllib.parse.parse_qs(request.content.decode(), keep_blank_values=True)
+        fields = {name: values[0] for name, values in parsed.items()}
         body: JsonValue = JSON.validate_python(fields)
     else:
         body = JSON.validate_json(request.content)
@@ -112,26 +108,6 @@ def capture_request(request: httpx.Request) -> Captured:
         "content_type": content_type,
         "body": body,
     }
-
-
-def build_guardrail(args: Enforcement, replies: ScriptedReplies) -> PreCallHook:
-    return Agent365Guardrail(
-        GUARDRAIL_NAME,
-        "tenant-abc",
-        "client-xyz",
-        "secret-123",
-        unreachable_fallback=args["unreachable_fallback"],
-        async_handler=AsyncHTTPHandler(transport=httpx.MockTransport(replies)),
-        event_hook=GuardrailEventHooks.pre_mcp_call,
-        default_on=True,
-    )
-
-
-def rejected_outcome(error: HTTPException) -> JsonValue:
-    detail = JSON.validate_python(error.detail)
-    return JSON.validate_python(
-        {"kind": "rejected", "status_code": error.status_code, "detail": detail}
-    )
 
 
 def records_of(data: dict[str, JsonValue]) -> list[JsonValue]:
@@ -155,7 +131,10 @@ async def call_hook(
             call_type=invocation["call_type"],
         )
     except HTTPException as error:
-        return rejected_outcome(error)
+        detail = JSON.validate_python(error.detail)
+        return JSON.validate_python(
+            {"kind": "rejected", "status_code": error.status_code, "detail": detail}
+        )
     return JSON.validate_python({"kind": "allowed"})
 
 
@@ -174,7 +153,16 @@ def run(input_value: Enforcement) -> JsonValue:
     replies = ScriptedReplies(
         input_value["replies"], repeat_last_reply=input_value["repeat_last_reply"]
     )
-    guardrail = build_guardrail(input_value, replies)
+    guardrail = Agent365Guardrail(
+        GUARDRAIL_NAME,
+        "tenant-abc",
+        "client-xyz",
+        "secret-123",
+        unreachable_fallback=input_value["unreachable_fallback"],
+        async_handler=AsyncHTTPHandler(transport=httpx.MockTransport(replies)),
+        event_hook=GuardrailEventHooks.pre_mcp_call,
+        default_on=True,
+    )
     auth = UserAPIKeyAuth(key_alias=input_value["key_alias"])
     wall_clock = time.time
     perf_clock = time.perf_counter

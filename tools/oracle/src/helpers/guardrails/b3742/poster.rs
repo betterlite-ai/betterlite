@@ -13,7 +13,6 @@ use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use secrecy::SecretString;
 use serde_json::Value;
-use tokio::runtime::{Builder, Runtime};
 use url::form_urlencoded;
 
 use super::{FIXED_NOW_SECONDS, FORM_CONTENT_TYPE, ScriptedReply};
@@ -138,13 +137,6 @@ pub(super) fn guardrail(
         .or_config_error()?;
     let clock: Arc<dyn Fn() -> SystemTime + Send + Sync> = Arc::new(move || now);
     Agent365Guardrail::new(settings, poster, true, clock).or_config_error()
-}
-
-pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
-    Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .or_value_error()
 }
 
 #[async_trait]
