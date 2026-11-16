@@ -4,12 +4,12 @@ use std::fs;
 use std::path::Path;
 
 use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{ORACLE_DIR, invoke};
 
 use super::input::Input;
 
 fn seeds() -> Vec<(String, HelperCase)> {
-    let corpus =
-        Path::new(betterlite_oracle_runner::helpers::ORACLE_DIR).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let mut seeds: Vec<(String, HelperCase)> = fs::read_dir(corpus)
         .expect("the helper corpus")
         .map(|entry| entry.expect("a corpus entry").path())
@@ -49,7 +49,7 @@ fn seeds_run_the_production_adapter() {
     let outcomes: Vec<(String, bool)> = seeds()
         .into_iter()
         .map(|(path, case)| {
-            let output = betterlite_oracle_runner::helpers::invoke(&[crate::GROUP], &case.call);
+            let output = invoke(&[crate::GROUP], &case.call);
             (path, output.ok)
         })
         .collect();

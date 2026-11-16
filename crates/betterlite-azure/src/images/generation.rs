@@ -180,8 +180,15 @@ pub fn finish(
     sent: Result<ImageResponse, ImageError>,
     logger: &mut dyn ImageGenerationLogger,
 ) -> Result<GeneratedImage, ImageError> {
-    let result = sent.and_then(|response| convert(begun, &response, logger));
-    result.map_err(|error| fail(&begun.prepared, error, logger))
+    let response = sent.map_err(|error| fail(&begun.prepared, error, logger))?;
+    if !(200..300).contains(&response.status) {
+        let error = ImageError::Status {
+            status: response.status,
+            body: response_text(&response.body),
+        };
+        return Err(fail(&begun.prepared, error, logger));
+    }
+    convert(begun, &response, logger).map_err(|error| fail(&begun.prepared, error, logger))
 }
 
 // The async leg applies the selected family's reply transform; the sync leg special-cases only MAI
@@ -191,12 +198,6 @@ fn convert(
     logger: &mut dyn ImageGenerationLogger,
 ) -> Result<GeneratedImage, ImageError> {
     let prepared = &begun.prepared;
-    if !(200..300).contains(&response.status) {
-        return Err(ImageError::Status {
-            status: response.status,
-            body: response_text(&response.body),
-        });
-    }
     if begun.config == AzureImageConfig::Mai {
         // B554 owns the MAI reply transform, and a provider leaf cannot depend on betterlite-foundry
         return Err(ImageError::Classified(ClassifiedError {

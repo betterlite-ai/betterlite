@@ -54,8 +54,8 @@ fn body_base_model() {
             format!(
                 "{AZURE}/openai/deployments/my-deployment/images/generations?api-version={VERSION}"
             )
-        );
-    }
+        )
+    };
 
     {
         // an empty base model counts as absent, so the deployment's own name fills the request data
@@ -67,8 +67,8 @@ fn body_base_model() {
         assert_eq!(
             outcome.logger.pre[0].data.get("model"),
             Some(&Json::Text("my-deployment".to_owned()))
-        );
-    }
+        )
+    };
 }
 
 fn body_options_table() {
@@ -160,8 +160,8 @@ fn auth_table() {
             outcome.pre_headers().get("api-key"),
             Some(&Json::Text("***REDACTED***".to_owned()))
         );
-        assert_eq!(outcome.constructed, 1);
-    }
+        assert_eq!(outcome.constructed, 1)
+    };
 
     {
         let mut harness = Harness::new(&[]).with_reply(ok_reply());
@@ -177,8 +177,8 @@ fn auth_table() {
         assert_eq!(
             outcome.pre_headers().get("Authorization"),
             Some(&Json::Text("***REDACTED***".to_owned()))
-        );
-    }
+        )
+    };
 
     {
         let mut harness = Harness::new(&[]).with_reply(ok_reply());
@@ -190,8 +190,8 @@ fn auth_table() {
         assert_eq!(
             outcome.header("authorization"),
             Some(format!("Bearer {BEARER}").as_str())
-        );
-    }
+        )
+    };
 }
 
 fn provider_table() {
@@ -205,8 +205,8 @@ fn provider_table() {
         assert_eq!(
             outcome.header("authorization"),
             Some("Bearer provider-token")
-        );
-    }
+        )
+    };
 
     {
         let mut harness = Harness::new(&[]).with_reply(ok_reply());
@@ -215,8 +215,8 @@ fn provider_table() {
             ..scenario("dall-e-3")
         });
         assert_eq!(outcome.header("api-key"), Some("custom"));
-        assert_eq!(outcome.sent_headers().len(), 1);
-    }
+        assert_eq!(outcome.sent_headers().len(), 1)
+    };
 }
 
 fn provider_failures() {
@@ -232,8 +232,8 @@ fn provider_failures() {
             ("AzureOpenAIError", Some(500))
         );
         assert_eq!(outcome.failure().to_string(), "boom");
-        assert!(outcome.calls.is_empty());
-    }
+        assert!(outcome.calls.is_empty())
+    };
 
     {
         // a caller that already carries auth never reaches the token provider, so its failure is moot
@@ -246,8 +246,8 @@ fn provider_failures() {
         });
         assert_eq!(outcome.success().reply.data.len(), 1);
         assert_eq!(outcome.header("api-key"), Some("custom"));
-        assert_eq!(outcome.sent_headers().len(), 1);
-    }
+        assert_eq!(outcome.sent_headers().len(), 1)
+    };
 
     {
         // an empty provider token counts as no token, so no bearer header goes out
@@ -258,8 +258,8 @@ fn provider_failures() {
             ..scenario("dall-e-3")
         });
         assert_eq!(outcome.header("authorization"), None);
-        assert_eq!(outcome.header("api-key"), None);
-    }
+        assert_eq!(outcome.header("api-key"), None)
+    };
 }
 
 pub(super) fn azure_image_errors() {
@@ -298,8 +298,8 @@ fn sync_failure_table() {
             ("AzureOpenAIError", Some(400))
         );
         assert_eq!(outcome.logger.post.len(), 1);
-        assert_eq!(outcome.logger.post[0].input, PROMPT);
-    }
+        assert_eq!(outcome.logger.post[0].input, PROMPT)
+    };
 
     {
         let outcome = failed(200, "not json", false);
@@ -307,8 +307,8 @@ fn sync_failure_table() {
             outcome.failure().classification(),
             ("AzureOpenAIError", Some(500))
         );
-        assert!(outcome.logger.post.is_empty());
-    }
+        assert!(outcome.logger.post.is_empty())
+    };
 
     {
         let mut harness = Harness::new(&[]).with_reply(ok_reply());
@@ -318,8 +318,8 @@ fn sync_failure_table() {
         });
         assert_eq!(outcome.failure().classification().1, Some(422));
         assert!(outcome.calls.is_empty());
-        assert!(outcome.logger.pre.is_empty());
-    }
+        assert!(outcome.logger.pre.is_empty())
+    };
 }
 
 // the async leg logs each failure once as text and re-raises it as it was
@@ -340,8 +340,8 @@ fn async_failure_table() {
     {
         let outcome = failed(200, "not json", true);
         assert_eq!(outcome.failure().classification(), ("Exception", None));
-        assert_eq!(outcome.logger.post.len(), 1);
-    }
+        assert_eq!(outcome.logger.post.len(), 1)
+    };
 
     {
         let outcome = failed(200, BODY_ERROR, true);
@@ -353,8 +353,8 @@ fn async_failure_table() {
                 panic!("the async leg logs the failure as text")
             }
         }
-        url_failures();
-    }
+        url_failures()
+    };
 
     {
         let mut harness = Harness::new(&[]).with_reply(ok_reply());
@@ -362,8 +362,8 @@ fn async_failure_table() {
             delegate_async: true,
             ..scenario("dall-e-3")
         });
-        assert_eq!(outcome.success().reply.size.as_deref(), Some("1024x1024"));
-    }
+        assert_eq!(outcome.success().reply.size.as_deref(), Some("1024x1024"))
+    };
 }
 
 // the async leg builds its URL inside the step that logs and re-raises, the sync leg inside the wrapper
@@ -378,8 +378,8 @@ fn url_failures() {
         let outcome = Harness::new(&[]).with_reply(ok_reply()).run(&unusable);
         assert!(matches!(outcome.result, Err(ImageError::Url(_))));
         assert!(outcome.calls.is_empty());
-        assert_eq!(outcome.logger.post.len(), 1);
-    }
+        assert_eq!(outcome.logger.post.len(), 1)
+    };
 
     {
         let outcome = Harness::new(&[]).with_reply(ok_reply()).run(&Scenario {
@@ -390,6 +390,6 @@ fn url_failures() {
             outcome.failure().classification(),
             ("AzureOpenAIError", Some(500))
         );
-        assert!(outcome.logger.post.is_empty());
-    }
+        assert!(outcome.logger.post.is_empty())
+    };
 }

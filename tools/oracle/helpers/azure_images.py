@@ -55,7 +55,6 @@ class ImageReply(TypedDict):
 
 # the typed view of AzureImageEditConfig, whose own methods take bare dicts
 class EditConfig(Protocol):
-    # ast-grep-ignore: no-long-names
     def azure_deployment_image_edit_form_data(
         self, data: dict[str, JsonValue], request_url: str
     ) -> dict[str, JsonValue]: ...
@@ -147,72 +146,61 @@ class RecordingLogging(Logging):
         self.posts.append(str(record))
 
 
-def model_step(model: str) -> JsonValue:
-    config = get_azure_image_generation_config(model)
-    return JSON.validate_python({"class": config.__class__.__name__})
-
-
 def target_step(step: Step) -> JsonValue:
-    params: dict[str, JsonValue] = {}
-    for name, value in (
-        ("azure_endpoint", step.get("azure_endpoint")),
-        ("base_url", step.get("base_url")),
-        ("api_version", step.get("api_version")),
-    ):
-        if value is not None:
-            params[name] = value
+    params: dict[str, JsonValue] = {
+        name: value
+        for name, value in (
+            ("azure_endpoint", step.get("azure_endpoint")),
+            ("base_url", step.get("base_url")),
+            ("api_version", step.get("api_version")),
+        )
+        if value is not None
+    }
     url = COMPLETION.create_azure_base_url(
         azure_client_params=params,
         model=step.get("model"),
         base_model=step.get("base_model"),
     )
-    return JSON.validate_python({"url": url})
+    return {"url": url}
 
 
 def url_step(step: Step) -> JsonValue:
     clear_ambient()
     litellm.api_base = step.get("global_base")
     litellm.api_version = step.get("global_version")
-    model = step.get("model")
-    params: dict[str, JsonValue] = {"api_version": step.get("api_version")}
     try:
         url = EDIT_CONFIG.get_complete_url(
-            model="" if model is None else model,
+            model=step["model"] if "model" in step else "",
             api_base=step.get("api_base"),
-            litellm_params=params,
+            litellm_params={"api_version": step.get("api_version")},
         )
     except ValueError as error:
-        return JSON.validate_python({**FAILURE, "status": None, "message": str(error)})
-    return JSON.validate_python({"url": url})
+        return {**FAILURE, "status": None, "message": str(error)}
+    return {"url": url}
 
 
 def form_step(step: Step) -> JsonValue:
-    data = step.get("data")
-    request_url = step.get("request_url")
     fields = EDIT_CONFIG.azure_deployment_image_edit_form_data(
-        {} if data is None else data,
-        "" if request_url is None else request_url,
+        step["data"] if "data" in step else {},
+        step["request_url"] if "request_url" in step else "",
     )
-    return JSON.validate_python({"fields": fields})
+    return {"fields": fields}
 
 
 def auth_step(step: Step) -> JsonValue:
     clear_ambient()
-    token = step.get("env_token")
-    if token is not None:
-        os.environ["AZURE_AD_TOKEN"] = token
-    supplied = step.get("params")
-    given = step.get("headers")
+    if "env_token" in step:
+        os.environ["AZURE_AD_TOKEN"] = step["env_token"]
     try:
         headers = EDIT_CONFIG.validate_environment(
-            headers={} if given is None else dict(given),
+            headers=dict(step["headers"]) if "headers" in step else {},
             model="dall-e-3",
             api_key=step.get("api_key"),
-            litellm_params={} if supplied is None else dict(supplied),
+            litellm_params=dict(step["params"]) if "params" in step else {},
         )
     except ValueError as error:
-        return JSON.validate_python({**FAILURE, "status": None, "message": str(error)})
-    return JSON.validate_python({"headers": headers})
+        return {**FAILURE, "status": None, "message": str(error)}
+    return {"headers": headers}
 
 
 def sent_record(transport: Transport, logging: RecordingLogging) -> dict[str, JsonValue]:
@@ -243,20 +231,16 @@ def reply_report(view: ImageReply) -> dict[str, JsonValue]:
 
 def generation_step(step: Step) -> JsonValue:
     clear_ambient()
-    body = step.get("reply_body")
-    transport = Transport("" if body is None else body)
+    transport = Transport(step["reply_body"] if "reply_body" in step else "")
     litellm.client_session = httpx.Client(transport=transport)
     logging = RecordingLogging()
-    prompt = step.get("prompt")
-    optional = step.get("optional")
-    given = step.get("headers")
     try:
         response = COMPLETION.image_generation(
-            prompt="" if prompt is None else prompt,
+            prompt=step["prompt"] if "prompt" in step else "",
             timeout=600.0,
-            optional_params={} if optional is None else dict(optional),
+            optional_params=dict(step["optional"]) if "optional" in step else {},
             logging_obj=logging,
-            headers={} if given is None else dict(given),
+            headers=dict(step["headers"]) if "headers" in step else {},
             model=step.get("model"),
             api_key=step.get("api_key"),
             api_base=step.get("api_base"),
@@ -265,36 +249,43 @@ def generation_step(step: Step) -> JsonValue:
             litellm_params={"base_model": step.get("base_model")},
         )
     except AzureOpenAIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L46
-        return JSON.validate_python({
+        return {
             **FAILURE,
             "status": error.status_code,
             "message": str(error),
             **sent_record(transport, logging),
-        })
+        }
     calls = transport.calls
-    sent_headers = calls[0]["sent_headers"] if calls else None
-    return JSON.validate_python({
+    return {
         "kind": "response",
-        "sent_headers": sent_headers,
+        "sent_headers": calls[0]["sent_headers"] if calls else None,
         **sent_record(transport, logging),
         "reply": reply_report(REPLY.validate_json(response.model_dump_json())),
-    })
+    }
 
 
 def run(argument: Input) -> JsonValue:
-    targets = argument.get("targets")
-    models = argument.get("models")
-    forms = argument.get("forms")
-    urls = argument.get("urls")
-    auth = argument.get("auth")
-    generations = argument.get("generations")
-    return JSON.validate_python({
-        "targets": [] if targets is None else [target_step(step) for step in targets],
-        "models": [] if models is None else [model_step(model) for model in models],
-        "forms": [] if forms is None else [form_step(step) for step in forms],
-        "urls": [] if urls is None else [url_step(step) for step in urls],
-        "auth": [] if auth is None else [auth_step(step) for step in auth],
-        "generations": (
-            [] if generations is None else [generation_step(step) for step in generations]
-        ),
-    })
+    report: dict[str, JsonValue] = {
+        "targets": [],
+        "models": [],
+        "forms": [],
+        "urls": [],
+        "auth": [],
+        "generations": [],
+    }
+    if "targets" in argument:
+        report["targets"] = [target_step(step) for step in argument["targets"]]
+    if "models" in argument:
+        report["models"] = [
+            {"class": get_azure_image_generation_config(model).__class__.__name__}
+            for model in argument["models"]
+        ]
+    if "forms" in argument:
+        report["forms"] = [form_step(step) for step in argument["forms"]]
+    if "urls" in argument:
+        report["urls"] = [url_step(step) for step in argument["urls"]]
+    if "auth" in argument:
+        report["auth"] = [auth_step(step) for step in argument["auth"]]
+    if "generations" in argument:
+        report["generations"] = [generation_step(step) for step in argument["generations"]]
+    return report

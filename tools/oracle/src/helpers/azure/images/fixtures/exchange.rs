@@ -23,11 +23,11 @@ type GenerationRun = (
     RecordingLogger,
 );
 
-fn generation<'a>(
-    step: &'a Step,
-    api_key: Option<&'a SecretString>,
-    token: Option<&'a SecretString>,
-) -> Generation<'a> {
+fn generation<'data>(
+    step: &'data Step,
+    api_key: Option<&'data SecretString>,
+    token: Option<&'data SecretString>,
+) -> Generation<'data> {
     Generation {
         model: step.model.as_deref(),
         prompt: &step.prompt,

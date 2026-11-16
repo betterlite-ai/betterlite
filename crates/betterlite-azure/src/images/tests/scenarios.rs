@@ -106,8 +106,8 @@ fn async_transforms() {
         let image = &outcome.success().reply;
         assert_eq!(image.size.as_deref(), Some("1024x1024"));
         assert_eq!(image.quality.as_deref(), Some("hd"));
-        assert_eq!(image.output_format.as_deref(), Some("png"));
-    }
+        assert_eq!(image.output_format.as_deref(), Some("png"))
+    };
 
     {
         let mut harness = Harness::new(&[]).with_reply(ok_reply());
@@ -118,8 +118,8 @@ fn async_transforms() {
         });
         let image = &outcome.success().reply;
         assert_eq!(image.size.as_deref(), Some("1792x1024"));
-        assert_eq!(image.quality.as_deref(), Some("standard"));
-    }
+        assert_eq!(image.quality.as_deref(), Some("standard"))
+    };
 
     {
         let mut harness = Harness::new(&[]).with_reply(reply(200, MAI_BODY));
@@ -134,8 +134,8 @@ fn async_transforms() {
         // the async leg re-raises its own error unwrapped
         assert_eq!(outcome.failure().classification(), ("NotBuilt", None));
         assert!(outcome.failure().to_string().contains("B554"));
-        assert_eq!(outcome.logger.post.len(), 1);
-    }
+        assert_eq!(outcome.logger.post.len(), 1)
+    };
 }
 
 fn sync_transform() {
@@ -147,8 +147,8 @@ fn sync_transform() {
         assert_eq!(image.quality, None);
         assert_eq!(image.output_format, None);
         assert_eq!(outcome.logger.post.len(), 1);
-        assert_eq!(outcome.logger.post[0].input, PROMPT);
-    }
+        assert_eq!(outcome.logger.post[0].input, PROMPT)
+    };
 
     {
         let mut harness = Harness::new(&[]).with_reply(reply(200, MAI_BODY));
@@ -162,8 +162,8 @@ fn sync_transform() {
             ("AzureOpenAIError", Some(500))
         );
         assert!(outcome.failure().to_string().contains("B554"));
-        assert!(outcome.logger.post.is_empty());
-    }
+        assert!(outcome.logger.post.is_empty())
+    };
 }
 
 pub(super) fn image_edit_deployment_url() {

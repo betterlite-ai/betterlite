@@ -12,13 +12,11 @@ use betterlite_openai::image_generation::reply::ImageGenerationReply;
 use secrecy::SecretString;
 use serde_json::{Map, Value, json};
 
-use betterlite_oracle_helper_api::helper::HelperResult;
-
 use super::fixtures::exchange::run_generation;
 use super::fixtures::sources::NoSources;
 use super::input::{Input, Step};
 
-pub(crate) fn run(input: &Input) -> HelperResult {
+pub(crate) fn run(input: &Input) -> Value {
     let targets: Vec<Value> = input
         .targets
         .iter()
@@ -49,14 +47,14 @@ pub(crate) fn run(input: &Input) -> HelperResult {
             json!({"fields": fields})
         })
         .collect();
-    Ok(json!({
+    json!({
         "targets": targets,
         "models": models,
         "forms": forms,
         "urls": input.urls.iter().map(edit_value).collect::<Vec<_>>(),
         "auth": input.auth.iter().map(auth_value).collect::<Vec<_>>(),
         "generations": input.generations.iter().map(generation_value).collect::<Vec<_>>(),
-    }))
+    })
 }
 
 fn failure(error: &dyn Display) -> Value {
@@ -71,7 +69,10 @@ fn failure(error: &dyn Display) -> Value {
 }
 
 // both URL readers report the composed URL or the error's message the same way
-fn url_value<E: Display>(result: Result<String, E>) -> Value {
+fn url_value<E>(result: Result<String, E>) -> Value
+where
+    E: Display,
+{
     match result {
         Ok(url) => json!({"url": url}),
         Err(error) => failure(&error),

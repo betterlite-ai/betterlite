@@ -12,22 +12,25 @@ type Source<'source> = Result<Arc<dyn CallableTokenProvider + 'source>, SourceFa
 pub(crate) struct NoSources;
 
 impl CredentialSources for NoSources {
-    fn client_secret<'a>(&'a self, _record: &ClientSecretRecord) -> Source<'a> {
+    fn client_secret<'source>(&'source self, _record: &ClientSecretRecord) -> Source<'source> {
         Err(unavailable("client secret"))
     }
 
-    fn username_password<'a>(&'a self, _record: &UsernamePasswordRecord) -> Source<'a> {
+    fn username_password<'source>(
+        &'source self,
+        _record: &UsernamePasswordRecord,
+    ) -> Source<'source> {
         Err(unavailable("username and password"))
     }
 
-    fn sdk_refresh<'a>(&'a self, _scope: &str) -> Source<'a> {
+    fn sdk_refresh<'source>(&'source self, _scope: &str) -> Source<'source> {
         Err(unavailable("SDK refresh"))
     }
 
-    fn default_credential<'a>(
-        &'a self,
-        _scope: &'a str,
-    ) -> Option<Arc<dyn CallableTokenProvider + 'a>> {
+    fn default_credential<'source>(
+        &'source self,
+        _scope: &'source str,
+    ) -> Option<Arc<dyn CallableTokenProvider + 'source>> {
         None
     }
 

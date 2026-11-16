@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_azure::image_transport::request::{ImageClientConstructor, TimeoutPhases};
 use betterlite_azure::image_transport::{ImageReply, ImageRequest, ImageTransport};
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_openai::image_generation::logging::{
     ImageGenerationLogger, PostCallRecord, PreCallRecord,
@@ -32,9 +33,7 @@ impl ImageTransport for FixtureTransport {
     fn send(
         &self,
         request: ImageRequest,
-    ) -> impl Future<
-        Output = Result<ImageReply, betterlite_http::proxy::transport_error::TransportError>,
-    > + Send {
+    ) -> impl Future<Output = Result<ImageReply, TransportError>> + Send {
         let mut headers = BTreeMap::new();
         for name in ["api-key", "authorization"] {
             let value = request
