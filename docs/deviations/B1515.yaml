@@ -1,0 +1,6 @@
+task: B1515
+deviations: []
+kept_bugs:
+  - what: A reasoning input item loses encrypted_content when its value is null, although the source comment says it is kept even then.
+    why: A request that replays a reasoning item with a null encrypted_content reaches Copilot without the key today, and sending the null instead would change what that setup sends after the switch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/responses/transformation.py#L284-L290
