@@ -92,6 +92,9 @@ PROCESS: TypeAdapter[ProcessBody] = TypeAdapter(ProcessBody)
 
 
 class ScriptedEvent(ModelResponseStream):
+    id: str = ""
+    created: int = 0
+    object: str = ""
     type: str = ""
     response: ResponsesAPIResponse | None = None
     choices: list[StreamingChoices] = []
@@ -214,6 +217,7 @@ def run(input_value: Input) -> JsonValue:
         client_secret=config["client_secret"],
         purview_app_name=config["purview_app_name"],
         user_id_field=config["user_id_field"],
+        timeout=config["timeout_seconds"],
     )
     hooks.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     function = input_value["function"]
