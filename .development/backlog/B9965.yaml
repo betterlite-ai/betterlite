@@ -1,0 +1,13 @@
+id: B9965
+milestone: R2 bug fixes
+title: Vertex Gemini and AI Studio fetch request media
+status: todo
+depends_on: [B1311, B1321, B1325, B5083, B183]
+file: tasks/B9965-request-media-inline.yaml
+covers: []
+parent: B9961
+split_from: B9961
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

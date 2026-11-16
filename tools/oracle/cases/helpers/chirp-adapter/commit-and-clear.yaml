@@ -1,0 +1,22 @@
+kind: helper
+name: chirp-adapter-commit-and-clear
+call:
+  chirp_adapter:
+    function: commands
+    project: oracle-project
+    location: null
+    model: chirp_2
+    session_id: sess_log
+    steps:
+      - '{"type":"input_audio_buffer.commit"}'
+      - '{"type":"input_audio_buffer.clear"}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":24000},"transcription":{"model":"chirp_2"}}}}}'
+      - '{"type":"input_audio_buffer.commit"}'
+      - '{"type":"input_audio_buffer.end"}'
+      - '{"type":"input_audio_buffer.clear"}'
+      - '{"type":"input_audio_buffer.clear"}'
+env: {}
+compare:
+  ignore:
+    - pointer: /value/created/event_id
+      why: both sides generate their own event ids
