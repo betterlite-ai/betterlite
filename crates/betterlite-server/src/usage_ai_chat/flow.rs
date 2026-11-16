@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use chrono::NaiveDate;
-use futures_util::StreamExt;
+use futures_util::StreamExt as _;
 use indexmap::IndexMap;
 use tokio::sync::mpsc;
 
@@ -17,7 +17,7 @@ use super::prompt::build_system_prompt;
 use super::source::UsageDataSource;
 use super::sse::{SseEvent, ToolCallStatus, sse_frame};
 use super::summary::{EntityLabel, summarise_entity_data, summarise_usage_data};
-use super::tools::{UsageTool, tools_for_role};
+use super::tools::{ToolDefinition, UsageTool, tools_for_role};
 
 const THINKING: &str = "Thinking...";
 const ANALYZING: &str = "Analyzing results...";
@@ -54,14 +54,19 @@ pub async fn stream_usage_ai_chat<Model, Data, Clock>(
     }
 }
 
-async fn run_chat<Model: UsageChatModel, Data: UsageDataSource, Clock>(
+async fn run_chat<Model, Data, Clock>(
     parts: &UsageChatParts<Model, Data, Clock>,
     model: &str,
     chat: &mut Vec<ChatMessage>,
     request: &UsageChatRequest<'_>,
     sink: &mpsc::Sender<String>,
-) -> Result<(), ChatError<Model::Error>> {
-    let reply = request_reply(parts, model, chat.as_slice(), request.is_admin, sink).await?;
+) -> Result<(), ChatError<Model::Error>>
+where
+    Model: UsageChatModel,
+    Data: UsageDataSource,
+    Clock: Sync,
+{
+    let reply = request_reply(&parts.model, model, chat.as_slice(), request.is_admin, sink).await?;
     if reply.tool_calls.is_empty() {
         if let Some(content) = reply.content.filter(|text| !text.is_empty()) {
             sink.send(sse_frame(&SseEvent::Chunk { content })).await?;
@@ -81,39 +86,39 @@ async fn run_chat<Model: UsageChatModel, Data: UsageDataSource, Clock>(
     Ok(())
 }
 
-async fn request_reply<Model: UsageChatModel, Data: UsageDataSource, Clock>(
-    parts: &UsageChatParts<Model, Data, Clock>,
-    model: &str,
+async fn request_reply<Model>(
+    model: &Model,
+    name: &str,
     messages: &[ChatMessage],
     is_admin: bool,
     sink: &mpsc::Sender<String>,
-) -> Result<ModelReply, ChatError<Model::Error>> {
+) -> Result<ModelReply, ChatError<Model::Error>>
+where
+    Model: UsageChatModel,
+{
     let thinking = SseEvent::Status {
         message: THINKING.to_owned(),
     };
     sink.send(sse_frame(&thinking)).await?;
     let tools = tools_for_role(is_admin);
-    let request = ModelRequest {
-        model,
-        messages,
-        tools: Some(tools.as_slice()),
-        temperature: USAGE_AI_TEMPERATURE,
-    };
-    let reply = parts
-        .model
+    let request = model_request(name, messages, Some(tools.as_slice()));
+    model
         .complete(&request)
         .await
-        .map_err(|source| ModelError::Completion { source })?;
-    Ok(reply)
+        .map_err(|source| ChatError::Model(ModelError::Completion { source }))
 }
 
-async fn process_tool_call<Data: UsageDataSource, Fault: Error + 'static>(
+async fn process_tool_call<Data, Fault>(
     data: &Data,
     call: &ModelToolCall,
     chat: &mut Vec<ChatMessage>,
     request: &UsageChatRequest<'_>,
     sink: &mpsc::Sender<String>,
-) -> Result<(), ChatError<Fault>> {
+) -> Result<(), ChatError<Fault>>
+where
+    Data: UsageDataSource,
+    Fault: Error + 'static,
+{
     let arguments = decode_tool_arguments(&call.arguments)?;
     let Some(tool) =
         UsageTool::from_name(&call.name).filter(|tool| tool.allowed_for(request.is_admin))
@@ -145,12 +150,15 @@ async fn process_tool_call<Data: UsageDataSource, Fault: Error + 'static>(
     Ok(())
 }
 
-async fn execute_tool<Data: UsageDataSource>(
+async fn execute_tool<Data>(
     data: &Data,
     tool: UsageTool,
     arguments: &IndexMap<String, String>,
     request: &UsageChatRequest<'_>,
-) -> Result<String, UsageChatError> {
+) -> Result<String, UsageChatError>
+where
+    Data: UsageDataSource,
+{
     let fetch = resolve_fetch_kwargs(tool, arguments, request.user_id, request.is_admin)?;
     let page = match &fetch {
         FetchArguments::Global {
@@ -185,22 +193,20 @@ async fn execute_tool<Data: UsageDataSource>(
     }
 }
 
-async fn stream_final_response<Model: UsageChatModel>(
+async fn stream_final_response<Model>(
     model: &Model,
     name: &str,
     messages: &[ChatMessage],
     sink: &mpsc::Sender<String>,
-) -> Result<(), ChatError<Model::Error>> {
+) -> Result<(), ChatError<Model::Error>>
+where
+    Model: UsageChatModel,
+{
+    let request = model_request(name, messages, None);
     let analyzing = SseEvent::Status {
         message: ANALYZING.to_owned(),
     };
     sink.send(sse_frame(&analyzing)).await?;
-    let request = ModelRequest {
-        model: name,
-        messages,
-        tools: None,
-        temperature: USAGE_AI_TEMPERATURE,
-    };
     let opened = model
         .stream(&request)
         .await
@@ -213,6 +219,19 @@ async fn stream_final_response<Model: UsageChatModel>(
         }
     }
     Ok(())
+}
+
+fn model_request<'text>(
+    name: &'text str,
+    messages: &'text [ChatMessage],
+    tools: Option<&'text [ToolDefinition]>,
+) -> ModelRequest<'text> {
+    ModelRequest {
+        model: name,
+        messages,
+        tools,
+        temperature: USAGE_AI_TEMPERATURE,
+    }
 }
 
 fn tool_event(

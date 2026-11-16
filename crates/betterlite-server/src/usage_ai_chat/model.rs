@@ -7,10 +7,10 @@ use thiserror::Error;
 use super::messages::ChatMessage;
 use super::tools::ToolDefinition;
 
-pub struct ModelRequest<'a> {
-    pub model: &'a str,
-    pub messages: &'a [ChatMessage],
-    pub tools: Option<&'a [ToolDefinition]>,
+pub struct ModelRequest<'text> {
+    pub model: &'text str,
+    pub messages: &'text [ChatMessage],
+    pub tools: Option<&'text [ToolDefinition]>,
     pub temperature: f64,
 }
 
@@ -28,7 +28,10 @@ pub struct ModelToolCall {
 }
 
 #[derive(Debug, Error)]
-pub enum ModelError<Fault: Error + 'static> {
+pub enum ModelError<Fault>
+where
+    Fault: Error + 'static,
+{
     #[error("the completion call failed: {source}")]
     Completion {
         #[source]

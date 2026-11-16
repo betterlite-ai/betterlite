@@ -1,4 +1,6 @@
-use betterlite_analytics::daily_metrics::{DailySpendPage, SpendMetrics};
+use std::cmp::Reverse;
+
+use betterlite_analytics::daily_metrics::{DailySpendPage, MetricWithMetadata, SpendMetrics};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use indexmap::map::Entry;
@@ -7,6 +9,8 @@ use serde::Deserialize;
 
 use super::constants::{TOP_N_MODELS, TOP_N_PROVIDERS};
 use super::error::UsageChatError;
+
+type Breakdown = IndexMap<String, Totals>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -119,39 +123,40 @@ pub fn summarise_entity_data(
         String::new(),
     ];
     let mut ranked: Vec<(&String, &EntityTotals)> = totals.iter().collect();
-    ranked.sort_by(|left, right| right.1.totals.spend.cmp(&left.1.totals.spend));
-    for (id, totals) in ranked {
+    ranked.sort_by_key(|entry| Reverse(entry.1.totals.spend));
+    for (id, entity) in ranked {
         lines.push(format!(
             "- {} (ID: {id}): ${:.4} | {} reqs | {} tokens",
-            totals.alias,
-            totals.totals.spend.round_dp(4),
-            totals.totals.api_requests,
-            totals.totals.total_tokens,
+            entity.alias,
+            entity.totals.spend.round_dp(4),
+            entity.totals.api_requests,
+            entity.totals.total_tokens,
         ));
     }
     Ok(lines.join("\n"))
 }
 
-fn accumulate_breakdowns(
-    page: &DailySpendPage,
-) -> Result<(IndexMap<String, Totals>, IndexMap<String, Totals>), UsageChatError> {
-    let mut models: IndexMap<String, Totals> = IndexMap::new();
-    let mut providers: IndexMap<String, Totals> = IndexMap::new();
+fn accumulate_breakdowns(page: &DailySpendPage) -> Result<(Breakdown, Breakdown), UsageChatError> {
+    let mut models: Breakdown = IndexMap::new();
+    let mut providers: Breakdown = IndexMap::new();
     for day in &page.results {
-        for (name, entry) in &day.breakdown.models {
-            models
-                .entry(name.clone())
-                .or_default()
-                .add(&entry.metrics)?;
-        }
-        for (name, entry) in &day.breakdown.providers {
-            providers
-                .entry(name.clone())
-                .or_default()
-                .add(&entry.metrics)?;
-        }
+        add_metrics(&mut models, &day.breakdown.models)?;
+        add_metrics(&mut providers, &day.breakdown.providers)?;
     }
     Ok((models, providers))
+}
+
+fn add_metrics(
+    totals: &mut Breakdown,
+    entries: &IndexMap<String, MetricWithMetadata>,
+) -> Result<(), UsageChatError> {
+    for (name, entry) in entries {
+        totals
+            .entry(name.clone())
+            .or_default()
+            .add(&entry.metrics)?;
+    }
+    Ok(())
 }
 
 fn entity_totals(page: &DailySpendPage) -> Result<IndexMap<String, EntityTotals>, UsageChatError> {
@@ -190,11 +195,11 @@ where
     Format: Fn(&str, &Totals) -> String,
 {
     let mut ranked: Vec<(&String, &Totals)> = totals.iter().collect();
-    ranked.sort_by(|left, right| right.1.spend.cmp(&left.1.spend));
+    ranked.sort_by_key(|entry| Reverse(entry.1.spend));
     ranked.truncate(limit);
     ranked
         .into_iter()
-        .map(|(name, totals)| format(name, totals))
+        .map(|(name, entry_totals)| format(name, entry_totals))
         .collect()
 }
 
