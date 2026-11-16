@@ -11,6 +11,7 @@ pub trait StreamChunks<Chunk> {
 }
 
 // LiteLLM's _assemble_complete_response_from_streaming_chunks: the whole response returns, others buffer.
+#[must_use]
 pub fn assemble_complete_stream<Chunk, Chunks>(
     result: &SuccessResult,
     chunk: &Chunk,

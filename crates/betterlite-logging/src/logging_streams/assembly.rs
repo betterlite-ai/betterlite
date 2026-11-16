@@ -61,6 +61,7 @@ pub fn successful_stream_handoff(
 }
 
 // LiteLLM's _record_partial_usage_for_failure: an interrupted stream still billed for its chunks.
+#[must_use]
 pub fn partial_stream_handoff<Cost>(
     assembly: &dyn StreamAssembly,
     count_prompt_tokens: Option<&PromptCounter<'_>>,
