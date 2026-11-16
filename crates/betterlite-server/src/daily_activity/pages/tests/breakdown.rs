@@ -254,6 +254,15 @@ fn entities_without_an_id_use_unassigned() {
 }
 
 #[test]
+fn entities_without_a_metadata_map_get_empty_metadata() {
+    let fixture = BreakdownFixture::default().with_entity_field("user_id");
+    let mut record = spend_record("2025-03-10", "sk-real");
+    record.entity_id = Some(text("user-7"));
+    let breakdown = breakdown_of(&[record], &fixture).unwrap();
+    assert!(breakdown.entities["user-7"].metadata.is_empty());
+}
+
+#[test]
 fn no_entity_field_means_no_entity_bucket() {
     let fixture = BreakdownFixture::default();
     let mut record = spend_record("2025-03-10", "sk-real");

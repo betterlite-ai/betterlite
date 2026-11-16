@@ -30,6 +30,12 @@ fn real_keys_bucket_models_by_model_only() {
         breakdown.model_groups["group-a"].metrics.spend,
         money("1.25")
     );
+    assert_eq!(
+        breakdown.model_groups["group-a"].api_key_breakdown["sk-real"]
+            .metrics
+            .spend,
+        money("1.25")
+    );
 }
 
 #[test]
