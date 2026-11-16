@@ -3,9 +3,8 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::foundry_credentials::Settings as FoundrySettings;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::Object;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
-use crate::credentials::model_info::ModelInfoAccessors;
 use crate::image_edits::auth::{ValidateEnvironmentRequest, validate_environment};
 use crate::image_edits::error::ImageEditError;
 use crate::image_edits::flux2::map_edit_params;
@@ -16,34 +15,30 @@ use super::support::{self, FLUX1, FLUX2, NoSources};
 const SECRET: &str = "fixture-secret-value";
 const CLIENT_SECRET: &str = "fixture-client-secret";
 
-fn identity<'data>(
-    settings: &'data FoundrySettings,
-    global_key: Option<&'data SecretString>,
-) -> ModelInfoAccessors<'data> {
-    ModelInfoAccessors {
-        global_api_base: None,
-        global_api_key: global_key,
-        environment_api_base: settings.api_base.as_deref(),
-        environment_api_key: settings.api_key.as_ref(),
-    }
-}
-
 #[test]
 fn foundry_image_edit_credential_identity_isolation() {
     let first = support::foundry_settings(Some("https://first.test"), Some("key-a"));
     let second = support::foundry_settings(Some("https://second.test"), Some("key-b"));
 
     // each configured identity resolves its own key and base, never the other's
-    let first_key = identity(&first, None).api_key(None).expect("a key");
-    let second_key = identity(&second, None).api_key(None).expect("a key");
+    let first_key = support::accessors(&first, None, None)
+        .api_key(None)
+        .expect("a key");
+    let second_key = support::accessors(&second, None, None)
+        .api_key(None)
+        .expect("a key");
     assert_eq!(first_key.expose_secret(), "key-a");
     assert_eq!(second_key.expose_secret(), "key-b");
     assert_eq!(
-        identity(&first, None).api_base(None).as_deref(),
+        support::accessors(&first, None, None)
+            .api_base(None)
+            .as_deref(),
         Some("https://first.test")
     );
     assert_eq!(
-        identity(&second, None).api_base(None).as_deref(),
+        support::accessors(&second, None, None)
+            .api_base(None)
+            .as_deref(),
         Some("https://second.test")
     );
 
@@ -61,13 +56,17 @@ fn foundry_image_edit_credential_identity_isolation() {
 
     // a global key overrides the identity it is passed with, and only that call
     let global = support::secret("global-key");
-    let from_global = identity(&first, Some(&global))
+    let from_global = support::accessors(&first, None, Some(&global))
         .api_key(None)
         .expect("a key");
-    let from_env = identity(&first, None).api_key(None).expect("a key");
-    assert_ne!(from_global, from_env);
+    let from_env = support::accessors(&first, None, None)
+        .api_key(None)
+        .expect("a key");
     assert_eq!(from_global.expose_secret(), "global-key");
-    let untouched = identity(&second, None).api_key(None).expect("a key");
+    assert_ne!(from_global.expose_secret(), from_env.expose_secret());
+    let untouched = support::accessors(&second, None, None)
+        .api_key(None)
+        .expect("a key");
     assert_eq!(untouched.expose_secret(), "key-b");
 }
 
@@ -103,7 +102,7 @@ fn validate_failure(settings: &FoundrySettings, params: &Object) -> ImageEditErr
         api_key: None,
         params: Some(params),
         environment: &BTreeMap::new(),
-        accessors: identity(settings, None),
+        accessors: support::accessors(settings, None, None),
         refresh_enabled: false,
         sources: &NoSources,
     })
@@ -113,7 +112,7 @@ fn validate_failure(settings: &FoundrySettings, params: &Object) -> ImageEditErr
 fn url_failure(settings: &FoundrySettings) -> ImageEditError {
     complete_url(&CompleteUrlRequest {
         model: FLUX1,
-        accessors: identity(settings, None),
+        accessors: support::accessors(settings, None, None),
         api_base: None,
         api_version: None,
         global_api_version: None,
