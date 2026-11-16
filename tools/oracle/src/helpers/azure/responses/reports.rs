@@ -8,7 +8,7 @@ use crate::helpers::HelperError;
 use betterlite_azure::responses::capabilities::{
     is_o_series_model, map_params, o_series_map_params, o_series_supported_params, supported_params,
 };
-use betterlite_azure::responses::decode::record;
+use betterlite_azure::responses::decode::cancel_reply;
 use betterlite_azure::responses::error::ResponsesError;
 use betterlite_azure::responses::request::transform_request;
 use betterlite_azure::responses::resources::{list_input_items, resource_request};
@@ -25,7 +25,6 @@ use betterlite_openai::response_params::params::{ResponsesOptions, ResponsesPara
 use betterlite_openai::response_resources::request::{
     InputItemsOrder, ListInputItemsQuery, ResourceOperation, ResourceRequest,
 };
-use betterlite_openai::response_resources::response::json_body;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -68,65 +67,71 @@ fn base_row(step: &UrlStep, settings: &Settings) -> Value {
     }
 }
 pub(super) fn transform_rows(call: &Steps<TransformStep>) -> Result<Vec<Value>, Box<HelperError>> {
-    let mut rows = Vec::with_capacity(call.steps.len());
-    for step in &call.steps {
-        let body = transform_request(&step.model, &step.input, &step.params, None)
-            .map_err(|error| invalid_input(error.to_string()))?;
-        let value = serde_json::to_value(&body).expect("the request body serializes");
-        let projected: serde_json::Map<String, Value> = PROJECTED
-            .into_iter()
-            .filter_map(|key| value.get(key).map(|found| (key.to_owned(), found.clone())))
-            .collect();
-        rows.push(Value::Object(projected));
-    }
-    Ok(rows)
+    call.steps
+        .iter()
+        .map(projected_body)
+        .collect::<Result<Vec<Value>, Box<HelperError>>>()
+}
+fn projected_body(step: &TransformStep) -> Result<Value, Box<HelperError>> {
+    let body = transform_request(&step.model, &step.input, &step.params, None)
+        .map_err(|error| invalid_input(error.to_string()))?;
+    let value = serde_json::to_value(&body).expect("the request body serializes");
+    let projected: serde_json::Map<String, Value> = PROJECTED
+        .into_iter()
+        .filter_map(|key| value.get(key).map(|found| (key.to_owned(), found.clone())))
+        .collect();
+    Ok(Value::Object(projected))
 }
 pub(super) fn websocket_report(call: &Steps<WebsocketStep>) -> Value {
-    let steps: Vec<Value> = call
+    let steps = call
         .steps
         .iter()
-        .map(|step| match websocket_url(step.api_base.as_deref()) {
-            Ok(url) => json!({"ok": true, "url": url, "status": Value::Null}),
-            Err(error) => json!({"ok": false, "url": Value::Null, "status": error.http_status()}),
-        })
-        .collect();
+        .map(websocket_step)
+        .collect::<Vec<Value>>();
     json!({
         "supports_native_websocket": SUPPORTS_NATIVE_WEBSOCKET,
         "model_in_websocket_url": MODEL_IN_WEBSOCKET_URL,
         "steps": steps,
     })
 }
+fn websocket_step(step: &WebsocketStep) -> Value {
+    match websocket_url(step.api_base.as_deref()) {
+        Ok(url) => json!({"ok": true, "url": url, "status": Value::Null}),
+        Err(error) => json!({"ok": false, "url": Value::Null, "status": error.http_status()}),
+    }
+}
 pub(super) fn resource_rows(call: &Steps<ResourceStep>) -> Result<Vec<Value>, Box<HelperError>> {
     let mut rows = Vec::with_capacity(call.steps.len());
-    for step in &call.steps {
-        let result = match step.endpoint {
-            Endpoint::List => list_request(step),
-            Endpoint::Get => {
-                resource_request(&step.api_base, &step.response_id, ResourceOperation::Get)
-            }
-            Endpoint::Delete => {
-                resource_request(&step.api_base, &step.response_id, ResourceOperation::Delete)
-            }
-            Endpoint::Cancel => {
-                resource_request(&step.api_base, &step.response_id, ResourceOperation::Cancel)
-            }
-        };
-        rows.push(match result {
-            Ok(request) => json!({
-                "ok": true,
-                "url": request.url,
-                "data": serde_json::to_value(&request.payload).expect("the data serializes"),
-                "status": Value::Null,
-            }),
-            Err(error) => json!({
-                "ok": false,
-                "url": Value::Null,
-                "data": Value::Null,
-                "status": error.http_status(),
-            }),
-        });
-    }
+    rows.extend(call.steps.iter().map(resource_row));
     Ok(rows)
+}
+fn resource_row(step: &ResourceStep) -> Value {
+    let result = match step.endpoint {
+        Endpoint::List => list_request(step),
+        Endpoint::Get => {
+            resource_request(&step.api_base, &step.response_id, ResourceOperation::Get)
+        }
+        Endpoint::Delete => {
+            resource_request(&step.api_base, &step.response_id, ResourceOperation::Delete)
+        }
+        Endpoint::Cancel => {
+            resource_request(&step.api_base, &step.response_id, ResourceOperation::Cancel)
+        }
+    };
+    match result {
+        Ok(request) => json!({
+            "ok": true,
+            "url": request.url,
+            "data": serde_json::to_value(&request.payload).expect("the data serializes"),
+            "status": Value::Null,
+        }),
+        Err(error) => json!({
+            "ok": false,
+            "url": Value::Null,
+            "data": Value::Null,
+            "status": error.http_status(),
+        }),
+    }
 }
 fn list_request(step: &ResourceStep) -> Result<ResourceRequest, ResponsesError> {
     let query = ListInputItemsQuery {
@@ -139,35 +144,35 @@ fn list_request(step: &ResourceStep) -> Result<ResourceRequest, ResponsesError> 
     list_input_items(&step.api_base, &step.response_id, &query)
 }
 pub(super) fn reply_rows(call: &Steps<ReplyStep>) -> Vec<Value> {
-    call.steps
-        .iter()
-        .map(|step| {
-            let headers = IndexMap::new();
-            let reply = RawResponse {
-                status: step.status,
-                headers: &headers,
-                text: &step.body,
-            };
-            let decoded = json_body(&reply)
-                .map_err(ResponsesError::from)
-                .and_then(|body| record(&body));
-            match decoded {
-                Ok(response) => json!({
-                    "ok": true,
-                    "value": {
-                        "id": response.id,
-                        "created_at": response.created_at,
-                        "status": response.status,
-                        "model": response.model,
-                    },
-                    "status": Value::Null,
-                }),
-                Err(error) => {
-                    json!({"ok": false, "value": Value::Null, "status": error.http_status()})
-                }
-            }
-        })
-        .collect()
+    let mut rows = Vec::with_capacity(call.steps.len());
+    for step in &call.steps {
+        rows.push(reply_row(step));
+    }
+    rows
+}
+fn reply_row(step: &ReplyStep) -> Value {
+    let headers = IndexMap::new();
+    let reply = RawResponse {
+        status: step.status,
+        headers: &headers,
+        text: &step.body,
+    };
+    let response = match cancel_reply(&reply) {
+        Ok(response) => response,
+        Err(error) => {
+            return json!({"ok": false, "value": Value::Null, "status": error.http_status()});
+        }
+    };
+    json!({
+        "ok": true,
+        "value": {
+            "id": response.id,
+            "created_at": response.created_at,
+            "status": response.status,
+            "model": response.model,
+        },
+        "status": Value::Null,
+    })
 }
 pub(super) fn capability_report(runtime: &Runtime, call: &CapabilityCall) -> Value {
     let models = call
