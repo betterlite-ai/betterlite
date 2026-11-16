@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use http::{HeaderMap, HeaderName, HeaderValue};
+use secrecy::SecretString;
 
 use crate::data_cloud_dispatch::call::EmbeddingReply;
 use crate::data_cloud_dispatch::context::DispatchGlobals;
@@ -374,6 +375,159 @@ async fn snowflake_embedding_keeps_the_error_headers() {
         }
         other => panic!("expected the snowflake exception, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn databricks_embedding_treats_an_empty_call_base_as_unset() {
+    let mut fixture = Fixture::new();
+    fixture.model = String::from("databricks-bge-large-en");
+    fixture.environment = environment(&[
+        ("DATABRICKS_API_BASE", "https://env.example.com"),
+        ("DATABRICKS_API_KEY", "db-key"),
+    ]);
+    fixture.api_base = Some(String::new());
+    let transport = Scripted::with_replies(vec![ok(databricks_embedding_reply())]);
+    let tokens = NoTokens;
+    let clock = FixedClock;
+    let mut globals = OwnedGlobals::empty();
+    globals.api_base = Some(String::from("https://global.example.com"));
+    let call = fixture.embedding_call();
+    let context = embedding_context(&fixture, globals.borrowed(), &transport, &tokens, &clock);
+    embedding_dispatch(&call, EmbeddingConfig::Databricks, &context)
+        .await
+        .expect("the databricks embedding answers");
+    let sent = transport.sent();
+    assert_eq!(sent[0].url, "https://global.example.com/embeddings");
+}
+
+#[tokio::test]
+async fn databricks_embedding_treats_an_empty_call_key_as_unset() {
+    let mut fixture = Fixture::new();
+    fixture.model = String::from("databricks-bge-large-en");
+    fixture.environment = environment(&[
+        (
+            "DATABRICKS_API_BASE",
+            "https://dbc.example.com/serving-endpoints",
+        ),
+        ("DATABRICKS_API_KEY", "db-key"),
+    ]);
+    fixture.api_key = Some(SecretString::from(String::new()));
+    let transport = Scripted::with_replies(vec![ok(databricks_embedding_reply())]);
+    let tokens = NoTokens;
+    let clock = FixedClock;
+    let mut globals = OwnedGlobals::empty();
+    globals.api_key = Some(SecretString::from("global-key"));
+    let call = fixture.embedding_call();
+    let context = embedding_context(&fixture, globals.borrowed(), &transport, &tokens, &clock);
+    embedding_dispatch(&call, EmbeddingConfig::Databricks, &context)
+        .await
+        .expect("the databricks embedding answers");
+    let sent = transport.sent();
+    assert_eq!(
+        sent[0]
+            .headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer global-key")
+    );
+}
+
+#[tokio::test]
+async fn databricks_embedding_skips_an_empty_global_key() {
+    let mut fixture = Fixture::new();
+    fixture.model = String::from("databricks-bge-large-en");
+    fixture.environment = environment(&[
+        (
+            "DATABRICKS_API_BASE",
+            "https://dbc.example.com/serving-endpoints",
+        ),
+        ("DATABRICKS_API_KEY", "db-key"),
+    ]);
+    let transport = Scripted::with_replies(vec![ok(databricks_embedding_reply())]);
+    let tokens = NoTokens;
+    let clock = FixedClock;
+    let mut globals = OwnedGlobals::empty();
+    globals.api_key = Some(SecretString::from(String::new()));
+    globals.databricks_key = Some(SecretString::from("databricks-key"));
+    let call = fixture.embedding_call();
+    let context = embedding_context(&fixture, globals.borrowed(), &transport, &tokens, &clock);
+    embedding_dispatch(&call, EmbeddingConfig::Databricks, &context)
+        .await
+        .expect("the databricks embedding answers");
+    let sent = transport.sent();
+    assert_eq!(
+        sent[0]
+            .headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer databricks-key")
+    );
+}
+
+#[tokio::test]
+async fn databricks_embedding_skips_an_empty_databricks_key() {
+    let mut fixture = Fixture::new();
+    fixture.model = String::from("databricks-bge-large-en");
+    fixture.environment = environment(&[
+        (
+            "DATABRICKS_API_BASE",
+            "https://dbc.example.com/serving-endpoints",
+        ),
+        ("DATABRICKS_API_KEY", "db-key"),
+    ]);
+    let transport = Scripted::with_replies(vec![ok(databricks_embedding_reply())]);
+    let tokens = NoTokens;
+    let clock = FixedClock;
+    let mut globals = OwnedGlobals::empty();
+    globals.databricks_key = Some(SecretString::from(String::new()));
+    let call = fixture.embedding_call();
+    let context = embedding_context(&fixture, globals.borrowed(), &transport, &tokens, &clock);
+    embedding_dispatch(&call, EmbeddingConfig::Databricks, &context)
+        .await
+        .expect("the databricks embedding answers");
+    let sent = transport.sent();
+    assert_eq!(
+        sent[0]
+            .headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer db-key")
+    );
+}
+
+#[tokio::test]
+async fn snowflake_embedding_skips_an_empty_call_key() {
+    let mut fixture = Fixture::new();
+    fixture.model = String::from("openai-gpt-4.1");
+    fixture.environment = environment(&[
+        ("SNOWFLAKE_JWT", "pat/abc"),
+        ("SNOWFLAKE_ACCOUNT_ID", "acct1"),
+    ]);
+    fixture.api_key = Some(SecretString::from(String::new()));
+    let transport = Scripted::with_replies(vec![ok(
+        r#"{"object":"list","data":[{"object":"embedding","embedding":[[0.1,0.2]],"index":0}],"model":"openai-gpt-4.1","usage":{"prompt_tokens":1,"total_tokens":1}}"#,
+    )]);
+    let tokens = NoTokens;
+    let clock = FixedClock;
+    let call = fixture.embedding_call();
+    let context = embedding_context(
+        &fixture,
+        DispatchGlobals::default(),
+        &transport,
+        &tokens,
+        &clock,
+    );
+    embedding_dispatch(&call, EmbeddingConfig::Snowflake, &context)
+        .await
+        .expect("the snowflake embedding answers");
+    let sent = transport.sent();
+    assert_eq!(
+        sent[0]
+            .headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer abc")
+    );
 }
 
 fn status_with_headers(

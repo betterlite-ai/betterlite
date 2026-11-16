@@ -166,3 +166,32 @@ async fn oci_stream_carries_a_utf8_sequence_split_across_reads() {
     }
     assert_eq!(contents, vec![String::from("héllo")]);
 }
+
+#[tokio::test]
+async fn oci_stream_decodes_a_final_event_without_a_trailing_newline() {
+    let transport = Scripted::with_stream(sse_head(vec![
+        "data: {\"message\":{\"content\":[{\"type\":\"TEXT\",\"text\":\"tail\"}]}}",
+    ]));
+    let headers = HeaderMap::new();
+    let data = PromptJson::Null;
+    let mut stream = open_stream(
+        OciStreamRequest {
+            api_base: "https://example.com",
+            headers,
+            data: &data,
+            signed_body: None,
+        },
+        &transport,
+    )
+    .await
+    .expect("the stream opens");
+    let mut contents = Vec::new();
+    while let Some(item) = stream.next().await.expect("the stream decodes") {
+        if let StreamItem::Chunk(chunk) = item
+            && let Some(content) = chunk.choice.delta.content
+        {
+            contents.push(content);
+        }
+    }
+    assert_eq!(contents, vec![String::from("tail")]);
+}
