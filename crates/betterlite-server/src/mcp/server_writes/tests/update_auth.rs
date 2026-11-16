@@ -422,3 +422,34 @@ async fn update_url_change_alone_leaves_the_legacy_blob_untouched() {
     assert_eq!(blob_keys(&column), ["client_id", "token_exchange_endpoint"]);
     harness.close().await;
 }
+
+const FULL_FLOW_SQL: &str = r#"UPDATE "LiteLLM_MCPServerTable" SET "issuer" = 'https://i', "authorization_url" = 'https://i/authorize', "token_url" = 'https://i/token', "registration_url" = 'https://i/register', "oauth2_flow" = 'authorization_code', "dcr_bridge" = true, "token_exchange_endpoint" = 'https://te', "audience" = 'aud', "subject_token_type" = 'urn:access', "token_exchange_profile" = 'rfc8693' WHERE "server_id" = $1"#;
+
+// The edit form re-sends all ten auth-flow fields unchanged; an auth_type switch clears every one.
+#[tokio::test]
+async fn update_auth_type_change_clears_every_resubmitted_flow_field() {
+    let harness = database().await;
+    let store = harness.writes();
+    seed_row(&harness, "srv-1", Some("oauth2"), None).await;
+    harness.execute(FULL_FLOW_SQL, &[&"srv-1"]).await;
+    let server = updated_row(
+        &store,
+        r#"{"server_id": "srv-1", "auth_type": "api_key", "issuer": "https://i",
+            "authorization_url": "https://i/authorize", "token_url": "https://i/token",
+            "registration_url": "https://i/register", "oauth2_flow": "authorization_code",
+            "dcr_bridge": true, "token_exchange_endpoint": "https://te", "audience": "aud",
+            "subject_token_type": "urn:access", "token_exchange_profile": "rfc8693"}"#,
+    )
+    .await;
+    assert_eq!(server.issuer, None);
+    assert_eq!(server.authorization_url, None);
+    assert_eq!(server.token_url, None);
+    assert_eq!(server.registration_url, None);
+    assert_eq!(server.oauth2_flow, None);
+    assert_eq!(server.dcr_bridge, None);
+    assert_eq!(server.token_exchange_endpoint, None);
+    assert_eq!(server.audience, None);
+    assert_eq!(server.subject_token_type, None);
+    assert_eq!(server.token_exchange_profile, None);
+    harness.close().await;
+}

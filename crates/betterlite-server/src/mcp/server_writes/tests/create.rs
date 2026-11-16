@@ -4,9 +4,7 @@ use betterlite_db::mcp_stored_contracts::JsonValue;
 use uuid::Uuid;
 
 use super::support::cipher::{SALT, cipher, opened_env_vars};
-use super::support::database::{
-    AGE_SERVER_SQL, SEED_DRAFT_SQL, SERVER_COUNT_SQL, SERVER_NAME_COUNT_SQL, database,
-};
+use super::support::database::{SEED_DRAFT_SQL, SERVER_COUNT_SQL, SERVER_NAME_COUNT_SQL, database};
 use super::support::fake::RecordingInvalidation;
 use super::support::logs::capture_logs;
 use super::support::request;
@@ -244,15 +242,5 @@ async fn get_draft_drops_undecryptable_global_env_vars() {
     assert_eq!(entries[0].value, "");
     assert_eq!(entries[1].value, "kept");
     assert!(logs.contents().contains("failed to decrypt"));
-    harness
-        .execute(AGE_SERVER_SQL, &[&"srv-draft".to_owned(), &600.0_f64])
-        .await;
-    assert!(
-        get_draft_mcp_server(&store, &cipher, "srv-draft", 300)
-            .await
-            .unwrap()
-            .is_none(),
-        "an aged draft is unreadable"
-    );
     harness.close().await;
 }

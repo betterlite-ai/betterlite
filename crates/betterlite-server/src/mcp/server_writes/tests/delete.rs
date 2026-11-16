@@ -140,7 +140,10 @@ async fn delete_warns_on_a_failed_child_cleanup_and_still_invalidates() {
         invalidation.calls(),
         [("u1".to_owned(), "srv-1".to_owned())]
     );
-    assert!(logs.contents().contains("cleanup failed"));
+    let lines = logs.contents();
+    assert!(lines.contains("per-user credential cleanup failed"));
+    assert!(lines.contains("per-user env var cleanup failed"));
+    assert!(lines.contains("per-user OAuth client cleanup failed"));
 }
 
 #[tokio::test]
