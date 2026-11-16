@@ -152,13 +152,13 @@ fn leaves_a_unit_with_a_null_price_unpriced() {
     );
 }
 
-// the shared pricing rejects a negative-signed zero that LiteLLM's Field(ge=0) reads as zero, as docs/deviations/B3688.yaml records
+// the shared pricing drops the sign of a zero, so -0.0 prices the unit at zero the way LiteLLM's Field(ge=0) does
 #[test]
-fn treats_a_negative_signed_zero_price_as_unpriced() {
+fn keeps_a_negative_signed_zero_unit_priced() {
     let entry = r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": -0.0}}"#;
     assert_eq!(
         units_of(&[payload_with_entries(entry)]),
-        [unit_call("g1", "a", increment(1, Decimal::ZERO, 1))]
+        [unit_call("g1", "a", increment(1, Decimal::ZERO, 0))]
     );
 }
 

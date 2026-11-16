@@ -1,7 +1,7 @@
 task: B3688
 deviations:
   - what: The redaction walks an owned JSON tree with no seen set, so every node is visited; LiteLLM keeps a set of object ids because its deepcopy preserves shared and cyclic references.
-    why: betterlite's Json tree is owned and cannot contain a shared or cyclic node, so the case the seen set guards against cannot be built; the 2,000-level payload in the tests proves the walk is iterative rather than recursive.
+    why: betterlite's Json tree is owned and cannot contain a shared or cyclic node, so the case the seen set guards against cannot be built; the walk keeps its own stack, and the 2,000-level payload in the tests drives it past the depth Python's default recursion limit allows, on a thread sized for the copy and drop that recurse.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L732-L740
   - what: An index row renders start_time as UTC text with the +00:00 offset; LiteLLM prints str(datetime) of the payload's own datetime, which keeps the request's original offset and prints a naive datetime with none.
     why: betterlite normalizes a parsed start time to one DateTime<Utc> and prints it the way str(datetime) prints a UTC time, so the stored instant and the day bucket are the same and only the rendered offset differs.
@@ -15,9 +15,6 @@ deviations:
   - what: Unit costs and their sums are exact decimals; LiteLLM sums Python floats for the priced share of a unit row.
     why: Money is a Decimal in betterlite from the request cost to the rollup, so repeated fractional-cent prices add up to their decimal sum instead of carrying a float's rounding error in the last bits.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L100-L106
-  - what: A unit price written as a negative-signed zero reads as malformed, so the whole entry is unpriced; LiteLLM's Field(ge=0) accepts -0.0 and prices that unit at zero.
-    why: The rollup prices units through the shared guardrail cost validator, which rejects a price whose Decimal carries the sign bit, and that validator owns the coercion; the case is the one place its verdict differs from LiteLLM's bound.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/guardrail_cost.py#L39
   - what: A metadata string that is not a JSON object logs a warning before the payload is read as having no guardrail entries; LiteLLM returns an empty list silently when json.loads fails or produces a non-dict.
     why: The string is parsed once while the payload is deserialized, and a warning is the only signal that the field held something other than the object LiteLLM writes there.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L214-L218
