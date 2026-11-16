@@ -38,6 +38,11 @@ impl<R: SkillRepository> StoredSkillReads<R> {
         principal: Option<&Principal>,
     ) -> Result<Vec<StoredSkill>, StoredSkillReadError> {
         self.repository.availability()?;
+        tracing::debug!(
+            limit = page.limit,
+            offset = page.offset,
+            "LiteLLMSkillsHandler: Listing skills"
+        );
         let scopes = (principal.is_some() && !is_proxy_admin(principal))
             .then(|| get_resource_owner_scopes(principal));
         if scopes.as_ref().is_some_and(Vec::is_empty) {
@@ -58,6 +63,7 @@ impl<R: SkillRepository> StoredSkillReads<R> {
         skill_id: &str,
         principal: Option<&Principal>,
     ) -> Result<StoredSkill, StoredSkillReadError> {
+        tracing::debug!(skill_id = %skill_id, "LiteLLMSkillsHandler: Getting skill");
         let Some(skill) = self.load_skill(skill_id).await? else {
             return Err(StoredSkillReadError::NotFound {
                 skill_id: skill_id.to_owned(),
