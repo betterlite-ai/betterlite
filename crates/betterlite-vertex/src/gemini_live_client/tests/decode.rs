@@ -134,10 +134,20 @@ fn a_missing_item_is_an_empty_user_message() {
 #[test]
 fn invalid_json_reports_the_message_it_could_not_parse() {
     let error = decode_bytes(b"{\"type\":", usize::MAX).expect_err("invalid JSON fails");
+    assert_eq!(error.to_string(), "Invalid JSON message: {\"type\":");
     let LiveClientError::InvalidJson { message, .. } = error else {
         panic!("the error is InvalidJson");
     };
     assert_eq!(message, "{\"type\":");
+}
+
+#[test]
+fn a_non_utf8_event_reports_the_encoding_failure() {
+    let error = decode_bytes(&[0xff, 0xfe], usize::MAX).expect_err("the bytes are not an event");
+    let LiveClientError::InvalidJson { message, .. } = error else {
+        panic!("the error is InvalidJson");
+    };
+    assert!(message.starts_with("the event is not UTF-8: "));
 }
 
 #[rstest]

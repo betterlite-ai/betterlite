@@ -138,15 +138,21 @@ pub fn decode_gemini_live_client_event(
 }
 
 fn top_level_error(source: serde_json::Error, bytes: &[u8]) -> LiveClientError {
+    let text = match std::str::from_utf8(bytes) {
+        Ok(text) => text,
+        Err(error) => {
+            return LiveClientError::InvalidJson {
+                message: format!("the event is not UTF-8: {error}"),
+                source,
+            };
+        }
+    };
     match source.classify() {
         Category::Data => LiveClientError::NotAnObject(source),
-        Category::Io | Category::Syntax | Category::Eof => {
-            let message = match std::str::from_utf8(bytes) {
-                Ok(text) => text.to_owned(),
-                Err(error) => format!("the event is not UTF-8: {error}"),
-            };
-            LiveClientError::InvalidJson { message, source }
-        }
+        Category::Io | Category::Syntax | Category::Eof => LiveClientError::InvalidJson {
+            message: text.to_owned(),
+            source,
+        },
     }
 }
 
