@@ -263,9 +263,9 @@ fn a2a_takes_the_registered_agent_base_key_and_headers() {
     let recorder = Recorder::answer("hi");
     let reply = complete_a2a(&harness.context(), &recorder).expect("the call resolves");
     assert_eq!(reply, "hi");
-    let calls = recorder.calls();
-    assert_eq!(calls.len(), 1);
-    let call = &calls[0];
+    let sent = recorder.calls();
+    assert_eq!(sent.len(), 1);
+    let call = &sent[0];
     assert_eq!(call.model, "my-agent");
     assert_eq!(call.api_base.as_deref(), Some("http://card.test/agent"));
     assert_eq!(
@@ -418,8 +418,8 @@ fn langgraph_passes_the_provider_info_pair() {
     harness.provider_config = Some(ChatConfigTag::LangGraph);
     let recorder = Recorder::answer("hi");
     complete_langgraph(&harness.context(), &recorder).expect("the call resolves");
-    let calls = recorder.calls();
-    let call = &calls[0];
+    let sent = recorder.calls();
+    let call = &sent[0];
     assert_eq!(call.model, "agent");
     assert_eq!(call.api_base.as_deref(), Some("http://lg.test"));
     assert_eq!(exposed(call.api_key.as_ref()), Some(String::from("lg-key")));
@@ -510,8 +510,8 @@ fn langflow_passes_the_provider_info_pair() {
     harness.provider_config = Some(ChatConfigTag::LangFlow);
     let recorder = Recorder::answer("hello");
     complete_langflow(&harness.context(), &recorder).expect("the call resolves");
-    let calls = recorder.calls();
-    let call = &calls[0];
+    let sent = recorder.calls();
+    let call = &sent[0];
     assert_eq!(call.model, "flow-1");
     assert_eq!(call.api_base.as_deref(), Some("http://lf.test"));
     assert_eq!(exposed(call.api_key.as_ref()), Some(String::from("lf-key")));

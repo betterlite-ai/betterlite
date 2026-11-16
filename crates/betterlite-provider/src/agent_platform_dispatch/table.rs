@@ -8,6 +8,7 @@ use super::langflow::complete_langflow;
 use super::langgraph::complete_langgraph;
 
 // LiteLLM's dispatch arms for the three agent platforms; every other provider keeps its own path
+#[must_use]
 pub fn dispatch<R>(
     tag: ChatConfigTag,
     context: &DispatchContext<'_>,
