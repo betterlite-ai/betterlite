@@ -132,10 +132,11 @@ fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
 
 fn map_answer(call: &MapCall) -> Value {
     let options = json_options(&call.options);
-    match StabilityImageEditConfig::map_openai_params(&options, &call.model, call.drop_params) {
-        Ok(mapped) => json!({"mapped": mapped_json(&mapped)}),
-        Err(_) => json!({"unsupported": true}),
-    }
+    StabilityImageEditConfig::map_openai_params(&options, &call.model, call.drop_params)
+        .map_or_else(
+            |_| json!({"unsupported": true}),
+            |mapped| json!({"mapped": mapped_json(&mapped)}),
+        )
 }
 
 fn url_answer(call: &UrlCall) -> Value {
@@ -148,10 +149,12 @@ fn url_answer(call: &UrlCall) -> Value {
 fn environment_answer(call: &EnvironmentCall) -> Value {
     let config = edit_config(&call.model, &call.environment);
     let explicit = call.api_key.as_deref().map(SecretString::from);
-    match config.validate_environment(call.headers.clone(), explicit.as_ref()) {
-        Ok(validated) => json!({"headers": validated}),
-        Err(_) => json!({"missing_key": true}),
-    }
+    config
+        .validate_environment(call.headers.clone(), explicit.as_ref())
+        .map_or_else(
+            |_| json!({"missing_key": true}),
+            |validated| json!({"headers": validated}),
+        )
 }
 
 fn request_answer(call: &RequestCall) -> Result<Value, Box<HelperError>> {

@@ -411,8 +411,8 @@ fn a_size_outside_the_table_is_dropped(#[case] size: Json) {
 fn a_known_size_overwrites_a_supplied_aspect_ratio() {
     let input = options(&[("aspect_ratio", text("3:2")), ("size", text("1024x1024"))]);
 
-    let mapped = StabilityImageEditConfig::map_openai_params(&input, INPAINT, false)
-        .expect("size is supported");
+    let mapped = StabilityImageEditConfig::map_openai_params(&input, INPAINT, true)
+        .expect("drop_params keeps the supplied aspect_ratio");
 
     assert_eq!(
         mapped.get("aspect_ratio"),
