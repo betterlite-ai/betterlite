@@ -3,6 +3,8 @@ use betterlite_logging::otel::integrations::arize_messages::ArizeOtelAttributes;
 use betterlite_logging::otel::integrations::weave_attributes::set_weave_otel_attributes;
 use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use opentelemetry::Value as OtelValue;
 use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, Span as SdkSpan};
@@ -41,10 +43,10 @@ struct Recorded {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let kwargs = match input {
             Input::SetAttributes { kwargs, .. } | Input::SetWeaveAttributes { kwargs, .. } => {
                 kwargs
@@ -83,7 +85,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn recorded_span<F>(record: F) -> Result<Recorded, Box<crate::helpers::HelperError>>
+fn recorded_span<F>(record: F) -> Result<Recorded, Box<HelperError>>
 where
     F: FnOnce(&mut SdkSpan),
 {
@@ -180,8 +182,8 @@ fn has_array_content(message: &OtelModelValue) -> bool {
         .is_some_and(|content| content.as_array().is_some())
 }
 
-fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn helper_error(class: &str, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,

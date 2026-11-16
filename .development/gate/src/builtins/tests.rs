@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
@@ -8,6 +9,7 @@ use crate::builtins::expect_budget;
 use crate::builtins::file_size::size_problem;
 use crate::builtins::globs::glob_set;
 use crate::builtins::module_tree::Walk;
+use crate::builtins::shared_names::{name_problems, shared_names};
 use crate::spec::catalog::FileSize;
 
 const PIN: &str =
@@ -212,4 +214,22 @@ fn http_case_pointers_are_left_to_the_oracle() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn a_free_function_cannot_take_a_shared_oracle_function_name() {
+    let shared = BTreeSet::from(["invoke".to_owned(), "run_case".to_owned()]);
+    let source = "fn run_case() {}\nimpl Op { fn invoke(&self) {} }\nfn outer() { fn invoke() {} }\nmod inner { pub(crate) fn run_case_file() {} }\n";
+    let items = syn::parse_file(source).unwrap().items;
+    let problems = name_problems("tools/oracle/src/probe.rs", &items, &shared);
+    assert_eq!(problems.len(), 2);
+    assert!(problems[0].starts_with("tools/oracle/src/probe.rs: fn run_case "));
+    assert!(problems[1].starts_with("tools/oracle/src/probe.rs: fn invoke "));
+}
+
+#[test]
+fn the_shared_oracle_functions_include_run_case_and_invoke() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let names = shared_names(&root).unwrap();
+    assert!(names.contains("run_case") && names.contains("invoke"));
 }

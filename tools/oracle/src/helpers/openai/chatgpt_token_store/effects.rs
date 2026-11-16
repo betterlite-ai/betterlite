@@ -1,21 +1,23 @@
-use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use std::{fs, io};
 
-use betterlite_openai::chatgpt::token_store::Clock;
+use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_openai::chatgpt::token_store::codec::AuthRecord;
 use betterlite_openai::chatgpt::token_store::files::{FileAccess, LocalFiles, StoreEvent};
+use betterlite_openai::chatgpt::token_store::{ChatGptTokenStore, Clock, StoreError};
 use rust_decimal::Decimal;
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum FixtureError {
     #[error("fixture IO failed")]
     Io(#[from] io::Error),
     #[error("fixture configuration failed")]
-    Config(#[from] betterlite_config::loader::ConfigError),
+    Config(#[from] ConfigError),
     #[error("fixture store failed")]
-    Store(#[from] betterlite_openai::chatgpt::token_store::StoreError),
+    Store(#[from] StoreError),
     #[error("fixture time failed")]
     Time,
     #[error("fixture number failed")]
@@ -82,7 +84,7 @@ impl Clock for ScriptClock {
         }
         self.now = self.now.saturating_add(seconds);
         if let Some(replacement) = self.replacement.take() {
-            self.failure = std::fs::write(&self.path, replacement).err();
+            self.failure = fs::write(&self.path, replacement).err();
         }
     }
 }
@@ -90,12 +92,9 @@ impl Clock for ScriptClock {
 pub(super) fn store(
     input: &super::Input,
     directory: &Path,
-) -> Result<
-    betterlite_openai::chatgpt::token_store::ChatGptTokenStore<Files, ScriptClock>,
-    FixtureError,
-> {
-    let mut settings = betterlite_config::loader::ConfigLoader {
-        lookup: std::collections::BTreeMap::<String, String>::new(),
+) -> Result<ChatGptTokenStore<Files, ScriptClock>, FixtureError> {
+    let mut settings = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
     }
     .load("")?
     .sections
@@ -114,5 +113,5 @@ pub(super) fn store(
         failure: None,
         replacement: input.replacement.clone(),
     };
-    Ok(betterlite_openai::chatgpt::token_store::ChatGptTokenStore::new(settings, files, clock)?)
+    Ok(ChatGptTokenStore::new(settings, files, clock)?)
 }

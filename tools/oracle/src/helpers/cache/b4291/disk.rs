@@ -7,7 +7,8 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use super::super::b4290::failure;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const PROBE_CLOCK_SECONDS: f64 = 1_000_000.0;
 
@@ -26,7 +27,7 @@ pub(crate) struct StoredEntry {
     pub(crate) value: CacheValue,
 }
 
-fn probe() -> Result<(TempDir, DiskCache), Box<crate::helpers::HelperError>> {
+fn probe() -> Result<(TempDir, DiskCache), Box<HelperError>> {
     let directory = TempDir::new().map_err(failure)?;
     let clock: Clock = Arc::new(|| PROBE_CLOCK_SECONDS);
     let cache = DiskCache::open(Some(directory.path()), clock).map_err(failure)?;

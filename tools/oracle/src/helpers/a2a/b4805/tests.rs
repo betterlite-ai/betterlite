@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use crate::case::{LoadedCase, load_cases};
-use crate::helpers::{HelperRun, run_case};
+use betterlite_oracle_runner::case::load_helper_cases;
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 use rstest::rstest;
 use std::path::Path;
 
@@ -25,10 +25,11 @@ use std::path::Path;
 #[case::stream_user_without_parts("pydantic-stream-user-without-parts")]
 #[case::stream_exact_chunks("pydantic-stream-exact-chunks")]
 fn pydantic_ai_transformation(#[case] name: &str) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("cases/a2a/{name}.yaml"));
-    let cases = load_cases(&[path]).unwrap();
-    let LoadedCase::Helper(case) = &cases[0] else {
-        panic!("expected helper");
-    };
-    assert!(matches!(run_case(case, false).unwrap(), HelperRun::Match));
+    let path = Path::new(ORACLE_DIR).join(format!("cases/a2a/{name}.yaml"));
+    let cases = load_helper_cases(&[path]).unwrap();
+    let case = &cases[0];
+    assert!(matches!(
+        run_case(&[crate::GROUP], case, false).unwrap(),
+        HelperRun::Match
+    ));
 }

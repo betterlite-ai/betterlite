@@ -10,7 +10,7 @@ use betterlite_server::cli_login_pages::{
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use extract::{
     COMPLETION_FIELDS, VERIFICATION_FIELDS, classified, consent_entries, field_entries, object,
 };

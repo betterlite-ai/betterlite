@@ -3,12 +3,14 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 
 use super::{Input, Op};
+use betterlite_oracle_helper_api::helper::Helper;
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 fn seed_sources() -> Vec<String> {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -63,7 +65,7 @@ fn seeds_reach_native_formatter() {
     let keys: Vec<String> = inputs
         .iter()
         .map(|input| {
-            let answer = <Op as crate::helpers::Helper>::run(input).expect("a native answer");
+            let answer = <Op as Helper>::run(input).expect("a native answer");
             let key = answer.as_str().expect("a key string");
             key.to_owned()
         })

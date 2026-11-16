@@ -6,7 +6,8 @@ use betterlite_logging::gcs_client::gcs_storage_auth::environment_source::Enviro
 use betterlite_logging::gcs_client::gcs_storage_auth::initialization_behaviors::initialize;
 use betterlite_logging::gcs_mock::request::GcsRequest;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod cases;
 mod input;
@@ -20,6 +21,7 @@ use self::cases::{
 };
 use self::input::{Action, Input};
 use self::recording::{FakeAuth, RecordingClient};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -27,7 +29,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .build()
             .map_err(|error| failure("RuntimeError", error))?;

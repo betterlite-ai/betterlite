@@ -12,7 +12,8 @@ use betterlite_core::api::image_input_options::selection::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod readers;
 
