@@ -1,0 +1,13 @@
+kind: helper
+name: cache-settings-read-view-classifier-key
+call:
+  b4307:
+    stored:
+      type: "redis"
+      host: "classified-host"
+      password: "secret"
+      sentinel_password: null
+      aws_iam_auth: true
+    environment: {}
+env: {}
+compare: {ignore: []}
