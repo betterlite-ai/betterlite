@@ -156,7 +156,7 @@ impl UuidQueue {
         if let Some(id) = self.ids.pop_front() {
             return id;
         }
-        self.missing += 1;
+        self.missing = self.missing.checked_add(1).unwrap_or(i64::MAX);
         format!("missing-uuid-{}", self.missing)
     }
 }
