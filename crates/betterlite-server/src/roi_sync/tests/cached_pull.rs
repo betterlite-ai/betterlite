@@ -7,9 +7,11 @@ use betterlite_roi::records::ROIEstimateStatus;
 
 use super::support::{
     answering_caller, inputs, manager, pull, pull_key, pull_param, record_text, report_of,
-    report_text, settled,
+    report_text, settled, unchanged_record_text, unchanged_report_text,
 };
 use crate::roi_cache::store::REPORT_PARAM;
+
+const OLD_PROFILE: &str = r#"{"email":"old@example.com"}"#;
 
 #[tokio::test]
 async fn saved_record_is_reused_without_reading_evidence() {
@@ -76,6 +78,42 @@ async fn previous_report_record_is_reused_and_cached() {
     assert_eq!(counted.load(Ordering::SeqCst), 0);
     assert!(inputs.repository.written_named(&pull_param(&key)).is_some());
     assert_eq!(manager.status().reused, 1);
+}
+
+#[tokio::test]
+async fn unchanged_saved_record_is_not_rewritten() {
+    let manager = manager(None);
+    let mut inputs = inputs("o/r", &[12]);
+    inputs.routes = inputs.routes.clone().with("/users/dev", 200, OLD_PROFILE);
+    let key = pull_key(&inputs.settings, "o/r", &pull(12)).await;
+    inputs.repository = inputs
+        .repository
+        .with_param(&pull_param(&key), &unchanged_record_text(12, &key));
+    assert!(manager.start(inputs.run()).await);
+    settled(&manager).await;
+    assert!(inputs.repository.written_named(&pull_param(&key)).is_none());
+    let report = report_of(&inputs.repository);
+    let record = &report.pulls[0];
+    assert_eq!(record.profile_email, "old@example.com");
+    assert_eq!(
+        record.emails,
+        vec!["old@example.com".to_owned(), "work@example.com".to_owned()]
+    );
+    assert_eq!(record.estimate.cached, Some(true));
+}
+
+#[tokio::test]
+async fn unchanged_previous_report_record_is_rewritten() {
+    let manager = manager(None);
+    let mut inputs = inputs("o/r", &[12]);
+    inputs.routes = inputs.routes.clone().with("/users/dev", 200, OLD_PROFILE);
+    let key = pull_key(&inputs.settings, "o/r", &pull(12)).await;
+    inputs.repository = inputs
+        .repository
+        .with_param(REPORT_PARAM, &unchanged_report_text(&[(12, &key)]));
+    assert!(manager.start(inputs.run()).await);
+    settled(&manager).await;
+    assert!(inputs.repository.written_named(&pull_param(&key)).is_some());
 }
 
 #[tokio::test]

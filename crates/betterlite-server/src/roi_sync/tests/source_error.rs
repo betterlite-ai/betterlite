@@ -2,16 +2,15 @@
 
 use betterlite_roi::records::ROISyncPhase;
 
-use super::support::{failing_factory, inputs, manager, settled};
+use super::support::{failing_factory, inputs, manager, manager_from, settled};
 use crate::roi_cache::store::REPORT_PARAM;
 use crate::roi_github::error::SourceError;
-use crate::roi_sync::manager::SyncManager;
 
 const DETAIL: &str = "/repos/o/r/pulls/12";
 
 #[tokio::test]
 async fn a_factory_error_fails_the_run_before_any_read() {
-    let manager = SyncManager::new(failing_factory(), None);
+    let manager = manager_from(failing_factory());
     let inputs = inputs("o/r", &[12]);
     assert!(manager.start(inputs.run()).await);
     settled(&manager).await;

@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use betterlite_roi::records::{ROISyncPhase, ROISyncStatus};
 use tokio::sync::Notify;
 
-use super::support::{TestClock, inputs, manager, stalled_caller};
-use crate::roi_sync::status::{StatusReporter, idle_status};
+use super::support::{TestClock, blank_status, inputs, manager, stalled_caller};
+use crate::roi_sync::status::StatusReporter;
 
 const START: &str = "2026-01-10T00:00:00+00:00";
 
@@ -18,7 +18,7 @@ fn reporter(stored: ROISyncStatus, clock: &TestClock) -> StatusReporter {
 }
 
 fn running_status(done: i64, total: i64) -> ROISyncStatus {
-    let mut status = idle_status();
+    let mut status = blank_status();
     status.running = true;
     status.phase = ROISyncPhase::Estimates;
     status.started_at = Some(START.to_owned());
@@ -30,7 +30,7 @@ fn running_status(done: i64, total: i64) -> ROISyncStatus {
 #[test]
 fn status_without_a_start_time_reports_no_elapsed_time() {
     let clock = TestClock::at("2026-01-10T00:05:00Z");
-    let status = reporter(idle_status(), &clock).snapshot();
+    let status = reporter(blank_status(), &clock).snapshot();
     assert_eq!(status.elapsed_seconds, 0);
     assert!(status.remaining_seconds.is_none());
 }

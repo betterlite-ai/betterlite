@@ -12,9 +12,13 @@ use betterlite_db::postgres_store::errors::DbError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_models::decisions::Json;
+use betterlite_models::model_capability_predicates::{CapabilityPredicates, CapabilityRequest};
 use betterlite_roi::estimator::cache::cache_context;
+use betterlite_roi::estimator::models::ROICompletionRequest;
 use betterlite_roi::records::{
-    ROIEstimate, ROIEstimateStatus, ROIPullRecord, ROIReport, ROISpendRecord, ROISyncStatus,
+    ROIEstimate, ROIEstimateStatus, ROIPullRecord, ROIReport, ROISpendRecord, ROISyncPhase,
+    ROISyncStatus,
 };
 use betterlite_roi::settings::ROISettings;
 use chrono::{DateTime, NaiveDate, Utc};
@@ -25,6 +29,7 @@ use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 use thiserror::Error;
 use tokio::sync::{Barrier, Notify};
+use uuid::Uuid;
 
 use crate::roi_cache::key::cache_key;
 use crate::roi_cache::store::{PULL_PARAM_PREFIX, REPORT_PARAM, ReportRepository};
@@ -34,10 +39,10 @@ use crate::roi_github::error::SourceError;
 use crate::roi_github::models::GitHubPullListItem;
 use crate::roi_github::transport::Transport;
 use crate::roi_spend::SpendReader;
-use crate::roi_sync::capabilities::NoDeclaredCapabilities;
+use crate::roi_sync::capabilities::{CapabilityLookup, SessionCapabilities};
 use crate::roi_sync::coordinator::SyncCoordinator;
 use crate::roi_sync::manager::{SyncManager, SyncRun};
-use crate::roi_sync::ports::{GitHubFactory, SyncClock};
+use crate::roi_sync::ports::{GitHubFactory, SyncClock, UuidSource};
 
 pub(super) const ANSWER: &str = r#"{"hours": 3.5, "reasoning": "Small change."}"#;
 
@@ -235,7 +240,8 @@ pub(super) async fn pull_key(
     repo: &str,
     item: &GitHubPullListItem,
 ) -> String {
-    let mut predicates = NoDeclaredCapabilities;
+    let empty = NoDeclaredCapabilities;
+    let mut predicates = SessionCapabilities { lookup: &empty };
     let context = cache_context(settings, None, &mut predicates)
         .await
         .unwrap();
@@ -264,6 +270,20 @@ pub(super) fn report_text(numbers: &[(i64, &str)]) -> String {
     )
 }
 
+pub(super) fn unchanged_record_text(number: i64, key: &str) -> String {
+    record_text(number, Some(key)).replace(
+        r#""emails":["work@example.com","old@example.com"]"#,
+        r#""emails":["old@example.com","work@example.com"]"#,
+    )
+}
+
+pub(super) fn unchanged_report_text(numbers: &[(i64, &str)]) -> String {
+    report_text(numbers).replace(
+        r#""emails":["work@example.com","old@example.com"]"#,
+        r#""emails":["old@example.com","work@example.com"]"#,
+    )
+}
+
 pub(super) fn report_of(repository: &MemoryRepository) -> ROIReport {
     let value = repository
         .written_named(REPORT_PARAM)
@@ -276,6 +296,25 @@ pub(super) fn written_record(repository: &MemoryRepository, name: &str) -> ROIPu
         .written_named(name)
         .expect("the pull record was stored");
     wire(&serde_json::to_string(&value).unwrap())
+}
+
+pub(super) fn blank_status() -> ROISyncStatus {
+    ROISyncStatus {
+        running: false,
+        phase: ROISyncPhase::Idle,
+        stage: "Idle".to_owned(),
+        done: 0,
+        total: 0,
+        estimated: 0,
+        reused: 0,
+        needs_attention: 0,
+        error: None,
+        started_at: None,
+        finished_at: None,
+        next_update: None,
+        elapsed_seconds: 0,
+        remaining_seconds: None,
+    }
 }
 
 pub(super) fn estimate(status: ROIEstimateStatus, cached: Option<bool>) -> ROIEstimate {
@@ -469,6 +508,7 @@ pub(super) enum Lease {
 pub(super) struct CoordinatorState {
     pub(super) shared: Option<ROISyncStatus>,
     pub(super) refused: BTreeSet<Lease>,
+    pub(super) acquire_gate: Option<Arc<Notify>>,
     pub(super) acquires: Vec<(String, ROISyncStatus, f64)>,
     pub(super) beats: Vec<(String, ROISyncStatus)>,
     pub(super) finishes: Vec<(String, ROISyncStatus, Option<ROIReport>)>,
@@ -488,6 +528,10 @@ impl FakeCoordinator {
         self.state.lock().unwrap().refused.insert(lease);
     }
 
+    pub(super) fn holding_acquires(&self, gate: Arc<Notify>) {
+        self.state.lock().unwrap().acquire_gate = Some(gate);
+    }
+
     pub(super) fn acquires(&self) -> Vec<(String, ROISyncStatus, f64)> {
         self.state.lock().unwrap().acquires.clone()
     }
@@ -501,6 +545,64 @@ impl FakeCoordinator {
     }
 }
 
+pub(super) struct NoDeclaredCapabilities;
+
+#[async_trait]
+impl CapabilityLookup for NoDeclaredCapabilities {
+    async fn supports(&self, _model: &str, _provider: Option<&str>, _key: &str) -> bool {
+        false
+    }
+}
+
+pub(super) struct ModelSupport;
+
+#[async_trait]
+impl CapabilityLookup for ModelSupport {
+    async fn supports(&self, _model: &str, _provider: Option<&str>, _key: &str) -> bool {
+        true
+    }
+}
+
+impl CapabilityPredicates for ModelSupport {
+    fn supports_factory(
+        &mut self,
+        _request: &CapabilityRequest<'_>,
+        _key: &str,
+    ) -> impl Future<Output = bool> + Send {
+        ready(true)
+    }
+
+    fn declared_value_factory(
+        &mut self,
+        _request: &CapabilityRequest<'_>,
+        _key: &str,
+    ) -> impl Future<Output = Option<String>> + Send {
+        ready(None)
+    }
+
+    fn is_explicitly_disabled_factory(
+        &mut self,
+        _request: &CapabilityRequest<'_>,
+        _key: &str,
+    ) -> impl Future<Output = bool> + Send {
+        ready(false)
+    }
+
+    fn supports_native_streaming(
+        &mut self,
+        _request: &CapabilityRequest<'_>,
+    ) -> impl Future<Output = Json> + Send {
+        ready(Json::Null)
+    }
+
+    fn supports_response_schema(
+        &mut self,
+        _request: &CapabilityRequest<'_>,
+    ) -> impl Future<Output = bool> + Send {
+        ready(false)
+    }
+}
+
 #[async_trait]
 impl SyncCoordinator for FakeCoordinator {
     async fn status(&self) -> Option<ROISyncStatus> {
@@ -508,11 +610,17 @@ impl SyncCoordinator for FakeCoordinator {
     }
 
     async fn acquire(&self, owner: &str, status: &ROISyncStatus, scheduled_interval: f64) -> bool {
-        let mut state = self.state.lock().unwrap();
-        state
-            .acquires
-            .push((owner.to_owned(), status.clone(), scheduled_interval));
-        !state.refused.contains(&Lease::Acquire)
+        let gate = {
+            let mut state = self.state.lock().unwrap();
+            state
+                .acquires
+                .push((owner.to_owned(), status.clone(), scheduled_interval));
+            state.acquire_gate.clone()
+        };
+        if let Some(gate) = gate {
+            gate.notified().await;
+        }
+        !self.state.lock().unwrap().refused.contains(&Lease::Acquire)
     }
 
     async fn heartbeat(&self, owner: &str, status: &ROISyncStatus) -> bool {
@@ -543,6 +651,18 @@ pub(super) fn answering_caller(count: Option<Arc<AtomicUsize>>) -> CompletionCal
         if let Some(count) = count.as_ref() {
             count.fetch_add(1, Ordering::SeqCst);
         }
+        let object: CompletionObject = RawValue::from_string(body.clone()).unwrap();
+        let future: CompletionFuture = Box::pin(ready(Ok(object)));
+        future
+    })
+}
+
+pub(super) fn recording_caller(sent: Arc<Mutex<Vec<ROICompletionRequest>>>) -> CompletionCaller {
+    let content = serde_json::to_string(ANSWER).unwrap();
+    let body =
+        format!(r#"{{"choices":[{{"finish_reason":"stop","message":{{"content":{content}}}}}]}}"#);
+    Arc::new(move |request| {
+        sent.lock().unwrap().push(request);
         let object: CompletionObject = RawValue::from_string(body.clone()).unwrap();
         let future: CompletionFuture = Box::pin(ready(Ok(object)));
         future
@@ -629,7 +749,45 @@ pub(super) fn inputs(repo: &str, numbers: &[i64]) -> Inputs {
 }
 
 pub(super) fn manager(clock: Option<SyncClock>) -> SyncManager<Routes> {
-    SyncManager::new(factory(), clock)
+    SyncManager::new(
+        factory(),
+        clock.unwrap_or_else(|| -> SyncClock { Arc::new(Utc::now) }),
+        Arc::new(Uuid::new_v4),
+        Arc::new(NoDeclaredCapabilities),
+    )
+}
+
+pub(super) fn no_capabilities() -> Arc<dyn CapabilityLookup> {
+    Arc::new(NoDeclaredCapabilities)
+}
+
+pub(super) fn manager_from(factory: GitHubFactory<Routes>) -> SyncManager<Routes> {
+    SyncManager::new(
+        factory,
+        Arc::new(Utc::now),
+        Arc::new(Uuid::new_v4),
+        Arc::new(NoDeclaredCapabilities),
+    )
+}
+
+pub(super) fn manager_with_id(next_id: UuidSource) -> SyncManager<Routes> {
+    SyncManager::new(
+        factory(),
+        Arc::new(Utc::now),
+        next_id,
+        Arc::new(NoDeclaredCapabilities),
+    )
+}
+
+pub(super) fn manager_with_capabilities(
+    capabilities: Arc<dyn CapabilityLookup>,
+) -> SyncManager<Routes> {
+    SyncManager::new(
+        factory(),
+        Arc::new(Utc::now),
+        Arc::new(Uuid::new_v4),
+        capabilities,
+    )
 }
 
 pub(super) async fn drained() {

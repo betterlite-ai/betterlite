@@ -1,8 +1,16 @@
 #![cfg(test)]
 
+use std::sync::{Arc, Mutex};
+
+use betterlite_roi::estimator::cache::cache_context;
+use betterlite_roi::estimator::models::ReasoningEffort;
 use betterlite_roi::records::ROIEstimateStatus;
 
-use super::support::{inputs, manager, pull, pull_key, pull_param, report_of, settled};
+use super::support::{
+    ModelSupport, inputs, manager, manager_with_capabilities, pull, pull_key, pull_param,
+    recording_caller, report_of, settled,
+};
+use crate::roi_cache::key::cache_key;
 use crate::roi_cache::store::PULL_PARAM_PREFIX;
 
 const DETAIL: &str = "/repos/o/r/pulls/12";
@@ -47,6 +55,40 @@ async fn new_pull_estimates_from_evidence_and_caches() {
     assert_eq!(record.estimate.effort_basis.as_deref(), Some("without_ai"));
     assert_eq!(record.cache_key.as_deref(), Some(key.as_str()));
     assert!(inputs.repository.written_named(&pull_param(&key)).is_some());
+}
+
+#[tokio::test]
+async fn injected_capabilities_choose_none_reasoning_and_the_cache_key() {
+    let manager = manager_with_capabilities(Arc::new(ModelSupport));
+    let mut inputs = inputs("o/r", &[12]);
+    let sent = Arc::new(Mutex::new(Vec::new()));
+    inputs.complete = recording_caller(Arc::clone(&sent));
+    assert!(manager.start(inputs.run()).await);
+    settled(&manager).await;
+    {
+        let requests = sent.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].reasoning_effort, Some(ReasoningEffort::None));
+        assert_eq!(requests[0].model, "gpt-5.2");
+    }
+    let mut predicates = ModelSupport;
+    let context = cache_context(&inputs.settings, None, &mut predicates)
+        .await
+        .unwrap();
+    let expected = cache_key(&inputs.settings, &context, "o/r", &pull(12))
+        .unwrap()
+        .unwrap();
+    let report = report_of(&inputs.repository);
+    assert_eq!(
+        report.pulls[0].cache_key.as_deref(),
+        Some(expected.as_str())
+    );
+    assert!(
+        inputs
+            .repository
+            .written_named(&pull_param(&expected))
+            .is_some()
+    );
 }
 
 #[tokio::test]

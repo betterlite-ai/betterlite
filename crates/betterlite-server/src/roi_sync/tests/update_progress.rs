@@ -4,12 +4,12 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_roi::records::ROIEstimateStatus;
 
-use super::support::{TestClock, estimate};
-use crate::roi_sync::status::{StatusReporter, idle_status};
+use super::support::{TestClock, blank_status, estimate};
+use crate::roi_sync::status::StatusReporter;
 
 fn reporter() -> StatusReporter {
     StatusReporter {
-        stored: Arc::new(Mutex::new(idle_status())),
+        stored: Arc::new(Mutex::new(blank_status())),
         clock: TestClock::at("2026-01-10T00:00:00Z").handle(),
     }
 }

@@ -7,12 +7,13 @@ use betterlite_roi::records::ROISyncPhase;
 use tokio::sync::Barrier;
 
 use super::support::{
-    TestClock, barrier_caller, factory, inputs, manager, pull, report_of, settled,
+    TestClock, barrier_caller, blank_status, factory, inputs, manager, no_capabilities, pull,
+    report_of, settled,
 };
 use crate::roi_cache::processed::ProcessedPull;
 use crate::roi_estimator::Estimator;
 use crate::roi_sync::process::{IndexedPull, PullProcessor};
-use crate::roi_sync::status::{StatusReporter, idle_status};
+use crate::roi_sync::status::StatusReporter;
 
 const NUMBERS: [i64; 5] = [40, 7, 99, 12, 13];
 
@@ -38,10 +39,11 @@ async fn workers_process_every_third_pull_from_their_offset() {
     let estimator = Estimator::new(inputs.settings.clone(), Arc::clone(&inputs.complete), None);
     let clock = TestClock::at("2026-01-10T00:00:00Z");
     let status = StatusReporter {
-        stored: Arc::new(Mutex::new(idle_status())),
+        stored: Arc::new(Mutex::new(blank_status())),
         clock: clock.handle(),
     };
     let previous = BTreeMap::new();
+    let capabilities = no_capabilities();
     let processor = PullProcessor {
         github: &github,
         repository: &inputs.repository,
@@ -50,6 +52,7 @@ async fn workers_process_every_third_pull_from_their_offset() {
         estimate_context: "",
         previous: &previous,
         status: &status,
+        capabilities: &capabilities,
     };
     let first = processor.worker(0, &queue).await.unwrap();
     let second = processor.worker(1, &queue).await.unwrap();

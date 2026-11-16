@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_roi::records::{ROISyncPhase, ROISyncStatus};
 
-use super::support::TestClock;
-use crate::roi_sync::status::{StatusChange, StatusReporter, idle_status};
+use super::support::{TestClock, blank_status};
+use crate::roi_sync::status::{StatusChange, StatusReporter};
 
 const START: &str = "2026-01-10T00:00:00+00:00";
 
@@ -17,7 +17,7 @@ fn reporter(stored: ROISyncStatus, clock: &TestClock) -> StatusReporter {
 }
 
 fn started_status() -> ROISyncStatus {
-    let mut status = idle_status();
+    let mut status = blank_status();
     status.running = true;
     status.phase = ROISyncPhase::Spend;
     status.started_at = Some(START.to_owned());

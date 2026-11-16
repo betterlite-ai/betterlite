@@ -9,9 +9,10 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use super::support::{
-    FakeCoordinator, Lease, TestClock, drained, inputs, manager, settings, settled, stalled_caller,
+    FakeCoordinator, Lease, TestClock, blank_status, drained, inputs, manager, manager_with_id,
+    settings, settled, stalled_caller, until,
 };
-use crate::roi_sync::status::idle_status;
+use crate::roi_sync::ports::UuidSource;
 
 #[tokio::test]
 async fn start_refuses_settings_without_repositories() {
@@ -139,7 +140,7 @@ async fn start_refuses_when_the_shared_run_is_still_running() {
     inputs.complete = stalled_caller(Arc::new(Notify::new()));
     assert!(manager.start(inputs.run()).await);
     drained().await;
-    let mut shared = idle_status();
+    let mut shared = blank_status();
     shared.running = true;
     shared.phase = ROISyncPhase::Estimates;
     coordinator.sharing(shared);
@@ -165,11 +166,52 @@ async fn start_leaves_a_running_analysis_when_the_new_settings_are_invalid() {
 }
 
 #[tokio::test]
+async fn start_acquires_the_lease_with_the_injected_owner_id() {
+    let owner = "6f0b6a2e-1c55-4a5e-9a10-2f0d3c4b5a69";
+    let next_id: UuidSource = Arc::new(move || Uuid::parse_str(owner).unwrap());
+    let manager = manager_with_id(next_id);
+    let mut inputs = inputs("o/r", &[12]);
+    let coordinator = FakeCoordinator::default();
+    inputs.coordinator = Some(coordinator.clone());
+    assert!(manager.start(inputs.run()).await);
+    settled(&manager).await;
+    assert_eq!(coordinator.acquires()[0].0, owner);
+    assert_eq!(coordinator.finishes()[0].0, owner);
+}
+
+#[tokio::test]
 async fn start_serializes_concurrent_starts() {
     let manager = Arc::new(manager(None));
-    let first = inputs("o/r", &[12]);
-    let second = inputs("o/r", &[12]);
-    let (one, two) = tokio::join!(manager.start(first.run()), manager.start(second.run()));
+    let coordinator = FakeCoordinator::default();
+    let gate = Arc::new(Notify::new());
+    coordinator.holding_acquires(Arc::clone(&gate));
+    let mut shared = blank_status();
+    shared.running = true;
+    shared.phase = ROISyncPhase::Estimates;
+    coordinator.sharing(shared);
+    let mut first = inputs("o/r", &[12]);
+    first.coordinator = Some(coordinator.clone());
+    first.complete = stalled_caller(Arc::new(Notify::new()));
+    let mut second = inputs("o/r", &[12]);
+    second.coordinator = Some(coordinator.clone());
+    let release = async {
+        until(|| coordinator.acquires().len() >= 1).await;
+        drained().await;
+        gate.notify_one();
+    };
+    let joined = timeout(Duration::from_secs(5), async {
+        tokio::join!(
+            manager.start(first.run()),
+            manager.start(second.run()),
+            release
+        )
+    })
+    .await
+    .expect("both starts finished");
+    let (one, two, ()) = joined;
     assert_ne!(one, two);
+    assert_eq!(coordinator.acquires().len(), 1);
+    assert!(coordinator.finishes().is_empty());
+    assert!(manager.status().running);
     assert!(manager.cancel().await);
 }

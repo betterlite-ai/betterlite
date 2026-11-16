@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_roi::records::ROISyncPhase;
+use chrono::{DateTime, TimeDelta, Utc};
 
 use super::support::{TestClock, inputs, manager, settled};
 
@@ -37,12 +38,17 @@ async fn new_keeps_each_manager_on_its_own_status() {
 
 #[tokio::test]
 async fn new_without_a_clock_stamps_the_system_time() {
+    let before = Utc::now();
     let manager = manager(None);
     let inputs = inputs("o/r", &[]);
     assert!(manager.start(inputs.run()).await);
+    let after = Utc::now();
     let started = manager.status().started_at.unwrap();
-    assert!(chrono::DateTime::parse_from_rfc3339(&started).is_ok());
-    assert!(started.ends_with("+00:00"));
+    let parsed = DateTime::parse_from_rfc3339(&started)
+        .unwrap()
+        .with_timezone(&Utc);
+    assert!(parsed <= after);
+    assert!(parsed >= before - TimeDelta::microseconds(1));
     settled(&manager).await;
 }
 
