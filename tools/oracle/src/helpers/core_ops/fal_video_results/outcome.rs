@@ -36,11 +36,11 @@ fn status_case(case: &StatusCase) -> Result<Value, Box<HelperError>> {
 }
 
 fn status_outcome(case: &StatusCase, kind: ClientKind) -> Result<Value, Box<HelperError>> {
-    let sync_transport = ScriptedTransport::new(case.probe_status, case.probe_body.as_bytes());
-    let async_transport = ScriptedTransport::new(case.probe_status, case.probe_body.as_bytes());
+    // one outcome issues one request, so both kinds answer from the same scripted reply
+    let transport = ScriptedTransport::new(case.probe_status, case.probe_body.as_bytes());
     let clients = VideoClients {
-        sync: &sync_transport,
-        asynchronous: &async_transport,
+        sync: &transport,
+        asynchronous: &transport,
     };
     let request = StatusRequest {
         url: Url::parse(&case.status_url).or_value_error()?,
@@ -56,17 +56,9 @@ fn status_outcome(case: &StatusCase, kind: ClientKind) -> Result<Value, Box<Help
         reply: &reply,
         provider: case.provider.as_deref(),
     };
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .or_value_error()?;
-    let video = runtime
+    let video = runtime()?
         .block_on(status_response(&clients, kind, None, &call))
         .or_value_error()?;
-    let transport = match kind {
-        ClientKind::Sync => &sync_transport,
-        ClientKind::Asynchronous => &async_transport,
-    };
     Ok(json!({
         "video": video_fields(&video),
         "requests": request_values(&transport.requests()),
@@ -88,35 +80,38 @@ fn content_case(case: &ContentCase) -> Result<Value, Box<HelperError>> {
 }
 
 fn content_outcome(case: &ContentCase, kind: ClientKind) -> Result<Value, Box<HelperError>> {
-    let sync_transport =
-        ScriptedTransport::new(case.artifact_status, case.artifact_body.as_bytes());
-    let async_transport =
-        ScriptedTransport::new(case.artifact_status, case.artifact_body.as_bytes());
-    let clients = VideoClients {
-        sync: &sync_transport,
-        asynchronous: &async_transport,
-    };
-    let reply = UpstreamReply {
+    let transport = ScriptedTransport::new(case.artifact_status, case.artifact_body.as_bytes());
+    let outcome = content_bytes(&transport, kind, &content_reply(case))?;
+    let requests = request_values(&transport.requests());
+    Ok(content_value(&outcome, &requests))
+}
+
+fn content_reply(case: &ContentCase) -> UpstreamReply {
+    UpstreamReply {
         status: case.status,
         headers: case.response_headers.clone(),
         body: case.body.as_bytes().to_vec(),
+    }
+}
+
+fn content_bytes(
+    transport: &ScriptedTransport,
+    kind: ClientKind,
+    reply: &UpstreamReply,
+) -> Result<Result<Vec<u8>, VideoResultsError>, Box<HelperError>> {
+    // one outcome issues one request, so both kinds answer from the same scripted reply
+    let clients = VideoClients {
+        sync: transport,
+        asynchronous: transport,
     };
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .or_value_error()?;
-    let outcome = runtime.block_on(content_response(&clients, kind, &reply));
-    let transport = match kind {
-        ClientKind::Sync => &sync_transport,
-        ClientKind::Asynchronous => &async_transport,
-    };
-    let requests = request_values(&transport.requests());
-    Ok(match outcome {
-        Ok(body) => {
-            json!({"body": str::from_utf8(&body).ok(), "error": null, "requests": requests})
-        }
-        Err(error) => json!({"body": null, "error": error_fields(&error), "requests": requests}),
-    })
+    Ok(runtime()?.block_on(content_response(&clients, kind, reply)))
+}
+
+fn content_value(outcome: &Result<Vec<u8>, VideoResultsError>, requests: &[Value]) -> Value {
+    match outcome {
+        Ok(body) => json!({"body": str::from_utf8(body).ok(), "error": null, "requests": requests}),
+        Err(error) => json!({"body": null, "error": error_fields(error), "requests": requests}),
+    }
 }
 
 fn error_fields(error: &VideoResultsError) -> Value {
@@ -163,6 +158,13 @@ pub(crate) fn unsupported_report() -> Value {
         .map(|operation| json!({"name": operation.name(), "message": operation.to_string()}))
         .collect();
     json!({"operations": operations})
+}
+
+fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .or_value_error()
 }
 
 fn request_values(requests: &[RecordedRequest]) -> Vec<Value> {

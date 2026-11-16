@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_core::api::fal::video_results::transport::VideoTransport;
@@ -35,7 +36,7 @@ impl ScriptedTransport {
                 value
                     .to_str()
                     .ok()
-                    .map(|value| (name.as_str().to_owned(), value.to_owned()))
+                    .map(|text| (name.as_str().to_owned(), text.to_owned()))
             })
             .collect();
         self.requests
@@ -46,9 +47,13 @@ impl ScriptedTransport {
 }
 
 impl VideoTransport for ScriptedTransport {
-    async fn get(&self, url: Url, headers: HeaderMap) -> Result<UpstreamResponse, TransportError> {
+    fn get(
+        &self,
+        url: Url,
+        headers: HeaderMap,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.record(&url, &headers);
-        match &self.reply {
+        std::future::ready(match &self.reply {
             Some((status, body)) => Ok(UpstreamResponse {
                 status: *status,
                 headers: HeaderMap::new(),
@@ -58,6 +63,6 @@ impl VideoTransport for ScriptedTransport {
             None => Err(TransportError::RedirectScheme {
                 scheme: Box::from("ftp"),
             }),
-        }
+        })
     }
 }
