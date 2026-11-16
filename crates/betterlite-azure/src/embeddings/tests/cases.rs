@@ -35,7 +35,10 @@ fn sent(input: &EmbeddingInput, aembedding: bool, answer: &Answer) -> Run {
 
 fn assert_input(input: &EmbeddingInput, expected: &Json) {
     let outcome = sent(input, false, &json_reply(&[]));
-    assert!(outcome.result.is_ok());
+    assert_eq!(
+        outcome.result.unwrap().unwrap().model,
+        "text-embedding-3-small"
+    );
     let (data, timeout) = &outcome.calls[0];
     assert_eq!(data.keys().collect::<Vec<_>>(), ["model", "input"]);
     assert_eq!(data["model"], text("my-deployment"));
@@ -151,7 +154,7 @@ fn client_settings() {
     let input = EmbeddingInput::Text("a".to_owned());
     let mut request = call(&input, false);
     request.litellm_params.max_retries = Some(7);
-    request.litellm_params.timeout = Some(2.5);
+    request.litellm_params.timeout = Some(2.5_f64);
     let outcome = run(
         request,
         &json_reply(&[]),
@@ -159,7 +162,7 @@ fn client_settings() {
         Recorder::default(),
     );
     assert_eq!(outcome.built[0].max_retries, Some(7));
-    assert_eq!(outcome.built[0].timeout, Some(2.5));
+    assert_eq!(outcome.built[0].timeout, Some(2.5_f64));
     let defaulted = sent(&input, false, &json_reply(&[]));
     assert_eq!(defaulted.built[0].max_retries, Some(2));
     assert_eq!(defaulted.built[0].timeout, None);
@@ -184,7 +187,10 @@ fn built_kind(version: Option<&str>, aembedding: bool) -> (ClientKind, Option<St
         &Calls::default(),
         Recorder::default(),
     );
-    assert!(outcome.result.is_ok());
+    assert_eq!(
+        outcome.result.unwrap().unwrap().model,
+        "text-embedding-3-small"
+    );
     (outcome.built[0].kind, outcome.built[0].endpoint.clone())
 }
 
@@ -215,7 +221,10 @@ pub(super) fn deployment_and_v1_path() {
 
 fn supplied_client_skips_the_factory() {
     let outcome = supplied_run(ClientKind::OpenAi, false);
-    assert!(outcome.result.is_ok());
+    assert_eq!(
+        outcome.result.unwrap().unwrap().model,
+        "text-embedding-3-small"
+    );
     assert!(outcome.built.is_empty());
     assert_eq!(outcome.calls.len(), 1);
 }

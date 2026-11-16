@@ -62,54 +62,56 @@ fn arguments(state: &LoggingState) -> &IndexMap<String, Json> {
     arguments
 }
 
-pub(super) fn logs_pre_and_post_through_the_logging_crate() {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let mut recorded = state(&redactor);
-    let sink = Sink::default();
-    let env = PrePostEnv {
+fn environment<'env>(redactor: &'env Redactor, sink: &'env Sink) -> PrePostEnv<'env> {
+    PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
         decision: Decision {
             content: false,
             key_info: false,
         },
-        redactor: &redactor,
-        log: &sink,
+        redactor,
+        log: sink,
         input_callbacks: &[],
         sentry: None,
         logger_fn: None,
         now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").unwrap(),
-    };
-    let mut logger = PrePostLogger {
-        state: &mut recorded,
-        env: &env,
-    };
-    logger
-        .pre_call(PreCallRecord {
-            input: Json::List(vec![text("a")]),
-            api_key: Some(SecretString::from("azure-key-value")),
-            azure_ad_token: None,
-            complete_input_dict: body(),
-        })
-        .unwrap();
+    }
+}
+
+fn pre_call_records_the_request(recorded: &mut LoggingState, env: &PrePostEnv<'_>) {
+    PrePostLogger {
+        state: recorded,
+        env,
+    }
+    .pre_call(PreCallRecord {
+        input: Json::List(vec![text("a")]),
+        api_key: Some(SecretString::from("azure-key-value")),
+        azure_ad_token: None,
+        complete_input_dict: body(),
+    })
+    .unwrap();
     assert_eq!(
         recorded.model_call_details.get("log_event_type"),
         Some(&text("pre_api_call"))
     );
     assert_eq!(
-        arguments(&recorded).get("complete_input_dict"),
+        arguments(recorded).get("complete_input_dict"),
         Some(&Json::Object(body()))
     );
-    let Some(Json::Object(headers)) = arguments(&recorded).get("headers") else {
+    let Some(Json::Object(headers)) = arguments(recorded).get("headers") else {
         panic!("the pre call records the headers");
     };
     assert_eq!(headers.get("azure_ad_token"), Some(&Json::Null));
     assert_ne!(headers.get("api_key"), Some(&text("azure-key-value")));
-    let mut logger = PrePostLogger {
-        state: &mut recorded,
-        env: &env,
-    };
-    logger.post_call(PostCallRecord {
+}
+
+fn post_call_records_the_response(recorded: &mut LoggingState, env: &PrePostEnv<'_>) {
+    PrePostLogger {
+        state: recorded,
+        env,
+    }
+    .post_call(PostCallRecord {
         input: Json::List(vec![text("a")]),
         api_key: None,
         original_response: Json::Object(body()),
@@ -126,7 +128,16 @@ pub(super) fn logs_pre_and_post_through_the_logging_crate() {
     };
     assert!(response.contains("my-deployment"));
     assert_eq!(
-        arguments(&recorded).get("api_base"),
+        arguments(recorded).get("api_base"),
         Some(&text("https://example.openai.azure.com"))
     );
+}
+
+pub(super) fn logs_pre_and_post_through_the_logging_crate() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let mut recorded = state(&redactor);
+    let sink = Sink::default();
+    let env = environment(&redactor, &sink);
+    pre_call_records_the_request(&mut recorded, &env);
+    post_call_records_the_response(&mut recorded, &env);
 }

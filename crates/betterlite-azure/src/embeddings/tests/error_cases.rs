@@ -27,7 +27,12 @@ fn sent(aembedding: bool, answer: &Answer) -> Run {
 fn azure(outcome: Run) -> AzureOpenAiError {
     match outcome.result.unwrap_err() {
         EmbeddingError::Azure(error) => error,
-        other => panic!("expected an AzureOpenAIError, got {other:?}"),
+        other @ (EmbeddingError::Value { .. }
+        | EmbeddingError::Sdk(_)
+        | EmbeddingError::Parse(_)
+        | EmbeddingError::Endpoint(_)
+        | EmbeddingError::Logging(_)
+        | EmbeddingError::Encode(_)) => panic!("expected an AzureOpenAIError, got {other:?}"),
     }
 }
 
@@ -113,7 +118,12 @@ pub(super) fn embedding_error() {
     assert_eq!(post.original_response, Json::Text("slow down".to_owned()));
     match outcome.result.unwrap_err() {
         EmbeddingError::Sdk(raised) => assert_eq!(raised.status_code, Some(429)),
-        other => panic!("expected the original SDK error, got {other:?}"),
+        other @ (EmbeddingError::Azure(_)
+        | EmbeddingError::Value { .. }
+        | EmbeddingError::Parse(_)
+        | EmbeddingError::Endpoint(_)
+        | EmbeddingError::Logging(_)
+        | EmbeddingError::Encode(_)) => panic!("expected the original SDK error, got {other:?}"),
     }
     connection_and_attribute_errors();
     pre_call_failure_is_wrapped_for_async();
@@ -182,7 +192,12 @@ fn assert_async_rejects(kind: ClientKind) {
             message,
             "Azure client is not an instance of AsyncAzureOpenAI or AsyncOpenAI"
         ),
-        other => panic!("expected a ValueError, got {other:?}"),
+        other @ (EmbeddingError::Azure(_)
+        | EmbeddingError::Sdk(_)
+        | EmbeddingError::Parse(_)
+        | EmbeddingError::Endpoint(_)
+        | EmbeddingError::Logging(_)
+        | EmbeddingError::Encode(_)) => panic!("expected a ValueError, got {other:?}"),
     }
 }
 
@@ -251,7 +266,13 @@ fn json_content_type_decoding() {
     let wrong_shape = text_reply(200, "application/json", "{\"object\":\"list\"}");
     match sent(true, &wrong_shape).result.unwrap_err() {
         EmbeddingError::Parse(ParseError::Shape(_)) => {}
-        other => panic!("expected a shape error, got {other:?}"),
+        other @ (EmbeddingError::Azure(_)
+        | EmbeddingError::Value { .. }
+        | EmbeddingError::Sdk(_)
+        | EmbeddingError::Parse(ParseError::Json(_))
+        | EmbeddingError::Endpoint(_)
+        | EmbeddingError::Logging(_)
+        | EmbeddingError::Encode(_)) => panic!("expected a shape error, got {other:?}"),
     }
     let shaped = azure(sent(false, &wrong_shape));
     assert_eq!(shaped.status_code, 500);

@@ -176,10 +176,7 @@ pub(super) struct Run {
     pub(super) built: Vec<Built>,
 }
 
-pub(super) fn call<'call>(
-    input: &'call EmbeddingInput,
-    aembedding: bool,
-) -> EmbeddingCall<'call, Sdk> {
+pub(super) fn call(input: &EmbeddingInput, aembedding: bool) -> EmbeddingCall<'_, Sdk> {
     EmbeddingCall {
         model: "my-deployment",
         input,
@@ -213,47 +210,55 @@ pub(super) fn supplied_run(kind: ClientKind, aembedding: bool) -> Run {
     run(request, &answer, &calls, Recorder::default())
 }
 
-pub(super) fn run(
-    request: EmbeddingCall<'_, Sdk>,
-    answer: &Answer,
-    calls: &Calls,
-    recorder: Recorder,
-) -> Run {
-    let factory = Factory {
+fn build_factory(answer: &Answer, calls: &Calls) -> Factory {
+    Factory {
         answer: answer.clone(),
         calls: Arc::clone(calls),
         built: Mutex::new(Vec::new()),
-    };
-    let settings = Settings::default();
-    let environment: BTreeMap<String, String> = BTreeMap::new();
-    let sources = NoSources;
-    let mut cache = Cache::default();
-    let mut refresh_cache = RefreshProviderCache::new(&sources);
-    let mut logger = recorder;
-    let result = begin(request, &mut logger).and_then(|begun| {
-        let setup = ClientSetup {
-            provider: None,
-            settings: &settings,
-            environment: &environment,
-            refresh_enabled: false,
-            session: SessionKind::Dedicated,
-            sources: &sources,
-            cache: &mut cache,
-            refresh_cache: &mut refresh_cache,
-        };
-        let resolved = resolve(&begun, setup);
-        let sent = Builder::new_current_thread()
-            .build()
-            .unwrap()
-            .block_on(send(&begun, resolved, &factory));
-        finish(&begun, sent, &mut logger)
-    });
+    }
+}
+
+fn seen_and_built(calls: &Calls, factory: &Factory) -> (Vec<(Fields, f64)>, Vec<Built>) {
     let seen = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
     let built = factory
         .built
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
+    (seen, built)
+}
+
+pub(super) fn run(
+    request: EmbeddingCall<'_, Sdk>,
+    answer: &Answer,
+    calls: &Calls,
+    recorder: Recorder,
+) -> Run {
+    let factory = build_factory(answer, calls);
+    let settings = Settings::default();
+    let environment: BTreeMap<String, String> = BTreeMap::new();
+    let sources = NoSources;
+    let mut cache = Cache::default();
+    let mut refresh_cache = RefreshProviderCache::new(&sources);
+    let setup = ClientSetup {
+        provider: None,
+        settings: &settings,
+        environment: &environment,
+        refresh_enabled: false,
+        session: SessionKind::Dedicated,
+        sources: &sources,
+        cache: &mut cache,
+        refresh_cache: &mut refresh_cache,
+    };
+    let mut logger = recorder;
+    let result = begin(request, &mut logger).and_then(|begun| {
+        let sent = Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(send(&begun, resolve(&begun, setup), &factory));
+        finish(&begun, sent, &mut logger)
+    });
+    let (seen, built) = seen_and_built(calls, &factory);
     Run {
         result,
         recorder: logger,

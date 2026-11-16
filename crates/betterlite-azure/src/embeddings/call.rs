@@ -56,7 +56,7 @@ pub struct ClientSetup<'data, 'run> {
 
 // the call after its pre_call: the logger and the client caches stay out of the future that waits for the SDK
 pub struct Begun<'call, Client> {
-    pub call: EmbeddingCall<'call, Client>,
+    call: EmbeddingCall<'call, Client>,
     input: Json,
     data: Fields,
 }
