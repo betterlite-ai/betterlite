@@ -227,7 +227,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_request*")"
       && grep -lq 'bedrock_invoke_request' tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_request* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_invoke_request$/)'
+      nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_invoke_request$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-request-setup-order
     why: Pop stream from optional_params, then pop custom_prompt_dict from litellm_params and replace falsey values

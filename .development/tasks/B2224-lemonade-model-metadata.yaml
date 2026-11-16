@@ -216,7 +216,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/lemonade_model_metadata*")"
       && grep -lq 'lemonade_model_metadata' tools/oracle/fuzz/corpus/helper_case/lemonade_model_metadata* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_lemonade_model_metadata$/)'
+      nextest run --locked -p betterlite-oracle-models --no-tests=fail -E 'test(/::helper_seeds_select_lemonade_model_metadata$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-configured-origin-auth
     why: Base chooses truthy explicit, LEMONADE_API_BASE, http://localhost:8000/api/v1 without trimming slashes.

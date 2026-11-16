@@ -183,7 +183,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_files*")"
       && grep -lq 'azure_files' tools/oracle/fuzz/corpus/helper_case/azure_files* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_files$/)' && cargo nextest run
+      -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_files$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-azure-file-client-inputs
     why: Every operation calls B531 get_azure_openai_client with litellm_params or {},api_key,api_base,api_version,provided

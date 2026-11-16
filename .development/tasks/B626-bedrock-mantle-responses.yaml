@@ -319,7 +319,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_responses*")"
       && grep -lq 'bedrock_mantle_responses' tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_responses* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_mantle_responses$/)'
+      nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_mantle_responses$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-mantle-tool-filter
     why: 'Allow exactly function,mcp,custom,namespace,tool_search,web_search through B907 drop_unsupported_tools;

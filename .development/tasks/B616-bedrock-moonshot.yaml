@@ -193,7 +193,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_moonshot*")"
       && grep -lq 'bedrock_moonshot' tools/oracle/fuzz/corpus/helper_case/bedrock_moonshot* && cargo nextest run
-      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_moonshot$/)' && cargo
+      --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_moonshot$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-moonshot-supported-options
     why: Call the B502 GPT supported-parameter implementation through super(MoonshotChatConfig,self), bypassing
