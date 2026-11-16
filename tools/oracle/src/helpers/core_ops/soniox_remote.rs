@@ -17,7 +17,7 @@ impl Helper for Op {
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(answers::failure)?;
+            .map_err(recorder::failure)?;
         let answers = input
             .calls
             .iter()

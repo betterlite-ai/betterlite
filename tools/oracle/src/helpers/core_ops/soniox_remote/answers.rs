@@ -6,7 +6,10 @@ use betterlite_core::api::soniox::prepare::options::HandlerOptions;
 use betterlite_core::api::soniox::prepare::response::TranscriptionMeta;
 use betterlite_core::api::soniox::records::error::SonioxException;
 use betterlite_core::api::soniox::remote::SonioxRemote;
+use betterlite_core::api::soniox::remote::cleanup::clean_up;
 use betterlite_core::api::soniox::remote::error::RemoteError;
+use betterlite_core::api::soniox::remote::poll::poll_until_completed;
+use betterlite_core::api::soniox::remote::upload::upload_file;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use rust_decimal::Decimal;
@@ -14,13 +17,62 @@ use rust_decimal::prelude::FromPrimitive as _;
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
-use super::input::{Call, CleanupArgs, PollArgs, UploadArgs};
+use super::input::{Answer, Call, CleanupArgs, PollArgs, UploadArgs};
 use super::recorder::{Failure, Recorder, failure};
 use betterlite_oracle_helper_api::helper::HelperResult;
 
 const BOUNDARY: &str = "soniox-remote-oracle";
 
+struct Choices {
+    poll_interval: Decimal,
+    max_attempts: i64,
+    cleanup: Vec<String>,
+    filename_override: Option<String>,
+}
+
+// Every call carries the authenticated headers, the endpoint and the scripted answers the recorder replays
+trait Shared {
+    fn shared(&self) -> (&[Answer], &Headers, &str);
+}
+
+impl Shared for UploadArgs {
+    fn shared(&self) -> (&[Answer], &Headers, &str) {
+        (
+            self.answers.as_slice(),
+            &self.auth_headers,
+            self.api_base.as_str(),
+        )
+    }
+}
+
+impl Shared for PollArgs {
+    fn shared(&self) -> (&[Answer], &Headers, &str) {
+        (
+            self.answers.as_slice(),
+            &self.auth_headers,
+            self.api_base.as_str(),
+        )
+    }
+}
+
+impl Shared for CleanupArgs {
+    fn shared(&self) -> (&[Answer], &Headers, &str) {
+        (
+            self.answers.as_slice(),
+            &self.auth_headers,
+            self.api_base.as_str(),
+        )
+    }
+}
+
+// LiteLLM's sync and async helpers share this behavior, so both runs answer the same way
 pub(super) fn answer(runtime: &Runtime, call: &Call) -> HelperResult {
+    let sync = answer_once(runtime, call)?;
+    let asynchronous = answer_once(runtime, call)?;
+    Ok(json!({ "sync": sync, "async": asynchronous }))
+}
+
+fn answer_once(runtime: &Runtime, call: &Call) -> HelperResult {
     match call {
         Call::Upload(fields) => upload(runtime, fields),
         Call::Poll(fields) => poll(runtime, fields),
@@ -29,102 +81,72 @@ pub(super) fn answer(runtime: &Runtime, call: &Call) -> HelperResult {
 }
 
 fn upload(runtime: &Runtime, fields: &UploadArgs) -> HelperResult {
-    let sync = upload_once(runtime, fields)?;
-    let asynchronous = upload_once(runtime, fields)?;
-    Ok(json!({ "sync": sync, "async": asynchronous }))
-}
-
-fn poll(runtime: &Runtime, fields: &PollArgs) -> HelperResult {
-    let sync = poll_once(runtime, fields)?;
-    let asynchronous = poll_once(runtime, fields)?;
-    Ok(json!({ "sync": sync, "async": asynchronous }))
-}
-
-fn cleanup(runtime: &Runtime, fields: &CleanupArgs) -> HelperResult {
-    let sync = cleanup_once(runtime, fields)?;
-    let asynchronous = cleanup_once(runtime, fields)?;
-    Ok(json!({ "sync": sync, "async": asynchronous }))
-}
-
-fn upload_once(runtime: &Runtime, fields: &UploadArgs) -> HelperResult {
-    let recorder = Recorder::new(&fields.answers, &fields.auth_headers)?;
-    let audio = ProcessedAudioFile {
-        file_content: fields.content.as_bytes().to_vec(),
-        filename: fields.filename.clone(),
-        content_type: fields.content_type.clone(),
-    };
-    let ready = prepared(
-        &fields.auth_headers,
-        &fields.api_base,
-        upload_options(fields),
-    );
-    let remote = remote(&recorder, &ready, fields.timeout_ms);
-    let outcome = runtime.block_on(remote.upload(&audio));
+    let (recorder, ready) = setup(fields, upload_options(fields))?;
+    let remote = remote_for(&recorder, &ready, fields.timeout_ms);
+    let outcome = runtime.block_on(upload_file(&remote, &audio(fields)));
     Ok(view(&recorder, upload_outcome(outcome)))
 }
 
-fn poll_once(runtime: &Runtime, fields: &PollArgs) -> HelperResult {
-    let recorder = Recorder::new(&fields.answers, &fields.auth_headers)?;
-    let ready = prepared(
-        &fields.auth_headers,
-        &fields.api_base,
-        poll_options(fields)?,
-    );
-    let remote = remote(&recorder, &ready, fields.timeout_ms);
-    let outcome = runtime.block_on(remote.poll(&fields.transcription_id));
+fn poll(runtime: &Runtime, fields: &PollArgs) -> HelperResult {
+    let (recorder, ready) = setup(fields, poll_options(fields)?)?;
+    let remote = remote_for(&recorder, &ready, fields.timeout_ms);
+    let outcome = runtime.block_on(poll_until_completed(&remote, &fields.transcription_id));
     Ok(view(&recorder, poll_outcome(outcome)))
 }
 
-fn cleanup_once(runtime: &Runtime, fields: &CleanupArgs) -> HelperResult {
-    let recorder = Recorder::new(&fields.answers, &fields.auth_headers)?;
-    let ready = prepared(
-        &fields.auth_headers,
-        &fields.api_base,
-        cleanup_options(fields),
-    );
-    let remote = remote(&recorder, &ready, fields.timeout_ms);
-    runtime.block_on(remote.cleanup(
-        fields.transcription_id.as_deref(),
-        fields.file_id.as_deref(),
-    ));
+fn cleanup(runtime: &Runtime, fields: &CleanupArgs) -> HelperResult {
+    let (recorder, ready) = setup(fields, cleanup_options(fields))?;
+    let remote = remote_for(&recorder, &ready, fields.timeout_ms);
+    let transcription = fields.transcription_id.as_deref();
+    let file = fields.file_id.as_deref();
+    runtime.block_on(clean_up(&remote, transcription, file));
     Ok(view(
         &recorder,
-        json!({ "kind": "returned", "value": Value::Null }),
+        json!({ "kind": "returned", "value": null }),
     ))
 }
 
+fn setup(fields: &dyn Shared, options: HandlerOptions) -> Result<(Recorder, Prepared), Failure> {
+    let (answers, auth_headers, api_base) = fields.shared();
+    let recorder = Recorder::new(answers, auth_headers)?;
+    Ok((recorder, prepared(auth_headers, api_base, options)))
+}
+
 fn upload_options(fields: &UploadArgs) -> HandlerOptions {
-    HandlerOptions {
+    options(Choices {
         poll_interval: Decimal::ONE,
         max_attempts: 1,
         cleanup: Vec::new(),
         filename_override: fields.filename_override.clone(),
-        audio_url: None,
-        file_id: None,
-        response_format: None,
-    }
+    })
+}
+
+fn cleanup_options(fields: &CleanupArgs) -> HandlerOptions {
+    options(Choices {
+        poll_interval: Decimal::ONE,
+        max_attempts: 1,
+        cleanup: fields.cleanup.clone(),
+        filename_override: None,
+    })
 }
 
 fn poll_options(fields: &PollArgs) -> Result<HandlerOptions, Failure> {
     let poll_interval = Decimal::from_f64(fields.poll_interval)
         .ok_or_else(|| failure("the poll interval is not a finite number"))?;
-    Ok(HandlerOptions {
+    Ok(options(Choices {
         poll_interval,
         max_attempts: fields.max_attempts,
         cleanup: Vec::new(),
         filename_override: None,
-        audio_url: None,
-        file_id: None,
-        response_format: None,
-    })
+    }))
 }
 
-fn cleanup_options(fields: &CleanupArgs) -> HandlerOptions {
+fn options(choices: Choices) -> HandlerOptions {
     HandlerOptions {
-        poll_interval: Decimal::ONE,
-        max_attempts: 1,
-        cleanup: fields.cleanup.clone(),
-        filename_override: None,
+        poll_interval: choices.poll_interval,
+        max_attempts: choices.max_attempts,
+        cleanup: choices.cleanup,
+        filename_override: choices.filename_override,
         audio_url: None,
         file_id: None,
         response_format: None,
@@ -140,7 +162,15 @@ fn prepared(auth_headers: &Headers, api_base: &str, options: HandlerOptions) -> 
     }
 }
 
-fn remote<'call>(
+fn audio(fields: &UploadArgs) -> ProcessedAudioFile {
+    ProcessedAudioFile {
+        file_content: fields.content.as_bytes().to_vec(),
+        filename: fields.filename.clone(),
+        content_type: fields.content_type.clone(),
+    }
+}
+
+fn remote_for<'call>(
     recorder: &'call Recorder,
     prepared: &'call Prepared,
     timeout_ms: u64,
