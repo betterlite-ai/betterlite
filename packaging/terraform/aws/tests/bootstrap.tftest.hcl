@@ -70,8 +70,8 @@ run "create_database_builds_one_bootstrap_task_and_one_runner" {
       aws_iam_role_policy_attachment.task_execution_bootstrap_secrets[0].role == aws_iam_role.task_execution.name,
       aws_iam_role_policy_attachment.task_execution_bootstrap_secrets[0].policy_arn == aws_iam_policy.bootstrap_secrets[0].arn,
       jsondecode(aws_iam_policy.bootstrap_secrets[0].policy).Statement[0].Effect == "Allow",
-      tolist(jsondecode(aws_iam_policy.bootstrap_secrets[0].policy).Statement[0].Action) == ["secretsmanager:GetSecretValue"],
-      tolist(jsondecode(aws_iam_policy.bootstrap_secrets[0].policy).Statement[0].Resource) == [aws_secretsmanager_secret.db_master_password[0].arn],
+      jsondecode(aws_iam_policy.bootstrap_secrets[0].policy).Statement[0].Action == ["secretsmanager:GetSecretValue"],
+      jsondecode(aws_iam_policy.bootstrap_secrets[0].policy).Statement[0].Resource == [aws_secretsmanager_secret.db_master_password[0].arn],
     ])
     error_message = "The bootstrap policy must let the execution role read only the master password secret, and the log group must carry the stack name and retention."
   }
@@ -144,7 +144,7 @@ run "master_password_secret_holds_the_connection_fields" {
   assert {
     condition = alltrue([
       jsondecode(nonsensitive(aws_secretsmanager_secret_version.db_master_password[0].secret_string))["username"] == var.db_master_username,
-      jsondecode(nonsensitive(aws_secretsmanager_secret_version.db_master_password[0].secret_string))["password"] == random_password.db_master_password[0].result,
+      jsondecode(nonsensitive(aws_secretsmanager_secret_version.db_master_password[0].secret_string))["password"] == nonsensitive(random_password.db_master_password[0].result),
       jsondecode(nonsensitive(aws_secretsmanager_secret_version.db_master_password[0].secret_string))["host"] == aws_rds_cluster.this[0].endpoint,
       jsondecode(nonsensitive(aws_secretsmanager_secret_version.db_master_password[0].secret_string))["port"] == aws_rds_cluster.this[0].port,
       jsondecode(nonsensitive(aws_secretsmanager_secret_version.db_master_password[0].secret_string))["dbname"] == var.db_name,

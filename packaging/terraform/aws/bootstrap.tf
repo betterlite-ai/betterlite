@@ -1,7 +1,7 @@
-# The execution role already reads the runtime secrets; the master password is used only here, so it gets its own policy
 resource "aws_iam_policy" "bootstrap_secrets" {
   count = var.create_database ? 1 : 0
   name  = "${local.name}-bootstrap-secrets-access"
+  # The runtime secrets policy leaves this one out: only the bootstrap task reads the master password
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

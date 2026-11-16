@@ -39,8 +39,8 @@ run "empty_master_key_falls_back_to_a_generated_sk_key" {
 
   assert {
     condition = alltrue([
-      length(aws_secretsmanager_secret.master_key) == 1,
       aws_secretsmanager_secret.master_key.name == "${local.name}-master-key",
+      aws_secretsmanager_secret.master_key.description == "LITELLM_MASTER_KEY for the proxy.",
       aws_secretsmanager_secret.master_key.recovery_window_in_days == 0,
       random_password.master_key.length == 48,
       random_password.master_key.special == false,
@@ -57,7 +57,7 @@ run "empty_master_key_falls_back_to_a_generated_sk_key" {
   }
 
   assert {
-    condition     = nonsensitive(aws_secretsmanager_secret_version.master_key.secret_string) == "sk-${random_password.master_key.result}"
+    condition     = nonsensitive(aws_secretsmanager_secret_version.master_key.secret_string) == "sk-${nonsensitive(random_password.master_key.result)}"
     error_message = "The generated value must be the random password behind an sk- prefix, not any other string."
   }
 }
@@ -75,7 +75,7 @@ run "supplied_master_key_replaces_the_generated_one" {
   }
 
   assert {
-    condition     = !startswith(nonsensitive(aws_secretsmanager_secret_version.master_key.secret_string), "sk-${random_password.master_key.result}")
+    condition     = !startswith(nonsensitive(aws_secretsmanager_secret_version.master_key.secret_string), "sk-${nonsensitive(random_password.master_key.result)}")
     error_message = "A supplied key must not be replaced by the generated one."
   }
 }
@@ -89,7 +89,7 @@ run "empty_license_and_ui_password_create_no_secrets" {
       length(aws_secretsmanager_secret_version.license) == 0,
       length(aws_secretsmanager_secret.ui_password) == 0,
       length(aws_secretsmanager_secret_version.ui_password) == 0,
-      length(aws_secretsmanager_secret.master_key) == 1,
+      aws_secretsmanager_secret.master_key.name == "${local.name}-master-key",
     ])
     error_message = "Only the master key secret may exist when litellm_license and ui_password are empty."
   }
@@ -108,11 +108,11 @@ run "supplied_license_and_ui_password_create_their_secrets" {
       length(aws_secretsmanager_secret.license) == 1,
       aws_secretsmanager_secret.license[0].name == "${local.name}-license",
       aws_secretsmanager_secret.license[0].recovery_window_in_days == 0,
-      nonsensitive(aws_secretsmanager_secret_version.license[0].secret_string) == var.litellm_license,
+      nonsensitive(aws_secretsmanager_secret_version.license[0].secret_string) == nonsensitive(var.litellm_license),
       length(aws_secretsmanager_secret.ui_password) == 1,
       aws_secretsmanager_secret.ui_password[0].name == "${local.name}-ui-password",
       aws_secretsmanager_secret.ui_password[0].recovery_window_in_days == 0,
-      nonsensitive(aws_secretsmanager_secret_version.ui_password[0].secret_string) == var.ui_password,
+      nonsensitive(aws_secretsmanager_secret_version.ui_password[0].secret_string) == nonsensitive(var.ui_password),
     ])
     error_message = "A supplied license and UI password must each get a secret and a version holding the value."
   }
@@ -133,10 +133,10 @@ run "byo_urls_get_secrets_and_leave_no_master_password" {
       length(aws_secretsmanager_secret.database_url) == 1,
       aws_secretsmanager_secret.database_url[0].name == "${local.name}-database-url",
       aws_secretsmanager_secret.database_url[0].recovery_window_in_days == 0,
-      nonsensitive(aws_secretsmanager_secret_version.database_url[0].secret_string) == var.database_url,
+      nonsensitive(aws_secretsmanager_secret_version.database_url[0].secret_string) == nonsensitive(var.database_url),
       length(aws_secretsmanager_secret.redis_url) == 1,
       aws_secretsmanager_secret.redis_url[0].name == "${local.name}-redis-url",
-      nonsensitive(aws_secretsmanager_secret_version.redis_url[0].secret_string) == var.redis_url,
+      nonsensitive(aws_secretsmanager_secret_version.redis_url[0].secret_string) == nonsensitive(var.redis_url),
     ])
     error_message = "A supplied database_url and redis_url must each get a secret and a version holding the value."
   }
@@ -184,7 +184,7 @@ run "secrets_access_policy_lists_the_runtime_secrets" {
   }
 
   assert {
-    condition = data.aws_iam_policy_document.secrets_access.statement[0].resources == toset([
+    condition = toset(data.aws_iam_policy_document.secrets_access.statement[0].resources) == toset([
       aws_secretsmanager_secret.master_key.arn,
       aws_secretsmanager_secret.license[0].arn,
       aws_secretsmanager_secret.ui_password[0].arn,
@@ -214,7 +214,7 @@ run "no_otel_secret_and_no_extras_are_listed_by_default" {
   command = plan
 
   assert {
-    condition     = data.aws_iam_policy_document.secrets_access.statement[0].resources == toset([aws_secretsmanager_secret.master_key.arn])
+    condition     = toset(data.aws_iam_policy_document.secrets_access.statement[0].resources) == toset([aws_secretsmanager_secret.master_key.arn])
     error_message = "With no optional secret the policy must list only the master key secret."
   }
 }
@@ -245,7 +245,7 @@ run "task_role_gets_rds_connect_and_the_assume_document" {
       aws_iam_policy.rds_iam_connect[0].name == "${local.name}-rds-iam-connect",
       aws_iam_role_policy_attachment.task_rds_iam_connect[0].role == aws_iam_role.task.name,
       aws_iam_role_policy_attachment.task_rds_iam_connect[0].policy_arn == aws_iam_policy.rds_iam_connect[0].arn,
-      data.aws_iam_policy_document.rds_iam_connect[0].statement[0].resources == toset(["arn:aws:rds-db:us-east-1:111122223333:dbuser:cluster-ABCDEFGHIJKLMNOPQRSTUVW/litellm_app"]),
+      toset(data.aws_iam_policy_document.rds_iam_connect[0].statement[0].resources) == toset(["arn:aws:rds-db:us-east-1:111122223333:dbuser:cluster-ABCDEFGHIJKLMNOPQRSTUVW/litellm_app"]),
     ])
     error_message = "The task role must gain rds-db:connect on the cluster resource id and the application user."
   }
@@ -298,9 +298,9 @@ run "bucket_is_hardened_and_the_task_role_reads_it" {
       aws_iam_role_policy_attachment.task_s3_access.role == aws_iam_role.task.name,
       aws_iam_role_policy_attachment.task_s3_access.policy_arn == aws_iam_policy.s3_access.arn,
       toset(data.aws_iam_policy_document.s3_access.statement[0].actions) == toset(["s3:ListBucket", "s3:GetBucketLocation"]),
-      data.aws_iam_policy_document.s3_access.statement[0].resources == toset([aws_s3_bucket.this.arn]),
+      toset(data.aws_iam_policy_document.s3_access.statement[0].resources) == toset([aws_s3_bucket.this.arn]),
       toset(data.aws_iam_policy_document.s3_access.statement[1].actions) == toset(["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]),
-      data.aws_iam_policy_document.s3_access.statement[1].resources == toset(["${aws_s3_bucket.this.arn}/*"]),
+      toset(data.aws_iam_policy_document.s3_access.statement[1].resources) == toset(["${aws_s3_bucket.this.arn}/*"]),
     ])
     error_message = "The task role must get list and location on the bucket and the five object actions on its objects."
   }
@@ -425,7 +425,7 @@ run "migrations_log_group_disappears_without_a_database" {
     condition = alltrue([
       length(aws_cloudwatch_log_group.migrations) == 0,
       length(aws_cloudwatch_log_group.bootstrap_db) == 0,
-      length(aws_cloudwatch_log_group.betterlite) == 1,
+      aws_cloudwatch_log_group.betterlite.name == "/ecs/${local.name}/betterlite",
     ])
     error_message = "With no database at all only the service log group remains."
   }
