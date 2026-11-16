@@ -101,7 +101,7 @@ checks:
       run: test -f tools/oracle/helpers/savings_pricing.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: savings-pricing-corpus
       why: Savings-pricing inputs are missing from shared helper parser replay.
-      run: grep -rlq 'savings_pricing:' tools/oracle/fuzz/corpus/helper_case/savings-pricing-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: grep -rlq 'savings_pricing:' tools/oracle/fuzz/corpus/helper_case/savings-pricing-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/savings-pricing/cache-usage-without-baseline-evidence-is-unknown.yaml
   - tools/oracle/cases/helpers/savings-pricing/observed-initial-requires-identical-deployment-and-rates.yaml

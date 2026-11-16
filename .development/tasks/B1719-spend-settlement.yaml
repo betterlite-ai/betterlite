@@ -70,7 +70,7 @@ checks:
       run: test -f tools/oracle/helpers/reservation_state.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: reservation-corpus
       why: Reservation ownership has no helper decoder seed.
-      run: grep -rlq 'reservation_state:' tools/oracle/fuzz/corpus/helper_case/reservation-state-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: grep -rlq 'reservation_state:' tools/oracle/fuzz/corpus/helper_case/reservation-state-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-auth --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/reservation-state/direct-and-auth-object-precedence.yaml
   - tools/oracle/cases/helpers/reservation-state/bind-unbind-two-existing-buckets.yaml
