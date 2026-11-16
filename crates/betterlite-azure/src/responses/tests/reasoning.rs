@@ -2,6 +2,7 @@ use betterlite_openai::response_input::ResponsesInput;
 use betterlite_prompts::arguments::json::Json;
 
 use super::support;
+use crate::responses::reasoning::sanitize_item;
 use crate::responses::request::transform_request;
 
 fn transformed(items: &str) -> Vec<Json> {
@@ -63,6 +64,8 @@ pub(super) fn reasoning_null_fields() {
     synthesized_summary();
     failed_validation();
     long_reasoning_content();
+    sanitized_null_fields();
+    sanitized_reasoning_content();
 }
 
 fn synthesized_summary() {
@@ -115,13 +118,47 @@ fn long_reasoning_content() {
     let over_limit = summary_entries(101);
     let items = transformed(&format!(
         r#"[
-        {{"type": "reasoning", "id": "rs_100", "reasoning_content": [{at_limit}]}},
+        {{"type": "reasoning", "id": "rs_100", "reasoning_content": [{at_limit}], "status": "completed"}},
         {{"type": "reasoning", "id": "rs_101", "reasoning_content": [{over_limit}]}}
         ]"#
     ));
-    // exactly one hundred entries still synthesize a summary
+    // exactly one hundred entries still synthesize a summary, and the item loses the status it carried
     assert_eq!(list_len(&items[0], "summary"), Some(100_usize));
+    let fields = items[0].as_object().unwrap();
+    assert!(!fields.contains_key("status"));
     // one more entry makes LiteLLM's slice-plus-ellipsis raise, so the item is kept as it arrived
     assert_eq!(list_len(&items[1], "summary"), None);
     assert_eq!(list_len(&items[1], "reasoning_content"), Some(101_usize));
+}
+
+fn sanitized_null_fields() {
+    // The Azure filter alone, since the later shared request pass would drop these nulls too
+    let filtered = Json::Object(sanitize_item(&support::object(
+        r#"{"type": "reasoning", "id": "rs_7", "summary": [{"type": "summary_text", "text": "a", "extra": null, "y": 1}],
+            "status": "completed", "encrypted_content": null, "znull": null, "keep": {"nested": null}}"#,
+    )));
+    assert_eq!(
+        filtered,
+        support::json(
+            r#"{"type": "reasoning", "id": "rs_7", "summary": [{"type": "summary_text", "text": "a", "y": 1}], "keep": {"nested": null}}"#
+        )
+    );
+}
+
+fn sanitized_reasoning_content() {
+    let at_limit_entries = summary_entries(100);
+    let at_limit = Json::Object(sanitize_item(&support::object(&format!(
+        r#"{{"type": "reasoning", "id": "rs_100", "reasoning_content": [{at_limit_entries}], "status": "completed"}}"#
+    ))));
+    // exactly one hundred entries validate, so the filter drops the status it carried
+    assert_eq!(list_len(&at_limit, "summary"), Some(100_usize));
+    let fields = at_limit.as_object().unwrap();
+    assert!(!fields.contains_key("status"));
+    let over_limit_entries = summary_entries(101);
+    let over_limit = Json::Object(sanitize_item(&support::object(&format!(
+        r#"{{"type": "reasoning", "id": "rs_101", "reasoning_content": [{over_limit_entries}]}}"#
+    ))));
+    // one more entry fails validation, so the source item survives with no synthesized summary
+    assert_eq!(list_len(&over_limit, "summary"), None);
+    assert_eq!(list_len(&over_limit, "reasoning_content"), Some(101_usize));
 }
