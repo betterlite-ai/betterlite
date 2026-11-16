@@ -40,29 +40,33 @@ impl TryFrom<DeploymentFixture> for RouterWeightDeployment {
 
 impl RouterWeightDeployment {
     pub(crate) fn from_stored(row: &ProxyModelTable) -> Result<Self, RouterWeightModelInfoError> {
-        let model_info = match &row.fields.model_info {
-            Some(payload) => {
-                let text =
-                    serde_json::to_string(&payload.0).map_err(RouterWeightModelInfoError::Json)?;
-                serde_json::from_str(&text).map_err(RouterWeightModelInfoError::Json)?
-            }
-            None => Json::Null,
-        };
-        Self::from_json(&row.fields.model_name, &model_info)
+        let model_info = stored_model_info(row)?;
+        Ok(Self {
+            model_name: row.fields.model_name.clone(),
+            model_info,
+        })
     }
 
     pub(crate) fn from_configured(
         spec: &DeploymentSpec,
     ) -> Result<Self, RouterWeightModelInfoError> {
-        Self::from_json(&spec.model_name, &Json::Object(spec.model_info.clone()))
-    }
-
-    fn from_json(model_name: &str, model_info: &Json) -> Result<Self, RouterWeightModelInfoError> {
         Ok(Self {
-            model_name: model_name.to_owned(),
-            model_info: RouterWeightModelInfo::decode(model_info)?,
+            model_name: spec.model_name.clone(),
+            model_info: RouterWeightModelInfo::decode(&Json::Object(spec.model_info.clone()))?,
         })
     }
+}
+
+// a stored model_info arrives as a DB payload, so it reaches the shared decoder as JSON text
+fn stored_model_info(
+    row: &ProxyModelTable,
+) -> Result<RouterWeightModelInfo, RouterWeightModelInfoError> {
+    let Some(payload) = &row.fields.model_info else {
+        return Ok(RouterWeightModelInfo::default());
+    };
+    let text = serde_json::to_string(&payload.0).map_err(RouterWeightModelInfoError::Json)?;
+    let value: Json = serde_json::from_str(&text).map_err(RouterWeightModelInfoError::Json)?;
+    RouterWeightModelInfo::decode(&value)
 }
 
 pub fn validate_weight_reference(
