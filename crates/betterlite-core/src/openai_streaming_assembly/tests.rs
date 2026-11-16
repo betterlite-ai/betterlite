@@ -607,6 +607,38 @@ async fn assembly_counts_the_prompt_through_the_relayed_counter() {
 }
 
 #[tokio::test]
+async fn assembly_falls_back_to_zero_when_the_counter_refuses_an_image_block() {
+    let chunks = content_chunks();
+    let raw = json!([{
+        "role": "user",
+        "content": [
+            { "type": "text", "text": "describe" },
+            { "type": "image_url", "image_url": { "url": "data:image/png;base64,AAAA" } },
+        ],
+    }]);
+    let typed = messages(raw);
+    let counter = FixtureCounter {
+        messages: 0,
+        text: 0,
+        response_text: 2,
+        fail_messages: true,
+        calls: Mutex::new(Vec::new()),
+    };
+    let assembly = request(&chunks, Some(&typed), &counter, &NoCost);
+    let response = complete_streaming_response(&assembly, &hooks()).await;
+    let response = chat(response.as_ref().unwrap());
+    assert_eq!(response.usage.prompt_tokens, 0);
+    assert_eq!(response.usage.completion_tokens, 2);
+    assert_eq!(
+        counter.calls(),
+        vec![
+            String::from("messages:user:text,image_url"),
+            String::from("response:Hello world"),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn assembly_skips_the_prompt_count_when_a_chunk_reports_usage() {
     let chunks = vec![usage_chunk(7, 2)];
     let raw = json!([{ "role": "user", "content": "hello world" }]);
