@@ -27,6 +27,10 @@ fn emits_one_newline_terminated_line_with_every_required_key() {
     assert!(text.contains(r#""start_time":"2026-01-01T00:00:00Z""#));
     assert!(text.contains(r#""completion_start_time":"2026-01-01T00:00:00.500000+02:00""#));
     assert!(text.starts_with(r#"{"version":1,"#));
+}
+
+#[test]
+fn carries_the_identity_scalars_and_times() {
     let event = built(SCALARS, &options(false, CachePresence::On));
     assert_eq!(event.version, EventVersion::One);
     assert_eq!(event.start_time, stamp("2026-01-01T00:00:00Z"));
@@ -39,6 +43,11 @@ fn emits_one_newline_terminated_line_with_every_required_key() {
     assert_eq!(event.cache_hit, Some(false));
     assert_eq!(event.agent_id.as_deref(), Some("agent-1"));
     assert_eq!(event.litellm_trace_id.as_deref(), Some("trace-1"));
+}
+
+#[test]
+fn carries_params_dynamic_params_realtime_fields_and_usage() {
+    let event = built(SCALARS, &options(false, CachePresence::On));
     assert_eq!(
         event.litellm_params.api_base.as_deref(),
         Some("https://api")
