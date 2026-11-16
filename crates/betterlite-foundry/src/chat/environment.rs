@@ -68,12 +68,11 @@ pub fn validate_environment(request: EnvironmentRequest<'_>) -> Result<Headers, 
             }
         }
         None => {
+            // the shared validator skips an empty key itself, so only the request key needs the filter here
             let resolved = request
                 .params_key
                 .filter(|key| !key.expose_secret().is_empty())
-                .or(request
-                    .configured_key
-                    .filter(|key| !key.expose_secret().is_empty()));
+                .or(request.configured_key);
             headers = validate_azure_environment(EnvironmentHeadersRequest {
                 headers,
                 api_key: resolved,

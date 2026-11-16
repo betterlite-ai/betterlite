@@ -1,4 +1,5 @@
 use betterlite_prompts::arguments::json::Json;
+use rstest::rstest;
 
 use crate::chat::request::transform_request;
 
@@ -45,21 +46,28 @@ pub(super) fn extra_body_precedence() {
     );
 }
 
-#[test]
-fn extra_body_is_dropped_unless_it_is_a_non_empty_object() {
-    for params in [
-        r#"{"extra_body":{}}"#,
-        r#"{"extra_body":"x","seed":1}"#,
-        r#"{"extra_body":[],"seed":1}"#,
-        r#"{"extra_body":null,"seed":1}"#,
-    ] {
-        let expected = if params.contains("seed") {
-            r#"{"model":"fixture-model","messages":[{"role":"assistant","content":"a"}],"seed":1}"#
-        } else {
-            r#"{"model":"fixture-model","messages":[{"role":"assistant","content":"a"}]}"#
-        };
-        assert_eq!(request(params), body(expected));
-    }
+#[rstest]
+#[case::empty_object(
+    r#"{"extra_body":{}}"#,
+    r#"{"model":"fixture-model","messages":[{"role":"assistant","content":"a"}]}"#
+)]
+#[case::string(
+    r#"{"extra_body":"x","seed":1}"#,
+    r#"{"model":"fixture-model","messages":[{"role":"assistant","content":"a"}],"seed":1}"#
+)]
+#[case::list(
+    r#"{"extra_body":[],"seed":1}"#,
+    r#"{"model":"fixture-model","messages":[{"role":"assistant","content":"a"}],"seed":1}"#
+)]
+#[case::null(
+    r#"{"extra_body":null,"seed":1}"#,
+    r#"{"model":"fixture-model","messages":[{"role":"assistant","content":"a"}],"seed":1}"#
+)]
+fn extra_body_is_dropped_unless_it_is_a_non_empty_object(
+    #[case] params: &str,
+    #[case] expected: &str,
+) {
+    assert_eq!(request(params), body(expected));
 }
 
 #[test]
