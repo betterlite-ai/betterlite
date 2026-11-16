@@ -1,0 +1,8 @@
+apiVersion: v2
+name: betterlite
+description: betterlite componentized, with the gateway, backend and ui as three separate Deployments
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+annotations:
+  org.opencontainers.image.source: "https://github.com/betterlite-ai/betterlite"
