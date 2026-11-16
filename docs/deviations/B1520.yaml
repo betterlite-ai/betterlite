@@ -9,7 +9,7 @@ deviations:
   - what: A poll body that is not BFL JSON, and a failed polling GET, surface as typed errors with no status; LiteLLM lets the JSON and httpx exceptions escape the handler unwrapped.
     why: betterlite names a failure in its module enum, and the shared poll executor never invents a BFL status for an answer that carries none.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/handler.py#L385-L399
-  - what: An inner image_edit_optional_request_params.extra_headers entry the wire cannot carry is refused while preparing, before the pre-call record: an invalid name, a forbidden or non-ASCII value, or a value that is not a string. LiteLLM records the pre-call and then fails inside the POST. The first two answer 500 like LiteLLM's wrapped failure; the non-string value names the field and carries no status. Neither path sends a submission.
+  - what: An inner image_edit_optional_request_params.extra_headers entry the wire cannot carry is refused while preparing, before the pre-call record, whether it has an invalid name, a forbidden or non-ASCII value, or a value that is not a string. LiteLLM records the pre-call and then fails inside the POST. The first two answer 500 like LiteLLM's wrapped failure; the non-string value names the field and carries no status. Neither path sends a submission.
     why: the seed has to reach validate_environment as a header map, so an entry that map cannot hold is refused then; the caller-visible status still matches the 500 LiteLLM's except block produces.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/handler.py#L146-L201
 kept_bugs:
