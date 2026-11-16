@@ -282,9 +282,9 @@ impl Seek for Probe {
     }
 }
 
-fn create(
-    mapped: MappedParams<'_>,
-    extra: &Object,
+fn create<'input>(
+    mapped: MappedParams<'input>,
+    extra: &'input Object,
     mime: &dyn MimeReader,
 ) -> Result<CreateForm, VeoRequestError> {
     create_request(
@@ -581,7 +581,7 @@ fn edit_requires_prefetched_source_data() {
 }
 
 #[rstest]
-#[case::absent_done(r#"{}"#)]
+#[case::absent_done("{}")]
 #[case::false_flag(r#"{"done": false}"#)]
 #[case::null_done(r#"{"done": null}"#)]
 fn edit_requires_a_completed_source(#[case] source: &str) {

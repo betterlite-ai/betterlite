@@ -125,7 +125,7 @@ fn attach_image(
     let Some(chosen) = image else {
         return Ok(());
     };
-    if let ImageInput::Json(Json::Null) = &chosen {
+    if matches!(&chosen, ImageInput::Json(Json::Null)) {
         options.insert("image".to_owned(), Json::Null);
         return Ok(());
     }
