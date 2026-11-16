@@ -38,7 +38,7 @@ class CountContentList(Protocol):
 
 
 count_content = cast(CountContentList, _count_content_list)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L869-L951
-calculate_tiles_needed = cast("Callable[[int, int, int, int], int]", token_counter.calculate_tiles_needed)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L173-L178
+calculate_tiles_needed = cast("Callable[[int, int, int, int], int]", token_counter.calculate_tiles_needed)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L173-L178
 
 
 class Call(TypedDict):
