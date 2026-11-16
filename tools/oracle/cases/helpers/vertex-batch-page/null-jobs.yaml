@@ -1,0 +1,7 @@
+kind: helper
+name: vertex-batch-page-null-jobs
+call:
+  vertex_batch_page:
+    body: '{"batchPredictionJobs":null}'
+env: {}
+compare: {ignore: []}

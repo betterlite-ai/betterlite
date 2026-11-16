@@ -1,0 +1,34 @@
+kind: helper
+name: stored-skill-reads-ownership-checks
+call:
+  b3212:
+    now: "2026-02-03T04:05:06"
+    rows:
+      - {skill_id: litellm_skill_raw, display_title: Raw, created_by: alice}
+      - {skill_id: litellm_skill_other, display_title: Other, created_by: "user:bob"}
+      - {skill_id: litellm_skill_team, display_title: Team, created_by: "team:team-1"}
+      - {skill_id: litellm_skill_org, display_title: Org, created_by: "org:org-1"}
+      - {skill_id: litellm_skill_key, display_title: Key, created_by: "key:key-1"}
+      - {skill_id: litellm_skill_token, display_title: Token, created_by: "key:tok-1"}
+      - {skill_id: litellm_skill_unowned, display_title: Nobody}
+      - {skill_id: litellm_skill_second_team, display_title: Second, created_by: "team:team-2"}
+    page:
+      - {skill_id: litellm_skill_raw, display_title: Raw, created_by: alice}
+      - {skill_id: litellm_skill_team, display_title: Team, created_by: "team:team-1"}
+    steps:
+      - {action: get, skill_id: litellm_skill_raw, principal: {user_id: alice, team_id: team-1, org_id: org-1, api_key: key-1, token: tok-1}}
+      - {action: get, skill_id: litellm_skill_other, principal: {user_id: alice, team_id: team-1, org_id: org-1, api_key: key-1, token: tok-1}}
+      - {action: get, skill_id: litellm_skill_team, principal: {user_id: alice, team_id: team-1, org_id: org-1, api_key: key-1, token: tok-1}}
+      - {action: get, skill_id: litellm_skill_org, principal: {user_id: alice, team_id: team-1, org_id: org-1, api_key: key-1, token: tok-1}}
+      - {action: get, skill_id: litellm_skill_key, principal: {user_id: alice, team_id: team-1, org_id: org-1, api_key: key-1, token: tok-1}}
+      - {action: get, skill_id: litellm_skill_token, principal: {user_id: alice, team_id: team-1, org_id: org-1, api_key: key-1, token: tok-1}}
+      - {action: get, skill_id: litellm_skill_unowned, principal: {user_id: alice, team_id: team-1, org_id: org-1, api_key: key-1, token: tok-1}}
+      - {action: get, skill_id: litellm_skill_second_team, principal: {user_id: alice, team_id: team-1, org_id: org-1, api_key: key-1, token: tok-1}}
+      - {action: list, limit: 10, principal: {user_id: alice, team_id: team-1, org_id: org-1, api_key: key-1, token: tok-1}}
+      - {action: get, skill_id: litellm_skill_other, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_raw, principal: {user_id: bob}}
+      - {action: get, skill_id: litellm_skill_unowned, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_unowned, principal: {user_id: alice, admin: true}}
+      - {action: list, limit: 10, principal: {team_id: team-2}}
+env: {}
+compare: {ignore: []}

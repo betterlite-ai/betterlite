@@ -1,0 +1,13 @@
+kind: helper
+name: base_precedence
+call:
+  copilot_responses:
+    settings: {}
+    steps:
+      - {step: url, endpoints_api: "https://cached.test", api_base: "https://explicit.test//", env_api_base: "https://env.test"}
+      - {step: url, endpoints_api: "https://cached.test/", api_base: null, env_api_base: "https://env.test"}
+      - {step: url, endpoints_api: null, api_base: null, env_api_base: "https://env.test///"}
+      - {step: url, endpoints_api: null, api_base: null, env_api_base: null}
+env: {}
+compare:
+  ignore: []
