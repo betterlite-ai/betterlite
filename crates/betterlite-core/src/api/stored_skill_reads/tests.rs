@@ -558,7 +558,23 @@ async fn get_skill_returns_one_not_found_for_missing_and_cross_owner_rows() {
         .unwrap_err();
     assert!(matches!(missing, StoredSkillReadError::NotFound { .. }));
     assert_eq!(denied.to_string(), missing.to_string());
+    assert_eq!(
+        missing.to_string(),
+        format!("Skill not found: {ALICE_SKILL}")
+    );
     assert_eq!(repository.find_unique_calls(), vec![ALICE_SKILL.to_owned()]);
+}
+
+#[tokio::test]
+async fn get_skill_rejects_a_cross_owner_read_before_decoding_the_file() {
+    let repository =
+        ScriptedRepository::with_rows(vec![row_with_content(ALICE_SKILL, Some("alice"), "abc")]);
+    let reads = service(repository);
+    let denied = reads
+        .get_skill(ALICE_SKILL, Some(&principal("bob")))
+        .await
+        .unwrap_err();
+    assert!(matches!(denied, StoredSkillReadError::NotFound { .. }));
 }
 
 #[tokio::test]
@@ -745,13 +761,15 @@ async fn load_skill_answers_from_the_cache_while_the_database_is_down() {
             .unwrap_err(),
         StoredSkillReadError::NotFound { .. }
     ));
-    assert!(matches!(
-        reads
-            .get_skill("litellm_skill_ghost", Some(&principal("alice")))
-            .await
-            .unwrap_err(),
-        StoredSkillReadError::NoDatabase
-    ));
+    let offline = reads
+        .get_skill("litellm_skill_ghost", Some(&principal("alice")))
+        .await
+        .unwrap_err();
+    assert!(matches!(offline, StoredSkillReadError::NoDatabase));
+    assert_eq!(
+        offline.to_string(),
+        "Prisma client is not initialized. Database connection required for LiteLLM skills."
+    );
     assert!(matches!(
         reads
             .list_skills(SkillPage::default(), Some(&principal("alice")))
