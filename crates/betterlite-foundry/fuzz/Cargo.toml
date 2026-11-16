@@ -28,3 +28,10 @@ path = "fuzz_targets/foundry_mai_images.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "foundry_embeddings"
+path = "fuzz_targets/foundry_embeddings.rs"
+test = false
+doc = false
+bench = false
