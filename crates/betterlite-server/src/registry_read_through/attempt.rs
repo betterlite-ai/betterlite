@@ -1,9 +1,9 @@
 mod tests;
 
-use std::sync::PoisonError;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::Instant;
 
 use super::{
@@ -19,52 +19,50 @@ impl<R: Resync> RegistryReadThrough<R> {
             miss_ttl: READ_THROUGH_MISS_TTL,
             max_resyncs_per_window: READ_THROUGH_MAX_RESYNCS,
             window: READ_THROUGH_RESYNC_WINDOW,
-            recent_misses: std::sync::Mutex::new(RecentMisses::default()),
-            state: Mutex::new(State::default()),
+            recent_misses: Mutex::new(RecentMisses::default()),
+            state: AsyncMutex::new(State::default()),
         }
     }
 
     pub async fn attempt(&self, key: &str) -> bool {
-        let remembered = self
-            .recent_misses
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .contains(key, Instant::now());
-        if remembered {
+        if self.is_recent_miss(key) {
             return false;
         }
         let mut state = self.state.lock().await;
-        let remembered = self
-            .recent_misses
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .contains(key, Instant::now());
-        if remembered {
+        if self.is_recent_miss(key) {
             return false;
         }
         if !state.consume_resync_budget(self.max_resyncs_per_window, self.window) {
             tracing::warn!(
-                key,
+                key = %key,
                 max_resyncs = self.max_resyncs_per_window,
                 window_seconds = self.window.as_secs(),
                 "registry read-through skipped: the resync budget is exhausted"
             );
             return false;
         }
-        match self.resync.resync(key).await {
-            Ok(true) => true,
-            Ok(false) => {
-                self.recent_misses
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .remember(key, Instant::now(), self.miss_ttl);
-                false
-            }
+        let outcome = self.resync.resync(key).await;
+        if matches!(outcome, Ok(false)) {
+            self.recent_misses
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remember(key, Instant::now(), self.miss_ttl);
+        }
+        drop(state);
+        match outcome {
+            Ok(found) => found,
             Err(error) => {
-                tracing::warn!(key, error = %error, "registry read-through failed");
+                tracing::warn!(key = %key, error = %error, "registry read-through failed");
                 false
             }
         }
+    }
+
+    fn is_recent_miss(&self, key: &str) -> bool {
+        self.recent_misses
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(key, Instant::now())
     }
 }
 

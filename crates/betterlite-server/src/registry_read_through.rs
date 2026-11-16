@@ -6,9 +6,10 @@ mod tests;
 
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::sync::Mutex;
 use std::time::Duration;
 
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::Instant;
 
 pub const READ_THROUGH_MISS_TTL: Duration = Duration::from_secs(2);
@@ -32,8 +33,8 @@ pub struct RegistryReadThrough<R: Resync> {
     max_resyncs_per_window: usize,
     window: Duration,
     // never held across an await, so the fast path reads it while a resync holds `state`
-    recent_misses: std::sync::Mutex<RecentMisses>,
-    state: Mutex<State>,
+    recent_misses: Mutex<RecentMisses>,
+    state: AsyncMutex<State>,
 }
 
 #[derive(Debug, Default)]
