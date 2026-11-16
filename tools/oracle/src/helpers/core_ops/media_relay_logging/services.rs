@@ -94,16 +94,36 @@ pub(super) struct Adjustments {
     pub(super) margin: BTreeMap<String, AdjustmentEntry>,
 }
 
-// The values the cost calculator borrows for the whole session: the size pattern, the time zone database and the provider sets.
-struct Holders {
+// What a served listen session prices with: the catalog lookup, the size pattern, the time zone database, the provider sets and the tool policy.
+struct Stage {
+    lookup: CatalogLookup,
     pattern: SizePattern,
     database: TimeZoneDatabase,
     models: ProviderModelSets,
     tools: GroundingPricing<'static, ProviderFormulas>,
 }
 
-fn holders() -> Result<Holders, Box<HelperError>> {
-    Ok(Holders {
+fn build_stage(entries: &IndexMap<String, Json>) -> Result<Stage, Box<HelperError>> {
+    let bytes = serde_json::to_vec(entries).map_err(super::failure)?;
+    let lookup = CatalogLookup::new(
+        &bytes,
+        LookupSettings {
+            known_model_names: BTreeSet::new(),
+            custom_providers: BTreeSet::new(),
+            environment: BTreeMap::new(),
+            registry: JSONProviderRegistry::default(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+            normalizers: NameNormalizers {
+                bedrock_base_model: get_bedrock_base_model,
+                bedrock_routing_prefix: strip_bedrock_routing_prefix,
+                mantle_region_split: split_region_prefix,
+            },
+        },
+    )
+    .map_err(super::failure)?;
+    Ok(Stage {
+        lookup,
         pattern: SizePattern::new().map_err(super::failure)?,
         database: TimeZoneDatabase::from_env(),
         models: ProviderModelSets::default(),
@@ -114,52 +134,34 @@ fn holders() -> Result<Holders, Box<HelperError>> {
     })
 }
 
-// The outside values the catalog lookup reads, the way a served process passes them in.
-fn lookup_settings() -> LookupSettings {
-    LookupSettings {
-        known_model_names: BTreeSet::new(),
-        custom_providers: BTreeSet::new(),
-        environment: BTreeMap::new(),
-        registry: JSONProviderRegistry::default(),
-        policies: ProviderPolicies::default(),
-        globals: GlobalCredentials::default(),
-        normalizers: NameNormalizers {
-            bedrock_base_model: get_bedrock_base_model,
-            bedrock_routing_prefix: strip_bedrock_routing_prefix,
-            mantle_region_split: split_region_prefix,
-        },
-    }
-}
-
 // The one calculator a served listen session prices with, borrowing the case's lookup and adjustments.
 fn calculator<'services, Image>(
-    lookup: &'services CatalogLookup,
-    holders: &'services Holders,
+    stage: &'services Stage,
     image: &'services Image,
     adjustments: &'services Adjustments,
     resolution: &'services ResolutionContext<'services>,
 ) -> CostCalculator<'services, CatalogLookup, Image, CatalogLookup> {
     CostCalculator {
         special: SpecialBorrows {
-            lookup,
-            resolver: lookup,
+            lookup: &stage.lookup,
+            resolver: &stage.lookup,
             image_policy: image,
             special_policy: &ProviderPricing,
-            size_pattern: &holders.pattern,
-            database: &holders.database,
-            replicate_models: &holders.models,
+            size_pattern: &stage.pattern,
+            database: &stage.database,
+            replicate_models: &stage.models,
             replicate_price: Decimal::new(14, 4),
             discount: &adjustments.discount,
             margin: &adjustments.margin,
         },
-        catalog: lookup,
-        inference: lookup,
+        catalog: &stage.lookup,
+        inference: &stage.lookup,
         counter: &Counter,
         price_policy: &ProviderPricing,
         resolution,
         tools: ToolBorrows {
-            source: lookup,
-            policy: &holders.tools,
+            source: &stage.lookup,
+            policy: &stage.tools,
             prices: &ToolPrices::PINNED,
         },
     }
@@ -173,21 +175,19 @@ pub(super) async fn listen_outcome(
     messages: &[Json],
     kwargs: &PassThroughLoggingKwargs,
 ) -> Result<DeepgramListenOutcome, Box<HelperError>> {
-    let bytes = serde_json::to_vec(entries).map_err(super::failure)?;
-    let lookup = CatalogLookup::new(&bytes, lookup_settings()).map_err(super::failure)?;
-    let resolution = lookup.resolution();
-    let holders = holders()?;
+    let stage = build_stage(entries)?;
+    let resolution = stage.lookup.resolution();
     let image = SyncImage {
         build: |price_lookup, zone_database, moment| ProviderImagePricing {
             lookup: price_lookup,
             database: zone_database,
             moment,
         },
-        lookup: &lookup,
-        database: &holders.database,
+        lookup: &stage.lookup,
+        database: &stage.database,
         moment: DateTime::<Utc>::UNIX_EPOCH,
     };
-    let services = calculator(&lookup, &holders, &image, adjustments, &resolution);
+    let services = calculator(&stage, &image, adjustments, &resolution);
     let request = DeepgramListenRequest {
         upstream_url,
         messages,
