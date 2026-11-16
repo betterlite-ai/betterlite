@@ -117,7 +117,7 @@ where
         Some(RawDisable::Boolean(disable)) => Ok(disable),
         // LiteLLM's str_to_bool trims the literal and only "true" disables, so every other word leaves updates enabled
         Some(RawDisable::Text(text)) => text.strip_prefix(ENV_PREFIX).map_or_else(
-            || Ok(text.trim().eq_ignore_ascii_case("true")),
+            || Ok(text.trim().to_lowercase() == "true"),
             // an unset or empty reference behaves like an absent key and reads DISABLE_SCHEMA_UPDATE
             |variable| disable_from(&[variable, DISABLE_SCHEMA_UPDATE_ENV_VAR], lookup),
         ),
