@@ -41,7 +41,7 @@ where
         let table = self
             .table
             .as_ref()
-            .ok_or(PromptWriteError::DbNotConnected)?;
+            .ok_or(PromptWriteError::<Table::Failure>::DbNotConnected)?;
         let user_id = principal
             .user
             .as_ref()

@@ -22,6 +22,19 @@ struct DetailBody {
 }
 
 #[derive(Deserialize)]
+struct ValidationBody {
+    detail: Vec<ValidationIssue>,
+}
+
+#[derive(Deserialize)]
+struct ValidationIssue {
+    #[serde(rename = "type")]
+    issue_type: String,
+    loc: Vec<String>,
+    msg: String,
+}
+
+#[derive(Deserialize)]
 struct MessageBody {
     message: String,
 }
@@ -164,6 +177,21 @@ async fn oneshot_create_answers_422_for_a_body_that_does_not_fit(#[case] body: &
     let (status, _) = harness.send(Method::POST, "/prompts", body).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(harness.rows.lock().expect("rows").is_empty());
+}
+
+#[tokio::test]
+async fn oneshot_create_locates_the_field_a_body_gets_wrong() {
+    let harness = Harness::new(master_key(), TableMode::Working);
+    let body = r#"{"prompt_id":"greeting","litellm_params":{}}"#;
+    let (status, response) = harness.send(Method::POST, "/prompts", body).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    let issues = serde_json::from_str::<ValidationBody>(&response)
+        .expect("a validation body")
+        .detail;
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].loc, ["body", "litellm_params"]);
+    assert_eq!(issues[0].issue_type, "value_error");
+    assert!(issues[0].msg.contains("prompt_integration"));
 }
 
 #[tokio::test]
