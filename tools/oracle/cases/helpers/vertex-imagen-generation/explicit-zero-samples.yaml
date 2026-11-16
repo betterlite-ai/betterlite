@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-imagen-generation-explicit-zero-samples
+call:
+  vertex_imagen_generation:
+    model: imagen-3.0-generate-002
+    mappings:
+      - prompt: a red fox
+        non_default_params: {n: 0}
+        optional_params: {}
+        litellm_params: null
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}
