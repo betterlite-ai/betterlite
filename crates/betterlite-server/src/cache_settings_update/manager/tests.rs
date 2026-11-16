@@ -29,6 +29,9 @@ fn params_equal_compares_python_str_forms() {
     assert!(!params_equal(&typed, &lower_flag));
     let other_ratio = support::params(r#"{"ttl":"1","flag":"True","ratio":"1.25","name":"x"}"#);
     assert!(!params_equal(&typed, &other_ratio));
+    let float_ttl = support::params(r#"{"ttl":1.0}"#);
+    let int_ttl = support::params(r#"{"ttl":1}"#);
+    assert!(params_equal(&float_ttl, &int_ttl));
 }
 
 #[test]
@@ -40,6 +43,8 @@ fn params_equal_keeps_lists_and_objects_structural() {
     assert!(!params_equal(&nodes, &other));
     let text = support::params(r#"{"redis_startup_nodes":"[{\"host\":\"a\",\"port\":1}]"}"#);
     assert!(!params_equal(&nodes, &text));
+    let float_port = support::params(r#"{"redis_startup_nodes":[{"host":"a","port":1.0}]}"#);
+    assert!(!params_equal(&nodes, &float_port));
 }
 
 #[test]
@@ -158,6 +163,7 @@ async fn init_from_db_logs_and_skips_a_stored_value_that_is_not_an_object() {
     let (logs, _guard) = support::capture_logs();
     let (fake, erased) = support::fake_repository();
     fake.push_read(Ok(Some(JsonValue::String("null".to_owned()))));
+    fake.push_read(Ok(Some(support::json(r#"[["host","h"]]"#))));
     let manager = CacheSettingsManager::default();
     let reinit = support::reinit();
     let cipher = support::cipher();
@@ -169,9 +175,17 @@ async fn init_from_db_logs_and_skips_a_stored_value_that_is_not_an_object() {
             None::<&mut support::FakeReconnect>,
         )
         .await;
+    manager
+        .init_from_db(
+            erased.as_ref(),
+            &cipher,
+            reinit.as_ref(),
+            None::<&mut support::FakeReconnect>,
+        )
+        .await;
     assert!(reinit.calls().is_empty());
     assert!(manager.last_params().is_none());
-    assert_eq!(fake.read_count(), 1);
+    assert_eq!(fake.read_count(), 2);
     let text = logs.text();
     assert!(text.contains(
         "cache_settings_endpoints.py::CacheSettingsManager::init_cache_settings_in_db - "
