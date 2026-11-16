@@ -14,7 +14,8 @@ use serde_json::{Map, Value, json};
 
 use betterlite_oracle_helper_api::helper::HelperResult;
 
-use super::fixture::{NoSources, run_generation};
+use super::fixtures::exchange::run_generation;
+use super::fixtures::sources::NoSources;
 use super::input::{Input, Step};
 
 pub(crate) fn run(input: &Input) -> HelperResult {
