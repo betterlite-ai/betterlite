@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-services-responses-url
+call:
+  bedrock_services_responses:
+    responses_runtime_url:
+      - {}
+      - api_base: https://proxy.example/v1/responses
+        litellm_params: {aws_region_name: eu-west-1}
+env: {}
+compare: {ignore: []}
