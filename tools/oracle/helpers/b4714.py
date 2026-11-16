@@ -178,10 +178,12 @@ def stored_value(stored: str) -> JsonValue:
     )
     if decrypted is None:
         return None
+    parsed: JsonValue
     try:
-        return JSON.validate_json(decrypted)
+        parsed = JSON.validate_json(decrypted)
     except ValidationError:
         return decrypted
+    return parsed
 
 
 def row_view(row: FakeRow) -> RowView:
