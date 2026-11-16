@@ -207,13 +207,13 @@ checks:
       why: new helper seeds are absent or do not replay through the shared helper-case parser
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_passthrough_handler-*')" &&
-        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: order-oracle
       why: newly added helper cases are absent, do not use the b3642 operation or disagree with LiteLLM
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vertex-passthrough-handler)" &&
         grep -rlE '^[[:space:]]+b3642:' tools/oracle/cases/helpers/vertex-passthrough-handler &&
-        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/vertex-passthrough-handler
+        cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server -- tools/oracle/cases/helpers/vertex-passthrough-handler
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-interactions.yaml
   - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-predict-long-running.yaml
