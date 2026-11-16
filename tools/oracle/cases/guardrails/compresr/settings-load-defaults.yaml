@@ -1,0 +1,7 @@
+kind: helper
+name: settings-load-defaults
+call:
+  b3765: {"function": "init", "config": {"api_key": "test-key"}, "env": {}}
+env: {}
+compare:
+  ignore: []

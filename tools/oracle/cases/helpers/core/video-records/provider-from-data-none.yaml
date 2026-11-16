@@ -1,0 +1,12 @@
+kind: helper
+name: b3330-provider-from-data-none
+call:
+  b3330: {function: custom_provider, value: {}}
+calls:
+  - b3330: {function: custom_provider, value: {other: x}}
+  - b3330: {function: custom_provider, value: {custom_llm_provider: null}}
+  - b3330: {function: custom_provider, value: {extra_body: []}}
+  - b3330: {function: custom_provider, value: {extra_body: 5}}
+  - b3330: {function: custom_provider, value: {extra_body: true}}
+env: {}
+compare: {ignore: []}

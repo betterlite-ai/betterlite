@@ -18,6 +18,7 @@ use crate::credentials::{
     ExplicitCredentials, LiteLlmGlobals, get_openai_credentials, resolve_openai_api_base,
 };
 
+pub mod container_file_http;
 pub mod costs;
 pub mod replies;
 pub mod requests;
