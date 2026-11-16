@@ -213,6 +213,34 @@ call:
           thinking_blocks: []
           refusal: null
           provider_specific_fields: null
+    - step: is_blank
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields:
+            refusal: "No"
+    - step: start_block
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields:
+            refusal: "No"
+    - step: refusal_stop
+      event:
+        type: message_delta
+        delta:
+          stop_reason: end_turn
+    - step: snapshot
 env: {}
 compare:
   ignore: []
