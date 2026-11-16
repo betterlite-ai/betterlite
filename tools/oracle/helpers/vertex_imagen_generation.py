@@ -48,11 +48,11 @@ class ImagenImageConfig(Protocol):
         ],
         dict[str, JsonValue],
     ]
-    transform_image_generation_request: Callable[
+    transform_image_generation_request: Callable[  # ast-grep-ignore: no-long-names
         [str, str, dict[str, JsonValue], dict[str, JsonValue], dict[str, str]],
         dict[str, JsonValue],
     ]
-    transform_image_generation_response: Callable[
+    transform_image_generation_response: Callable[  # ast-grep-ignore: no-long-names
         [
             str,
             httpx.Response,

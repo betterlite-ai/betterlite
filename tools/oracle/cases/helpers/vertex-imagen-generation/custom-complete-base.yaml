@@ -9,7 +9,7 @@ call:
         optional_params: {}
         litellm_params: null
     target:
-      api_base: https://proxy.example/predict///
+      api_base: https://proxy.example/models/x:generateContent///
       params_api_base: null
       project: proj
       location: us-central1

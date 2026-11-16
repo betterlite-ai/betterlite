@@ -28,8 +28,8 @@ pub fn transform_image_generation_request(
         Json::List(vec![Json::Object(instance)]),
     );
     body.insert("parameters".to_owned(), Json::Object(parameters));
-    if let Some(labels) = labels {
-        let fields = labels
+    if let Some(request_labels) = labels {
+        let fields = request_labels
             .into_iter()
             .map(|(name, value)| (name, Json::Text(value)))
             .collect();

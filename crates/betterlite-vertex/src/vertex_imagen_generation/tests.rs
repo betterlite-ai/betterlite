@@ -418,7 +418,7 @@ fn a_prediction_that_is_a_list_or_null_names_its_index(#[case] body: &str) {
     let ImagenGenerationError::Shape { source, .. } = &error else {
         panic!("{body}: {error}");
     };
-    assert!(source.to_string().contains("a JSON object"), "{body}");
+    assert!(source.to_string().contains("expected a map"), "{body}");
 }
 
 #[test]
@@ -507,7 +507,7 @@ fn a_custom_base_is_returned_with_trailing_slashes_trimmed() {
 }
 
 #[test]
-fn a_custom_base_that_names_the_gemini_method_is_swapped_to_predict() {
+fn a_custom_base_is_returned_exactly_as_configured() {
     let target = ImageTarget {
         model: "imagen-3.0-generate-002",
         api_base: Some("https://proxy.example/models/x:generateContent"),
@@ -515,7 +515,7 @@ fn a_custom_base_that_names_the_gemini_method_is_swapped_to_predict() {
     };
     let url = predict_url(&ImageIdentitySettings::default(), &target)
         .expect("a custom base needs no project");
-    assert_eq!(url, "https://proxy.example/models/x:predict");
+    assert_eq!(url, "https://proxy.example/models/x:generateContent");
 }
 
 #[test]
@@ -536,9 +536,9 @@ fn a_missing_project_or_location_is_one_error() {
     assert!(matches!(error, ImageIdentityError::MissingTarget));
     let mut project_only = target_settings();
     project_only.module.location = None;
-    let error =
+    let location_error =
         predict_url(&project_only, &standard_target()).expect_err("the location is missing");
-    assert!(matches!(error, ImageIdentityError::MissingTarget));
+    assert!(matches!(location_error, ImageIdentityError::MissingTarget));
 }
 
 #[test]

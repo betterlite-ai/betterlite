@@ -1,10 +1,7 @@
-use std::fmt::{Formatter, Result as FmtResult};
-
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_models::decisions::{Extra, Json};
 use serde::Deserialize;
 use serde::de::Error as _;
-use serde::de::value::MapAccessDeserializer;
-use serde::de::{MapAccess, Visitor};
 use serde_json::Deserializer;
 use serde_json::Error as JsonError;
 use serde_json::value::RawValue;
@@ -13,51 +10,44 @@ use super::error::ImagenGenerationError;
 use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 
 // transform_image_generation_response reads the reply as a dict and keeps only these prediction fields
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Default)]
 pub struct ImagenReply {
-    #[serde(default)]
     pub predictions: Vec<ImagenPrediction>,
 }
 
 // the key's presence decides whether an image is appended, so null is Some(None) and an absent key is None
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ImagenPrediction {
     pub bytes_base64_encoded: Option<Option<String>>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PredictionFields {
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    bytes_base64_encoded: Option<Option<String>>,
+// LiteLLM calls .get on each prediction, so a JSON array or null is refused here rather than read by position
+#[derive(Debug, Deserialize)]
+struct RawImagenReply {
+    #[serde(default)]
+    predictions: Vec<Extra>,
 }
 
-// serde's derive also reads a struct from a JSON array by position, and LiteLLM's `in` test on a list finds no key
-struct MapOnly;
-
-impl<'de> Visitor<'de> for MapOnly {
-    type Value = ImagenPrediction;
-
-    fn expecting(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        formatter.write_str("a JSON object")
-    }
-
-    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<ImagenPrediction, A::Error> {
-        let fields = PredictionFields::deserialize(MapAccessDeserializer::new(map))?;
-        Ok(ImagenPrediction {
-            bytes_base64_encoded: fields.bytes_base64_encoded,
-        })
-    }
-}
-
-impl<'de> Deserialize<'de> for ImagenPrediction {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_map(MapOnly)
-    }
+// LiteLLM's `in` test appends for any prediction holding the key, and a value that is no string is malformed
+fn prediction_at(fields: &Extra, index: usize) -> Result<ImagenPrediction, ImagenGenerationError> {
+    let Some(encoded) = fields.get("bytesBase64Encoded") else {
+        return Ok(ImagenPrediction {
+            bytes_base64_encoded: None,
+        });
+    };
+    let value = match encoded {
+        Json::Null => None,
+        Json::Text(text) => Some(text.clone()),
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            return Err(ImagenGenerationError::Shape {
+                path: format!("predictions[{index}].bytesBase64Encoded"),
+                source: JsonError::custom("the value is not a string"),
+            });
+        }
+    };
+    Ok(ImagenPrediction {
+        bytes_base64_encoded: Some(value),
+    })
 }
 
 pub fn decode_imagen_generation(
@@ -83,10 +73,16 @@ pub fn decode_imagen_generation(
             source: JsonError::custom("the value is not a JSON object"),
         });
     }
-    serde_path_to_error::deserialize(&mut Deserializer::from_slice(&reply.body)).map_err(|error| {
-        ImagenGenerationError::Shape {
-            path: error.path().to_string(),
-            source: error.into_inner(),
-        }
-    })
+    let raw: RawImagenReply = serde_path_to_error::deserialize(&mut Deserializer::from_slice(
+        &reply.body,
+    ))
+    .map_err(|error| ImagenGenerationError::Shape {
+        path: error.path().to_string(),
+        source: error.into_inner(),
+    })?;
+    let mut predictions = Vec::with_capacity(raw.predictions.len());
+    for (index, fields) in raw.predictions.iter().enumerate() {
+        predictions.push(prediction_at(fields, index)?);
+    }
+    Ok(ImagenReply { predictions })
 }
