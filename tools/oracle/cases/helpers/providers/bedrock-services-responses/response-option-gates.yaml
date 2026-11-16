@@ -1,0 +1,32 @@
+kind: helper
+name: response-option-gates
+call:
+  bedrock_services_responses:
+    response_option_gates:
+      - params: {background: false, temperature: 0.5}
+      - params: {background: null}
+        drop_params: true
+      - params: {background: true, instructions: keep}
+      - params: {temperature: 0.5}
+      - params: {tools: null}
+      - params: {tools: []}
+      - params:
+          tools:
+            - {type: function, name: first, parameters: {}, strict: true}
+            - {type: web_search}
+            - {type: mcp, server_label: s}
+            - {type: web_search_preview}
+          temperature: 0.5
+      - params:
+          tools:
+            - {type: code_interpreter, container: auto}
+            - {type: file_search, vector_store_ids: [vs]}
+      - params:
+          tools:
+            - {type: function, name: kept, parameters: {}, strict: false}
+            - {type: custom, name: c}
+            - {type: apply_patch}
+            - {type: tool_search}
+            - {type: computer}
+env: {}
+compare: {ignore: []}

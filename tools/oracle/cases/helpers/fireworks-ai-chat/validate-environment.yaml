@@ -1,0 +1,86 @@
+kind: helper
+name: fireworks-ai-chat-validate-environment
+call:
+  b6072:
+    catalog: []
+    headers:
+      - headers: {}
+        api_key: arg-key
+        litellm_params: {}
+        environment: {FIREWORKS_AI_API_KEY: env-key}
+      - headers: {content-type: application/x-www-form-urlencoded}
+        api_key: arg-key
+        litellm_params: {}
+        environment: {}
+      - headers: {Content-Type: application/x+yaml}
+        api_key: arg-key
+        litellm_params: {}
+        environment: {}
+      - headers: {Content-type: application/x-odd}
+        api_key: arg-key
+        litellm_params: {}
+        environment: {}
+      - headers: {authorization: Bearer old}
+        api_key: arg-key
+        litellm_params: {}
+        environment: {}
+      - headers: {Authorization: Bearer old}
+        api_key: arg-key
+        litellm_params: {}
+        environment: {}
+      - headers: {}
+        api_key: null
+        litellm_params: {}
+        environment: {FIREWORKS_API_KEY: one, FIREWORKS_AI_API_KEY: two, FIREWORKSAI_API_KEY: three, FIREWORKS_AI_TOKEN: four}
+      - headers: {}
+        api_key: null
+        litellm_params: {}
+        environment: {FIREWORKS_API_KEY: "", FIREWORKSAI_API_KEY: three}
+      - headers: {}
+        api_key: arg-key
+        litellm_params: {}
+        environment: {}
+      - headers: {}
+        api_key: arg-key
+        litellm_params: {litellm_session_id: session-one}
+        environment: {}
+      - headers: {}
+        api_key: arg-key
+        litellm_params: {session_id: session-two}
+        environment: {}
+      - headers: {}
+        api_key: arg-key
+        litellm_params: {metadata: {session_id: session-three}}
+        environment: {}
+      - headers: {}
+        api_key: arg-key
+        litellm_params: {litellm_session_id: session-four, metadata: {litellm_session_id_generated: true}}
+        environment: {}
+      - headers: {x-session-affinity: pinned}
+        api_key: arg-key
+        litellm_params: {litellm_session_id: session-five}
+        environment: {}
+      - headers: {X-Session-Affinity: pinned}
+        api_key: arg-key
+        litellm_params: {session_id: session-six}
+        environment: {}
+    keys: []
+    requests: []
+    replies: []
+    chunks: []
+    models: []
+calls:
+  - b6072:
+      catalog: []
+      headers:
+        - headers: {}
+          api_key: null
+          litellm_params: {}
+          environment: {}
+      keys: []
+      requests: []
+      replies: []
+      chunks: []
+      models: []
+env: {}
+compare: {ignore: []}

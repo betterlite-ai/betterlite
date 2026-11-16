@@ -1,0 +1,52 @@
+id: B9975
+title: Server run test passes on what it sees, not on a deadline
+description: >-
+  Fix a flaky test on main. tests::run_serves_requests_with_the_chat_executor_it_was_given in
+  crates/betterlite-server/src/tests.rs joins two 3 second timeouts: one around run_with_listener, which must still
+  be serving when it expires, and one around post_chat_once_listening, which must answer inside the same 3
+  seconds. The test passes only if the server starts and answers within that window. It took 4.2 seconds in the
+  green full run https://github.com/betterlite-ai/betterlite/actions/runs/43886225133 and 5.8 seconds in the merge
+  queue run https://github.com/betterlite-ai/betterlite/actions/runs/43906321153, where the request timed out
+  ("called `Result::unwrap()` on an `Err` value: Elapsed(())" at tests.rs:46) and threw B9974 out of the queue.
+  Nothing in that change touched the server.
+
+
+  Test change only. Start run_with_listener in a JoinSet, send the request with post_chat_once_listening, and wait
+  for the answer with a 30 second timeout that only guards a hang. Assert the answer starts with "HTTP/1.1 501",
+  then assert the server task has not finished (it is still serving after it answered), then abort it. Nothing in
+  the test waits for a deadline to pass, so a slow runner makes it slower, not red. Every other timeout in
+  tests.rs that bounds a step the test expects to happen (an accept, a read, a disconnect) goes from 3 to 30
+  seconds, since those only guard against a hang and a passing test never waits them out. A timeout whose
+  expiry is the expected outcome stays as it is.
+scope:
+  paths:
+  - crates/betterlite-server/src/tests.rs
+  lint_tables: false
+references: []
+dod:
+- text: >-
+    run_serves_requests_with_the_chat_executor_it_was_given passes on the 501 answer and a server task that is
+    still running, with no 3 second window.
+  proof: [server-tests, no-short-window]
+checks:
+  optional: []
+  commands:
+  - id: server-tests
+    why: A server test broke.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^tests::/)'
+  - id: no-short-window
+    why: A server test still has a 3 second timeout that a slow runner can hit.
+    run: "! grep -n -F 'Duration::from_secs(3)' crates/betterlite-server/src/tests.rs"
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The server code; the server answers correctly, only the test's timing is wrong.
+- Timeouts in other test files.
+pitfalls:
+- 'Keep post_chat_once_listening and the pre-bound listener from B9959; only the waiting changes.'
+- 'Use JoinHandle::is_finished or JoinSet::try_join_next to see that the server is still running; do not sleep to give it time.'
+- 'If a 3 second timeout in tests.rs is the expected outcome (the test checks that something does not happen), keep it and say so in the report; the no-short-window check then needs the architect.'
+review_level: standard
+budget:
+  max_changed_lines: 100
+  max_new_expects: 0

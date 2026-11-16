@@ -1,0 +1,44 @@
+kind: helper
+name: soniox-remote-immediate-http-failure
+call:
+  soniox_remote:
+    calls:
+    - function: upload
+      auth_headers: {Authorization: "Bearer sk-local"}
+      api_base: "https://api.soniox.test"
+      filename: audio.mp3
+      content: "RIFF-data"
+      content_type: audio/mpeg
+      filename_override: null
+      timeout_ms: 2500
+      answers:
+      - {status: 500, headers: {X-Request-Id: req-1}, body: '{"error_message": "quota"}'}
+    - function: poll
+      auth_headers: {Authorization: "Bearer sk-local"}
+      api_base: "https://api.soniox.test"
+      transcription_id: job-7
+      poll_interval: 0.5
+      max_attempts: 3
+      timeout_ms: 2500
+      answers:
+      - {status: 500, headers: {}, body: '{"error": "nope"}'}
+    - function: poll
+      auth_headers: {Authorization: "Bearer sk-local"}
+      api_base: "https://api.soniox.test"
+      transcription_id: job-7
+      poll_interval: 0.5
+      max_attempts: 1
+      timeout_ms: 2500
+      answers:
+      - {status: 502, headers: {}, body: 'gateway down'}
+    - function: poll
+      auth_headers: {Authorization: "Bearer sk-local"}
+      api_base: "https://api.soniox.test"
+      transcription_id: job-7
+      poll_interval: 0.5
+      max_attempts: 1
+      timeout_ms: 2500
+      answers:
+      - {status: 204, headers: {}, body: '', fail: true}
+compare: {ignore: []}
+env: {}
