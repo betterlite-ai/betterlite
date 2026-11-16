@@ -227,7 +227,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_chat_call*")"
       && grep -lq 'anthropic_chat_call' tools/oracle/fuzz/corpus/helper_case/anthropic_chat_call* && cargo nextest
       run --locked -p betterlite-oracle-anthropic --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_chat_call$/)'
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-anthropic --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-chat-failure-projection
     why: 'Both buffered paths wrap transport exception as B567 AnthropicError: status attribute or500, message exception.text-or-str
       then truthy response.text overrides, headers exception.headers if non-None else truthy response.headers. Async

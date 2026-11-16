@@ -99,7 +99,7 @@ checks:
       run: test -f tools/oracle/helpers/ui_session_cleanup.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
       why: No new worker seed replays the helper decoder.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/ui-session-cleanup-*')" && grep -rlq ui_session_cleanup tools/oracle/fuzz/corpus/helper_case/ui-session-cleanup-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/ui-session-cleanup-*')" && grep -rlq ui_session_cleanup tools/oracle/fuzz/corpus/helper_case/ui-session-cleanup-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-corpus
       why: No batch-size seed exercises the existing config decoder.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/ui-session-cleanup-*')" && grep -rlq LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_BATCH_SIZE crates/betterlite-config/fuzz/corpus/config_yaml/ui-session-cleanup-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'

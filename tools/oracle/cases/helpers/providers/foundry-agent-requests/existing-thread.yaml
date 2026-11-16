@@ -1,0 +1,22 @@
+kind: helper
+name: foundry-agent-requests-existing-thread
+call:
+  foundry_agent_requests:
+    requests:
+      - {model: azure_ai/agents/a, messages: [{role: user, content: hi}], optional_params: {thread_id: thread-1}}
+      - {model: azure_ai/agents/a, messages: [], optional_params: {thread_id: null}}
+      - {model: azure_ai/agents/a, messages: [], optional_params: {thread_id: ""}}
+      - {model: azure_ai/agents/a, messages: [], optional_params: {instructions: "be brief"}}
+      - {model: azure_ai/agents/a, messages: [], optional_params: {instructions: null}}
+      - {model: azure_ai/agents/a, messages: [], optional_params: {}}
+      - {model: azure_ai/agents/a, messages: [], optional_params: {thread_id: thread-1, instructions: "stay short", agent_id: explicit-agent}}
+calls:
+  - foundry_agent_requests:
+      preparations:
+        - {model: azure_ai/agents/a, api_base: "https://base.example", api_key: "", optional_params: {thread_id: thread-1}, headers: {}}
+        - {model: azure_ai/agents/a, api_base: "https://base.example", api_key: "", optional_params: {thread_id: null}, headers: {}}
+        - {model: azure_ai/agents/a, api_base: "https://base.example", api_key: "", optional_params: {thread_id: ""}, headers: {}}
+        - {model: azure_ai/agents/a, api_base: "https://base.example", api_key: "", optional_params: {}, headers: {}}
+        - {model: azure_ai/agents/a, api_base: "https://base.example", api_key: "", optional_params: {assistant_id: assistant-one}, headers: {}}
+env: {}
+compare: {ignore: []}

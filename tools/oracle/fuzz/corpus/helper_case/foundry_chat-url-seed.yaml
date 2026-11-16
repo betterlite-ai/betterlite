@@ -1,0 +1,13 @@
+kind: helper
+name: foundry-chat-url-seed
+call:
+  foundry_chat:
+    model_cost: {}
+    chat_models: []
+    text_models: []
+    urls:
+      - {api_base: "https://litellm8397336933.services.ai.azure.com", api_version: null}
+      - {api_base: "https://studio.example.test/v1?api-version=latest", api_version: v}
+      - {api_base: null, api_version: null}
+env: {}
+compare: {ignore: []}
