@@ -76,9 +76,11 @@ async fn buffer_stream(
     limits: StreamBufferLimits,
     input: &mut mpsc::Receiver<StreamItem>,
 ) -> Result<Vec<StreamItem>, ResponseToolError> {
+    let max_chunks = limits.max_chunks;
+    let max_bytes = limits.max_bytes;
     let mut budget = RetentionBudget {
-        max_bytes: limits.max_bytes,
-        max_chunks: limits.max_chunks,
+        max_bytes,
+        max_chunks,
         bytes: 0,
         chunks: 0,
     };
@@ -93,8 +95,7 @@ async fn buffer_stream(
                 GuardrailFailure::GuardrailRaised {
                     guardrail_name: Some(guardrail.args.name.clone()),
                     message: format!(
-                        "Streamed response exceeded the {} chunk or {} byte buffer limit for tool permission checks, blocking it",
-                        limits.max_chunks, limits.max_bytes
+                        "Streamed response exceeded the {max_chunks} chunk or {max_bytes} byte buffer limit for tool permission checks, blocking it"
                     ),
                     wrap_default_message: true,
                     status_code: 400,
