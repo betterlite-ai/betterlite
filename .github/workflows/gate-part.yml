@@ -225,6 +225,7 @@ jobs:
           if grep -q -w helm "$file"; then echo "helm=true" >> "$GITHUB_OUTPUT"; fi
           if grep -q -w terraform "$file"; then echo "terraform=true" >> "$GITHUB_OUTPUT"; fi
           if grep -q -E '\bgo (vet|build|test|run)\b|\bgofmt\b' "$file"; then echo "go=true" >> "$GITHUB_OUTPUT"; fi
+          if grep -q -E '(^|[[:space:]])ruby[[:space:]]' "$file"; then echo "ruby=true" >> "$GITHUB_OUTPUT"; fi
 
       - name: Set up Helm
         if: steps.toolchains.outputs.helm == 'true'
@@ -255,6 +256,11 @@ jobs:
         with:
           go-version: 1.25.0
           cache: false
+
+      # the Homebrew task tests its formula with Ruby, Debian's 3.3 in this image
+      - name: Install Ruby
+        if: steps.toolchains.outputs.ruby == 'true'
+        run: apt-get install --yes --no-install-recommends ruby
 
       # lint and task split every check between them, so a check added to checks.yaml runs in task
       - name: Run the gate's ${{ matrix.part }} checks on the merged result

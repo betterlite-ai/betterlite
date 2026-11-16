@@ -1,0 +1,9 @@
+kind: helper
+name: cache-settings-update-params-equal-str-forms
+call:
+  b8502:
+    function: cache_params_equal
+    params1: {ttl: 1, flag: true, ratio: 1.5, name: "x"}
+    params2: {ttl: "1", flag: "True", ratio: "1.5", name: "x"}
+env: {}
+compare: {ignore: []}

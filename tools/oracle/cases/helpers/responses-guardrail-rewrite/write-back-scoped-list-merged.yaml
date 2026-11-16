@@ -1,0 +1,6 @@
+kind: helper
+name: responses-write-back-scoped-list-merged
+call:
+  b3671: {"function": "input", "scenarios": [{"data": {"instructions": "sys", "input": [{"role": "user", "content": "a"}]}, "skip_system": true, "covers_full": false, "reply": {"structured_messages": [{"role": "user", "content": "A"}]}}, {"data": {"instructions": "sys", "input": [{"role": "user", "content": "a"}]}, "skip_system": true, "covers_full": true, "reply": {"structured_messages": [{"role": "system", "content": "S2"}, {"role": "user", "content": "A"}]}}, {"data": {"instructions": "sys", "input": [{"role": "user", "content": "a"}]}, "skip_system": true, "covers_full": false, "reply": {"structured_messages": [{"role": "system", "content": "S2"}, {"role": "user", "content": "A"}]}}, {"data": {"instructions": "sys", "input": [{"role": "user", "content": "a"}]}, "skip_system": true, "covers_full": true, "reply": {"structured_messages": [{"role": "user", "content": "A"}]}}]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,70 @@
+use std::time::Duration;
+
+use betterlite_logging::azure_storage_logging::http_ops::{StorageAuthorization, storage_request};
+use betterlite_logging::azure_storage_logging::transport::{StorageRequest, StorageResponse};
+use http::Method;
+
+use super::AzureBlobStorageBackend;
+use super::error::AzureFileStorageError;
+
+pub(super) const NOT_FOUND: u16 = 404;
+const OCTET_STREAM: &str = "application/octet-stream";
+
+pub(super) async fn send(
+    backend: &AzureBlobStorageBackend,
+    request: StorageRequest,
+    operation: &'static str,
+) -> Result<StorageResponse, AzureFileStorageError> {
+    let response = backend.logger.deps.transport.send(request).await?;
+    // response.raise_for_status(): every status outside 2xx fails, redirects included
+    if !(200..=299).contains(&response.status) {
+        return Err(AzureFileStorageError::Status {
+            operation,
+            status: response.status,
+        });
+    }
+    Ok(response)
+}
+
+// the SDK's exists() calls: a 404 means create, any other non-2xx status propagates
+pub(super) async fn resource_exists(
+    backend: &AzureBlobStorageBackend,
+    method: Method,
+    url: String,
+    auth: &StorageAuthorization<'_>,
+    now: Duration,
+) -> Result<bool, AzureFileStorageError> {
+    let request = storage_request(method, url, auth, now, &[])?;
+    let response = backend.logger.deps.transport.send(request).await?;
+    match response.status {
+        NOT_FOUND => Ok(false),
+        status if !(200..=299).contains(&status) => Err(AzureFileStorageError::Status {
+            operation: "exists",
+            status,
+        }),
+        _ => Ok(true),
+    }
+}
+
+// LiteLLM's upload types every request as the file bytes, so the JSON type is replaced
+pub(super) fn octet_request(
+    method: Method,
+    url: String,
+    auth: &StorageAuthorization<'_>,
+    now: Duration,
+    body: &[u8],
+) -> Result<StorageRequest, AzureFileStorageError> {
+    let mut request = storage_request(method, url, auth, now, body)?;
+    if let Some((_name, value)) = request
+        .headers
+        .iter_mut()
+        .find(|(name, _value)| name.eq_ignore_ascii_case("content-type"))
+    {
+        OCTET_STREAM.clone_into(value);
+        return Ok(request);
+    }
+    request
+        .headers
+        .push(("Content-Type".to_owned(), OCTET_STREAM.to_owned()));
+    Ok(request)
+}

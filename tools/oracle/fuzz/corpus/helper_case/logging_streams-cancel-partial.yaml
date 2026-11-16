@@ -1,0 +1,16 @@
+kind: helper
+name: logging-streams-cancel-partial
+call:
+  logging_streams:
+    probes:
+      - operation: stream
+        chunk_lists:
+          - [{choices: [{index: 0, delta: {content: "partial ans"}}]}, {choices: [{index: 0, delta: {content: "wer"}}]}]
+          - [{choices: [{index: 0, delta: {content: null}}]}, {choices: [{index: 1, delta: {tool_calls: []}}]}]
+          - [{choices: [{index: 0, delta: {content: "done"}, finish_reason: stop}]}]
+      - operation: chat
+        responses:
+          - {choices: [{message: {role: assistant, content: "partial answer"}}, {message: {role: assistant}}]}
+          - {choices: [{message: {role: assistant, content: ""}}]}
+env: {}
+compare: {ignore: []}

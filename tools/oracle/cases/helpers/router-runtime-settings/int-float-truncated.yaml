@@ -1,0 +1,11 @@
+kind: helper
+name: router-runtime-settings-int-float-truncated
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["timeout", 30.5]
+      - ["retry_after", -2.5]
+env: {}
+compare: {ignore: []}
