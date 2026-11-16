@@ -41,13 +41,16 @@ enum Call<'request> {
 }
 
 impl Call<'_> {
-    async fn answer<R: SkillRepository>(
+    async fn answer<R>(
         self,
         ops: &HostedSkillOps<R>,
         step: &Step,
         caller: Option<&Principal>,
         logging: &mut LoggingState,
-    ) -> HelperResult {
+    ) -> HelperResult
+    where
+        R: SkillRepository,
+    {
         let call_id = step.litellm_call_id.as_deref();
         match self {
             Self::Create => {

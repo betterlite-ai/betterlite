@@ -1,6 +1,7 @@
 mod scripted;
 mod steps;
 
+use std::fmt::Display;
 use std::sync::Arc;
 
 use base64::Engine as _;
@@ -17,6 +18,7 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
+use tokio::runtime::Builder;
 
 use scripted::Scripted;
 use steps::run_steps;
@@ -81,7 +83,7 @@ pub(super) fn invalid_input(message: String) -> Box<HelperError> {
     })
 }
 
-fn failure(class: &str, error: &dyn std::fmt::Display) -> Box<HelperError> {
+fn failure(class: &str, error: &dyn Display) -> Box<HelperError> {
     Box::new(HelperError {
         class: class.to_owned(),
         status: None,
@@ -99,10 +101,7 @@ struct DecodedUpload {
     has_type: bool,
 }
 
-fn tuple_text<'entry>(
-    entry: &'entry [Json],
-    index: usize,
-) -> Result<&'entry str, Box<HelperError>> {
+fn tuple_text(entry: &[Json], index: usize) -> Result<&str, Box<HelperError>> {
     match entry.get(index) {
         Some(Json::Text(text)) => Ok(text),
         None
@@ -138,7 +137,9 @@ fn decoded_upload(entry: &[Json]) -> Result<DecodedUpload, Box<HelperError>> {
     })
 }
 
-pub(super) fn upload_of(upload: &DecodedUpload) -> SkillUpload<'_> {
+type DecodedFiles = (Vec<DecodedUpload>, Option<Vec<u8>>);
+
+fn upload_of(upload: &DecodedUpload) -> SkillUpload<'_> {
     SkillUpload {
         file_name: &upload.file_name,
         content: &upload.file_content,
@@ -160,7 +161,7 @@ pub(super) fn decoded_content(text: Option<&str>) -> Result<Option<Vec<u8>>, Box
         .map_err(|error| invalid_input(error.to_string()))
 }
 
-fn decoded_files(step: &Step) -> Result<(Vec<DecodedUpload>, Option<Vec<u8>>), Box<HelperError>> {
+fn decoded_files(step: &Step) -> Result<DecodedFiles, Box<HelperError>> {
     let entries = step.files.as_deref().unwrap_or(&[]);
     let mut decoded = Vec::with_capacity(entries.len());
     for entry in entries {
@@ -201,7 +202,7 @@ impl Helper for Op {
         let store = HostedSkillStore::new(scripted.clone(), ids, clock)
             .map_err(|error| failure("StoreError", &error))?;
         let ops = HostedSkillOps { store };
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| invalid_input(error.to_string()))?;
         let answers = runtime.block_on(run_steps(&ops, &input.steps))?;
