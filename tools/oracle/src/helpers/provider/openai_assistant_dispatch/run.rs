@@ -63,8 +63,8 @@ async fn exchange(operation: OpenAiAssistantOperation, wire: Arc<Wire>) -> Helpe
     let requests = reader.seen();
     match result {
         Ok(OperationResult::OpenAiAssistant(reply)) => {
-            let result = outcome(reply).await?;
-            Ok(json!({"requests": requests, "result": result}))
+            let answer = outcome(reply).await?;
+            Ok(json!({"requests": requests, "result": answer}))
         }
         Ok(_other) => Err(invalid_input(String::from(
             "the composition returned another operation",
@@ -93,9 +93,9 @@ fn options(input: &Input) -> ClientOptions {
     }
 }
 
-fn required(field: &Option<String>, name: &str) -> Result<String, Box<HelperError>> {
+fn required(field: Option<&str>, name: &str) -> Result<String, Box<HelperError>> {
     field
-        .clone()
+        .map(str::to_owned)
         .ok_or_else(|| invalid_input(format!("{name} is required")))
 }
 
@@ -128,7 +128,7 @@ fn assistants(input: &Input) -> Result<OpenAiAssistantOperation, Box<HelperError
             async_requested: true,
         },
         Operation::Delete => AssistantsOperation::Delete {
-            assistant_id: required(&input.assistant_id, "assistant_id")?,
+            assistant_id: required(input.assistant_id.as_deref(), "assistant_id")?,
             async_requested: true,
         },
         _ => return Err(wrong_operation(input, "assistants")),
@@ -146,16 +146,16 @@ fn threads(input: &Input) -> Result<OpenAiAssistantOperation, Box<HelperError>> 
             async_requested: true,
         },
         Operation::Retrieve => ThreadsOperation::Retrieve {
-            thread_id: required(&input.thread_id, "thread_id")?,
+            thread_id: required(input.thread_id.as_deref(), "thread_id")?,
             async_requested: true,
         },
         Operation::AddMessage => ThreadsOperation::AddMessage {
-            thread_id: required(&input.thread_id, "thread_id")?,
+            thread_id: required(input.thread_id.as_deref(), "thread_id")?,
             data: from_data::<ThreadMessageData>(input, "data")?,
             async_requested: true,
         },
         Operation::ListMessages => ThreadsOperation::ListMessages {
-            thread_id: required(&input.thread_id, "thread_id")?,
+            thread_id: required(input.thread_id.as_deref(), "thread_id")?,
             async_requested: true,
         },
         _ => return Err(wrong_operation(input, "threads")),
@@ -194,13 +194,13 @@ fn decisions(input: &Input) -> Result<OpenAiAssistantOperation, Box<HelperError>
         .decision
         .clone()
         .ok_or_else(|| invalid_input(String::from("decision is required")))?;
-    let model = required(&input.model, "model")?;
+    let model = required(input.model.as_deref(), "model")?;
     let operation = match input.operation {
         Operation::Request => DecisionsOperation::Request { model, request },
         Operation::Response => DecisionsOperation::Response {
             model,
             request,
-            payload: required(&input.payload, "payload")?.into_bytes(),
+            payload: required(input.payload.as_deref(), "payload")?.into_bytes(),
         },
         _ => return Err(wrong_operation(input, "decisions")),
     };
@@ -227,7 +227,7 @@ fn realtime(input: &Input) -> Result<OpenAiAssistantOperation, Box<HelperError>>
         None => RealtimeCall::Connect {
             api_base: input.api_base.clone(),
             api_key: input.api_key.clone().map(SecretString::from),
-            model: required(&input.model, "model")?,
+            model: required(input.model.as_deref(), "model")?,
             query_params: input.query_params.clone(),
             beta_realtime: input.openai_beta,
             ssl_verification: verification(input.ssl_verification),

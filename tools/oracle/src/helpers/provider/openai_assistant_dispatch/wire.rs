@@ -9,8 +9,8 @@ use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::stream::{RunChunks, RunStreamTransport};
 use futures_util::stream;
-use http::HeaderMap;
 use http::header::CONTENT_TYPE;
+use http::{HeaderMap, HeaderValue};
 use serde_json::{Value, json};
 
 use super::input::Reply;
@@ -59,20 +59,11 @@ impl Wire {
                 "content-type": content_type,
                 "body": body,
             }));
-        match self
-            .replies
+        self.replies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
-        {
-            Some(reply) => reply,
-            None => Reply {
-                status: 500,
-                body: None,
-                text: None,
-                content_type: None,
-            },
-        }
+            .unwrap_or_default()
     }
 }
 
@@ -94,7 +85,7 @@ fn answer_bytes(reply: &Reply) -> Vec<u8> {
 fn answer_headers(reply: &Reply) -> HeaderMap {
     let mut headers = HeaderMap::new();
     if let Some(text) = reply.content_type.as_deref()
-        && let Ok(value) = http::HeaderValue::try_from(text)
+        && let Ok(value) = HeaderValue::try_from(text)
     {
         headers.insert(CONTENT_TYPE, value);
     }

@@ -69,6 +69,18 @@ pub(crate) struct Reply {
     pub content_type: Option<String>,
 }
 
+// A case that lists fewer replies than the composition sends gets a server error for the rest.
+impl Default for Reply {
+    fn default() -> Self {
+        Self {
+            status: 500,
+            body: None,
+            text: None,
+            content_type: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct Input {
     pub kind: Kind,

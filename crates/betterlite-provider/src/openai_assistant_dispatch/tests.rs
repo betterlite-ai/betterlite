@@ -30,6 +30,7 @@ use betterlite_openai::threads::error::ThreadsError;
 use betterlite_openai::threads::operations::ThreadReply;
 use betterlite_openai::threads::records::{MessageStatus, ThreadCreate, ThreadMessageData};
 use futures_util::StreamExt as _;
+use futures_util::stream;
 use http::HeaderMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -148,7 +149,7 @@ impl RunStreamTransport for Recorder {
     ) -> impl Future<Output = Result<RunChunks, ThreadRunsError>> + Send {
         self.record(&request);
         let body = self.stream.lock().unwrap().take().unwrap_or_default();
-        let chunks: RunChunks = Box::pin(futures_util::stream::once(async move {
+        let chunks: RunChunks = Box::pin(stream::once(async move {
             Ok::<Vec<u8>, ThreadRunsError>(body.into_bytes())
         }));
         ready(Ok(chunks))
@@ -197,14 +198,14 @@ async fn run_operation(
     logger: &mut RecordingLogger,
     operation: OpenAiAssistantOperation,
 ) -> Result<OpenAiAssistantResult, OpenAiAssistantError> {
-    let result = dispatch(
+    let answer = dispatch(
         OperationRequest::OpenAiAssistant(OpenAiAssistantRequest),
         operation,
         Arc::clone(transport),
         logger,
     )
     .await?;
-    let OperationResult::OpenAiAssistant(result) = result else {
+    let OperationResult::OpenAiAssistant(result) = answer else {
         panic!("the assistant composition returned another operation")
     };
     Ok(result)
@@ -267,8 +268,8 @@ async fn assistants_delete() {
         assistant_id: String::from("a/b c"),
         async_requested: false,
     });
-    let deleted = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Assistants(AssistantsReply::Deleted(deleted)) = deleted else {
+    let removed = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Assistants(AssistantsReply::Deleted(deleted)) = removed else {
         panic!("delete did not return a deletion")
     };
     assert!(deleted.deleted);
@@ -282,58 +283,67 @@ async fn assistants_delete() {
     assert_eq!(seen[0].beta.as_deref(), Some("assistants=v2"));
 }
 
-async fn assistants_listing() {
+async fn assistants_listing_async_facade() {
     let transport = Arc::new(Recorder::default());
-    for _ in 0..3 {
-        transport.queue(200, PAGE);
-    }
+    transport.queue(200, PAGE);
     let mut logger = RecordingLogger::default();
-    let facade = assistants_operation(AssistantsOperation::List {
+    let call = assistants_operation(AssistantsOperation::List {
         facade: AssistantsFacade::Facade {
             aget_assistants: true,
         },
         params: caller_params(),
     });
-    let page = run_operation(&transport, &mut logger, facade)
-        .await
-        .unwrap();
-    let OpenAiAssistantResult::Assistants(AssistantsReply::Page(page)) = page else {
-        panic!("the facade listing did not return a page")
+    let listed = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Assistants(AssistantsReply::Page(page)) = listed else {
+        panic!("the async facade listing did not return a page")
     };
     assert_eq!(page.data[0].id, "asst_1");
     assert_eq!(page.has_more, Some(true));
-    let sync = assistants_operation(AssistantsOperation::List {
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(
+        seen[0].url,
+        format!("{BASE}/assistants?limit=20&order=desc")
+    );
+    assert_eq!(seen[0].beta.as_deref(), Some("assistants=v2"));
+}
+
+async fn assistants_listing_sync_facade() {
+    let transport = Arc::new(Recorder::default());
+    transport.queue(200, PAGE);
+    let mut logger = RecordingLogger::default();
+    let call = assistants_operation(AssistantsOperation::List {
         facade: AssistantsFacade::Facade {
             aget_assistants: false,
         },
         params: caller_params(),
     });
-    run_operation(&transport, &mut logger, sync).await.unwrap();
-    let direct = assistants_operation(AssistantsOperation::List {
+    run_operation(&transport, &mut logger, call).await.unwrap();
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(
+        seen[0].url,
+        format!("{BASE}/assistants?after=a&before=b&limit=5&order=asc")
+    );
+    assert_eq!(seen[0].beta.as_deref(), Some("assistants=v2"));
+}
+
+async fn assistants_listing_helper() {
+    let transport = Arc::new(Recorder::default());
+    transport.queue(200, PAGE);
+    let mut logger = RecordingLogger::default();
+    let call = assistants_operation(AssistantsOperation::List {
         facade: AssistantsFacade::AsyncHelper,
         params: caller_params(),
     });
-    run_operation(&transport, &mut logger, direct)
-        .await
-        .unwrap();
+    run_operation(&transport, &mut logger, call).await.unwrap();
     let seen = transport.requests();
-    assert_eq!(seen.len(), 3);
+    assert_eq!(seen.len(), 1);
     assert_eq!(
         seen[0].url,
-        format!("{BASE}/assistants?limit=20&order=desc")
-    );
-    assert_eq!(
-        seen[1].url,
         format!("{BASE}/assistants?after=a&before=b&limit=5&order=asc")
     );
-    assert_eq!(
-        seen[2].url,
-        format!("{BASE}/assistants?after=a&before=b&limit=5&order=asc")
-    );
-    for request in &seen {
-        assert_eq!(request.beta.as_deref(), Some("assistants=v2"));
-        assert_eq!(request.authorization.as_deref(), Some("Bearer sk-fixture"));
-    }
+    assert_eq!(seen[0].authorization.as_deref(), Some("Bearer sk-fixture"));
 }
 
 async fn assistants_leaf_error() {
@@ -356,7 +366,9 @@ async fn assistants_leaf_error() {
 async fn assistants_case() {
     assistants_create().await;
     assistants_delete().await;
-    assistants_listing().await;
+    assistants_listing_async_facade().await;
+    assistants_listing_sync_facade().await;
+    assistants_listing_helper().await;
     assistants_leaf_error().await;
 }
 
@@ -855,22 +867,22 @@ async fn realtime_connection_failures() {
     let transport = Arc::new(Recorder::default());
     let mut logger = RecordingLogger::default();
     let handshake = realtime_failure(RealtimeFailureOwned::Handshake { status_code: 403 });
-    let action = run_operation(&transport, &mut logger, handshake)
+    let answered = run_operation(&transport, &mut logger, handshake)
         .await
         .unwrap();
-    let OpenAiAssistantResult::SessionFailure(action) = action else {
+    let OpenAiAssistantResult::SessionFailure(refused) = answered else {
         panic!("a handshake refusal did not return a session failure")
     };
-    assert_eq!(action, ClientAction::RefuseHandshake { status_code: 403 });
+    assert_eq!(refused, ClientAction::RefuseHandshake { status_code: 403 });
     let other = realtime_failure(RealtimeFailureOwned::Other {
         message: String::from("connection reset"),
     });
-    let action = run_operation(&transport, &mut logger, other).await.unwrap();
-    let OpenAiAssistantResult::SessionFailure(action) = action else {
+    let failed = run_operation(&transport, &mut logger, other).await.unwrap();
+    let OpenAiAssistantResult::SessionFailure(closed) = failed else {
         panic!("a connection failure did not return a session failure")
     };
     assert_eq!(
-        action,
+        closed,
         ClientAction::Close(RealtimeClose {
             code: 1011,
             reason: String::from("Internal server error: connection reset"),
@@ -885,10 +897,10 @@ async fn realtime_close_failures() {
         message: String::from("connection reset"),
         close_error: String::from("already completed"),
     });
-    let action = run_operation(&transport, &mut logger, ignored)
+    let answered = run_operation(&transport, &mut logger, ignored)
         .await
         .unwrap();
-    let OpenAiAssistantResult::SessionFailure(action) = action else {
+    let OpenAiAssistantResult::SessionFailure(action) = answered else {
         panic!("an ignored close failure did not return a session failure")
     };
     assert!(matches!(action, ClientAction::IgnoreCloseFailure { .. }));
