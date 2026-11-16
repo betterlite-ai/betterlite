@@ -1,0 +1,6 @@
+task: B7760
+deviations:
+  - what: The Terraform provider module lives at packaging/terraform-provider/ instead of LiteLLM's terraform/provider/.
+    why: betterlite keeps distribution files under packaging/; the module path, go.mod, go.sum and every file in the litellm package are byte-identical to LiteLLM's, so the upstream mirror layout still applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/go.mod
+kept_bugs: []
