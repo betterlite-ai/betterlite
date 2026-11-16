@@ -3336,6 +3336,7 @@ dependencies = [
  "betterlite-anthropic",
  "betterlite-bedrock",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-core",
  "betterlite-foundry",
  "betterlite-http",
