@@ -18,7 +18,8 @@ use betterlite_core::api::vertex_chirp::target::{
 };
 use betterlite_models::catalog::BundledCatalog;
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use inputs::{FrameInput, Function, ResponsesCall, UrlCase};
 use outputs::{
