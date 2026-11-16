@@ -16,7 +16,9 @@ call:
       - gpt-image-1
       - azure_ai/gpt-image-1
       - dall-e-2-dall-e-3-flux
+      - mai-image-dall-e-2
       - dall-e-3-flux
+      - dall-e-3-mai-image
       - mai-image-flux
       - "dall e 3"
 env: {}

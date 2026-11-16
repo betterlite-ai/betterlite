@@ -60,20 +60,20 @@ pub fn flux2_image_generation_url(
     api_version: Option<&str>,
 ) -> Result<String, FoundryImageError> {
     let base = api_base.ok_or(FoundryImageError::ApiBaseRequired)?;
-    let base = base.trim_end_matches('/');
+    let trimmed_base = base.trim_end_matches('/');
     let version = api_version
         .filter(|candidate| !candidate.is_empty())
         .unwrap_or(DEFAULT_API_VERSION);
-    if base.contains("/providers/") {
-        return Ok(if base.contains('?') {
-            base.to_owned()
+    if trimmed_base.contains("/providers/") {
+        return Ok(if trimmed_base.contains('?') {
+            trimmed_base.to_owned()
         } else {
-            format!("{base}?api-version={version}")
+            format!("{trimmed_base}?api-version={version}")
         });
     }
     let path = flux2_provider_model_path(model);
     Ok(format!(
-        "{base}/providers/blackforestlabs/v1/{path}?api-version={version}"
+        "{trimmed_base}/providers/blackforestlabs/v1/{path}?api-version={version}"
     ))
 }
 

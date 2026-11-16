@@ -43,9 +43,27 @@ fn inherited_names() {
 }
 
 fn priority_order() {
+    dalle2_first();
+    dalle3_second();
+    mai_third();
+    leftover_names();
+}
+
+fn dalle2_first() {
     assert_selected("dall-e-2-dall-e-3-flux", FoundryImageConfig::DallE2);
+    assert_selected("mai-image-dall-e-2", FoundryImageConfig::DallE2);
+}
+
+fn dalle3_second() {
     assert_selected("dall-e-3-flux", FoundryImageConfig::DallE3);
+    assert_selected("dall-e-3-mai-image", FoundryImageConfig::DallE3);
+}
+
+fn mai_third() {
     assert_selected("mai-image-flux", FoundryImageConfig::Mai);
+}
+
+fn leftover_names() {
     assert_selected("_", FoundryImageConfig::DallE2);
     assert_selected("DallE2x", FoundryImageConfig::DallE2);
 }
