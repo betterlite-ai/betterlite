@@ -30,13 +30,11 @@ pub(super) fn parts(response: &GuardrailValue) -> Result<Vec<String>, PurviewDlp
     let GuardrailValue::Object(fields) = response else {
         return Ok(Vec::new());
     };
+    let object = conversion::object(fields);
     match fields.get("object") {
-        Some(GuardrailValue::Text(kind)) if kind.as_str() == TEXT_COMPLETION_OBJECT => {
-            let object = conversion::object(fields);
-            Ok(completion_response_text_parts(
-                &CompletionResponse::TextCompletion(&object),
-            ))
-        }
+        Some(GuardrailValue::Text(kind)) if kind.as_str() == TEXT_COMPLETION_OBJECT => Ok(
+            completion_response_text_parts(&CompletionResponse::TextCompletion(&object)),
+        ),
         _ if responses_body(fields) => {
             let parsed: ResponsesApiResponse = serde_json::to_string(response)
                 .and_then(|encoded| serde_json::from_str(&encoded))
@@ -45,11 +43,8 @@ pub(super) fn parts(response: &GuardrailValue) -> Result<Vec<String>, PurviewDlp
                 &CompletionResponse::Responses(&parsed),
             ))
         }
-        _ => {
-            let object = conversion::object(fields);
-            Ok(completion_response_text_parts(&CompletionResponse::Model(
-                &object,
-            )))
-        }
+        _ => Ok(completion_response_text_parts(&CompletionResponse::Model(
+            &object,
+        ))),
     }
 }
