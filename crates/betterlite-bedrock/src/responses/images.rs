@@ -39,7 +39,10 @@ pub fn collect_remote_image_urls(input: &ResponsesInput) -> Vec<String> {
             continue;
         };
         for key in IMAGE_BLOCK_KEYS {
-            let blocks = fields.get(key).map_or(&[][..], blocks_under);
+            let Some(value) = fields.get(key) else {
+                continue;
+            };
+            let blocks = blocks_under(value);
             urls.extend(
                 blocks
                     .iter()
