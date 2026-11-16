@@ -60,7 +60,7 @@ fn an_unbilled_call_still_records_the_cost_and_the_time_to_first_token() {
         "api_call_start_time": 10.5,
         "completion_start_time": 11.0
     }"#;
-    let response = r#"{"usage": {"prompt_tokens": 2, "completion_tokens": 4}, "background": true}"#;
+    let response = r#"{"usage": {"prompt_tokens": 2, "completion_tokens": 4}}"#;
     let recorded = record(extra, Some(response));
     assert!(sums(&recorded, TOKENS).is_empty());
     assert!(sums(&recorded, TPOT).is_empty());

@@ -35,7 +35,7 @@ fn an_empty_call_records_the_operation_duration_alone() {
 #[test]
 fn a_call_without_a_response_records_the_duration_and_the_cost() {
     let recorded = record(r#"{"response_cost": 0.25}"#, None);
-    assert_eq!(names(&recorded), [COST, DURATION]);
+    assert_eq!(names(&recorded), [DURATION, COST]);
     assert_eq!(sums(&recorded, COST), ["0.25"]);
 }
 
