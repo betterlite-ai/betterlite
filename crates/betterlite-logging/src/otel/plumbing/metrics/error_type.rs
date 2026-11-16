@@ -8,12 +8,12 @@ pub const ERROR_TYPE_FALLBACK: &str = "_OTHER";
 
 // kwargs carries the exception as an object with class_name, the shape betterlite's exception facts serialize to
 pub fn resolve_error_type(kwargs: &MetadataMap) -> Result<String, LegacyMetricsError> {
-    let information = kwargs
+    let error_information = kwargs
         .get("standard_logging_object")
         .and_then(OtelModelValue::as_object)
         .and_then(|payload| payload.get("error_information"))
         .and_then(OtelModelValue::as_object);
-    if let Some(information) = information {
+    if let Some(information) = error_information {
         for field in ["error_class", "error_code"] {
             let Some(value) = information.get(field) else {
                 continue;
@@ -36,8 +36,7 @@ pub fn resolve_error_type(kwargs: &MetadataMap) -> Result<String, LegacyMetricsE
 }
 
 fn text(value: &OtelModelValue) -> Result<String, LegacyMetricsError> {
-    match value.as_str() {
-        Some(text) => Ok(text.to_owned()),
-        None => dump(value),
-    }
+    value
+        .as_str()
+        .map_or_else(|| dump(value), |name| Ok(name.to_owned()))
 }
