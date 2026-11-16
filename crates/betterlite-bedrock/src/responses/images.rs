@@ -71,28 +71,30 @@ fn inline_block(block: &Json, inlined: &BTreeMap<String, String>) -> Result<Json
     Ok(replaced)
 }
 
+fn inline_field(
+    key: &str,
+    value: &Json,
+    inlined: &BTreeMap<String, String>,
+) -> Result<Json, ResponsesError> {
+    if !IMAGE_BLOCK_KEYS.contains(&key) {
+        return Ok(value.clone());
+    }
+    match value {
+        Json::List(blocks) => blocks
+            .iter()
+            .map(|block| inline_block(block, inlined))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Json::List),
+        Json::Object(_) => inline_block(value, inlined),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => Ok(value.clone()),
+    }
+}
+
 fn inline_item(item: &Json, inlined: &BTreeMap<String, String>) -> Result<Json, ResponsesError> {
     match item {
         Json::Object(fields) => fields
             .iter()
-            .map(|(key, value)| {
-                let image_key = IMAGE_BLOCK_KEYS.contains(&key.as_str());
-                let inlined_value = match value {
-                    Json::List(blocks) if image_key => blocks
-                        .iter()
-                        .map(|block| inline_block(block, inlined))
-                        .collect::<Result<Vec<_>, _>>()
-                        .map(Json::List)?,
-                    Json::Object(_) if image_key => inline_block(value, inlined)?,
-                    Json::Null
-                    | Json::Bool(_)
-                    | Json::Number(_)
-                    | Json::Text(_)
-                    | Json::List(_)
-                    | Json::Object(_) => value.clone(),
-                };
-                Ok((key.clone(), inlined_value))
-            })
+            .map(|(key, value)| Ok((key.clone(), inline_field(key, value, inlined)?)))
             .collect::<Result<_, _>>()
             .map(Json::Object),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
@@ -101,7 +103,6 @@ fn inline_item(item: &Json, inlined: &BTreeMap<String, String>) -> Result<Json, 
     }
 }
 
-// A missing mapping entry is an error, never a fresh download
 pub fn inline_remote_image_urls(
     input: &ResponsesInput,
     inlined: &BTreeMap<String, String>,
