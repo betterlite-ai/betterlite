@@ -1,0 +1,12 @@
+kind: helper
+name: provider-config-azure
+call:
+  b3361:
+    function: provider_config
+    custom_llm_provider: "azure"
+calls:
+  - b3361:
+      function: provider_config
+      custom_llm_provider: "azure_text"
+env: {}
+compare: {ignore: []}
