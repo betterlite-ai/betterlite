@@ -167,12 +167,12 @@ checks:
     why: A lock held by another session no longer answers Contention, or the test still calls deploy_lock_held.
     run: >-
       test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-db/src/migration_recovery/tests/postgres.rs)"
-      && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_recovery::tests::postgres_lock_contention_is_typed$/)'
+      && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_recovery::tests::postgres::postgres_lock_contention_is_typed$/)'
   - id: recovery-timeout-tests
     why: A deadline after the lock is acquired is still classified from pg_locks and can answer Contention.
     run: >-
       test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-db/src/migration_recovery/tests/postgres.rs)"
-      && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_recovery::tests::postgres_slow_statement_is_a_deploy_timeout$/)'
+      && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_recovery::tests::postgres::postgres_slow_statement_is_a_deploy_timeout$/)'
   - id: recovery-tests
     why: The classification split broke the wider recovery suite.
     run: >-
