@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use serde_with::rust::double_option;
 
-use super::messages_stream_logging::outcome::StreamLoggingRun;
+use super::messages_stream_logging::outcome::{Flag, StreamLoggingRun};
 use super::messages_stream_logging::relay::call::StepOutcome;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -17,6 +17,7 @@ pub enum SdkResult {
     MessagesHeaderStream { value: HeaderStreamRun },
     MessagesStreamLogging { value: StreamLoggingRun },
     MessagesNativeStream { value: Vec<StepOutcome> },
+    MessagesSyncStream { value: SyncRun },
     ResponsesAgenticContinuation { value: AgenticContinuationRun },
     FileAzureStorage { value: FileStorageRun },
     Failure(Failure),
@@ -57,6 +58,56 @@ pub struct AgenticIdentity {
 pub struct AgenticFailure {
     pub class: String,
     pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncRun {
+    pub runs: Vec<SyncRunOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncRunOutcome {
+    pub steps: Vec<SyncStepOutcome>,
+}
+
+// One driver call: what it handed back, whether the iteration ended, and the state it left
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncStepOutcome {
+    pub events: Vec<Value>,
+    pub end: bool,
+    pub state: SyncState,
+    pub diagnostics: Vec<SyncDiagnostic>,
+}
+
+// LiteLLM's public stream attributes, so a seeded branch is observed the same way on both sides
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncState {
+    pub pulls: usize,
+    pub index: i64,
+    pub block_type: String,
+    pub sent_first_chunk: Flag,
+    pub sent_content_block_start: Flag,
+    pub sent_content_block_finish: Flag,
+    pub sent_last_message: Flag,
+    pub queued_usage_chunk: Flag,
+    pub queued: usize,
+    pub holding_chunk: Flag,
+    pub holding_stop_reason: Flag,
+    pub sent_compaction_block: Flag,
+    pub sent_compaction_block_start: Flag,
+    pub sent_compaction_block_delta: Flag,
+}
+
+// The swallowed failure's level and message prefix, since the exception text differs by runtime
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncDiagnostic {
+    pub level: String,
+    pub prefix: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

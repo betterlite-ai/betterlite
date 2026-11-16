@@ -2,8 +2,12 @@ use std::collections::BTreeMap;
 use std::str;
 use std::time::Duration;
 
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use betterlite_core::api::messages_context_clear::result::{
+    AppliedEdit, CompactionBlock, UsageIteration,
+};
 use betterlite_models::decisions::Json;
 use betterlite_provider::api::vector_store_contracts::config::Params;
 
@@ -24,6 +28,7 @@ pub mod error;
 pub mod file_azure_storage;
 pub(crate) mod messages_header_stream;
 pub mod messages_stream_logging;
+pub(crate) mod messages_sync_stream;
 pub(crate) mod native;
 pub(crate) mod python;
 pub mod responses_agentic_continuation;
@@ -75,8 +80,54 @@ pub enum SdkHttpCall {
     MessagesHeaderStream(MessagesHeaderStreamCall),
     MessagesStreamLogging(MessagesStreamLoggingCall),
     MessagesNativeStream(MessagesNativeStreamCall),
+    MessagesSyncStream(Box<MessagesSyncStreamCall>),
     ResponsesAgenticContinuation(Box<AgenticContinuationCall>),
     FileAzureStorage(FileAzureStorageCall),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MessagesSyncStreamCall {
+    pub(crate) model: String,
+    pub(crate) messages: Vec<ChatMessage>,
+    pub(crate) api_key: String,
+    pub(crate) timeout_seconds: u64,
+    #[serde(default)]
+    pub(crate) tool_name_mapping: IndexMap<String, String>,
+    #[serde(default)]
+    pub(crate) applied_edits: Vec<AppliedEdit>,
+    #[serde(default)]
+    pub(crate) compaction_block: Option<CompactionBlock>,
+    #[serde(default)]
+    pub(crate) iterations_usage: Option<Vec<UsageIteration>>,
+    pub(crate) runs: Vec<SyncRunSpec>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncRunSpec {
+    #[serde(default)]
+    pub(crate) initial: SyncInitial,
+    pub(crate) steps: Vec<SyncStep>,
+}
+
+// The held buffers are dormant in this version, so a case seeds them to reach their branches
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncInitial {
+    #[serde(default)]
+    pub(crate) holding_chunk: Option<Json>,
+    #[serde(default)]
+    pub(crate) holding_stop_reason_chunk: Option<Json>,
+    #[serde(default)]
+    pub(crate) queued_usage_chunk: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncStep {
+    Next,
+    Drain,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -251,6 +302,30 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
                 return Err(SdkHttpError::Invalid(
                     "the relay queue maxsize must be greater than 0".to_owned(),
                 ));
+            }
+        }
+        SdkHttpCall::MessagesSyncStream(stream) => {
+            if stream.timeout_seconds == 0
+                || stream.timeout_seconds > limits.max_execution.as_secs()
+            {
+                return Err(SdkHttpError::Invalid(
+                    "timeout_seconds must be between 1 and the execution limit".to_owned(),
+                ));
+            }
+            for run in &stream.runs {
+                for seed in [
+                    &run.initial.holding_chunk,
+                    &run.initial.holding_stop_reason_chunk,
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    if !matches!(seed, Json::Object(_)) {
+                        return Err(SdkHttpError::Invalid(
+                            "the initial held chunks must be objects".to_owned(),
+                        ));
+                    }
+                }
             }
         }
         SdkHttpCall::ResponsesAgenticContinuation(_)
