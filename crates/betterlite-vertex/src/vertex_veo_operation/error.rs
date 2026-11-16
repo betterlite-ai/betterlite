@@ -17,14 +17,8 @@ pub enum VeoOperationError {
         "Invalid operation name format: {operation}. Expected format: projects/PROJECT/locations/LOCATION/publishers/google/models/MODEL/operations/OPERATION_ID"
     )]
     InvalidOperation { operation: String },
-    #[error("the operation metadata is not an object")]
-    MetadataShape,
     #[error("the request parameters are not an object")]
     ParametersShape,
-    #[error("the operation response is not an object")]
-    ResponseShape,
-    #[error("the operation error is not an object")]
-    ErrorShape,
     #[error("No video data found in completed operation")]
     NoVideos,
     #[error(

@@ -8,28 +8,6 @@ deviations:
       decoder's cap; an operation body that large is not a Veo result any working setup relies on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L69-L71
   - what: >-
-      An operation whose name is not a string, whose done is not a boolean, or whose metadata or error is a
-      non-null value that is not an object fails with a typed error naming the field, while a null name, done,
-      metadata or error takes the field's default. LiteLLM reads name, done and error by truthiness and indexes
-      metadata as a mapping, so a wrong-typed value either crashes the request with an AttributeError or a
-      validation error, or lets a truthy non-boolean done complete the operation.
-    why: >-
-      The operation's declared shape is an object with a string name, a boolean done, an object metadata and an
-      object error; betterlite names the mismatch instead of crashing or completing on a value only Python
-      accepts, and no working setup receives one.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L522-L560
-  - what: >-
-      Content extraction reports No video data found in completed operation for an absent or null response or
-      videos, and refuses a response that is not an object, a videos that is not a list, a first video that is not
-      an object, and a bytesBase64Encoded that is not a nonempty string, each with a typed error naming the value.
-      LiteLLM duck-types the same reply and raises an uncaught AttributeError or TypeError.
-    why: >-
-      The content reply's declared shape is an object holding a videos list of objects with a string
-      bytesBase64Encoded, so these replies are malformed; betterlite names the failed value and no working setup
-      receives one. A base64 field that is not valid base64 keeps LiteLLM's ValueError class through
-      decode_stream_audio_fragment, so only the shape refusals are listed here.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L594-L620
-  - what: >-
       The usage builder keeps a duration that is a number or a decimal string and a resolution that is a string or
       a number, and omits either one for a boolean or a container, where LiteLLM runs them through float() and
       str() and reports 1.0 for a true duration or Python's text for a true resolution. A parameters block that is

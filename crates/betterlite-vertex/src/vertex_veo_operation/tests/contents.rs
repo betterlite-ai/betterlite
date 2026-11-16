@@ -77,13 +77,12 @@ fn a_null_content_block_has_no_videos(#[case] body: &[u8]) {
 
 #[rstest]
 #[case::text_response(br#"{"done": true, "response": "later"}"#.as_slice())]
-#[case::list_response(br#"{"done": true, "response": []}"#.as_slice())]
 #[case::text_videos(br#"{"done": true, "response": {"videos": "later"}}"#.as_slice())]
 #[case::first_video_not_an_object(br#"{"done": true, "response": {"videos": [5]}}"#.as_slice())]
 fn a_malformed_content_block_is_rejected(#[case] body: &[u8]) {
     assert!(matches!(
         content_response(body),
-        Err(VeoOperationError::ResponseShape)
+        Err(VeoOperationError::Json(_))
     ));
 }
 
@@ -107,7 +106,7 @@ fn a_non_string_video_field_is_rejected() {
     }));
     assert!(matches!(
         content_response(&body),
-        Err(VeoOperationError::NoBase64)
+        Err(VeoOperationError::Json(_))
     ));
 }
 

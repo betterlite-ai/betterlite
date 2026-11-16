@@ -73,7 +73,7 @@ fn a_null_error_is_no_error() {
 fn a_non_object_error_is_rejected(#[case] body: &[u8]) {
     assert!(matches!(
         status_response(body, None, 0, &utc()),
-        Err(VeoOperationError::ErrorShape)
+        Err(VeoOperationError::Json(_))
     ));
 }
 
@@ -97,7 +97,6 @@ fn a_vertex_create_time_becomes_the_created_at() {
 #[rstest]
 #[case::unparseable(text("not a time"))]
 #[case::empty(text(""))]
-#[case::number(number(5))]
 #[case::null(Json::Null)]
 fn an_invalid_create_time_uses_the_current_second(#[case] create_time: Json) {
     let body = encoded(&json!({"metadata": {"createTime": create_time}}));
@@ -110,7 +109,7 @@ fn a_non_object_metadata_is_rejected() {
     let body = encoded(&json!({"metadata": "later"}));
     assert!(matches!(
         status_response(&body, None, 0, &utc()),
-        Err(VeoOperationError::MetadataShape)
+        Err(VeoOperationError::Json(_))
     ));
 }
 

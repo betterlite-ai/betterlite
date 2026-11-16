@@ -1,6 +1,7 @@
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde_json::{Map, Value};
 use serde_with::{DefaultOnNull, serde_as};
 
 use super::error::VeoOperationError;
@@ -17,11 +18,39 @@ pub struct VertexVeoOperation {
     #[serde_as(as = "DefaultOnNull")]
     pub done: bool,
     #[serde(default)]
-    pub metadata: Option<Json>,
+    #[serde_as(as = "DefaultOnNull")]
+    pub metadata: VeoOperationMetadata,
     #[serde(default)]
-    pub response: Option<Json>,
+    #[serde_as(as = "DefaultOnNull")]
+    pub response: VeoOperationResponse,
+    // the provider's error dict, which LiteLLM copies unchanged into VideoObject.error (a Dict[str, Any])
     #[serde(default)]
-    pub error: Option<Json>,
+    pub error: Option<Map<String, Value>>,
+}
+
+// _VeoOperationMetadata
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct VeoOperationMetadata {
+    #[serde(default, rename = "createTime")]
+    pub create_time: Option<String>,
+}
+
+// _VeoOperationResponse
+#[serde_as]
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct VeoOperationResponse {
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
+    pub videos: Vec<VeoVideo>,
+}
+
+// _VeoVideo: gcsUri and mimeType are never read, so a gcsUri alone is not downloaded
+#[serde_as]
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct VeoVideo {
+    #[serde(default, rename = "bytesBase64Encoded")]
+    #[serde_as(as = "DefaultOnNull")]
+    pub bytes_base64_encoded: String,
 }
 
 pub fn decode_vertex_veo_operation(bytes: &[u8]) -> Result<VertexVeoOperation, VeoOperationError> {
@@ -34,7 +63,7 @@ pub fn decode_vertex_veo_operation(bytes: &[u8]) -> Result<VertexVeoOperation, V
     serde_json::from_slice(bytes).map_err(VeoOperationError::Json)
 }
 
-// the usage and error dicts LiteLLM passes through unchanged, read back into the typed wire field
+// the usage dict LiteLLM builds as plain JSON, read back into the typed VideoObject field
 pub(crate) fn decoded_json<T>(value: Object) -> Result<T, VeoOperationError>
 where
     T: DeserializeOwned,
