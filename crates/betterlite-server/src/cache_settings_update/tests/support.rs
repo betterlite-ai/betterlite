@@ -535,48 +535,51 @@ pub(crate) fn request_body(settings: JsonValue) -> String {
     serde_json::to_string(&body).expect("the request encodes")
 }
 
-pub(crate) async fn post(
-    harness: &Harness,
+// The request future exceeds clippy's large-futures ceiling, so it is boxed here and callers await a pointer.
+pub(crate) fn post<'a>(
+    harness: &'a Harness,
     auth: Option<AuthContext>,
-    body: &str,
-) -> (StatusCode, String) {
-    post_with_header(harness, auth, body, None).await
+    body: &'a str,
+) -> Pin<Box<dyn Future<Output = (StatusCode, String)> + Send + 'a>> {
+    post_with_header(harness, auth, body, None)
 }
 
-pub(crate) async fn post_with_header(
-    harness: &Harness,
+pub(crate) fn post_with_header<'a>(
+    harness: &'a Harness,
     auth: Option<AuthContext>,
-    body: &str,
-    changed_by: Option<&[u8]>,
-) -> (StatusCode, String) {
-    let application = router(harness.state.clone());
-    let mut builder = Request::builder()
-        .method("POST")
-        .uri("/cache/settings")
-        .header(header::CONTENT_TYPE, "application/json");
-    if let Some(value) = changed_by {
-        builder = builder.header(
-            CHANGED_BY,
-            HeaderValue::from_bytes(value).expect("the test header builds"),
-        );
-    }
-    let mut request = builder
-        .body(Body::from(body.to_owned()))
-        .expect("the test request builds");
-    if let Some(context) = auth {
-        request.extensions_mut().insert(context);
-    }
-    let response = Box::pin(application.oneshot(request))
-        .await
-        .expect("the router answers");
-    let status = response.status();
-    let bytes = to_bytes(response.into_body(), usize::MAX)
-        .await
-        .expect("the body reads");
-    (
-        status,
-        String::from_utf8(bytes.to_vec()).expect("the body is utf-8"),
-    )
+    body: &'a str,
+    changed_by: Option<&'a [u8]>,
+) -> Pin<Box<dyn Future<Output = (StatusCode, String)> + Send + 'a>> {
+    Box::pin(async move {
+        let application = router(harness.state.clone());
+        let mut builder = Request::builder()
+            .method("POST")
+            .uri("/cache/settings")
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(value) = changed_by {
+            builder = builder.header(
+                CHANGED_BY,
+                HeaderValue::from_bytes(value).expect("the test header builds"),
+            );
+        }
+        let mut request = builder
+            .body(Body::from(body.to_owned()))
+            .expect("the test request builds");
+        if let Some(context) = auth {
+            request.extensions_mut().insert(context);
+        }
+        let response = Box::pin(application.oneshot(request))
+            .await
+            .expect("the router answers");
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("the body reads");
+        (
+            status,
+            String::from_utf8(bytes.to_vec()).expect("the body is utf-8"),
+        )
+    })
 }
 
 #[derive(Clone, Default)]
