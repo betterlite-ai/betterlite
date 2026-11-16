@@ -15,7 +15,10 @@ use super::call::{
 };
 use super::error::OpenAiMediaError;
 use super::parts::media_part;
-use super::{MediaMethod, MediaPayload, OpenAiMediaPrepared, VideoOutcome, VideoReplyKind};
+use super::{
+    MediaMethod, MediaPayload, OpenAiMediaPrepared, VideoOutcome, VideoReplyKind,
+    empty_body_request,
+};
 
 // Every video handler completes the base URL first, then hands it to the leaf's own request transform.
 pub(super) fn video(operation: VideoOperation) -> Result<VideoOutcome, OpenAiMediaError> {
@@ -90,14 +93,7 @@ fn list(
     );
     let list = list_response(&reply, provider)?;
     Ok(VideoOutcome {
-        request: OpenAiMediaPrepared {
-            method: MediaMethod::Get,
-            url,
-            query,
-            body: MediaPayload::Empty,
-            parts: Vec::new(),
-            multipart: false,
-        },
+        request: empty_body_request(MediaMethod::Get, url, query),
         reply: VideoReplyKind::List(Box::new(list)),
     })
 }
@@ -111,14 +107,7 @@ fn status(
     let url = path_url(&video_id, base, "")?;
     let video = status_response(&reply, provider)?;
     Ok(VideoOutcome {
-        request: OpenAiMediaPrepared {
-            method: MediaMethod::Get,
-            url,
-            query: VideoOptions::new(),
-            body: MediaPayload::Empty,
-            parts: Vec::new(),
-            multipart: false,
-        },
+        request: empty_body_request(MediaMethod::Get, url, VideoOptions::new()),
         reply: VideoReplyKind::Video(Box::new(video)),
     })
 }
@@ -128,14 +117,7 @@ fn delete(base: &str, call: VideoDeleteCall) -> Result<VideoOutcome, OpenAiMedia
     let url = path_url(&video_id, base, "")?;
     let video = decode_video(&reply)?;
     Ok(VideoOutcome {
-        request: OpenAiMediaPrepared {
-            method: MediaMethod::Delete,
-            url,
-            query: VideoOptions::new(),
-            body: MediaPayload::Empty,
-            parts: Vec::new(),
-            multipart: false,
-        },
+        request: empty_body_request(MediaMethod::Delete, url, VideoOptions::new()),
         reply: VideoReplyKind::Video(Box::new(video)),
     })
 }
@@ -148,14 +130,7 @@ fn content(base: &str, call: VideoContentCall) -> Result<VideoOutcome, OpenAiMed
     } = call;
     let (url, query) = content_request(&video_id, base, variant.as_deref())?;
     Ok(VideoOutcome {
-        request: OpenAiMediaPrepared {
-            method: MediaMethod::Get,
-            url,
-            query,
-            body: MediaPayload::Empty,
-            parts: Vec::new(),
-            multipart: false,
-        },
+        request: empty_body_request(MediaMethod::Get, url, query),
         reply: VideoReplyKind::Bytes(reply),
     })
 }

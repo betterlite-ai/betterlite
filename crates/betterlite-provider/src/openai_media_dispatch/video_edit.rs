@@ -30,7 +30,7 @@ use super::error::OpenAiMediaError;
 use super::parts::media_part;
 use super::{
     MediaMethod, MediaPart, MediaPartBody, MediaPayload, OpenAiMediaPrepared, VideoEditOutcome,
-    VideoEditReplyKind,
+    VideoEditReplyKind, empty_body_request,
 };
 
 pub(super) fn video_edit(
@@ -150,14 +150,7 @@ fn get_character(
     let url = character_get_request(&character_id, base)?;
     let character = decode_character_reply(&reply)?;
     Ok(VideoEditOutcome {
-        request: OpenAiMediaPrepared {
-            method: MediaMethod::Get,
-            url,
-            query: VideoOptions::new(),
-            body: MediaPayload::Empty,
-            parts: Vec::new(),
-            multipart: false,
-        },
+        request: empty_body_request(MediaMethod::Get, url, VideoOptions::new()),
         reply: VideoEditReplyKind::Character(Box::new(character)),
     })
 }
