@@ -50,7 +50,7 @@ fn request(model: &str, input: EmbeddingInput, optional_params: &str) -> VertexE
         api_base: Some("https://vertex.example".to_owned()),
         extra_headers: BTreeMap::from([("x-goog-request-params".to_owned(), "a=b".to_owned())]),
         timeout: Some(Duration::from_secs(42)),
-        aembedding: false,
+        aembedding: true,
     }
 }
 
@@ -99,6 +99,7 @@ fn assert_text_arguments() {
         )))
     );
     assert_eq!(text.optional_params, Json::Object(Extra::new()));
+    assert!(text.aembedding);
 }
 
 fn assert_embed_content_arguments() {
@@ -126,6 +127,7 @@ fn assert_embed_content_arguments() {
         Some("a=b")
     );
     assert!(media.optional_params.contains_key("image"));
+    assert!(media.aembedding);
 }
 
 fn assert_multimodal_arguments() {
@@ -141,6 +143,24 @@ fn assert_multimodal_arguments() {
     assert_eq!(multimodal.input, Json::Text("hello".to_owned()));
     assert!(multimodal.litellm_params.is_some());
     assert_eq!(multimodal.optional_params.get("image"), Some(&Json::Null));
+    assert!(multimodal.aembedding);
+
+    let texts = prepared(
+        TEXT_MODEL,
+        EmbeddingInput::Texts(vec!["one".to_owned(), "two".to_owned()]),
+        r#"{"image": "gs://bucket/cat.png"}"#,
+        &ModelCatalog::default(),
+    );
+    let VertexEmbeddingPrepared::Multimodal(texts) = texts else {
+        panic!("a text list with a media key selects multimodal prediction");
+    };
+    assert_eq!(
+        texts.input,
+        Json::List(vec![
+            Json::Text("one".to_owned()),
+            Json::Text("two".to_owned()),
+        ])
+    );
 }
 
 #[test]
@@ -152,15 +172,18 @@ fn branch_specific_arguments() {
 
 #[derive(Default)]
 struct Recorder {
-    called: Mutex<Vec<&'static str>>,
+    called: Mutex<Vec<(&'static str, String)>>,
 }
 
 impl Recorder {
-    fn record(&self, arm: &'static str) {
-        self.called.lock().expect("the call log").push(arm);
+    fn record(&self, arm: &'static str, model: &str) {
+        self.called
+            .lock()
+            .expect("the call log")
+            .push((arm, model.to_owned()));
     }
 
-    fn calls(&self) -> Vec<&'static str> {
+    fn calls(&self) -> Vec<(&'static str, String)> {
         let calls = self.called.lock().expect("the call log");
         calls.clone()
     }
@@ -208,32 +231,32 @@ fn answer() -> MultimodalEmbeddingAnswer {
 impl VertexEmbeddingHandlers for Recorder {
     fn embed_content<'call>(
         &'call self,
-        _call: &'call EmbedContentArguments,
+        call: &'call EmbedContentArguments,
     ) -> impl Future<Output = Result<EmbeddingReply, GeminiEmbeddingCallError>> + Send + 'call {
         async move {
-            self.record("embed_content");
+            self.record("embed_content", &call.model);
             Ok(reply())
         }
     }
 
     fn multimodal<'call>(
         &'call self,
-        _call: &'call MultimodalArguments,
+        call: &'call MultimodalArguments,
     ) -> impl Future<Output = Result<MultimodalEmbeddingAnswer, VertexEmbeddingCallError>> + Send + 'call
     {
         async move {
-            self.record("multimodal");
+            self.record("multimodal", &call.model);
             Ok(answer())
         }
     }
 
     fn text<'call>(
         &'call self,
-        _call: &'call TextArguments,
+        call: &'call TextArguments,
     ) -> impl Future<Output = Result<EmbeddingResponse, VertexEmbeddingCallError>> + Send + 'call
     {
         async move {
-            self.record("text");
+            self.record("text", &call.model);
             Ok(response())
         }
     }
@@ -269,7 +292,15 @@ async fn runs_each_arm_through_its_handler() {
     assert!(matches!(results[0], VertexEmbeddingResult::EmbedContent(_)));
     assert!(matches!(results[1], VertexEmbeddingResult::Multimodal(_)));
     assert!(matches!(results[2], VertexEmbeddingResult::Text(_)));
-    assert_eq!(recorder.calls(), ["embed_content", "multimodal", "text"]);
+    // each handler receives the prepared call of its own arm
+    assert_eq!(
+        recorder.calls(),
+        [
+            ("embed_content", EMBED_CONTENT_MODEL.to_owned()),
+            ("multimodal", TEXT_MODEL.to_owned()),
+            ("text", TEXT_MODEL.to_owned()),
+        ]
+    );
 }
 
 #[test]
