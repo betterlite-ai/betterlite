@@ -14,6 +14,12 @@ call:
           body: '{"id":"t","status":"SUCCEEDED","failureCode":""}'
         - provider: null
           request_data: {}
+          body: '{"id":"t","failure":"boom"}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","status":"RUNNING","progress":0.5}'
+        - provider: null
+          request_data: {}
           body: '{"id":"t","status":"failed","failure":"boom","failureCode":"E1"}'
         - provider: null
           request_data: {}
@@ -42,6 +48,9 @@ call:
         - provider: runwayml
           request_data: {}
           body: '{"id":"task_1","status":"PENDING"}'
+        - provider: runwayml
+          request_data: {}
+          body: '{"status":"PENDING"}'
         - provider: ''
           request_data: {}
           body: '{"id":"task_1","status":"PENDING"}'

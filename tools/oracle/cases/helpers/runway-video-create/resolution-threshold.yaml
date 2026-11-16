@@ -37,6 +37,9 @@ call:
           request_data: {ratio: ':720'}
           body: '{"id":"t"}'
         - provider: null
+          request_data: {ratio: '1280:'}
+          body: '{"id":"t"}'
+        - provider: null
           request_data: {ratio: 1280}
           body: '{"id":"t"}'
         - provider: null
