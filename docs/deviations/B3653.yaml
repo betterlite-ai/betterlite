@@ -42,4 +42,11 @@ deviations:
     why: the cost leaves here return Result instead of raising, so the handler catches DurationCostError and keeps
       the spend row the way the source's except clause does.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/deepgram_listen_passthrough_logging_handler.py#L25-L35
+  - what: >-
+      An upstream listen URL that does not parse is a typed target error here, where LiteLLM reads every query
+      parameter out of any string and logs the session under the default model with a null cost.
+    why: the listen metadata helpers here need a parsed target before they can name the requested model or the
+      declared channels, so the handler reports the target it cannot read instead of guessing a model; the proxy
+      only hands the handler a URL it routed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/common_utils.py#L64-L66
 kept_bugs: []
