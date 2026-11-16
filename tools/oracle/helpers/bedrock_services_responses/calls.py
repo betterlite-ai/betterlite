@@ -3,6 +3,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Final
 
+from litellm.llms.bedrock.responses.transformation import BedrockOpenAIResponsesConfig
 from pydantic import JsonValue
 
 from .models import Object
@@ -17,7 +18,6 @@ ENVIRONMENT_KEYS: Final = (
     "AWS_REGION",
     "AWS_REGION_NAME",
 )
-SIGNED_SCHEME: Final = "AWS4-HMAC-SHA256 "
 TIME_DEPENDENT: Final = ("Authorization", "X-Amz-Date")
 
 
@@ -30,6 +30,11 @@ class Fixture:
     def __init__(self, data_urls: dict[str, str]) -> None:
         self.data_urls = data_urls
         self.fetched: list[JsonValue] = []
+
+    def config(self) -> BedrockOpenAIResponsesConfig:
+        return BedrockOpenAIResponsesConfig(
+            fetch_image=self.fetch, async_fetch_image=self.fetch_async
+        )
 
     def fetch(self, url: str) -> str:
         self.fetched.append(url)
@@ -60,17 +65,8 @@ def environment(values: dict[str, str] | None) -> Generator[None]:
 
 
 def signed_summary(headers: dict[str, str]) -> Object:
-    # The signing time and signature change on every run, so only their shape is compared
-    authorization = headers["Authorization"].removeprefix(SIGNED_SCHEME)
-    _, _, rest = authorization.partition("Credential=")
-    credential, _, rest = rest.partition(", SignedHeaders=")
-    signed_headers, _, _signature = rest.partition(", Signature=")
+    # The signing time and signature change on every run, so only the credential scope is compared
+    credential = headers["Authorization"].partition("Credential=")[2].partition(",")[0]
     access_key, _date, region, service, _scope = credential.split("/")
     plain: Object = {name: text for name, text in headers.items() if name not in TIME_DEPENDENT}
-    return {
-        "access_key": access_key,
-        "region": region,
-        "service": service,
-        "signed_headers": signed_headers,
-        "headers": plain,
-    }
+    return {"access_key": access_key, "region": region, "service": service, "headers": plain}

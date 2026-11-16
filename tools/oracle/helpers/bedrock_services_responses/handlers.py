@@ -132,19 +132,10 @@ def fetch_cases(_calls: Calls, payload: JsonValue) -> JsonValue:
     results: list[JsonValue] = []
     for case in TypeAdapter(list[FetchCase]).validate_python(payload):
         sync_fixture = Fixture(case["data_urls"])
-        sync_config = BedrockOpenAIResponsesConfig(
-            fetch_image=sync_fixture.fetch, async_fetch_image=sync_fixture.fetch_async
-        )
         async_fixture = Fixture(case["data_urls"])
-        async_config = BedrockOpenAIResponsesConfig(
-            fetch_image=async_fixture.fetch, async_fetch_image=async_fixture.fetch_async
-        )
-        results.append(
-            {
-                "sync": fetch_outcome(sync_config, sync_fixture, case, asynchronous=False),
-                "async": fetch_outcome(async_config, async_fixture, case, asynchronous=True),
-            }
-        )
+        sync = fetch_outcome(sync_fixture.config(), sync_fixture, case, asynchronous=False)
+        parallel = fetch_outcome(async_fixture.config(), async_fixture, case, asynchronous=True)
+        results.append({"sync": sync, "async": parallel})
     return {"results": results}
 
 

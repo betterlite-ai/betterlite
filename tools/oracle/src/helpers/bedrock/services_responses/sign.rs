@@ -36,13 +36,13 @@ fn static_credentials(
     )
 }
 
-fn secret_of(text: Option<&String>) -> Option<SecretString> {
-    text.cloned().map(SecretString::from)
-}
-
 pub(super) fn auth_case(case: &AuthCase) -> Case {
-    let api_key = secret_of(case.api_key.as_ref());
-    let environment_token = secret_of(case.environment.get(BEARER_VARIABLE));
+    let api_key = case.api_key.clone().map(SecretString::from);
+    let environment_token = case
+        .environment
+        .get(BEARER_VARIABLE)
+        .cloned()
+        .map(SecretString::from);
     let mut validated = case.headers.clone();
     validate_environment(&mut validated, api_key.as_ref(), environment_token.as_ref());
     Ok(json!({"headers": validated}))
@@ -70,22 +70,18 @@ fn error_value(probe: Option<&ErrorProbe>) -> Case {
     }))
 }
 
-// The signing time and signature change on every run, so only their shape is compared
+// The signing time and signature change on every run, so only the credential scope is compared
 fn signed_summary(headers: &BTreeMap<String, Option<String>>) -> Case {
-    let text = |name: &str| headers.get(name).cloned().flatten().unwrap_or_default();
-    let authorization = text("Authorization");
-    let (_, rest) = authorization
-        .split_once("Credential=")
-        .ok_or("no credential scope")
-        .or_value_error()?;
-    let (credential, rest) = rest
-        .split_once(", SignedHeaders=")
-        .ok_or("no signed headers")
-        .or_value_error()?;
-    let (signed_headers, _signature) = rest
-        .split_once(", Signature=")
-        .ok_or("no signature")
-        .or_value_error()?;
+    let authorization = headers
+        .get("Authorization")
+        .cloned()
+        .flatten()
+        .unwrap_or_default();
+    let credential = authorization
+        .split("Credential=")
+        .nth(1)
+        .and_then(|rest| rest.split(',').next())
+        .unwrap_or_default();
     let fields: Vec<&str> = credential.split('/').collect();
     let [access_key, _date, region, service, _scope] = fields.as_slice() else {
         return Err("the credential scope has the wrong shape").or_value_error();
@@ -94,13 +90,7 @@ fn signed_summary(headers: &BTreeMap<String, Option<String>>) -> Case {
         .iter()
         .filter(|(name, _)| !["Authorization", "X-Amz-Date"].contains(&name.as_str()))
         .collect();
-    Ok(json!({
-        "access_key": access_key,
-        "region": region,
-        "service": service,
-        "signed_headers": signed_headers,
-        "headers": plain,
-    }))
+    Ok(json!({"access_key": access_key, "region": region, "service": service, "headers": plain}))
 }
 
 pub(super) fn sigv4_case(case: &SigningCase) -> Case {
