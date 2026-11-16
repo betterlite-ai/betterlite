@@ -119,6 +119,7 @@ fn custom_provider_returns_none_without_the_field() {
         IndexMap::new(),
         object(&[("other", Json::Text("x".to_owned()))]),
         object(&[("custom_llm_provider", Json::Null)]),
+        object(&[("custom_llm_provider", Json::Text(String::new()))]),
         object(&[("extra_body", Json::Null)]),
         object(&[("extra_body", Json::Number(Number::from(5_i64)))]),
         object(&[("extra_body", Json::Bool(true))]),
@@ -130,7 +131,7 @@ fn custom_provider_returns_none_without_the_field() {
 }
 
 #[test]
-fn custom_provider_keeps_an_explicit_empty_top_level_field() {
+fn custom_provider_falls_through_an_empty_top_level_field() {
     let data = object(&[
         ("custom_llm_provider", Json::Text(String::new())),
         (
@@ -143,7 +144,7 @@ fn custom_provider_keeps_an_explicit_empty_top_level_field() {
     ]);
     assert_eq!(
         get_custom_provider_from_data(&data).unwrap(),
-        Some(String::new())
+        Some("vertex_ai".to_owned())
     );
 }
 

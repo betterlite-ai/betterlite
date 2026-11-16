@@ -17,15 +17,26 @@ fn video_reference_reads_an_id_from_an_object() {
         ),
         (object(&[("object", Json::Text("video".to_owned()))]), ""),
         (object(&[("id", Json::Text(String::new()))]), ""),
-        (object(&[("id", Json::Null)]), ""),
         (IndexMap::new(), ""),
     ];
     for (fields, expected) in cases {
         assert_eq!(
             video_reference_to_id(&Json::Object(fields)).unwrap(),
-            expected
+            Some(expected.to_owned())
         );
     }
+}
+
+#[test]
+fn video_reference_hands_back_a_null_id() {
+    assert_eq!(
+        video_reference_to_id(&Json::Object(object(&[("id", Json::Null)]))).unwrap(),
+        None
+    );
+    assert_eq!(
+        video_reference_to_id(&Json::Text(r#"{"id": null}"#.to_owned())).unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -44,7 +55,7 @@ fn video_reference_decodes_a_json_string() {
     for (text, expected) in cases {
         assert_eq!(
             video_reference_to_id(&Json::Text(text.to_owned())).unwrap(),
-            expected,
+            Some(expected.to_owned()),
             "{text:?}"
         );
     }
@@ -62,7 +73,7 @@ fn video_reference_keeps_malformed_json() {
     for (text, expected) in cases {
         assert_eq!(
             video_reference_to_id(&Json::Text(text.to_owned())).unwrap(),
-            expected,
+            Some(expected.to_owned()),
             "{text:?}"
         );
     }
@@ -77,7 +88,11 @@ fn video_reference_returns_empty_for_other_types() {
         Json::List(vec![Json::Text("video_1".to_owned())]),
     ];
     for value in cases {
-        assert_eq!(video_reference_to_id(&value).unwrap(), "", "{value:?}");
+        assert_eq!(
+            video_reference_to_id(&value).unwrap(),
+            Some(String::new()),
+            "{value:?}"
+        );
     }
 }
 

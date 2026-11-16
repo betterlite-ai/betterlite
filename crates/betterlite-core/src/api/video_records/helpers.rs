@@ -45,21 +45,22 @@ pub fn extract_model_from_target_model_names(
     }
 }
 
-pub fn video_reference_to_id(video_reference: &Json) -> Result<String, VideoRecordError> {
+// None is LiteLLM's answer for an object whose id is an explicit null: get("id", "") hands the null back.
+pub fn video_reference_to_id(video_reference: &Json) -> Result<Option<String>, VideoRecordError> {
     match video_reference {
         Json::Object(fields) => id_of(fields),
         Json::Text(text) => {
             let Ok(parsed) = serde_json::from_str::<Json>(text) else {
-                return Ok(text.clone());
+                return Ok(Some(text.clone()));
             };
             match parsed {
                 Json::Object(fields) => id_of(&fields),
                 Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                    Ok(text.clone())
+                    Ok(Some(text.clone()))
                 }
             }
         }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => Ok(String::new()),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => Ok(Some(String::new())),
     }
 }
 
@@ -68,6 +69,7 @@ pub fn get_custom_provider_from_data(
 ) -> Result<Option<String>, VideoRecordError> {
     match data.get("custom_llm_provider") {
         Some(Json::Null) | None => {}
+        Some(Json::Text(provider)) if provider.is_empty() => {}
         Some(Json::Text(provider)) => return Ok(Some(provider.clone())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             return Err(VideoRecordError::NotText {
@@ -94,10 +96,11 @@ fn first_model(names: &[Json]) -> Result<Option<String>, VideoRecordError> {
     }
 }
 
-fn id_of(fields: &IndexMap<String, Json>) -> Result<String, VideoRecordError> {
+fn id_of(fields: &IndexMap<String, Json>) -> Result<Option<String>, VideoRecordError> {
     match fields.get(ID_FIELD) {
-        Some(Json::Text(id)) => Ok(id.clone()),
-        Some(Json::Null) | None => Ok(String::new()),
+        Some(Json::Text(id)) => Ok(Some(id.clone())),
+        Some(Json::Null) => Ok(None),
+        None => Ok(Some(String::new())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(VideoRecordError::NotText { field: ID_FIELD })
         }

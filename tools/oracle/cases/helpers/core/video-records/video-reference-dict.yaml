@@ -6,5 +6,6 @@ calls:
   - b3330: {function: video_reference, value: {object: video}}
   - b3330: {function: video_reference, value: {id: ""}}
   - b3330: {function: video_reference, value: {}}
+  - b3330: {function: video_reference, value: {id: null}}
 env: {}
 compare: {ignore: []}

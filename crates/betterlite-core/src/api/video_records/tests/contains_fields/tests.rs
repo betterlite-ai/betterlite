@@ -7,7 +7,7 @@ use super::fixture::{full_video, video};
 
 #[test]
 fn contains_reports_every_declared_video_field() {
-    let video = VideoObject::default();
+    let video = video("video_123");
     for field in VideoObject::FIELDS {
         assert!(video.contains(field), "missing {field}");
     }

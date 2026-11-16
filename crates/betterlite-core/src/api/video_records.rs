@@ -9,8 +9,7 @@ use crate::api::bfl::edit::media::SuppliedMedia;
 pub mod dict_access;
 pub mod helpers;
 
-// The pydantic model the video routes return: json() carries the declared fields, and the private
-// _hidden_params answers only contains, get and getitem.
+// _hidden_params is private in LiteLLM, so json() leaves it out and only contains, get and getitem see it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VideoObject {
     pub id: String,
@@ -38,27 +37,6 @@ pub struct VideoObject {
     pub usage: Option<IndexMap<String, Json>>,
     #[serde(skip)]
     pub hidden_params: IndexMap<String, Json>,
-}
-
-impl Default for VideoObject {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            object: VideoKind::Video,
-            status: String::new(),
-            created_at: None,
-            completed_at: None,
-            expires_at: None,
-            error: None,
-            progress: None,
-            remixed_from_video_id: None,
-            seconds: None,
-            size: None,
-            model: None,
-            usage: None,
-            hidden_params: IndexMap::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

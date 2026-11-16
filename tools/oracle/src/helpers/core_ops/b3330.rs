@@ -30,7 +30,7 @@ impl Helper for Op {
                 // ast-grep-ignore: no-long-names
                 extract_model_from_target_model_names(value).or_value_error()?
             }
-            Input::VideoReference { value } => Some(video_reference_to_id(value).or_value_error()?),
+            Input::VideoReference { value } => video_reference_to_id(value).or_value_error()?,
             Input::CustomProvider { value } => {
                 get_custom_provider_from_data(value).or_value_error()?
             }

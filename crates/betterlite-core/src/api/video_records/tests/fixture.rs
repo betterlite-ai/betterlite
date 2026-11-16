@@ -10,7 +10,19 @@ use crate::api::video_records::{CharacterObject, VideoObject, VideoRecordError};
 pub(super) fn video(id: &str) -> VideoObject {
     VideoObject {
         id: id.to_owned(),
-        ..VideoObject::default()
+        object: VideoKind::Video,
+        status: "queued".to_owned(),
+        created_at: None,
+        completed_at: None,
+        expires_at: None,
+        error: None,
+        progress: None,
+        remixed_from_video_id: None,
+        seconds: None,
+        size: None,
+        model: None,
+        usage: None,
+        hidden_params: IndexMap::new(),
     }
 }
 

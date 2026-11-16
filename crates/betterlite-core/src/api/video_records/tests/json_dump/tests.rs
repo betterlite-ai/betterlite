@@ -14,7 +14,24 @@ use super::fixture::{full_video, object, video};
 fn json_carries_the_declared_fields_in_order() {
     let dumped = full_video().json();
     let names: Vec<&str> = dumped.keys().map(String::as_str).collect();
-    assert_eq!(names, VideoObject::FIELDS.to_vec());
+    assert_eq!(
+        names,
+        [
+            "id",
+            "object",
+            "status",
+            "created_at",
+            "completed_at",
+            "expires_at",
+            "error",
+            "progress",
+            "remixed_from_video_id",
+            "seconds",
+            "size",
+            "model",
+            "usage",
+        ]
+    );
 }
 
 #[test]
@@ -41,15 +58,18 @@ fn json_leaves_out_the_hidden_params() {
     let video = full_video();
     let dumped = video.json();
     assert!(!dumped.contains_key("_hidden_params"));
-    assert_eq!(dumped.len(), VideoObject::FIELDS.len());
+    assert_eq!(dumped.len(), 13);
 }
 
 #[test]
 fn json_matches_the_direct_fields() {
     let video = full_video();
     let dumped = video.json();
-    assert_eq!(dumped.get("id"), video.get("id").as_ref());
-    assert_eq!(dumped.get("usage"), video.get("usage").as_ref());
+    assert_eq!(dumped.get("id"), Some(&Json::Text(video.id.clone())));
+    assert_eq!(
+        dumped.get("usage"),
+        Some(&Json::Object(video.usage.clone().unwrap()))
+    );
 }
 
 #[test]
