@@ -229,6 +229,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "blocked_words_file"
+path = "fuzz_targets/blocked_words_file.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "usage_tool_arguments"
 path = "fuzz_targets/usage_tool_arguments.rs"
 test = false
