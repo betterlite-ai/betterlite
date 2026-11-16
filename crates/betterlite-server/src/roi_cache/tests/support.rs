@@ -218,6 +218,21 @@ impl MemoryRepository {
         Self::holding_text(name, &serde_json::to_string(value).unwrap())
     }
 
+    fn read(&self, name: &str) -> Result<Option<JsonData>, MemoryError> {
+        (!self.refuse_reads)
+            .then(|| self.params.lock().unwrap().get(name).cloned())
+            .ok_or(MemoryError::Unreadable)
+    }
+
+    fn write(&self, name: &str, value: JsonData) -> Result<(), MemoryError> {
+        if self.refuse_writes {
+            return Err(MemoryError::Refused);
+        }
+        let mut writes = self.writes.lock().unwrap();
+        writes.push((name.to_owned(), value));
+        Ok(())
+    }
+
     pub(super) fn written(&self) -> Vec<(String, JsonData)> {
         self.writes.lock().unwrap().clone()
     }
@@ -230,10 +245,7 @@ impl ReportRepository for MemoryRepository {
         &self,
         param_name: &str,
     ) -> impl Future<Output = Result<Option<JsonData>, MemoryError>> + Send {
-        if self.refuse_reads {
-            return ready(Err(MemoryError::Unreadable));
-        }
-        ready(Ok(self.params.lock().unwrap().get(param_name).cloned()))
+        ready(self.read(param_name))
     }
 
     fn set_param(
@@ -241,14 +253,7 @@ impl ReportRepository for MemoryRepository {
         param_name: &str,
         param_value: JsonData,
     ) -> impl Future<Output = Result<(), MemoryError>> + Send {
-        let name = param_name.to_owned();
-        async move {
-            if self.refuse_writes {
-                return Err(MemoryError::Refused);
-            }
-            self.writes.lock().unwrap().push((name, param_value));
-            Ok(())
-        }
+        ready(self.write(param_name, param_value))
     }
 }
 
