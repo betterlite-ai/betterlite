@@ -1,0 +1,106 @@
+kind: helper
+name: guardrail-usage-row-summation-and-grouping
+call:
+  b3689:
+    function: row_sums
+    cases:
+      - reduce: units
+        rows:
+          - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 4, untracked_units: 1, cost: 0.5}
+          - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 6, untracked_units: 0, cost: null}
+          - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 2, untracked_units: 0, cost: 1.25}
+          - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 0, untracked_units: 0, cost: 0.0}
+      - reduce: untracked
+        rows:
+          - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 4, untracked_units: 1, cost: 0.5}
+          - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 6, untracked_units: 0, cost: null}
+          - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 2, untracked_units: 0, cost: 1.25}
+          - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 0, untracked_units: 0, cost: 0.0}
+      - reduce: cost
+        rows:
+          - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 4, untracked_units: 1, cost: 0.5}
+          - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 6, untracked_units: 0, cost: null}
+          - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 2, untracked_units: 0, cost: 1.25}
+          - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 0, untracked_units: 0, cost: 0.0}
+      - reduce: units
+        rows:
+          - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 3, untracked_units: 3, cost: null}
+          - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 2, untracked_units: 2, cost: 1.0}
+      - reduce: untracked
+        rows:
+          - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 3, untracked_units: 3, cost: null}
+          - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 2, untracked_units: 2, cost: 1.0}
+      - reduce: cost
+        rows:
+          - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 3, untracked_units: 3, cost: null}
+          - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 2, untracked_units: 2, cost: 1.0}
+      - reduce: units
+        rows:
+          - {usage_unit: zero, guardrail_id: g1, team_id: t1, api_key: k1, units: 0, untracked_units: 0, cost: null}
+          - {usage_unit: zero, guardrail_id: g1, team_id: t1, api_key: k1, units: 0, untracked_units: 0, cost: null}
+      - reduce: untracked
+        rows:
+          - {usage_unit: zero, guardrail_id: g1, team_id: t1, api_key: k1, units: 0, untracked_units: 0, cost: null}
+          - {usage_unit: zero, guardrail_id: g1, team_id: t1, api_key: k1, units: 0, untracked_units: 0, cost: null}
+      - reduce: cost
+        rows:
+          - {usage_unit: zero, guardrail_id: g1, team_id: t1, api_key: k1, units: 0, untracked_units: 0, cost: null}
+          - {usage_unit: zero, guardrail_id: g1, team_id: t1, api_key: k1, units: 0, untracked_units: 0, cost: null}
+calls:
+  - b3689:
+      function: row_parts
+      cases:
+        - rows:
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 4, untracked_units: 1, cost: 0.5}
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 6, untracked_units: 0, cost: null}
+            - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 2, untracked_units: 0, cost: 1.25}
+            - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 0, untracked_units: 0, cost: 0.0}
+        - rows:
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 3, untracked_units: 3, cost: null}
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 2, untracked_units: 2, cost: 1.0}
+        - rows:
+            - {usage_unit: zero, guardrail_id: g1, team_id: t1, api_key: k1, units: 0, untracked_units: 0, cost: null}
+            - {usage_unit: zero, guardrail_id: g1, team_id: t1, api_key: k1, units: 0, untracked_units: 0, cost: null}
+  - b3689:
+      function: group_by
+      cases:
+        - key: usage_unit
+          reduce: units
+          rows:
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 4, untracked_units: 1, cost: 0.5}
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 6, untracked_units: 0, cost: null}
+            - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 2, untracked_units: 0, cost: 1.25}
+            - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 0, untracked_units: 0, cost: 0.0}
+        - key: team_id
+          reduce: untracked
+          rows:
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 4, untracked_units: 1, cost: 0.5}
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 6, untracked_units: 0, cost: null}
+            - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 2, untracked_units: 0, cost: 1.25}
+            - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 0, untracked_units: 0, cost: 0.0}
+        - key: api_key
+          reduce: cost
+          rows:
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 4, untracked_units: 1, cost: 0.5}
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 6, untracked_units: 0, cost: null}
+            - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 2, untracked_units: 0, cost: 1.25}
+            - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 0, untracked_units: 0, cost: 0.0}
+        - key: guardrail_id
+          reduce: units
+          rows:
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 4, untracked_units: 1, cost: 0.5}
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 6, untracked_units: 0, cost: null}
+            - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 2, untracked_units: 0, cost: 1.25}
+            - {usage_unit: tokens, guardrail_id: g2, team_id: t2, api_key: k2, units: 0, untracked_units: 0, cost: 0.0}
+        - key: guardrail_id
+          reduce: untracked
+          rows:
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 3, untracked_units: 3, cost: null}
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 2, untracked_units: 2, cost: 1.0}
+        - key: team_id
+          reduce: cost
+          rows:
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 3, untracked_units: 3, cost: null}
+            - {usage_unit: requests, guardrail_id: g1, team_id: t1, api_key: k1, units: 2, untracked_units: 2, cost: 1.0}
+env: {}
+compare: {ignore: []}
