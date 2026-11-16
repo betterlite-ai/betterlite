@@ -6,6 +6,11 @@ deviations:
       betterlite wires dependencies through constructors and keeps no module-level state; registry population, database reads and reconcile stay with the tasks that own them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L959-L960
   - what: >-
+      The lookup returns an AgentRef carrying the agent's id and litellm_params, with a null litellm_params becoming an empty map; LiteLLM returns the whole AgentResponse and leaves the field None.
+    why: >-
+      The read-only view carries the two fields a session budget reads, and docs/compatibility.md takes null as the field's default, which for a params map is empty.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L314-L322
+  - what: >-
       The router alias scan reads a DeploymentSnapshot the caller passes, or none when the caller has no router, instead of importing `litellm.proxy.proxy_server.llm_router`.
     why: >-
       betterlite keeps no module globals; a missing router is the same state LiteLLM resolves before startup builds one, and the alias scan then finds no deployment.
@@ -26,7 +31,7 @@ deviations:
       docs/compatibility.md uses an explicit empty value as given instead of Python truthiness.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L161
   - what: >-
-      An explicit empty model or llm_provider string stays empty; LiteLLM's `model or ""` and `llm_provider or "litellm_proxy"` replace it with the default. Absent or null takes the default in both.
+      An explicit empty llm_provider stays an empty string, where LiteLLM's `llm_provider or "litellm_proxy"` turns it into the fallback; an explicit empty model is "" in both, and an absent or null one takes the default in both.
     why: >-
       docs/compatibility.md uses an explicit empty string as given instead of Python truthiness.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L158-L159
