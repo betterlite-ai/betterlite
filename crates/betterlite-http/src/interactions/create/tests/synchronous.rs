@@ -353,6 +353,24 @@ fn create_interaction_validates_an_absent_model_as_an_empty_string() {
 }
 
 #[test]
+fn create_interaction_passes_an_absent_api_base_as_an_empty_string() {
+    let fixture = Fixture::new();
+    let mut call = Call::new(dead_address());
+    call.params.remove("api_base");
+
+    let (outcome, _logging) = run(&fixture, &call);
+
+    assert!(matches!(transport_error(outcome), RequestFailure::Url(_)));
+    let calls = fixture.calls();
+    assert!(
+        calls
+            .iter()
+            .any(|recorded| recorded.starts_with("url||gemini-2.5-flash|")),
+        "{calls:?}"
+    );
+}
+
+#[test]
 fn create_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_directly() {
     let fixture = Fixture::new();
     let mut clients = HttpClients::new(
