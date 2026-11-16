@@ -9,6 +9,9 @@ deviations:
   - what: A defender.status or defender.message that is not a string is read as missing, so the unevaluated reason says defender.status=missing and a block uses the default message; LiteLLM passes the value through into the reason and into the verdict record.
     why: The evaluation response is decoded into typed fields, and a status or message of another type carries no meaning the Defender contract gives it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L352-L360
+  - what: latency_ms is rounded half away from zero, where Python's round moves a half to the nearest even tenth.
+    why: Both stay within a tenth of a millisecond, and a latency that lands exactly on a half tenth depends on the float's binary representation in either language.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L621-L622
 kept_bugs:
   - what: An evaluation response with status 401 evicts the cached OBO token before the call is rejected, while a token exchange that answers 401 leaves the cached token in place.
     why: A working setup that retries after an evaluation 401 picks up a fresh token, and the eviction is observable through the token request that follows, so betterlite copies it.

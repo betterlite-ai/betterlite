@@ -18,6 +18,7 @@ use crate::guardrail_selection::gate::GuardrailSelection as _;
 
 mod handlers;
 mod record;
+mod refusals;
 mod tests;
 
 const MCP_CALL_TYPES: [&str; 2] = ["mcp_call", "call_mcp_tool"];
@@ -44,10 +45,10 @@ pub async fn pre_mcp_call_hook(
     }
     let tool_name = tool_name(data)?;
     let Some(assertion) = resolve_assertion(data) else {
-        return handlers::refuse(
+        return refusals::refuse(
             guardrail,
             data,
-            &handlers::Refusal::CallerFault {
+            &refusals::Refusal::CallerFault {
                 status: STATUS_UNAUTHORIZED,
                 tool_name: tool_name.as_str(),
                 reason: MISSING_BEARER_REASON,
@@ -120,19 +121,19 @@ fn token_failure(
 ) -> Result<(), GuardrailFailure> {
     let reason = token_failure_reason(&error);
     match error {
-        Agent365TokenError::Exchange(exchange) if !exchange.gateway_owned() => handlers::refuse(
+        Agent365TokenError::Exchange(exchange) if !exchange.gateway_owned() => refusals::refuse(
             guardrail,
             data,
-            &handlers::Refusal::CallerFault {
+            &refusals::Refusal::CallerFault {
                 status: STATUS_UNAUTHORIZED,
                 tool_name,
                 reason: &reason,
             },
         ),
-        Agent365TokenError::Throttled { .. } => handlers::refuse(
+        Agent365TokenError::Throttled { .. } => refusals::refuse(
             guardrail,
             data,
-            &handlers::Refusal::Throttled {
+            &refusals::Refusal::Throttled {
                 tool_name,
                 reason: &reason,
                 latency: None,

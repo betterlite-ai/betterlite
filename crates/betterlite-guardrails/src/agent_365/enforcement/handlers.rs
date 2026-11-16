@@ -4,6 +4,7 @@ use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
 
 use super::Step;
 use super::record::{VerdictRecord, record_verdict};
+use super::refusals::{Refusal, UNAVAILABLE_ERROR, UNAVAILABLE_STATUS, refusal_failure, refuse};
 use crate::agent_365::enforcement_types::{
     BlockedDetail, EvaluateVerdict, UnavailableDetail, Verdict, decode_evaluate_response,
 };
@@ -12,11 +13,8 @@ use crate::agent_365_tokens::poster::PostReply;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_metadata::RequestData;
 
-pub(super) const CALLER_FAULT_ERROR: &str = "Agent 365 guardrail rejected the tool call";
-pub(super) const UNAVAILABLE_ERROR: &str = "Agent 365 guardrail could not authorize the tool call";
 pub(super) const REJECTED_ERROR: &str = "Agent 365 rejected the tool evaluation request";
 pub(super) const BLOCKED_ERROR: &str = "Blocked by Microsoft Defender";
-const UNAVAILABLE_STATUS: u16 = 503;
 const REJECTED_STATUS: u16 = 400;
 const MAX_ERROR_TEXT_CHARS: usize = 512;
 
@@ -26,91 +24,6 @@ pub(super) struct EvaluateError<'reply> {
     pub assertion: &'reply str,
     pub reply: &'reply PostReply,
     pub latency: Duration,
-}
-
-// The refusals LiteLLM raises before any verdict, which differ only in their record, status, error and message
-pub(super) enum Refusal<'call> {
-    CallerFault {
-        status: u16,
-        tool_name: &'call str,
-        reason: &'call str,
-    },
-    Throttled {
-        tool_name: &'call str,
-        reason: &'call str,
-        latency: Option<Duration>,
-    },
-}
-
-impl<'call> Refusal<'call> {
-    fn names(&self) -> (&'call str, &'call str) {
-        match *self {
-            Self::CallerFault {
-                tool_name, reason, ..
-            }
-            | Self::Throttled {
-                tool_name, reason, ..
-            } => (tool_name, reason),
-        }
-    }
-
-    fn message(&self) -> String {
-        match *self {
-            Self::CallerFault {
-                tool_name, reason, ..
-            } => format!("Tool call '{tool_name}' was blocked because {reason}."),
-            Self::Throttled {
-                tool_name, reason, ..
-            } => format!(
-                "Tool call '{tool_name}' was blocked because {reason}; throttled evaluations block regardless of unreachable_fallback."
-            ),
-        }
-    }
-}
-
-// LiteLLM's _handle_caller_fault and _handle_throttled: record the refusal, then raise its detail
-pub(super) fn refuse(
-    guardrail: &Agent365Guardrail,
-    data: &mut RequestData,
-    refusal: &Refusal<'_>,
-) -> Result<(), GuardrailFailure> {
-    let (verdict, latency, status, error) = match *refusal {
-        Refusal::CallerFault { status, .. } => {
-            (Verdict::Rejected, None, status, CALLER_FAULT_ERROR)
-        }
-        Refusal::Throttled { latency, .. } => (
-            Verdict::Throttled,
-            latency,
-            UNAVAILABLE_STATUS,
-            UNAVAILABLE_ERROR,
-        ),
-    };
-    let (tool_name, reason) = refusal.names();
-    write_record(
-        guardrail,
-        data,
-        &VerdictRecord {
-            verdict,
-            defender_status: None,
-            correlation_id: None,
-            latency,
-            reason: Some(reason),
-        },
-    )?;
-    Err(refusal_failure(status, error, refusal.message(), tool_name))
-}
-
-// The detail of a refusal: the short error, the message and the tool the call named
-fn refusal_failure(status: u16, error: &str, message: String, tool_name: &str) -> GuardrailFailure {
-    let detail = UnavailableDetail {
-        error: error.to_owned(),
-        message,
-        tool: tool_name.to_owned(),
-    };
-    GuardrailFailure::HttpObject {
-        status,
-        detail: detail.detail(),
-    }
 }
 
 // LiteLLM's _handle_unavailable
@@ -124,7 +37,7 @@ pub(super) fn unavailable(
     if guardrail.settings.unreachable_fallback == UnreachableFallback::FailOpen {
         return allow_unscanned(guardrail, data, tool_name, record);
     }
-    write_record(guardrail, data, record)?;
+    record_verdict(guardrail, data, record)?;
     let message = format!(
         "Tool call '{tool_name}' was blocked because {reason} and unreachable_fallback is 'fail_closed'."
     );
@@ -147,7 +60,7 @@ fn allow_unscanned(
     tracing::error!(
         "Agent 365 guardrail ({name}): {reason}; unreachable_fallback='fail_open', allowing tool call '{tool_name}' unscanned"
     );
-    write_record(guardrail, data, &record.relabelled(Verdict::Unscanned))
+    record_verdict(guardrail, data, &record.relabelled(Verdict::Unscanned))
 }
 
 // Runs _handle_evaluate_error and, when it lets the call through, _enforce_verdict
@@ -205,9 +118,10 @@ fn reject(
     if status == 401 {
         guardrail.evict_obo_token(error.assertion);
     }
-    let text = error_text(error.reply);
+    let body = std::str::from_utf8(&error.reply.body).unwrap_or_default();
+    let text: String = body.chars().take(MAX_ERROR_TEXT_CHARS).collect();
     let reason = format!("HTTP {status}: {text}");
-    write_record(
+    record_verdict(
         guardrail,
         data,
         &VerdictRecord {
@@ -218,9 +132,14 @@ fn reject(
             reason: Some(&reason),
         },
     )?;
+    let message = if status == REJECTED_STATUS {
+        text
+    } else {
+        format!("the Agent 365 evaluation request failed with HTTP {status}")
+    };
     let detail = UnavailableDetail {
         error: REJECTED_ERROR.to_owned(),
-        message: rejection_message(status, text),
+        message,
         tool: error.tool_name.to_owned(),
     };
     Err(GuardrailFailure::HttpObject {
@@ -245,13 +164,6 @@ fn unavailable_for_status(
     Ok(Step::Done)
 }
 
-fn rejection_message(status: u16, text: String) -> String {
-    if status == REJECTED_STATUS {
-        return text;
-    }
-    format!("the Agent 365 evaluation request failed with HTTP {status}")
-}
-
 // LiteLLM's _enforce_verdict
 fn enforce_verdict(
     guardrail: &Agent365Guardrail,
@@ -260,8 +172,14 @@ fn enforce_verdict(
     reply: &PostReply,
     latency: Duration,
 ) -> Result<(), GuardrailFailure> {
-    let Some(verdict) = decode_or_unavailable(guardrail, data, tool_name, &reply.body)? else {
-        return Ok(());
+    let verdict = match decode_evaluate_response(&reply.body) {
+        Ok(verdict) => verdict,
+        // an unavailable fallback already answered the call
+        Err(error) => {
+            let reason = error.to_string();
+            unavailable(guardrail, data, tool_name, &unavailable_record(&reason))?;
+            return Ok(());
+        }
     };
     if verdict.allowed && !verdict.defender_evaluated() {
         let reason = verdict.unevaluated_reason();
@@ -286,24 +204,6 @@ fn enforce_verdict(
     Err(blocked_failure(tool_name, &verdict))
 }
 
-// Ok(None) means an unavailable fallback already answered the call
-fn decode_or_unavailable(
-    guardrail: &Agent365Guardrail,
-    data: &mut RequestData,
-    tool_name: &str,
-    body: &[u8],
-) -> Result<Option<EvaluateVerdict>, GuardrailFailure> {
-    let verdict = match decode_evaluate_response(body) {
-        Ok(verdict) => verdict,
-        Err(error) => {
-            let reason = error.to_string();
-            unavailable(guardrail, data, tool_name, &unavailable_record(&reason))?;
-            return Ok(None);
-        }
-    };
-    Ok(Some(verdict))
-}
-
 pub(super) fn unavailable_record(reason: &str) -> VerdictRecord<'_> {
     VerdictRecord {
         verdict: Verdict::Unavailable,
@@ -325,7 +225,7 @@ fn record_decision(
     } else {
         Verdict::Block
     };
-    write_record(
+    record_verdict(
         guardrail,
         data,
         &VerdictRecord {
@@ -349,23 +249,4 @@ fn blocked_failure(tool_name: &str, verdict: &EvaluateVerdict) -> GuardrailFailu
         status: REJECTED_STATUS,
         detail: detail.detail(),
     }
-}
-
-fn error_text(reply: &PostReply) -> String {
-    let text = std::str::from_utf8(&reply.body).unwrap_or_default();
-    text.chars().take(MAX_ERROR_TEXT_CHARS).collect()
-}
-
-fn write_record(
-    guardrail: &Agent365Guardrail,
-    data: &mut RequestData,
-    record: &VerdictRecord<'_>,
-) -> Result<(), GuardrailFailure> {
-    let written = record_verdict(guardrail, data, record);
-    written.map_err(|error| {
-        GuardrailFailure::Other(format!(
-            "the Agent 365 guardrail record could not be written: {error}"
-        ))
-    })?;
-    Ok(())
 }

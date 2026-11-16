@@ -7,8 +7,9 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 
 use crate::agent_365::enforcement_types::Verdict;
 use crate::agent_365_tokens::Agent365Guardrail;
+use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_metadata::RequestData;
-use crate::guardrail_records::error::{GuardrailRecordError, GuardrailSpanError};
+use crate::guardrail_records::error::GuardrailSpanError;
 use crate::guardrail_records::metadata::add_guardrail_record;
 use crate::guardrail_records::record::{
     GuardrailInvocationRecord, GuardrailRecordContext, GuardrailRecordInput, GuardrailSpanSink,
@@ -54,7 +55,7 @@ pub(super) fn record_verdict(
     guardrail: &Agent365Guardrail,
     data: &mut RequestData,
     record: &VerdictRecord<'_>,
-) -> Result<(), GuardrailRecordError> {
+) -> Result<(), GuardrailFailure> {
     let mut context = GuardrailRecordContext {
         base: &guardrail.base,
         request_data: data,
@@ -75,6 +76,11 @@ pub(super) fn record_verdict(
             tracing_detail: None,
         },
     )
+    .map_err(|error| {
+        GuardrailFailure::Other(format!(
+            "the Agent 365 guardrail record could not be written: {error}"
+        ))
+    })
 }
 
 // LiteLLM's _record_verdict payload, with latency_ms rounded to one decimal
@@ -108,13 +114,6 @@ fn payload_for(record: &VerdictRecord<'_>) -> GuardrailValue {
     GuardrailValue::Object(payload)
 }
 
-fn duration_of(record: &VerdictRecord<'_>) -> Option<f64> {
-    let Some(latency) = record.latency else {
-        return None;
-    };
-    Some(latency.as_secs_f64())
-}
-
 // LiteLLM's verdict to guardrail_status pairing
 const fn status_for(verdict: Verdict) -> GuardrailStatus {
     match verdict {
@@ -124,4 +123,11 @@ const fn status_for(verdict: Verdict) -> GuardrailStatus {
             GuardrailStatus::GuardrailFailedToRespond
         }
     }
+}
+
+fn duration_of(record: &VerdictRecord<'_>) -> Option<f64> {
+    let Some(latency) = record.latency else {
+        return None;
+    };
+    Some(latency.as_secs_f64())
 }
