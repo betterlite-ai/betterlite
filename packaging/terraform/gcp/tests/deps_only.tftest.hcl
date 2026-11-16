@@ -55,6 +55,7 @@ run "default_creates_the_network_and_stores" {
       google_sql_database_instance.writer.settings[0].backup_configuration[0].start_time == "07:00",
       google_sql_database_instance.writer.settings[0].insights_config[0].query_insights_enabled == true,
       google_sql_database_instance.writer.settings[0].ip_configuration[0].ipv4_enabled == false,
+      google_sql_database_instance.reader.settings[0].ip_configuration[0].ipv4_enabled == false,
       google_sql_database_instance.writer.deletion_protection == true,
       google_sql_database_instance.reader.name == "tenant-test-betterlite-reader",
       google_sql_database_instance.reader.master_instance_name == "tenant-test-betterlite",
@@ -68,6 +69,8 @@ run "default_creates_the_network_and_stores" {
     condition = alltrue([
       google_sql_database.this.name == "betterlite",
       google_sql_user.app.name == "betterlite",
+      google_sql_database.this.deletion_policy == "ABANDON",
+      google_sql_user.app.deletion_policy == "ABANDON",
       google_secret_manager_secret.db_password.secret_id == "tenant-test-betterlite-db-password",
       google_redis_instance.this[0].tier == "STANDARD_HA",
       google_redis_instance.this[0].memory_size_gb == 1,
@@ -131,6 +134,18 @@ run "caller_labels_merge_with_the_module_label" {
   assert {
     condition     = local.labels["managed_by"] == "terraform" && local.labels["team"] == "platform"
     error_message = "Caller labels must merge with the module's managed_by label."
+  }
+
+  assert {
+    condition = alltrue([
+      for labels in [
+        google_sql_database_instance.writer.settings[0].user_labels,
+        google_sql_database_instance.reader.settings[0].user_labels,
+        google_redis_instance.this[0].labels,
+        google_secret_manager_secret.db_password.labels,
+      ] : labels["team"] == "platform" && labels["managed_by"] == "terraform"
+    ])
+    error_message = "The merged labels must reach both Cloud SQL instances, Memorystore and the password secret."
   }
 }
 
@@ -256,5 +271,47 @@ run "long_names_are_cut_to_thirty_characters" {
   assert {
     condition     = length(local.name) <= 30 && !endswith(local.name, "-")
     error_message = "Every resource name must stay at or below 30 characters and must not end with a hyphen."
+  }
+}
+
+run "connector_name_fits_the_25_character_limit" {
+  command = plan
+
+  variables {
+    tenant = "acme"
+    env    = "stage"
+  }
+
+  assert {
+    condition     = google_vpc_access_connector.this[0].name == "acme-stage-betterlit-conn" && length(google_vpc_access_connector.this[0].name) <= 25
+    error_message = "The connector name must be cut so it stays within 25 characters."
+  }
+}
+
+run "connector_name_fits_for_the_longest_tenant_and_env" {
+  command = plan
+
+  variables {
+    tenant = "abcdefghijklmnopqrstu"
+    env    = "abcdefghi"
+  }
+
+  assert {
+    condition     = length(google_vpc_access_connector.this[0].name) <= 25 && google_vpc_access_connector.this[0].name == "abcdefghijklmnopqrst-conn"
+    error_message = "The longest tenant and env must still give a connector name within 25 characters."
+  }
+}
+
+run "connector_name_drops_a_hyphen_at_the_cut" {
+  command = plan
+
+  variables {
+    tenant = "abcdefghijklmnopqrs"
+    env    = "dev"
+  }
+
+  assert {
+    condition     = google_vpc_access_connector.this[0].name == "abcdefghijklmnopqrs-conn"
+    error_message = "A hyphen the 20-character cut lands on must not be kept in the connector name."
   }
 }

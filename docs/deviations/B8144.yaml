@@ -1,5 +1,8 @@
 task: B8144
 deviations:
+  - what: The serverless VPC connector is named from the first 20 characters of `<tenant>-<env>-betterlite` (a trailing hyphen dropped) plus `-conn`, so it never passes the 25 characters GCP allows.
+    why: LiteLLM names it `<name>-conn` with no cut, and its shorter `<tenant>-litellm-<env>` name fits for inputs that betterlite's 3 characters longer name would push over, so those inputs would fail to apply. No betterlite deployment exists, so there is no connector name to keep.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/network.tf#L50
   - what: Every resource is named `<tenant>-<env>-betterlite`, cut to 30 characters, and the only label the module always adds is `managed_by = "terraform"`.
     why: betterlite names its own stack after itself, and the 30-character cut keeps the shared prefix inside the GCP limit for service account ids while leaving room for the suffixes the later parts add. LiteLLM names the stack `<tenant>-litellm-<env>` and also stamps a `litellm-stack` label.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/locals.tf#L5-L22
@@ -27,7 +30,4 @@ deviations:
   - what: Cloud SQL uses password authentication from a generated secret, as LiteLLM does.
     why: IAM database authentication on Cloud SQL needs a connector or token refresh that betterlite does not have; the AWS module uses IAM tokens because B1232 and the gateway support them there.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudsql.tf#L1-L9
-kept_bugs:
-  - what: The serverless VPC connector is named `<name>-conn`, so a tenant and env that together pass the regex validations can still produce a connector name longer than the 25 characters GCP allows.
-    why: LiteLLM derives the connector name the same way, and the documented defaults stay inside the limit. Shortening the connector name further would rename the connector of an existing deployment.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/network.tf#L47-L56
+kept_bugs: []

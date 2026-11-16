@@ -38,7 +38,8 @@ resource "google_service_networking_connection" "psa" {
 resource "google_vpc_access_connector" "this" {
   count = var.create_runtime ? 1 : 0
 
-  name          = "${local.name}-conn"
+  # GCP caps a connector name at 25 characters, so the shared name is cut to 20 before the suffix
+  name          = "${trimsuffix(substr(local.name, 0, 20), "-")}-conn"
   region        = var.region
   network       = local.network_self_link
   ip_cidr_range = var.vpc_connector_cidr
