@@ -14,7 +14,6 @@ use crate::endpoints::projection::{
 
 use super::error::{ClassifiedError, ImageError};
 use super::generation::Generation;
-use super::target::{AzureClientParams, create_azure_base_url};
 use super::wire::text_value;
 
 pub(super) struct PrepareContext<'data> {
@@ -24,14 +23,16 @@ pub(super) struct PrepareContext<'data> {
     pub(super) refresh_enabled: bool,
 }
 
-// Everything LiteLLM resolves before it sends: the body, the auth headers, the target URL and the send inputs
+// What LiteLLM resolves before the async leg takes over: the body, the auth headers and the send inputs
 pub(super) struct Prepared {
     pub(super) data: IndexMap<String, Json>,
     // the prompt argument, which only the sync post_call reads
     pub(super) prompt: String,
     // the prompt as the body carries it, which pre_call reads
     pub(super) body_prompt: String,
-    pub(super) url: String,
+    // the client's endpoint fields, which the URL is built from after the async leg takes over
+    pub(super) azure_endpoint: Option<String>,
+    pub(super) base_url: Option<String>,
     pub(super) headers: Vec<(String, String)>,
     pub(super) resolved_version: String,
     pub(super) argument_version: String,
@@ -51,25 +52,11 @@ pub(super) fn prepare(
     let data = request_data(&call, model, &mut optional_params)?;
     let inputs = client_inputs(&call, model, context)?;
     let headers = request_headers(&call, &inputs)?;
-    let body = text_value(&data, "model")?;
-    let (selected, substitute) = if call.delegate_async {
-        (model.or(body.as_deref()), body.as_deref())
-    } else {
-        (model, call.base_model)
-    };
-    let url = create_azure_base_url(
-        &AzureClientParams {
-            azure_endpoint: inputs.endpoint.azure_endpoint.as_deref(),
-            base_url: inputs.endpoint.base_url.as_deref(),
-            api_version: Some(&inputs.api_version),
-        },
-        selected,
-        substitute,
-    )?;
     Ok(Prepared {
         prompt: call.prompt.to_owned(),
         body_prompt: text_value(&data, "prompt")?.unwrap_or_default(),
-        url,
+        azure_endpoint: inputs.endpoint.azure_endpoint.clone(),
+        base_url: inputs.endpoint.base_url.clone(),
         resolved_version: inputs.api_version.clone(),
         argument_version: call.api_version.unwrap_or_default().to_owned(),
         deployment: model.map(str::to_owned),
@@ -90,12 +77,13 @@ fn request_data(
 ) -> Result<IndexMap<String, Json>, ImageError> {
     let extra = match optional_params.shift_remove("extra_body") {
         Some(Json::Object(fields)) => fields,
-        Some(Json::Null) | None => IndexMap::new(),
+        None => IndexMap::new(),
+        // an explicit null is unpacked as a mapping too, and LiteLLM fails it with a TypeError
         Some(_) => return Err(ImageError::ExtraBody),
     };
-    let model = call.base_model.filter(|name| !name.is_empty()).or(model);
+    let body_model = call.base_model.filter(|name| !name.is_empty()).or(model);
     let mut data = IndexMap::new();
-    let model_value = model.map_or(Json::Null, |name| Json::Text(name.to_owned()));
+    let model_value = body_model.map_or(Json::Null, |name| Json::Text(name.to_owned()));
     data.insert("model".to_owned(), model_value);
     data.insert("prompt".to_owned(), Json::Text(call.prompt.to_owned()));
     data.extend(optional_params.clone());

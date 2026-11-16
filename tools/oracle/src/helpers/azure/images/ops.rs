@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
+use betterlite_azure::azure_urls::AuthParams;
 use betterlite_azure::images::edit::{
     EditAuth, EditParams, EditUrl, finalize_image_edit_request_data, get_complete_url,
     validate_environment,
@@ -18,10 +19,26 @@ use super::fixture::{NoSources, run_generation};
 use super::input::{Input, Step};
 
 pub(crate) fn run(input: &Input) -> HelperResult {
+    let models: Vec<Value> = input
+        .models
+        .iter()
+        .map(|model| {
+            let config = get_azure_image_generation_config(Some(model.as_str()));
+            json!({"class": config.class_name()})
+        })
+        .collect();
+    let forms: Vec<Value> = input
+        .forms
+        .iter()
+        .map(|step| {
+            let fields = finalize_image_edit_request_data(&step.data, &step.request_url);
+            json!({"fields": fields})
+        })
+        .collect();
     Ok(json!({
         "targets": input.targets.iter().map(target_value).collect::<Vec<_>>(),
-        "models": input.models.iter().map(model_value).collect::<Vec<_>>(),
-        "forms": input.forms.iter().map(form_value).collect::<Vec<_>>(),
+        "models": models,
+        "forms": forms,
         "urls": input.urls.iter().map(url_value).collect::<Vec<_>>(),
         "auth": input.auth.iter().map(auth_value).collect::<Vec<_>>(),
         "generations": input.generations.iter().map(generation_value).collect::<Vec<_>>(),
@@ -39,33 +56,16 @@ fn failure(error: &dyn Display) -> Value {
     })
 }
 
-fn client_params(step: &Step) -> AzureClientParams<'_> {
-    AzureClientParams {
+fn target_value(step: &Step) -> Value {
+    let params = AzureClientParams {
         azure_endpoint: step.azure_endpoint.as_deref(),
         base_url: step.base_url.as_deref(),
         api_version: step.api_version.as_deref(),
+    };
+    match create_azure_base_url(&params, step.model.as_deref(), step.base_model.as_deref()) {
+        Ok(url) => json!({"url": url}),
+        Err(error) => failure(&error),
     }
-}
-
-fn target_value(step: &Step) -> Value {
-    let params = client_params(step);
-    reported(create_azure_base_url(
-        &params,
-        step.model.as_deref(),
-        step.base_model.as_deref(),
-    ))
-}
-
-fn reported(result: Result<String, impl Display>) -> Value {
-    result.map_or_else(|error| failure(&error), |url| json!({"url": url}))
-}
-
-fn model_value(model: &str) -> Value {
-    json!({"class": get_azure_image_generation_config(Some(model)).class_name()})
-}
-
-fn form_value(step: &Step) -> Value {
-    json!({"fields": finalize_image_edit_request_data(&step.data, &step.request_url)})
 }
 
 fn url_value(step: &Step) -> Value {
@@ -81,7 +81,10 @@ fn url_value(step: &Step) -> Value {
         credentials: &credentials,
         default_api_version: "2025-02-01-preview",
     };
-    reported(get_complete_url(&request))
+    match get_complete_url(&request) {
+        Ok(url) => json!({"url": url}),
+        Err(error) => failure(&error),
+    }
 }
 
 fn auth_value(step: &Step) -> Value {
@@ -93,13 +96,14 @@ fn auth_value(step: &Step) -> Value {
     let params = EditParams {
         api_key: step.params.api_key.as_deref().map(SecretString::from),
         azure_ad_token: token.map(SecretString::from),
-        ..EditParams::default()
+        auth: AuthParams::default(),
     };
     let credentials = AzureCredentials::default();
     let sources = NoSources;
+    let positional = step.api_key.as_deref().map(SecretString::from);
     let request = EditAuth {
         headers: step.headers.clone(),
-        api_key: step.api_key.as_deref(),
+        api_key: positional.as_ref(),
         params: &params,
         credentials: &credentials,
         environment: &environment,
@@ -136,7 +140,7 @@ fn generation_value(step: &Step) -> Value {
         }
         Err(error) => {
             report.insert("kind".to_owned(), json!("error"));
-            report.insert("status".to_owned(), json!(error.status()));
+            report.insert("status".to_owned(), json!(error.classification().1));
             report.insert("type".to_owned(), Value::Null);
             report.insert("param".to_owned(), Value::Null);
             report.insert("code".to_owned(), Value::Null);

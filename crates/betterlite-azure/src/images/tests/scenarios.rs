@@ -5,9 +5,10 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::image_generation::family::ImageFamily;
 
 use super::support::{
-    API_KEY, AZURE, BEARER, Harness, MAI_BODY, PROMPT, ProviderScript, Scenario, VERSION,
+    API_KEY, AZURE, BEARER, Harness, MAI_BODY, Outcome, PROMPT, ProviderScript, Scenario, VERSION,
     edit_form, ok_reply, reply, scenario,
 };
+use crate::azure_urls::AuthParams;
 use crate::credentials::selection::AzureTokenError;
 use crate::images::edit::{
     EditAuth, EditParams, EditUrl, finalize_image_edit_request_data, get_complete_url,
@@ -129,8 +130,8 @@ fn async_transforms() {
         outcome.url(),
         format!("{AZURE}/mai/v1/images/generations?api-version={VERSION}")
     );
-    assert_eq!(outcome.failure().class(), "AzureOpenAIError");
-    assert_eq!(outcome.failure().status(), Some(500));
+    // the async leg re-raises its own error unwrapped
+    assert_eq!(outcome.failure().classification(), ("NotBuilt", None));
     assert!(outcome.failure().to_string().contains("B554"));
     assert_eq!(outcome.logger.post.len(), 1);
 }
@@ -151,8 +152,10 @@ fn sync_transform() {
         outcome.url(),
         format!("{AZURE}/mai/v1/images/generations?api-version={VERSION}")
     );
-    assert_eq!(outcome.failure().class(), "AzureOpenAIError");
-    assert_eq!(outcome.failure().status(), Some(500));
+    assert_eq!(
+        outcome.failure().classification(),
+        ("AzureOpenAIError", Some(500))
+    );
     assert!(outcome.failure().to_string().contains("B554"));
     assert!(outcome.logger.post.is_empty());
 }
@@ -185,9 +188,10 @@ impl<'data> EditCase<'data> {
     }
 
     fn run(self) -> Result<BTreeMap<String, String>, AzureTokenError> {
+        let argument = self.argument.map(secrecy::SecretString::from);
         validate_environment(&EditAuth {
             headers: self.headers.into_iter().collect(),
-            api_key: self.argument,
+            api_key: argument.as_ref(),
             params: &self.params,
             credentials: self.credentials,
             environment: self.environment,
@@ -207,8 +211,9 @@ fn edit_auth_table() {
 // the deployment-settings key fills in when neither the argument nor litellm_params carries one
 fn edit_credentials_key() {
     let credentials = AzureCredentials {
+        api_base: None,
+        api_version: None,
         api_key: Some(secrecy::SecretString::from("credential-key")),
-        ..AzureCredentials::default()
     };
     let environment = BTreeMap::new();
     let keyed = EditCase::new(&credentials, &environment)
@@ -216,6 +221,23 @@ fn edit_credentials_key() {
         .expect("credential key");
     assert_eq!(
         keyed.get("api-key").map(String::as_str),
+        Some("credential-key")
+    );
+
+    // LiteLLM fills the positional key only when params.api_key is None, so an empty one blocks it
+    let blocked = EditCase {
+        argument: Some("positional-key"),
+        params: EditParams {
+            api_key: Some(secrecy::SecretString::from("")),
+            azure_ad_token: None,
+            auth: AuthParams::default(),
+        },
+        ..EditCase::new(&credentials, &environment)
+    }
+    .run()
+    .expect("credential key behind an empty params key");
+    assert_eq!(
+        blocked.get("api-key").map(String::as_str),
         Some("credential-key")
     );
 }
@@ -226,7 +248,8 @@ fn edit_key_and_token() {
     let keyed = EditCase {
         params: EditParams {
             api_key: Some(secrecy::SecretString::from(API_KEY)),
-            ..EditParams::default()
+            azure_ad_token: None,
+            auth: AuthParams::default(),
         },
         ..EditCase::new(&credentials, &environment)
     }
@@ -236,8 +259,9 @@ fn edit_key_and_token() {
     assert!(!keyed.contains_key("Authorization"));
 
     let token = EditParams {
+        api_key: None,
         azure_ad_token: Some(secrecy::SecretString::from(BEARER)),
-        ..EditParams::default()
+        auth: AuthParams::default(),
     };
     let bearer = EditCase {
         params: token,
@@ -258,7 +282,8 @@ fn edit_header_and_environment() {
         headers: vec![("api-key".to_owned(), "given".to_owned())],
         params: EditParams {
             api_key: Some(secrecy::SecretString::from(API_KEY)),
-            ..EditParams::default()
+            azure_ad_token: None,
+            auth: AuthParams::default(),
         },
         ..EditCase::new(&credentials, &environment)
     }
@@ -288,7 +313,7 @@ fn edit_url_empty_arguments() {
     let global = AzureCredentials {
         api_base: Some("https://global.openai.azure.com".to_owned()),
         api_version: Some("2024-06-01".to_owned()),
-        ..AzureCredentials::default()
+        api_key: None,
     };
     assert_eq!(
         edit_url(Some(""), Some(""), &global),
@@ -297,7 +322,7 @@ fn edit_url_empty_arguments() {
     let empty_version = AzureCredentials {
         api_base: Some("https://global.openai.azure.com".to_owned()),
         api_version: Some(String::new()),
-        ..AzureCredentials::default()
+        api_key: None,
     };
     assert_eq!(
         edit_url(None, None, &empty_version),
@@ -327,7 +352,7 @@ fn edit_url_versions() {
     let global = AzureCredentials {
         api_base: Some("https://global.openai.azure.com".to_owned()),
         api_version: Some("2024-06-01".to_owned()),
-        ..AzureCredentials::default()
+        api_key: None,
     };
     let url = get_complete_url(&EditUrl {
         model: "dall-e-3",
@@ -668,8 +693,11 @@ fn retry_rejected() {
             ..scenario("dall-e-3")
         });
         let error = outcome.failure();
-        assert_eq!(error.class(), "AzureOpenAIError", "{rejected}");
-        assert_eq!(error.status(), Some(422), "{rejected}");
+        assert_eq!(
+            error.classification(),
+            ("AzureOpenAIError", Some(422)),
+            "{rejected}"
+        );
         assert_eq!(
             error.to_string(),
             "max retries must be an int",
@@ -683,13 +711,20 @@ fn retry_rejected() {
         assert!(outcome.calls.is_empty(), "{rejected}");
         assert!(outcome.logger.post.is_empty(), "{rejected}");
     }
-    let mut harness = Harness::new(&[]).with_reply(ok_reply());
-    let outcome = harness.run(&Scenario {
-        optional: r#"{"extra_body":"nope"}"#.to_owned(),
-        ..scenario("dall-e-3")
-    });
-    assert_eq!(outcome.failure().class(), "AzureOpenAIError");
-    assert_eq!(outcome.failure().status(), Some(500));
+    // LiteLLM unpacks extra_body as a mapping, so null fails like any other non-object
+    for rejected in [r#"{"extra_body":"nope"}"#, r#"{"extra_body":null}"#] {
+        let mut harness = Harness::new(&[]).with_reply(ok_reply());
+        let outcome = harness.run(&Scenario {
+            optional: rejected.to_owned(),
+            ..scenario("dall-e-3")
+        });
+        assert_eq!(
+            outcome.failure().classification(),
+            ("AzureOpenAIError", Some(500)),
+            "{rejected}"
+        );
+        assert!(outcome.calls.is_empty(), "{rejected}");
+    }
 }
 
 pub(super) fn azure_image_auth() {
@@ -761,8 +796,10 @@ fn provider_table() {
         provider: Some(ProviderScript::Failure("RuntimeError", "boom")),
         ..scenario("dall-e-3")
     });
-    assert_eq!(outcome.failure().class(), "AzureOpenAIError");
-    assert_eq!(outcome.failure().status(), Some(500));
+    assert_eq!(
+        outcome.failure().classification(),
+        ("AzureOpenAIError", Some(500))
+    );
     assert!(outcome.calls.is_empty());
 }
 
@@ -771,20 +808,43 @@ pub(super) fn azure_image_errors() {
     async_failure_table();
 }
 
+// the reply's HTTP status decides the error, whatever code its body names
+const RATE_LIMITED: &str = r#"{"error":{"code":"429","message":"rate limited"}}"#;
+const BODY_ERROR: &str = r#"{"error":{"message":"boom","code":400}}"#;
+
+fn failed(status: u16, body: &'static str, delegate_async: bool) -> Outcome {
+    let mut harness = Harness::new(&[]).with_reply(reply(status, body));
+    harness.run(&Scenario {
+        delegate_async,
+        ..scenario("dall-e-3")
+    })
+}
+
 fn sync_failure_table() {
-    let body = r#"{"error":{"message":"boom","code":400}}"#;
-    let mut harness = Harness::new(&[]).with_reply(reply(400, body));
-    let outcome = harness.run(&scenario("dall-e-3"));
-    let error = outcome.failure();
-    assert_eq!(error.class(), "AzureOpenAIError");
-    assert_eq!(error.status(), Some(400));
+    for (status, body) in [(429, RATE_LIMITED), (503, "Service Unavailable")] {
+        let outcome = failed(status, body, false);
+        assert_eq!(
+            outcome.failure().classification(),
+            ("AzureOpenAIError", Some(status))
+        );
+        assert_eq!(outcome.failure().to_string(), body);
+        assert_eq!(outcome.logger.pre.len(), 1);
+        assert!(outcome.logger.post.is_empty(), "{status}");
+    }
+
+    let outcome = failed(200, BODY_ERROR, false);
+    assert_eq!(
+        outcome.failure().classification(),
+        ("AzureOpenAIError", Some(400))
+    );
     assert_eq!(outcome.logger.post.len(), 1);
     assert_eq!(outcome.logger.post[0].input, PROMPT);
 
-    let mut harness = Harness::new(&[]).with_reply(reply(200, "not json"));
-    let outcome = harness.run(&scenario("dall-e-3"));
-    assert_eq!(outcome.failure().class(), "AzureOpenAIError");
-    assert_eq!(outcome.failure().status(), Some(500));
+    let outcome = failed(200, "not json", false);
+    assert_eq!(
+        outcome.failure().classification(),
+        ("AzureOpenAIError", Some(500))
+    );
     assert!(outcome.logger.post.is_empty());
 
     let mut harness = Harness::new(&[]).with_reply(ok_reply());
@@ -792,25 +852,38 @@ fn sync_failure_table() {
         optional: r#"{"max_retries":null}"#.to_owned(),
         ..scenario("dall-e-3")
     });
-    assert_eq!(outcome.failure().status(), Some(422));
+    assert_eq!(outcome.failure().classification().1, Some(422));
     assert!(outcome.calls.is_empty());
     assert!(outcome.logger.pre.is_empty());
 }
 
+// the async leg logs each failure once as text and re-raises it as it was
 fn async_failure_table() {
-    let body = r#"{"error":{"message":"boom","code":400}}"#;
-    let mut harness = Harness::new(&[]).with_reply(reply(400, body));
-    let outcome = harness.run(&Scenario {
-        delegate_async: true,
-        ..scenario("dall-e-3")
-    });
-    assert_eq!(outcome.failure().class(), "AzureOpenAIError");
-    assert_eq!(outcome.failure().status(), Some(400));
+    for (status, body) in [(429, RATE_LIMITED), (503, "Service Unavailable")] {
+        let outcome = failed(status, body, true);
+        assert_eq!(
+            outcome.failure().classification(),
+            ("MaskedHTTPStatusError", Some(status))
+        );
+        assert_eq!(outcome.logger.post.len(), 1, "{status}");
+        assert_eq!(
+            outcome.logger.post[0].original_response,
+            Json::Text(body.to_owned())
+        );
+    }
+
+    let outcome = failed(200, "not json", true);
+    assert_eq!(outcome.failure().classification(), ("Exception", None));
+    assert_eq!(outcome.logger.post.len(), 1);
+
+    let outcome = failed(200, BODY_ERROR, true);
+    assert_eq!(outcome.failure().classification(), ("Exception", Some(400)));
     assert_eq!(outcome.logger.post.len(), 2);
     match &outcome.logger.post[1].original_response {
         Json::Text(text) => assert!(text.contains("boom")),
         _ => panic!("the async leg logs the failure as text"),
     }
+    url_failures();
 
     let mut harness = Harness::new(&[]).with_reply(ok_reply());
     let outcome = harness.run(&Scenario {
@@ -818,6 +891,30 @@ fn async_failure_table() {
         ..scenario("dall-e-3")
     });
     assert_eq!(outcome.success().reply.size.as_deref(), Some("1024x1024"));
+}
+
+// the async leg builds its URL inside the step that logs and re-raises, the sync leg inside the wrapper
+fn url_failures() {
+    let unusable = Scenario {
+        api_base: Some(format!("{AZURE}:port")),
+        api_version: Some("preview".to_owned()),
+        delegate_async: true,
+        ..scenario("dall-e-3")
+    };
+    let outcome = Harness::new(&[]).with_reply(ok_reply()).run(&unusable);
+    assert!(matches!(outcome.result, Err(ImageError::Url(_))));
+    assert!(outcome.calls.is_empty());
+    assert_eq!(outcome.logger.post.len(), 1);
+
+    let outcome = Harness::new(&[]).with_reply(ok_reply()).run(&Scenario {
+        delegate_async: false,
+        ..unusable
+    });
+    assert_eq!(
+        outcome.failure().classification(),
+        ("AzureOpenAIError", Some(500))
+    );
+    assert!(outcome.logger.post.is_empty());
 }
 
 fn target(

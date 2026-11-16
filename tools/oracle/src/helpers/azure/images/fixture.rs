@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Instant;
 
 use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
 use betterlite_azure::credentials::source::{
     CallableTokenProvider, CredentialSources, SourceFailure,
 };
+use betterlite_azure::endpoints::projection::LiteLlmParams;
 use betterlite_azure::image_transport::request::{ImageClientConstructor, TimeoutPhases};
 use betterlite_azure::image_transport::{ImageReply, ImageRequest, ImageTransport, SystemClock};
 use betterlite_azure::images::error::ImageError;
@@ -22,6 +22,7 @@ use http::header::HeaderMap;
 use secrecy::SecretString;
 use serde_json::Value;
 use tokio::runtime::Builder;
+use tokio::time::Instant;
 
 use super::input::Step;
 
@@ -39,15 +40,18 @@ fn generation<'a>(
     Generation {
         model: step.model.as_deref(),
         prompt: &step.prompt,
+        timeout: Some(600.0),
         optional_params: step.optional.clone(),
         headers: step.headers.clone().into_iter().collect(),
         api_key,
         api_base: step.api_base.as_deref(),
         api_version: step.api_version.as_deref(),
         azure_ad_token: token,
+        azure_ad_token_provider: None,
         base_model: step.base_model.as_deref(),
+        params: LiteLlmParams::default(),
+        delegate_async: false,
         now_seconds: 1_700_000_000,
-        ..Generation::default()
     }
 }
 
@@ -94,6 +98,7 @@ struct FixtureState {
     reply: Mutex<String>,
 }
 
+#[derive(Clone)]
 pub(super) struct RecordedCall {
     pub(super) url: String,
     pub(super) body: Option<Value>,

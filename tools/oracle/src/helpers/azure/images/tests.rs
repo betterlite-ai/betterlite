@@ -5,7 +5,7 @@ use std::path::Path;
 
 use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 
-use super::Input;
+use super::input::Input;
 
 fn seeds() -> Vec<(String, HelperCase)> {
     let corpus =

@@ -12,6 +12,9 @@ call:
       - env_token: env-token
       - api_key: positional-key
         params: {azure_ad_token: params-token}
+      - api_key: positional-key
+        params: {api_key: ""}
+        env_token: env-token
     generations:
       - prompt: a cat
         model: dall-e-3

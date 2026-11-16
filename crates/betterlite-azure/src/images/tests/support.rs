@@ -135,8 +135,8 @@ impl CredentialSources for NoSources {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct RecordedCall {
-    pub method: String,
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: Option<Json>,
@@ -174,7 +174,6 @@ impl ImageTransport for FixtureTransport {
         request: ImageRequest,
     ) -> impl Future<Output = Result<ImageReply, TransportError>> + Send {
         lock(&self.state.calls).push(RecordedCall {
-            method: request.method.to_string(),
             url: request.url.clone(),
             headers: request
                 .headers
@@ -241,7 +240,6 @@ impl ImageGenerationLogger for RecordingLogger {
     }
 }
 
-#[derive(Default)]
 pub(super) struct Scenario {
     pub model: Option<String>,
     pub base_model: Option<String>,
@@ -259,13 +257,6 @@ pub(super) struct Scenario {
 }
 
 impl Scenario {
-    pub(super) fn new() -> Self {
-        Self {
-            prompt: PROMPT.to_owned(),
-            ..Self::default()
-        }
-    }
-
     fn optional_params(&self) -> IndexMap<String, Json> {
         if self.optional.is_empty() {
             return IndexMap::new();
@@ -285,9 +276,18 @@ impl Scenario {
 pub(super) fn scenario(model: &str) -> Scenario {
     Scenario {
         model: Some(model.to_owned()),
+        base_model: None,
+        prompt: PROMPT.to_owned(),
+        optional: String::new(),
+        headers: Vec::new(),
         api_key: Some(API_KEY.to_owned()),
         api_base: Some(AZURE.to_owned()),
-        ..Scenario::new()
+        api_version: None,
+        azure_ad_token: None,
+        provider: None,
+        params: String::new(),
+        delegate_async: false,
+        timeout: None,
     }
 }
 

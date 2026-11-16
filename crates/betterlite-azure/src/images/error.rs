@@ -52,18 +52,21 @@ pub enum ImageError {
     Logging(#[from] PrePostError),
     #[error("{message}")]
     Azure { status: u16, message: String },
+    // LiteLLM's HTTP handler raises for a reply outside 2xx before anything reads its body
+    #[error("{body}")]
+    Status { status: u16, body: String },
 }
 
 impl ImageError {
     // the Python class and HTTP status LiteLLM's caller sees for this failure
     #[must_use]
-    fn classification(&self) -> (&str, Option<u16>) {
+    pub fn classification(&self) -> (&str, Option<u16>) {
         match self {
             Self::MaxRetries => ("AzureOpenAIError", Some(422)),
             Self::ExtraBody | Self::Field { .. } | Self::Header { .. } => ("TypeError", None),
             Self::Url(_) => ("ValueError", None),
             Self::Client(error) => (error.class(), error.status()),
-            Self::Classified(error) => (&error.class, error.status),
+            Self::Classified(error) => (error.class.as_str(), error.status),
             // the transport errors that carry an HTTP status are the ones LiteLLM's request helper raises itself
             Self::Transport(error) => (
                 error
@@ -76,26 +79,18 @@ impl ImageError {
             }
             Self::Reply(_) | Self::Json(_) | Self::Logging(_) => ("Exception", None),
             Self::Azure { status, .. } => ("AzureOpenAIError", Some(*status)),
+            Self::Status { status, .. } => ("MaskedHTTPStatusError", Some(*status)),
         }
-    }
-
-    #[must_use]
-    pub fn class(&self) -> &str {
-        self.classification().0
-    }
-
-    #[must_use]
-    pub fn status(&self) -> Option<u16> {
-        self.classification().1
     }
 
     // LiteLLM re-raises its own image errors and wraps every other one with str(error) and status or 500
     #[must_use]
     pub fn into_sync(self) -> Self {
-        if self.class() == "AzureOpenAIError" {
+        let (class, status) = self.classification();
+        if class == "AzureOpenAIError" {
             return self;
         }
-        let status = self.status().unwrap_or(500);
+        let status = status.unwrap_or(500);
         let message = self.to_string();
         Self::Azure { status, message }
     }

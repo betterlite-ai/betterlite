@@ -1,4 +1,3 @@
-// LiteLLM's Azure image URL order: MAI first, then FLUX 2, then the v1 surface, then the dated deployment route
 use crate::azure_urls::{AzureUrlError, get_azure_v1_image_url};
 
 const MAI_DEFAULT_API_VERSION: &str = "preview";
@@ -26,8 +25,10 @@ pub fn create_azure_base_url(
     if is_mai_model(mai_model) {
         return Ok(mai_image_generation_url(base, params.api_version));
     }
-    if is_flux2_model(model) {
-        return Ok(flux2_image_generation_url(base, model, params.api_version));
+    // FLUX 2 reads the deployment model alone, with dots and underscores read as hyphens
+    let flux = model.to_lowercase().replace(['.', '_'], "-");
+    if flux.contains("flux-2") || flux.contains("flux2") {
+        return Ok(flux2_image_generation_url(base, &flux, params.api_version));
     }
     if let Some(url) =
         get_azure_v1_image_url(base, params.api_version, "/openai/images/generations")?
@@ -41,19 +42,13 @@ pub fn create_azure_base_url(
     ))
 }
 
-// Neither marker looks at case, and both ignore the separators a deployment name may carry
+// The marker ignores case and the separators a deployment name may carry
 #[must_use]
 pub fn is_mai_model(model: &str) -> bool {
     model
         .replace(['-', '_'], "")
         .to_lowercase()
         .contains("maiimage")
-}
-
-#[must_use]
-pub fn is_flux2_model(model: &str) -> bool {
-    let normalized = model.to_lowercase().replace(['.', '_'], "-");
-    normalized.contains("flux-2") || normalized.contains("flux2")
 }
 
 // An api_base that already holds /mai/ is cut at its first /images/; otherwise /mai/v1/images/ is appended
@@ -79,7 +74,7 @@ fn mai_image_generation_url(base: &str, api_version: Option<&str>) -> String {
     )
 }
 
-fn flux2_image_generation_url(base: &str, model: &str, api_version: Option<&str>) -> String {
+fn flux2_image_generation_url(base: &str, normalized: &str, api_version: Option<&str>) -> String {
     let version = api_version
         .filter(|text| !text.is_empty())
         .unwrap_or(MAI_DEFAULT_API_VERSION);
@@ -90,11 +85,7 @@ fn flux2_image_generation_url(base: &str, model: &str, api_version: Option<&str>
             format!("{base}?api-version={version}")
         };
     }
-    let path = if model
-        .to_lowercase()
-        .replace(['.', '_'], "-")
-        .contains("flux-2-flex")
-    {
+    let path = if normalized.contains("flux-2-flex") {
         "flux-2-flex"
     } else {
         "flux-2-pro"

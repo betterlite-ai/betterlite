@@ -65,6 +65,7 @@ pub fn validate_environment(
                 .api_key
                 .as_ref()
                 .filter(|key| !key.expose_secret().is_empty())
+                .cloned()
         });
     let auth = resolve_auth_environment(request.params.auth.clone(), request.environment);
     let credentials = DeploymentSettings {
