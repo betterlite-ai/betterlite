@@ -186,10 +186,10 @@ fn completion_projection(completion: FalChatCompletion) -> Value {
         "object": response.object,
         "created_stamped": response.created == STAMPED_AT,
         "model": response.model,
-        "role": choice.map(|choice| choice.message.role.as_str()),
-        "content": choice.and_then(|choice| choice.message.content.as_deref()),
+        "role": choice.map(|first| first.message.role.as_str()),
+        "content": choice.and_then(|first| first.message.content.as_deref()),
         "reasoning_content": completion.reasoning_content,
-        "finish_reason": choice.and_then(|choice| choice.finish_reason.as_deref()),
+        "finish_reason": choice.and_then(|first| first.finish_reason.as_deref()),
         "usage": {
             "prompt_tokens": response.usage.prompt_tokens,
             "completion_tokens": response.usage.completion_tokens,
