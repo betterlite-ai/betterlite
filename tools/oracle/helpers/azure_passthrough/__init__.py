@@ -213,10 +213,6 @@ def nonstream_step(step: Step) -> Json:
     }
 
 
-def nonstream_report(steps: list[Step]) -> Json:
-    return {"steps": [nonstream_step(step) for step in steps]}
-
-
 def key_step(step: Step) -> Json:
     with azure_environment(None, step.get("env_key")):
         return AzurePassthroughConfig.get_api_key(step.get("api_key"))
@@ -268,5 +264,5 @@ def run(input_value: Input) -> Json:
     elif function == "messages_relay_log":
         report = relay_report(input_value["relay_steps"])
     else:
-        report = nonstream_report(input_value["nonstream_steps"])
+        report = {"steps": [nonstream_step(step) for step in input_value["nonstream_steps"]]}
     return report

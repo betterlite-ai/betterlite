@@ -154,10 +154,8 @@ fn relay_step(step: &RelayStep) -> Value {
     );
     let assembly = config.chat_stream.assembly();
     let called = assembly.is_some();
-    let (model, messages) = match assembly {
-        Some(assembly) => (Some(assembly.model), assembly.messages),
-        None => (None, None),
-    };
+    let messages = assembly.as_ref().map(|assembly| assembly.messages.clone());
+    let model = assembly.map_or_else(|| step.model.clone(), |assembly| assembly.model);
     json!({
         "called": called,
         "result": logged.is_some(),
