@@ -74,30 +74,7 @@ impl Agent365Guardrail {
         let seconds = settings.request_timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS);
         let request_timeout = Duration::try_from_secs_f64(seconds)
             .map_err(|source| Agent365Error::Timeout { seconds, source })?;
-        let base = GuardrailBase::new(
-            GuardrailSettings {
-                guardrail_name: Some(settings.guardrail_name.clone()),
-                supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
-                event_hook: settings.event_hook.clone(),
-                default_on: settings.default_on,
-                mask_request_content: false,
-                mask_response_content: false,
-                violation_message_template: None,
-                end_session_after_n_fails: None,
-                on_violation: None,
-                realtime_violation_message: None,
-                on_sensitive_data: None,
-                sensitive_data_route_to_model: None,
-                sticky_session_routing: true,
-                // LiteLLM constructs this guardrail with run_in_parallel=True
-                run_in_parallel: true,
-                scan_raw_request: false,
-                only_scan_new_messages: false,
-                timeout: None,
-                switches: AGENT_365_SWITCHES,
-            },
-            strict_modes,
-        )?;
+        let base = GuardrailBase::new(base_settings(&settings), strict_modes)?;
         let name = &settings.guardrail_name;
         tracing::info!("Initialized Microsoft Agent 365 guardrail: {name}");
         Ok(Self {
@@ -166,5 +143,29 @@ impl Agent365Guardrail {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop(&cache_key);
+    }
+}
+
+fn base_settings(settings: &Agent365Settings) -> GuardrailSettings {
+    GuardrailSettings {
+        guardrail_name: Some(settings.guardrail_name.clone()),
+        supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
+        event_hook: settings.event_hook.clone(),
+        default_on: settings.default_on,
+        mask_request_content: false,
+        mask_response_content: false,
+        violation_message_template: None,
+        end_session_after_n_fails: None,
+        on_violation: None,
+        realtime_violation_message: None,
+        on_sensitive_data: None,
+        sensitive_data_route_to_model: None,
+        sticky_session_routing: true,
+        // LiteLLM constructs this guardrail with run_in_parallel=True
+        run_in_parallel: true,
+        scan_raw_request: false,
+        only_scan_new_messages: false,
+        timeout: None,
+        switches: AGENT_365_SWITCHES,
     }
 }

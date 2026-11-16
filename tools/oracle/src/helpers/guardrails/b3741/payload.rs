@@ -8,14 +8,14 @@ use super::{Data, PayloadAssemblyArgs, UUID_MARKER};
 use crate::helpers::{HelperResult, OrHelperError as _};
 
 fn insert_metadata(data: &mut Data, name: &str, metadata: Option<&Data>) {
-    if let Some(metadata) = metadata {
-        let _previous = data.insert(name.to_owned(), GuardrailValue::Object(metadata.clone()));
+    if let Some(fields) = metadata {
+        let _previous = data.insert(name.to_owned(), GuardrailValue::Object(fields.clone()));
     }
 }
 
 fn insert_text(data: &mut Data, name: &str, value: Option<&str>) {
-    if let Some(value) = value {
-        let _previous = data.insert(name.to_owned(), GuardrailValue::Text(value.to_owned()));
+    if let Some(text) = value {
+        let _previous = data.insert(name.to_owned(), GuardrailValue::Text(text.to_owned()));
     }
 }
 
