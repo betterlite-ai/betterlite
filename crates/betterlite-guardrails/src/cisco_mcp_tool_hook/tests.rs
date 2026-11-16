@@ -11,7 +11,6 @@ use axum::routing::post;
 use betterlite_config::sections::cisco_verdict_contracts::{
     Configured, FallbackAction, FlaggedAction, InspectionType,
 };
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::mcp_tool_hook::types::{
@@ -196,14 +195,14 @@ fn blocking_text(reply: &McpPostCallResponse) -> String {
 #[test]
 fn copies_the_listed_kwargs_and_skips_null_ones() {
     let kwargs = kwargs(
-        r#"{"name":"get_weather","mcp_tool_name":"get_weather","arguments":{"city":"SF"},"guardrails":null,"unlisted":"dropped"}"#,
+        r#"{"unlisted":"dropped","guardrails":["cisco-ai-defense"],"mcp_tool_call_metadata":{"name":"x"},"litellm_metadata":{"l":"2"},"metadata":{"m":"1"},"server_name":"srv2","mcp_server_name":"srv","arguments":{"b":"2"},"mcp_arguments":{"a":"1"},"tool_name":"tool2","mcp_tool_name":"tool","user":null,"id":"id-1","litellm_call_id":"call-1","name":"n"}"#,
     );
 
     let data = super::request::request_fields(&kwargs);
 
     assert_eq!(
         serde_json::to_string(&data).expect("fields serialize"),
-        r#"{"name":"get_weather","mcp_tool_name":"get_weather","arguments":{"city":"SF"}}"#
+        r#"{"name":"n","litellm_call_id":"call-1","id":"id-1","mcp_tool_name":"tool","tool_name":"tool2","mcp_arguments":{"a":"1"},"arguments":{"b":"2"},"mcp_server_name":"srv","server_name":"srv2","metadata":{"m":"1"},"litellm_metadata":{"l":"2"},"mcp_tool_call_metadata":{"name":"x"},"guardrails":["cisco-ai-defense"]}"#
     );
 }
 
@@ -520,44 +519,6 @@ fn the_callback_is_named_after_the_guardrail() {
     assert_eq!(hook.callback_name(), "cisco-ai-defense");
 }
 
-#[test]
-fn the_gate_data_carries_every_request_field_value() {
-    let Json::Object(fields) = Json::parse(
-        r#"{"n":null,"b":true,"i":-3,"u":18446744073709551615,"d":1.5,"t":"s","l":[1,"x"],"o":{"k":false}}"#,
-    ) else {
-        panic!("expected an object");
-    };
-
-    let data = super::request::guardrail_data(&fields);
-
-    let expected = BTreeMap::from([
-        ("n".to_owned(), GuardrailValue::Null),
-        ("b".to_owned(), GuardrailValue::Boolean(true)),
-        ("i".to_owned(), GuardrailValue::SignedInteger(-3)),
-        (
-            "u".to_owned(),
-            GuardrailValue::UnsignedInteger(18_446_744_073_709_551_615),
-        ),
-        ("d".to_owned(), GuardrailValue::Decimal(1.5)),
-        ("t".to_owned(), GuardrailValue::Text("s".to_owned())),
-        (
-            "l".to_owned(),
-            GuardrailValue::Array(vec![
-                GuardrailValue::SignedInteger(1),
-                GuardrailValue::Text("x".to_owned()),
-            ]),
-        ),
-        (
-            "o".to_owned(),
-            GuardrailValue::Object(BTreeMap::from([(
-                "k".to_owned(),
-                GuardrailValue::Boolean(false),
-            )])),
-        ),
-    ]);
-    assert_eq!(data, expected);
-}
-
 #[tokio::test]
 async fn the_trait_hook_copies_the_kwargs_and_returns_the_block() {
     let (base, _server) = serve(StatusCode::OK, br#"{"action":"block"}"#.to_vec()).await;
@@ -577,4 +538,108 @@ async fn the_trait_hook_copies_the_kwargs_and_returns_the_block() {
         response.mcp_tool_call_response,
         reply.mcp_tool_call_response
     );
+}
+
+#[tokio::test]
+async fn a_copied_guardrails_list_is_the_only_reason_an_opt_in_gate_runs() {
+    let (base, _server) = serve(StatusCode::OK, br#"{"action":"block"}"#.to_vec()).await;
+    let mut opt_in = hook(guardrail(InspectionType::Mcp, base), "\"during_mcp_call\"");
+    opt_in.selection.settings.default_on = false;
+    let requested = kwargs(
+        r#"{"mcp_tool_name":"get_weather","guardrails":["cisco-ai-defense"],"metadata":{}}"#,
+    );
+    let unrequested = kwargs(r#"{"mcp_tool_name":"get_weather","metadata":{}}"#);
+    let mut response = response_copy();
+    let mut original = tool_result();
+
+    let skipped = opt_in
+        .async_post_mcp_tool_call_hook(call(&unrequested, &mut response, &mut original))
+        .await
+        .expect("hook");
+    let scanned = opt_in
+        .async_post_mcp_tool_call_hook(call(&requested, &mut response, &mut original))
+        .await
+        .expect("hook");
+
+    assert!(skipped.is_none());
+    assert!(scanned.is_some());
+}
+
+#[tokio::test]
+async fn a_fail_closed_api_error_replaces_the_copy_and_the_original() {
+    let (base, _server) = serve(StatusCode::INTERNAL_SERVER_ERROR, Vec::new()).await;
+    let hook = hook(guardrail(InspectionType::Mcp, base), "\"during_mcp_call\"");
+    let kwargs = kwargs(r#"{"mcp_tool_name":"get_weather","original_response":{},"metadata":{}}"#);
+    let mut request_data = prepared(&kwargs);
+    let mut response = response_copy();
+    let mut original = tool_result();
+
+    let result = hook
+        .inspect_tool_output(
+            &mut request_data,
+            call(&kwargs, &mut response, &mut original),
+        )
+        .await
+        .expect("hook");
+
+    let reply = result.expect("blocking reply");
+    let text = blocking_text(&reply);
+    assert!(text.contains("CiscoAIDefenseGuardrailAPIError"));
+    assert!(text.contains("fallback_on_error='block'"));
+    assert_eq!(
+        response.mcp_tool_call_response,
+        reply.mcp_tool_call_response
+    );
+    assert_eq!(original.content, reply.mcp_tool_call_response);
+    assert_eq!(applied_guardrails(&request_data), vec!["cisco-ai-defense"]);
+}
+
+#[tokio::test]
+async fn a_fail_open_api_error_leaves_the_output_and_records() {
+    let (base, _server) = serve(StatusCode::INTERNAL_SERVER_ERROR, Vec::new()).await;
+    let mut open = guardrail(InspectionType::Mcp, base);
+    open.settings.fallback_on_error = FallbackAction::Allow;
+    let hook = hook(open, "\"during_mcp_call\"");
+    let kwargs = kwargs(r#"{"mcp_tool_name":"get_weather","original_response":{},"metadata":{}}"#);
+    let mut request_data = prepared(&kwargs);
+    let mut response = response_copy();
+    let mut original = tool_result();
+
+    let result = hook
+        .inspect_tool_output(
+            &mut request_data,
+            call(&kwargs, &mut response, &mut original),
+        )
+        .await
+        .expect("hook");
+
+    assert!(result.is_none());
+    assert_eq!(response.mcp_tool_call_response, vec![text_item("secret")]);
+    assert_eq!(original.content, vec![text_item("secret")]);
+    assert_eq!(applied_guardrails(&request_data), vec!["cisco-ai-defense"]);
+}
+
+#[tokio::test]
+async fn monitor_mode_leaves_a_flagged_output_and_records() {
+    let (base, _server) = serve(StatusCode::OK, br#"{"action":"block"}"#.to_vec()).await;
+    let mut monitoring = guardrail(InspectionType::Mcp, base);
+    monitoring.settings.on_flagged_action = FlaggedAction::Monitor;
+    let hook = hook(monitoring, "\"during_mcp_call\"");
+    let kwargs = kwargs(r#"{"mcp_tool_name":"get_weather","original_response":{},"metadata":{}}"#);
+    let mut request_data = prepared(&kwargs);
+    let mut response = response_copy();
+    let mut original = tool_result();
+
+    let result = hook
+        .inspect_tool_output(
+            &mut request_data,
+            call(&kwargs, &mut response, &mut original),
+        )
+        .await
+        .expect("hook");
+
+    assert!(result.is_none());
+    assert_eq!(response.mcp_tool_call_response, vec![text_item("secret")]);
+    assert_eq!(original.content, vec![text_item("secret")]);
+    assert_eq!(applied_guardrails(&request_data), vec!["cisco-ai-defense"]);
 }

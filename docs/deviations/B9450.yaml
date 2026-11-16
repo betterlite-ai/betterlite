@@ -75,4 +75,31 @@ deviations:
       is identical, so the oracle cases compare the text after parsing it, and a client that parses
       the text sees no difference.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L175-L213
+  - what: >-
+      The buffered stream is capped at the API boundary limits (64 Ki chunks and 16 MiB of serialized chunk JSON);
+      a stream over either cap is withheld and answers the scan-error SSE event (guardrail_scan_error, 500), on the
+      scanned path and on both passthrough branches.
+    why: >-
+      LiteLLM appends every chunk to an unbounded list, so an untrusted provider answer grows its memory without
+      limit; betterlite bounds the buffer the way the noma streaming hook does, with ApiLimits::default() and
+      RetentionBudget, so a stream over the cap now fails where LiteLLM buffered and delivered it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L444-L453
+  - what: >-
+      On both passthrough branches (inspection type other than chat, and a false post_call gate) scan_stream returns
+      the chunks as one list after the upstream stream ends, so an unscanned stream's first byte waits for the whole
+      answer and a stream that never ends delivers nothing.
+    why: >-
+      LiteLLM yields each chunk as it arrives on these branches. scan_stream's signature returns a Vec of items, so
+      the caller cannot see a chunk before the stream finishes; the caller that composes the hook (B8666) can skip
+      scan_stream for these two branches and forward the provider stream itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L429-L437
+  - what: >-
+      A streamed chunk whose reasoning lives only in the delta's reasoning_items is not part of the scanned text, so
+      a flagged reasoning item is delivered unscanned.
+    why: >-
+      LiteLLM's streamed Delta declares reasoning_items and _extract_message_reasoning_parts reads each item's summary
+      text and its text, reasoning and reasoning_content keys. B2227's Delta record has no such field and drops it
+      when the chunk is read, so the hook never sees it; the field has to be added to that record (B2227's file,
+      outside this task's scope) and read in scan_text.rs delta_fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L2049-L2057
 kept_bugs: []

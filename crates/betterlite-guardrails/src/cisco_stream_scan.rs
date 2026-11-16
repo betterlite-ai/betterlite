@@ -2,6 +2,8 @@ use std::fmt::Display;
 use std::pin::pin;
 
 use betterlite_config::sections::cisco_verdict_contracts::InspectionType;
+use betterlite_core::api::api_boundaries::ApiLimits;
+use betterlite_core::api::messages_native_stream::retention::RetentionBudget;
 use betterlite_streaming::streamed_response_assembly::records::{Chunk, TextField};
 use betterlite_streaming::streamed_response_assembly::response::Response;
 use futures_util::StreamExt as _;
@@ -17,7 +19,6 @@ use crate::cisco_inspection::hooks::{PostCallArgs, extract_response_messages};
 use crate::cisco_stream_scan::delivery::{
     deliver, joined_contents, pass_chunks, scan_failure, stream_outcome,
 };
-use crate::cisco_stream_scan::events;
 use crate::cisco_stream_scan::scan_text::chunk_scan_text;
 use crate::cisco_verdict_enforcement::api_error::ApiErrorDetail;
 use crate::cisco_verdict_enforcement::block_payload::BlockPayload;
@@ -48,32 +49,58 @@ where
     S: Stream<Item = Result<Chunk, StreamError>>,
     StreamError: Display,
 {
+    let name = guardrail.settings.guardrail_name.as_str();
     if guardrail.settings.inspection_type != InspectionType::Chat || !args.should_run {
-        let buffered = collect_chunks(chunks, false).await?;
+        let Buffered::Chunks(buffered) = collect_chunks(chunks, false).await? else {
+            return Ok(events::event(name, events::SCAN_ERROR));
+        };
         return Ok(pass_chunks(&buffered));
     }
-    let name = guardrail.settings.guardrail_name.as_str();
     tracing::debug!("Cisco AI Defense guardrail ({name}): scanning streaming chat response.");
-    let buffered = collect_chunks(chunks, true).await?;
+    let Buffered::Chunks(buffered) = collect_chunks(chunks, true).await? else {
+        return Ok(events::event(name, events::SCAN_ERROR));
+    };
     if buffered.is_empty() {
         return Ok(Vec::new());
     }
     Ok(scan_chat(guardrail, request_data, &buffered, args.key_user_id).await)
 }
 
+enum Buffered {
+    Chunks(Vec<Chunk>),
+    OverBudget,
+}
+
+// The buffer holds untrusted provider output, so the API boundary ceilings bound it as they do for noma
 async fn collect_chunks<S, StreamError>(
     chunks: S,
     log_failure: bool,
-) -> Result<Vec<Chunk>, StreamError>
+) -> Result<Buffered, StreamError>
 where
     S: Stream<Item = Result<Chunk, StreamError>>,
     StreamError: Display,
 {
+    let limits = ApiLimits::default();
+    let mut budget = RetentionBudget {
+        max_bytes: limits.max_json_bytes,
+        max_chunks: limits.max_items,
+        bytes: 0,
+        chunks: 0,
+    };
     let mut buffered = Vec::new();
     let mut chunks = pin!(chunks);
     while let Some(item) = chunks.next().await {
         match item {
-            Ok(chunk) => buffered.push(chunk),
+            Ok(chunk) => {
+                let size = serde_json::to_string(&chunk).map_or(usize::MAX, |text| text.len());
+                if budget.accept(size).is_err() {
+                    tracing::error!(
+                        "Cisco AI Defense guardrail: streaming response exceeded the buffer limit"
+                    );
+                    return Ok(Buffered::OverBudget);
+                }
+                buffered.push(chunk);
+            }
             Err(error) => {
                 if log_failure {
                     tracing::error!(
@@ -84,7 +111,7 @@ where
             }
         }
     }
-    Ok(buffered)
+    Ok(Buffered::Chunks(buffered))
 }
 
 async fn scan_chat(

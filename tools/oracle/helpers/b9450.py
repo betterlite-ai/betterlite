@@ -24,6 +24,7 @@ class Settings(TypedDict, total=False):
     inspection_type: str
     event_hook: GuardrailEventHooks
     fallback_on_error: str
+    on_flagged_action: str
 
 
 class Answer(TypedDict):
@@ -131,6 +132,7 @@ def build_guardrail(settings: Settings, script: Script) -> CiscoAIDefenseGuardra
         api_base=INSPECT_BASE,
         inspection_type=settings.get("inspection_type"),
         fallback_on_error=settings.get("fallback_on_error"),
+        on_flagged_action=settings.get("on_flagged_action"),
     )
     cisco.event_hook = settings.get("event_hook")
     cisco.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(script))
@@ -190,10 +192,7 @@ def item_value(item: ModelResponseStream | str) -> JsonValue:
 
 
 def content_values(items: list[ContentItemDump]) -> list[JsonValue]:
-    rendered: list[JsonValue] = []
-    for item in items:
-        rendered.append({"type": item["type"], "text": parsed_text(item["text"])})
-    return rendered
+    return [{"type": item["type"], "text": parsed_text(item["text"])} for item in items]
 
 
 def recorded(script: Script) -> tuple[JsonValue, JsonValue]:
@@ -240,7 +239,7 @@ async def stream_async(input_value: StreamInput) -> JsonValue:
     script = Script(input_value["answer"])
     cisco = build_guardrail(input_value["settings"], script)
     request_data = dict(input_value["request_data"])
-    responses = cast("AsyncIterator[ModelResponseStream | str]", cisco.async_post_call_streaming_iterator_hook(UserAPIKeyAuth(), chunk_stream(stream_items(input_value["chunks"])), request_data))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L419-L537
+    responses = cast("AsyncIterator[ModelResponseStream | str]", cisco.async_post_call_streaming_iterator_hook(UserAPIKeyAuth(), chunk_stream(stream_items(input_value["chunks"])), request_data))  # noqa: E501  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L419-L537
     yielded: list[JsonValue] = [item_value(item) async for item in responses]
     path, request = recorded(script)
     return {
@@ -259,9 +258,7 @@ async def mcp_async(input_value: McpInput) -> JsonValue:
         {"mcp_tool_call_response": content, "hidden_params": {"response_cost": None}}
     )
     original = CallToolResult.model_validate({"content": content})
-    kwargs: dict[str, JsonValue | CallToolResult] = {}
-    for key, value in input_value["kwargs"].items():
-        kwargs[key] = value
+    kwargs: dict[str, JsonValue | CallToolResult] = dict(input_value["kwargs"])
     if kwargs.get("original_response") is not None:
         kwargs["original_response"] = original
     returned = await cisco.async_post_mcp_tool_call_hook(

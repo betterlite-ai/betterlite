@@ -61,7 +61,7 @@ impl CiscoMcpToolHook {
         mut call: McpToolHookCall<'_>,
     ) -> Result<Option<McpPostCallResponse>, LoggerError> {
         let name = self.guardrail.settings.guardrail_name.as_str();
-        if !self.runs(&guardrail_data(request_data))? {
+        if !self.runs(&guardrail_data(request_data, name)?)? {
             tracing::debug!(
                 "Cisco AI Defense guardrail ({name}): no MCP mode configured — skipping MCP response scan."
             );

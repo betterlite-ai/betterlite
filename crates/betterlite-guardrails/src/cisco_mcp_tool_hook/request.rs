@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
-
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_core::passthrough_guardrail::settings::RequestData;
+use betterlite_core::passthrough_guardrail::wire::parse_request_data;
+use betterlite_logging::callback_logger::error::LoggerError;
 use betterlite_logging::mcp_tool_hook::types::McpPostCallResponse;
 use betterlite_models::decisions::Json as DecisionsJson;
 use indexmap::IndexMap;
@@ -39,46 +39,18 @@ pub(super) fn request_fields(kwargs: &IndexMap<String, DecisionsJson>) -> Fields
     data
 }
 
-pub(super) fn guardrail_data(request_data: &Fields) -> BTreeMap<String, GuardrailValue> {
-    let mut data = BTreeMap::new();
-    for (key, raw) in request_data {
-        data.insert(key.clone(), guardrail_value(&Json::parse(raw.get())));
-    }
-    data
-}
-
-fn guardrail_value(value: &Json) -> GuardrailValue {
-    match value {
-        Json::Null => GuardrailValue::Null,
-        Json::Bool(flag) => GuardrailValue::Boolean(*flag),
-        Json::Number(text) => number_value(text),
-        Json::Text(text) => GuardrailValue::Text(text.clone()),
-        Json::List(items) => GuardrailValue::Array(
-            items
-                .iter()
-                .map(|item| guardrail_value(&Json::parse(item.get())))
-                .collect(),
-        ),
-        Json::Object(fields) => GuardrailValue::Object(
-            fields
-                .iter()
-                .map(|(key, raw)| (key.clone(), guardrail_value(&Json::parse(raw.get()))))
-                .collect(),
-        ),
-    }
-}
-
-fn number_value(text: &str) -> GuardrailValue {
-    if let Ok(signed) = text.parse::<i64>() {
-        return GuardrailValue::SignedInteger(signed);
-    }
-    if let Ok(unsigned) = text.parse::<u64>() {
-        return GuardrailValue::UnsignedInteger(unsigned);
-    }
-    match text.parse::<f64>() {
-        Ok(decimal) => GuardrailValue::Decimal(decimal),
-        Err(_) => GuardrailValue::Text(text.to_owned()),
-    }
+pub(super) fn guardrail_data(
+    request_data: &Fields,
+    callback: &str,
+) -> Result<RequestData, LoggerError> {
+    let text = serde_json::to_string(request_data).map_err(|error| LoggerError::Delivery {
+        callback: callback.to_owned(),
+        message: error.to_string(),
+    })?;
+    parse_request_data(&text).map_err(|error| LoggerError::Delivery {
+        callback: callback.to_owned(),
+        message: error.to_string(),
+    })
 }
 
 pub(super) fn scanned_response(response: &McpPostCallResponse) -> Option<Json> {

@@ -9,6 +9,7 @@ use axum::routing::post;
 use betterlite_config::sections::cisco_verdict_contracts::{
     Configured, FallbackAction, FlaggedAction, InspectionType,
 };
+use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_streaming::stream_usage_assembly::UsageTokenCounter as _;
 use betterlite_streaming::streamed_response_assembly::records::Chunk;
 use futures_util::stream;
@@ -486,4 +487,97 @@ async fn the_scan_counter_counts_zero_tokens() {
         counter.count_messages("gpt-4o", None).await.expect("count"),
         0
     );
+}
+
+#[tokio::test]
+async fn a_stream_over_the_item_limit_is_withheld_when_scanned() {
+    let (base, _server) = serve(StatusCode::OK, br#"{"action":"allow"}"#.to_vec()).await;
+    let guardrail = guardrail(InspectionType::Chat, FallbackAction::Block, base);
+    let mut request_data = obj(r#"{"metadata":{}}"#);
+    let one = chunk(SECOND_CHUNK);
+    let endless =
+        (0..=ApiLimits::default().max_items).map(move |_| Ok::<Chunk, io::Error>(one.clone()));
+
+    let items = scan_stream(&guardrail, &mut request_data, stream::iter(endless), args())
+        .await
+        .expect("stream");
+
+    assert_eq!(items, vec![StreamItem::Sse(scan_error_event())]);
+    assert!(applied_guardrails(&request_data).is_empty());
+}
+
+#[tokio::test]
+async fn a_stream_over_the_item_limit_is_withheld_when_passed_through() {
+    let guardrail = guardrail(
+        InspectionType::Mcp,
+        FallbackAction::Block,
+        "http://127.0.0.1:1".to_owned(),
+    );
+    let mut request_data = obj("{}");
+    let one = chunk(SECOND_CHUNK);
+    let endless =
+        (0..=ApiLimits::default().max_items).map(move |_| Ok::<Chunk, io::Error>(one.clone()));
+
+    let items = scan_stream(&guardrail, &mut request_data, stream::iter(endless), args())
+        .await
+        .expect("stream");
+
+    assert_eq!(items, vec![StreamItem::Sse(scan_error_event())]);
+}
+
+#[tokio::test]
+async fn monitor_mode_delivers_a_flagged_stream_and_records() {
+    let (base, _server) = serve(StatusCode::OK, br#"{"action":"block"}"#.to_vec()).await;
+    let mut monitoring = guardrail(InspectionType::Chat, FallbackAction::Block, base);
+    monitoring.settings.on_flagged_action = FlaggedAction::Monitor;
+    let mut request_data = obj(r#"{"metadata":{}}"#);
+
+    let items = scan_stream(
+        &monitoring,
+        &mut request_data,
+        stream::iter(chat_chunks()),
+        args(),
+    )
+    .await
+    .expect("stream");
+
+    assert_eq!(items, passed_chunks());
+    assert_eq!(applied_guardrails(&request_data), vec!["cisco-ai-defense"]);
+}
+
+#[tokio::test]
+async fn a_response_without_messages_passes_the_chunks_unexamined() {
+    let (base, _server) = serve(StatusCode::OK, br#"{"action":"block"}"#.to_vec()).await;
+    let guardrail = guardrail(InspectionType::Chat, FallbackAction::Block, base);
+    let mut request_data = obj(r#"{"metadata":{}}"#);
+    let chunks = vec![chunk(
+        r#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":"stop"}]}"#,
+    )];
+    let response = obj(
+        r#"{"choices":[{"index":0,"message":{"role":"assistant","content":null},"finish_reason":"stop"}]}"#,
+    );
+
+    let items =
+        super::inspect_and_deliver(&guardrail, &mut request_data, &chunks, response, None).await;
+
+    assert_eq!(items, vec![StreamItem::Chunk(Box::new(chunks[0].clone()))]);
+    assert!(applied_guardrails(&request_data).is_empty());
+}
+
+#[tokio::test]
+async fn a_stream_without_content_passes_through_a_blocking_scan() {
+    let (base, _server) = serve(StatusCode::OK, br#"{"action":"block"}"#.to_vec()).await;
+    let guardrail = guardrail(InspectionType::Chat, FallbackAction::Block, base);
+    let mut request_data = obj(r#"{"metadata":{}}"#);
+    let role_only = chunk(
+        r#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":"stop"}]}"#,
+    );
+    let chunks: [Result<Chunk, io::Error>; 1] = [Ok(role_only.clone())];
+
+    let items = scan_stream(&guardrail, &mut request_data, stream::iter(chunks), args())
+        .await
+        .expect("stream");
+
+    assert_eq!(items, vec![StreamItem::Chunk(Box::new(role_only))]);
+    assert!(applied_guardrails(&request_data).is_empty());
 }
