@@ -6,9 +6,9 @@ use betterlite_streaming::stream_chunk_shaping::{
     },
     decision::{combine_thinking_in_choices, is_chunk_non_empty, return_processed_chunk_logic},
     extras::{convert_generic_chunk, generic_chunk_has_known_fields, strip_sse_data_from_chunk},
-    records::{ChunkResponseObject, GenericChunk, JsonObject, StreamChunk, StreamDelta, Usage},
+    records::{ChunkResponseObject, GenericChunk, JsonObject, StreamChunk, StreamDelta},
     tokens::{check_special_tokens, finish_reason_handler, raise_on_model_repetition},
-    usage_totals::{backfill_cache_usage, calculate_total_usage, propagate_usage_cost},
+    usage_totals::{calculate_total_usage, propagate_usage_cost},
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -84,7 +84,6 @@ fn apply(shaper: &mut ChunkShaper, step: &Value, limit: usize, providers: &[Stri
             &field::<JsonObject>(step, "chunk")?.unwrap_or_default(),
         ))),
         Some("total_usage") => encoded(&calculate_total_usage(&shaper.chunks)),
-        Some("backfill_usage") => backfill_usage(step),
         Some("propagate_cost") => propagate_cost(shaper, step, providers),
         Some("provider_response_model") => Ok(json!(provider_response_model(
             &field::<StreamChunk>(step, "chunk")?.unwrap_or_default(),
@@ -152,12 +151,6 @@ fn special_tokens(shaper: &mut ChunkShaper, step: &Value) -> StepResult {
     let reason: Option<String> = field(step, "finish_reason")?;
     let (hold, text) = check_special_tokens(shaper, &chunk, reason.as_deref());
     Ok(json!({"hold": hold, "text": text}))
-}
-
-fn backfill_usage(step: &Value) -> StepResult {
-    let mut usage: Usage = field(step, "usage")?.unwrap_or_default();
-    backfill_cache_usage(&mut usage);
-    encoded(&usage)
 }
 
 fn propagate_cost(shaper: &ChunkShaper, step: &Value, providers: &[String]) -> StepResult {

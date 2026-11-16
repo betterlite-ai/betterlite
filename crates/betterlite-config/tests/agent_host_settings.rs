@@ -224,6 +224,7 @@ fn a_missing_environment_reference_names_the_variable_and_path() {
         | ConfigError::Unsupported { .. }
         | ConfigError::InvalidFloat { .. }
         | ConfigError::InvalidInteger { .. }
-        | ConfigError::InvalidScalar { .. } => panic!("unexpected error"),
+        | ConfigError::InvalidScalar { .. }
+        | ConfigError::LoadThread { .. } => panic!("unexpected error"),
     }
 }

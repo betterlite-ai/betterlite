@@ -1,0 +1,16 @@
+kind: helper
+name: databricks-chat-headers-seed
+call:
+  b5841:
+    function: headers
+    cases:
+    - model: databricks-meta-llama-3-1-70b
+      api_key: dapi123
+      api_base: https://adb-1.cloud.databricks.com
+      headers:
+        X-Extra: seeded
+      optional_params:
+        databricks_user_agent: seeded-agent
+      user_agent: null
+env: {}
+compare: {ignore: []}

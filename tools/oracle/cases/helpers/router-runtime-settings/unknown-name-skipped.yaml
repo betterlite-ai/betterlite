@@ -1,0 +1,11 @@
+kind: helper
+name: router-runtime-settings-unknown-name-skipped
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["cache", true]
+      - ["timeout", 5]
+env: {}
+compare: {ignore: []}
