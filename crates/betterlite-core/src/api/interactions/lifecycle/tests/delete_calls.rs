@@ -34,6 +34,7 @@ fn delete_reaches_the_provider_config_and_answers_with_its_result() {
         Some(&text("call-9"))
     );
     assert_eq!(logging.model, "gemini-2.5-flash");
+    assert_eq!(logging.call_type, "generated");
     let received = received(serving);
     assert_eq!(
         received.request_line(),
