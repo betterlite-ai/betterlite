@@ -1,0 +1,44 @@
+{
+  "kind": "helper",
+  "name": "v1-last-message-scan",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 1
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "texts": [
+          "first line",
+          "last line"
+        ],
+        "structured_messages": [
+          {
+            "role": "system",
+            "content": "policy text"
+          },
+          {
+            "role": "user",
+            "content": "last message text"
+          }
+        ]
+      },
+      "request_data": {},
+      "input_type": "request",
+      "answers": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {}
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

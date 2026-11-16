@@ -1,0 +1,50 @@
+{
+  "kind": "helper",
+  "name": "v2-full-request-payload",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 2
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "structured_messages": [
+          {
+            "role": "user",
+            "content": "hi"
+          }
+        ],
+        "model": "gpt-4o",
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          }
+        ]
+      },
+      "request_data": {},
+      "input_type": "request",
+      "answers": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "messages": []
+          }
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "kind": "helper",
+  "name": "v1-redact-action-modifies-texts",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 1
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "texts": [
+          "answer"
+        ]
+      },
+      "request_data": {},
+      "input_type": "response",
+      "answers": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "evaluation": {
+              "action": "Redact"
+            },
+            "modified_data": {
+              "output": {
+                "messages": [
+                  {
+                    "role": "assistant",
+                    "content": "clean answer"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

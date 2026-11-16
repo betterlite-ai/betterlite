@@ -1,0 +1,46 @@
+{
+  "kind": "helper",
+  "name": "v2-full-response-payload-choices",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 2
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "texts": [
+          "first"
+        ]
+      },
+      "request_data": {},
+      "input_type": "response",
+      "answers": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "choices": [
+              {
+                "message": {
+                  "content": "one"
+                }
+              },
+              {
+                "message": {
+                  "content": "two"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

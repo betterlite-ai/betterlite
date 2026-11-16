@@ -1,0 +1,38 @@
+{
+  "kind": "helper",
+  "name": "v1-model-metadata",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 1
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "texts": [
+          "hello"
+        ]
+      },
+      "request_data": {
+        "litellm_logging_obj": {
+          "model": "gpt-4o",
+          "model_call_details": {}
+        }
+      },
+      "input_type": "request",
+      "answers": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {}
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

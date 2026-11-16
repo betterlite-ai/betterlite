@@ -1,0 +1,43 @@
+{
+  "kind": "helper",
+  "name": "v2-hl-headers-extracted",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 2
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "texts": [
+          "hi"
+        ]
+      },
+      "request_data": {
+        "proxy_server_request": {
+          "headers": {
+            "HL-Project-Id": "proj",
+            "HL-Requester-Id": "app",
+            "X-Trace": "skip"
+          }
+        }
+      },
+      "input_type": "request",
+      "answers": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "messages": []
+          }
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

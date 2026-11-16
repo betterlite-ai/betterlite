@@ -1,0 +1,38 @@
+{
+  "kind": "helper",
+  "name": "v1-block-threat-level",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 1
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "texts": [
+          "secret"
+        ]
+      },
+      "request_data": {},
+      "input_type": "request",
+      "answers": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "evaluation": {
+              "action": "Block",
+              "threat_level": "High"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
