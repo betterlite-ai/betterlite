@@ -29,13 +29,6 @@ deviations:
       the hidden params.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/deepgram_listen_passthrough_logging_handler.py#L70-L73
   - what: >-
-      A per-second rate stored as a string is read as its number here, and a string that is not a number prices at
-      zero, where LiteLLM multiplies the string by the duration, raises a TypeError and treats the entry as
-      unpriced.
-    why: the catalog reader coerces a scalar it cannot read as a number to zero, and reads a numeric string as its
-      value, the same rules the token cost leaves follow, so a stringly typed rate still prices.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/cost_calculation.py#L78-L87
-  - what: >-
       A registry entry that cannot be priced makes completion_cost return a typed error, which the handler logs at
       debug and turns into no cost, where LiteLLM's completion_cost raises and the handler catches the exception and
       logs it at debug. Either way the spend row keeps its model and provider with a null cost.

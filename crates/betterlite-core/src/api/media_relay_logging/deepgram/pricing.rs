@@ -52,8 +52,7 @@ where
         Some(total)
     }
 
-    // The source's _registry_cost: completion_cost for one registry entry, so the provider's discount and margin apply to it.
-    // A charge that fails logs debug and contributes nothing, the way the source swallows the exception.
+    // A failed charge logs debug and contributes nothing, the way the source swallows the exception.
     async fn registry_cost(&mut self, billed: Decimal, model: &str) -> Option<Decimal> {
         let args = transcription_args(model, billed);
         let charge = completion_cost(

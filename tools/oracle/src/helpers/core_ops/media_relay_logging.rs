@@ -1,7 +1,6 @@
 use betterlite_config::cost_adjustments::{
     AdjustmentKind, CostAdjustmentMap, resolve_adjustment_entries,
 };
-use betterlite_core::api::media_relay_logging::deepgram::DeepgramListenRequest;
 use betterlite_core::api::media_relay_logging::fal::{
     FalPassthroughRequest, fal_ai_passthrough_outcome,
 };
@@ -17,7 +16,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use self::services::{Adjustments, listen_outcome, registry};
+use self::services::{Adjustments, fal_lookup, listen_outcome};
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 mod services;
@@ -107,7 +106,6 @@ impl Helper for Op {
 
 // What the relay handler leaves for the spend logger: the response text, the billed duration and its cost.
 fn deepgram_answer(call: &DeepgramCall) -> Result<Value, Box<HelperError>> {
-    let registry = registry(&call.catalog)?;
     let adjustments = Adjustments {
         discount: resolve_adjustment_entries(
             AdjustmentKind::Discount,
@@ -125,16 +123,16 @@ fn deepgram_answer(call: &DeepgramCall) -> Result<Value, Box<HelperError>> {
     let kwargs = PassThroughLoggingKwargs {
         entries: call.kwargs.clone(),
     };
-    let request = DeepgramListenRequest {
-        upstream_url: &call.upstream_url,
-        messages: &call.messages,
-        kwargs: &kwargs,
-        catalog: &registry.catalog,
-    };
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .map_err(failure)?;
-    let listen = runtime.block_on(listen_outcome(&registry, &adjustments, &request))?;
+    let listen = runtime.block_on(listen_outcome(
+        &call.catalog,
+        &adjustments,
+        &call.upstream_url,
+        &call.messages,
+        &kwargs,
+    ))?;
     let spend = listen.spend;
     Ok(json!({
         "text": transcript_text(&listen.outcome),
@@ -148,7 +146,7 @@ fn deepgram_answer(call: &DeepgramCall) -> Result<Value, Box<HelperError>> {
 
 // What the relay handler leaves for the spend logger: the image urls, the model and the submission's cost.
 fn fal_answer(call: &FalCall) -> Result<Value, Box<HelperError>> {
-    let registry = registry(&call.catalog)?;
+    let lookup = fal_lookup(&call.catalog)?;
     let kwargs = PassThroughLoggingKwargs {
         entries: call.kwargs.clone(),
     };
@@ -157,7 +155,7 @@ fn fal_answer(call: &FalCall) -> Result<Value, Box<HelperError>> {
         response_body: &call.response_body,
         request_body: &call.request_body,
         kwargs: &kwargs,
-        lookup: &registry.lookup,
+        lookup: &lookup,
         queue_base: call.queue_base.as_deref(),
     };
     let passthrough = fal_ai_passthrough_outcome(&request).map_err(failure)?;

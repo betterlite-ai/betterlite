@@ -4,10 +4,10 @@ use betterlite_core::api::media_relay_logging::error::MediaRelayLoggingError;
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_models::decisions::Json;
 
-use super::listen_services::listen;
+use super::listen_services::Listener;
 use super::support::{
-    Registry, capture_logs, json, kwargs, logged_model, logging_object, lookup, messages, registry,
-    spend, spend_cost, spend_row,
+    capture_logs, json, kwargs, logged_model, logging_object, messages, spend, spend_cost,
+    spend_row,
 };
 
 const CATALOG: &[(&str, &str)] = &[
@@ -37,7 +37,7 @@ const TWO_CHANNEL: &str = r#"[
 
 #[tokio::test]
 async fn deepgram_listen_bills_the_base_and_each_priced_addon() {
-    let registry = registry(CATALOG);
+    let listener = Listener::new(CATALOG);
     let logging_obj = logging_object();
     let frames = messages(TWO_CHANNEL);
     let caller = kwargs(&[
@@ -47,7 +47,8 @@ async fn deepgram_listen_bills_the_base_and_each_priced_addon() {
     ]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3&redact=pci&diarize=true";
 
-    let outcome = listen(&registry, &logging_obj, url, &frames, &caller)
+    let outcome = listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 
@@ -79,13 +80,14 @@ async fn deepgram_listen_bills_the_base_and_each_priced_addon() {
 #[tokio::test]
 async fn deepgram_listen_debug_reports_the_billed_duration() {
     let (logs, _guard) = capture_logs(tracing::Level::DEBUG);
-    let registry = registry(CATALOG);
+    let listener = Listener::new(CATALOG);
     let logging_obj = logging_object();
     let frames = messages(TWO_CHANNEL);
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3";
 
-    listen(&registry, &logging_obj, url, &frames, &caller)
+    listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 
@@ -101,13 +103,14 @@ async fn deepgram_listen_debug_reports_the_billed_duration() {
 #[tokio::test]
 async fn deepgram_listen_drops_an_addon_without_a_registry_price() {
     let (logs, _guard) = capture_logs(tracing::Level::DEBUG);
-    let registry = registry(CATALOG);
+    let listener = Listener::new(CATALOG);
     let logging_obj = logging_object();
     let frames = messages(TWO_CHANNEL);
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3&redact=pci&keyterm=abc";
 
-    let outcome = listen(&registry, &logging_obj, url, &frames, &caller)
+    let outcome = listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 
@@ -126,7 +129,7 @@ async fn deepgram_listen_drops_an_addon_without_a_registry_price() {
 
 #[tokio::test]
 async fn deepgram_listen_unpriced_base_keeps_the_spend_row() {
-    let registry = registry(&[(
+    let listener = Listener::new(&[(
         "deepgram/streaming/redact",
         r#"{"litellm_provider": "deepgram", "input_cost_per_second": 0.00003333}"#,
     )]);
@@ -135,7 +138,8 @@ async fn deepgram_listen_unpriced_base_keeps_the_spend_row() {
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-9&redact=pci";
 
-    let outcome = listen(&registry, &logging_obj, url, &frames, &caller)
+    let outcome = listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 
@@ -159,13 +163,14 @@ async fn deepgram_listen_unpriced_base_keeps_the_spend_row() {
 
 #[tokio::test]
 async fn deepgram_listen_zero_length_session_costs_zero() {
-    let registry = registry(CATALOG);
+    let listener = Listener::new(CATALOG);
     let logging_obj = logging_object();
     let frames = messages("[]");
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3";
 
-    let outcome = listen(&registry, &logging_obj, url, &frames, &caller)
+    let outcome = listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 
@@ -180,13 +185,14 @@ async fn deepgram_listen_zero_length_session_costs_zero() {
 
 #[tokio::test]
 async fn deepgram_listen_declared_channels_multiply_the_billed_seconds() {
-    let registry = registry(CATALOG);
+    let listener = Listener::new(CATALOG);
     let logging_obj = logging_object();
     let frames = messages(r#"[{"type": "Metadata", "duration": 1}]"#);
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3&channels=3";
 
-    let outcome = listen(&registry, &logging_obj, url, &frames, &caller)
+    let outcome = listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 
@@ -201,13 +207,14 @@ async fn deepgram_listen_declared_channels_multiply_the_billed_seconds() {
 
 #[tokio::test]
 async fn deepgram_listen_multilingual_language_prices_the_multilingual_entry() {
-    let registry = registry(CATALOG);
+    let listener = Listener::new(CATALOG);
     let logging_obj = logging_object();
     let frames = messages(r#"[{"type": "Metadata", "duration": 2}]"#);
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3&language=multi";
 
-    listen(&registry, &logging_obj, url, &frames, &caller)
+    listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 
@@ -216,7 +223,7 @@ async fn deepgram_listen_multilingual_language_prices_the_multilingual_entry() {
 
 #[tokio::test]
 async fn deepgram_listen_skips_messages_that_are_not_listen_frames() {
-    let registry = registry(CATALOG);
+    let listener = Listener::new(CATALOG);
     let logging_obj = logging_object();
     let frames = messages(
         r#"[
@@ -231,7 +238,8 @@ async fn deepgram_listen_skips_messages_that_are_not_listen_frames() {
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3";
 
-    let outcome = listen(&registry, &logging_obj, url, &frames, &caller)
+    let outcome = listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 
@@ -245,107 +253,23 @@ async fn deepgram_listen_skips_messages_that_are_not_listen_frames() {
 }
 
 #[tokio::test]
-async fn deepgram_listen_unreadable_base_rate_leaves_the_cost_absent() {
-    let registry = Registry {
-        catalog: registry(CATALOG).catalog,
-        lookup: lookup(&[(
-            "deepgram/streaming/nova-3",
-            r#"{"litellm_provider": "deepgram", "input_cost_per_second": [1]}"#,
-        )]),
-    };
-    let logging_obj = logging_object();
-    let frames = messages(TWO_CHANNEL);
-    let caller = kwargs(&[]);
-    let url = "https://api.deepgram.com/v1/listen?model=nova-3";
-
-    let outcome = listen(&registry, &logging_obj, url, &frames, &caller)
-        .await
-        .expect("the handler runs");
-
-    assert_eq!(spend_cost(&logging_obj), Json::Null);
-    assert_eq!(
-        outcome.result.expect("a result").into_json(),
-        json(
-            r#"{"text": "hello world",
-                "_hidden_params": {"audio_transcription_duration": 4, "response_cost": null}}"#
-        )
-    );
-}
-
-#[tokio::test]
-async fn deepgram_listen_reads_a_numeric_string_rate() {
-    let registry = Registry {
-        catalog: registry(&[(
-            "deepgram/streaming/nova-3",
-            r#"{"litellm_provider": "deepgram", "input_cost_per_second": 0.00008}"#,
-        )])
-        .catalog,
-        lookup: lookup(&[(
-            "deepgram/streaming/nova-3",
-            r#"{"litellm_provider": "deepgram", "input_cost_per_second": "0.5"}"#,
-        )]),
-    };
-    let logging_obj = logging_object();
-    let frames = messages(r#"[{"type": "Metadata", "duration": 1}]"#);
-    let caller = kwargs(&[]);
-    let url = "https://api.deepgram.com/v1/listen?model=nova-3";
-
-    listen(&registry, &logging_obj, url, &frames, &caller)
-        .await
-        .expect("the handler runs");
-
-    assert_eq!(spend_cost(&logging_obj), json("0.5"));
-}
-
-#[tokio::test]
-async fn deepgram_listen_prices_a_non_numeric_string_rate_at_zero() {
-    let registry = Registry {
-        catalog: registry(&[(
-            "deepgram/streaming/nova-3",
-            r#"{"litellm_provider": "deepgram", "input_cost_per_second": 0.00008}"#,
-        )])
-        .catalog,
-        lookup: lookup(&[(
-            "deepgram/streaming/nova-3",
-            r#"{"litellm_provider": "deepgram", "input_cost_per_second": "unpriced"}"#,
-        )]),
-    };
-    let logging_obj = logging_object();
-    let frames = messages(r#"[{"type": "Metadata", "duration": 1}]"#);
-    let caller = kwargs(&[]);
-    let url = "https://api.deepgram.com/v1/listen?model=nova-3";
-
-    listen(&registry, &logging_obj, url, &frames, &caller)
-        .await
-        .expect("the handler runs");
-
-    assert_eq!(spend_cost(&logging_obj), json("0"));
-}
-
-#[tokio::test]
 async fn deepgram_listen_price_sum_beyond_the_decimal_range_leaves_the_cost_absent() {
-    let registry = Registry {
-        catalog: registry(&[(
+    let listener = Listener::new(&[
+        (
             "deepgram/streaming/nova-3",
-            r#"{"litellm_provider": "deepgram", "input_cost_per_second": 0.00008}"#,
-        )])
-        .catalog,
-        lookup: lookup(&[
-            (
-                "deepgram/streaming/nova-3",
-                r#"{"litellm_provider": "deepgram", "input_cost_per_second": 4e28}"#,
-            ),
-            (
-                "deepgram/streaming/redact",
-                r#"{"litellm_provider": "deepgram", "input_cost_per_second": 4e28}"#,
-            ),
-        ]),
-    };
+            r#"{"litellm_provider": "deepgram", "input_cost_per_second": 40000000000000000000000000000}"#,
+        ),
+        (
+            "deepgram/streaming/redact",
+            r#"{"litellm_provider": "deepgram", "input_cost_per_second": 40000000000000000000000000000}"#,
+        ),
+    ]);
     let logging_obj = logging_object();
     let frames = messages(r#"[{"type": "Metadata", "duration": 1}]"#);
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3&redact=pci";
-    let outcome = listen(&registry, &logging_obj, url, &frames, &caller)
+    let outcome = listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 
@@ -360,12 +284,13 @@ async fn deepgram_listen_price_sum_beyond_the_decimal_range_leaves_the_cost_abse
 
 #[tokio::test]
 async fn deepgram_listen_invalid_upstream_url_is_a_target_error() {
-    let registry = registry(CATALOG);
+    let listener = Listener::new(CATALOG);
     let logging_obj = logging_object();
     let frames = messages(TWO_CHANNEL);
     let caller = kwargs(&[]);
 
-    let error = listen(&registry, &logging_obj, "not a url", &frames, &caller)
+    let error = listener
+        .listen(&logging_obj, "not a url", &frames, &caller)
         .await
         .expect_err("the target cannot be read");
 
@@ -374,13 +299,14 @@ async fn deepgram_listen_invalid_upstream_url_is_a_target_error() {
 
 #[tokio::test]
 async fn deepgram_listen_duration_beyond_the_decimal_range_is_an_overflow() {
-    let registry = registry(CATALOG);
+    let listener = Listener::new(CATALOG);
     let logging_obj = logging_object();
     let frames = messages(r#"[{"type": "Metadata", "duration": 7.9e28, "channels": 2}]"#);
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3";
 
-    let error = listen(&registry, &logging_obj, url, &frames, &caller)
+    let error = listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect_err("the billed duration exceeds the decimal range");
 

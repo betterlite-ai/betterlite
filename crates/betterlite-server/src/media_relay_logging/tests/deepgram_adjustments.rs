@@ -3,8 +3,8 @@
 use betterlite_config::cost_adjustments::{AdjustmentEntry, MarginFieldEntry};
 use rust_decimal::Decimal;
 
-use super::listen_services::{Adjustments, listen_adjusted};
-use super::support::{json, kwargs, logging_object, messages, registry, spend_cost};
+use super::listen_services::Listener;
+use super::support::{json, kwargs, logging_object, messages, spend_cost};
 
 const CATALOG: &[(&str, &str)] = &[
     (
@@ -19,36 +19,20 @@ const CATALOG: &[(&str, &str)] = &[
 
 const TWO_SECONDS: &str = r#"[{"type": "Metadata", "duration": 2, "channels": 1}]"#;
 
-fn adjustments(
-    discount: &[(&str, AdjustmentEntry)],
-    margin: &[(&str, AdjustmentEntry)],
-) -> Adjustments {
-    Adjustments {
-        discount: discount
-            .iter()
-            .map(|(key, entry)| ((*key).to_owned(), *entry))
-            .collect(),
-        margin: margin
-            .iter()
-            .map(|(key, entry)| ((*key).to_owned(), *entry))
-            .collect(),
-    }
-}
-
 #[tokio::test]
 async fn deepgram_listen_applies_the_deepgram_discount_and_the_global_margin_to_each_registry_cost()
 {
-    let registry = registry(CATALOG);
     let logging_obj = logging_object();
     let frames = messages(TWO_SECONDS);
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3&diarize=true";
-    let configured = adjustments(
+    let listener = Listener::new(CATALOG).adjusted(
         &[("deepgram", AdjustmentEntry::Percent(Decimal::new(25, 2)))],
         &[("global", AdjustmentEntry::Percent(Decimal::new(1, 1)))],
     );
 
-    let outcome = listen_adjusted(&registry, &configured, &logging_obj, url, &frames, &caller)
+    let outcome = listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 
@@ -64,12 +48,11 @@ async fn deepgram_listen_applies_the_deepgram_discount_and_the_global_margin_to_
 
 #[tokio::test]
 async fn deepgram_listen_adds_a_fixed_margin_to_the_base_and_to_every_addon() {
-    let registry = registry(CATALOG);
     let logging_obj = logging_object();
     let frames = messages(TWO_SECONDS);
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3&diarize=true";
-    let configured = adjustments(
+    let listener = Listener::new(CATALOG).adjusted(
         &[],
         &[(
             "deepgram",
@@ -80,7 +63,8 @@ async fn deepgram_listen_adds_a_fixed_margin_to_the_base_and_to_every_addon() {
         )],
     );
 
-    listen_adjusted(&registry, &configured, &logging_obj, url, &frames, &caller)
+    listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 
@@ -89,12 +73,11 @@ async fn deepgram_listen_adds_a_fixed_margin_to_the_base_and_to_every_addon() {
 
 #[tokio::test]
 async fn deepgram_listen_prefers_the_deepgram_margin_over_the_global_one() {
-    let registry = registry(CATALOG);
     let logging_obj = logging_object();
     let frames = messages(TWO_SECONDS);
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3";
-    let configured = adjustments(
+    let listener = Listener::new(CATALOG).adjusted(
         &[],
         &[
             ("deepgram", AdjustmentEntry::Percent(Decimal::new(5, 1))),
@@ -102,7 +85,8 @@ async fn deepgram_listen_prefers_the_deepgram_margin_over_the_global_one() {
         ],
     );
 
-    listen_adjusted(&registry, &configured, &logging_obj, url, &frames, &caller)
+    listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 
@@ -111,17 +95,17 @@ async fn deepgram_listen_prefers_the_deepgram_margin_over_the_global_one() {
 
 #[tokio::test]
 async fn deepgram_listen_leaves_the_cost_alone_when_no_adjustment_names_deepgram() {
-    let registry = registry(CATALOG);
     let logging_obj = logging_object();
     let frames = messages(TWO_SECONDS);
     let caller = kwargs(&[]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3";
-    let configured = adjustments(
+    let listener = Listener::new(CATALOG).adjusted(
         &[("openai", AdjustmentEntry::Percent(Decimal::new(5, 1)))],
         &[("openai", AdjustmentEntry::Percent(Decimal::new(5, 1)))],
     );
 
-    listen_adjusted(&registry, &configured, &logging_obj, url, &frames, &caller)
+    listener
+        .listen(&logging_obj, url, &frames, &caller)
         .await
         .expect("the handler runs");
 

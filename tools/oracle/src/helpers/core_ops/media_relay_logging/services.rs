@@ -2,28 +2,26 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::UNIX_EPOCH;
 
 use async_trait::async_trait;
+use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_config::cost_adjustments::AdjustmentEntry;
+use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_core::api::media_relay_logging::deepgram::{
     DeepgramListenOutcome, DeepgramListenRequest, deepgram_listen_outcome,
 };
 use betterlite_core::cost::completion::args::{
     CostCalculator, SpecialBorrows, SyncImage, ToolBorrows,
 };
-use betterlite_core::cost::context::ProviderInference;
+use betterlite_core::cost::completion::lookup::{CatalogLookup, LookupSettings};
 use betterlite_core::cost::image_dispatch::options::SizePattern;
 use betterlite_core::cost::prepare::BillingTokenCounter;
-use betterlite_core::cost::special::policy::ModelResolver;
-use betterlite_models::catalog::{ModelCatalog, UnknownFields};
+use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::model_metadata_resolution::names::NameNormalizers;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::provider_model_sets::ProviderModelSets;
-use betterlite_models::resolution::{ProviderIdentity, ResolutionContext, ResolvedModel};
-use betterlite_models::tool_fees::error::LookupFailed;
-use betterlite_models::tool_fees::model_info::{Rate, ToolModelInfo};
-use betterlite_models::tool_fees::ports::ToolPriceSource;
 use betterlite_models::tool_fees::prices::ToolPrices;
 use betterlite_provider::pricing::ProviderPricing;
 use betterlite_provider::pricing::grounding::{GroundingPricing, ProviderFormulas};
@@ -36,7 +34,7 @@ use rust_decimal::Decimal;
 
 use crate::helpers::HelperError;
 
-// The case's catalog stands in for litellm.model_cost, so a raw lookup is the key and an effective one is provider-qualified.
+// The case's catalog stands in for litellm.model_cost for the Fal cost, where a raw lookup is the key and an effective one is provider-qualified.
 pub(super) struct CaseLookup {
     entries: BTreeMap<String, PriceRecord>,
 }
@@ -71,36 +69,11 @@ impl PriceLookup for CaseLookup {
     }
 }
 
-// The cases name every model and provider outright, so no name is ever resolved or inferred.
-impl ModelResolver for CaseLookup {
-    type Failure = &'static str;
-
-    fn resolve_model(&self, _model: &str) -> Result<ResolvedModel, &'static str> {
-        Err("the relay cases resolve no model")
-    }
-}
-
-impl ProviderInference for CaseLookup {
-    type Failure = &'static str;
-
-    fn inferred_provider(&self, _model: &str) -> Result<ProviderIdentity, &'static str> {
-        Ok(ProviderIdentity::Custom("deepgram".to_owned()))
-    }
-}
-
-// A transcription carries no built-in tool, so the source has no tool prices to give.
-impl ToolPriceSource for CaseLookup {
-    fn model_info(
-        &self,
-        _model: &str,
-        _custom_llm_provider: Option<&str>,
-    ) -> Result<ToolModelInfo, LookupFailed> {
-        Err(LookupFailed)
-    }
-
-    fn container_session_rate(&self, _provider: &str) -> Result<Rate, LookupFailed> {
-        Err(LookupFailed)
-    }
+pub(super) fn fal_lookup(entries: &IndexMap<String, Json>) -> Result<CaseLookup, Box<HelperError>> {
+    let bytes = serde_json::to_vec(entries).map_err(super::failure)?;
+    Ok(CaseLookup {
+        entries: serde_json::from_slice(&bytes).map_err(super::failure)?,
+    })
 }
 
 struct Counter;
@@ -116,34 +89,39 @@ impl BillingTokenCounter for Counter {
     }
 }
 
-pub(super) struct Registry {
-    pub(super) catalog: ModelCatalog,
-    pub(super) lookup: CaseLookup,
-}
-
-pub(super) fn registry(entries: &IndexMap<String, Json>) -> Result<Registry, Box<HelperError>> {
-    let bytes = serde_json::to_vec(entries).map_err(super::failure)?;
-    let catalog = ModelCatalog::parse(&bytes, UnknownFields::Reject).map_err(super::failure)?;
-    let lookup = CaseLookup {
-        entries: serde_json::from_slice(&bytes).map_err(super::failure)?,
-    };
-    Ok(Registry { catalog, lookup })
-}
-
 // litellm.cost_discount_config and litellm.cost_margin_config as the config reader resolves them.
 pub(super) struct Adjustments {
     pub(super) discount: BTreeMap<String, AdjustmentEntry>,
     pub(super) margin: BTreeMap<String, AdjustmentEntry>,
 }
 
-// The Deepgram relay handler's pricing over the case's catalog, discount and margin.
+// The Deepgram relay handler's pricing over the case's catalog, discount and margin, resolved the way a served request resolves them.
 pub(super) async fn listen_outcome(
-    registry: &Registry,
+    entries: &IndexMap<String, Json>,
     adjustments: &Adjustments,
-    request: &DeepgramListenRequest<'_>,
+    upstream_url: &str,
+    messages: &[Json],
+    kwargs: &PassThroughLoggingKwargs,
 ) -> Result<DeepgramListenOutcome, Box<HelperError>> {
-    let names = BTreeSet::new();
-    let environment = BTreeMap::new();
+    let bytes = serde_json::to_vec(entries).map_err(super::failure)?;
+    let lookup = CatalogLookup::new(
+        &bytes,
+        LookupSettings {
+            known_model_names: BTreeSet::new(),
+            custom_providers: BTreeSet::new(),
+            environment: BTreeMap::new(),
+            registry: JSONProviderRegistry::default(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+            normalizers: NameNormalizers {
+                bedrock_base_model: get_bedrock_base_model,
+                bedrock_routing_prefix: strip_bedrock_routing_prefix,
+                mantle_region_split: split_region_prefix,
+            },
+        },
+    )
+    .map_err(super::failure)?;
+    let resolution = lookup.resolution();
     let pattern = SizePattern::new().map_err(super::failure)?;
     let database = TimeZoneDatabase::from_env();
     let models = ProviderModelSets::default();
@@ -153,7 +131,7 @@ pub(super) async fn listen_outcome(
             database,
             moment,
         },
-        lookup: &registry.lookup,
+        lookup: &lookup,
         database: &database,
         moment: DateTime::<Utc>::UNIX_EPOCH,
     };
@@ -161,19 +139,10 @@ pub(super) async fn listen_outcome(
         formulas: ProviderFormulas,
         model_key: None,
     };
-    let resolution = ResolutionContext {
-        catalog: &registry.catalog,
-        known_model_names: &names,
-        custom_providers: &names,
-        environment: &environment,
-        registry: JSONProviderRegistry::default(),
-        policies: ProviderPolicies::default(),
-        globals: GlobalCredentials::default(),
-    };
     let services = CostCalculator {
         special: SpecialBorrows {
-            lookup: &registry.lookup,
-            resolver: &registry.lookup,
+            lookup: &lookup,
+            resolver: &lookup,
             image_policy: &image,
             special_policy: &ProviderPricing,
             size_pattern: &pattern,
@@ -183,19 +152,25 @@ pub(super) async fn listen_outcome(
             discount: &adjustments.discount,
             margin: &adjustments.margin,
         },
-        catalog: &registry.lookup,
-        inference: &registry.lookup,
+        catalog: &lookup,
+        inference: &lookup,
         counter: &Counter,
         price_policy: &ProviderPricing,
         resolution: &resolution,
         tools: ToolBorrows {
-            source: &registry.lookup,
+            source: &lookup,
             policy: &tools,
             prices: &ToolPrices::PINNED,
         },
     };
+    let request = DeepgramListenRequest {
+        upstream_url,
+        messages,
+        kwargs,
+        catalog: resolution.catalog,
+    };
     let mut clock = || UNIX_EPOCH;
-    deepgram_listen_outcome(request, &services, &mut clock)
+    deepgram_listen_outcome(&request, &services, &mut clock)
         .await
         .map_err(super::failure)
 }
