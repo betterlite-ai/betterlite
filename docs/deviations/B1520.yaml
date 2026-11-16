@@ -1,0 +1,21 @@
+task: B1520
+deviations:
+  - what: An extra_headers entry whose name differs only in case from a validated header replaces that header on the wire and in the pre-call record, and polling sends the caller value; LiteLLM's header dict keeps both entries, its record shows both, and httpx writes both lines.
+    why: Header names are case-insensitive on the wire, so a duplicated x-key is a broken credential that no working setup can rely on; betterlite canonicalizes the overlay to one header.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/handler.py#L146-L152
+  - what: The pre-call headers record spells every name in its lowercase canonical form; LiteLLM records the caller's spelling, both for the seeded optional headers and for the separately supplied ones.
+    why: betterlite holds the merged headers in a HeaderMap, which canonicalizes names, and header names are case-insensitive on the wire; the record keeps the names the request actually carries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/handler.py#L146-L199
+  - what: A poll body that is not BFL JSON, and a failed polling GET, surface as typed errors with no status; LiteLLM lets the JSON and httpx exceptions escape the handler unwrapped.
+    why: betterlite names a failure in its module enum, and the shared poll executor never invents a BFL status for an answer that carries none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/handler.py#L385-L399
+  - what: An inner image_edit_optional_request_params.extra_headers entry the wire cannot carry (an invalid name, a forbidden value or a non-ASCII value) is refused while preparing, before the pre-call record; LiteLLM records the pre-call and then fails inside the POST. Both answer 500 and neither sends a submission.
+    why: the seed has to reach validate_environment as a header map, so an entry that map cannot hold is refused then; the caller-visible status still matches the 500 LiteLLM's except block produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/handler.py#L146-L201
+kept_bugs:
+  - what: A submission answered with any status outside 2xx (a 3xx without a followed redirect, a 4xx or a 5xx) becomes a BFL 500 "Request failed" error instead of keeping the provider status.
+    why: LiteLLM's HTTP client calls raise_for_status and the handler's except catches every exception, so callers today see a 500 and a working setup cannot distinguish the provider status; the port keeps that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/handler.py#L190-L201
+  - what: A submission body carrying an errors key is rejected with the initial status even when the value is null or an empty list.
+    why: LiteLLM tests membership alone, and a provider that only adds the key on failure is what working setups talk to, so the presence check is copied unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/handler.py#L359-L364
