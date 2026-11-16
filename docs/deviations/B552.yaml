@@ -18,8 +18,8 @@ deviations:
   - what: "Reply data entries are parsed into B004's embedding record, so entry fields that record does not declare are dropped and an entry missing object, embedding or index is a typed Json error; LiteLLM copies the raw reply dictionaries through, so an entry without object still becomes an embedding."
     why: "The task binds the response projection to B004's embedding conversion, and its record is the typed entry betterlite carries."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L770
-  - what: 'A reply vector element outside f64 range, such as 1e400, is a typed Json error; LiteLLM copies the number through and Python reads the literal as infinity.'
-    why: "B004's embedding record holds its numbers through serde, and docs/compatibility.md writes standard JSON, where an infinity has no spelling; it does not port json.loads accepting an out-of-range number."
+  - what: 'A reply vector element outside f64 range, such as 1e400, keeps the literal number it was sent; LiteLLM reads the literal as infinity, which its model JSON output then writes as null.'
+    why: "B004's embedding record keeps each number as serde_json read it, and docs/compatibility.md does not port Python's json.loads turning an out-of-range literal into infinity."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L770
   - what: 'An llm_provider-num_tokens value that Python''s int() accepts but a plain decimal count does not, such as "9_0", "-3", a unicode digit string or a count above u32, is a typed TokenCount error naming the value.'
     why: "docs/compatibility.md reads a string into the field's type and refuses what does not fit instead of porting int()'s underscore, negative-value and unicode-digit parsing."
