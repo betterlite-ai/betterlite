@@ -115,3 +115,22 @@ fn video_json_carries_numbers() {
         Some(&Json::Number(Number::from(100_i64)))
     );
 }
+
+#[test]
+fn video_object_defaults_missing_optional_fields() {
+    let decoded: VideoObject = serde_json::from_str(
+        r#"{"id": "video_1", "object": "video", "status": "queued", "seconds": null}"#,
+    )
+    .unwrap();
+    assert_eq!(decoded.created_at, None);
+    assert_eq!(decoded.progress, None);
+    assert_eq!(decoded.seconds, None);
+    assert!(decoded.hidden_params.is_empty());
+    assert_eq!(decoded.get("model"), Some(Json::Null));
+    assert!(
+        serde_json::from_str::<VideoObject>(r#"{"id": "video_1", "object": "video"}"#).is_err()
+    );
+    assert!(
+        serde_json::from_str::<VideoObject>(r#"{"id": "video_1", "status": "queued"}"#).is_err()
+    );
+}
