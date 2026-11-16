@@ -29,33 +29,24 @@ const CACHE_ONLY_OPTIONS: &str = "type mode namespace ttl default_in_memory_ttl 
     semantic_cache_embedding_max_input_tokens semantic_cache_embedding_timeout semantic_cache_scope \
     gcp_service_account gcp_ssl_ca_certs _backend";
 
-pub(super) enum ConnectionTestError {
-    Options(CacheOptionsError),
-    Construction(BackendConstructionError),
-    NotRedis,
-}
-
+// The serde error quotes the offending value, so the message names only the option's path and the source stays unformatted.
 #[derive(Debug, Error)]
-#[error("the cache settings do not name valid redis options: {source}")]
-pub(super) struct CacheOptionsError {
-    #[source]
-    source: serde_path_to_error::Error<serde_json::Error>,
-}
-
-impl ConnectionTestError {
-    pub(super) fn text(&self) -> String {
-        match self {
-            Self::Options(error) => error.to_string(),
-            Self::Construction(error) => deepest_source(error),
-            Self::NotRedis => "the temporary cache is not a redis cache".to_owned(),
-        }
-    }
+pub(super) enum ConnectionTestError {
+    #[error("the redis option {:?} has the wrong type or value", .source.path().to_string())]
+    Options {
+        #[source]
+        source: serde_path_to_error::Error<serde_json::Error>,
+    },
+    #[error("the cache could not be constructed")]
+    Construction(#[source] BackendConstructionError),
+    #[error("the temporary cache is not a redis cache")]
+    NotRedis,
 }
 
 // Python binds Cache's named options and hands the rest to redis-py as keyword arguments; the map is split the same way.
 pub(super) fn cache_settings_from_map(
     settings: &Map<String, Value>,
-) -> Result<CacheSettings, CacheOptionsError> {
+) -> Result<CacheSettings, ConnectionTestError> {
     let mut options = settings.clone();
     if let Some(startup_nodes) = options.remove(CACHE_STARTUP_NODES_OPTION) {
         options.insert(STARTUP_NODES_OPTION.to_owned(), startup_nodes);
@@ -67,7 +58,7 @@ pub(super) fn cache_settings_from_map(
         options.insert(URL_OPTION.to_owned(), Value::Null);
     }
     let redis: RedisOverrides = serde_path_to_error::deserialize(Value::Object(options))
-        .map_err(|source| CacheOptionsError { source })?;
+        .map_err(|source| ConnectionTestError::Options { source })?;
     Ok(CacheSettings {
         cache_type: LiteLlmCacheType::Redis,
         mode: CacheMode::DefaultOn,
@@ -87,7 +78,7 @@ pub(super) fn cache_settings_from_map(
 }
 
 // LiteLLM reports the exception raised inside the cache; the outermost betterlite error only says the cache could not be created.
-fn deepest_source(source: &(dyn StdError + 'static)) -> String {
+pub(super) fn deepest_source(source: &(dyn StdError + 'static)) -> String {
     let mut text = source.to_string();
     let mut cause = source.source();
     while let Some(inner) = cause {

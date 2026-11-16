@@ -41,6 +41,7 @@ use super::saved::saved_settings;
 
 use self::bridge::ConnectionTestError;
 use self::bridge::cache_settings_from_map;
+use self::bridge::deepest_source;
 use self::validation::decode_request;
 
 mod bridge;
@@ -130,7 +131,19 @@ async fn connection_answer(
             message: result.message,
             error: result.error,
         },
-        Err(error) => failed(error.text()),
+        Err(error) => {
+            let error_text = match &error {
+                ConnectionTestError::Construction(source) => deepest_source(source),
+                ConnectionTestError::Options { .. } | ConnectionTestError::NotRedis => {
+                    error.to_string()
+                }
+            };
+            CacheTestResponse {
+                status: ConnectionStatus::Failed,
+                message: format!("Cache connection test failed: {error_text}"),
+                error: Some(error_text),
+            }
+        }
     }
 }
 
@@ -143,9 +156,15 @@ async fn connection_test(
     settings: &Map<String, Value>,
     state: &CacheTestState,
 ) -> Result<ConnectionTestResult, ConnectionTestError> {
-    let cache_settings = cache_settings_from_map(settings).map_err(ConnectionTestError::Options)?;
+    let cache_settings = cache_settings_from_map(settings)?;
     let mut callbacks = CacheCallbacks::default();
-    let dependencies = cache_dependencies(state);
+    let dependencies = CacheDependencies {
+        clock: Arc::new(|| 0.0),
+        redis_factory: Arc::clone(&state.redis_factory),
+        redis_store: Arc::new(RedisClientStore::new()),
+        redis_hooks: Arc::new(SilentHooks),
+        redis_gate: Arc::new(ClosedGate),
+    };
     let cache = Cache::open(
         cache_settings,
         &mut callbacks,
@@ -159,24 +178,6 @@ async fn connection_test(
         Backend::Memory(_) | Backend::Disk(_) | Backend::Injected(_) => {
             Err(ConnectionTestError::NotRedis)
         }
-    }
-}
-
-fn cache_dependencies(state: &CacheTestState) -> CacheDependencies {
-    CacheDependencies {
-        clock: Arc::new(|| 0.0),
-        redis_factory: Arc::clone(&state.redis_factory),
-        redis_store: Arc::new(RedisClientStore::new()),
-        redis_hooks: Arc::new(SilentHooks),
-        redis_gate: Arc::new(ClosedGate),
-    }
-}
-
-fn failed(error_text: String) -> CacheTestResponse {
-    CacheTestResponse {
-        status: ConnectionStatus::Failed,
-        message: format!("Cache connection test failed: {error_text}"),
-        error: Some(error_text),
     }
 }
 

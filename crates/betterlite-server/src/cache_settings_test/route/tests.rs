@@ -314,6 +314,29 @@ async fn route_clears_the_saved_password_with_an_empty_value(#[case] password: V
     assert!(!redis.sent_secret(support::SAVED_SECRET));
 }
 
+#[rstest]
+#[case::password("password")]
+#[case::url("url")]
+#[tokio::test]
+async fn route_keeps_a_wrongly_typed_secret_out_of_the_answer(#[case] option: &str) {
+    let redis = FakeRedis::start().await;
+    let mut target = redis_target(&redis);
+    target[option] = json!(12_345);
+    let body = support::request(target);
+    let (status, text) = support::post(support::state(None), Some(support::admin()), &body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!text.contains("12345"), "{text}");
+    let message = format!("the redis option \"{option}\" has the wrong type or value");
+    assert_eq!(
+        support::answer(&text),
+        json!({
+            "status": "failed",
+            "message": format!("Cache connection test failed: {message}"),
+            "error": message,
+        })
+    );
+}
+
 #[tokio::test]
 async fn route_drops_the_redacted_password_without_a_saved_row() {
     let redis = FakeRedis::start().await;
