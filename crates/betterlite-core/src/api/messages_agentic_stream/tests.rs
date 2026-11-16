@@ -30,15 +30,16 @@ use super::interceptor::{
 };
 use super::stream::MessagesAgenticStream;
 use super::{
-    HoldBackPolicy, KEEPALIVE_PING, MessagesAgenticError, MessagesAgenticStreamInput,
-    MessagesAgenticStreamResult, PING_INTERVAL_SECONDS, decode_messages_agentic_stream,
-    is_server_fulfilled_tool_leak_error,
+    HoldBackPolicy, KEEPALIVE_PING, MessagesAgenticStreamInput, MessagesAgenticStreamResult,
+    PING_INTERVAL_SECONDS, decode_messages_agentic_stream, is_server_fulfilled_tool_leak_error,
 };
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::messages_fake_stream::{MessagesFakeStream, MessagesFakeStreamError};
 use crate::api::messages_sse_events::stream::MessagesProviderStream;
 use crate::meta_muse_realtime::request::Sleep;
 
+mod limits;
+mod pacing;
 mod rebuild;
 
 type EffectLog = Recorder<String>;
@@ -188,7 +189,8 @@ impl<FollowUp> Drop for GatedHook<FollowUp> {
 
 enum HookReply {
     Empty,
-    Stream(Vec<Vec<u8>>),
+    // the follow-up frames and the gate that holds each of its reads, None when they are ready at once
+    Stream(Vec<Vec<u8>>, Option<Arc<AtomicBool>>),
     Message(Json),
     Unexpected(&'static str),
     Failed(String),
@@ -232,12 +234,14 @@ fn reply_outcome(
 ) -> Result<MessagesAgenticStreamResult<ScriptedFollowUp>, AgenticHookError> {
     match reply {
         HookReply::Empty => Ok(MessagesAgenticStreamResult::NoFollowUp),
-        HookReply::Stream(frames) => Ok(MessagesAgenticStreamResult::Stream(ScriptedFollowUp {
-            frames: VecDeque::from(frames),
-            gate: None,
-            effects: effects.clone(),
-            labels: ("followup-read", "followup-end"),
-        })),
+        HookReply::Stream(frames, gate) => {
+            Ok(MessagesAgenticStreamResult::Stream(ScriptedFollowUp {
+                frames: VecDeque::from(frames),
+                gate,
+                effects: effects.clone(),
+                labels: ("followup-read", "followup-end"),
+            }))
+        }
         HookReply::Message(message) => Ok(MessagesAgenticStreamResult::Message(message)),
         HookReply::Unexpected(type_name) => Ok(MessagesAgenticStreamResult::Unexpected {
             type_name: type_name.to_owned(),
@@ -366,9 +370,12 @@ fn policy(names: &[&str]) -> HoldBackPolicy {
     policy_at(names, PING_INTERVAL_SECONDS)
 }
 
-async fn drain(
-    stream: &mut MessagesAgenticStream<ScriptedInner, ScriptedInterceptor>,
-) -> Vec<Vec<u8>> {
+async fn drain<Inner>(
+    stream: &mut MessagesAgenticStream<Inner, ScriptedInterceptor>,
+) -> Vec<Vec<u8>>
+where
+    Inner: MessagesProviderStream<Error = Infallible> + Send,
+{
     let mut chunks = Vec::new();
     while let Some(chunk) = stream.next_chunk().await.expect("the stream yields") {
         chunks.push(chunk);
@@ -506,7 +513,7 @@ enum ReplyKind {
 
 fn follow_up_reply(kind: ReplyKind) -> HookReply {
     match kind {
-        ReplyKind::Frames => HookReply::Stream(replacement_frames()),
+        ReplyKind::Frames => HookReply::Stream(replacement_frames(), None),
         ReplyKind::Message => HookReply::Message(replacement()),
     }
 }
@@ -554,7 +561,7 @@ async fn server_tool_held_back(#[case] kind: ReplyKind) {
 
 // while the interceptor runs the client gets keepalive pings at the configured interval, then the buffer replays
 #[rstest]
-#[case::default_interval(PING_INTERVAL_SECONDS)]
+#[case::default_interval(15.0_f64)]
 #[case::custom_interval(0.05_f64)]
 #[tokio::test]
 async fn ping_during_interceptor(#[case] interval: f64) {
@@ -868,37 +875,6 @@ async fn empty_buffer_skips_hooks(#[case] held_back: bool) {
         assert!(chunks.is_empty());
     }
     assert_eq!(effects.count("hook-start"), 0);
-}
-
-// the collected provider bytes stop at the JSON boundary, so a long stream cannot grow the buffer
-#[rstest]
-#[case::at_limit(0, true)]
-#[case::over_limit(1, false)]
-#[tokio::test]
-async fn collected_bytes_respect_limits(#[case] overflow: usize, #[case] fits: bool) {
-    let effects = EffectLog::default();
-    let seen = HookSeen::default();
-    let frames = text_stream();
-    let total = frames.iter().map(Vec::len).sum::<usize>();
-    let limits = ApiLimits {
-        max_json_bytes: total.saturating_sub(overflow),
-        ..ApiLimits::default()
-    };
-    let mut stream = MessagesAgenticStream::new(
-        ScriptedInner::open(frames.clone(), &effects),
-        resolved_interceptor(HookReply::Empty, &effects, &seen),
-        agentic_input(None),
-        immediate_sleep(),
-        limits,
-    );
-    let mut reads = Vec::new();
-    for _frame in &frames {
-        reads.push(stream.next_chunk().await);
-    }
-    let last = reads.pop().expect("one read per frame");
-    assert!(reads.iter().all(Result::is_ok));
-    assert_eq!(last.is_ok(), fits);
-    assert_eq!(matches!(last, Err(MessagesAgenticError::Limit(_))), !fits);
 }
 
 // a whole-message hook answer replays as the same frames the fake stream builds

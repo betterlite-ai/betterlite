@@ -88,9 +88,10 @@ fn rebuilds_every_block_kind() {
             "content_block_start",
             r#"{"type":"content_block_start","index":6,"content_block":{}}"#,
         ),
-        frame(
-            "message_delta",
-            r#"{"type":"other","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":12,"input_tokens":6,"cache_creation_input_tokens":2}}"#,
+        // kept bug: the failed data line leaves message_delta pending, so it types the next data line
+        frame("message_delta", "not json"),
+        data_only(
+            r#"{"delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":12,"input_tokens":6,"cache_creation_input_tokens":2}}"#,
         ),
         frame("message_stop", r#"{"type":"message_stop"}"#),
     ]
