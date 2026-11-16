@@ -6,4 +6,7 @@ deviations:
   - what: The text and multimodal handlers receive no litellm_params, so request labels that LiteLLM reads from the deployment's litellm_params metadata are not sent.
     why: The deployment parameters hold api_key and credentials as plain JSON text, and the handler arguments derive Debug.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6837-L6929
+  - what: When a deployment pins both vertex_credentials and vertex_ai_credentials, the alias main.py does not pop is dropped instead of staying in optional_params.
+    why: LiteLLM leaves it in optional_params, and the text handler builds the Vertex request parameters from them, so the service-account document or file path would be sent to Google in the request body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_embeddings/transformation.py#L144
 kept_bugs: []

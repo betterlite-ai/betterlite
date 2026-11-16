@@ -34,12 +34,11 @@ pub struct Defaults<'settings> {
     pub embedding: &'settings EmbeddingSettings,
 }
 
-// a deployment's litellm_params decoded once, so a pinned credential never travels as plain JSON
+// a deployment's litellm_params decoded once, each alias under its own name, so a pinned credential never travels as plain JSON
 #[derive(Clone, Debug, Default)]
 pub struct Pinned {
-    pub project: Option<String>,
-    pub location: Option<String>,
-    pub credentials: Option<ConfiguredCredentials>,
+    pub options: Extra,
+    pub credentials: Vec<(&'static str, ConfiguredCredentials)>,
     pub api_base: Option<String>,
 }
 
@@ -77,21 +76,28 @@ pub enum VertexEmbeddingDispatchError {
 }
 
 pub fn pin(params: &Extra) -> Result<Pinned, VertexEmbeddingDispatchError> {
-    let mut remaining = params.clone();
-    Ok(Pinned {
-        project: take_alias(&mut remaining, &PROJECT_ALIASES)
-            .map(text_option)
-            .transpose()?,
-        location: take_alias(&mut remaining, &LOCATION_ALIASES)
-            .map(text_option)
-            .transpose()?,
-        credentials: take_alias(&mut remaining, &CREDENTIAL_ALIASES)
-            .map(credential_option)
-            .transpose()?,
-        api_base: take_alias(&mut remaining, &["api_base"])
-            .map(text_option)
-            .transpose()?,
-    })
+    let mut pinned = Pinned::default();
+    // a null pin merges as None, which main.py's chain skips like an absent one
+    for name in PROJECT_ALIASES.into_iter().chain(LOCATION_ALIASES) {
+        let Some(value) = params.get(name).filter(|value| **value != Json::Null) else {
+            continue;
+        };
+        let text = text_option((name, value.clone()))?;
+        pinned.options.insert(name.to_owned(), Json::Text(text));
+    }
+    for name in CREDENTIAL_ALIASES {
+        let Some(value) = params.get(name).filter(|value| **value != Json::Null) else {
+            continue;
+        };
+        let credentials = credential_option((name, value.clone()))?;
+        pinned.credentials.push((name, credentials));
+    }
+    pinned.api_base = params
+        .get("api_base")
+        .filter(|value| **value != Json::Null)
+        .map(|value| text_option(("api_base", value.clone())))
+        .transpose()?;
+    Ok(pinned)
 }
 
 pub fn select(
@@ -101,21 +107,20 @@ pub fn select(
 ) -> Result<Resolution, VertexEmbeddingDispatchError> {
     let pinned = request.pinned.cloned().unwrap_or_default();
     let mut optional_params = request.optional_params.clone();
+    // the router spreads the deployment's params under the client's, so a name the client sent keeps its value
+    for (name, value) in pinned.options {
+        optional_params.entry(name).or_insert(value);
+    }
     let project = take_alias(&mut optional_params, &PROJECT_ALIASES)
         .map(text_option)
         .transpose()?
-        .or(pinned.project)
         .or_else(|| defaults.vertex.project.clone())
         .or_else(|| defaults.embedding.project.clone());
     let location = take_alias(&mut optional_params, &LOCATION_ALIASES)
         .map(text_option)
         .transpose()?
-        .or(pinned.location)
         .or_else(|| defaults.vertex.location.clone());
-    let credentials = take_alias(&mut optional_params, &CREDENTIAL_ALIASES)
-        .map(credential_option)
-        .transpose()?
-        .or(pinned.credentials)
+    let credentials = take_credentials(&mut optional_params, &pinned.credentials)?
         .or_else(|| defaults.vertex.credentials.clone())
         .or_else(|| defaults.embedding.credentials.clone());
     let api_base = request
@@ -174,6 +179,25 @@ fn take_alias(params: &mut Extra, names: &[&'static str]) -> Option<(&'static st
         return Some((*name, value));
     }
     None
+}
+
+// the credential chain over the same merged view; a pin no pop reaches is dropped instead of riding along in optional_params
+fn take_credentials(
+    params: &mut Extra,
+    pinned: &[(&'static str, ConfiguredCredentials)],
+) -> Result<Option<ConfiguredCredentials>, VertexEmbeddingDispatchError> {
+    for name in CREDENTIAL_ALIASES {
+        if let Some(value) = params.shift_remove(name) {
+            if value == Json::Null {
+                continue;
+            }
+            return credential_option((name, value)).map(Some);
+        }
+        if let Some((_name, credentials)) = pinned.iter().find(|(alias, _)| *alias == name) {
+            return Ok(Some(credentials.clone()));
+        }
+    }
+    Ok(None)
 }
 
 fn text_option(

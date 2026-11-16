@@ -520,12 +520,136 @@ fn pinned_options_sit_between_the_request_and_the_settings() {
         pinned_only.credentials,
         Some(ConfiguredCredentials::Source(_))
     ));
+    assert!(pinned_only.optional_params.is_empty());
     let overridden = pinned_resolution(&pins, r#"{"vertex_project": "option-project"}"#, &vertex);
     assert_eq!(overridden.project.as_deref(), Some("option-project"));
     assert_eq!(overridden.location.as_deref(), Some("pinned-location"));
+    // the pinned second alias is never popped, so it stays with the handler's options
+    assert_eq!(
+        overridden.optional_params.get("vertex_ai_project"),
+        Some(&Json::Text("pinned-project".to_owned()))
+    );
     let unpinned = pinned_resolution("{}", "{}", &vertex);
     assert_eq!(unpinned.project.as_deref(), Some("settings-project"));
     assert!(unpinned.credentials.is_none());
+}
+
+// LiteLLM's router calls aembedding(**{**deployment_params, **client_kwargs}), and main.py pops that one dict
+#[test]
+fn a_pinned_first_alias_beats_a_client_second_alias() {
+    let vertex = VertexSettings::default();
+    let resolved = pinned_resolution(
+        r#"{"vertex_project": "pinned-project", "vertex_location": "pinned-location"}"#,
+        r#"{"vertex_ai_project": "client-project", "vertex_ai_location": "client-location"}"#,
+        &vertex,
+    );
+    assert_eq!(resolved.project.as_deref(), Some("pinned-project"));
+    assert_eq!(resolved.location.as_deref(), Some("pinned-location"));
+    assert_eq!(
+        resolved.optional_params.get("vertex_ai_project"),
+        Some(&Json::Text("client-project".to_owned()))
+    );
+    assert_eq!(
+        resolved.optional_params.get("vertex_ai_location"),
+        Some(&Json::Text("client-location".to_owned()))
+    );
+    assert!(!resolved.optional_params.contains_key("vertex_project"));
+    assert!(!resolved.optional_params.contains_key("vertex_location"));
+}
+
+#[test]
+fn a_client_value_replaces_the_pin_under_the_same_name() {
+    let vertex = VertexSettings::default();
+    let replaced = pinned_resolution(
+        r#"{"vertex_project": "pinned-project"}"#,
+        r#"{"vertex_project": "client-project"}"#,
+        &vertex,
+    );
+    assert_eq!(replaced.project.as_deref(), Some("client-project"));
+    assert!(replaced.optional_params.is_empty());
+    // a client null overwrites the pin in the merged dict, so the chain moves on to the second name
+    let nulled = pinned_resolution(
+        r#"{"vertex_project": "pinned-project", "vertex_ai_project": "pinned-second"}"#,
+        r#"{"vertex_project": null}"#,
+        &vertex,
+    );
+    assert_eq!(nulled.project.as_deref(), Some("pinned-second"));
+    assert!(nulled.optional_params.is_empty());
+}
+
+#[test]
+fn null_pins_fall_through_like_absent_ones() {
+    let vertex = VertexSettings {
+        project: Some("settings-project".to_owned()),
+        location: None,
+        credentials: Some(credentials("settings-creds")),
+        adc: AdcEnvironment::default(),
+    };
+    let resolved = pinned_resolution(
+        r#"{"vertex_project": null, "vertex_ai_location": null, "vertex_credentials": null, "api_base": null}"#,
+        "{}",
+        &vertex,
+    );
+    assert_eq!(resolved.project.as_deref(), Some("settings-project"));
+    assert!(resolved.location.is_none());
+    assert!(resolved.api_base.is_none());
+    assert_eq!(
+        resolved
+            .credentials
+            .as_ref()
+            .and_then(ConfiguredCredentials::as_text),
+        Some("settings-creds")
+    );
+    assert!(resolved.optional_params.is_empty());
+}
+
+#[rstest]
+#[case::first_pin_wins(
+    r#"{"vertex_credentials": "first", "vertex_ai_credentials": "second"}"#,
+    "{}",
+    Some("first")
+)]
+#[case::second_pin_alone(r#"{"vertex_ai_credentials": "second"}"#, "{}", Some("second"))]
+#[case::client_null_skips_the_first_pin(
+    r#"{"vertex_credentials": "first", "vertex_ai_credentials": "second"}"#,
+    r#"{"vertex_credentials": null}"#,
+    Some("second")
+)]
+#[case::client_first_beats_the_pin(
+    r#"{"vertex_credentials": "first"}"#,
+    r#"{"vertex_credentials": "client"}"#,
+    Some("client")
+)]
+#[case::pinned_first_beats_client_second(
+    r#"{"vertex_credentials": "first"}"#,
+    r#"{"vertex_ai_credentials": "client"}"#,
+    Some("first")
+)]
+#[case::no_pin("{}", "{}", None)]
+fn pinned_credentials_follow_the_merged_alias_order(
+    #[case] pins: &str,
+    #[case] options: &str,
+    #[case] expected: Option<&str>,
+) {
+    let resolved = pinned_resolution(pins, options, &VertexSettings::default());
+    assert_eq!(
+        resolved
+            .credentials
+            .as_ref()
+            .and_then(ConfiguredCredentials::as_text),
+        expected
+    );
+}
+
+// a credential no pop reaches would reach Vertex inside the request parameters, so it is dropped
+#[test]
+fn an_unpopped_pinned_credential_never_reaches_the_options() {
+    let resolved = pinned_resolution(
+        r#"{"vertex_credentials": "first", "vertex_ai_credentials": "second"}"#,
+        "{}",
+        &VertexSettings::default(),
+    );
+    assert!(resolved.optional_params.is_empty());
 }
 
 #[rstest]
@@ -533,7 +657,15 @@ fn pinned_options_sit_between_the_request_and_the_settings() {
     r#"{"vertex_project": 5}"#,
     "the vertex_project option must be a string"
 )]
+#[case::second_location(
+    r#"{"vertex_location": "first", "vertex_ai_location": 5}"#,
+    "the vertex_ai_location option must be a string"
+)]
 #[case::api_base(r#"{"api_base": ["x"]}"#, "the api_base option must be a string")]
+#[case::second_credentials(
+    r#"{"vertex_credentials": "first", "vertex_ai_credentials": 5}"#,
+    "the vertex_ai_credentials option must be a string or an object"
+)]
 #[case::credentials(
     r#"{"vertex_credentials": true}"#,
     "the vertex_credentials option must be a string or an object"
