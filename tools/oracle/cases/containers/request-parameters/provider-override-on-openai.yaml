@@ -1,0 +1,10 @@
+kind: helper
+name: provider-override-on-openai
+call:
+  b3361:
+    function: decode_managed_id
+    container_id: "cntr_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmF6dXJlO21vZGVsX2lkOjtjb250YWluZXJfaWQ6Y29udGFpbmVyXzEyMw=="
+    custom_llm_provider: "openai"
+    litellm_params: {}
+env: {}
+compare: {ignore: []}
