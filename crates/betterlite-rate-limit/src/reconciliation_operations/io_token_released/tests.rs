@@ -130,6 +130,41 @@ fn one_windowed_side_still_guards_every_scope() {
 }
 
 #[test]
+fn a_zero_reserved_side_emits_no_operations() {
+    let response = ResponseObject::Usage(usage(100, 50));
+    let input_zero = slot_from(StashState {
+        itpm_reserved_tokens: 0,
+        ..windowed_state(false)
+    });
+    let output_zero = slot_from(StashState {
+        otpm_reserved_tokens: 0,
+        ..windowed_state(false)
+    });
+    assert_eq!(
+        reservation_tuples(&io_ops(&input_zero, &io_reconciliation(&response, None))),
+        vec![(
+            counter_key(OTPM_SCOPE),
+            30.0_f64,
+            Some(60),
+            Some("{model_per_project_otpm:proj-1:gpt-4}:window".to_owned()),
+            Some("1000".to_owned()),
+            Some(ReservationBackend::Redis)
+        )]
+    );
+    assert_eq!(
+        reservation_tuples(&io_ops(&output_zero, &io_reconciliation(&response, None))),
+        vec![(
+            counter_key(ITPM_SCOPE),
+            60.0_f64,
+            Some(60),
+            Some("{model_per_project_itpm:proj-1:gpt-4}:window".to_owned()),
+            Some("1000".to_owned()),
+            Some(ReservationBackend::Redis)
+        )]
+    );
+}
+
+#[test]
 fn zero_reserved_sides_with_windows_build_no_operations() {
     let slot = slot_from(StashState {
         itpm_reserved_tokens: 0,
