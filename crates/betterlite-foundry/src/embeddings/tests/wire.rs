@@ -1,4 +1,5 @@
 use betterlite_openai::embedding::EmbeddingVector;
+use rstest::rstest;
 
 use crate::embeddings::error::FoundryEmbeddingError;
 use crate::embeddings::reply::{FoundryEmbeddingResponse, decode_foundry_embedding};
@@ -58,20 +59,30 @@ fn defaults_usage_counts() {
     assert_eq!(usage.prompt_tokens, 0);
     assert_eq!(usage.completion_tokens, 0);
     assert_eq!(usage.total_tokens, 0);
-    let partial = decode_foundry_embedding(br#"{"usage":{"prompt_tokens":3,"total_tokens":9}}"#)
-        .unwrap();
+    let partial =
+        decode_foundry_embedding(br#"{"usage":{"prompt_tokens":3,"total_tokens":9}}"#).unwrap();
     let usage = partial.usage.unwrap();
     assert_eq!(usage.prompt_tokens, 3);
     assert_eq!(usage.completion_tokens, 0);
     assert_eq!(usage.total_tokens, 9);
 }
 
+#[rstest]
+#[case::top_level_null("null")]
+#[case::top_level_array("[]")]
+#[case::top_level_string("\"text\"")]
+#[case::data_an_object("{\"data\":{}}")]
+#[case::entry_without_fields("{\"data\":[{}]}")]
+fn rejects_wrong_shapes(#[case] body: &str) {
+    let error = decode_foundry_embedding(body.as_bytes()).unwrap_err();
+    assert!(
+        matches!(error, FoundryEmbeddingError::Json { .. }),
+        "{body}"
+    );
+}
+
 #[test]
-fn rejects_wrong_shapes() {
-    for body in ["null", "[]", "\"text\"", "{\"data\":{}}", "{\"data\":[{}]}"] {
-        let error = decode_foundry_embedding(body.as_bytes()).unwrap_err();
-        assert!(matches!(error, FoundryEmbeddingError::Json { .. }), "{body}");
-    }
+fn rejects_a_null_object() {
     let null_object = decode_foundry_embedding(br#"{"object":null,"data":[]}"#).unwrap_err();
     assert!(matches!(
         null_object,
