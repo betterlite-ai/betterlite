@@ -80,7 +80,7 @@ impl FakeProviders {
             environment: strings(environment),
             by_provider: by_provider
                 .iter()
-                .map(|(provider, models)| ((*provider).to_owned(), strings(*models)))
+                .map(|(provider, models)| ((*provider).to_owned(), strings(models)))
                 .collect(),
             records: Mutex::new(Vec::new()),
         }
@@ -107,12 +107,14 @@ impl ProviderModels for FakeProviders {
                 provider: provider.map(str::to_owned),
                 parameters: parameters.cloned(),
             });
-        match provider {
-            None => Some(self.environment.clone()),
-            Some(name) => self.by_provider.get(name).cloned(),
-        }
+        provider.map_or_else(
+            || Some(self.environment.clone()),
+            |name| self.by_provider.get(name).cloned(),
+        )
     }
 }
+
+type RowSpec<'row> = (&'row str, Option<&'row str>, &'row [(&'row str, Json)]);
 
 struct DeploymentRow {
     model: String,
@@ -126,7 +128,7 @@ struct FakeDeployments {
 }
 
 impl FakeDeployments {
-    fn rows(rows: &[(&str, Option<&str>, &[(&str, Json)])]) -> Self {
+    fn rows(rows: &[RowSpec<'_>]) -> Self {
         Self {
             rows: rows
                 .iter()
@@ -212,7 +214,7 @@ impl FallbackGroups for FakeFallbacks {
             .collect();
         self.seen
             .lock()
-            .expect("the fake records its chains")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(names);
         if self.fails {
             return Err(FallbackError::Unresolvable);
@@ -375,17 +377,24 @@ fn team_set_order_and_all_proxy_sentinel_retained() {
     assert!(get_team_models(&[], &proxy_model_list, &groups, false).is_empty());
 }
 
+fn expansion_context<'context>(
+    providers: &'context FakeProviders,
+    credentials: &'context CredentialSnapshot,
+) -> ExpansionContext<'context> {
+    ExpansionContext {
+        providers,
+        credentials,
+        deployments: None,
+    }
+}
+
 #[test]
 fn complete_key_then_team_then_proxy_precedence() {
     let providers = FakeProviders::new(&["inferred"], &[]);
     let credentials = CredentialSnapshot::default();
     let groups = IndexMap::new();
     let proxy_model_list = strings(&["proxy-a"]);
-    let context = ExpansionContext {
-        providers: &providers,
-        credentials: &credentials,
-        deployments: None,
-    };
+    let context = expansion_context(&providers, &credentials);
     let key_models = strings(&["key-a"]);
     let team_models = strings(&["team-a"]);
     let key_request = ListingRequest {
@@ -427,11 +436,7 @@ fn no_default_sentinel_and_inferred_models() {
     let credentials = CredentialSnapshot::default();
     let groups = IndexMap::new();
     let proxy_model_list = strings(&[NO_DEFAULT_MODELS, "proxy-a"]);
-    let context = ExpansionContext {
-        providers: &providers,
-        credentials: &credentials,
-        deployments: None,
-    };
+    let context = expansion_context(&providers, &credentials);
     let request = ListingRequest {
         key_models: &[],
         team_models: &[],
@@ -594,7 +599,8 @@ fn partial_suffix_filter_or_prepend() {
     };
     assert_eq!(
         get_known_models_from_wildcard("gemini/gemini-1.5-*", None, &context),
-        strings(&["gemini/gemini-1.5-pro", "gemini/gemini-1.5-flash"])
+        strings(&["gemini-1.5-pro", "gemini-1.5-flash"]),
+        "the models already start with the wildcard's prefix, so it is never stacked twice"
     );
     assert_eq!(
         get_known_models_from_wildcard("anthropic/claude-*", None, &context),
@@ -800,7 +806,7 @@ fn expanded_rows_deep_copy_and_params_model() {
             Json::Object(object(&[("id", text("deployment-id"))])),
         ),
     ]);
-    let expanded = expand_wildcard_deployments(&[deployment.clone()], &context);
+    let expanded = expand_wildcard_deployments(std::slice::from_ref(&deployment), &context);
     assert_eq!(expanded.len(), 2);
     assert_expanded_row(&expanded[0], "openai/gpt-4o");
     assert_expanded_row(&expanded[1], "openai/gpt-4o-mini");
@@ -938,10 +944,10 @@ fn unknown_fallback_warns_only_with_router() {
     assert!(value.is_empty());
     assert_eq!((warnings, errors), (1, 0));
     assert_eq!(resolver.seen_chains(), 0, "an unknown type never resolves");
-    let (value, warnings, errors) =
+    let (unrouted_value, unrouted_warnings, unrouted_errors) =
         events::captured(|| get_all_fallbacks("any-model", "bogus", None, &resolver));
-    assert!(value.is_empty());
-    assert_eq!((warnings, errors), (0, 0));
+    assert!(unrouted_value.is_empty());
+    assert_eq!((unrouted_warnings, unrouted_errors), (0, 0));
     assert_eq!(
         resolver.seen_chains(),
         0,

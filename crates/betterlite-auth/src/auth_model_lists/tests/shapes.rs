@@ -12,7 +12,7 @@ fn parsed(entries: &[(&str, Json)]) -> Result<ModelParameters, ParameterError> {
 
 #[test]
 fn credential_field_shapes_follow_pydantic() {
-    assert!(parsed(&[("model", text("openai/*")), ("api_key", text("key"))]).is_ok());
+    parsed(&[("model", text("openai/*")), ("api_key", text("key"))]).unwrap();
     assert!(matches!(
         parsed(&[("model", text("openai/*")), ("api_key", Json::Bool(true))]),
         Err(ParameterError::Field { field: "api_key" })
@@ -26,31 +26,25 @@ fn credential_field_shapes_follow_pydantic() {
             field: "aws_session_tags"
         })
     ));
-    assert!(
-        parsed(&[
-            ("model", text("openai/*")),
-            ("aws_session_tags", Json::List(vec![text("tag")])),
-            ("bedrock_tags", Json::List(vec![text("tag")])),
-        ])
-        .is_ok()
-    );
-    assert!(
-        parsed(&[
-            ("model", text("openai/*")),
-            ("vertex_credentials", text("json"))
-        ])
-        .is_ok()
-    );
-    assert!(
-        parsed(&[
-            ("model", text("openai/*")),
-            (
-                "vertex_credentials",
-                Json::Object(object(&[("type", text("service_account"))])),
-            ),
-        ])
-        .is_ok()
-    );
+    parsed(&[
+        ("model", text("openai/*")),
+        ("aws_session_tags", Json::List(vec![text("tag")])),
+        ("bedrock_tags", Json::List(vec![text("tag")])),
+    ])
+    .unwrap();
+    parsed(&[
+        ("model", text("openai/*")),
+        ("vertex_credentials", text("json")),
+    ])
+    .unwrap();
+    parsed(&[
+        ("model", text("openai/*")),
+        (
+            "vertex_credentials",
+            Json::Object(object(&[("type", text("service_account"))])),
+        ),
+    ])
+    .unwrap();
     assert!(matches!(
         parsed(&[
             ("model", text("openai/*")),
@@ -69,20 +63,16 @@ fn credential_field_shapes_follow_pydantic() {
             field: "litellm_credential_name"
         })
     ));
-    assert!(
-        parsed(&[
-            ("model", text("openai/*")),
-            ("litellm_credential_name", Json::Null),
-        ])
-        .is_ok()
-    );
-    assert!(
-        parsed(&[
-            ("model", text("openai/*")),
-            ("litellm_credential_name", text("named")),
-        ])
-        .is_ok()
-    );
+    parsed(&[
+        ("model", text("openai/*")),
+        ("litellm_credential_name", Json::Null),
+    ])
+    .unwrap();
+    parsed(&[
+        ("model", text("openai/*")),
+        ("litellm_credential_name", text("named")),
+    ])
+    .unwrap();
 }
 
 #[test]
