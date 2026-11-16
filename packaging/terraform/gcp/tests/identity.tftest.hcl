@@ -247,7 +247,7 @@ run "data_retention_days_adds_a_delete_rule" {
       length(google_storage_bucket.data.lifecycle_rule) == 1,
       alltrue([
         for rule in google_storage_bucket.data.lifecycle_rule :
-        rule.condition[0].age == 30 && rule.action[0].type == "Delete"
+        one(rule.condition).age == 30 && one(rule.action).type == "Delete"
       ]),
     ])
     error_message = "A positive data_retention_days must add one delete lifecycle rule with that age to the data bucket."
