@@ -13,6 +13,7 @@ use rstest::rstest;
 use serde_json::json;
 
 use super::VERSIONS_ADMIN_ONLY;
+use crate::cache_settings::REDACTED_VALUE;
 use support::{
     FakePromptTable, call, config_prompt, dotprompt_prompt, key_context, keyed_prompt,
     master_context, ordinary_context, registry, role_context, state, stored_prompt,
@@ -538,7 +539,7 @@ async fn oneshot_list_redacts_stored_api_keys() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         body["prompts"][0]["litellm_params"]["api_key"],
-        crate::cache_settings::REDACTED_VALUE
+        REDACTED_VALUE
     );
     assert!(!body.to_string().contains("sk-prompt-secret"));
 }

@@ -33,6 +33,7 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::cache_settings::REDACTED_VALUE;
 
 const PROMPTS_LIST_PATH: &str = "/prompts/list";
 const PROMPT_VERSIONS_PATH: &str = "/prompts/{prompt_id}/versions";
@@ -124,7 +125,7 @@ impl From<&PromptSpec> for PromptSpecWire {
                 api_key: params
                     .api_key
                     .as_ref()
-                    .map(|_secret| crate::cache_settings::REDACTED_VALUE.to_owned()),
+                    .map(|_secret| REDACTED_VALUE.to_owned()),
                 provider_specific_query_params: params.provider_specific_query_params.clone(),
                 ignore_prompt_manager_model: params.ignore_model,
                 ignore_optional_params: params.ignore_optional_params,
@@ -161,6 +162,7 @@ fn has_admin_view(principal: &Principal) -> bool {
         || principal.roles.contains(&Role::PlatformViewer)
 }
 
+// The key metadata the prompt routes read, taken from the key's serde form
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct PromptKeyView {
@@ -498,7 +500,7 @@ where
 {
     info_access::<Table::Failure>(&context.principal, &prompt_id)?;
     let base_prompt_id = get_base_prompt_id(&prompt_id);
-    let environment = query.environment.as_deref();
+    let wanted_environment = query.environment.as_deref();
     let environments = prompt_environments(&state, &base_prompt_id).await?;
     let requested_version = if prompt_id == base_prompt_id {
         None
@@ -510,13 +512,13 @@ where
         &base_prompt_id,
         &prompt_id,
         requested_version,
-        environment,
+        wanted_environment,
     )
     .await?;
     let Some(spec) = resolved else {
         return Err(PromptReadError::Denied {
             status: StatusCode::BAD_REQUEST,
-            detail: not_found_detail(&prompt_id, environment),
+            detail: not_found_detail(&prompt_id, wanted_environment),
         });
     };
     Ok(Json(PromptInfoResponse {
