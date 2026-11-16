@@ -9,4 +9,7 @@ deviations:
   - what: When end minus 90 days falls before year 1 the backfill window starts at the earliest declared effective_from date; LiteLLM's date subtraction raises OverflowError there instead.
     why: A DATE column cannot hold a year-0 floor, and the declared start is already the tightest bound the table can express.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L497-L512
+  - what: A prune run whose start is less than the 300-second grace above the first representable instant returns a StoreError::GraceUnderflow naming the start; LiteLLM's timedelta subtraction raises OverflowError there instead.
+    why: The cutoff is computed from the caller's run clock, so an unrepresentable start fails that run's prune with an error the caller can report rather than an exception no layer names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L787
 kept_bugs: []
