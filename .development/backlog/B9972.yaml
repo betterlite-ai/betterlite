@@ -1,7 +1,7 @@
 id: B9972
 milestone: R2 bug fixes
 title: Config load runs on its own stack
-status: todo
+status: in-progress
 depends_on: []
 file: tasks/B9972-config-load-stack.yaml
 covers: []

@@ -31,6 +31,13 @@ description: >-
   test process aborts, so the test is red before the fix and green after it.
 scope:
   paths:
+  - "crates/betterlite-config/tests/agent_host_settings.rs"
+  - "crates/betterlite-config/tests/**"
+  - "crates/betterlite-config/src/sections/password_policy/tests.rs"
+  - "crates/betterlite-config/src/sections/includes.rs"
+  - "crates/betterlite-config/src/sections/azure_default_chain/tests.rs"
+  - "crates/betterlite-config/src/loader/startup.rs"
+  - "crates/betterlite-config/src/**"
   - crates/betterlite-config/src/loader.rs
   - crates/betterlite-config/src/sections/claude_gateway_policy/tests.rs
   lint_tables: false
