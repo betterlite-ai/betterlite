@@ -274,6 +274,54 @@ fn deepgram_listen_unreadable_base_rate_leaves_the_cost_absent() {
 }
 
 #[test]
+fn deepgram_listen_reads_a_numeric_string_rate() {
+    let registry = Registry {
+        catalog: registry(&[(
+            "deepgram/streaming/nova-3",
+            r#"{"litellm_provider": "deepgram", "input_cost_per_second": 0.00008}"#,
+        )])
+        .catalog,
+        lookup: lookup(&[(
+            "deepgram/streaming/nova-3",
+            r#"{"litellm_provider": "deepgram", "input_cost_per_second": "0.5"}"#,
+        )]),
+    };
+    let logging_obj = logging_object();
+    let frames = messages(r#"[{"type": "Metadata", "duration": 1}]"#);
+    let caller = kwargs(&[]);
+    let url = "https://api.deepgram.com/v1/listen?model=nova-3";
+
+    deepgram_listen_passthrough_handler(&logging_obj, &request(&registry, url, &frames, &caller))
+        .expect("the handler runs");
+
+    assert_eq!(spend_cost(&logging_obj), json("0.5"));
+}
+
+#[test]
+fn deepgram_listen_prices_a_non_numeric_string_rate_at_zero() {
+    let registry = Registry {
+        catalog: registry(&[(
+            "deepgram/streaming/nova-3",
+            r#"{"litellm_provider": "deepgram", "input_cost_per_second": 0.00008}"#,
+        )])
+        .catalog,
+        lookup: lookup(&[(
+            "deepgram/streaming/nova-3",
+            r#"{"litellm_provider": "deepgram", "input_cost_per_second": "unpriced"}"#,
+        )]),
+    };
+    let logging_obj = logging_object();
+    let frames = messages(r#"[{"type": "Metadata", "duration": 1}]"#);
+    let caller = kwargs(&[]);
+    let url = "https://api.deepgram.com/v1/listen?model=nova-3";
+
+    deepgram_listen_passthrough_handler(&logging_obj, &request(&registry, url, &frames, &caller))
+        .expect("the handler runs");
+
+    assert_eq!(spend_cost(&logging_obj), json("0"));
+}
+
+#[test]
 fn deepgram_listen_price_sum_beyond_the_decimal_range_leaves_the_cost_absent() {
     let registry = Registry {
         catalog: registry(&[(
