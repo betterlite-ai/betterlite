@@ -3100,6 +3100,8 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-server",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
  "chrono",
  "flate2",
  "http 1.5.0",
