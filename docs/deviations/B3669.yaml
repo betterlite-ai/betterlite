@@ -1,0 +1,21 @@
+task: B3669
+deviations:
+  - what: 'The streaming entry points take the buffered chunks as typed objects plus an EndedStream (principal, guardrail name, rewrite delivery) and a chunk assembler, and build the guardrail request data themselves; they have no request_data, logging_obj or user_api_key_dict arguments.'
+    why: 'B3668 fixed that shape for the ended-stream path so B3251 can call it, and the key metadata comes from the principal the same way it does for the completed-response pass.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L490-L640
+  - what: 'A guardrail tool whose type, function name, server_label or name is neither text nor null fails the merge with an error that names the field, where LiteLLM turns the value into text with str().'
+    why: 'docs/compatibility.md refuses a value of the wrong type instead of reproducing Python coercion.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/tool_merge.py#L43-L48
+  - what: 'assemble_anthropic_sse_stream takes the assembler as an argument (SseAssembler) and answers None when it does, instead of importing AnthropicPassthroughLoggingHandler and catching every exception.'
+    why: 'The passthrough handler is not built in the server crate yet and dependencies come in through constructors; the implementor maps its own failures to None.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/anthropic_sse.py#L84-L132
+  - what: 'anthropic_sse_chunks_from_response returns an error when the response cannot be translated (tool arguments that are not an object, a block that is not a mapping), where LiteLLM raises from the adapter.'
+    why: 'A function that can fail returns its typed error instead of raising.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/anthropic_sse.py#L169-L180
+kept_bugs:
+  - what: 'The block-only path writes the guardrailed text back across responses_so_far (the full text in each choice first chunk, the rest blanked) even though its docstring says text rewrites are not propagated there.'
+    why: 'The block-only inspection runs on a copy and drops the writes, so callers already rely on the in-place write being harmless.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L629-L633
+  - what: 'merge_guardrailed_tools pairs original tools with flattened groups by position, so an original tool beyond the last group is dropped, and a namespace member that is not an object is dropped when its namespace is rebuilt.'
+    why: 'Callers pass one group per original tool, so nothing relies on the truncation, and a rebuilt namespace has only ever been written from the object members.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/tool_merge.py#L177-L180
