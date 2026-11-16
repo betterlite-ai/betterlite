@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use betterlite_core::api::chat_response_stream_items::snapshot::StreamAssembly;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
+use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
@@ -10,11 +12,69 @@ use betterlite_streaming::stream_usage_assembly::wire::Usage;
 use betterlite_streaming::streamed_response_assembly::cost::{
     CostError, CostInput, StreamCostCalculator,
 };
+use betterlite_streaming::streamed_response_assembly::records::Chunk;
+use betterlite_streaming::streamed_response_assembly::response::Response;
+use betterlite_streaming::streamed_response_assembly::{
+    AssemblyError, Request, stream_chunk_builder,
+};
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use tokio::runtime::{Builder, Runtime};
 
 pub(crate) type Hooks = VerboseHooks<FixtureLogger, FixtureConsole>;
+
+// The streaming driver hands the end-of-stream assembly its logging context; the helper supplies the builder itself.
+pub(crate) struct AssemblyContext {
+    now: i64,
+    runtime: Runtime,
+    hooks: Hooks,
+}
+
+impl AssemblyContext {
+    pub(crate) fn new(now: i64) -> Result<Self, Box<HelperError>> {
+        let runtime = Builder::new_current_thread()
+            .build()
+            .map_err(|error| failure(error.to_string()))?;
+        Ok(Self {
+            now,
+            runtime,
+            hooks: hooks()?,
+        })
+    }
+}
+
+impl StreamAssembly for AssemblyContext {
+    fn assemble(
+        &self,
+        chunks: &[IndexMap<String, Json>],
+    ) -> Result<Option<Response>, AssemblyError> {
+        let decoded = chunks
+            .iter()
+            .map(decode_chunk)
+            .collect::<Result<Vec<Chunk>, _>>()?;
+        let counter = ZeroCounter;
+        let costs = NoCosts;
+        let request = Request {
+            chunks: Some(&decoded),
+            messages: None,
+            count_prompt_tokens: None,
+            logging: None,
+            costs: &costs,
+            counter: &counter,
+            metadata: None,
+            now: self.now,
+        };
+        self.runtime
+            .block_on(stream_chunk_builder(&request, &self.hooks))
+    }
+}
+
+fn decode_chunk(chunk: &IndexMap<String, Json>) -> Result<Chunk, AssemblyError> {
+    let value = serde_json::to_value(chunk)?;
+    serde_json::from_value(value).map_err(AssemblyError::from)
+}
 
 pub(crate) fn failure(message: String) -> Box<HelperError> {
     Box::new(HelperError {

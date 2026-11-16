@@ -15,32 +15,23 @@ from pydantic import TypeAdapter
 OBJECT: TypeAdapter[dict[str, Json]] = TypeAdapter(dict[str, Json])
 
 
-class DumpedMessage(TypedDict):
+class CompletionFields(TypedDict):
+    choices: list[dict[str, dict[str, Json]]]
+
+
+class AssembledMessage(TypedDict):
     content: Json
 
 
-class DumpedChoice(TypedDict):
-    message: DumpedMessage
+class AssembledChoice(TypedDict):
+    message: AssembledMessage
 
 
-class DumpedResponse(TypedDict):
-    choices: list[DumpedChoice]
+class AssembledFields(TypedDict):
+    choices: list[AssembledChoice]
 
 
-DUMPED: TypeAdapter[DumpedResponse] = TypeAdapter(DumpedResponse)
-
-
-class MessageFields(TypedDict):
-    content: NotRequired[Json]
-    annotations: NotRequired[Json]
-
-
-class CompletionChoice(TypedDict):
-    message: MessageFields
-
-
-class CompletionFields(TypedDict):
-    choices: list[CompletionChoice]
+DUMPED: TypeAdapter[AssembledFields] = TypeAdapter(AssembledFields)
 
 
 class ChunkChoice(TypedDict):
@@ -58,21 +49,12 @@ class ChunkFields(TypedDict):
     usage: NotRequired[dict[str, Json]]
 
 
-class InitialStep(TypedDict):
-    kind: Literal["initial"]
+class SimpleStep(TypedDict):
+    kind: Literal["initial", "message_items", "content_part", "assemble", "pending", "finished"]
 
 
-class MessageItemsStep(TypedDict):
-    kind: Literal["message_items"]
-
-
-class ContentPartStep(TypedDict):
-    kind: Literal["content_part"]
-
-
-class DoneStep(TypedDict):
-    kind: Literal["done"]
-    target: Literal["text", "part", "item"]
+class CompletionStep(TypedDict):
+    kind: Literal["done", "default_done"]
     completion: CompletionFields
 
 
@@ -81,15 +63,6 @@ class ReasoningDoneStep(TypedDict):
     item_id: str
     content: str
     sequence_number: int
-
-
-class DefaultDoneStep(TypedDict):
-    kind: Literal["default_done"]
-    completion: CompletionFields
-
-
-class PendingStep(TypedDict):
-    kind: Literal["pending"]
 
 
 class SnapshotStep(TypedDict):
@@ -103,38 +76,16 @@ class MergeStep(TypedDict):
     fields: dict[str, Json]
 
 
-class AssembleStep(TypedDict):
-    kind: Literal["assemble"]
-
-
-class FinishedStep(TypedDict):
-    kind: Literal["finished"]
-
-
 class SetStep(TypedDict):
     kind: Literal["set"]
-    cached_item_id: NotRequired[str]
-    cached_response_id: NotRequired[str]
     cached_reasoning_item_id: NotRequired[str]
     sequence_number: NotRequired[int]
     message_output_index: NotRequired[int]
-    next_tool_output_index: NotRequired[int]
     litellm_model_response: NotRequired[CompletionFields]
 
 
 Step: TypeAlias = (
-    InitialStep
-    | MessageItemsStep
-    | ContentPartStep
-    | DoneStep
-    | ReasoningDoneStep
-    | DefaultDoneStep
-    | PendingStep
-    | SnapshotStep
-    | MergeStep
-    | AssembleStep
-    | FinishedStep
-    | SetStep
+    SimpleStep | CompletionStep | ReasoningDoneStep | SnapshotStep | MergeStep | SetStep
 )
 
 
@@ -144,7 +95,6 @@ class Input(TypedDict):
     responses_api_request: dict[str, Json]
     custom_llm_provider: str | None
     litellm_metadata: dict[str, Json] | None
-    logging_marker: str
     now: int
     uuid_ids: list[str]
     steps: list[Step]
@@ -176,10 +126,8 @@ def no_response_cost(result: Json) -> Json:
 
 
 def build_iterator(input_value: Input) -> StreamIterator:
-    details: dict[str, Json] = {}
     logging = SimpleNamespace(
-        marker=input_value["logging_marker"],
-        model_call_details=details,
+        model_call_details={},
         _response_cost_calculator=no_response_cost,
     )
     wrapper = SimpleNamespace(logging_obj=logging)
@@ -221,7 +169,9 @@ def chunk_view(fields: ChunkFields) -> ModelResponseStream:
         content = cast(str | None, choice["delta"].get("content"))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1513
         finish_reason = cast(str | None, choice["finish_reason"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2007
         delta = Delta(content=content)
-        choices.append(StreamingChoices(index=choice["index"], delta=delta, finish_reason=finish_reason))
+        choices.append(
+            StreamingChoices(index=choice["index"], delta=delta, finish_reason=finish_reason)
+        )
     chunk = ModelResponseStream(
         id=fields["id"],
         object=fields["object"],
@@ -240,53 +190,12 @@ def pending_events(iterator: StreamIterator) -> Json:
     return views
 
 
-def flags_view(iterator: StreamIterator) -> dict[str, Json]:
-    return {
-        "sent_response_created": iterator.sent_response_created_event,
-        "sent_in_progress": iterator.sent_response_in_progress_event,
-        "sent_output_item_added": iterator.sent_output_item_added_event,
-        "sent_message_item_added": iterator.sent_message_item_added_event,
-        "sent_content_part_added": iterator.sent_content_part_added_event,
-        "sent_output_text_done": iterator.sent_output_text_done_event,
-        "sent_content_part_done": iterator.sent_output_content_part_done_event,
-        "sent_output_item_done": iterator.sent_output_item_done_event,
-        "sent_annotation_events": iterator.sent_annotation_events,
-    }
-
-
-def counters_view(iterator: StreamIterator) -> dict[str, Json]:
-    return {
-        "sequence_number": iterator._sequence_number,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L132
-        "message_output_index": iterator._message_output_index,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L119
-        "next_tool_output_index": iterator._next_tool_output_index,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L130
-    }
-
-
-def state_view(iterator: StreamIterator, marker: str) -> Json:
-    return {
-        "flags": flags_view(iterator),
-        "counters": counters_view(iterator),
-        "cached_item_id": iterator._cached_item_id,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L120
-        "cached_response_id": iterator._cached_response_id,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L121
-        "cached_reasoning_item_id": iterator._cached_reasoning_item_id,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L133
-        "pending_response_events": [event_view(event) for event in iterator._pending_response_events],  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L135
-        "provider_specific_fields": OBJECT.validate_python(iterator._accumulated_provider_specific_fields),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L150
-        "logging_context": marker,
-    }
-
-
-def message_items_step(iterator: StreamIterator) -> Json:
-    iterator._queue_message_item_added_events()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L600
-    return pending_events(iterator)
-
-
-def done_step(iterator: StreamIterator, step: DoneStep) -> Json:
+def done_step(iterator: StreamIterator, step: CompletionStep) -> Json:
     completion = completion_view(step["completion"])
-    if step["target"] == "text":
-        return event_view(iterator.create_output_text_done_event(completion))
-    if step["target"] == "part":
-        return event_view(iterator.create_output_content_part_done_event(completion))
-    return event_view(iterator.create_output_item_done_event(completion))
+    text = event_view(iterator.create_output_text_done_event(completion))
+    part = event_view(iterator.create_output_content_part_done_event(completion))
+    item = event_view(iterator.create_output_item_done_event(completion))
+    return [text, part, item]
 
 
 def reasoning_step(iterator: StreamIterator, step: ReasoningDoneStep) -> Json:
@@ -299,18 +208,6 @@ def reasoning_step(iterator: StreamIterator, step: ReasoningDoneStep) -> Json:
     return [text, part, item]
 
 
-def default_done_step(iterator: StreamIterator, step: DefaultDoneStep) -> Json:
-    event = iterator.return_default_done_events(completion_view(step["completion"]))
-    if event is None:
-        return None
-    return event_view(event)
-
-
-def snapshot_view(snapshot: Json) -> Json:
-    view = OBJECT.validate_python(snapshot)
-    return {"usage": view.get("usage"), "_hidden_params": view.get("_hidden_params")}
-
-
 def snapshot_step(iterator: StreamIterator, step: SnapshotStep) -> Json:
     chunk = chunk_view(step["chunk"])
     hidden = step.get("hidden")
@@ -318,7 +215,8 @@ def snapshot_step(iterator: StreamIterator, step: SnapshotStep) -> Json:
         chunk._hidden_params = dict(hidden)
     snapshot = iterator._snapshot_chunk_for_stream_chunk_builder(chunk)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L658
     iterator.collected_chat_completion_chunks.append(snapshot)
-    return snapshot_view(cast(Json, snapshot))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L658
+    view = OBJECT.validate_python(cast(Json, snapshot))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L658
+    return {"usage": view.get("usage"), "_hidden_params": view.get("_hidden_params")}
 
 
 def merge_step(iterator: StreamIterator, step: MergeStep) -> Json:
@@ -337,23 +235,13 @@ def assembled_view(response: ModelResponse | None) -> Json:
     }
 
 
-def assemble_step(iterator: StreamIterator) -> Json:
-    return assembled_view(iterator.create_litellm_model_response())
-
-
 def set_step(iterator: StreamIterator, step: SetStep) -> Json:
-    if "cached_item_id" in step:
-        iterator._cached_item_id = step["cached_item_id"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L120
-    if "cached_response_id" in step:
-        iterator._cached_response_id = step["cached_response_id"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L121
     if "cached_reasoning_item_id" in step:
         iterator._cached_reasoning_item_id = step["cached_reasoning_item_id"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L133
     if "sequence_number" in step:
         iterator._sequence_number = step["sequence_number"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L132
     if "message_output_index" in step:
         iterator._message_output_index = step["message_output_index"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L119
-    if "next_tool_output_index" in step:
-        iterator._next_tool_output_index = step["next_tool_output_index"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L130
     if "litellm_model_response" in step:
         iterator.litellm_model_response = completion_view(step["litellm_model_response"])
     return None
@@ -365,44 +253,44 @@ def apply_step(iterator: StreamIterator, step: Step) -> Json:
         if event is None:
             return None
         return event_view(event)
+    if step["kind"] == "message_items":
+        iterator._queue_message_item_added_events()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L600
+        return pending_events(iterator)
+    if step["kind"] == "content_part":
+        return event_view(iterator.create_content_part_added_event())
     return event_step(iterator, step)
 
 
 def event_step(iterator: StreamIterator, step: Step) -> Json:
-    if step["kind"] == "message_items":
-        return message_items_step(iterator)
-    if step["kind"] == "content_part":
-        return event_view(iterator.create_content_part_added_event())
     if step["kind"] == "done":
         return done_step(iterator, step)
     if step["kind"] == "reasoning_done":
         return reasoning_step(iterator, step)
     if step["kind"] == "default_done":
-        return default_done_step(iterator, step)
+        event = iterator.return_default_done_events(completion_view(step["completion"]))
+        if event is None:
+            return None
+        return event_view(event)
     return state_step(iterator, step)
 
 
 def state_step(iterator: StreamIterator, step: Step) -> Json:
-    if step["kind"] == "pending":
-        return pending_events(iterator)
     if step["kind"] == "snapshot":
         return snapshot_step(iterator, step)
     if step["kind"] == "merge_fields":
         return merge_step(iterator, step)
     if step["kind"] == "assemble":
-        return assemble_step(iterator)
-    if step["kind"] == "finished":
-        return iterator.is_stream_finished()
-    return set_step(iterator, cast(SetStep, step))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L119
+        return assembled_view(iterator.create_litellm_model_response())
+    if step["kind"] == "pending":
+        return pending_events(iterator)
+    if step["kind"] == "set":
+        return set_step(iterator, step)
+    return iterator.is_stream_finished()
 
 
 def run(input_value: Input) -> Json:
     iterator = build_iterator(input_value)
     results: list[Json] = []
     for step in input_value["steps"]:
-        outcome: Json = {
-            "step": apply_step(iterator, step),
-            "state": state_view(iterator, input_value["logging_marker"]),
-        }
-        results.append(outcome)
+        results.append(apply_step(iterator, step))
     return {"results": results}

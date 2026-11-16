@@ -106,7 +106,8 @@ fn response_data<Context>(
         "user",
         "metadata",
     ] {
-        copy_request_field(request, &mut data, name);
+        let value = request.get(name).cloned().unwrap_or(Json::Null);
+        data.insert(name.to_owned(), value);
     }
     let tool_choice = request.get("tool_choice").unwrap_or(&Json::Null);
     data.insert("tool_choice".to_owned(), responses_tool_choice(tool_choice));
@@ -136,32 +137,19 @@ fn fixed_response_fields<Context>(
         Json::Number(Number::from(sources.now())),
     );
     data.insert("status".to_owned(), Json::Text("in_progress".to_owned()));
-    data.insert("error".to_owned(), Json::Null);
-    data.insert("incomplete_details".to_owned(), Json::Null);
-    data.insert("max_output_tokens".to_owned(), Json::Null);
     data.insert("model".to_owned(), Json::Text(state.model.clone()));
     data.insert("output".to_owned(), Json::List(Vec::new()));
     data.insert("parallel_tool_calls".to_owned(), Json::Bool(true));
-    data.insert("previous_response_id".to_owned(), Json::Null);
     data.insert("reasoning".to_owned(), default_reasoning());
     data.insert("store".to_owned(), Json::Bool(true));
     data
 }
 
-fn copy_request_field(
-    request: &IndexMap<String, Json>,
-    data: &mut IndexMap<String, Json>,
-    name: &str,
-) {
-    let value = request.get(name).cloned().unwrap_or(Json::Null);
-    data.insert(name.to_owned(), value);
-}
-
 fn default_reasoning() -> Json {
-    let mut reasoning = IndexMap::new();
-    reasoning.insert("effort".to_owned(), Json::Null);
-    reasoning.insert("summary".to_owned(), Json::Null);
-    Json::Object(reasoning)
+    Json::Object(IndexMap::from([
+        ("effort".to_owned(), Json::Null),
+        ("summary".to_owned(), Json::Null),
+    ]))
 }
 
 fn default_top_p() -> Json {

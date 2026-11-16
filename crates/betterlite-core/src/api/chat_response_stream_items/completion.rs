@@ -64,24 +64,25 @@ fn citation_extras(annotations: Option<&[ChatAnnotation]>) -> Vec<Extra> {
 }
 
 fn annotation_extra(annotation: &OutputAnnotation) -> Extra {
-    let mut extra = Extra::new();
-    extra.insert(
-        "type".to_owned(),
-        optional_text(annotation.r#type.as_deref()),
-    );
-    extra.insert(
-        "start_index".to_owned(),
-        optional_number(annotation.start_index),
-    );
-    extra.insert(
-        "end_index".to_owned(),
-        optional_number(annotation.end_index),
-    );
-    extra.insert("url".to_owned(), optional_text(annotation.url.as_deref()));
-    extra.insert(
-        "title".to_owned(),
-        optional_text(annotation.title.as_deref()),
-    );
+    let mut extra = Extra::from([
+        (
+            "type".to_owned(),
+            optional_text(annotation.r#type.as_deref()),
+        ),
+        (
+            "start_index".to_owned(),
+            optional_number(annotation.start_index),
+        ),
+        (
+            "end_index".to_owned(),
+            optional_number(annotation.end_index),
+        ),
+        ("url".to_owned(), optional_text(annotation.url.as_deref())),
+        (
+            "title".to_owned(),
+            optional_text(annotation.title.as_deref()),
+        ),
+    ]);
     for (key, value) in &annotation.extra {
         extra.insert(key.clone(), value.clone());
     }
@@ -89,15 +90,9 @@ fn annotation_extra(annotation: &OutputAnnotation) -> Extra {
 }
 
 fn optional_text(value: Option<&str>) -> Json {
-    match value {
-        Some(text) => Json::Text(text.to_owned()),
-        None => Json::Null,
-    }
+    value.map_or(Json::Null, |text| Json::Text(text.to_owned()))
 }
 
 fn optional_number(value: Option<i64>) -> Json {
-    match value {
-        Some(number) => Json::Number(Number::from(number)),
-        None => Json::Null,
-    }
+    value.map_or(Json::Null, |number| Json::Number(Number::from(number)))
 }

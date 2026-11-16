@@ -19,12 +19,11 @@ pub fn merge_provider_specific_fields<Context>(
     state: &mut ChatStreamState<Context>,
     provider_fields: &IndexMap<String, Json>,
 ) {
-    for (key, value) in provider_fields {
-        state
-            .progress
-            .provider_specific_fields
-            .insert(key.clone(), value.clone());
-    }
+    state.progress.provider_specific_fields.extend(
+        provider_fields
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone())),
+    );
 }
 
 #[must_use]

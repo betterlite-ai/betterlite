@@ -7,7 +7,6 @@ call:
     responses_api_request: {}
     custom_llm_provider: null
     litellm_metadata: null
-    logging_marker: ctx
     now: 10
     uuid_ids: [u1]
     steps:
@@ -22,7 +21,6 @@ calls:
       responses_api_request: {}
       custom_llm_provider: null
       litellm_metadata: null
-      logging_marker: ctx
       now: 10
       uuid_ids: [u1]
       steps:
@@ -44,7 +42,6 @@ calls:
       responses_api_request: {}
       custom_llm_provider: null
       litellm_metadata: null
-      logging_marker: ctx
       now: 10
       uuid_ids: [u1, u2]
       steps:
@@ -68,20 +65,21 @@ calls:
       responses_api_request: {}
       custom_llm_provider: null
       litellm_metadata: null
-      logging_marker: ctx
       now: 10
       uuid_ids: [u1]
       steps:
         - kind: set
           litellm_model_response: {choices: [{message: {content: unused}}]}
         - kind: message_items
-        - kind: set
-          cached_item_id: msg_kept
+        - kind: default_done
+          completion: {choices: [{message: {content: later}}]}
+        - kind: default_done
+          completion: {choices: [{message: {content: later}}]}
         - kind: default_done
           completion: {choices: [{message: {content: later}}]}
         - kind: set
           sequence_number: 40
-          next_tool_output_index: 9
+        - kind: message_items
         - kind: finished
 env: {}
 compare: {ignore: []}

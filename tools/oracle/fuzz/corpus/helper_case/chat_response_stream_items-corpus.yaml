@@ -7,7 +7,6 @@ call:
     responses_api_request: {}
     custom_llm_provider: null
     litellm_metadata: null
-    logging_marker: ctx
     now: 10
     uuid_ids: []
     steps: []

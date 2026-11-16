@@ -74,19 +74,19 @@ pub(super) fn ensure_cached_item_id<Context>(
 }
 
 fn message_item(item_id: &str) -> Extra {
-    let mut item = Extra::new();
-    item.insert("id".to_owned(), Json::Text(item_id.to_owned()));
-    item.insert("type".to_owned(), Json::Text("message".to_owned()));
-    item.insert("status".to_owned(), Json::Text("in_progress".to_owned()));
-    item.insert("role".to_owned(), Json::Text("assistant".to_owned()));
-    item.insert("content".to_owned(), Json::List(Vec::new()));
-    item
+    Extra::from([
+        ("id".to_owned(), Json::Text(item_id.to_owned())),
+        ("type".to_owned(), Json::Text("message".to_owned())),
+        ("status".to_owned(), Json::Text("in_progress".to_owned())),
+        ("role".to_owned(), Json::Text("assistant".to_owned())),
+        ("content".to_owned(), Json::List(Vec::new())),
+    ])
 }
 
 fn content_part() -> Extra {
-    let mut part = Extra::new();
-    part.insert("type".to_owned(), Json::Text("output_text".to_owned()));
-    part.insert("text".to_owned(), Json::Text(String::new()));
-    part.insert("annotations".to_owned(), Json::List(Vec::new()));
-    part
+    Extra::from([
+        ("type".to_owned(), Json::Text("output_text".to_owned())),
+        ("text".to_owned(), Json::Text(String::new())),
+        ("annotations".to_owned(), Json::List(Vec::new())),
+    ])
 }

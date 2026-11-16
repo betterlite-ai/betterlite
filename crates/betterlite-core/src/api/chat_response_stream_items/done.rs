@@ -116,39 +116,40 @@ pub fn create_reasoning_output_item_done_event(
 }
 
 fn completed_message_item(item_id: &str, text: &str, annotations: Vec<Extra>) -> Extra {
-    let mut content_part = Extra::new();
-    content_part.insert("type".to_owned(), Json::Text("output_text".to_owned()));
-    content_part.insert("text".to_owned(), Json::Text(text.to_owned()));
-    content_part.insert(
-        "annotations".to_owned(),
-        Json::List(annotations.into_iter().map(Json::Object).collect()),
-    );
-    let mut item = Extra::new();
-    item.insert("id".to_owned(), Json::Text(item_id.to_owned()));
-    item.insert("status".to_owned(), Json::Text("completed".to_owned()));
-    item.insert("type".to_owned(), Json::Text("message".to_owned()));
-    item.insert("role".to_owned(), Json::Text("assistant".to_owned()));
-    item.insert(
-        "content".to_owned(),
-        Json::List(vec![Json::Object(content_part)]),
-    );
-    item
+    let content_part = Extra::from([
+        ("type".to_owned(), Json::Text("output_text".to_owned())),
+        ("text".to_owned(), Json::Text(text.to_owned())),
+        (
+            "annotations".to_owned(),
+            Json::List(annotations.into_iter().map(Json::Object).collect()),
+        ),
+    ]);
+    Extra::from([
+        ("id".to_owned(), Json::Text(item_id.to_owned())),
+        ("status".to_owned(), Json::Text("completed".to_owned())),
+        ("type".to_owned(), Json::Text("message".to_owned())),
+        ("role".to_owned(), Json::Text("assistant".to_owned())),
+        (
+            "content".to_owned(),
+            Json::List(vec![Json::Object(content_part)]),
+        ),
+    ])
 }
 
 fn reasoning_item(item_id: &str, content: &str) -> Extra {
-    let mut item = Extra::new();
-    item.insert("id".to_owned(), Json::Text(item_id.to_owned()));
-    item.insert("type".to_owned(), Json::Text("reasoning".to_owned()));
-    item.insert(
-        "summary".to_owned(),
-        Json::List(vec![Json::Object(summary_part(content))]),
-    );
-    item
+    Extra::from([
+        ("id".to_owned(), Json::Text(item_id.to_owned())),
+        ("type".to_owned(), Json::Text("reasoning".to_owned())),
+        (
+            "summary".to_owned(),
+            Json::List(vec![Json::Object(summary_part(content))]),
+        ),
+    ])
 }
 
 fn summary_part(content: &str) -> Extra {
-    let mut part = Extra::new();
-    part.insert("type".to_owned(), Json::Text("summary_text".to_owned()));
-    part.insert("text".to_owned(), Json::Text(content.to_owned()));
-    part
+    Extra::from([
+        ("type".to_owned(), Json::Text("summary_text".to_owned())),
+        ("text".to_owned(), Json::Text(content.to_owned())),
+    ])
 }

@@ -21,7 +21,6 @@ call:
     custom_llm_provider: azure
     litellm_metadata:
       model_info: {id: deployment-1}
-    logging_marker: ctx
     now: 10
     uuid_ids: [u]
     steps:
@@ -35,7 +34,6 @@ calls:
       responses_api_request: {}
       custom_llm_provider: null
       litellm_metadata: null
-      logging_marker: ctx
       now: 10
       uuid_ids: [u]
       steps:
@@ -55,12 +53,9 @@ calls:
         metadata: null
       custom_llm_provider: openai
       litellm_metadata: {model_info: {id: deployment-2}}
-      logging_marker: ctx
       now: 11
       uuid_ids: [v]
       steps:
-        - kind: set
-          cached_response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmF6dXJlO21vZGVsX2lkOmRlcGxveW1lbnQtMTtyZXNwb25zZV9pZDpyZXNwX3Ux
         - kind: initial
 env: {}
 compare: {ignore: []}
