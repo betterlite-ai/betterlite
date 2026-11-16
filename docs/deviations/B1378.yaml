@@ -1,0 +1,15 @@
+task: B1378
+deviations:
+  - what: A setup JSON body that is not valid JSON, or that carries trailing data, fails with a typed InvalidJson error, where LiteLLM's json.loads raises an uncaught JSONDecodeError from the transform that answers HTTP 500.
+    why: The body is a client-controlled session_configuration_request string, so a 4xx that names the failure belongs there and no working setup sends a malformed one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L112-L115
+  - what: A turn_detection duration written as a JSON integer beyond the signed or unsigned 64-bit range is dropped, where LiteLLM forwards it because Python ints are unbounded.
+    why: betterlite reads setup numbers as serde_json numbers, and a padding or silence window that large is not a value any working Gemini setup sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L295-L298
+kept_bugs:
+  - what: session.created copies instructions only when systemInstruction is a string, so a session configured through the first session.update, which stores a content object, never sees its instructions echoed back.
+    why: The event shape is what every LiteLLM client, pipecat included, parses today, and the task pins this projection, so betterlite keeps the omission rather than adding a field working clients do not expect.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L662-L663
+  - what: LITELLM_GEMINI_LIVE_DEFER_SETUP enables deferred setup only when its value lowercases to exactly true, with no whitespace trimming and no 1, yes or on spellings.
+    why: LiteLLM reads the variable that way at import, and the task requires the same comparison so an existing deployment's environment behaves identically, even though betterlite's shared env parser elsewhere trims and accepts more spellings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L273
