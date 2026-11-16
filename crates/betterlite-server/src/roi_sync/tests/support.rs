@@ -212,27 +212,32 @@ fn list_json(numbers: &[i64]) -> String {
 }
 
 pub(super) fn routes_for(repo: &str, numbers: &[i64]) -> Routes {
-    let mut routes =
-        Routes::default().with(&format!("/repos/{repo}/pulls"), 200, &list_json(numbers));
-    routes = routes.with("/users/dev", 200, PROFILE);
+    let mut routes = Routes::default()
+        .with(&format!("/repos/{repo}/pulls"), 200, &list_json(numbers))
+        .with("/users/dev", 200, PROFILE);
     for number in numbers {
-        routes = routes.with(
-            &format!("/repos/{repo}/pulls/{number}"),
-            200,
-            &pull_detail_json(*number),
-        );
-        routes = routes.with(
-            &format!("/repos/{repo}/pulls/{number}/files"),
-            200,
-            PULL_FILES,
-        );
-        routes = routes.with(
-            &format!("/repos/{repo}/pulls/{number}/commits"),
-            200,
-            PULL_COMMITS,
-        );
+        for (path, body) in pull_routes(repo, *number) {
+            routes = routes.with(&path, 200, &body);
+        }
     }
     routes
+}
+
+fn pull_routes(repo: &str, number: i64) -> [(String, String); 3] {
+    [
+        (
+            format!("/repos/{repo}/pulls/{number}"),
+            pull_detail_json(number),
+        ),
+        (
+            format!("/repos/{repo}/pulls/{number}/files"),
+            PULL_FILES.to_owned(),
+        ),
+        (
+            format!("/repos/{repo}/pulls/{number}/commits"),
+            PULL_COMMITS.to_owned(),
+        ),
+    ]
 }
 
 pub(super) async fn pull_key(
@@ -359,22 +364,21 @@ pub(super) struct MemoryRepository {
 impl MemoryRepository {
     pub(super) fn holding_text(name: &str, text: &str) -> Self {
         let repository = Self::default();
-        repository
-            .state
-            .lock()
-            .unwrap()
-            .params
-            .insert(name.to_owned(), wire(text));
+        repository.insert_param(name, text);
         repository
     }
 
-    pub(super) fn with_param(&self, name: &str, text: &str) -> Self {
+    pub(super) fn with_param(self, name: &str, text: &str) -> Self {
+        self.insert_param(name, text);
+        self
+    }
+
+    fn insert_param(&self, name: &str, text: &str) {
         self.state
             .lock()
             .unwrap()
             .params
             .insert(name.to_owned(), wire(text));
-        self.clone()
     }
 
     pub(super) fn holding<Value>(name: &str, value: &Value) -> Self
@@ -643,29 +647,31 @@ impl SyncCoordinator for FakeCoordinator {
     }
 }
 
-pub(super) fn answering_caller(count: Option<Arc<AtomicUsize>>) -> CompletionCaller {
+fn answer_body() -> String {
     let content = serde_json::to_string(ANSWER).unwrap();
-    let body =
-        format!(r#"{{"choices":[{{"finish_reason":"stop","message":{{"content":{content}}}}}]}}"#);
+    format!(r#"{{"choices":[{{"finish_reason":"stop","message":{{"content":{content}}}}}]}}"#)
+}
+
+fn answer_future(body: &str) -> CompletionFuture {
+    let object: CompletionObject = RawValue::from_string(body.to_owned()).unwrap();
+    Box::pin(ready(Ok(object)))
+}
+
+pub(super) fn answering_caller(count: Option<Arc<AtomicUsize>>) -> CompletionCaller {
+    let body = answer_body();
     Arc::new(move |_request| {
         if let Some(count) = count.as_ref() {
             count.fetch_add(1, Ordering::SeqCst);
         }
-        let object: CompletionObject = RawValue::from_string(body.clone()).unwrap();
-        let future: CompletionFuture = Box::pin(ready(Ok(object)));
-        future
+        answer_future(&body)
     })
 }
 
 pub(super) fn recording_caller(sent: Arc<Mutex<Vec<ROICompletionRequest>>>) -> CompletionCaller {
-    let content = serde_json::to_string(ANSWER).unwrap();
-    let body =
-        format!(r#"{{"choices":[{{"finish_reason":"stop","message":{{"content":{content}}}}}]}}"#);
+    let answer = answering_caller(None);
     Arc::new(move |request| {
-        sent.lock().unwrap().push(request);
-        let object: CompletionObject = RawValue::from_string(body.clone()).unwrap();
-        let future: CompletionFuture = Box::pin(ready(Ok(object)));
-        future
+        sent.lock().unwrap().push(request.clone());
+        answer(request)
     })
 }
 
@@ -676,18 +682,20 @@ pub(super) fn failing_caller() -> CompletionCaller {
     })
 }
 
+async fn wait_for_barrier(
+    barrier: Arc<Barrier>,
+    body: String,
+) -> Result<CompletionObject, SourceError> {
+    barrier.wait().await;
+    let object: CompletionObject = RawValue::from_string(body).unwrap();
+    Ok(object)
+}
+
 pub(super) fn barrier_caller(barrier: Arc<Barrier>) -> CompletionCaller {
-    let content = serde_json::to_string(ANSWER).unwrap();
-    let body =
-        format!(r#"{{"choices":[{{"finish_reason":"stop","message":{{"content":{content}}}}}]}}"#);
+    let body = answer_body();
     Arc::new(move |_request| {
-        let barrier = Arc::clone(&barrier);
-        let body = body.clone();
-        let future: CompletionFuture = Box::pin(async move {
-            barrier.wait().await;
-            let object: CompletionObject = RawValue::from_string(body).unwrap();
-            Ok(object)
-        });
+        let future: CompletionFuture =
+            Box::pin(wait_for_barrier(Arc::clone(&barrier), body.clone()));
         future
     })
 }
@@ -736,13 +744,14 @@ impl Inputs {
     }
 }
 
-pub(super) fn inputs(repo: &str, numbers: &[i64]) -> Inputs {
+pub(super) fn inputs(repo_slug: &str, pull_numbers: &[i64]) -> Inputs {
+    let routes = routes_for(repo_slug, pull_numbers);
     Inputs {
-        settings: settings(&[repo]),
+        settings: settings(&[repo_slug]),
         repository: MemoryRepository::default(),
         spend: FakeSpend::with_rows(vec![spend_row()]),
         complete: answering_caller(None),
-        routes: routes_for(repo, numbers),
+        routes,
         coordinator: None,
         interval: 0.0_f64,
     }
