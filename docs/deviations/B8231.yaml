@@ -1,0 +1,15 @@
+task: B8231
+deviations:
+  - what: >-
+      The recent-miss map is a plain BTreeMap from key to expiry that keeps at most 1000 keys, not LiteLLM's
+      InMemoryCache instance.
+    why: >-
+      The cache class is a Python helper, and its observable rule here (a miss is remembered for the ttl, at most
+      1000 keys, the earliest expiry goes first) is the same in a map that holds only the key and its expiry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L61
+  - what: >-
+      A resync failure is a typed ResyncError that is logged and turned into false, and the log line carries the
+      error's Display text instead of a Python exception repr.
+    why: the line is a log, not a wire contract, and the caller only sees the same false answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L89-L93
+kept_bugs: []
