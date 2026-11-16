@@ -159,6 +159,17 @@ fn request_complete(request: &[u8]) -> bool {
     request.len() >= total
 }
 
+// http::HeaderMap iterates in hash order, so two equal requests can put their headers in different order
+fn sorted_request_lines(request: &[u8]) -> Vec<String> {
+    let mut lines: Vec<String> = from_utf8(request)
+        .unwrap()
+        .split("\r\n")
+        .map(str::to_owned)
+        .collect();
+    lines.sort_unstable();
+    lines
+}
+
 async fn serve(listener: &TcpListener, response: &[u8]) -> Vec<u8> {
     let (mut stream, _) = listener.accept().await.unwrap();
     let mut request = Vec::new();
@@ -564,7 +575,10 @@ fn async_matches_sync() {
     let async_write_server = spawn_serve(&runtime, &listener, response("200 OK", b""));
     runtime.block_on(cache.async_set_cache("key", &value));
     let async_write = await_server(&runtime, async_write_server);
-    assert_eq!(sync_write, async_write);
+    assert_eq!(
+        sorted_request_lines(&sync_write),
+        sorted_request_lines(&async_write)
+    );
     let body = br#"{"value":true}"#;
     let read_server = spawn_serve(&runtime, &listener, response("200 OK", body));
     let sync_read = cache.get_cache(&handle, "key");
@@ -574,7 +588,10 @@ fn async_matches_sync() {
     let async_get = await_server(&runtime, async_read_server);
     assert_eq!(sync_read, async_read);
     assert_eq!(sync_read, Some(value));
-    assert_eq!(sync_get, async_get);
+    assert_eq!(
+        sorted_request_lines(&sync_get),
+        sorted_request_lines(&async_get)
+    );
     runtime.block_on(cache.disconnect());
 }
 
