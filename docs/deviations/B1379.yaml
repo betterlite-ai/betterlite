@@ -1,0 +1,18 @@
+task: B1379
+deviations:
+  - what: A Live client event whose top-level JSON is not an object, such as 5, "text" or [1], fails with a typed NotAnObject error that names the event, where LiteLLM calls .get on the non-mapping and lets AttributeError escape from the transform that answers HTTP 500.
+    why: The event comes from a client websocket, so a 4xx belongs there and no working client sends a non-object event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L598-L607
+  - what: An input_audio_buffer.append event without an audio key fails with a typed MissingAudio error, where LiteLLM reads json_message["audio"] and lets KeyError escape as HTTP 500.
+    why: The missing field is the client's mistake, so the connection gets an error naming it instead of a server fault.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L618-L619
+  - what: decode_gemini_live_client_event refuses an event longer than the caller's byte limit with TooLarge before parsing, where LiteLLM hands the whole message to json.loads with no bound.
+    why: The bytes arrive from an untrusted websocket frame, and a parser bound keeps an oversized frame from being decoded and walked before the event type is known.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L597-L598
+  - what: Event bytes that are not UTF-8 fail with an InvalidJson error whose message reads "the event is not UTF-8: ...", where LiteLLM decodes the bytes with errors="replace" and quotes the replaced text in its ValueError message.
+    why: betterlite reads the event as bytes and refuses to replace invalid sequences, so the error names the real failure instead of a mangled message; valid UTF-8 invalid JSON keeps LiteLLM's exact message text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L599-L604
+kept_bugs:
+  - what: The SDK encoder's list branch runs two independent if statements, so an all-bytes list has its base64 conversion overwritten by the element-wise copy and the bytes survive into json.dumps, while an all-datetime list is converted to ISO text.
+    why: Working callers build payloads the same way and the task pins this behavior, so betterlite keeps the overwrite rather than encode bytes lists that LiteLLM leaves unserializable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L458-L464
