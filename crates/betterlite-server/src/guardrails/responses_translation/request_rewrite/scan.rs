@@ -67,10 +67,11 @@ pub(super) fn scan_request(
     data: &Object,
     context: &RequestContext<'_>,
 ) -> Result<Option<Scan>, RequestRewriteError> {
-    let input_data = match data.get("input") {
-        Some(input @ (GuardrailValue::Text(_) | GuardrailValue::Array(_))) => input.clone(),
-        Some(_) | None => return Ok(None),
+    let Some(input @ (GuardrailValue::Text(_) | GuardrailValue::Array(_))) = data.get("input")
+    else {
+        return Ok(None);
     };
+    let input_data = input.clone();
     let scoped = scoped_request(data, context)?;
     let original_tools = tools::original_tools(data)?;
     let groups = tools::flattened_tool_groups(&original_tools)?;
@@ -97,7 +98,7 @@ pub(super) fn write_answer(
     context: &RequestContext<'_>,
 ) -> Result<(), RequestRewriteError> {
     if let Some(returned) = &answer.tools {
-        tools::apply_guardrailed_tools_to_data(data, &scan.original_tools, &scan.groups, returned)?;
+        tools::apply_returned_tools(data, &scan.original_tools, &scan.groups, returned)?;
     }
     let written =
         write_back::written_back_request_fields(data, &scan.scoped, answer, covers_full, context)?;

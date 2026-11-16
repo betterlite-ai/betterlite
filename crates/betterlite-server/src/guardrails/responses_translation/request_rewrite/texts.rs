@@ -42,13 +42,13 @@ pub fn apply_guardrailed_texts(
         return Ok(());
     }
     if let Some(GuardrailValue::Array(messages)) = data.get_mut("input") {
-        apply_guardrail_responses_to_input(messages, input_texts, &extracted.task_mappings);
+        apply_texts_to_input(messages, input_texts, &extracted.task_mappings);
     }
     Ok(())
 }
 
 // The two lists pair up to the shorter, and the caller has already checked they agree
-pub fn apply_guardrail_responses_to_input(
+pub fn apply_texts_to_input(
     messages: &mut [GuardrailValue],
     responses: &[String],
     task_mappings: &[(usize, Option<usize>)],

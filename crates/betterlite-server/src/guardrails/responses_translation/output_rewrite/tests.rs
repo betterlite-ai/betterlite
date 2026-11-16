@@ -9,8 +9,8 @@ use serde_json::{Value, json};
 
 use super::error::OutputRewriteError;
 use super::{
-    OutputContext, apply_guardrail_responses_to_output, extract_output, process_output_response,
-    write_tool_call_item, write_tool_call_rewrites_to_output,
+    OutputContext, apply_texts_to_output, extract_output, process_output_response,
+    write_call_rewrites, write_tool_call_item,
 };
 use crate::guardrails::responses_translation::request_rewrite::tests::fake::FakeGuardrail;
 use crate::guardrails::tool_call_identity::ToolCallShape;
@@ -118,8 +118,7 @@ fn apply_output_writes_each_text_to_its_mapped_entry() {
         {"content": [{"text": "a"}, {"text": "b"}]},
         {"content": [{"text": "c"}]}
     ]});
-    apply_guardrail_responses_to_output(&mut response, &strings(&["B", "C"]), &[(0, 1), (1, 0)])
-        .unwrap();
+    apply_texts_to_output(&mut response, &strings(&["B", "C"]), &[(0, 1), (1, 0)]).unwrap();
     assert_eq!(
         response,
         json!({"output": [
@@ -142,16 +141,14 @@ fn apply_output_skips_a_text_it_cannot_place(
     #[case] mapping: (usize, usize),
 ) {
     let mut response = original.clone();
-    apply_guardrail_responses_to_output(&mut response, &strings(&["X"]), &[mapping]).unwrap();
+    apply_texts_to_output(&mut response, &strings(&["X"]), &[mapping]).unwrap();
     assert_eq!(response, original);
 }
 
 #[test]
 fn apply_output_fails_on_a_text_without_a_mapping_after_the_earlier_writes() {
     let mut response = json!({"output": [{"content": [{"text": "a"}]}]});
-    let error =
-        apply_guardrail_responses_to_output(&mut response, &strings(&["A", "B"]), &[(0, 0)])
-            .unwrap_err();
+    let error = apply_texts_to_output(&mut response, &strings(&["A", "B"]), &[(0, 0)]).unwrap_err();
     assert!(matches!(
         error,
         OutputRewriteError::TooManyTexts {
@@ -193,7 +190,7 @@ fn tool_rewrite_output_rewrites_only_the_calls_that_changed() {
     let mut response = tool_call_response();
     let pre = [shape("f", "{}"), shape("g", "x")];
     let post = [shape("f", "{\"a\":1}"), shape("g", "x")];
-    write_tool_call_rewrites_to_output(&mut response, &pre, &post);
+    write_call_rewrites(&mut response, &pre, &post);
     assert_eq!(
         response["output"][0],
         json!({"type": "function_call", "name": "f", "arguments": "{\"a\":1}"})
@@ -209,7 +206,7 @@ fn tool_rewrite_output_renames_a_call_whose_name_changed() {
     let mut response = tool_call_response();
     let pre = [shape("f", "{}"), shape("g", "x")];
     let post = [shape("f", "{}"), shape("h", "y")];
-    write_tool_call_rewrites_to_output(&mut response, &pre, &post);
+    write_call_rewrites(&mut response, &pre, &post);
     assert_eq!(response["output"][0]["name"], json!("f"));
     assert_eq!(
         response["output"][2],
@@ -224,7 +221,7 @@ fn tool_rewrite_output_renames_a_call_whose_name_changed() {
 fn tool_rewrite_output_ignores_a_count_that_differs(#[case] post: Vec<ToolCallShape>) {
     let mut response = tool_call_response();
     let pre = [shape("f", "{}"), shape("g", "x")];
-    write_tool_call_rewrites_to_output(&mut response, &pre, &post);
+    write_call_rewrites(&mut response, &pre, &post);
     assert_eq!(response, tool_call_response());
 }
 
@@ -232,7 +229,7 @@ fn tool_rewrite_output_ignores_a_count_that_differs(#[case] post: Vec<ToolCallSh
 fn tool_rewrite_output_stops_at_the_shorter_scanned_list() {
     let mut response = tool_call_response();
     let post = [shape("f", "{\"a\":1}"), shape("g", "y")];
-    write_tool_call_rewrites_to_output(&mut response, &[shape("f", "{}")], &post);
+    write_call_rewrites(&mut response, &[shape("f", "{}")], &post);
     assert_eq!(response["output"][0]["arguments"], json!("{\"a\":1}"));
     assert_eq!(response["output"][2]["input"], json!("x"));
 }

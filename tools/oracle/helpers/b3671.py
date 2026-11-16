@@ -18,7 +18,7 @@ Result_co = TypeVar("Result_co", covariant=True, default=object)
 
 
 class CoveringGuardrail(CustomGuardrail):
-    def structured_messages_cover_full_request(self) -> bool:
+    def covers(self) -> bool:
         return True
 
 
@@ -34,13 +34,6 @@ class HandlerView(Protocol[Result_co]):
         response: ResponseOutputEnvelope,
         guardrail_to_apply: CustomGuardrail,
         request_data: dict[str, JsonValue] | None = None,
-    ) -> Result_co: ...
-
-    async def _apply_guardrail_responses_to_output(
-        self,
-        response: ResponseOutputEnvelope,
-        responses: list[str],
-        task_mappings: list[tuple[int, int]],
     ) -> Result_co: ...
 
 
@@ -71,12 +64,6 @@ class OutputScenario(TypedDict):
     reply: Inputs | None
 
 
-class ApplyScenario(TypedDict):
-    response: ResponseOutputEnvelope
-    responses: list[str]
-    task_mappings: list[tuple[int, int]]
-
-
 class DataCall(TypedDict):
     function: Literal["request_view", "input"]
     scenarios: list[DataScenario]
@@ -87,12 +74,7 @@ class OutputCall(TypedDict):
     scenarios: list[OutputScenario]
 
 
-class ApplyCall(TypedDict):
-    function: Literal["apply_output"]
-    scenarios: list[ApplyScenario]
-
-
-Input = DataCall | OutputCall | ApplyCall
+Input = DataCall | OutputCall
 
 
 async def recording_apply(
@@ -123,14 +105,19 @@ def recording_guardrail(
     skip_system: bool,
     covers_full: bool,
 ) -> CustomGuardrail:
+    cover = (
+        CoveringGuardrail.covers
+        if covers_full
+        else GUARDRAIL_BASE.structured_messages_cover_full_request
+    )
     members = {
         "apply_guardrail": recording_apply,
+        "structured_messages_cover_full_request": cover,
         "calls": calls,
         "reply": reply,
         "skip_system_message_in_guardrail": skip_system,
     }
-    base = CoveringGuardrail if covers_full else GUARDRAIL_BASE
-    recording_class = type("Recording", (base,), members)
+    recording_class = type("Recording", (GUARDRAIL_BASE,), members)
     guardrail_class = GUARDRAIL_CLASS.validate_python(recording_class)
     return guardrail_class(guardrail_name="guard")
 
@@ -165,17 +152,8 @@ async def output_answer(handler: HandlerView, scenario: OutputScenario) -> JsonV
     return {"response": JSON.validate_python(response), "calls": calls}
 
 
-async def apply_answer(handler: HandlerView, scenario: ApplyScenario) -> JsonValue:
-    apply = handler._apply_guardrail_responses_to_output  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1509
-    response = scenario["response"]
-    await apply(response, scenario["responses"], scenario["task_mappings"])
-    return JSON.validate_python(response)
-
-
 async def answer(call: Input) -> list[JsonValue]:
     handler: HandlerView = OpenAIResponsesHandler()
-    if call["function"] == "apply_output":
-        return [await apply_answer(handler, item) for item in call["scenarios"]]
     if call["function"] == "output":
         return [await output_answer(handler, item) for item in call["scenarios"]]
     if call["function"] == "request_view":

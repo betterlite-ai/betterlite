@@ -45,7 +45,7 @@ pub fn flattened_tool_groups(
     Ok(groups)
 }
 
-pub fn apply_guardrailed_tools_to_data(
+pub fn apply_returned_tools(
     data: &mut Object,
     original_tools: &[Fields],
     flattened_tool_groups: &[Vec<Fields>],

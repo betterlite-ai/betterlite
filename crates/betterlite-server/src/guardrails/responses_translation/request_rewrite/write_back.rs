@@ -8,7 +8,7 @@ use super::error::RequestRewriteError;
 use super::patch::patched_request_fields;
 use super::{RequestContext, RequestFields, ScopedRequest, serde_convert};
 
-pub fn patch_or_convert_request_fields(
+pub fn patch_or_convert_fields(
     raw_input: Option<&Value>,
     raw_instructions: Option<&Value>,
     original_messages: &[Value],
@@ -62,7 +62,7 @@ pub fn written_back_request_fields(
         )
     };
     let request: Value = serde_convert(data, "request")?;
-    patch_or_convert_request_fields(
+    patch_or_convert_fields(
         request.get("input"),
         request.get("instructions"),
         &scoped.structured_messages,

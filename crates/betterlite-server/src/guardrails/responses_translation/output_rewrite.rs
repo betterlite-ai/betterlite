@@ -92,7 +92,7 @@ pub fn extract_output(output_items: &[Value]) -> Result<ExtractedOutput, OutputR
     Ok(extracted)
 }
 
-pub fn apply_guardrail_responses_to_output(
+pub fn apply_texts_to_output(
     response: &mut Value,
     responses: &[String],
     task_mappings: &[(usize, usize)],
@@ -140,7 +140,7 @@ pub fn write_tool_call_item(item: &mut Value, new_name: Option<&str>, new_payloa
 }
 
 // A guardrail that adds or drops a call is ignored, so the originals stay
-pub fn write_tool_call_rewrites_to_output(
+pub fn write_call_rewrites(
     response: &mut Value,
     pre_guardrail: &[ToolCallShape],
     post_guardrail: &[ToolCallShape],
@@ -225,8 +225,8 @@ fn write_answer(
     let post_guardrail =
         post_guardrail_shapes(returned_calls.as_deref(), &pre_guardrail, guardrail_name);
     let texts = answer.texts.as_deref().unwrap_or_default();
-    apply_guardrail_responses_to_output(response, texts, &extracted.task_mappings)?;
-    write_tool_call_rewrites_to_output(response, &pre_guardrail, &post_guardrail);
+    apply_texts_to_output(response, texts, &extracted.task_mappings)?;
+    write_call_rewrites(response, &pre_guardrail, &post_guardrail);
     Ok(())
 }
 

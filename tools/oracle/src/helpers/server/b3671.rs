@@ -12,14 +12,14 @@ use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, Guardrai
 use betterlite_guardrails::guardrail_message_scope::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_server::guardrails::responses_translation::output_rewrite::{
-    OutputContext, apply_guardrail_responses_to_output, process_output_response,
+    OutputContext, process_output_response,
 };
 use betterlite_server::guardrails::responses_translation::request_rewrite::error::RequestRewriteError;
 use betterlite_server::guardrails::responses_translation::request_rewrite::{
     RequestContext, get_structured_messages, process_input_messages, scannable_instructions,
 };
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -29,7 +29,7 @@ pub(crate) struct Op;
 
 #[derive(Deserialize)]
 pub(crate) struct DataScenario {
-    data: Map<String, Value>,
+    data: Object,
     skip_system: bool,
     covers_full: bool,
     reply: Option<GuardrailApiInputs>,
@@ -38,15 +38,8 @@ pub(crate) struct DataScenario {
 #[derive(Deserialize)]
 pub(crate) struct OutputScenario {
     response: Value,
-    request_data: Option<Map<String, Value>>,
+    request_data: Option<Object>,
     reply: Option<GuardrailApiInputs>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct ApplyScenario {
-    response: Value,
-    responses: Vec<String>,
-    task_mappings: Vec<(usize, usize)>,
 }
 
 #[derive(Deserialize)]
@@ -55,7 +48,6 @@ pub(crate) enum Request {
     RequestView { scenarios: Vec<DataScenario> },
     Input { scenarios: Vec<DataScenario> },
     Output { scenarios: Vec<OutputScenario> },
-    ApplyOutput { scenarios: Vec<ApplyScenario> },
 }
 
 struct ScriptedGuardrail {
@@ -115,16 +107,12 @@ fn empty_cache() -> Result<DualLocalCache, Box<HelperError>> {
     ))
 }
 
-fn object(fields: &Map<String, Value>) -> Result<Object, Box<HelperError>> {
-    serde_json::from_value(Value::Object(fields.clone())).or_value_error()
-}
-
 fn input_answer(
     runtime: &Runtime,
     cache: &DualLocalCache,
     scenario: &DataScenario,
 ) -> HelperResult {
-    let mut data = object(&scenario.data)?;
+    let mut data = scenario.data.clone();
     let guardrail = ScriptedGuardrail {
         reply: scenario.reply.clone(),
         covers_full: scenario.covers_full,
@@ -154,7 +142,7 @@ fn input_answer(
 fn output_answer(runtime: &Runtime, scenario: &OutputScenario) -> HelperResult {
     let mut response: GuardrailValue =
         serde_json::from_value(scenario.response.clone()).or_value_error()?;
-    let mut stored = scenario.request_data.as_ref().map(object).transpose()?;
+    let mut stored = scenario.request_data.clone();
     let guardrail = ScriptedGuardrail {
         reply: scenario.reply.clone(),
         covers_full: false,
@@ -180,27 +168,16 @@ fn output_answer(runtime: &Runtime, scenario: &OutputScenario) -> HelperResult {
 }
 
 fn request_view_answer(cache: &DualLocalCache, scenario: &DataScenario) -> HelperResult {
-    let data = object(&scenario.data)?;
+    let data = &scenario.data;
     let context = RequestContext {
         skip_system_message: scenario.skip_system,
         guardrail_name: None,
         limits: ApiLimits::default(),
         cache,
     };
-    let messages = get_structured_messages(&data, &context).or_value_error()?;
-    let instructions = scannable_instructions(&data, scenario.skip_system);
+    let messages = get_structured_messages(data, &context).or_value_error()?;
+    let instructions = scannable_instructions(data, scenario.skip_system);
     Ok(json!({"messages": messages, "instructions": instructions}))
-}
-
-fn apply_answer(scenario: &ApplyScenario) -> HelperResult {
-    let mut response = scenario.response.clone();
-    apply_guardrail_responses_to_output(
-        &mut response,
-        &scenario.responses,
-        &scenario.task_mappings,
-    )
-    .or_value_error()?;
-    Ok(response)
 }
 
 impl Helper for Op {
@@ -222,7 +199,6 @@ impl Helper for Op {
                 .iter()
                 .map(|scenario| output_answer(&runtime, scenario))
                 .collect(),
-            Request::ApplyOutput { scenarios } => scenarios.iter().map(apply_answer).collect(),
         };
         answers.map(Value::Array)
     }

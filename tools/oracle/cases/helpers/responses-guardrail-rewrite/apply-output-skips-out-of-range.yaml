@@ -1,6 +1,6 @@
 kind: helper
 name: responses-apply-output-skips-out-of-range
 call:
-  b3671: {"function": "apply_output", "scenarios": [{"response": {"output": [{"type": "message", "content": [{"type": "output_text", "text": "a"}, {"type": "output_text", "text": "b"}]}, {"type": "message", "content": [{"type": "output_text", "text": "c"}]}]}, "responses": ["A", "B", "C", "D"], "task_mappings": [[0, 0], [0, 1], [5, 0], [1, 9]]}, {"response": {"output": [{"type": "message", "content": ["bare"]}, {"type": "message", "content": [{"text": "x"}]}]}, "responses": ["A", "B"], "task_mappings": [[0, 0], [1, 0]]}]}
+  b3671: {"function": "output", "scenarios": [{"response": {"output": [{"type": "message", "content": ["bare", {"type": "output_text", "text": ""}, {"type": "output_text", "text": "c"}]}, {"type": "message", "content": [{"type": "output_text", "text": "d"}]}]}, "request_data": null, "reply": {"texts": ["C"]}}, {"response": {"output": ["bare string", {"type": "message", "content": [{"text": "x"}]}]}, "request_data": null, "reply": {"texts": ["X"]}}]}
 env: {}
 compare: {ignore: []}

@@ -21,7 +21,7 @@ pub(in crate::guardrails::responses_translation) mod fake;
 use self::fake::FakeGuardrail;
 use super::error::RequestRewriteError;
 use super::patch::patched_request_fields;
-use super::texts::{apply_guardrail_responses_to_input, apply_guardrailed_texts};
+use super::texts::{apply_guardrailed_texts, apply_texts_to_input};
 use super::write_back::written_back_request_fields;
 use super::{
     ExtractedInputs, RequestContext, RequestFields, ScopedRequest, extract_guardrail_inputs,
@@ -317,7 +317,7 @@ fn texts_pair_to_the_shorter_list_and_skip_what_cannot_take_a_text() {
         (3, Some(5)),
         (9, None),
     ];
-    apply_guardrail_responses_to_input(&mut items, &responses, &mappings);
+    apply_texts_to_input(&mut items, &responses, &mappings);
     assert_eq!(
         serde_json::to_value(&items).unwrap(),
         json!([
