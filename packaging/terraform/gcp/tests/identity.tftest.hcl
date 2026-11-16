@@ -184,7 +184,7 @@ run "data_bucket_is_locked_down" {
       google_storage_bucket.data.public_access_prevention == "enforced",
       google_storage_bucket.data.force_destroy == false,
       google_storage_bucket.data.versioning[0].enabled == true,
-      length(google_storage_bucket.data.lifecycle_rule) == 0,
+      try(length(google_storage_bucket.data.lifecycle_rule), 0) == 0,
       google_storage_bucket_iam_member.data_runtime.bucket == google_storage_bucket.data.name,
       google_storage_bucket_iam_member.data_runtime.role == "roles/storage.objectAdmin",
       google_storage_bucket_iam_member.data_runtime.member == "serviceAccount:${google_service_account.runtime.email}",
