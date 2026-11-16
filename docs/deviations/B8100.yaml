@@ -53,7 +53,8 @@ deviations:
       A2A status or message.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/common_utils.py#L86-L93
   - what: >-
-      A stream chunk whose JSON is not an object yields an empty unfinished chunk, the same as a falsy chunk.
+      A stream chunk whose JSON parses to a truthy non-object (a list, string or number) yields an empty unfinished
+      chunk instead of ending the stream.
     why: >-
       LiteLLM reads chunk.get("error") before its try block, so a truthy non-object chunk raises AttributeError and
       ends the stream; an empty chunk keeps one malformed line from killing the rest of the stream.
