@@ -189,7 +189,7 @@ fn a_response_error_keeps_its_headers_through_the_provider_error() {
 }
 
 #[rstest]
-#[case("id", json!("not-a-string"))]
+#[case("id", json!(5))]
 #[case("created", json!(null))]
 #[case("choices", json!({}))]
 #[case("usage", json!([]))]
