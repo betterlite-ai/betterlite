@@ -159,30 +159,37 @@ def window_answer(case: WindowCase) -> JsonValue:
     try:
         start, end = WINDOW(case.start_date, case.end_date)
     except StarletteHTTPException as error:
-        return JSON.validate_python({"status": error.status_code})
-    return JSON.validate_python({"start": start, "end": end})
+        failure: dict[str, int] = {"status": error.status_code}
+        return JSON.validate_python(failure)
+    window: dict[str, str] = {"start": start, "end": end}
+    return JSON.validate_python(window)
 
 
 def threshold_answer(case: ThresholdCase) -> JsonValue:
     status = STATUS(case.fail_rate)
     trend = TREND(case.fail_rate, case.previous)
-    return JSON.validate_python({"status": status, "trend": trend})
+    thresholds: dict[str, str] = {"status": status, "trend": trend}
+    return JSON.validate_python(thresholds)
 
 
 def daily_answer(case: DailyCase) -> JsonValue:
     if case.reduce == "aggregate":
-        return JSON.validate_python(dict(AGGREGATE(case.rows, METRIC_ID)))
+        aggregate: dict[str, MetricTotals] = dict(AGGREGATE(case.rows, METRIC_ID))
+        return JSON.validate_python(aggregate)
     if case.reduce == "previous":
-        return JSON.validate_python(dict(PREVIOUS(case.rows, METRIC_ID)))
+        previous: dict[str, float] = dict(PREVIOUS(case.rows, METRIC_ID))
+        return JSON.validate_python(previous)
     charts: list[UsageChartPoint] = CHART(case.rows)
     return JSON.validate_python(charts)
 
 
 def sum_answer(case: SumCase) -> JsonValue:
     if case.reduce == "units":
-        return JSON.validate_python(dict(SUM_UNITS(case.rows)))
+        units: dict[str, int] = dict(SUM_UNITS(case.rows))
+        return JSON.validate_python(units)
     if case.reduce == "untracked":
-        return JSON.validate_python(dict(SUM_UNTRACKED(case.rows)))
+        untracked: dict[str, int] = dict(SUM_UNTRACKED(case.rows))
+        return JSON.validate_python(untracked)
     return JSON.validate_python(SUM_COST(case.rows))
 
 
@@ -198,8 +205,10 @@ def group_answer(case: GroupCase) -> JsonValue:
     elif case.reduce == "untracked":
         grouped = BY_UNTRACKED(case.rows, key, SUM_UNTRACKED)
     else:
-        return JSON.validate_python(dict(BY_COST(case.rows, key, SUM_COST)))
-    return JSON.validate_python({name: dict(counts) for name, counts in grouped.items()})
+        costs: dict[str, float | None] = dict(BY_COST(case.rows, key, SUM_COST))
+        return JSON.validate_python(costs)
+    counts: dict[str, dict[str, int]] = {name: dict(values) for name, values in grouped.items()}
+    return JSON.validate_python(counts)
 
 
 def guardrail_answer(case: OverviewCase) -> JsonValue:
@@ -229,7 +238,8 @@ def answers(
     answer: Callable[[Case], JsonValue],
 ) -> JsonValue:
     results = [answer(case) for case in adapter.validate_python(cases)]
-    return JSON.validate_python({"results": results})
+    payload: dict[str, list[JsonValue]] = {"results": results}
+    return JSON.validate_python(payload)
 
 
 def run(input_value: Input) -> JsonValue:
