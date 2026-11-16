@@ -1,0 +1,30 @@
+task: B1533
+deviations:
+  - what: A status reply or a content reply that is not JSON, or whose JSON root is not an object, fails with a typed error that keeps the upstream status and headers.
+    why: LiteLLM validates the decoded body with pydantic, whose ValidationError reaches the client as a 500 with the upstream status lost. A working Fal setup always sends a JSON object, so the typed error breaks nobody.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L165-L167
+  - what: A status reply or a content reply larger than 16 MiB is refused with a typed error that keeps the upstream status and headers.
+    why: LiteLLM reads the whole reply with no size limit. A body that comes from outside needs a bound, and no working Fal setup relies on a reply that large.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L207-L216
+  - what: A failed answer whose body is not valid UTF-8 reports fal.ai returned HTTP {status}, where LiteLLM decodes the body with replacement characters and returns that text.
+    why: betterlite reads bytes as UTF-8 and has no replacement-character decoding, so a body no text decoder can read falls back to the status message a working setup never triggers; fal.ai sends JSON or UTF-8 text on failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L207-L216
+  - what: The result probe and the artifact download send the URL exactly as parsed, keeping its query string in order with repeated keys and blank values, where LiteLLM's HTTP handler moves the query into a dict and re-encodes it, so repeated keys collapse to the last value and blank values disappear.
+    why: LiteLLM's sync handler flattens the query at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1446 and its async handler does the same at line 726 of the same file; betterlite has no such rewrite step, and a working fal.ai result or artifact URL carries no query string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1446
+  - what: The artifact body is buffered up to the outbound transport's body limit (16 MiB by default), and a larger artifact fails with the transport's body limit error, where LiteLLM returns whatever the CDN sends with no cap.
+    why: ProxiedClient::send_following -> buffered enforces TransportLimits::body_bytes on every outbound body. A generated video can exceed 16 MiB, so this cap can reject a working download until the limit is raised or the artifact is streamed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L565-L581
+  - what: The error raised for a failed content reply carries the upstream status, message and headers but not LiteLLM's request and response objects.
+    why: betterlite's FalVideoException has no request or response field, so a reader of the exception cannot reach the original httpx response; the proxy's error answer uses only the status and message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L565-L581
+  - what: A header forwarded from the status request that has an invalid name or value fails the result probe with a typed error before any request is sent, where LiteLLM raises httpx's LocalProtocolError, which is not a TransportError and so leaves _fetch_result_error uncaught.
+    why: betterlite builds typed header names and values with the http crate; both sides refuse to send the header and neither carries the probe out, and a working fal.ai queue request only carries valid headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L468-L486
+kept_bugs:
+  - what: An empty detail string wins over a non-empty error field, so a reply with detail "" and error "boom" reports no error and keeps its queued or in_progress status.
+    why: A completed job whose failure detail happens to be empty loses its error text; betterlite copies the precedence because a working setup cannot be told apart from one that relies on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L190-L205
+  - what: The request id is the first path segment after the first requests segment of the percent-decoded path, so an encoded slash truncates the id, and a model path that itself contains a requests segment yields no model path.
+    why: Both come from splitting the decoded path on the literal requests segment; betterlite copies it because the id is what a working setup stores and sends back, and fal.ai model paths do not contain a requests segment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L113-L129
