@@ -108,8 +108,8 @@ pub(super) fn run_cases(input: &Input) -> HelperResult {
     let costs = input
         .costs
         .iter()
-        .map(cost_value)
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|case| Ok(json!({"cost": priced_cost(case)?.normalize().to_string()})))
+        .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
     Ok(json!({
         "factories": factories,
         "requests": requests,
@@ -188,24 +188,28 @@ fn image_value(image: &GeneratedImage) -> Value {
 fn usage_value(usage: &ImageGenerationUsage) -> Value {
     json!({
         "input_tokens": usage.input_tokens,
-        "input_tokens_details": tokens_value(&usage.input_tokens_details),
+        "input_tokens_details": {
+            "image_tokens": usage.input_tokens_details.image_tokens,
+            "text_tokens": usage.input_tokens_details.text_tokens,
+        },
         "output_tokens": usage.output_tokens,
         "total_tokens": usage.total_tokens,
         "prompt_tokens": usage.prompt_tokens,
-        "prompt_tokens_details": tokens_value(&usage.prompt_tokens_details),
+        "prompt_tokens_details": {
+            "image_tokens": usage.prompt_tokens_details.image_tokens,
+            "text_tokens": usage.prompt_tokens_details.text_tokens,
+        },
         "completion_tokens": usage.completion_tokens,
-        "completion_tokens_details": tokens_value(&usage.completion_tokens_details),
-        "output_tokens_details": tokens_value(&usage.output_tokens_details),
+        "completion_tokens_details": {
+            "image_tokens": usage.completion_tokens_details.image_tokens,
+            "text_tokens": usage.completion_tokens_details.text_tokens,
+        },
+        "output_tokens_details": {
+            "image_tokens": usage.output_tokens_details.image_tokens,
+            "text_tokens": usage.output_tokens_details.text_tokens,
+        },
         "web_search_requests": usage.web_search_requests,
     })
-}
-
-fn tokens_value(tokens: &ImageInputTokens) -> Value {
-    json!({"image_tokens": tokens.image_tokens, "text_tokens": tokens.text_tokens})
-}
-
-fn cost_value(case: &CostCase) -> Result<Value, Box<HelperError>> {
-    Ok(json!({"cost": priced_cost(case)?.normalize().to_string()}))
 }
 
 fn priced_cost(case: &CostCase) -> Result<Decimal, Box<HelperError>> {

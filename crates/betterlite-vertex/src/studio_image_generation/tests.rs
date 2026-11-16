@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::image_cost::error::ImageCostError;
@@ -122,7 +124,12 @@ fn the_base_falls_back_to_the_studio_endpoint(
     #[case] pairs: &[(&str, &str)],
     #[case] expected: &str,
 ) {
-    assert_eq!(studio_settings(pairs).api_base, expected);
+    let settings = studio_settings(pairs);
+    assert_eq!(settings.api_base, expected);
+    assert_eq!(
+        complete_url(GEMINI, None, &settings),
+        format!("{}/models/{}:generateContent", expected, GEMINI)
+    );
 }
 
 #[rstest]
@@ -265,17 +272,27 @@ fn the_gemini_request_omits_the_role_and_asks_for_both_modalities() {
 }
 
 #[rstest]
-#[case::empty_tools(r#"{"tools":[]}"#, false)]
-#[case::tools(r#"{"tools":[{"function_declarations":[{"name":"f"}]}]}"#, true)]
-#[case::empty_config(r#"{"toolConfig":{}}"#, false)]
-#[case::config(r#"{"toolConfig":{"a":1}}"#, true)]
-#[case::zero_config(r#"{"toolConfig":0}"#, false)]
-#[case::false_config(r#"{"toolConfig":false}"#, false)]
-fn the_gemini_request_copies_only_truthy_tools(#[case] params: &str, #[case] copied: bool) {
-    let body = transform_image_generation_request(GEMINI, "a cat", &object(params), None)
+#[case::empty_tools(r#"{"tools":[]}"#, None)]
+#[case::tools(
+    r#"{"tools":[{"function_declarations":[{"name":"f"}]}]}"#,
+    Some("tools")
+)]
+#[case::empty_config(r#"{"toolConfig":{}}"#, None)]
+#[case::config(r#"{"toolConfig":{"a":1}}"#, Some("toolConfig"))]
+#[case::zero_config(r#"{"toolConfig":0}"#, None)]
+#[case::false_config(r#"{"toolConfig":false}"#, None)]
+fn the_gemini_request_copies_only_truthy_tools(#[case] source: &str, #[case] copied: Option<&str>) {
+    let params = object(source);
+    let body = transform_image_generation_request(GEMINI, "a cat", &params, None)
         .expect("the request builds");
-    let found = body.get("tools").is_some() || body.get("toolConfig").is_some();
-    assert_eq!(found, copied);
+    for key in ["tools", "toolConfig"] {
+        let expected = if Some(key) == copied {
+            params.get(key)
+        } else {
+            None
+        };
+        assert_eq!(body.get(key), expected, "the {key} value");
+    }
 }
 
 #[test]
@@ -649,6 +666,17 @@ fn a_reply_past_the_limit_is_refused_before_it_parses() {
     ));
 }
 
+#[rstest]
+fn replays_the_studio_image_corpus(#[files("fuzz/corpus/studio_image/*")] path: PathBuf) {
+    let body = fs::read(path).expect("the corpus file is readable");
+    let reply = UpstreamResponse {
+        status: 200,
+        headers: HeaderMap::new(),
+        body,
+    };
+    drop(decode_studio_image(&reply));
+}
+
 #[test]
 fn the_search_count_rides_on_a_present_usage() {
     let body = r#"{"candidates":[{"content":{"parts":[]},"groundingMetadata":{"webSearchQueries":["a","b","a"]}}],"usageMetadata":{}}"#;
@@ -824,11 +852,11 @@ fn a_zero_token_cost_suppresses_the_per_image_fallback() {
 #[test]
 fn an_unpriced_token_table_bills_each_returned_image() {
     let fake = Fake::new(r#"{"output_cost_per_image":0.04}"#);
-    let body = r#"{"predictions":[{"bytesBase64Encoded":"a"},{"bytesBase64Encoded":"b"},{"bytesBase64Encoded":"c"}]}"#;
-    let response = generated(IMAGEN, body);
+    let response = priced_gemini(CANONICAL_USAGE);
+    assert_eq!(response.data.len(), 2);
     assert_eq!(
         billed_cost(&response, &fake).expect("priced"),
-        Decimal::new(12, 2)
+        Decimal::new(15, 2)
     );
 }
 
