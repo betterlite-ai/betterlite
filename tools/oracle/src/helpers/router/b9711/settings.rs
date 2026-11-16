@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_router::router_runtime_settings::error::RouterSettingsError;
 use betterlite_router::router_runtime_settings::target::RouterSettingsTarget;
@@ -70,18 +72,23 @@ impl RouterSettingsTarget for Recorder {
 
 // The values a Router built with no arguments stores for these names
 fn seeded_settings(initial: &Initial) -> RouterRuntimeSettings {
-    let values = json!({
-        "routing_strategy": initial.routing_strategy,
-        "routing_strategy_args": initial.routing_strategy_args,
-        "allowed_fails": 3,
-        "cooldown_time": 5,
-        "num_retries": 2,
-        "retry_after": 0,
-        "retry_policy": null,
-        "model_group_retry_policy": null,
-    });
+    let mut values = BTreeMap::new();
+    values.insert(
+        "routing_strategy".to_owned(),
+        json!(initial.routing_strategy),
+    );
+    values.insert(
+        "routing_strategy_args".to_owned(),
+        json!(initial.routing_strategy_args),
+    );
+    values.insert("allowed_fails".to_owned(), json!(3_i64));
+    values.insert("cooldown_time".to_owned(), json!(5_i64));
+    values.insert("num_retries".to_owned(), json!(2_i64));
+    values.insert("retry_after".to_owned(), json!(0_i64));
+    values.insert("retry_policy".to_owned(), Value::Null);
+    values.insert("model_group_retry_policy".to_owned(), Value::Null);
     RouterRuntimeSettings {
-        values: values.as_object().cloned().unwrap_or_default(),
+        values,
         routing_groups_input: initial.routing_groups.clone(),
     }
 }
@@ -114,7 +121,7 @@ pub(super) fn run(input: &SettingsInput) -> HelperResult {
         }),
     };
     let shown = settings.get_settings(&SettingsView::default());
-    let listed: Map<String, Value> = input
+    let listed: BTreeMap<String, Value> = input
         .kwargs
         .iter()
         .filter_map(|(name, _)| shown.get(name).map(|value| (name.clone(), value.clone())))
