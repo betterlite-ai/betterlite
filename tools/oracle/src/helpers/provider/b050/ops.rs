@@ -10,8 +10,9 @@ use betterlite_provider::agent_platform_dispatch::table::dispatch;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use super::fixture::{Handler, NoEntra, Registry, secret_lookup};
+use super::handler::Handler;
 use super::script::{DispatchCase, Platform};
+use super::stubs::{NoEntra, Registry, secret_lookup};
 
 pub(super) fn dispatch_case(case: &DispatchCase) -> HelperResult {
     let secrets = secret_lookup();
@@ -71,16 +72,12 @@ fn outcome_value(requests: Vec<Value>, outcome: Result<Value, DispatchError>) ->
 
 fn error_value(failure: &DispatchError) -> Value {
     match failure {
-        DispatchError::Handler(handler) => {
-            json!({"status": handler.status_code, "message": handler.message})
-        }
+        DispatchError::Handler(handler) => json!({"status": handler.status_code()}),
         DispatchError::A2a(_)
         | DispatchError::LangGraph(_)
         | DispatchError::LangFlow(_)
         | DispatchError::Environment { .. }
-        | DispatchError::MissingA2aApiBase => {
-            json!({"status": null, "message": failure.to_string()})
-        }
+        | DispatchError::MissingA2aApiBase => json!({"status": null}),
     }
 }
 

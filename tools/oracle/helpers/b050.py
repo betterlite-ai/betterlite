@@ -15,8 +15,6 @@ from pydantic import JsonValue, TypeAdapter
 litellm.suppress_debug_info = True
 
 KEPT_HEADERS = ("authorization", "content-type", "x-api-key", "x-card")
-CONNECTION_PREFIX = "litellm.APIConnectionError: "
-LANGFLOW_PREFIX = "litellm.InternalServerError: LangflowException - "
 
 
 class AgentCase(TypedDict):
@@ -92,11 +90,6 @@ def request_view(responder: Responder) -> JsonValue | None:
     }
 
 
-def first_line(text: str, prefix: str) -> str:
-    head = text.split("\n", 1)[0]
-    return head.removeprefix(prefix)
-
-
 def reply_view(response: ModelResponse) -> JsonValue:
     choice = response.choices[0]
     return {
@@ -107,11 +100,11 @@ def reply_view(response: ModelResponse) -> JsonValue:
     }
 
 
-def error_view(responder: Responder, status: int | None, message: str) -> JsonValue:
+def error_view(responder: Responder, status: int | None) -> JsonValue:
     return {
         "request": request_view(responder),
         "reply": None,
-        "error": {"status": status, "message": message},
+        "error": {"status": status},
     }
 
 
@@ -137,17 +130,9 @@ def dispatch_case(case: DispatchCase) -> JsonValue:
             **case["optionals"],
         )
     except openai.APIStatusError as error:
-        return error_view(
-            responder,
-            error.status_code,
-            first_line(str(error), LANGFLOW_PREFIX),
-        )
-    except openai.APIConnectionError as error:
-        return error_view(
-            responder,
-            None,
-            first_line(str(error), CONNECTION_PREFIX),
-        )
+        return error_view(responder, error.status_code)
+    except openai.APIConnectionError:
+        return error_view(responder, None)
     # a streaming call returns a stream rather than a reply, and the stream's chunks are not part of this case
     if case["stream"] is True:
         return {"request": request_view(responder), "reply": None, "error": None}

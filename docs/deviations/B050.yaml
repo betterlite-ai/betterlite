@@ -27,4 +27,11 @@ deviations:
     why: >-
       The ids are random and the usage comes from each side's tokenizer (B196), so neither can be equal across the two.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L354
+  - what: >-
+      The a2a-no-api-base, langflow-no-message and langflow-upstream-500 cases compare a failure by its status alone:
+      the status is 500 or absent, and no error text appears in the compared value on either side.
+    why: >-
+      A helper case never compares an error's message, only what a client branches on. The exact text betterlite
+      reports for each failure is proven by the Rust tests that assert it directly, not by the oracle.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2252-L2257
 kept_bugs: []

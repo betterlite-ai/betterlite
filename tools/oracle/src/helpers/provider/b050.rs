@@ -3,9 +3,10 @@ use serde::Deserialize;
 use self::script::DispatchCase;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
-mod fixture;
+mod handler;
 mod ops;
 mod script;
+mod stubs;
 
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
