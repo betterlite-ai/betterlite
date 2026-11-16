@@ -50,6 +50,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4", "with-serde_json-1"] }
 tokio-postgres-rustls-improved.workspace = true
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing.workspace = true
 unicode-normalization = "0.1.26"
 uuid.workspace = true

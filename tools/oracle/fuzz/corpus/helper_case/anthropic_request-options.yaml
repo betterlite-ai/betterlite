@@ -1,0 +1,30 @@
+kind: helper
+name: anthropic_request-options
+call:
+  anthropic_request:
+    fixture:
+      model_cost:
+        fast-model:
+          litellm_provider: anthropic
+          supports_speed: true
+      packaged: {}
+    model: fast-model
+    custom_llm_provider: anthropic
+    messages:
+      - role: user
+        content: hi
+    optional_params:
+      speed: fast
+      top_k: 3
+      output_config:
+        effort: high
+    litellm_params:
+      metadata:
+        user_id: user-42
+    headers:
+      Anthropic-Beta: foo, bar
+    strips_billing_metadata: false
+    modify_params: false
+    global_drop_params: false
+env: {}
+compare: {ignore: []}
