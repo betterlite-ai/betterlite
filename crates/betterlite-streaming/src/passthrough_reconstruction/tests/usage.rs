@@ -160,6 +160,19 @@ fn derives_the_cache_creation_total_only_from_the_split(
 }
 
 #[test]
+fn keeps_a_one_sided_cache_split() {
+    let calculator = FixtureCalculator::default();
+    let chunks = [text_chunk(&start_event(
+        "{\"cache_creation\":{\"ephemeral_5m_input_tokens\":2}}",
+    ))];
+    assert!(built(&chunks, &calculator).is_some());
+    assert_eq!(
+        calculator.seen_object(),
+        "{\"input_tokens\":0,\"output_tokens\":0,\"cache_creation_input_tokens\":2,\"cache_creation\":{\"ephemeral_5m_input_tokens\":2,\"ephemeral_1h_input_tokens\":0}}"
+    );
+}
+
+#[test]
 fn carries_server_tool_use_only_when_a_count_is_present() {
     let calculator = FixtureCalculator::default();
     let partial = [

@@ -37,7 +37,7 @@ pub fn extract_sse_data(event: &str) -> Option<Json> {
         .lines()
         .find(|line| line.trim().starts_with("data:"))?;
     let payload = line.trim().strip_prefix("data:")?.trim();
-    if payload.is_empty() || payload == "[DONE]" {
+    if matches!(payload, "" | "[DONE]") {
         return None;
     }
     serde_json::from_str(payload).ok()
