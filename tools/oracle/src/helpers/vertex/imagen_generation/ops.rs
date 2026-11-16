@@ -8,6 +8,8 @@ use betterlite_config::sections::vertex_credential_sources::credential_source::C
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::api::image_contracts::records::ImageUsage;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_vertex::credential_sources::getters::VertexParams;
 use betterlite_vertex::credential_sources::sdk::CredentialClock;
 use betterlite_vertex::token_cache::CredentialCache;
@@ -31,8 +33,6 @@ use http::header::HeaderMap;
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
-
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
