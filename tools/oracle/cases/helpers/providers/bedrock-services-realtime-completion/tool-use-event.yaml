@@ -1,0 +1,39 @@
+kind: helper
+name: tool-use-event
+call:
+  bedrock_services_realtime_completion:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+      - 00000000-0000-4000-8000-000000000005
+      - 00000000-0000-4000-8000-000000000006
+      - 00000000-0000-4000-8000-000000000007
+      - 00000000-0000-4000-8000-000000000008
+      - 00000000-0000-4000-8000-000000000009
+      - 00000000-0000-4000-8000-00000000000a
+      - 00000000-0000-4000-8000-00000000000b
+      - 00000000-0000-4000-8000-00000000000c
+      - 00000000-0000-4000-8000-00000000000d
+      - 00000000-0000-4000-8000-00000000000e
+    steps:
+      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: text, delta_chunks: null}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_1, toolName: get_weather, input: "{\"city\":\"Paris\"}"}}}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_2, toolName: get_weather, input: {city: Paris, days: 3}}}}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_3, toolName: get_weather}}}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_4, toolName: get_weather, input: null}}}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_5, toolName: get_weather, input: "not json"}}}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_6, toolName: get_weather, input: ""}}}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_7, toolName: get_weather, input: [1, 2]}}}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_8, toolName: get_weather, input: 42}}}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_9, toolName: get_weather, input: "[1]"}}}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_10, toolName: get_weather, input: "5"}}}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_11, toolName: get_weather, input: "null"}}}
+      - {op: tool_use, event: {toolUse: {input: {a: 1}}}}
+      - {op: set_state, output_item_id: null, response_id: resp_1, conversation_id: conv_1, delta_type: text, delta_chunks: null}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_12, toolName: get_weather, input: {a: 1}}}}
+      - {op: set_state, output_item_id: item_1, response_id: null, conversation_id: conv_1, delta_type: text, delta_chunks: null}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_13, toolName: get_weather, input: {a: 1}}}}
+env: {}
+compare: {ignore: []}

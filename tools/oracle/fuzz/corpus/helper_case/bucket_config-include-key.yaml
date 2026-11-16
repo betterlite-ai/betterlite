@@ -1,0 +1,9 @@
+kind: helper
+name: bucket-config-include-key-seed
+call:
+  b4143:
+    operation: include_key
+    config_object_key: team/sub/config.yaml
+    include_entry: ../../shared/models.yaml
+env: {}
+compare: {ignore: []}

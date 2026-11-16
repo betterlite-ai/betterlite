@@ -1,0 +1,13 @@
+kind: helper
+name: hosted-skill-store-seed
+call:
+  hosted_skill_store:
+    now: "2026-02-03T04:05:06"
+    uuid: "00000000-0000-4000-8000-000000000007"
+    rows:
+      - {skill_id: litellm_skill_a, created_by: alice}
+    steps:
+      - {action: create, principal: {user_id: alice}, data: {display_title: Alpha}}
+      - {action: list, principal: {user_id: alice}, limit: 1, offset: 0}
+env: {}
+compare: {ignore: []}

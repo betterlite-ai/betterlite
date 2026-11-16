@@ -1,8 +1,20 @@
-pub(crate) fn check(limit: usize, rust_lines: &[String], python_lines: &[String]) -> Vec<String> {
+pub(crate) fn check(
+    limit: usize,
+    pin: &str,
+    rust_lines: &[String],
+    python_lines: &[String],
+    helper_lines: &[String],
+) -> Vec<String> {
     let found: Vec<&String> = rust_lines
         .iter()
         .filter(|line| line.contains("#[expect(") || line.contains("#![expect("))
         .chain(python_lines.iter().filter(|line| suppresses(line)))
+        // an oracle helper's suppression that LiteLLM forces, shown by a link at the pinned commit, is free (Max, 11-15)
+        .chain(
+            helper_lines
+                .iter()
+                .filter(|line| suppresses(line) && !line.contains(pin)),
+        )
         .collect();
     if found.len() <= limit {
         return Vec::new();
