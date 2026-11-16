@@ -136,6 +136,13 @@ async fn spend(store: &dyn TotalsStore, max_budget: Decimal) -> Response {
     .into_response()
 }
 
+fn invalid_limit(limit: i64) -> Response {
+    responses::detail_error(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        &format!("Invalid limit: {limit}, error: Limit must be greater than 0"),
+    )
+}
+
 async fn keys(store: &dyn TotalsStore, caller: Caller, requested: LimitQuery) -> Response {
     match (caller, requested) {
         (Caller::Internal { user_id: None }, _) => {
@@ -152,10 +159,7 @@ async fn keys(store: &dyn TotalsStore, caller: Caller, requested: LimitQuery) ->
                 .await,
             None,
         ),
-        (Caller::Global, LimitQuery::Value(limit)) if limit < 1 => {
-            let message = format!("Invalid limit: {limit}, error: Limit must be greater than 0");
-            responses::detail_error(StatusCode::UNPROCESSABLE_ENTITY, &message)
-        }
+        (Caller::Global, LimitQuery::Value(limit)) if limit < 1 => invalid_limit(limit),
         (Caller::Global, LimitQuery::Value(limit)) => {
             rows_response(store.keys_by_spend(Some(limit)).await, None)
         }
@@ -176,6 +180,7 @@ async fn models(store: &dyn TotalsStore, caller: Caller, requested: LimitQuery) 
         Caller::Internal { user_id: None } => {
             responses::detail_error(StatusCode::INTERNAL_SERVER_ERROR, NO_USER_ID)
         }
+        Caller::Internal { user_id: Some(_) } | Caller::Global if limit < 0 => invalid_limit(limit),
         Caller::Internal {
             user_id: Some(user_id),
         } => rows_response(store.user_models_by_spend(&user_id, limit).await, None),
