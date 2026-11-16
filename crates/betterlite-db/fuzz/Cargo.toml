@@ -151,3 +151,10 @@ path = "fuzz_targets/tool_record.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mcp_user_env_vars"
+path = "fuzz_targets/mcp_user_env_vars.rs"
+test = false
+doc = false
+bench = false
