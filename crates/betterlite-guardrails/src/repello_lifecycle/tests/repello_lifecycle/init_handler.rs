@@ -2,9 +2,10 @@ use std::time::Duration;
 
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
-use betterlite_guardrails::repello_lifecycle::config::{RepelloAIParams, RepelloAISettings};
-use betterlite_guardrails::repello_lifecycle::error::RepelloLifecycleError;
-use betterlite_guardrails::repello_lifecycle::initialize::guardrail_settings;
+use betterlite_guardrails::repello_lifecycle::config::{
+    RepelloAIParams, RepelloAISettings, RepelloLifecycleError,
+};
+use betterlite_guardrails::repello_lifecycle::guardrail_settings;
 use rstest::rstest;
 
 use crate::support::{GUARDRAIL_NAME, empty_env, lookup, params};
@@ -17,7 +18,6 @@ fn resolved(configured: &RepelloAIParams) -> RepelloAISettings {
 #[test]
 fn the_default_request_timeout_is_thirty_seconds() {
     let settings = resolved(&params());
-    assert_eq!(settings.timeout, None);
     assert_eq!(settings.request_timeout, Duration::from_secs(30));
 }
 
@@ -26,7 +26,6 @@ fn a_configured_timeout_is_the_request_timeout() {
     let mut configured = params();
     configured.timeout = Some(2.5);
     let settings = resolved(&configured);
-    assert_eq!(settings.timeout, Some(Duration::from_millis(2_500)));
     assert_eq!(settings.request_timeout, Duration::from_millis(2_500));
 }
 

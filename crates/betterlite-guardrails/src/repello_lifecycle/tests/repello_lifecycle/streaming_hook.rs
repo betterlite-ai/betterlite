@@ -140,6 +140,26 @@ async fn a_mode_without_post_call_relays_every_chunk_without_scanning() {
     assert_eq!(captured.text(), "");
 }
 
+#[tokio::test]
+async fn a_chunk_that_is_not_a_stream_chunk_fails_the_scan() {
+    let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
+    let run = run_stream(
+        &guarding(&mock.base, "post_call"),
+        prompt_data(),
+        &["\"nope\""],
+    )
+    .await;
+    let Err(error) = run.result else {
+        panic!("a chunk that is not a chunk must fail the stream scan");
+    };
+    assert_eq!(
+        error.to_string(),
+        "RepelloAI Argus stream scan failed: a streamed chunk could not be read"
+    );
+    assert!(run.output.is_empty());
+    assert_eq!(request_count(&mock), 0);
+}
+
 #[rstest]
 #[case::fail_closed(UnreachableFallback::FailClosed, false)]
 #[case::fail_open(UnreachableFallback::FailOpen, true)]

@@ -1,6 +1,7 @@
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
-use betterlite_guardrails::repello_lifecycle::config::event_hook_from_mode;
-use betterlite_guardrails::repello_lifecycle::error::RepelloLifecycleError;
+use betterlite_guardrails::repello_lifecycle::config::{
+    RepelloLifecycleError, event_hook_from_mode,
+};
 use rstest::rstest;
 
 fn decoded(mode: &str) -> LitellmParamsMode {

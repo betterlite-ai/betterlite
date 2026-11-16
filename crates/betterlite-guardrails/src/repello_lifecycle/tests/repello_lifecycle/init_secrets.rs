@@ -1,5 +1,6 @@
-use betterlite_guardrails::repello_lifecycle::config::{RepelloAIParams, RepelloAISettings};
-use betterlite_guardrails::repello_lifecycle::error::RepelloLifecycleError;
+use betterlite_guardrails::repello_lifecycle::config::{
+    RepelloAIParams, RepelloAISettings, RepelloLifecycleError,
+};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 

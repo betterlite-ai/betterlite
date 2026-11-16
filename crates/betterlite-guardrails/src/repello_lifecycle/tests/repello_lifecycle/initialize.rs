@@ -89,7 +89,7 @@ fn a_non_string_asset_id_is_a_configuration_error() {
     .unwrap_err();
     assert!(matches!(
         error,
-        betterlite_guardrails::repello_lifecycle::error::RepelloLifecycleError::InvalidParam {
+        betterlite_guardrails::repello_lifecycle::config::RepelloLifecycleError::InvalidParam {
             field: "asset_id"
         }
     ));

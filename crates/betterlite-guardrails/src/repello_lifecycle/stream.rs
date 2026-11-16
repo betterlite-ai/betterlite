@@ -181,8 +181,9 @@ pub(super) async fn assemble(
             let encoded = serde_json::to_value(&chat).map_err(StreamScanError::Chunk)?;
             let body: BTreeMap<String, GuardrailValue> =
                 serde_json::from_value(encoded).map_err(StreamScanError::Chunk)?;
+            let text = extract_response_text(&ResponseSource::Body(&body));
             Ok(Assembled {
-                text: extract_response_text(&ResponseSource::Body(&body)),
+                text,
                 kind: "ModelResponse",
             })
         }

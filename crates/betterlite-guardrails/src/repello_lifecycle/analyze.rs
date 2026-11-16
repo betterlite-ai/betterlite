@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
@@ -8,13 +9,14 @@ use reqwest::header::HeaderValue;
 use secrecy::ExposeSecret as _;
 
 use crate::guardrail_base::failure::GuardrailFailure;
-use crate::guardrail_records::record::GuardrailStatus;
+use crate::guardrail_records::record::{
+    GuardrailRecordContext, GuardrailRecordInput, GuardrailStatus,
+};
 use crate::repello_content::wire::{
     RepelloAIAnalyzeRequest, RepelloAIAnalyzeResponse, RepelloAIScanData,
 };
 
 use super::hooks::HookContext;
-use super::records::{ScanRun, record_scan};
 use super::verdict::verdict_blocks;
 use super::{
     API_KEY_HEADER, CONFIG_ERROR_STATUS_CODES, Data, ERROR_STATUS, FAILED_MESSAGE,
@@ -24,15 +26,12 @@ use super::{
 };
 
 type Detail = BTreeMap<String, GuardrailValue>;
-
-// The text LiteLLM passes to _call_analyze; the stage is its path segment and the event type is the
-// hook that asked for the scan
-#[derive(Debug, Clone, Copy)]
-pub struct Scan<'scan> {
-    pub text: &'scan str,
-    pub stage: &'static str,
-    pub event_type: GuardrailEventHooks,
-}
+// The scan's result, its record and its logging status: what LiteLLM writes in _call_analyze's finally.
+type Outcome = (
+    Result<Option<RepelloAIAnalyzeResponse>, GuardrailFailure>,
+    GuardrailValue,
+    GuardrailStatus,
+);
 
 enum PostError {
     Config { status: u16 },
@@ -41,109 +40,106 @@ enum PostError {
     Unexpected { reason: String },
 }
 
-struct ScanOutcome {
-    result: Result<Option<RepelloAIAnalyzeResponse>, GuardrailFailure>,
-    record: GuardrailValue,
-    status: GuardrailStatus,
-}
-
-impl ScanOutcome {
-    fn scanned(response: RepelloAIAnalyzeResponse) -> Self {
-        let status = if verdict_blocks(Some(&response)) {
-            GuardrailStatus::GuardrailIntervened
-        } else {
-            GuardrailStatus::Success
-        };
-        Self {
-            record: recorded_response(&response),
-            status,
-            result: Ok(Some(response)),
-        }
-    }
-
-    fn allowed(reason: String) -> Self {
-        Self {
-            result: Ok(None),
-            record: GuardrailValue::Text(reason),
-            status: GuardrailStatus::GuardrailFailedToRespond,
-        }
-    }
-
-    // A failed scan records the detail object, which is what LiteLLM keeps as guardrail_json_response
-    fn error(detail: Detail) -> Self {
-        Self::failed(http_object(&detail), GuardrailValue::Object(detail))
-    }
-
-    fn failed(failure: GuardrailFailure, record: GuardrailValue) -> Self {
-        Self {
-            result: Err(failure),
-            record,
-            status: GuardrailStatus::GuardrailFailedToRespond,
-        }
-    }
-}
-
 impl RepelloAILifecycle {
     // LiteLLM's _call_analyze: the scan is recorded in a finally, so every outcome writes one record.
     pub async fn call_analyze(
         &self,
-        scan: Scan<'_>,
+        text: &str,
+        stage: &'static str,
+        event_type: GuardrailEventHooks,
         request_data: &mut Data,
         context: &mut HookContext<'_>,
     ) -> Result<Option<RepelloAIAnalyzeResponse>, GuardrailFailure> {
         let started = (self.clock)();
-        let outcome = self.analyze(&scan).await;
-        let run = ScanRun {
-            event_type: scan.event_type,
-            response: outcome.record,
-            status: outcome.status,
-            started,
-            finished: (self.clock)(),
+        let (result, response, status) = self.analyze(text, stage).await;
+        let finished = (self.clock)();
+        let duration = finished.duration_since(started).unwrap_or_default();
+        let input = GuardrailRecordInput {
+            guardrail_response: response,
+            guardrail_status: status,
+            start_time: Some(epoch(started)),
+            end_time: Some(epoch(finished)),
+            duration: Some(duration.as_secs_f64()),
+            masked_entity_count: Some(BTreeMap::new()),
+            guardrail_provider: None,
+            event_type: Some(event_type),
+            tracing_detail: None,
         };
-        record_scan(self, request_data, context, run);
-        outcome.result
+        let mut record = GuardrailRecordContext {
+            base: &self.base,
+            request_data,
+            log_target: context.log_target.as_deref_mut(),
+            sink: context.sink,
+        };
+        if let Err(error) = context.invocation.record_own(&mut record, input) {
+            tracing::warn!("RepelloAI Argus guardrail record was not written: {error}");
+        }
+        result
     }
 
     // A permanent configuration answer never falls through to the fallback mode.
-    async fn analyze(&self, scan: &Scan<'_>) -> ScanOutcome {
-        match self.post(scan).await {
-            Ok(response) => ScanOutcome::scanned(response),
+    async fn analyze(&self, text: &str, stage: &'static str) -> Outcome {
+        match self.post(text, stage).await {
+            Ok(response) => {
+                let status = if verdict_blocks(Some(&response)) {
+                    GuardrailStatus::GuardrailIntervened
+                } else {
+                    GuardrailStatus::Success
+                };
+                let record = serde_json::to_value(&response)
+                    .and_then(serde_json::from_value)
+                    .unwrap_or(GuardrailValue::Null);
+                (Ok(Some(response)), record, status)
+            }
             Err(PostError::Transient { reason }) => self.unreachable(reason),
-            Err(PostError::Config { status }) => ScanOutcome::error(detail(
+            Err(PostError::Config { status }) => failed(detail(
                 MISCONFIGURED_MESSAGE,
                 Some(status),
                 Some(MISCONFIGURED_ERROR_TYPE),
             )),
-            Err(PostError::InvalidJson { status }) => ScanOutcome::error(detail(
+            Err(PostError::InvalidJson { status }) => failed(detail(
                 INVALID_JSON_MESSAGE,
                 Some(status),
                 Some(INVALID_JSON_ERROR_TYPE),
             )),
-            Err(PostError::Unexpected { reason }) => ScanOutcome::failed(
-                http_object(&detail(FAILED_MESSAGE, None, None)),
+            Err(PostError::Unexpected { reason }) => (
+                Err(http_object(detail(FAILED_MESSAGE, None, None))),
                 GuardrailValue::Text(reason),
+                GuardrailStatus::GuardrailFailedToRespond,
             ),
         }
     }
 
-    fn unreachable(&self, reason: String) -> ScanOutcome {
+    fn unreachable(&self, reason: String) -> Outcome {
         tracing::warn!("RepelloAI Argus unreachable: {reason}");
         if self.settings.unreachable_fallback == UnreachableFallback::FailOpen {
-            return ScanOutcome::allowed(reason);
+            return (
+                Ok(None),
+                GuardrailValue::Text(reason),
+                GuardrailStatus::GuardrailFailedToRespond,
+            );
         }
-        let failure = http_object(&detail(
+        let failure = http_object(detail(
             UNREACHABLE_MESSAGE,
             None,
             Some(UNREACHABLE_ERROR_TYPE),
         ));
-        ScanOutcome::failed(failure, GuardrailValue::Text(reason))
+        (
+            Err(failure),
+            GuardrailValue::Text(reason),
+            GuardrailStatus::GuardrailFailedToRespond,
+        )
     }
 
-    async fn post(&self, scan: &Scan<'_>) -> Result<RepelloAIAnalyzeResponse, PostError> {
-        let endpoint = format!("{}/analyze/{}", self.settings.api_base, scan.stage);
+    async fn post(
+        &self,
+        text: &str,
+        stage: &'static str,
+    ) -> Result<RepelloAIAnalyzeResponse, PostError> {
+        let endpoint = format!("{}/analyze/{stage}", self.settings.api_base);
         let scan_data = RepelloAIScanData {
-            prompt: (scan.stage == PROMPT_STAGE).then(|| scan.text.to_owned()),
-            response: (scan.stage == RESPONSE_STAGE).then(|| scan.text.to_owned()),
+            prompt: (stage == PROMPT_STAGE).then(|| text.to_owned()),
+            response: (stage == RESPONSE_STAGE).then(|| text.to_owned()),
         };
         let request = RepelloAIAnalyzeRequest {
             asset_id: self.settings.asset_id.clone(),
@@ -182,13 +178,19 @@ impl RepelloAILifecycle {
     }
 }
 
-fn http_object(detail: &Detail) -> GuardrailFailure {
+// A failed scan records the detail object, which is what LiteLLM keeps as guardrail_json_response.
+fn failed(detail: Detail) -> Outcome {
+    (
+        Err(http_object(detail.clone())),
+        GuardrailValue::Object(detail),
+        GuardrailStatus::GuardrailFailedToRespond,
+    )
+}
+
+fn http_object(detail: Detail) -> GuardrailFailure {
     GuardrailFailure::HttpObject {
         status: ERROR_STATUS,
-        detail: detail
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect(),
+        detail: detail.into_iter().collect(),
     }
 }
 
@@ -226,11 +228,9 @@ fn read_error(error: ReadError) -> PostError {
     }
 }
 
-fn recorded_response(response: &RepelloAIAnalyzeResponse) -> GuardrailValue {
-    serde_json::to_value(response)
-        .and_then(serde_json::from_value)
-        .unwrap_or_else(|error| {
-            tracing::warn!("RepelloAI Argus response could not be recorded: {error}");
-            GuardrailValue::Null
-        })
+fn epoch(instant: SystemTime) -> f64 {
+    instant
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64()
 }

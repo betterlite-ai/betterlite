@@ -25,10 +25,9 @@ use betterlite_guardrails::repello_lifecycle::config::{RepelloAIParams, RepelloA
 use betterlite_guardrails::repello_lifecycle::hooks::{
     HookContext, post_call_success_hook, pre_call_hook, streaming_iterator_hook,
 };
-use betterlite_guardrails::repello_lifecycle::initialize::{
-    CallbackRegistry, guardrail_settings, initialize_guardrail,
+use betterlite_guardrails::repello_lifecycle::{
+    CallbackRegistry, DEFAULT_REQUEST_TIMEOUT, Data, guardrail_settings, initialize_guardrail,
 };
-use betterlite_guardrails::repello_lifecycle::{DEFAULT_REQUEST_TIMEOUT, Data};
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
@@ -167,7 +166,6 @@ pub(crate) fn settings(base: &str) -> RepelloAISettings {
         api_base: base.to_owned(),
         asset_id: ASSET_ID.to_owned(),
         unreachable_fallback: UnreachableFallback::FailClosed,
-        timeout: None,
         request_timeout: DEFAULT_REQUEST_TIMEOUT,
     }
 }

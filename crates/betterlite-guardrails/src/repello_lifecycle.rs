@@ -1,26 +1,29 @@
 pub mod analyze;
 pub mod config;
-pub mod error;
 pub mod hooks;
-pub mod initialize;
-pub mod records;
 pub mod stream;
 pub mod verdict;
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_logging::verbose_hooks::VerboseHooks;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_redact::structured::Payload;
 
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::contract::GuardrailContract;
+use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use crate::repello_content::SUPPORTED_EVENT_HOOKS;
 use crate::repello_content::config::RepelloAIGuardrailConfigModel;
 
-use config::RepelloAISettings;
+use config::{RepelloAIParams, RepelloAISettings, RepelloLifecycleError, event_hook_from_mode};
 use stream::{SilentConsole, SilentLogger};
 
 pub type Data = BTreeMap<String, GuardrailValue>;
@@ -82,5 +85,65 @@ impl GuardrailContract for RepelloAILifecycle {
 
     fn get_supported_event_hooks(&self) -> Option<Vec<GuardrailEventHooks>> {
         Some(SUPPORTED_EVENT_HOOKS.to_vec())
+    }
+}
+
+pub trait CallbackRegistry {
+    fn add_litellm_callback(&mut self, guardrail: Arc<RepelloAILifecycle>);
+}
+
+// LiteLLM's initialize_guardrail: the callback joins the logging callback manager before it is returned.
+pub fn initialize_guardrail<E, R>(
+    params: &RepelloAIParams,
+    env: &E,
+    client_builder: reqwest::ClientBuilder,
+    registry: &mut R,
+) -> Result<Arc<RepelloAILifecycle>, RepelloLifecycleError>
+where
+    E: EnvironmentLookup,
+    R: CallbackRegistry,
+{
+    let event_hook = event_hook_from_mode(&params.mode)?;
+    let settings = RepelloAISettings::resolve(params, env)?;
+    let client = client_builder
+        .build()
+        .map_err(|source| RepelloLifecycleError::Client { source })?;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+        .map_err(|source| RepelloLifecycleError::Redactor { source })?;
+    let hooks = VerboseHooks {
+        logger: SilentLogger,
+        console: SilentConsole,
+        set_verbose: Payload::Bool(false),
+        redactor: Arc::new(redactor),
+    };
+    let base = GuardrailBase::new(guardrail_settings(params, event_hook), params.strict_modes)?;
+    let guardrail = Arc::new(RepelloAILifecycle {
+        base,
+        settings,
+        client,
+        clock: SystemTime::now,
+        hooks,
+    });
+    registry.add_litellm_callback(Arc::clone(&guardrail));
+    Ok(guardrail)
+}
+
+#[must_use]
+pub fn guardrail_settings(
+    params: &RepelloAIParams,
+    event_hook: LitellmParamsMode,
+) -> GuardrailSettings {
+    GuardrailSettings {
+        guardrail_name: params.guardrail_name.clone(),
+        supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
+        event_hook: Some(event_hook),
+        default_on: params.default_on,
+        timeout: params.timeout,
+        // The Repello hooks are undecorated, so _call_analyze's finally is the only record it writes.
+        switches: GuardrailSwitches {
+            records_own_information: true,
+            ..GuardrailSwitches::default()
+        },
+        ..GuardrailSettings::default()
     }
 }

@@ -14,7 +14,6 @@ use crate::repello_content::response::{ResponseSource, extract_response_text};
 use crate::tool_permission_requests::header_mutation::record_applied_guardrail;
 
 use super::RepelloAILifecycle;
-use super::analyze::Scan;
 use super::stream::{assemble, collect, parse_chunks, relay, replay};
 use super::verdict::{log_flagged_verdict, raise_if_blocked, verdict_blocks};
 use super::{BLOCKED_MESSAGE, Data, PROMPT_STAGE, RESPONSE_STAGE};
@@ -44,12 +43,9 @@ pub async fn pre_call_hook(
         tracing::warn!("RepelloAI Argus: no inspectable prompt text in data - skipping.");
         return Ok(());
     };
-    let scan = Scan {
-        text: &text,
-        stage: PROMPT_STAGE,
-        event_type,
-    };
-    let scanned = guardrail.call_analyze(scan, data, context).await?;
+    let scanned = guardrail
+        .call_analyze(&text, PROMPT_STAGE, event_type, data, context)
+        .await?;
     raise_if_blocked(scanned.as_ref())?;
     record_applied(guardrail, data);
     Ok(())
@@ -76,12 +72,9 @@ pub async fn post_call_success_hook(
         tracing::warn!("RepelloAI Argus: no inspectable response text - skipping.");
         return Ok(());
     };
-    let scan = Scan {
-        text: &text,
-        stage: RESPONSE_STAGE,
-        event_type,
-    };
-    let scanned = guardrail.call_analyze(scan, data, context).await?;
+    let scanned = guardrail
+        .call_analyze(&text, RESPONSE_STAGE, event_type, data, context)
+        .await?;
     raise_if_blocked(scanned.as_ref())?;
     record_applied(guardrail, data);
     Ok(())
@@ -106,12 +99,8 @@ pub async fn streaming_iterator_hook(
     let chunks = collect(response).await;
     let assembled = assemble(guardrail, &parse_chunks(&chunks)?).await?;
     let Some(text) = assembled.text else {
-        let name = guardrail
-            .base
-            .settings
-            .guardrail_name
-            .as_deref()
-            .unwrap_or("None");
+        let guardrail_name = &guardrail.base.settings.guardrail_name;
+        let name = guardrail_name.as_deref().unwrap_or("None");
         tracing::warn!(
             "RepelloAI Argus: no inspectable text in streamed response; skipping scan. guardrail={name} assembled_type={}",
             assembled.kind
@@ -119,12 +108,9 @@ pub async fn streaming_iterator_hook(
         replay(chunks, output).await;
         return Ok(());
     };
-    let scan = Scan {
-        text: &text,
-        stage: RESPONSE_STAGE,
-        event_type,
-    };
-    let scanned = guardrail.call_analyze(scan, data, context).await?;
+    let scanned = guardrail
+        .call_analyze(&text, RESPONSE_STAGE, event_type, data, context)
+        .await?;
     if let Some(scanned) = scanned.as_ref() {
         log_flagged_verdict(scanned);
     }

@@ -1,18 +1,20 @@
-use std::time::Duration;
+use std::time::{Duration, TryFromFloatSecsError};
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
+use betterlite_redact::error::RedactionError;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize as _;
 use serde::de::IntoDeserializer as _;
 use serde::de::value::{Error as ValueError, StrDeserializer};
+use thiserror::Error;
 
+use crate::guardrail_base::error::GuardrailBaseError;
 use crate::guardrail_initializers::extras;
 
-use super::error::RepelloLifecycleError;
 use super::{
     API_BASE_ENV, API_KEY_ENV, DEFAULT_API_BASE, DEFAULT_REQUEST_TIMEOUT, FALLBACK_API_KEY_ENV,
 };
@@ -62,7 +64,6 @@ pub struct RepelloAISettings {
     pub api_base: String,
     pub asset_id: String,
     pub unreachable_fallback: UnreachableFallback,
-    pub timeout: Option<Duration>,
     pub request_timeout: Duration,
 }
 
@@ -77,13 +78,11 @@ impl RepelloAISettings {
             .clone()
             .filter(|asset| !asset.is_empty())
             .ok_or(RepelloLifecycleError::MissingAssetId)?;
-        let timeout = params
-            .timeout
-            .map(|seconds| {
-                Duration::try_from_secs_f64(seconds)
-                    .map_err(|source| RepelloLifecycleError::Timeout { seconds, source })
-            })
-            .transpose()?;
+        let request_timeout = match params.timeout {
+            Some(seconds) => Duration::try_from_secs_f64(seconds)
+                .map_err(|source| RepelloLifecycleError::Timeout { seconds, source })?,
+            None => DEFAULT_REQUEST_TIMEOUT,
+        };
         let api_base = params
             .api_base
             .as_deref()
@@ -96,8 +95,7 @@ impl RepelloAISettings {
             api_base,
             asset_id,
             unreachable_fallback: params.unreachable_fallback,
-            timeout,
-            request_timeout: timeout.unwrap_or(DEFAULT_REQUEST_TIMEOUT),
+            request_timeout,
         })
     }
 }
@@ -126,16 +124,13 @@ pub fn event_hook_from_mode(
     mode: &LitellmParamsMode,
 ) -> Result<LitellmParamsMode, RepelloLifecycleError> {
     match mode {
-        LitellmParamsMode::Tagged(_) => Ok(mode.clone()),
+        LitellmParamsMode::Tagged(_) => {}
         LitellmParamsMode::Many(names) => {
-            names.iter().try_for_each(|name| check_event_hook(name))?;
-            Ok(LitellmParamsMode::Many(names.clone()))
+            names.iter().try_for_each(|name| check_event_hook(name))?
         }
-        LitellmParamsMode::One(name) => {
-            check_event_hook(name)?;
-            Ok(LitellmParamsMode::One(name.clone()))
-        }
+        LitellmParamsMode::One(name) => check_event_hook(name)?,
     }
+    Ok(mode.clone())
 }
 
 fn check_event_hook(name: &str) -> Result<(), RepelloLifecycleError> {
@@ -145,4 +140,38 @@ fn check_event_hook(name: &str) -> Result<(), RepelloLifecycleError> {
         .map_err(|_unknown| RepelloLifecycleError::InvalidEventHook {
             hook: name.to_owned(),
         })
+}
+
+#[derive(Debug, Error)]
+pub enum RepelloLifecycleError {
+    #[error(
+        "Couldn't get Repello API key. Set `ARGUS_API_KEY` in the environment or pass `api_key` to the guardrail in the config file."
+    )]
+    MissingApiKey,
+    #[error(
+        "Repello guardrail requires an `asset_id`. Create an asset in the Repello dashboard and set `asset_id` on the guardrail in the config file."
+    )]
+    MissingAssetId,
+    #[error("the `{field}` parameter of the RepelloAI Argus guardrail has the wrong type")]
+    InvalidParam { field: &'static str },
+    #[error("the RepelloAI Argus event hook `{hook}` is not a guardrail event hook")]
+    InvalidEventHook { hook: String },
+    #[error("the RepelloAI Argus timeout {seconds} is not a representable duration")]
+    Timeout {
+        seconds: f64,
+        #[source]
+        source: TryFromFloatSecsError,
+    },
+    #[error("the RepelloAI Argus HTTP client could not be built")]
+    Client {
+        #[source]
+        source: reqwest::Error,
+    },
+    #[error("the RepelloAI Argus redactor could not be built")]
+    Redactor {
+        #[source]
+        source: RedactionError,
+    },
+    #[error(transparent)]
+    Base(#[from] GuardrailBaseError),
 }
