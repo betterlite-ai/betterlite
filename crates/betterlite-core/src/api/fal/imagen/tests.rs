@@ -100,6 +100,9 @@ fn imagen_uses_one_preview_endpoint_for_every_variant() {
 #[case::fal_separator("1792-x-1024", "1:1")]
 #[case::decimal_part("1.5x2", "1:1")]
 #[case::uppercase_separator("1792X1024", "1:1")]
+#[case::min_i64("-9223372036854775808x1", "1:1")]
+#[case::non_ascii_digits("\u{661}\u{660}\u{662}\u{664}x\u{667}\u{666}\u{668}", "1:1")]
+#[case::double_rounding_below_wide_threshold("16999999999999999x10000000000000000", "4:3")]
 fn size_selects_a_ratio_by_thresholds(#[case] size: &str, #[case] ratio: &str) {
     assert_eq!(map_aspect_ratio(size), ratio);
 }

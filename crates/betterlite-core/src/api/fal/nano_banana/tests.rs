@@ -111,6 +111,8 @@ fn size_selects_the_nearest_ratio_by_distance(#[case] size: &str, #[case] ratio:
 #[case::fal_separator(text("1792-x-1024"))]
 #[case::decimal_part(text("1.5x2"))]
 #[case::uppercase_separator(text("1792X1024"))]
+#[case::min_i64(text("-9223372036854775808x1"))]
+#[case::non_ascii_digits(text("\u{661}\u{660}\u{662}\u{664}x\u{667}\u{666}\u{668}"))]
 #[case::number(number(1024))]
 #[case::boolean(Json::Bool(true))]
 #[case::null(Json::Null)]

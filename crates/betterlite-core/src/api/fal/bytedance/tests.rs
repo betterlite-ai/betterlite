@@ -85,6 +85,11 @@ fn bytedance_models_use_their_fixed_endpoints() {
 #[case::three_parts("1x2x3", text("landscape_4_3"))]
 #[case::fal_separator("1024-x-768", text("landscape_4_3"))]
 #[case::uppercase_separator("1024X768", text("landscape_4_3"))]
+#[case::min_i64("-9223372036854775808x1", text("landscape_4_3"))]
+#[case::non_ascii_digits(
+    "\u{661}\u{660}\u{662}\u{664}x\u{667}\u{666}\u{668}",
+    text("landscape_4_3")
+)]
 fn text_size_maps_to_a_preset_or_custom_dimensions(#[case] size: &str, #[case] expected: Json) {
     assert_eq!(image_size_for(&text(size)), expected);
 }
