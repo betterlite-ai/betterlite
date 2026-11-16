@@ -9,6 +9,7 @@ use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::{
     ConfiguredCredentials, CredentialSource,
 };
+use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
 use betterlite_config::sections::vertex_embedding_dispatch::Settings as EmbeddingSettings;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::{Extra, Json};
@@ -134,27 +135,29 @@ fn catalog_before_media() {
     assert_eq!(resolved.native, Native::EmbedContent);
 }
 
-#[test]
-fn null_image_selects_media() {
+#[rstest]
+#[case::image(r#"{"image": null}"#)]
+#[case::video(r#"{"video": null}"#)]
+#[case::both(r#"{"image": null, "video": null}"#)]
+fn null_image_selects_media(#[case] source: &str) {
     let catalog = ModelCatalog::default();
     let vertex = VertexSettings::default();
     let embedding = EmbeddingSettings::default();
-    for source in [
-        r#"{"image": null}"#,
-        r#"{"video": null}"#,
-        r#"{"image": null, "video": null}"#,
-    ] {
-        let optional_params = params(source);
-        let resolved = resolution(MODEL, &optional_params, &vertex, &embedding, &catalog);
-        assert_eq!(resolved.native, Native::Multimodal);
-        // the media keys stay in the params the multimodal handler reads
-        assert_eq!(resolved.optional_params, optional_params);
-    }
-    let empty = params("{}");
-    assert_eq!(
-        resolution(MODEL, &empty, &vertex, &embedding, &catalog).native,
-        Native::Text
-    );
+    let optional_params = params(source);
+    let resolved = resolution(MODEL, &optional_params, &vertex, &embedding, &catalog);
+    assert_eq!(resolved.native, Native::Multimodal);
+    // the media keys stay in the params the multimodal handler reads
+    assert_eq!(resolved.optional_params, optional_params);
+}
+
+#[test]
+fn absent_media_selects_text() {
+    let catalog = ModelCatalog::default();
+    let vertex = VertexSettings::default();
+    let embedding = EmbeddingSettings::default();
+    let optional_params = params("{}");
+    let resolved = resolution(MODEL, &optional_params, &vertex, &embedding, &catalog);
+    assert_eq!(resolved.native, Native::Text);
 }
 
 #[test]
@@ -193,25 +196,27 @@ fn alias_pop_short_circuit() {
     assert!(nested.optional_params.is_empty());
 }
 
-#[test]
-fn multimodal_model_names_match_exactly() {
+#[rstest]
+#[case::multimodal("multimodalembedding", Native::Multimodal)]
+#[case::multimodal_001("multimodalembedding@001", Native::Multimodal)]
+// main.py compares the split model by name, so a near miss falls through to text
+#[case::multimodal_002("multimodalembedding@002", Native::Text)]
+#[case::capitalized("MultimodalEmbedding", Native::Text)]
+fn multimodal_model_names_match_exactly(#[case] model: &str, #[case] native: Native) {
     let catalog = ModelCatalog::default();
     let optional_params = params("{}");
     let vertex = VertexSettings::default();
     let embedding = EmbeddingSettings::default();
-    for model in MULTIMODAL_EMBEDDING_MODELS {
-        assert_eq!(
-            resolution(model, &optional_params, &vertex, &embedding, &catalog).native,
-            Native::Multimodal
-        );
-    }
-    // main.py compares the split model by name, so a near miss falls through to text
-    for model in ["multimodalembedding@002", "MultimodalEmbedding"] {
-        assert_eq!(
-            resolution(model, &optional_params, &vertex, &embedding, &catalog).native,
-            Native::Text
-        );
-    }
+    let resolved = resolution(model, &optional_params, &vertex, &embedding, &catalog);
+    assert_eq!(resolved.native, native);
+}
+
+#[test]
+fn the_multimodal_model_table_is_the_source_pair() {
+    assert_eq!(
+        MULTIMODAL_EMBEDDING_MODELS,
+        ["multimodalembedding", "multimodalembedding@001"]
+    );
 }
 
 #[test]
@@ -227,7 +232,7 @@ fn environment_aliases_fall_back_in_source_order() {
         project: Some("vertex-ai-project".to_owned()),
         location: Some("vertex-ai-location".to_owned()),
         credentials: Some(credentials("vertex-ai-key")),
-        ..VertexSettings::default()
+        adc: AdcEnvironment::default(),
     };
     let resolved = resolution(MODEL, &optional_params, &vertex, &embedding, &catalog);
     assert_eq!(resolved.project.as_deref(), Some("vertex-ai-project"));
@@ -312,12 +317,15 @@ fn the_section_input_is_the_last_fallback() {
 fn an_explicit_api_base_and_option_credentials_win() {
     let catalog = ModelCatalog::default();
     let vertex = VertexSettings {
+        project: None,
         location: Some("settings-location".to_owned()),
-        ..VertexSettings::default()
+        credentials: None,
+        adc: AdcEnvironment::default(),
     };
     let embedding = EmbeddingSettings {
+        project: None,
+        credentials: None,
         api_base: Some("https://settings.example".to_owned()),
-        ..EmbeddingSettings::default()
     };
     let optional_params = params(
         r#"{"vertex_credentials": "{\"type\": \"service_account\"}", "vertex_location": "option-location"}"#,
@@ -463,7 +471,8 @@ fn pinned_options_sit_between_the_request_and_the_settings() {
     let vertex = VertexSettings {
         project: Some("settings-project".to_owned()),
         location: Some("settings-location".to_owned()),
-        ..VertexSettings::default()
+        credentials: None,
+        adc: AdcEnvironment::default(),
     };
     let pins = format!(
         r#"{{"vertex_ai_project": "pinned-project", "vertex_location": "pinned-location", "vertex_credentials": {ACCOUNT}, "api_base": "https://pinned.example"}}"#

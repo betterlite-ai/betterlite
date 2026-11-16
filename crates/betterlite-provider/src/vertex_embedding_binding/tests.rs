@@ -8,6 +8,7 @@ use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::{
     ConfiguredCredentials, CredentialSource,
 };
+use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
 use betterlite_config::sections::vertex_embedding_dispatch::Settings as EmbeddingSettings;
 use betterlite_core::vertex_embedding_dispatch::{Defaults, Resolution, pin};
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
@@ -207,11 +208,12 @@ fn resolved_settings_reach_every_arm() {
         credentials: Some(ConfiguredCredentials::Text(SecretString::from(
             "settings-key".to_owned(),
         ))),
-        ..VertexSettings::default()
+        adc: AdcEnvironment::default(),
     };
     let embedding = EmbeddingSettings {
+        project: None,
+        credentials: None,
         api_base: Some("https://settings.example".to_owned()),
-        ..EmbeddingSettings::default()
     };
     let defaults = Defaults {
         vertex: &vertex,
@@ -245,20 +247,39 @@ fn resolved_settings_reach_every_arm() {
         )
         .expect("a prepared request"),
     ];
-    for arm in &arms {
-        let (_, resolved) = labelled(arm);
-        assert_eq!(resolved.project.as_deref(), Some("settings-project"));
-        assert_eq!(resolved.location.as_deref(), Some("settings-location"));
-        assert_eq!(
-            resolved
+    let resolved: Vec<&Resolution> = arms.iter().map(|arm| labelled(arm).1).collect();
+    assert_eq!(
+        resolved
+            .iter()
+            .map(|arm| arm.project.as_deref())
+            .collect::<Vec<_>>(),
+        [Some("settings-project"); 3]
+    );
+    assert_eq!(
+        resolved
+            .iter()
+            .map(|arm| arm.location.as_deref())
+            .collect::<Vec<_>>(),
+        [Some("settings-location"); 3]
+    );
+    assert_eq!(
+        resolved
+            .iter()
+            .map(|arm| arm
                 .credentials
                 .as_ref()
-                .and_then(ConfiguredCredentials::as_text),
-            Some("settings-key")
-        );
-        // the explicit api_base wins over the setting, as in main.py's or chain
-        assert_eq!(resolved.api_base.as_deref(), Some("https://vertex.example"));
-    }
+                .and_then(ConfiguredCredentials::as_text))
+            .collect::<Vec<_>>(),
+        [Some("settings-key"); 3]
+    );
+    // the explicit api_base wins over the setting, as in main.py's or chain
+    assert_eq!(
+        resolved
+            .iter()
+            .map(|arm| arm.api_base.as_deref())
+            .collect::<Vec<_>>(),
+        [Some("https://vertex.example"); 3]
+    );
     assert!(matches!(arms[0], VertexEmbeddingPrepared::EmbedContent(_)));
     assert!(matches!(arms[1], VertexEmbeddingPrepared::Multimodal(_)));
     assert!(matches!(arms[2], VertexEmbeddingPrepared::Text(_)));
@@ -435,10 +456,17 @@ async fn runs_each_arm_through_its_handler() {
             &ModelCatalog::default(),
         ),
     ];
-    let mut results = Vec::new();
-    for arm in &arms {
-        results.push(execute(arm, &recorder).await.expect("a handler result"));
-    }
+    let results = [
+        execute(&arms[0], &recorder)
+            .await
+            .expect("a handler result"),
+        execute(&arms[1], &recorder)
+            .await
+            .expect("a handler result"),
+        execute(&arms[2], &recorder)
+            .await
+            .expect("a handler result"),
+    ];
     assert!(matches!(results[0], VertexEmbeddingResult::EmbedContent(_)));
     assert!(matches!(results[1], VertexEmbeddingResult::Multimodal(_)));
     assert!(matches!(results[2], VertexEmbeddingResult::Text(_)));
