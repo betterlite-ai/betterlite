@@ -10,5 +10,5 @@ pub mod model_info;
 pub mod parameters;
 pub mod providers;
 pub mod team_models;
-pub mod wildcard;
 mod tests;
+pub mod wildcard;

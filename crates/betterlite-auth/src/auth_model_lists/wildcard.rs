@@ -5,7 +5,6 @@ use crate::auth_model_lists::parameters::{ModelParameters, ParameterError};
 use crate::auth_model_lists::providers::{
     ProviderModels, get_provider_models, is_declared_provider, is_wildcard,
 };
-
 // B302's router facts: the deployments that answer a model name, parsed into their litellm_params.
 pub trait DeploymentLookup: Send + Sync {
     fn model_rows(
@@ -14,7 +13,6 @@ pub trait DeploymentLookup: Send + Sync {
         team_id: Option<&str>,
     ) -> Result<Vec<ModelParameters>, WildcardError>;
 }
-
 #[derive(Debug, thiserror::Error)]
 pub enum WildcardError {
     #[error("the router's model list could not be read")]
@@ -22,14 +20,11 @@ pub enum WildcardError {
     #[error(transparent)]
     Parameters(#[from] ParameterError),
 }
-
 pub struct ExpansionContext<'context> {
     pub providers: &'context dyn ProviderModels,
     pub credentials: &'context CredentialSnapshot,
     pub deployments: Option<&'context dyn DeploymentLookup>,
 }
-
-// get_known_models_from_wildcard: provider models, suffix-filtered or prefixed, then provider-prefixed.
 #[must_use]
 pub fn get_known_models_from_wildcard(
     wildcard_model: &str,
@@ -51,8 +46,6 @@ pub fn get_known_models_from_wildcard(
         .map(|model| prefixed(&model, wildcard_provider_prefix))
         .collect()
 }
-
-// _get_wildcard_models: each wildcard leaves the list, its routes stay on request, its models join the answer.
 pub fn wildcard_models(
     unique_models: &mut Vec<String>,
     return_wildcard_routes: bool,
@@ -88,7 +81,6 @@ pub fn wildcard_models(
     unique_models.retain(|model| !models_to_remove.contains(model));
     Ok(all_wildcard_models)
 }
-
 // "*" expands the deployment's own provider wildcard when that wildcard carries a slash.
 fn wildcard_to_expand<'model>(
     wildcard_model: &'model str,
@@ -105,8 +97,6 @@ fn wildcard_to_expand<'model>(
         _ => wildcard_model,
     }
 }
-
-// the provider comes from litellm_params when present, otherwise from the wildcard's own prefix
 fn requested_provider<'parameters>(
     parameters: Option<&'parameters ModelParameters>,
     wildcard_provider_prefix: &'parameters str,
@@ -119,7 +109,6 @@ fn requested_provider<'parameters>(
         None => wildcard_provider_prefix,
     }
 }
-
 // a partial suffix (`gemini-*`) filters by its prefix, or prepends it when no model carries it
 fn apply_suffix(wildcard_models: Vec<String>, wildcard_suffix: &str) -> Vec<String> {
     if wildcard_suffix == "*" {
@@ -140,7 +129,6 @@ fn apply_suffix(wildcard_models: Vec<String>, wildcard_suffix: &str) -> Vec<Stri
         .map(|model| format!("{model_prefix}{model}"))
         .collect()
 }
-
 // a known provider's leading segment is replaced, an organization segment is kept under the prefix
 fn prefixed(model: &str, wildcard_provider_prefix: &str) -> String {
     if model.starts_with(wildcard_provider_prefix) {

@@ -4,7 +4,6 @@ use indexmap::IndexMap;
 
 use crate::auth_model_lists::access_groups::models_from_access_groups;
 use crate::auth_model_lists::lists::{ALL_PROXY_MODELS, ALL_TEAM_MODELS, dedup_first};
-
 // get_team_models: LiteLLM builds a Python set, so the listed order is sorted here and never inherited.
 #[must_use]
 pub fn get_team_models(

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 use std::sync::Arc;
 
 use betterlite_auth::auth_model_lists::complete_list::ListingRequest;
@@ -17,16 +18,12 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::provider_metadata_factory::selection::ProviderModelMetadata;
 use betterlite_models::provider_model_sets::ProviderModelSets;
 use secrecy::{ExposeSecret as _, SecretString};
-use thiserror::Error;
 
 use crate::state::shared::Shared;
-
-// The listing facts the server reads from config, plus the provider catalog a wildcard expands against.
 pub struct Slot {
     pub service: ListingService,
     providers: CatalogModels,
 }
-
 impl Slot {
     #[must_use]
     pub fn new(config: &Config, _shared: &Shared) -> Self {
@@ -36,7 +33,6 @@ impl Slot {
         }
     }
 
-    // the listing a model route reads; no router means wildcards expand without deployment rows
     pub fn authorized_models(
         &self,
         request: &ListingRequest<'_>,
@@ -45,28 +41,24 @@ impl Slot {
             .authorized_models(request, &self.providers, None)
     }
 }
-
 struct CatalogModels {
     models_by_provider: BTreeMap<ProviderId, Vec<String>>,
     provider_list: Vec<ProviderId>,
     environment: EnvironmentSnapshot,
     check_provider_endpoint: bool,
 }
-
 impl CatalogModels {
     fn from_config(config: &Config) -> Self {
         let mut bundled = BundledCatalog::default();
-        let catalog = bundled.get();
         let mut sets = ProviderModelSets::default();
-        sets.add_known_models(&catalog);
+        sets.add_known_models(&bundled.get());
         Self {
             models_by_provider: sets
                 .models_by_provider
                 .iter()
                 .filter_map(|(name, models)| {
-                    name.parse::<ProviderId>()
-                        .ok()
-                        .map(|provider| (provider, models.iter().cloned().collect()))
+                    let provider = name.parse::<ProviderId>().ok()?;
+                    Some((provider, models.iter().cloned().collect()))
                 })
                 .collect(),
             provider_list: provider_list(),
@@ -75,7 +67,6 @@ impl CatalogModels {
         }
     }
 }
-
 impl ProviderModels for CatalogModels {
     fn valid_models(
         &self,
@@ -107,13 +98,10 @@ impl ProviderModels for CatalogModels {
         Some(enumeration.models)
     }
 }
-
 fn available_parameters(parameters: &ModelParameters) -> LiteLlmParams {
     LiteLlmParams {
         model: parameters.model().to_owned(),
-        api_key: parameters
-            .text("api_key")
-            .map(|key| SecretString::from(key.to_owned())),
+        api_key: parameters.text("api_key").map(SecretString::from),
         api_base: parameters.text("api_base").map(str::to_owned),
         api_version: parameters.text("api_version").map(str::to_owned),
         custom_llm_provider: parameters
@@ -121,33 +109,29 @@ fn available_parameters(parameters: &ModelParameters) -> LiteLlmParams {
             .and_then(|provider| provider.parse().ok()),
     }
 }
-
 // `environment_variables:` is the proxy's own env source; an unset reference keeps the name only.
 fn environment_variables(config: &Config) -> BTreeMap<String, String> {
-    let mut environment = BTreeMap::new();
-    for (name, value) in &config.environment_variables {
-        let text = value
-            .as_ref()
-            .map_or_else(String::new, |secret| secret.expose_secret().to_owned());
-        environment.insert(name.clone(), text);
-    }
-    environment
+    config
+        .environment_variables
+        .iter()
+        .map(|(name, value)| {
+            let value = value
+                .as_ref()
+                .map_or_else(String::new, |secret| secret.expose_secret().to_owned());
+            (name.clone(), value)
+        })
+        .collect()
 }
-
-#[derive(Debug, Error)]
-#[error("provider endpoint model listing is not built yet")]
-struct EndpointListingUnavailable;
-
 struct ProviderEndpointListing;
-
 impl ModelListing for ProviderEndpointListing {
-    type Error = EndpointListingUnavailable;
+    // no provider endpoint catalogue is built, so an endpoint check lists no models
+    type Error = Infallible;
 
     fn get_models(
         &self,
         _adapter: &ProviderModelMetadata,
         _credentials: ListingCredentials<'_>,
-    ) -> Result<Vec<String>, Self::Error> {
-        Err(EndpointListingUnavailable)
+    ) -> Result<Vec<String>, Infallible> {
+        Ok(Vec::new())
     }
 }

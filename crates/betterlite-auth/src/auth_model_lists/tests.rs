@@ -22,7 +22,7 @@ use super::fallbacks::{FallbackError, FallbackGroups, get_all_fallbacks};
 use super::key_models::get_key_models;
 use super::lists::{ALL_PROXY_MODELS, ALL_TEAM_MODELS, NO_DEFAULT_MODELS};
 use super::mcp::{ObjectPermissions, PermissionLookupError, get_mcp_server_ids};
-use super::model_info::expand_wildcard_deployments_for_model_info;
+use super::model_info::expand_wildcard_deployments;
 use super::parameters::{ModelParameters, ParameterError};
 use super::providers::{ProviderModels, get_provider_models, is_declared_provider, is_wildcard};
 use super::team_models::get_team_models;
@@ -185,10 +185,7 @@ impl FakeFallbacks {
     }
 
     fn seen_chains(&self) -> usize {
-        *self
-            .seen_chains
-            .lock()
-            .expect("the fake counts its chains")
+        *self.seen_chains.lock().expect("the fake counts its chains")
     }
 }
 
@@ -198,10 +195,7 @@ impl FallbackGroups for FakeFallbacks {
         _chain: &[FallbackChainEntry],
         model: &str,
     ) -> Result<Option<Vec<String>>, FallbackError> {
-        *self
-            .seen_chains
-            .lock()
-            .expect("the fake counts its chains") += 1;
+        *self.seen_chains.lock().expect("the fake counts its chains") += 1;
         if self.fails {
             return Err(FallbackError::Unresolvable);
         }
@@ -303,7 +297,10 @@ fn wildcard_any_asterisk_and_provider_lookup(#[case] model: &str, #[case] wildca
         get_provider_models("openai", Some(&parameters), &providers),
         Some(strings(&["gpt-4o"]))
     );
-    assert_eq!(get_provider_models("missing", Some(&parameters), &providers), None);
+    assert_eq!(
+        get_provider_models("missing", Some(&parameters), &providers),
+        None
+    );
     let records = providers.records();
     assert_eq!(records.len(), 3);
     assert_eq!(records[0].provider, None);
@@ -326,7 +323,14 @@ fn group_name_model_collision() {
     );
     assert_eq!(
         models_from_access_groups(&groups, &all_models, true, &proxy_model_list),
-        strings(&["gpt-4", "shared", "beta-models", "backing", "gpt-4", "claude"])
+        strings(&[
+            "gpt-4",
+            "shared",
+            "beta-models",
+            "backing",
+            "gpt-4",
+            "claude"
+        ])
     );
 }
 
@@ -477,8 +481,7 @@ fn no_default_sentinel_and_inferred_models() {
         },
     };
     assert_eq!(
-        get_complete_model_list(&proxy_model_list, &request, &context)
-            .expect("the listing builds"),
+        get_complete_model_list(&proxy_model_list, &request, &context).expect("the listing builds"),
         strings(&["proxy-a", "user-a", "inferred-a", "inferred-b"])
     );
     let key_models = strings(&["key-a"]);
@@ -487,8 +490,7 @@ fn no_default_sentinel_and_inferred_models() {
         ..request
     };
     assert_eq!(
-        get_complete_model_list(&proxy_model_list, &granted, &context)
-            .expect("the listing builds"),
+        get_complete_model_list(&proxy_model_list, &granted, &context).expect("the listing builds"),
         strings(&["key-a"]),
         "a granted key never falls back to inferred provider models"
     );
@@ -530,18 +532,23 @@ fn only_groups_returns_before_wildcards() {
         },
     };
     assert_eq!(
-        get_complete_model_list(&proxy_model_list, &request, &context)
-            .expect("the listing builds"),
+        get_complete_model_list(&proxy_model_list, &request, &context).expect("the listing builds"),
         strings(&["beta"])
     );
-    assert!(providers.records().is_empty(), "the wildcard is never expanded");
+    assert!(
+        providers.records().is_empty(),
+        "the wildcard is never expanded"
+    );
 }
 
 #[test]
 fn team_scoped_wildcard_lookup_and_duplicates() {
     let providers = FakeProviders::new(
         &[],
-        &[("openai", &["gpt-4o"]), ("anthropic", &["claude", "claude"])],
+        &[
+            ("openai", &["gpt-4o"]),
+            ("anthropic", &["claude", "claude"]),
+        ],
     );
     let credentials = CredentialSnapshot::default();
     let groups = IndexMap::new();
@@ -569,8 +576,7 @@ fn team_scoped_wildcard_lookup_and_duplicates() {
         },
     };
     assert_eq!(
-        get_complete_model_list(&strings(&[]), &request, &context)
-            .expect("the listing builds"),
+        get_complete_model_list(&strings(&[]), &request, &context).expect("the listing builds"),
         strings(&["openai/*", "openai/claude", "openai/claude"]),
         "the team row redirects the provider and the expansions are never deduplicated"
     );
@@ -579,8 +585,7 @@ fn team_scoped_wildcard_lookup_and_duplicates() {
         ..request
     };
     assert_eq!(
-        get_complete_model_list(&strings(&[]), &team_less, &context)
-            .expect("the listing builds"),
+        get_complete_model_list(&strings(&[]), &team_less, &context).expect("the listing builds"),
         strings(&["openai/*", "openai/gpt-4o"]),
         "without the team the row is invisible and the wildcard prefix names the provider"
     );
@@ -651,7 +656,10 @@ fn known_provider_prefix_replaced_org_prefix_preserved() {
     };
     assert_eq!(
         get_known_models_from_wildcard("ollama_server1/*", None, &context),
-        strings(&["ollama_server1/gemma3:1b", "ollama_server1/meta-llama/Llama-3-8B"])
+        strings(&[
+            "ollama_server1/gemma3:1b",
+            "ollama_server1/meta-llama/Llama-3-8B"
+        ])
     );
     assert!(is_declared_provider("ollama"));
     assert!(!is_declared_provider("veniceai"));
@@ -667,7 +675,10 @@ fn credential_first_match_copy_and_null_only_fields() {
         ("api_base", text("")),
         ("region_name", text("eu")),
         ("unrelated", text("kept")),
-        ("vertex_credentials", Json::Object(object(&[("type", text("service_account"))]))),
+        (
+            "vertex_credentials",
+            Json::Object(object(&[("type", text("service_account"))])),
+        ),
     ]);
     let credentials = CredentialSnapshot::new(vec![
         CredentialEntry {
@@ -746,13 +757,19 @@ fn concrete_deployment_kept() {
     };
     let deployments = vec![object(&[
         ("model_name", text("gpt-4o")),
-        ("litellm_params", Json::Object(object(&[("model", text("openai/*"))]))),
+        (
+            "litellm_params",
+            Json::Object(object(&[("model", text("openai/*"))])),
+        ),
     ])];
     assert_eq!(
-        expand_wildcard_deployments_for_model_info(&deployments, &context),
+        expand_wildcard_deployments(&deployments, &context),
         deployments
     );
-    assert!(providers.records().is_empty(), "a concrete name is never expanded");
+    assert!(
+        providers.records().is_empty(),
+        "a concrete name is never expanded"
+    );
 }
 
 #[test]
@@ -767,11 +784,17 @@ fn invalid_params_or_empty_expansion_keeps_row() {
     let deployments = vec![
         object(&[
             ("model_name", text("openai/*")),
-            ("litellm_params", Json::Object(object(&[("model", Json::Bool(true))]))),
+            (
+                "litellm_params",
+                Json::Object(object(&[("model", Json::Bool(true))])),
+            ),
         ]),
         object(&[
             ("model_name", text("missing/*")),
-            ("litellm_params", Json::Object(object(&[("model", text("missing/*"))]))),
+            (
+                "litellm_params",
+                Json::Object(object(&[("model", text("missing/*"))])),
+            ),
         ]),
         object(&[
             ("model_name", text("*")),
@@ -780,7 +803,7 @@ fn invalid_params_or_empty_expansion_keeps_row() {
         object(&[("model_name", text("*"))]),
     ];
     assert_eq!(
-        expand_wildcard_deployments_for_model_info(&deployments, &context),
+        expand_wildcard_deployments(&deployments, &context),
         deployments
     );
     assert_eq!(
@@ -803,30 +826,38 @@ fn expanded_rows_deep_copy_and_params_model() {
         ("model_name", text("openai/*")),
         (
             "litellm_params",
-            Json::Object(object(&[("model", text("openai/*")), ("api_key", text("key"))])),
+            Json::Object(object(&[
+                ("model", text("openai/*")),
+                ("api_key", text("key")),
+            ])),
         ),
-        ("model_info", Json::Object(object(&[("id", text("deployment-id"))]))),
+        (
+            "model_info",
+            Json::Object(object(&[("id", text("deployment-id"))])),
+        ),
     ]);
-    let expanded = expand_wildcard_deployments_for_model_info(&[deployment.clone()], &context);
+    let expanded = expand_wildcard_deployments(&[deployment.clone()], &context);
     assert_eq!(expanded.len(), 2);
-    assert_eq!(expanded[0].get("model_name"), Some(&text("openai/gpt-4o")));
-    assert_eq!(expanded[1].get("model_name"), Some(&text("openai/gpt-4o-mini")));
-    for row in &expanded {
-        assert_eq!(
-            row.get("model_info"),
-            Some(&Json::Object(object(&[("id", text("deployment-id"))])))
-        );
-        let Some(Json::Object(parameters)) = row.get("litellm_params") else {
-            panic!("every expanded row keeps its params object");
-        };
-        assert_eq!(parameters.get("api_key"), Some(&text("key")));
-        assert_eq!(parameters.get("model"), row.get("model_name"));
-    }
+    assert_expanded_row(&expanded[0], "openai/gpt-4o");
+    assert_expanded_row(&expanded[1], "openai/gpt-4o-mini");
     assert_eq!(
         deployment.get("model_name"),
         Some(&text("openai/*")),
         "the input row is never mutated"
     );
+}
+
+fn assert_expanded_row(row: &JsonObject, model: &str) {
+    assert_eq!(row.get("model_name"), Some(&text(model)));
+    assert_eq!(
+        row.get("model_info"),
+        Some(&Json::Object(object(&[("id", text("deployment-id"))])))
+    );
+    let Some(Json::Object(parameters)) = row.get("litellm_params") else {
+        panic!("every expanded row keeps its params object");
+    };
+    assert_eq!(parameters.get("api_key"), Some(&text("key")));
+    assert_eq!(parameters.get("model"), Some(&text(model)));
 }
 
 #[test]
@@ -870,7 +901,11 @@ fn wildcard_lookup_error_propagates() {
 
 #[tokio::test]
 async fn mcp_missing_context_and_query_error_silently_empty() {
-    assert!(get_mcp_server_ids(None, Some("permission")).await.is_empty());
+    assert!(
+        get_mcp_server_ids(None, Some("permission"))
+            .await
+            .is_empty()
+    );
     let rowless = FakePermissions {
         servers: Some(strings(&["server-a", "server-b"])),
         fails: false,
@@ -880,7 +915,11 @@ async fn mcp_missing_context_and_query_error_silently_empty() {
         servers: None,
         fails: false,
     };
-    assert!(get_mcp_server_ids(Some(&absent), Some("permission")).await.is_empty());
+    assert!(
+        get_mcp_server_ids(Some(&absent), Some("permission"))
+            .await
+            .is_empty()
+    );
     let failing = FakePermissions {
         servers: Some(strings(&["server-a"])),
         fails: true,
@@ -934,7 +973,11 @@ fn unknown_fallback_warns_only_with_router() {
         captured(|| get_all_fallbacks("any-model", "bogus", None, &resolver));
     assert!(value.is_empty());
     assert_eq!((warnings, errors), (0, 0));
-    assert_eq!(resolver.seen_chains(), 0, "no router never reaches the plans");
+    assert_eq!(
+        resolver.seen_chains(),
+        0,
+        "no router never reaches the plans"
+    );
 }
 
 #[test]

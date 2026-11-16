@@ -1,0 +1,15 @@
+kind: helper
+name: auth-model-lists-mcp-grants
+call:
+  auth_model_lists:
+    function: mcp_server_ids
+    object_permission_id: op-1
+calls:
+  - auth_model_lists:
+      function: mcp_server_ids
+      object_permission_id: null
+  - auth_model_lists:
+      function: mcp_server_ids
+      object_permission_id: op-2
+env: {}
+compare: {ignore: []}

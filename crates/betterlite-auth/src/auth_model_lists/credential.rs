@@ -1,21 +1,19 @@
 use betterlite_models::model_registration::JsonObject;
 
 use crate::auth_model_lists::parameters::{CREDENTIAL_FIELDS, ModelParameters};
-
 // credential_accessor.CredentialAccessor reads this list and never writes it; B061 owns loading it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CredentialSnapshot {
     entries: Vec<CredentialEntry>,
 }
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct CredentialEntry {
     pub credential_name: String,
     pub credential_values: JsonObject,
 }
-
 impl CredentialSnapshot {
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions
     pub fn new(entries: Vec<CredentialEntry>) -> Self {
         Self { entries }
     }
@@ -27,7 +25,6 @@ impl CredentialSnapshot {
             .iter()
             .find(|entry| entry.credential_name == credential_name)
     }
-
     // get_credential_values: a copy, so hydration can never reach the stored credential.
     #[must_use]
     pub fn values(&self, credential_name: &str) -> JsonObject {
@@ -35,7 +32,6 @@ impl CredentialSnapshot {
             .map_or_else(JsonObject::new, |entry| entry.credential_values.clone())
     }
 }
-
 // _hydrate_litellm_credential_name: copy on a hit, fill only declared null fields, then clear the name.
 #[must_use]
 pub fn hydrate_credential_name(

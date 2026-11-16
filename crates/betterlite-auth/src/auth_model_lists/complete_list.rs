@@ -3,14 +3,12 @@ use indexmap::IndexMap;
 use crate::auth_model_lists::access_groups::AccessGroupScope;
 use crate::auth_model_lists::lists::append_unique;
 use crate::auth_model_lists::wildcard::{ExpansionContext, WildcardError, wildcard_models};
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ListingFlags {
     pub infer_model_from_keys: bool,
     pub return_wildcard_routes: bool,
     pub groups: AccessGroupScope,
 }
-
 #[derive(Clone, Copy, Debug)]
 pub struct ListingRequest<'request> {
     pub key_models: &'request [String],
@@ -20,8 +18,6 @@ pub struct ListingRequest<'request> {
     pub model_access_groups: &'request IndexMap<String, Vec<String>>,
     pub flags: ListingFlags,
 }
-
-// get_complete_model_list: nonempty key grants, else team grants, else the proxy list, then wildcards.
 pub fn get_complete_model_list(
     proxy_model_list: &[String],
     request: &ListingRequest<'_>,

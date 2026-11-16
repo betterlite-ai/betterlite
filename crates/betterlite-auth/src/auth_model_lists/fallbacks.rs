@@ -1,17 +1,14 @@
 use betterlite_config::sections::fallback_plans::Settings;
 use betterlite_config::sections::fallback_plans::chains::FallbackChainEntry;
-
 pub const GENERAL_FALLBACK_TYPE: &str = "general";
 pub const CONTEXT_WINDOW_FALLBACK_TYPE: &str = "context_window";
 pub const CONTENT_POLICY_FALLBACK_TYPE: &str = "content_policy";
-
 // B309's get_fallback_model_group, injected so a listing declares no permission to call a fallback.
 #[derive(Debug, thiserror::Error)]
 pub enum FallbackError {
     #[error("the fallback plan could not be resolved")]
     Unresolvable,
 }
-
 pub trait FallbackGroups: Send + Sync {
     fn fallback_group(
         &self,
@@ -19,7 +16,6 @@ pub trait FallbackGroups: Send + Sync {
         model: &str,
     ) -> Result<Option<Vec<String>>, FallbackError>;
 }
-
 // get_all_fallbacks: the names of one fallback category; a listing never grants the models it names.
 #[must_use]
 pub fn get_all_fallbacks(

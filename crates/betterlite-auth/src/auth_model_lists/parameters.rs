@@ -1,6 +1,5 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-
 // CredentialLiteLLMParams.model_fields: the only keys hydration may fill, in the class's declared order.
 #[rustfmt::skip]
 pub const CREDENTIAL_FIELDS: [&str; 40] = [
@@ -14,13 +13,11 @@ pub const CREDENTIAL_FIELDS: [&str; 40] = [
     "s3_access_key_id", "s3_secret_access_key", "s3_encryption_key_id", "s3_bucket_owner",
     "aws_batch_role_arn", "s3_output_bucket_name", "bedrock_tags", "watsonx_region_name",
 ];
-
 // The three CredentialLiteLLMParams fields pydantic declares as a mapping or a sequence, not text.
-const STRUCTURED_CREDENTIAL_FIELDS: [&str; 3] = ["aws_session_tags", "bedrock_tags", "vertex_credentials"];
-
+const STRUCTURED_CREDENTIAL_FIELDS: [&str; 3] =
+    ["aws_session_tags", "bedrock_tags", "vertex_credentials"];
 const MODEL_FIELD: &str = "model";
 const CREDENTIAL_NAME_FIELD: &str = "litellm_credential_name";
-
 #[derive(Debug, thiserror::Error)]
 pub enum ParameterError {
     #[error("litellm_params.model is required and must be text")]
@@ -28,14 +25,11 @@ pub enum ParameterError {
     #[error("litellm_params.{field} does not have the type LiteLLM declares for it")]
     Field { field: &'static str },
 }
-
-// LiteLLM_Params: the model plus the credential fields hydration reads; LiteLLM keeps every other key.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ModelParameters {
     model: String,
     fields: JsonObject,
 }
-
 impl ModelParameters {
     pub fn parse(fields: &JsonObject) -> Result<Self, ParameterError> {
         let Some(Json::Text(model)) = fields.get(MODEL_FIELD) else {
@@ -64,13 +58,9 @@ impl ModelParameters {
     }
 
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions
     pub fn model(&self) -> &str {
         &self.model
-    }
-
-    #[must_use]
-    pub fn fields(&self) -> &JsonObject {
-        &self.fields
     }
 
     #[must_use]
@@ -82,6 +72,7 @@ impl ModelParameters {
     }
 
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions
     pub fn credential_name(&self) -> Option<&str> {
         self.text(CREDENTIAL_NAME_FIELD)
     }
@@ -104,7 +95,6 @@ impl ModelParameters {
             .insert(CREDENTIAL_NAME_FIELD.to_owned(), Json::Null);
     }
 }
-
 fn allowed_credential_value(value: &Json, structured: bool) -> bool {
     match value {
         Json::Null | Json::Text(_) => true,

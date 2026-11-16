@@ -1,0 +1,30 @@
+task: B759
+deviations:
+  - what: A team's listed models come back sorted by name, where LiteLLM returns them in whatever order the Python set it builds yields.
+    why: Python set iteration order is not a contract and differs between runs and interpreters, so the only stable answer is sorted order; the model list as a set is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L153-L180
+  - what: A fallback target written as a parameter object ({"model": "x", "api_key": "..."}) is listed as the model name "x", where LiteLLM returns the whole object inside its list of fallback names.
+    why: A listing must never echo the credentials and parameters a fallback carries, and B309's resolver hands this task model names only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/fallback_event_handlers.py#L459-L480
+  - what: A wildcard or infer_model_from_keys expansion reads the environment from the config's environment_variables section, not from the proxy process's environment.
+    why: betterlite reads configuration only through the config crate, so a variable the operator wants enumerated is declared under environment_variables, usually as an os.environ reference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7835-L7920
+  - what: With check_provider_endpoint enabled a listing returns no provider-endpoint models, because the server's ModelListing answers with an empty list where LiteLLM calls the provider's model-list endpoint.
+    why: provider endpoint catalogues belong to the available-models owner; no production ModelListing has been built yet, and the static catalog path still answers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7835-L7920
+  - what: The server's listing expands wildcards without deployment rows (Slot::authorized_models passes no DeploymentLookup), so a wildcard whose provider pattern lives in a deployment's litellm_params is not expanded from that row, where LiteLLM asks llm_router.get_model_list for it.
+    why: B302 owns the router's team-scoped model rows and the server state has no router seam yet; the listing accepts a DeploymentLookup and the server hands it none until that owner supplies one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L380-L410
+  - what: A deployment row's litellm_params are validated only for a text model and the forty CredentialLiteLLMParams fields, where LiteLLM's pydantic validation covers every LiteLLM_Params field; a row with another field of the wrong type is expanded here and kept unchanged there.
+    why: LiteLLM_Params declares hundreds of request fields owned by other tasks, and the listing reads only the model and the fields hydration may fill.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L346-L352
+kept_bugs:
+  - what: A complete model list drops a wildcard entirely when the team-scoped router lookup finds no deployment for it and the provider lookup knows nothing either; the route disappears instead of staying as a literal.
+    why: LiteLLM removes every wildcard from the list before expanding it, and a setup that scopes a wildcard to one team relies on other teams not seeing it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L404-L410
+  - what: Two deployments answering the same wildcard append every expanded name once per deployment; the final list repeats names.
+    why: LiteLLM appends each deployment's expansion without a final deduplication, and a working setup can list a name once per route it is served by.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L398-L403
+  - what: A key granted all-team-models has its own non-sentinel model entries discarded and replaced by the team's grants, including the nested all-team-models expansion.
+    why: LiteLLM rebuilds the whole list from the team grants; a setup that stacks all-team-models next to a named model relies on the team list winning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L115-L121

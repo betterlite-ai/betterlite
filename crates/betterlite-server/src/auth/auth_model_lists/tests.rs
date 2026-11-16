@@ -40,9 +40,7 @@ fn strings(models: &[&str]) -> Vec<String> {
     models.iter().map(|model| (*model).to_owned()).collect()
 }
 
-fn request<'request>(
-    groups: &'request IndexMap<String, Vec<String>>,
-) -> ListingRequest<'request> {
+fn request<'request>(groups: &'request IndexMap<String, Vec<String>>) -> ListingRequest<'request> {
     ListingRequest {
         key_models: &[],
         team_models: &[],
@@ -105,10 +103,4 @@ async fn listing_reads_authorized_models() {
         body, LISTED,
         "the model-list route lists the same names in the order the listing service returns"
     );
-    for name in &authorized {
-        assert!(
-            body.contains(&format!(r#""id":"{name}""#)),
-            "the route lists the authorized model {name}"
-        );
-    }
 }
