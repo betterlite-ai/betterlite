@@ -1,4 +1,5 @@
-from typing import NotRequired, TypedDict
+from collections.abc import Iterator
+from typing import Final, NotRequired, TypedDict
 
 from litellm.types.utils import ModelResponseStream
 from pydantic import JsonValue, TypeAdapter
@@ -6,7 +7,8 @@ from pydantic import JsonValue, TypeAdapter
 from .views import CHAT, ChunkHandler
 from .wire import ChunkCall, Object
 
-HANDLER: ChunkHandler = CHAT.get_model_response_iterator(iter(()), sync_stream=True, json_mode=False)
+NO_STREAM: Final[Iterator[str]] = iter(())
+HANDLER: ChunkHandler = CHAT.get_model_response_iterator(NO_STREAM, sync_stream=True, json_mode=False)
 
 
 class ChunkDelta(TypedDict, total=False):
