@@ -42,28 +42,26 @@ pub(crate) fn run(input: &Input) -> HelperResult {
     let guardrail = guardrail(&input.guardrail, &mock.base);
     let setup = Setup::new(mock, guardrail)?;
     let status = match input.function {
-        Function::PreCall => response_status(pre_call(input, &setup)?),
-        Function::PostSuccess => response_status(post_success(input, &setup)?),
-        Function::Streaming => response_status(streaming(input, &setup)?),
+        Function::PreCall => response_status(blocking(
+            input,
+            &setup,
+            BlockingOperation::PreCall(call_type(input)?),
+        )?),
+        Function::PostSuccess => response_status(blocking(
+            input,
+            &setup,
+            BlockingOperation::PostSuccess(required(input.result.as_ref(), "result")?.clone()),
+        )?),
+        Function::Streaming => response_status(blocking(
+            input,
+            &setup,
+            BlockingOperation::Streaming(required(input.chunks.as_ref(), "chunks")?.clone()),
+        )?),
         Function::LoggingSync => logging_sync(input, &setup)?,
         Function::LoggingDeferred => logging_deferred(input, &setup)?,
         Function::LoggingAsync => logging_async(input, &setup)?,
     };
     Ok(json!({"scans": setup.mock.scans(), "status": status}))
-}
-
-fn pre_call(input: &Input, setup: &Setup) -> Result<Outcome, Box<HelperError>> {
-    blocking(input, setup, BlockingOperation::PreCall(call_type(input)?))
-}
-
-fn post_success(input: &Input, setup: &Setup) -> Result<Outcome, Box<HelperError>> {
-    let result = required(input.result.as_ref(), "result")?.clone();
-    blocking(input, setup, BlockingOperation::PostSuccess(result))
-}
-
-fn streaming(input: &Input, setup: &Setup) -> Result<Outcome, Box<HelperError>> {
-    let chunks = required(input.chunks.as_ref(), "chunks")?.clone();
-    blocking(input, setup, BlockingOperation::Streaming(chunks))
 }
 
 enum BlockingOperation {
