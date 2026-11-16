@@ -2,11 +2,11 @@ use betterlite_models::model_registration::JsonObject;
 
 use crate::auth_model_lists::parameters::{CREDENTIAL_FIELDS, ModelParameters};
 // credential_accessor.CredentialAccessor reads this list and never writes it; B061 owns loading it.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CredentialSnapshot {
     entries: Vec<CredentialEntry>,
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CredentialEntry {
     pub credential_name: String,
     pub credential_values: JsonObject,
@@ -14,7 +14,7 @@ pub struct CredentialEntry {
 impl CredentialSnapshot {
     #[must_use]
     // ast-grep-ignore: no-one-line-functions
-    pub fn new(entries: Vec<CredentialEntry>) -> Self {
+    pub const fn new(entries: Vec<CredentialEntry>) -> Self {
         Self { entries }
     }
 

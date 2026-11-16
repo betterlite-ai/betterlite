@@ -25,7 +25,7 @@ pub enum ParameterError {
     #[error("litellm_params.{field} does not have the type LiteLLM declares for it")]
     Field { field: &'static str },
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModelParameters {
     model: String,
     fields: JsonObject,

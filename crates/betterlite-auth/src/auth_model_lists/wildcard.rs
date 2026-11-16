@@ -102,13 +102,12 @@ fn requested_provider<'parameters>(
     parameters: Option<&'parameters ModelParameters>,
     wildcard_provider_prefix: &'parameters str,
 ) -> &'parameters str {
-    match parameters {
-        Some(found) => found
+    parameters.map_or(wildcard_provider_prefix, |found| {
+        found
             .model()
             .split_once('/')
-            .map_or(found.model(), |(head, _suffix)| head),
-        None => wildcard_provider_prefix,
-    }
+            .map_or_else(|| found.model(), |(head, _suffix)| head)
+    })
 }
 // a partial suffix (`gemini-*`) filters by its prefix, or prepends it when no model carries it
 fn apply_suffix(wildcard_models: Vec<String>, wildcard_suffix: &str) -> Vec<String> {
