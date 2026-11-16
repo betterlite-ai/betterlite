@@ -1,0 +1,15 @@
+task: B538
+deviations:
+  - what: A speed whose int((speed - 1.0) * 100) is not finite or does not fit in an i64 fails with a typed SpeedOutOfRange error instead of producing a rate string.
+    why: LiteLLM raises Python's OverflowError for inf and ValueError for nan, and turns a huge finite speed into an unbounded percent string; no working setup can rely on either, and the typed error names the speed while the mapped parameters stay unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L160-L161
+  - what: An api_base whose host the url crate cannot parse, such as https://eastus.api.cognitive.microsoft.com:badport, is treated as a custom base, so /cognitiveservices/v1 is appended to the original string.
+    why: LiteLLM reads the hostname past an invalid port with urlparse and rewrites the base to the regional TTS endpoint; betterlite rejects the malformed URL rather than acting on a base no client can reach. A base with a valid scheme and port is unaffected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L333-L349
+kept_bugs:
+  - what: style, styledegree and role are interpolated into the mstts:express-as attributes literally, without XML escaping or validation, so a value containing a quote yields invalid SSML.
+    why: Setups pass Azure style names such as cheerful and role names such as Senior_Male, which are also what the attribute values are meant to be; escaping them would change every request, and the values come from the caller's own kwargs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L185-L194
+  - what: SSML detection is a case-sensitive substring check for <speak> or "<speak ", not an XML validity check, so any text containing either is passed through unchanged even when it is not valid SSML.
+    why: Setups send SSML built elsewhere and rely on it reaching Azure byte for byte, and plain text that happens to contain the substring is not something a working setup sends on purpose.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L377-L383
