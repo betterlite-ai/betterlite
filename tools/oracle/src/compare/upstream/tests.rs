@@ -5,11 +5,12 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 use serde_json::{Map, Value};
 
-use crate::case::{BodyKind, Compare, Ignore, RequestBody};
+use crate::case::Compare;
 use crate::compare::compare;
 use crate::http::Response;
-use crate::mock::ProviderRequest;
-use crate::multipart_oracle::request::request_body;
+use betterlite_oracle_runner::case::{BodyKind, Ignore, RequestBody};
+use betterlite_oracle_runner::mock::ProviderRequest;
+use betterlite_oracle_runner::multipart_oracle::request::decode_request_body;
 
 const TARGETS_DIFFER: &str = "provider request targets differ";
 const BODIES_DIFFER: &str = "provider request bodies differ";
@@ -113,7 +114,7 @@ fn upload(parts: Value) -> ProviderRequest {
     let RequestBody::Raw {
         content_type,
         bytes,
-    } = request_body(&Value::Object(document), BodyKind::Multipart).unwrap()
+    } = decode_request_body(&Value::Object(document), BodyKind::Multipart).unwrap()
     else {
         panic!("a multipart specification encodes to raw bytes");
     };

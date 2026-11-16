@@ -1,5 +1,3 @@
-use crate::compare::helper::HelperError;
-use crate::helpers::{Helper, HelperResult};
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogLevel, LogRecord, LogSink, PrePostEnv,
@@ -16,6 +14,8 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use indexmap::IndexMap;
@@ -251,10 +251,10 @@ fn dispatch(
         now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
             .map_err(|error| failure(error.to_string()))?,
     };
-    Ok(invoke(input, state, &env))
+    Ok(invoke_hook(input, state, &env))
 }
 
-fn invoke(input: &Input, state: &mut LoggingState, env: &PrePostEnv<'_>) -> Value {
+fn invoke_hook(input: &Input, state: &mut LoggingState, env: &PrePostEnv<'_>) -> Value {
     if matches!(input.action, Action::Post) {
         let call = PostCall {
             original_response: input.original_response.clone(),

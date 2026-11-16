@@ -1,4 +1,6 @@
 use betterlite_models::model_metadata_projection::project;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
@@ -12,18 +14,18 @@ pub(crate) struct Input {
     entry: Box<RawValue>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let projected = project(&input.key, &input.model, &input.provider, &input.entry)
             .map_err(|error| helper_error(error.to_string()))?;
         serde_json::from_str(projected.get()).map_err(|error| helper_error(error.to_string()))
     }
 }
 
-fn helper_error(message: String) -> Box<crate::helpers::HelperError> {
-    let error = crate::helpers::HelperError {
+fn helper_error(message: String) -> Box<HelperError> {
+    let error = HelperError {
         class: "ProjectionError".to_owned(),
         status: None,
         error_type: None,

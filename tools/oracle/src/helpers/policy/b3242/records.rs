@@ -27,7 +27,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use super::helper_error;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]

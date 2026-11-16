@@ -1,4 +1,6 @@
 use betterlite_db::daily_activity_contracts;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::value::{RawValue, to_raw_value};
 use std::collections::BTreeMap;
@@ -12,16 +14,16 @@ macro_rules! contracts {
         #[derive(Deserialize)]
         #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
         enum Step { $($variant($input),)+ }
-        impl crate::helpers::Helper for Op {
+        impl Helper for Op {
             type Input = Input;
-            fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+            fn run(input: &Self::Input) -> HelperResult {
                 let values: Result<BTreeMap<_, _>, _> = input.steps.iter().map(|(name, step)| {
                     let value = match step {
                         $(Step::$variant(value) => probe::<_, $output>(value),)+
                     }?;
                     Ok((name, value))
                 }).collect();
-                values.and_then(serde_json::to_value).map_err(|error| Box::new(crate::helpers::HelperError {
+                values.and_then(serde_json::to_value).map_err(|error| Box::new(HelperError {
                     class: "ValueError".to_owned(), status: None, error_type: None,
                     param: None, code: None, message: error.to_string(),
                 }))

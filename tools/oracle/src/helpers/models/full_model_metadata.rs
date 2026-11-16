@@ -7,7 +7,8 @@ use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_metadata_resolution::hf_config::HfConfigClient;
 use serde_json::Value;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod fixture;
 mod input;
@@ -18,10 +19,11 @@ mod tests;
 use fixture::FixtureContext;
 use input::{Input, Step};
 use sources::{CallLog, NoConfig, RecordingDynamic};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -111,7 +113,7 @@ fn block_on<FutureType>(future: FutureType) -> Result<FutureType::Output, Box<He
 where
     FutureType: Future,
 {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|source| error_box("FixtureError", source.to_string()))?;

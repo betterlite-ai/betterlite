@@ -15,7 +15,7 @@ use betterlite_cli::token_records::record::CliTokenRecord;
 use betterlite_logging::private_json::files::StagedFile;
 use secrecy::SecretString;
 use serde_json::Value;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub(crate) const CLOCK_SECONDS: i64 = 2_000_000_000;
 
@@ -97,8 +97,8 @@ impl SecretVault for DisabledVault {
 pub(crate) struct FixedClock;
 
 impl Clock for FixedClock {
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
+    fn now(&self) -> Instant {
+        Instant::now()
     }
 }
 

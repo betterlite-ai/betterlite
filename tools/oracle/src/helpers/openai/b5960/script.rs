@@ -4,7 +4,8 @@ use betterlite_openai::sagemaker_completion::response::TextTokenCounter;
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::hub::{Hub, builtin_entries};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use tokio::runtime::{Builder, Runtime};
 
 pub(super) const FIXED_NOW: i64 = 1_700_000_000;
 pub(super) const FIXED_CREATED: u64 = 1_700_000_000;
@@ -25,8 +26,8 @@ pub(super) fn factory() -> PromptFactory {
     }
 }
 
-pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|source| failure("HelperError", None, source.to_string()))

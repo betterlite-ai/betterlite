@@ -8,14 +8,15 @@ use serde_json::Value;
 use tokio::runtime::Builder;
 
 use crate::OracleError;
-use crate::case::{Ignore, validate_ignores};
 use crate::cli::Options;
-use crate::compare::{Difference, first_difference, remove_pointer};
 use crate::oracle_comparison_contracts::{ExpectedDifference, NumericRule, validate};
-use crate::process::sync_litellm;
 use crate::router_probes::{ProbeOperation, Reply, Request, Sample, comparison};
 use crate::routing_probe_ipc::child::{ProbeCommand, run_bounded};
 use crate::routing_probe_ipc::{BUILD_DEADLINE, OPERATION_DEADLINE, ProbeClock, parse_message};
+use betterlite_oracle_runner::case::{Ignore, validate_ignores};
+use betterlite_oracle_runner::compare::Difference;
+use betterlite_oracle_runner::compare::value::{first_difference, remove_pointer};
+use betterlite_oracle_runner::helpers::sync_litellm;
 
 mod tests;
 
@@ -103,7 +104,7 @@ pub(crate) fn run_cases(options: &Options, cases: &[ProbeCase]) -> Result<Vec<bo
         build_probe().await?;
         let mut outcomes = Vec::with_capacity(cases.len());
         for case in cases {
-            outcomes.push(run_case(options, &commands, case).await?);
+            outcomes.push(run_component_case(options, &commands, case).await?);
         }
         Ok(outcomes)
     })
@@ -120,7 +121,7 @@ async fn build_probe() -> Result<(), OracleError> {
     Ok(())
 }
 
-async fn run_case(
+async fn run_component_case(
     options: &Options,
     commands: &Commands,
     case: &ProbeCase,

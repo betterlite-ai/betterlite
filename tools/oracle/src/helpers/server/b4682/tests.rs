@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::{Input, Op};
+use betterlite_oracle_helper_api::helper::Helper;
 
 #[test]
 fn override_input_uses_the_production_service() {
@@ -11,6 +12,6 @@ fn override_input_uses_the_production_service() {
         "overrides": {"search": "safe"}
     });
     let decoded: Input = serde_json::from_value(input).expect("typed override input");
-    let result = <Op as crate::helpers::Helper>::run(&decoded).expect("override succeeds");
+    let result = <Op as Helper>::run(&decoded).expect("override succeeds");
     assert_eq!(result[0]["description"], "safe");
 }

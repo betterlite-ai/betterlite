@@ -22,8 +22,11 @@ use serde_json::{Value, json};
 
 use super::views::{fixture_response, response_view};
 use super::{ProjectionFixture, ProviderScenario, ResponseSpec, SelectorFixture};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::sync::Mutex;
 
-pub(super) fn assembled_json(cases: &[ProviderScenario]) -> crate::helpers::HelperResult {
+pub(super) fn assembled_json(cases: &[ProviderScenario]) -> HelperResult {
     let redactor = match Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH) {
         Ok(redactor) => redactor,
         Err(error) => return Err(failure(error.to_string())),
@@ -46,7 +49,7 @@ fn assembled_view(scenario: &ProviderScenario, redactor: &Redactor) -> Value {
     };
     let projection = FixtureProjection {
         mode: scenario.projection,
-        calls: std::sync::Mutex::new(Vec::new()),
+        calls: Mutex::new(Vec::new()),
     };
     let context = ProviderMetadataContext {
         custom_llm_provider: scenario.custom_llm_provider.as_deref(),
@@ -60,8 +63,8 @@ fn assembled_view(scenario: &ProviderScenario, redactor: &Redactor) -> Value {
     json!({"response": response_view(&response), "calls": calls})
 }
 
-fn failure(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn failure(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
@@ -160,7 +163,7 @@ impl JsonProviderProjection for NoJsonProviders {
 
 struct FixtureProjection {
     mode: ProjectionFixture,
-    calls: std::sync::Mutex<Vec<Value>>,
+    calls: Mutex<Vec<Value>>,
 }
 
 impl ProviderMetadataProjection for FixtureProjection {

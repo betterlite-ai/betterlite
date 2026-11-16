@@ -6,6 +6,8 @@ use betterlite_db::{
         validator::set_model_info,
     },
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, Serialize};
 
 pub(crate) struct Op;
@@ -55,12 +57,12 @@ struct Validated {
     error: Option<String>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let outputs = input.calls.iter().map(run_call).collect::<Vec<_>>();
         serde_json::to_value(outputs).map_err(|source| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "Output".to_owned(),
                 status: None,
                 error_type: None,

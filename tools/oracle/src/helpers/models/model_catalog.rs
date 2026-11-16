@@ -1,7 +1,8 @@
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_models::catalog::{
     BundledCatalog, CatalogError, ModelCatalog, ModelMetadataProjection, UnknownFields,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json, value::RawValue};
 use std::collections::BTreeMap;
@@ -31,7 +32,7 @@ enum Operation {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Input) -> HelperResult {
