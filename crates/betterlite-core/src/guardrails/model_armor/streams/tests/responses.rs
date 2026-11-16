@@ -220,11 +220,11 @@ fn response_text_joins_texts_then_encoded_calls_of_every_item() {
         parts: vec![
             OutputParts {
                 texts: vec!["one".to_owned()],
-                encoded_calls: Vec::new(),
+                encoded_calls: vec!["{\"a\":1}".to_owned()],
             },
             OutputParts {
                 texts: vec!["two".to_owned()],
-                encoded_calls: vec!["{\"a\":1}".to_owned()],
+                encoded_calls: Vec::new(),
             },
         ],
         ..Setup::default()

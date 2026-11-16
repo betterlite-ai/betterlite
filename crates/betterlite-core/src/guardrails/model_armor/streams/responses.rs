@@ -24,22 +24,24 @@ const FIELD_ATTRS: [&str; 5] = [
     "summary_index",
 ];
 
-// LiteLLM's _responses_api_response_text: every output item's text, then each tool call it carries.
+// LiteLLM's _responses_api_response_text: every output item's text first, then every tool call the turn carries.
 #[must_use]
 pub fn response_text<W: StreamWire>(wire: &W, body: &GuardrailValue) -> String {
     let Some(GuardrailValue::Array(items)) = field(body, "output") else {
         return String::new();
     };
     let mut text = String::new();
+    let mut calls = String::new();
     for item in items {
         let parts = wire.output_parts(item);
         for part in parts.texts {
             text.push_str(&part);
         }
         for call in parts.encoded_calls {
-            text.push_str(&call);
+            calls.push_str(&call);
         }
     }
+    text.push_str(&calls);
     text
 }
 
