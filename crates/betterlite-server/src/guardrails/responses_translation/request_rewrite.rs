@@ -158,10 +158,10 @@ impl Collected {
         }
     }
 
-    fn collect_items(&mut self, items: &[GuardrailValue], flags: &ScopeFlags) {
+    fn collect_items(&mut self, items: &[GuardrailValue], flags: ScopeFlags) {
         for (index, item) in items.iter().enumerate() {
             if let GuardrailValue::Object(message) = item
-                && !role_out_of_guardrail_scope(&message_role(item), flags)
+                && !role_out_of_guardrail_scope(&message_role(item), &flags)
             {
                 self.collect_message(message, index);
             }
@@ -176,7 +176,7 @@ impl Collected {
         };
         match input_data {
             GuardrailValue::Text(text) => self.texts.push(text.clone()),
-            GuardrailValue::Array(items) => self.collect_items(items, &flags),
+            GuardrailValue::Array(items) => self.collect_items(items, flags),
             GuardrailValue::Null
             | GuardrailValue::Boolean(_)
             | GuardrailValue::SignedInteger(_)

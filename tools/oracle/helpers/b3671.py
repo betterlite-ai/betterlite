@@ -125,6 +125,7 @@ def recording_guardrail(
         "calls": calls,
         "reply": reply,
         "skip_system_message_in_guardrail": skip_system,
+        "records_own_guardrail_information": True,
     }
     recording_class = type("Recording", (GUARDRAIL_BASE,), members)
     guardrail_class = GUARDRAIL_CLASS.validate_python(recording_class)
