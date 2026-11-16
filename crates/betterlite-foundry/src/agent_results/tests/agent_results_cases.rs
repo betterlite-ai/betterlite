@@ -296,11 +296,14 @@ fn message_delta_stream() {
     block_on(async {
         let spaced = concat!(
             "  event: thread.message.delta  \n\n",
-            "data:  {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"Hel\"}}]}}  \n\n",
+            "data:  {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"Hello\"}}]}}  \n\n",
             "data: [DONE]\n\n",
         );
         let chunks = chunks_of(stream_for(spaced).await).await;
-        assert_eq!(chunks, vec![delta_chunk("Hel"), terminal_chunk(None, None)]);
+        assert_eq!(
+            chunks,
+            vec![delta_chunk("Hello"), terminal_chunk(None, None)]
+        );
 
         let compact = concat!(
             "event: thread.message.delta\n\n",

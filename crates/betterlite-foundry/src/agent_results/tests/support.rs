@@ -132,7 +132,10 @@ pub(super) fn terminal_chunk(
     }
 }
 
-pub(super) fn block_on<Output>(future: impl Future<Output = Output>) -> Output {
+pub(super) fn block_on<Output, Fut>(future: Fut) -> Output
+where
+    Fut: Future<Output = Output>,
+{
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -275,9 +278,10 @@ impl<Inner: Subscriber> Layer<Inner> for Captured {
     }
 }
 
-pub(super) async fn with_warnings<Output>(
-    future: impl Future<Output = Output>,
-) -> (Output, Vec<String>) {
+pub(super) async fn with_warnings<Output, Fut>(future: Fut) -> (Output, Vec<String>)
+where
+    Fut: Future<Output = Output>,
+{
     let captured = Captured::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
     let guard = tracing::subscriber::set_default(subscriber);
