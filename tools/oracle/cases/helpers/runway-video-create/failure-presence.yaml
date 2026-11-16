@@ -1,0 +1,58 @@
+kind: helper
+name: runway-video-create-failure-presence
+call:
+  runway_video_create:
+    operation: reply
+    params:
+      model: gen4_turbo
+      calls:
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","status":"SUCCEEDED"}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","status":"SUCCEEDED","failureCode":""}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","failure":"boom"}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","status":"RUNNING","progress":0.5}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","status":"failed","failure":"boom","failureCode":"E1"}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","failure":null,"failureCode":null}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","status":"CANCELLED"}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","status":"THROTTLED"}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","status":"weird"}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","createdAt":"2025-11-11T21:48:50.448Z","completedAt":"2025-11-11T23:48:50+02:00"}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","createdAt":"2025-11-11T21:48:50"}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","createdAt":"yesterday","completedAt":null}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","status":"SUCCEEDED","output":["https://o.test/a.mp4","https://o.test/b.mp4"]}'
+        - provider: runwayml
+          request_data: {}
+          body: '{"id":"task_1","status":"PENDING"}'
+        - provider: runwayml
+          request_data: {}
+          body: '{"status":"PENDING"}'
+        - provider: ''
+          request_data: {}
+          body: '{"id":"task_1","status":"PENDING"}'
+env: {TZ: UTC}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: fal-image-families-reply-metadata
+call:
+  fal_image_families:
+    operation: family_reply_metadata
+    families: [imagen, nano_banana, seedream, dreamina]
+    replies:
+      - status: 200
+        headers: {x-request-id: req-1}
+        body: '{"images": ["https://a.test/1.png", {"url": "https://b.test/2.png", "b64_json": "aGk=", "width": 640, "height": 480, "content_type": "image/webp"}], "seed": 42, "timings": {"inference": 2}, "has_nsfw_concepts": [false]}'
+        existing: []
+env: {}
+compare:
+  ignore: []
