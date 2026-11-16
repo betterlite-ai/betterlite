@@ -79,6 +79,10 @@ description: >-
   and prepared.rs as they are.
 scope:
   paths:
+  - "tools/oracle/src/helpers/provider/Cargo.toml"
+  - "tools/oracle/src/helpers/openai/threads.rs"
+  - "tools/oracle/helpers/openai_threads.py"
+  - "tools/oracle/cases/**"
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-core/Cargo.toml
