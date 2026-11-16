@@ -1,14 +1,14 @@
 id: B1539
 milestone: M3 providers
 title: Translate Fal single-image chat queries and usage replies
-status: todo
+status: done
 depends_on: [B004, B1525, B206, B171]
 file: tasks/B1539-fal-vision-chat.yaml
 covers:
   - "litellm/llms/fal_ai/chat/**"
 parent: B046
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2034
