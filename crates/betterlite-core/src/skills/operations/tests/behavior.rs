@@ -41,11 +41,14 @@ fn create_forwards_identity_metadata_and_caller_arguments() {
             display_title: Some("Title"),
             description: Some("Desc"),
             instructions: Some("Do"),
+            files: None,
+            file_content: None,
+            file_name: None,
+            file_type: None,
             metadata: Some(&metadata),
             user_id: Some("bob"),
             principal: Some(&alice),
             litellm_call_id: Some("call-9"),
-            ..HostedSkillCreation::default()
         };
         let skill = ops.create_skill(&mut logging, creation).await.unwrap();
         assert_eq!(skill.id, support::SKILL_ID);
@@ -85,9 +88,17 @@ fn create_encodes_nested_metadata_as_row_json() {
         metadata.insert("note".to_owned(), Json::Object(nested));
         let alice = principal("alice");
         let creation = HostedSkillCreation {
+            display_title: None,
+            description: None,
+            instructions: None,
+            files: None,
+            file_content: None,
+            file_name: None,
+            file_type: None,
             metadata: Some(&metadata),
+            user_id: None,
             principal: Some(&alice),
-            ..HostedSkillCreation::default()
+            litellm_call_id: None,
         };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
@@ -107,11 +118,17 @@ fn create_uses_the_first_uploaded_tuple_and_ignores_later_ones() {
         let files = uploads();
         let alice = principal("alice");
         let creation = HostedSkillCreation {
+            display_title: None,
+            description: None,
+            instructions: None,
             files: Some(&files),
+            file_content: None,
             file_name: Some("explicit.zip"),
             file_type: Some("application/x-explicit"),
+            metadata: None,
+            user_id: None,
             principal: Some(&alice),
-            ..HostedSkillCreation::default()
+            litellm_call_id: None,
         };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
@@ -130,12 +147,17 @@ fn create_keeps_explicit_bytes_over_the_uploaded_tuples() {
         let files = uploads();
         let alice = principal("alice");
         let creation = HostedSkillCreation {
+            display_title: None,
+            description: None,
+            instructions: None,
             files: Some(&files),
             file_content: Some(b"explicit"),
             file_name: Some("explicit.zip"),
             file_type: Some("application/x-explicit"),
+            metadata: None,
+            user_id: None,
             principal: Some(&alice),
-            ..HostedSkillCreation::default()
+            litellm_call_id: None,
         };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
@@ -154,12 +176,17 @@ fn create_lets_the_tuples_replace_empty_explicit_bytes() {
         let files = uploads();
         let alice = principal("alice");
         let creation = HostedSkillCreation {
+            display_title: None,
+            description: None,
+            instructions: None,
             files: Some(&files),
             file_content: Some(b""),
             file_name: Some("explicit.zip"),
             file_type: Some("application/x-explicit"),
+            metadata: None,
+            user_id: None,
             principal: Some(&alice),
-            ..HostedSkillCreation::default()
+            litellm_call_id: None,
         };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
@@ -182,11 +209,17 @@ fn create_keeps_a_null_mime_type_from_a_three_element_tuple() {
         )];
         let alice = principal("alice");
         let creation = HostedSkillCreation {
+            display_title: None,
+            description: None,
+            instructions: None,
             files: Some(&files),
+            file_content: None,
             file_name: Some("explicit.zip"),
             file_type: Some("application/x-explicit"),
+            metadata: None,
+            user_id: None,
             principal: Some(&alice),
-            ..HostedSkillCreation::default()
+            litellm_call_id: None,
         };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
@@ -204,11 +237,17 @@ fn create_ignores_an_empty_tuple_list() {
         let files: [SkillUpload<'_>; 0] = [];
         let alice = principal("alice");
         let creation = HostedSkillCreation {
+            display_title: None,
+            description: None,
+            instructions: None,
             files: Some(&files),
+            file_content: None,
             file_name: Some("explicit.zip"),
             file_type: Some("application/x-explicit"),
+            metadata: None,
+            user_id: None,
             principal: Some(&alice),
-            ..HostedSkillCreation::default()
+            litellm_call_id: None,
         };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
@@ -227,8 +266,16 @@ fn create_updates_the_call_context_before_the_store_fails() {
         let alice = principal("alice");
         let creation = HostedSkillCreation {
             display_title: Some("Title"),
+            description: None,
+            instructions: None,
+            files: None,
+            file_content: None,
+            file_name: None,
+            file_type: None,
+            metadata: None,
+            user_id: None,
             principal: Some(&alice),
-            ..HostedSkillCreation::default()
+            litellm_call_id: None,
         };
         let outcome = ops.create_skill(&mut logging, creation).await;
         assert!(matches!(
@@ -268,8 +315,17 @@ fn create_forwards_user_id_when_the_caller_has_no_principal() {
         let ops = support::ops(repository.clone());
         let mut logging = support::logging_state();
         let creation = HostedSkillCreation {
+            display_title: None,
+            description: None,
+            instructions: None,
+            files: None,
+            file_content: None,
+            file_name: None,
+            file_type: None,
+            metadata: None,
             user_id: Some("bob"),
-            ..HostedSkillCreation::default()
+            principal: None,
+            litellm_call_id: None,
         };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
