@@ -16,7 +16,6 @@ use crate::roi_cache::repositories::{RepositoryBatch, read_repositories};
 use crate::roi_cache::store::{ReportRepository, previous_report};
 use crate::roi_estimator::{CompletionCaller, Estimator};
 use crate::roi_github::client::GitHub;
-use crate::roi_github::models::GitHubPullListItem;
 use crate::roi_github::transport::Transport;
 use crate::roi_spend::SpendReader;
 
@@ -64,7 +63,14 @@ where
     context.status.apply(StatusChange::Repositories);
     let repositories =
         read_repositories(context.github, &context.settings.repos, start, end).await?;
-    let plan = plan_estimates(context, repository, &repositories).await?;
+    let previous = previous_report(repository)
+        .await
+        .map_err(RunError::Repository)?;
+    let plan = index_pulls(context, previous, &repositories)
+        .await
+        .map_err(RunError::Key)?;
+    let total = i64::try_from(plan.queue.len()).map_err(RunError::Count)?;
+    context.status.apply(StatusChange::Estimates { total });
     let processed = process_pulls(context, repository, &plan).await?;
     let report = build_report(ReportParts {
         settings: context.settings,
@@ -82,43 +88,15 @@ where
     })
 }
 
-async fn plan_estimates<T, Repository>(
+async fn index_pulls<T: Transport>(
     context: &RunContext<'_, T>,
-    repository: &Repository,
-    repositories: &RepositoryBatch,
-) -> Result<EstimatePlan, RunError<Repository::Error>>
-where
-    T: Transport,
-    Repository: ReportRepository + Sync,
-{
-    let previous = previous_report(repository)
-        .await
-        .map_err(RunError::Repository)?;
-    let plan = index_pulls(
-        context.settings,
-        context.models,
-        previous,
-        &repositories.queue,
-        context.capabilities,
-    )
-    .await
-    .map_err(RunError::Key)?;
-    let total = i64::try_from(plan.queue.len()).map_err(RunError::Count)?;
-    context.status.apply(StatusChange::Estimates { total });
-    Ok(plan)
-}
-
-async fn index_pulls(
-    settings: &ROISettings,
-    models: Option<&[EstimatorModel]>,
     previous: Option<ROIReport>,
-    queue: &[(String, GitHubPullListItem)],
-    capabilities: &Arc<dyn CapabilityLookup>,
+    repositories: &RepositoryBatch,
 ) -> Result<EstimatePlan, JsonError> {
     let mut predicates = SessionCapabilities {
-        lookup: capabilities.as_ref(),
+        lookup: context.capabilities.as_ref(),
     };
-    let estimate_context = cache_context(settings, models, &mut predicates).await?;
+    let estimate_context = cache_context(context.settings, context.models, &mut predicates).await?;
     let previous_pulls = previous.map_or_else(BTreeMap::new, |report| {
         let mut map = BTreeMap::new();
         for pull in report.pulls {
@@ -128,9 +106,9 @@ async fn index_pulls(
         }
         map
     });
-    let mut indexed = Vec::with_capacity(queue.len());
-    for (position, (repo, pull)) in queue.iter().enumerate() {
-        let key = cache_key(settings, &estimate_context, repo, pull)?;
+    let mut indexed = Vec::with_capacity(repositories.queue.len());
+    for (position, (repo, pull)) in repositories.queue.iter().enumerate() {
+        let key = cache_key(context.settings, &estimate_context, repo, pull)?;
         indexed.push(IndexedPull {
             position,
             repo: repo.clone(),
