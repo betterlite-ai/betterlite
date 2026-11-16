@@ -43,6 +43,10 @@ litellm_settings:
   check_provider_endpoint: true
 ";
 
+const REDIRECT_CONFIG: &str = "model_list:
+  - {model_name: '*', litellm_params: {model: 'openai/*'}}
+";
+
 fn loaded(source: &str) -> betterlite_config::types::Config {
     ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
@@ -220,5 +224,24 @@ fn listing_provider_endpoint_check_lists_nothing() {
     assert!(
         expanded.is_empty(),
         "no provider endpoint catalogue is built, so an endpoint check lists no models"
+    );
+}
+
+#[test]
+fn listing_has_no_deployment_rows() {
+    let state = state_for(&loaded(REDIRECT_CONFIG));
+    let groups = IndexMap::new();
+    let granted_wildcard = strings(&["*"]);
+    let expanded = state
+        .auth_model_lists
+        .authorized_models(&listing_request(
+            &granted_wildcard,
+            &groups,
+            ListingFlags::default(),
+        ))
+        .expect("a wildcard without deployment rows always lists");
+    assert!(
+        expanded.is_empty(),
+        "the slot hands the listing no deployment rows, so a row's provider wildcard is never expanded"
     );
 }
