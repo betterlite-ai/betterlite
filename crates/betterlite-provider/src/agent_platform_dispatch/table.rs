@@ -7,7 +7,7 @@ use super::handler::ChatCompletionHandler;
 use super::langflow::complete_langflow;
 use super::langgraph::complete_langgraph;
 
-// LiteLLM's dispatch arms for the three agent platforms; without the skip, rustfmt puts one tag per line and passes clippy's 40-line limit
+// LiteLLM's dispatch arms for the three agent platforms; the skip keeps the 113-variant no-op arm short enough for clippy's 40-line limit
 #[rustfmt::skip]
 #[must_use]
 pub fn dispatch<R>(
