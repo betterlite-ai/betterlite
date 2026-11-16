@@ -143,10 +143,10 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
         &self,
         call: &ContainerFileHttpCall<'_, Source>,
     ) -> Result<ContainerFileReply, ContainerFileHttpError> {
-        match pin!(self.lookup_and_run::<BlockingKind>(call))
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop()))
-        {
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
+        let mut running = pin!(self.lookup_and_run::<BlockingKind>(call));
+        match running.as_mut().poll(&mut context) {
             Poll::Ready(outcome) => outcome,
             Poll::Pending => Err(ContainerFileHttpError::Suspended),
         }
@@ -183,11 +183,12 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
     where
         Mode: Channel<Source>,
     {
-        let client = Selected::choose(Mode::supplied(call), || {
-            Mode::build(&self.clients, params.ssl_verify.as_ref())
-        })?;
+        let ssl_verify = params.ssl_verify.as_ref();
+        let supplied = Mode::supplied(call);
+        let client = Selected::choose(supplied, || Mode::build(&self.clients, ssl_verify))?;
         let request = self.prepare(endpoint, call, params)?;
-        let reply = Mode::send(client.get(), &request).await?;
+        let pending = Mode::send(client.get(), &request);
+        let reply = pending.await?;
         transform_reply(call.config, endpoint, &reply)
     }
 
