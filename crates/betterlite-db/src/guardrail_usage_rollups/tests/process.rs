@@ -133,7 +133,7 @@ async fn requeues_a_retry_safe_upsert_failure_for_the_next_flush() {
     let payload = from_json(METRICS_ONLY);
     let failing = FakeSink::failing_upserts(vec![Some(RETRY_SAFE); 4]);
     process_guardrail_usage(
-        &[payload.clone()],
+        std::slice::from_ref(&payload),
         &pending,
         &failing,
         limits(1_000_000, 100),
@@ -228,13 +228,13 @@ async fn keeps_the_pending_queue_untouched_for_an_empty_batch() {
 
 #[test]
 fn keeps_the_first_policy_id_of_a_request_and_guardrail() {
-    let payload = from_json(&format!(
-        r#"{{"request_id": "req-1", "startTime": "2026-01-02T03:04:05Z", "metadata": {{"guardrail_information": [
-            {{"guardrail_id": "g1", "policy_id": null}},
-            {{"guardrail_id": "g1", "policy_id": "p1"}},
-            {{"guardrail_id": "g1", "policy_id": "p2"}}
-        ]}}}}"#
-    ));
+    let payload = from_json(
+        r#"{"request_id": "req-1", "startTime": "2026-01-02T03:04:05Z", "metadata": {"guardrail_information": [
+            {"guardrail_id": "g1", "policy_id": null},
+            {"guardrail_id": "g1", "policy_id": "p1"},
+            {"guardrail_id": "g1", "policy_id": "p2"}
+        ]}}"#,
+    );
     let rows = index_rows::build(&[payload]);
     assert_eq!(rows.len(), 1);
     assert_eq!(

@@ -165,10 +165,8 @@ impl GuardrailRollupSink for FakeSink {
     ) -> RollupFuture<'rows, FakeFailure> {
         Box::pin(async move {
             lock(&self.index_calls).push(rows.to_vec());
-            match lock(&self.index_failures).pop_front() {
-                Some(failure) => Err(failure),
-                None => Ok(()),
-            }
+            let failure = lock(&self.index_failures).pop_front();
+            failure.map_or(Ok(()), Err)
         })
     }
 
@@ -221,9 +219,9 @@ impl CapturedLogs {
 }
 
 impl Write for CapturedLogs {
-    fn write(&mut self, buffer: &[u8]) -> IoResult<usize> {
-        lock(&self.0).extend_from_slice(buffer);
-        Ok(buffer.len())
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        lock(&self.0).extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> IoResult<()> {
