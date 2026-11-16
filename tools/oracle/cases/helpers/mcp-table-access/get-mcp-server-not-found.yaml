@@ -1,0 +1,12 @@
+kind: helper
+name: mcp-table-access-get-mcp-server-not-found
+call:
+  b4711:
+    function: get_server
+    salt_key: b4711-salt
+    server_id: srv-missing
+    rows:
+      - {server_id: srv-good, server_name: good, transport: sse, approval_status: active}
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}

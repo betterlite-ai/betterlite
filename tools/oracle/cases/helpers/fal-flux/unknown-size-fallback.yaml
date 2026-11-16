@@ -1,0 +1,36 @@
+kind: helper
+name: fal-flux-unknown-size-fallback
+call:
+  fal_flux:
+    operation: unknown_size_fallback
+    profiles: [ultra, pro_v11, schnell, dev]
+    sizes:
+      - "auto"
+      - "AUTO"
+      - "1024X768"
+      - "10x20x30"
+      - "1024-x-768"
+      - "10x"
+      - "x"
+      - ""
+      - "axb"
+      - "1_0x2_0"
+      - " 10x20 "
+      - "+10x20"
+      - "-5x+6"
+      - "-1024x768"
+      - "-1024x-768"
+      - "1024x0"
+      - "1024-x-0"
+      - "0x100"
+    image_sizes:
+      - "1024x768"
+      - "1500x1000"
+      - {width: 512}
+      - 7
+      - true
+      - null
+      - [1]
+env: {}
+compare:
+  ignore: []
