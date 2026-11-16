@@ -37,7 +37,7 @@ pub(crate) struct FixtureTransport {
 }
 
 impl FixtureTransport {
-    pub(crate) fn new(verdict: Verdict, polled: Arc<AtomicBool>) -> Self {
+    pub(crate) const fn new(verdict: Verdict, polled: Arc<AtomicBool>) -> Self {
         Self {
             verdict: Mutex::new(Some(verdict)),
             posts: Mutex::new(Vec::new()),

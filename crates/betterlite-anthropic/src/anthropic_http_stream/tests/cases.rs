@@ -79,7 +79,12 @@ async fn async_stream_post(supplied: bool) {
     .make_call()
     .await
     .expect("a 200 reply opens the stream");
-    assert_served(supplied, &supplied_client, &module_async, &module_blocking);
+    let (served, idle) = if supplied {
+        (&supplied_client, [&module_async, &module_blocking])
+    } else {
+        (&module_async, [&supplied_client, &module_blocking])
+    };
+    assert_served(served, &idle);
     assert!(!opened.sync_stream);
     assert_eq!(header(&opened.headers, "x-request-id"), Some("req-1"));
     let stream = &opened.completion_stream;
@@ -114,7 +119,12 @@ async fn sync_stream_post(supplied: bool) {
     .make_sync_call()
     .await
     .expect("a 200 reply opens the stream");
-    assert_served(supplied, &supplied_client, &module_async, &module_blocking);
+    let (served, idle) = if supplied {
+        (&supplied_client, [&module_async, &module_blocking])
+    } else {
+        (&module_blocking, [&supplied_client, &module_async])
+    };
+    assert_served(served, &idle);
     assert!(opened.sync_stream);
     assert_eq!(
         &opened
@@ -132,22 +142,14 @@ async fn sync_stream_post(supplied: bool) {
     );
 }
 
-fn assert_served(
-    supplied: bool,
-    supplied_client: &FixtureTransport,
-    module_async: &FixtureTransport,
-    module_blocking: &FixtureTransport,
-) {
-    let (served, untouched) = if supplied {
-        (supplied_client.posts(), module_async.posts())
-    } else {
-        (module_async.posts(), supplied_client.posts())
-    };
-    assert!(untouched.is_empty());
-    assert!(module_blocking.posts().is_empty());
-    assert!(!supplied_client.polled());
-    assert!(!module_async.polled());
-    let post = served
+fn assert_served(served: &FixtureTransport, idle: &[&FixtureTransport]) {
+    for client in idle {
+        assert!(client.posts().is_empty());
+        assert!(!client.polled());
+    }
+    assert!(!served.polled());
+    let posts = served.posts();
+    let post = posts
         .first()
         .expect("the selected client receives the post");
     assert_eq!(post.url.as_str(), API_BASE);
