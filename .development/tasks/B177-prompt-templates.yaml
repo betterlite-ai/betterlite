@@ -12,7 +12,7 @@ description: >-
   message name) is not built: no caller at the pin passes custom_llm_provider "perplexity", and the Perplexity chat
   path never calls prompt_factory. Until each adapter is installed, return the framework typed
   unsupported-operation outcome rather than a fabricated prompt. Do not create remote-template acquisition or new
-  config behavior before the open decision. Budget 230 selector/custom transforms, 100 adapters, 300 tests and 60
+  config behavior here; an R2 fix task adds the Hugging Face download. Budget 230 selector/custom transforms, 100 adapters, 300 tests and 60
   wiring (690 total). Write the behavior rstest functions prompt_templates_prompt_template_tests_behavior in adjacent tests.rs
   files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation prompt_factory is already registered; each
   operation has its own Rust and Python adapter file and corpus seed.
@@ -113,7 +113,7 @@ deviations:
 - what: Template lookup uses local files only and never downloads Hugging Face assets. Missing local templates in
     the early Bedrock llama3/llama4 instruct branch raise ValueError No chat template found; the final generic selector
     catches lookup failures and silently uses default_pt.
-  why: Keep local-only behavior while Max decides whether validated Hugging Face acquisition should be supported.
+  why: Hugging Face downloads are not wired in yet. betterlite downloads what LiteLLM downloads, from the same place (decision 2026-10-31), and an R2 fix task wires it in.
     Preserve the source exception boundaries instead of inventing a warning or a Bedrock fallback.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5305-L5369
 out_of_scope:

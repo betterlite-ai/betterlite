@@ -1,0 +1,14 @@
+kind: helper
+name: hosted-skill-store-negative-hit
+call:
+  hosted_skill_store:
+    now: "2026-02-03T04:05:06"
+    uuid: "00000000-0000-4000-8000-000000000004"
+    steps:
+      - {action: get, skill_id: litellm_skill_ghost, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_ghost, principal: {user_id: bob}}
+      - {action: fetch, skill_id: litellm_skill_ghost, principal: {user_id: alice}}
+      - {action: delete, skill_id: litellm_skill_ghost, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_ghost, principal: {user_id: carol, admin: true}}
+env: {}
+compare: {ignore: []}

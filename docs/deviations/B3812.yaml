@@ -1,0 +1,19 @@
+task: B3812
+deviations: []
+kept_bugs:
+  - what: >-
+      A function_call string other than auto and none names a forced function, so function_call "required"
+      is checked, blocked or rewritten as a tool called "required". A tool_choice string other than auto,
+      none and required is likewise a forced tool name, so values such as "any" are checked as names.
+    why: >-
+      OpenAI's function_call has no "required" value, so a request that sends one is already broken at the
+      provider. Copying LiteLLM keeps a setup that relies on the same checks working after the switch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L628-L634
+  - what: >-
+      A forbidden name is removed from every list that carries it, whichever field it came from: a denied
+      forced tool_choice also drops the tool and the legacy function of that name, and a denied legacy
+      function also drops a tool of that name.
+    why: >-
+      LiteLLM collects one set of denied names and filters tools, functions and both forced choices against
+      it. A working setup can see the extra removals, so they stay.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L658-L704

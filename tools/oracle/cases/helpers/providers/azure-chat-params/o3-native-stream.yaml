@@ -1,0 +1,109 @@
+kind: helper
+name: o3-native-stream
+call:
+  azure_chat_params:
+    function: native_stream
+    install:
+      model_cost:
+        azure/gpt-5.1:
+          supports_tool_choice: true
+          supports_function_calling: true
+          supports_parallel_function_calling: true
+          supports_response_schema: true
+          supports_reasoning: true
+          max_input_tokens: 1000
+          max_output_tokens: 1000
+          litellm_provider: azure
+          supports_none_reasoning_effort: true
+          default_reasoning_effort: none
+        gpt-5.1:
+          supports_tool_choice: true
+          supports_function_calling: true
+          supports_parallel_function_calling: true
+          supports_response_schema: true
+          supports_reasoning: true
+          max_input_tokens: 1000
+          max_output_tokens: 1000
+          litellm_provider: openai
+          supports_none_reasoning_effort: true
+          default_reasoning_effort: none
+        azure/gpt-5.2:
+          supports_tool_choice: true
+          supports_function_calling: true
+          supports_parallel_function_calling: true
+          supports_response_schema: true
+          supports_reasoning: true
+          max_input_tokens: 1000
+          max_output_tokens: 1000
+          litellm_provider: azure
+          supports_none_reasoning_effort: true
+          default_reasoning_effort: medium
+        azure/gpt-5.3:
+          supports_tool_choice: true
+          supports_function_calling: true
+          supports_parallel_function_calling: true
+          supports_response_schema: true
+          supports_reasoning: true
+          max_input_tokens: 1000
+          max_output_tokens: 1000
+          litellm_provider: azure
+          supports_low_reasoning_effort: false
+          supports_minimal_reasoning_effort: false
+        azure/o1-preview:
+          litellm_provider: azure
+          supports_native_streaming: true
+          supports_reasoning: true
+        azure/o1-mini:
+          litellm_provider: azure
+          supports_native_streaming: false
+          supports_reasoning: true
+        o1-mini:
+          litellm_provider: openai
+          supports_reasoning: true
+        gpt-4o:
+          litellm_provider: openai
+          supports_tool_choice: true
+          supports_function_calling: true
+      chat_models:
+      - azure/gpt-5.1
+      - gpt-5.1
+      - azure/gpt-5.2
+      - azure/gpt-5.3
+      - azure/o1-preview
+      - azure/o1-mini
+      - o1-mini
+      - gpt-4o
+      text_models: []
+      drop_params: false
+      openai_system_messages_first: false
+    steps:
+    - model: o3-mini
+      stream: true
+      provider: azure
+    - model: azure-o3-deployment
+      stream: true
+      provider: null
+    - model: o1-preview
+      stream: true
+      provider: azure
+    - model: o1-mini
+      stream: true
+      provider: azure
+    - model: o1-mini
+      stream: false
+      provider: azure
+    - model: o1-mini
+      stream: null
+      provider: azure
+    - model: null
+      stream: true
+      provider: azure
+    - model: o1-mini
+      stream: true
+      provider: null
+    - model: ''
+      stream: true
+      provider: azure
+env: {}
+compare:
+  ignore: []

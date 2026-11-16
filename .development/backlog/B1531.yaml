@@ -1,14 +1,14 @@
 id: B1531
 milestone: M3 providers
 title: Price Fal images by deployment, resolution and returned dimensions
-status: todo
+status: done
 depends_on: [B002, B193, B068, B997, B171, B1525]
 file: tasks/B1531-fal-image-pricing.yaml
 covers:
   - "litellm/llms/fal_ai/cost_calculator.py"
 parent: B046
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1963
