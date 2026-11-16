@@ -102,6 +102,11 @@ impl FakeState {
             .collect()
     }
 
+    fn remove_row(&mut self, user_id: &str, server_id: &str) {
+        self.rows
+            .retain(|row| row.user_id != user_id || row.server_id != server_id);
+    }
+
     fn put_row(&mut self, user_id: &str, server_id: &str, values_b64: &str) {
         let existing = self
             .rows
@@ -152,6 +157,19 @@ impl FakeTable {
         Ok(state)
     }
 
+    // the recorded answer every table call shares, with the differing lookup passed in
+    fn answered<T, F>(
+        &self,
+        event: &'static str,
+        answer: F,
+    ) -> impl Future<Output = Result<T, UserEnvVarsError>> + Send
+    where
+        T: Send,
+        F: FnOnce(&mut FakeState) -> T,
+    {
+        ready(self.recording(event).map(|mut state| answer(&mut state)))
+    }
+
     pub(super) fn events(&self) -> Vec<String> {
         lock(&self.state).events.clone()
     }
@@ -171,10 +189,7 @@ impl UserEnvVarTable for FakeTable {
         user_id: &str,
         server_id: &str,
     ) -> impl Future<Output = Result<Option<JsonData>, UserEnvVarsError>> + Send {
-        ready(
-            self.recording("find_unique")
-                .map(|state| state.find_row(user_id, server_id)),
-        )
+        self.answered("find_unique", |state| state.find_row(user_id, server_id))
     }
 
     fn find_many(
@@ -182,10 +197,7 @@ impl UserEnvVarTable for FakeTable {
         user_id: &str,
         server_ids: &[String],
     ) -> impl Future<Output = Result<Vec<JsonData>, UserEnvVarsError>> + Send {
-        ready(
-            self.recording("find_many")
-                .map(|state| state.select(user_id, server_ids)),
-        )
+        self.answered("find_many", |state| state.select(user_id, server_ids))
     }
 
     fn delete_many(
@@ -193,11 +205,7 @@ impl UserEnvVarTable for FakeTable {
         user_id: &str,
         server_id: &str,
     ) -> impl Future<Output = Result<(), UserEnvVarsError>> + Send {
-        ready(self.recording("delete_many").map(|mut state| {
-            state
-                .rows
-                .retain(|row| row.user_id != user_id || row.server_id != server_id);
-        }))
+        self.answered("delete_many", |state| state.remove_row(user_id, server_id))
     }
 }
 

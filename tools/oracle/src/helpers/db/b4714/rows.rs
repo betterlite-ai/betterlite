@@ -40,6 +40,22 @@ impl RowStore {
         }
     }
 
+    // the recorded answer every table call shares, with the differing lookup passed in
+    fn answered<T, F>(
+        &self,
+        event: &str,
+        answer: F,
+    ) -> impl Future<Output = Result<T, UserEnvVarsError>> + Send
+    where
+        T: Send,
+        F: FnOnce(&mut RowState) -> T,
+    {
+        let mut guard = recording(&self.state, event);
+        let produced = answer(&mut guard);
+        drop(guard);
+        ready(Ok(produced))
+    }
+
     pub(super) fn rows(&self) -> Vec<JsonData> {
         self.state
             .lock()
@@ -91,6 +107,12 @@ impl RowState {
         selected
     }
 
+    fn remove(&mut self, user_id: &str, server_id: &str) {
+        self.rows.retain(|row| {
+            text(row, "user_id") != Some(user_id) || text(row, "server_id") != Some(server_id)
+        });
+    }
+
     fn put_row(&mut self, user_id: &str, server_id: &str, values_b64: &str) {
         for row in &mut self.rows {
             if text(row, "user_id") == Some(user_id) && text(row, "server_id") == Some(server_id) {
@@ -137,8 +159,7 @@ impl UserEnvVarTable for RowStore {
         user_id: &str,
         server_id: &str,
     ) -> impl Future<Output = Result<Option<JsonData>, UserEnvVarsError>> + Send {
-        let state = recording(&self.state, "find_unique");
-        ready(Ok(state.find(user_id, server_id)))
+        self.answered("find_unique", |state| state.find(user_id, server_id))
     }
 
     fn find_many(
@@ -146,8 +167,7 @@ impl UserEnvVarTable for RowStore {
         user_id: &str,
         server_ids: &[String],
     ) -> impl Future<Output = Result<Vec<JsonData>, UserEnvVarsError>> + Send {
-        let state = recording(&self.state, "find_many");
-        ready(Ok(state.select(user_id, server_ids)))
+        self.answered("find_many", |state| state.select(user_id, server_ids))
     }
 
     fn delete_many(
@@ -155,12 +175,7 @@ impl UserEnvVarTable for RowStore {
         user_id: &str,
         server_id: &str,
     ) -> impl Future<Output = Result<(), UserEnvVarsError>> + Send {
-        let mut state = recording(&self.state, "delete_many");
-        state.rows.retain(|row| {
-            text(row, "user_id") != Some(user_id) || text(row, "server_id") != Some(server_id)
-        });
-        drop(state);
-        ready(Ok(()))
+        self.answered("delete_many", |state| state.remove(user_id, server_id))
     }
 }
 
