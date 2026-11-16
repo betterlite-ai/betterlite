@@ -352,3 +352,10 @@ path = "fuzz_targets/chirp_backend_event.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "messages_agentic_stream"
+path = "fuzz_targets/messages_agentic_stream.rs"
+test = false
+doc = false
+bench = false

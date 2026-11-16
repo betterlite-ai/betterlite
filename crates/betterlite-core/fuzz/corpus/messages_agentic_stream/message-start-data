@@ -1,0 +1,1 @@
+{"type": "message_start", "message": {"id": "msg_1", "model": "claude-test", "role": "assistant", "usage": {"input_tokens": 11}}}
