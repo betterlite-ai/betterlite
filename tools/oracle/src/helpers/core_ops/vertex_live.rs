@@ -99,7 +99,12 @@ fn answer(
 }
 
 fn dispatch(call: &Call, live: &Live<'_>) -> Result<Value, Box<HelperError>> {
-    let policy = policy(call.session());
+    let session = call.session();
+    let policy = VertexLivePolicy {
+        project: session.project.clone(),
+        region: session.location.clone(),
+        access_token: SecretString::from(session.access_token.clone()),
+    };
     match call {
         Call::Mime { formats, .. } => Ok(json!({
             "mimes": formats.iter().map(String::as_str).map(audio_mime_type).collect::<Vec<_>>(),
@@ -109,7 +114,12 @@ fn dispatch(call: &Call, live: &Live<'_>) -> Result<Value, Box<HelperError>> {
             api_key,
             headers,
             ..
-        } => endpoint(&policy, api_base.as_deref(), api_key.as_deref(), headers),
+        } => Ok(endpoint(
+            &policy,
+            api_base.as_deref(),
+            api_key.as_deref(),
+            headers,
+        )),
         Call::Automatic { model, .. } => automatic(&policy, model),
         Call::Transform {
             model,
@@ -137,15 +147,15 @@ fn endpoint(
     api_base: Option<&str>,
     api_key: Option<&str>,
     headers: &BTreeMap<String, String>,
-) -> Result<Value, Box<HelperError>> {
+) -> Value {
     let environment = policy.environment(headers);
     let api_key_used =
         api_key.is_some_and(|api_key| environment.values().any(|value| value.contains(api_key)));
-    Ok(json!({
+    json!({
         "url": policy.complete_url(api_base),
         "environment": environment,
         "api_key_used": api_key_used,
-    }))
+    })
 }
 
 fn automatic(policy: &VertexLivePolicy, model: &str) -> Result<Value, Box<HelperError>> {
@@ -182,14 +192,6 @@ fn transform(
         .map(|message| serde_json::from_str::<Value>(message).or_value_error())
         .collect::<Result<Vec<_>, _>>()?;
     Ok(json!({"messages": parsed}))
-}
-
-fn policy(session: &Session) -> VertexLivePolicy {
-    VertexLivePolicy {
-        project: session.project.clone(),
-        region: session.location.clone(),
-        access_token: SecretString::from(session.access_token.clone()),
-    }
 }
 
 impl Call {
