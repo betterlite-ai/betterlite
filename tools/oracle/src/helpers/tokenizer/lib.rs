@@ -11,6 +11,7 @@
 )]
 
 betterlite_oracle_helper_api::helper_group! {
+    "b9963" => b9963,
     "image_tokens" => image_tokens,
     "media_tokens" => media_tokens,
     "reservation_tokens" => reservation_tokens,

@@ -324,7 +324,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_image_edits*")"
       && grep -lq 'foundry_image_edits' tools/oracle/fuzz/corpus/helper_case/foundry_image_edits* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_image_edits$/)'
+      run --locked -p betterlite-oracle-foundry --no-tests=fail -E 'test(/::helper_seeds_select_foundry_image_edits$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.

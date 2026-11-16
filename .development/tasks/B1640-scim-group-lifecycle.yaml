@@ -56,7 +56,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_group_lifecycle::/)'
     - id: group-lifecycle-corpora
       why: Group lifecycle decoding and HTTP case envelopes lack their added regression inputs.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/scim_resource/group-lifecycle-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/scim-group-lifecycle-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_scim_resource_corpus) | test(replays_the_http_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/scim_resource/group-lifecycle-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/scim-group-lifecycle-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle -p betterlite-oracle-server --no-tests=fail -E 'test(replays_the_scim_resource_corpus) | test(replays_the_http_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/management/scim-group-lifecycle/default-models-and-scim-metadata.yaml
   - tools/oracle/cases/management/scim-group-lifecycle/explicit-id-before-external-id.yaml

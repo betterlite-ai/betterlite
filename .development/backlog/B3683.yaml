@@ -1,7 +1,7 @@
 id: B3683
 milestone: M6 guardrails
 title: Guardrail startup, database reconciliation and legacy guardrail config
-status: todo
+status: done
 depends_on: [B3660, B3662, B3682]
 file: tasks/B3683-guardrail-startup-reconcile.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/guardrails/guardrail_registry.py"
 parent: B104
 split_from: B104
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2016
