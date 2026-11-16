@@ -110,7 +110,7 @@ pub(super) async fn video_extended(case: &VideoExtendedCase) -> HelperResult {
 }
 
 async fn run(operation: OpenAiMediaOperation) -> Result<OperationResult, OpenAiMediaError> {
-    let fixture = Fixture::new(200, Vec::new());
+    let fixture = Fixture::new(200, b"");
     let mut logger = Recorder;
     dispatch(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),

@@ -37,7 +37,7 @@ pub(super) async fn speech(case: &SpeechCase) -> HelperResult {
                 .map_err(|error| failure("Fixture", error))?,
         );
     }
-    let fixture = Fixture::with_headers(case.status, case.body.clone().into_bytes(), headers);
+    let fixture = Fixture::with_headers(case.status, case.body.as_bytes(), headers);
     let mut logger = Recorder;
     let result = dispatch(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),
@@ -46,7 +46,7 @@ pub(super) async fn speech(case: &SpeechCase) -> HelperResult {
         &mut logger,
     )
     .await;
-    let sent = fixture.only_request()?;
+    let sent = fixtures::only_request(&fixture)?;
     let request = speech_request(&sent, &case.options)?;
     speech_outcome(result, request).await
 }
@@ -112,7 +112,7 @@ async fn speech_outcome(
 
 pub(super) async fn transcription(case: &TranscriptionCase) -> HelperResult {
     let operation = transcription_operation(case)?;
-    let fixture = Fixture::new(case.status, case.reply.clone().into_bytes());
+    let fixture = Fixture::new(case.status, case.reply.as_bytes());
     let mut logger = Recorder;
     let result = dispatch(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),
@@ -121,7 +121,7 @@ pub(super) async fn transcription(case: &TranscriptionCase) -> HelperResult {
         &mut logger,
     )
     .await;
-    let sent = fixture.only_request()?;
+    let sent = fixtures::only_request(&fixture)?;
     let request = transcription_request(&sent)?;
     transcription_outcome(result, request)
 }

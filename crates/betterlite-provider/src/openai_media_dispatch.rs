@@ -14,6 +14,8 @@ use indexmap::IndexMap;
 pub mod call;
 pub mod error;
 pub mod execute;
+#[cfg(any(test, feature = "testing"))]
+pub mod test_support;
 pub mod video;
 pub mod video_edit;
 

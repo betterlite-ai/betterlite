@@ -70,7 +70,9 @@ async fn binary_reply() {
     let OpenAiMediaResult::Speech(response) = result else {
         panic!("the speech reply stays binary");
     };
-    let sent = fixture.only_request();
+    let sent = fixture
+        .take_request()
+        .expect("one dispatch sends one request");
     speech_request(&sent);
     let status = response.status;
     let bytes = response

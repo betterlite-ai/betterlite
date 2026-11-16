@@ -68,7 +68,9 @@ async fn projection() {
     let OpenAiMediaResult::Transcription(reply) = result else {
         panic!("the transcription stays its own reply");
     };
-    let sent = fixture.only_request();
+    let sent = fixture
+        .take_request()
+        .expect("one dispatch sends one request");
     assert_eq!(sent.method, Method::POST);
     assert_eq!(
         sent.url.as_str(),

@@ -39,7 +39,7 @@ pub(super) async fn image_generation(case: &ImageGenerationCase) -> HelperResult
         delegate_async: false,
         now_seconds: NOW,
     };
-    let fixture = Fixture::new(case.status, reply_bytes(&case.reply)?);
+    let fixture = Fixture::new(case.status, &reply_bytes(&case.reply)?);
     let mut logger = Recorder;
     let result = dispatch(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),
@@ -48,7 +48,7 @@ pub(super) async fn image_generation(case: &ImageGenerationCase) -> HelperResult
         &mut logger,
     )
     .await;
-    let request = request_view(&fixture.only_request()?)?;
+    let request = request_view(&fixtures::only_request(&fixture)?)?;
     let (reply, raised) = match result {
         Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::ImageGeneration(outcome))) => {
             (image_reply(&outcome.reply), Value::Null)
@@ -74,7 +74,7 @@ pub(super) async fn image_edit(case: &ImageEditCase) -> HelperResult {
             options: case.options.clone(),
         },
     };
-    let fixture = Fixture::new(200, Vec::new());
+    let fixture = Fixture::new(200, b"");
     let mut logger = Recorder;
     let result = dispatch(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),
@@ -101,7 +101,7 @@ pub(super) async fn image_edit(case: &ImageEditCase) -> HelperResult {
 
 pub(super) async fn image_variation(case: &ImageVariationCase) -> HelperResult {
     let operation = variation_request(case);
-    let fixture = Fixture::new(case.status, reply_bytes(&case.reply)?);
+    let fixture = Fixture::new(case.status, &reply_bytes(&case.reply)?);
     let mut logger = Recorder;
     let result = dispatch(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),
@@ -110,7 +110,7 @@ pub(super) async fn image_variation(case: &ImageVariationCase) -> HelperResult {
         &mut logger,
     )
     .await;
-    let sent = fixture.only_request()?;
+    let sent = fixtures::only_request(&fixture)?;
     let request = serde_json::json!({
         "url": sent.url.as_str(),
         "authorization": fixtures::header(&sent, "authorization"),

@@ -64,7 +64,9 @@ async fn dall_e() {
     let OpenAiMediaResult::ImageGeneration(outcome) = result else {
         panic!("a generation reply is never read as an edit");
     };
-    let request = fixture.only_request();
+    let request = fixture
+        .take_request()
+        .expect("one dispatch sends one request");
     assert_eq!(request.method, Method::POST);
     assert_eq!(
         request.url.as_str(),
@@ -97,7 +99,9 @@ async fn gpt_image() {
     let OpenAiMediaResult::ImageGeneration(outcome) = result else {
         panic!("a generation reply is never read as an edit");
     };
-    let request = fixture.only_request();
+    let request = fixture
+        .take_request()
+        .expect("one dispatch sends one request");
     assert_eq!(
         json_body(&request),
         options(

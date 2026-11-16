@@ -64,7 +64,9 @@ async fn variation() {
     let OpenAiMediaResult::ImageVariation(outcome) = result else {
         panic!("the variation stays its own operation");
     };
-    let sent = fixture.only_request();
+    let sent = fixture
+        .take_request()
+        .expect("one dispatch sends one request");
     assert_eq!(sent.method, Method::POST);
     assert_eq!(
         sent.url.as_str(),
