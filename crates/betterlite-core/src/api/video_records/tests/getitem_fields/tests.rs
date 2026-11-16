@@ -2,7 +2,7 @@
 
 use betterlite_models::decisions::Json;
 
-use crate::api::video_records::dict_access::DictAccess;
+use crate::api::video_records::dict_access::DictAccess as _;
 
 use super::fixture::{assert_unknown_field, full_video, video};
 

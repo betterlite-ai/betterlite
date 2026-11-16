@@ -1,29 +1,15 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
-use betterlite_openai::video_edits::response::{CharacterKind, VideoKind};
+use betterlite_openai::video_edits::response::VideoKind;
 use indexmap::IndexMap;
 use serde_json::Number;
 
 use crate::api::video_records::{CharacterObject, VideoObject, VideoRecordError};
 
 pub(super) fn video(id: &str) -> VideoObject {
-    VideoObject {
-        id: id.to_owned(),
-        object: VideoKind::Video,
-        status: "queued".to_owned(),
-        created_at: None,
-        completed_at: None,
-        expires_at: None,
-        error: None,
-        progress: None,
-        remixed_from_video_id: None,
-        seconds: None,
-        size: None,
-        model: None,
-        usage: None,
-        hidden_params: IndexMap::new(),
-    }
+    let wire = format!(r#"{{"id": "{id}", "object": "video", "status": "queued"}}"#);
+    serde_json::from_str(&wire).expect("the video fixture decodes")
 }
 
 pub(super) fn full_video() -> VideoObject {
@@ -49,13 +35,10 @@ pub(super) fn full_video() -> VideoObject {
 }
 
 pub(super) fn character(id: &str) -> CharacterObject {
-    CharacterObject {
-        id: id.to_owned(),
-        object: CharacterKind::Character,
-        created_at: 1_700_000_000,
-        name: "Ada".to_owned(),
-        hidden_params: IndexMap::new(),
-    }
+    let wire = format!(
+        r#"{{"id": "{id}", "object": "character", "created_at": 1700000000, "name": "Ada"}}"#
+    );
+    serde_json::from_str(&wire).expect("the character fixture decodes")
 }
 
 pub(super) fn object(pairs: &[(&str, Json)]) -> IndexMap<String, Json> {

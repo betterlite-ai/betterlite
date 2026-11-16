@@ -2,11 +2,11 @@
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::video_edits::response::CharacterKind;
-use serde::Deserialize;
+use rstest::rstest;
 use serde_json::Number;
 
 use crate::api::video_records::CharacterObject;
-use crate::api::video_records::dict_access::DictAccess;
+use crate::api::video_records::dict_access::DictAccess as _;
 
 use super::fixture::{assert_unknown_field, character, object};
 
@@ -53,12 +53,19 @@ fn character_object_hides_its_hidden_params() {
     assert_eq!(character.json().len(), 4);
 }
 
-#[test]
-fn character_contains_reports_the_declared_fields() {
+#[rstest]
+#[case::id("id")]
+#[case::object("object")]
+#[case::created_at("created_at")]
+#[case::name("name")]
+fn character_contains_reports_the_declared_fields(#[case] field: &str) {
     let character = character("char_123");
-    for field in CharacterObject::FIELDS {
-        assert!(character.contains(field), "missing {field}");
-    }
+    assert!(character.contains(field), "missing {field}");
+}
+
+#[test]
+fn character_contains_rejects_an_undeclared_field() {
+    let character = character("char_123");
     assert!(!character.contains("prompt"));
     assert!(!character.contains(""));
 }
@@ -86,7 +93,7 @@ fn character_get_returns_none_for_an_unknown_field() {
 fn character_object_serializes_only_declared_fields() {
     let mut character = character("char_123");
     character.hidden_params = object(&[("team", Json::Text("core".to_owned()))]);
-    let dumped = Json::deserialize(serde_json::to_value(&character).unwrap()).unwrap();
+    let dumped: Json = serde_json::from_value(serde_json::to_value(&character).unwrap()).unwrap();
     let expected = Json::Object(object(&[
         ("id", Json::Text("char_123".to_owned())),
         ("object", Json::Text("character".to_owned())),

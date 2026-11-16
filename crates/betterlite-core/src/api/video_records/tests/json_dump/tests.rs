@@ -2,10 +2,10 @@
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde::Deserialize;
+use rstest::rstest;
 use serde_json::Number;
 
-use crate::api::video_records::dict_access::DictAccess;
+use crate::api::video_records::dict_access::DictAccess as _;
 use crate::api::video_records::{DecodedVideoId, VideoObject};
 
 use super::fixture::{full_video, object, video};
@@ -34,23 +34,20 @@ fn json_carries_the_declared_fields_in_order() {
     );
 }
 
-#[test]
-fn json_keeps_null_for_unset_optional_fields() {
+#[rstest]
+#[case::created_at("created_at")]
+#[case::completed_at("completed_at")]
+#[case::expires_at("expires_at")]
+#[case::error("error")]
+#[case::progress("progress")]
+#[case::remixed_from_video_id("remixed_from_video_id")]
+#[case::seconds("seconds")]
+#[case::size("size")]
+#[case::model("model")]
+#[case::usage("usage")]
+fn json_keeps_null_for_unset_optional_fields(#[case] field: &str) {
     let dumped = video("video_123").json();
-    for field in [
-        "created_at",
-        "completed_at",
-        "expires_at",
-        "error",
-        "progress",
-        "remixed_from_video_id",
-        "seconds",
-        "size",
-        "model",
-        "usage",
-    ] {
-        assert_eq!(dumped.get(field), Some(&Json::Null), "{field}");
-    }
+    assert_eq!(dumped.get(field), Some(&Json::Null), "{field}");
 }
 
 #[test]
@@ -76,7 +73,7 @@ fn json_matches_the_direct_fields() {
 fn json_round_trips_through_serde() {
     let mut video = full_video();
     video.hidden_params = IndexMap::new();
-    let dumped = Json::deserialize(serde_json::to_value(&video).unwrap()).unwrap();
+    let dumped: Json = serde_json::from_value(serde_json::to_value(&video).unwrap()).unwrap();
     assert_eq!(dumped, Json::Object(video.json()));
     let decoded: VideoObject =
         serde_json::from_value(serde_json::to_value(&video).unwrap()).unwrap();
@@ -85,10 +82,10 @@ fn json_round_trips_through_serde() {
 
 #[test]
 fn decoded_video_id_keeps_none_fields_through_serde() {
-    let decoded = DecodedVideoId::deserialize(serde_json::json!({"video_id": "video_1"})).unwrap();
+    let decoded: DecodedVideoId = serde_json::from_str(r#"{"video_id": "video_1"}"#).unwrap();
     assert_eq!(decoded.custom_llm_provider, None);
     assert_eq!(decoded.model_id, None);
-    let dumped = Json::deserialize(serde_json::to_value(&decoded).unwrap()).unwrap();
+    let dumped: Json = serde_json::from_value(serde_json::to_value(&decoded).unwrap()).unwrap();
     assert_eq!(
         dumped,
         Json::Object(object(&[
@@ -147,10 +144,19 @@ fn video_object_defaults_missing_optional_fields() {
     assert_eq!(decoded.seconds, None);
     assert!(decoded.hidden_params.is_empty());
     assert_eq!(decoded.get("model"), Some(Json::Null));
+    let missing_status =
+        serde_json::from_str::<VideoObject>(r#"{"id": "video_1", "object": "video"}"#).unwrap_err();
+    let missing_object =
+        serde_json::from_str::<VideoObject>(r#"{"id": "video_1", "status": "queued"}"#)
+            .unwrap_err();
     assert!(
-        serde_json::from_str::<VideoObject>(r#"{"id": "video_1", "object": "video"}"#).is_err()
+        missing_status
+            .to_string()
+            .contains("missing field `status`")
     );
     assert!(
-        serde_json::from_str::<VideoObject>(r#"{"id": "video_1", "status": "queued"}"#).is_err()
+        missing_object
+            .to_string()
+            .contains("missing field `object`")
     );
 }

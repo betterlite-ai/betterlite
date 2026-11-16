@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 use serde_json::Number;
 
-use crate::api::video_records::dict_access::DictAccess;
+use crate::api::video_records::dict_access::DictAccess as _;
 
 use super::fixture::{full_video, object, video};
 
@@ -70,23 +71,20 @@ fn get_returns_the_video_object_fields() {
     );
 }
 
-#[test]
-fn get_returns_null_for_unset_video_fields() {
+#[rstest]
+#[case::created_at("created_at")]
+#[case::completed_at("completed_at")]
+#[case::expires_at("expires_at")]
+#[case::error("error")]
+#[case::progress("progress")]
+#[case::remixed_from_video_id("remixed_from_video_id")]
+#[case::seconds("seconds")]
+#[case::size("size")]
+#[case::model("model")]
+#[case::usage("usage")]
+fn get_returns_null_for_unset_video_fields(#[case] field: &str) {
     let video = video("video_123");
-    for field in [
-        "created_at",
-        "completed_at",
-        "expires_at",
-        "error",
-        "progress",
-        "remixed_from_video_id",
-        "seconds",
-        "size",
-        "model",
-        "usage",
-    ] {
-        assert_eq!(video.get(field), Some(Json::Null), "{field}");
-    }
+    assert_eq!(video.get(field), Some(Json::Null), "{field}");
 }
 
 #[test]

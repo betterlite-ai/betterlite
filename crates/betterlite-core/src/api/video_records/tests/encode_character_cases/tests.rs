@@ -3,6 +3,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_video_identifiers::ids::{decode_character_id, encode_character_id};
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::Number;
 
 use crate::api::video_records::helpers::{CharacterResponse, encode_character_id_in_response};
@@ -120,19 +121,15 @@ fn encode_character_leaves_ids_without_a_provider() {
     assert_eq!(fields.get("id"), Some(&Json::Text("char_abc".to_owned())));
 }
 
-#[test]
-fn encode_character_rejects_a_non_text_dict_id() {
-    let cases = [
-        Json::Bool(true),
-        Json::Number(Number::from(5_i64)),
-        Json::List(Vec::new()),
-        Json::Object(IndexMap::new()),
-    ];
-    for value in cases {
-        let mut fields = object(&[("id", value)]);
-        let error =
-            encode_character_id_in_response(CharacterResponse::Fields(&mut fields), "openai", None)
-                .unwrap_err();
-        assert_not_text(error, "id");
-    }
+#[rstest]
+#[case::bool(Json::Bool(true))]
+#[case::number(Json::Number(Number::from(5_i64)))]
+#[case::list(Json::List(Vec::new()))]
+#[case::object(Json::Object(IndexMap::new()))]
+fn encode_character_rejects_a_non_text_dict_id(#[case] value: Json) {
+    let mut fields = object(&[("id", value)]);
+    let error =
+        encode_character_id_in_response(CharacterResponse::Fields(&mut fields), "openai", None)
+            .unwrap_err();
+    assert_not_text(error, "id");
 }
