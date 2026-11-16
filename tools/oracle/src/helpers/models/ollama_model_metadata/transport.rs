@@ -3,7 +3,7 @@ use std::sync::{Mutex, PoisonError};
 use betterlite_models::ollama_model_metadata::{OllamaTransport, ShowRequest, ShowResponse};
 use secrecy::ExposeSecret as _;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::helper_error;
 

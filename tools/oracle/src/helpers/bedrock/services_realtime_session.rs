@@ -6,7 +6,7 @@ use betterlite_bedrock::realtime_session::update::SessionUpdate;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use wire::parse_ids;
 
 mod cases;

@@ -16,7 +16,7 @@ use betterlite_guardrails::guardrail_selection::error::GuardrailSelectionError;
 use serde_json::{Value, json};
 
 use super::{Data, FIXED_TOKEN, Settings, guardrail_of};
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 // Both sides run the same hook and note the key fields it was handed
 #[derive(Default)]

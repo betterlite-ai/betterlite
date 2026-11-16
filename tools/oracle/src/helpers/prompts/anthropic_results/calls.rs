@@ -11,7 +11,7 @@ use betterlite_prompts::anthropic_results::images::{
 use betterlite_prompts::anthropic_results::server_result::find_server_tool_result;
 use betterlite_prompts::anthropic_results::tool_result::to_anthropic_tool_result;
 use serde::Serialize;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
 use super::failures::{helper_failure, image_failure, tool_result_failure};
 use super::policies::{CaseSource, NoBlocks, predicate};
@@ -19,10 +19,11 @@ use super::{
     FunctionInvokeCall, ImageChunkCall, ImageParamCall, ReplaceIds, ServerResultCall,
     ToolResultCall, ValueList,
 };
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 fn runtime() -> Result<Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| helper_failure(None, error.to_string()))

@@ -16,6 +16,8 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::{Input, ScriptedResponse, helper_error};
+use betterlite_oracle_helper_api::error::HelperError;
+use tokio::runtime::Builder;
 
 pub(super) type Environment = BTreeMap<String, String>;
 pub(super) type Sandbox = OpenSandbox<RecordingHttp, Environment, StepClock>;
@@ -92,11 +94,11 @@ pub(super) fn recording_sandbox(input: &Input) -> Sandbox {
     }
 }
 
-pub(super) fn block_on<Output, Work>(work: Work) -> Result<Output, Box<crate::helpers::HelperError>>
+pub(super) fn block_on<Output, Work>(work: Work) -> Result<Output, Box<HelperError>>
 where
     Work: Future<Output = Result<Output, LifecycleError>>,
 {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| helper_error("RuntimeError", error))?;
     runtime
@@ -140,9 +142,7 @@ struct TimeoutRecord {
     pool: Option<f64>,
 }
 
-pub(super) fn requests_output(
-    http: &RecordingHttp,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+pub(super) fn requests_output(http: &RecordingHttp) -> Result<Value, Box<HelperError>> {
     let requests = {
         let state = http.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.requests.clone()
@@ -154,9 +154,7 @@ pub(super) fn requests_output(
     serde_json::to_value(records).map_err(|error| helper_error("BodyEncoding", error))
 }
 
-fn record_request(
-    request: &SandboxRequest,
-) -> Result<RequestRecord, Box<crate::helpers::HelperError>> {
+fn record_request(request: &SandboxRequest) -> Result<RequestRecord, Box<HelperError>> {
     let mut headers = BTreeMap::new();
     for (name, value) in &request.headers {
         let text = value

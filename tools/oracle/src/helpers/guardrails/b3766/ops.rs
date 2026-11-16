@@ -7,7 +7,7 @@ use betterlite_guardrails::crowdstrike_aidr::handler::{CrowdStrikeAidr, SUPPORTE
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 
@@ -16,9 +16,11 @@ use super::support::{
     recorded_call, streaming_json,
 };
 use super::{ApplyInput, ConstructInput, StreamingInput};
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::MockScript;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::MockScript;
+use std::slice;
 
 pub(super) fn apply(args: &ApplyInput) -> HelperResult {
     let (mock, base) = start_mock(args)?;
@@ -27,7 +29,7 @@ pub(super) fn apply(args: &ApplyInput) -> HelperResult {
     let guardrail = CrowdStrikeAidr::new(&constructor, &args.environment, dependencies())
         .map_err(|error| fail(error.to_string()))?;
     let mut request_data = args.request_data.clone();
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| fail(error.to_string()))?;
@@ -55,7 +57,7 @@ pub(super) fn apply(args: &ApplyInput) -> HelperResult {
 fn start_mock(args: &ApplyInput) -> Result<(Option<MockProvider>, String), Box<HelperError>> {
     let mock = match &args.answer {
         Some(answer) => Some(
-            MockScript::try_from(std::slice::from_ref(answer))
+            MockScript::try_from(slice::from_ref(answer))
                 .and_then(MockProvider::start)
                 .map_err(|error| fail(error.to_string()))?,
         ),

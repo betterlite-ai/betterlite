@@ -6,7 +6,8 @@ use betterlite_sdk::proxy_auth::clock::Clock;
 use serde::Deserialize;
 use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod azure;
 mod handler;

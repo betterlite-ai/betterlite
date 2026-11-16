@@ -9,7 +9,9 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -248,7 +250,7 @@ fn response_called(
 
 fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "B8021".to_owned(),

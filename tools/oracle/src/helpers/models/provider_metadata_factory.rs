@@ -10,7 +10,8 @@ use betterlite_models::provider_metadata_factory::selection::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 
@@ -249,7 +250,7 @@ fn separation(input: &DynamicInput) -> HelperResult {
     Ok(Value::Array(results))
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

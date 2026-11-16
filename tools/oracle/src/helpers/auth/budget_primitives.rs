@@ -13,9 +13,11 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::resource_rows::organization::OrganizationTable;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::{DateTime, Datelike as _, FixedOffset, Timelike as _, Utc};
 use jiff::tz::TimeZoneDatabase;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -155,10 +157,10 @@ enum Failure {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let outcomes = input
             .calls
             .iter()
@@ -227,7 +229,7 @@ fn configured(value: &JsonData) -> Option<f64> {
 
 fn read_row<T>(value: Option<&JsonData>) -> Result<Option<T>, Failure>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
     let Some(row) = value else {
         return Ok(None);

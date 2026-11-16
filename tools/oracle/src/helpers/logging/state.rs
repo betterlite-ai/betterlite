@@ -20,8 +20,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
 
-use crate::compare::helper::HelperError;
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod snapshot;
 

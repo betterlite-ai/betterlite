@@ -7,13 +7,15 @@ use betterlite_core::cost::realtime::{
 use betterlite_models::usage_sum::{
     CompletionTokensDetails, PromptTokensDetails, Usage, UsageNumber, usage_sum,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-type Failure = Box<crate::helpers::HelperError>;
+type Failure = Box<HelperError>;
 
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
@@ -29,10 +31,10 @@ pub(crate) struct EventsInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Collect(fields) => collect(&fields.events),
             Input::TranscriptionModel(fields) => Ok(json!({
@@ -43,7 +45,7 @@ impl crate::helpers::Helper for Op {
 }
 
 fn failure(error: &RealtimeCostError) -> Failure {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "RealtimeCostError".to_owned(),
         status: None,
         error_type: None,
@@ -53,7 +55,7 @@ fn failure(error: &RealtimeCostError) -> Failure {
     })
 }
 
-fn collect(events: &[Event]) -> crate::helpers::HelperResult {
+fn collect(events: &[Event]) -> HelperResult {
     let realtime_usages =
         realtime_stream::collect_usage(events).map_err(|error| failure(&error))?;
     let realtime_combined = usage_sum(&realtime_usages)
@@ -185,7 +187,7 @@ fn decimal_value(value: Option<Decimal>) -> Result<Value, Failure> {
 
 fn decimal_to_value(decimal: Decimal, label: &str) -> Result<Value, Failure> {
     decimal.to_f64().map(|float| json!(float)).ok_or_else(|| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "InvalidInput".to_owned(),
             status: None,
             error_type: None,

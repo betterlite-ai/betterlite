@@ -5,12 +5,11 @@ use std::path::Path;
 
 use serde_json::json;
 
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
-use crate::helpers::{HelperCall, invoke};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperCall, ORACLE_DIR, invoke};
 
 fn seeds() -> Vec<(String, HelperCase)> {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let mut seeds: Vec<(String, HelperCase)> = fs::read_dir(corpus)
         .expect("the helper corpus")
         .map(|entry| entry.expect("a corpus entry").path())
@@ -85,7 +84,7 @@ fn helper_runs_the_production_subtitle_renderer() {
         )
         .expect("an audio_subtitles input"),
     };
-    let output = invoke(&call);
+    let output = invoke(&[crate::GROUP], &call);
     assert!(output.ok);
     assert_eq!(
         output.value,
@@ -105,7 +104,7 @@ fn helper_runs_the_production_word_timing_transformer() {
         )
         .expect("an audio_subtitles input"),
     };
-    let output = invoke(&call);
+    let output = invoke(&[crate::GROUP], &call);
     assert!(output.ok);
     assert_eq!(
         output.value,

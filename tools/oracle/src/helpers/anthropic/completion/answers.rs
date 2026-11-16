@@ -18,7 +18,8 @@ use serde_json::{Value, json};
 
 use super::fixture::{Fixture, blank_response, tiktoken};
 use super::input::{AuthCase, Constructor, ErrorCase, OptionCase, PromptCase, ReplyCase};
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 // the constructor's DEFAULT_MAX_TOKENS
 const DEFAULT_MAX_TOKENS: i64 = 4096;

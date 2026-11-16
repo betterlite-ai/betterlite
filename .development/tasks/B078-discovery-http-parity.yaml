@@ -220,7 +220,7 @@ checks:
       run: >-
         test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/src/discovery_http.rs tools/postgres-fixture/src/discovery_skills.rs)" &&
         cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)' &&
-        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::postgres::tests::/) | test(/^multipart_oracle::tests::/) | test(/^tests::http_/)'
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::postgres::tests::/) | test(/^tests::multipart::/) | test(/^tests::http_/)'
 oracle_cases:
   - tools/oracle/cases/http/discovery-parity/index-catalog.yaml
   - tools/oracle/cases/http/discovery-parity/legacy-index-catalog.yaml
