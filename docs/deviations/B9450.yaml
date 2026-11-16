@@ -1,0 +1,51 @@
+task: B9450
+deviations:
+  - what: >-
+      A failure to assemble the buffered chunks, to turn the assembled chat response into the
+      guardrail's Fields, or to rebuild the stream after a redaction answers with the scan-error SSE
+      event (guardrail_scan_error, 500) and withholds the chunks.
+    why: >-
+      LiteLLM reaches its except Exception branch for these failures as well, but here inspect_chat
+      returns an outcome instead of raising and B2227's builder error has no path back to the caller,
+      so the stream is withheld for safety instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L513-L526
+  - what: >-
+      The rebuilt single chunk carries the assembled response's usage, whose counts are zero when the
+      stream carried no usage and no tokenizer is injected on the scan path.
+    why: >-
+      LiteLLM's stream_chunk_builder counts completion and prompt tokens through litellm.token_counter
+      while rebuilding, so its rebuilt chunk can report nonzero counts where betterlite reports zeros.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L56-L60
+  - what: >-
+      The rebuilt chunk is B010's convert_model_response_to_streaming ported locally into
+      cisco_stream_scan/rebuild.rs, producing one Chunk record with the delta taken from the
+      assembled message, instead of calling a shared B010 helper.
+    why: >-
+      betterlite has no MockResponseIterator yet; when B010 lands, this module should call it and
+      drop the local conversion.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L19-L63
+  - what: >-
+      The MCP hook records applied_guardrails only in its private copy of the copied kwargs, so the
+      entry does not reach the logger's model_call_details.
+    why: >-
+      LiteLLM's copied metadata value is the same dict object as kwargs['metadata'], so its
+      add_guardrail_to_applied_guardrails_header write lands in the caller's metadata; B9650's
+      McpToolHookCall exposes kwargs immutably, so the hook cannot write it back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L164
+  - what: >-
+      The first buffered item counts as an unsupported streaming shape when its first choice carries
+      a text-completion text field, not when a Python isinstance against ModelResponse or
+      ModelResponseStream fails.
+    why: >-
+      The buffered items here are typed chat-chunk records, so the text-completion choice field is
+      the only shape the type still carries; any other non-chat item cannot reach this hook.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L458-L465
+  - what: >-
+      A logger response copy whose extracted tool response is null answers Ok(None) without
+      scanning and without recording the guardrail.
+    why: >-
+      LiteLLM's _extract_mcp_tool_call_response never returns None (it falls back to the response
+      object), so its own no-payload branch is unreachable too; B9650's dispatch always builds the
+      copy from a content list, which is never null.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L276-L281
+kept_bugs: []
