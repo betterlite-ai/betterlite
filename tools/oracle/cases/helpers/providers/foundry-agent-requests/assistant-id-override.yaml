@@ -1,0 +1,17 @@
+kind: helper
+name: foundry-agent-requests-assistant-id-override
+call:
+  foundry_agent_requests:
+    agent_ids:
+      - {model: azure_ai/agents/suffix, optional_params: {assistant_id: assistant-id}}
+      - {model: no-slash, optional_params: {assistant_id: assistant-id}}
+      - {model: azure_ai/agents/suffix, optional_params: {agent_id: agent-id, assistant_id: assistant-id}}
+      - {model: azure_ai/agents/suffix, optional_params: {agent_id: "", assistant_id: assistant-id}}
+      - {model: azure_ai/agents/suffix, optional_params: {agent_id: 0, assistant_id: assistant-id}}
+      - {model: azure_ai/agents/suffix, optional_params: {agent_id: false, assistant_id: assistant-id}}
+      - {model: azure_ai/agents/suffix, optional_params: {agent_id: [], assistant_id: assistant-id}}
+      - {model: azure_ai/agents/suffix, optional_params: {agent_id: null, assistant_id: assistant-id}}
+      - {model: azure_ai/agents/suffix, optional_params: {agent_id: null, assistant_id: null}}
+      - {model: azure_ai/agents/suffix, optional_params: {assistant_id: ""}}
+env: {}
+compare: {ignore: []}
