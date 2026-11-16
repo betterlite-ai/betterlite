@@ -1,0 +1,21 @@
+task: B252
+deviations:
+  - what: A streamed choice index at or past MAX_SERVED_CHOICES (1024) is left out of the served texts, and one warning says so; LiteLLM builds a tuple over every index up to the maximum seen, so one chunk with a huge index allocates that many slots.
+    why: The task bounds the served-text buffer; LiteLLM's range(max(index + 1)) lets a single chunk with index 10**9 hang the stream and exhaust memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/served_output_texts.py#L130-L133
+  - what: The served text of one stream is capped at MAX_SERVED_TEXT_BYTES (16 MiB) across all choices; a piece that would pass the cap is left out while later pieces that still fit are kept.
+    why: The task requires a bounded text buffer; LiteLLM concatenates every delta with no limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/served_output_texts.py#L120-L127
+  - what: A streaming chunk whose choices are missing, null or empty has no finish reason and only joins the cache buffer; LiteLLM indexes choices[0] and raises IndexError.
+    why: A usage-only chunk with choices [] ends many streams, and LiteLLM's unguarded index turns that normal chunk into an error in the cache assembly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_utils.py#L262
+  - what: record_call_duration returns a typed CallDurationError naming the field when litellm_params, metadata or litellm_metadata is not an object, or when an earlier timing window holds a non-finite number; the duration itself is written before that check, as LiteLLM writes it before its own failure.
+    why: betterlite reports a typed error instead of LiteLLM's catch-all warning. The documented input types never carry these shapes, so a working setup never sees the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_utils.py#L277-L309
+kept_bugs:
+  - what: A chat choice whose message has no text keeps a null slot in the served texts, and a response whose choices all lack text gives None rather than an empty list.
+    why: A working setup relies on the slot staying next to its choice index, because overlay_served_output_texts replaces text per index; dropping the slot would move the texts of later choices.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/served_output_texts.py#L59-L62
+  - what: A stream delta that carries only tool calls contributes no served text, so a tool-call-only stream logs None.
+    why: LiteLLM only joins strings from delta.content, and guardrail or logging consumers read the final message from the assembled response, so copying it keeps the served texts identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/served_output_texts.py#L120-L127
