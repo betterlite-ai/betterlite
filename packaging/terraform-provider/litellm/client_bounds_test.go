@@ -81,6 +81,24 @@ func TestRequestFailsWhenResponseBodyStalls(t *testing.T) {
 	}
 }
 
+func TestRequestFailsWhenTransportErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	serverURL := server.URL
+	server.Close()
+
+	client := newClient(serverURL, "sk-test", false, clientLimits{
+		requestTimeout:      5 * time.Second,
+		dialTimeout:         time.Second,
+		tlsHandshakeTimeout: time.Second,
+		maxResponseBytes:    1 << 20,
+	})
+
+	_, err := client.GetKey("sk-test")
+	if err == nil {
+		t.Fatal("GetKey succeeded after its server closed")
+	}
+}
+
 func TestResponseBodyOverCapFails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/at-cap" {
