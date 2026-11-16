@@ -6,7 +6,7 @@ use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
 
 use super::error::RouterWeightError;
 use super::reference::{RouterWeightDeployment, stored_deployments, validate_weight_reference};
-use super::weights::decode_router_weights;
+use super::weights::{RouterWeightIdentifier, decode_router_weights};
 
 pub async fn validate_settings_weights(
     router_settings: Option<&Json>,
@@ -23,7 +23,7 @@ pub async fn validate_settings_weights(
     let deployment_ids = weights
         .values()
         .flat_map(|group| group.keys())
-        .map(String::as_str)
+        .map(RouterWeightIdentifier::as_str)
         .collect::<BTreeSet<_>>();
     if deployment_ids.is_empty() {
         return Ok(());
@@ -33,7 +33,7 @@ pub async fn validate_settings_weights(
     };
     let stored = stored_deployments(repository, &deployment_ids).await?;
     for (model_group, group) in &weights {
-        for deployment_id in group.keys() {
+        for deployment_id in group.keys().map(RouterWeightIdentifier::as_str) {
             let stored_deployment = stored.get(deployment_id);
             let configured_deployment = if stored_deployment.is_some() {
                 None
@@ -41,7 +41,7 @@ pub async fn validate_settings_weights(
                 configured_reference(configured, deployment_id)?
             };
             validate_weight_reference(
-                model_group,
+                model_group.as_str(),
                 deployment_id,
                 team_id,
                 stored_deployment,

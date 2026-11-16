@@ -92,22 +92,20 @@ def stored_rows(request: Input) -> list[Row]:
     return [Row(request["deployment_id"], stored)]
 
 
-async def validate(request: Input) -> dict[str, JsonValue]:
-    group_weights: dict[str, JsonValue] = {request["deployment_id"]: 1.0}
-    weights: dict[str, JsonValue] = {request["model_group"]: group_weights}
-    settings: dict[str, JsonValue] = {"weights": weights}
+def run(input_value: dict[str, JsonValue]) -> JsonValue:
+    request = INPUT.validate_python(input_value)
+    group_weights: dict[str, float] = {request["deployment_id"]: 1.0}
+    weights: dict[str, dict[str, float]] = {request["model_group"]: group_weights}
+    settings: dict[str, dict[str, dict[str, float]]] = {"weights": weights}
     try:
-        await validate_router_settings_weights(
-            settings,
-            team_id=request["team_id"],
-            prisma_client=Client(Table(stored_rows(request))),
-            llm_router=Router(request["configured"]),
+        asyncio.run(
+            validate_router_settings_weights(
+                settings,
+                team_id=request["team_id"],
+                prisma_client=Client(Table(stored_rows(request))),
+                llm_router=Router(request["configured"]),
+            )
         )
     except StarletteHTTPException as raised:
         return {"status": raised.status_code, "detail": raised.detail}
     return {"status": None, "detail": None}
-
-
-def run(input_value: dict[str, JsonValue]) -> JsonValue:
-    request = INPUT.validate_python(input_value)
-    return asyncio.run(validate(request))

@@ -1,81 +1,107 @@
-use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
-use indexmap::IndexMap;
+use std::borrow::Borrow;
 
-pub type RouterWeights = IndexMap<String, IndexMap<String, f64>>;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use serde::Deserialize;
+use serde_json::Number;
+
+#[derive(Debug, thiserror::Error)]
+pub enum RouterWeightValueError {
+    #[error("router weight identifiers must contain a non-whitespace character")]
+    Identifier,
+    #[error("router weights must be finite nonnegative numbers")]
+    Weight,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
+#[serde(try_from = "String")]
+pub struct RouterWeightIdentifier(String);
+
+impl TryFrom<String> for RouterWeightIdentifier {
+    type Error = RouterWeightValueError;
+
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        if name.chars().all(char::is_whitespace) {
+            return Err(RouterWeightValueError::Identifier);
+        }
+        Ok(Self(name))
+    }
+}
+
+impl RouterWeightIdentifier {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<str> for RouterWeightIdentifier {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(try_from = "Number")]
+pub struct RouterWeight(f64);
+
+impl TryFrom<Number> for RouterWeight {
+    type Error = RouterWeightValueError;
+
+    fn try_from(number: Number) -> Result<Self, Self::Error> {
+        match number.as_f64() {
+            Some(weight) if weight >= 0.0 => Ok(Self(weight)),
+            _ => Err(RouterWeightValueError::Weight),
+        }
+    }
+}
+
+impl RouterWeight {
+    #[must_use]
+    pub const fn get(self) -> f64 {
+        self.0
+    }
+}
+
+pub type RouterWeights =
+    IndexMap<RouterWeightIdentifier, IndexMap<RouterWeightIdentifier, RouterWeight>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RouterWeightsError {
     #[error("router_settings must be an object")]
     SettingsNotAnObject,
-    #[error("router_settings.weights must be an object or null")]
-    WeightsNotAnObject,
-    #[error("each router weight group must be an object")]
-    GroupNotAnObject,
-    #[error("router weight identifiers must contain a non-whitespace character")]
-    InvalidIdentifier,
-    #[error("router weights must be finite nonnegative numbers")]
-    InvalidWeight,
+    #[error("router_settings.weights is invalid: {0}")]
+    Decode(serde_json::Error),
     #[error("Each nonempty weights group must contain at least one positive weight")]
     NoPositiveWeight,
 }
 
+#[derive(Deserialize)]
+struct RouterWeightSettings {
+    #[serde(default)]
+    weights: Option<RouterWeights>,
+}
+
 pub fn decode_router_weights(settings: &Json) -> Result<Option<RouterWeights>, RouterWeightsError> {
-    let Json::Object(settings) = settings else {
-        return Err(RouterWeightsError::SettingsNotAnObject);
-    };
-    let Some(weights) = settings.get("weights") else {
-        return Ok(None);
-    };
-    match weights {
-        Json::Null => Ok(None),
-        Json::Object(groups) => decode_groups(groups).map(Some),
+    // serde would also read this one-field struct from a JSON array, so objects are checked first
+    match settings {
+        Json::Null => return Ok(None),
+        Json::Object(_) => {}
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(RouterWeightsError::WeightsNotAnObject)
+            return Err(RouterWeightsError::SettingsNotAnObject);
         }
     }
-}
-
-fn decode_groups(groups: &JsonObject) -> Result<RouterWeights, RouterWeightsError> {
-    let mut decoded = RouterWeights::new();
-    for (model_group, group) in groups {
-        validate_identifier(model_group)?;
-        let Json::Object(entries) = group else {
-            return Err(RouterWeightsError::GroupNotAnObject);
-        };
-        decoded.insert(model_group.clone(), decode_group(entries)?);
-    }
-    Ok(decoded)
-}
-
-fn decode_group(entries: &JsonObject) -> Result<IndexMap<String, f64>, RouterWeightsError> {
-    let mut decoded = IndexMap::new();
-    for (deployment_id, weight) in entries {
-        validate_identifier(deployment_id)?;
-        decoded.insert(deployment_id.clone(), decode_weight(weight)?);
-    }
-    if !decoded.is_empty() && !decoded.values().any(|weight| *weight > 0.0) {
+    let text = serde_json::to_string(settings).map_err(RouterWeightsError::Decode)?;
+    let parsed: RouterWeightSettings =
+        serde_json::from_str(&text).map_err(RouterWeightsError::Decode)?;
+    let Some(weights) = parsed.weights else {
+        return Ok(None);
+    };
+    let without_positive = weights
+        .values()
+        .any(|group| !group.is_empty() && group.values().all(|weight| weight.get() <= 0.0));
+    if without_positive {
         return Err(RouterWeightsError::NoPositiveWeight);
     }
-    Ok(decoded)
-}
-
-fn validate_identifier(name: &str) -> Result<(), RouterWeightsError> {
-    if name.chars().any(|character| !character.is_whitespace()) {
-        return Ok(());
-    }
-    Err(RouterWeightsError::InvalidIdentifier)
-}
-
-fn decode_weight(value: &Json) -> Result<f64, RouterWeightsError> {
-    let Json::Number(number) = value else {
-        return Err(RouterWeightsError::InvalidWeight);
-    };
-    let Some(weight) = number.as_f64() else {
-        return Err(RouterWeightsError::InvalidWeight);
-    };
-    if weight < 0.0 {
-        return Err(RouterWeightsError::InvalidWeight);
-    }
-    Ok(weight)
+    Ok(Some(weights))
 }

@@ -10,12 +10,15 @@ use super::error::RouterWeightError;
 use super::model_info::{RouterWeightModelInfo, RouterWeightModelInfoError};
 use super::reference::{RouterWeightDeployment, validate_weight_reference};
 use super::settings::validate_settings_weights;
-use super::weights::{RouterWeightsError, decode_router_weights};
+use super::weights::{RouterWeightIdentifier, RouterWeightsError, decode_router_weights};
 
 mod support;
 
 const INVALID_SETTINGS: &str = "Invalid router weights. Replace or clear router_settings.weights.";
 const DATABASE_UNAVAILABLE: &str = "Database unavailable while validating router weights";
+const WEIGHT_MESSAGE: &str = "router weights must be finite nonnegative numbers";
+const IDENTIFIER_MESSAGE: &str =
+    "router weight identifiers must contain a non-whitespace character";
 
 const TABLE_SCHEMA: &str = r#"
     CREATE TABLE "LiteLLM_ProxyModelTable" (
@@ -25,6 +28,8 @@ const TABLE_SCHEMA: &str = r#"
         model_info jsonb
     );
 "#;
+
+const UNRELATED_SCHEMA: &str = r#"CREATE TABLE "Unrelated" (id text PRIMARY KEY);"#;
 
 const SCANNED_SCHEMA: &str = r#"
     CREATE TABLE "WeightRows" (
@@ -50,15 +55,15 @@ fn json(text: &str) -> Json {
 fn deployment(
     model_name: &str,
     team_id: Option<&str>,
-    db_model: Option<bool>,
-    public_name: Option<&str>,
+    db_model: bool,
+    public_name: &str,
 ) -> RouterWeightDeployment {
     RouterWeightDeployment {
         model_name: model_name.to_owned(),
         model_info: RouterWeightModelInfo {
             team_id: team_id.map(str::to_owned),
             db_model,
-            team_public_model_name: public_name.map(str::to_owned),
+            team_public_model_name: public_name.to_owned(),
         },
     }
 }
@@ -96,6 +101,12 @@ fn assert_invalid_settings(error: &RouterWeightError) {
     assert_eq!(error.to_string(), INVALID_SETTINGS);
 }
 
+fn assert_weight_decode_error(settings: &str, message: &str) {
+    let error = decode_router_weights(&json(settings)).unwrap_err();
+    assert!(matches!(error, RouterWeightsError::Decode(_)), "{settings}");
+    assert!(error.to_string().contains(message), "{error}");
+}
+
 fn assert_falsey_model_info_defaults(values: &[&str]) {
     for value in values {
         let decoded = RouterWeightModelInfo::decode(&json(value)).unwrap();
@@ -127,7 +138,7 @@ fn assert_model_info_field_type(values: &[&str]) {
     for value in values {
         let error = RouterWeightModelInfo::decode(&json(value)).unwrap_err();
         assert!(
-            matches!(error, RouterWeightModelInfoError::FieldType { .. }),
+            matches!(error, RouterWeightModelInfoError::Json(_)),
             "{value}"
         );
     }
@@ -135,8 +146,8 @@ fn assert_model_info_field_type(values: &[&str]) {
 
 #[test]
 fn stored_precedes_configured() {
-    let stored = deployment("gpt-4", None, Some(true), None);
-    let configured_deployment = deployment("other-group", Some("team-b"), Some(true), None);
+    let stored = deployment("gpt-4", None, true, "");
+    let configured_deployment = deployment("other-group", Some("team-b"), true, "");
     let checked = validate_weight_reference(
         "gpt-4",
         "dep-1",
@@ -155,7 +166,7 @@ fn missing_id() {
 
 #[test]
 fn stale_db_model() {
-    let configured_deployment = deployment("gpt-4", None, Some(true), None);
+    let configured_deployment = deployment("gpt-4", None, true, "");
     let error =
         validate_weight_reference("gpt-4", "dep-1", None, None, Some(&configured_deployment))
             .unwrap_err();
@@ -164,7 +175,7 @@ fn stale_db_model() {
 
 #[test]
 fn other_team_hidden() {
-    let configured_deployment = deployment("gpt-4", Some("team-b"), None, None);
+    let configured_deployment = deployment("gpt-4", Some("team-b"), false, "");
     let error = validate_weight_reference(
         "gpt-4",
         "dep-1",
@@ -178,42 +189,42 @@ fn other_team_hidden() {
 
 #[test]
 fn same_team_public_name() {
-    let stored = deployment("internal", Some("team-a"), None, Some("gpt-4"));
+    let stored = deployment("internal", Some("team-a"), false, "gpt-4");
     let checked = validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None);
     assert!(checked.is_ok());
 }
 
 #[test]
 fn global_model_in_team() {
-    let stored = deployment("gpt-4", None, None, None);
+    let stored = deployment("gpt-4", None, false, "");
     let checked = validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None);
     assert!(checked.is_ok());
 }
 
 #[test]
 fn global_ignores_public_name() {
-    let stored = deployment("gpt-4", None, None, Some("public-name"));
+    let stored = deployment("gpt-4", None, false, "public-name");
     let checked = validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None);
     assert!(checked.is_ok());
 }
 
 #[test]
 fn empty_public_name_falls_back() {
-    let stored = deployment("gpt-4", Some("team-a"), None, Some(""));
+    let stored = deployment("gpt-4", Some("team-a"), false, "");
     let checked = validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None);
     assert!(checked.is_ok());
 }
 
 #[test]
 fn wrong_group() {
-    let stored = deployment("renamed", None, None, None);
+    let stored = deployment("renamed", None, false, "");
     let error = validate_weight_reference("gpt-4", "dep-1", None, Some(&stored), None).unwrap_err();
     assert_wrong_group(&error, "dep-1", "gpt-4");
 }
 
 #[test]
 fn team_public_name_is_canonical() {
-    let stored = deployment("gpt-4", Some("team-a"), None, Some("public-name"));
+    let stored = deployment("gpt-4", Some("team-a"), false, "public-name");
     let error = validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None)
         .unwrap_err();
     assert_wrong_group(&error, "dep-1", "gpt-4");
@@ -221,7 +232,7 @@ fn team_public_name_is_canonical() {
 
 #[test]
 fn stored_other_team_hidden() {
-    let stored = deployment("gpt-4", Some("team-b"), None, None);
+    let stored = deployment("gpt-4", Some("team-b"), false, "");
     let error = validate_weight_reference("gpt-4", "dep-1", Some("team-a"), Some(&stored), None)
         .unwrap_err();
     assert_unknown(&error, "dep-1");
@@ -239,8 +250,8 @@ fn deployment_fixture_decodes_model_info() {
             model_name: "gpt-4".to_owned(),
             model_info: RouterWeightModelInfo {
                 team_id: Some("team-a".to_owned()),
-                db_model: None,
-                team_public_model_name: None,
+                db_model: false,
+                team_public_model_name: String::new(),
             },
         }
     );
@@ -370,45 +381,49 @@ fn weights_accept_integer_and_zero() {
     let decoded = decode_router_weights(&json(r#"{"weights": {"gpt-4": {"a": 1, "b": 0}}}"#))
         .unwrap()
         .unwrap();
-    assert_eq!(decoded["gpt-4"]["a"].to_bits(), 1.0_f64.to_bits());
-    assert_eq!(decoded["gpt-4"]["b"].to_bits(), 0.0_f64.to_bits());
+    assert_eq!(decoded["gpt-4"]["a"].get().to_bits(), 1.0_f64.to_bits());
+    assert_eq!(decoded["gpt-4"]["b"].get().to_bits(), 0.0_f64.to_bits());
 }
 
 #[test]
 fn weights_reject_negative() {
-    let error = decode_router_weights(&json(r#"{"weights": {"gpt-4": {"a": -1}}}"#)).unwrap_err();
-    assert!(matches!(error, RouterWeightsError::InvalidWeight));
+    assert_weight_decode_error(r#"{"weights": {"gpt-4": {"a": -1}}}"#, WEIGHT_MESSAGE);
 }
 
 #[test]
 fn weights_reject_text() {
-    let error = decode_router_weights(&json(r#"{"weights": {"gpt-4": {"a": "1"}}}"#)).unwrap_err();
-    assert!(matches!(error, RouterWeightsError::InvalidWeight));
+    assert_weight_decode_error(r#"{"weights": {"gpt-4": {"a": "1"}}}"#, "invalid type");
 }
 
 #[test]
 fn weights_reject_boolean() {
-    let error = decode_router_weights(&json(r#"{"weights": {"gpt-4": {"a": true}}}"#)).unwrap_err();
-    assert!(matches!(error, RouterWeightsError::InvalidWeight));
+    assert_weight_decode_error(r#"{"weights": {"gpt-4": {"a": true}}}"#, "invalid type");
 }
 
 #[test]
 fn weights_reject_huge_number() {
-    let error =
-        decode_router_weights(&json(r#"{"weights": {"gpt-4": {"a": 1e400}}}"#)).unwrap_err();
-    assert!(matches!(error, RouterWeightsError::InvalidWeight));
+    assert_weight_decode_error(r#"{"weights": {"gpt-4": {"a": 1e400}}}"#, WEIGHT_MESSAGE);
 }
 
 #[test]
 fn weights_reject_empty_group_name() {
-    let error = decode_router_weights(&json(r#"{"weights": {"": {"a": 1}}}"#)).unwrap_err();
-    assert!(matches!(error, RouterWeightsError::InvalidIdentifier));
+    assert_weight_decode_error(r#"{"weights": {"": {"a": 1}}}"#, IDENTIFIER_MESSAGE);
 }
 
 #[test]
 fn weights_reject_whitespace_deployment_id() {
-    let error = decode_router_weights(&json(r#"{"weights": {"gpt-4": {" ": 1}}}"#)).unwrap_err();
-    assert!(matches!(error, RouterWeightsError::InvalidIdentifier));
+    assert_weight_decode_error(r#"{"weights": {"gpt-4": {" ": 1}}}"#, IDENTIFIER_MESSAGE);
+}
+
+#[test]
+fn weights_reject_non_object_group() {
+    assert_weight_decode_error(r#"{"weights": {"gpt-4": 1}}"#, "invalid type");
+}
+
+#[test]
+fn weights_reject_array_settings_that_wrap_weights() {
+    let error = decode_router_weights(&json(r#"[{"gpt-4": {"a": 1}}]"#)).unwrap_err();
+    assert!(matches!(error, RouterWeightsError::SettingsNotAnObject));
 }
 
 #[test]
@@ -430,9 +445,12 @@ fn weights_keep_group_and_deployment_order() {
     ))
     .unwrap()
     .unwrap();
-    let groups: Vec<&str> = decoded.keys().map(String::as_str).collect();
+    let groups: Vec<&str> = decoded.keys().map(RouterWeightIdentifier::as_str).collect();
     assert_eq!(groups, ["z-group", "a-group"]);
-    let deployments: Vec<&str> = decoded["z-group"].keys().map(String::as_str).collect();
+    let deployments: Vec<&str> = decoded["z-group"]
+        .keys()
+        .map(RouterWeightIdentifier::as_str)
+        .collect();
     assert_eq!(deployments, ["b", "a"]);
 }
 
@@ -458,8 +476,12 @@ fn weights_reject_non_object_settings() {
 
 #[test]
 fn weights_reject_non_object_weights() {
-    let error = decode_router_weights(&json(r#"{"weights": "gpt-4"}"#)).unwrap_err();
-    assert!(matches!(error, RouterWeightsError::WeightsNotAnObject));
+    assert_weight_decode_error(r#"{"weights": "gpt-4"}"#, "invalid type");
+}
+
+#[test]
+fn weights_null_settings_are_none() {
+    assert!(decode_router_weights(&Json::Null).unwrap().is_none());
 }
 
 #[test]
@@ -472,8 +494,8 @@ fn model_info_accepts_object() {
         decoded,
         RouterWeightModelInfo {
             team_id: Some("team-a".to_owned()),
-            db_model: Some(true),
-            team_public_model_name: Some("public".to_owned()),
+            db_model: true,
+            team_public_model_name: "public".to_owned(),
         }
     );
 }
@@ -485,8 +507,8 @@ fn model_info_accepts_json_string() {
         decoded,
         RouterWeightModelInfo {
             team_id: Some("team-a".to_owned()),
-            db_model: None,
-            team_public_model_name: None,
+            db_model: false,
+            team_public_model_name: String::new(),
         }
     );
 }
@@ -513,8 +535,10 @@ fn model_info_unparsable_json_string_fails() {
 
 #[test]
 fn model_info_fields_default_to_none() {
-    let decoded =
-        RouterWeightModelInfo::decode(&json(r#"{"team_id": null, "version": 2}"#)).unwrap();
+    let decoded = RouterWeightModelInfo::decode(&json(
+        r#"{"team_id": null, "db_model": null, "team_public_model_name": null, "version": 2}"#,
+    ))
+    .unwrap();
     assert_eq!(decoded, RouterWeightModelInfo::default());
 }
 
@@ -573,6 +597,20 @@ async fn postgres_reference_lookup_stored_absent_uses_configured() {
     validate_settings_weights(Some(&settings), None, Some(&repository), Some(&catalog))
         .await
         .unwrap();
+    case.close().await;
+}
+
+#[tokio::test]
+async fn postgres_reference_lookup_configured_db_model_hidden() {
+    let case = support::Case::new(TABLE_SCHEMA).await;
+    let repository = case.repository();
+    let mut catalog = DeploymentCatalog::default();
+    catalog.push(configured("gpt-4", r#"{"id": "dep-1", "db_model": true}"#));
+    let settings = json(r#"{"weights": {"gpt-4": {"dep-1": 1}}}"#);
+    let error = validate_settings_weights(Some(&settings), None, Some(&repository), Some(&catalog))
+        .await
+        .unwrap_err();
+    assert_unknown(&error, "dep-1");
     case.close().await;
 }
 
@@ -657,6 +695,21 @@ async fn postgres_reference_lookup_scalar_model_info_fails() {
 
 #[tokio::test]
 async fn postgres_reference_lookup_database_failure_no_fallback() {
+    let case = support::Case::new(UNRELATED_SCHEMA).await;
+    let repository = case.repository();
+    let mut catalog = DeploymentCatalog::default();
+    catalog.push(configured("gpt-4", r#"{"id": "dep-1"}"#));
+    let settings = json(r#"{"weights": {"gpt-4": {"dep-1": 1}}}"#);
+    let error = validate_settings_weights(Some(&settings), None, Some(&repository), Some(&catalog))
+        .await
+        .unwrap_err();
+    assert!(matches!(&error, RouterWeightError::Database(_)), "{error}");
+    assert_eq!(error.status_code(), None);
+    case.close().await;
+}
+
+#[tokio::test]
+async fn postgres_reference_lookup_unconnected_store_is_unavailable() {
     let missing = support::MissingDatabase::new();
     let repository = missing.repository();
     let mut catalog = DeploymentCatalog::default();

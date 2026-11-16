@@ -78,7 +78,7 @@ pub fn validate_weight_reference(
             deployment_id: deployment_id.to_owned(),
         });
     };
-    let hidden = (stored.is_none() && reference.model_info.db_model == Some(true))
+    let hidden = (stored.is_none() && reference.model_info.db_model)
         || reference
             .model_info
             .team_id
@@ -89,14 +89,12 @@ pub fn validate_weight_reference(
             deployment_id: deployment_id.to_owned(),
         });
     }
-    let public_name = if reference.model_info.team_id.is_some() {
-        reference.model_info.team_public_model_name.as_deref()
+    let public_name = reference.model_info.team_public_model_name.as_str();
+    let canonical_group = if reference.model_info.team_id.is_some() && !public_name.is_empty() {
+        public_name
     } else {
-        None
+        reference.model_name.as_str()
     };
-    let canonical_group = public_name
-        .filter(|name| !name.is_empty())
-        .unwrap_or(&reference.model_name);
     if model_group != canonical_group {
         return Err(RouterWeightError::WrongModelGroup {
             deployment_id: deployment_id.to_owned(),
@@ -134,12 +132,12 @@ pub(crate) async fn stored_deployments(
         let Some(JsonData::String(model_id)) = fields.get("model_id") else {
             continue;
         };
-        let model_id = model_id.clone();
         if !deployment_ids.contains(model_id.as_str()) {
             continue;
         }
+        let stored_id = model_id.clone();
         let decoded = ProxyModelTable::try_from(row)?;
-        stored.insert(model_id, RouterWeightDeployment::from_stored(&decoded)?);
+        stored.insert(stored_id, RouterWeightDeployment::from_stored(&decoded)?);
     }
     Ok(stored)
 }
