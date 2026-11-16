@@ -1,0 +1,8 @@
+kind: helper
+name: guardrail-form-tables-a-panw-prisma-airs
+call:
+  b6561:
+    provider: panw_prisma_airs
+env: {}
+compare:
+  ignore: []

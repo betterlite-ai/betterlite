@@ -1,0 +1,25 @@
+kind: helper
+name: streamed-response-assembly-simple
+call:
+  streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          role: assistant
+          content: A
+    - choices:
+      - index: 0
+        delta:
+          content: B
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}
