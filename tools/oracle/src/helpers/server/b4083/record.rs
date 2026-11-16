@@ -1,10 +1,10 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::shadow_tables::rows::ShadowAttemptRow;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_server::shadow_eval_job_loading::attempt::record_attempt;
 use serde_json::{Value, json};
-
-use crate::helpers::{HelperError, HelperResult};
 
 use super::inputs::{AttemptCall, RowInput};
 use super::support::{AttemptTables, FakeCounter, build_runtime, failure, outcome};

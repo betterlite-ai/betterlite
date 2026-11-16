@@ -7,6 +7,7 @@ use betterlite_db::shadow_tables::rows::{
     AttemptOutcome, FunnelCounters, JobAttemptStats, ShadowAttemptRow, ShadowFuture, ShadowJobRow,
     ShadowTables,
 };
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_server::shadow_eval_job_loading::attempt::{SpendCounter, SpendFuture};
 use betterlite_server::shadow_eval_job_loading::jobs::ActiveShadowEvalJob;
 use betterlite_server::shadow_eval_job_loading::loader::LoadedJobs;
@@ -14,8 +15,6 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde_json::Value;
 use tokio::runtime::{Builder, Runtime};
-
-use crate::helpers::HelperError;
 
 use super::inputs::{JobInput, StatInput};
 
