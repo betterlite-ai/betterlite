@@ -16,7 +16,9 @@ use super::codec::fake_codec;
 use super::coordinator::Coordinator;
 use super::support::{FakeCache, ManualClock, PayloadReader, ScriptedStore};
 use super::{number, parse_token, result_view, runtime, text};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::collections::BTreeMap;
 
 fn duration_ms(millis: i64) -> Duration {
     if millis <= 0 {
@@ -98,7 +100,7 @@ fn fake_cache(input: &Value) -> FakeCache {
             .get("delete_error")
             .and_then(Value::as_bool)
             .unwrap_or(false),
-        stored: Mutex::new(std::collections::BTreeMap::new()),
+        stored: Mutex::new(BTreeMap::new()),
     }
 }
 

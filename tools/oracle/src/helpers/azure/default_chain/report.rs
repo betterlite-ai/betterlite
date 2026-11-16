@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 use super::fixture::{Recorder, capture};
 use super::{ChainStep, InferStep, ProviderStep, TryStep, environment_of, requested};
+use betterlite_oracle_helper_api::error::HelperError;
 
 fn selection_log(logs: &[String]) -> Option<String> {
     logs.iter()
@@ -94,9 +95,7 @@ fn provider_report(
     })
 }
 
-pub(super) fn provider_value(
-    step: &ProviderStep,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+pub(super) fn provider_value(step: &ProviderStep) -> Result<Value, Box<HelperError>> {
     let environment = environment_of(&step.environment)?;
     let recorder = Recorder::new(&[], &step.construct_errors);
     let credential = requested(step.credential.as_deref())?;
@@ -113,7 +112,7 @@ pub(super) fn provider_value(
     })
 }
 
-pub(super) fn chain_value(step: &ChainStep) -> Result<Value, Box<crate::helpers::HelperError>> {
+pub(super) fn chain_value(step: &ChainStep) -> Result<Value, Box<HelperError>> {
     let environment = environment_of(&step.environment)?;
     let recorder = Recorder::new(&step.scripts, &step.construct_errors);
     let credential = requested(step.credential.as_deref())?;
@@ -209,7 +208,7 @@ fn invocation_result(error: &DefaultChainError) -> Value {
     }
 }
 
-pub(super) fn boundary_value(step: &TryStep) -> Result<Value, Box<crate::helpers::HelperError>> {
+pub(super) fn boundary_value(step: &TryStep) -> Result<Value, Box<HelperError>> {
     let environment = environment_of(&step.environment)?;
     let recorder = Recorder::new(&step.scripts, &step.construct_errors);
     let (boundary, logs) = capture(|| try_default_credential(&step.scope, &environment, &recorder));

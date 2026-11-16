@@ -1,8 +1,11 @@
 use betterlite_core::api::responses_reasoning_merge::merge_reasoning;
 use betterlite_core::api::responses_reasoning_merge::record::{ChatRecord, Record};
 use betterlite_core::api::responses_reasoning_merge::trailing::{TrailingInput, merge_trailing};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::Value;
+use std::fmt::Display;
 
 pub(crate) struct Op;
 
@@ -55,12 +58,9 @@ pub(crate) struct Input {
     hosted_search: bool,
 }
 
-fn to_records(
-    messages: &[Value],
-    kinds: &[RecordKind],
-) -> Result<Vec<Record>, Box<crate::helpers::HelperError>> {
+fn to_records(messages: &[Value], kinds: &[RecordKind]) -> Result<Vec<Record>, Box<HelperError>> {
     if kinds.len() != messages.len() {
-        return Err(Box::new(crate::helpers::HelperError {
+        return Err(Box::new(HelperError {
             class: "InvalidInput".to_owned(),
             status: None,
             error_type: None,
@@ -82,7 +82,7 @@ fn to_records(
         })
         .collect::<Result<_, serde_json::Error>>()
         .map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "InvalidInput".to_owned(),
                 status: None,
                 error_type: None,
@@ -93,10 +93,7 @@ fn to_records(
         })
 }
 
-fn merge_reasoning_records(
-    messages: &[Value],
-    kinds: &[RecordKind],
-) -> crate::helpers::HelperResult {
+fn merge_reasoning_records(messages: &[Value], kinds: &[RecordKind]) -> HelperResult {
     let mut records = to_records(messages, kinds)?;
     let merged = merge_reasoning(&mut records);
     let values: Vec<Value> = merged
@@ -104,7 +101,7 @@ fn merge_reasoning_records(
         .map(serialize_record)
         .collect::<Result<_, serde_json::Error>>()
         .map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "InvalidInput".to_owned(),
                 status: None,
                 error_type: None,
@@ -129,11 +126,11 @@ fn serialize_record(record: &Record) -> Result<Value, serde_json::Error> {
     }
 }
 
-fn helper_error<T>(message: T) -> Box<crate::helpers::HelperError>
+fn helper_error<T>(message: T) -> Box<HelperError>
 where
-    T: std::fmt::Display,
+    T: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,
@@ -143,9 +140,7 @@ where
     })
 }
 
-fn to_trailing_inputs(
-    values: &[Value],
-) -> Result<Vec<TrailingInput>, Box<crate::helpers::HelperError>> {
+fn to_trailing_inputs(values: &[Value]) -> Result<Vec<TrailingInput>, Box<HelperError>> {
     values
         .iter()
         .cloned()
@@ -158,7 +153,7 @@ fn merge_trailing_records(
     messages: &[Value],
     new_messages: &[Value],
     hosted_search: bool,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let typed_messages = to_trailing_inputs(messages)?;
     let typed_new_messages = to_trailing_inputs(new_messages)?;
     let merged = merge_trailing(&typed_messages, &typed_new_messages, hosted_search)
@@ -173,10 +168,10 @@ fn merge_trailing_records(
     Ok(Value::Object(object))
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.mode {
             Mode::Reasoning => {
                 let kinds = input.record_kind.resolve(input.messages.len());

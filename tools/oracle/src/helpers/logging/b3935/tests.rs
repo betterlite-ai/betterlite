@@ -1,22 +1,22 @@
 #![cfg(test)]
 
-use std::fs;
 use std::path::Path;
+use std::{fs, str};
 
 use betterlite_logging::datadog_llm_obs::arguments::{ToolArguments, decode_tool_arguments};
 use betterlite_logging::datadog_llm_obs::literal::literal_json;
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 use rstest::rstest;
 
 #[rstest]
 fn replays_the_datadog_llm_argument_decoder_corpus() {
-    let corpus =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/datadog_llm_argument_decoder");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/datadog_llm_argument_decoder");
     let mut seen = 0_usize;
     for entry in fs::read_dir(corpus).unwrap() {
         let path = entry.unwrap().path();
         let name = path.file_name().unwrap().to_str().unwrap().to_owned();
         let bytes = fs::read(&path).unwrap();
-        let Ok(text) = std::str::from_utf8(&bytes) else {
+        let Ok(text) = str::from_utf8(&bytes) else {
             continue;
         };
         seen = seen.saturating_add(1);

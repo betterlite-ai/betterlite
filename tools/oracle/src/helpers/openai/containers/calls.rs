@@ -7,7 +7,8 @@ use serde_json::{Map, Value, json};
 
 use super::fixture::call_config;
 use super::input::{BodyCall, HeadersCall, ReplyCall, ReplyKind, RequestCall, UrlCall};
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn url(call: &UrlCall) -> HelperResult {
     let built = call_config(&call.globals, &call.environment)?;

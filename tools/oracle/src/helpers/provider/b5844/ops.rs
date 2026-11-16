@@ -1,4 +1,4 @@
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_prompts::arguments::json::Object;
 use betterlite_provider::snowflake::config::{
     EMBEDDING_PARAMS, Endpoint, get_complete_url, get_supported_openai_params, is_claude_model,
@@ -22,7 +22,7 @@ use super::input::{
 };
 use super::project;
 use super::support::{NilIds, NoFetch, Recorder, WordCounter};
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 type Handler = SnowflakeStreamingHandler<(), (), WordCounter>;
 type StepResult = Result<Value, Box<HelperError>>;

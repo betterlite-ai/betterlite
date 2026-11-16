@@ -52,7 +52,7 @@ description: >-
   the mock provider. Do not add a decoder fuzz target: this task transforms typed events and streams, and B925/B932
   own byte decoding.
 
-  Register HelperCall::ResponsesMcpStreamRound in tools/oracle/src/helpers/mod.rs and helpers.rs when required, add
+  Register HelperCall::ResponsesMcpStreamRound in tools/oracle/src/helpers.rs and helpers.rs when required, add
   tools/oracle/helpers/responses_mcp_stream_round.py and externally tagged helper seeds under
   tools/oracle/fuzz/corpus/helper_case/responses_mcp_stream_round-*. Compare ordered events, dropped/retained chunks,
   action transitions, diagnostics and mutations against independently scripted pinned behavior; do not compare random

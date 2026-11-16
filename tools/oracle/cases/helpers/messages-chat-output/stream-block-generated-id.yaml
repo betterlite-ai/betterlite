@@ -1,0 +1,24 @@
+kind: helper
+name: messages-chat-output-stream-block-generated-id
+call:
+  messages_chat_output:
+    operation: block
+    choices:
+    - finish_reason: null
+      delta:
+        content: null
+        tool_calls:
+        - id: null
+          index: 0
+          function:
+            name: null
+            arguments: null
+        reasoning_content: null
+        thinking_blocks: null
+        refusal: null
+        provider_specific_fields: null
+env: {}
+compare:
+  ignore:
+  - pointer: /value/block/id
+    why: B198 generates a fresh uuid when the delta carries no tool id
