@@ -19,23 +19,20 @@ pub fn messages_to_input(
     let mut items = Vec::new();
     for message in messages {
         match message.role {
-            MessageRole::System => append_system(&mut items, message.content.as_ref()),
+            MessageRole::System => {
+                let parts = system_parts(message.content.as_ref());
+                if !parts.is_empty() {
+                    items.push(InputItem::Message {
+                        role: MessageRole::System,
+                        content: parts,
+                    });
+                }
+            }
             MessageRole::User => append_user(&mut items, message.content.as_ref()),
             MessageRole::Assistant => append_assistant(&mut items, message.content.as_ref())?,
         }
     }
     Ok(items)
-}
-
-fn append_system(items: &mut Vec<InputItem>, content: Option<&Content>) {
-    let parts = system_parts(content);
-    if parts.is_empty() {
-        return;
-    }
-    items.push(InputItem::Message {
-        role: MessageRole::System,
-        content: parts,
-    });
 }
 
 fn append_user(items: &mut Vec<InputItem>, content: Option<&Content>) {

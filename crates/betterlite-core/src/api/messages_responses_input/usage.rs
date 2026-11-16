@@ -11,10 +11,7 @@ use super::error::MessagesResponsesInputError;
 pub fn anthropic_usage(
     raw_usage: Option<&ResponseApiUsage>,
 ) -> Result<UsageProjection, MessagesResponsesInputError> {
-    let input = match raw_usage {
-        None => UsageInput::Absent,
-        Some(usage) => UsageInput::Response(usage),
-    };
+    let input = raw_usage.map_or(UsageInput::Absent, UsageInput::Response);
     let chat_usage = normalize_and_project(input)
         .map_err(|source| MessagesResponsesInputError::Usage { source })?;
     let record: UsageRecord = serde_json::from_value(chat_usage)

@@ -377,9 +377,7 @@ fn reasoning_item_thinking_block(
     #[case] expected: &str,
 ) {
     let parts: Vec<SummaryPart> = serde_json::from_str(summary).expect("valid summary");
-    let block = match thinking_block(&parts, encrypted_content) {
-        Some(block) => rendered(&block),
-        None => Json::Null,
-    };
+    let block = thinking_block(&parts, encrypted_content)
+        .map_or_else(|| Json::Null, |block| rendered(&block));
     assert_eq!(block, json(expected));
 }
