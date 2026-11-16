@@ -1,0 +1,23 @@
+kind: helper
+name: audit-events-policy-and-records-seed
+call:
+  audit_events:
+    aspect: policy
+    explicit: null
+    store: null
+    env: " true "
+calls:
+  - audit_events:
+      aspect: record
+      record:
+        id: audit-seed
+        updated_at: "2026-01-02T03:04:05.123456+00:00"
+        changed_by: 7
+        changed_by_api_key: null
+        action: kill_switch_fired
+        table_name: LiteLLM_Config
+        object_id: config-seed
+        before_value: '{"key": "abcdefghij", "name": "seed"}'
+        updated_values: null
+env: {}
+compare: {ignore: []}

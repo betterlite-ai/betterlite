@@ -1,0 +1,10 @@
+kind: helper
+name: b3330-extract-model-none
+call:
+  b3330: {function: extract_model, value: null}
+calls:
+  - b3330: {function: extract_model, value: true}
+  - b3330: {function: extract_model, value: 12}
+  - b3330: {function: extract_model, value: {model: sora-2}}
+env: {}
+compare: {ignore: []}

@@ -141,7 +141,7 @@ checks:
       run: test -f tools/oracle/helpers/identity_grants.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
       why: The new projection operation has no added decoder seed.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/identity-grants-*")" && grep -rlq identity_grants tools/oracle/fuzz/corpus/helper_case/identity-grants-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/identity-grants-*")" && grep -rlq identity_grants tools/oracle/fuzz/corpus/helper_case/identity-grants-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-auth --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: alias-corpus
       why: Stored alias strings have no production decoder target or fresh replay corpus.
       run: test -f crates/betterlite-auth/fuzz/fuzz_targets/team_model_aliases.rs && grep -q team_model_aliases crates/betterlite-auth/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/team_model_aliases)" && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(replays_the_team_model_aliases_corpus)'

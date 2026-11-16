@@ -1,0 +1,36 @@
+kind: helper
+name: watsonx-chat-plan-project-id-in-body
+env: {}
+compare: {ignore: []}
+call:
+  b5971:
+    env: {}
+    maps: []
+    infos: []
+    urls: []
+    plans:
+      - model: granite-13b
+        api_base: https://host
+        api_key: null
+        headers: {Authorization: Bearer caller, X-Trace: abc}
+        options: {project_id: project-1, temperature: 0.5, region_name: us-south}
+      - model: granite-13b
+        api_base: https://host
+        api_key: null
+        headers: {Authorization: Bearer caller}
+        options: {space_id: space-1}
+      - model: granite-13b
+        api_base: https://host
+        api_key: null
+        headers: {Authorization: Bearer caller}
+        options: {space_id: space-1, project_id: project-1, model_id: other}
+      - model: ibm/granite-13b
+        api_base: https://host/
+        api_key: key
+        headers: {Authorization: Bearer caller}
+        options: {watsonx_project: project-2, stream: true, api_version: "2025-02-02"}
+      - model: granite-13b
+        api_base: https://host
+        api_key: null
+        headers: {}
+        options: {project_id: project-1, token: opt-token, zen_api_key: zen}
