@@ -8,7 +8,7 @@ use secrecy::SecretString;
 use super::delete::transform_delete_response;
 use super::error::FireworksResponsesError;
 use super::headers::validate_environment;
-use super::instructions::fold_instructions;
+use super::instructions::{fold_instructions, text_only_content};
 use super::request::transform_responses_request;
 use super::settings::{FireworksResponsesEnv, SessionSource};
 use super::url::{DEFAULT_API_BASE, get_complete_url};
@@ -485,6 +485,28 @@ fn a_system_item_after_the_conversation_starts_is_kept() {
         (
             Some(json(r#""a""#)),
             json(r#"[{"role": "user", "content": "u"}, {"role": "system", "content": "s"}]"#),
+        )
+    );
+}
+
+#[test]
+fn text_only_content_ignores_a_non_instruction_role() {
+    let user = json(r#"{"role": "user", "content": "u"}"#);
+    assert_eq!(text_only_content(&user), None);
+    let system = json(r#"{"role": "system", "content": "s"}"#);
+    assert_eq!(text_only_content(&system), Some(String::from("s")));
+}
+
+#[test]
+fn an_empty_folded_text_adds_no_separator() {
+    assert_eq!(
+        folded(
+            r#"[{"role": "system", "content": ""}, {"role": "system", "content": "a"}, {"role": "user", "content": "u"}]"#,
+            None,
+        ),
+        (
+            Some(json(r#""a""#)),
+            json(r#"[{"role": "user", "content": "u"}]"#),
         )
     );
 }

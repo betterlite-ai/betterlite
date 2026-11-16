@@ -95,7 +95,7 @@ fn closing_start(roles: &[Option<&str>], leading: usize) -> usize {
     }
 }
 
-fn text_only_content(item: &Json) -> Option<String> {
+pub(super) fn text_only_content(item: &Json) -> Option<String> {
     let fields = item.as_object()?;
     let role = fields.get("role").and_then(Json::as_str);
     if !matches!(role, Some("system" | "developer")) {
