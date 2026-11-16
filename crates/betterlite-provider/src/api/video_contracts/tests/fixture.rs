@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::string::FromUtf8Error;
+
 use betterlite_core::api::video_records::{VideoCreateOptionalRequestParams, VideoObject};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
@@ -13,30 +15,30 @@ use crate::api::video_contracts::records::{
 };
 
 #[derive(Debug, Error)]
-pub enum FixtureError {
+pub(super) enum FixtureError {
     #[error(transparent)]
     Contract(#[from] VideoContractError),
     #[error("the fixture refused status {0}")]
     Refused(u16),
     #[error("the fixture body is not text")]
-    Body(#[from] std::string::FromUtf8Error),
+    Body(#[from] FromUtf8Error),
 }
 
-pub struct SyncHandle;
+pub(super) struct SyncHandle;
 
-pub struct AsyncHandle;
+pub(super) struct AsyncHandle;
 
 // Implements only what LiteLLM declares abstract, so every other member runs the trait default
-pub struct Subject;
+pub(super) struct Subject;
 
 #[derive(Default)]
-pub struct Parts {
-    pub params: Params,
-    pub headers: Headers,
+pub(super) struct Parts {
+    params: Params,
+    headers: Headers,
 }
 
 impl Parts {
-    pub fn context(&self) -> VideoRequestContext<'_> {
+    pub(super) fn context(&self) -> VideoRequestContext<'_> {
         VideoRequestContext {
             api_base: "https://mock/videos",
             litellm_params: &self.params,
@@ -45,27 +47,11 @@ impl Parts {
     }
 }
 
-pub fn raw(status: u16, body: &str) -> UpstreamResponse {
+pub(super) fn raw(status: u16, body: &str) -> UpstreamResponse {
     UpstreamResponse {
         status,
         headers: HeaderMap::new(),
         body: body.as_bytes().to_vec(),
-    }
-}
-
-pub fn empty_options() -> VideoCreateOptionalRequestParams {
-    VideoCreateOptionalRequestParams {
-        input_reference: None,
-        image: None,
-        parameters: None,
-        model: None,
-        resolution: None,
-        seconds: None,
-        size: None,
-        characters: None,
-        user: None,
-        extra_headers: None,
-        extra_body: None,
     }
 }
 
@@ -103,10 +89,10 @@ impl BaseVideoConfig for Subject {
         &self,
         model: &str,
         prompt: &str,
-        _optional_params: &VideoCreateOptionalRequestParams,
+        optional_params: &Params,
         context: VideoRequestContext<'_>,
     ) -> Result<(Params, RequestFiles, String), FixtureError> {
-        let mut data = Params::new();
+        let mut data = optional_params.clone();
         data.insert("model".to_owned(), Json::Text(model.to_owned()));
         data.insert("prompt".to_owned(), Json::Text(prompt.to_owned()));
         Ok((data, Vec::new(), context.api_base.to_owned()))
@@ -144,12 +130,19 @@ impl BaseVideoConfig for Subject {
 
     fn transform_video_remix_request(
         &self,
-        _video_id: &str,
-        _prompt: &str,
-        _extra_body: Option<&Params>,
+        video_id: &str,
+        prompt: &str,
+        extra_body: Option<&Params>,
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params), FixtureError> {
-        Ok((context.api_base.to_owned(), Params::new()))
+        let mut data = Params::from([
+            ("prompt".to_owned(), Json::Text(prompt.to_owned())),
+            ("video_id".to_owned(), Json::Text(video_id.to_owned())),
+        ]);
+        if let Some(extra) = extra_body {
+            data.extend(extra.clone());
+        }
+        Ok((context.api_base.to_owned(), data))
     }
 
     fn transform_video_remix_response(
@@ -184,7 +177,7 @@ impl BaseVideoConfig for Subject {
 
     fn transform_video_status_retrieve_response(
         &self,
-        mut reply: VideoReply<'_>,
+        reply: VideoReply<'_>,
         client: Option<&SyncHandle>,
     ) -> Result<VideoObject, FixtureError> {
         refuse_failure(reply.raw_response)?;

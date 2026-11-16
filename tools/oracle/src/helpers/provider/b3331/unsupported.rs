@@ -28,6 +28,21 @@ pub(crate) enum ResponseOperation {
     Extension,
 }
 
+const EDIT_INPUT: VideoEditInput<'static> = VideoEditInput {
+    prompt: "prompt",
+    video_id: "video_1",
+    video_file: None,
+    extra_body: None,
+    prefetched_source_data: None,
+};
+
+const EXTENSION_INPUT: VideoExtensionInput<'static> = VideoExtensionInput {
+    prompt: "prompt",
+    video_id: "video_1",
+    seconds: "4",
+    extra_body: None,
+};
+
 pub(super) fn unsupported_request(operation: RequestOperation) -> serde_json::Value {
     let params = Params::new();
     let headers = Headers::new();
@@ -47,29 +62,12 @@ pub(super) fn unsupported_request(operation: RequestOperation) -> serde_json::Va
         RequestOperation::GetCharacter => Subject
             .transform_video_get_character_request("char_1", context)
             .map(drop),
-        RequestOperation::Edit => {
-            let input = VideoEditInput {
-                prompt: "prompt",
-                video_id: "video_1",
-                video_file: None,
-                extra_body: None,
-                prefetched_source_data: None,
-            };
-            Subject
-                .transform_video_edit_request(input, context)
-                .map(drop)
-        }
-        RequestOperation::Extension => {
-            let input = VideoExtensionInput {
-                prompt: "prompt",
-                video_id: "video_1",
-                seconds: "4",
-                extra_body: None,
-            };
-            Subject
-                .transform_video_extension_request(input, context)
-                .map(drop)
-        }
+        RequestOperation::Edit => Subject
+            .transform_video_edit_request(EDIT_INPUT, context)
+            .map(drop),
+        RequestOperation::Extension => Subject
+            .transform_video_extension_request(EXTENSION_INPUT, context)
+            .map(drop),
     };
     raised(outcome)
 }
@@ -77,22 +75,37 @@ pub(super) fn unsupported_request(operation: RequestOperation) -> serde_json::Va
 pub(super) fn unsupported_response(operation: ResponseOperation) -> serde_json::Value {
     let raw = response("");
     let mut logging = VideoLogging::default();
-    let reply = VideoReply {
-        raw_response: &raw,
-        logging_obj: &mut logging,
-        custom_llm_provider: None,
-    };
-    let outcome = match operation {
-        ResponseOperation::CreateCharacter => Subject
-            .transform_video_create_character_response(reply.raw_response, reply.logging_obj)
-            .map(drop),
-        ResponseOperation::GetCharacter => Subject
-            .transform_video_get_character_response(reply.raw_response, reply.logging_obj)
-            .map(drop),
-        ResponseOperation::Edit => Subject.transform_video_edit_response(reply, None).map(drop),
-        ResponseOperation::Extension => Subject.transform_video_extension_response(reply).map(drop),
-    };
-    raised(outcome)
+    match operation {
+        ResponseOperation::CreateCharacter => {
+            let outcome = Subject.transform_video_create_character_response(&raw, &mut logging);
+            raised(outcome.map(drop))
+        }
+        ResponseOperation::GetCharacter => {
+            let outcome = Subject.transform_video_get_character_response(&raw, &mut logging);
+            raised(outcome.map(drop))
+        }
+        ResponseOperation::Edit => raised(
+            Subject
+                .transform_video_edit_response(
+                    VideoReply {
+                        raw_response: &raw,
+                        logging_obj: &mut logging,
+                        custom_llm_provider: None,
+                    },
+                    None,
+                )
+                .map(drop),
+        ),
+        ResponseOperation::Extension => raised(
+            Subject
+                .transform_video_extension_response(VideoReply {
+                    raw_response: &raw,
+                    logging_obj: &mut logging,
+                    custom_llm_provider: None,
+                })
+                .map(drop),
+        ),
+    }
 }
 
 fn raised(outcome: Result<(), SubjectError>) -> serde_json::Value {

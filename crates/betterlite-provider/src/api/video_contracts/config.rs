@@ -3,12 +3,19 @@ use std::error::Error;
 use async_trait::async_trait;
 use betterlite_core::api::bfl::edit::media::SuppliedMedia;
 use betterlite_core::api::video_records::{
-    CharacterObject, VideoCreateOptionalRequestParams, VideoObject,
+    CharacterObject,
+    // ast-grep-ignore: no-long-names
+    VideoCreateOptionalRequestParams,
+    VideoObject,
 };
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 
 use super::error::VideoContractError;
+use super::error::VideoContractError::{
+    ApiBaseRequired, CreateCharacterUnsupported, EditUnsupported, ExtensionUnsupported,
+    GetCharacterUnsupported,
+};
 use super::records::{
     Headers, Params, RequestFiles, VideoEditInput, VideoEnvironment, VideoExtensionInput,
     VideoListQuery, VideoLogging, VideoReply, VideoRequestContext,
@@ -26,6 +33,7 @@ pub trait BaseVideoConfig: Send + Sync {
 
     fn map_openai_params(
         &self,
+        // ast-grep-ignore: no-long-names
         video_create_optional_params: &VideoCreateOptionalRequestParams,
         model: &str,
         drop_params: bool,
@@ -44,7 +52,7 @@ pub trait BaseVideoConfig: Send + Sync {
         _litellm_params: &Params,
     ) -> Result<String, Self::Error> {
         let Some(base) = api_base else {
-            return Err(Self::Error::from(VideoContractError::ApiBaseRequired));
+            return Err(Self::Error::from(ApiBaseRequired));
         };
         Ok(base.to_owned())
     }
@@ -53,12 +61,12 @@ pub trait BaseVideoConfig: Send + Sync {
         false
     }
 
-    // ast-grep-ignore: no-long-names
+    // The mapped params: map_openai_params's map with extra_body merged over it, as LiteLLM's handler passes
     fn transform_video_create_request(
         &self,
         model: &str,
         prompt: &str,
-        optional_params: &VideoCreateOptionalRequestParams,
+        optional_params: &Params,
         context: VideoRequestContext<'_>,
     ) -> Result<(Params, RequestFiles, String), Self::Error>;
 
@@ -94,7 +102,6 @@ pub trait BaseVideoConfig: Send + Sync {
         self.transform_video_content_response(raw_response, logging_obj)
     }
 
-    // ast-grep-ignore: no-long-names
     fn transform_video_remix_request(
         &self,
         video_id: &str,
@@ -103,20 +110,17 @@ pub trait BaseVideoConfig: Send + Sync {
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params), Self::Error>;
 
-    // ast-grep-ignore: no-long-names
     fn transform_video_remix_response(
         &self,
         reply: VideoReply<'_>,
     ) -> Result<VideoObject, Self::Error>;
 
-    // ast-grep-ignore: no-long-names
     fn transform_video_list_request(
         &self,
         query: VideoListQuery<'_>,
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params), Self::Error>;
 
-    // ast-grep-ignore: no-long-names
     fn transform_video_list_response(&self, reply: VideoReply<'_>) -> Result<Params, Self::Error>;
 
     // ast-grep-ignore: no-long-names
@@ -150,9 +154,7 @@ pub trait BaseVideoConfig: Send + Sync {
         _video: &SuppliedMedia,
         _context: VideoRequestContext<'_>,
     ) -> Result<(String, RequestFiles), Self::Error> {
-        Err(Self::Error::from(
-            VideoContractError::CreateCharacterUnsupported,
-        ))
+        Err(Self::Error::from(CreateCharacterUnsupported))
     }
 
     // ast-grep-ignore: no-long-names
@@ -161,9 +163,7 @@ pub trait BaseVideoConfig: Send + Sync {
         _raw_response: &UpstreamResponse,
         _logging_obj: &mut VideoLogging,
     ) -> Result<CharacterObject, Self::Error> {
-        Err(Self::Error::from(
-            VideoContractError::CreateCharacterUnsupported,
-        ))
+        Err(Self::Error::from(CreateCharacterUnsupported))
     }
 
     // ast-grep-ignore: no-long-names
@@ -172,9 +172,7 @@ pub trait BaseVideoConfig: Send + Sync {
         _character_id: &str,
         _context: VideoRequestContext<'_>,
     ) -> Result<(String, Params), Self::Error> {
-        Err(Self::Error::from(
-            VideoContractError::GetCharacterUnsupported,
-        ))
+        Err(Self::Error::from(GetCharacterUnsupported))
     }
 
     // ast-grep-ignore: no-long-names
@@ -183,9 +181,7 @@ pub trait BaseVideoConfig: Send + Sync {
         _raw_response: &UpstreamResponse,
         _logging_obj: &mut VideoLogging,
     ) -> Result<CharacterObject, Self::Error> {
-        Err(Self::Error::from(
-            VideoContractError::GetCharacterUnsupported,
-        ))
+        Err(Self::Error::from(GetCharacterUnsupported))
     }
 
     // None means the edit needs no pre-fetch call, and Some is the (url, body) to send first
@@ -197,22 +193,20 @@ pub trait BaseVideoConfig: Send + Sync {
         None
     }
 
-    // ast-grep-ignore: no-long-names
     fn transform_video_edit_request(
         &self,
         _input: VideoEditInput<'_>,
         _context: VideoRequestContext<'_>,
     ) -> Result<(String, Params, Option<RequestFiles>), Self::Error> {
-        Err(Self::Error::from(VideoContractError::EditUnsupported))
+        Err(Self::Error::from(EditUnsupported))
     }
 
-    // ast-grep-ignore: no-long-names
     fn transform_video_edit_response(
         &self,
         _reply: VideoReply<'_>,
         _request_data: Option<&Params>,
     ) -> Result<VideoObject, Self::Error> {
-        Err(Self::Error::from(VideoContractError::EditUnsupported))
+        Err(Self::Error::from(EditUnsupported))
     }
 
     // ast-grep-ignore: no-long-names
@@ -221,7 +215,7 @@ pub trait BaseVideoConfig: Send + Sync {
         _input: VideoExtensionInput<'_>,
         _context: VideoRequestContext<'_>,
     ) -> Result<(String, Params), Self::Error> {
-        Err(Self::Error::from(VideoContractError::ExtensionUnsupported))
+        Err(Self::Error::from(ExtensionUnsupported))
     }
 
     // ast-grep-ignore: no-long-names
@@ -229,7 +223,7 @@ pub trait BaseVideoConfig: Send + Sync {
         &self,
         _reply: VideoReply<'_>,
     ) -> Result<VideoObject, Self::Error> {
-        Err(Self::Error::from(VideoContractError::ExtensionUnsupported))
+        Err(Self::Error::from(ExtensionUnsupported))
     }
 
     // B2202's BaseLLMException with the three supplied facts; LiteLLM raises it where this returns it

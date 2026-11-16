@@ -1,21 +1,24 @@
 #![cfg(test)]
 
 use betterlite_core::api::video_records::{CharacterObject, VideoObject};
+use betterlite_models::decisions::Json;
 
 use crate::api::video_contracts::config::BaseVideoConfig as _;
-use crate::api::video_contracts::records::{VideoLogging, VideoReply};
+use crate::api::video_contracts::records::{Params, VideoLogging, VideoReply};
 
-use super::fixture::{FixtureError, Parts, Subject, empty_options, raw};
+use super::fixture::{FixtureError, Parts, Subject, raw};
 
 #[test]
-fn types_create_request_takes_the_b3330_option_record() {
+fn types_create_request_takes_the_mapped_params() {
     let parts = Parts::default();
-    let mut options = empty_options();
-    options.seconds = Some("8".to_owned());
+    let mut mapped = Params::new();
+    mapped.insert("seconds".to_owned(), Json::Text("8".to_owned()));
     let (data, files, url) = Subject
-        .transform_video_create_request("veo", "a cat", &options, parts.context())
+        .transform_video_create_request("veo", "a cat", &mapped, parts.context())
         .unwrap();
-    assert_eq!(data.len(), 2);
+    assert_eq!(data.get("seconds"), Some(&Json::Text("8".to_owned())));
+    assert_eq!(data.get("model"), Some(&Json::Text("veo".to_owned())));
+    assert_eq!(data.get("prompt"), Some(&Json::Text("a cat".to_owned())));
     assert!(files.is_empty());
     assert_eq!(url, "https://mock/videos");
 }
@@ -43,6 +46,12 @@ fn types_character_transforms_return_the_b3330_character_record() {
         Subject.transform_video_create_character_response(&raw(200, ""), &mut logging);
     let fetched: Result<CharacterObject, FixtureError> =
         Subject.transform_video_get_character_response(&raw(200, ""), &mut logging);
-    assert!(created.is_err());
-    assert!(fetched.is_err());
+    assert_eq!(
+        created.unwrap_err().to_string(),
+        "video create character is not supported for this provider"
+    );
+    assert_eq!(
+        fetched.unwrap_err().to_string(),
+        "video get character is not supported for this provider"
+    );
 }
