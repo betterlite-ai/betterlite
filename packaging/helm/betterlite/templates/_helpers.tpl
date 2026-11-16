@@ -1,8 +1,3 @@
-{{/*
-Naming, labels, the shared server environment and the small blocks the
-gateway, backend, ui and migrations Job templates all render.
-*/}}
-
 {{- define "betterlite.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
@@ -77,11 +72,7 @@ app.kubernetes.io/component: ui
 {{- end -}}
 {{- end -}}
 
-{{/*
-ServiceAccount name for the migrations Job. The Job is a hook, so it runs before
-the chart's ordinary resources: an account this chart creates is not there yet,
-and the Job falls back to default unless the operator names an existing account.
-*/}}
+{{/* The hook runs before the chart creates accounts, so a created backend account does not exist yet */}}
 {{- define "betterlite.migrations.serviceAccountName" -}}
 {{- if .Values.migrationJob.serviceAccountName -}}
 {{ .Values.migrationJob.serviceAccountName }}
@@ -92,12 +83,7 @@ default
 {{- end -}}
 {{- end -}}
 
-{{/*
-Extra pod labels for a Deployment, rejected when they collide with a selector
-label: the template would render the key twice, stop matching the immutable
-selector, and the apiserver would refuse the Deployment with a vague message.
-Invoke with a dict: (dict "podLabels" .Values.gateway.podLabels "componentName" "gateway").
-*/}}
+{{/* A label repeating a selector key renders twice and breaks the immutable selector */}}
 {{- define "betterlite.podLabels" -}}
 {{- $componentName := .componentName -}}
 {{- range $key, $value := .podLabels }}
@@ -108,14 +94,7 @@ Invoke with a dict: (dict "podLabels" .Values.gateway.podLabels "componentName" 
 {{- toYaml .podLabels }}
 {{- end -}}
 
-{{/*
-Master key, database and Redis environment shared by the gateway, backend and
-migrations Job. Invoke with (dict "root" $ "component" .Values.gateway).
-
-Sensitive values come only from referenced Secrets. The chart never assembles
-DATABASE_URL: a raw password in a URL breaks on reserved characters, so the
-proxy builds it from the discrete variables.
-*/}}
+{{/* No DATABASE_URL here: a raw password breaks the URL on reserved characters */}}
 {{- define "betterlite.serverEnv" -}}
 {{- $root := .root -}}
 {{- $component := .component -}}
@@ -212,10 +191,7 @@ proxy builds it from the discrete variables.
 {{- end }}
 {{- end }}
 {{- end }}
-{{/*
-The migrations Job owns the schema update, so the pods must not run one on
-startup and race the Job and each other. The Job entrypoint ignores the variable.
-*/}}
+{{/* The migrations Job owns the schema update, so pods must not race it on startup */}}
 - name: DISABLE_SCHEMA_UPDATE
   value: "true"
 {{- if $root.Values.redis.host }}
@@ -241,10 +217,7 @@ startup and race the Job and each other. The Job entrypoint ignores the variable
 {{- end }}
 {{- end -}}
 
-{{/*
-In-container PgBouncer environment for the gateway container. Under IAM or
-Entra auth the pooler mints and renews the database token itself.
-*/}}
+{{/* Under IAM or Entra auth the pooler mints and renews the database token itself */}}
 {{- define "betterlite.connectionPoolEnv" -}}
 {{- with .Values.database.connectionPool -}}
 - name: LITELLM_PGBOUNCER_ENABLED
@@ -256,16 +229,7 @@ Entra auth the pooler mints and renews the database token itself.
 {{- end }}
 {{- end -}}
 
-{{/*
-PodDisruptionBudget shared by the three components. Invoke with a dict:
-(dict "root" $ "component" .Values.gateway "componentName" "gateway"
-      "fullname" (include "betterlite.gateway.fullname" .)
-      "selectorLabels" (include "betterlite.gateway.selectorLabels" .))
-
-minAvailable wins over maxUnavailable. With neither set the budget falls back
-to maxUnavailable 1. "Set" means non-nil and not the empty string, so an
-explicit 0 is written instead of being replaced by the fallback.
-*/}}
+{{/* An explicit 0 counts as set, so it is written instead of replaced by the maxUnavailable 1 fallback */}}
 {{- define "betterlite.pdb" -}}
 {{- $root := .root -}}
 {{- $component := .component -}}
@@ -295,10 +259,6 @@ spec:
 {{- end }}
 {{- end -}}
 
-{{/*
-envFrom block for a component's envConfigMaps / envSecrets name lists.
-Invoke with the component dict, e.g. .Values.gateway.
-*/}}
 {{- define "betterlite.envFrom" -}}
 {{- $component := . -}}
 {{- if or $component.envConfigMaps $component.envSecrets }}
@@ -314,11 +274,7 @@ envFrom:
 {{- end }}
 {{- end -}}
 
-{{/*
-ingress-nginx's admission webhook rejects a dot in an Exact or Prefix path and
-serves ImplementationSpecific as a plain prefix location, so a dotted path
-takes that type there.
-*/}}
+{{/* ingress-nginx's webhook rejects a dot in an Exact or Prefix path, so a dotted path takes ImplementationSpecific */}}
 {{- define "betterlite.ingress.pathType" -}}
 {{- if and (eq .controller "nginx") (contains "." .path) -}}
 ImplementationSpecific
@@ -329,21 +285,14 @@ ImplementationSpecific
 
 {{- define "betterlite.gateway.prometheusMultiprocDir" -}}/tmp/litellm_prometheus_multiproc{{- end -}}
 
-{{/*
-Directory of the collector's unix socket, shared by the gateway and collector
-containers through an emptyDir. Empty when the sidecar is off or the address is
-a tcp://127.0.0.1:<port> endpoint.
-*/}}
+{{/* Empty for a tcp address, so no socket volume is mounted */}}
 {{- define "betterlite.gateway.collectorSocketDir" -}}
 {{- if and .Values.gateway.collector.enabled (hasPrefix "unix://" .Values.gateway.collector.address) -}}
 {{- dir (trimPrefix "unix://" .Values.gateway.collector.address) -}}
 {{- end -}}
 {{- end -}}
 
-{{/*
-LITELLM_COLLECTOR_* environment shared by the producer and the consumer, so
-both agree on the transport and the shutdown drain window.
-*/}}
+{{/* One definition keeps the producer and the consumer on the same transport and drain window */}}
 {{- define "betterlite.gateway.collectorEnv" -}}
 {{- with .Values.gateway.collector }}
 - name: LITELLM_COLLECTOR_ENABLED

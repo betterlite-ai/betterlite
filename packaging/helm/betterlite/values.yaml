@@ -7,17 +7,14 @@ imagePullSecrets: []
 ingress:
   enabled: false
   className: ""
-  # Which ingress controller serves the Ingress: alb or nginx. It picks the
-  # pathType of the dotted paths and whether the /*.txt wildcard is rendered.
+  # alb or nginx: nginx needs ImplementationSpecific for dotted paths and skips the /*.txt wildcard
   controller: alb
   annotations: {}
   host: ""
   tls: []
   extraPaths: []
 
-# Per-component ServiceAccounts. With create true the chart makes the account
-# (and can carry cloud identity annotations); create false binds an existing
-# name, or the namespace default account when no name is set.
+# With create false an empty name binds the namespace default account
 serviceAccounts:
   gateway:
     create: false
@@ -36,8 +33,7 @@ serviceAccounts:
     annotations: {}
     name: ""
 
-# Pre-install / pre-upgrade hook that creates the database schema before the
-# pods start. Disable it when another pipeline runs the migrations.
+# Disable when another pipeline runs the migrations
 migrationJob:
   enabled: true
   hooks:
@@ -51,8 +47,7 @@ migrationJob:
   # Wall-clock budget for the whole Job, shared across every retry. null removes it.
   activeDeadlineSeconds: 1800
   resources: {}
-  # The Job runs before the chart's other resources exist, so a created
-  # ServiceAccount is not available to it; an empty name falls back to default.
+  # The Job runs before the chart creates accounts, so an empty name means default
   serviceAccountName: ""
   automountServiceAccountToken: false
   podSecurityContext: {}
@@ -108,8 +103,7 @@ database:
     maxDbConnections: 20
     maxClientConn: 1000
 
-# Coordination Redis: cross-pod rate limits, spend tracking and the pod lock
-# manager. Leave host empty to disable.
+# Leave host empty to disable
 redis:
   cluster: false
   host: ""
@@ -118,7 +112,6 @@ redis:
     name: ""
     passwordKey: password
 
-# The gateway is the LLM data plane.
 gateway:
   enabled: true
   logLevel: INFO
@@ -224,7 +217,6 @@ gateway:
   affinity: {}
   topologySpreadConstraints: []
 
-# The backend serves the management API.
 backend:
   enabled: true
   logLevel: INFO
@@ -283,7 +275,6 @@ backend:
   affinity: {}
   topologySpreadConstraints: []
 
-# The ui is the static dashboard served by nginx.
 ui:
   enabled: true
   logLevel: INFO
