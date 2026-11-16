@@ -17,6 +17,8 @@ use crate::microsoft_purview::purview_dlp_hooks::test_support::{
 use crate::purview_dlp_evaluation::error_handling::PurviewDlpHttpError;
 use crate::purview_dlp_evaluation::user_id_blocking::UNTRUSTED_IDENTITY_ERROR;
 
+const TRANSFORM_ERROR: &str = "Microsoft Purview DLP: Responses API input could not be transformed for DLP scanning in blocking mode";
+
 fn http_error(result: Result<(), PurviewHookError>) -> PurviewDlpHttpError {
     match result {
         Err(PurviewHookError::Http(error)) => *error,
@@ -299,4 +301,31 @@ async fn records_the_scan_through_a_started_invocation() {
     assert!(result.is_ok());
     assert!(invocation.self_recorded);
     assert_eq!(harness.sink.records().len(), 1);
+}
+
+#[tokio::test]
+async fn rejects_a_responses_input_the_transform_cannot_read() {
+    let mock = start(Script::passing());
+    let guardrail = guardrail_at(&mock.base);
+    let mut harness = Harness::new(data(
+        r#"{"model":"gpt","input":[{"role":"user","content":true}]}"#,
+    ));
+    let mut context = hook_context(
+        trusted_identity(),
+        &harness.cache,
+        &harness.redactor,
+        &harness.base,
+        &harness.sink,
+    );
+    let result = async_pre_call_hook(
+        &guardrail,
+        &mut harness.data,
+        Some(CallType::Responses),
+        &mut context,
+    )
+    .await;
+    let error = http_error(result);
+    assert_eq!(error.status, 400);
+    assert_eq!(detail(&error, "error").as_deref(), Some(TRANSFORM_ERROR));
+    assert_eq!(mock.process_calls(), 0);
 }

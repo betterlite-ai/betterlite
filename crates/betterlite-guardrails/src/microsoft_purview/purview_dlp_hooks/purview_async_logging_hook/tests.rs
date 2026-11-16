@@ -182,3 +182,58 @@ async fn handles_an_unparseable_responses_result_without_raising() {
     assert_eq!(mock.process_calls(), 1);
     assert_eq!(mock.scanned()[0].activity, "uploadText");
 }
+
+#[tokio::test]
+async fn keeps_auditing_the_response_when_the_responses_input_cannot_be_transformed() {
+    let mock = start(Script::passing());
+    let sink = Arc::new(TestSink::default());
+    let engine = engine(&mock.base, &sink);
+    let mut kwargs = data(
+        r#"{"model":"gpt","input":[{"role":"user","content":true}],"litellm_params":{"metadata":{"user_api_key_user_id":"user-1"}}}"#,
+    );
+    audit(
+        &engine,
+        &mut kwargs,
+        &value(CHAT_RESULT),
+        Some(CallType::Aresponses),
+    )
+    .await;
+    assert_eq!(
+        mock.scanned(),
+        vec![Scan {
+            activity: "downloadText".to_owned(),
+            data: "hello".to_owned(),
+        }]
+    );
+    assert_eq!(sink.records().len(), 1);
+}
+
+#[tokio::test]
+async fn audits_a_mixed_text_completion_prompt() {
+    let mock = start(Script::new(vec![passing_actions(), passing_actions()]));
+    let sink = Arc::new(TestSink::default());
+    let engine = engine(&mock.base, &sink);
+    let mut kwargs = data(
+        r#"{"model":"gpt","prompt":["secret",[1,2]],"litellm_params":{"metadata":{"user_api_key_user_id":"user-1"}}}"#,
+    );
+    audit(
+        &engine,
+        &mut kwargs,
+        &value(CHAT_RESULT),
+        Some(CallType::TextCompletion),
+    )
+    .await;
+    assert_eq!(
+        mock.scanned(),
+        vec![
+            Scan {
+                activity: "uploadText".to_owned(),
+                data: "secret".to_owned(),
+            },
+            Scan {
+                activity: "downloadText".to_owned(),
+                data: "hello".to_owned(),
+            },
+        ]
+    );
+}
