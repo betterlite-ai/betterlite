@@ -37,26 +37,26 @@ Pending = Settled | Coroutine[object, object, Settled]
 
 
 class HostedHandler(Protocol):
-    def create_skill_handler(
-        self, display_title: str | None, description: str | None, instructions: str | None,
+    def create_skill_handler(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/transformation.py#L40-L56
+        self, *, display_title: str | None, description: str | None, instructions: str | None,
         files: Sequence[Upload] | None, file_content: bytes | None, file_name: str | None,
         file_type: str | None, metadata: dict[str, JsonValue] | None, user_id: str | None,
         user_api_key_dict: UserAPIKeyAuth | None, _is_async: bool, logging_obj: Logging,
         litellm_call_id: str | None,
     ) -> Pending: ...
 
-    def list_skills_handler(
-        self, limit: int, offset: int, _is_async: bool, logging_obj: Logging,
+    def list_skills_handler(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/transformation.py#L159-L167
+        self, *, limit: int, offset: int, _is_async: bool, logging_obj: Logging,
         litellm_call_id: str | None, user_api_key_dict: UserAPIKeyAuth | None,
     ) -> Pending: ...
 
     def get_skill_handler(
-        self, skill_id: str, _is_async: bool, logging_obj: Logging,
+        self, *, skill_id: str, _is_async: bool, logging_obj: Logging,
         litellm_call_id: str | None, user_api_key_dict: UserAPIKeyAuth | None,
     ) -> Pending: ...
 
     def delete_skill_handler(
-        self, skill_id: str, _is_async: bool, logging_obj: Logging,
+        self, *, skill_id: str, _is_async: bool, logging_obj: Logging,
         litellm_call_id: str | None, user_api_key_dict: UserAPIKeyAuth | None,
     ) -> Pending: ...
 
@@ -70,7 +70,8 @@ class PrincipalFields(TypedDict, total=False):
     admin: bool
 
 
-class Payload(TypedDict, total=False):
+class Step(TypedDict, total=False):
+    action: Required[str]
     display_title: str | None
     description: str | None
     instructions: str | None
@@ -78,23 +79,9 @@ class Payload(TypedDict, total=False):
     file_name: str | None
     file_type: str | None
     metadata: dict[str, JsonValue] | None
-
-
-class Row(Payload, total=False):
-    skill_id: Required[str]
-    source: str
-    latest_version: str | None
-    created_at: str | None
-    created_by: str | None
-    updated_at: str | None
-    updated_by: str | None
-
-
-class Step(Payload, total=False):
-    action: Required[str]
-    skill_id: str
     files: list[list[JsonValue]]
     principal: PrincipalFields
+    skill_id: str
     user_id: str | None
     limit: int
     offset: int
@@ -104,8 +91,8 @@ class Step(Payload, total=False):
 class Input(TypedDict, total=False):
     now: Required[str]
     uuid: Required[str]
-    rows: list[Row]
-    page: list[Row]
+    rows: list[dict[str, JsonValue]]
+    page: list[dict[str, JsonValue]]
     steps: Required[list[Step]]
 
 
@@ -159,51 +146,43 @@ class TableState:
         self.page: list[FakeRow] = []
         seeded = input_value.get("rows")
         if seeded is not None:
-            self.rows = {
-                fields["skill_id"]: FakeRow(OBJECT.validate_python(fields))
-                for fields in seeded
-            }
+            self.rows = {TEXT.validate_python(row["skill_id"]): FakeRow(row) for row in seeded}
         listed = input_value.get("page")
         if listed is not None:
-            self.page = [FakeRow(OBJECT.validate_python(fields)) for fields in listed]
+            self.page = [FakeRow(row) for row in listed]
 
     async def create(self, data: dict[str, JsonValue]) -> FakeRow:
         stored = {**data, "skill_id": self.fixed_id}
         metadata = stored.get("metadata")
         if metadata is not None:
             stored["metadata"] = OBJECT.validate_json(TEXT.validate_python(metadata))
-        effect: JsonValue = {"kind": "create", "data": stored}
-        self.effects.append(effect)
+        self.effects.append({"kind": "create", "data": stored})
         row = FakeRow({**stored, "created_at": self.now, "updated_at": self.now})
         self.rows[self.fixed_id] = row
         return row
 
-    async def find_unique(self, where: dict[str, str]) -> FakeRow | None:
-        effect: JsonValue = {"kind": "find_unique", "where": where}
-        self.effects.append(effect)
-        return self.rows.get(where["skill_id"])
+    async def find_unique(self, where: dict[str, JsonValue]) -> FakeRow | None:
+        self.effects.append({"kind": "find_unique", "where": where})
+        return self.rows.get(TEXT.validate_python(where["skill_id"]))
 
     async def find_many(
         self, take: int, skip: int, order: JsonValue, where: JsonValue,
     ) -> list[FakeRow]:
-        effect: JsonValue = {
+        self.effects.append({
             "kind": "find_many", "take": take, "skip": skip, "order": order, "where": where,
-        }
-        self.effects.append(effect)
+        })
         return self.page
 
-    async def delete(self, where: dict[str, str]) -> FakeRow | None:
-        effect: JsonValue = {"kind": "delete", "where": where}
-        self.effects.append(effect)
-        return self.rows.pop(where["skill_id"], None)
+    async def delete(self, where: dict[str, JsonValue]) -> FakeRow | None:
+        self.effects.append({"kind": "delete", "where": where})
+        return self.rows.pop(TEXT.validate_python(where["skill_id"]), None)
 
 
 def principal_of(fields: PrincipalFields | None) -> UserAPIKeyAuth | None:
     if fields is None:
         return None
     principal = UserAPIKeyAuth(
-        user_id=fields.get("user_id"), team_id=fields.get("team_id"),
-        org_id=fields.get("org_id"),
+        user_id=fields.get("user_id"), team_id=fields.get("team_id"), org_id=fields.get("org_id"),
         user_role=LitellmUserRoles.PROXY_ADMIN if fields.get("admin") else None,
     )
     principal.api_key = fields.get("api_key")
@@ -222,8 +201,7 @@ def upload_of(entry: list[JsonValue]) -> Upload:
 def error_token(error: ValueError) -> str:
     message = str(error)
     for prefix, code in (
-        (NO_DATABASE, "no_database"),
-        (MISSING_IDENTITY, "missing_identity"),
+        (NO_DATABASE, "no_database"), (MISSING_IDENTITY, "missing_identity"),
         (NOT_FOUND, "not_found"),
     ):
         if message.startswith(prefix):
@@ -253,8 +231,7 @@ def run_step(step: Step) -> JsonValue:
     skill_id = step.get("skill_id")
     logging_obj = Logging(
         model="fixture-model", messages=None, stream=False, call_type=action,
-        start_time=datetime(2026, 1, 1, tzinfo=UTC), litellm_call_id="call-1",
-        function_id="fn-1",
+        start_time=datetime(2026, 1, 1, tzinfo=UTC), litellm_call_id="call-1", function_id="fn-1",
     )
     handler: HostedHandler = LiteLLMSkillsTransformationHandler()
     principal = principal_of(step.get("principal"))
@@ -265,54 +242,43 @@ def run_step(step: Step) -> JsonValue:
     try:
         if action == "create":
             answer = answer_of(action, handler.create_skill_handler(
-                display_title=step.get("display_title"),
-                description=step.get("description"),
-                instructions=step.get("instructions"),
-                metadata=step.get("metadata"),
+                display_title=step.get("display_title"), description=step.get("description"),
+                instructions=step.get("instructions"), metadata=step.get("metadata"),
                 files=None if files is None else [upload_of(entry) for entry in files],
                 file_content=None if encoded is None else base64.b64decode(encoded),
-                file_name=step.get("file_name"),
-                file_type=step.get("file_type"),
-                user_id=step.get("user_id"),
-                user_api_key_dict=principal,
-                _is_async=True,
-                logging_obj=logging_obj,
+                file_name=step.get("file_name"), file_type=step.get("file_type"),
+                user_id=step.get("user_id"), user_api_key_dict=principal,
+                _is_async=True, logging_obj=logging_obj,
                 litellm_call_id=step.get("litellm_call_id"),
             ))
         elif action == "list":
             answer = answer_of(action, handler.list_skills_handler(
                 limit=DEFAULT_LIMIT if limit is None else limit,
                 offset=DEFAULT_OFFSET if offset is None else offset,
-                _is_async=True,
-                logging_obj=logging_obj,
-                litellm_call_id=step.get("litellm_call_id"),
-                user_api_key_dict=principal,
+                _is_async=True, logging_obj=logging_obj,
+                litellm_call_id=step.get("litellm_call_id"), user_api_key_dict=principal,
             ))
         elif skill_id is None:
             return {"action": action, "error": "invalid_input"}
         elif action == "get":
             answer = answer_of(action, handler.get_skill_handler(
                 skill_id=skill_id, _is_async=True, logging_obj=logging_obj,
-                litellm_call_id=step.get("litellm_call_id"),
-                user_api_key_dict=principal,
+                litellm_call_id=step.get("litellm_call_id"), user_api_key_dict=principal,
             ))
         else:
             answer = answer_of(action, handler.delete_skill_handler(
                 skill_id=skill_id, _is_async=True, logging_obj=logging_obj,
-                litellm_call_id=step.get("litellm_call_id"),
-                user_api_key_dict=principal,
+                litellm_call_id=step.get("litellm_call_id"), user_api_key_dict=principal,
             ))
     except ValueError as error:
         answer = {"action": action, "error": error_token(error)}
     details = RecordedLogging.model_validate(logging_obj).model_call_details
-    logging_part: JsonValue = {
-        "model": details.model,
-        "optional_params": details.optional_params,
+    return {**answer, "logging": {
+        "model": details.model, "optional_params": details.optional_params,
         "litellm_params": details.litellm_params,
         "custom_llm_provider": details.custom_llm_provider,
         "litellm_call_id": details.litellm_call_id,
-    }
-    return {**answer, "logging": logging_part}
+    }}
 
 
 def run(input_value: Input) -> JsonValue:
@@ -326,5 +292,4 @@ def run(input_value: Input) -> JsonValue:
     sys.modules[PRISMA_MODULE] = prisma
     sys.modules[FIELDS_MODULE] = fields
     steps: list[JsonValue] = [run_step(step) for step in input_value["steps"]]
-    effects: JsonValue = state.effects
-    return {"steps": steps, "effects": effects}
+    return {"steps": steps, "effects": state.effects}
