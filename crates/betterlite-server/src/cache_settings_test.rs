@@ -6,5 +6,5 @@
 pub mod route;
 pub mod saved;
 
-#[cfg(test)]
+#[path = "cache_settings_test/tests/support.rs"]
 mod support;
