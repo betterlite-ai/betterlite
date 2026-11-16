@@ -21,7 +21,10 @@ description: >-
   Decode through B1522 and preserve its errors/CONTENT_FILTERED handling. Start a fresh ImageResponse,
   optionally append the base64 image, then look up model_info even for empty output. Place the float
   output_cost_per_image under hidden additional_headers.llm_provider-x-litellm-response-cost; a missing
-  value defaults to zero, explicit null suppresses the header, and lookup/conversion failures propagate.
+  value defaults to zero, explicit null suppresses the header, and conversion failures propagate. A model
+  with no catalog entry is treated like an entry without output_cost_per_image: the header is zero and
+  the decoded image is returned. LiteLLM raises there after Stability has billed the image, so that
+  case is a lost-data fix listed in docs/deviations/B1523.yaml.
   Do not multiply this header by requested n or make it depend on returned-image count.
 
   Add helper call.stability_edit and cases style_transfer_shadowed, dropped_option_survives,
@@ -34,6 +37,7 @@ scope:
   paths:
     - crates/betterlite-core/src/api/stability/edit.rs
     - crates/betterlite-core/src/api/stability/edit/**
+    - docs/deviations/B1523.yaml
     - tools/oracle/src/helpers/core_ops/stability_edit.rs
     - tools/oracle/src/helpers/core_ops/stability_edit/**
     - tools/oracle/helpers/stability_edit.py
@@ -69,7 +73,10 @@ oracle_cases:
   - tools/oracle/cases/helpers/stability-edit/output-format-stays-png.yaml
   - tools/oracle/cases/helpers/stability-edit/env-before-litellm-base.yaml
   - tools/oracle/cases/helpers/stability-edit/empty-image-cost.yaml
-deviations: []
+deviations:
+  - what: A Stability edit for a model with no catalog entry returns the decoded image with a zero response-cost header.
+    why: LiteLLM calls get_model_info after the provider has already returned and billed the image, so an unmapped model name loses the image on every call. betterlite treats the missing entry like an entry without output_cost_per_image.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L306-L312
 out_of_scope:
   - B1522 owns StabilityImageGenerationRequest and the generation/aspect tables; its no-caller inventory excludes the other shared request/response declarations.
 pitfalls:
