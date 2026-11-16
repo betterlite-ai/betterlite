@@ -7,9 +7,7 @@ use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_foundry::anthropic_count::counter::{AzureAnthropicTokenCounter, CountTokensCall};
 use betterlite_foundry::anthropic_count::endpoint::get_count_tokens_endpoint;
 use betterlite_foundry::anthropic_count::error::ApiError;
-use betterlite_foundry::anthropic_count::handler::{
-    AzureAnthropicCountTokensHandler, CountTokensRequest,
-};
+use betterlite_foundry::anthropic_count::handler::{CountTokensRequest, FoundryCountHandler};
 use betterlite_foundry::anthropic_count::reply::FoundryCountReply;
 use betterlite_foundry::anthropic_messages::environment::TokenSource;
 use indexmap::IndexMap;
@@ -94,8 +92,8 @@ fn scripted_handler(
     seconds: Option<f64>,
     globals: &Globals,
     environment: &BTreeMap<String, String>,
-) -> Result<AzureAnthropicCountTokensHandler<Script>, Box<HelperError>> {
-    Ok(AzureAnthropicCountTokensHandler {
+) -> Result<FoundryCountHandler<Script>, Box<HelperError>> {
+    Ok(FoundryCountHandler {
         transport: Script::new(reply),
         request_timeout: request_timeout(seconds)?,
         beta_version: beta_version(environment)?,

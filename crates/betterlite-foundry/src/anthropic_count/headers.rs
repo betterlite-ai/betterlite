@@ -1,13 +1,9 @@
-use std::collections::BTreeMap;
-
 use betterlite_anthropic::credentials::ANTHROPIC_VERSION;
 use betterlite_azure::azure_urls::{EnvironmentHeadersRequest, validate_azure_environment};
 use betterlite_azure::credentials::selection::AzureTokenError;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::anthropic_messages::environment::{ParamsKey, TokenSource};
-
-pub type Headers = BTreeMap<String, String>;
+use crate::anthropic_messages::environment::{Headers, ParamsKey, TokenSource, explicit_key};
 
 const CONTENT_TYPE_HEADER: &str = "Content-Type";
 const CONTENT_TYPE_JSON: &str = "application/json";
@@ -20,24 +16,6 @@ pub struct HeadersRequest<'call> {
     pub params_key: ParamsKey<'call>,
     pub configured_key: Option<&'call SecretString>,
     pub token: &'call TokenSource<'call>,
-}
-
-// A dict only takes the argument when it has no api_key entry; a typed object when its field is empty
-fn explicit_key<'call>(
-    params_key: ParamsKey<'call>,
-    argument: &'call SecretString,
-) -> Option<&'call SecretString> {
-    let usable = if argument.expose_secret().is_empty() {
-        None
-    } else {
-        Some(argument)
-    };
-    match params_key {
-        ParamsKey::DictNull => None,
-        ParamsKey::Dict(key) => Some(key),
-        ParamsKey::Typed(Some(key)) if !key.expose_secret().is_empty() => Some(key),
-        ParamsKey::DictAbsent | ParamsKey::Typed(_) => usable,
-    }
 }
 
 pub fn get_required_headers(
@@ -55,7 +33,7 @@ pub fn get_required_headers(
         ANTHROPIC_KEY_HEADER.to_owned(),
         request.api_key.expose_secret().to_owned(),
     );
-    let azure_key = explicit_key(request.params_key, request.api_key)
+    let azure_key = explicit_key(request.params_key, Some(request.api_key))
         .filter(|key| !key.expose_secret().is_empty())
         .or(request.configured_key);
     let azure = validate_azure_environment(EnvironmentHeadersRequest {

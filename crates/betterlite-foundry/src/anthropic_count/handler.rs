@@ -12,9 +12,9 @@ use url::Url;
 
 use crate::anthropic_count::endpoint::get_count_tokens_endpoint;
 use crate::anthropic_count::error::ApiError;
-use crate::anthropic_count::headers::{Headers, HeadersRequest, get_required_headers};
+use crate::anthropic_count::headers::{HeadersRequest, get_required_headers};
 use crate::anthropic_count::reply::{FoundryCountReply, decode_foundry_count_reply};
-use crate::anthropic_messages::environment::{ParamsKey, TokenSource};
+use crate::anthropic_messages::environment::{Headers, ParamsKey, TokenSource};
 
 const SENSITIVE_HEADERS: [&str; 3] = ["x-api-key", "api-key", "authorization"];
 
@@ -28,14 +28,14 @@ pub struct CountTokensRequest<'call> {
 }
 
 #[derive(Debug)]
-pub struct AzureAnthropicCountTokensHandler<T> {
+pub struct FoundryCountHandler<T> {
     pub transport: T,
     pub request_timeout: Duration,
     pub beta_version: String,
     pub configured_key: Option<SecretString>,
 }
 
-impl<T: CountTokensTransport> AzureAnthropicCountTokensHandler<T> {
+impl<T: CountTokensTransport> FoundryCountHandler<T> {
     pub async fn handle_count_tokens_request(
         &self,
         request: &CountTokensRequest<'_>,

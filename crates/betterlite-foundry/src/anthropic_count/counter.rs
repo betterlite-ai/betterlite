@@ -7,7 +7,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::anthropic_count::error::ApiError;
 use crate::anthropic_count::handler::{
-    AzureAnthropicCountTokensHandler, CountTokensRequest, CountTokensTransport,
+    CountTokensRequest, CountTokensTransport, FoundryCountHandler,
 };
 use crate::anthropic_count::reply::FoundryCountReply;
 use crate::anthropic_messages::environment::{ParamsKey, TokenSource};
@@ -28,7 +28,7 @@ pub struct CountTokensCall<'call> {
 }
 
 pub struct AzureAnthropicTokenCounter<T> {
-    pub handler: AzureAnthropicCountTokensHandler<T>,
+    pub handler: FoundryCountHandler<T>,
     pub environment_api_key: Option<SecretString>,
     pub environment_api_base: Option<String>,
 }
