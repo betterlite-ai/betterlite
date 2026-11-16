@@ -302,6 +302,11 @@ fn style_literals() {
 }
 
 fn existing_ssml() {
+    ssml_passthrough();
+    ssml_generated();
+}
+
+fn ssml_passthrough() {
     let (_, mapped) = support::map(
         None,
         SpeechOptionalParams::default(),
@@ -323,6 +328,14 @@ fn existing_ssml() {
             Some("audio-24khz-48kbitrate-mono-mp3")
         );
     }
+}
+
+fn ssml_generated() {
+    let (_, mapped) = support::map(
+        None,
+        SpeechOptionalParams::default(),
+        SpeechKwargs::default(),
+    );
     let generated = support::data("<SPEAK>x</SPEAK><speakx>y</speakx>", None, &mapped);
     assert!(
         generated

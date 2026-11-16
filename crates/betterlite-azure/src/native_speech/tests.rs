@@ -5,7 +5,7 @@ mod support;
 
 use std::collections::BTreeMap;
 
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use crate::native_speech::endpoint::get_complete_url;
 use crate::native_speech::headers::validate_environment;
@@ -16,25 +16,18 @@ use crate::native_speech::mapping::convert_speed_to_rate;
 fn azure_native_speech_credential_identity_isolation() {
     let first = support::identity(
         Some("https://first.api.cognitive.microsoft.com"),
-        "first-identity-key",
+        "first-key",
     );
     let second = support::identity(
         Some("https://eastus.api.cognitive.microsoft.com"),
-        "second-identity-key",
+        "second-key",
     );
     let first_headers = validate_environment(&first, BTreeMap::new());
     let second_headers = validate_environment(&second, BTreeMap::new());
+    assert_eq!(support::subscription_key(&first_headers), Some("first-key"));
     assert_eq!(
-        first_headers
-            .get("Ocp-Apim-Subscription-Key")
-            .map(String::as_str),
-        Some("first-identity-key")
-    );
-    assert_eq!(
-        second_headers
-            .get("Ocp-Apim-Subscription-Key")
-            .map(String::as_str),
-        Some("second-identity-key")
+        support::subscription_key(&second_headers),
+        Some("second-key")
     );
     assert_ne!(first_headers, second_headers);
     assert_eq!(
@@ -45,25 +38,10 @@ fn azure_native_speech_credential_identity_isolation() {
         get_complete_url(&second).unwrap(),
         "https://eastus.tts.speech.microsoft.com/cognitiveservices/v1"
     );
-    let mut cache = BTreeMap::new();
-    for identity in [&first, &second] {
-        let base = identity.api_base.clone().expect("configured base");
-        let key = identity
-            .api_key
-            .as_ref()
-            .map(|value| value.expose_secret().to_owned())
-            .expect("configured key");
-        cache.insert((base, key), validate_environment(identity, BTreeMap::new()));
-    }
+    let cache = support::identity_cache(&[&first, &second]);
     assert_eq!(cache.len(), 2);
-    let first_entries = cache
-        .values()
-        .filter(|headers| {
-            headers.get("Ocp-Apim-Subscription-Key").map(String::as_str)
-                == Some("first-identity-key")
-        })
-        .count();
-    assert_eq!(first_entries, 1);
+    let cached = cache.get(&support::cache_key(&first)).expect("first entry");
+    assert_eq!(support::subscription_key(cached), Some("first-key"));
 }
 
 #[test]
