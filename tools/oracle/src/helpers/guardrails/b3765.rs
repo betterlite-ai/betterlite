@@ -26,10 +26,10 @@ pub(crate) struct Config {
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
     Init {
-        config: Config,
+        config: Box<Config>,
         env: BTreeMap<String, String>,
     },
-    Apply(apply::Apply),
+    Apply(Box<apply::Apply>),
 }
 
 fn build(

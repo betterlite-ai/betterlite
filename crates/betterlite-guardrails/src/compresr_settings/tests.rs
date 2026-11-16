@@ -7,6 +7,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::compresr_writeback::Configured;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 
 use super::error::CompresrSettingsError;
 use super::{
@@ -74,10 +75,7 @@ fn litellm_transport_defaults_init() {
     assert_eq!(guardrail.guardrail_name, "squeeze");
     assert_eq!(transport.api_base, DEFAULT_API_BASE);
     assert_eq!(transport.model, DEFAULT_COMPRESSION_MODEL);
-    assert_eq!(
-        transport.target_compression_ratio,
-        DEFAULT_COMPRESSION_RATIO
-    );
+    assert!((transport.target_compression_ratio - DEFAULT_COMPRESSION_RATIO).abs() < f64::EPSILON);
     assert!(transport.coarse && transport.dynamic);
     assert!(transport.dynamic_min_ratio.is_none() && transport.dynamic_max_ratio.is_none());
     assert!(transport.compression_params.is_empty());
@@ -146,15 +144,19 @@ fn compression_targets_init(#[case] params: &str, #[case] expected: &[Compressib
 #[test]
 fn api_key_from_environment_init() {
     let guardrail = build("", &[("COMPRESR_API_KEY", "env-key")]).unwrap();
-    assert_eq!(
-        guardrail.transport.settings.model,
-        DEFAULT_COMPRESSION_MODEL
-    );
+    assert_eq!(guardrail.transport.api_key.expose_secret(), "env-key");
+}
+
+#[test]
+fn configured_api_key_wins_over_environment_init() {
+    let guardrail = build(KEY, &[("COMPRESR_API_KEY", "env-key")]).unwrap();
+    assert_eq!(guardrail.transport.api_key.expose_secret(), "test-key");
 }
 
 #[test]
 fn empty_configured_api_key_falls_back_to_the_environment_init() {
-    build("      api_key: ''\n", &[("COMPRESR_API_KEY", "env-key")]).unwrap();
+    let guardrail = build("      api_key: ''\n", &[("COMPRESR_API_KEY", "env-key")]).unwrap();
+    assert_eq!(guardrail.transport.api_key.expose_secret(), "env-key");
 }
 
 #[rstest]
