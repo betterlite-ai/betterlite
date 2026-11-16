@@ -184,11 +184,8 @@ fn write_usage<S>(
     let Some(returned) = response.filter(|value| is_truthy(value)) else {
         return;
     };
-    if unbilled_call(
-        kwargs.get("call_type").and_then(OtelModelValue::as_str),
-        Some(litellm_params),
-        Some(returned),
-    ) {
+    let call_type = kwargs.get("call_type").and_then(OtelModelValue::as_str);
+    if unbilled_call(call_type, Some(litellm_params), Some(returned)) {
         return;
     }
     let usage = returned

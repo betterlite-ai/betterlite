@@ -67,15 +67,15 @@ impl LegacyMetricRecorder {
             .filter
             .filter_attributes(common_attributes(call.kwargs, self.semconv_latest)?)?;
         record_seconds(&self.instruments.operation_duration, duration, &attributes);
-        let unbilled = unbilled_call(
-            call.kwargs
-                .get("call_type")
-                .and_then(OtelModelValue::as_str),
-            call.kwargs
-                .get("litellm_params")
-                .and_then(OtelModelValue::as_object),
-            call.response,
-        );
+        let call_type = call
+            .kwargs
+            .get("call_type")
+            .and_then(OtelModelValue::as_str);
+        let params = call
+            .kwargs
+            .get("litellm_params")
+            .and_then(OtelModelValue::as_object);
+        let unbilled = unbilled_call(call_type, params, call.response);
         let usage = call
             .response
             .filter(|response| is_truthy(response))
