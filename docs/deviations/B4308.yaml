@@ -20,5 +20,5 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L80-L218
   - what: "_backend is accepted and ignored; LiteLLM would use it as the cache object under test."
     why: "A cache backend is an in-process object. It cannot arrive over HTTP, and constructing one from a JSON member would let the caller choose the answer without touching Redis."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L60-L75
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L187-L188
 kept_bugs: []
