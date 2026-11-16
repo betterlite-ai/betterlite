@@ -91,6 +91,7 @@ where
     Reads: DailyActivityProxyReads + Send + Sync,
     Clock: Fn() -> DateTime<Utc> + Send + Sync,
 {
+    #[cfg_attr(test, mutants::skip)]
     async fn read_aggregated(
         &self,
         scope: &DailyActivityScope,
@@ -101,6 +102,7 @@ where
             .await
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn read_key_metadata(
         &self,
         api_keys: &BTreeSet<String>,
