@@ -55,6 +55,19 @@ fn polling_transport_sends_exposed_headers_and_keeps_the_body() {
 }
 
 #[test]
+fn polling_transport_posts_and_keeps_the_body() {
+    thread::scope(|scope| {
+        let served = serve(scope, answer("posted"));
+        let client = client(&served.base_url);
+        let url = format!("{}/sso/exchange", served.base_url);
+        let response = PollTransport::post(&client, &url, 2).unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, b"posted".to_vec());
+        assert!(served.request().starts_with("POST /sso/exchange"));
+    });
+}
+
+#[test]
 fn proxy_get_sends_exposed_headers_and_returns_status_and_body() {
     thread::scope(|scope| {
         let served = serve(scope, answer("proxied"));
