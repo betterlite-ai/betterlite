@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict, cast
 
 import litellm
 from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
@@ -165,19 +165,24 @@ def record_success(request: Input) -> Recorded:
     log_exporter = InMemoryLogRecordExporter()
     logger_provider = LoggerProvider()
     logger_provider.add_log_record_processor(SimpleLogRecordProcessor(log_exporter))
-    previous = litellm.callback_settings
-    litellm.callback_settings = {}
+    callback_settings = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L184
+        "dict[str, dict[str, JsonValue]]", litellm.callback_settings
+    )
+    previous = callback_settings.copy()
+    callback_settings.clear()
     if "callback_settings" in request:
-        litellm.callback_settings = {"otel": {"attributes": request["callback_settings"]}}
+        callback_settings["otel"] = {"attributes": request["callback_settings"]}
     try:
-        new_logger(request, reader, logger_provider).log_success_event(
+        logger = new_logger(request, reader, logger_provider)
+        logger.log_success_event(  # type: ignore[misc, no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L756
             request["kwargs"],
             request.get("response"),
             datetime.fromtimestamp(request["start_time"], tz=UTC),
             datetime.fromtimestamp(request["end_time"], tz=UTC),
         )
     finally:
-        litellm.callback_settings = previous
+        callback_settings.clear()
+        callback_settings.update(previous)
     events = [
         EventLine(
             body=JSON.validate_python(log.log_record.body),
@@ -227,7 +232,7 @@ def run(input_value: Input) -> JsonValue:
     request = INPUT.validate_python(input_value)
     match request["function"]:
         case "record_success":
-            return TypeAdapter(Recorded).dump_python(record_success(request))
+            return JSON.validate_python(record_success(request))
         case "request_input":
             return parsed(request_input(request["data"]))
         case "response_output":
