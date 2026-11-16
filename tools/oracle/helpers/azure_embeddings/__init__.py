@@ -112,7 +112,7 @@ class Embedder(Protocol):
         self,
         *,
         model: str,
-        input: EmbeddingInput,
+        input: EmbeddingInput,  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L747
         api_base: str,
         api_version: str,
         timeout: float,
@@ -178,7 +178,7 @@ def call_embedding(
     match outcome:
         case Awaitable():
             return asyncio.run(asyncio.wait_for(outcome, timeout=None))
-        case EmbeddingResponse():
+        case EmbeddingResponse():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2298
             return outcome
 
 

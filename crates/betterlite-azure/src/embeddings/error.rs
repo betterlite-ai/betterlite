@@ -40,23 +40,23 @@ pub enum EmbeddingError {
 
 impl AzureOpenAiError {
     #[must_use]
-    pub fn new(status_code: u16, message: impl Into<String>) -> Self {
+    pub const fn new(status_code: u16, message: String) -> Self {
         Self {
             status_code,
-            message: message.into(),
+            message,
             headers: None,
             cause: None,
         }
     }
 
     fn from_sdk(raised: SdkError, message: String) -> Self {
-        let (message, headers) = match (raised.headers, raised.response) {
+        let (shown, headers) = match (raised.headers, raised.response) {
             (None, Some(response)) => (response.text, Some(response.headers)),
             (headers, _response) => (message, headers),
         };
         Self {
             headers,
-            ..Self::new(raised.status_code.unwrap_or(DEFAULT_STATUS), message)
+            ..Self::new(raised.status_code.unwrap_or(DEFAULT_STATUS), shown)
         }
     }
 

@@ -66,7 +66,9 @@ fn additional_args(
 impl EmbeddingLogger for PrePostLogger<'_, '_> {
     fn pre_call(&mut self, record: PreCallRecord) -> Result<(), PrePostError> {
         let secret = |key: Option<&SecretString>| {
-            key.map_or(Json::Null, |key| Json::Text(key.expose_secret().to_owned()))
+            key.map_or(Json::Null, |secret| {
+                Json::Text(secret.expose_secret().to_owned())
+            })
         };
         let headers = IndexMap::from([
             ("api_key".to_owned(), secret(record.api_key.as_ref())),

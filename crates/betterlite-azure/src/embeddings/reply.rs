@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingResponse};
-use indexmap::IndexMap;
 
 use crate::credentials::headers::{HeaderLookup, process_azure_headers};
 

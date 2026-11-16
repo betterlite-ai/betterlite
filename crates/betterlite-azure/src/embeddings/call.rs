@@ -144,7 +144,7 @@ fn require_client_family(kind: ClientKind, is_async: bool) -> Result<(), Embeddi
         (false, ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi | ClientKind::Other) => {
             Err(EmbeddingError::Azure(AzureOpenAiError::new(
                 DEFAULT_STATUS,
-                "azure_client is not an instance of AzureOpenAI or OpenAI",
+                "azure_client is not an instance of AzureOpenAI or OpenAI".to_owned(),
             )))
         }
     }
@@ -233,7 +233,7 @@ fn convert<Client>(
         return if is_async {
             Err(EmbeddingError::Azure(AzureOpenAiError::new(
                 DEFAULT_STATUS,
-                "embedding_response is not an instance of EmbeddingResponse",
+                "embedding_response is not an instance of EmbeddingResponse".to_owned(),
             )))
         } else {
             Ok(None)
