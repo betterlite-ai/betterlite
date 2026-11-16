@@ -18,34 +18,27 @@ const RECORDS_KEY: &str = "standard_logging_guardrail_information";
 // The name B3786's error handling records; its constant is private to that module.
 pub const PROVIDER_NAME: &str = "panw_prisma_airs";
 
-#[derive(Debug, Clone, Copy)]
-pub struct ScanRecord<'scan> {
-    pub verdict: &'scan ScanVerdict,
-    pub start_time: SystemTime,
-    pub direction: Direction,
-}
-
 // Mirrors LiteLLM's add_standard_logging_guardrail_information_to_request_data for a successful scan.
 pub fn record_information(
     guardrail: &PanwPrismaAirs,
     audit: &mut GuardrailAudit,
-    record: ScanRecord<'_>,
+    verdict: &ScanVerdict,
+    start_time: SystemTime,
+    direction: Direction,
 ) {
     let end_time = (guardrail.now)();
-    let status = match record.verdict.action {
+    let status = match verdict.action {
         Action::Allow => GuardrailStatus::Success,
         Action::Block => GuardrailStatus::GuardrailIntervened,
     };
     audit.information.push(GuardrailInformation {
         provider: PROVIDER_NAME.to_owned(),
         status,
-        response: record.verdict.summary(),
-        start_time: record.start_time,
+        response: verdict.summary(),
+        start_time,
         end_time,
-        duration: end_time
-            .duration_since(record.start_time)
-            .unwrap_or_default(),
-        event_type: record.direction.stage(),
+        duration: end_time.duration_since(start_time).unwrap_or_default(),
+        event_type: direction.stage(),
     });
 }
 
@@ -56,15 +49,7 @@ pub fn record_response_success(
     verdict: &ScanVerdict,
     start_time: SystemTime,
 ) {
-    record_information(
-        guardrail,
-        audit,
-        ScanRecord {
-            verdict,
-            start_time,
-            direction: Direction::Response,
-        },
-    );
+    record_information(guardrail, audit, verdict, start_time, Direction::Response);
     record_scan_id(guardrail, audit, verdict, Direction::Response);
     audit.add_applied_guardrail(&guardrail.settings.guardrail_name);
 }

@@ -19,22 +19,15 @@ pub enum StreamChunk {
     Model(GuardrailValue),
 }
 
-impl From<StreamChunk> for StreamItem {
-    fn from(chunk: StreamChunk) -> Self {
-        match chunk {
-            StreamChunk::Bytes(bytes) => Self::Bytes(bytes),
-            StreamChunk::Event(event) | StreamChunk::Model(event) => Self::Json(event),
-        }
-    }
-}
-
 #[must_use]
 pub fn into_items(chunks: Vec<StreamChunk>) -> Vec<StreamItem> {
-    let mut items = Vec::with_capacity(chunks.len());
-    for chunk in chunks {
-        items.push(StreamItem::from(chunk));
-    }
-    items
+    chunks
+        .into_iter()
+        .map(|chunk| match chunk {
+            StreamChunk::Bytes(bytes) => StreamItem::Bytes(bytes),
+            StreamChunk::Event(event) | StreamChunk::Model(event) => StreamItem::Json(event),
+        })
+        .collect()
 }
 
 // The chunks the caller collected plus the assembler U2 will provide.

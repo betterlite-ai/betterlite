@@ -6,8 +6,8 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_config::sections::panw_prisma_airs::FallbackAction;
 
 use super::support::{
-    self, APPLIED, FakeAssembler, FakeSelection, context, data, field, guardrail, json, masking,
-    names_in, records, settings, text_of,
+    self, APPLIED, FakeAssembler, FakeSelection, context, data, field, guardrail, json, names_in,
+    no_masking, records, settings, text_of,
 };
 use crate::guardrail_message_scope::StreamItem;
 use crate::panw_prisma_airs::audit::GuardrailAudit;
@@ -34,11 +34,7 @@ fn delta(text: &str) -> StreamChunk {
 #[tokio::test]
 async fn disabled_passes_the_chunks_through() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let chunks = vec![model("a"), model("b")];
     let expected = into_items(chunks.clone());
@@ -96,11 +92,7 @@ async fn bytes_chunks_are_scanned_and_passed_through() {
 #[tokio::test]
 async fn event_chunks_are_scanned_and_passed_through() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let chunks = vec![
         StreamChunk::Event(json(r#"{"type":"response.output_text.delta","delta":"a"}"#)),
@@ -140,11 +132,7 @@ async fn event_chunks_are_scanned_and_passed_through() {
 #[tokio::test]
 async fn the_first_chunk_decides_the_route() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let chunks = vec![delta("raw"), model("late")];
     let expected = into_items(chunks.clone());
@@ -181,11 +169,7 @@ async fn the_first_chunk_decides_the_route() {
 #[tokio::test]
 async fn model_chunks_are_assembled_with_every_chunk() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let chunks = vec![model("a"), model("b")];
     let expected = into_items(chunks.clone());
@@ -227,11 +211,7 @@ async fn a_masked_assembly_returns_the_rebuilt_chunks() {
         r#"{"action":"allow","category":"benign","response_masked_data":{"data":"MASKED"}}"#,
     )
     .await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let chunks = vec![model("a")];
     let fake = FakeAssembler::new(Some(ASSEMBLED));
@@ -262,11 +242,7 @@ async fn a_masked_assembly_returns_the_rebuilt_chunks() {
 #[tokio::test]
 async fn a_blocked_assembly_yields_an_error_frame() {
     let server = support::serve(StatusCode::OK, BLOCK).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let chunks = vec![model("a")];
     let fake = FakeAssembler::new(Some(ASSEMBLED));
@@ -303,11 +279,7 @@ async fn a_blocked_assembly_yields_an_error_frame() {
 #[tokio::test]
 async fn a_none_assembly_passes_the_chunks() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let chunks = vec![model("a"), model("b")];
     let expected = into_items(chunks.clone());
@@ -359,11 +331,7 @@ async fn a_second_streaming_call_is_deduplicated() {
 #[tokio::test]
 async fn an_empty_stream_yields_nothing() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let fake = FakeAssembler::new(Some(ASSEMBLED));
     let selection = FakeSelection {
@@ -396,11 +364,7 @@ async fn an_empty_stream_yields_nothing() {
 #[tokio::test]
 async fn a_transient_fallback_yields_the_originals() {
     let server = support::serve(StatusCode::TOO_MANY_REQUESTS, "{}").await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Allow,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Allow));
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let chunks = vec![model("a")];
     let expected = into_items(chunks.clone());

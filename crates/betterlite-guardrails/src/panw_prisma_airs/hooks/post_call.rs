@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 
-use super::audit_bridge::{self, ScanRecord};
+use super::audit_bridge;
 use super::context::HookContext;
 use super::data::{Data, call_id};
 use super::dedup::{self, ScanType};
@@ -64,15 +64,7 @@ async fn run_post_call(
     else {
         return Ok(());
     };
-    audit_bridge::record_information(
-        guardrail,
-        audit,
-        ScanRecord {
-            verdict: &verdict,
-            start_time,
-            direction: Direction::Response,
-        },
-    );
+    audit_bridge::record_information(guardrail, audit, &verdict, start_time, Direction::Response);
     record_scan_id(guardrail, audit, &verdict, Direction::Response);
     apply_response_verdict(guardrail, response, audit, &verdict)
 }

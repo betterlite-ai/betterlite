@@ -44,12 +44,32 @@ pub(super) const SCAN_PATH: &str = "/v1/scan/sync/request";
 pub(super) const APPLIED: &str = "applied_guardrails";
 pub(super) const RECORDS: &str = "standard_logging_guardrail_information";
 
-pub(super) fn masking(request_content: bool, response_content: bool) -> MaskingSettings {
+pub(super) fn no_masking() -> MaskingSettings {
     MaskingSettings {
         mask_on_block: false,
         content: ContentMaskSettings {
-            request_content,
-            response_content,
+            request_content: false,
+            response_content: false,
+        },
+    }
+}
+
+pub(super) fn request_masking() -> MaskingSettings {
+    MaskingSettings {
+        mask_on_block: false,
+        content: ContentMaskSettings {
+            request_content: true,
+            response_content: false,
+        },
+    }
+}
+
+pub(super) fn response_masking() -> MaskingSettings {
+    MaskingSettings {
+        mask_on_block: false,
+        content: ContentMaskSettings {
+            request_content: false,
+            response_content: true,
         },
     }
 }
@@ -102,33 +122,21 @@ pub(super) fn guardrail(configured: Configured) -> PanwPrismaAirs {
 }
 
 pub(super) fn blocking(api_base: &str) -> PanwPrismaAirs {
-    guardrail(settings(
-        api_base,
-        masking(false, false),
-        FallbackAction::Block,
-    ))
+    guardrail(settings(api_base, no_masking(), FallbackAction::Block))
 }
 
 pub(super) fn allowing(api_base: &str) -> PanwPrismaAirs {
-    guardrail(settings(
-        api_base,
-        masking(false, false),
-        FallbackAction::Allow,
-    ))
+    guardrail(settings(api_base, no_masking(), FallbackAction::Allow))
 }
 
 pub(super) fn masking_requests(api_base: &str) -> PanwPrismaAirs {
-    guardrail(settings(
-        api_base,
-        masking(true, false),
-        FallbackAction::Block,
-    ))
+    guardrail(settings(api_base, request_masking(), FallbackAction::Block))
 }
 
 pub(super) fn masking_responses(api_base: &str) -> PanwPrismaAirs {
     guardrail(settings(
         api_base,
-        masking(false, true),
+        response_masking(),
         FallbackAction::Block,
     ))
 }

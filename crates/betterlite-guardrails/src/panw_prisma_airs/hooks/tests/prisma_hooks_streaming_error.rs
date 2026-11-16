@@ -8,11 +8,11 @@ use indexmap::IndexMap;
 use serde_json::value::RawValue;
 
 use super::support::{
-    self, FakeAssembler, FakeSelection, LogCapture, context, data, field, guardrail, masking,
+    self, FakeAssembler, FakeSelection, LogCapture, context, data, field, guardrail, no_masking,
     object_of, settings, text_of,
 };
 use crate::guardrail_message_scope::StreamItem;
-use crate::panw_prisma_airs::audit::Direction;
+use crate::panw_prisma_airs::audit::{Direction, GuardrailAudit};
 use crate::panw_prisma_airs::error_detail::{
     ErrorBody, ErrorCode, ErrorDetail, ErrorType, GuardrailHttpError,
 };
@@ -72,7 +72,7 @@ fn an_http_frame_uses_the_status_as_its_code() {
 fn an_internal_500_frame_carries_no_action() {
     let guardrail = guardrail(settings(
         "http://127.0.0.1:1",
-        masking(false, false),
+        no_masking(),
         FallbackAction::Block,
     ));
     let http = internal(
@@ -121,11 +121,7 @@ fn a_generic_frame_logs_the_error() {
 #[tokio::test]
 async fn a_blocked_raw_stream_yields_a_frame() {
     let server = support::serve(StatusCode::OK, BLOCK).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let chunks = vec![StreamChunk::Bytes(
         b"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"secret\"}}\n\n"
@@ -137,7 +133,7 @@ async fn a_blocked_raw_stream_yields_a_frame() {
     };
     let suppressed = BTreeSet::new();
     let hook_context = context(&selection, &suppressed);
-    let mut audit = crate::panw_prisma_airs::audit::GuardrailAudit::default();
+    let mut audit = GuardrailAudit::default();
     let items = streaming_iterator_hook(
         &guardrail,
         &mut request_data,

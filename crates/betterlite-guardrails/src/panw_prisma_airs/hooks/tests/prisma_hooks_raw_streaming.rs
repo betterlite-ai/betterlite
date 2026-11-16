@@ -3,7 +3,9 @@ use std::time::Duration;
 use axum::http::StatusCode;
 use betterlite_config::sections::panw_prisma_airs::FallbackAction;
 
-use super::support::{self, LogCapture, data, guardrail, json, masking, settings};
+use super::support::{
+    self, LogCapture, data, guardrail, json, no_masking, response_masking, settings,
+};
 use crate::panw_prisma_airs::audit::{GuardrailAudit, GuardrailStatus, Stage};
 use crate::panw_prisma_airs::error_detail::ErrorCode;
 use crate::panw_prisma_airs::hooks::streaming::StreamChunk;
@@ -80,11 +82,7 @@ fn event_text_prefers_deltas_over_the_done_text() {
 #[tokio::test]
 async fn blank_text_skips_the_scan() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut audit = GuardrailAudit::default();
     scan_raw_streaming_text(
@@ -105,11 +103,7 @@ async fn blank_text_skips_the_scan() {
 #[tokio::test]
 async fn allow_records_the_raw_response_scan() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut audit = GuardrailAudit::default();
     scan_raw_streaming_text(
@@ -141,11 +135,7 @@ async fn allow_records_the_raw_response_scan() {
 #[tokio::test]
 async fn block_returns_the_400_without_recording_a_scan() {
     let server = support::serve(StatusCode::OK, BLOCK).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut audit = GuardrailAudit::default();
     let error = scan_raw_streaming_text(
@@ -178,7 +168,7 @@ async fn a_mask_with_the_response_flag_warns_and_blocks() {
     let server = support::serve(StatusCode::OK, BLOCK_MASK).await;
     let guardrail = guardrail(settings(
         &server.base,
-        masking(false, true),
+        response_masking(),
         FallbackAction::Block,
     ));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
@@ -204,11 +194,7 @@ async fn a_mask_with_the_response_flag_warns_and_blocks() {
 async fn a_mask_without_the_response_flag_logs_no_warning() {
     let logs = LogCapture::start("raw-mask-quiet", tracing::Level::INFO);
     let server = support::serve(StatusCode::OK, BLOCK_MASK).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut audit = GuardrailAudit::default();
     scan_raw_streaming_text(
@@ -227,11 +213,7 @@ async fn a_mask_without_the_response_flag_logs_no_warning() {
 #[tokio::test]
 async fn transient_error_with_fallback_allow_marks_the_response_unscanned() {
     let server = support::serve(StatusCode::TOO_MANY_REQUESTS, "{}").await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Allow,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Allow));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut audit = GuardrailAudit::default();
     scan_raw_streaming_text(
@@ -259,11 +241,7 @@ async fn transient_error_with_fallback_allow_marks_the_response_unscanned() {
 #[tokio::test]
 async fn transient_error_with_fallback_block_returns_a_500() {
     let server = support::serve(StatusCode::TOO_MANY_REQUESTS, "{}").await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut audit = GuardrailAudit::default();
     let error = scan_raw_streaming_text(
@@ -287,11 +265,7 @@ async fn transient_error_with_fallback_block_returns_a_500() {
 #[tokio::test]
 async fn unreadable_metadata_returns_a_data_error() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1","metadata":"x"}"#);
     let mut audit = GuardrailAudit::default();
     let error = scan_raw_streaming_text(

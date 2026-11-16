@@ -3,7 +3,7 @@ use std::time::SystemTime;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 
-use super::audit_bridge::{self, ScanRecord};
+use super::audit_bridge;
 use super::context::HookContext;
 use super::data::{Data, MESSAGES, PROMPT, call_id, messages};
 use super::dedup::{self, ScanType};
@@ -62,15 +62,7 @@ async fn run_pre_call(
     let Some(verdict) = scan_prompt(guardrail, data, &prompt_text, start_time, audit).await? else {
         return Ok(());
     };
-    audit_bridge::record_information(
-        guardrail,
-        audit,
-        ScanRecord {
-            verdict: &verdict,
-            start_time,
-            direction: Direction::Request,
-        },
-    );
+    audit_bridge::record_information(guardrail, audit, &verdict, start_time, Direction::Request);
     record_scan_id(guardrail, audit, &verdict, Direction::Request);
     apply_prompt_verdict(guardrail, data, audit, &verdict)
 }

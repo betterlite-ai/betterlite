@@ -2,14 +2,15 @@ use axum::http::StatusCode;
 use betterlite_config::sections::panw_prisma_airs::FallbackAction;
 
 use super::support::{
-    self, LogCapture, data, field, guardrail, json, masking, response, settings, text_of,
+    self, LogCapture, data, field, guardrail, json, no_masking, response, response_masking,
+    settings, text_of,
 };
 use crate::panw_prisma_airs::error_detail::ErrorCode;
 use crate::panw_prisma_airs::hooks::streaming::assembly::{
     StreamScanError, scan_streaming_response,
 };
 use crate::panw_prisma_airs::verdict::{Action, Failure};
-use crate::prisma_airs_masking::MaskContent;
+use crate::prisma_airs_masking::{MaskContent, MaskedResponseMessage};
 
 const ALLOW: &str = r#"{"action":"allow","category":"benign","scan_id":"scan-1"}"#;
 const BLOCK: &str = r#"{"action":"block","category":"toxic","scan_id":"scan-2"}"#;
@@ -19,7 +20,7 @@ const BLOCK_MASKED: &str =
     r#"{"action":"block","category":"toxic","response_masked_data":{"data":"MASKED"}}"#;
 const ANSWER: &str = r#"{"choices":[{"message":{"content":"answer"}}]}"#;
 
-fn content_text(message: &crate::prisma_airs_masking::MaskedResponseMessage) -> String {
+fn content_text(message: &MaskedResponseMessage) -> String {
     match message.content.as_ref() {
         Some(MaskContent::Text(text)) => text.clone(),
         _ => panic!("text content"),
@@ -29,11 +30,7 @@ fn content_text(message: &crate::prisma_airs_masking::MaskedResponseMessage) -> 
 #[tokio::test]
 async fn an_allowed_response_is_not_modified() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(ANSWER);
     let scan = scan_streaming_response(
@@ -61,11 +58,7 @@ async fn an_allowed_response_is_not_modified() {
 async fn an_allowed_mask_modifies_every_choice() {
     let logs = LogCapture::start("assembly-mask", tracing::Level::INFO);
     let server = support::serve(StatusCode::OK, MASKED).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response =
         response(r#"{"choices":[{"message":{"content":"one"}},{"message":{"content":"two"}}]}"#);
@@ -104,11 +97,7 @@ async fn an_allowed_mask_modifies_every_choice() {
 #[tokio::test]
 async fn a_blocked_response_with_a_mask_but_no_flag_errors() {
     let server = support::serve(StatusCode::OK, BLOCK_MASKED).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(ANSWER);
     let error = scan_streaming_response(
@@ -145,7 +134,7 @@ async fn a_blocked_response_with_a_mask_and_the_flag_is_masked() {
     let server = support::serve(StatusCode::OK, BLOCK_MASKED).await;
     let guardrail = guardrail(settings(
         &server.base,
-        masking(false, true),
+        response_masking(),
         FallbackAction::Block,
     ));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
@@ -175,11 +164,7 @@ async fn a_blocked_response_with_a_mask_and_the_flag_is_masked() {
 async fn empty_content_is_a_synthetic_allow() {
     let logs = LogCapture::start("assembly-empty", tracing::Level::INFO);
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(r#"{"choices":[]}"#);
     let scan = scan_streaming_response(
@@ -201,11 +186,7 @@ async fn empty_content_is_a_synthetic_allow() {
 #[tokio::test]
 async fn whitespace_content_is_no_content() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(r#"{"choices":[{"message":{"content":"   "}}]}"#);
     let scan = scan_streaming_response(
@@ -223,11 +204,7 @@ async fn whitespace_content_is_no_content() {
 #[tokio::test]
 async fn a_transient_failure_is_returned_unmodified() {
     let server = support::serve(StatusCode::TOO_MANY_REQUESTS, "{}").await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(ANSWER);
     let scan = scan_streaming_response(
@@ -246,11 +223,7 @@ async fn a_transient_failure_is_returned_unmodified() {
 #[tokio::test]
 async fn a_permanent_failure_is_returned_unmodified() {
     let server = support::serve(StatusCode::BAD_REQUEST, "{}").await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(ANSWER);
     let scan = scan_streaming_response(
@@ -268,11 +241,7 @@ async fn a_permanent_failure_is_returned_unmodified() {
 #[tokio::test]
 async fn tool_call_arguments_are_scanned() {
     let server = support::serve(StatusCode::OK, ALLOW).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(
         r#"{"choices":[{"message":{"tool_calls":[{"function":{"arguments":"{\"a\":1}"}}]}}]}"#,
@@ -302,11 +271,7 @@ async fn an_oversized_mask_errors() {
         r#"{{"action":"allow","category":"benign","response_masked_data":{{"data":"{masked}"}}}}"#
     );
     let server = support::serve(StatusCode::OK, &body).await;
-    let guardrail = guardrail(settings(
-        &server.base,
-        masking(false, false),
-        FallbackAction::Block,
-    ));
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let mut model_response = response(ANSWER);
     let error = scan_streaming_response(
