@@ -1,9 +1,13 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use betterlite_config::sections::database_startup::job::UnrecoverableMigration;
 use betterlite_db::database_repair::RepairError;
 use betterlite_db::migration_deploy::DeployError;
 use betterlite_db::migration_ledger::connection::ConnectionError;
+use betterlite_db::migration_recovery::{
+    RecoveryError, extras_boolean, resolve_v2_migration_resolver,
+};
 use betterlite_db::spend_backfills::BackfillError;
 use betterlite_db::spend_partitions::{SpendPartitionError, SpendPartitionOperation};
 use chrono::{DateTime, Utc};
@@ -88,14 +92,15 @@ impl Operation {
     pub fn command(self, environment: &BTreeMap<String, String>) -> DbAdminCommand {
         match self {
             Self::Migrate => DbAdminCommand::Migrate(MigrationOptions {
-                use_migrate: !str_to_bool(
+                use_migrate: !extras_boolean(
                     environment.get("USE_PRISMA_DB_PUSH").map(String::as_str),
                 ),
-                use_v2_resolver: str_to_bool(Some(
+                use_v2_resolver: resolve_v2_migration_resolver(
+                    false,
                     environment
                         .get("USE_V2_MIGRATION_RESOLVER")
-                        .map_or("true", String::as_str),
-                )),
+                        .map(String::as_str),
+                ),
             }),
             Self::DatabaseViews => DbAdminCommand::DatabaseViews,
             Self::DailyToolSpend { cutover } => {
@@ -275,12 +280,14 @@ pub enum ViewsError {
 pub enum MigrationError {
     #[error(transparent)]
     Deploy(#[from] DeployError),
+    #[error(transparent)]
+    Recovery(#[from] RecoveryError),
+    #[error(transparent)]
+    Startup(#[from] UnrecoverableMigration),
 }
 
-// LiteLLM's extras str_to_bool: case-insensitive true/1/t/y/yes only, no stripping, no "on"
-fn str_to_bool(value: Option<&str>) -> bool {
-    let Some(text) = value else {
-        return false;
-    };
-    ["true", "1", "t", "y", "yes"].contains(&text.to_lowercase().as_str())
+impl From<MigrationError> for DbAdminError {
+    fn from(source: MigrationError) -> Self {
+        Self::Unrecoverable { source }
+    }
 }

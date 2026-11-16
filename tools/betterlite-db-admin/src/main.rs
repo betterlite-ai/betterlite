@@ -10,6 +10,7 @@ use betterlite_db_admin::commands::{DAILY_TOOL_SPEND_KEY, Operation, VERIFICATIO
 use tokio::runtime::Builder;
 
 use crate::database_repair::DatabaseRepairService;
+use crate::database_startup::DatabaseStartupService;
 use crate::database_views::{DatabaseViewsService, OFFLINE_TIMEOUT};
 use crate::spend_backfills::SpendBackfillsService;
 use crate::spend_partitions::SpendPartitionsService;
@@ -50,6 +51,9 @@ fn backend() -> DbAdminBackend {
         .services
         .insert(Operation::UpdateUnassignedTeams, Arc::clone(&repair));
     backend.services.insert(VERIFICATION_TOKENS_KEY, repair);
+    backend
+        .services
+        .insert(Operation::Migrate, Arc::new(DatabaseStartupService));
     backend
 }
 
