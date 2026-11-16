@@ -117,6 +117,9 @@ path = "src/helpers/logging/otlp_normalization/tests.rs"
 [[test]]
 name = "dashboard_governance_case"
 path = "src/dashboard_governance_fixture/decoder.rs"
+[[test]]
+name = "openai_resource_dispatch"
+path = "src/helpers/provider/openai_resource_dispatch/tests.rs"
 [lints]
 workspace = true
 [package.metadata.cargo-shear]

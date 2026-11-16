@@ -13,7 +13,6 @@ use tokio::runtime::Builder;
 
 mod fixtures;
 mod sdk_handlers;
-mod tests;
 mod transform_handlers;
 
 pub(crate) struct Op;
