@@ -80,8 +80,8 @@ impl Helper for Op {
             &input.rate_limit_error,
         ) {
             (Some(lookup), None, None) => agent_lookup(lookup),
-            (None, Some(resolution), None) => provider_resolution(resolution),
-            (None, None, Some(error)) => rate_limit_error(error),
+            (None, Some(resolution), None) => Ok(provider_resolution(resolution)),
+            (None, None, Some(error)) => Ok(rate_limit_error(error)),
             _ => Err(Box::new(HelperError {
                 class: String::from("InvalidInput"),
                 status: None,
@@ -172,7 +172,7 @@ impl DeploymentSnapshot for FixtureRouter {
     }
 }
 
-fn provider_resolution(input: &ProviderResolutionInput) -> HelperResult {
+fn provider_resolution(input: &ProviderResolutionInput) -> Value {
     let native = NativeResolution::default();
     let empty = FixtureRouter {
         deployments: Vec::new(),
@@ -186,10 +186,10 @@ fn provider_resolution(input: &ProviderResolutionInput) -> HelperResult {
         RouterKind::Deployments => Some(&filled),
     };
     let (model, provider) = resolve_rate_limit_provider(input.model.as_deref(), &native, router);
-    Ok(json!({"model": model, "provider": provider}))
+    json!({"model": model, "provider": provider})
 }
 
-fn rate_limit_error(input: &RateLimitErrorInput) -> HelperResult {
+fn rate_limit_error(input: &RateLimitErrorInput) -> Value {
     let error = ProxyRateLimitError::new(ProxyRateLimitErrorInit {
         detail: input.detail.clone(),
         headers: input.headers.clone(),
@@ -198,7 +198,7 @@ fn rate_limit_error(input: &RateLimitErrorInput) -> HelperResult {
         model: input.model.clone(),
         llm_provider: input.llm_provider.clone(),
     });
-    Ok(json!({
+    json!({
         "status_code": 429,
         "headers": error.headers,
         "message": error.message,
@@ -207,5 +207,5 @@ fn rate_limit_error(input: &RateLimitErrorInput) -> HelperResult {
         "model": error.model,
         "llm_provider": error.llm_provider,
         "detail": error.detail,
-    }))
+    })
 }

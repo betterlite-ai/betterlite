@@ -109,7 +109,7 @@ struct HttpExceptionBody<'detail> {
 
 impl IntoResponse for ProxyRateLimitError {
     fn into_response(self) -> Response {
-        let ProxyRateLimitError {
+        let Self {
             detail, headers, ..
         } = self;
         let body = HttpExceptionBody { detail: &detail };
