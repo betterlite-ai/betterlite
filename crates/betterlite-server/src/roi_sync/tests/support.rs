@@ -28,6 +28,7 @@ use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 use thiserror::Error;
 use tokio::sync::{Barrier, Notify};
+use tokio::task::yield_now;
 use uuid::Uuid;
 
 use crate::roi_cache::key::cache_key;
@@ -56,11 +57,11 @@ pub(super) async fn until<Condition>(mut condition: Condition)
 where
     Condition: FnMut() -> bool,
 {
-    for _ in 0..20_000 {
+    for _ in 0_u32..20_000 {
         if condition() {
             return;
         }
-        tokio::task::yield_now().await;
+        yield_now().await;
     }
     panic!("the condition never held");
 }
@@ -85,7 +86,7 @@ impl Routes {
             .insert(path.to_owned(), (status, body.to_owned()));
     }
 
-    pub(super) fn merge(self, other: Self) -> Self {
+    pub(super) fn merge(self, other: &Self) -> Self {
         let borrowed = other.answers.lock().unwrap().clone();
         self.answers.lock().unwrap().extend(borrowed);
         let borrowed_gates = other.gates.lock().unwrap().clone();
@@ -118,8 +119,8 @@ impl Transport for Routes {
         let requested = Arc::clone(&self.requested);
         async move {
             requested.lock().unwrap().push(path.clone());
-            let gate = gates.lock().unwrap().get(&path).cloned();
-            if let Some(gate) = gate {
+            let waiting = gates.lock().unwrap().get(&path).cloned();
+            if let Some(gate) = waiting {
                 gate.notified().await;
             }
             let (status, body) = answers
@@ -424,6 +425,7 @@ impl MemoryRepository {
         }
         state.writes.push((name.to_owned(), value.clone()));
         state.params.insert(name.to_owned(), value);
+        drop(state);
         Ok(())
     }
 }
@@ -491,6 +493,7 @@ impl SpendReader for FakeSpend {
         } else {
             Ok(rows)
         };
+        drop(state);
         ready(outcome)
     }
 }
@@ -615,8 +618,8 @@ impl SyncCoordinator for FakeCoordinator {
                 .push((owner.to_owned(), status.clone(), scheduled_interval));
             state.acquire_gate.clone()
         };
-        if let Some(gate) = gate {
-            gate.notified().await;
+        if let Some(notify) = gate {
+            notify.notified().await;
         }
         !self.state.lock().unwrap().refused.contains(&Lease::Acquire)
     }
@@ -654,8 +657,8 @@ fn answer_future(body: &str) -> CompletionFuture {
 pub(super) fn answering_caller(count: Option<Arc<AtomicUsize>>) -> CompletionCaller {
     let body = answer_body();
     Arc::new(move |_request| {
-        if let Some(count) = count.as_ref() {
-            count.fetch_add(1, Ordering::SeqCst);
+        if let Some(counter) = count.as_ref() {
+            counter.fetch_add(1, Ordering::SeqCst);
         }
         answer_future(&body)
     })
@@ -696,9 +699,9 @@ pub(super) fn barrier_caller(barrier: Arc<Barrier>) -> CompletionCaller {
 
 pub(super) fn stalled_caller(gate: Arc<Notify>) -> CompletionCaller {
     Arc::new(move |_request| {
-        let gate = Arc::clone(&gate);
+        let waiting = Arc::clone(&gate);
         let future: CompletionFuture = Box::pin(async move {
-            gate.notified().await;
+            waiting.notified().await;
             Err(SourceError::PaginationLimit)
         });
         future
@@ -730,9 +733,7 @@ impl Inputs {
     }
 
     fn lease(&self) -> Option<Arc<dyn SyncCoordinator>> {
-        let Some(coordinator) = self.coordinator.as_ref() else {
-            return None;
-        };
+        let coordinator = self.coordinator.as_ref()?;
         let lease: Arc<dyn SyncCoordinator> = Arc::new(coordinator.clone());
         Some(lease)
     }
@@ -807,19 +808,19 @@ pub(super) fn manager_with_capabilities(
 }
 
 pub(super) async fn drained() {
-    for _ in 0..16 {
-        tokio::task::yield_now().await;
+    for _ in 0_u32..16 {
+        yield_now().await;
     }
 }
 
 pub(super) async fn settled(manager: &SyncManager<Routes>) {
-    for _ in 0..20_000 {
+    for _ in 0_u32..20_000 {
         if !manager.status().running {
             break;
         }
-        tokio::task::yield_now().await;
+        yield_now().await;
     }
-    for _ in 0..64 {
-        tokio::task::yield_now().await;
+    for _ in 0_u32..64 {
+        yield_now().await;
     }
 }

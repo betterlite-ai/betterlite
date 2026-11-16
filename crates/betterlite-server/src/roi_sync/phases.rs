@@ -88,11 +88,14 @@ where
     })
 }
 
-async fn index_pulls<T: Transport>(
+async fn index_pulls<T>(
     context: &RunContext<'_, T>,
     previous: Option<ROIReport>,
     repositories: &RepositoryBatch,
-) -> Result<EstimatePlan, JsonError> {
+) -> Result<EstimatePlan, JsonError>
+where
+    T: Transport,
+{
     let mut predicates = SessionCapabilities {
         lookup: context.capabilities.as_ref(),
     };
@@ -134,7 +137,7 @@ where
 {
     let estimator = Estimator::new(
         context.settings.clone(),
-        context.complete.clone(),
+        Arc::clone(context.complete),
         context.models,
     );
     let processor = PullProcessor {

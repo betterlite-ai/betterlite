@@ -1,10 +1,12 @@
 use std::error::Error as StdError;
+use std::pin::pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use betterlite_roi::estimator::models::EstimatorModel;
 use betterlite_roi::records::ROISyncPhase;
 use betterlite_roi::settings::ROISettings;
+use futures_util::future::{Either, select};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
@@ -57,7 +59,7 @@ where
         github.close();
     }
     task.status.apply(StatusChange::Finished);
-    notify_coordinator(&task).await;
+    notify_coordinator(task.coordinator.as_ref(), &task.owner, &task.status).await;
     task.finished.store(true, Ordering::SeqCst);
 }
 
@@ -87,9 +89,14 @@ where
         factory: &task.factory,
         transport,
     };
-    tokio::select! {
-        result = analysis.run(client, monitor, stop) => result,
-        () = task.token.cancelled() => Err(RunError::Cancelled),
+    match select(
+        pin!(analysis.run(client, monitor, stop)),
+        pin!(task.token.cancelled()),
+    )
+    .await
+    {
+        Either::Left((result, _cancelled)) => result,
+        Either::Right(((), _analysis)) => Err(RunError::Cancelled),
     }
 }
 
@@ -126,16 +133,17 @@ where
     }
 }
 
-async fn notify_coordinator<T, Reader, Repository>(task: &RunTask<T, Reader, Repository>)
-where
-    T: Transport,
-{
-    let Some(lease) = task.coordinator.as_ref() else {
+async fn notify_coordinator(
+    coordinator: Option<&Arc<dyn SyncCoordinator>>,
+    owner: &str,
+    status: &StatusReporter,
+) {
+    let Some(lease) = coordinator else {
         return;
     };
-    let final_status = task.status.snapshot();
+    let final_status = status.snapshot();
     if final_status.phase != ROISyncPhase::Complete {
-        lease.finish(&task.owner, &final_status, None).await;
+        lease.finish(owner, &final_status, None).await;
     }
 }
 

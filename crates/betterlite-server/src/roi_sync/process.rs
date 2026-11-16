@@ -110,7 +110,7 @@ where
     ) -> Result<ProcessedPull, RunError<Repository::Error>> {
         let profile = profile_email(self.github, &cached.login, &cached.profile_email).await;
         let record = refreshed_record(cached, &profile);
-        let previous = if saved { Some(cached) } else { None };
+        let previous = saved.then_some(cached);
         cache_estimated_pull(self.repository, item.key.as_deref(), &record, previous).await?;
         self.status.record_estimate(&record.estimate);
         Ok(ProcessedPull {
@@ -162,7 +162,7 @@ where
 
 fn refreshed_record(cached: &ROIPullRecord, profile: &str) -> ROIPullRecord {
     let mut record = cached_record(cached);
-    record.profile_email = profile.to_owned();
+    profile.clone_into(&mut record.profile_email);
     let mut emails: BTreeSet<String> = cached
         .commit_emails
         .clone()

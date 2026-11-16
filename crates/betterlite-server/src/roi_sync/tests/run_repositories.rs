@@ -11,7 +11,7 @@ async fn run_reads_every_configured_repository() {
     let manager = manager(None);
     let mut inputs = inputs("o/r", &[12]);
     inputs.settings = settings(&["o/r", "c/d"]);
-    inputs.routes = routes_for("o/r", &[12]).merge(routes_for("c/d", &[13]));
+    inputs.routes = routes_for("o/r", &[12]).merge(&routes_for("c/d", &[13]));
     assert!(manager.start(inputs.run()).await);
     settled(&manager).await;
     let report = report_of(&inputs.repository);

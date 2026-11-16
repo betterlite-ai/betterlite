@@ -42,11 +42,11 @@ async fn start_reports_false_when_the_coordinator_refuses_the_lease() {
     let coordinator = FakeCoordinator::default();
     coordinator.refusing(Lease::Acquire);
     inputs.coordinator = Some(coordinator.clone());
-    inputs.interval = 5.5;
+    inputs.interval = 5.5_f64;
     assert!(!manager.start(inputs.run()).await);
     let acquires = coordinator.acquires();
     assert_eq!(acquires.len(), 1);
-    assert!(Uuid::parse_str(&acquires[0].0).is_ok());
+    Uuid::parse_str(&acquires[0].0).unwrap();
     assert!(acquires[0].1.running);
     assert_eq!(acquires[0].1.phase, ROISyncPhase::Spend);
     assert_eq!(acquires[0].1.stage, "Reading gateway spend");
@@ -63,7 +63,7 @@ async fn start_spawns_the_analysis_after_a_successful_acquire() {
     let mut inputs = inputs("o/r", &[12]);
     let coordinator = FakeCoordinator::default();
     inputs.coordinator = Some(coordinator.clone());
-    inputs.interval = 5.5;
+    inputs.interval = 5.5_f64;
     assert!(manager.start(inputs.run()).await);
     let status = manager.status();
     assert!(status.running);
@@ -195,7 +195,7 @@ async fn start_serializes_concurrent_starts() {
     let mut second = inputs("o/r", &[12]);
     second.coordinator = Some(coordinator.clone());
     let release = async {
-        until(|| coordinator.acquires().len() >= 1).await;
+        until(|| !coordinator.acquires().is_empty()).await;
         drained().await;
         gate.notify_one();
     };

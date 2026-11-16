@@ -40,10 +40,10 @@ fn elapsed_seconds(status: &ROISyncStatus, now: DateTime<Utc>) -> i64 {
         .finished_at
         .as_deref()
         .and_then(|text| DateTime::parse_from_rfc3339(text).ok());
-    let elapsed = match finish {
-        Some(finished) => finished.signed_duration_since(started).num_seconds(),
-        None => now.signed_duration_since(started).num_seconds(),
-    };
+    let elapsed = finish
+        .unwrap_or(now)
+        .signed_duration_since(started)
+        .num_seconds();
     elapsed.max(0)
 }
 
@@ -83,22 +83,22 @@ impl StatusReporter {
         match change {
             StatusChange::Repositories => {
                 status.phase = ROISyncPhase::Repositories;
-                status.stage = REPOSITORIES_STAGE.to_owned();
+                REPOSITORIES_STAGE.clone_into(&mut status.stage);
             }
             StatusChange::Estimates { total } => {
                 status.phase = ROISyncPhase::Estimates;
-                status.stage = ESTIMATES_STAGE.to_owned();
+                ESTIMATES_STAGE.clone_into(&mut status.stage);
                 status.total = total;
             }
             StatusChange::Failed { message } => {
                 status.phase = ROISyncPhase::Error;
-                status.stage = FAILED_STAGE.to_owned();
+                FAILED_STAGE.clone_into(&mut status.stage);
                 status.error = Some(message);
             }
             StatusChange::Cancelled => {
                 status.running = false;
                 status.phase = ROISyncPhase::Cancelled;
-                status.stage = CANCELLED_STAGE.to_owned();
+                CANCELLED_STAGE.clone_into(&mut status.stage);
             }
             StatusChange::Finished => {
                 status.running = false;
@@ -117,9 +117,10 @@ impl StatusReporter {
         let now = (self.clock)();
         let stored = self.stored.lock().unwrap_or_else(PoisonError::into_inner);
         let mut completed = timed_status(stored.clone(), now);
+        drop(stored);
         completed.running = false;
         completed.phase = ROISyncPhase::Complete;
-        completed.stage = stage.to_owned();
+        stage.clone_into(&mut completed.stage);
         completed.finished_at = Some(isoformat(now));
         completed
     }

@@ -118,14 +118,13 @@ impl<T: Transport + 'static> SyncManager<T> {
         if !acquired {
             return false;
         }
-        {
-            let mut stored = self
-                .reporter
-                .stored
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            *stored = initial;
-        }
+        let mut stored = self
+            .reporter
+            .stored
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        *stored = initial;
+        drop(stored);
         self.launch(run, owner).await;
         true
     }
@@ -163,19 +162,19 @@ impl<T: Transport + 'static> SyncManager<T> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        let Some(mut slot) = slot else {
+        let Some(mut run_slot) = slot else {
             return false;
         };
-        if slot.finished.load(Ordering::SeqCst) {
+        if run_slot.finished.load(Ordering::SeqCst) {
             return false;
         }
-        slot.cancel.cancel();
-        while slot.tasks.join_next().await.is_some() {}
+        run_slot.cancel.cancel();
+        while run_slot.tasks.join_next().await.is_some() {}
         self.reporter.apply(StatusChange::Cancelled);
         self.reporter.apply(StatusChange::FinishedComputed);
-        if let Some(lease) = slot.coordinator.as_ref() {
+        if let Some(lease) = run_slot.coordinator.as_ref() {
             let final_status = self.reporter.snapshot();
-            lease.finish(&slot.owner, &final_status, None).await;
+            lease.finish(&run_slot.owner, &final_status, None).await;
         }
         true
     }

@@ -80,23 +80,20 @@ where
 
     async fn publish(&self, execution: &Execution) -> Result<(), RunError<Repository::Error>> {
         let completed = self.status.completed_status(execution.stage);
-        match self.coordinator {
-            Some(lease) => {
-                if !lease
-                    .finish(self.owner, &completed, Some(&execution.report))
-                    .await
-                {
-                    return Err(RunError::Replaced);
-                }
+        if let Some(lease) = self.coordinator {
+            if !lease
+                .finish(self.owner, &completed, Some(&execution.report))
+                .await
+            {
+                return Err(RunError::Replaced);
             }
-            None => {
-                let bytes = serde_json::to_vec(&execution.report)?;
-                let value = serde_json::from_slice(&bytes)?;
-                self.repository
-                    .set_param(REPORT_PARAM, value)
-                    .await
-                    .map_err(RunError::Repository)?;
-            }
+        } else {
+            let bytes = serde_json::to_vec(&execution.report)?;
+            let value = serde_json::from_slice(&bytes)?;
+            self.repository
+                .set_param(REPORT_PARAM, value)
+                .await
+                .map_err(RunError::Repository)?;
         }
         let mut stored = self
             .status
@@ -104,6 +101,7 @@ where
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         *stored = completed;
+        drop(stored);
         Ok(())
     }
 }
