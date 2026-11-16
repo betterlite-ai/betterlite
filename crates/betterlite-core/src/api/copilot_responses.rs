@@ -40,8 +40,8 @@ where
         model: &str,
         request_id: Uuid,
     ) -> Result<Headers, CopilotResponsesError> {
-        let key = match self.credentials.api_key().await {
-            Ok(key) => key,
+        let stored = match self.credentials.api_key().await {
+            Ok(stored) => stored,
             Err(source @ ApiKeyError::AccessToken(_)) => {
                 return Err(CopilotResponsesError::Login(source));
             }
@@ -52,7 +52,7 @@ where
                 });
             }
         };
-        let Some(key) = key.filter(|secret| !secret.expose_secret().is_empty()) else {
+        let Some(key) = stored.filter(|secret| !secret.expose_secret().is_empty()) else {
             return Err(CopilotResponsesError::MissingKey {
                 model: model.to_owned(),
             });

@@ -43,6 +43,7 @@ class CopilotResponses(Protocol):
         self, model: str, parsed_chunk: dict[str, JsonValue], logging_obj: Logging, /
     ) -> ResponsesAPIStreamingResponse: ...
 
+    # ast-grep-ignore: no-long-names
     def transform_responses_api_request(
         self,
         model: str,
