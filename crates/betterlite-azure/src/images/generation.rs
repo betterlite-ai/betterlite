@@ -87,8 +87,19 @@ where
         Ok(url) => url,
         Err(error) => return Err(fail(&prepared, error, runtime.logger)),
     };
-    if let Err(error) = pre_call(&prepared, &url, runtime.logger) {
-        return Err(fail(&prepared, error, runtime.logger));
+    // B249's pre_call reads the prompt from the body and the auth headers with their values redacted
+    let headers = redact_azure_auth_headers(&prepared.headers)
+        .into_iter()
+        .map(|(name, value)| (name, Json::Text(value)))
+        .collect();
+    let record = PreCallRecord {
+        input: prepared.body_prompt.clone(),
+        headers,
+        api_base: url.clone(),
+        data: prepared.data.clone(),
+    };
+    if let Err(error) = runtime.logger.pre_call(record) {
+        return Err(fail(&prepared, ImageError::Logging(error), runtime.logger));
     }
     Ok(Begun {
         prepared,
@@ -112,26 +123,6 @@ fn prepare_call<C, K>(
         },
     )
     .map_err(ImageError::into_sync)
-}
-
-// B249's pre_call reads the prompt from the body and the auth headers with their values redacted
-fn pre_call(
-    prepared: &Prepared,
-    url: &str,
-    logger: &mut dyn ImageGenerationLogger,
-) -> Result<(), ImageError> {
-    let headers = redact_azure_auth_headers(&prepared.headers)
-        .into_iter()
-        .map(|(name, value)| (name, Json::Text(value)))
-        .collect();
-    logger
-        .pre_call(PreCallRecord {
-            input: prepared.body_prompt.clone(),
-            headers,
-            api_base: url.to_owned(),
-            data: prepared.data.clone(),
-        })
-        .map_err(ImageError::Logging)
 }
 
 // only the transport call crosses the await point; the caller runs begin and finish around it

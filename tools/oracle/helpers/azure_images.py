@@ -55,7 +55,7 @@ class ImageReply(TypedDict):
 
 # the typed view of AzureImageEditConfig, whose own methods take bare dicts
 class EditConfig(Protocol):
-    def azure_deployment_image_edit_form_data(
+    def azure_deployment_image_edit_form_data(  # ast-grep-ignore: no-long-names
         self, data: dict[str, JsonValue], request_url: str
     ) -> dict[str, JsonValue]: ...
 
@@ -156,21 +156,23 @@ def target_step(step: Step) -> JsonValue:
         )
         if value is not None
     }
-    url = COMPLETION.create_azure_base_url(
-        azure_client_params=params,
-        model=step.get("model"),
-        base_model=step.get("base_model"),
-    )
-    return {"url": url}
+    return {
+        "url": COMPLETION.create_azure_base_url(
+            azure_client_params=params,
+            model=step.get("model"),
+            base_model=step.get("base_model"),
+        )
+    }
 
 
 def url_step(step: Step) -> JsonValue:
     clear_ambient()
     litellm.api_base = step.get("global_base")
     litellm.api_version = step.get("global_version")
+    model = step.get("model")
     try:
         url = EDIT_CONFIG.get_complete_url(
-            model=step["model"] if "model" in step else "",
+            model="" if model is None else model,
             api_base=step.get("api_base"),
             litellm_params={"api_version": step.get("api_version")},
         )
@@ -180,9 +182,11 @@ def url_step(step: Step) -> JsonValue:
 
 
 def form_step(step: Step) -> JsonValue:
+    data = step.get("data")
+    request_url = step.get("request_url")
     fields = EDIT_CONFIG.azure_deployment_image_edit_form_data(
-        step["data"] if "data" in step else {},
-        step["request_url"] if "request_url" in step else "",
+        {} if data is None else data,
+        "" if request_url is None else request_url,
     )
     return {"fields": fields}
 
@@ -231,12 +235,14 @@ def reply_report(view: ImageReply) -> dict[str, JsonValue]:
 
 def generation_step(step: Step) -> JsonValue:
     clear_ambient()
-    transport = Transport(step["reply_body"] if "reply_body" in step else "")
+    body = step.get("reply_body")
+    transport = Transport("" if body is None else body)
     litellm.client_session = httpx.Client(transport=transport)
     logging = RecordingLogging()
+    prompt = step.get("prompt")
     try:
         response = COMPLETION.image_generation(
-            prompt=step["prompt"] if "prompt" in step else "",
+            prompt="" if prompt is None else prompt,
             timeout=600.0,
             optional_params=dict(step["optional"]) if "optional" in step else {},
             logging_obj=logging,

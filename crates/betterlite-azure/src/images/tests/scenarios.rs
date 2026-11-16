@@ -97,73 +97,63 @@ fn selection_table() {
 }
 
 fn async_transforms() {
-    {
-        let mut harness = Harness::new(&[]).with_reply(ok_reply());
-        let outcome = harness.run(&Scenario {
-            delegate_async: true,
-            ..scenario("dall-e-3")
-        });
-        let image = &outcome.success().reply;
-        assert_eq!(image.size.as_deref(), Some("1024x1024"));
-        assert_eq!(image.quality.as_deref(), Some("hd"));
-        assert_eq!(image.output_format.as_deref(), Some("png"))
-    };
+    let mut harness = Harness::new(&[]).with_reply(ok_reply());
+    let outcome = harness.run(&Scenario {
+        delegate_async: true,
+        ..scenario("dall-e-3")
+    });
+    let image = &outcome.success().reply;
+    assert_eq!(image.size.as_deref(), Some("1024x1024"));
+    assert_eq!(image.quality.as_deref(), Some("hd"));
+    assert_eq!(image.output_format.as_deref(), Some("png"));
 
-    {
-        let mut harness = Harness::new(&[]).with_reply(ok_reply());
-        let outcome = harness.run(&Scenario {
-            delegate_async: true,
-            optional: r#"{"size":"1792x1024","quality":"standard"}"#.to_owned(),
-            ..scenario("dall-e-3")
-        });
-        let image = &outcome.success().reply;
-        assert_eq!(image.size.as_deref(), Some("1792x1024"));
-        assert_eq!(image.quality.as_deref(), Some("standard"))
-    };
+    let mut harness_2 = Harness::new(&[]).with_reply(ok_reply());
+    let outcome_2 = harness_2.run(&Scenario {
+        delegate_async: true,
+        optional: r#"{"size":"1792x1024","quality":"standard"}"#.to_owned(),
+        ..scenario("dall-e-3")
+    });
+    let image_2 = &outcome_2.success().reply;
+    assert_eq!(image_2.size.as_deref(), Some("1792x1024"));
+    assert_eq!(image_2.quality.as_deref(), Some("standard"));
 
-    {
-        let mut harness = Harness::new(&[]).with_reply(reply(200, MAI_BODY));
-        let outcome = harness.run(&Scenario {
-            delegate_async: true,
-            ..scenario("MAI-Image-1")
-        });
-        assert_eq!(
-            outcome.url(),
-            format!("{AZURE}/mai/v1/images/generations?api-version={VERSION}")
-        );
-        // the async leg re-raises its own error unwrapped
-        assert_eq!(outcome.failure().classification(), ("NotBuilt", None));
-        assert!(outcome.failure().to_string().contains("B554"));
-        assert_eq!(outcome.logger.post.len(), 1)
-    };
+    let mut harness_3 = Harness::new(&[]).with_reply(reply(200, MAI_BODY));
+    let outcome_3 = harness_3.run(&Scenario {
+        delegate_async: true,
+        ..scenario("MAI-Image-1")
+    });
+    assert_eq!(
+        outcome_3.url(),
+        format!("{AZURE}/mai/v1/images/generations?api-version={VERSION}")
+    );
+    // the async leg re-raises its own error unwrapped
+    assert_eq!(outcome_3.failure().classification(), ("NotBuilt", None));
+    assert!(outcome_3.failure().to_string().contains("B554"));
+    assert_eq!(outcome_3.logger.post.len(), 1);
 }
 
 fn sync_transform() {
-    {
-        let mut harness = Harness::new(&[]).with_reply(ok_reply());
-        let outcome = harness.run(&scenario("dall-e-3"));
-        let image = &outcome.success().reply;
-        assert_eq!(image.size, None);
-        assert_eq!(image.quality, None);
-        assert_eq!(image.output_format, None);
-        assert_eq!(outcome.logger.post.len(), 1);
-        assert_eq!(outcome.logger.post[0].input, PROMPT)
-    };
+    let mut harness = Harness::new(&[]).with_reply(ok_reply());
+    let outcome = harness.run(&scenario("dall-e-3"));
+    let image = &outcome.success().reply;
+    assert_eq!(image.size, None);
+    assert_eq!(image.quality, None);
+    assert_eq!(image.output_format, None);
+    assert_eq!(outcome.logger.post.len(), 1);
+    assert_eq!(outcome.logger.post[0].input, PROMPT);
 
-    {
-        let mut harness = Harness::new(&[]).with_reply(reply(200, MAI_BODY));
-        let outcome = harness.run(&scenario("MAI-Image-1"));
-        assert_eq!(
-            outcome.url(),
-            format!("{AZURE}/mai/v1/images/generations?api-version={VERSION}")
-        );
-        assert_eq!(
-            outcome.failure().classification(),
-            ("AzureOpenAIError", Some(500))
-        );
-        assert!(outcome.failure().to_string().contains("B554"));
-        assert!(outcome.logger.post.is_empty())
-    };
+    let mut harness_2 = Harness::new(&[]).with_reply(reply(200, MAI_BODY));
+    let outcome_2 = harness_2.run(&scenario("MAI-Image-1"));
+    assert_eq!(
+        outcome_2.url(),
+        format!("{AZURE}/mai/v1/images/generations?api-version={VERSION}")
+    );
+    assert_eq!(
+        outcome_2.failure().classification(),
+        ("AzureOpenAIError", Some(500))
+    );
+    assert!(outcome_2.failure().to_string().contains("B554"));
+    assert!(outcome_2.logger.post.is_empty());
 }
 
 pub(super) fn image_edit_deployment_url() {
