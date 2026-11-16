@@ -168,16 +168,6 @@ def size_outcomes(call: SizeCases) -> JsonValue:
     return {"sizes": sizes}
 
 
-def url_entry(
-    ideogram: RenderConfig, diffusion: RenderConfig, api_base: str | None, model: str
-) -> JsonValue:
-    answer: dict[str, JsonValue] = {
-        "ideogram": ideogram.get_complete_url(api_base, None, model, {}, {}),
-        "stable_diffusion": diffusion.get_complete_url(api_base, None, model, {}, {}),
-    }
-    return JSON.validate_python(answer)
-
-
 def case_entry(call: CustomDiffusionPathInput, case: MappingCase) -> JsonValue:
     answer: dict[str, JsonValue] = {
         "ideogram": mapping_entry(IDEOGRAM, call["model"], call["prompt"], case),
@@ -188,11 +178,14 @@ def case_entry(call: CustomDiffusionPathInput, case: MappingCase) -> JsonValue:
 
 def custom_diffusion_path(call: CustomDiffusionPathInput) -> JsonValue:
     apply_environment(call["environment"])
-    urls = [
-        url_entry(IDEOGRAM, DIFFUSION, api_base, model)
-        for api_base in call["api_bases"]
-        for model in call["models"]
-    ]
+    urls: list[JsonValue] = []
+    for api_base in call["api_bases"]:
+        for model in call["models"]:
+            pair = {
+                "ideogram": IDEOGRAM.get_complete_url(api_base, None, model, {}, {}),
+                "stable_diffusion": DIFFUSION.get_complete_url(api_base, None, model, {}, {}),
+            }
+            urls.append(JSON.validate_python(pair))
     cases = [case_entry(call, case) for case in call["cases"]]
     return {"urls": urls, "cases": cases}
 
