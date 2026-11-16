@@ -8,6 +8,9 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 mod fixture;
 mod input;
 mod reports;
+// the Anthropic messages helper already defines the offline token sources
+#[path = "anthropic_messages/sources.rs"]
+mod sources;
 mod tests;
 
 use fixture::Installed;

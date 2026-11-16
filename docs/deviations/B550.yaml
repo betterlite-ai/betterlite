@@ -1,19 +1,9 @@
 task: B550
 deviations:
-  - what: >-
-      A provider chat body that is not a JSON object is refused with betterlite's typed ResponseError::NotAnObject,
-      where LiteLLM calls response_object.get("choices") on it and raises AttributeError, which the proxy answers as
-      a 500.
-    why: >-
-      A provider answering with a list or a scalar is malformed data, not an internal fault, so betterlite reports an
-      error its caller can map instead of crashing; no working setup relies on the crash.
+  - what: A provider chat body that is not a JSON object is refused with the typed ResponseError::NotAnObject, where LiteLLM calls .get("choices") on it, raises AttributeError and the proxy answers 500.
+    why: A provider answering with a list or a scalar is malformed data, not an internal fault, and no working setup relies on the crash.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L630
-  - what: >-
-      A provider chat body whose model is not a string is refused with betterlite's typed ResponseError::ModelNotString,
-      where LiteLLM concatenates the value into "azure_ai/" + model and raises TypeError, which the proxy answers as
-      a 500.
-    why: >-
-      The answer's model is declared a string, so another type is malformed data, and betterlite reports that instead
-      of crashing; no working setup relies on the crash.
+  - what: A provider chat body whose model is not a string is refused with the typed ResponseError::ModelNotString, where LiteLLM concatenates it into "azure_ai/" + model, raises TypeError and the proxy answers 500.
+    why: The answer's model is declared a string, so another type is malformed data, and no working setup relies on the crash.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L731-L736
 kept_bugs: []

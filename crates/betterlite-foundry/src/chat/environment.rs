@@ -55,16 +55,11 @@ pub fn validate_environment(request: EnvironmentRequest<'_>) -> Result<Headers, 
         .filter(|key| !key.expose_secret().is_empty());
     match argument {
         Some(key) => {
-            let takes_api_key = request
-                .api_base
-                .is_some_and(|base| api_key_header_for_base(Some(base)) == ApiKeyHeader::ApiKey);
-            if takes_api_key {
+            if api_key_header_for_base(request.api_base) == ApiKeyHeader::ApiKey {
                 headers.insert(String::from(API_KEY_HEADER), key.expose_secret().to_owned());
             } else {
-                headers.insert(
-                    String::from(AUTHORIZATION_HEADER),
-                    format!("{BEARER_PREFIX}{}", key.expose_secret()),
-                );
+                let bearer = format!("{BEARER_PREFIX}{}", key.expose_secret());
+                headers.insert(String::from(AUTHORIZATION_HEADER), bearer);
             }
         }
         None => {

@@ -1,10 +1,3 @@
-use std::sync::Arc;
-
-use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
-use betterlite_azure::credentials::source::{
-    CallableTokenProvider, CredentialSources, SourceFailure,
-};
-use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::sections::Section;
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_config::sections::azure_url_policy::Raw as KeyRaw;
@@ -30,6 +23,7 @@ use super::fixture::Installed;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 use super::input::{AuthCall, MapCall, ProviderCall, RequestCall, ResponseCall, UrlCall};
+use super::sources::Offline;
 
 pub(super) fn url_report(call: &UrlCall) -> Value {
     match get_complete_url(call.api_base.as_deref(), call.api_version.as_deref()) {
@@ -176,7 +170,7 @@ pub(super) fn auth_report(call: &AuthCall) -> Result<Value, Box<HelperError>> {
             credentials: &credentials,
             refresh_enabled: false,
             provider: None,
-            sources: &NoSources,
+            sources: &Offline,
         },
         api_base: call.api_base.as_deref(),
     });
@@ -198,48 +192,4 @@ fn auth_configured_key(call: &AuthCall) -> Result<Option<SecretString>, Box<Help
         .into_iter()
         .next()
         .and_then(|deployment| deployment.api_key))
-}
-
-fn refused(message: &str) -> SourceFailure {
-    SourceFailure {
-        class: String::from("ValueError"),
-        status: None,
-        message: message.to_owned(),
-    }
-}
-
-struct NoSources;
-
-impl CredentialSources for NoSources {
-    fn client_secret<'source>(
-        &'source self,
-        _record: &ClientSecretRecord,
-    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(refused("no client secret source is configured"))
-    }
-
-    fn username_password<'source>(
-        &'source self,
-        _record: &UsernamePasswordRecord,
-    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(refused("no username and password source is configured"))
-    }
-
-    fn sdk_refresh<'source>(
-        &'source self,
-        _scope: &str,
-    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(refused("no SDK refresh source is configured"))
-    }
-
-    fn default_credential<'source>(
-        &'source self,
-        _scope: &'source str,
-    ) -> Option<Arc<dyn CallableTokenProvider + 'source>> {
-        None
-    }
-
-    fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        Err(refused("no OIDC source is configured"))
-    }
 }

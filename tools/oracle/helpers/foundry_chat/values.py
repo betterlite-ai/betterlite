@@ -85,8 +85,7 @@ def response_value(call: ResponseCall) -> JsonObject:
         json_mode=None,
     )
     record = RESPONSE.validate_json(response.model_dump_json())
-    usage_record = record.get("usage")
-    usage: JsonValue = None if usage_record is None else JSON.validate_python(usage_record)
+    usage = JSON.validate_python(record.get("usage"))
     choices: list[JsonValue] = [
         {
             "index": choice["index"],
@@ -135,14 +134,4 @@ def auth_value(call: AuthCall) -> JsonValue:
 
 
 def fields_value() -> JsonValue:
-    return JSON.validate_python(
-        [
-            {
-                "field_name": field["field_name"],
-                "field_type": field["field_type"],
-                "field_description": field["field_description"],
-                "field_value": field["field_value"],
-            }
-            for field in CONFIG.get_required_params()
-        ]
-    )
+    return JSON.validate_python(CONFIG.get_required_params())
