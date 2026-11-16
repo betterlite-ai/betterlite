@@ -8,7 +8,7 @@ use betterlite_foundry::agent_requests::request::AgentCallRequest;
 use betterlite_foundry::agent_results::error::AgentResultError;
 use betterlite_foundry::agent_results::messages::{extract_content, transform_annotations};
 use betterlite_foundry::agent_results::reply::{
-    AgentReply, ReplyInput, TokenCountRequest, TokenCounter, Usage, build_model_response,
+    AgentReply, ReplyInput, TokenCountRequest, TokenCounter, build_model_response,
 };
 use betterlite_foundry::agent_results::request::build_stream_request;
 use betterlite_foundry::agent_results::stream::{
