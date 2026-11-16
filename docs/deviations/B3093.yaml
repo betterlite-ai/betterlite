@@ -12,7 +12,7 @@ deviations:
   - what: LiteLLM's `_fold_entity_rollups_sync` is named `fold_entity_rollups_sync` here, without the leading underscore.
     why: Rust spells an internal function without a Python privacy prefix, and the fold keeps the same signature and the same loop. The name fits the length rule, so only the prefix differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L973-L1004
-  - what: A date-level rollup row with a null date fails the read with a 500 whose detail is "Failed to fetch analytics: rollup row has no date". LiteLLM stores the row under a None date, raises TypeError while it parses the dates, and answers that exception with a 500 whose detail carries the Python error text.
+  - what: 'A date-level rollup row with a null date fails the read with a 500 whose detail is "Failed to fetch analytics: rollup row has no date". LiteLLM stores the row under a None date, raises TypeError while it parses the dates, and answers that exception with a 500 whose detail carries the Python error text.'
     why: The row type carries an optional date only because the grand-total row leaves it null, and every other grouping set has date in its key, so no query writes a date-level row without one. Naming the row is clearer than a Python type error, and both paths answer 500.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L791-L795
   - what: The entity fold runs inline on the async task after the metadata read, where LiteLLM hands `_fold_entity_rollups_sync` to `asyncio.to_thread`.
