@@ -47,7 +47,11 @@ impl ConverseOptionsError {
     pub const fn status_code(&self) -> Option<u16> {
         match self {
             Self::Capability(_) => None,
-            _ => Some(BAD_REQUEST_STATUS),
+            Self::NovaEffort { .. }
+            | Self::UnmappedEffort(_)
+            | Self::InvalidEffort(_)
+            | Self::AdaptiveEffort { .. }
+            | Self::UnsupportedEffort { .. } => Some(BAD_REQUEST_STATUS),
         }
     }
 }

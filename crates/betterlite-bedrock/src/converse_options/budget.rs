@@ -15,10 +15,12 @@ pub fn clamp_thinking_budget_tokens(optional_params: &mut ParamMap, minimum: i64
     };
     let got = match budget {
         ParamValue::Bool(flag) => i64::from(*flag),
-        ParamValue::Number(number) => match number.as_i64() {
-            Some(value) => value,
-            None => return,
-        },
+        ParamValue::Number(number) => {
+            let Some(value) = number.as_i64() else {
+                return;
+            };
+            value
+        }
         ParamValue::Null | ParamValue::Text(_) | ParamValue::List(_) | ParamValue::Mapping(_) => {
             return;
         }
