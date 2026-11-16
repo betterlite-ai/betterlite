@@ -1,0 +1,49 @@
+{
+  "kind": "helper",
+  "name": "v2-full-response-payload-tool-calls",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 2
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+              "name": "lookup",
+              "arguments": "{}"
+            }
+          }
+        ]
+      },
+      "request_data": {},
+      "input_type": "response",
+      "answers": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": [
+            {
+              "id": "call_1",
+              "type": "function",
+              "function": {
+                "name": "lookup",
+                "arguments": "{}"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

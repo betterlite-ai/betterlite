@@ -1,0 +1,22 @@
+kind: helper
+name: messages-chat-output-stream-block-selection
+call:
+  messages_chat_output:
+    operation: block
+    choices:
+    - finish_reason: null
+      delta:
+        content: ignored
+        tool_calls:
+        - id: t__thought__sig
+          index: 0
+          function:
+            name: Bash
+            arguments: '{a'
+        reasoning_content: ignored
+        thinking_blocks: null
+        refusal: null
+        provider_specific_fields: null
+env: {}
+compare:
+  ignore: []

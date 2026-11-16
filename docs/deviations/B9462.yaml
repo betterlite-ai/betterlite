@@ -1,0 +1,13 @@
+task: B9462
+deviations:
+  - what: >-
+      A guardrail timeout that is not representable as a Duration (negative, NaN,
+      infinite or too large) fails construction with a typed error. LiteLLM keeps
+      the float and passes it to httpx inside each call, so block_on_error decides
+      what the caller sees.
+    why: >-
+      B3800's settings carry the timeout as a Duration, which cannot hold these
+      values; naming the config error once at load beats a scan that can never
+      succeed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L363
+kept_bugs: []

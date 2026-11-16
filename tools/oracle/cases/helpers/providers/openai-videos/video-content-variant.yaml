@@ -1,0 +1,29 @@
+kind: helper
+name: video-content-variant
+call:
+  openai_videos:
+    calls:
+      - op: content_request
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLzEw
+        api_base: https://mock.example/v1/videos
+        variant: thumbnail
+      - op: content_request
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLzEw
+        api_base: https://mock.example/v1/videos
+        variant: ''
+      - op: content_request
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLzEw
+        api_base: https://mock.example/v1/videos
+        variant: thumbnail&extra=1
+      - op: content_request
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLzEw
+        api_base: https://mock.example/v1/videos
+        variant: héllo
+      - op: content_request
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLzEw
+        api_base: https://mock.example/v1/videos
+        variant: null
+      - op: content_response
+        body_base64: iVBORw0KGgoAAAANSUhEUg==
+env: {}
+compare: {ignore: []}
