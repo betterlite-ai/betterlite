@@ -1,12 +1,16 @@
 use std::convert::Infallible;
 use std::error::Error;
+use std::marker::PhantomData;
+use std::pin::Pin;
 
 use betterlite_openai::passthrough::transformation::types::{
-    MAX_COLLECTED_BYTES, PassthroughError, PassthroughLogging, PassthroughTarget,
+    PassthroughError, PassthroughLogging, PassthroughTarget,
 };
 use betterlite_openai::passthrough::transformation::{
     BasePassthroughConfig, PassthroughStreamCollector,
 };
+use selfie::SelfieMut;
+use selfie::refs::RefType;
 
 mod tests;
 
@@ -56,63 +60,79 @@ impl<S: SpendSink> SpendCollection<S> {
     }
 }
 
+struct OwnedCollectorRef<Logged>(PhantomData<Logged>);
+
+impl<'this, Logged: 'this> RefType<'this> for OwnedCollectorRef<Logged> {
+    type Ref = Box<dyn PassthroughStreamCollector<Logged = Logged> + Send + 'this>;
+}
+
 // Owned so the background flush outlives the request borrow
-pub struct OwnedProviderSpend<C> {
-    pub(crate) config: C,
-    pub(crate) model: String,
-    pub(crate) custom_llm_provider: String,
-    pub(crate) endpoint: String,
-    pub(crate) chunks: Vec<Vec<u8>>,
-    pub(crate) collected_bytes: usize,
-    pub(crate) disabled: bool,
+// The collector borrows the config it was built from, so both share one cell
+pub struct OwnedProviderSpend<C>
+where
+    C: BasePassthroughConfig + 'static,
+    C::Logged: 'static,
+{
+    cell: SelfieMut<'static, Box<C>, OwnedCollectorRef<C::Logged>>,
+}
+
+fn provider_collector<'this, C>(
+    config: Pin<&'this mut C>,
+    target: &PassthroughTarget<'_>,
+) -> Box<dyn PassthroughStreamCollector<Logged = C::Logged> + Send + 'this>
+where
+    C: BasePassthroughConfig + Sync + Unpin,
+{
+    let config: &'this C = Pin::into_inner(config);
+    config.create_stream_collector(target)
+}
+
+impl<C> OwnedProviderSpend<C>
+where
+    C: BasePassthroughConfig + Sync + Unpin + 'static,
+    C::Logged: 'static,
+{
+    pub(crate) fn new(config: C, target: PassthroughTarget<'_>) -> Self {
+        let model = target.model.to_owned();
+        let custom_llm_provider = target.custom_llm_provider.to_owned();
+        let endpoint = target.endpoint.to_owned();
+        Self {
+            cell: SelfieMut::new(Box::pin(config), move |pinned| {
+                let spend_target = PassthroughTarget {
+                    model: &model,
+                    custom_llm_provider: &custom_llm_provider,
+                    endpoint: &endpoint,
+                };
+                provider_collector(pinned, &spend_target)
+            }),
+        }
+    }
 }
 
 impl<C> PassthroughStreamCollector for OwnedProviderSpend<C>
 where
-    C: BasePassthroughConfig + Sync,
+    C: BasePassthroughConfig + 'static,
+    C::Logged: 'static,
 {
     type Logged = C::Logged;
 
     fn add(&mut self, chunk: &[u8]) {
-        if self.disabled {
-            return;
-        }
-        let Some(total) = self
-            .collected_bytes
-            .checked_add(chunk.len())
-            .filter(|total| *total <= MAX_COLLECTED_BYTES)
-        else {
-            self.disabled = true;
-            self.chunks.clear();
-            self.collected_bytes = 0;
-            return;
-        };
-        self.chunks.push(chunk.to_vec());
-        self.collected_bytes = total;
+        self.cell
+            .with_referential_mut(|collector| collector.add(chunk));
     }
 
     fn build_logged_response(
         &self,
         logging_obj: &mut dyn PassthroughLogging,
     ) -> Result<Option<Self::Logged>, PassthroughError> {
-        if self.disabled {
-            return Ok(None);
-        }
-        let mut collector = self.config.create_stream_collector(&PassthroughTarget {
-            model: &self.model,
-            custom_llm_provider: &self.custom_llm_provider,
-            endpoint: &self.endpoint,
-        });
-        for chunk in &self.chunks {
-            collector.add(chunk);
-        }
-        collector.build_logged_response(logging_obj)
+        self.cell
+            .with_referential(|collector| collector.build_logged_response(logging_obj))
     }
 }
 
 impl<C> SpendSink for OwnedProviderSpend<C>
 where
-    C: BasePassthroughConfig + Sync + Send + 'static,
+    C: BasePassthroughConfig + Send + 'static,
     C::Logged: Send + 'static,
 {
     type Logged = C::Logged;

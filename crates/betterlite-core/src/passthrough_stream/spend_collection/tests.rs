@@ -1,30 +1,81 @@
 #![cfg(test)]
 
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_openai::passthrough::transformation::PassthroughStreamCollector;
-use betterlite_openai::passthrough::transformation::types::MAX_COLLECTED_BYTES;
+use betterlite_openai::openai_base_config::Object;
+use betterlite_openai::passthrough::transformation::types::{
+    MAX_COLLECTED_BYTES, PassthroughTarget, PassthroughUrlRequest,
+};
+use betterlite_openai::passthrough::transformation::{
+    BasePassthroughConfig, PassthroughStreamCollector,
+};
 use tracing::Level;
+use url::Url;
 
 use super::{OwnedProviderSpend, SpendCollection};
 use crate::passthrough_stream::tests::{
-    ENDPOINT, FakeConfig, MODEL, NoopPassthroughLogging, PROVIDER, capture, collection, fake_config,
+    ENDPOINT, FakeConfigError, MODEL, NoopPassthroughLogging, PROVIDER, RecordingCollector,
+    capture, collection, fake_config,
 };
 
-fn owned_spend(config: FakeConfig) -> OwnedProviderSpend<FakeConfig> {
-    OwnedProviderSpend {
+fn owned_spend<C>(config: C) -> OwnedProviderSpend<C>
+where
+    C: BasePassthroughConfig + Sync + Unpin + 'static,
+    C::Logged: 'static,
+{
+    OwnedProviderSpend::new(
         config,
-        model: MODEL.to_owned(),
-        custom_llm_provider: PROVIDER.to_owned(),
-        endpoint: ENDPOINT.to_owned(),
-        chunks: Vec::new(),
-        collected_bytes: 0,
-        disabled: false,
+        PassthroughTarget {
+            model: MODEL,
+            custom_llm_provider: PROVIDER,
+            endpoint: ENDPOINT,
+        },
+    )
+}
+
+type TargetStrings = (String, String, String);
+
+struct CountingConfig {
+    created: Arc<Mutex<Vec<TargetStrings>>>,
+}
+
+impl BasePassthroughConfig for CountingConfig {
+    type Error = FakeConfigError;
+    type Logged = String;
+
+    fn is_streaming_request(&self, _endpoint: &str, _request_data: &Object) -> bool {
+        true
+    }
+
+    fn get_complete_url(
+        &self,
+        _request: &PassthroughUrlRequest<'_>,
+    ) -> Result<(Url, String), Self::Error> {
+        let base = "https://api.test";
+        Ok((Url::parse(base).unwrap(), base.to_owned()))
+    }
+
+    fn create_stream_collector(
+        &self,
+        target: &PassthroughTarget<'_>,
+    ) -> Box<dyn PassthroughStreamCollector<Logged = Self::Logged> + Send + '_>
+    where
+        Self: Sized + Sync,
+    {
+        self.created
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((
+                target.model.to_owned(),
+                target.custom_llm_provider.to_owned(),
+                target.endpoint.to_owned(),
+            ));
+        Box::new(RecordingCollector { chunks: Vec::new() })
     }
 }
 
 #[test]
-fn owned_spend_replays_chunks_into_the_provider_collector() {
+fn owned_spend_hands_chunks_to_the_provider_collector() {
     let config = fake_config();
     let collected = Arc::clone(&config.collected);
     let mut spend = SpendCollection {
@@ -53,6 +104,31 @@ fn owned_spend_replays_chunks_into_the_provider_collector() {
     assert_eq!(
         records[0].lines,
         vec!["data: one".to_owned(), "data: two".to_owned()]
+    );
+}
+
+#[test]
+fn owned_spend_builds_the_provider_collector_once_at_construction() {
+    let created = Arc::new(Mutex::new(Vec::new()));
+    let mut sink = owned_spend(CountingConfig {
+        created: Arc::clone(&created),
+    });
+    {
+        let targets = created.lock().unwrap_or_else(PoisonError::into_inner);
+        assert_eq!(
+            *targets,
+            vec![(MODEL.to_owned(), PROVIDER.to_owned(), ENDPOINT.to_owned())]
+        );
+    }
+    PassthroughStreamCollector::add(&mut sink, b"data: one\n\n");
+    let mut logging = NoopPassthroughLogging;
+    let logged = sink
+        .build_logged_response(&mut logging)
+        .expect("the provider collector builds");
+    assert_eq!(logged.as_deref(), Some("data: one\n\n"));
+    assert_eq!(
+        created.lock().unwrap_or_else(PoisonError::into_inner).len(),
+        1
     );
 }
 
@@ -120,26 +196,23 @@ fn take_flush_hands_the_collector_over_once() {
 
 #[test]
 fn owned_spend_stops_collecting_exactly_past_the_byte_cap() {
-    let config = fake_config();
-    let collected = Arc::clone(&config.collected);
+    let config = CountingConfig {
+        created: Arc::new(Mutex::new(Vec::new())),
+    };
     let mut sink = owned_spend(config);
-    sink.collected_bytes = MAX_COLLECTED_BYTES.saturating_sub(1);
-    PassthroughStreamCollector::add(&mut sink, b"a");
-    assert!(!sink.disabled);
-    assert_eq!(sink.chunks.len(), 1);
-    PassthroughStreamCollector::add(&mut sink, b"b");
-    assert!(sink.disabled);
-    assert!(sink.chunks.is_empty());
+    PassthroughStreamCollector::add(&mut sink, &vec![b'a'; MAX_COLLECTED_BYTES]);
     let mut logging = NoopPassthroughLogging;
     assert!(
         sink.build_logged_response(&mut logging)
-            .expect("a disabled collector builds nothing")
-            .is_none()
+            .expect("the collector builds at the cap")
+            .is_some(),
+        "a chunk that ends exactly on the cap is still collected"
     );
+    PassthroughStreamCollector::add(&mut sink, b"b");
     assert!(
-        collected
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .is_empty()
+        sink.build_logged_response(&mut logging)
+            .expect("a disabled collector builds nothing")
+            .is_none(),
+        "a chunk past the cap stops collection"
     );
 }

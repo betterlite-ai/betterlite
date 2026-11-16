@@ -76,7 +76,7 @@ pub async fn async_passthrough_request<C, L>(
     background_tasks: TaskTracker,
 ) -> Result<AsyncPassthroughReply<OwnedProviderSpend<C>, L>, PassthroughStreamError>
 where
-    C: BasePassthroughConfig + Sync + Send + 'static,
+    C: BasePassthroughConfig + Sync + Send + Unpin + 'static,
     C::Logged: Send + 'static,
     L: SpendLogging<C::Logged>,
 {
@@ -89,7 +89,6 @@ where
             full_reply(pending).await?,
         )));
     }
-    let target = logging.spend_target();
     let mut stream = AsyncPassthroughStream {
         initialized: false,
         status_code: 0,
@@ -97,15 +96,10 @@ where
         pending: Some(pending),
         source: None,
         spend: SpendCollection {
-            sink: Some(OwnedProviderSpend {
-                config: provider_config,
-                model: target.model.to_owned(),
-                custom_llm_provider: target.custom_llm_provider.to_owned(),
-                endpoint: target.endpoint.to_owned(),
-                chunks: Vec::new(),
-                collected_bytes: 0,
-                disabled: false,
-            }),
+            sink: Some(OwnedProviderSpend::new(
+                provider_config,
+                logging.spend_target(),
+            )),
             chunk_count: 0,
             failed: false,
         },
