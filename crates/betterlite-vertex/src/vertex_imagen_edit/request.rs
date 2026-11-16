@@ -131,8 +131,8 @@ fn prepare_references(
         });
     }
     // len(reference_images) + 1 may repeat an earlier raw id, and LiteLLM keeps the collision
-    if let Some(mask) = mask {
-        let content = read_image_bytes(mask, 0, max_depth)?;
+    if let Some(mask_image) = mask {
+        let content = read_image_bytes(mask_image, 0, max_depth)?;
         let mask_id = u64::try_from(references.len())
             .unwrap_or(u64::MAX)
             .saturating_add(1);

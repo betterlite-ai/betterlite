@@ -1,4 +1,4 @@
-use std::io::{self, Read as _, Seek as _, SeekFrom};
+use std::io::{self, SeekFrom};
 use std::path::PathBuf;
 
 use betterlite_openai::openai_video_identifiers::multipart::ReadSeek;
@@ -17,7 +17,7 @@ pub enum ImagenFileInput<'file> {
     // a filesystem path, which the reader refuses without opening it
     Path(PathBuf),
     // a list or tuple, read through its first non-None member
-    Sequence(Vec<Option<ImagenFileInput<'file>>>),
+    Sequence(Vec<Option<Self>>),
     // a dict, read through data, bytes or content and then path
     Mapping(ImagenFields<'file>),
     // a BytesIO, read whole from position zero and left where it was found
@@ -67,9 +67,7 @@ pub fn read_image_bytes(
         ImagenFileInput::Seekable(stream) => read_stream(&mut **stream, TellPolicy::Required),
         ImagenFileInput::Buffered(stream) => read_stream(&mut **stream, TellPolicy::MayRefuse),
         ImagenFileInput::Reader(stream) => read_text_stream(&mut **stream),
-        ImagenFileInput::Unsupported { kind } => {
-            Err(ImagenEditError::UnsupportedImage { kind: *kind })
-        }
+        ImagenFileInput::Unsupported { kind } => Err(ImagenEditError::UnsupportedImage { kind }),
     }
 }
 
@@ -129,7 +127,7 @@ fn read_stream(stream: &mut dyn ReadSeek, tell: TellPolicy) -> Result<Vec<u8>, I
         Err(_) if tell == TellPolicy::MayRefuse => None,
         Err(error) => return Err(ImagenEditError::Stream(error)),
     };
-    if let Some(offset) = start {
+    if start.is_some() {
         stream
             .seek(SeekFrom::Start(0))
             .map_err(ImagenEditError::Stream)?;
