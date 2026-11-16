@@ -9,15 +9,16 @@ use betterlite_provider::openai_media_dispatch::call::{
 use betterlite_provider::openai_media_dispatch::error::OpenAiMediaError;
 use betterlite_provider::openai_media_dispatch::execute::dispatch;
 use betterlite_provider::openai_media_dispatch::{
-    MediaMethod, OpenAiMediaRequest, OpenAiMediaResult, VideoEditOutcome, VideoEditReplyKind,
-    VideoOutcome, VideoReplyKind,
+    OpenAiMediaRequest, OpenAiMediaResult, VideoEditOutcome, VideoEditReplyKind, VideoOutcome,
+    VideoReplyKind,
 };
 use betterlite_provider::operation::{OperationRequest, OperationResult};
 
 use super::fixtures::{Fixture, Recorder};
-use super::views::{method_name, parts_value, payload_value, query_value, serialized, text};
+use super::views::{method_name, parts_value, payload_value, query_value};
 use super::{
-    OTHER_OUTCOME, VideoCreateCase, VideoExtendedCase, VideoLifecycleCase, failure, leaf_failure,
+    OTHER_OUTCOME, VideoCreateCase, VideoExtendedCase, VideoExtendedOp, VideoLifecycleCase,
+    VideoLifecycleOp, failure, leaf_failure,
 };
 
 pub(super) async fn video_create(case: &VideoCreateCase) -> HelperResult {
@@ -50,7 +51,7 @@ pub(super) async fn video_create(case: &VideoCreateCase) -> HelperResult {
         "body": payload_value(&request.body)?,
         "parts": parts_value(&request.parts)?,
         "multipart": request.multipart,
-        "reply": serialized(&video)?,
+        "reply": serde_json::to_value(&video).map_err(|error| failure("Serialize", error))?,
     }))
 }
 
@@ -66,10 +67,16 @@ pub(super) async fn video_lifecycle(case: &VideoLifecycleCase) -> HelperResult {
         Err(error) => return Err(leaf_failure(&error)),
     };
     let VideoOutcome { request, reply } = outcome;
-    let reply = match reply {
-        VideoReplyKind::Video(video) => serialized(&video)?,
-        VideoReplyKind::List(list) => serialized(&list)?,
-        VideoReplyKind::Bytes(bytes) => serde_json::json!({"body": text(&bytes)?}),
+    let reply_value = match reply {
+        VideoReplyKind::Video(video) => {
+            serde_json::to_value(&video).map_err(|error| failure("Serialize", error))?
+        }
+        VideoReplyKind::List(list) => {
+            serde_json::to_value(&list).map_err(|error| failure("Serialize", error))?
+        }
+        VideoReplyKind::Bytes(bytes) => serde_json::json!({
+            "body": String::from_utf8(bytes).map_err(|error| failure("Utf8", error))?
+        }),
     };
     Ok(serde_json::json!({
         "request": {
@@ -80,7 +87,7 @@ pub(super) async fn video_lifecycle(case: &VideoLifecycleCase) -> HelperResult {
             "parts": parts_value(&request.parts)?,
             "multipart": request.multipart,
         },
-        "reply": reply,
+        "reply": reply_value,
     }))
 }
 
@@ -96,16 +103,20 @@ pub(super) async fn video_extended(case: &VideoExtendedCase) -> HelperResult {
         Err(error) => return Err(leaf_failure(&error)),
     };
     let VideoEditOutcome { request, reply } = outcome;
-    let reply = match reply {
-        VideoEditReplyKind::Video(video) => serialized(&video)?,
-        VideoEditReplyKind::Character(character) => serialized(&character)?,
+    let reply_value = match reply {
+        VideoEditReplyKind::Video(video) => {
+            serde_json::to_value(&video).map_err(|error| failure("Serialize", error))?
+        }
+        VideoEditReplyKind::Character(character) => {
+            serde_json::to_value(&character).map_err(|error| failure("Serialize", error))?
+        }
     };
     Ok(serde_json::json!({
         "url": request.url,
         "body": payload_value(&request.body)?,
         "parts": parts_value(&request.parts)?,
         "multipart": request.multipart,
-        "reply": reply,
+        "reply": reply_value,
     }))
 }
 
@@ -123,42 +134,41 @@ async fn run(operation: OpenAiMediaOperation) -> Result<OperationResult, OpenAiM
 
 fn lifecycle_call(case: &VideoLifecycleCase) -> Result<VideoCall, Box<HelperError>> {
     let reply = case.reply.clone().into_bytes();
-    let call = match case.op.as_str() {
-        "list" => VideoCall::List(Box::new(VideoListCall {
+    let call = match case.op {
+        VideoLifecycleOp::List => VideoCall::List(Box::new(VideoListCall {
             after: case.after.clone(),
             limit: case.limit,
             order: case.order.clone(),
             extra_query: VideoOptions::new(),
             reply,
         })),
-        "status" => VideoCall::Status(Box::new(VideoStatusCall {
+        VideoLifecycleOp::Status => VideoCall::Status(Box::new(VideoStatusCall {
             video_id: required(&case.video_id, "video_id")?.to_owned(),
             reply,
         })),
-        "delete" => VideoCall::Delete(Box::new(VideoDeleteCall {
+        VideoLifecycleOp::Delete => VideoCall::Delete(Box::new(VideoDeleteCall {
             video_id: required(&case.video_id, "video_id")?.to_owned(),
             reply,
         })),
-        "content" => VideoCall::Content(Box::new(VideoContentCall {
+        VideoLifecycleOp::Content => VideoCall::Content(Box::new(VideoContentCall {
             video_id: required(&case.video_id, "video_id")?.to_owned(),
             variant: case.variant.clone(),
             reply,
         })),
-        "remix" => VideoCall::Remix(Box::new(VideoRemixCall {
+        VideoLifecycleOp::Remix => VideoCall::Remix(Box::new(VideoRemixCall {
             video_id: required(&case.video_id, "video_id")?.to_owned(),
             prompt: required(&case.prompt, "prompt")?.to_owned(),
             extra_body: VideoOptions::new(),
             reply,
         })),
-        other => return Err(failure("Input", format!("unknown video op {other}"))),
     };
     Ok(call)
 }
 
 fn extended_call(case: &VideoExtendedCase) -> Result<VideoEditCall, Box<HelperError>> {
     let reply = case.reply.clone().into_bytes();
-    let call = match case.op.as_str() {
-        "edit" => VideoEditCall::Edit(Box::new(VideoEditInput {
+    let call = match case.op {
+        VideoExtendedOp::Edit => VideoEditCall::Edit(Box::new(VideoEditInput {
             prompt: required(&case.prompt, "prompt")?.to_owned(),
             video_id: required(&case.video_id, "video_id")?.to_owned(),
             video_file: case
@@ -168,23 +178,24 @@ fn extended_call(case: &VideoExtendedCase) -> Result<VideoEditCall, Box<HelperEr
             extra_body: case.extra_body.clone(),
             reply,
         })),
-        "extension" => VideoEditCall::Extension(Box::new(VideoExtensionInput {
+        VideoExtendedOp::Extension => VideoEditCall::Extension(Box::new(VideoExtensionInput {
             prompt: required(&case.prompt, "prompt")?.to_owned(),
             video_id: required(&case.video_id, "video_id")?.to_owned(),
             seconds: required(&case.seconds, "seconds")?.to_owned(),
             extra_body: case.extra_body.clone(),
             reply,
         })),
-        "create_character" => VideoEditCall::CreateCharacter(Box::new(CharacterCreateInput {
-            name: required(&case.name, "name")?.to_owned(),
-            video: required(&case.video, "video")?.as_bytes().to_vec(),
-            reply,
-        })),
-        "get_character" => VideoEditCall::GetCharacter(Box::new(CharacterGetInput {
+        VideoExtendedOp::CreateCharacter => {
+            VideoEditCall::CreateCharacter(Box::new(CharacterCreateInput {
+                name: required(&case.name, "name")?.to_owned(),
+                video: required(&case.video, "video")?.as_bytes().to_vec(),
+                reply,
+            }))
+        }
+        VideoExtendedOp::GetCharacter => VideoEditCall::GetCharacter(Box::new(CharacterGetInput {
             character_id: required(&case.character_id, "character_id")?.to_owned(),
             reply,
         })),
-        other => return Err(failure("Input", format!("unknown video edit op {other}"))),
     };
     Ok(call)
 }

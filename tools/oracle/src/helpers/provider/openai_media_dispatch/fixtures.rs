@@ -3,7 +3,6 @@ use betterlite_oracle_helper_api::error::HelperError;
 use serde_json::Value;
 
 use super::failure;
-use super::views::text;
 
 pub(super) use betterlite_provider::openai_media_dispatch::test_support::{Fixture, Recorder};
 
@@ -45,7 +44,8 @@ pub(super) fn multipart_view(request: &OutboundRequest) -> Result<Value, Box<Hel
             "name": part.name,
             "filename": part.file_name,
             "content_type": part.content_type,
-            "body": text(&part.data)?,
+            "body": String::from_utf8(part.data.clone())
+                .map_err(|error| failure("Utf8", error))?,
         }));
     }
     Ok(Value::Array(rendered))

@@ -24,8 +24,9 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::fixtures::{self, Fixture, Recorder};
-use super::views::text;
-use super::{OTHER_OUTCOME, SpeechCase, TranscriptionCase, failure, leaf_failure};
+use super::{
+    OTHER_OUTCOME, SpeechCase, TranscriptionCase, TranscriptionFamilyCase, failure, leaf_failure,
+};
 
 pub(super) async fn speech(case: &SpeechCase) -> HelperResult {
     let operation = speech_operation(case);
@@ -89,7 +90,7 @@ async fn speech_outcome(
                 "request": request,
                 "status": status,
                 "content_type": content_type,
-                "body": text(&body)?,
+                "body": String::from_utf8(body).map_err(|error| failure("Utf8", error))?,
                 "error": Value::Null,
             }))
         }
@@ -111,7 +112,7 @@ async fn speech_outcome(
 }
 
 pub(super) async fn transcription(case: &TranscriptionCase) -> HelperResult {
-    let operation = transcription_operation(case)?;
+    let operation = transcription_operation(case);
     let fixture = Fixture::new(case.status, case.reply.as_bytes());
     let mut logger = Recorder;
     let result = dispatch(
@@ -126,20 +127,12 @@ pub(super) async fn transcription(case: &TranscriptionCase) -> HelperResult {
     transcription_outcome(result, request)
 }
 
-fn transcription_operation(
-    case: &TranscriptionCase,
-) -> Result<TranscriptionOperation, Box<HelperError>> {
-    let family = match case.family.as_str() {
-        "whisper" => TranscriptionFamily::Whisper,
-        "gpt" => TranscriptionFamily::Gpt,
-        other => {
-            return Err(failure(
-                "Input",
-                format!("unknown transcription family {other}"),
-            ));
-        }
+fn transcription_operation(case: &TranscriptionCase) -> TranscriptionOperation {
+    let family = match case.family {
+        TranscriptionFamilyCase::Whisper => TranscriptionFamily::Whisper,
+        TranscriptionFamilyCase::Gpt => TranscriptionFamily::Gpt,
     };
-    Ok(TranscriptionOperation {
+    TranscriptionOperation {
         input: String::from("a.wav"),
         file: ProcessedAudioFile {
             file_content: b"abc".to_vec(),
@@ -159,7 +152,7 @@ fn transcription_operation(
         family: Some(family),
         optional_params: case.options.clone(),
         atranscription: false,
-    })
+    }
 }
 
 fn transcription_request(request: &OutboundRequest) -> Result<Value, Box<HelperError>> {

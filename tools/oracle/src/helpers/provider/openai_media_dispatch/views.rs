@@ -4,7 +4,6 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_provider::openai_media_dispatch::{
     MediaMethod, MediaPart, MediaPartBody, MediaPayload,
 };
-use serde::Serialize;
 use serde_json::Value;
 
 use super::failure;
@@ -34,17 +33,6 @@ pub(super) const fn method_name(method: MediaMethod) -> &'static str {
     }
 }
 
-pub(super) fn serialized<T>(value: &T) -> Result<Value, Box<HelperError>>
-where
-    T: Serialize,
-{
-    serde_json::to_value(value).map_err(|error| failure("Serialize", error))
-}
-
-pub(super) fn reply_bytes(reply: &Value) -> Result<Vec<u8>, Box<HelperError>> {
-    serde_json::to_vec(reply).map_err(|error| failure("Serialize", error))
-}
-
 pub(super) fn payload_value(payload: &MediaPayload) -> Result<Value, Box<HelperError>> {
     match payload {
         MediaPayload::Empty => Ok(Value::Null),
@@ -70,15 +58,13 @@ pub(super) fn parts_value(parts: &[MediaPart]) -> Result<Value, Box<HelperError>
 
 fn part_body(body: &MediaPartBody) -> Result<String, Box<HelperError>> {
     match body {
-        MediaPartBody::Bytes(bytes) => text(bytes),
+        MediaPartBody::Bytes(bytes) => {
+            String::from_utf8(bytes.clone()).map_err(|error| failure("Utf8", error))
+        }
         MediaPartBody::Text(text) => Ok(text.clone()),
         // the composition never copies a caller-held reader, so no case can project one
         MediaPartBody::Streamed => Err(failure("Fixture", "the part is a stream")),
     }
-}
-
-pub(super) fn text(bytes: &[u8]) -> Result<String, Box<HelperError>> {
-    String::from_utf8(bytes.to_vec()).map_err(|error| failure("Utf8", error))
 }
 
 pub(super) fn query_value(query: &VideoOptions) -> Value {

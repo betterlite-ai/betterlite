@@ -17,7 +17,7 @@ use secrecy::SecretString;
 use serde_json::Value;
 
 use super::fixtures::{self, Fixture, Recorder};
-use super::views::{image_reply, parts_value, payload_value, reply_bytes};
+use super::views::{image_reply, parts_value, payload_value};
 use super::{
     ImageEditCase, ImageFileCase, ImageGenerationCase, ImageVariationCase, OTHER_OUTCOME, failure,
     leaf_failure,
@@ -39,7 +39,9 @@ pub(super) async fn image_generation(case: &ImageGenerationCase) -> HelperResult
         delegate_async: false,
         now_seconds: NOW,
     };
-    let fixture = Fixture::new(case.status, &reply_bytes(&case.reply)?);
+    let reply_body =
+        serde_json::to_vec(&case.reply).map_err(|error| failure("Serialize", error))?;
+    let fixture = Fixture::new(case.status, &reply_body);
     let mut logger = Recorder;
     let result = dispatch(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),
@@ -101,7 +103,9 @@ pub(super) async fn image_edit(case: &ImageEditCase) -> HelperResult {
 
 pub(super) async fn image_variation(case: &ImageVariationCase) -> HelperResult {
     let operation = variation_request(case);
-    let fixture = Fixture::new(case.status, &reply_bytes(&case.reply)?);
+    let reply_body =
+        serde_json::to_vec(&case.reply).map_err(|error| failure("Serialize", error))?;
+    let fixture = Fixture::new(case.status, &reply_body);
     let mut logger = Recorder;
     let result = dispatch(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),

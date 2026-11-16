@@ -91,11 +91,18 @@ pub(super) struct SpeechCase {
     pub(super) body: String,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum TranscriptionFamilyCase {
+    Whisper,
+    Gpt,
+}
+
 #[derive(Debug, Deserialize)]
 pub(super) struct TranscriptionCase {
     pub(super) api_base: String,
     pub(super) model: String,
-    pub(super) family: String,
+    pub(super) family: TranscriptionFamilyCase,
     #[serde(default)]
     pub(super) options: IndexMap<String, Json>,
     pub(super) status: u16,
@@ -114,11 +121,21 @@ pub(super) struct VideoCreateCase {
     pub(super) reply: String,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum VideoLifecycleOp {
+    List,
+    Status,
+    Delete,
+    Content,
+    Remix,
+}
+
 #[derive(Debug, Deserialize)]
 pub(super) struct VideoLifecycleCase {
     pub(super) api_base: String,
     pub(super) provider: Option<String>,
-    pub(super) op: String,
+    pub(super) op: VideoLifecycleOp,
     pub(super) video_id: Option<String>,
     pub(super) after: Option<String>,
     pub(super) limit: Option<i64>,
@@ -128,12 +145,21 @@ pub(super) struct VideoLifecycleCase {
     pub(super) reply: String,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum VideoExtendedOp {
+    Edit,
+    Extension,
+    CreateCharacter,
+    GetCharacter,
+}
+
 #[derive(Debug, Deserialize)]
 pub(super) struct VideoExtendedCase {
     pub(super) api_base: String,
     pub(super) provider: Option<String>,
     pub(super) model: String,
-    pub(super) op: String,
+    pub(super) op: VideoExtendedOp,
     pub(super) prompt: Option<String>,
     pub(super) video_id: Option<String>,
     pub(super) video_file: Option<String>,
