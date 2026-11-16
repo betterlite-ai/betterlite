@@ -1,14 +1,14 @@
 id: B3091
 milestone: M4 keys, spend and management
 title: Aggregate paginated daily spend into attributed breakdowns
-status: todo
+status: done
 depends_on: [B729, B3090, B3092]
 file: tasks/B3091-paginated-daily-activity.yaml
 covers:
   - "litellm/proxy/management_endpoints/common_daily_activity.py"
 parent: B074
 split_from: B074
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2046

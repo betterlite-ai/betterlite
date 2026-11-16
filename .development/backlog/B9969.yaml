@@ -1,0 +1,13 @@
+id: B9969
+milestone: R2 bug fixes
+title: Azure Responses answers 400 for a tool whose function is not an object
+status: todo
+depends_on: [B544]
+file: tasks/B9969-azure-tool-function.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
