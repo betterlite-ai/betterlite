@@ -1,0 +1,18 @@
+kind: helper
+name: vertex-imagen-edit-reply-created-and-usage
+call:
+  vertex_imagen_edit:
+    model: imagen-3.0-capability-001
+    prompt: paint the sky teal
+    image: [{kind: bytes, data_base64: iVBORw0KGgo=}]
+    mask: null
+    optional_params: {}
+    target: null
+    response:
+      predictions:
+        - {bytesBase64Encoded: AAA, prompt: ignored}
+        - {raiFilteredReason: blocked}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/response/created, why: ImageResponse() stamps the current time}

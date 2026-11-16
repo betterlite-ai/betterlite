@@ -13,6 +13,7 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-bedrock = { path = "../../betterlite-bedrock" }
+betterlite-config = { path = "../../betterlite-config" }
 betterlite-http = { path = "../../betterlite-http" }
 betterlite-models = { path = "../../betterlite-models" }
 betterlite-tokenizer = { path = "../../betterlite-tokenizer" }
@@ -118,6 +119,13 @@ bench = false
 [[bin]]
 name = "image_options"
 path = "fuzz_targets/image_options.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "imagen_edit_input"
+path = "fuzz_targets/imagen_edit_input.rs"
 test = false
 doc = false
 bench = false
