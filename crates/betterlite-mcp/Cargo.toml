@@ -27,7 +27,7 @@ rmcp = { version = "=3.9.0", default-features = false, features = ["client", "tr
 rust_decimal = { workspace = true, features = ["serde-with-float"] }
 rustix = { version = "1.1.5", features = ["process"] }
 scrypt = { version = "0.11.0", default-features = false }
-secrecy.workspace = true
+secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value", "arbitrary_precision"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }

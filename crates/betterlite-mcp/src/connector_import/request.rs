@@ -1,28 +1,27 @@
 use crate::server_payload::request::OrderedMap;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::de::Error as _;
 use serde_with::rust::double_option;
 mod tests;
-#[derive(Clone, Debug, PartialEq, Eq)]
+// no Debug: the token, the headers and the env hold secrets
 pub struct ConnectorEntry {
     pub name: Option<String>,
     pub entry_type: Option<String>,
     pub url: Option<String>,
-    pub authorization_token: Option<String>,
+    pub authorization_token: Option<SecretString>,
     pub headers: Option<OrderedMap>,
     pub command: Option<String>,
     pub args: Vec<String>,
     pub env: OrderedMap,
     pub description: Option<String>,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConnectorServers {
     Mapping(IndexMap<String, ConnectorEntry>),
     List(Vec<ConnectorEntry>),
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectorImportRequest {
     pub mcp_servers: ConnectorServers,
 }
@@ -48,9 +47,9 @@ struct RawConnectorEntry {
     #[serde(default)]
     url: Option<String>,
     #[serde(default, rename = "authorization_token", with = "double_option")]
-    authorization_token_snake: Option<Option<String>>,
+    authorization_token_snake: Option<Option<SecretString>>,
     #[serde(default, rename = "authorizationToken", with = "double_option")]
-    authorization_token_camel: Option<Option<String>>,
+    authorization_token_camel: Option<Option<SecretString>>,
     #[serde(default)]
     headers: Option<OrderedMap>,
     #[serde(default)]

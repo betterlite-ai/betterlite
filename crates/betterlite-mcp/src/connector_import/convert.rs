@@ -2,6 +2,7 @@ use super::request::{ConnectorEntry, ConnectorImportRequest, ConnectorServers};
 use crate::server_payload::request::{NewMCPServerRequest, OrderedMap};
 use betterlite_config::sections::mcp_env_values::StdioPolicy;
 use betterlite_prompts::arguments::json::{Json, Object};
+use secrecy::ExposeSecret;
 mod tests;
 #[derive(Debug, Clone)]
 pub enum ConnectorOutcome {
@@ -103,7 +104,8 @@ fn add_remote_auth(fields: &mut Object, entry: &ConnectorEntry) {
     let (header_value, static_headers) = split_headers(entry.headers.as_ref());
     let direct = entry
         .authorization_token
-        .as_deref()
+        .as_ref()
+        .map(ExposeSecret::expose_secret)
         .filter(|text| !text.is_empty());
     let header = header_value.as_deref();
     let bearer = header.and_then(bearer_token);

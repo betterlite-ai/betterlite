@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use rstest::rstest;
+use secrecy::ExposeSecret;
 
 use crate::connector_import::request::{
     ConnectorImportRequest, ConnectorServers, MCPConnectorImportFailure,
@@ -86,15 +87,36 @@ fn both_authorization_token_spellings_are_read() {
     let snake = entries(
         parse(r#"{"mcpServers":{"a":{"url":"u","authorization_token":"snake"}}}"#).unwrap(),
     );
-    assert_eq!(snake[0].1.authorization_token.as_deref(), Some("snake"));
+    assert_eq!(
+        snake[0]
+            .1
+            .authorization_token
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("snake")
+    );
     let camel =
         entries(parse(r#"{"mcpServers":{"a":{"url":"u","authorizationToken":"camel"}}}"#).unwrap());
-    assert_eq!(camel[0].1.authorization_token.as_deref(), Some("camel"));
+    assert_eq!(
+        camel[0]
+            .1
+            .authorization_token
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("camel")
+    );
     let both = entries(
         parse(r#"{"mcpServers":{"a":{"url":"u","authorization_token":"snake","authorizationToken":"camel"}}}"#)
             .unwrap(),
     );
-    assert_eq!(both[0].1.authorization_token.as_deref(), Some("snake"));
+    assert_eq!(
+        both[0]
+            .1
+            .authorization_token
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("snake")
+    );
 }
 
 #[test]
@@ -103,7 +125,7 @@ fn a_null_token_key_holds_its_position() {
         parse(r#"{"mcpServers":{"a":{"url":"u","authorization_token":null,"authorizationToken":"camel"}}}"#)
             .unwrap(),
     );
-    assert_eq!(parsed[0].1.authorization_token, None);
+    assert!(parsed[0].1.authorization_token.is_none());
 }
 
 #[test]
