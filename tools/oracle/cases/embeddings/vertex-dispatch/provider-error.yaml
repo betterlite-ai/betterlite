@@ -1,0 +1,20 @@
+kind: helper
+name: vertex-embedding-provider-error
+call:
+  b1395:
+    config: "{}"
+    environment: {}
+    model: text-embedding-005
+    input: hello
+    optional_params:
+      vertex_ai_credentials: option-creds.json
+    api_key: gemini-key
+    extra_headers:
+      x-goog-request-params: a=b
+    timeout_seconds: 600
+    litellm_params:
+      custom_llm_provider: vertex_ai
+    fail: true
+env: {}
+compare:
+  ignore: []
