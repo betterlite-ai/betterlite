@@ -14,7 +14,6 @@ from litellm.llms.runwayml.image_generation import get_runwayml_image_generation
 from litellm.types.utils import ImageObject, ImageResponse
 from openai.types.image import Image
 from pydantic import ConfigDict, JsonValue, TypeAdapter
-from typing_extensions import override
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 EMPTY: dict[str, JsonValue] = {}
@@ -27,9 +26,7 @@ class ClientCache(Protocol):
     def set_cache(self, key: str, value: HTTPHandler, *, ttl: int) -> None: ...
 
 
-CLIENT_CACHE: TypeAdapter[ClientCache] = TypeAdapter(
-    ClientCache, config=ConfigDict(arbitrary_types_allowed=True)
-)
+CLIENT_CACHE: TypeAdapter[ClientCache] = TypeAdapter(ClientCache, config=ConfigDict(arbitrary_types_allowed=True))
 
 
 class ImageConfig(Protocol):
@@ -55,14 +52,15 @@ class ImageConfig(Protocol):
 
     def transform_image_generation_response(  # ast-grep-ignore: no-long-names
         self,
-        model: str,
-        raw_response: httpx.Response,
-        model_response: ImageResponse,
-        logging_obj: Logging,
-        request_data: dict[str, JsonValue],
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        encoding: None,
+        _model: str,
+        _raw_response: httpx.Response,
+        _model_response: ImageResponse,
+        _logging_obj: Logging,
+        _request_data: dict[str, JsonValue],
+        _optional_params: dict[str, JsonValue],
+        _litellm_params: dict[str, JsonValue],
+        _encoding: None,
+        /,
     ) -> ImageResponse: ...
 
 
@@ -138,24 +136,17 @@ class CostInput(TypedDict):
 Input = MappingInput | ResponseInput | CostInput
 
 
-class TimeSource(Protocol):
-    def time(self) -> float: ...
-    def sleep(self, seconds: float) -> None: ...
-
-
-class Clock(TimeSource):
+class Clock:
     def __init__(self, step_millis: int) -> None:
         self.millis = 0
         self.step_millis = step_millis
         self.sleeps: list[JsonValue] = []
 
-    @override
     def time(self) -> float:
         current = self.millis
         self.millis += self.step_millis
         return current / 1000.0
 
-    @override
     def sleep(self, seconds: float) -> None:
         self.sleeps.append(int(seconds))
 
@@ -265,14 +256,8 @@ def transform_value(config: ImageConfig, input_value: ResponseInput) -> JsonValu
         request=request,
     )
     finished = config.transform_image_generation_response(
-        params["model"],
-        raw_response,
-        model_response,
-        logging_object(params["model"]),
-        EMPTY,
-        EMPTY,
-        EMPTY,
-        None,
+        params["model"], raw_response, model_response, logging_object(params["model"]),
+        EMPTY, EMPTY, EMPTY, None,
     )
     gets: list[JsonValue] = [request_value(item) for item in scripted.requests]
     answer: dict[str, JsonValue] = {
@@ -302,13 +287,7 @@ def cost_value(input_value: CostInput) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     if input_value["operation"] == "mapping":
-        return mapping_value(
-            get_runwayml_image_generation_config(input_value["params"]["model"]),
-            input_value,
-        )
+        return mapping_value(get_runwayml_image_generation_config(input_value["params"]["model"]), input_value)
     if input_value["operation"] == "response":
-        return transform_value(
-            get_runwayml_image_generation_config(input_value["params"]["model"]),
-            input_value,
-        )
+        return transform_value(get_runwayml_image_generation_config(input_value["params"]["model"]), input_value)
     return cost_value(input_value)
