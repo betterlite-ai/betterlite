@@ -16,11 +16,13 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
+use crate::budget_permission_rows::JsonData;
+
 use super::codec::{USER_ENV_VARS_KEY, decode_user_env_vars, parse_user_env_vars};
 use super::error::UserEnvVarsError;
 use super::lock::user_env_vars_lock_key;
 use super::postgres::composite_key;
-use super::store::UserEnvVars;
+use super::store::{UserEnvVars, values_text};
 
 use fakes::{
     FakeRow, FakeTable, SALT, TestCipher, lock, recording_cipher, sealed, test_cipher, test_store,
@@ -88,6 +90,13 @@ fn texts<const N: usize>(entries: [(&str, &str); N]) -> BTreeMap<String, String>
         .collect()
 }
 
+fn secrets<const N: usize>(entries: [(&str, &str); N]) -> UserEnvVars {
+    entries
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), SecretString::from(value.to_owned())))
+        .collect()
+}
+
 fn names(entries: &[&str]) -> BTreeSet<String> {
     entries.iter().map(|name| name.to_string()).collect()
 }
@@ -115,7 +124,7 @@ fn decode_object_of_strings_gives_the_map() {
         &cipher,
         "{\"API_KEY\":\"s3cr3t-value\",\"TOKEN\":\"tok-2\"}",
     );
-    let decoded = decode_user_env_vars(Some(&stored), &cipher);
+    let decoded = decode_user_env_vars(&stored, &cipher);
     assert_eq!(
         exposed(&decoded),
         texts([("API_KEY", "s3cr3t-value"), ("TOKEN", "tok-2")])
@@ -129,7 +138,7 @@ fn decode_reports_the_field_and_debug_level_when_decryption_fails() {
         &test_cipher("rotated-salt"),
         "{\"API_KEY\":\"s3cr3t-value\"}",
     );
-    assert!(decode_user_env_vars(Some(&stored), &cipher).is_empty());
+    assert!(decode_user_env_vars(&stored, &cipher).is_empty());
     let events = diagnostics.events();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].0, Level::Debug);
@@ -145,7 +154,7 @@ fn decode_undecryptable_blob_warns_once_and_reads_as_empty() {
         &test_cipher("rotated-salt"),
         "{\"API_KEY\":\"s3cr3t-value\"}",
     );
-    let decoded = decode_user_env_vars(Some(&stored), &cipher);
+    let decoded = decode_user_env_vars(&stored, &cipher);
     assert!(decoded.is_empty());
     let warnings = logs.warnings();
     assert_eq!(warnings.len(), 1);
@@ -158,7 +167,7 @@ fn decode_without_a_signing_key_warns_and_reads_as_empty() {
     let (logs, subscriber) = capture_logs();
     let _guard = set_default(subscriber);
     let stored = sealed(&test_cipher(SALT), "{\"API_KEY\":\"s3cr3t-value\"}");
-    assert!(decode_user_env_vars(Some(&stored), &unkeyed_cipher()).is_empty());
+    assert!(decode_user_env_vars(&stored, &unkeyed_cipher()).is_empty());
     assert_eq!(logs.warnings().len(), 1);
 }
 
@@ -166,14 +175,21 @@ fn decode_without_a_signing_key_warns_and_reads_as_empty() {
 fn decode_empty_blob_is_empty_without_a_warning() {
     let (logs, subscriber) = capture_logs();
     let _guard = set_default(subscriber);
-    let decoded = decode_user_env_vars(Some(""), &test_cipher(SALT));
+    let decoded = decode_user_env_vars("", &test_cipher(SALT));
     assert!(decoded.is_empty());
     assert!(logs.warnings().is_empty());
 }
 
 #[test]
-fn decode_missing_stored_text_is_empty() {
-    assert!(decode_user_env_vars(None, &test_cipher(SALT)).is_empty());
+fn values_text_rejects_a_row_without_a_text_values_b64() {
+    let row = JsonData::Object(BTreeMap::from([
+        ("user_id".to_owned(), JsonData::String("user-1".to_owned())),
+        ("values_b64".to_owned(), JsonData::Null),
+    ]));
+    assert!(matches!(
+        values_text(&row),
+        Err(UserEnvVarsError::MissingValues)
+    ));
 }
 
 #[test]
@@ -182,7 +198,7 @@ fn decode_invalid_json_is_empty_without_a_warning() {
     let _guard = set_default(subscriber);
     let cipher = test_cipher(SALT);
     let stored = sealed(&cipher, "not json");
-    assert!(decode_user_env_vars(Some(&stored), &cipher).is_empty());
+    assert!(decode_user_env_vars(&stored, &cipher).is_empty());
     assert!(logs.warnings().is_empty());
 }
 
@@ -197,7 +213,7 @@ fn decode_json_that_is_not_an_object_is_empty_without_a_warning(#[case] plaintex
     let _guard = set_default(subscriber);
     let cipher = test_cipher(SALT);
     let stored = sealed(&cipher, plaintext);
-    assert!(decode_user_env_vars(Some(&stored), &cipher).is_empty());
+    assert!(decode_user_env_vars(&stored, &cipher).is_empty());
     assert!(logs.warnings().is_empty());
 }
 
@@ -207,7 +223,7 @@ fn decode_non_string_value_warns_without_names_or_values() {
     let _guard = set_default(subscriber);
     let cipher = test_cipher(SALT);
     let stored = sealed(&cipher, "{\"API_KEY\":\"hunter2\",\"RETRIES\":3}");
-    assert!(decode_user_env_vars(Some(&stored), &cipher).is_empty());
+    assert!(decode_user_env_vars(&stored, &cipher).is_empty());
     let warnings = logs.warnings();
     assert_eq!(warnings.len(), 1);
     assert!(!warnings[0].contains("API_KEY"));
@@ -219,7 +235,7 @@ fn decode_non_string_value_warns_without_names_or_values() {
 fn decode_keeps_the_last_duplicate_name() {
     let cipher = test_cipher(SALT);
     let stored = sealed(&cipher, "{\"API_KEY\":\"old\",\"API_KEY\":\"new\"}");
-    let decoded = decode_user_env_vars(Some(&stored), &cipher);
+    let decoded = decode_user_env_vars(&stored, &cipher);
     assert_eq!(exposed(&decoded), texts([("API_KEY", "new")]));
 }
 
@@ -228,7 +244,7 @@ fn decode_plain_base64_is_not_a_legacy_path() {
     let (logs, subscriber) = capture_logs();
     let _guard = set_default(subscriber);
     // base64url of {"API_KEY":"legacy"}; per-user env vars have no plain-base64 fallback
-    let decoded = decode_user_env_vars(Some("eyJBUElfS0VZIjoibGVnYWN5In0="), &test_cipher(SALT));
+    let decoded = decode_user_env_vars("eyJBUElfS0VZIjoibGVnYWN5In0=", &test_cipher(SALT));
     assert!(decoded.is_empty());
     assert_eq!(logs.warnings().len(), 1);
 }
@@ -372,7 +388,7 @@ async fn lock_runs_before_the_row_read_inside_the_transaction() {
             .merge_user_env_vars(
                 "alice",
                 "srv-1",
-                &texts([("FRESH", "v")]),
+                &secrets([("FRESH", "v")]),
                 &names(&["FRESH", "KEPT"]),
             )
             .await
@@ -390,7 +406,7 @@ async fn lock_failure_stops_before_the_read() {
         .merge_user_env_vars(
             "alice",
             "srv-1",
-            &texts([("API_KEY", "v")]),
+            &secrets([("API_KEY", "v")]),
             &names(&["API_KEY"]),
         )
         .await;
@@ -407,7 +423,7 @@ async fn merge_creates_the_row_when_absent() {
         .merge_user_env_vars(
             "alice",
             "srv-1",
-            &texts([("API_KEY", "fresh")]),
+            &secrets([("API_KEY", "fresh")]),
             &names(&["API_KEY"]),
         )
         .await
@@ -436,7 +452,7 @@ async fn merge_overlays_updates_and_prunes_retired_names() {
         .merge_user_env_vars(
             "alice",
             "srv-1",
-            &texts([("FRESH", "v"), ("KEPT", "new"), ("UNLISTED", "x")]),
+            &secrets([("FRESH", "v"), ("KEPT", "new"), ("UNLISTED", "x")]),
             &names(&["FRESH", "KEPT"]),
         )
         .await
@@ -458,7 +474,7 @@ async fn merge_writes_a_sealed_empty_object_for_an_empty_result() {
     )]);
     let store = test_store(&table);
     let merged = store
-        .merge_user_env_vars("alice", "srv-1", &BTreeMap::new(), &BTreeSet::new())
+        .merge_user_env_vars("alice", "srv-1", &UserEnvVars::new(), &BTreeSet::new())
         .await
         .expect("the merge commits");
     assert!(merged.is_empty());
@@ -480,7 +496,7 @@ async fn merge_replaces_an_undecryptable_row() {
         .merge_user_env_vars(
             "alice",
             "srv-1",
-            &texts([("API_KEY", "fresh")]),
+            &secrets([("API_KEY", "fresh")]),
             &names(&["API_KEY"]),
         )
         .await
@@ -510,7 +526,7 @@ async fn merge_propagates_a_database_error_without_logging_a_value() {
         .merge_user_env_vars(
             "alice",
             "srv-1",
-            &texts([("API_KEY", "hunter2")]),
+            &secrets([("API_KEY", "hunter2")]),
             &names(&["API_KEY"]),
         )
         .await;
@@ -532,7 +548,7 @@ async fn merge_propagates_a_cipher_error_without_logging_a_value() {
         .merge_user_env_vars(
             "alice",
             "srv-1",
-            &texts([("API_KEY", "hunter2")]),
+            &secrets([("API_KEY", "hunter2")]),
             &names(&["API_KEY"]),
         )
         .await;

@@ -13,4 +13,6 @@ pub enum UserEnvVarsError {
     Encrypt(#[source] SecretError),
     #[error("the sealed per-user env vars are not text")]
     NotText,
+    #[error("the row has no text values_b64")]
+    MissingValues,
 }

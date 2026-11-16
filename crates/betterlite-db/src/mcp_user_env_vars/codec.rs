@@ -40,13 +40,10 @@ pub fn parse_user_env_vars(decrypted: &str) -> UserEnvVars {
 
 // LiteLLM has no legacy plain-base64 path here, unlike per-user credentials
 #[must_use]
-pub fn decode_user_env_vars<N, D>(stored: Option<&str>, cipher: &StoredCipher<N, D>) -> UserEnvVars
+pub fn decode_user_env_vars<N, D>(stored: &str, cipher: &StoredCipher<N, D>) -> UserEnvVars
 where
     D: SecretDiagnostics,
 {
-    let Some(stored) = stored else {
-        return UserEnvVars::new();
-    };
     let sealed = StoredValue::<()>::Text(SecretString::from(stored.to_owned()));
     if let Some(StoredValue::Text(decrypted)) =
         cipher.decrypt_value(sealed, USER_ENV_VARS_KEY, DECRYPT_POLICY)

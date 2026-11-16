@@ -36,10 +36,10 @@ where
         user_id: &str,
         server_id: &str,
     ) -> Result<UserEnvVars, UserEnvVarsError> {
-        let row = self.table.find_unique(user_id, server_id).await?;
-        Ok(row.as_ref().map_or_else(UserEnvVars::new, |row| {
-            decode_user_env_vars(text_field(row, "values_b64"), &self.cipher)
-        }))
+        let Some(row) = self.table.find_unique(user_id, server_id).await? else {
+            return Ok(UserEnvVars::new());
+        };
+        Ok(decode_user_env_vars(values_text(&row)?, &self.cipher))
     }
 
     // an empty id list returns before any query, as LiteLLM skips the pointless round trip
@@ -55,7 +55,7 @@ where
         let mut found = BTreeMap::new();
         for row in &rows {
             let server_id = text_field(row, "server_id").ok_or(McpTableError::MissingServerId)?;
-            let values = decode_user_env_vars(text_field(row, "values_b64"), &self.cipher);
+            let values = decode_user_env_vars(values_text(row)?, &self.cipher);
             found.insert(server_id.to_owned(), values);
         }
         Ok(found)
@@ -65,7 +65,7 @@ where
         &self,
         user_id: &str,
         server_id: &str,
-        updates: &BTreeMap<String, String>,
+        updates: &UserEnvVars,
         allowed_names: &BTreeSet<String>,
     ) -> Result<UserEnvVars, UserEnvVarsError> {
         let step = Merge {
@@ -92,7 +92,7 @@ struct Merge<'a, N, D> {
     cipher: &'a StoredCipher<N, D>,
     user_id: &'a str,
     server_id: &'a str,
-    updates: &'a BTreeMap<String, String>,
+    updates: &'a UserEnvVars,
     allowed_names: &'a BTreeSet<String>,
 }
 
@@ -112,11 +112,12 @@ where
             let row = transaction
                 .find_unique(self.user_id, self.server_id)
                 .await?;
-            let mut merged = row.as_ref().map_or_else(UserEnvVars::new, |row| {
-                decode_user_env_vars(text_field(row, "values_b64"), self.cipher)
-            });
+            let mut merged = UserEnvVars::new();
+            if let Some(row) = row {
+                merged = decode_user_env_vars(values_text(&row)?, self.cipher);
+            }
             for (name, value) in self.updates {
-                merged.insert(name.clone(), SecretString::from(value.as_str()));
+                merged.insert(name.clone(), value.clone());
             }
             merged.retain(|name, _| self.allowed_names.contains(name));
             let sealed = seal_user_env_vars(&merged, self.cipher)?;
@@ -125,6 +126,14 @@ where
                 .await?;
             Ok(merged)
         })
+    }
+}
+
+// values_b64 is a non-null text column, so a row without one is an error and not an unset value
+pub(crate) fn values_text(row: &JsonData) -> Result<&str, UserEnvVarsError> {
+    match text_field(row, "values_b64") {
+        Some(text) => Ok(text),
+        None => Err(UserEnvVarsError::MissingValues),
     }
 }
 
