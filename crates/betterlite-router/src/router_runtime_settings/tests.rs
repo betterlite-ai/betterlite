@@ -295,51 +295,32 @@ fn get_settings_names_every_updatable_setting_once() {
 #[test]
 fn get_settings_stores_the_other_names_as_given() {
     let mut settings = router(full_values());
+    let stored = vec![
+        ("fallbacks", json!([object(vec![("a", json!(["b"]))])])),
+        (
+            "context_window_fallbacks",
+            json!([object(vec![("c", json!(["d"]))])]),
+        ),
+        (
+            "model_group_retry_policy",
+            object(vec![(
+                "gpt",
+                object(vec![("DefaultRetries", json!(2_i64))]),
+            )]),
+        ),
+        ("model_group_alias", object(vec![("x", json!(["y"]))])),
+        ("enable_weighted_failover", json!(true)),
+        ("enable_tag_filtering", json!(true)),
+        ("tag_routing_prefix", json!("tag:")),
+        ("max_retries", json!(3.5_f64)),
+    ];
 
-    update(
-        &mut settings,
-        vec![
-            ("fallbacks", json!([object(vec![("a", json!(["b"]))])])),
-            (
-                "context_window_fallbacks",
-                json!([object(vec![("c", json!(["d"]))])]),
-            ),
-            (
-                "model_group_retry_policy",
-                object(vec![(
-                    "gpt",
-                    object(vec![("DefaultRetries", json!(2_i64))]),
-                )]),
-            ),
-            ("model_group_alias", object(vec![("x", json!(["y"]))])),
-            ("enable_weighted_failover", json!(true)),
-            ("enable_tag_filtering", json!(true)),
-            ("tag_routing_prefix", json!("tag:")),
-            ("max_retries", json!(3.5_f64)),
-        ],
-    );
+    update(&mut settings, stored.clone());
 
     let view = shown(&settings);
-    assert_eq!(
-        view["fallbacks"],
-        json!([object(vec![("a", json!(["b"]))])])
-    );
-    assert_eq!(
-        view["context_window_fallbacks"],
-        json!([object(vec![("c", json!(["d"]))])])
-    );
-    assert_eq!(
-        view["model_group_retry_policy"],
-        object(vec![(
-            "gpt",
-            object(vec![("DefaultRetries", json!(2_i64))])
-        )])
-    );
-    assert_eq!(view["model_group_alias"], object(vec![("x", json!(["y"]))]));
-    assert_eq!(view["enable_weighted_failover"], json!(true));
-    assert_eq!(view["enable_tag_filtering"], json!(true));
-    assert_eq!(view["tag_routing_prefix"], json!("tag:"));
-    assert_eq!(view["max_retries"], json!(3.5_f64));
+    for (name, value) in stored {
+        assert_eq!(view[name], value, "{name}");
+    }
 }
 
 #[rstest]
