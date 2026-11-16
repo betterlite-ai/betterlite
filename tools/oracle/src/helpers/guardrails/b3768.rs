@@ -13,10 +13,13 @@ use betterlite_http::proxy::base_builder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::MockScript;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::MockScript;
+use std::slice;
+use tokio::runtime::{Builder, Runtime};
 
 pub(crate) struct Op;
 
@@ -80,7 +83,7 @@ struct Output {
     error: Option<&'static str>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Call;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -230,12 +233,12 @@ fn script(call: &Call) -> Result<MockScript, Box<HelperError>> {
         .answer
         .as_ref()
         .ok_or_else(|| failure("MockError", "the case has no answer".to_owned()))?;
-    MockScript::try_from(std::slice::from_ref(answer))
+    MockScript::try_from(slice::from_ref(answer))
         .map_err(|error| failure("MockError", error.to_string()))
 }
 
-fn build_runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+fn build_runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("RuntimeError", error.to_string()))

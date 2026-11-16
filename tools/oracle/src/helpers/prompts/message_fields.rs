@@ -1,7 +1,10 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::{ContentPart, Message};
-use betterlite_prompts::message_fields::file_migration::migrate_file_to_image_url;
+use betterlite_prompts::message_fields::file_migration::{
+    FileMigrationError, migrate_file_to_image_url,
+};
 use betterlite_prompts::message_fields::image_hoist::{
     extract_images_from_message, hoist_tool_message_images,
 };
@@ -121,10 +124,7 @@ fn classified_error(class: &str, message: String) -> Box<HelperError> {
     })
 }
 
-fn migration_error(
-    error: &betterlite_prompts::message_fields::file_migration::FileMigrationError,
-) -> Box<HelperError> {
-    use betterlite_prompts::message_fields::file_migration::FileMigrationError;
+fn migration_error(error: &FileMigrationError) -> Box<HelperError> {
     let (class, status) = match error {
         FileMigrationError::MissingFile => (
             "BadRequestError",

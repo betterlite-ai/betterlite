@@ -14,7 +14,10 @@ use pyo3::types::{PyAnyMethods as _, PyModule};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::io;
+use tokio::runtime::Builder;
 
 const LITERAL_TRUE_CODE: &CStr =
     c"from typing import Literal\n\ndef validator() -> Literal[True]:\n    return True\n";
@@ -48,10 +51,10 @@ pub(crate) enum Fixture {
 struct NoFetch;
 
 impl ModuleFetcher for NoFetch {
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     fn fetch(&self, _request: &ModuleRequest) -> Result<(), Self::Error> {
-        Err(std::io::Error::other("the oracle helper downloads nothing"))
+        Err(io::Error::other("the oracle helper downloads nothing"))
     }
 }
 
@@ -72,11 +75,11 @@ impl Helper for Op {
 }
 
 fn load(host: &PythonHost, value: &str, config_file_path: Option<&str>) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
+    let runtime = Builder::new_multi_thread()
         .enable_all()
         .build()
         .map_err(|error| helper_error("PyHostError", error.to_string()))?;
-    let fetcher: Arc<dyn ModuleFetcher<Error = std::io::Error>> = Arc::new(NoFetch);
+    let fetcher: Arc<dyn ModuleFetcher<Error = io::Error>> = Arc::new(NoFetch);
     let loader = InstanceLoader::new(host.clone(), fetcher);
     let tracker = WorkTracker::default();
     let config = config_file_path.map(Path::new);

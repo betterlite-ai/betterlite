@@ -6,7 +6,8 @@ use betterlite_anthropic::usage::ReasoningTokenCounter;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::helpers::{HelperCall, HelperError, OrHelperError as _, invoke};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_runner::helpers::{HelperCall, invoke};
 
 pub(super) struct FixedIds {
     values: Mutex<VecDeque<Uuid>>,
@@ -53,7 +54,7 @@ impl ReasoningTokenCounter for TokenizerCounter {
                 "count_response_tokens": true,
             }),
         };
-        let output = invoke(&call);
+        let output = invoke(&[betterlite_oracle_tokenizer::GROUP], &call);
         if let Some(error) = output.error {
             return Err(TokenCountFailure {
                 message: error.message,

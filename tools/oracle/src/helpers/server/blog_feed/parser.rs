@@ -1,7 +1,7 @@
 use quick_xml::Reader;
 use quick_xml::encoding::EncodingError;
 use quick_xml::escape::{EscapeError, unescape};
-use quick_xml::events::Event;
+use quick_xml::events::{BytesEnd, BytesRef, BytesStart, Event};
 use thiserror::Error;
 
 use collector::{Collector, TagKind};
@@ -77,7 +77,7 @@ fn run_events(reader: &mut Reader<&[u8]>, collector: &mut Collector) -> Result<(
 }
 
 fn open_tag(
-    tag: &quick_xml::events::BytesStart<'_>,
+    tag: &BytesStart<'_>,
     collector: &mut Collector,
 ) -> Result<(String, TagKind), ParseFailure> {
     let (kind, default_namespace) = tag_info(collector, tag)?;
@@ -86,15 +86,12 @@ fn open_tag(
     Ok((name, kind))
 }
 
-fn handle_start(
-    tag: &quick_xml::events::BytesStart<'_>,
-    collector: &mut Collector,
-) -> Result<(), ParseFailure> {
+fn handle_start(tag: &BytesStart<'_>, collector: &mut Collector) -> Result<(), ParseFailure> {
     open_tag(tag, collector)?;
     Ok(())
 }
 
-fn handle_end(tag: &quick_xml::events::BytesEnd<'_>, collector: &mut Collector) {
+fn handle_end(tag: &BytesEnd<'_>, collector: &mut Collector) {
     let tag_name = tag.name().as_ref().to_owned();
     let name = String::from_utf8_lossy(&tag_name);
     let kind = if name.contains(':') || collector.default_namespace.last().copied().unwrap_or(false)
@@ -106,17 +103,14 @@ fn handle_end(tag: &quick_xml::events::BytesEnd<'_>, collector: &mut Collector) 
     collector.close(&name, kind);
 }
 
-fn handle_empty(
-    tag: &quick_xml::events::BytesStart<'_>,
-    collector: &mut Collector,
-) -> Result<(), ParseFailure> {
+fn handle_empty(tag: &BytesStart<'_>, collector: &mut Collector) -> Result<(), ParseFailure> {
     let (name, kind) = open_tag(tag, collector)?;
     collector.close(&name, kind);
     Ok(())
 }
 
 fn handle_reference(
-    reference: &quick_xml::events::BytesRef<'_>,
+    reference: &BytesRef<'_>,
     collector: &mut Collector,
 ) -> Result<(), ParseFailure> {
     let decoded = reference.decode().map_err(ParseFailure::Decode)?;
@@ -125,10 +119,7 @@ fn handle_reference(
     collector.push_text(&value)
 }
 
-fn tag_info(
-    collector: &Collector,
-    tag: &quick_xml::events::BytesStart<'_>,
-) -> Result<(TagKind, bool), ParseFailure> {
+fn tag_info(collector: &Collector, tag: &BytesStart<'_>) -> Result<(TagKind, bool), ParseFailure> {
     for attribute in tag.attributes() {
         attribute.map_err(|error| ParseFailure::Xml(quick_xml::Error::from(error)))?;
     }

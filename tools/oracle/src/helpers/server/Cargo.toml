@@ -30,6 +30,7 @@ betterlite-mcp = { path = "../../../../../crates/betterlite-mcp" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-ocr = { path = "../../../../../crates/betterlite-ocr" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-roi = { path = "../../../../../crates/betterlite-roi" }
 betterlite-semantic = { path = "../../../../../crates/betterlite-semantic" }
@@ -59,7 +60,6 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
 
 [dev-dependencies]
-betterlite-oracle = { path = "../../.." }
 rstest = "=0.27.0"
 serde-saphyr = "2.0.0"
 

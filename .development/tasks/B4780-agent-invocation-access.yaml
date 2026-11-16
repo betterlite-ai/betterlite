@@ -98,7 +98,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_access::humans::/)'
     - id: oracle-cases
       why: the oracle cases are missing or the Rust answers differ from LiteLLM's on the same input
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agent-access)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::auth::b4780::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agent-access)" && cargo nextest run --locked -p betterlite-oracle-auth --no-tests=fail -E 'test(/^b4780::/)'
 oracle_cases:
   - tools/oracle/cases/agent-access/accessible-admin-sees-all.yaml
   - tools/oracle/cases/agent-access/accessible-unrestricted-sees-none.yaml

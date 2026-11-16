@@ -2,7 +2,8 @@ use betterlite_db::database_tls::translation::{
     libpq_tls_params, strip_prisma_query_params, translate_libpq_ssl_params,
 };
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

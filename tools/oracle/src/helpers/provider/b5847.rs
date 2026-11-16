@@ -6,7 +6,7 @@ use betterlite_prompts::factory::custom::CustomPromptTemplate;
 use betterlite_provider::replicate::request::ReplicateDefaults;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::script::{FIXED_NOW, ScriptedResponse};
 

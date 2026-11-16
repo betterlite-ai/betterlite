@@ -7,9 +7,10 @@ use betterlite_prompts::anthropic_user_blocks::user_run::UserBlockBuilder;
 use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use serde::Deserialize;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::failures::{conversion_failure, failure, prepare_failure};
 use super::policies::{NoFileBlocks, UrlSource};
@@ -63,7 +64,7 @@ pub(crate) fn system_prompt(call: &SystemPromptCall) -> HelperResult {
 }
 
 fn runtime() -> Result<Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure(None, &error))

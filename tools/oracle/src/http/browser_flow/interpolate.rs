@@ -7,12 +7,12 @@ use serde_json::Value;
 use url::form_urlencoded;
 
 use super::{BrowserFlowError, CapturedValue};
-use crate::case::BodyKind::{Bytes, Json, Multipart};
-use crate::case::RequestBody;
 use crate::case::browser_flow::{
     Encoding, PLACEHOLDER_PREFIX, PLACEHOLDER_SUFFIX, Step, find_placeholders,
 };
-use crate::multipart_oracle::request::request_body;
+use betterlite_oracle_runner::case::BodyKind::{Bytes, Json, Multipart};
+use betterlite_oracle_runner::case::RequestBody;
+use betterlite_oracle_runner::multipart_oracle::request::decode_request_body;
 
 // Case loading parsed every placeholder before any capture had a value, so find_placeholders runs again here to read the actual substitution.
 pub(crate) fn resolve_text(
@@ -66,7 +66,7 @@ pub(crate) fn resolve_body(
             let RequestBody::Raw {
                 content_type,
                 bytes,
-            } = request_body(&step.request.body, Bytes).map_err(multipart)?
+            } = decode_request_body(&step.request.body, Bytes).map_err(multipart)?
             else {
                 return Err(BrowserFlowError::BytesBody { index });
             };
@@ -80,9 +80,9 @@ pub(crate) fn resolve_body(
         }
         Json => {
             let resolved = resolve_value(index, &step.request.body, captures)?;
-            request_body(&resolved, Json).map_err(multipart)
+            decode_request_body(&resolved, Json).map_err(multipart)
         }
-        Multipart => request_body(&step.request.body, Multipart).map_err(multipart),
+        Multipart => decode_request_body(&step.request.body, Multipart).map_err(multipart),
     }
 }
 

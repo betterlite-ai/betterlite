@@ -16,12 +16,13 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::script::{
     FIXED_NOW, HeaderRequest, MapCase, PayloadRequest, ReplyRequest, UrlRequest,
     default_max_new_tokens, factory, runtime,
 };
+use tokio::runtime::Runtime;
 
 mod script;
 
@@ -203,7 +204,7 @@ fn results(replies: &[ReplyRequest]) -> HelperResult {
     Ok(json!({"replies": results}))
 }
 
-fn one_reply(runtime: &tokio::runtime::Runtime, reply: &ReplyRequest) -> Value {
+fn one_reply(runtime: &Runtime, reply: &ReplyRequest) -> Value {
     let request_body = RequestBody {
         inputs: None,
         parameters: reply.parameters.clone(),
