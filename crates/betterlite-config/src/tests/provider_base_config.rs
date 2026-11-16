@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::io;
 
 use rstest::rstest;
 
@@ -216,7 +217,7 @@ fn shared_env_os_environ_number() {
     "environment"
 )]
 #[case::load_thread(
-    ConfigError::LoadThread { source: std::io::Error::other("thread limit reached") },
+    ConfigError::LoadThread { source: io::Error::other("thread limit reached") },
     "load_thread"
 )]
 fn category_names_every_config_error_variant(#[case] error: ConfigError, #[case] expected: &str) {
@@ -226,7 +227,7 @@ fn category_names_every_config_error_variant(#[case] error: ConfigError, #[case]
 #[test]
 fn load_thread_error_names_the_start_failure() {
     let error = ConfigError::LoadThread {
-        source: std::io::Error::other("thread limit reached"),
+        source: io::Error::other("thread limit reached"),
     };
     assert_eq!(
         error.to_string(),

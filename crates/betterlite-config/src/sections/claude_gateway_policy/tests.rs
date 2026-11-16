@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::thread;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -157,7 +158,7 @@ fn resolves_references_through_the_deepest_mapping_yaml_allows() {
 
 #[test]
 fn deep_yaml_loads_on_small_stack() {
-    let worker = std::thread::Builder::new()
+    let worker = thread::Builder::new()
         .stack_size(1024 * 1024)
         .spawn(|| {
             let environment = [("GATEWAY_URL", "https://gateway.example")];
