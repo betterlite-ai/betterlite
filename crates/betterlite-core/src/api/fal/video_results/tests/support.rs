@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -79,7 +80,7 @@ impl FakeTransport {
                 value
                     .to_str()
                     .ok()
-                    .map(|value| (name.as_str().to_owned(), value.to_owned()))
+                    .map(|text| (name.as_str().to_owned(), text.to_owned()))
             })
             .collect();
         self.recorded
@@ -90,7 +91,11 @@ impl FakeTransport {
 }
 
 impl VideoTransport for FakeTransport {
-    async fn get(&self, url: Url, headers: HeaderMap) -> Result<UpstreamResponse, TransportError> {
+    fn get(
+        &self,
+        url: Url,
+        headers: HeaderMap,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.record(&url, &headers);
         let step = self
             .script
@@ -98,14 +103,14 @@ impl VideoTransport for FakeTransport {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .expect("the test scripts one answer per request");
-        match step {
+        std::future::ready(match step {
             Step::Answer(status, body) => Ok(UpstreamResponse {
                 status,
                 headers: HeaderMap::new(),
                 body,
             }),
             Step::Fail(source) => Err(source),
-        }
+        })
     }
 }
 
@@ -198,17 +203,20 @@ pub(crate) fn run_status(
     block_on_status(&clients, kind, None, call)
 }
 
+fn runtime() -> tokio::runtime::Runtime {
+    Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime builds")
+}
+
 pub(crate) fn block_on_status(
     clients: &VideoClients<'_, FakeTransport>,
     kind: ClientKind,
     supplied: Option<&SuppliedTransport<'_, FakeTransport>>,
     call: &StatusCall<'_>,
 ) -> Result<VideoObject, VideoResultsError> {
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("a runtime builds");
-    runtime.block_on(status_response(clients, kind, supplied, call))
+    runtime().block_on(status_response(clients, kind, supplied, call))
 }
 
 pub(crate) fn run_content(
@@ -220,11 +228,7 @@ pub(crate) fn run_content(
         sync: transport,
         asynchronous: transport,
     };
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("a runtime builds");
-    runtime.block_on(content_response(&clients, kind, reply))
+    runtime().block_on(content_response(&clients, kind, reply))
 }
 
 pub(crate) fn decoded(video: &VideoObject) -> (Option<String>, Option<String>, String) {

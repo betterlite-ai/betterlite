@@ -405,8 +405,8 @@ fn the_probe_url_only_loses_a_trailing_status_suffix() {
         .expect("the queried status url parses"),
         headers: VideoHeaders::new(),
     };
-    let (url, _) = result_request(&reply, &queried).expect("a completed job probes");
-    assert_eq!(url, queried.url.as_str());
+    let (queried_url, _) = result_request(&reply, &queried).expect("a completed job probes");
+    assert_eq!(queried_url, queried.url.as_str());
 }
 
 #[rstest]
@@ -759,12 +759,19 @@ fn the_unsupported_operations_carry_the_provider_messages(
 
 #[test]
 fn every_unsupported_operation_has_a_name_and_is_listed_once() {
-    assert_eq!(ALL.len(), 7);
-    for (index, operation) in ALL.iter().enumerate() {
-        assert!(!operation.name().is_empty());
-        assert_eq!(ALL.iter().filter(|other| *other == operation).count(), 1);
-        assert_eq!(ALL.iter().position(|other| other == operation), Some(index));
-    }
+    assert_eq!(
+        ALL,
+        [
+            UnsupportedOperation::Remix,
+            UnsupportedOperation::List,
+            UnsupportedOperation::Delete,
+            UnsupportedOperation::CreateCharacter,
+            UnsupportedOperation::GetCharacter,
+            UnsupportedOperation::Edit,
+            UnsupportedOperation::Extension,
+        ]
+    );
+    assert!(ALL.iter().all(|operation| !operation.name().is_empty()));
 }
 
 #[test]
@@ -781,8 +788,8 @@ fn an_unforwardable_header_name_is_refused_before_the_probe() {
     };
     let error = run_status(&transport, ClientKind::Sync, &call).expect_err("a bad header");
     assert!(matches!(
-        error,
-        VideoResultsError::HeaderName { ref name, .. } if name.as_str() == "bad header"
+        &error,
+        VideoResultsError::HeaderName { name, .. } if name.as_str() == "bad header"
     ));
     assert!(transport.recorded().is_empty());
 }
@@ -801,8 +808,8 @@ fn an_unforwardable_header_value_is_refused_before_the_probe() {
     };
     let error = run_status(&transport, ClientKind::Sync, &call).expect_err("a bad header");
     assert!(matches!(
-        error,
-        VideoResultsError::HeaderValue { ref name, .. } if name.as_str() == "x-trace"
+        &error,
+        VideoResultsError::HeaderValue { name, .. } if name.as_str() == "x-trace"
     ));
     assert!(transport.recorded().is_empty());
 }
@@ -852,13 +859,13 @@ fn the_error_text_of_a_decoded_reply_favours_the_detail() {
     )
     .expect("the reply decodes");
     assert_eq!(error_text(&reply).as_deref(), Some("a"));
-    let reply = decode_fal_video_reply(
+    let empty_detail = decode_fal_video_reply(
         200,
         &VideoHeaders::new(),
         br#"{"detail": "", "error": "boom"}"#,
     )
     .expect("the reply decodes");
-    assert_eq!(error_text(&reply).as_deref(), Some(""));
+    assert_eq!(error_text(&empty_detail).as_deref(), Some(""));
 }
 
 #[test]
