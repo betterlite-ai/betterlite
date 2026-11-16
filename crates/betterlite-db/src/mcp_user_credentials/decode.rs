@@ -1,6 +1,10 @@
+use std::collections::BTreeMap;
+
 use betterlite_secrets::secret_codec::python_base64::decode_lenient;
 use betterlite_secrets::secret_codec::{DecryptPolicy, FailureLog, FailureValue, StoredValue};
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 use crate::budget_permission_rows::JsonData;
 use crate::stored_cipher::DbCipher;
@@ -38,6 +42,14 @@ pub fn decode_user_credential(cipher: &DbCipher, stored: &str) -> Option<SecretS
         .map(SecretString::from)
 }
 
+// LiteLLM's parsed.get("type") == "oauth2": any JSON object parses, and only the text oauth2 under "type" makes it a payload
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum PayloadField {
+    Text(String),
+    Other(IgnoredAny),
+}
+
 // LiteLLM's _parse_oauth_payload: only a JSON object whose "type" is the text "oauth2" is a payload, so an array or scalar is not one
 pub fn parse_oauth_payload(
     decoded: Option<&SecretString>,
@@ -45,15 +57,14 @@ pub fn parse_oauth_payload(
     let Some(text) = decoded else {
         return Ok(None);
     };
-    let Ok(fields) =
-        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(text.expose_secret())
+    let Ok(fields) = serde_json::from_str::<BTreeMap<String, PayloadField>>(text.expose_secret())
     else {
         return Ok(None);
     };
-    if fields.get("type").and_then(serde_json::Value::as_str) != Some(OAUTH2) {
+    if !matches!(fields.get("type"), Some(PayloadField::Text(kind)) if kind.as_str() == OAUTH2) {
         return Ok(None);
     }
-    serde_json::from_value(serde_json::Value::Object(fields))
+    serde_json::from_str(text.expose_secret())
         .map(Some)
         .map_err(CredentialError::Json)
 }
