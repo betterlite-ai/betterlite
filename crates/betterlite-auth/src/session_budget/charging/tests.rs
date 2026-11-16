@@ -99,6 +99,17 @@ async fn charging_without_metadata_is_skipped() {
 }
 
 #[tokio::test]
+async fn charging_with_non_object_litellm_params_is_skipped() {
+    let handler = handler(FakeCache::new());
+    let registry = agent_registry_with(&[BUDGET_ONE]);
+    let params = json(r#""none""#);
+    handler
+        .async_log_success_event(&registry, &success(Some(&params), Some(amount("0.25"))))
+        .await;
+    assert_eq!(handler.cache.memory(KEY), None);
+}
+
+#[tokio::test]
 async fn charging_with_non_object_metadata_is_skipped() {
     let handler = handler(FakeCache::new());
     let registry = agent_registry_with(&[BUDGET_ONE]);

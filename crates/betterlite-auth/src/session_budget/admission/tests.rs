@@ -10,8 +10,10 @@ use crate::agent_registry::AgentRegistryApi as _;
 use crate::session_budget::SessionBudgetHandler;
 
 use crate::session_budget::error::SessionBudgetError;
+use crate::session_budget::tests::support::BUDGET_FALSE;
 use crate::session_budget::tests::support::BUDGET_INFINITY;
 use crate::session_budget::tests::support::BUDGET_INVALID;
+use crate::session_budget::tests::support::BUDGET_LIST;
 use crate::session_budget::tests::support::BUDGET_NULL;
 use crate::session_budget::tests::support::BUDGET_ONE;
 use crate::session_budget::tests::support::BUDGET_TEXT;
@@ -191,6 +193,30 @@ async fn admission_rejects_a_budget_that_is_not_a_number() {
 }
 
 #[tokio::test]
+async fn admission_treats_a_false_budget_as_zero() {
+    let handler = handler(FakeCache::new());
+    let registry = agent_registry_with(&[BUDGET_FALSE]);
+    assert!(
+        check(&handler, &registry, Some("agent-1"), &json(REQUEST))
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn admission_rejects_a_list_budget() {
+    let handler = handler(FakeCache::new());
+    let registry = agent_registry_with(&[BUDGET_LIST]);
+    let error = check(&handler, &registry, Some("agent-1"), &json(REQUEST))
+        .await
+        .unwrap_err();
+    let SessionBudgetError::InvalidBudget { agent_id } = error else {
+        panic!("expected an invalid budget error");
+    };
+    assert_eq!(agent_id, "agent-1");
+}
+
+#[tokio::test]
 async fn admission_rejects_a_non_finite_budget() {
     let handler = handler(over_budget_cache());
     let registry = agent_registry_with(&[BUDGET_INFINITY]);
@@ -278,6 +304,19 @@ async fn metadata_empty_session_id_is_tracked_as_given() {
     let handler = handler(cache);
     let registry = agent_registry_with(&[BUDGET_ONE]);
     let data = json(r#"{"model":"gpt-4o","metadata":{"session_id":""}}"#);
+    assert!(
+        check(&handler, &registry, Some("agent-1"), &data)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn metadata_non_object_bucket_falls_through_to_litellm_metadata() {
+    let handler = handler(over_budget_cache());
+    let registry = agent_registry_with(&[BUDGET_ONE]);
+    let data =
+        json(r#"{"model":"gpt-4o","metadata":"none","litellm_metadata":{"session_id":"s1"}}"#);
     assert!(
         check(&handler, &registry, Some("agent-1"), &data)
             .await
