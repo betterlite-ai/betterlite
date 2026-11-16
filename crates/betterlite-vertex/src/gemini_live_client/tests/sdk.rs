@@ -87,6 +87,15 @@ fn a_nested_object_stays_raw_beyond_the_depth_limit() {
 }
 
 #[test]
+fn a_top_level_value_at_the_depth_limit_is_encoded() {
+    let encoded = encoded_value(SdkValue::Bytes(b"a".to_vec()), MAX_DEPTH);
+    assert_eq!(
+        encoded.get("value"),
+        Some(&SdkValue::Text("YQ==".to_owned()))
+    );
+}
+
+#[test]
 fn a_top_level_value_beyond_the_depth_limit_is_returned_unchanged() {
     let raw = SdkValue::Bytes(b"a".to_vec());
     let encoded = encoded_value(raw.clone(), MAX_DEPTH.saturating_add(1));
