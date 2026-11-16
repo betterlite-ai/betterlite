@@ -31,18 +31,18 @@ pub(crate) enum CachedText {
 // one InMemoryCache: the lock is taken here so the callers hold no guard
 struct Slot(Mutex<LocalTtlCache>);
 
-impl Slot {
-    fn new(capacity: i64, clock: Clock) -> Result<Self, CacheError> {
-        LocalTtlCache::with_clock(
-            Some(capacity),
-            Some(CACHE_TTL_SECONDS),
-            Some(ITEM_KIB),
-            ITEM_KIB,
-            clock,
-        )
-        .map(|cache| Self(Mutex::new(cache)))
-    }
+fn locked_cache(capacity: i64, clock: Clock) -> Result<Slot, CacheError> {
+    LocalTtlCache::with_clock(
+        Some(capacity),
+        Some(CACHE_TTL_SECONDS),
+        Some(ITEM_KIB),
+        ITEM_KIB,
+        clock,
+    )
+    .map(|cache| Slot(Mutex::new(cache)))
+}
 
+impl Slot {
     fn with<Out, Action>(&self, action: Action) -> Out
     where
         Action: FnOnce(&mut LocalTtlCache) -> Out,
@@ -69,7 +69,7 @@ impl SentinelCache {
         blank_is_absent: bool,
     ) -> Result<Self, CacheError> {
         Ok(Self {
-            slot: Slot::new(capacity, clock)?,
+            slot: locked_cache(capacity, clock)?,
             sentinel,
             blank_is_absent,
         })
@@ -120,7 +120,7 @@ impl ContainerCaches {
                 NEGATIVE_STORED_ID_SENTINEL,
                 true,
             )?,
-            allowed: Slot::new(ALLOWED_CAPACITY, clock)?,
+            allowed: locked_cache(ALLOWED_CAPACITY, clock)?,
         })
     }
 
