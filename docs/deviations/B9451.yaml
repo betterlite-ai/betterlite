@@ -1,0 +1,18 @@
+task: B9451
+deviations:
+  - what: The legacy Lakera check merges the dynamic request body params into the messages body, as it already does for the input body.
+    why: LiteLLM passes them to json.dumps as keyword arguments on the messages path, so any extra_body for this guardrail fails the request with a TypeError (500). This follows the input path; the choice is the owner's to confirm.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L208-L212
+  - what: A Conduct guardrail never builds.
+    why: LiteLLM's working class extends ConductGuard from the separate conduct-litellm-guard package, and LiteLLM doesn't ship it; without it LiteLLM's constructor raises the same message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/conduct/conduct.py#L104-L119
+  - what: The legacy Lakera v1 call keeps the timeout of the injected HTTP client, and a guardrail timeout configured in litellm_params is not applied to it.
+    why: B3777's LegacyLakeraModeration keeps no timeout field, so the hook has none to pass. LiteLLM passes self.timeout, which is None unless the guardrail sets one and then leaves the handler's own default in place.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L253
+kept_bugs:
+  - what: With neither a messages list nor an input text or list, the legacy Lakera check still posts to the v1 endpoint with an empty body.
+    why: LiteLLM starts the body as an empty string and posts it unchanged, so the v1 API answers an error status and the hook fails that request. Copied because the task text and LiteLLM agree on the call being made, and a working setup may rely on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L142
+  - what: Akto's hook skip compares str(event_hook) with the single names pre_call and post_call, so a list or tagged mode skips neither input type and both run.
+    why: LiteLLM's HOOK_TO_INPUT holds only those two string keys, and str() of a list or a Mode never equals one, so a configured list mode silently checks the request and mirrors the response. Copied as LiteLLM behaves.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L419-L421
