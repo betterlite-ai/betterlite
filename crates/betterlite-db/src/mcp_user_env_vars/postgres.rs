@@ -14,6 +14,7 @@ use crate::mcp::table_access::rows::{ENV_VAR_TABLE, KeyValues, RowFields};
 use crate::mcp::table_access::sql::{self, Select};
 use crate::mcp::table_access::store::{LockedTable, McpTableStore, db_transaction_manager};
 use crate::mcp::table_access::types::McpTableError;
+use crate::mcp::table_access::user_tables::db_find_user_env_var_rows;
 use crate::postgres_store::errors::backend;
 use crate::stored_cipher::DbCipher;
 
@@ -66,9 +67,8 @@ impl UserEnvVarTable for McpTableStore<'_> {
         user_id: &str,
         server_id: &str,
     ) -> Result<Option<JsonData>, UserEnvVarsError> {
-        let filter = composite_key(user_id, server_id);
-        let rows = sql::select_keyed(self.reader(), &ENV_VAR_TABLE, Some(&filter)).await?;
-        Ok(rows.into_iter().next())
+        let key = composite_key(user_id, server_id);
+        Ok(db_find_user_env_var_rows(self, Some(&key)).await?.pop())
     }
 
     async fn find_many(
