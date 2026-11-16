@@ -40,26 +40,44 @@ pub(super) fn router_entry(entry: &EntryInput) -> RouterEntry {
     }
 }
 
+#[derive(serde::Serialize)]
+struct ParsedRecord<'model> {
+    model_id: &'model str,
+    model_name: &'model str,
+    team_id: &'model str,
+    ptu_count: u32,
+    cost_per_ptu_per_hour: f64,
+    effective_from_micros: i64,
+    effective_to_micros: Option<i64>,
+}
+
+impl<'model> TryFrom<&'model PtuModel> for ParsedRecord<'model> {
+    type Error = Box<HelperError>;
+
+    fn try_from(model: &'model PtuModel) -> Result<Self, Self::Error> {
+        Ok(Self {
+            model_id: &model.model_id,
+            model_name: &model.model_name,
+            team_id: &model.team_id,
+            ptu_count: model.ptu_count,
+            cost_per_ptu_per_hour: float_value(model.cost_per_ptu_per_hour)?,
+            effective_from_micros: model.effective_from.timestamp_micros(),
+            effective_to_micros: model.effective_to.map(|instant| instant.timestamp_micros()),
+        })
+    }
+}
+
 pub(super) fn parsed_value(model: &PtuModel) -> Result<Value, Box<HelperError>> {
-    let rate = float_value(model.cost_per_ptu_per_hour)?;
-    Ok(json!({
-        "model_id": model.model_id,
-        "model_name": model.model_name,
-        "team_id": model.team_id,
-        "ptu_count": model.ptu_count,
-        "cost_per_ptu_per_hour": rate,
-        "effective_from_micros": model.effective_from.timestamp_micros(),
-        "effective_to_micros": model.effective_to.map(|instant| instant.timestamp_micros()),
-    }))
+    let record = ParsedRecord::try_from(model)?;
+    serde_json::to_value(record).map_err(|error| value_error(error.to_string()))
 }
 
 pub(super) fn charge_value(charge: &PtuCharge) -> Result<Value, Box<HelperError>> {
-    let flat_cost = float_value(charge.flat_cost)?;
     Ok(json!({
         "team_id": charge.team_id,
         "model_id": charge.model_id,
         "model_name": charge.model_name,
-        "flat_cost": flat_cost,
+        "flat_cost": float_value(charge.flat_cost)?,
     }))
 }
 

@@ -162,13 +162,12 @@ fn cost_answer(input: &ModelInput, day: &str) -> Result<Value, Box<HelperError>>
 }
 
 fn aggregate_answer(inputs: &[ModelInput], day: &str) -> Result<Value, Box<HelperError>> {
-    let models = parsed_models(inputs)?;
-    let charges = aggregate_charges(&models, utc_day(day)?)
+    let charges = aggregate_charges(&parsed_models(inputs)?, utc_day(day)?)
         .map_err(|error| value_error(error.to_string()))?;
-    let mut values: Vec<Value> = Vec::new();
-    for charge in &charges {
-        values.push(charge_value(charge)?);
-    }
+    let values = charges
+        .iter()
+        .map(charge_value)
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(Value::Array(values))
 }
 

@@ -142,6 +142,18 @@ def ptu_model(model: ModelInput) -> PTUModel:
     )
 
 
+def model_record(model: PTUModel) -> dict[str, JsonValue]:
+    return {
+        "model_id": model.model_id,
+        "model_name": model.model_name,
+        "team_id": model.team_id,
+        "ptu_count": model.ptu_count,
+        "cost_per_ptu_per_hour": model.cost_per_ptu_per_hour,
+        "effective_from_micros": optional_micros(model.effective_from),
+        "effective_to_micros": optional_micros(model.effective_to),
+    }
+
+
 def decode_step(step: DecodeStep) -> JsonValue:
     decoded = _decode_model_info(step["raw"])
     if decoded is None:
@@ -158,16 +170,7 @@ def parse_step(step: ParseStep) -> JsonValue:
     parsed = _parse_ptu_model(row)
     if parsed is None:
         return None
-    record: dict[str, JsonValue] = {
-        "model_id": parsed.model_id,
-        "model_name": parsed.model_name,
-        "team_id": parsed.team_id,
-        "ptu_count": parsed.ptu_count,
-        "cost_per_ptu_per_hour": parsed.cost_per_ptu_per_hour,
-        "effective_from_micros": optional_micros(parsed.effective_from),
-        "effective_to_micros": optional_micros(parsed.effective_to),
-    }
-    return record
+    return model_record(parsed)
 
 
 def hours_step(step: HoursStep) -> float:
@@ -185,29 +188,24 @@ def cost_step(step: CostStep) -> float:
 def aggregate_step(step: AggregateStep) -> list[JsonValue]:
     models = tuple(ptu_model(model) for model in step["models"])
     charges = _aggregate_charges(models, date.fromisoformat(step["day"]))
-    records: list[JsonValue] = []
-    for charge in charges:
-        record: dict[str, JsonValue] = {
+    return [
+        {
             "team_id": charge.team_id,
             "model_id": charge.model_id,
             "model_name": charge.model_name,
             "flat_cost": charge.flat_cost,
         }
-        records.append(record)
-    return records
+        for charge in charges
+    ]
 
 
 def config_step(step: ConfigStep) -> list[JsonValue]:
     router = SimpleNamespace(model_list=step["entries"])
     deployments = _config_deployments(router, owned_by_db=frozenset(step["owned_by_db"]))
-    records: list[JsonValue] = []
-    for deployment in deployments:
-        record: dict[str, JsonValue] = {
-            "model_id": deployment.model_id,
-            "model_name": deployment.model_name,
-        }
-        records.append(record)
-    return records
+    return [
+        {"model_id": deployment.model_id, "model_name": deployment.model_name}
+        for deployment in deployments
+    ]
 
 
 def lapsed_step(step: LapsedStep) -> list[JsonValue]:
@@ -219,61 +217,55 @@ def lapsed_step(step: LapsedStep) -> list[JsonValue]:
 def backfill_step(step: BackfillStep) -> list[JsonValue]:
     models = tuple(ptu_model(model) for model in step["models"])
     days = _backfill_window(models, date.fromisoformat(step["end"]))
-    records: list[JsonValue] = []
-    for day in days:
-        label = day.isoformat()
-        records.append(label)
-    return records
+    return [day.isoformat() for day in days]
+
+
+def prune_record(date_str: str, cutoff: datetime, chunk: tuple[str, ...]) -> dict[str, JsonValue]:
+    predicate = _prune_filter(date_str=date_str, cutoff=cutoff, chunk=chunk)
+    expected = {
+        "date": date_str,
+        "api_key": PTU_SENTINEL_API_KEY,
+        "updated_at": {"lt": cutoff},
+        "model": {"in": chunk},
+    }
+    if dict(predicate) != expected:
+        raise ValueError("the prune predicate no longer matches the sentinel delete")
+    return {
+        "date": date_str,
+        "cutoff_micros": instant_micros(cutoff),
+        "api_key": PTU_SENTINEL_API_KEY,
+        "models": [*chunk],
+    }
 
 
 def prune_step(step: PruneStep) -> list[JsonValue]:
     started = instant_from_micros(step["run_started_micros"])
     cutoff = started - timedelta(seconds=PTU_PRUNE_SKEW_GRACE_SECONDS)
     ordered = sorted(set(step["scanned_ids"]))
-    records: list[JsonValue] = []
-    for start in range(0, len(ordered), _PRUNE_ID_CHUNK_SIZE):
-        chunk = ordered[start : start + _PRUNE_ID_CHUNK_SIZE]
-        predicate = _prune_filter(date_str=step["date"], cutoff=cutoff, chunk=tuple(chunk))
-        expected = {
-            "date": step["date"],
-            "api_key": PTU_SENTINEL_API_KEY,
-            "updated_at": {"lt": cutoff},
-            "model": {"in": tuple(chunk)},
-        }
-        if dict(predicate) != expected:
-            raise ValueError("the prune predicate no longer matches the sentinel delete")
-        chunk_ids: list[JsonValue] = [*chunk]
-        record: dict[str, JsonValue] = {
-            "date": step["date"],
-            "cutoff_micros": instant_micros(cutoff),
-            "api_key": PTU_SENTINEL_API_KEY,
-            "models": chunk_ids,
-        }
-        records.append(record)
-    return records
+    return [
+        prune_record(step["date"], cutoff, tuple(ordered[start : start + _PRUNE_ID_CHUNK_SIZE]))
+        for start in range(0, len(ordered), _PRUNE_ID_CHUNK_SIZE)
+    ]
 
 
 def step_value(step: Step) -> JsonValue:
-    result: JsonValue
     if step["kind"] == "decode":
-        result = decode_step(step)
-    elif step["kind"] == "parse":
-        result = parse_step(step)
-    elif step["kind"] == "hours":
-        result = hours_step(step)
-    elif step["kind"] == "cost":
-        result = cost_step(step)
-    elif step["kind"] == "aggregate":
-        result = aggregate_step(step)
-    elif step["kind"] == "config":
-        result = config_step(step)
-    elif step["kind"] == "lapsed":
-        result = lapsed_step(step)
-    elif step["kind"] == "backfill":
-        result = backfill_step(step)
-    else:
-        result = prune_step(step)
-    return result
+        return decode_step(step)
+    if step["kind"] == "parse":
+        return parse_step(step)
+    if step["kind"] == "hours":
+        return hours_step(step)
+    if step["kind"] == "cost":
+        return cost_step(step)
+    if step["kind"] == "aggregate":
+        return aggregate_step(step)
+    if step["kind"] == "config":
+        return config_step(step)
+    if step["kind"] == "lapsed":
+        return lapsed_step(step)
+    if step["kind"] == "backfill":
+        return backfill_step(step)
+    return prune_step(step)
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:
