@@ -260,6 +260,11 @@ async fn keeps_the_parse_error_of_an_unreadable_amount() {
         TotalsStoreError::UnreadableAmount { column, .. } => assert_eq!(column, "spend"),
         other => panic!("the unreadable daily spend decoded as {other:?}"),
     }
+    let teams = store.team_daily_spend().await.unwrap_err();
+    match teams {
+        TotalsStoreError::InvalidAmount { column } => assert_eq!(column, "total_spend"),
+        other => panic!("the non-finite team spend decoded as {other:?}"),
+    }
     pool.close();
     fixture.close_async().await.unwrap();
 }

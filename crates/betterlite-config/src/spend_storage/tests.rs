@@ -173,11 +173,12 @@ fn replays_the_spend_storage_policy_corpus(
 #[test]
 fn decodes_a_stored_policy_row() {
     let decoded = decode_spend_storage_policy(
-        br#"{"general_settings":{"store_prompts_in_spend_logs":"true","disable_spend_updates":true},"environment":{"MAX_STRING_LENGTH_PROMPT_IN_DB":"12"}}"#,
+        br#"{"general_settings":{"store_prompts_in_spend_logs":"true","disable_spend_updates":true},"litellm_settings":{"max_budget":7.5},"environment":{"MAX_STRING_LENGTH_PROMPT_IN_DB":"12"}}"#,
     )
     .unwrap();
     assert!(decoded.store_prompts_in_spend_logs);
     assert_eq!(decoded.spend_updates, SpendUpdates::Disabled);
     assert_eq!(decoded.max_string_length_prompt_in_db, 12);
+    assert_eq!(decoded.max_budget, Decimal::new(75, 1));
     decode_spend_storage_policy(b"not json").unwrap_err();
 }

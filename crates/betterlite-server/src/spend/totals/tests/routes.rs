@@ -207,6 +207,28 @@ async fn logs_use_prometheus_for_a_global_caller() {
 }
 
 #[tokio::test]
+async fn logs_keep_an_internal_viewer_on_the_database_with_prometheus_connected() {
+    let mut fake = spend_store();
+    fake.user_daily = vec![user_daily("2026-01-01", "1.25", "sk-one", "u1")];
+    let store = store_with(fake);
+    let mut source = prometheus();
+    source.rows = vec![prometheus_row("2026-01-01T00:00:00+00:00", "9.5")];
+    let source = source_with(source);
+    let reply = call(
+        "/global/spend/logs",
+        Some(&internal("u1")),
+        state(Some(&store), Some(&source), Decimal::ZERO),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let body: Vec<UserKeyDailyBody> = decode(&reply);
+    assert_eq!(body.len(), 1);
+    assert_eq!(body[0].spend, decimal("1.25"));
+    assert!(source.calls().is_empty());
+    assert_eq!(store.calls(), vec!["user_daily_spend(u1,None)".to_owned()]);
+}
+
+#[tokio::test]
 async fn logs_read_the_monthly_view_without_prometheus() {
     let mut fake = spend_store();
     fake.global_daily = vec![daily("2026-01-01", "1"), daily("2026-01-02", "2.5")];
@@ -289,6 +311,24 @@ async fn logs_wrap_a_database_failure() {
     let reply = call(
         "/global/spend/logs",
         Some(&admin()),
+        state(Some(&store), None, Decimal::ZERO),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    let body: ErrorEnvelope = decode(&reply);
+    assert!(body.error.message.starts_with("/global/spend/logs Error: "));
+    assert_eq!(body.error.kind, "internal_error");
+    assert_eq!(body.error.code, "500");
+}
+
+#[tokio::test]
+async fn logs_wrap_an_internal_database_failure() {
+    let mut fake = spend_store();
+    fake.failure = Some(FakeFailure::InvalidAmount);
+    let store = store_with(fake);
+    let reply = call(
+        "/global/spend/logs",
+        Some(&internal("u1")),
         state(Some(&store), None, Decimal::ZERO),
     )
     .await;
@@ -597,6 +637,23 @@ async fn keys_report_a_store_failure() {
 }
 
 #[tokio::test]
+async fn keys_report_an_internal_store_failure() {
+    let mut failed = spend_store();
+    failed.failure = Some(FakeFailure::InvalidAmount);
+    let store = store_with(failed);
+    let reply = call(
+        "/global/spend/keys",
+        Some(&internal("u1")),
+        state(Some(&store), None, Decimal::ZERO),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    let body: InternalEnvelope = decode(&reply);
+    assert_eq!(body.error.message, "Internal server error");
+    assert_eq!(body.error.kind, "internal_server_error");
+}
+
+#[tokio::test]
 async fn models_default_the_limit_to_ten() {
     let mut fake = spend_store();
     fake.models = vec![ModelSpend {
@@ -721,6 +778,23 @@ async fn models_report_no_database_as_a_detail_error() {
     assert_eq!(per_user.status, StatusCode::INTERNAL_SERVER_ERROR);
     let body: DetailMessageEnvelope = decode(&per_user);
     assert_eq!(body.detail.error, "No db connected");
+}
+
+#[tokio::test]
+async fn models_report_a_store_failure() {
+    let mut failed = spend_store();
+    failed.failure = Some(FakeFailure::InvalidAmount);
+    let store = store_with(failed);
+    let reply = call(
+        "/global/spend/models",
+        Some(&admin()),
+        state(Some(&store), None, Decimal::ZERO),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    let body: InternalEnvelope = decode(&reply);
+    assert_eq!(body.error.message, "Internal server error");
+    assert_eq!(body.error.kind, "internal_server_error");
 }
 
 #[tokio::test]
