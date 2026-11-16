@@ -312,20 +312,18 @@ impl UsageChatModel for FakeModel {
         Output = Result<impl Stream<Item = Result<String, FakeFailure>> + Send, FakeFailure>,
     > + Send {
         self.record(request);
-        match self
+        let step = self
             .streams
             .lock()
             .unwrap()
             .pop_front()
-            .expect("scripted stream")
-        {
-            StreamStep::Chunks(scripted) => {
-                let items: Vec<Result<String, FakeFailure>> =
-                    scripted.into_iter().map(Ok).collect();
-                ready(Ok(stream::iter(items)))
-            }
-            StreamStep::Fail(error) => ready(Err(error)),
-        }
+            .expect("scripted stream");
+        let scripted = match step {
+            StreamStep::Chunks(scripted) => scripted,
+            StreamStep::Fail(error) => return ready(Err(error)),
+        };
+        let items: Vec<Result<String, FakeFailure>> = scripted.into_iter().map(Ok).collect();
+        ready(Ok(stream::iter(items)))
     }
 }
 
