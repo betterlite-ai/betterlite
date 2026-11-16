@@ -30,20 +30,7 @@ pub fn text_completion_as_chat(response: &TextCompletionResponse) -> Object {
         .choices
         .iter()
         .enumerate()
-        .map(|(index, choice)| {
-            let message = Object::from([
-                ("role".to_owned(), Json::Text("assistant".to_owned())),
-                ("content".to_owned(), Json::Text(choice.text.clone())),
-            ]);
-            Json::Object(Object::from([
-                ("index".to_owned(), Json::Number(Number::from(index))),
-                (
-                    "finish_reason".to_owned(),
-                    choice.finish_reason.clone().map_or(Json::Null, Json::Text),
-                ),
-                ("message".to_owned(), Json::Object(message)),
-            ]))
-        })
+        .map(|(index, choice)| Json::Object(chat_choice(index, choice)))
         .collect();
     let mut chat = Object::from([
         ("id".to_owned(), Json::Text(response.id.clone())),
@@ -65,6 +52,21 @@ pub fn text_completion_as_chat(response: &TextCompletionResponse) -> Object {
         chat.insert("usage".to_owned(), Json::Object(usage.clone()));
     }
     chat
+}
+
+fn chat_choice(index: usize, choice: &TextCompletionChoice) -> Object {
+    let message = Object::from([
+        ("role".to_owned(), Json::Text("assistant".to_owned())),
+        ("content".to_owned(), Json::Text(choice.text.clone())),
+    ]);
+    Object::from([
+        ("index".to_owned(), Json::Number(Number::from(index))),
+        (
+            "finish_reason".to_owned(),
+            choice.finish_reason.clone().map_or(Json::Null, Json::Text),
+        ),
+        ("message".to_owned(), Json::Object(message)),
+    ])
 }
 
 mod tests;

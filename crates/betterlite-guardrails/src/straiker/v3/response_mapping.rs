@@ -39,12 +39,26 @@ pub fn response(body: &Object) -> Option<StraikerWebhookResponse> {
         || stated
             .as_deref()
             .is_some_and(|text| BLOCK_DECISIONS.contains(&text));
-    let blocked_reason = blocked.then(|| {
-        [
-            verdict.get("block_message"),
-            verdict.get("deny_reason"),
-            body.get("stopReason"),
-        ]
+    Some(StraikerWebhookResponse {
+        action: if blocked {
+            StraikerWebhookAction::Blocked
+        } else {
+            StraikerWebhookAction::NoAction
+        },
+        blocked_reason: blocked.then(|| block_reason(verdict, body, &controls)),
+        blocked_by: controls,
+        turn_id: turn_id(verdict).or_else(|| turn_id(body)),
+    })
+}
+
+// Straiker's own wording wins; a build that blocks without one still names the controls that fired.
+fn block_reason(verdict: &Object, body: &Object, controls: &[String]) -> String {
+    let stated = [
+        verdict.get("block_message"),
+        verdict.get("deny_reason"),
+        body.get("stopReason"),
+    ];
+    stated
         .into_iter()
         .flatten()
         .filter_map(Json::as_str)
@@ -58,17 +72,6 @@ pub fn response(body: &Object) -> Option<StraikerWebhookResponse> {
             },
             str::to_owned,
         )
-    });
-    Some(StraikerWebhookResponse {
-        action: if blocked {
-            StraikerWebhookAction::Blocked
-        } else {
-            StraikerWebhookAction::NoAction
-        },
-        blocked_reason,
-        blocked_by: controls,
-        turn_id: turn_id(verdict).or_else(|| turn_id(body)),
-    })
 }
 
 fn turn_id(fields: &Object) -> Option<String> {
