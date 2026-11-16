@@ -312,8 +312,8 @@ fn sdk_client_missing() {
         .extra
         .get("extra_body")
         .and_then(|body| body.get("trainingType"))
-        .and_then(serde_json::Value::as_i64);
-    assert_eq!(defaulted, Some(1));
+        .is_some_and(|training_type| training_type.as_i64() == Some(1));
+    assert!(defaulted);
 }
 
 fn sdk_client_wrong_async() {
