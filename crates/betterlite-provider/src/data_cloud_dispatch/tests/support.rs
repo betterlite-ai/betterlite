@@ -88,7 +88,7 @@ pub(super) fn logging(redactor: &Redactor) -> (LoggingState, PrePostEnv<'_>) {
         },
         redactor,
         || "trace".to_owned(),
-        Duration::default(),
+        Duration::default,
     )
     .expect("the fixture logging state builds");
     let env = PrePostEnv {
