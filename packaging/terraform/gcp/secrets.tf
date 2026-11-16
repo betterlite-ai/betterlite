@@ -1,3 +1,9 @@
+locals {
+  # a count cannot come from a sensitive value, so only the emptiness test is unwrapped
+  license_set     = nonsensitive(var.litellm_license != "")
+  ui_password_set = nonsensitive(var.ui_password != "")
+}
+
 resource "google_secret_manager_secret" "master_key" {
   secret_id = "${local.name}-master-key"
   labels    = local.labels
@@ -13,7 +19,7 @@ resource "google_secret_manager_secret_version" "master_key" {
 }
 
 resource "google_secret_manager_secret" "license" {
-  count = var.litellm_license == "" ? 0 : 1
+  count = local.license_set ? 1 : 0
 
   secret_id = "${local.name}-license"
   labels    = local.labels
@@ -24,14 +30,14 @@ resource "google_secret_manager_secret" "license" {
 }
 
 resource "google_secret_manager_secret_version" "license" {
-  count = var.litellm_license == "" ? 0 : 1
+  count = local.license_set ? 1 : 0
 
   secret      = google_secret_manager_secret.license[0].id
   secret_data = var.litellm_license
 }
 
 resource "google_secret_manager_secret" "ui_password" {
-  count = var.ui_password == "" ? 0 : 1
+  count = local.ui_password_set ? 1 : 0
 
   secret_id = "${local.name}-ui-password"
   labels    = local.labels
@@ -42,7 +48,7 @@ resource "google_secret_manager_secret" "ui_password" {
 }
 
 resource "google_secret_manager_secret_version" "ui_password" {
-  count = var.ui_password == "" ? 0 : 1
+  count = local.ui_password_set ? 1 : 0
 
   secret      = google_secret_manager_secret.ui_password[0].id
   secret_data = var.ui_password
@@ -61,7 +67,7 @@ resource "google_secret_manager_secret_iam_member" "db_password" {
 }
 
 resource "google_secret_manager_secret_iam_member" "license" {
-  count = var.litellm_license == "" ? 0 : 1
+  count = local.license_set ? 1 : 0
 
   secret_id = google_secret_manager_secret.license[0].id
   role      = "roles/secretmanager.secretAccessor"
@@ -69,7 +75,7 @@ resource "google_secret_manager_secret_iam_member" "license" {
 }
 
 resource "google_secret_manager_secret_iam_member" "ui_password" {
-  count = var.ui_password == "" ? 0 : 1
+  count = local.ui_password_set ? 1 : 0
 
   secret_id = google_secret_manager_secret.ui_password[0].id
   role      = "roles/secretmanager.secretAccessor"

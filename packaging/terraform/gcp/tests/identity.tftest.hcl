@@ -37,9 +37,11 @@ run "master_key_secret_always_exists" {
       google_secret_manager_secret.master_key.labels["managed_by"] == "terraform",
       length(google_secret_manager_secret.master_key.replication) == 1,
       google_secret_manager_secret_version.master_key.secret_data == var.litellm_master_key,
+      local.license_set == false,
       length(google_secret_manager_secret.license) == 0,
       length(google_secret_manager_secret_version.license) == 0,
       length(google_secret_manager_secret_iam_member.license) == 0,
+      local.ui_password_set == false,
       length(google_secret_manager_secret.ui_password) == 0,
       length(google_secret_manager_secret_version.ui_password) == 0,
       length(google_secret_manager_secret_iam_member.ui_password) == 0,
@@ -58,6 +60,8 @@ run "license_and_ui_password_secrets_exist_when_set" {
 
   assert {
     condition = alltrue([
+      local.license_set == true,
+      local.ui_password_set == true,
       length(google_secret_manager_secret.license) == 1,
       google_secret_manager_secret.license[0].secret_id == "tenant-test-betterlite-license",
       length(google_secret_manager_secret_version.license) == 1,
