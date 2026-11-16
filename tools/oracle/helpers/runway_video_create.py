@@ -41,7 +41,7 @@ VideoReplyTransform = Callable[
 @runtime_checkable
 class VideoConfig(Protocol):
     def map_openai_params(
-        self, video_create_optional_request_params: JsonObject, model: str, *, drop_params: bool
+        self, optional_params: JsonObject, model: str, *, drop_params: bool
     ) -> JsonObject: ...
 
     def get_complete_url(
@@ -60,20 +60,17 @@ class VideoConfig(Protocol):
 
     # ruff counts a def's parameters (PLR0913), so the six-argument call types are property values
     @property
-    def transform_video_create_request(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> VideoRequestTransform: ...
+    def transform_video_create_request(self) -> VideoRequestTransform: ...
 
     @property
-    def transform_video_create_response(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> VideoReplyTransform: ...
+    # ast-grep-ignore: no-long-names
+    def transform_video_create_response(self) -> VideoReplyTransform: ...
 
 
 # litellm's config class carries untyped parameters, so the protocol is the declared shape
 CONFIG: Final[VideoConfig] = TypeAdapter[VideoConfig](
     VideoConfig, config=ARBITRARY_TYPES
-).validate_python(RunwayMLVideoConfig())
+).validate_python(RunwayMLVideoConfig())  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L110-L111
 
 
 class CreateCall(TypedDict):
@@ -141,7 +138,8 @@ def create_value(model: str, prompt: str, call: CreateCall) -> JsonValue:
     try:
         headers = CONFIG.validate_environment({}, model, call["api_key"], litellm_params)
     except ValueError:
-        return JSON.validate_python({"credentials_error": True})
+        failure: JsonObject = {"credentials_error": True}
+        return JSON.validate_python(failure)
     complete = CONFIG.get_complete_url(model, call["api_base"], EMPTY)
     mapped = CONFIG.map_openai_params(call["params"], model, drop_params=DROP_PARAMS)
     body, files, url = CONFIG.transform_video_create_request(
@@ -178,13 +176,15 @@ def create_results(input_value: CreateInput) -> JsonValue:
     results: list[JsonValue] = [
         create_value(params["model"], params["prompt"], call) for call in params["calls"]
     ]
-    return JSON.validate_python({"results": results})
+    answer: JsonObject = {"results": results}
+    return JSON.validate_python(answer)
 
 
 def reply_results(input_value: ReplyInput) -> JsonValue:
     params = input_value["params"]
     videos: list[JsonValue] = [reply_value(params["model"], call) for call in params["calls"]]
-    return JSON.validate_python({"videos": videos})
+    answer: JsonObject = {"videos": videos}
+    return JSON.validate_python(answer)
 
 
 def run(input_value: Input) -> JsonValue:
