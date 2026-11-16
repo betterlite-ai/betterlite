@@ -22,6 +22,8 @@ call:
       - {status: 500, headers: {content-type: text/html}, body: "<html>bad gateway</html>"}
       - {status: 200, headers: {}, body: '{"output": "a", "usage_info": {"input_tokens": 1, "output_tokens": 1}} trailing'}
       - {status: 200, headers: {}, body: '[{"output": "a"}]'}
+      - {status: 200, headers: {}, body: '{"output": "x", "usage_info": [1, 2]}'}
+      - {status: 200, headers: {}, body: '["x", [1, 2], null, null]'}
       - {status: 200, headers: {}, body: "null"}
 env: {}
 compare:

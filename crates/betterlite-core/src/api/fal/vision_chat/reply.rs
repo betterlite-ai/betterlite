@@ -1,12 +1,41 @@
+use std::fmt;
+use std::marker::PhantomData;
+
 use betterlite_models::call_helpers::finish_reason::map_finish_reason;
 use betterlite_openai::api::image_contracts::records::ImageHeaders;
 use betterlite_openai::chat::response::{
     AssistantMessage, ChatResponse, ChatUsage, MessageProviderFields,
 };
-use serde::Deserialize;
+use serde::de::value::MapAccessDeserializer;
+use serde::de::{MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 
 use crate::api::fal::vision_chat::error::FalAIError;
 use crate::api::fal::vision_chat::token_count::TokenCount;
+
+// a record read only from a JSON object: a derived Deserialize would also take a JSON array field by field
+#[derive(Debug)]
+struct JsonObject<T>(T);
+
+struct JsonObjectVisitor<T>(PhantomData<T>);
+
+impl<'de, T: Deserialize<'de>> Visitor<'de> for JsonObjectVisitor<T> {
+    type Value = JsonObject<T>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a JSON object")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+        T::deserialize(MapAccessDeserializer::new(map)).map(JsonObject)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for JsonObject<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_map(JsonObjectVisitor(PhantomData))
+    }
+}
 
 // fields Fal sends beyond these are ignored, as LiteLLM's model does
 #[derive(Debug, Deserialize)]
@@ -18,7 +47,7 @@ struct RawUsage {
 #[derive(Debug, Deserialize)]
 struct RawReply {
     output: String,
-    usage_info: RawUsage,
+    usage_info: JsonObject<RawUsage>,
     reasoning: Option<String>,
     finish_reason: Option<String>,
 }
@@ -41,14 +70,15 @@ pub struct FalChatCompletion {
 }
 
 pub fn decode_fal_chat(headers: &ImageHeaders, body: &[u8]) -> Result<FalChatReply, FalAIError> {
-    let raw: RawReply =
+    let JsonObject(raw): JsonObject<RawReply> =
         serde_json::from_slice(body).map_err(|source| FalAIError::UnexpectedResponse {
             text: replaced_text(body),
             headers: headers.clone(),
             source,
         })?;
-    let TokenCount(prompt_tokens) = raw.usage_info.input_tokens;
-    let TokenCount(completion_tokens) = raw.usage_info.output_tokens;
+    let JsonObject(usage) = raw.usage_info;
+    let TokenCount(prompt_tokens) = usage.input_tokens;
+    let TokenCount(completion_tokens) = usage.output_tokens;
     let total_tokens = prompt_tokens
         .checked_add(completion_tokens)
         .ok_or_else(|| FalAIError::UsageOverflow {

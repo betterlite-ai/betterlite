@@ -553,6 +553,8 @@ fn a_fraction_past_float_precision_is_refused() {
     r#"{"output": "a", "usage_info": {"input_tokens": 1, "output_tokens": 1}} x"#
 )]
 #[case::array_root(r#"[{"output": "a"}]"#)]
+#[case::array_usage(r#"{"output": "x", "usage_info": [1, 2]}"#)]
+#[case::array_reply(r#"["x", [1, 2], null, null]"#)]
 #[case::null_root("null")]
 #[case::not_json("not json at all")]
 #[case::empty_body("")]
@@ -564,6 +566,20 @@ fn an_invalid_reply_is_a_422_with_the_body_and_headers(#[case] body: &str) {
     assert_eq!(
         error.to_string(),
         format!("fal_ai returned an unexpected response body: {body}")
+    );
+}
+
+#[rstest]
+#[case::usage_array(r#"{"output": "x", "usage_info": [1, 2]}"#)]
+#[case::reply_array(r#"["x", [1, 2], null, null]"#)]
+fn a_record_given_as_an_array_is_refused_as_not_an_object(#[case] body: &str) {
+    let error = decode_fal_chat(&headers(&[]), body.as_bytes()).expect_err("rejected");
+    let FalAIError::UnexpectedResponse { source, .. } = error else {
+        panic!("expected an unexpected-response error");
+    };
+    assert!(
+        source.to_string().contains("expected a JSON object"),
+        "{source}"
     );
 }
 
