@@ -1,0 +1,42 @@
+kind: helper
+name: fal-single-image-models-empty-image-map
+call:
+  fal_single_image_models:
+    operation: empty_image_map
+    bria:
+      - status: 200
+        headers: {}
+        body: '{"image": {}}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"image": null}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"images": ["https://b.test/2.png"]}'
+        existing: []
+    recraft:
+      - status: 200
+        headers: {}
+        body: '{"images": [{}]}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"images": []}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"images": [{"url": null}]}'
+        existing: []
+env: {}
+compare:
+  ignore: []
