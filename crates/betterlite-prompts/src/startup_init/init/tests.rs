@@ -136,6 +136,20 @@ fn an_entry_without_prompt_info_registers_with_the_defaults_litellm_injects() {
 }
 
 #[test]
+fn prompt_info_without_a_prompt_type_gets_the_config_default() {
+    let all = entries(&[
+        r#"{"prompt_id":"greeting","prompt_info":{"environment":"staging"},"litellm_params":{"prompt_integration":"dotprompt"}}"#,
+    ]);
+    let mut registry = InMemoryPromptRegistry::default();
+    let mut callbacks = RecordingCallbacks::default();
+    let registered =
+        init_prompts(&mut registry, &all, None, &mut callbacks).expect("the prompt registers");
+    assert_eq!(registered.len(), 1);
+    assert_eq!(registered[0].prompt_info.prompt_type, "config");
+    assert_eq!(registered[0].prompt_info.environment, "staging");
+}
+
+#[test]
 fn a_prompt_already_registered_comes_back_as_the_stored_spec() {
     let mut stored = prompt_spec("greeting", Some(1), "development");
     stored.litellm_params.dotprompt_content = Some("Original".to_owned());
