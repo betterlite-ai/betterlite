@@ -146,11 +146,13 @@ fn fallback_of(raw: &StraikerArgs) -> Result<UnreachableFallback, SettingsError>
 }
 
 fn format_hint_of(raw: &StraikerArgs) -> Result<Option<FormatHint>, SettingsError> {
-    match raw.format_hint.as_deref() {
-        None => Ok(None),
-        Some("anthropic.messages") => Ok(Some(FormatHint::AnthropicMessages)),
-        Some("openai.chat") => Ok(Some(FormatHint::OpenAiChat)),
-        Some(other) => Err(SettingsError::FormatHint {
+    let Some(value) = raw.format_hint.as_deref() else {
+        return Ok(None);
+    };
+    match value {
+        "anthropic.messages" => Ok(Some(FormatHint::AnthropicMessages)),
+        "openai.chat" => Ok(Some(FormatHint::OpenAiChat)),
+        other => Err(SettingsError::FormatHint {
             value: other.to_owned(),
         }),
     }
