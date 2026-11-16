@@ -114,14 +114,10 @@ where
         .review_rows
         .find_unique(guardrail_id)
         .await
-        .map_err(|source| logged(context, MutationError::ReviewRows { source }))?;
-    let Some(row) = row else {
-        return Err(MutationError::SubmissionNotFound);
-    };
+        .map_err(|source| logged(context, MutationError::ReviewRows { source }))?
+        .ok_or(MutationError::SubmissionNotFound)?;
     if row.status != PENDING_REVIEW {
-        return Err(MutationError::NotPendingReview {
-            status: row.status.clone(),
-        });
+        return Err(MutationError::NotPendingReview { status: row.status });
     }
     Ok((database, row))
 }

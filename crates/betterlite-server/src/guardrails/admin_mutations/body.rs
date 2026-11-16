@@ -198,21 +198,19 @@ impl BodyError {
 
     fn params(bytes: &[u8], base: &[&str], source: &GuardrailParamsError) -> Self {
         let mut loc = body_location(base);
-        let field = match source {
+        let path = match source {
             GuardrailParamsError::InvalidField { field }
-            | GuardrailParamsError::MissingField { field } => Some(field.as_str()),
+            | GuardrailParamsError::MissingField { field } => field.as_str(),
             GuardrailParamsError::RouteModelMissing
             | GuardrailParamsError::ViolationNeedsMcpSecurity { .. }
             | GuardrailParamsError::ChecksNeedDecisionModel { .. }
             | GuardrailParamsError::InvalidTimeout
             | GuardrailParamsError::TrailingData
             | GuardrailParamsError::Environment(_)
-            | GuardrailParamsError::Encode { .. } => None,
+            | GuardrailParamsError::Encode { .. } => "",
         };
-        if let Some(field) = field {
-            for part in field.split('.').filter(|part| !part.is_empty()) {
-                loc.push(Location::Field(part.to_owned()));
-            }
+        for part in path.split('.').filter(|part| !part.is_empty()) {
+            loc.push(Location::Field(part.to_owned()));
         }
         if matches!(source, GuardrailParamsError::MissingField { .. }) {
             return Self {
@@ -260,7 +258,7 @@ fn append_path(loc: &mut Vec<Location>, path: &Path) {
     }
 }
 
-fn parent_of(loc: &[Location]) -> &[Location] {
+const fn parent_of(loc: &[Location]) -> &[Location] {
     match loc.split_last() {
         Some((_last, parent)) => parent,
         None => loc,
@@ -274,13 +272,15 @@ fn value_at(bytes: &[u8], loc: &[Location]) -> JsonData {
     };
     let mut current = &root;
     for part in loc.iter().skip(1) {
-        let next = match (part, current) {
+        let child = match (part, current) {
             (Location::Field(name), JsonData::Object(fields)) => fields.get(name),
             (Location::Position(index), JsonData::Array(items)) => items.get(*index),
             (Location::Field(_) | Location::Position(_), _) => None,
         };
-        let Some(next) = next else { break };
-        current = next;
+        match child {
+            Some(next) => current = next,
+            None => break,
+        }
     }
     current.clone()
 }

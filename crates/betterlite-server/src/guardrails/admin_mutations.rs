@@ -7,6 +7,7 @@ mod replace;
 mod response;
 mod review;
 pub mod review_rows;
+mod sync;
 
 mod tests;
 

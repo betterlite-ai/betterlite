@@ -3,7 +3,9 @@ use std::sync::Arc;
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Extension, State};
-use betterlite_config::sections::guardrail_params::records::GuardrailDefinitionLocation;
+use betterlite_config::sections::guardrail_params::records::{
+    Guardrail, GuardrailDefinitionLocation,
+};
 use betterlite_guardrails::guardrail_registry::rows::GuardrailRows;
 use chrono::Utc;
 
@@ -41,6 +43,28 @@ where
         .await
         .map_err(|source| logged(DB_FAILED, MutationError::Registry { source }))?;
     let guardrail_id = created.guardrail_id.clone().unwrap_or_default();
+    start_created(database, created, &guardrail_id).await?;
+    Ok(Json(CreatedGuardrail {
+        guardrail_id,
+        guardrail_name: guardrail.guardrail_name,
+        litellm_params: guardrail.litellm_params,
+        guardrail_info,
+        policy_template: guardrail.policy_template,
+        created_at: guardrail.created_at,
+        updated_at: guardrail.updated_at,
+    }))
+}
+
+// A configuration error deletes the row again, any other start error only logs a warning
+async fn start_created<R, S>(
+    database: &MutationDatabase<R, S>,
+    created: Guardrail,
+    guardrail_id: &str,
+) -> Result<(), MutationError>
+where
+    R: GuardrailRows,
+    S: ReviewRows,
+{
     let name = created.guardrail_name.clone();
     let started = database
         .runtime
@@ -52,25 +76,15 @@ where
         Ok(_initialized) => tracing::info!(
             "Immediate sync: Successfully initialized guardrail '{name}' (ID: {guardrail_id})"
         ),
-        Err(error) => {
-            if is_configuration_error(&error) {
-                rollback(database, &guardrail_id).await;
-                return Err(MutationError::Configuration { source: error });
-            }
-            tracing::warn!(
-                "Immediate sync: Failed to initialize guardrail '{name}' (ID: {guardrail_id}) in memory: {error}"
-            );
+        Err(error) if is_configuration_error(&error) => {
+            rollback(database, guardrail_id).await;
+            return Err(MutationError::Configuration { source: error });
         }
+        Err(error) => tracing::warn!(
+            "Immediate sync: Failed to initialize guardrail '{name}' (ID: {guardrail_id}) in memory: {error}"
+        ),
     }
-    Ok(Json(CreatedGuardrail {
-        guardrail_id,
-        guardrail_name: guardrail.guardrail_name,
-        litellm_params: guardrail.litellm_params,
-        guardrail_info,
-        policy_template: guardrail.policy_template,
-        created_at: guardrail.created_at,
-        updated_at: guardrail.updated_at,
-    }))
+    Ok(())
 }
 
 async fn rollback<R, S>(database: &MutationDatabase<R, S>, guardrail_id: &str)

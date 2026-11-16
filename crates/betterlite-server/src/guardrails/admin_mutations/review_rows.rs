@@ -12,7 +12,7 @@ use betterlite_db::resource_repository::table::{
     KeyFilter, ResourceActions, ResourceBinding, RowWrite,
 };
 use betterlite_redis::config_sync::publish::PublishChange;
-use betterlite_redis::config_sync::table_actions::{ConfigSyncTableActions, TableActions};
+use betterlite_redis::config_sync::table_actions::{ConfigSyncTableActions, TableActions as _};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use thiserror::Error;
@@ -22,7 +22,7 @@ const UPDATED_AT: &str = "updated_at";
 const STATUS: &str = "status";
 const REVIEWED_AT: &str = "reviewed_at";
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ReviewRow {
     pub guardrail_id: String,
     pub guardrail_name: String,
@@ -118,11 +118,10 @@ impl ReviewRows for PostgresReviewRows<'_> {
         let updated = actions
             .update(RowWrite(record), guardrail_id.to_owned())
             .await?;
-        match updated {
-            Some(_row) => Ok(()),
-            None => Err(ReviewRowsError::MissingRow {
+        updated
+            .map(|_row| ())
+            .ok_or_else(|| ReviewRowsError::MissingRow {
                 guardrail_id: guardrail_id.to_owned(),
-            }),
-        }
+            })
     }
 }

@@ -201,25 +201,29 @@ fn replace_body(name: &str, params: &str) -> String {
     format!(r#"{{"guardrail":{{"guardrail_name":"{name}","litellm_params":{params}}}}}"#)
 }
 
-fn stored_params(harness: &Harness) -> String {
-    harness
-        .guardrails
+fn stored_params(guardrails: &FakeGuardrails) -> LitellmParams {
+    let stored = guardrails
         .row("g1")
         .expect("the row is stored")
         .litellm_params
-        .expect("the row has params")
+        .expect("the row has params");
+    decode_litellm_params(stored.as_bytes()).expect("the row decodes")
 }
 
-#[tokio::test]
-async fn replace_stores_the_row_and_syncs_memory() {
-    let (captured, _guard) = capture();
-    let harness = harness();
+fn seed_old_guardrail(harness: &Harness) {
     harness
         .guardrails
         .insert(stored_row("g1", "old-name", BEDROCK_PARAMS, "active"));
     harness
         .reviews
         .insert(review_row("g1", "old-name", None, "active"));
+}
+
+#[tokio::test]
+async fn replace_stores_the_row_and_syncs_memory() {
+    let (captured, _guard) = capture();
+    let harness = harness();
+    seed_old_guardrail(&harness);
     let payload = replace_body(
         "new-name",
         r#"{"guardrail":"bedrock","mode":"pre_call","default_on":false}"#,
@@ -245,8 +249,7 @@ async fn replace_stores_the_row_and_syncs_memory() {
         harness.guardrails.row("g1").unwrap().guardrail_name,
         "new-name"
     );
-    let params =
-        decode_litellm_params(stored_params(&harness).as_bytes()).expect("the row decodes");
+    let params = stored_params(&harness.guardrails);
     assert_eq!(params.base.fields.default_on, Some(false));
     let held = held_guardrail(&harness.runtime, "g1")
         .await
@@ -280,12 +283,7 @@ async fn replace_missing_row_is_a_404() {
 #[tokio::test]
 async fn replace_rejects_a_configuration_error_and_restores_the_row() {
     let harness = harness();
-    harness
-        .guardrails
-        .insert(stored_row("g1", "old-name", BEDROCK_PARAMS, "active"));
-    harness
-        .reviews
-        .insert(review_row("g1", "old-name", None, "active"));
+    seed_old_guardrail(&harness);
     let payload = replace_body("new-name", r#"{"guardrail":"made-up","mode":"pre_call"}"#);
     let (status, body) = send(
         harness.router,
@@ -306,8 +304,7 @@ async fn replace_rejects_a_configuration_error_and_restores_the_row() {
         harness.guardrails.row("g1").unwrap().guardrail_name,
         "old-name"
     );
-    let params =
-        decode_litellm_params(stored_params(&harness).as_bytes()).expect("the row decodes");
+    let params = stored_params(&harness.guardrails);
     assert_eq!(params.guardrail, "bedrock");
     assert!(held_guardrail(&harness.runtime, "g1").await.is_none());
 }
@@ -409,8 +406,7 @@ async fn patch_merges_only_the_sent_params_keys() {
     assert_eq!(status, StatusCode::OK);
     let parsed = parse(&body);
     assert_eq!(text(field(&parsed, "guardrail_name")), "old-name");
-    let params =
-        decode_litellm_params(stored_params(&harness).as_bytes()).expect("the row decodes");
+    let params = stored_params(&harness.guardrails);
     assert_eq!(params.guardrail, "bedrock");
     assert_eq!(params.base.fields.default_on, Some(false));
     assert!(params.base.extra.0.contains_key("guardrailIdentifier"));
@@ -490,12 +486,7 @@ async fn patch_null_info_keeps_the_stored_one() {
 #[tokio::test]
 async fn patch_name_only_keeps_params() {
     let harness = harness();
-    harness
-        .guardrails
-        .insert(stored_row("g1", "old-name", BEDROCK_PARAMS, "active"));
-    harness
-        .reviews
-        .insert(review_row("g1", "old-name", None, "active"));
+    seed_old_guardrail(&harness);
     let (status, _body) = send(
         harness.router,
         request(
@@ -511,8 +502,7 @@ async fn patch_name_only_keeps_params() {
         harness.guardrails.row("g1").unwrap().guardrail_name,
         "renamed"
     );
-    let params =
-        decode_litellm_params(stored_params(&harness).as_bytes()).expect("the row decodes");
+    let params = stored_params(&harness.guardrails);
     assert_eq!(params.guardrail, "bedrock");
 }
 
@@ -531,12 +521,7 @@ async fn patch_missing_row_is_a_404() {
 #[tokio::test]
 async fn patch_rejects_a_configuration_error_and_restores_the_row() {
     let harness = harness();
-    harness
-        .guardrails
-        .insert(stored_row("g1", "old-name", BEDROCK_PARAMS, "active"));
-    harness
-        .reviews
-        .insert(review_row("g1", "old-name", None, "active"));
+    seed_old_guardrail(&harness);
     let (status, body) = send(
         harness.router,
         request(
@@ -549,8 +534,7 @@ async fn patch_rejects_a_configuration_error_and_restores_the_row() {
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(detail(&body).starts_with("Invalid guardrail configuration, update rejected: "));
-    let params =
-        decode_litellm_params(stored_params(&harness).as_bytes()).expect("the row decodes");
+    let params = stored_params(&harness.guardrails);
     assert_eq!(params.guardrail, "bedrock");
     assert!(held_guardrail(&harness.runtime, "g1").await.is_none());
 }
@@ -558,12 +542,7 @@ async fn patch_rejects_a_configuration_error_and_restores_the_row() {
 #[tokio::test]
 async fn patch_bad_params_decode_is_a_422() {
     let harness = harness();
-    harness
-        .guardrails
-        .insert(stored_row("g1", "old-name", BEDROCK_PARAMS, "active"));
-    harness
-        .reviews
-        .insert(review_row("g1", "old-name", None, "active"));
+    seed_old_guardrail(&harness);
     let (status, body) = send(
         harness.router,
         request(
@@ -579,8 +558,7 @@ async fn patch_bad_params_decode_is_a_422() {
         detail(&body),
         "Invalid guardrail configuration, update rejected: on_violation='block' is only supported by guardrail='mcp_security'"
     );
-    let params =
-        decode_litellm_params(stored_params(&harness).as_bytes()).expect("the row decodes");
+    let params = stored_params(&harness.guardrails);
     assert_eq!(params.guardrail, "bedrock");
     assert_eq!(params.base.fields.on_violation, None);
 }

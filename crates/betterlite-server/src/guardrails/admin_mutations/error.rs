@@ -62,10 +62,10 @@ pub(super) const fn is_configuration_error(error: &RegistryError) -> bool {
 }
 
 impl MutationError {
-    fn status(&self) -> StatusCode {
+    const fn status(&self) -> StatusCode {
         match self {
             Self::Unauthenticated => StatusCode::UNAUTHORIZED,
-            Self::Body(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::Body(_) | Self::UpdateRejected { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Forbidden { .. } => StatusCode::FORBIDDEN,
             Self::NoDatabase
             | Self::MissingParams
@@ -74,7 +74,6 @@ impl MutationError {
             | Self::MissingAfterUpdate { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::NotFound { .. } | Self::SubmissionNotFound => StatusCode::NOT_FOUND,
             Self::NotPendingReview { .. } | Self::Configuration { .. } => StatusCode::BAD_REQUEST,
-            Self::UpdateRejected { .. } => StatusCode::UNPROCESSABLE_ENTITY,
         }
     }
 }
@@ -90,9 +89,19 @@ impl IntoResponse for MutationError {
         match self {
             Self::Unauthenticated => unauthenticated(),
             Self::Body(error) => (*error).into_response(),
-            other => {
-                let detail = other.to_string();
-                (other.status(), Json(DetailBody { detail })).into_response()
+            Self::Forbidden { .. }
+            | Self::NoDatabase
+            | Self::NotFound { .. }
+            | Self::SubmissionNotFound
+            | Self::NotPendingReview { .. }
+            | Self::MissingParams
+            | Self::Configuration { .. }
+            | Self::UpdateRejected { .. }
+            | Self::Registry { .. }
+            | Self::ReviewRows { .. }
+            | Self::MissingAfterUpdate { .. } => {
+                let detail = self.to_string();
+                (self.status(), Json(DetailBody { detail })).into_response()
             }
         }
     }

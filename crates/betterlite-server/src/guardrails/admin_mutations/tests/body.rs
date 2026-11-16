@@ -13,9 +13,9 @@ fn issue_loc(issue: &JsonData) -> Vec<JsonData> {
     }
 }
 
-fn loc_field(issue: &JsonData, position: usize) -> &str {
+fn loc_field(issue: &JsonData, position: usize) -> String {
     match &issue_loc(issue)[position] {
-        JsonData::String(name) => name,
+        JsonData::String(name) => name.clone(),
         other => panic!("the loc part is not text: {other:?}"),
     }
 }
@@ -375,120 +375,63 @@ async fn auth_bad_body_is_a_422_for_any_caller() {
 #[tokio::test]
 async fn auth_viewer_is_forbidden_on_the_guardrail_routes() {
     let harness = harness();
-    let detail_text = "Admin access required to manage guardrails";
-    let (create, body) = send(
-        harness.router.clone(),
-        request("POST", "/guardrails", Some(viewer()), Some(CREATE_JSON)),
-    )
-    .await;
-    assert_eq!(create, StatusCode::FORBIDDEN);
-    assert_eq!(detail(&body), detail_text);
-    let (replace, body) = send(
-        harness.router.clone(),
-        request("PUT", "/guardrails/g1", Some(viewer()), Some(CREATE_JSON)),
-    )
-    .await;
-    assert_eq!(replace, StatusCode::FORBIDDEN);
-    assert_eq!(detail(&body), detail_text);
-    let (patch, body) = send(
-        harness.router.clone(),
-        request("PATCH", "/guardrails/g1", Some(viewer()), Some("{}")),
-    )
-    .await;
-    assert_eq!(patch, StatusCode::FORBIDDEN);
-    assert_eq!(detail(&body), detail_text);
-    let (delete, body) = send(
-        harness.router,
-        request("DELETE", "/guardrails/g1", Some(viewer()), None),
-    )
-    .await;
-    assert_eq!(delete, StatusCode::FORBIDDEN);
-    assert_eq!(detail(&body), detail_text);
+    let routes = [
+        ("POST", "/guardrails", Some(CREATE_JSON)),
+        ("PUT", "/guardrails/g1", Some(CREATE_JSON)),
+        ("PATCH", "/guardrails/g1", Some("{}")),
+        ("DELETE", "/guardrails/g1", None),
+    ];
+    for (method, uri, payload) in routes {
+        let (status, body) = send(
+            harness.router.clone(),
+            request(method, uri, Some(viewer()), payload),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {uri}");
+        assert_eq!(
+            detail(&body),
+            "Admin access required to manage guardrails",
+            "{method} {uri}"
+        );
+    }
 }
 
 #[tokio::test]
 async fn auth_viewer_is_forbidden_on_the_review_routes() {
     let harness = harness();
-    let (approve, body) = send(
-        harness.router.clone(),
-        request(
-            "POST",
-            "/guardrails/submissions/g1/approve",
-            Some(viewer()),
-            None,
-        ),
-    )
-    .await;
-    assert_eq!(approve, StatusCode::FORBIDDEN);
-    assert_eq!(detail(&body), "Admin access required");
-    let (reject, body) = send(
-        harness.router,
-        request(
-            "POST",
-            "/guardrails/submissions/g1/reject",
-            Some(viewer()),
-            None,
-        ),
-    )
-    .await;
-    assert_eq!(reject, StatusCode::FORBIDDEN);
-    assert_eq!(detail(&body), "Admin access required");
+    for uri in [
+        "/guardrails/submissions/g1/approve",
+        "/guardrails/submissions/g1/reject",
+    ] {
+        let (status, body) = send(
+            harness.router.clone(),
+            request("POST", uri, Some(viewer()), None),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
+        assert_eq!(detail(&body), "Admin access required", "{uri}");
+    }
 }
 
 #[tokio::test]
 async fn auth_no_database_is_a_500_on_every_route() {
     let router = bare_router();
-    let detail_text = "Prisma client not initialized";
-    let (create, body) = send(
-        router.clone(),
-        request("POST", "/guardrails", Some(admin()), Some(CREATE_JSON)),
-    )
-    .await;
-    assert_eq!(create, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(detail(&body), detail_text);
-    let (replace, body) = send(
-        router.clone(),
-        request("PUT", "/guardrails/g1", Some(admin()), Some(CREATE_JSON)),
-    )
-    .await;
-    assert_eq!(replace, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(detail(&body), detail_text);
-    let (patch, body) = send(
-        router.clone(),
-        request("PATCH", "/guardrails/g1", Some(admin()), Some("{}")),
-    )
-    .await;
-    assert_eq!(patch, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(detail(&body), detail_text);
-    let (delete, body) = send(
-        router.clone(),
-        request("DELETE", "/guardrails/g1", Some(admin()), None),
-    )
-    .await;
-    assert_eq!(delete, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(detail(&body), detail_text);
-    let (approve, body) = send(
-        router.clone(),
-        request(
-            "POST",
-            "/guardrails/submissions/g1/approve",
-            Some(admin()),
-            None,
-        ),
-    )
-    .await;
-    assert_eq!(approve, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(detail(&body), detail_text);
-    let (reject, body) = send(
-        router,
-        request(
-            "POST",
-            "/guardrails/submissions/g1/reject",
-            Some(admin()),
-            None,
-        ),
-    )
-    .await;
-    assert_eq!(reject, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(detail(&body), detail_text);
+    let routes = [
+        ("POST", "/guardrails", Some(CREATE_JSON)),
+        ("PUT", "/guardrails/g1", Some(CREATE_JSON)),
+        ("PATCH", "/guardrails/g1", Some("{}")),
+        ("DELETE", "/guardrails/g1", None),
+        ("POST", "/guardrails/submissions/g1/approve", None),
+        ("POST", "/guardrails/submissions/g1/reject", None),
+    ];
+    for (method, uri, payload) in routes {
+        let (status, body) =
+            send(router.clone(), request(method, uri, Some(admin()), payload)).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{method} {uri}");
+        assert_eq!(
+            detail(&body),
+            "Prisma client not initialized",
+            "{method} {uri}"
+        );
+    }
 }

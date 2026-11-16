@@ -69,29 +69,22 @@ fn storage_binds_the_config_sync_table() {
     assert_eq!(ReviewRowsBinding::TABLE, "LiteLLM_GuardrailsTable");
 }
 
-#[tokio::test]
-async fn storage_round_trips_a_review_row() {
-    let (fixture, pool) = database().await;
-    insert_row(&pool, "g1", r#"{"guardrail":"bedrock","mode":"pre_call"}"#).await;
-    let store = PostgresStore {
-        pool: Some(pool.clone()),
-    };
-    let availability = Availability::default();
-    let client = PrismaClient {
-        writer: &store,
-        reader: &store,
-        availability: &availability,
-    };
-    let journal: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let rows = PostgresReviewRows {
-        client: Some(client),
-        publish: publisher(&journal),
-    };
-    let row = rows
-        .find_unique("g1")
-        .await
-        .expect("the read succeeds")
-        .expect("the row exists");
+fn review_rows<'db>(
+    store: &'db PostgresStore,
+    availability: &'db Availability,
+    journal: &Arc<Mutex<Vec<String>>>,
+) -> PostgresReviewRows<'db> {
+    PostgresReviewRows {
+        client: Some(PrismaClient {
+            writer: store,
+            reader: store,
+            availability,
+        }),
+        publish: publisher(journal),
+    }
+}
+
+fn assert_pending_row(row: &ReviewRow) {
     assert_eq!(row.guardrail_id, "g1");
     assert_eq!(row.guardrail_name, "my-guard");
     assert_eq!(row.status, "pending_review");
@@ -100,6 +93,24 @@ async fn storage_round_trips_a_review_row() {
     assert!(row.submitted_at.is_some());
     assert!(row.reviewed_at.is_none());
     assert_eq!(row.team_id, None);
+}
+
+#[tokio::test]
+async fn storage_round_trips_a_review_row() {
+    let (fixture, pool) = database().await;
+    insert_row(&pool, "g1", r#"{"guardrail":"bedrock","mode":"pre_call"}"#).await;
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let availability = Availability::default();
+    let journal: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let rows = review_rows(&store, &availability, &journal);
+    let row = rows
+        .find_unique("g1")
+        .await
+        .expect("the read succeeds")
+        .expect("the row exists");
+    assert_pending_row(&row);
     assert!(journal.lock().unwrap().is_empty());
     rows.set_status("g1", "active", Utc::now())
         .await

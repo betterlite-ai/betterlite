@@ -17,6 +17,7 @@ use betterlite_auth::auth_identity::records::{
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::decode::decode_litellm_params;
+use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::{
     Guardrail, GuardrailDefinitionLocation,
 };
@@ -203,14 +204,13 @@ fn request(
     auth: Option<AuthContext>,
     body: Option<&str>,
 ) -> Request<Body> {
-    let builder = Request::builder()
+    let mut builder = Request::builder()
         .method(method)
         .uri(uri)
         .header(header::CONTENT_TYPE, "application/json");
-    let builder = match auth {
-        Some(context) => builder.extension(context),
-        None => builder,
-    };
+    if let Some(context) = auth {
+        builder = builder.extension(context);
+    }
     let payload = body.unwrap_or_default().to_owned();
     builder.body(Body::from(payload)).expect("a request")
 }
@@ -238,7 +238,7 @@ pub(super) fn parse(text: &str) -> JsonData {
     serde_json::from_str(text).unwrap_or_else(|error| panic!("{text}: {error}"))
 }
 
-pub(super) fn field<'a>(value: &'a JsonData, name: &str) -> &'a JsonData {
+pub(super) fn field<'value>(value: &'value JsonData, name: &str) -> &'value JsonData {
     match value {
         JsonData::Object(fields) => fields
             .get(name)
@@ -277,16 +277,16 @@ fn error_keeps_the_typed_cause() {
     let registry = MutationError::Registry {
         source: RegistryError::MissingGuardrailType,
     };
-    let cause = std::error::Error::source(&registry).expect("a registry cause");
-    assert_eq!(cause.to_string(), "guardrail_type is required");
+    let registry_cause = std::error::Error::source(&registry).expect("a registry cause");
+    assert_eq!(registry_cause.to_string(), "guardrail_type is required");
     let rows = MutationError::ReviewRows {
         source: ReviewRowsError::MissingRow {
             guardrail_id: "g1".to_owned(),
         },
     };
-    let cause = std::error::Error::source(&rows).expect("a review rows cause");
+    let rows_cause = std::error::Error::source(&rows).expect("a review rows cause");
     assert_eq!(
-        cause.to_string(),
+        rows_cause.to_string(),
         "Guardrail with ID g1 not found after the update"
     );
 }
