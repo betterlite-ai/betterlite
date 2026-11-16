@@ -8,6 +8,7 @@ pub mod decision_mapping;
 pub mod error;
 pub mod first_user_text;
 #[cfg(test)]
+#[path = "v3/tests/fixtures.rs"]
 mod fixtures;
 pub mod header_composition;
 pub mod messages;
