@@ -4,6 +4,8 @@ use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::tool_records::decode::decode_tool_record;
 use betterlite_db::tool_records::owners::{attach_owners, owners_from_rows};
 use betterlite_db::tool_records::records::LiteLLMToolTableRow;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -21,10 +23,10 @@ struct Output {
     tools: Vec<LiteLLMToolTableRow>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut tools = Vec::with_capacity(input.rows.len());
         for row in &input.rows {
             let Ok(text) = serde_json::to_string(row) else {
@@ -40,7 +42,7 @@ impl crate::helpers::Helper for Op {
         let owners = owners_from_rows(&input.tokens, &input.users);
         attach_owners(&mut tools, &owners);
         serde_json::to_value(Output { tools }).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,
