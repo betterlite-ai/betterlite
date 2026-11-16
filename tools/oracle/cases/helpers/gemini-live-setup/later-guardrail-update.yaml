@@ -1,0 +1,41 @@
+kind: helper
+name: later-guardrail-update
+call:
+  gemini_live_setup:
+    calls:
+      - op: session_update
+        model: gemini-2.5-flash
+        session:
+          instructions: first
+      - op: session_update
+        model: gemini-2.5-flash
+        session_configuration_request: stored
+        session:
+          turn_detection: {type: semantic_vad, create_response: false}
+      - op: session_update
+        model: gemini-2.5-flash
+        session_configuration_request: stored
+        session:
+          turn_detection: {type: server_vad}
+      - op: session_update
+        model: gemini-2.5-flash
+        session_configuration_request: stored
+        session:
+          audio: {input: {turn_detection: {type: server_vad, create_response: false}}}
+      - op: session_update
+        model: gemini-2.5-flash
+        session_configuration_request: stored
+        session:
+          instructions: late
+      - op: session_update
+        model: gemini-2.5-flash
+        session_configuration_request: ""
+        session:
+          turn_detection: {type: server_vad, create_response: false}
+      - op: session_update
+        model: gemini-2.5-flash
+        session_configuration_request: stored
+        session:
+          turn_detection: {type: semantic_vad}
+env: {}
+compare: {ignore: []}

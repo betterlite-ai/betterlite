@@ -1,9 +1,15 @@
+mod ops;
+mod tests;
+mod warnings;
+
+use crate::helpers::{Helper, HelperResult};
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+impl Helper for Op {
+    type Input = ops::Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("gemini_live_setup")
+    fn run(input: &Self::Input) -> HelperResult {
+        ops::run(input)
     }
 }

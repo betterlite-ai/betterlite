@@ -1,0 +1,16 @@
+kind: helper
+name: gemini-live-setup-seed
+call:
+  gemini_live_setup:
+    calls:
+      - op: session_update
+        model: gemini-2.5-flash
+        session:
+          instructions: hello
+          modalities: [audio]
+          voice: Puck
+      - op: endpoint
+        model: gemini-2.5-flash
+        api_key: seed-key
+env: {}
+compare: {ignore: []}

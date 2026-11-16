@@ -1,0 +1,32 @@
+kind: helper
+name: empty-explicit-key
+call:
+  gemini_live_setup:
+    calls:
+      - op: endpoint
+        model: gemini-2.5-flash
+        api_base: https://example.test
+        api_key: ""
+        env: {}
+      - op: endpoint
+        model: gemini-2.5-flash
+        env: {GOOGLE_API_KEY: "", GEMINI_API_KEY: gemini-env-key}
+      - op: endpoint
+        model: gemini-2.5-flash
+        api_key: explicit-key
+        env: {GOOGLE_API_KEY: google-env-key}
+      - op: endpoint
+        model: gemini-2.5-flash
+        api_key: studio-key
+      - op: endpoint
+        model: gemini-2.5-flash
+        api_base: http://localhost:8080
+        api_key: studio-key
+calls:
+  - gemini_live_setup:
+      calls:
+        - op: endpoint
+          model: gemini-2.5-flash
+          env: {}
+env: {}
+compare: {ignore: []}

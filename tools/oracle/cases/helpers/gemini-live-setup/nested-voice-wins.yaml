@@ -1,0 +1,24 @@
+kind: helper
+name: nested-voice-wins
+call:
+  gemini_live_setup:
+    calls:
+      - op: session_update
+        model: gemini-2.5-flash
+        session:
+          voice: Puck
+          modalities: [text]
+          output_modalities: [audio]
+          audio:
+            input:
+              transcription: {model: nested}
+              turn_detection: {type: server_vad, create_response: false}
+            output:
+              voice: Charon
+      - op: session_update
+        model: gemini-2.5-flash
+        session:
+          voice: Puck
+          audio: {output: {voice: ""}}
+env: {}
+compare: {ignore: []}

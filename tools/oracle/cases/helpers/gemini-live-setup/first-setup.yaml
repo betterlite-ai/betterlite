@@ -1,0 +1,37 @@
+kind: helper
+name: first-setup
+call:
+  gemini_live_setup:
+    calls:
+      - op: session_update
+        model: gemini-2.5-flash
+        session:
+          instructions: Be brief.
+          temperature: 0.4
+          max_response_output_tokens: 256
+          modalities: [text, audio]
+          input_audio_transcription: {model: whisper-1}
+          turn_detection: {type: server_vad, prefix_padding_ms: 20, silence_duration_ms: 500}
+          voice: Puck
+          tools:
+            - type: function
+              function:
+                name: lookup
+                description: Find a city
+                parameters:
+                  type: object
+                  properties:
+                    city: {type: string}
+                  required: [city]
+            - googleMaps: {latitude: 12.5, longitude: -7.25}
+      - op: session_update
+        model: gemini-2.5-flash
+        session: {}
+      - op: automatic
+        model: gemini-2.5-flash
+        defer_setup: false
+      - op: automatic
+        model: gemini-2.5-flash
+        defer_setup: true
+env: {}
+compare: {ignore: []}
