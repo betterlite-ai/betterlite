@@ -278,7 +278,7 @@ checks:
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/redis_cache_defaults-*")" &&
         grep -lE '^[[:space:]]+b5630:' tools/oracle/fuzz/corpus/helper_case/redis_cache_defaults-* &&
         test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
-        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-config --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 
 oracle_cases:
   - tools/oracle/cases/helpers/redis-cache-defaults/ttl-unset-is-sixty.yaml

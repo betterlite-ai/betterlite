@@ -165,7 +165,7 @@ checks:
       why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bulk-user-write-*")"
         && grep -rlq "bulk_user_write" tools/oracle/fuzz/corpus/helper_case/bulk-user-write-* && cargo
-        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: postgres-tests
       why: Actual Postgres row and failure-effect tests are absent or fail.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/bulk_user_write::tests::postgres_pinned_rows$/)'

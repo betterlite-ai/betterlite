@@ -1,0 +1,77 @@
+kind: helper
+name: list-input
+call:
+  azure_embeddings:
+    steps:
+      - input: ["first", "second"]
+        client: azure
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0},{\"object\":\"embedding\",\"embedding\":[0.125,1.0],\"index\":1}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}"}}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
+      - input: ["first", "second"]
+        client: async_azure
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0},{\"object\":\"embedding\",\"embedding\":[0.125,1.0],\"index\":1}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}"}}
+        aembedding: true
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
+      - input: ["first", "second"]
+        client: v1
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0},{\"object\":\"embedding\",\"embedding\":[0.125,1.0],\"index\":1}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}"}}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
+      - input: ["first", "second"]
+        client: async_v1
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0},{\"object\":\"embedding\",\"embedding\":[0.125,1.0],\"index\":1}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}"}}
+        aembedding: true
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
+      - input: [[1, 2], [3, 4]]
+        client: azure
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0},{\"object\":\"embedding\",\"embedding\":[0.125,1.0],\"index\":1}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":4,\"total_tokens\":4}}"}}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
+env: {}
+compare: {ignore: []}

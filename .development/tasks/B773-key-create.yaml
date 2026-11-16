@@ -200,7 +200,7 @@ checks:
       why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/key-create-*")"
         && grep -rlq "key_create" tools/oracle/fuzz/corpus/helper_case/key-create-* && cargo nextest run
-        --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: postgres-tests
       why: Actual Postgres row and failure-effect tests are absent or fail.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_create::tests::postgres_pinned_rows$/)'
