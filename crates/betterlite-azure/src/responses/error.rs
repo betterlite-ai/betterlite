@@ -22,8 +22,10 @@ pub enum ResponsesError {
         source: HttpError,
     },
     // LiteLLM merges the nested mapping into the tool, so a non-object cannot be merged
-    #[error("a tool's 'function' must be an object")]
-    InvalidToolFunction,
+    #[error(
+        "invalid type for 'tools[{index}].function': expected an object, but got {found} instead"
+    )]
+    InvalidToolFunction { index: usize, found: &'static str },
     #[error(transparent)]
     Input(#[from] ResponseInputError),
     #[error(transparent)]
@@ -38,12 +40,12 @@ impl ResponsesError {
         match self {
             Self::Resource(error) => error.http_status(),
             Self::Input(error) => error.http_status(),
+            Self::InvalidToolFunction { .. } => Some(400),
             Self::Url(_)
             | Self::MissingWebsocketApiBase
             | Self::InvalidUrl(_)
             | Self::Parse(_)
             | Self::ResponseId { .. }
-            | Self::InvalidToolFunction
             | Self::Record(_) => None,
         }
     }

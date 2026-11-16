@@ -1,0 +1,10 @@
+kind: helper
+name: router-runtime-settings-policy-object
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["retry_policy", {"RateLimitErrorRetries": 3, "Extra": 1}]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,49 @@
+kind: helper
+name: runway-video-create-credit-usage
+call:
+  runway_video_create:
+    operation: reply
+    params:
+      model: gen4_turbo
+      calls:
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","estimatedCost":{"credits":10}}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","estimatedCost":{"credits":25}}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","estimatedCost":{"credits":0}}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","estimatedCost":{"credits":true}}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","estimatedCost":{"credits":false}}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","estimatedCost":{"credits":"10"}}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","estimatedCost":{"credits":null}}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","estimatedCost":[{"credits":10}]}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","estimatedCost":{"credits":0.5}}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","estimatedCost":{}}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t","estimatedCost":null}'
+        - provider: null
+          request_data: {duration: 5, ratio: '1280:720'}
+          body: '{"id":"t"}'
+env: {}
+compare: {ignore: []}
