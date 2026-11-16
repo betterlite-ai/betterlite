@@ -149,7 +149,7 @@ def apply(call: ApplyCall) -> JsonValue:
     request_data: dict[str, JsonValue] = {}
     if headers is not None:
         request_data["proxy_server_request"] = {"headers": dict(headers)}
-    # LiteLLM types apply_guardrail with GenericGuardrailAPIInputs, whose message TypedDicts carry Any
+    # LiteLLM's apply_guardrail signatures carry Any, so validate into the protocol
     applier = ApplierRecord.model_validate({"applier": guardrail}).applier
     output = asyncio.run(apply_once(applier, call, request_data))
     return {"inputs": output, "requests": recorder.requests}
