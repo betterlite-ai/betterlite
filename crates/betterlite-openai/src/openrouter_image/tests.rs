@@ -413,6 +413,17 @@ fn a_wrong_shape_names_the_field(#[case] body: &str, #[case] path: &str) {
     assert!(message.starts_with(&prefix), "{message}");
 }
 
+#[rstest]
+#[case::body("[]")]
+#[case::choice(r#"{"choices": [[]]}"#)]
+fn a_list_is_not_read_as_an_object(#[case] body: &str) {
+    let error = decode(body).expect_err("a list is not an object");
+    assert!(
+        error.to_string().contains("expected a JSON object"),
+        "{error}"
+    );
+}
+
 #[test]
 fn a_syntax_error_after_a_shape_error_is_a_parse_error() {
     let error = decode(r#"{"choices": 5} trailing"#).expect_err("the body is not JSON");
