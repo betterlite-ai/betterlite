@@ -44,7 +44,7 @@ const REPLACEMENT: &str = r#"[
         {"type": "input_image", "image_url": "s3://bucket/key.png"},
         {"type": "input_image", "image_url": "HTTP://a.example/1.png"},
         "loose"
-    ], "id": "m1"},
+    ], "id": "m1", "notes": [{"type": "input_image", "image_url": "http://a.example/1.png"}], "side": {"type": "computer_screenshot", "image_url": "https://b.example/2.png"}},
     {"type": "computer_call_output", "call_id": "c", "output": {"type": "computer_screenshot", "image_url": "https://b.example/2.png"}},
     {"type": "message", "role": "user", "content": "http://a.example/1.png"},
     7
@@ -57,7 +57,7 @@ const REPLACED: &str = r#"[
         {"type": "input_image", "image_url": "s3://bucket/key.png"},
         {"type": "input_image", "image_url": "HTTP://a.example/1.png"},
         "loose"
-    ], "id": "m1"},
+    ], "id": "m1", "notes": [{"type": "input_image", "image_url": "http://a.example/1.png"}], "side": {"type": "computer_screenshot", "image_url": "https://b.example/2.png"}},
     {"type": "computer_call_output", "call_id": "c", "output": {"type": "computer_screenshot", "image_url": "data:image/png;base64,Qg=="}},
     {"type": "message", "role": "user", "content": "http://a.example/1.png"},
     7
