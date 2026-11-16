@@ -196,7 +196,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_message_attachments*")"
       && grep -lq 'azure_message_attachments' tools/oracle/fuzz/corpus/helper_case/azure_message_attachments* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_message_attachments$/)'
+      cargo nextest run --locked -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_message_attachments$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-assistants-beta-default
     why: 'For append/list use OpenAI-Beta: assistants=v2 through the same SDK beta header contract as B519/B520/B527/B686;

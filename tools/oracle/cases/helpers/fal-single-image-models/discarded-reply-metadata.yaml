@@ -1,0 +1,26 @@
+kind: helper
+name: fal-single-image-models-discarded-reply-metadata
+call:
+  fal_single_image_models:
+    operation: discarded_reply_metadata
+    bria:
+      - status: 200
+        headers: {}
+        body: '{"image": {"url": "https://a.test/1.png", "width": 1024, "height": 768, "content_type": "image/png", "file_name": "a.png", "file_size": 123, "b64_json": "aGk=", "seed": 7}}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"image": {"b64_json": "aGk="}}'
+        existing: []
+    recraft:
+      - status: 200
+        headers: {}
+        body: '{"images": [{"url": "https://a.test/1.png", "width": 1024, "height": 768, "content_type": "image/webp", "file_name": "a.webp", "file_size": 123, "b64_json": "aGk=", "seed": 7}, "https://b.test/2.png"]}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"images": [{"url": null, "width": 1024, "seed": 7}]}'
+        existing: []
+env: {}
+compare:
+  ignore: []
