@@ -12,7 +12,7 @@ use axum::routing::get;
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_auth::auth_identity::roles::Role;
 use betterlite_auth::resolved_key::auth::user_api_key_has_admin_view;
-use betterlite_models::decisions::Json;
+use betterlite_models::decisions::Json as JsonValue;
 use betterlite_models::prompt_spec::{PromptInfo, PromptSpec};
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::dotprompt_templates::content::dotprompt_content_to_json;
@@ -102,13 +102,13 @@ struct PromptLiteLLMParamsWire {
     prompt_integration: String,
     api_base: Option<String>,
     api_key: Option<String>,
-    provider_specific_query_params: Option<IndexMap<String, Json>>,
+    provider_specific_query_params: Option<IndexMap<String, JsonValue>>,
     ignore_prompt_manager_model: bool,
     #[serde(rename = "ignore_prompt_manager_optional_params")]
     ignore_optional_params: bool,
     dotprompt_content: Option<String>,
     #[serde(flatten)]
-    extra: IndexMap<String, Json>,
+    extra: IndexMap<String, JsonValue>,
 }
 
 impl From<&PromptSpec> for PromptSpecWire {
