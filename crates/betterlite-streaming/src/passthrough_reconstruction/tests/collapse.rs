@@ -87,6 +87,10 @@ fn refuses_a_delta_that_is_not_text() {
         "{TEXT_BLOCK_START}\n\nevent: content_block_delta\ndata: {{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{{\"text\":\"x\"}}}}"
     ))];
     assert_eq!(collapse_pure_text_chunks(&chunks).unwrap(), None);
+    let non_object = [text_chunk(&format!(
+        "{TEXT_BLOCK_START}\n\nevent: content_block_delta\ndata: {{\"type\":\"content_block_delta\",\"index\":0,\"delta\":[1]}}"
+    ))];
+    assert_eq!(collapse_pure_text_chunks(&non_object).unwrap(), None);
 }
 
 #[test]
@@ -99,6 +103,10 @@ fn refuses_a_block_that_is_not_text() {
         "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0}",
     )];
     assert_eq!(collapse_pure_text_chunks(&missing).unwrap(), None);
+    let non_object = [text_chunk(
+        "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":[1]}",
+    )];
+    assert_eq!(collapse_pure_text_chunks(&non_object).unwrap(), None);
 }
 
 #[test]

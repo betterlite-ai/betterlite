@@ -134,6 +134,12 @@ fn keeps_the_model_when_the_message_has_none() {
     let response =
         build_usage_only_response(&request(&nameless, &calculator, "unknown", None)).unwrap();
     assert_eq!(chat_of(response).model, "unknown");
+    let numeric = [text_chunk(
+        "data: {\"type\":\"message_start\",\"message\":{\"model\":5}}",
+    )];
+    let response =
+        build_usage_only_response(&request(&numeric, &calculator, "unknown", None)).unwrap();
+    assert_eq!(chat_of(response).model, "unknown");
 }
 
 #[rstest::rstest]
