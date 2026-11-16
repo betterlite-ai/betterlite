@@ -1,0 +1,1 @@
+{"id":"cmpl-2","object":"text_completion","created":1700000001,"model":"gpt-3.5-turbo-instruct","choices":[],"usage":{"prompt_tokens":4,"completion_tokens":0,"total_tokens":4,"completion_tokens_details":{"reasoning_tokens":0},"prompt_tokens_details":{"cached_tokens":2}}}
