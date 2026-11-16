@@ -30,6 +30,9 @@ deviations:
   - what: SyncManager::new requires its GitHub factory and clock from the caller, where LiteLLM's __init__ defaults the factory to GitHub and the clock to _utc_now.
     why: The composition root resolves both defaults once, so the manager holds plain injected dependencies instead of Option fields, as the non-nullable-by-default rule asks; B8588 builds the manager with the GitHub factory and Arc::new(Utc::now), which yields the same clients and timestamps LiteLLM's defaults produce.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L333-L338
+  - what: start takes the lease owner id from a UuidSource injected when the manager is built, where LiteLLM calls uuid.uuid4() inside start.
+    why: The caller passes Uuid::new_v4, so the owner string is the same hyphenated random UUID LiteLLM builds, and the random source is a constructor dependency instead of a hidden call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L405
 kept_bugs:
   - what: A cancelled run notifies the coordinator twice, once from the run task's finally and once from cancel itself.
     why: Both calls carry the cancelled status, and the second one is what LiteLLM's cancel does after awaiting the task, so a coordinator that records every finish sees the same two entries.
