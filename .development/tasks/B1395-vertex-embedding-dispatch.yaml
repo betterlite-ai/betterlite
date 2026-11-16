@@ -37,6 +37,9 @@ description: >-
   and prepared.rs as they are.
 scope:
   paths:
+    - "crates/betterlite-server/src/state/shared.rs"
+    - "crates/betterlite-server/src/model_armor_tokens.rs"
+    - "crates/betterlite-server"
     - crates/betterlite-server/src/routes/embeddings.rs
     - crates/betterlite-server/src/server/chat_setup.rs
     - "crates/betterlite-provider/src/vertex_dispatch.rs"
