@@ -1,8 +1,8 @@
 from typing import Final, NotRequired, TypedDict
 
 import httpx
-from litellm.llms.vertex_ai.batches.handler import (  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L79-L80
-    _vertex_batch_list_payload,
+from litellm.llms.vertex_ai.batches.handler import (
+    _vertex_batch_list_payload,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L79-L80
 )
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
