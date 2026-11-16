@@ -1,10 +1,11 @@
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::SecretString;
 
+use crate::chat::sources::NoSources;
 use crate::chat::{FoundryChatOptions, PreparedChat};
 
 use super::support::{
-    EnvironmentFixture, Keys, NoSources, SENTINEL_KEY, SENTINEL_SECRET, object, settings, validate,
+    EnvironmentFixture, Keys, SENTINEL_KEY, SENTINEL_SECRET, object, settings, validate,
     validate_with,
 };
 

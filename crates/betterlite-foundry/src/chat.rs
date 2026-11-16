@@ -7,6 +7,7 @@ pub mod messages;
 pub mod provider;
 pub mod request;
 pub mod response;
+pub mod sources;
 pub mod url;
 pub mod url_error;
 

@@ -7,18 +7,18 @@ use betterlite_azure::credentials::source::{
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use secrecy::SecretString;
 
-// The oracle never reaches Azure, so every token source refuses
-pub(super) struct Offline;
+// For a caller that holds no Azure AD token source: every token request refuses
+pub struct NoSources;
 
-fn refuse<T>(source: &str) -> Result<T, SourceFailure> {
+fn refuse<T>(kind: &str) -> Result<T, SourceFailure> {
     Err(SourceFailure {
         class: "ValueError".to_owned(),
         status: None,
-        message: format!("the {source} source is offline"),
+        message: format!("no {kind} source is configured"),
     })
 }
 
-impl CredentialSources for Offline {
+impl CredentialSources for NoSources {
     fn client_secret<'source>(
         &'source self,
         _record: &ClientSecretRecord,

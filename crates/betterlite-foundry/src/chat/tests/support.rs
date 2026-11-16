@@ -1,12 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
-use std::sync::Arc;
 
-use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
-use betterlite_azure::credentials::source::{
-    CallableTokenProvider, CredentialSources, SourceFailure,
-};
-use betterlite_azure::oidc_exchange::OidcExchangeInput;
+use betterlite_azure::credentials::source::CredentialSources;
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_models::model_capability_predicates::CapabilityRequest;
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers, Object};
@@ -24,6 +19,7 @@ use crate::chat::capabilities::{
 };
 use crate::chat::environment::{EnvironmentRequest, TokenSource, validate_environment};
 use crate::chat::environment_error::EnvironmentError;
+use crate::chat::sources::NoSources;
 
 pub(super) const SENTINEL_KEY: &str = "fixture-key-sentinel-8f2c";
 pub(super) const SENTINEL_SECRET: &str = "fixture-client-secret-sentinel-41d7";
@@ -219,50 +215,6 @@ impl ReasoningCapabilities for CapabilityFixture {
             .map(|entry| serde_json::to_string(entry).expect("a fixture entry"))
             .collect();
         catalogue_declares_default(entries.iter().map(String::as_str))
-    }
-}
-
-pub(super) struct NoSources;
-
-fn refuse<T>(kind: &str) -> Result<T, SourceFailure> {
-    Err(SourceFailure {
-        class: "ValueError".to_owned(),
-        status: None,
-        message: format!("no {kind} source is configured"),
-    })
-}
-
-impl CredentialSources for NoSources {
-    fn client_secret<'source>(
-        &'source self,
-        _record: &ClientSecretRecord,
-    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        refuse("client secret")
-    }
-
-    fn username_password<'source>(
-        &'source self,
-        _record: &UsernamePasswordRecord,
-    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        refuse("username and password")
-    }
-
-    fn sdk_refresh<'source>(
-        &'source self,
-        _scope: &str,
-    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        refuse("SDK refresh")
-    }
-
-    fn default_credential<'source>(
-        &'source self,
-        _scope: &'source str,
-    ) -> Option<Arc<dyn CallableTokenProvider + 'source>> {
-        None
-    }
-
-    fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        refuse("OIDC")
     }
 }
 

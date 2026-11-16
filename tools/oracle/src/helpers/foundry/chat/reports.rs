@@ -21,7 +21,7 @@ use super::fixture::Installed;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 use super::input::{AuthCall, MapCall, ProviderCall, RequestCall, ResponseCall, UrlCall};
-use super::sources::Offline;
+use betterlite_foundry::chat::sources::NoSources;
 
 pub(super) fn url_report(call: &UrlCall) -> Value {
     let Ok(url) = get_complete_url(call.api_base.as_deref(), call.api_version.as_deref()) else {
@@ -182,7 +182,7 @@ pub(super) fn auth_report(call: &AuthCall) -> Result<Value, Box<HelperError>> {
             credentials: &credentials,
             refresh_enabled: false,
             provider: None,
-            sources: &Offline,
+            sources: &NoSources,
         },
         api_base: call.api_base.as_deref(),
     });
