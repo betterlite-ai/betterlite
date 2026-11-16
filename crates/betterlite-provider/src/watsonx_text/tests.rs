@@ -262,6 +262,12 @@ fn payload_without_project_or_space_fails_401() {
     true,
     "/ml/v1/deployments/deployment-id/text/generation_stream"
 )]
+#[case::deployment_encodes_the_query(
+    None,
+    "deployment/x?y#z",
+    false,
+    "/ml/v1/deployments/x%3Fy%23z/text/generation"
+)]
 #[case::explicit_base(Some("https://host/"), "granite", false, "/ml/v1/text/generation")]
 fn urls_follow_the_model_shape(
     #[case] api_base: Option<&str>,
@@ -274,6 +280,21 @@ fn urls_follow_the_model_shape(
     let url = complete_url(&environment, api_base, model, &mut options, stream).unwrap();
     let base = api_base.unwrap_or("https://env-host").trim_end_matches('/');
     assert_eq!(url, format!("{base}{endpoint}?version=2024-03-13"));
+}
+
+#[test]
+fn complete_url_refuses_a_deployment_id_that_leaves_its_path() {
+    let environment = environment(&[("WATSONX_API_BASE", "https://env-host")]);
+    let mut options = WatsonxParams::new();
+    let error = complete_url(
+        &environment,
+        None,
+        "deployment/x/../other",
+        &mut options,
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(error.status(), Some(400));
 }
 
 #[test]

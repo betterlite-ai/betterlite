@@ -1,0 +1,33 @@
+kind: helper
+name: stream-output-chunk-builder
+call:
+  b3857:
+    function: stream_output
+    chunks:
+    - type: chat
+      value:
+        id: chatcmpl-1
+        object: chat.completion.chunk
+        created: 1
+        model: gpt-4o
+        choices:
+        - index: 0
+          delta: {role: assistant, content: he}
+          finish_reason: null
+    - type: chat
+      value:
+        id: chatcmpl-1
+        object: chat.completion.chunk
+        created: 1
+        model: gpt-4o
+        choices:
+        - index: 0
+          delta: {content: llo}
+          finish_reason: stop
+        usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+    data:
+      messages:
+      - {role: user, content: q}
+env: {}
+compare:
+  ignore: []
