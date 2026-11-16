@@ -75,6 +75,27 @@ async fn async_handler_matches_the_blocking_result() {
 }
 
 #[tokio::test]
+async fn async_prepare_error_uses_the_resolved_provider() {
+    let mut fixture = fixture();
+    fixture.decoder.answer = decoding_to("bogus", None);
+    let endpoints = fixture.endpoints();
+    let failure = endpoints
+        .acontainer_file_call(
+            "retrieve_container_file",
+            &retrieve_call(),
+            &logging(),
+            TIMEOUT_SECONDS,
+        )
+        .await
+        .expect_err("the decoded provider is unknown");
+    let ErrorClass::ApiConnection(context) = &failure.class else {
+        panic!("a ValueError maps to a connection error");
+    };
+    assert_eq!(context.provider.as_deref(), Some("bogus"));
+    assert_eq!(context.model.as_deref(), Some(""));
+}
+
+#[tokio::test]
 async fn async_handler_error_uses_the_callers_provider() {
     let mut fixture = fixture();
     fixture.decoder.answer = decoding_to("azure", None);
