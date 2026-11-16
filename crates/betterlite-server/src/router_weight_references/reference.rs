@@ -13,7 +13,7 @@ use serde::Deserialize;
 use super::error::RouterWeightError;
 use super::model_info::{RouterWeightModelInfo, RouterWeightModelInfoError};
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(try_from = "DeploymentFixture")]
 pub struct RouterWeightDeployment {
     pub model_name: String,
