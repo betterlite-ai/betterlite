@@ -63,8 +63,9 @@ pub(super) enum ImageSpec {
     Text {
         text: String,
     },
+    // a nested list counts one level toward the reader's depth limit, so the case can hand it more
     Sequence {
-        items: Vec<Option<MemberSpec>>,
+        items: Vec<Option<ImageSpec>>,
     },
     Mapping {
         data: Option<String>,
@@ -72,15 +73,6 @@ pub(super) enum ImageSpec {
         content: Option<String>,
         path: Option<String>,
     },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(super) enum MemberSpec {
-    Bytes { data_base64: String },
-    Text { text: String },
-    // a nested list counts one level toward the reader's depth limit, so the case can hand it more
-    Sequence { items: Vec<Option<MemberSpec>> },
 }
 
 // the values get_complete_url and validate_environment read
@@ -157,7 +149,7 @@ fn image_input(spec: &ImageSpec) -> Result<ImagenFileInput<'static>, Box<HelperE
         ImageSpec::Sequence { items } => {
             let mut members = Vec::with_capacity(items.len());
             for item in items {
-                members.push(item.as_ref().map(member_input).transpose()?);
+                members.push(item.as_ref().map(image_input).transpose()?);
             }
             Ok(ImagenFileInput::Sequence(members))
         }
@@ -172,22 +164,6 @@ fn image_input(spec: &ImageSpec) -> Result<ImagenFileInput<'static>, Box<HelperE
             content.as_deref(),
             path.as_deref(),
         ))),
-    }
-}
-
-fn member_input(spec: &MemberSpec) -> Result<ImagenFileInput<'static>, Box<HelperError>> {
-    match spec {
-        MemberSpec::Bytes { data_base64 } => Ok(ImagenFileInput::Bytes(
-            STANDARD.decode(data_base64).or_config_error()?,
-        )),
-        MemberSpec::Text { text } => Ok(ImagenFileInput::Text(text.clone())),
-        MemberSpec::Sequence { items } => {
-            let mut members = Vec::with_capacity(items.len());
-            for item in items {
-                members.push(item.as_ref().map(member_input).transpose()?);
-            }
-            Ok(ImagenFileInput::Sequence(members))
-        }
     }
 }
 
