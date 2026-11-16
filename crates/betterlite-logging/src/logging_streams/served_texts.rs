@@ -34,60 +34,84 @@ pub fn served_output_texts(response: &Json) -> Option<ServedTexts> {
     texts.iter().any(Option::is_some).then_some(texts)
 }
 
-// The chat branch of served_stream_output_texts: the chunks' deltas joined per choice index.
-#[must_use]
-pub fn served_stream_output_texts(chunks: &[Json]) -> Option<ServedTexts> {
-    let mut choice_count: usize = 0;
-    let mut texts: BTreeMap<usize, String> = BTreeMap::new();
-    let mut joined_bytes: usize = 0;
-    let mut past_bound = false;
-    for chunk in chunks {
+// The bounded chat branch of served_stream_output_texts, fed one chunk at a time.
+#[derive(Default)]
+pub struct StreamTexts {
+    choice_count: usize,
+    texts: BTreeMap<usize, String>,
+    joined_bytes: usize,
+    past_bound: bool,
+}
+
+impl StreamTexts {
+    // Adds the deltas one streamed chunk carries; a piece past the byte bound is left out.
+    pub fn push(&mut self, chunk: &Json) {
         let Json::Object(fields) = chunk else {
-            continue;
+            return;
         };
         let Some(Json::List(choices)) = fields.get("choices") else {
-            continue;
+            return;
         };
         for choice in choices {
-            let Json::Object(choice) = choice else {
-                continue;
-            };
-            let index = match choice_index(choice.get("index")) {
-                ChoiceIndex::Slot(index) => index,
-                ChoiceIndex::BeyondBound => {
-                    past_bound = true;
-                    continue;
-                }
-                ChoiceIndex::Invalid => continue,
-            };
-            choice_count = choice_count.max(index.saturating_add(1));
-            let content = match choice.get("delta") {
-                Some(Json::Object(delta)) => delta.get("content"),
-                None
-                | Some(
-                    Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_),
-                ) => None,
-            };
-            let Some(Json::Text(piece)) = content else {
-                continue;
-            };
-            let remaining = MAX_SERVED_TEXT_BYTES.saturating_sub(joined_bytes);
-            if piece.len() <= remaining {
-                joined_bytes = joined_bytes.saturating_add(piece.len());
-                texts.entry(index).or_default().push_str(piece);
-            }
+            self.push_choice(choice);
         }
     }
-    if past_bound {
-        tracing::warn!(
-            max_choices = MAX_SERVED_CHOICES,
-            "a stream choice index is past the served-output bound and was left out"
-        );
+
+    // The joined texts per choice index, holes included, or None when no choice carried text.
+    #[must_use]
+    pub fn finish(mut self) -> Option<ServedTexts> {
+        if self.past_bound {
+            tracing::warn!(
+                max_choices = MAX_SERVED_CHOICES,
+                "a stream choice index is past the served-output bound and was left out"
+            );
+        }
+        let texts: ServedTexts = (0..self.choice_count)
+            .map(|index| self.texts.remove(&index))
+            .collect();
+        texts.iter().any(Option::is_some).then_some(texts)
     }
-    let texts: ServedTexts = (0..choice_count)
-        .map(|index| texts.remove(&index))
-        .collect();
-    texts.iter().any(Option::is_some).then_some(texts)
+
+    fn push_choice(&mut self, choice: &Json) {
+        let Json::Object(choice) = choice else {
+            return;
+        };
+        let index = match choice_index(choice.get("index")) {
+            ChoiceIndex::Slot(index) => index,
+            ChoiceIndex::BeyondBound => {
+                self.past_bound = true;
+                return;
+            }
+            ChoiceIndex::Invalid => return,
+        };
+        self.choice_count = self.choice_count.max(index.saturating_add(1));
+        let Some(piece) = delta_text(choice.get("delta")) else {
+            return;
+        };
+        self.append(index, piece);
+    }
+
+    fn append(&mut self, index: usize, piece: &str) {
+        let remaining = MAX_SERVED_TEXT_BYTES.saturating_sub(self.joined_bytes);
+        if piece.len() > remaining {
+            return;
+        }
+        self.joined_bytes = self.joined_bytes.saturating_add(piece.len());
+        self.texts.entry(index).or_default().push_str(piece);
+    }
+}
+
+fn delta_text(delta: Option<&Json>) -> Option<&str> {
+    let Some(Json::Object(delta)) = delta else {
+        return None;
+    };
+    match delta.get("content") {
+        Some(Json::Text(piece)) => Some(piece),
+        None
+        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            None
+        }
+    }
 }
 
 fn choice_text(choice: &Json) -> Option<Option<String>> {

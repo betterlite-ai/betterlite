@@ -21,4 +21,7 @@ pub(crate) enum Probe {
         #[serde(default)]
         texts: Option<Vec<Option<String>>>,
     },
+    PartialUsage {
+        usages: Vec<Value>,
+    },
 }

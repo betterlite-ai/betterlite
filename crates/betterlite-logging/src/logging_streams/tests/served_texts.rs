@@ -2,9 +2,18 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::support::json;
+use crate::fields::response::ServedTexts;
 use crate::logging_streams::served_texts::{
-    MAX_SERVED_CHOICES, MAX_SERVED_TEXT_BYTES, served_output_texts, served_stream_output_texts,
+    MAX_SERVED_CHOICES, MAX_SERVED_TEXT_BYTES, StreamTexts, served_output_texts,
 };
+
+fn stream_texts(pieces: &[Json]) -> Option<ServedTexts> {
+    let mut texts = StreamTexts::default();
+    for piece in pieces {
+        texts.push(piece);
+    }
+    texts.finish()
+}
 
 fn text(value: &str) -> Option<String> {
     Some(value.to_owned())
@@ -116,10 +125,7 @@ fn joins_stream_text_pieces() {
         ("0".to_owned(), "he".to_owned()),
         ("0".to_owned(), "llo".to_owned()),
     ]);
-    assert_eq!(
-        served_stream_output_texts(&pieces),
-        Some(vec![text("hello")])
-    );
+    assert_eq!(stream_texts(&pieces), Some(vec![text("hello")]));
 }
 
 fn keeps_holes_for_sparse_stream_indices() {
@@ -128,21 +134,21 @@ fn keeps_holes_for_sparse_stream_indices() {
         ("2".to_owned(), "b".to_owned()),
     ]);
     assert_eq!(
-        served_stream_output_texts(&pieces),
+        stream_texts(&pieces),
         Some(vec![text("a"), None, text("b")])
     );
 }
 
 fn treats_a_missing_stream_index_as_zero() {
     let pieces = vec![json(r#"{"choices":[{"delta":{"content":"a"}}]}"#)];
-    assert_eq!(served_stream_output_texts(&pieces), Some(vec![text("a")]));
+    assert_eq!(stream_texts(&pieces), Some(vec![text("a")]));
 }
 
 fn treats_a_null_stream_index_as_zero() {
     let pieces = vec![json(
         r#"{"choices":[{"index":null,"delta":{"content":"a"}}]}"#,
     )];
-    assert_eq!(served_stream_output_texts(&pieces), Some(vec![text("a")]));
+    assert_eq!(stream_texts(&pieces), Some(vec![text("a")]));
 }
 
 fn ignores_negative_stream_indices() {
@@ -150,9 +156,9 @@ fn ignores_negative_stream_indices() {
         ("-1".to_owned(), "a".to_owned()),
         ("0".to_owned(), "b".to_owned()),
     ]);
-    assert_eq!(served_stream_output_texts(&mixed), Some(vec![text("b")]));
+    assert_eq!(stream_texts(&mixed), Some(vec![text("b")]));
     let negative_only = chunks(&[("-1".to_owned(), "a".to_owned())]);
-    assert_eq!(served_stream_output_texts(&negative_only), None);
+    assert_eq!(stream_texts(&negative_only), None);
 }
 
 fn ignores_a_stream_index_that_is_not_a_number() {
@@ -160,19 +166,19 @@ fn ignores_a_stream_index_that_is_not_a_number() {
         ("\"0\"".to_owned(), "a".to_owned()),
         ("0".to_owned(), "b".to_owned()),
     ]);
-    assert_eq!(served_stream_output_texts(&pieces), Some(vec![text("b")]));
+    assert_eq!(stream_texts(&pieces), Some(vec![text("b")]));
 }
 
 fn drops_a_stream_index_past_the_choice_bound() {
     let past = MAX_SERVED_CHOICES.to_string();
     let pieces = chunks(&[(past, "a".to_owned())]);
-    assert_eq!(served_stream_output_texts(&pieces), None);
+    assert_eq!(stream_texts(&pieces), None);
 }
 
 fn keeps_the_last_stream_index_inside_the_choice_bound() {
     let inside = (MAX_SERVED_CHOICES - 1).to_string();
     let pieces = chunks(&[(inside, "a".to_owned())]);
-    let texts = served_stream_output_texts(&pieces).unwrap();
+    let texts = stream_texts(&pieces).unwrap();
     assert_eq!(texts.len(), MAX_SERVED_CHOICES);
     assert_eq!(texts.last(), Some(&text("a")));
 }
@@ -180,13 +186,13 @@ fn keeps_the_last_stream_index_inside_the_choice_bound() {
 fn drops_a_stream_piece_past_the_text_bound() {
     let oversized = "x".repeat(MAX_SERVED_TEXT_BYTES + 1);
     let pieces = chunks(&[("0".to_owned(), oversized)]);
-    assert_eq!(served_stream_output_texts(&pieces), None);
+    assert_eq!(stream_texts(&pieces), None);
 }
 
 fn keeps_stream_pieces_that_fill_the_text_bound() {
     let filling = "x".repeat(16 * 1024 * 1024);
     let pieces = chunks(&[("0".to_owned(), filling), ("0".to_owned(), "y".to_owned())]);
-    let texts = served_stream_output_texts(&pieces).unwrap();
+    let texts = stream_texts(&pieces).unwrap();
     assert_eq!(texts[0].as_ref().map(String::len), Some(16 * 1024 * 1024));
 }
 
@@ -196,22 +202,22 @@ fn keeps_a_stream_piece_after_a_dropped_one() {
         ("0".to_owned(), oversized),
         ("0".to_owned(), "y".to_owned()),
     ]);
-    assert_eq!(served_stream_output_texts(&pieces), Some(vec![text("y")]));
+    assert_eq!(stream_texts(&pieces), Some(vec![text("y")]));
 }
 
 fn skips_stream_chunks_that_are_not_objects() {
     let pieces = vec![Json::Text("x".to_owned()), chunk("0", "a")];
-    assert_eq!(served_stream_output_texts(&pieces), Some(vec![text("a")]));
+    assert_eq!(stream_texts(&pieces), Some(vec![text("a")]));
 }
 
 fn skips_stream_chunks_without_choices() {
     let pieces = vec![json(r#"{"id":"x"}"#), chunk("0", "a")];
-    assert_eq!(served_stream_output_texts(&pieces), Some(vec![text("a")]));
+    assert_eq!(stream_texts(&pieces), Some(vec![text("a")]));
 }
 
 fn skips_stream_choices_that_are_not_objects() {
     let pieces = vec![json(r#"{"choices":["a"]}"#), chunk("0", "b")];
-    assert_eq!(served_stream_output_texts(&pieces), Some(vec![text("b")]));
+    assert_eq!(stream_texts(&pieces), Some(vec![text("b")]));
 }
 
 fn skips_a_stream_delta_that_is_not_an_object() {
@@ -220,7 +226,7 @@ fn skips_a_stream_delta_that_is_not_an_object() {
         json(r#"{"choices":[{"delta":null}]}"#),
         chunk("0", "b"),
     ];
-    assert_eq!(served_stream_output_texts(&pieces), Some(vec![text("b")]));
+    assert_eq!(stream_texts(&pieces), Some(vec![text("b")]));
 }
 
 fn skips_stream_content_that_is_not_text() {
@@ -230,19 +236,19 @@ fn skips_stream_content_that_is_not_text() {
         json(r#"{"choices":[{"delta":{"content":["a"]}}]}"#),
         json(r#"{"choices":[{"delta":{"content":null}}]}"#),
     ];
-    assert_eq!(served_stream_output_texts(&pieces), None);
+    assert_eq!(stream_texts(&pieces), None);
 }
 
 fn keeps_empty_stream_text() {
     let pieces = vec![chunk("0", "")];
-    assert_eq!(served_stream_output_texts(&pieces), Some(vec![text("")]));
+    assert_eq!(stream_texts(&pieces), Some(vec![text("")]));
 }
 
 fn ignores_tool_call_stream_deltas() {
     let pieces = vec![json(
         r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"lookup","arguments":""}}]}}]}"#,
     )];
-    assert_eq!(served_stream_output_texts(&pieces), None);
+    assert_eq!(stream_texts(&pieces), None);
 }
 
 fn counts_a_stream_index_without_text_as_a_hole() {
@@ -250,14 +256,11 @@ fn counts_a_stream_index_without_text_as_a_hole() {
         json(r#"{"choices":[{"index":1,"delta":{}}]}"#),
         chunk("0", "a"),
     ];
-    assert_eq!(
-        served_stream_output_texts(&pieces),
-        Some(vec![text("a"), None])
-    );
+    assert_eq!(stream_texts(&pieces), Some(vec![text("a"), None]));
 }
 
 fn drops_an_empty_stream() {
-    assert_eq!(served_stream_output_texts(&[]), None);
+    assert_eq!(stream_texts(&[]), None);
 }
 
 fn joins_stream_text_across_higher_indices() {
@@ -265,10 +268,7 @@ fn joins_stream_text_across_higher_indices() {
         ("1".to_owned(), "a".to_owned()),
         ("0".to_owned(), "b".to_owned()),
     ]);
-    assert_eq!(
-        served_stream_output_texts(&pieces),
-        Some(vec![text("b"), text("a")])
-    );
+    assert_eq!(stream_texts(&pieces), Some(vec![text("b"), text("a")]));
 }
 
 #[rstest]
