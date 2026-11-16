@@ -404,19 +404,22 @@ async fn keys_read_the_last_thirty_days_view_without_a_limit() {
     assert_eq!(store.calls(), vec!["keys_by_spend(None)".to_owned()]);
 }
 
+#[rstest]
+#[case::smallest_positive(1, "keys_by_spend(Some(1))")]
+#[case::larger(5, "keys_by_spend(Some(5))")]
 #[tokio::test]
-async fn keys_pass_a_positive_limit() {
+async fn keys_pass_a_positive_limit(#[case] limit: i64, #[case] expected: &str) {
     let mut fake = spend_store();
     fake.keys = vec![key_spend("sk-one", "1.5")];
     let store = store_with(fake);
     let reply = call(
-        "/global/spend/keys?limit=5",
+        &format!("/global/spend/keys?limit={limit}"),
         Some(&admin()),
         state(Some(&store), None, Decimal::ZERO),
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(store.calls(), vec!["keys_by_spend(Some(5))".to_owned()]);
+    assert_eq!(store.calls(), vec![expected.to_owned()]);
 }
 
 #[rstest]
