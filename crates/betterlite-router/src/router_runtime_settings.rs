@@ -55,7 +55,7 @@ const SETTINGS_SHOWN: [&str; 16] = [
 
 const LATENCY_STRATEGY: &str = "latency-based-routing";
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RouterRuntimeSettings {
     pub values: BTreeMap<String, JsonValue>,
     pub routing_groups_input: Option<JsonValue>,
