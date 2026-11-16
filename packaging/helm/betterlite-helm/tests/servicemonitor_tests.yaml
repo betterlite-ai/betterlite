@@ -129,6 +129,12 @@ tests:
       - matchRegex: { path: 'spec.containers[0].args[0]', pattern: '"dev_helm"' }
       - equal: { path: spec.restartPolicy, value: Never }
 
+  - it: keeps the expected env literal when envVars is empty
+    template: tests/test-env-vars.yaml
+    asserts:
+      - isNullOrEmpty: { path: 'spec.containers[0].env[0].value' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'EXAMPLE_ENV" != "dev_helm"' }
+
   - it: renders no ServiceMonitor test pod when the ServiceMonitor is off
     template: tests/test-servicemonitor.yaml
     asserts:
@@ -147,6 +153,7 @@ tests:
       - matchRegex: { path: 'spec.containers[0].args[0]', pattern: kubectl get servicemonitor mon-betterlite }
       - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'ENDPOINT_PORT" != "http"' }
       - matchRegex: { path: 'spec.containers[0].args[0]', pattern: '"10s"' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: kubectl get svc mon-betterlite }
 
   - it: expects the metrics port when the metrics server is enabled
     template: tests/test-servicemonitor.yaml

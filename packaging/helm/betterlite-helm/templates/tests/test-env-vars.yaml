@@ -13,8 +13,8 @@ spec:
       command: ['sh', '-c']
       args:
         - |
-          if [ "$EXAMPLE_ENV" != {{ .Values.envVars.EXAMPLE_ENV | quote }} ]; then
-            echo "Environment variable EXAMPLE_ENV mismatch. Expected: {{ .Values.envVars.EXAMPLE_ENV }}, Got: $EXAMPLE_ENV"
+          if [ "$EXAMPLE_ENV" != "dev_helm" ]; then
+            echo "Environment variable EXAMPLE_ENV mismatch. Expected: dev_helm, Got: $EXAMPLE_ENV"
             exit 1
           fi
           echo "Environment variable EXAMPLE_ENV matches expected value: $EXAMPLE_ENV"

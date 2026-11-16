@@ -12,6 +12,9 @@ deviations:
   - what: The ServiceMonitor test pod expects the metrics Service port when metricsServer.enabled, while LiteLLM's pod always compares the endpoint port with http.
     why: LiteLLM's own ServiceMonitor switches the endpoint to the metrics port when the metrics Service exists, so its test pod fails on that configuration; betterlite's test verifies what the chart rendered.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/tests/test-servicemonitor.yaml#L30-L36
+  - what: The ServiceMonitor test pod checks whether the ServiceMonitor exists with the POSIX redirect >/dev/null 2>&1, where LiteLLM writes &>/dev/null inside sh -c.
+    why: The pod runs under /bin/sh, which is dash on the kubectl image, and dash parses &> as a background job followed by a bare redirect, so LiteLLM's existence check always takes the not-found branch and helm test exits 1; betterlite's redirect works in every POSIX shell.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/tests/test-servicemonitor.yaml#L21
   - what: The kubectl test pod image comes from test.kubectlImage instead of LiteLLM's hardcoded docker.io/bitnamilegacy/kubectl:1.29.2-debian-12-r3.
     why: B8130 defines the value so a cluster can point the test pod at a mirror it already has; the default image is the same one LiteLLM uses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/tests/test-servicemonitor.yaml#L13

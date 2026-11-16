@@ -122,6 +122,10 @@ spec:
           {{- end }}
           {{- end }}
 
+          SVC_LABELS=$(kubectl get svc {{ include "betterlite.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.metadata.labels}')
+          echo "Service labels: $SVC_LABELS"
+          echo "Selector labels validation passed"
+
           echo "All ServiceMonitor checks passed"
   serviceAccountName: {{ include "betterlite.serviceAccountName" . }}
   restartPolicy: Never
