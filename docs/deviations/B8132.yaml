@@ -16,7 +16,7 @@ deviations:
     why: B8130 defines the value so a cluster can point the test pod at a mirror it already has; the default image is the same one LiteLLM uses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/tests/test-servicemonitor.yaml#L13
 kept_bugs:
-  - what: PDB bounds, the HPA CPU and memory targets and the KEDA thresholds go through Go template truthiness, so an explicit 0 in values renders as if the key were absent and the default applies.
+  - what: PDB bounds, the HPA CPU and memory targets, the KEDA thresholds and the KEDA fallback values go through Go template truthiness or sprig default, so an explicit 0 in values renders as if the key were absent and the default applies.
     why: LiteLLM renders them the same way, and every value a working chart uses (percentages, replica targets, utilization above zero) is unaffected; changing it would alter the rendered chart for configurations LiteLLM already accepted.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/poddisruptionbudget.yaml#L25-L32
   - what: An ingress path entry without pathType renders without the field on networking.k8s.io/v1, which the API server rejects.
