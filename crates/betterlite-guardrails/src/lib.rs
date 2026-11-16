@@ -4,6 +4,7 @@ pub mod agent_365_tokens;
 pub mod aim;
 pub mod akto;
 pub mod alice;
+pub mod anthropic_sse;
 pub mod aporia_guardrail;
 pub mod azure_content_safety;
 pub mod azure_prompt_shield;

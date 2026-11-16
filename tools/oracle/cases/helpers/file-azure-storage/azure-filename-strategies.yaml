@@ -1,0 +1,26 @@
+kind: helper
+name: azure-filename-strategies
+env:
+  AZURE_STORAGE_ACCOUNT_NAME: acct
+  AZURE_STORAGE_FILE_SYSTEM: files
+call:
+  file_azure_storage:
+    calls:
+      - {filename: dir/a b.TXT, strategy: original_filename, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: dir/a b.TXT, strategy: timestamp, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: dir/a b.TXT, strategy: timestamp, now_seconds: 1.001, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: dir/a b.TXT, strategy: uuid, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: dir/a b.TXT, strategy: unknown, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: '', strategy: original_filename, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: '..', strategy: original_filename, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: "a\0b.txt", strategy: original_filename, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: .env, strategy: timestamp, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: a.tar.gz, strategy: timestamp, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: a., strategy: timestamp, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: a..b, strategy: timestamp, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: a.jsonl/../../etc/cron.d/x, strategy: timestamp, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: dir/é.txt, strategy: original_filename, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: "dir/a\\b.txt", strategy: original_filename, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: dir/a%20b.txt, strategy: original_filename, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+compare:
+  ignore: []
