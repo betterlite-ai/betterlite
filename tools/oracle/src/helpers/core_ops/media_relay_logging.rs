@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use betterlite_config::cost_adjustments::CostAdjustmentMap;
 use betterlite_core::api::media_relay_logging::routes::{
     is_deepgram_listen_route, is_fal_ai_route,
@@ -140,7 +142,7 @@ fn kwargs_view(kwargs: &PassThroughLoggingKwargs, cost: Option<Decimal>) -> Valu
 
 fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "ValueError".to_owned(),

@@ -55,7 +55,7 @@ pub(super) struct Listener {
     pattern: SizePattern,
     database: TimeZoneDatabase,
     models: ProviderModelSets,
-    tools: GroundingPricing,
+    tools: GroundingPricing<'static, ProviderFormulas>,
 }
 
 impl Listener {

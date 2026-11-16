@@ -90,7 +90,7 @@ struct Holders {
     pattern: SizePattern,
     database: TimeZoneDatabase,
     models: ProviderModelSets,
-    tools: GroundingPricing,
+    tools: GroundingPricing<'static, ProviderFormulas>,
 }
 
 fn holders() -> Result<Holders, Box<HelperError>> {
@@ -169,9 +169,9 @@ pub(super) async fn listen_outcome(
     let resolution = lookup.resolution();
     let holders = holders()?;
     let image = SyncImage {
-        build: |lookup, database, moment| ProviderImagePricing {
-            lookup,
-            database,
+        build: |price_lookup, zone_database, moment| ProviderImagePricing {
+            lookup: price_lookup,
+            database: zone_database,
             moment,
         },
         lookup: &lookup,
