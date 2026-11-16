@@ -47,7 +47,7 @@ fn matches_the_pinned_litellm_request_preparation(
 #[test]
 fn an_unknown_option_is_rejected() {
     let input = serde_json::json!({
-        "creates": [{"model": "m", "prompt": "p", "api_base": "b", "bogus": 1}],
+        "creates": [{"model": "m", "prompt": "p", "api_base": "b", "bogus": 1_i32}],
         "edits": [],
     });
     assert!(super::Op::check(&input).is_err());

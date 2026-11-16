@@ -1,9 +1,10 @@
+use std::future::ready;
 use std::sync::Mutex;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_openai::vector_stores::Headers;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::credential_sources::getters::VertexParams;
 use crate::token_cache::error::CredentialCacheError;
@@ -44,9 +45,9 @@ impl MintAccessToken for RecordingMint {
             project.map(str::to_owned),
         ));
         if self.fails {
-            return Box::pin(std::future::ready(Err(CredentialCacheError::MissingToken)));
+            return Box::pin(ready(Err(CredentialCacheError::MissingToken)));
         }
-        Box::pin(std::future::ready(Ok(AccessToken {
+        Box::pin(ready(Ok(AccessToken {
             token: SecretString::from("minted-token"),
             project: project.unwrap_or("project-1").to_owned(),
         })))
@@ -83,13 +84,11 @@ async fn headers_start_with_the_minted_bearer_and_json_defaults() {
     assert_eq!(
         headers
             .get("Authorization")
-            .map(|value| value.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("Bearer minted-token")
     );
     assert_eq!(
-        headers
-            .get("Content-Type")
-            .map(|value| value.expose_secret()),
+        headers.get("Content-Type").map(ExposeSecret::expose_secret),
         Some("application/json")
     );
     assert_eq!(
@@ -122,17 +121,15 @@ async fn caller_headers_override_the_defaults_and_are_kept() {
     assert_eq!(
         headers
             .get("Authorization")
-            .map(|value| value.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("Bearer caller")
     );
     assert_eq!(
-        headers
-            .get("Content-Type")
-            .map(|value| value.expose_secret()),
+        headers.get("Content-Type").map(ExposeSecret::expose_secret),
         Some("text/plain")
     );
     assert_eq!(
-        headers.get("X-Extra").map(|value| value.expose_secret()),
+        headers.get("X-Extra").map(ExposeSecret::expose_secret),
         Some("1")
     );
 }
