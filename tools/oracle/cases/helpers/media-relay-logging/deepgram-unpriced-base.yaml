@@ -1,0 +1,17 @@
+kind: helper
+name: media-relay-logging-deepgram-unpriced-base
+call:
+  media_relay_logging:
+    deepgram_routes: []
+    fal_routes: []
+    deepgram_listens:
+      - upstream_url: "https://api.deepgram.com/v1/listen?model=nova-9&redact=pci"
+        messages:
+          - {type: Metadata, duration: 2, channels: 2}
+          - {type: Results, is_final: true, channel: {alternatives: [{transcript: hello}]}}
+        kwargs: {}
+        catalog:
+          deepgram/streaming/redact: {litellm_provider: deepgram, input_cost_per_second: 0.00003333}
+    fal_passthroughs: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: media-relay-logging-fal-route-detection-no-match
+call:
+  media_relay_logging:
+    deepgram_routes: []
+    fal_routes:
+      - {url_route: "https://queue.fal.run/fal-ai/flux/dev", custom_llm_provider: null}
+      - {url_route: "https://queue.fal.run/fal-ai/flux/dev", custom_llm_provider: openai}
+      - {url_route: "https://queue.fal.run/fal-ai/flux/dev", custom_llm_provider: FAL_AI}
+      - {url_route: "https://queue.fal.run/fal-ai/flux/dev", custom_llm_provider: fal_ai_extra}
+    deepgram_listens: []
+    fal_passthroughs: []
+env: {}
+compare: {ignore: []}

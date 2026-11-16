@@ -1,0 +1,13 @@
+kind: helper
+name: media-relay-logging-deepgram-route-detection-listen
+call:
+  media_relay_logging:
+    deepgram_routes:
+      - "https://gateway.example/deepgram/v1/listen"
+      - "https://gateway.example/deepgram/v1/listen?model=nova-3"
+      - "https://gateway.example/deepgram/v2/projects/p/listen"
+    fal_routes: []
+    deepgram_listens: []
+    fal_passthroughs: []
+env: {}
+compare: {ignore: []}
