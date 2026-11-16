@@ -50,6 +50,9 @@ fn automatic_detection_follows_the_override_rules(
     #[case] expected: Option<&str>,
 ) {
     let detection = map_automatic_turn_detection(&parse::<TurnDetection>(source));
-    let expected = expected.map_or(Json::Null, json);
+    let expected = match expected {
+        Some(text) => parse::<Json>(text),
+        None => Json::Null,
+    };
     assert_eq!(as_json(&detection), expected);
 }
