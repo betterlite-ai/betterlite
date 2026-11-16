@@ -19,10 +19,6 @@ TEXT_BASE: Final = "https://text.test/v1"
 # a fixed start time keeps the helper off the clock; Logging only stores it in its details
 LOG_START: Final = datetime(1970, 1, 1, tzinfo=UTC)
 BODY_KEYS: Final = frozenset({"model", "input"})
-NONE_MESSAGES: Final = (
-    "/image/embeddings route returned None Embeddings.",
-    "/v1/embeddings route returned None Embeddings.",
-)
 
 
 class HeaderCall(TypedDict):
@@ -101,8 +97,7 @@ class HiddenModel(BaseModel):
 
 
 # LiteLLM raises a bare Exception for an error inside a reply and sets status_code on it
-class ReplyErrorFacts(BaseModel):
-    model_config = ConfigDict(from_attributes=True, extra="ignore")
+class ReplyErrorFacts(Protocol):
     status_code: JsonValue
 
 
@@ -231,8 +226,9 @@ def flow_outcome(flow: FlowCall) -> dict[str, JsonValue]:
         kind = "ValueError"
     except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L180
         kind = "Exception"
-        if str(error) not in NONE_MESSAGES:
-            status = ReplyErrorFacts.model_validate(error).status_code
+        # only the reply-error Exception carries status_code; the None Embeddings ones carry none
+        if hasattr(error, "status_code"):
+            status = cast(ReplyErrorFacts, error).status_code  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L614-L617
     else:
         return answer_outcome(state, response)
     finally:
