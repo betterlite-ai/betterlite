@@ -52,12 +52,19 @@ pub(crate) struct RowFields {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Step {
-    action: String,
+    action: Action,
     principal: Option<PrincipalFields>,
     skill_id: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
     available: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Action {
+    List,
+    Get,
 }
 
 #[derive(Debug, Deserialize)]

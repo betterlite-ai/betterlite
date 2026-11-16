@@ -7,9 +7,9 @@ use betterlite_core::api::stored_skill_reads::stored_skill::StoredSkill;
 use betterlite_core::skills::store::{DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET, SkillPage};
 use serde_json::{Value, json};
 
-use super::Step;
 use super::principal::principal_of;
 use super::scripted::Scripted;
+use super::{Action, Step};
 use betterlite_oracle_helper_api::error::HelperError;
 
 fn page_of(step: &Step) -> SkillPage {
@@ -57,10 +57,9 @@ pub(super) async fn run_steps(
     for step in steps {
         scripted.set_available(step.available.unwrap_or(true));
         let caller = step.principal.as_ref().map(principal_of).transpose()?;
-        let answer = match step.action.as_str() {
-            "list" => list_answer(reads.list_skills(page_of(step), caller.as_ref()).await),
-            "get" => skill_answer(reads, step, caller.as_ref()).await,
-            other => json!({"action": other, "error": "invalid_input"}),
+        let answer = match step.action {
+            Action::List => list_answer(reads.list_skills(page_of(step), caller.as_ref()).await),
+            Action::Get => skill_answer(reads, step, caller.as_ref()).await,
         };
         results.push(answer);
     }
@@ -82,12 +81,11 @@ async fn skill_answer(
     step: &Step,
     caller: Option<&Principal>,
 ) -> Value {
-    let action = step.action.as_str();
     let Some(skill_id) = step.skill_id.as_deref() else {
-        return json!({"action": action, "error": "invalid_input"});
+        return json!({"action": "get", "error": "invalid_input"});
     };
     match reads.get_skill(skill_id, caller).await {
-        Ok(skill) => json!({"action": action, "row": skill_json(&skill)}),
-        Err(error) => json!({"action": action, "error": token(&error)}),
+        Ok(skill) => json!({"action": "get", "row": skill_json(&skill)}),
+        Err(error) => json!({"action": "get", "error": token(&error)}),
     }
 }
