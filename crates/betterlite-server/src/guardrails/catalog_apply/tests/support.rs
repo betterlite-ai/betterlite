@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use axum::Router;
-use axum::body::Body as HttpBody;
+use axum::body::{Body as HttpBody, to_bytes};
 use axum::http::Request;
 use axum::response::Response;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -97,14 +97,14 @@ impl World {
         self.router().oneshot(request).await.unwrap()
     }
 
-    fn router(&self) -> Router {
+    fn ports(&self) -> ApplyPorts {
         let log: Option<Arc<dyn ApplyLog>> = self.log.map(|mode| -> Arc<dyn ApplyLog> {
             Arc::new(FakeLog {
                 mode,
                 events: Arc::clone(&self.events),
             })
         });
-        let ports = ApplyPorts {
+        ApplyPorts {
             runner: Arc::new(FakeRunner {
                 mode: self.runner.clone(),
                 events: Arc::clone(&self.events),
@@ -119,7 +119,10 @@ impl World {
             sink: Arc::new(FakeSink {
                 events: Arc::clone(&self.events),
             }),
-        };
+        }
+    }
+
+    fn router(&self) -> Router {
         let registry = FakeRegistry {
             callback: callback(&self.guardrail_name, self.event_hook.clone()),
             present: Arc::clone(&self.present),
@@ -131,7 +134,7 @@ impl World {
             resyncs: Arc::clone(&self.resyncs),
         });
         routes(CatalogApplyState {
-            ports: Arc::new(ports),
+            ports: Arc::new(self.ports()),
             lookup: Arc::new(registry),
             read_through: Arc::new(read_through),
             roots: Arc::clone(&self.roots),
@@ -353,7 +356,7 @@ fn single<T, F>(events: &[Event], pick: F, what: &str) -> T
 where
     F: Fn(&Event) -> Option<T>,
 {
-    let found: Vec<T> = events.iter().filter_map(pick).collect();
+    let mut found: Vec<T> = events.iter().filter_map(pick).collect();
     assert_eq!(found.len(), 1, "{what}");
     found.swap_remove(0)
 }
@@ -423,7 +426,7 @@ pub(super) fn sink_record(events: &[Event]) -> GuardrailInvocationRecord {
 }
 
 pub(super) async fn body_bytes(response: Response) -> Vec<u8> {
-    axum::body::to_bytes(response.into_body(), usize::MAX)
+    to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap()
         .to_vec()

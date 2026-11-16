@@ -4,7 +4,7 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::Extension;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::Serialize;
 
@@ -73,10 +73,10 @@ pub fn check_blocked_words(file_content: &str) -> BlockedWordsVerdict {
             };
         }
     };
-    let GuardrailValue::Object(mut document) = document else {
+    let GuardrailValue::Object(mut mapping) = document else {
         return BlockedWordsVerdict::NotAFile;
     };
-    match document.remove("blocked_words") {
+    match mapping.remove("blocked_words") {
         None => BlockedWordsVerdict::NotAFile,
         Some(GuardrailValue::Array(entries)) => validate_entries(&entries),
         Some(_not_a_list) => BlockedWordsVerdict::NotAList,
@@ -140,7 +140,7 @@ fn value_text(value: &GuardrailValue) -> String {
             "{{{}}}",
             fields
                 .iter()
-                .map(|(key, value)| format!("{key}: {}", value_text(value)))
+                .map(|(key, item)| format!("{key}: {}", value_text(item)))
                 .collect::<Vec<_>>()
                 .join(", ")
         ),

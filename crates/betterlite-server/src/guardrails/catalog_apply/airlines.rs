@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::extract::Extension;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use betterlite_guardrails::content_filter::competitor_intent_airline::MAJOR_AIRLINES_JSON;
 use serde::{Deserialize, Serialize};
 

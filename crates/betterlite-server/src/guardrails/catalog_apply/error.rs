@@ -1,3 +1,5 @@
+use std::io::Error as IoError;
+
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -6,6 +8,7 @@ use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_records::error::GuardrailRecordError;
 use serde::Serialize;
 use thiserror::Error;
+use tokio::task::JoinError;
 
 use crate::guardrails::callback_caps::errors::ProxyHookError;
 
@@ -23,12 +26,12 @@ pub enum CatalogApplyError {
     #[error("Error reading category file: {source}")]
     CategoryRead {
         #[source]
-        source: std::io::Error,
+        source: IoError,
     },
     #[error("Error reading category file: {source}")]
     CategoryBlocking {
         #[source]
-        source: tokio::task::JoinError,
+        source: JoinError,
     },
     #[error("Error reading major_airlines.json: {source}")]
     AirlinesRead {
@@ -212,8 +215,8 @@ fn proxy_error(
             code: WireField::Text(code.to_owned()),
         },
     };
-    let status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    (status, Json(body)).into_response()
+    let status_code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    (status_code, Json(body)).into_response()
 }
 
 #[derive(Serialize)]

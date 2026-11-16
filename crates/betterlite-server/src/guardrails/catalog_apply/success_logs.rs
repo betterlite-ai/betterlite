@@ -39,7 +39,7 @@ pub(super) async fn emit(
     logging: &SuccessLogging<'_>,
 ) -> ApplyGuardrailResponse {
     let fallback = response.clone();
-    let response = match logging
+    let hooked = match logging
         .hooks
         .post_call_success(logging.data, logging.caller, response)
         .await
@@ -52,10 +52,10 @@ pub(super) async fn emit(
         }
     };
     let Some(log) = logging.log else {
-        return response;
+        return hooked;
     };
     let payload = SuccessPayload {
-        response: response.clone(),
+        response: hooked.clone(),
     };
     let end_time = SystemTime::now();
     if log
@@ -71,5 +71,5 @@ pub(super) async fn emit(
     {
         tracing::error!("apply_guardrail: success_handler submit failed");
     }
-    response
+    hooked
 }

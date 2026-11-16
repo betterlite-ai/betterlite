@@ -7,7 +7,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Extension, State};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::routes::{
@@ -65,7 +65,7 @@ where
     L: GuardrailLookup + 'static,
     R: Resync + 'static,
 {
-    let Some(Extension(caller)) = caller else {
+    let Some(Extension(auth)) = caller else {
         return unauthenticated();
     };
     let request: ApplyGuardrailRequest = match decode_body(&body) {
@@ -78,9 +78,9 @@ where
         log: None,
     };
     let hooks = state.ports.hooks.as_ref();
-    match attempt(&state, &caller, &request, &mut exchange).await {
-        Ok(response) => answer(hooks, &caller, started_at, response, &exchange).await,
-        Err(error) => failure(hooks, &caller, error, &exchange).await,
+    match attempt(&state, &auth, &request, &mut exchange).await {
+        Ok(response) => answer(hooks, &auth, started_at, response, &exchange).await,
+        Err(error) => failure(hooks, &auth, error, &exchange).await,
     }
 }
 
@@ -98,8 +98,8 @@ async fn answer(
         log: exchange.log.as_deref(),
         started_at,
     };
-    let response = success_logs::emit(response, &logging).await;
-    (StatusCode::OK, Json(response)).into_response()
+    let emitted = success_logs::emit(response, &logging).await;
+    (StatusCode::OK, Json(emitted)).into_response()
 }
 
 async fn attempt<L, R>(
@@ -162,12 +162,14 @@ where
         guardrail_name,
     )
     .await;
-    match found {
-        Some(callback) => Ok(callback),
-        None => Err(CatalogApplyError::GuardrailNotFound {
-            guardrail_name: guardrail_name.to_owned(),
-        }),
-    }
+    found.map_or_else(
+        || {
+            Err(CatalogApplyError::GuardrailNotFound {
+                guardrail_name: guardrail_name.to_owned(),
+            })
+        },
+        Ok,
+    )
 }
 
 async fn invoke(
@@ -214,26 +216,30 @@ async fn failure(
     error: CatalogApplyError,
     exchange: &Exchange,
 ) -> Response {
-    let error = failure_handlers(exchange.log.as_deref(), error).await;
-    let error = hooked_failure(hooks, caller, error, &exchange.data).await;
-    error.into_response()
+    let handled = failure_handlers(exchange.log.as_deref(), error).await;
+    let hooked = hooked_failure(hooks, caller, handled, &exchange.data).await;
+    hooked.into_response()
 }
 
 async fn failure_handlers(
     log: Option<&dyn ApplyLog>,
     error: CatalogApplyError,
 ) -> CatalogApplyError {
-    let Some(log) = log else {
+    let Some(handle) = log else {
         return error;
     };
     if error.is_http() {
         return error;
     }
     let traceback = format!("{:?}", Backtrace::capture());
-    if log.async_failure_handler(&error, &traceback).await.is_err() {
+    if handle
+        .async_failure_handler(&error, &traceback)
+        .await
+        .is_err()
+    {
         tracing::error!("apply_guardrail: async_failure_handler failed");
     }
-    if log.submit_failure_handler(&error, &traceback).is_err() {
+    if handle.submit_failure_handler(&error, &traceback).is_err() {
         tracing::error!("apply_guardrail: failure_handler submit failed");
     }
     error

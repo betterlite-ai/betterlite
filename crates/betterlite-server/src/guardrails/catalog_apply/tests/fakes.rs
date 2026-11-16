@@ -199,9 +199,8 @@ pub(super) struct FakeLog {
 }
 
 impl FakeLog {
-    fn record(&self, event: Event) -> Result<(), ApplyLogError> {
+    fn record(&self, event: Event) {
         self.events.lock().unwrap().push(event);
-        Ok(())
     }
 
     fn fail_with(
@@ -210,7 +209,7 @@ impl FakeLog {
         event: Event,
         error: ApplyLogError,
     ) -> Result<(), ApplyLogError> {
-        self.record(event)?;
+        self.record(event);
         if self.mode == mode {
             return Err(error);
         }
@@ -280,7 +279,7 @@ impl ApplyLog for FakeLog {
         self.record(Event::FailureHandler {
             handler: Handler::Async,
             error: error.to_string(),
-        })?;
+        });
         if self.mode == LogMode::FailFailureHandlers {
             return Err(ApplyLogError::Failed {
                 message: "async failure handler".to_owned(),
@@ -304,7 +303,7 @@ impl ApplyLog for FakeLog {
             start_time,
             end_time,
             cache_hit,
-        })?;
+        });
         if self.mode == LogMode::FailSuccessHandlers {
             return Err(ApplyLogError::Unavailable);
         }

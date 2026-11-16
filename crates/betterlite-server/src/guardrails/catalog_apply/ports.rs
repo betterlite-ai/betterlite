@@ -35,7 +35,7 @@ pub enum ApplyLogError {
     Failed { message: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SuccessPayload {
     pub response: ApplyGuardrailResponse,
 }

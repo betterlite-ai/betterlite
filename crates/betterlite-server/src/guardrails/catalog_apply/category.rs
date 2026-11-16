@@ -6,7 +6,7 @@ use axum::Json;
 use axum::Router;
 use axum::extract::{Extension, Path as UrlPath, State};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use axum::routing::get;
 use betterlite_config::sections::content_filter_catalog::categories::{
     category_dirs, find_category_file,
@@ -74,17 +74,20 @@ fn read_category(
     if safe_join(Path::new(CATEGORIES_DIR), &[yaml_name.as_str()]).is_err() {
         return Err(CatalogApplyError::InvalidCategoryName);
     }
-    let roots: Vec<&Path> = roots.iter().map(PathBuf::as_path).collect();
-    let Some(found) = find_category_file(&category_name, &roots) else {
+    let search_roots: Vec<&Path> = roots.iter().map(PathBuf::as_path).collect();
+    let Some(found) = find_category_file(&category_name, &search_roots) else {
         return Err(CatalogApplyError::CategoryNotFound { category_name });
     };
-    if !category_dirs(&roots)
+    if !category_dirs(&search_roots)
         .iter()
         .any(|category_dir| is_within(&found, category_dir))
     {
         return Err(CatalogApplyError::InvalidCategoryName);
     }
-    let file_type = if found.to_str().is_some_and(|path| path.ends_with(".yaml")) {
+    let file_type = if found
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("yaml"))
+    {
         "yaml"
     } else {
         "json"

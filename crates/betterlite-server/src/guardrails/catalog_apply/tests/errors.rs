@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
+use std::io::Error as IoError;
 
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::IntoResponse as _;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 
 use super::super::error::CatalogApplyError;
@@ -40,7 +41,7 @@ fn hook_error_status_comes_from_the_hook_error() {
 #[test]
 fn category_read_keeps_the_cause_in_the_detail() {
     let error = CatalogApplyError::CategoryRead {
-        source: std::io::Error::other("disk on fire"),
+        source: IoError::other("disk on fire"),
     };
     assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(error.detail(), "Error reading category file: disk on fire");
