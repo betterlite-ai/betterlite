@@ -37,14 +37,16 @@ fn create_forwards_identity_metadata_and_caller_arguments() {
         let mut metadata = IndexMap::new();
         metadata.insert("tier".to_owned(), number(2));
         let alice = principal("alice");
-        let mut creation = HostedSkillCreation::default();
-        creation.display_title = Some("Title");
-        creation.description = Some("Desc");
-        creation.instructions = Some("Do");
-        creation.metadata = Some(&metadata);
-        creation.user_id = Some("bob");
-        creation.principal = Some(&alice);
-        creation.litellm_call_id = Some("call-9");
+        let creation = HostedSkillCreation {
+            display_title: Some("Title"),
+            description: Some("Desc"),
+            instructions: Some("Do"),
+            metadata: Some(&metadata),
+            user_id: Some("bob"),
+            principal: Some(&alice),
+            litellm_call_id: Some("call-9"),
+            ..HostedSkillCreation::default()
+        };
         let skill = ops.create_skill(&mut logging, creation).await.unwrap();
         assert_eq!(skill.id, support::SKILL_ID);
         assert_eq!(skill.display_title.as_deref(), Some("Title"));
@@ -82,9 +84,11 @@ fn create_encodes_nested_metadata_as_row_json() {
         let mut metadata = IndexMap::new();
         metadata.insert("note".to_owned(), Json::Object(nested));
         let alice = principal("alice");
-        let mut creation = HostedSkillCreation::default();
-        creation.metadata = Some(&metadata);
-        creation.principal = Some(&alice);
+        let creation = HostedSkillCreation {
+            metadata: Some(&metadata),
+            principal: Some(&alice),
+            ..HostedSkillCreation::default()
+        };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(
@@ -102,11 +106,13 @@ fn create_uses_the_first_uploaded_tuple_and_ignores_later_ones() {
         let mut logging = support::logging_state();
         let files = uploads();
         let alice = principal("alice");
-        let mut creation = HostedSkillCreation::default();
-        creation.files = Some(&files);
-        creation.file_name = Some("explicit.zip");
-        creation.file_type = Some("application/x-explicit");
-        creation.principal = Some(&alice);
+        let creation = HostedSkillCreation {
+            files: Some(&files),
+            file_name: Some("explicit.zip"),
+            file_type: Some("application/x-explicit"),
+            principal: Some(&alice),
+            ..HostedSkillCreation::default()
+        };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(write.file_name.as_deref(), Some("first.zip"));
@@ -123,12 +129,14 @@ fn create_keeps_explicit_bytes_over_the_uploaded_tuples() {
         let mut logging = support::logging_state();
         let files = uploads();
         let alice = principal("alice");
-        let mut creation = HostedSkillCreation::default();
-        creation.files = Some(&files);
-        creation.file_content = Some(b"explicit");
-        creation.file_name = Some("explicit.zip");
-        creation.file_type = Some("application/x-explicit");
-        creation.principal = Some(&alice);
+        let creation = HostedSkillCreation {
+            files: Some(&files),
+            file_content: Some(b"explicit"),
+            file_name: Some("explicit.zip"),
+            file_type: Some("application/x-explicit"),
+            principal: Some(&alice),
+            ..HostedSkillCreation::default()
+        };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(write.file_name.as_deref(), Some("explicit.zip"));
@@ -145,12 +153,14 @@ fn create_lets_the_tuples_replace_empty_explicit_bytes() {
         let mut logging = support::logging_state();
         let files = uploads();
         let alice = principal("alice");
-        let mut creation = HostedSkillCreation::default();
-        creation.files = Some(&files);
-        creation.file_content = Some(b"");
-        creation.file_name = Some("explicit.zip");
-        creation.file_type = Some("application/x-explicit");
-        creation.principal = Some(&alice);
+        let creation = HostedSkillCreation {
+            files: Some(&files),
+            file_content: Some(b""),
+            file_name: Some("explicit.zip"),
+            file_type: Some("application/x-explicit"),
+            principal: Some(&alice),
+            ..HostedSkillCreation::default()
+        };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(write.file_name.as_deref(), Some("first.zip"));
@@ -171,11 +181,13 @@ fn create_keeps_a_null_mime_type_from_a_three_element_tuple() {
             SkillUploadType::Given(None),
         )];
         let alice = principal("alice");
-        let mut creation = HostedSkillCreation::default();
-        creation.files = Some(&files);
-        creation.file_name = Some("explicit.zip");
-        creation.file_type = Some("application/x-explicit");
-        creation.principal = Some(&alice);
+        let creation = HostedSkillCreation {
+            files: Some(&files),
+            file_name: Some("explicit.zip"),
+            file_type: Some("application/x-explicit"),
+            principal: Some(&alice),
+            ..HostedSkillCreation::default()
+        };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(write.file_name.as_deref(), Some("first.zip"));
@@ -191,11 +203,13 @@ fn create_ignores_an_empty_tuple_list() {
         let mut logging = support::logging_state();
         let files: [SkillUpload<'_>; 0] = [];
         let alice = principal("alice");
-        let mut creation = HostedSkillCreation::default();
-        creation.files = Some(&files);
-        creation.file_name = Some("explicit.zip");
-        creation.file_type = Some("application/x-explicit");
-        creation.principal = Some(&alice);
+        let creation = HostedSkillCreation {
+            files: Some(&files),
+            file_name: Some("explicit.zip"),
+            file_type: Some("application/x-explicit"),
+            principal: Some(&alice),
+            ..HostedSkillCreation::default()
+        };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(write.file_name.as_deref(), Some("explicit.zip"));
@@ -211,9 +225,11 @@ fn create_updates_the_call_context_before_the_store_fails() {
         let ops = support::ops(repository.clone());
         let mut logging = support::logging_state();
         let alice = principal("alice");
-        let mut creation = HostedSkillCreation::default();
-        creation.display_title = Some("Title");
-        creation.principal = Some(&alice);
+        let creation = HostedSkillCreation {
+            display_title: Some("Title"),
+            principal: Some(&alice),
+            ..HostedSkillCreation::default()
+        };
         let outcome = ops.create_skill(&mut logging, creation).await;
         assert!(matches!(
             outcome,
@@ -251,8 +267,10 @@ fn create_forwards_user_id_when_the_caller_has_no_principal() {
         let repository = ScriptedRepository::default();
         let ops = support::ops(repository.clone());
         let mut logging = support::logging_state();
-        let mut creation = HostedSkillCreation::default();
-        creation.user_id = Some("bob");
+        let creation = HostedSkillCreation {
+            user_id: Some("bob"),
+            ..HostedSkillCreation::default()
+        };
         ops.create_skill(&mut logging, creation).await.unwrap();
         let write = created_write(&repository);
         assert_eq!(write.created_by, "bob");

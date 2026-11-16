@@ -10,6 +10,7 @@ use crate::api::skills::get_delete::call::LITELLM_PROXY_PROVIDER;
 use crate::skills::store::SkillPage;
 
 // The arguments each hosted skill call records before it reaches the store
+#[derive(Clone, Copy)]
 pub(super) enum SkillLog<'request> {
     Create(Option<&'request str>),
     List(SkillPage),

@@ -45,7 +45,7 @@ class HostedHandler(Protocol):
         litellm_call_id: str | None,
     ) -> Pending: ...
 
-    def list_skills_handler(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/transformation.py#L159-L167
+    def list_skills_handler(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/transformation.py#L159-L167
         self, *, limit: int, offset: int, _is_async: bool, logging_obj: Logging,
         litellm_call_id: str | None, user_api_key_dict: UserAPIKeyAuth | None,
     ) -> Pending: ...
