@@ -35,7 +35,7 @@ pub async fn mask_anthropic_sse_stream<A>(
 where
     A: StreamAssembly,
 {
-    let chunks = collect_frames(first_chunk, rest).await?;
+    let chunks = collect_frames::<A>(first_chunk, rest).await?;
     let raw_chunks: Vec<Vec<u8>> = chunks
         .iter()
         .filter_map(|chunk| match chunk {
