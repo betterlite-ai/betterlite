@@ -2436,6 +2436,7 @@ dependencies = [
  "jiff",
  "lru",
  "mime_guess",
+ "mutants",
  "nix",
  "num-traits",
  "percent-encoding",
