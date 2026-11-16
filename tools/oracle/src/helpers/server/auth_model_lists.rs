@@ -34,18 +34,16 @@ pub(crate) struct Grants {
     proxy_model_list: Vec<String>,
     model_access_groups: IndexMap<String, Vec<String>>,
     include_model_access_groups: bool,
+    #[serde(default)]
+    only_model_access_groups: bool,
 }
 #[derive(Deserialize)]
 pub(crate) struct CompleteModelList {
-    key_models: Vec<String>,
-    team_models: Vec<String>,
-    proxy_model_list: Vec<String>,
+    #[serde(flatten)]
+    grants: Grants,
     user_model: Option<String>,
     infer_model_from_keys: bool,
     return_wildcard_routes: bool,
-    model_access_groups: IndexMap<String, Vec<String>>,
-    include_model_access_groups: bool,
-    only_model_access_groups: bool,
     team_id: Option<String>,
     deployments: Vec<Row>,
     catalog: IndexMap<String, Vec<String>>,
@@ -70,7 +68,7 @@ impl Helper for Op {
             Input::TeamModels(case) => team_models(case),
             Input::CompleteModelList(case) => complete_model_list(case),
             Input::McpServerIds(case) => mcp_server_ids(case),
-            Input::AllFallbacks(case) => all_fallbacks(case),
+            Input::AllFallbacks(case) => Ok(all_fallbacks(case)),
         }
     }
 }
@@ -114,21 +112,21 @@ fn complete_model_list(case: &CompleteModelList) -> HelperResult {
         deployments: Some(&deployments),
     };
     let request = ListingRequest {
-        key_models: &case.key_models,
-        team_models: &case.team_models,
+        key_models: &case.grants.key_models,
+        team_models: &case.grants.team_models,
         user_model: case.user_model.as_deref(),
         team_id: case.team_id.as_deref(),
-        model_access_groups: &case.model_access_groups,
+        model_access_groups: &case.grants.model_access_groups,
         flags: ListingFlags {
             infer_model_from_keys: case.infer_model_from_keys,
             return_wildcard_routes: case.return_wildcard_routes,
             groups: AccessGroupScope {
-                include: case.include_model_access_groups,
-                only: case.only_model_access_groups,
+                include: case.grants.include_model_access_groups,
+                only: case.grants.only_model_access_groups,
             },
         },
     };
-    get_complete_model_list(&case.proxy_model_list, &request, &context)
+    get_complete_model_list(&case.grants.proxy_model_list, &request, &context)
         .map_err(|error| failure(&error))
         .and_then(to_value)
 }
@@ -142,14 +140,14 @@ fn mcp_server_ids(case: &McpServerIds) -> HelperResult {
         case.object_permission_id.as_deref(),
     )))
 }
-fn all_fallbacks(case: &AllFallbacks) -> HelperResult {
+fn all_fallbacks(case: &AllFallbacks) -> serde_json::Value {
     let settings = case.settings.as_ref().map(|configured| Settings {
         fallbacks: configured.fallbacks.clone(),
         context_window_fallbacks: configured.context_window_fallbacks.clone(),
         content_policy_fallbacks: configured.content_policy_fallbacks.clone(),
         max_fallbacks: 0,
     });
-    let (fallbacks, warnings) = captured(|| {
+    let (fallbacks, warnings) = captured(&|| {
         get_all_fallbacks(
             &case.model,
             &case.fallback_type,
@@ -157,9 +155,9 @@ fn all_fallbacks(case: &AllFallbacks) -> HelperResult {
             &Resolver,
         )
     });
-    Ok(json!({"fallbacks": fallbacks, "warnings": warnings}))
+    json!({"fallbacks": fallbacks, "warnings": warnings})
 }
 // ast-grep-ignore: no-one-line-functions
-fn to_value<T: serde::Serialize>(value: T) -> HelperResult {
+fn to_value(value: Vec<String>) -> HelperResult {
     serde_json::to_value(value).map_err(|error| failure(&error))
 }

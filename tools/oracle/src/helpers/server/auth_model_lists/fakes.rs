@@ -53,15 +53,17 @@ impl ProviderModels for Catalog<'_> {
         if !is_declared_provider(name) {
             return None;
         }
-        let key = match parameters {
-            None => name.to_owned(),
-            Some(found) => format!(
-                "{name}|{}|{}|{}",
-                found.text("api_key").unwrap_or("None"),
-                found.text("api_base").unwrap_or("None"),
-                found.text("litellm_credential_name").unwrap_or("None"),
-            ),
-        };
+        let key = parameters.map_or_else(
+            || name.to_owned(),
+            |found| {
+                format!(
+                    "{name}|{}|{}|{}",
+                    found.text("api_key").unwrap_or("None"),
+                    found.text("api_base").unwrap_or("None"),
+                    found.text("litellm_credential_name").unwrap_or("None"),
+                )
+            },
+        );
         Some(self.0.get(&key).cloned().unwrap_or_default())
     }
 }
@@ -153,7 +155,7 @@ impl<Inner: Subscriber> Layer<Inner> for Logs {
             .push(message.0);
     }
 }
-pub(crate) fn captured<T, F: FnOnce() -> T>(run: F) -> (T, Vec<String>) {
+pub(crate) fn captured<T>(run: &dyn Fn() -> T) -> (T, Vec<String>) {
     let logs = Logs::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());
     let value = with_default(subscriber, run);
@@ -164,7 +166,7 @@ pub(crate) fn captured<T, F: FnOnce() -> T>(run: F) -> (T, Vec<String>) {
         .clone();
     (value, warnings)
 }
-pub(crate) fn failure<E: Display>(error: &E) -> Box<HelperError> {
+pub(crate) fn failure(error: &dyn Display) -> Box<HelperError> {
     Box::new(HelperError {
         class: "ModelListError".to_owned(),
         status: None,
