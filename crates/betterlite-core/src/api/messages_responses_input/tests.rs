@@ -87,6 +87,7 @@ fn translated(messages: &str) -> Json {
     r#"[{"role": "user", "content": ""}]"#,
     r#"[{"type": "message", "role": "user", "content": [{"type": "input_text", "text": ""}]}]"#
 )]
+#[case::empty_content_list(r#"[{"role": "user", "content": []}]"#, "[]")]
 fn document_file_data(#[case] messages: &str, #[case] expected: &str) {
     assert_eq!(translated(messages), json(expected));
 }
@@ -237,6 +238,10 @@ fn tool_result_output(#[case] messages: &str, #[case] expected: &str) {
 )]
 #[case::assistant_empty_string(
     r#"[{"role": "assistant", "content": ""}]"#,
+    r#"[{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": ""}]}]"#
+)]
+#[case::empty_text_block_kept(
+    r#"[{"role": "assistant", "content": [{"type": "text", "text": ""}]}]"#,
     r#"[{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": ""}]}]"#
 )]
 #[case::thinking_then_text(
