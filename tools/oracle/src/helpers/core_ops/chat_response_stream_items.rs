@@ -119,7 +119,7 @@ fn event_sources(input: &Input) -> EventSources {
             if let Some(id) = queue.0.pop_front() {
                 return id;
             }
-            queue.1 = queue.1.checked_add(1).unwrap_or(i64::MAX);
+            queue.1 = queue.1.saturating_add(1);
             format!("missing-uuid-{}", queue.1)
         }),
     }
@@ -132,7 +132,7 @@ fn apply_step(
 ) -> Result<Value, Box<HelperError>> {
     match step {
         Step::Initial => match return_default_initial_events(state, sources).or_value_error()? {
-            Some(event) => Ok(serde_json::to_value(&event).or_value_error()?),
+            Some(event) => serde_json::to_value(&event).or_value_error(),
             None => Ok(Value::Null),
         },
         Step::MessageItems => {
@@ -141,7 +141,7 @@ fn apply_step(
         }
         Step::ContentPart => {
             let event = create_content_part_added_event(state, sources).or_value_error()?;
-            Ok(serde_json::to_value(&event).or_value_error()?)
+            serde_json::to_value(&event).or_value_error()
         }
         Step::Done { completion } => done_events(state, sources, completion),
         Step::ReasoningDone {
@@ -151,7 +151,7 @@ fn apply_step(
         } => reasoning_events(item_id, content, *sequence_number),
         Step::DefaultDone { completion } => {
             match return_default_done_events(state, sources, completion).or_value_error()? {
-                Some(event) => Ok(serde_json::to_value(&event).or_value_error()?),
+                Some(event) => serde_json::to_value(&event).or_value_error(),
                 None => Ok(Value::Null),
             }
         }

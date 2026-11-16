@@ -66,7 +66,7 @@ pub fn return_default_initial_events<Context>(
 }
 
 #[must_use]
-pub fn is_stream_finished<Context>(state: &ChatStreamState<Context>) -> bool {
+pub const fn is_stream_finished<Context>(state: &ChatStreamState<Context>) -> bool {
     state.progress.sent_output_text_done
         && state.progress.sent_content_part_done
         && state.progress.sent_output_item_done
