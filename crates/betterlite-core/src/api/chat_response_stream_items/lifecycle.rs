@@ -97,26 +97,17 @@ fn response_data<Context>(
 ) -> Result<IndexMap<String, Json>, StreamItemsError> {
     let request =
         object(&state.responses_api_request).ok_or(StreamItemsError::ResponseNotObject)?;
-    let mut data = IndexMap::new();
-    data.insert("id".to_owned(), Json::Null);
-    data.insert("object".to_owned(), Json::Text("response".to_owned()));
-    data.insert(
-        "created_at".to_owned(),
-        Json::Number(Number::from(sources.now())),
-    );
-    data.insert("status".to_owned(), Json::Text("in_progress".to_owned()));
-    data.insert("error".to_owned(), Json::Null);
-    data.insert("incomplete_details".to_owned(), Json::Null);
-    copy_request_field(request, &mut data, "instructions");
-    data.insert("max_output_tokens".to_owned(), Json::Null);
-    data.insert("model".to_owned(), Json::Text(state.model.clone()));
-    data.insert("output".to_owned(), Json::List(Vec::new()));
-    data.insert("parallel_tool_calls".to_owned(), Json::Bool(true));
-    data.insert("previous_response_id".to_owned(), Json::Null);
-    data.insert("reasoning".to_owned(), default_reasoning());
-    data.insert("store".to_owned(), Json::Bool(true));
-    copy_request_field(request, &mut data, "temperature");
-    copy_request_field(request, &mut data, "text");
+    let mut data = fixed_response_fields(state, sources);
+    for name in [
+        "instructions",
+        "temperature",
+        "text",
+        "truncation",
+        "user",
+        "metadata",
+    ] {
+        copy_request_field(request, &mut data, name);
+    }
     let tool_choice = request.get("tool_choice").unwrap_or(&Json::Null);
     data.insert("tool_choice".to_owned(), responses_tool_choice(tool_choice));
     data.insert(
@@ -130,10 +121,31 @@ fn response_data<Context>(
         "top_p".to_owned(),
         request.get("top_p").cloned().unwrap_or_else(default_top_p),
     );
-    copy_request_field(request, &mut data, "truncation");
-    copy_request_field(request, &mut data, "user");
-    copy_request_field(request, &mut data, "metadata");
     Ok(data)
+}
+
+fn fixed_response_fields<Context>(
+    state: &ChatStreamState<Context>,
+    sources: &EventSources,
+) -> IndexMap<String, Json> {
+    let mut data = IndexMap::new();
+    data.insert("id".to_owned(), Json::Null);
+    data.insert("object".to_owned(), Json::Text("response".to_owned()));
+    data.insert(
+        "created_at".to_owned(),
+        Json::Number(Number::from(sources.now())),
+    );
+    data.insert("status".to_owned(), Json::Text("in_progress".to_owned()));
+    data.insert("error".to_owned(), Json::Null);
+    data.insert("incomplete_details".to_owned(), Json::Null);
+    data.insert("max_output_tokens".to_owned(), Json::Null);
+    data.insert("model".to_owned(), Json::Text(state.model.clone()));
+    data.insert("output".to_owned(), Json::List(Vec::new()));
+    data.insert("parallel_tool_calls".to_owned(), Json::Bool(true));
+    data.insert("previous_response_id".to_owned(), Json::Null);
+    data.insert("reasoning".to_owned(), default_reasoning());
+    data.insert("store".to_owned(), Json::Bool(true));
+    data
 }
 
 fn copy_request_field(
