@@ -1,0 +1,10 @@
+kind: helper
+name: foundry-agent-requests-paths-seed
+call:
+  foundry_agent_requests:
+    paths:
+      - {function: threads, api_base: "https://base.example", api_version: "2025-05-01", thread_id: t, run_id: r}
+      - {function: run_status, api_base: "https://base.example", api_version: "2025-05-01", thread_id: "thread 1", run_id: "run/1"}
+      - {function: messages, api_base: "https://base.example", api_version: "2025-05-01", thread_id: ".", run_id: r}
+env: {}
+compare: {ignore: []}

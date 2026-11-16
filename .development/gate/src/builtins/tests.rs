@@ -1,15 +1,19 @@
 #![cfg(test)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::builtins::case_ignores::pointer_problems;
 use crate::builtins::expect_budget;
 use crate::builtins::file_size::size_problem;
 use crate::builtins::globs::glob_set;
 use crate::builtins::module_tree::Walk;
+use crate::builtins::oracle_groups::{
+    GATEWAY, ROOT, case_packages, listed_operations, oracle_groups,
+};
 use crate::builtins::shared_names::{name_problems, shared_names};
+use crate::error::GateError;
 use crate::spec::catalog::FileSize;
 
 const PIN: &str =
@@ -232,4 +236,67 @@ fn the_shared_oracle_functions_include_run_case_and_invoke() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let names = shared_names(&root).unwrap();
     assert!(names.contains("run_case") && names.contains("invoke"));
+}
+
+#[test]
+fn a_helper_group_lists_its_operations_and_other_macros_list_none() {
+    let file = syn::parse_file(
+        "betterlite_oracle_helper_api::helper_group! {\n    \"auth_cache\" => cache, \"sso_roles\" => sso_roles,\n}\nthread_local! { static A: u8 = 0; }\n",
+    )
+    .unwrap();
+    assert_eq!(
+        listed_operations(&file.items).unwrap(),
+        vec!["auth_cache".to_owned(), "sso_roles".to_owned()]
+    );
+}
+
+#[test]
+fn a_case_runs_where_its_operations_live() {
+    let owners = BTreeMap::from([
+        ("auth_cache".to_owned(), "betterlite-oracle-auth".to_owned()),
+        ("mcp_names".to_owned(), "betterlite-oracle-mcp".to_owned()),
+        ("b202".to_owned(), ROOT.to_owned()),
+    ]);
+    let helper = |calls: &str| {
+        format!("kind: helper\nname: probe\nenv: {{}}\ncompare: {{ignore: []}}\n{calls}")
+    };
+    for (text, expected) in [
+        (helper("call: {auth_cache: {}}\n"), vec!["betterlite-oracle-auth"]),
+        (
+            helper("call: {auth_cache: {}}\ncalls: [{mcp_names: {}}]\n"),
+            vec!["betterlite-oracle-auth", "betterlite-oracle-mcp"],
+        ),
+        (helper("call: {auth_cache: {}}\ncalls: [{b202: {}}]\n"), vec![ROOT]),
+        (
+            "{\"kind\": \"helper\", \"name\": \"flow\", \"call\": {\"mcp_names\": {}}, \"env\": {}, \"compare\": {\"ignore\": []}}".to_owned(),
+            vec!["betterlite-oracle-mcp"],
+        ),
+        ("kind: sdk_http\nname: probe\ncall: {anthropic_beta_config: {url: empty}}\n".to_owned(), vec![GATEWAY]),
+        ("name: probe\nrequest: {method: GET}\n".to_owned(), vec![GATEWAY]),
+    ] {
+        let packages = case_packages(Path::new("case.yaml"), &text, &owners).unwrap();
+        assert_eq!(packages.iter().map(String::as_str).collect::<Vec<_>>(), expected, "{text}");
+    }
+    assert!(matches!(
+        case_packages(Path::new("case.yaml"), &helper("call: {nobody: {}}\n"), &owners),
+        Err(GateError::UnknownOperation { operation, .. }) if operation == "nobody"
+    ));
+}
+
+#[test]
+fn the_oracle_groups_of_the_repository_find_a_group_crate_for_a_helper_folder() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lines = oracle_groups(
+        &root,
+        &[PathBuf::from(
+            "tools/oracle/cases/helpers/mcp-server-encoding",
+        )],
+    )
+    .unwrap();
+    assert!(!lines.is_empty());
+    assert!(
+        lines.iter().all(|line| line
+            .starts_with("betterlite-oracle-mcp tools/oracle/cases/helpers/mcp-server-encoding/")),
+        "{lines:?}"
+    );
 }

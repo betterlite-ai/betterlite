@@ -1,0 +1,36 @@
+kind: helper
+name: dashscope-family-key-and-message
+call:
+  b8172:
+    function: family_key_and_message
+    api_key: sk-arg
+    dashscope: sk-dash
+    qwencloud: sk-qwen
+    qwen_ai_platform: sk-cn
+calls:
+  - b8172:
+      function: family_key_and_message
+      api_key: null
+      dashscope: sk-dash
+      qwencloud: sk-qwen
+      qwen_ai_platform: sk-cn
+  - b8172:
+      function: family_key_and_message
+      api_key: null
+      dashscope: sk-dash
+      qwencloud: null
+      qwen_ai_platform: ''
+  - b8172:
+      function: family_key_and_message
+      api_key: null
+      dashscope: null
+      qwencloud: null
+      qwen_ai_platform: null
+  - b8172:
+      function: family_key_and_message
+      api_key: ''
+      dashscope: sk-dash
+      qwencloud: sk-qwen
+      qwen_ai_platform: sk-cn
+env: {}
+compare: {ignore: []}

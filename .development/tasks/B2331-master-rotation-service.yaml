@@ -105,7 +105,7 @@ checks:
       run: test -f tools/oracle/helpers/master_rotation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
       why: No new pure credential transformation seed replays.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/master-rotation-*')" && grep -rlq master_rotation tools/oracle/fuzz/corpus/helper_case/master-rotation-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/master-rotation-*')" && grep -rlq master_rotation tools/oracle/fuzz/corpus/helper_case/master-rotation-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/master-rotation/credential-projection-and-merge.yaml
   - tools/oracle/cases/helpers/master-rotation/ordered-store-migration.yaml
