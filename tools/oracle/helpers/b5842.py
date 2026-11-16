@@ -5,6 +5,9 @@ from typing import Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.base_llm.audio_transcription.transformation import (
+    AudioTranscriptionRequestData,
+)
 from litellm.llms.watsonx.audio_transcription.transformation import (
     IBMWatsonXAudioTranscriptionConfig,
 )
@@ -66,7 +69,7 @@ class AudioConfig(Urls, Protocol):
     # the request dataclass holds a dict or bytes, so the form data comes back through the view below
     def transform_audio_transcription_request(  # ast-grep-ignore: no-long-names
         self, model: str, audio: tuple[str, bytes, str], params: Object, extra: Object, /
-    ) -> object: ...
+    ) -> AudioTranscriptionRequestData: ...
 
     def transform_audio_transcription_response(  # ast-grep-ignore: no-long-names
         self, raw: httpx.Response, /
