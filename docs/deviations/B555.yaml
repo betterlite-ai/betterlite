@@ -1,0 +1,15 @@
+task: B555
+deviations:
+  - what: An MAI edit reply whose JSON object holds a meaningful error field fails with the code's status instead of returning an empty image response.
+    why: LiteLLM passes the error object into ImageResponse, whose model_config allows extra fields, so it returns a reply with no data and the reply's 200; betterlite projects the edit reply through B004, which treats a response object error as a failure, and this task owns that call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2613-L2622
+  - what: A token counter that does not fit i64, or a sum of counters past i64::MAX, fails the edit reply with a 500 instead of returning Python's arbitrary-size integer.
+    why: betterlite stores usage counts as i64 with checked arithmetic, and no provider reports counts near that size; the MAI edit reply normalizes usage through B554, which has the same limit for generation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/mai_transformation.py#L95-L133
+kept_bugs:
+  - what: An MAI edit keeps only the first non-None supplied image and silently discards the remaining ones and every mask.
+    why: A working LiteLLM setup that sends a list or a mask gets the same single image upload, so betterlite copies the silent choice instead of rejecting the extra input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_edit/mai_transformation.py#L87-L96
+  - what: A tuple passed as the FLUX 2 image is one file-like value that fails as an unsupported type, not a list of reference images.
+    why: LiteLLM expands only a Python list, so a setup that passes a tuple gets the unsupported-type error; betterlite keeps that rule even though the parameter is annotated Sequence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_edit/flux2_transformation.py#L103
