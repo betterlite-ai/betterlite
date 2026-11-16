@@ -184,3 +184,20 @@ async fn a_masking_failure_yields_the_generic_frame() {
     assert!(written.contains("PANW Prisma AIRS streaming error:"));
     assert!(written.contains("masked output would exceed 1048576 bytes"));
 }
+
+#[tokio::test]
+async fn a_permanent_scan_failure_yields_the_http_frame() {
+    let server = support::serve(StatusCode::BAD_REQUEST, "{}").await;
+    let guardrail = support::blocking(&server.base);
+    let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
+    let chunks = vec![StreamChunk::Model(support::json(r#"{"id":"chunk-1"}"#))];
+    let fake = FakeAssembler::new(Some(ASSEMBLED));
+    let items = support::run_streaming(&guardrail, &mut request_data, chunks, &fake).await;
+    assert_eq!(items.len(), 1);
+    let frame = support::frame_json(&items[0]);
+    let error = field(&frame, "error");
+    assert_eq!(field(error, "code"), &GuardrailValue::SignedInteger(500));
+    assert_eq!(text_of(field(error, "type")), "guardrail_scan_error");
+    assert_eq!(text_of(field(error, "category")), "http_400_error");
+    assert_eq!(text_of(field(error, "guardrail")), "panw");
+}

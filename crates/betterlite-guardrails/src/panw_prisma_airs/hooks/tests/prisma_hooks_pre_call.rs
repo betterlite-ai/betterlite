@@ -582,3 +582,29 @@ async fn flushing_twice_keeps_one_record_and_an_earlier_value() {
         Some(&GuardrailValue::Text("old".to_owned()))
     );
 }
+
+#[tokio::test]
+async fn a_mask_with_non_list_messages_fails_closed() {
+    let server = support::serve(
+        StatusCode::OK,
+        r#"{"action":"allow","category":"benign","prompt_masked_data":{"data":"MASKED"}}"#,
+    )
+    .await;
+    let guardrail = support::blocking(&server.base);
+    let mut request_data = data(r#"{"litellm_call_id":"call-1","messages":"x","prompt":"hi"}"#);
+    let selection = FakeSelection {
+        events: vec![GuardrailEventHooks::PreCall],
+    };
+    let suppressed = BTreeSet::new();
+    let hook_context = context(&selection, &suppressed);
+    let mut audit = GuardrailAudit::default();
+    let error = pre_call_hook(&guardrail, &mut request_data, &mut audit, &hook_context)
+        .await
+        .expect_err("messages");
+    assert_eq!(error.status, 500);
+    assert_eq!(error.detail.error.category, "api_error");
+    assert_eq!(
+        error.detail.error.message,
+        "Security scan failed - request blocked for safety"
+    );
+}

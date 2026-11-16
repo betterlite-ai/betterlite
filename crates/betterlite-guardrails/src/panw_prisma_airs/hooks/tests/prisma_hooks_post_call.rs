@@ -523,3 +523,29 @@ async fn a_non_object_content_part_is_not_scanned() {
     let body = support::only_scan_body(&server).await;
     assert_eq!(support::scanned_text(&body, "response"), "only");
 }
+
+#[tokio::test]
+async fn a_suppressed_guardrail_leaves_the_response_untouched() {
+    let server = support::serve(StatusCode::OK, ALLOW).await;
+    let guardrail = support::blocking(&server.base);
+    let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
+    let original = request_data.clone();
+    let mut model_response = response(ANSWER);
+    let selection = FakeSelection { events: vec![] };
+    let suppressed = BTreeSet::new();
+    let hook_context = context(&selection, &suppressed);
+    let mut audit = GuardrailAudit::default();
+    post_call_hook(
+        &guardrail,
+        &mut request_data,
+        CallResponse::Model(&mut model_response),
+        &mut audit,
+        &hook_context,
+    )
+    .await
+    .expect("pass through");
+    assert_eq!(request_data, original);
+    let message = support::message_at(&model_response, 0);
+    assert_eq!(support::text_content(message), "answer");
+    assert!(server.body_texts().await.is_empty());
+}

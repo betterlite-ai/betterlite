@@ -284,3 +284,21 @@ async fn an_oversized_mask_errors() {
     .expect_err("oversized");
     assert!(matches!(error, StreamScanError::Masking(_)));
 }
+
+#[tokio::test]
+async fn unreadable_metadata_errors_before_the_scan() {
+    let server = support::serve(StatusCode::OK, ALLOW).await;
+    let guardrail = guardrail(settings(&server.base, no_masking(), FallbackAction::Block));
+    let request_data = data(r#"{"litellm_call_id":"call-1","metadata":"x"}"#);
+    let mut model_response = response(ANSWER);
+    let error = scan_streaming_response(
+        &guardrail,
+        &request_data,
+        &mut model_response,
+        support::now(),
+    )
+    .await
+    .expect_err("metadata");
+    assert!(matches!(error, StreamScanError::Data { .. }));
+    assert!(server.body_texts().await.is_empty());
+}
