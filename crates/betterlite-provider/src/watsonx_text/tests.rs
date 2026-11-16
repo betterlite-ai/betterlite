@@ -262,6 +262,12 @@ fn payload_without_project_or_space_fails_401() {
     true,
     "/ml/v1/deployments/deployment-id/text/generation_stream"
 )]
+#[case::deployment_encodes_the_query(
+    None,
+    "deployment/x?y#z",
+    false,
+    "/ml/v1/deployments/x%3Fy%23z/text/generation"
+)]
 #[case::explicit_base(Some("https://host/"), "granite", false, "/ml/v1/text/generation")]
 fn urls_follow_the_model_shape(
     #[case] api_base: Option<&str>,

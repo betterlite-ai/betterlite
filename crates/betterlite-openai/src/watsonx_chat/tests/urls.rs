@@ -31,6 +31,11 @@ fn url_for(
 #[case::deployment("deployment/abc", false, "/ml/v1/deployments/abc/text/chat")]
 #[case::deployment_stream("deployment/abc", true, "/ml/v1/deployments/abc/text/chat_stream")]
 #[case::deployment_keeps_slashes("deployment/a/b", false, "/ml/v1/deployments/a/b/text/chat")]
+#[case::deployment_encodes_the_query(
+    "deployment/x?y#z",
+    true,
+    "/ml/v1/deployments/x%3Fy%23z/text/chat_stream"
+)]
 #[case::prefix_needs_the_slash("deployment", false, "/ml/v1/text/chat")]
 #[case::prefix_is_not_a_substring("my-deployment/abc", false, "/ml/v1/text/chat")]
 #[case::provider_prefixed("ibm/granite", true, "/ml/v1/text/chat_stream")]
