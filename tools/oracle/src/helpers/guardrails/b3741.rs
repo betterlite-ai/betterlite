@@ -4,7 +4,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod outcome;
 mod payload;

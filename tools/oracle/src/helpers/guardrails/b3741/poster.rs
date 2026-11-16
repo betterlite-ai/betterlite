@@ -15,7 +15,7 @@ use secrecy::SecretString;
 use url::form_urlencoded;
 
 use super::{FIXED_NOW_SECONDS, ScriptedReply};
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub(super) struct Recorded {

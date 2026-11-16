@@ -13,7 +13,8 @@ use url::form_urlencoded;
 
 use super::poster::{ScriptedReplies, guardrail, runtime};
 use super::{FIXED_NOW_SECONDS, Step, TokenExchangeArgs};
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 fn token_outcome(result: Result<SecretString, Agent365TokenError>) -> Value {
     match result {

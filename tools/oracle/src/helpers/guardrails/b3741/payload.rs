@@ -5,7 +5,8 @@ use betterlite_guardrails::agent_365_tokens::payload::{EvaluatePayload, build_ev
 use serde_json::json;
 
 use super::{Data, PayloadAssemblyArgs, UUID_MARKER};
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 fn insert_metadata(data: &mut Data, name: &str, metadata: Option<&Data>) {
     if let Some(fields) = metadata {
