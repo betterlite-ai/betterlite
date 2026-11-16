@@ -11,7 +11,7 @@ checks:
   - id: helper-case-corpus
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/invoke_agent_reply*")"
       && grep -lq 'invoke_agent_reply' tools/oracle/fuzz/corpus/helper_case/invoke_agent_reply* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_invoke_agent_reply$/)' &&
+      run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_invoke_agent_reply$/)' &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
   - id: parser-corpus

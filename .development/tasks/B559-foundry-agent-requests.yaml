@@ -231,7 +231,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_agent_requests*")"
       && grep -lq 'foundry_agent_requests' tools/oracle/fuzz/corpus/helper_case/foundry_agent_requests* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_agent_requests$/)'
+      nextest run --locked -p betterlite-oracle-foundry --no-tests=fail -E 'test(/::helper_seeds_select_foundry_agent_requests$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-agent-auth-and-response-checks
     why: 'Both validation/preparation overwrite Content-Type=application/json; only truthy api_key overwrites Authorization=Bearer

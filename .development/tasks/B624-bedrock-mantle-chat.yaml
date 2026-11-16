@@ -280,7 +280,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_chat*")"
       && grep -lq 'bedrock_mantle_chat' tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_chat* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_mantle_chat$/)'
+      run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_mantle_chat$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: media-fetch
     why: The Mantle async media fetch through the injected fetcher lacks a production assertion.

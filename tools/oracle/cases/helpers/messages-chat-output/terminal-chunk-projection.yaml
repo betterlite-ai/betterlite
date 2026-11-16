@@ -1,0 +1,30 @@
+kind: helper
+name: messages-chat-output-terminal-chunk-projection
+call:
+  messages_chat_output:
+    operation: terminal
+    choices:
+    - finish_reason: stop
+      message:
+        content: done
+        tool_calls: []
+        reasoning_content: null
+        thinking_blocks: null
+        refusal: null
+        provider_specific_fields: null
+    usage:
+      prompt_tokens: 100
+      completion_tokens: 7
+      prompt_tokens_details: null
+      server_tool_use: null
+      cache_read_input_tokens: 20
+      cache_creation_input_tokens: 30
+      _cache_read_input_tokens: null
+      _cache_creation_input_tokens: null
+    applied_edits:
+    - type: clear_tool_uses_20250919
+      cleared_tool_uses: 2
+    index: 4
+env: {}
+compare:
+  ignore: []

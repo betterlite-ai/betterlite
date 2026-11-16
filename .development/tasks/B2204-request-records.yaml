@@ -11,7 +11,7 @@ checks:
   - id: helper-case-corpus
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/request_records*")"
       && grep -lq 'request_records' tools/oracle/fuzz/corpus/helper_case/request_records* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_request_records$/)' && cargo nextest
+      -p betterlite-oracle-context --no-tests=fail -E 'test(/::helper_seeds_select_request_records$/)' && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
   - id: case-safe-copy-mode-and-fallback

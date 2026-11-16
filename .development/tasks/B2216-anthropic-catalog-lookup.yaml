@@ -131,7 +131,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_catalog_lookup*")"
       && grep -lq 'anthropic_catalog_lookup' tools/oracle/fuzz/corpus/helper_case/anthropic_catalog_lookup* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_catalog_lookup$/)'
+      nextest run --locked -p betterlite-oracle-context --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_catalog_lookup$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-candidate-order
     why: Start with the original model, every matching prefix removed in order bedrock/converse/, bedrock/invoke/,

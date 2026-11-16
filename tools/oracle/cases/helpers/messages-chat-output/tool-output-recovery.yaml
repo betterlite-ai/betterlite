@@ -1,0 +1,48 @@
+kind: helper
+name: messages-chat-output-tool-output-recovery
+call:
+  messages_chat_output:
+    operation: response
+    response:
+      id: msg_recovery
+      model: claude-sonnet-4-5
+      choices:
+      - finish_reason: tool_calls
+        message:
+          content: null
+          tool_calls:
+          - id: functions.Bash:0__thought__sig
+            function:
+              name: Bashxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+              arguments: '{"x":1'
+            provider_specific_fields: null
+          - id: ''
+            function:
+              name: Read
+              arguments: null
+            provider_specific_fields: null
+          - id: call_c
+            function:
+              name: Grep
+              arguments: ''
+            provider_specific_fields:
+              thought_signature: sigC
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+      usage:
+        prompt_tokens: 100
+        completion_tokens: 7
+        prompt_tokens_details: null
+        server_tool_use: null
+        cache_read_input_tokens: null
+        cache_creation_input_tokens: null
+        _cache_read_input_tokens: null
+        _cache_creation_input_tokens: null
+    tool_name_mapping:
+      Bashxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx: Bash
+    polyfill_result: null
+env: {}
+compare:
+  ignore: []
