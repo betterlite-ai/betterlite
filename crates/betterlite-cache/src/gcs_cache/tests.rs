@@ -499,6 +499,22 @@ async fn read_miss_on_header_failure() {
 }
 
 #[tokio::test]
+async fn read_swallows_transport_error() {
+    let cache = cache_at("http://127.0.0.1:0", &settings(""), FixedAuth::new(false));
+    let (value, log) = timeout(
+        Duration::from_secs(5),
+        capture_log(cache.async_get_cache("key")),
+    )
+    .await
+    .unwrap();
+    assert!(value.is_none());
+    assert!(log.contains("ERROR"), "{log}");
+    assert!(log.contains("GCS cache read failed"), "{log}");
+    assert!(!log.contains(SERVICE_ACCOUNT), "{log}");
+    assert!(!log.contains(TOKEN), "{log}");
+}
+
+#[tokio::test]
 async fn headers_sent_on_read_and_write() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let cache = cache_on(&listener, "");
