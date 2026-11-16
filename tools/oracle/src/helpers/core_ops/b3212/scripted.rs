@@ -29,10 +29,7 @@ fn wire_row(fields: &RowFields, now: &str) -> Result<SkillTable, Box<HelperError
         display_title: fields.display_title.clone(),
         description: fields.description.clone(),
         instructions: fields.instructions.clone(),
-        source: fields
-            .source
-            .clone()
-            .unwrap_or_else(|| CUSTOM_SOURCE.to_owned()),
+        source: fields.source.as_deref().unwrap_or(CUSTOM_SOURCE).to_owned(),
         latest_version: fields.latest_version.clone(),
         file_content: fields.file_content.clone(),
         file_name: fields.file_name.clone(),

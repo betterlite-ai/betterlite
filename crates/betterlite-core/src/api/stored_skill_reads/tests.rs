@@ -215,13 +215,13 @@ impl ScriptedRepository {
     fn found_page(
         &self,
         page: SkillPage,
-        created_by: Option<Vec<String>>,
+        created_by: Option<&[String]>,
     ) -> Result<Vec<SkillTable>, TableError> {
         let (rows, failed) = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             state.calls.push(Call::FindMany {
                 page,
-                created_by: created_by.clone(),
+                created_by: created_by.map(<[String]>::to_vec),
             });
             (state.page.clone(), state.failed)
         };
@@ -234,12 +234,12 @@ impl ScriptedRepository {
         let limit = usize::try_from(page.limit).unwrap_or(0);
         Ok(rows
             .into_iter()
-            .filter(|row| match &created_by {
-                Some(scopes) => row
-                    .created_by
-                    .as_ref()
-                    .is_some_and(|owner| scopes.contains(owner)),
-                None => true,
+            .filter(|row| {
+                created_by.is_none_or(|scopes| {
+                    row.created_by
+                        .as_ref()
+                        .is_some_and(|owner| scopes.contains(owner))
+                })
             })
             .skip(offset)
             .take(limit)
@@ -281,7 +281,7 @@ impl SkillRepository for ScriptedRepository {
         page: SkillPage,
         created_by: Option<Vec<String>>,
     ) -> impl Future<Output = Result<Vec<SkillTable>, TableError>> + Send {
-        ready(self.found_page(page, created_by))
+        ready(self.found_page(page, created_by.as_deref()))
     }
 
     fn delete(&self, _skill_id: &str) -> impl Future<Output = Result<(), TableError>> + Send {
@@ -298,6 +298,16 @@ async fn stored_skill_reads_missing_principal() {
         row("litellm_skill_bob", Some("bob")),
     ]);
     let reads = service(repository.clone());
+    assert_public_reads(&reads, &repository).await;
+    assert_identityless_reads(&reads, &anonymous()).await;
+    assert_eq!(repository.find_unique_calls(), vec![ALICE_SKILL.to_owned()]);
+    assert_eq!(repository.find_many_calls().len(), 1);
+}
+
+async fn assert_public_reads(
+    reads: &StoredSkillReads<ScriptedRepository>,
+    repository: &ScriptedRepository,
+) {
     let public_page = reads
         .list_skills(
             SkillPage {
@@ -334,20 +344,22 @@ async fn stored_skill_reads_missing_principal() {
             Call::FindUnique(ALICE_SKILL.to_owned()),
         ]
     );
+}
 
-    let identity = anonymous();
+async fn assert_identityless_reads(
+    reads: &StoredSkillReads<ScriptedRepository>,
+    identity: &Principal,
+) {
     let identityless_page = reads
-        .list_skills(SkillPage::default(), Some(&identity))
+        .list_skills(SkillPage::default(), Some(identity))
         .await
         .unwrap();
     assert!(identityless_page.is_empty());
     let refused = reads
-        .get_skill(ALICE_SKILL, Some(&identity))
+        .get_skill(ALICE_SKILL, Some(identity))
         .await
         .unwrap_err();
     assert!(matches!(refused, StoredSkillReadError::NotFound { .. }));
-    assert_eq!(repository.find_unique_calls(), vec![ALICE_SKILL.to_owned()]);
-    assert_eq!(repository.find_many_calls().len(), 1);
 }
 
 #[tokio::test]
@@ -373,6 +385,10 @@ async fn list_skills_scopes_the_page_to_the_callers_owner_scopes() {
         .map(|skill| skill.skill_id.as_str())
         .collect::<Vec<_>>();
     assert_eq!(ids, vec!["litellm_skill_alice", "litellm_skill_team"]);
+    assert_alice_scopes(&repository);
+}
+
+fn assert_alice_scopes(repository: &ScriptedRepository) {
     assert_eq!(
         repository.find_many_calls(),
         vec![(
@@ -480,7 +496,7 @@ fn skill_to_typed_conversion_decodes_base64_file_content() {
         converted
             .metadata
             .as_ref()
-            .and_then(|metadata| metadata.get("tier")),
+            .and_then(|stored| stored.get("tier")),
         Some(&JsonData::Number(serde_json::Number::from(2_i32)))
     );
     assert_eq!(
@@ -562,13 +578,11 @@ async fn cache_serves_every_caller_from_one_per_skill_entry() {
         .await
         .unwrap_err();
     assert!(matches!(refused, StoredSkillReadError::NotFound { .. }));
-    assert!(
-        reads
-            .get_skill(ALICE_SKILL, Some(&admin("root")))
-            .await
-            .is_ok()
-    );
-    assert!(reads.get_skill(ALICE_SKILL, None).await.is_ok());
+    reads
+        .get_skill(ALICE_SKILL, Some(&admin("root")))
+        .await
+        .unwrap();
+    reads.get_skill(ALICE_SKILL, None).await.unwrap();
     assert_eq!(repository.find_unique_calls(), vec![ALICE_SKILL.to_owned()]);
 }
 
@@ -656,27 +670,21 @@ async fn cache_uses_the_configured_limits() {
         default_ttl: 5.0_f64,
     };
     let reads = service_with(repository.clone(), limits, clock);
-    assert!(
-        reads
-            .get_skill(ALICE_SKILL, Some(&principal("alice")))
-            .await
-            .is_ok()
-    );
+    reads
+        .get_skill(ALICE_SKILL, Some(&principal("alice")))
+        .await
+        .unwrap();
     set_clock(&now, 1_004.0_f64);
-    assert!(
-        reads
-            .get_skill(ALICE_SKILL, Some(&principal("alice")))
-            .await
-            .is_ok()
-    );
+    reads
+        .get_skill(ALICE_SKILL, Some(&principal("alice")))
+        .await
+        .unwrap();
     assert_eq!(repository.find_unique_calls(), vec![ALICE_SKILL.to_owned()]);
     set_clock(&now, 1_006.0_f64);
-    assert!(
-        reads
-            .get_skill(ALICE_SKILL, Some(&principal("alice")))
-            .await
-            .is_ok()
-    );
+    reads
+        .get_skill(ALICE_SKILL, Some(&principal("alice")))
+        .await
+        .unwrap();
     assert_eq!(
         repository.find_unique_calls(),
         vec![ALICE_SKILL.to_owned(), ALICE_SKILL.to_owned()]
@@ -695,24 +703,18 @@ async fn cache_capacity_drops_an_entry_once_the_limit_is_reached() {
         default_ttl: 60.0_f64,
     };
     let reads = service_with(repository.clone(), limits, fixed_clock());
-    assert!(
-        reads
-            .get_skill(ALICE_SKILL, Some(&principal("alice")))
-            .await
-            .is_ok()
-    );
-    assert!(
-        reads
-            .get_skill(other, Some(&principal("alice")))
-            .await
-            .is_ok()
-    );
-    assert!(
-        reads
-            .get_skill(ALICE_SKILL, Some(&principal("alice")))
-            .await
-            .is_ok()
-    );
+    reads
+        .get_skill(ALICE_SKILL, Some(&principal("alice")))
+        .await
+        .unwrap();
+    reads
+        .get_skill(other, Some(&principal("alice")))
+        .await
+        .unwrap();
+    reads
+        .get_skill(ALICE_SKILL, Some(&principal("alice")))
+        .await
+        .unwrap();
     assert_eq!(
         repository.find_unique_calls(),
         vec![
@@ -727,19 +729,15 @@ async fn cache_capacity_drops_an_entry_once_the_limit_is_reached() {
 async fn load_skill_answers_from_the_cache_while_the_database_is_down() {
     let repository = ScriptedRepository::with_rows(vec![row(ALICE_SKILL, Some("alice"))]);
     let reads = service(repository.clone());
-    assert!(
-        reads
-            .get_skill(ALICE_SKILL, Some(&principal("alice")))
-            .await
-            .is_ok()
-    );
+    reads
+        .get_skill(ALICE_SKILL, Some(&principal("alice")))
+        .await
+        .unwrap();
     repository.set_available(false);
-    assert!(
-        reads
-            .get_skill(ALICE_SKILL, Some(&principal("alice")))
-            .await
-            .is_ok()
-    );
+    reads
+        .get_skill(ALICE_SKILL, Some(&principal("alice")))
+        .await
+        .unwrap();
     assert!(matches!(
         reads
             .get_skill(ALICE_SKILL, Some(&principal("bob")))

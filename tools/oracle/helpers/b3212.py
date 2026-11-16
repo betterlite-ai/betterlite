@@ -114,14 +114,16 @@ class FakeModule(ModuleType):
 
 
 def principal_of(fields: PrincipalFields) -> UserAPIKeyAuth:
-    return UserAPIKeyAuth.model_construct(
+    # The handler receives resolved auth fields; construction would replace token with the api key.
+    principal = UserAPIKeyAuth(
         user_id=fields.get("user_id"),
         team_id=fields.get("team_id"),
         org_id=fields.get("org_id"),
-        api_key=fields.get("api_key"),
-        token=fields.get("token"),
         user_role=LitellmUserRoles.PROXY_ADMIN if fields.get("admin") else None,
     )
+    principal.api_key = fields.get("api_key")
+    principal.token = fields.get("token")
+    return principal
 
 
 def row_value(row: LiteLLM_SkillsTable) -> JsonValue:

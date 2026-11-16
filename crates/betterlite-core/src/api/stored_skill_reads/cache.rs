@@ -61,11 +61,10 @@ impl SkillRowCache {
     }
 
     pub(crate) fn lookup(&self, skill_id: &str) -> Result<CachedSkill, StoredSkillReadError> {
-        let found = {
-            let mut guard = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-            let rows = &mut *guard;
-            lookup_marked(&mut rows.markers, &mut rows.values, skill_id)?
-        };
+        let mut guard = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        let rows = &mut *guard;
+        let found = lookup_marked(&mut rows.markers, &mut rows.values, skill_id)?;
+        drop(guard);
         Ok(match found.0 {
             None => CachedSkill::Miss,
             Some(None) => CachedSkill::Missing,

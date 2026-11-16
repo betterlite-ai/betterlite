@@ -17,7 +17,9 @@ deviations:
       in the process. Each service instance is still per-skill, not per-caller.
     why: >-
       betterlite injects its dependencies and B2226 owns the cache implementation, so the application holds one
-      service per process and that instance reproduces the module-global scope. Proven by
-      cache_serves_every_caller_from_one_per_skill_entry.
+      service per process and that instance reproduces the module-global scope. Per-skill sharing across callers is
+      proven by cache_serves_every_caller_from_one_per_skill_entry; isolation between two services is proven by
+      stored_skill_reads_postgres, where a stale service keeps serving the cached title after a second service over
+      the same database reads the changed row.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L34
 kept_bugs: []

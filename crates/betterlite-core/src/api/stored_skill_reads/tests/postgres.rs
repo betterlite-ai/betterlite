@@ -74,14 +74,15 @@ fn no_publish() -> PublishChange<TableError> {
     })
 }
 
-async fn insert_row(
-    store: &PostgresStore,
-    skill_id: &str,
-    owner: &str,
-    title: &str,
-    created_at: &str,
-    content: Option<&[u8]>,
-) {
+struct NewRow<'a> {
+    skill_id: &'a str,
+    owner: &'a str,
+    title: &'a str,
+    created_at: &'a str,
+    content: Option<&'a [u8]>,
+}
+
+async fn insert_row(store: &PostgresStore, row: &NewRow<'_>) {
     store
         .session()
         .await
@@ -89,7 +90,13 @@ async fn insert_row(
         .execute(
             "INSERT INTO \"LiteLLM_SkillsTable\" (skill_id, display_title, created_by, created_at, file_content) \
              VALUES ($1, $2, $3, $4::text::timestamp(3), $5)",
-            &[&skill_id, &title, &owner, &created_at, &content],
+            &[
+                &row.skill_id,
+                &row.title,
+                &row.owner,
+                &row.created_at,
+                &row.content,
+            ],
         )
         .await
         .unwrap();
@@ -112,7 +119,7 @@ fn ids(skills: &[StoredSkill]) -> Vec<&str> {
     skills.iter().map(|skill| skill.skill_id.as_str()).collect()
 }
 
-fn service<'db>(client: PrismaClient<'db>) -> StoredSkillReads<PrismaSkillRepository<'db>> {
+fn service(client: PrismaClient<'_>) -> StoredSkillReads<PrismaSkillRepository<'_>> {
     StoredSkillReads::new(
         PrismaSkillRepository::new(Some(client), no_publish()),
         SkillCacheLimits::default(),
@@ -121,52 +128,54 @@ fn service<'db>(client: PrismaClient<'db>) -> StoredSkillReads<PrismaSkillReposi
     .unwrap()
 }
 
-#[tokio::test]
-async fn stored_skill_reads_postgres() {
-    let fixture = provision().await;
-    let writer = postgres_store(&fixture);
+async fn seeded_writer(fixture: &PostgresFixture) -> PostgresStore {
+    let writer = postgres_store(fixture);
     migrate(&writer).await;
-    let availability = Availability::default();
-    let client = PrismaClient {
-        writer: &writer,
-        reader: &writer,
-        availability: &availability,
-    };
     insert_row(
         &writer,
-        ALICE_SKILL,
-        "alice",
-        "Alpha",
-        "2026-01-01 00:00:00",
-        Some(&[b'z'; 120][..]),
+        &NewRow {
+            skill_id: ALICE_SKILL,
+            owner: "alice",
+            title: "Alpha",
+            created_at: "2026-01-01 00:00:00",
+            content: Some(&[b'z'; 120][..]),
+        },
     )
     .await;
     insert_row(
         &writer,
-        BOB_SKILL,
-        "bob",
-        "Beta",
-        "2026-02-01 00:00:00",
-        None,
+        &NewRow {
+            skill_id: BOB_SKILL,
+            owner: "bob",
+            title: "Beta",
+            created_at: "2026-02-01 00:00:00",
+            content: None,
+        },
     )
     .await;
     insert_row(
         &writer,
-        OLD_SKILL,
-        "alice",
-        "Old",
-        "2025-12-01 00:00:00",
-        Some(b"zip".as_slice()),
+        &NewRow {
+            skill_id: OLD_SKILL,
+            owner: "alice",
+            title: "Old",
+            created_at: "2025-12-01 00:00:00",
+            content: Some(b"zip".as_slice()),
+        },
     )
     .await;
+    writer
+}
 
-    let reads = service(client);
-    let public_page = reads.list_skills(SkillPage::default(), None).await.unwrap();
-    assert_eq!(ids(&public_page), vec![BOB_SKILL, ALICE_SKILL, OLD_SKILL]);
-    assert_eq!(public_page[0].file_content, None);
-    assert_eq!(public_page[1].file_content, Some(vec![b'z'; 120]));
-    assert_eq!(public_page[2].file_content, Some(b"zip".to_vec()));
+async fn assert_public_page(reads: &StoredSkillReads<PrismaSkillRepository<'_>>) {
+    let page = reads.list_skills(SkillPage::default(), None).await.unwrap();
+    assert_eq!(ids(&page), vec![BOB_SKILL, ALICE_SKILL, OLD_SKILL]);
+    assert_eq!(page[0].file_content, None);
+    assert_eq!(page[1].file_content, Some(vec![b'z'; 120]));
+    assert_eq!(page[2].file_content, Some(b"zip".to_vec()));
+}
 
+async fn assert_owner_pages(reads: &StoredSkillReads<PrismaSkillRepository<'_>>) {
     let alice = principal("alice");
     let alice_page = reads
         .list_skills(SkillPage::default(), Some(&alice))
@@ -178,6 +187,9 @@ async fn stored_skill_reads_postgres() {
         .await
         .unwrap();
     assert_eq!(ids(&bob_page), vec![BOB_SKILL]);
+}
+
+async fn assert_admin_pages(reads: &StoredSkillReads<PrismaSkillRepository<'_>>) {
     let admin_page = reads
         .list_skills(SkillPage::default(), Some(&admin("root")))
         .await
@@ -199,7 +211,16 @@ async fn stored_skill_reads_postgres() {
         .await
         .unwrap();
     assert_eq!(ids(&second_page), vec![ALICE_SKILL]);
+}
 
+async fn assert_listing_pages(reads: &StoredSkillReads<PrismaSkillRepository<'_>>) {
+    assert_public_page(reads).await;
+    assert_owner_pages(reads).await;
+    assert_admin_pages(reads).await;
+}
+
+async fn assert_owner_gets(reads: &StoredSkillReads<PrismaSkillRepository<'_>>) {
+    let alice = principal("alice");
     let skill = reads.get_skill(ALICE_SKILL, Some(&alice)).await.unwrap();
     assert_eq!(skill.display_title.as_deref(), Some("Alpha"));
     assert_eq!(skill.file_content, Some(vec![b'z'; 120]));
@@ -217,8 +238,15 @@ async fn stored_skill_reads_postgres() {
             .unwrap_err(),
         StoredSkillReadError::NotFound { .. }
     ));
+}
 
-    set_title(&writer, ALICE_SKILL, "Changed").await;
+async fn assert_cached_row_survives_a_title_change(
+    reads: &StoredSkillReads<PrismaSkillRepository<'_>>,
+    client: PrismaClient<'_>,
+    writer: &PostgresStore,
+) {
+    let alice = principal("alice");
+    set_title(writer, ALICE_SKILL, "Changed").await;
     assert!(matches!(
         reads
             .get_skill(ALICE_SKILL, Some(&principal("bob")))
@@ -228,31 +256,41 @@ async fn stored_skill_reads_postgres() {
     ));
     let cached = reads.get_skill(ALICE_SKILL, Some(&alice)).await.unwrap();
     assert_eq!(cached.display_title.as_deref(), Some("Alpha"));
-    let cached_reader = service(client);
-    let refreshed = cached_reader
+    let refreshed_reads = service(client);
+    let refreshed = refreshed_reads
         .get_skill(ALICE_SKILL, Some(&alice))
         .await
         .unwrap();
     assert_eq!(refreshed.display_title.as_deref(), Some("Changed"));
+    assert_negative_cache_hides_a_new_row(&refreshed_reads, client, writer).await;
+}
 
+async fn assert_negative_cache_hides_a_new_row(
+    reads: &StoredSkillReads<PrismaSkillRepository<'_>>,
+    client: PrismaClient<'_>,
+    writer: &PostgresStore,
+) {
+    let alice = principal("alice");
     assert!(matches!(
-        cached_reader
+        reads
             .get_skill(GHOST_SKILL, Some(&alice))
             .await
             .unwrap_err(),
         StoredSkillReadError::NotFound { .. }
     ));
     insert_row(
-        &writer,
-        GHOST_SKILL,
-        "alice",
-        "Returned",
-        "2026-03-01 00:00:00",
-        Some(b"back".as_slice()),
+        writer,
+        &NewRow {
+            skill_id: GHOST_SKILL,
+            owner: "alice",
+            title: "Returned",
+            created_at: "2026-03-01 00:00:00",
+            content: Some(b"back".as_slice()),
+        },
     )
     .await;
     assert!(matches!(
-        cached_reader
+        reads
             .get_skill(GHOST_SKILL, Some(&alice))
             .await
             .unwrap_err(),
@@ -264,7 +302,9 @@ async fn stored_skill_reads_postgres() {
         .await
         .unwrap();
     assert_eq!(returned.file_content, Some(b"back".to_vec()));
+}
 
+async fn assert_offline_reads_report_no_database() {
     let offline = StoredSkillReads::new(
         PrismaSkillRepository::new(None::<PrismaClient<'static>>, no_publish()),
         SkillCacheLimits::default(),
@@ -282,11 +322,24 @@ async fn stored_skill_reads_postgres() {
             .unwrap_err(),
         StoredSkillReadError::NoDatabase
     ));
+}
 
+#[tokio::test]
+async fn stored_skill_reads_postgres() {
+    let fixture = provision().await;
+    let writer = seeded_writer(&fixture).await;
+    let availability = Availability::default();
+    let client = PrismaClient {
+        writer: &writer,
+        reader: &writer,
+        availability: &availability,
+    };
+    let reads = service(client);
+    assert_listing_pages(&reads).await;
+    assert_owner_gets(&reads).await;
+    assert_cached_row_survives_a_title_change(&reads, client, &writer).await;
+    assert_offline_reads_report_no_database().await;
     drop(reads);
-    drop(cached_reader);
-    drop(after_insert);
-    drop(offline);
     writer.pool.unwrap().close();
     fixture.close_async().await.unwrap();
 }
