@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use axum::response::IntoResponse as _;
 use betterlite_auth::agent::get_agent_by_id;
 use betterlite_auth::agent_policy::AgentResponse;
 use betterlite_auth::agent_registry::AgentRegistry;
@@ -81,7 +82,7 @@ impl Helper for Op {
         ) {
             (Some(lookup), None, None) => agent_lookup(lookup),
             (None, Some(resolution), None) => Ok(provider_resolution(resolution)),
-            (None, None, Some(error)) => Ok(rate_limit_error(error)),
+            (None, None, Some(error)) => rate_limit_error(error),
             _ => Err(Box::new(HelperError {
                 class: String::from("InvalidInput"),
                 status: None,
@@ -189,7 +190,7 @@ fn provider_resolution(input: &ProviderResolutionInput) -> Value {
     json!({"model": model, "provider": provider})
 }
 
-fn rate_limit_error(input: &RateLimitErrorInput) -> Value {
+fn rate_limit_error(input: &RateLimitErrorInput) -> HelperResult {
     let error = ProxyRateLimitError::new(ProxyRateLimitErrorInit {
         detail: input.detail.clone(),
         headers: input.headers.clone(),
@@ -197,15 +198,28 @@ fn rate_limit_error(input: &RateLimitErrorInput) -> Value {
         rate_limit_type: input.rate_limit_type,
         model: input.model.clone(),
         llm_provider: input.llm_provider.clone(),
+    })
+    .or_value_error()?;
+    let status_code = error.clone().into_response().status().as_u16();
+    let headers: Option<BTreeMap<&str, String>> = error.headers.as_ref().map(|present| {
+        present
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str(),
+                    String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                )
+            })
+            .collect()
     });
-    json!({
-        "status_code": 429,
-        "headers": error.headers,
+    Ok(json!({
+        "status_code": status_code,
+        "headers": headers,
         "message": error.message,
         "category": error.category,
         "rate_limit_type": error.rate_limit_type,
         "model": error.model,
         "llm_provider": error.llm_provider,
         "detail": error.detail,
-    })
+    }))
 }

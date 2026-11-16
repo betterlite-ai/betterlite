@@ -3,15 +3,15 @@
 use std::collections::BTreeMap;
 
 use axum::http::StatusCode;
-use axum::http::header::HeaderValue;
+use axum::http::header::{HeaderMap, HeaderValue};
 use axum::response::IntoResponse as _;
 use betterlite_redact::structured::Payload;
 use rstest::rstest;
 use serde_json::json;
 
 use super::{
-    ProxyRateLimitError, ProxyRateLimitErrorInit, RateLimitCategory, RateLimitDimension,
-    coerce_message,
+    InvalidRateLimitHeader, ProxyRateLimitError, ProxyRateLimitErrorInit, RateLimitCategory,
+    RateLimitDimension, coerce_message,
 };
 
 #[rstest]
@@ -57,11 +57,13 @@ fn error_with_headers(headers: BTreeMap<String, Payload>) -> ProxyRateLimitError
         model: None,
         llm_provider: None,
     })
+    .expect("the headers are valid")
 }
 
 #[test]
 fn new_defaults_match_litellm() {
-    let error = ProxyRateLimitError::new(ProxyRateLimitErrorInit::default());
+    let error = ProxyRateLimitError::new(ProxyRateLimitErrorInit::default())
+        .expect("no headers means nothing to reject");
     assert_eq!(error.message, "");
     assert_eq!(error.headers, None);
     assert_eq!(error.category, RateLimitCategory::LitellmRateLimit);
@@ -89,15 +91,12 @@ fn new_keeps_given_fields() {
         model: Some(String::from("gpt-4o")),
         llm_provider: Some(String::from("openai")),
     };
-    let error = ProxyRateLimitError::new(init);
+    let error = ProxyRateLimitError::new(init).expect("the headers are valid");
     assert_eq!(error.message, "slow down");
-    assert_eq!(
-        error.headers,
-        Some(BTreeMap::from([
-            (String::from("retry-after"), String::from("5")),
-            (String::from("x-bucket"), String::from("a")),
-        ]))
-    );
+    let headers = error.headers.as_ref().expect("headers were given");
+    assert_eq!(headers.len(), 2);
+    assert_eq!(headers["retry-after"], "5");
+    assert_eq!(headers["x-bucket"], "a");
     assert_eq!(error.category, RateLimitCategory::LitellmBatchRateLimit);
     assert_eq!(error.rate_limit_type, Some(RateLimitDimension::Budget));
     assert_eq!(error.model, "gpt-4o");
@@ -112,13 +111,9 @@ fn new_keeps_given_fields() {
 #[case::empty_text(json!(""), "")]
 fn header_values_are_stringified(#[case] value: Payload, #[case] expected: &str) {
     let error = error_with_headers(BTreeMap::from([(String::from("x-test"), value)]));
-    assert_eq!(
-        error.headers,
-        Some(BTreeMap::from([(
-            String::from("x-test"),
-            expected.to_owned()
-        )]))
-    );
+    let headers = error.headers.expect("headers were given");
+    assert_eq!(headers.len(), 1);
+    assert_eq!(headers["x-test"], expected);
 }
 
 #[test]
@@ -145,7 +140,9 @@ async fn into_response_is_a_429_with_detail_and_headers() {
         model: None,
         llm_provider: None,
     };
-    let response = ProxyRateLimitError::new(init).into_response();
+    let response = ProxyRateLimitError::new(init)
+        .expect("the headers are valid")
+        .into_response();
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(
         response.headers().get("retry-after"),
@@ -164,13 +161,64 @@ async fn into_response_is_a_429_with_detail_and_headers() {
     );
 }
 
+fn init_with_header(name: &str, value: Payload) -> ProxyRateLimitErrorInit {
+    ProxyRateLimitErrorInit {
+        headers: Some(BTreeMap::from([(String::from(name), value)])),
+        ..ProxyRateLimitErrorInit::default()
+    }
+}
+
+#[test]
+fn new_rejects_a_header_name_http_cannot_carry() {
+    let error = ProxyRateLimitError::new(init_with_header("bad header", json!("value")))
+        .expect_err("a space is not allowed in a header name");
+    assert_eq!(
+        error,
+        InvalidRateLimitHeader::Name {
+            name: String::from("bad header")
+        }
+    );
+    assert!(error.to_string().contains("bad header"));
+}
+
+#[test]
+fn new_rejects_a_header_value_http_cannot_carry_without_echoing_it() {
+    let error = ProxyRateLimitError::new(init_with_header("x-secret", json!("line\nbreak")))
+        .expect_err("a newline is not allowed in a header value");
+    assert_eq!(
+        error,
+        InvalidRateLimitHeader::Value {
+            name: String::from("x-secret")
+        }
+    );
+    assert!(error.to_string().contains("x-secret"));
+    assert!(!error.to_string().contains("break"));
+}
+
 #[tokio::test]
-async fn into_response_drops_headers_http_cannot_carry() {
-    let error = error_with_headers(BTreeMap::from([(
-        String::from("bad header"),
-        json!("value"),
-    )]));
-    let response = error.into_response();
-    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-    assert!(response.headers().get("bad header").is_none());
+async fn into_response_keeps_headers_that_differ_only_by_case() {
+    let init = ProxyRateLimitErrorInit {
+        headers: Some(BTreeMap::from([
+            (String::from("Retry-After"), json!(5)),
+            (String::from("retry-after"), json!(9)),
+        ])),
+        ..ProxyRateLimitErrorInit::default()
+    };
+    let response = ProxyRateLimitError::new(init)
+        .expect("the headers are valid")
+        .into_response();
+    let retry_after: Vec<&HeaderValue> = response.headers().get_all("retry-after").iter().collect();
+    assert_eq!(
+        retry_after,
+        [
+            &HeaderValue::from_static("5"),
+            &HeaderValue::from_static("9")
+        ]
+    );
+}
+
+#[test]
+fn explicit_empty_headers_stay_an_empty_map() {
+    let error = error_with_headers(BTreeMap::new());
+    assert_eq!(error.headers, Some(HeaderMap::new()));
 }

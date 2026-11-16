@@ -48,19 +48,30 @@ pub struct ProxyRateLimitErrorInit {
 pub struct ProxyRateLimitError {
     pub detail: Payload,
     pub message: String,
-    pub headers: Option<BTreeMap<String, String>>,
+    pub headers: Option<HeaderMap>,
     pub category: RateLimitCategory,
     pub rate_limit_type: Option<RateLimitDimension>,
     pub model: String,
     pub llm_provider: String,
 }
 
+// A header the limiter named that HTTP can't carry; it names the header, never the value, which can be a secret.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum InvalidRateLimitHeader {
+    #[error("rate limit header name {name:?} is not a valid HTTP header name")]
+    Name { name: String },
+    #[error("rate limit header {name:?} has a value HTTP cannot carry")]
+    Value { name: String },
+}
+
 impl ProxyRateLimitError {
     // Prometheus' exception_class label stays HTTPException, which is what proxy-side 429s were before this class.
     pub const PROMETHEUS_EXCEPTION_CLASS: &str = "HTTPException";
 
-    #[must_use]
-    pub fn new(init: ProxyRateLimitErrorInit) -> Self {
+    /// # Errors
+    ///
+    /// Returns [`InvalidRateLimitHeader`] naming the first header whose name or value HTTP cannot carry.
+    pub fn new(init: ProxyRateLimitErrorInit) -> Result<Self, InvalidRateLimitHeader> {
         let ProxyRateLimitErrorInit {
             detail,
             headers,
@@ -70,25 +81,26 @@ impl ProxyRateLimitError {
             llm_provider,
         } = init;
         let message = coerce_message(&detail);
-        Self {
+        let headers = headers.map(http_headers).transpose()?;
+        Ok(Self {
             detail,
             message,
-            headers: headers.map(stringified_headers),
+            headers,
             category: category.unwrap_or(RateLimitCategory::LitellmRateLimit),
             rate_limit_type,
             model: model.unwrap_or_default(),
             llm_provider: llm_provider.unwrap_or_else(|| String::from(PROXY_LLM_PROVIDER_FALLBACK)),
-        }
+        })
     }
 }
 
 // never the derived Debug: a limiter's header value must not escape through format!("{:?}")
 impl fmt::Debug for ProxyRateLimitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let header_names: Option<Vec<&String>> = self
+        let header_names: Option<Vec<&str>> = self
             .headers
             .as_ref()
-            .map(|headers| headers.keys().collect());
+            .map(|headers| headers.keys().map(HeaderName::as_str).collect());
         f.debug_struct("ProxyRateLimitError")
             .field("detail", &self.detail)
             .field("message", &self.message)
@@ -115,7 +127,7 @@ impl IntoResponse for ProxyRateLimitError {
         let body = HttpExceptionBody { detail: &detail };
         let mut response = (StatusCode::TOO_MANY_REQUESTS, Json(body)).into_response();
         if let Some(present) = headers {
-            insert_headers(response.headers_mut(), &present);
+            response.headers_mut().extend(present);
         }
         response
     }
@@ -152,12 +164,17 @@ fn json_text(detail: &Payload) -> String {
     }
 }
 
-// {k: str(v)} in LiteLLM; a string stays as it is and every other value keeps its JSON text.
-fn stringified_headers(headers: BTreeMap<String, Payload>) -> BTreeMap<String, String> {
-    headers
-        .into_iter()
-        .map(|(name, value)| (name, stringified_header(&value)))
-        .collect()
+// {k: str(v)} in LiteLLM, checked against what HTTP can carry; names that differ only by case stay two entries.
+fn http_headers(headers: BTreeMap<String, Payload>) -> Result<HeaderMap, InvalidRateLimitHeader> {
+    let mut checked = HeaderMap::with_capacity(headers.len());
+    for (name, value) in headers {
+        let header_name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_error| InvalidRateLimitHeader::Name { name: name.clone() })?;
+        let header_value = HeaderValue::from_str(&stringified_header(&value))
+            .map_err(|_error| InvalidRateLimitHeader::Value { name })?;
+        checked.append(header_name, header_value);
+    }
+    Ok(checked)
 }
 
 fn stringified_header(value: &Payload) -> String {
@@ -168,18 +185,5 @@ fn stringified_header(value: &Payload) -> String {
         | Payload::Number(_)
         | Payload::Object(_)
         | Payload::Array(_)) => other.to_string(),
-    }
-}
-
-// A name or value HTTP can't carry is dropped here; the 429 still goes out with its status and body.
-fn insert_headers(target: &mut HeaderMap, headers: &BTreeMap<String, String>) {
-    for (header_name, header_value) in headers {
-        let Ok(name) = HeaderName::from_bytes(header_name.as_bytes()) else {
-            continue;
-        };
-        let Ok(value) = HeaderValue::from_str(header_value) else {
-            continue;
-        };
-        target.insert(name, value);
     }
 }

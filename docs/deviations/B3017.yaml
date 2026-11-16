@@ -51,7 +51,7 @@ deviations:
       docs/compatibility.md writes standard JSON instead of Python repr or str text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L86
   - what: >-
-      A header name or value the HTTP layer cannot carry is dropped from the 429 response; LiteLLM passes every stringified header to FastAPI and leaves validation to the server.
+      ProxyRateLimitError::new returns an error naming the first header whose name or value HTTP cannot carry; LiteLLM stores every stringified header and leaves validation to the server.
     why: >-
-      A header no limiter sends must not turn the 429 into a different error, and the status and detail body still go out.
+      A header the limiter sent that no response can carry would otherwise vanish from the 429 without a trace; the error names the header and never echoes its value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/proxy_rate_limit_error.py#L161

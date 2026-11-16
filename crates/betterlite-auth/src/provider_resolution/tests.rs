@@ -154,7 +154,7 @@ fn absent_router_falls_back_after_native_failure() {
 
 #[test]
 fn malformed_alias_rows_fall_back() {
-    let native = FakeNative::new(&[]);
+    let native = FakeNative::new(&[("openai/gpt-4o-mini", "gpt-4o-mini", "openai")]);
     let router = FakeRouter::new(rows(&[
         r#""not-a-deployment""#,
         r#"{"model_name": 7, "litellm_params": {"model": "openai/gpt-4o-mini"}}"#,
@@ -165,4 +165,5 @@ fn malformed_alias_rows_fall_back() {
     ]));
     let resolved = resolve_rate_limit_provider(Some("tpm-locked"), &native, Some(&router));
     assert_eq!(resolved, pair("tpm-locked", "litellm_proxy"));
+    assert_eq!(native.calls.load(Ordering::Relaxed), 1);
 }
