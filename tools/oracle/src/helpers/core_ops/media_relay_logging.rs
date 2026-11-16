@@ -1,14 +1,9 @@
-use betterlite_config::cost_adjustments::{
-    AdjustmentKind, CostAdjustmentMap, resolve_adjustment_entries,
-};
-use betterlite_core::api::media_relay_logging::fal::{
-    FalPassthroughRequest, fal_ai_passthrough_outcome,
-};
+use betterlite_config::cost_adjustments::CostAdjustmentMap;
 use betterlite_core::api::media_relay_logging::routes::{
     is_deepgram_listen_route, is_fal_ai_route,
 };
+use betterlite_core::api::media_relay_logging::spend::MediaSpend;
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
-use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
@@ -18,8 +13,11 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use self::services::{Adjustments, fal_lookup, listen_outcome};
+use self::deepgram::deepgram_answer;
+use self::fal::fal_answer;
 
+mod deepgram;
+mod fal;
 mod services;
 
 #[derive(Debug, Deserialize)]
@@ -105,97 +103,26 @@ impl Helper for Op {
     }
 }
 
-// What the relay handler leaves for the spend logger: the response text, the billed duration and its cost.
-fn deepgram_answer(call: &DeepgramCall) -> Result<Value, Box<HelperError>> {
-    let adjustments = Adjustments {
-        discount: resolve_adjustment_entries(
-            AdjustmentKind::Discount,
-            "litellm_settings.cost_discount_config",
-            call.cost_discount_config.clone(),
-        )
-        .map_err(failure)?,
-        margin: resolve_adjustment_entries(
-            AdjustmentKind::Margin,
-            "litellm_settings.cost_margin_config",
-            call.cost_margin_config.clone(),
-        )
-        .map_err(failure)?,
-    };
-    let kwargs = PassThroughLoggingKwargs {
-        entries: call.kwargs.clone(),
-    };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .map_err(failure)?;
-    let listen = runtime.block_on(listen_outcome(
-        &call.catalog,
-        &adjustments,
-        &call.upstream_url,
-        &call.messages,
-        &kwargs,
-    ))?;
-    let spend = listen.spend;
-    Ok(json!({
-        "text": transcript_text(&listen.outcome),
-        "billed_seconds": listen.billed_seconds.normalize().to_string(),
-        "model": spend.model,
-        "custom_llm_provider": spend.custom_llm_provider,
-        "response_cost": spend.response_cost.map(|cost| cost.normalize().to_string()),
-        "kwargs": kwargs_view(&listen.outcome.kwargs, spend.response_cost),
-    }))
-}
-
-// What the relay handler leaves for the spend logger: the image urls, the model and the submission's cost.
-fn fal_answer(call: &FalCall) -> Result<Value, Box<HelperError>> {
-    let lookup = fal_lookup(&call.catalog)?;
-    let kwargs = PassThroughLoggingKwargs {
-        entries: call.kwargs.clone(),
-    };
-    let request = FalPassthroughRequest {
-        url_route: &call.url_route,
-        response_body: &call.response_body,
-        request_body: &call.request_body,
-        kwargs: &kwargs,
-        lookup: &lookup,
-        queue_base: call.queue_base.as_deref(),
-    };
-    let passthrough = fal_ai_passthrough_outcome(&request).map_err(failure)?;
-    let spend = passthrough.spend;
-    Ok(json!({
-        "urls": image_urls(&passthrough.outcome),
-        "model": spend.model,
-        "custom_llm_provider": spend.custom_llm_provider,
-        "response_cost": spend.response_cost.map(|cost| cost.normalize().to_string()),
-        "kwargs": kwargs_view(&passthrough.outcome.kwargs, spend.response_cost),
-    }))
-}
-
-fn transcript_text(outcome: &HandlerOutcome) -> String {
-    let Some(PassThroughResponse::Transcription(Json::Object(fields))) = &outcome.result else {
-        return String::new();
-    };
-    let Some(Json::Text(text)) = fields.get("text") else {
-        return String::new();
-    };
-    text.clone()
-}
-
-fn image_urls(outcome: &HandlerOutcome) -> Vec<String> {
-    let Some(PassThroughResponse::Image(Json::Object(fields))) = &outcome.result else {
-        return Vec::new();
-    };
-    let Some(Json::List(items)) = fields.get("data") else {
-        return Vec::new();
-    };
-    let mut urls = Vec::new();
-    for item in items {
-        if let Json::Object(part) = item
-            && let Some(Json::Text(url)) = part.get("url")
-        {
-            urls.push(url.clone());
-        }
-    }
-    urls
+// What the relay handler leaves for the spend logger: the response's own fields, then the model, provider, cost and kwargs.
+fn relay_answer(
+    mut answer: Map<String, Value>,
+    outcome: &HandlerOutcome,
+    spend: &MediaSpend,
+) -> Value {
+    answer.insert("model".to_owned(), json!(spend.model));
+    answer.insert(
+        "custom_llm_provider".to_owned(),
+        json!(spend.custom_llm_provider),
+    );
+    answer.insert(
+        "response_cost".to_owned(),
+        json!(spend.response_cost.map(|cost| cost.normalize().to_string())),
+    );
+    answer.insert(
+        "kwargs".to_owned(),
+        kwargs_view(&outcome.kwargs, spend.response_cost),
+    );
+    Value::Object(answer)
 }
 
 // Money crosses the wire as normalized decimal text; the kwargs carry the same text for their cost.
