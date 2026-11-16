@@ -3,20 +3,21 @@ use betterlite_config::sections::azure_endpoints::Settings;
 use betterlite_models::decisions::Json;
 use betterlite_openai::embedding::{EmbeddingInput, EmbeddingResponse};
 use secrecy::SecretString;
+use serde::Serialize;
 
 use crate::credentials::cache::RefreshProviderCache;
 use crate::credentials::source::CredentialSources;
 use crate::endpoints::get_client::{ClientCache, GetClientRequest, get_azure_openai_client};
+use crate::endpoints::initialize::EndpointError;
 use crate::endpoints::projection::{
     CallableProvider, ClientKind, ClientOutcome, ClientSource, LiteLlmParams, SessionKind,
     SuppliedClient,
 };
 
 use super::client::{
-    ClientFactory, EmbeddingClient as _, Fields, Headers, ParseError, Parsed, RawEmbedding,
+    ClientFactory, EmbeddingClient, Fields, Headers, ParseError, Parsed, RawEmbedding,
 };
 use super::error::{AzureOpenAiError, EmbeddingError};
-use super::input::input_json;
 use super::logging::{EmbeddingLogger, PostCallRecord, PreCallRecord, ResponseKind};
 use super::reply::{EmbeddingReply, ModelResponse, convert_embedding};
 
@@ -42,34 +43,39 @@ pub struct EmbeddingCall<'call, Client> {
     pub model_response: ModelResponse,
 }
 
-pub struct ClientContext<'data> {
+pub struct ClientSetup<'data, 'run> {
     pub provider: Option<CallableProvider>,
     pub settings: &'data Settings,
     pub environment: &'data dyn EnvironmentLookup,
     pub refresh_enabled: bool,
     pub session: SessionKind,
     pub sources: &'data dyn CredentialSources,
-}
-
-pub struct Dependencies<'data, 'run, Factory> {
-    pub factory: &'run Factory,
-    pub context: ClientContext<'data>,
     pub cache: &'run mut dyn ClientCache,
     pub refresh_cache: &'run mut RefreshProviderCache<'data>,
-    pub logger: &'run mut dyn EmbeddingLogger,
 }
 
-struct Prepared {
+// the call after its pre_call: the logger and the client caches stay out of the future that waits for the SDK
+pub struct Begun<'call, Client> {
+    pub call: EmbeddingCall<'call, Client>,
     input: Json,
     data: Fields,
 }
 
+fn to_json<T>(value: &T) -> Result<Json, EmbeddingError>
+where
+    T: Serialize,
+{
+    serde_json::to_vec(value)
+        .and_then(|bytes| serde_json::from_slice(&bytes))
+        .map_err(EmbeddingError::Encode)
+}
+
 // {model, input, **optional_params}: an option named model or input replaces the value and keeps the position
-fn prepare<Client>(
-    call: &EmbeddingCall<'_, Client>,
+pub fn begin<'call, Client>(
+    call: EmbeddingCall<'call, Client>,
     logger: &mut dyn EmbeddingLogger,
-) -> Result<Prepared, EmbeddingError> {
-    let input = input_json(call.input);
+) -> Result<Begun<'call, Client>, EmbeddingError> {
+    let input = to_json(call.input).map_err(AzureOpenAiError::wrapped)?;
     let mut optional_params = call.optional_params.clone();
     if !call.headers.is_empty() {
         let headers = call
@@ -84,21 +90,26 @@ fn prepare<Client>(
         ("input".to_owned(), input.clone()),
     ]);
     data.extend(optional_params);
-    logger.pre_call(PreCallRecord {
-        input: input.clone(),
-        api_key: call.api_key.clone(),
-        azure_ad_token: call.azure_ad_token.clone(),
-        complete_input_dict: data.clone(),
-    })?;
-    Ok(Prepared { input, data })
+    logger
+        .pre_call(PreCallRecord {
+            input: input.clone(),
+            api_key: call.api_key.clone(),
+            azure_ad_token: call.azure_ad_token.clone(),
+            complete_input_dict: data.clone(),
+        })
+        .map_err(|error| AzureOpenAiError::wrapped(EmbeddingError::Logging(error)))?;
+    Ok(Begun { call, input, data })
 }
 
 // only the original api_version, model and litellm_params reach the client resolution; max_retries never does
-fn resolve<'data, Factory: ClientFactory>(
-    call: &EmbeddingCall<'_, Factory::Client>,
-    deps: &mut Dependencies<'data, '_, Factory>,
-) -> Result<ClientOutcome<'data>, EmbeddingError> {
-    let context = &deps.context;
+pub fn resolve<'data, Client>(
+    begun: &Begun<'_, Client>,
+    setup: ClientSetup<'data, '_>,
+) -> Result<ClientOutcome<'data>, EndpointError>
+where
+    Client: EmbeddingClient,
+{
+    let call = &begun.call;
     let request = GetClientRequest {
         api_key: call.api_key.clone(),
         api_base: Some(call.api_base.to_owned()),
@@ -106,22 +117,18 @@ fn resolve<'data, Factory: ClientFactory>(
         model: Some(call.model.to_owned()),
         is_async: call.aembedding,
         params: call.litellm_params.clone(),
-        provider: context.provider.clone(),
+        provider: setup.provider,
         supplied: call.client.map(|client| SuppliedClient {
             kind: client.kind(),
             custom_query: None,
         }),
-        settings: context.settings,
-        environment: context.environment,
-        refresh_enabled: context.refresh_enabled,
-        session: context.session,
-        sources: context.sources,
+        settings: setup.settings,
+        environment: setup.environment,
+        refresh_enabled: setup.refresh_enabled,
+        session: setup.session,
+        sources: setup.sources,
     };
-    Ok(get_azure_openai_client(
-        &request,
-        &mut *deps.cache,
-        &mut *deps.refresh_cache,
-    )?)
+    get_azure_openai_client(&request, setup.cache, setup.refresh_cache)
 }
 
 fn require_client_family(kind: ClientKind, is_async: bool) -> Result<(), EmbeddingError> {
@@ -145,136 +152,111 @@ fn require_client_family(kind: ClientKind, is_async: bool) -> Result<(), Embeddi
     }
 }
 
-// both paths resolve the client, check its family and send embeddings.with_raw_response.create(**data, timeout=timeout)
-async fn send_request<Factory: ClientFactory>(
-    call: &EmbeddingCall<'_, Factory::Client>,
-    prepared: &Prepared,
-    deps: &mut Dependencies<'_, '_, Factory>,
-) -> Result<RawEmbedding, EmbeddingError> {
-    let outcome = resolve(call, deps)?;
+// both paths check the client's family and send embeddings.with_raw_response.create(**data, timeout=timeout)
+pub async fn send<Factory>(
+    begun: &Begun<'_, Factory::Client>,
+    resolved: Result<ClientOutcome<'_>, EndpointError>,
+    factory: &Factory,
+) -> Result<RawEmbedding, EmbeddingError>
+where
+    Factory: ClientFactory,
+{
+    let call = &begun.call;
+    let outcome = resolved?;
     require_client_family(outcome.kind, call.aembedding)?;
     if let Some(supplied) = call.client
         && outcome.source == ClientSource::Supplied
     {
-        return Ok(supplied.create(&prepared.data, call.timeout).await?);
+        return Ok(supplied.create(&begun.data, call.timeout).await?);
     }
-    let built = deps.factory.client(&outcome)?;
-    Ok(built.create(&prepared.data, call.timeout).await?)
+    let built = factory.client(&outcome)?;
+    Ok(built.create(&begun.data, call.timeout).await?)
 }
 
 fn unexpected_text(status: u16, text: &str) -> AzureOpenAiError {
+    let preview: String = text.chars().take(TEXT_PREVIEW_CHARACTERS).collect();
     AzureOpenAiError {
         status_code: status,
-        message: format!(
-            "Unexpected string response from Azure: {}",
-            text.chars()
-                .take(TEXT_PREVIEW_CHARACTERS)
-                .collect::<String>()
-        ),
+        message: format!("Unexpected string response from Azure: {preview}"),
         headers: None,
         cause: None,
     }
 }
 
-fn dumped(response: &EmbeddingResponse) -> Result<Json, EmbeddingError> {
-    serde_json::to_vec(response)
-        .and_then(|bytes| serde_json::from_slice(&bytes))
-        .map_err(EmbeddingError::Encode)
-}
-
 fn post_record<Client>(
-    call: &EmbeddingCall<'_, Client>,
-    prepared: &Prepared,
+    begun: &Begun<'_, Client>,
     original_response: Json,
     kind: ResponseKind,
 ) -> PostCallRecord {
     PostCallRecord {
-        input: prepared.input.clone(),
-        api_key: call.api_key.clone(),
+        input: begun.input.clone(),
+        api_key: begun.call.api_key.clone(),
         original_response,
         kind,
-        complete_input_dict: prepared.data.clone(),
+        complete_input_dict: begun.data.clone(),
         // only the sync path's successful call names the api_base
-        api_base: (kind == ResponseKind::SdkObject).then(|| call.api_base.to_owned()),
+        api_base: (kind == ResponseKind::SdkObject).then(|| begun.call.api_base.to_owned()),
     }
 }
 
-async fn send_sync<Factory: ClientFactory>(
-    call: &EmbeddingCall<'_, Factory::Client>,
-    prepared: &Prepared,
-    deps: &mut Dependencies<'_, '_, Factory>,
-) -> Result<Option<EmbeddingReply>, EmbeddingError> {
-    let raw = send_request(call, prepared, deps).await?;
-    let response = match raw.parse()? {
-        Parsed::Embedding(response) => response,
-        Parsed::Text(text) => {
-            return Err(EmbeddingError::Azure(unexpected_text(raw.status, &text)));
-        }
-    };
-    let original = dumped(&response)?;
-    deps.logger.post_call(post_record(
-        call,
-        prepared,
-        original,
-        ResponseKind::SdkObject,
-    ));
-    if call.model_response == ModelResponse::Other {
-        return Ok(None);
-    }
-    Ok(Some(convert_embedding(*response, raw.headers, false)))
-}
-
-async fn send_async<Factory: ClientFactory>(
-    call: &EmbeddingCall<'_, Factory::Client>,
-    prepared: &Prepared,
-    deps: &mut Dependencies<'_, '_, Factory>,
-) -> Result<Option<EmbeddingReply>, EmbeddingError> {
-    let raw = send_request(call, prepared, deps).await?;
-    let response = match raw.parse() {
-        Ok(Parsed::Embedding(response)) => response,
-        Ok(Parsed::Text(text)) => {
-            return Err(EmbeddingError::Azure(unexpected_text(raw.status, &text)));
-        }
-        Err(ParseError::Json(error)) => {
-            return Err(EmbeddingError::Azure(AzureOpenAiError {
-                status_code: raw.status,
-                message: format!("Failed to parse raw Azure embedding response: {error}"),
-                headers: None,
-                cause: Some(ParseError::Json(error)),
-            }));
-        }
-        Err(error @ ParseError::Shape(_)) => return Err(EmbeddingError::Parse(error)),
-    };
-    let original = dumped(&response)?;
-    deps.logger
-        .post_call(post_record(call, prepared, original, ResponseKind::Dumped));
-    if call.model_response == ModelResponse::Other {
-        return Err(EmbeddingError::Azure(AzureOpenAiError {
-            status_code: DEFAULT_STATUS,
-            message: "embedding_response is not an instance of EmbeddingResponse".to_owned(),
+fn parse_response(
+    raw: &RawEmbedding,
+    is_async: bool,
+) -> Result<Box<EmbeddingResponse>, EmbeddingError> {
+    match raw.parse() {
+        Ok(Parsed::Embedding(response)) => Ok(response),
+        Ok(Parsed::Text(text)) => Err(EmbeddingError::Azure(unexpected_text(raw.status, &text))),
+        Err(ParseError::Json(error)) if is_async => Err(EmbeddingError::Azure(AzureOpenAiError {
+            status_code: raw.status,
+            message: format!("Failed to parse raw Azure embedding response: {error}"),
             headers: None,
-            cause: None,
-        }));
+            cause: Some(ParseError::Json(error)),
+        })),
+        Err(error) => Err(EmbeddingError::Parse(error)),
     }
-    Ok(Some(convert_embedding(*response, raw.headers, true)))
+}
+
+fn convert<Client>(
+    begun: &Begun<'_, Client>,
+    raw: RawEmbedding,
+    logger: &mut dyn EmbeddingLogger,
+) -> Result<Option<EmbeddingReply>, EmbeddingError> {
+    let is_async = begun.call.aembedding;
+    let response = parse_response(&raw, is_async)?;
+    let kind = if is_async {
+        ResponseKind::Dumped
+    } else {
+        ResponseKind::SdkObject
+    };
+    logger.post_call(post_record(begun, to_json(&*response)?, kind));
+    if begun.call.model_response == ModelResponse::Other {
+        return if is_async {
+            Err(EmbeddingError::Azure(AzureOpenAiError {
+                status_code: DEFAULT_STATUS,
+                message: "embedding_response is not an instance of EmbeddingResponse".to_owned(),
+                headers: None,
+                cause: None,
+            }))
+        } else {
+            Ok(None)
+        };
+    }
+    Ok(Some(convert_embedding(*response, raw.headers, is_async)))
 }
 
 // the sync path wraps every failure in AzureOpenAIError; the async path logs str(error) and raises the original
-pub async fn embedding<Factory: ClientFactory>(
-    call: EmbeddingCall<'_, Factory::Client>,
-    deps: &mut Dependencies<'_, '_, Factory>,
+pub fn finish<Client>(
+    begun: &Begun<'_, Client>,
+    sent: Result<RawEmbedding, EmbeddingError>,
+    logger: &mut dyn EmbeddingLogger,
 ) -> Result<Option<EmbeddingReply>, EmbeddingError> {
-    let prepared = prepare(&call, &mut *deps.logger).map_err(AzureOpenAiError::wrapped)?;
-    if !call.aembedding {
-        return send_sync(&call, &prepared, deps)
-            .await
-            .map_err(|error| EmbeddingError::Azure(AzureOpenAiError::wrapped(error)));
+    let result = sent.and_then(|raw| convert(begun, raw, logger));
+    if !begun.call.aembedding {
+        return result.map_err(|error| EmbeddingError::Azure(AzureOpenAiError::wrapped(error)));
     }
-    let result = send_async(&call, &prepared, deps).await;
     if let Err(error) = &result {
         let text = Json::Text(error.to_string());
-        deps.logger
-            .post_call(post_record(&call, &prepared, text, ResponseKind::ErrorText));
+        logger.post_call(post_record(begun, text, ResponseKind::ErrorText));
     }
     result
 }

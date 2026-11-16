@@ -11,7 +11,7 @@ use tokio::runtime::Builder;
 use super::fakes::{Cache, NoSources};
 
 use crate::credentials::cache::RefreshProviderCache;
-use crate::embeddings::call::{ClientContext, Dependencies, EmbeddingCall, embedding};
+use crate::embeddings::call::{ClientSetup, EmbeddingCall, begin, finish, resolve, send};
 use crate::embeddings::client::{
     ClientFactory, EmbeddingClient, Fields, Headers, RawEmbedding, SdkError,
 };
@@ -198,12 +198,19 @@ pub(super) fn call<'call>(
     }
 }
 
-pub(super) fn supplied(kind: ClientKind, answer: &Answer, calls: &Calls) -> Sdk {
-    Sdk {
+// a call whose supplied client has the given kind answers with the fixture reply
+pub(super) fn supplied_run(kind: ClientKind, aembedding: bool) -> Run {
+    let answer = json_reply(&[]);
+    let calls = Calls::default();
+    let client = Sdk {
         kind,
         answer: answer.clone(),
-        calls: Arc::clone(calls),
-    }
+        calls: Arc::clone(&calls),
+    };
+    let input = EmbeddingInput::Text("a".to_owned());
+    let mut request = call(&input, aembedding);
+    request.client = Some(&client);
+    run(request, &answer, &calls, Recorder::default())
 }
 
 pub(super) fn run(
@@ -223,26 +230,24 @@ pub(super) fn run(
     let mut cache = Cache::default();
     let mut refresh_cache = RefreshProviderCache::new(&sources);
     let mut logger = recorder;
-    let result = {
-        let mut dependencies = Dependencies {
-            factory: &factory,
-            context: ClientContext {
-                provider: None,
-                settings: &settings,
-                environment: &environment,
-                refresh_enabled: false,
-                session: SessionKind::Dedicated,
-                sources: &sources,
-            },
+    let result = begin(request, &mut logger).and_then(|begun| {
+        let setup = ClientSetup {
+            provider: None,
+            settings: &settings,
+            environment: &environment,
+            refresh_enabled: false,
+            session: SessionKind::Dedicated,
+            sources: &sources,
             cache: &mut cache,
             refresh_cache: &mut refresh_cache,
-            logger: &mut logger,
         };
-        Builder::new_current_thread()
+        let resolved = resolve(&begun, setup);
+        let sent = Builder::new_current_thread()
             .build()
             .unwrap()
-            .block_on(embedding(request, &mut dependencies))
-    };
+            .block_on(send(&begun, resolved, &factory));
+        finish(&begun, sent, &mut logger)
+    });
     let seen = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
     let built = factory
         .built

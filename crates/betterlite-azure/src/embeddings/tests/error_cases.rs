@@ -8,7 +8,7 @@ use crate::embeddings::reply::ModelResponse;
 use crate::endpoints::projection::ClientKind;
 
 use super::support::{
-    Answer, BODY, Calls, Recorder, Run, call, headers, json_reply, run, supplied, text_reply,
+    Answer, BODY, Calls, Recorder, Run, call, headers, json_reply, run, supplied_run, text_reply,
 };
 
 fn input() -> EmbeddingInput {
@@ -70,11 +70,12 @@ pub(super) fn embedding_usage() {
 }
 
 fn non_embedding_projection(answer: &Answer) {
-    let mut sync_call = call(&input(), false);
+    let text = input();
+    let mut sync_call = call(&text, false);
     sync_call.model_response = ModelResponse::Other;
     let sync = run(sync_call, answer, &Calls::default(), Recorder::default());
     assert!(sync.result.unwrap().is_none());
-    let mut async_call = call(&input(), true);
+    let mut async_call = call(&text, true);
     async_call.model_response = ModelResponse::Other;
     let outcome = run(async_call, answer, &Calls::default(), Recorder::default());
     assert_eq!(outcome.recorder.post.len(), 2);
@@ -164,12 +165,7 @@ fn pre_call_failure_is_wrapped_for_async() {
 }
 
 fn assert_sync_rejects(kind: ClientKind) {
-    let answer = json_reply(&[]);
-    let calls = Calls::default();
-    let client = supplied(kind, &answer, &calls);
-    let mut request = call(&input(), false);
-    request.client = Some(&client);
-    let error = azure(run(request, &answer, &calls, Recorder::default()));
+    let error = azure(supplied_run(kind, false));
     assert_eq!(error.status_code, 500);
     assert_eq!(
         error.message,
@@ -178,12 +174,7 @@ fn assert_sync_rejects(kind: ClientKind) {
 }
 
 fn assert_async_rejects(kind: ClientKind) {
-    let answer = json_reply(&[]);
-    let calls = Calls::default();
-    let client = supplied(kind, &answer, &calls);
-    let mut request = call(&input(), true);
-    request.client = Some(&client);
-    let outcome = run(request, &answer, &calls, Recorder::default());
+    let outcome = supplied_run(kind, true);
     assert_eq!(outcome.recorder.post.len(), 1);
     assert_eq!(outcome.recorder.post[0].kind, ResponseKind::ErrorText);
     match outcome.result.unwrap_err() {
@@ -196,12 +187,7 @@ fn assert_async_rejects(kind: ClientKind) {
 }
 
 fn assert_accepts(kind: ClientKind, aembedding: bool) {
-    let answer = json_reply(&[]);
-    let calls = Calls::default();
-    let client = supplied(kind, &answer, &calls);
-    let mut request = call(&input(), aembedding);
-    request.client = Some(&client);
-    let outcome = run(request, &answer, &calls, Recorder::default());
+    let outcome = supplied_run(kind, aembedding);
     assert!(outcome.built.is_empty());
     assert_eq!(outcome.calls.len(), 1);
     assert!(outcome.result.unwrap().is_some());

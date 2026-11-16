@@ -64,12 +64,12 @@ pub(super) struct Sdk {
 }
 
 // the SDK sends extra_headers as HTTP headers, so the wire body leaves them out
-fn wire_view(data: &Fields, timeout: f64) -> Value {
+fn wire_view(data: &Fields) -> Value {
     let mut body = serde_json::to_value(data).unwrap_or(Value::Null);
     if let Some(fields) = body.as_object_mut() {
         fields.remove("extra_headers");
     }
-    json!({"body": body, "timeout": timeout})
+    json!({"body": body})
 }
 
 impl EmbeddingClient for Sdk {
@@ -80,12 +80,12 @@ impl EmbeddingClient for Sdk {
     fn create(
         &self,
         data: &Fields,
-        timeout: f64,
+        _timeout: f64,
     ) -> impl Future<Output = Result<RawEmbedding, SdkError>> + Send {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(wire_view(data, timeout));
+            .push(wire_view(data));
         ready(match &self.answer {
             Answer::Connection {} => Err(SdkError {
                 status_code: None,

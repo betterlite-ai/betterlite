@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_azure::credentials::cache::RefreshProviderCache;
-use betterlite_azure::embeddings::call::{ClientContext, Dependencies, EmbeddingCall, embedding};
+use betterlite_azure::embeddings::call::{
+    ClientSetup, EmbeddingCall, begin, finish, resolve, send,
+};
 use betterlite_azure::embeddings::reply::ModelResponse;
 use betterlite_azure::endpoints::projection::{LiteLlmParams, SessionKind};
 use betterlite_config::sections::azure_endpoints::Settings;
@@ -16,7 +18,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -35,26 +37,20 @@ struct Step {
     input: EmbeddingInput,
     answer: Answer,
     client: ClientName,
-    #[serde(default)]
     aembedding: bool,
     model: String,
     api_base: String,
     api_version: String,
     timeout: f64,
     api_key: String,
-    #[serde(default)]
     azure_ad_token: Option<String>,
-    #[serde(default)]
     max_retries: Option<i64>,
-    #[serde(default)]
     optional_params: IndexMap<String, Json>,
-    #[serde(default)]
     headers: BTreeMap<String, String>,
-    #[serde(default)]
     litellm_params: LiteLlmParams,
 }
 
-async fn run_step(step: &Step) -> Value {
+fn run_step(step: &Step, runtime: &Runtime) -> Value {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let client = Sdk {
         kind: step.client.kind(),
@@ -83,21 +79,21 @@ async fn run_step(step: &Step) -> Value {
         litellm_params: step.litellm_params.clone(),
         model_response: ModelResponse::Embedding,
     };
-    let mut dependencies = Dependencies {
-        factory: &NoFactory,
-        context: ClientContext {
+    let outcome = begin(call, &mut recorder).and_then(|begun| {
+        let setup = ClientSetup {
             provider: None,
             settings: &settings,
             environment: &environment,
             refresh_enabled: false,
             session: SessionKind::Dedicated,
             sources: &sources,
-        },
-        cache: &mut cache,
-        refresh_cache: &mut refresh_cache,
-        logger: &mut recorder,
-    };
-    let outcome = embedding(call, &mut dependencies).await;
+            cache: &mut cache,
+            refresh_cache: &mut refresh_cache,
+        };
+        let resolved = resolve(&begun, setup);
+        let sent = runtime.block_on(send(&begun, resolved, &NoFactory));
+        finish(&begun, sent, &mut recorder)
+    });
     let seen = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
     json!({
         "result": outcome.as_ref().ok().and_then(Option::as_ref).map(output::reply),
@@ -127,7 +123,7 @@ impl Helper for Op {
         let steps: Vec<Value> = input
             .steps
             .iter()
-            .map(|step| runtime.block_on(run_step(step)))
+            .map(|step| run_step(step, &runtime))
             .collect();
         Ok(json!({"steps": steps}))
     }

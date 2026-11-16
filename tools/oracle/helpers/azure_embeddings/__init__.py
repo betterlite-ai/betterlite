@@ -1,18 +1,92 @@
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
+from typing import TypeAlias
 
+import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.azure.azure import AzureChatCompletion
 from litellm.llms.azure.common_utils import AzureOpenAIError
 from litellm.types.utils import EmbeddingResponse
-from openai import APIError, APIStatusError
+from openai import APIError, APIStatusError, AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
 from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
 
-from azure_embeddings.fixtures import Session, make_client
-from azure_embeddings.report import Recorder, azure_value, reply_value
-from azure_embeddings.types import Input, Step
+from azure_embeddings.report import (
+    ClientName,
+    Input,
+    Recorder,
+    Step,
+    azure_value,
+    reply_value,
+)
+
+BODY = TypeAdapter(dict[str, Json])
+ENDPOINT = "https://fixture.openai.azure.com"
+V1_URL = "https://fixture.openai.azure.com/openai/v1/"
+API_VERSION = "2024-02-01"
+CLIENT_KEY = "fixture-key"
+SdkClient: TypeAlias = AzureOpenAI | AsyncAzureOpenAI | OpenAI | AsyncOpenAI
+
+
+class Session:
+    def __init__(self, step: Step) -> None:
+        self.answer = step["answer"]
+        # the SDK adds encoding_format=base64 when the caller sent none; docs/deviations/B534.yaml lists it
+        self.sdk_adds_format = "encoding_format" not in step["optional_params"]
+        self.calls: list[Json] = []
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        body = BODY.validate_json(request.content)
+        if self.sdk_adds_format:
+            body.pop("encoding_format", None)
+        self.calls.append({"body": body})
+        answer = self.answer
+        if "connection" in answer:
+            raise httpx.ConnectError("fixture connection failure", request=request)
+        reply = answer["reply"]
+        return httpx.Response(
+            reply["status"],
+            headers=reply["headers"],
+            content=reply["body"].encode(),
+            request=request,
+        )
+
+
+def make_client(name: ClientName, session: Session) -> SdkClient:
+    transport = httpx.MockTransport(session.handle)
+    match name:
+        case "azure_open_ai":
+            return AzureOpenAI(
+                api_key=CLIENT_KEY,
+                azure_endpoint=ENDPOINT,
+                api_version=API_VERSION,
+                max_retries=0,
+                http_client=httpx.Client(transport=transport),
+            )
+        case "async_azure_open_ai":
+            return AsyncAzureOpenAI(
+                api_key=CLIENT_KEY,
+                azure_endpoint=ENDPOINT,
+                api_version=API_VERSION,
+                max_retries=0,
+                http_client=httpx.AsyncClient(transport=transport),
+            )
+        case "open_ai":
+            return OpenAI(
+                api_key=CLIENT_KEY,
+                base_url=V1_URL,
+                max_retries=0,
+                http_client=httpx.Client(transport=transport),
+            )
+        case "async_open_ai":
+            return AsyncOpenAI(
+                api_key=CLIENT_KEY,
+                base_url=V1_URL,
+                max_retries=0,
+                http_client=httpx.AsyncClient(transport=transport),
+            )
 
 
 def logging_object(recorder: Recorder) -> Logging:
@@ -25,15 +99,19 @@ def logging_object(recorder: Recorder) -> Logging:
         litellm_call_id="b534",
         function_id="b534",
     )
+    logger_params: dict[str, Callable[[dict[str, Json]], None]] = {"logger_fn": recorder.log}
+    no_params: dict[str, Json] = {}
     logging_obj.update_environment_variables(
-        litellm_params={"logger_fn": recorder.log},
-        optional_params={},
+        litellm_params=logger_params,
+        optional_params=no_params,
         model="my-deployment",
     )
     return logging_obj
 
 
 def call_embedding(step: Step, session: Session, logging_obj: Logging) -> EmbeddingResponse:
+    optional_params = dict(step["optional_params"])
+    litellm_params = dict(step["litellm_params"])
     outcome = AzureChatCompletion().embedding(
         model=step["model"],
         input=step["input"],
@@ -42,14 +120,14 @@ def call_embedding(step: Step, session: Session, logging_obj: Logging) -> Embedd
         timeout=step["timeout"],
         logging_obj=logging_obj,
         model_response=EmbeddingResponse(),
-        optional_params=dict(step["optional_params"]) if "optional_params" in step else {},
+        optional_params=optional_params,
         api_key=step["api_key"],
-        azure_ad_token=step["azure_ad_token"] if "azure_ad_token" in step else None,
-        max_retries=step["max_retries"] if "max_retries" in step else None,
+        azure_ad_token=step["azure_ad_token"],
+        max_retries=step["max_retries"],
         client=make_client(step["client"], session),
-        aembedding=step["aembedding"] if "aembedding" in step else False,
-        headers=step["headers"] if "headers" in step else None,
-        litellm_params=dict(step["litellm_params"]) if "litellm_params" in step else None,
+        aembedding=step["aembedding"],
+        headers=step["headers"],
+        litellm_params=litellm_params,
     )
     match outcome:
         case Coroutine():

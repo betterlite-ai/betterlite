@@ -36,29 +36,31 @@ pub enum EmbeddingError {
 }
 
 impl AzureOpenAiError {
+    fn from_sdk(raised: SdkError, message: String) -> Self {
+        let status_code = raised.status_code.unwrap_or(DEFAULT_STATUS);
+        match (raised.headers, raised.response) {
+            (None, Some(response)) => Self {
+                status_code,
+                message: response.text,
+                headers: Some(response.headers),
+                cause: None,
+            },
+            (headers, _response) => Self {
+                status_code,
+                message,
+                headers,
+                cause: None,
+            },
+        }
+    }
+
     // the sync catch-all: status_code or 500, headers or response.headers, and response.text once the headers came from it
     #[must_use]
     pub fn wrapped(error: EmbeddingError) -> Self {
         let message = error.to_string();
         match error {
             EmbeddingError::Azure(raised) => raised,
-            EmbeddingError::Sdk(raised) => {
-                let status_code = raised.status_code.unwrap_or(DEFAULT_STATUS);
-                match (raised.headers, raised.response) {
-                    (None, Some(response)) => Self {
-                        status_code,
-                        message: response.text,
-                        headers: Some(response.headers),
-                        cause: None,
-                    },
-                    (headers, _response) => Self {
-                        status_code,
-                        message,
-                        headers,
-                        cause: None,
-                    },
-                }
-            }
+            EmbeddingError::Sdk(raised) => Self::from_sdk(raised, message),
             EmbeddingError::Parse(raised) => Self {
                 status_code: DEFAULT_STATUS,
                 message,

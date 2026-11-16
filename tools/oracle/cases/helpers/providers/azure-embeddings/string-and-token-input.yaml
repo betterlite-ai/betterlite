@@ -11,6 +11,12 @@ call:
         api_version: "2024-02-01"
         timeout: 30.0
         api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
       - input: [1, 2, 3]
         client: azure_open_ai
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
@@ -19,6 +25,12 @@ call:
         api_version: "2024-02-01"
         timeout: 30.0
         api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
       - input: [[1, 2], [3]]
         client: async_azure_open_ai
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
@@ -28,6 +40,11 @@ call:
         api_version: "2024-02-01"
         timeout: 30.0
         api_key: azure-key
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
       - input: ["hello"]
         client: async_azure_open_ai
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
@@ -37,5 +54,10 @@ call:
         api_base: "https://example.openai.azure.com"
         api_version: "2024-02-01"
         api_key: azure-key
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
 env: {}
 compare: {ignore: []}

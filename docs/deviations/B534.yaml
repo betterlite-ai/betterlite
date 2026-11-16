@@ -6,6 +6,12 @@ deviations:
   - what: The logged original_response and the converted data keep only the fields of the typed embeddings response. An unknown field on the answer or on a data record is dropped.
     why: LiteLLM dumps the SDK object, which keeps unknown fields. The typed wire records of B006 do not, and the dropped fields are not part of the embeddings contract.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L714
+  - what: betterlite sends model, input and the optional params and does not add encoding_format "base64" when the caller left it unset.
+    why: LiteLLM reaches the OpenAI SDK's embeddings.create, which adds that field and decodes the answer to floats; the answer a client sees is the same floats, and the SDK transport that betterlite hands the data to is B173's and B025's, so the base64 round trip would only cost an encode and a decode.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L811
+  - what: A string embedding in the answer stays as sent, and a 2xx answer with an empty data list is returned as it is, where LiteLLM decodes base64 strings to float32 lists when the caller sent no encoding_format and fails an empty data list with ValueError("No embedding data received") (AzureOpenAIError 500 on the sync path).
+    why: Nothing in betterlite asked the provider for base64, and a valid answer with no records is not an error a caller can act on; the oracle cases keep the answers non-empty and drop the SDK's injected encoding_format from the recorded body.
+    link: https://github.com/openai/openai-python/blob/v2.54.0/src/openai/resources/embeddings.py#L114-L134
 kept_bugs:
   - what: The async path logs str(error) and raises the original SDK error, so a caller sees an SDK status error where the sync path raises AzureOpenAIError.
     why: A router that already handles both classes relies on the status attribute of either, and wrapping the async path would change what its callers catch.

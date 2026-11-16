@@ -102,7 +102,7 @@ pub trait EmbeddingClient: Sync {
 }
 
 pub trait ClientFactory: Sync {
-    type Client: EmbeddingClient;
+    type Client: EmbeddingClient + Send;
 
     fn client(&self, outcome: &ClientOutcome<'_>) -> Result<Self::Client, SdkError>;
 }

@@ -7,7 +7,7 @@ use crate::embeddings::client::Fields;
 use crate::embeddings::logging::ResponseKind;
 use crate::endpoints::projection::ClientKind;
 
-use super::support::{Answer, Calls, Recorder, Run, call, headers, json_reply, run, supplied};
+use super::support::{Answer, Calls, Recorder, Run, call, headers, json_reply, run, supplied_run};
 
 fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
@@ -214,13 +214,7 @@ pub(super) fn deployment_and_v1_path() {
 }
 
 fn supplied_client_skips_the_factory() {
-    let input = EmbeddingInput::Text("a".to_owned());
-    let answer = json_reply(&[]);
-    let calls = Calls::default();
-    let client = supplied(ClientKind::OpenAi, &answer, &calls);
-    let mut request = call(&input, false);
-    request.client = Some(&client);
-    let outcome = run(request, &answer, &calls, Recorder::default());
+    let outcome = supplied_run(ClientKind::OpenAi, false);
     assert!(outcome.result.is_ok());
     assert!(outcome.built.is_empty());
     assert_eq!(outcome.calls.len(), 1);
