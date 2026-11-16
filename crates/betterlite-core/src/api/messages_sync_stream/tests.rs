@@ -349,6 +349,17 @@ fn finish_waits_for_usage() {
 }
 
 #[test]
+fn a_choiceless_usage_chunk_hands_back_the_merged_delta_itself() {
+    let mut stream = started(Vec::new(), polyfilled());
+    stream.state.holding_stop_reason_chunk = Some(object(HELD_STOP));
+    let event = engine::update(&mut stream.state, &usage_chunk(5, 2), &stream.ids)
+        .expect("the choiceless update")
+        .expect("the merged delta leaves with the chunk");
+    assert_eq!(event, object(STOP_WITH_EDITS));
+    assert!(stream.state.queued_usage_chunk);
+}
+
+#[test]
 fn a_usage_bearing_choice_chunk_merges_into_a_held_stop() {
     let with_usage = chunk(
         r#"{"choices":[{"index":0,"delta":{"content":"B"},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3}}"#,
