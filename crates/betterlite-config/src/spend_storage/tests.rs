@@ -182,3 +182,23 @@ fn decodes_a_stored_policy_row() {
     assert_eq!(decoded.max_budget, Decimal::new(75, 1));
     decode_spend_storage_policy(b"not json").unwrap_err();
 }
+
+#[rstest]
+#[case::integer("100", Decimal::from(100_u8))]
+#[case::float("7.5", Decimal::new(75, 1))]
+#[case::text("\"12.25\"", Decimal::new(1225, 2))]
+fn decodes_a_stored_budget(#[case] configured: &str, #[case] expected: Decimal) {
+    let row = format!(r#"{{"litellm_settings":{{"max_budget":{configured}}},"environment":{{}}}}"#);
+    let decoded = decode_spend_storage_policy(row.as_bytes()).unwrap();
+    assert_eq!(decoded.max_budget, expected);
+}
+
+#[rstest]
+#[case::boolean("true")]
+#[case::array("[1]")]
+#[case::object("{}")]
+fn rejects_a_stored_budget_that_is_not_a_number(#[case] configured: &str) {
+    let row = format!(r#"{{"litellm_settings":{{"max_budget":{configured}}},"environment":{{}}}}"#);
+    let error = decode_spend_storage_policy(row.as_bytes()).unwrap_err();
+    assert!(error.to_string().contains("litellm_settings.max_budget"));
+}

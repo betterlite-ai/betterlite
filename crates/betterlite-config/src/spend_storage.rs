@@ -22,7 +22,7 @@ pub struct Raw {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct LiteLlmSettings {
-    max_budget: Option<RawNumber>,
+    max_budget: Option<JsonValue>,
 }
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -69,7 +69,10 @@ impl Section for Raw {
             missing_session_id: missing_session_id(&general.missing_session_id)?,
             spend_updates: spend_updates(&general.disable_spend_updates),
             max_budget: resolve_number(
-                self.litellm_settings.max_budget,
+                self.litellm_settings
+                    .max_budget
+                    .map(budget_number)
+                    .transpose()?,
                 MAX_BUDGET_PATH,
                 lookup,
                 parse_money,
@@ -148,4 +151,16 @@ const fn spend_updates(value: &JsonValue) -> SpendUpdates {
     } else {
         SpendUpdates::Allowed
     }
+}
+fn budget_number(configured: JsonValue) -> Result<RawNumber, ConfigError> {
+    let number = match configured {
+        JsonValue::Number(number) => number.as_f64().map(RawNumber::Float),
+        JsonValue::String(text) => Some(RawNumber::Text(text)),
+        JsonValue::Bool(flag) => Some(RawNumber::Boolean(flag)),
+        JsonValue::Null | JsonValue::Array(_) | JsonValue::Object(_) => None,
+    };
+    number.ok_or(ConfigError::InvalidScalar {
+        path: MAX_BUDGET_PATH.to_owned(),
+        value: false,
+    })
 }
