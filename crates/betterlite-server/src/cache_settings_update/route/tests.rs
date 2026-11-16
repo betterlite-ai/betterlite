@@ -221,6 +221,27 @@ async fn route_merges_the_saved_secret_and_keeps_redis_type_out_of_the_cache() {
 }
 
 #[tokio::test]
+async fn route_reads_the_stored_object_the_database_returns() {
+    let (fake, repository) = support::fake_repository();
+    fake.push_read(Ok(Some(support::object(&[
+        ("type", string("redis")),
+        ("host", string("saved-host")),
+        ("password", string(&support::sealed("saved-secret"))),
+    ]))));
+    let reinit = support::reinit();
+    let audit = support::audit(true);
+    let harness = support::harness(Some(repository), Arc::clone(&reinit), Arc::clone(&audit));
+    let body = support::request_body(support::json(r#"{"host":"h"}"#));
+    let (status, text) = support::post(&harness, Some(support::master_key()), &body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(text.contains(r#""password":"***REDACTED***""#));
+    assert_eq!(
+        reinit.params()[0].get("password"),
+        Some(&Json::Text("saved-secret".to_owned()))
+    );
+}
+
+#[tokio::test]
 async fn route_answers_a_string_detail_when_the_cache_refuses_the_params() {
     let (fake, repository) = support::fake_repository();
     let harness = support::harness(

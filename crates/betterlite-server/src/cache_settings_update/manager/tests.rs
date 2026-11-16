@@ -132,6 +132,33 @@ async fn init_from_db_reinitializes_changed_params() {
 }
 
 #[tokio::test]
+async fn init_from_db_reads_the_stored_object_the_database_returns() {
+    let (fake, erased) = support::fake_repository();
+    fake.push_read(Ok(Some(support::object(&[
+        ("host", string("h")),
+        ("password", string(&support::sealed("saved-secret"))),
+        ("redis_type", string("node")),
+    ]))));
+    let manager = CacheSettingsManager::default();
+    let reinit = support::reinit();
+    let cipher = support::cipher();
+    manager
+        .init_from_db(
+            erased.as_ref(),
+            &cipher,
+            reinit.as_ref(),
+            None::<&mut support::FakeReconnect>,
+        )
+        .await;
+    let expected = support::params(r#"{"host":"h","password":"saved-secret"}"#);
+    let initialized = &reinit.params()[0];
+    assert!(params_equal(initialized, &expected));
+    assert!(initialized.get("redis_type").is_none());
+    let stored = manager.last_params().expect("the params were stored");
+    assert!(params_equal(&stored, &expected));
+}
+
+#[tokio::test]
 async fn init_from_db_ignores_a_missing_or_empty_row() {
     let (fake, erased) = support::fake_repository();
     fake.push_read(Ok(None));
