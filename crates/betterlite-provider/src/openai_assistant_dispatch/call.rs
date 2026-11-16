@@ -9,6 +9,7 @@ use betterlite_openai::realtime::failure::RealtimeFailure;
 use betterlite_openai::realtime::url::QueryParams;
 use betterlite_openai::thread_runs::operations::RunDispatch;
 use betterlite_openai::thread_runs::records::RunRequest;
+use betterlite_openai::threads::operations::ThreadCall;
 use betterlite_openai::threads::records::{ThreadCreate, ThreadMessageData};
 use secrecy::SecretString;
 
@@ -52,31 +53,32 @@ pub struct AssistantsCall {
     pub operation: AssistantsOperation,
 }
 
+// the message record dwarfs the thread calls, so it is boxed to stay within 3x, the limit variant_size_differences enforces
 #[derive(Debug, Clone)]
 pub enum ThreadsOperation {
-    Create {
-        data: ThreadCreate,
-        async_requested: bool,
-    },
-    Retrieve {
-        thread_id: String,
-        async_requested: bool,
-    },
-    // the message record dwarfs the thread calls, so it is boxed to stay within 3x, the limit variant_size_differences enforces
-    AddMessage {
-        thread_id: String,
-        data: Box<ThreadMessageData>,
-        async_requested: bool,
-    },
-    ListMessages {
-        thread_id: String,
-        async_requested: bool,
-    },
+    Create(ThreadCreate),
+    Retrieve(String),
+    AddMessage(String, Box<ThreadMessageData>),
+    ListMessages(String),
+}
+
+impl ThreadsOperation {
+    // The leaf reads a borrowed view of the operation, so the owned call lends it out here.
+    #[must_use]
+    pub fn leaf_call(&self) -> ThreadCall<'_> {
+        match self {
+            Self::Create(data) => ThreadCall::Create(data),
+            Self::Retrieve(thread_id) => ThreadCall::Retrieve(thread_id),
+            Self::AddMessage(thread_id, data) => ThreadCall::AddMessage { thread_id, data },
+            Self::ListMessages(thread_id) => ThreadCall::ListMessages(thread_id),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ThreadsCall {
     pub options: ClientOptions,
+    pub async_requested: bool,
     pub operation: ThreadsOperation,
 }
 

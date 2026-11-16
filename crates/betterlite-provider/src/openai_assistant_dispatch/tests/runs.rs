@@ -89,7 +89,7 @@ async fn runs_async_facade() {
 
 async fn runs_streaming() {
     let transport = Arc::new(Recorder::default());
-    *transport.stream.lock().unwrap() = Some(stream_body());
+    *transport.stream.lock().unwrap() = Some((200, stream_body()));
     let mut logger = RecordingLogger::default();
     let dispatch = RunDispatch {
         arun_thread: false,
@@ -100,9 +100,11 @@ async fn runs_streaming() {
     let OpenAiAssistantResult::Runs(run) = outcome else {
         panic!("a streaming run did not stay a stream")
     };
-    let RunOutcome::Streaming(mut events) = *run else {
+    let RunOutcome::Streaming(kind, mut events) = *run else {
         panic!("a streaming run did not stay a stream")
     };
+    assert_eq!(kind, ClientKind::Sync);
+    assert!(transport.seen.lock().unwrap().is_empty());
     let mut names: Vec<String> = Vec::new();
     while let Some(event) = events.next().await {
         names.push(event.unwrap().name().to_owned());
@@ -114,6 +116,33 @@ async fn runs_streaming() {
     let expected: JsonValue = serde_json::from_str(STREAM_BODY).unwrap();
     assert_eq!(seen[0].body.as_ref(), Some(&expected));
     assert_eq!(seen[0].beta.as_deref(), Some("assistants=v2"));
+}
+
+// LiteLLM returns the stream manager unopened, so a refused open reaches the caller only when it reads the stream.
+async fn runs_stream_open_failure() {
+    let transport = Arc::new(Recorder::default());
+    *transport.stream.lock().unwrap() = Some((400, ERROR_BODY.to_owned()));
+    let mut logger = RecordingLogger::default();
+    let dispatch = RunDispatch {
+        arun_thread: true,
+        stream: true,
+    };
+    let call = runs_operation(dispatch);
+    let outcome = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Runs(run) = outcome else {
+        panic!("a refused stream did not stay a stream")
+    };
+    let RunOutcome::Streaming(kind, mut events) = *run else {
+        panic!("a refused stream did not stay a stream")
+    };
+    assert_eq!(kind, ClientKind::Async);
+    assert!(transport.seen.lock().unwrap().is_empty());
+    let Some(Err(ThreadRunsError::Status(400, body))) = events.next().await else {
+        panic!("the refused open did not come out of the stream")
+    };
+    assert_eq!(body, ERROR_BODY.as_bytes());
+    assert!(events.next().await.is_none());
+    assert_eq!(transport.seen.lock().unwrap().len(), 1);
 }
 
 async fn runs_leaf_error() {
@@ -134,5 +163,6 @@ pub(super) async fn case() {
     runs_buffered().await;
     runs_async_facade().await;
     runs_streaming().await;
+    runs_stream_open_failure().await;
     runs_leaf_error().await;
 }

@@ -123,14 +123,13 @@ async fn assistants_listing_async_facade() {
     assert_eq!(seen[0].beta.as_deref(), Some("assistants=v2"));
 }
 
-async fn assistants_listing_sync_facade() {
+// The sync facade and the async helper both pass the caller's pagination through.
+async fn assistants_listing_with_caller_params(facade: AssistantsFacade) {
     let transport = Arc::new(Recorder::default());
     transport.queue(200, PAGE);
     let mut logger = RecordingLogger::default();
     let call = assistants_operation(AssistantsOperation::List {
-        facade: AssistantsFacade::Facade {
-            aget_assistants: false,
-        },
+        facade,
         params: caller_params(),
     });
     run_operation(&transport, &mut logger, call).await.unwrap();
@@ -141,23 +140,6 @@ async fn assistants_listing_sync_facade() {
         format!("{BASE}/assistants?after=a&before=b&limit=5&order=asc")
     );
     assert_eq!(seen[0].beta.as_deref(), Some("assistants=v2"));
-}
-
-async fn assistants_listing_helper() {
-    let transport = Arc::new(Recorder::default());
-    transport.queue(200, PAGE);
-    let mut logger = RecordingLogger::default();
-    let call = assistants_operation(AssistantsOperation::List {
-        facade: AssistantsFacade::AsyncHelper,
-        params: caller_params(),
-    });
-    run_operation(&transport, &mut logger, call).await.unwrap();
-    let seen = transport.seen.lock().unwrap().clone();
-    assert_eq!(seen.len(), 1);
-    assert_eq!(
-        seen[0].url,
-        format!("{BASE}/assistants?after=a&before=b&limit=5&order=asc")
-    );
     assert_eq!(seen[0].authorization.as_deref(), Some("Bearer sk-fixture"));
 }
 
@@ -182,7 +164,10 @@ pub(super) async fn case() {
     assistants_create().await;
     assistants_delete().await;
     assistants_listing_async_facade().await;
-    assistants_listing_sync_facade().await;
-    assistants_listing_helper().await;
+    assistants_listing_with_caller_params(AssistantsFacade::Facade {
+        aget_assistants: false,
+    })
+    .await;
+    assistants_listing_with_caller_params(AssistantsFacade::AsyncHelper).await;
     assistants_leaf_error().await;
 }

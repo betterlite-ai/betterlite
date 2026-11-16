@@ -44,7 +44,7 @@ pub(super) struct Seen {
 pub(super) struct Recorder {
     pub(super) seen: Mutex<Vec<Seen>>,
     replies: Mutex<VecDeque<(u16, String)>>,
-    pub(super) stream: Mutex<Option<String>>,
+    pub(super) stream: Mutex<Option<(u16, String)>>,
 }
 
 impl Recorder {
@@ -104,10 +104,13 @@ impl RunStreamTransport for Recorder {
         request: OutboundRequest,
     ) -> impl Future<Output = Result<RunChunks, ThreadRunsError>> + Send {
         self.record(&request);
-        let body = self.stream.lock().unwrap().take().unwrap_or_default();
-        let chunks: RunChunks = Box::pin(stream::once(async move {
-            Ok::<Vec<u8>, ThreadRunsError>(body.into_bytes())
-        }));
+        let (status, body) = self.stream.lock().unwrap().take().unwrap();
+        // the proxied client reads an error status before any frame, so the open itself fails
+        if status >= 400 {
+            return ready(Err(ThreadRunsError::Status(status, body.into_bytes())));
+        }
+        let frame: Result<Vec<u8>, ThreadRunsError> = Ok(body.into_bytes());
+        let chunks: RunChunks = Box::pin(stream::iter([frame]));
         ready(Ok(chunks))
     }
 }

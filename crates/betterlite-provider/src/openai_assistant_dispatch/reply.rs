@@ -13,10 +13,10 @@ pub enum AssistantsReply {
     Deleted(AssistantDeleted),
 }
 
-// The buffered and streaming runs stay distinct, and each names the facade it was built for.
+// The buffered and streaming runs stay distinct, and each names the facade it was built for; the stream sends nothing until it is first polled.
 pub enum RunOutcome {
     Polled(ClientKind, Box<RunReply>),
-    Streaming(RunEventStream),
+    Streaming(ClientKind, RunEventStream),
 }
 
 #[derive(Debug)]

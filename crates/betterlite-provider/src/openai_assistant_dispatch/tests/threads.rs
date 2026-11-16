@@ -28,9 +28,13 @@ fn thread_data() -> ThreadCreate {
     .unwrap()
 }
 
-fn threads_operation(operation: ThreadsOperation) -> OpenAiAssistantOperation {
+fn threads_operation(
+    async_requested: bool,
+    operation: ThreadsOperation,
+) -> OpenAiAssistantOperation {
     OpenAiAssistantOperation::Threads(ThreadsCall {
         options: options(),
+        async_requested,
         operation,
     })
 }
@@ -39,10 +43,7 @@ async fn threads_create() {
     let transport = Arc::new(Recorder::default());
     transport.queue(200, THREAD);
     let mut logger = RecordingLogger::default();
-    let call = threads_operation(ThreadsOperation::Create {
-        data: thread_data(),
-        async_requested: true,
-    });
+    let call = threads_operation(true, ThreadsOperation::Create(thread_data()));
     let created = run_operation(&transport, &mut logger, call).await.unwrap();
     let OpenAiAssistantResult::Threads(reply) = created else {
         panic!("create did not return a thread")
@@ -67,10 +68,7 @@ async fn threads_retrieve() {
     let transport = Arc::new(Recorder::default());
     transport.queue(200, THREAD);
     let mut logger = RecordingLogger::default();
-    let call = threads_operation(ThreadsOperation::Retrieve {
-        thread_id: String::from("thread_1"),
-        async_requested: false,
-    });
+    let call = threads_operation(false, ThreadsOperation::Retrieve(String::from("thread_1")));
     let retrieved = run_operation(&transport, &mut logger, call).await.unwrap();
     let OpenAiAssistantResult::Threads(reply) = retrieved else {
         panic!("retrieve did not return a thread")
@@ -90,13 +88,12 @@ async fn threads_add_message() {
     let transport = Arc::new(Recorder::default());
     transport.queue(200, MESSAGE);
     let mut logger = RecordingLogger::default();
-    let call = threads_operation(ThreadsOperation::AddMessage {
-        thread_id: String::from("thread_1"),
-        data: Box::new(
-            serde_json::from_str::<ThreadMessageData>(r#"{"role":"user","content":"hi"}"#).unwrap(),
-        ),
-        async_requested: true,
-    });
+    let data: ThreadMessageData =
+        serde_json::from_str(r#"{"role":"user","content":"hi"}"#).unwrap();
+    let call = threads_operation(
+        true,
+        ThreadsOperation::AddMessage(String::from("thread_1"), Box::new(data)),
+    );
     let added = run_operation(&transport, &mut logger, call).await.unwrap();
     let OpenAiAssistantResult::Threads(reply) = added else {
         panic!("add_message did not return a message")
@@ -118,10 +115,10 @@ async fn threads_list_messages() {
     let transport = Arc::new(Recorder::default());
     transport.queue(200, MESSAGE_PAGE);
     let mut logger = RecordingLogger::default();
-    let call = threads_operation(ThreadsOperation::ListMessages {
-        thread_id: String::from("thread_1"),
-        async_requested: false,
-    });
+    let call = threads_operation(
+        false,
+        ThreadsOperation::ListMessages(String::from("thread_1")),
+    );
     let listed = run_operation(&transport, &mut logger, call).await.unwrap();
     let OpenAiAssistantResult::Threads(reply) = listed else {
         panic!("list_messages did not return a page")
@@ -143,10 +140,8 @@ async fn threads_missing_key() {
     let mut logger = RecordingLogger::default();
     let call = OpenAiAssistantOperation::Threads(ThreadsCall {
         options: ClientOptions::default(),
-        operation: ThreadsOperation::Retrieve {
-            thread_id: String::from("thread_1"),
-            async_requested: false,
-        },
+        async_requested: false,
+        operation: ThreadsOperation::Retrieve(String::from("thread_1")),
     });
     let Err(error) = run_operation(&transport, &mut logger, call).await else {
         panic!("the missing api key did not surface")

@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use rstest::rstest;
 
+use crate::openai_dispatch::OpenAiRequest;
 use crate::operation::OperationRequest;
 
 use super::call::{AssistantsCall, AssistantsOperation, OpenAiAssistantOperation};
@@ -58,7 +59,7 @@ async fn openai_assistant_dispatch_unsupported_operation() {
         },
     });
     let Err(error) = dispatch(
-        OperationRequest::OpenAi(crate::openai_dispatch::OpenAiRequest),
+        OperationRequest::OpenAi(OpenAiRequest),
         operation,
         transport,
         &mut logger,

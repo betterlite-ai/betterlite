@@ -5,21 +5,23 @@ use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::decisions::openai::config::{Credential, OpenAiDecisionsConfig};
 use betterlite_openai::decisions::openai::request::openai_request_to_ir;
 use betterlite_openai::decisions::openai::response::to_openai::ir_to_openai_response;
-use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
+use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 use betterlite_openai::realtime::connect::{RealtimeConnectSettings, prepare_connection};
 use betterlite_openai::realtime::failure::client_action;
 use betterlite_openai::realtime::logging::RealtimeLogger;
 use betterlite_openai::thread_runs::operations::{RunCall, RunInvocation, RunsApi};
 use betterlite_openai::thread_runs::stream::RunStreamTransport;
-use betterlite_openai::threads::operations::{ClientSetup, ThreadCall, ThreadReply, ThreadsApi};
+use betterlite_openai::threads::operations::{ClientSetup, ThreadsApi};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use secrecy::{ExposeSecret as _, SecretString};
+use futures_util::stream::once;
+use futures_util::{StreamExt as _, TryStreamExt as _};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::operation::{OperationRequest, OperationResult};
 
 use super::call::{
     AssistantsCall, AssistantsFacade, AssistantsOperation, DecisionsCall, DecisionsOperation,
-    OpenAiAssistantOperation, RealtimeCall, RunsCall, ThreadsCall, ThreadsOperation,
+    OpenAiAssistantOperation, RealtimeCall, RunsCall,
 };
 use super::error::OpenAiAssistantError;
 use super::reply::{AssistantsReply, DecisionsProjection, DecisionsReply, RunOutcome};
@@ -34,20 +36,30 @@ pub async fn dispatch<T, L>(
 ) -> Result<OperationResult, OpenAiAssistantError>
 where
     T: AssistantsTransport + RunStreamTransport + 'static,
-    L: RealtimeLogger,
+    L: RealtimeLogger + Send,
 {
     let OperationRequest::OpenAiAssistant(OpenAiAssistantRequest) = request else {
         return Err(OpenAiAssistantError::UnsupportedOperation);
     };
     let result = match operation {
         OpenAiAssistantOperation::Assistants(call) => {
-            OpenAiAssistantResult::Assistants(Box::new(assistants(call, &transport).await?))
+            let api = AssistantsApi { transport };
+            OpenAiAssistantResult::Assistants(Box::new(assistants(&api, call).await?))
         }
         OpenAiAssistantOperation::Threads(call) => {
-            OpenAiAssistantResult::Threads(Box::new(threads(call, &transport).await?))
+            let setup = ClientSetup {
+                options: call.options,
+                supplied: None,
+                async_requested: call.async_requested,
+            };
+            let api = ThreadsApi {
+                assistants: AssistantsApi { transport },
+            };
+            let thread_call = call.operation.leaf_call();
+            OpenAiAssistantResult::Threads(Box::new(api.call(setup, thread_call).await?))
         }
         OpenAiAssistantOperation::Runs(call) => {
-            OpenAiAssistantResult::Runs(Box::new(runs(call, &transport).await?))
+            OpenAiAssistantResult::Runs(Box::new(runs(&RunsApi { transport }, call).await?))
         }
         OpenAiAssistantOperation::Decisions(call) => {
             OpenAiAssistantResult::Decisions(Box::new(decisions(call)?))
@@ -58,26 +70,24 @@ where
 }
 
 async fn assistants<T>(
-    call: AssistantsCall,
-    transport: &Arc<T>,
+    api: &AssistantsApi<T>,
+    AssistantsCall { options, operation }: AssistantsCall,
 ) -> Result<AssistantsReply, OpenAiAssistantError>
 where
     T: AssistantsTransport,
 {
-    let api = AssistantsApi {
-        transport: Arc::clone(transport),
-    };
-    let AssistantsCall { options, operation } = call;
-    let reply = match operation {
-        AssistantsOperation::List { facade, params } => AssistantsReply::Page(match facade {
-            AssistantsFacade::AsyncHelper => {
-                api.async_get_assistants(options, None, &params).await?
-            }
-            AssistantsFacade::Facade { aget_assistants } => {
-                api.get_assistants(options, None, aget_assistants, &params)
-                    .await?
-            }
-        }),
+    Ok(match operation {
+        AssistantsOperation::List {
+            facade: AssistantsFacade::AsyncHelper,
+            params,
+        } => AssistantsReply::Page(api.async_get_assistants(options, None, &params).await?),
+        AssistantsOperation::List {
+            facade: AssistantsFacade::Facade { aget_assistants },
+            params,
+        } => AssistantsReply::Page(
+            api.get_assistants(options, None, aget_assistants, &params)
+                .await?,
+        ),
         AssistantsOperation::Create {
             data,
             async_requested,
@@ -92,57 +102,13 @@ where
             api.delete_assistant(options, &assistant_id, None, async_requested)
                 .await?,
         ),
-    };
-    Ok(reply)
+    })
 }
 
-async fn threads<T>(
-    call: ThreadsCall,
-    transport: &Arc<T>,
-) -> Result<ThreadReply, OpenAiAssistantError>
-where
-    T: AssistantsTransport,
-{
-    let api = ThreadsApi {
-        assistants: AssistantsApi {
-            transport: Arc::clone(transport),
-        },
-    };
-    let ThreadsCall { options, operation } = call;
-    let (async_requested, request) = match &operation {
-        ThreadsOperation::Create {
-            data,
-            async_requested,
-        } => (*async_requested, ThreadCall::Create(data)),
-        ThreadsOperation::Retrieve {
-            thread_id,
-            async_requested,
-        } => (*async_requested, ThreadCall::Retrieve(thread_id)),
-        ThreadsOperation::AddMessage {
-            thread_id,
-            data,
-            async_requested,
-        } => (*async_requested, ThreadCall::AddMessage { thread_id, data }),
-        ThreadsOperation::ListMessages {
-            thread_id,
-            async_requested,
-        } => (*async_requested, ThreadCall::ListMessages(thread_id)),
-    };
-    let setup = ClientSetup {
-        options,
-        supplied: None,
-        async_requested,
-    };
-    Ok(api.call(setup, request).await?)
-}
-
-async fn runs<T>(call: RunsCall, transport: &Arc<T>) -> Result<RunOutcome, OpenAiAssistantError>
+async fn runs<T>(api: &RunsApi<T>, call: RunsCall) -> Result<RunOutcome, OpenAiAssistantError>
 where
     T: AssistantsTransport + RunStreamTransport + 'static,
 {
-    let api = RunsApi {
-        transport: Arc::clone(transport),
-    };
     let run = RunCall {
         options: call.options,
         client: None,
@@ -150,25 +116,27 @@ where
         handler: None,
     };
     let invocation = api.run_thread(run, &call.request).await?;
-    let outcome = match invocation {
+    Ok(match invocation {
         RunInvocation::Polled(kind, reply) => RunOutcome::Polled(kind, reply),
-        RunInvocation::Streaming(stream) => RunOutcome::Streaming(stream.events().await?),
-    };
-    Ok(outcome)
+        // LiteLLM hands back the SDK stream manager unopened, so the POST goes out on the caller's first poll and an open failure is the first item
+        RunInvocation::Streaming(stream) => {
+            RunOutcome::Streaming(stream.kind, once(stream.events()).try_flatten().boxed())
+        }
+    })
 }
 
 fn decisions(call: DecisionsCall) -> Result<DecisionsReply, OpenAiAssistantError> {
     let DecisionsCall {
-        api_base,
-        api_key,
+        api_base: explicit_base,
+        api_key: explicit_key,
         globals,
         environment,
         operation,
     } = call;
     let config = OpenAiDecisionsConfig { globals };
     let get_secret_str = |name: &str| environment.get(name).cloned().unwrap_or_default();
-    let api_base = config.resolve(api_base.as_deref(), Credential::Base, &get_secret_str);
-    let supplied_key = api_key.as_ref().map(|key| key.expose_secret().as_str());
+    let api_base = config.resolve(explicit_base.as_deref(), Credential::Base, &get_secret_str);
+    let supplied_key = explicit_key.as_ref().map(ExposeSecret::expose_secret);
     let api_key = config
         .resolve(supplied_key, Credential::Key, &get_secret_str)
         .map(SecretString::from);
@@ -196,10 +164,13 @@ fn decisions(call: DecisionsCall) -> Result<DecisionsReply, OpenAiAssistantError
     })
 }
 
-fn session<L: RealtimeLogger>(
+fn session<L>(
     call: RealtimeCall,
     logger: &mut L,
-) -> Result<OpenAiAssistantResult, OpenAiAssistantError> {
+) -> Result<OpenAiAssistantResult, OpenAiAssistantError>
+where
+    L: RealtimeLogger,
+{
     match call {
         RealtimeCall::Connect {
             api_base,

@@ -73,7 +73,7 @@ async fn realtime_secure_session() {
     assert!(transport.seen.lock().unwrap().is_empty());
 }
 
-async fn realtime_plain_session() {
+async fn realtime_unverified_sessions() {
     let transport = Arc::new(Recorder::default());
     let mut logger = RecordingLogger::default();
     let call = OpenAiAssistantOperation::Realtime(RealtimeCall::Connect {
@@ -94,19 +94,16 @@ async fn realtime_plain_session() {
     assert_eq!(plan.force_transcription_model, None);
     assert_eq!(plan.headers.get("OpenAI-Beta"), None);
     assert_eq!(plan.max_message_size_bytes, 1024);
-}
-
-async fn realtime_insecure_session() {
-    let transport = Arc::new(Recorder::default());
-    let mut logger = RecordingLogger::default();
-    let call = realtime_connect(BASE, false, Verification::Disabled);
-    let prepared = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Session(plan) = prepared else {
+    let insecure = realtime_connect(BASE, false, Verification::Disabled);
+    let unverified = run_operation(&transport, &mut logger, insecure)
+        .await
+        .unwrap();
+    let OpenAiAssistantResult::Session(insecure_plan) = unverified else {
         panic!("the insecure session preparation did not return a session")
     };
-    assert!(plan.url.starts_with("wss://"));
-    assert_eq!(plan.ssl, RealtimeSsl::Insecure);
-    assert_eq!(plan.headers.get("OpenAI-Beta"), None);
+    assert!(insecure_plan.url.starts_with("wss://"));
+    assert_eq!(insecure_plan.ssl, RealtimeSsl::Insecure);
+    assert_eq!(insecure_plan.headers.get("OpenAI-Beta"), None);
 }
 
 async fn realtime_missing_key() {
@@ -216,8 +213,7 @@ async fn realtime_close_failures() {
 
 pub(super) async fn case() {
     realtime_secure_session().await;
-    realtime_plain_session().await;
-    realtime_insecure_session().await;
+    realtime_unverified_sessions().await;
     realtime_missing_key().await;
     realtime_default_base().await;
     realtime_connection_failures().await;

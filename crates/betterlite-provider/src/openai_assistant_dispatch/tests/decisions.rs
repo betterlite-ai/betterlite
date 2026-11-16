@@ -7,7 +7,7 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::openai::{ChoiceValue, DecisionAnswer};
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::decisions::transformation::wire::ProviderRequestWire;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::openai_assistant_dispatch::OpenAiAssistantResult;
 use crate::openai_assistant_dispatch::call::{
@@ -73,7 +73,7 @@ async fn decisions_request() {
     } = *reply;
     assert_eq!(api_base.as_deref(), Some(BASE));
     assert_eq!(
-        api_key.as_ref().map(|key| key.expose_secret().as_str()),
+        api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-decisions")
     );
     let DecisionsProjection::Request(wire) = projection else {
@@ -86,111 +86,25 @@ async fn decisions_request() {
     assert!(transport.seen.lock().unwrap().is_empty());
 }
 
-async fn decisions_defaults_from_environment() {
+// Nothing explicit is supplied, so the leaf resolves from the globals first and the environment after them.
+async fn decisions_resolution(
+    globals: LiteLlmGlobals,
+    environment: BTreeMap<String, String>,
+    expected_base: &str,
+    expected_key: Option<&str>,
+) {
     let transport = Arc::new(Recorder::default());
     let mut logger = RecordingLogger::default();
-    let call = decisions_call(
-        None,
-        None,
-        LiteLlmGlobals::default(),
-        env(&[
-            ("OPENAI_API_KEY", "sk-env"),
-            ("OPENAI_BASE_URL", "https://env.test/v1"),
-        ]),
-        choice_request(),
-    );
+    let call = decisions_call(None, None, globals, environment, choice_request());
     let projected = run_operation(&transport, &mut logger, call).await.unwrap();
     let OpenAiAssistantResult::Decisions(reply) = projected else {
-        panic!("the environment resolution did not project")
+        panic!("the credential resolution did not project")
     };
-    let DecisionsReply {
-        api_base, api_key, ..
-    } = *reply;
-    assert_eq!(api_base.as_deref(), Some("https://env.test/v1"));
+    assert_eq!(reply.api_base.as_deref(), Some(expected_base));
     assert_eq!(
-        api_key.as_ref().map(|key| key.expose_secret().as_str()),
-        Some("sk-env")
+        reply.api_key.as_ref().map(ExposeSecret::expose_secret),
+        expected_key
     );
-}
-
-async fn decisions_globals() {
-    let transport = Arc::new(Recorder::default());
-    let mut logger = RecordingLogger::default();
-    let globals = LiteLlmGlobals {
-        api_base: Some(String::from("https://global.test/v1")),
-        api_key: Some(SecretString::from("sk-global-api")),
-        openai_key: Some(SecretString::from("sk-global-openai")),
-        organization: None,
-    };
-    let call = decisions_call(
-        None,
-        None,
-        globals,
-        env(&[
-            ("OPENAI_API_KEY", "sk-env"),
-            ("OPENAI_BASE_URL", "https://env.test/v1"),
-        ]),
-        choice_request(),
-    );
-    let projected = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Decisions(reply) = projected else {
-        panic!("the global resolution did not project")
-    };
-    let DecisionsReply {
-        api_base, api_key, ..
-    } = *reply;
-    assert_eq!(api_base.as_deref(), Some("https://global.test/v1"));
-    assert_eq!(
-        api_key.as_ref().map(|key| key.expose_secret().as_str()),
-        Some("sk-global-api")
-    );
-}
-
-async fn decisions_openai_key() {
-    let transport = Arc::new(Recorder::default());
-    let mut logger = RecordingLogger::default();
-    let globals = LiteLlmGlobals {
-        api_base: None,
-        api_key: None,
-        openai_key: Some(SecretString::from("sk-global-openai")),
-        organization: None,
-    };
-    let call = decisions_call(
-        None,
-        None,
-        globals,
-        env(&[("OPENAI_API_KEY", "sk-env")]),
-        choice_request(),
-    );
-    let projected = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Decisions(reply) = projected else {
-        panic!("the openai_key resolution did not project")
-    };
-    assert_eq!(
-        reply
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("sk-global-openai")
-    );
-}
-
-async fn decisions_default_base() {
-    let transport = Arc::new(Recorder::default());
-    let mut logger = RecordingLogger::default();
-    let call = decisions_call(
-        None,
-        None,
-        LiteLlmGlobals::default(),
-        BTreeMap::new(),
-        choice_request(),
-    );
-    let projected = run_operation(&transport, &mut logger, call).await.unwrap();
-    let OpenAiAssistantResult::Decisions(reply) = projected else {
-        panic!("the default resolution did not project")
-    };
-    assert_eq!(reply.api_base.as_deref(), Some("https://api.openai.com"));
-    assert!(reply.api_key.is_none());
 }
 
 async fn decisions_response() {
@@ -246,10 +160,50 @@ async fn decisions_malformed_payload() {
 
 pub(super) async fn case() {
     decisions_request().await;
-    decisions_defaults_from_environment().await;
-    decisions_globals().await;
-    decisions_openai_key().await;
-    decisions_default_base().await;
+    let environment = env(&[
+        ("OPENAI_API_KEY", "sk-env"),
+        ("OPENAI_BASE_URL", "https://env.test/v1"),
+    ]);
+    let globals = LiteLlmGlobals {
+        api_base: Some(String::from("https://global.test/v1")),
+        api_key: Some(SecretString::from("sk-global-api")),
+        openai_key: Some(SecretString::from("sk-global-openai")),
+        organization: None,
+    };
+    let openai_key_only = LiteLlmGlobals {
+        api_base: None,
+        api_key: None,
+        openai_key: Some(SecretString::from("sk-global-openai")),
+        organization: None,
+    };
+    decisions_resolution(
+        LiteLlmGlobals::default(),
+        environment.clone(),
+        "https://env.test/v1",
+        Some("sk-env"),
+    )
+    .await;
+    decisions_resolution(
+        globals,
+        environment.clone(),
+        "https://global.test/v1",
+        Some("sk-global-api"),
+    )
+    .await;
+    decisions_resolution(
+        openai_key_only,
+        environment,
+        "https://env.test/v1",
+        Some("sk-global-openai"),
+    )
+    .await;
+    decisions_resolution(
+        LiteLlmGlobals::default(),
+        BTreeMap::new(),
+        "https://api.openai.com",
+        None,
+    )
+    .await;
     decisions_response().await;
     decisions_malformed_payload().await;
 }
