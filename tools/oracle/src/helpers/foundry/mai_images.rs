@@ -10,7 +10,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod input;
 mod tests;

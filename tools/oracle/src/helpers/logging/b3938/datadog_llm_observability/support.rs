@@ -23,8 +23,9 @@ use secrecy::SecretString;
 use serde_json::{Map, Value, json};
 
 use super::{ActionCall, Reply, Scenario};
-use crate::helpers::HelperError;
-use crate::helpers::OrHelperError as _;
+use betterlite_http::error::HttpError;
+use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 pub(super) type Logger = DatadogLlmObsLogger<TestCounter>;
 
@@ -117,11 +118,9 @@ impl Transport for ScriptedTransport {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop()
-            .ok_or(TransportFailure::Request(
-                betterlite_http::proxy::transport_error::TransportError::Rejected(
-                    betterlite_http::error::HttpError::Timeout,
-                ),
-            ))?;
+            .ok_or(TransportFailure::Request(TransportError::Rejected(
+                HttpError::Timeout,
+            )))?;
         Ok(TransportResponse {
             status: reply.status,
             body: reply.body.into_bytes(),

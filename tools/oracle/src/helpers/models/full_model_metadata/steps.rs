@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use super::input::Step;
 use super::sources::ScriptedSource;
 use super::{FixtureContext, State, error_box};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 type StepResult = Result<Value, Box<HelperError>>;
 

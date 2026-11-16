@@ -7,7 +7,10 @@ use betterlite_server::middleware::request_root_paths::{RootPaths, get_request_r
 use serde::{Deserialize, Serialize};
 use tower::ServiceExt as _;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -32,7 +35,7 @@ struct Output {
 
 fn failure<Message>(class: &str, message: Message) -> Box<HelperError>
 where
-    Message: std::fmt::Display,
+    Message: Display,
 {
     Box::new(HelperError {
         class: class.to_owned(),
@@ -94,11 +97,11 @@ async fn run(input: &Input) -> Result<Output, Box<HelperError>> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| failure("RuntimeError", error))?;
         let output = runtime.block_on(run(input))?;

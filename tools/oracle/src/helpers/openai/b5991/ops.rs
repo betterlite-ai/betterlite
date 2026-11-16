@@ -22,7 +22,8 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 use thiserror::Error;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::input::{
     Input, PrepareStep, ResponseStep, Step, TransformInputStep, UrlStep, ValidateEnvironmentStep,

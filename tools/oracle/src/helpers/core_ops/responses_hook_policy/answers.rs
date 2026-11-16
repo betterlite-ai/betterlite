@@ -14,6 +14,7 @@ use indexmap::IndexMap;
 use serde_json::{Value, json};
 
 use super::{Input, failure};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn settings_answer(input: &Input) -> Value {
     let Input::Settings { probes } = input else {
@@ -82,7 +83,7 @@ fn safety_probe(
     }
 }
 
-pub(super) fn followup_answer(input: &Input) -> crate::helpers::HelperResult {
+pub(super) fn followup_answer(input: &Input) -> HelperResult {
     let Input::Followup {
         request_kwargs,
         patch_kwargs,

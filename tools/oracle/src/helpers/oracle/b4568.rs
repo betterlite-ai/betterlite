@@ -1,10 +1,11 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_cli::agent_launch::{EnvVars, Platform, Terminal};
 use betterlite_cli::agent_run::error::AgentRunError;
 use betterlite_cli::agent_run::pipeline::{RunAgentRequest, run_agent};
 use betterlite_cli::agent_run::prepare::{CodexPreparer, PiPreparer, Preparers};
 use betterlite_cli::agent_run::sync::{AgentModelSync, SyncContext};
 use betterlite_logging::private_json::files::LocalFiles;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
