@@ -1,0 +1,13 @@
+name: auth-model-patterns-all-team-models
+config: |
+  model_list:
+    - {model_name: team-fast, litellm_params: {model: openai/team-fast-upstream}}
+    - {model_name: team-claude, litellm_params: {model: openai/team-claude-upstream}}
+env: {}
+request:
+  method: GET
+  path: /v1/models
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}
