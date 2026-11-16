@@ -125,11 +125,7 @@ impl InteractionLifecycleConfig for Config {
         &self,
         request: &InteractionIdRequest<'_>,
     ) -> Result<PreparedRequest, FixtureError> {
-        let url = interaction_url(request, "");
-        Ok(PreparedRequest {
-            url,
-            params: Params::new(),
-        })
+        Ok(prepared_request(request, ""))
     }
 
     fn transform_delete_response(
@@ -147,12 +143,11 @@ impl InteractionLifecycleConfig for Config {
         &self,
         request: &InteractionIdRequest<'_>,
     ) -> Result<PreparedRequest, FixtureError> {
-        let mut prepared = self.transform_delete_request(request)?;
-        prepared.url.push_str(":cancel");
-        prepared
+        let mut cancel = prepared_request(request, ":cancel");
+        cancel
             .params
             .insert("state".to_owned(), JsonValue::Text("cancelled".to_owned()));
-        Ok(prepared)
+        Ok(cancel)
     }
 
     fn transform_cancel_response(
@@ -166,11 +161,14 @@ impl InteractionLifecycleConfig for Config {
     }
 }
 
-fn interaction_url(request: &InteractionIdRequest<'_>, suffix: &str) -> String {
-    format!(
-        "{}/v1beta/interactions/{}{suffix}",
-        request.api_base, request.interaction_id
-    )
+fn prepared_request(request: &InteractionIdRequest<'_>, suffix: &str) -> PreparedRequest {
+    PreparedRequest {
+        url: format!(
+            "{}/v1beta/interactions/{}{suffix}",
+            request.api_base, request.interaction_id
+        ),
+        params: Params::new(),
+    }
 }
 
 pub(crate) fn handler<ClientType>(
