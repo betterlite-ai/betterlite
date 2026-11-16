@@ -23,7 +23,7 @@ use crate::daily_activity::recovery::scope::ScopeIds;
 use crate::usage_ai_chat::constants::{
     DEFAULT_CHAT_MODEL, ENTITY_FIELD_TAG, ENTITY_FIELD_TEAM, ENTITY_FIELD_USER, MAX_CHAT_MESSAGES,
     PAGINATED_PAGE_SIZE, TABLE_DAILY_TAG_SPEND, TABLE_DAILY_TEAM_SPEND, TABLE_DAILY_USER_SPEND,
-    USAGE_AI_TEMPERATURE, USAGE_TOP_API_KEYS_DEFAULT,
+    TOP_N_MODELS, TOP_N_PROVIDERS, USAGE_AI_TEMPERATURE, USAGE_TOP_API_KEYS_DEFAULT,
 };
 use crate::usage_ai_chat::error::UsageChatError;
 use crate::usage_ai_chat::fetch_args::{

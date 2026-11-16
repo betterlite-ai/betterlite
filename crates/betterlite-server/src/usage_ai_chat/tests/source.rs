@@ -125,7 +125,7 @@ async fn source_without_a_repository_fails_with_the_database_error() {
 }
 
 #[test]
-fn source_constants_match_the_daily_activity_tables() {
+fn source_constants_match_litellm() {
     assert_eq!(
         TABLE_DAILY_USER_SPEND,
         DailyActivityTable::User.metadata().table_name
@@ -153,6 +153,10 @@ fn source_constants_match_the_daily_activity_tables() {
     assert_eq!(PAGINATED_PAGE_SIZE, 200);
     assert_eq!(MAX_CHAT_MESSAGES, 20);
     assert_eq!(USAGE_TOP_API_KEYS_DEFAULT, 100);
+    assert_eq!(USAGE_AI_TEMPERATURE.to_bits(), 0.2_f64.to_bits());
+    assert_eq!(TOP_N_MODELS, 15);
+    assert_eq!(TOP_N_PROVIDERS, 10);
+    assert_eq!(DEFAULT_CHAT_MODEL, "gpt-4o-mini");
 }
 
 #[tokio::test]
