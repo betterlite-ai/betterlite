@@ -1,0 +1,266 @@
+#[tokio::test]
+async fn next_returns_chunks_in_order() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![
+        content_chunk("Hel"),
+        content_chunk("lo"),
+        finish_chunk(),
+    ]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
+
+    let first = only_chunk(stream.next().await);
+    assert_eq!(content_of(&first), "Hel");
+    assert_eq!(first.id, CHAT_ID);
+    assert_eq!(first.model, MODEL);
+    assert_eq!(first.choices[0].delta.role.as_deref(), Some("assistant"));
+
+    let second = only_chunk(stream.next().await);
+    assert_eq!(content_of(&second), "lo");
+    assert!(second.choices[0].delta.role.is_none());
+
+    let last = only_chunk(stream.next().await);
+    assert_eq!(finish_of(&last).as_deref(), Some("stop"));
+    assert_eq!(hidden_usage_total(&last), Some(0));
+    assert!(stream.next().await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn next_skips_empty_bytes_chunk() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![ProviderChunk::Bytes(Vec::new()), content_chunk("Hi")]);
+    let reads = Arc::clone(&source.reads);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
+
+    let chunk = only_chunk(stream.next().await);
+    assert_eq!(content_of(&chunk), "Hi");
+    assert_eq!(reads.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn next_skips_none_text_chunk() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![
+        ProviderChunk::Text("None".to_owned()),
+        content_chunk("Hi"),
+    ]);
+    let reads = Arc::clone(&source.reads);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+
+    let chunk = only_chunk(stream.next().await);
+    assert_eq!(content_of(&chunk), "Hi");
+    assert_eq!(reads.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn next_moves_inline_usage_to_hidden_params() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_usage_chunk()]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
+
+    let chunk = only_chunk(stream.next().await);
+    assert_eq!(content_of(&chunk), "Hi");
+    assert!(chunk.usage.is_none());
+    assert_eq!(hidden_usage_total(&chunk), Some(10));
+}
+
+#[tokio::test]
+async fn next_records_usage_chunk_after_finish() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), finish_chunk(), usage_chunk()]);
+    let reads = Arc::clone(&source.reads);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
+
+    assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
+    assert_eq!(
+        finish_of(&only_chunk(stream.next().await)).as_deref(),
+        Some("stop")
+    );
+    assert!(stream.next().await.unwrap().is_none());
+    // the usage chunk after the finish reason is read, then the source reports its end
+    assert_eq!(reads.load(Ordering::SeqCst), 4);
+
+    let logged = world.logging.logged.lock().unwrap();
+    assert_eq!(logged.completed.len(), 1);
+    let recorded = &logged.completed[0];
+    assert_eq!(recorded.len(), 3);
+    assert!(recorded[2].choices.is_empty());
+    assert_eq!(
+        recorded[2].usage.as_ref().map(|usage| usage.total_tokens),
+        Some(10)
+    );
+}
+
+#[tokio::test]
+async fn next_sends_usage_chunk_when_asked() {
+    let world = World::with_build(StreamBuild::UsageOnly(Box::new(usage_log(7, 3))));
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), finish_chunk(), usage_chunk()]);
+    let mut stream = start(
+        &world,
+        &mut correlation,
+        usage_config(CallMode::Blocking),
+        source,
+    );
+
+    let seen = drain(&mut stream).await;
+    assert_eq!(seen.len(), 3);
+    assert_eq!(finish_of(&seen[1]).as_deref(), Some("stop"));
+    assert!(seen[1].hidden_params.get("usage").is_none());
+    assert_eq!(
+        seen[2].usage.as_ref().map(|usage| usage.total_tokens),
+        Some(10)
+    );
+}
+
+#[tokio::test]
+async fn next_synthesizes_finish_when_source_ends() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi")]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
+
+    assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
+    let finish = only_chunk(stream.next().await);
+    assert_eq!(finish_of(&finish).as_deref(), Some("stop"));
+    assert_eq!(hidden_usage_total(&finish), Some(0));
+    assert_eq!(world.logging.logged.lock().unwrap().successes.len(), 1);
+    assert!(stream.next().await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn next_blocking_logs_each_chunk() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), finish_chunk()]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
+
+    let seen = drain(&mut stream).await;
+    assert_eq!(seen.len(), 2);
+    let logged = world.logging.logged.lock().unwrap();
+    assert_eq!(logged.started, Some(0));
+    assert_eq!(logged.chunks.len(), 2);
+}
+
+#[tokio::test]
+async fn next_async_does_not_log_chunks() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), finish_chunk()]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+
+    let seen = drain(&mut stream).await;
+    assert_eq!(seen.len(), 2);
+    let logged = world.logging.logged.lock().unwrap();
+    assert_eq!(logged.started, Some(0));
+    assert!(logged.chunks.is_empty());
+    assert!(logged.successes[0].0.is_none());
+}
+
+#[tokio::test]
+async fn next_disable_skips_chunk_logging() {
+    let mut config = config(CallMode::Blocking);
+    config.logging.disable = true;
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), finish_chunk()]);
+    let mut stream = start(&world, &mut correlation, config, source);
+
+    let seen = drain(&mut stream).await;
+    assert_eq!(seen.len(), 2);
+    let logged = world.logging.logged.lock().unwrap();
+    assert!(logged.chunks.is_empty());
+    assert!(logged.successes.is_empty());
+}
+
+#[tokio::test]
+async fn next_effective_model_names_driver_chunks() {
+    let mut config = config(CallMode::Blocking);
+    config.provider = Some("openai".to_owned());
+    config.logging_provider = Some("custom".to_owned());
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi")]);
+    let mut stream = start(&world, &mut correlation, config, source);
+
+    assert_eq!(only_chunk(stream.next().await).model, MODEL);
+    assert_eq!(only_chunk(stream.next().await).model, "custom/gpt-4o");
+}
+
+#[tokio::test]
+async fn next_stamps_base_hidden_params() {
+    let mut config = config(CallMode::Blocking);
+    config.logging_provider = Some("custom".to_owned());
+    config.hidden_params = object(r#"{"model_id":"model-1","api_base":"https://api.example"}"#);
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi")]);
+    let mut stream = start(&world, &mut correlation, config, source);
+
+    let chunk = only_chunk(stream.next().await);
+    assert_eq!(
+        chunk.hidden_params.get("model_id"),
+        Some(&JsonValue::String("model-1".to_owned()))
+    );
+    assert_eq!(
+        chunk.hidden_params.get("api_base"),
+        Some(&JsonValue::String("https://api.example".to_owned()))
+    );
+    assert_eq!(
+        chunk.hidden_params.get("response_cost"),
+        Some(&JsonValue::Null)
+    );
+    assert_eq!(
+        chunk.hidden_params.get("custom_llm_provider"),
+        Some(&JsonValue::String("custom".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn next_restores_correlation_context() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), finish_chunk()]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+
+    assert!(stream.next().await.unwrap().is_some());
+    assert_eq!(world.restore.calls.load(Ordering::SeqCst), 0);
+    assert!(stream.next().await.unwrap().is_some());
+    assert!(stream.next().await.unwrap().is_none());
+    assert_eq!(world.restore.calls.load(Ordering::SeqCst), 1);
+    drop(stream);
+    assert_eq!(correlation.trace_id, "restored");
+}
+
+#[tokio::test]
+async fn next_stop_iteration_synthesizes_finish() {
+    let mut config = config(CallMode::Blocking);
+    config.provider = Some("custom".to_owned());
+    config.provider_kind = ProviderKind::Custom;
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![finish_chunk(), empty_choice_chunk()]);
+    let mut stream = start(&world, &mut correlation, config, source);
+
+    let finish = only_chunk(stream.next().await);
+    assert_eq!(finish_of(&finish).as_deref(), Some("stop"));
+    assert!(stream.next().await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn next_rules_see_the_content_so_far() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hel"), content_chunk("lo")]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+
+    assert!(stream.next().await.unwrap().is_some());
+    assert!(stream.next().await.unwrap().is_some());
+    let seen = world.rules.seen.lock().unwrap();
+    assert_eq!(seen[0], "Hel");
+    assert_eq!(seen[1], "Hello");
+}
