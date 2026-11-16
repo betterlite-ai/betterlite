@@ -1,7 +1,10 @@
 use std::time::Duration;
 
+use betterlite_anthropic::skills::wire::ListSkillsResponse;
 use betterlite_auth::auth_identity::records::Principal;
-use betterlite_core::skills::operations::{HostedSkillOps, HostedSkillOpsError, SkillUpload};
+use betterlite_core::skills::operations::{
+    HostedSkillOps, HostedSkillOpsError, SkillTarget, SkillUpload,
+};
 use betterlite_core::skills::store::repository::SkillRepository;
 use betterlite_core::skills::store::{
     DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_OFFSET, SkillPage, StoreError,
@@ -16,13 +19,11 @@ use betterlite_logging::logging_state::types::{
 };
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
+use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::{
-    PrincipalFields, Step, creation_of, decoded_content, decoded_uploads, invalid_input, upload_of,
-};
+use super::{PrincipalFields, Step, creation_of, decoded_files, invalid_input, upload_of};
 
 const FIXTURE_MODEL: &str = "fixture-model";
 const FIXTURE_CALL_ID: &str = "call-1";
@@ -35,6 +36,49 @@ enum Call<'request> {
     List,
     Get(&'request str),
     Delete(&'request str),
+}
+
+impl Call<'_> {
+    async fn answer<R: SkillRepository>(
+        self,
+        ops: &HostedSkillOps<R>,
+        step: &Step,
+        caller: Option<&Principal>,
+        logging: &mut LoggingState,
+    ) -> crate::helpers::HelperResult {
+        let call_id = step.litellm_call_id.as_deref();
+        match self {
+            Self::Create => {
+                let (decoded, content) = decoded_files(step)?;
+                let uploads: Vec<SkillUpload<'_>> = decoded.iter().map(upload_of).collect();
+                let request = creation_of(step, caller, &uploads, content.as_deref());
+                let outcome = ops.create_skill(logging, request).await;
+                Ok(record_answer("create", outcome))
+            }
+            Self::List => Ok(page_answer(
+                ops.list_skills(logging, page_of(step), caller, call_id)
+                    .await,
+            )),
+            Self::Get(skill_id) => {
+                let target = SkillTarget {
+                    logging,
+                    id: skill_id,
+                    principal: caller,
+                    call_id,
+                };
+                Ok(record_answer("get", ops.get_skill(target).await))
+            }
+            Self::Delete(skill_id) => {
+                let target = SkillTarget {
+                    logging,
+                    id: skill_id,
+                    principal: caller,
+                    call_id,
+                };
+                Ok(record_answer("delete", ops.delete_skill(target).await))
+            }
+        }
+    }
 }
 
 // LiteLLM raises for an unknown action or a missing skill id before it touches the call context
@@ -90,10 +134,6 @@ fn principal_of(fields: &PrincipalFields) -> Result<Principal, Box<crate::helper
     serde_json::from_value(value).map_err(|error| invalid_input(error.to_string()))
 }
 
-fn moment() -> Result<DateTime<FixedOffset>, Box<crate::helpers::HelperError>> {
-    DateTime::parse_from_rfc3339(FIXTURE_START).map_err(|error| invalid_input(error.to_string()))
-}
-
 fn logging_state(action: &str) -> Result<LoggingState, Box<crate::helpers::HelperError>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
         .map_err(|error| invalid_input(error.to_string()))?;
@@ -102,7 +142,8 @@ fn logging_state(action: &str) -> Result<LoggingState, Box<crate::helpers::Helpe
         LoggingInit {
             model: FIXTURE_MODEL.to_owned(),
             call_type: action.to_owned(),
-            start_time: moment()?,
+            start_time: chrono::DateTime::parse_from_rfc3339(FIXTURE_START)
+                .map_err(|error| invalid_input(error.to_string()))?,
             litellm_call_id: FIXTURE_CALL_ID.to_owned(),
             function_id: FIXTURE_FUNCTION_ID.to_owned(),
             messages: None,
@@ -184,115 +225,30 @@ where
     };
     let caller = step.principal.as_ref().map(principal_of).transpose()?;
     let mut logging = logging_state(action)?;
-    let answer = match call {
-        Call::Create => create_step(ops, step, caller.as_ref(), &mut logging).await?,
-        Call::List => list_step(ops, step, caller.as_ref(), &mut logging).await?,
-        Call::Get(skill_id) => {
-            get_step(
-                ops,
-                skill_id,
-                caller.as_ref(),
-                &mut logging,
-                step.litellm_call_id.as_deref(),
-            )
-            .await?
-        }
-        Call::Delete(skill_id) => {
-            delete_step(
-                ops,
-                skill_id,
-                caller.as_ref(),
-                &mut logging,
-                step.litellm_call_id.as_deref(),
-            )
-            .await?
-        }
-    };
+    let answer = call
+        .answer(ops, step, caller.as_ref(), &mut logging)
+        .await?;
     with_logging(answer, &logging)
 }
 
-async fn create_step<R>(
-    ops: &HostedSkillOps<R>,
-    step: &Step,
-    caller: Option<&Principal>,
-    logging: &mut LoggingState,
-) -> Result<Value, Box<crate::helpers::HelperError>>
-where
-    R: SkillRepository,
-{
-    let entries = step.files.as_deref().unwrap_or(&[]);
-    let decoded = decoded_uploads(entries)?;
-    let uploads: Vec<SkillUpload<'_>> = decoded.iter().map(upload_of).collect();
-    let content = decoded_content(step.file_content.as_deref())?;
-    let request = creation_of(step, caller, &uploads, content.as_deref());
-    match ops.create_skill(logging, request).await {
-        Ok(skill) => Ok(json!({"action": "create", "record": skill})),
-        Err(error) => Ok(json!({"action": "create", "error": token(&error)})),
-    }
-}
-
-async fn list_step<R>(
-    ops: &HostedSkillOps<R>,
-    step: &Step,
-    caller: Option<&Principal>,
-    logging: &mut LoggingState,
-) -> Result<Value, Box<crate::helpers::HelperError>>
-where
-    R: SkillRepository,
-{
-    let outcome = ops
-        .list_skills(
-            logging,
-            page_of(step),
-            caller,
-            step.litellm_call_id.as_deref(),
-        )
-        .await;
+fn page_answer(outcome: Result<ListSkillsResponse, HostedSkillOpsError>) -> Value {
     match outcome {
-        Ok(response) => Ok(json!({
+        Ok(response) => json!({
             "action": "list",
             "data": response.data,
             "next_page": response.next_page,
             "has_more": response.has_more,
-        })),
-        Err(error) => Ok(json!({"action": "list", "error": token(&error)})),
+        }),
+        Err(error) => json!({"action": "list", "error": token(&error)}),
     }
 }
 
-async fn get_step<R>(
-    ops: &HostedSkillOps<R>,
-    skill_id: &str,
-    caller: Option<&Principal>,
-    logging: &mut LoggingState,
-    litellm_call_id: Option<&str>,
-) -> Result<Value, Box<crate::helpers::HelperError>>
+fn record_answer<T>(action: &str, outcome: Result<T, HostedSkillOpsError>) -> Value
 where
-    R: SkillRepository,
+    T: Serialize,
 {
-    match ops
-        .get_skill(logging, skill_id, caller, litellm_call_id)
-        .await
-    {
-        Ok(skill) => Ok(json!({"action": "get", "record": skill})),
-        Err(error) => Ok(json!({"action": "get", "error": token(&error)})),
-    }
-}
-
-async fn delete_step<R>(
-    ops: &HostedSkillOps<R>,
-    skill_id: &str,
-    caller: Option<&Principal>,
-    logging: &mut LoggingState,
-    litellm_call_id: Option<&str>,
-) -> Result<Value, Box<crate::helpers::HelperError>>
-where
-    R: SkillRepository,
-{
-    match ops
-        .delete_skill(logging, skill_id, caller, litellm_call_id)
-        .await
-    {
-        Ok(deleted) => Ok(json!({"action": "delete", "record": deleted})),
-        Err(error) => Ok(json!({"action": "delete", "error": token(&error)})),
+    match outcome {
+        Ok(record) => json!({"action": action, "record": record}),
+        Err(error) => json!({"action": action, "error": token(&error)}),
     }
 }

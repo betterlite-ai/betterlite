@@ -88,18 +88,14 @@ impl Scripted {
     fn row_for(
         &self,
         write: &SkillWrite,
-        metadata: Option<Value>,
-    ) -> Result<SkillTable, TableError> {
-        let metadata: Option<BTreeMap<String, JsonData>> = metadata
-            .map(serde_json::from_value)
-            .transpose()
-            .map_err(TableError::Row)?;
+        metadata: Option<BTreeMap<String, JsonData>>,
+    ) -> SkillTable {
         let now = self
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .now;
-        Ok(SkillTable {
+        SkillTable {
             skill_id: write.skill_id.clone(),
             display_title: write.display_title.clone(),
             description: write.description.clone(),
@@ -114,7 +110,7 @@ impl Scripted {
             created_by: Some(write.created_by.clone()),
             updated_at: Some(now),
             updated_by: Some(write.updated_by.clone()),
-        })
+        }
     }
 
     fn created_row(&self, write: &SkillWrite) -> Result<SkillTable, TableError> {
@@ -125,7 +121,11 @@ impl Scripted {
             .transpose()
             .map_err(TableError::Row)?;
         self.record_create(write, metadata.as_ref());
-        let row = self.row_for(write, metadata)?;
+        let decoded: Option<BTreeMap<String, JsonData>> = metadata
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(TableError::Row)?;
+        let row = self.row_for(write, decoded);
         self.state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

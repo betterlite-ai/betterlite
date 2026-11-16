@@ -138,10 +138,6 @@ fn decoded_upload(entry: &[Json]) -> Result<DecodedUpload, Box<HelperError>> {
     })
 }
 
-pub(super) fn decoded_uploads(files: &[Vec<Json>]) -> Result<Vec<DecodedUpload>, Box<HelperError>> {
-    files.iter().map(|entry| decoded_upload(entry)).collect()
-}
-
 pub(super) fn upload_of(upload: &DecodedUpload) -> SkillUpload<'_> {
     SkillUpload {
         file_name: &upload.file_name,
@@ -162,6 +158,15 @@ pub(super) fn decoded_content(text: Option<&str>) -> Result<Option<Vec<u8>>, Box
         .decode(encoded)
         .map(Some)
         .map_err(|error| invalid_input(error.to_string()))
+}
+
+fn decoded_files(step: &Step) -> Result<(Vec<DecodedUpload>, Option<Vec<u8>>), Box<HelperError>> {
+    let entries = step.files.as_deref().unwrap_or(&[]);
+    let mut decoded = Vec::with_capacity(entries.len());
+    for entry in entries {
+        decoded.push(decoded_upload(entry)?);
+    }
+    Ok((decoded, decoded_content(step.file_content.as_deref())?))
 }
 
 pub(super) fn creation_of<'request>(
