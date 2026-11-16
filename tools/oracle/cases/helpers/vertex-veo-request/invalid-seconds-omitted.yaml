@@ -1,0 +1,11 @@
+kind: helper
+name: invalid-seconds-omitted
+call:
+  vertex_veo_request:
+    creates:
+      - {model: veo-3.0-generate-001, prompt: a prompt, api_base: 'https://mock', params: {seconds: abc}, extra_body: null}
+      - {model: veo-3.0-generate-001, prompt: a prompt, api_base: 'https://mock', params: {seconds: '8'}, extra_body: null}
+      - {model: veo-3.0-generate-001, prompt: a prompt, api_base: 'https://mock', params: {seconds: '4.5'}, extra_body: null}
+    edits: []
+env: {}
+compare: {ignore: []}

@@ -159,6 +159,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "databricks_chat_reply"
+path = "fuzz_targets/databricks_chat_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "watsonx_embed_rerank_reply"
 path = "fuzz_targets/watsonx_embed_rerank_reply.rs"
 test = false

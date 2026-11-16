@@ -1,5 +1,5 @@
 mod reports;
-mod sources;
+pub(crate) mod sources;
 mod tests;
 
 use std::collections::BTreeMap;

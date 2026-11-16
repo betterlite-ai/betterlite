@@ -1,0 +1,45 @@
+task: B552
+deviations:
+  - what: 'The async image route with no api_base asks the transport for the relative /images/embeddings; LiteLLM interpolates the missing value into the URL and hands its client None/images/embeddings, so both fail before a server answers.'
+    why: "Python's str() text for an absent value is not a URL any client resolves, and docs/compatibility.md does not port str() formatting of absent values."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L82
+  - what: 'The async image route with no api_key sends an empty bearer, "Authorization: Bearer "; LiteLLM sends "Bearer None", the str() of the missing key.'
+    why: "An absent optional value takes its default under docs/compatibility.md, and the default here is no credential text rather than Python's rendering of None."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L87
+  - what: 'The "/v1/embeddings route returned None Embeddings." check is a typed TextDataMissing error that no reply can reach, because the inherited OpenAI call parses the answer through an SDK model that requires the data list.'
+    why: 'The owned source spells the check out, so the reply type keeps a present null data field distinct from an absent one and the branch exists.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L197
+  - what: "Betterlite's text embedding seam takes no caller client, so the text implementation builds the inherited OpenAI call; LiteLLM forwards the client it was given, and an async call that supplies a handler instead of an SDK client fails inside the SDK."
+    why: 'Client construction belongs to B173, and the route does not reproduce a TypeError that no working setup can rely on.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L183-L195
+  - what: 'A reply with a present null object field is a typed FieldType error naming the field; LiteLLM assigns the null and returns a response whose object is null.'
+    why: 'docs/compatibility.md makes a value of the wrong type an error that names the field, so the string field does not silently become null.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L767
+  - what: "Reply data entries are parsed into B004's embedding record, so entry fields that record does not declare are dropped and an entry missing object, embedding or index is a typed Json error; LiteLLM copies the raw reply dictionaries through, so an entry without object still becomes an embedding."
+    why: "The task binds the response projection to B004's embedding conversion, and its record is the typed entry betterlite carries."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L770
+  - what: 'A reply vector element outside f64 range, such as 1e400, keeps the literal number it was sent; LiteLLM reads the literal as infinity, which its model JSON output then writes as null.'
+    why: "B004's embedding record keeps each number as serde_json read it, and docs/compatibility.md does not port Python's json.loads turning an out-of-range literal into infinity."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L770
+  - what: 'An llm_provider-num_tokens value that Python''s int() accepts but a plain decimal count does not, such as "9_0", "-3", a unicode digit string or a count above u32, is a typed TokenCount error naming the value.'
+    why: "docs/compatibility.md reads a string into the field's type and refuses what does not fit instead of porting int()'s underscore, negative-value and unicode-digit parsing."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/cohere_transformation.py#L74-L79
+  - what: 'A meaningful error object inside a reply raises ReplyError with a u16 status taken from a numeric code, and 422 when the code is absent, null or not a whole number in u16 range; LiteLLM sets status_code to the raw code value, so a runner sees "quota" or None there instead.'
+    why: "docs/compatibility.md reads a value into the type its field declares, and a status code in betterlite is a u16, so the reply cannot carry Python's untyped status_code."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L603-L607
+  - what: 'The exception LiteLLM raises for a meaningful reply error carries a message, json.dumps of a dict message or str of anything else and "Error in response object" when absent; betterlite''s ReplyError carries the status and its text names only that status.'
+    why: "docs/compatibility.md does not port Python's json.dumps or str rendering of a value, and the message is free text rather than a field betterlite can type."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L608-L614
+  - what: 'The hidden response headers decode each value on its own, as UTF-8 or else Latin-1; httpx picks one encoding for the whole reply, so when one value is not UTF-8 it reads every other non-ASCII value as Latin-1 too.'
+    why: 'Betterlite reuses the shared httpx header flattener the other providers use, and a reply mixing valid UTF-8 with invalid bytes has no working setup relying on the garbled text.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L134
+kept_bugs:
+  - what: 'The filtered text input is built and then only tested for emptiness; the inherited OpenAI embedding call receives the original input, image data URIs included.'
+    why: 'A working setup embeds the image strings as text today, so the answer would change if betterlite sent only the filtered list.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L282-L293
+  - what: 'The exception message for an empty image answer names /image/embeddings while the request that produced it goes to /images/embeddings.'
+    why: 'The text is what a setup sees and may match on, so the inconsistent route name is copied with the message.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L180
+  - what: 'A base whose trimmed path already ends /models is returned exactly as given, so a base with a trailing slash produces a double slash before /images/embeddings.'
+    why: 'The route keeps the original string in that case and the image URL is the literal concatenation, so a setup using such a base sends the path it sends today.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L21-L28

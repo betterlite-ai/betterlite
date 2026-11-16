@@ -1,0 +1,69 @@
+kind: helper
+name: openrouter-image-generation-url-key-request
+call:
+  b5830:
+    op: generation_request
+    cases:
+      - model: google/gemini-2.5-flash-image
+        prompt: draw a cat
+        optional_params:
+          image_config: {aspect_ratio: "1:1"}
+          n: 1
+          model: ignored
+          messages: ignored
+          modalities: ignored
+        headers: {Authorization: "Bearer old", X-Trace: t1}
+        api_key: sk-caller
+        global_api_key: null
+        environment: {}
+        api_base: https://proxy.example/chat/completions
+      - model: openai/gpt-image-1
+        prompt: ""
+        optional_params: {}
+        headers: {}
+        api_key: ""
+        global_api_key: null
+        environment: {OPENROUTER_API_KEY: sk-env, OPENROUTER_API_BASE: "https://ignored.example/v1"}
+        api_base: "https://proxy.example/v1///"
+      - model: anthropic/claude-3.5-sonnet
+        prompt: paint a house
+        optional_params: {}
+        headers: {}
+        api_key: null
+        global_api_key: sk-global
+        environment: {OPENROUTER_API_KEY: sk-env}
+        api_base: https://proxy.example/chat/completions
+      - model: google/gemini-2.5-flash-image
+        prompt: paint a house
+        optional_params: {}
+        headers: {}
+        api_key: null
+        global_api_key: null
+        environment: {}
+        api_base: "https://proxy.example/chat/completions/"
+      - model: google/gemini-2.5-flash-image
+        prompt: paint a house
+        optional_params: {}
+        headers: {}
+        api_key: null
+        global_api_key: null
+        environment: {}
+        api_base: null
+      - model: google/gemini-2.5-flash-image
+        prompt: paint a house
+        optional_params: {}
+        headers: {}
+        api_key: null
+        global_api_key: null
+        environment: {OPENROUTER_API_BASE: "https://ignored.example/v1"}
+        api_base: ""
+      - model: google/gemini-2.5-flash-image
+        prompt: paint a house
+        optional_params: {}
+        headers: {}
+        api_key: ""
+        global_api_key: sk-global
+        environment: {OPENROUTER_API_KEY: sk-env}
+        api_base: null
+env: {}
+compare: {ignore: []}

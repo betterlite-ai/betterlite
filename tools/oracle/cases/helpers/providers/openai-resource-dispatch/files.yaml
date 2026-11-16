@@ -1,0 +1,20 @@
+kind: helper
+name: openai-resource-dispatch-files
+call:
+  openai_resource_dispatch:
+    case: files_create
+    api_base: https://fixture.test/v1
+    status: 200
+    filename: seed.jsonl
+    content: "{}\n"
+    reply: {id: file-1, bytes: 6, created_at: 1700000000, filename: seed.jsonl, object: file, purpose: batch, status: processed}
+calls:
+  - openai_resource_dispatch:
+      case: files_create
+      api_base: https://fixture.test/v1
+      status: 400
+      filename: seed.jsonl
+      content: "{}\n"
+      reply: {error: {message: bad file, type: invalid_request_error, param: purpose, code: invalid_purpose}}
+env: {}
+compare: {ignore: []}
