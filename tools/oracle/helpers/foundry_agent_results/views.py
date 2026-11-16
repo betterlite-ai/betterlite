@@ -1,9 +1,10 @@
+from collections.abc import Mapping
 from typing import cast
 
-from litellm.types.utils import ModelResponse, ModelResponseStream, Usage
+from litellm.types.utils import ModelResponseStream, Usage
 from pydantic import JsonValue
 
-from .types import CHUNK_JSON, REPLY_JSON, ExistingUsage, JsonObject
+from .types import CHUNK_JSON, ExistingUsage, JsonObject
 
 
 def usage_of(usage: ExistingUsage) -> Usage:
@@ -24,33 +25,17 @@ def usage_view(usage: JsonObject | None) -> JsonValue:
     }
 
 
-def reply_view(response: ModelResponse) -> JsonValue:
-    dumped = REPLY_JSON.validate_json(response.model_dump_json())
-    first = dumped["choices"][0]
-    message = first["message"]
-    hidden = cast(JsonObject, response._hidden_params)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L226-L230
+def fields_of(source: Mapping[str, JsonValue]) -> JsonObject:
     return {
-        "model": dumped.get("model"),
-        "choices": [
-            {
-                "index": first.get("index"),
-                "finish_reason": first.get("finish_reason"),
-                "message": {
-                    "role": message.get("role"),
-                    "content": message.get("content"),
-                    "annotations": message.get("annotations"),
-                },
-            }
-        ],
-        "hidden_params": hidden,
-        "usage": usage_view(dumped.get("usage")),
+        "role": source.get("role"),
+        "content": source.get("content"),
+        "annotations": source.get("annotations"),
     }
 
 
 def chunk_view(chunk: ModelResponseStream) -> JsonValue:
     dumped = CHUNK_JSON.validate_json(chunk.model_dump_json())
     first = dumped["choices"][0]
-    delta = first["delta"]
     hidden = cast(JsonObject, chunk._hidden_params)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L655-L703
     return {
         "id": dumped.get("id"),
@@ -61,11 +46,7 @@ def chunk_view(chunk: ModelResponseStream) -> JsonValue:
             {
                 "index": first.get("index"),
                 "finish_reason": first.get("finish_reason"),
-                "delta": {
-                    "content": delta.get("content"),
-                    "role": delta.get("role"),
-                    "annotations": delta.get("annotations"),
-                },
+                "delta": fields_of(first["delta"]),
             }
         ],
         "thread_id": hidden.get("thread_id"),

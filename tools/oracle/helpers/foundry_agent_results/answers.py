@@ -12,14 +12,16 @@ from pydantic import JsonValue
 from .fakes import FakeClient, Recorder, install_client, patch_identity
 from .types import (
     JSON,
+    REPLY_JSON,
     AnnotationCall,
     ExtractionCall,
+    JsonObject,
     ReplyCall,
     RequestCall,
     StreamCall,
     StreamPlan,
 )
-from .views import chunk_view, reply_view, usage_of
+from .views import chunk_view, fields_of, usage_of, usage_view
 
 
 def extraction_answer(handler: AgentHandler, call: ExtractionCall) -> JsonValue:
@@ -50,8 +52,21 @@ def reply_answer(handler: AgentHandler, call: ReplyCall) -> JsonValue:
         messages=cast("list[dict[str, object]]", call["messages"]),  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L212-L256
         annotations=call["annotations"],
     )
+    dumped = REPLY_JSON.validate_json(built.model_dump_json())
+    first = dumped["choices"][0]
     return {
-        "reply": reply_view(built),
+        "reply": {
+            "model": dumped.get("model"),
+            "choices": [
+                {
+                    "index": first.get("index"),
+                    "finish_reason": first.get("finish_reason"),
+                    "message": fields_of(first["message"]),
+                }
+            ],
+            "hidden_params": cast(JsonObject, built._hidden_params),  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L226-L230
+            "usage": usage_view(dumped.get("usage")),
+        },
         "counts": JSON.validate_python(recorder.calls),
     }
 
