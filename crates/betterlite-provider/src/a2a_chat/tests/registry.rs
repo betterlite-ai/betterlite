@@ -117,6 +117,80 @@ fn empty_headers_still_ask_the_lookup() {
 }
 
 #[test]
+fn empty_headers_with_a_base_and_key_still_ask_the_lookup() {
+    let lookup = FakeLookup::new(Some(agent(
+        r#"{"url":"http://card"}"#,
+        r#"{"api_key":"stored","headers":{"X":"1"}}"#,
+    )));
+    let key = secret("caller-key");
+    let empty = BTreeMap::new();
+    let mut optional_params = Object::new();
+    let input = RegistryInput {
+        agent_name: "agent",
+        api_base: Some("http://explicit"),
+        api_key: Some(&key),
+        headers: Some(&empty),
+    };
+    let resolved = resolve(&input, &mut optional_params, &lookup).unwrap();
+    assert_eq!(lookup.names(), vec![String::from("agent")]);
+    assert_eq!(resolved.api_base, Some(String::from("http://explicit")));
+    assert_eq!(api_key_of(&resolved), Some("caller-key"));
+    assert_eq!(resolved.headers, Some(header_map(&[("X", "1")])));
+}
+
+#[test]
+fn caller_headers_alone_do_not_skip_the_lookup() {
+    let lookup = FakeLookup::new(Some(agent(
+        r#"{"url":"http://card"}"#,
+        r#"{"api_key":"stored"}"#,
+    )));
+    let caller = header_map(&[("A", "b")]);
+    let mut optional_params = Object::new();
+    let input = RegistryInput {
+        agent_name: "agent",
+        api_base: None,
+        api_key: None,
+        headers: Some(&caller),
+    };
+    let resolved = resolve(&input, &mut optional_params, &lookup).unwrap();
+    assert_eq!(lookup.names(), vec![String::from("agent")]);
+    assert_eq!(resolved.api_base, Some(String::from("http://card")));
+    assert_eq!(api_key_of(&resolved), Some("stored"));
+    assert_eq!(resolved.headers, Some(caller));
+}
+
+#[test]
+fn an_empty_stored_header_map_leaves_no_headers() {
+    let lookup = FakeLookup::new(Some(agent("{}", r#"{"headers":{}}"#)));
+    let mut optional_params = Object::new();
+    let input = RegistryInput {
+        agent_name: "agent",
+        api_base: None,
+        api_key: None,
+        headers: None,
+    };
+    let resolved = resolve(&input, &mut optional_params, &lookup).unwrap();
+    assert_eq!(resolved.headers, None);
+}
+
+#[test]
+fn an_entra_agent_whose_only_stored_header_is_authorization_has_no_headers() {
+    let lookup = FakeLookup::new(Some(agent(
+        "{}",
+        r#"{"azure_ad_token":"t","headers":{"Authorization":"gone"}}"#,
+    )));
+    let mut optional_params = Object::new();
+    let input = RegistryInput {
+        agent_name: "agent",
+        api_base: None,
+        api_key: None,
+        headers: None,
+    };
+    let resolved = resolve(&input, &mut optional_params, &lookup).unwrap();
+    assert_eq!(resolved.headers, None);
+}
+
+#[test]
 fn no_lookup_returns_the_inputs_untouched() {
     let mut optional_params = Object::new();
     let input = RegistryInput {
