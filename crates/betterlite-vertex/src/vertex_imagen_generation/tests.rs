@@ -342,6 +342,7 @@ fn trailing_bytes_after_the_document_keep_the_upstream_answer() {
 #[rstest]
 #[case("[]")]
 #[case(r#"[{"bytesBase64Encoded":"AAA"}]"#)]
+#[case(r#"[[{"bytesBase64Encoded":"AAA"}]]"#)]
 #[case("null")]
 #[case("5")]
 #[case(r#""text""#)]
