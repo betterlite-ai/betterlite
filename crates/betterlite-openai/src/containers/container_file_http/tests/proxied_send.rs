@@ -65,7 +65,8 @@ async fn send_makes_the_request_and_returns_status_headers_and_body() {
     let server = serve_once(listener, 404, r#"{"error":{"message":"gone"}}"#);
     let mut asked = request(ContainerMethod::Delete, url);
     asked.query = vec![("limit".to_owned(), "5".to_owned())];
-    let (reply, seen) = tokio::join!(client().send(&asked), server);
+    let sender = client();
+    let (reply, seen) = tokio::join!(sender.send(&asked), server);
     let reply = reply.unwrap();
     assert_eq!(reply.status, 404);
     assert_eq!(reply.body, br#"{"error":{"message":"gone"}}"#);
@@ -98,7 +99,8 @@ async fn send_posts_the_file_as_multipart_form_data() {
         content: b"hello".to_vec(),
         content_type: "text/plain".to_owned(),
     });
-    let (reply, seen) = tokio::join!(client().send(&upload), server);
+    let sender = client();
+    let (reply, seen) = tokio::join!(sender.send(&upload), server);
     assert_eq!(reply.unwrap().status, 200);
     assert!(
         seen.starts_with("POST /v1/containers/c1/files HTTP/1.1"),

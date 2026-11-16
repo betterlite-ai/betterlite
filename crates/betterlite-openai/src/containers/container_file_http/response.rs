@@ -45,10 +45,10 @@ pub fn raise_for_error_status(
     ))
 }
 
-fn model<Model: DeserializeOwned>(
-    json: Value,
-    response_type: &str,
-) -> Result<Model, ContainerFileHttpError> {
+fn model<Model>(json: Value, response_type: &str) -> Result<Model, ContainerFileHttpError>
+where
+    Model: DeserializeOwned,
+{
     serde_json::from_value(json).map_err(|source| ContainerFileHttpError::Model {
         response_type: response_type.to_owned(),
         source,

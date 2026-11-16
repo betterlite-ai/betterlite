@@ -142,13 +142,15 @@ pub(super) struct FakeClient {
 
 impl FakeClient {
     pub(super) fn answering(status: u16, body: &[u8]) -> Self {
+        let headers = BTreeMap::from([("x-request-id".to_owned(), "req_1".to_owned())]);
+        let reply = ContainerHttpReply {
+            status,
+            headers,
+            body: body.to_vec(),
+        };
         Self {
-            requests: Arc::new(Mutex::new(Vec::new())),
-            reply: ContainerHttpReply {
-                status,
-                headers: BTreeMap::from([("x-request-id".to_owned(), "req_1".to_owned())]),
-                body: body.to_vec(),
-            },
+            requests: Arc::default(),
+            reply,
         }
     }
 
@@ -181,6 +183,16 @@ pub(super) struct FakeSource {
     pub(super) async_made: Mutex<Vec<Option<SslVerify>>>,
 }
 
+impl FakeSource {
+    fn over(client: FakeClient) -> Self {
+        Self {
+            client,
+            blocking_made: Mutex::default(),
+            async_made: Mutex::default(),
+        }
+    }
+}
+
 impl ClientSource for FakeSource {
     type Blocking = FakeClient;
     type Asynchronous = FakeClient;
@@ -199,6 +211,15 @@ impl ClientSource for FakeSource {
 pub(super) struct RecordingHook {
     pub(super) seen: Mutex<Vec<(Json, AdditionalArgs)>>,
     pub(super) fail: bool,
+}
+
+impl RecordingHook {
+    fn passing() -> Self {
+        Self {
+            seen: Mutex::default(),
+            fail: false,
+        }
+    }
 }
 
 impl PreCallHook for RecordingHook {
@@ -236,16 +257,10 @@ pub(super) fn logging_state() -> LoggingState {
 pub(super) type Handler = GenericContainerHandler<FakeSource, RecordingHook>;
 
 pub(super) fn handler(status: u16, body: &str) -> Handler {
+    let client = FakeClient::answering(status, body.as_bytes());
     GenericContainerHandler {
-        clients: FakeSource {
-            client: FakeClient::answering(status, body.as_bytes()),
-            blocking_made: Mutex::new(Vec::new()),
-            async_made: Mutex::new(Vec::new()),
-        },
-        logging: RecordingHook {
-            seen: Mutex::new(Vec::new()),
-            fail: false,
-        },
+        clients: FakeSource::over(client),
+        logging: RecordingHook::passing(),
     }
 }
 

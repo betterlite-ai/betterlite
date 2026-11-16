@@ -3,8 +3,8 @@ deviations:
   - what: The handler does not pass timeout to the HTTP send methods. The selected client keeps its own deadline.
     why: LiteLLM's handle accepts timeout and never forwards it to httpx, so passing it would promise behavior the source does not have.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L332-L410
-  - what: When the query is empty the request carries no params, so a query string already in api_base stays on the URL.
-    why: An empty dict passed as params to httpx strips the URL's own query string and breaks Azure container URLs with api-version, so LiteLLM passes None and betterlite sends no params.
+  - what: When the query is empty the request carries no params, so a query string already in api_base stays on the URL. A non-empty query on POST and DELETE replaces the URL's own query, as httpx does, and on GET it is merged with the URL's query with the URL's values winning, as LiteLLM's HTTPHandler.get does.
+    why: An empty dict passed as params to httpx strips the URL's own query string and breaks Azure container URLs with api-version, so LiteLLM passes None and betterlite sends no params. The replace and merge rules are the ones LiteLLM's handlers already apply to a non-empty query.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L383-L387
   - what: A 2xx JSON body with an error field that is not an object with a string message raises with the body's JSON text as the message.
     why: LiteLLM calls .get on the error value and fails with an AttributeError when it is not a dict, which is a crash on a provider answer and not an error with a status.

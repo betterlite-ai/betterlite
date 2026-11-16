@@ -82,7 +82,7 @@ fn header_text(bytes: &[u8]) -> String {
 
 // httpx joins repeated headers with a comma and keeps names in lower case
 pub fn reply_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
-    let mut joined = BTreeMap::new();
+    let mut joined: BTreeMap<String, String> = BTreeMap::new();
     for (name, value) in headers {
         let text = header_text(value.as_bytes());
         match joined.entry(name.as_str().to_owned()) {

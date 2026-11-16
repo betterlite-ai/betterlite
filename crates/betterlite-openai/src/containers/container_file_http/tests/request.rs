@@ -5,9 +5,10 @@ use std::collections::BTreeMap;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use indexmap::IndexMap;
 use rstest::rstest;
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::{Map, Value};
 
-use super::support::{BASE, FILE_BODY, LIST_BODY, StubConfig, fixture, handler};
+use super::support::{BASE, DELETE_BODY, FILE_BODY, LIST_BODY, StubConfig, fixture, handler};
 use crate::containers::container_file_http::request::{
     ParamValue, SslVerify, build_query, build_url, parse_method, read_params, request_headers,
 };
@@ -232,7 +233,7 @@ fn request_headers_overlay_the_extra_headers_after_validation() {
         ("Authorization".to_owned(), "Bearer override".to_owned()),
         ("x-trace".to_owned(), "1".to_owned()),
     ]);
-    let headers = request_headers(&config, Some(&extra), Some("sk-1"));
+    let headers = request_headers(&config, Some(&extra), Some(&SecretString::from("sk-1")));
     assert_eq!(
         headers.get("Authorization").map(String::as_str),
         Some("Bearer override")
@@ -318,7 +319,10 @@ fn read_params_reads_the_declared_fields() {
         ("ssl_verify".to_owned(), Value::Bool(false)),
     ]);
     let read = read_params(&params).unwrap();
-    assert_eq!(read.api_key, Some("k"));
+    assert_eq!(
+        read.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("k")
+    );
     assert_eq!(read.api_base, None);
     assert_eq!(read.ssl_verify, Some(SslVerify::Enabled(false)));
 }
@@ -464,4 +468,80 @@ fn handle_refuses_a_bare_string_as_file_content() {
     let error = handler.handle(&call).unwrap_err();
     assert!(matches!(error, ContainerFileHttpError::Upload(_)));
     assert!(handler.clients.client.seen().is_empty());
+}
+
+const AZURE: &str = "https://h.test/openai/v1/containers?api-version=v1";
+
+#[rstest]
+#[case::upload("upload_container_file", FILE_BODY, "k", "v", "/cntr_1/files?k=v")]
+#[case::delete(
+    "delete_container_file",
+    DELETE_BODY,
+    "k",
+    "v",
+    "/cntr_1/files/cfile_1?k=v"
+)]
+#[case::delete_overrides(
+    "delete_container_file",
+    DELETE_BODY,
+    "api-version",
+    "v2",
+    "/cntr_1/files/cfile_1?api-version=v2"
+)]
+fn handle_replaces_the_base_query_with_the_params_for_post_and_delete(
+    #[case] name: &str,
+    #[case] body: &str,
+    #[case] key: &str,
+    #[case] value: &str,
+    #[case] expected_tail: &str,
+) {
+    let handler = handler(200, body);
+    let mut fixture = fixture();
+    fixture.config = StubConfig::with_base(AZURE);
+    let overlay = IndexMap::from([(key.to_owned(), text(value))]);
+    let mut call = fixture.call(name);
+    call.extra_query = Some(&overlay);
+    handler.handle(&call).unwrap();
+    let requests = handler.clients.client.seen();
+    let request = requests.first().unwrap();
+    assert!(request.query.is_empty());
+    assert_eq!(
+        request.url,
+        format!("https://h.test/openai/v1/containers{expected_tail}")
+    );
+}
+
+#[test]
+fn handle_merges_the_params_with_the_base_query_for_get() {
+    let handler = handler(200, LIST_BODY);
+    let mut fixture = fixture();
+    fixture.config = StubConfig::with_base(AZURE);
+    let overlay = IndexMap::from([("k".to_owned(), text("v"))]);
+    let mut call = fixture.call("list_container_files");
+    call.extra_query = Some(&overlay);
+    handler.handle(&call).unwrap();
+    let requests = handler.clients.client.seen();
+    let request = requests.first().unwrap();
+    assert_eq!(request.query, [("k".to_owned(), "v".to_owned())]);
+    assert_eq!(
+        request.url,
+        "https://h.test/openai/v1/containers/cntr_1/files?api-version=v1"
+    );
+}
+
+#[test]
+fn handle_leaves_the_base_query_when_a_post_has_no_params() {
+    let handler = handler(200, FILE_BODY);
+    let mut fixture = fixture();
+    fixture.config = StubConfig::with_base(AZURE);
+    handler
+        .handle(&fixture.call("upload_container_file"))
+        .unwrap();
+    let requests = handler.clients.client.seen();
+    let request = requests.first().unwrap();
+    assert!(request.query.is_empty());
+    assert_eq!(
+        request.url,
+        "https://h.test/openai/v1/containers/cntr_1/files?api-version=v1"
+    );
 }

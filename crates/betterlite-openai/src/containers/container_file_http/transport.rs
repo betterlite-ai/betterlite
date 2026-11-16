@@ -85,3 +85,18 @@ pub enum SuppliedClient<'client, Source: ClientSource> {
     Blocking(&'client Source::Blocking),
     Asynchronous(&'client Source::Asynchronous),
 }
+
+// The client a call sends with: the caller's own or one the source built for it
+pub enum Selected<'client, Client> {
+    Supplied(&'client Client),
+    Created(Client),
+}
+
+impl<Client> Selected<'_, Client> {
+    pub const fn get(&self) -> &Client {
+        match self {
+            Self::Supplied(client) => client,
+            Self::Created(client) => client,
+        }
+    }
+}

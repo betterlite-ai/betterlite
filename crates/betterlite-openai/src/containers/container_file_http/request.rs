@@ -7,11 +7,13 @@ use betterlite_models::decisions::Json;
 use betterlite_prompts::media_metadata::extract_file_data;
 use indexmap::IndexMap;
 use percent_encoding::percent_decode_str;
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::{Map, Value};
 use url::Url;
 
-use super::transport::{ContainerMethod, UploadedFile};
+use super::transport::{ContainerHttpRequest, ContainerMethod, UploadedFile};
 use super::{ContainerFileHttpError, ContainerFileUpload};
+use crate::api::container_contracts::catalog::ContainerEndpoint;
 use crate::api::container_contracts::config::BaseContainerConfig;
 
 const DEFAULT_FILENAME: &str = "file";
@@ -40,9 +42,9 @@ pub enum SslVerify {
 }
 
 // The litellm_params fields this handler reads
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct CallParams<'params> {
-    pub api_key: Option<&'params str>,
+    pub api_key: Option<SecretString>,
     pub api_base: Option<&'params str>,
     pub ssl_verify: Option<SslVerify>,
 }
@@ -74,7 +76,7 @@ pub fn read_params(params: &Map<String, Value>) -> Result<CallParams<'_>, Contai
         }
     };
     Ok(CallParams {
-        api_key: text_param(params, "api_key")?,
+        api_key: text_param(params, "api_key")?.map(|key| SecretString::from(key.to_owned())),
         api_base: text_param(params, "api_base")?,
         ssl_verify,
     })
@@ -84,11 +86,11 @@ pub fn read_params(params: &Map<String, Value>) -> Result<CallParams<'_>, Contai
 pub fn request_headers(
     config: &dyn BaseContainerConfig,
     extra_headers: Option<&BTreeMap<String, String>>,
-    api_key: Option<&str>,
+    api_key: Option<&SecretString>,
 ) -> BTreeMap<String, String> {
     let none = BTreeMap::new();
     let extra = extra_headers.unwrap_or(&none);
-    let mut headers = config.validate_environment(extra, api_key);
+    let mut headers = config.validate_environment(extra, api_key.map(ExposeSecret::expose_secret));
     headers.extend(
         extra
             .iter()
@@ -193,4 +195,50 @@ pub fn multipart_upload(
     kept.remove("content-type");
     kept.remove("Content-Type");
     Ok((file, kept))
+}
+
+// What the handler has worked out before it picks the method and attaches the file
+pub struct RequestTarget {
+    pub url: String,
+    pub headers: BTreeMap<String, String>,
+    pub query: IndexMap<String, String>,
+}
+
+// httpx replaces the URL's own query with the params of a POST or DELETE, while GET merges the URL's query into the params
+fn replace_query(
+    url: &str,
+    query: &IndexMap<String, String>,
+) -> Result<String, ContainerFileHttpError> {
+    let mut parsed = Url::parse(url).map_err(|source| ContainerFileHttpError::BaseUrl {
+        url: url.to_owned(),
+        source,
+    })?;
+    parsed.query_pairs_mut().clear().extend_pairs(query);
+    Ok(parsed.to_string())
+}
+
+pub fn assemble_request(
+    endpoint: &ContainerEndpoint,
+    upload: Option<&ContainerFileUpload>,
+    target: RequestTarget,
+) -> Result<ContainerHttpRequest, ContainerFileHttpError> {
+    let method = parse_method(&endpoint.method)?;
+    let mut request = ContainerHttpRequest {
+        method,
+        url: target.url,
+        headers: target.headers,
+        query: Vec::new(),
+        file: None,
+    };
+    if method == ContainerMethod::Get || target.query.is_empty() {
+        request.query = target.query.into_iter().collect();
+    } else {
+        request.url = replace_query(&request.url, &target.query)?;
+    }
+    if let (true, Some(file)) = (endpoint.is_multipart, upload) {
+        let (sent, kept) = multipart_upload(file, &request.headers)?;
+        request.headers = kept;
+        request.file = Some(sent);
+    }
+    Ok(request)
 }
