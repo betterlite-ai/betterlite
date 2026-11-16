@@ -23,7 +23,7 @@ const ASYNC_FLAG: &str = "aget_interaction";
 
 pub(crate) struct Prepared {
     pub(crate) provider: String,
-    pub(crate) provider_id: ProviderId,
+    pub(crate) client: ProviderId,
     pub(crate) params: Params,
 }
 
@@ -43,7 +43,7 @@ where
         }
     };
     // the config lookup is the support check LiteLLM runs, and its answer keys the async client
-    let provider_id = match select_interactions_provider(Some(provider.as_str())) {
+    let client = match select_interactions_provider(Some(provider.as_str())) {
         Some(InteractionsProvider::GoogleAiStudio) => ProviderId::Gemini,
         Some(InteractionsProvider::VertexAi) if provider == "vertex_ai_beta" => {
             ProviderId::VertexAiBeta
@@ -104,7 +104,7 @@ where
     })?;
     Ok(Prepared {
         provider,
-        provider_id,
+        client,
         params,
     })
 }
@@ -134,7 +134,7 @@ pub(crate) fn transport_request<'request>(
     GetInteractionRequest {
         interaction_id: request.interaction_id,
         litellm_params: &prepared.params,
-        provider: prepared.provider_id,
+        provider: prepared.client,
         extra_headers: request
             .extra_headers
             .iter()

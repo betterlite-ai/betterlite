@@ -69,7 +69,7 @@ fn prepare_keys_each_provider_with_its_own_client(
     let call = Call::new("int_1").provider(provider);
     let prepared = prepare::<FixtureError>(&call.request(), &mut harness.state, &harness.redactor)
         .expect("the provider has an interactions config");
-    assert_eq!(prepared.provider_id, expected);
+    assert_eq!(prepared.client, expected);
 }
 
 #[test]
