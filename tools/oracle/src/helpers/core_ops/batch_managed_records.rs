@@ -10,6 +10,7 @@ use betterlite_core::api::batch_managed_records::{
 use betterlite_db::managed_resource_rows::files::ManagedFileTable;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::runtime::Builder;
 
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -103,7 +104,7 @@ impl Helper for Op {
             scheduler: Some(NoScheduledJobs),
             settings: Settings::default(),
         };
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .or_value_error()?;
