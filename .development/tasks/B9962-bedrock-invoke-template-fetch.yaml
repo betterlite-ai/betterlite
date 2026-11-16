@@ -94,6 +94,10 @@ scope:
     - crates/betterlite-prompts/src/factory/hub.rs
     - docs/deviations/B2205.yaml
     - tools/oracle/cases/helpers/providers/bedrock-invoke-templates/**
+    - tools/oracle/src/helpers/bedrock/b9962.rs
+    - tools/oracle/src/helpers/bedrock/b9962/**
+    - tools/oracle/helpers/b9962.py
+    - tools/oracle/helpers/b9962/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5305-L5309
@@ -171,7 +175,7 @@ out_of_scope:
   - B2205's second deviation row, the falcon and mpt null prompt typed error, stays.
   - Constructing the PromptFactory and the media Fetcher for the provider route is B028's; no route reaches this code on main yet.
 pitfalls:
-  - The oracle helper is pre-registered as b9962; the registry files (helpers/mod.rs, the bedrock group file and dispatch.py) are not this task's to edit. Replace the stub Op and the stub run.
+  - The oracle helper for this task is pre-registered as b9962 in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/b9962.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b9962.py. The registry files (tools/oracle/src/helpers/bedrock/lib.rs and tools/oracle/helpers/dispatch.py) are not this task's to edit.
   - The local check sits before prompt_factory and reads the cache directly, so deleting only the return leaves both helpers and the const unused and clippy fails on them and on the three unused imports.
   - prompt_factory with custom_llm_provider None runs generic::fallback, whose if let Ok discards every template error and answers default_pt; the deepseek_r1 arm must not keep going through it.
   - The two hardcoded models are built-in known_tokenizer_config entries, so the download only runs in a factory whose cache lacks them, which is the state the oracle clears known_tokenizer_config for.

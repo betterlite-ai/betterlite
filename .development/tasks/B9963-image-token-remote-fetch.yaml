@@ -255,8 +255,9 @@ out_of_scope:
   B258's remaining deviations: strict data-URL decoding, integer resize arithmetic, injected image constants
   and the negative base_tokens refusal.
 - Any fetch for image blocks, document sources and file data, which LiteLLM counts with mode auto.
-- The oracle registry files (tools/oracle/src/helpers/mod.rs, the tokenizer group file and tools/oracle/helpers/dispatch.py); the skeleton writes them.
+- The oracle registry files (tools/oracle/src/helpers/tokenizer/lib.rs and tools/oracle/helpers/dispatch.py); the skeleton writes them.
 pitfalls:
+- The oracle helper for this task is pre-registered as b9963 in the tokenizer group. Replace the stub Op in tools/oracle/src/helpers/tokenizer/b9963.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b9963.py. The registry files (tools/oracle/src/helpers/tokenizer/lib.rs and tools/oracle/helpers/dispatch.py) are not this task's to edit.
 - LiteLLM fetches only a string that starts with http:// or https://; a data URL or a bare base64 payload goes to decode_data_url and never to the fetcher.
 - 'detail low, detail auto and ImageCounting::DefaultCount must not call convert_url: the /utils/token_counter and rate-limit callers depend on the default count and its warning, and a refused fetch there would fail a request that should count 85 or 250.'
 - An image block, a document source and a file file_data count with Mode::Auto even when the value is an http URL, so they never fetch and their counts stay 85.

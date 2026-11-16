@@ -59,7 +59,7 @@ description: >-
   its part and stops at the first conversion failure. Second: a Studio file part whose download fails
   fails the request, where LiteLLM's synchronous Studio prepass swallows the failure and its walker can
   still forward an https url with an image extension as file_data. Compare the whole body after prepare
-  through helper gemini_media_prepare: patch image_handling's convert functions and
+  through helper b9965: patch image_handling's convert functions and
   factory.convert_url_to_base64 with a url map, run async_inline_remote_media or inline_remote_media
   with _ai_studio_inlines or _vertex_inlines, then _transform_request_body with
   _get_gcs_object_content_type patched to raise. The owned LiteLLM lines are about 90. The production
@@ -79,12 +79,12 @@ scope:
     - docs/deviations/B1321.yaml
     - docs/deviations/B1325.yaml
     - docs/deviations/B9965.yaml
-    - tools/oracle/src/helpers/vertex/gemini_media_prepare.rs
-    - tools/oracle/src/helpers/vertex/gemini_media_prepare/**
-    - tools/oracle/helpers/gemini_media_prepare.py
-    - tools/oracle/helpers/gemini_media_prepare/**
+    - tools/oracle/src/helpers/vertex/b9965.rs
+    - tools/oracle/src/helpers/vertex/b9965/**
+    - tools/oracle/helpers/b9965.py
+    - tools/oracle/helpers/b9965/**
     - tools/oracle/cases/helpers/gemini-media-prepare/**
-    - tools/oracle/fuzz/corpus/helper_case/gemini_media_prepare*
+    - tools/oracle/fuzz/corpus/helper_case/b9965*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1313-L1328
@@ -110,7 +110,7 @@ dod:
     proof: [media-tests, oracle]
   - text: The three old deviation rows are gone and docs/deviations/B9965.yaml records the two remaining differences.
     proof: [deviation-rows]
-  - text: The new helper seeds decode under call.gemini_media_prepare.
+  - text: The new helper seeds decode under call.b9965.
     proof: [media-prepare-seed]
 checks:
   optional: []
@@ -122,10 +122,10 @@ checks:
       run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_chat::tests::/)'
       why: Studio conversion must still refuse an unprepared remote part without performing I/O.
     - id: media-python
-      run: test -f tools/oracle/helpers/gemini_media_prepare.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      run: test -f tools/oracle/helpers/b9965.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The comparison must call the pinned inline and transform functions with network access replaced by a map.
     - id: media-prepare-seed
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_media_prepare*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_media_prepare::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/b9965*')" && cargo nextest run --locked -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^b9965::/)'
       why: New helper seeds must parse the production operation tag and input type.
     - id: deviation-rows
       run: test -f docs/deviations/B9965.yaml && test -z "$(grep -F 'L1373-L1396' docs/deviations/B1321.yaml)" && test -z "$(grep -F 'L113-L173' docs/deviations/B1325.yaml)" && grep -q -F 'gemini/chat/transformation.py#L154-L167' docs/deviations/B9965.yaml
@@ -153,6 +153,7 @@ out_of_scope:
   - Constructing B5083's Fetcher for the gateway route is B1316 and B1327 wiring, recorded in this task's notes for the architect.
   - The extensionless gs:// reference is B9961.
 pitfalls:
+  - The oracle helper for this task is pre-registered as b9965 in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/b9965.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b9965.py. The registry files (tools/oracle/src/helpers/vertex/lib.rs and tools/oracle/helpers/dispatch.py) are not this task's to edit.
   - The predicate reads RemoteMedia.fields, which is the image_url object for an image part and the file object for a file part; reading format from the wrong object turns a passthrough into a download.
   - Assistant images always follow the Vertex predicate, even for gemini, because LiteLLM handles them inside _process_gemini_media and not in the Studio prepass.
   - The seam writes a bare-string image_url back as a data URL string; keep that shape and do not turn it into an object.

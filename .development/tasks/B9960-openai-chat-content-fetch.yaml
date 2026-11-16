@@ -113,6 +113,10 @@ scope:
   - crates/betterlite-openai/src/chat_content/media/**
   - docs/deviations/B503.yaml
   - tools/oracle/cases/helpers/openai-chat-content-fetch/**
+  - tools/oracle/src/helpers/openai/b9960.rs
+  - tools/oracle/src/helpers/openai/b9960/**
+  - tools/oracle/helpers/b9960.py
+  - tools/oracle/helpers/b9960/**
   - "tools/oracle/fuzz/corpus/helper_case/b9960-*"
   lint_tables: false
 references:
@@ -243,8 +247,9 @@ out_of_scope:
   The gpt_transformation functions in the references stay B503's, and image_handling's
   _process_image_response and the two convert functions stay B5083's; this task adds a seam, not a
   transform rule.
-- The oracle registry files (tools/oracle/src/helpers/openai.rs, tools/oracle/src/helpers/openai/ and tools/oracle/helpers/dispatch.py); the skeleton writes them.
+- The oracle registry files (tools/oracle/src/helpers/openai/lib.rs and tools/oracle/helpers/dispatch.py); the skeleton writes them.
 pitfalls:
+- The oracle helper for this task is pre-registered as b9960 in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/b9960.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b9960.py. The registry files (tools/oracle/src/helpers/openai/lib.rs and tools/oracle/helpers/dispatch.py) are not this task's to edit.
 - >-
   Patch litellm.llms.openai.chat.gpt_transformation.convert_url_to_base64 and
   .async_convert_url_to_base64, not the names in image_handling: gpt_transformation imported both names at
