@@ -3,11 +3,10 @@ use std::collections::BTreeMap;
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use betterlite_config::sections::guardrail_params::decode::{
-    decode_litellm_params, decode_patch_request,
-};
+use betterlite_config::sections::guardrail_params::decode::decode_patch_request;
 use betterlite_config::sections::guardrail_params::error::GuardrailParamsError;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
+use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::Guardrail;
 use betterlite_config::sections::guardrail_params::routes::PatchGuardrailRequest;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -84,8 +83,7 @@ pub fn decode_write_request(bytes: &[u8]) -> Result<WriteRequest, BodyError> {
         None if sent(text, GUARDRAIL_INFO) => Some(RawValue::NULL.to_owned()),
         None => None,
     };
-    let params = decode_litellm_params(raw.litellm_params.get().as_bytes())
-        .map_err(|source| BodyError::params(bytes, &[GUARDRAIL, LITELLM_PARAMS], &source))?;
+    let params = decode_params(bytes, raw.litellm_params.get())?;
     let info = match &guardrail_info {
         Some(info) => decode_info(bytes, info.get())?,
         None => None,
@@ -133,6 +131,24 @@ fn sent(text: &str, key: &str) -> bool {
 fn decode_info(bytes: &[u8], text: &str) -> Result<Option<OpaqueParams>, BodyError> {
     serde_json::from_str::<Option<OpaqueParams>>(text)
         .map_err(|source| BodyError::info(bytes, &source))
+}
+
+// decode_litellm_params flattens every serde try_from error into a field path, so the typed convert keeps the missing and rule variants
+fn decode_params(bytes: &[u8], text: &str) -> Result<LitellmParams, BodyError> {
+    let map = match serde_json::from_str::<OpaqueParams>(text) {
+        Ok(map) => map,
+        Err(source) => {
+            let loc = body_location(&[GUARDRAIL, LITELLM_PARAMS]);
+            return Err(BodyError {
+                issue_type: "value_error",
+                input: value_at(bytes, &loc),
+                loc,
+                msg: source.to_string(),
+            });
+        }
+    };
+    LitellmParams::try_from(map)
+        .map_err(|source| BodyError::params(bytes, &[GUARDRAIL, LITELLM_PARAMS], &source))
 }
 
 impl BodyError {

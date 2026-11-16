@@ -4,7 +4,6 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, State};
 use betterlite_config::sections::guardrail_params::base::BaseLitellmParams;
-use betterlite_config::sections::guardrail_params::decode::decode_litellm_params;
 use betterlite_config::sections::guardrail_params::error::GuardrailParamsError;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
@@ -126,7 +125,5 @@ fn merge_params(
         .map_err(|source| GuardrailParamsError::Encode { source })?
         .0;
     merged.extend(overrides);
-    let bytes = serde_json::to_vec(&OpaqueParams(merged))
-        .map_err(|source| GuardrailParamsError::Encode { source })?;
-    decode_litellm_params(&bytes)
+    LitellmParams::try_from(OpaqueParams(merged))
 }

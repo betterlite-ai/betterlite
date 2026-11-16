@@ -570,18 +570,19 @@ async fn patch_bad_params_decode_is_a_422() {
             "PATCH",
             "/guardrails/g1",
             Some(admin()),
-            Some(r#"{"litellm_params":{"timeout":"soon"}}"#),
+            Some(r#"{"litellm_params":{"on_violation":"block"}}"#),
         ),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
         detail(&body),
-        "Invalid guardrail configuration, update rejected: timeout must be numeric"
+        "Invalid guardrail configuration, update rejected: on_violation='block' is only supported by guardrail='mcp_security'"
     );
     let params =
         decode_litellm_params(stored_params(&harness).as_bytes()).expect("the row decodes");
-    assert_eq!(params.base.fields.timeout, None);
+    assert_eq!(params.guardrail, "bedrock");
+    assert_eq!(params.base.fields.on_violation, None);
 }
 
 #[tokio::test]
