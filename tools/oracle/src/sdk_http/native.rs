@@ -77,7 +77,7 @@ fn load_config(
         .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))
 }
 
-fn deployments(
+pub(crate) fn deployments(
     chat: &OpenaiChat,
     api_base: &str,
     env: &BTreeMap<String, String>,

@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
-use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::mock::{chat::response as mock_chat, embedding::response as mock_embedding};
@@ -20,9 +19,8 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use super::error::SdkHttpError;
-use super::native::openai_defaults;
 use super::result::{SdkResult, SyncRun};
-use super::{ChatMessage, MessagesSyncStreamCall};
+use super::{ChatMessage, MessagesSyncStreamCall, OpenaiChat, native};
 
 mod diagnostics;
 mod run;
@@ -33,25 +31,6 @@ struct WireChat<'wire> {
     model: &'wire str,
     messages: &'wire [ChatMessage],
     stream: bool,
-}
-
-#[derive(Serialize)]
-struct Config<'config> {
-    model_list: [Entry<'config>; 1],
-}
-
-#[derive(Serialize)]
-struct Entry<'config> {
-    model_name: &'config str,
-    litellm_params: Params<'config>,
-}
-
-#[derive(Serialize)]
-struct Params<'config> {
-    model: String,
-    api_base: &'config str,
-    api_key: &'config str,
-    timeout: u64,
 }
 
 pub(crate) async fn send(
@@ -82,10 +61,17 @@ fn executor(
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
     );
+    // the same deployment the native chat call builds, so base URLs, keys and timeouts resolve alike
+    let chat = OpenaiChat {
+        model: call.model.clone(),
+        messages: call.messages.clone(),
+        api_key: call.api_key.clone(),
+        timeout_seconds: call.timeout_seconds,
+    };
     Ok(ChatExecutor {
         client: ProxiedClient::outbound(&policy)
             .map_err(|error| SdkHttpError::Client(Box::new(error)))?,
-        deployments: deployments(call, api_base, env)?,
+        deployments: native::deployments(&chat, api_base, env)?,
         catalog: CatalogCapabilities {
             chat_models: BTreeSet::new(),
             text_models: BTreeSet::new(),
@@ -99,38 +85,6 @@ fn executor(
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
             .map_err(|error| SdkHttpError::Invalid(error.to_string()))?,
     })
-}
-
-fn deployments(
-    call: &MessagesSyncStreamCall,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-) -> Result<Vec<ChatDeployment>, SdkHttpError> {
-    let config = Config {
-        model_list: [Entry {
-            model_name: &call.model,
-            litellm_params: Params {
-                model: format!("openai/{}", call.model),
-                api_base,
-                api_key: &call.api_key,
-                timeout: call.timeout_seconds,
-            },
-        }],
-    };
-    let text = serde_json::to_string(&config).map_err(SdkHttpError::Serialize)?;
-    let parsed = ConfigLoader {
-        lookup: env.clone(),
-    }
-    .load(&text)
-    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
-    let defaults = openai_defaults(&parsed);
-    let mut resolved = Vec::new();
-    for entry in &parsed.model_list {
-        let deployment = ChatDeployment::resolve(entry, &defaults)
-            .map_err(|error| SdkHttpError::Deployment(Box::new(error)))?;
-        resolved.push(deployment);
-    }
-    Ok(resolved)
 }
 
 // One POST per run, with the body the synchronous wrapper would send for the same case
