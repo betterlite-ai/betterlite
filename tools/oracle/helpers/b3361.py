@@ -26,8 +26,8 @@ class ContainerRequests(Protocol):
 
     @staticmethod
     def get_optional_params_container_create(  # ast-grep-ignore: no-long-names
-        provider_config: BaseContainerConfig,
-        optional_params: CreateOptionalParams,
+        container_provider_config: BaseContainerConfig,
+        container_create_optional_params: CreateOptionalParams,  # ast-grep-ignore: no-long-names
     ) -> dict[str, JsonValue]: ...
 
     @staticmethod
