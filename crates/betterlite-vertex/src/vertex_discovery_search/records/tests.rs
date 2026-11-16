@@ -518,10 +518,10 @@ fn a_reply_without_results_is_an_empty_page(#[case] body: &str) {
 }
 
 #[rstest]
-#[case(br#"[]"#)]
+#[case(b"[]")]
 #[case(br#" "x""#)]
-#[case(br#"null"#)]
-#[case(br#"5"#)]
+#[case(b"null")]
+#[case(b"5")]
 fn a_non_object_search_root_is_a_decode_error(#[case] body: &[u8]) {
     assert!(matches!(
         decode_vertex_search_payload(body, "query").unwrap_err(),

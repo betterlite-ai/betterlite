@@ -67,7 +67,9 @@ pub fn decode_vertex_search_payload(
     if !body.trim_ascii_start().starts_with(b"{") {
         return Err(PayloadError::Root);
     }
-    let hits = decode_object::<SearchPayload>(body)?.results.unwrap_or_default();
+    let hits = decode_object::<SearchPayload>(body)?
+        .results
+        .unwrap_or_default();
     let mut data = Vec::with_capacity(hits.len());
     for (position, hit) in hits.iter().enumerate() {
         let positional = positional_score(position)?;
@@ -118,7 +120,8 @@ struct Hit {
 #[serde(default, rename_all = "camelCase")]
 struct Document {
     struct_data: Option<IndexMap<String, Json>>,
-    derived_struct_data: Option<DerivedStructData>,
+    #[serde(rename = "derivedStructData")]
+    derived: Option<DerivedStructData>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -139,7 +142,8 @@ struct DerivedStructData {
 #[serde(default, rename_all = "camelCase")]
 struct Snippet {
     snippet: Option<String>,
-    html_snippet: Option<String>,
+    #[serde(rename = "htmlSnippet")]
+    html: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

@@ -8,26 +8,22 @@ use super::error::VertexDiscoverySearchError;
 
 pub const DEFAULT_COLLECTION_ID: &str = "default_collection";
 
-fn default_collection() -> Option<String> {
-    Some(DEFAULT_COLLECTION_ID.to_owned())
-}
-
 // compatibility.md: a null key takes the same default as an absent one
 fn collection_id<'de, Decoder>(deserializer: Decoder) -> Result<Option<String>, Decoder::Error>
 where
     Decoder: Deserializer<'de>,
 {
-    Ok(Option::<String>::deserialize(deserializer)?.or_else(default_collection))
+    let value = Option::<String>::deserialize(deserializer)?;
+    Ok(Some(
+        value.unwrap_or_else(|| DEFAULT_COLLECTION_ID.to_owned()),
+    ))
 }
 
 // the per-deployment litellm_params keys that pick the Discovery Engine serving config
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct VertexSearchOptions {
-    #[serde(
-        default = "default_collection",
-        deserialize_with = "collection_id"
-    )]
+    #[serde(deserialize_with = "collection_id")]
     pub vertex_collection_id: Option<String>,
     pub vertex_engine_id: Option<String>,
     pub vector_store_id: Option<String>,
@@ -36,7 +32,7 @@ pub struct VertexSearchOptions {
 impl Default for VertexSearchOptions {
     fn default() -> Self {
         Self {
-            vertex_collection_id: default_collection(),
+            vertex_collection_id: Some(DEFAULT_COLLECTION_ID.to_owned()),
             vertex_engine_id: None,
             vector_store_id: None,
         }

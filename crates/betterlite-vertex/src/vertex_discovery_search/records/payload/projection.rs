@@ -96,10 +96,7 @@ fn chunk_attributes(
     if let Some(struct_data) = struct_data {
         attributes.insert("structData".to_owned(), Json::Object(struct_data.clone()));
     }
-    let page_span = chunk
-        .page_span
-        .as_ref()
-        .filter(|fields| !fields.is_empty());
+    let page_span = chunk.page_span.as_ref().filter(|fields| !fields.is_empty());
     if let Some(page_span) = page_span {
         attributes.insert("pageSpan".to_owned(), Json::Object(page_span.clone()));
     }
@@ -127,10 +124,14 @@ struct DocumentView<'view> {
 // LiteLLM's _document_result: the link names the file, and structData stays a document attribute
 fn document_view(hit: &Hit) -> DocumentView<'_> {
     let document = hit.document.as_ref();
-    let derived = document.and_then(|document| document.derived_struct_data.as_ref());
+    let derived = document.and_then(|document| document.derived.as_ref());
     DocumentView {
-        link: derived.and_then(|derived| derived.link.as_deref()).unwrap_or(""),
-        title: derived.and_then(|derived| derived.title.as_deref()).unwrap_or(""),
+        link: derived
+            .and_then(|derived| derived.link.as_deref())
+            .unwrap_or(""),
+        title: derived
+            .and_then(|derived| derived.title.as_deref())
+            .unwrap_or(""),
         display_link: derived
             .and_then(|derived| derived.display_link.as_deref())
             .unwrap_or(""),
@@ -150,7 +151,7 @@ pub(super) fn document_result(
     let derived = hit
         .document
         .as_ref()
-        .and_then(|document| document.derived_struct_data.as_ref());
+        .and_then(|document| document.derived.as_ref());
     let file_id = if view.link.is_empty() {
         view.document_id.to_owned()
     } else {
@@ -223,7 +224,7 @@ fn snippet_text(snippets: &[Snippet]) -> String {
             snippet
                 .snippet
                 .as_deref()
-                .or(snippet.html_snippet.as_deref())
+                .or(snippet.html.as_deref())
                 .unwrap_or("")
         })
         .collect::<Vec<_>>()
