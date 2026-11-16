@@ -16,6 +16,9 @@ use serde_json::{Value, json};
 
 mod fixture;
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
 use fixture::{
     CostFixture, CounterFixture, FixtureCosts, FixtureCounter, FixtureLogging, LoggingFixture,
     failure, hooks,
@@ -56,10 +59,10 @@ pub(crate) enum FailureMode {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .map_err(|error| failure(error.to_string()))?;
@@ -67,10 +70,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn assemble_input(
-    runtime: &tokio::runtime::Runtime,
-    input: &Input,
-) -> crate::helpers::HelperResult {
+fn assemble_input(runtime: &tokio::runtime::Runtime, input: &Input) -> HelperResult {
     if input.function != ASSEMBLE {
         return Err(failure(format!(
             "the function {} is not {ASSEMBLE}",
@@ -103,9 +103,7 @@ fn assemble_input(
     }
 }
 
-fn decode_messages(
-    messages: Option<&[Value]>,
-) -> Result<Option<Vec<Message>>, Box<crate::helpers::HelperError>> {
+fn decode_messages(messages: Option<&[Value]>) -> Result<Option<Vec<Message>>, Box<HelperError>> {
     let Some(raw) = messages else {
         return Ok(None);
     };
@@ -127,11 +125,11 @@ fn prompt_callback(
     }
 }
 
-fn assembly_error(error: &AssemblyError) -> Box<crate::helpers::HelperError> {
+fn assembly_error(error: &AssemblyError) -> Box<HelperError> {
     let ErrorClass::Api(details) = error.classify() else {
         return failure(error.to_string());
     };
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "APIError".to_owned(),
         status: Some(details.status),
         error_type: Some(None),
