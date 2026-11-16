@@ -59,6 +59,10 @@ where
     let provider_name = resolve_provider(request);
     let mut kwargs = request.kwargs.clone();
     let _flagged = kwargs.shift_remove(operation.flag());
+    let params: Params = kwargs
+        .iter()
+        .map(|(name, value)| (name.clone(), value_of(value)))
+        .collect();
     let provider = match select_interactions_provider(Some(provider_name.as_str())) {
         Some(selected) => provider_id(selected),
         None => {
@@ -76,10 +80,6 @@ where
         )
     })?;
     let deadline = resolve_deadline(request, &provider_name, redactor)?;
-    let params: Params = kwargs
-        .iter()
-        .map(|(name, value)| (name.clone(), value_of(value)))
-        .collect();
     Ok(Prepared {
         provider,
         provider_name,
