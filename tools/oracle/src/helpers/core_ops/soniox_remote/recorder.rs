@@ -80,12 +80,12 @@ impl Recorder {
     }
 
     fn reply(&self) -> Result<UpstreamResponse, TransportError> {
-        let scripted = self
+        let pending = self
             .answers
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
-        let Some(scripted) = scripted else {
+        let Some(scripted) = pending else {
             return Err(TransportError::Closed);
         };
         if scripted.fail {

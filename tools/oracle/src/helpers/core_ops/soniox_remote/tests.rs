@@ -67,7 +67,7 @@ fn types_every_soniox_remote_oracle_case() {
             serde_saphyr::from_str(source).expect("a case parses as a helper case");
         validate_helper(Path::new("<case>"), &case).is_ok()
             && case.call.operation == "soniox_remote"
-            && serde_json::from_value::<super::input::Input>(case.call.input.clone()).is_ok()
+            && serde_json::from_value::<super::input::Input>(case.call.input).is_ok()
     }));
 }
 

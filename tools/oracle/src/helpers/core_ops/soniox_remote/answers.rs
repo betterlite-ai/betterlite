@@ -84,14 +84,14 @@ fn upload(runtime: &Runtime, fields: &UploadArgs) -> HelperResult {
     let (recorder, ready) = setup(fields, upload_options(fields))?;
     let remote = remote_for(&recorder, &ready, fields.timeout_ms);
     let outcome = runtime.block_on(upload_file(&remote, &audio(fields)));
-    Ok(view(&recorder, upload_outcome(outcome)))
+    Ok(view(&recorder, &upload_outcome(outcome)))
 }
 
 fn poll(runtime: &Runtime, fields: &PollArgs) -> HelperResult {
     let (recorder, ready) = setup(fields, poll_options(fields)?)?;
     let remote = remote_for(&recorder, &ready, fields.timeout_ms);
     let outcome = runtime.block_on(poll_until_completed(&remote, &fields.transcription_id));
-    Ok(view(&recorder, poll_outcome(outcome)))
+    Ok(view(&recorder, &poll_outcome(outcome)))
 }
 
 fn cleanup(runtime: &Runtime, fields: &CleanupArgs) -> HelperResult {
@@ -102,7 +102,7 @@ fn cleanup(runtime: &Runtime, fields: &CleanupArgs) -> HelperResult {
     runtime.block_on(clean_up(&remote, transcription, file));
     Ok(view(
         &recorder,
-        json!({ "kind": "returned", "value": null }),
+        &json!({ "kind": "returned", "value": null }),
     ))
 }
 
@@ -185,7 +185,7 @@ fn remote_for<'call>(
     }
 }
 
-fn view(recorder: &Recorder, outcome: Value) -> Value {
+fn view(recorder: &Recorder, outcome: &Value) -> Value {
     json!({
         "requests": recorder.calls(),
         "sleeps": recorder.sleeps(),
