@@ -11,6 +11,15 @@ use crate::microsoft_purview::purview_dlp_hooks::test_support::{
     trusted_identity, values,
 };
 use crate::purview_dlp_evaluation::error_handling::PurviewDlpHttpError;
+use betterlite_logging::verbose_hooks::{ConsoleSink as _, LoggerSink as _};
+use betterlite_redact::structured::Payload;
+use betterlite_streaming::stream_usage_assembly::{UsageTokenCounter as _, wire::Usage};
+use betterlite_streaming::streamed_response_assembly::cost::{
+    CostInput, StreamCostCalculator as _,
+};
+use rust_decimal::Decimal;
+
+use super::services::{NoCosts, SilentConsole, SilentCounter, SilentLogger};
 
 const CHAT_REQUEST: &str = r#"{"model":"gpt","messages":[{"role":"user","content":"hi"}]}"#;
 const CHAT_CHUNKS: &str = r#"[
@@ -236,5 +245,33 @@ async fn scans_the_assembled_text_of_a_completion_stream() {
             activity: "downloadText".to_owned(),
             data: "hello".to_owned(),
         }]
+    );
+}
+
+#[tokio::test]
+async fn seams_stay_silent_and_free() {
+    let payload = Payload::Bool(false);
+    assert!(!SilentLogger.debug(&payload));
+    assert!(!SilentLogger.info(&payload));
+    assert!(!SilentLogger.error(&payload));
+    assert!(!SilentLogger.debug_enabled());
+    assert!(!SilentConsole.print(&payload));
+    assert_eq!(
+        SilentCounter.count_response_text("m", "t").await.unwrap(),
+        0
+    );
+    assert_eq!(SilentCounter.count_text("t").await.unwrap(), 0);
+    assert_eq!(SilentCounter.count_messages("m", None).await.unwrap(), 0);
+    let input = CostInput {
+        model: "m",
+        usage: &Usage::default(),
+        hidden_params: &Default::default(),
+    };
+    assert_eq!(NoCosts.completion_cost(&input, None).unwrap(), None);
+    assert_eq!(
+        NoCosts
+            .prompt_completion_cost("m", &Usage::default())
+            .unwrap(),
+        (Decimal::ZERO, Decimal::ZERO)
     );
 }
