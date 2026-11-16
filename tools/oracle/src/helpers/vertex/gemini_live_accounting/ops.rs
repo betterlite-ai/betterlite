@@ -95,6 +95,12 @@ struct Burst {
     name_prefix: String,
 }
 
+struct Context<'context> {
+    live: &'context mut LiveClient,
+    settings: &'context LiveSetupSettings<'context>,
+    uuids: &'context mut dyn FnMut() -> Uuid,
+}
+
 pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
     match input.op {
         Operation::Aliases => {
@@ -128,134 +134,124 @@ fn run_steps(steps: &[Step]) -> Result<Value, Box<HelperError>> {
         drawn = drawn.saturating_add(1);
         Uuid::from_u128(drawn.saturating_mul(UUID_PATTERN))
     };
+    let mut context = Context {
+        live: &mut live,
+        settings: &settings,
+        uuids: &mut uuids,
+    };
     let values = steps
         .iter()
-        .map(|step| step_value(step, &mut live, &settings, &mut uuids))
+        .map(|step| step_value(&mut context, step))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(json!({"steps": values}))
 }
 
-fn step_value(
-    step: &Step,
-    live: &mut LiveClient,
-    settings: &LiveSetupSettings<'_>,
-    uuids: &mut dyn FnMut() -> Uuid,
-) -> Result<Value, Box<HelperError>> {
+fn step_value(context: &mut Context<'_>, step: &Step) -> Result<Value, Box<HelperError>> {
     match step.kind {
-        StepKind::Calls => calls_value(step, live, uuids),
-        StepKind::Message => message_value(step, live, settings),
-        StepKind::Audio => audio_value(step, live, settings),
-        StepKind::StandaloneUsage => usage_value(step, live),
-        StepKind::ResponseDone => done_value(step, live, uuids),
-        StepKind::Close => close_value(step, live, settings),
+        StepKind::Calls => calls_value(context, step),
+        StepKind::Message => Ok(json!({
+            "messages": client_messages(context, message_text(step)?)?
+        })),
+        StepKind::Audio => audio_value(context, audio_bytes(step)?),
+        StepKind::StandaloneUsage => Ok(usage_value(context, standalone_usage(step)?)),
+        StepKind::ResponseDone => {
+            let mut frame = done_frame(step)?;
+            let input = ResponseDoneInput {
+                response_id: step.response_id.as_deref(),
+                conversation_id: step.conversation_id.as_deref(),
+                output_items: &step.output_items,
+                session_configuration_request: step.session_configuration_request.as_deref(),
+            };
+            let event = transform_response_done_event(
+                &mut context.live.state,
+                &mut frame,
+                &input,
+                &|usage| usage_details(Some(usage)),
+                context.uuids,
+            )
+            .or_value_error()?;
+            Ok(json!({"event": event}))
+        }
+        StepKind::Close => close_value(context, close_model(step)?),
     }
 }
 
-fn calls_value(
-    step: &Step,
-    live: &mut LiveClient,
-    uuids: &mut dyn FnMut() -> Uuid,
-) -> Result<Value, Box<HelperError>> {
-    let message = tool_call_message(step.tool_call.as_ref(), step.burst.as_ref())?;
-    let ids = ToolCallIds {
-        response_id: step.response_id.as_deref(),
-        output_item_id: step.output_item_id.as_deref(),
-    };
-    let events = transform_tool_call_events(&mut live.state.tool_call_names, &message, ids, uuids);
+fn message_text(step: &Step) -> Result<&str, Box<HelperError>> {
+    step.message
+        .as_deref()
+        .ok_or("a message step needs a message")
+        .or_value_error()
+}
+
+fn audio_bytes(step: &Step) -> Result<usize, Box<HelperError>> {
+    step.audio_bytes
+        .ok_or("an audio step needs audio_bytes")
+        .or_value_error()
+}
+
+fn standalone_usage(step: &Step) -> Result<&Object, Box<HelperError>> {
+    step.usage
+        .as_ref()
+        .ok_or("a standalone_usage step needs a usage")
+        .or_value_error()
+}
+
+fn done_frame(step: &Step) -> Result<ServerMessage, Box<HelperError>> {
+    step.frame
+        .clone()
+        .ok_or("a response_done step needs a frame")
+        .or_value_error()
+}
+
+fn close_model(step: &Step) -> Result<&str, Box<HelperError>> {
+    step.model
+        .as_deref()
+        .ok_or("a close step needs a model")
+        .or_value_error()
+}
+
+fn calls_value(context: &mut Context<'_>, step: &Step) -> Result<Value, Box<HelperError>> {
+    let message = tool_call_message(step)?;
+    let names = &mut context.live.state.tool_call_names;
+    let events = transform_tool_call_events(names, &message, call_ids(step), context.uuids);
     Ok(json!({"events": events}))
 }
 
-fn message_value(
-    step: &Step,
-    live: &mut LiveClient,
-    settings: &LiveSetupSettings<'_>,
-) -> Result<Value, Box<HelperError>> {
-    let message = step
-        .message
-        .as_deref()
-        .ok_or("a message step needs a message")
-        .or_value_error()?;
-    let messages = client_messages(live, message, settings)?;
-    Ok(json!({"messages": messages}))
+fn call_ids(step: &Step) -> ToolCallIds<'_> {
+    ToolCallIds {
+        response_id: step.response_id.as_deref(),
+        output_item_id: step.output_item_id.as_deref(),
+    }
 }
 
-fn audio_value(
-    step: &Step,
-    live: &mut LiveClient,
-    settings: &LiveSetupSettings<'_>,
-) -> Result<Value, Box<HelperError>> {
-    let audio_bytes = step
-        .audio_bytes
-        .ok_or("an audio step needs audio_bytes")
-        .or_value_error()?;
-    let audio = STANDARD.encode(vec![0_u8; audio_bytes]);
+// the audio frame is B1379's output, so only the count of frames sent is compared
+fn audio_value(context: &mut Context<'_>, bytes: usize) -> Result<Value, Box<HelperError>> {
+    let audio = STANDARD.encode(vec![0_u8; bytes]);
     let append = json!({"type": "input_audio_buffer.append", "audio": audio});
-    // the audio frame is B1379's output, so only the count of frames sent is compared
-    let messages = client_messages(live, &append.to_string(), settings)?;
+    let messages = client_messages(context, &append.to_string())?;
     Ok(json!({"sent": messages.len()}))
 }
 
-fn usage_value(step: &Step, live: &mut LiveClient) -> Result<Value, Box<HelperError>> {
-    let usage = step
-        .usage
-        .as_ref()
-        .ok_or("a standalone_usage step needs a usage")
-        .or_value_error()?;
-    // the source buffers a dict usageMetadata from a frame that emits no event
-    live.state.pending_usage_metadata = Some(usage.clone());
-    Ok(json!({"events": []}))
+// the source buffers a dict usageMetadata from a frame that emits no event
+fn usage_value(context: &mut Context<'_>, usage: &Object) -> Value {
+    context.live.state.pending_usage_metadata = Some(usage.clone());
+    json!({"events": []})
 }
 
-fn done_value(
-    step: &Step,
-    live: &mut LiveClient,
-    uuids: &mut dyn FnMut() -> Uuid,
-) -> Result<Value, Box<HelperError>> {
-    let mut frame = step
-        .frame
-        .clone()
-        .ok_or("a response_done step needs a frame")
-        .or_value_error()?;
-    let input = ResponseDoneInput {
-        response_id: step.response_id.as_deref(),
-        conversation_id: step.conversation_id.as_deref(),
-        output_items: &step.output_items,
-        session_configuration_request: step.session_configuration_request.as_deref(),
-    };
-    let event = transform_response_done_event(
-        &mut live.state,
-        &mut frame,
-        &input,
-        &|usage| usage_details(Some(usage)),
-        uuids,
-    )
-    .or_value_error()?;
-    Ok(json!({"event": event}))
-}
-
-fn close_value(
-    step: &Step,
-    live: &mut LiveClient,
-    settings: &LiveSetupSettings<'_>,
-) -> Result<Value, Box<HelperError>> {
-    let model = step
-        .model
-        .as_deref()
-        .ok_or("a close step needs a model")
-        .or_value_error()?;
-    let usage =
-        consume_transcript_estimate(&mut live.state, settings.catalog, model).or_value_error()?;
+fn close_value(context: &mut Context<'_>, model: &str) -> Result<Value, Box<HelperError>> {
+    let state = &mut context.live.state;
+    let catalog = context.settings.catalog;
+    let usage = consume_transcript_estimate(state, catalog, model).or_value_error()?;
     Ok(json!({"usage": usage}))
 }
 
-fn tool_call_message(
-    tool_call: Option<&ToolCallMessage>,
-    burst: Option<&Burst>,
-) -> Result<ToolCallMessage, Box<HelperError>> {
-    if let Some(message) = tool_call {
+fn tool_call_message(step: &Step) -> Result<ToolCallMessage, Box<HelperError>> {
+    if let Some(message) = &step.tool_call {
         return Ok(message.clone());
     }
-    let generated = burst
+    let generated = step
+        .burst
+        .as_ref()
         .ok_or("a calls step needs a tool_call or a burst")
         .or_value_error()?;
     let function_calls = (0..generated.count)
@@ -268,18 +264,16 @@ fn tool_call_message(
     Ok(ToolCallMessage { function_calls })
 }
 
-fn client_messages(
-    live: &mut LiveClient,
-    text: &str,
-    settings: &LiveSetupSettings<'_>,
-) -> Result<Vec<Value>, Box<HelperError>> {
+fn client_messages(context: &mut Context<'_>, text: &str) -> Result<Vec<Value>, Box<HelperError>> {
     // ast-grep-ignore: no-long-names
     let event = decode_gemini_live_client_event(text.as_bytes(), usize::MAX).or_value_error()?;
-    let messages = live
-        .transform_realtime_request(&event, MODEL, None, settings)
+    let messages = context
+        .live
+        .transform_realtime_request(&event, MODEL, None, context.settings)
         .or_value_error()?;
-    messages
-        .iter()
-        .map(|message| serde_json::from_str::<Value>(message).or_value_error())
-        .collect()
+    let mut parsed = Vec::with_capacity(messages.len());
+    for message in &messages {
+        parsed.push(serde_json::from_str::<Value>(message).or_value_error()?);
+    }
+    Ok(parsed)
 }
