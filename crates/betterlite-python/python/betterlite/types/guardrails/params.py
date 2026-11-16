@@ -219,8 +219,7 @@ class LitellmParams(  # pyright: ignore[reportGeneralTypeIssues, reportIncompati
 ):
     guardrail: str
     decision_model: str | None = None
-    # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1229
-    checks: BedrockChecksConfigModel | tuple[DecisionModelCheck, ...] | None = None  # pyright: ignore[reportIncompatibleVariableOverride]
+    checks: BedrockChecksConfigModel | tuple[DecisionModelCheck, ...] | None = None  # pyright: ignore[reportIncompatibleVariableOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1229
     mode: str | list[str] | Mode
 
     @field_validator("timeout", mode="before", check_fields=False)
