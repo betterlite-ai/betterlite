@@ -317,6 +317,27 @@ async fn skips_a_call_type_that_is_not_an_mcp_call() {
 }
 
 #[tokio::test]
+async fn skips_a_suppressed_guardrail() {
+    let Harness {
+        guardrail,
+        poster,
+        mut data,
+    } = harness(UnreachableFallback::FailClosed);
+    let suppressed = BTreeSet::from([GUARDRAIL_NAME.to_owned()]);
+    let outcome = pre_mcp_call_hook(
+        &guardrail,
+        &mut data,
+        "mcp_call",
+        Some("alias-1"),
+        &suppressed,
+    )
+    .await;
+    assert!(outcome.is_ok());
+    assert!(poster.recorded().is_empty());
+    assert!(!data.contains_key("metadata"));
+}
+
+#[tokio::test]
 async fn skips_a_request_without_a_tool_name() {
     let Harness {
         guardrail,
