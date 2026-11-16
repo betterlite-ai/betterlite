@@ -27,9 +27,12 @@ impl From<Answer> for RepelloAIAnalyzeResponse {
         Self {
             verdict: answer.verdict,
             request_id: answer.request_id,
-            policies_violated: answer
-                .policies_violated
-                .map(|policies| policies.into_iter().map(Into::into).collect()),
+            policies_violated: answer.policies_violated.map(|policies| {
+                policies
+                    .into_iter()
+                    .map(RepelloAIViolatedPolicy::from)
+                    .collect()
+            }),
             policies_applied: answer
                 .policies_applied
                 .map(|applied| applied.into_iter().map(|policy| policy.0).collect()),

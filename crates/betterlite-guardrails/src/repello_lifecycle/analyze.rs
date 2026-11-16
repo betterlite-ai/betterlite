@@ -185,7 +185,7 @@ async fn decode(mut response: reqwest::Response) -> Result<RepelloAIAnalyzeRespo
 
 // LiteLLM's TypeAdapter(RepelloAIAnalyzeResponse).validate_json: the answer the Argus API sent, typed.
 pub fn parse_answer(body: &[u8]) -> Result<RepelloAIAnalyzeResponse, serde_json::Error> {
-    serde_json::from_slice::<Answer>(body).map(Into::into)
+    serde_json::from_slice::<Answer>(body).map(RepelloAIAnalyzeResponse::from)
 }
 
 // A failed scan records the detail object, which is what LiteLLM keeps as guardrail_json_response.
