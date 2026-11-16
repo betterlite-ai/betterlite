@@ -19,7 +19,6 @@ use super::scripted::{Scripted, outcome_view};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_oracle_runner::case::UpstreamAnswer;
 
-const HEADER_NAMES: [&str; 1] = ["content-type"];
 const ITEM_NAME: &str = "prompt_injection";
 
 #[derive(Debug, Deserialize)]
@@ -69,7 +68,6 @@ pub(super) async fn run(case: &Case) -> HelperResult {
         case.add_function_to_prompt,
     );
     let gate = case.gate.map_or(LakeraGate::Legacy, LakeraGate::Checked);
-    // the caller's B3665 gate with no dynamic params, and the B3663 metadata answer that lets the check proceed
     let base = GuardrailBase {
         settings: GuardrailSettings::default(),
         mode: None,
@@ -85,7 +83,7 @@ pub(super) async fn run(case: &Case) -> HelperResult {
     let secrets = [("authorization", format!("Bearer {}", case.api_key))];
     Ok(outcome_view(
         &scripted.take_requests()?,
-        &HEADER_NAMES,
+        &["content-type"],
         &secrets,
         &outcome,
     ))

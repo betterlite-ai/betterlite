@@ -18,7 +18,6 @@ Returned = Exception | str | dict[str, Json] | None
 PostCallHook = Callable[[dict[str, Json], UserAPIKeyAuth, LLMResponseTypes], Awaitable[LLMResponseTypes]]
 
 
-# LiteLLM types the request data as a bare dict and narrows call_type to a few names
 class PreCallHooks(Protocol):
     async def async_pre_call_hook(
         self, user: UserAPIKeyAuth, cache: DualCache, data: dict[str, Json], call_type: Literal["completion"], /

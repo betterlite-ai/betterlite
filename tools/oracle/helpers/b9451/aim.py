@@ -54,7 +54,6 @@ async def call_hook(guardrail: AimHooks, case: AimCase) -> dict[str, Json]:
             return {"data": returned_data(returned)}
         case "moderation":
             returned = await guardrail.async_moderation_hook(data, user, case["call_type"])
-            # the during-call dispatch drops this return, so what matters is that it hands the input back
             return {"returns_input": returned_data(returned) is data}
         case "post_call":
             return await post_call_contents(guardrail.async_post_call_success_hook, data, user, case["outputs"])

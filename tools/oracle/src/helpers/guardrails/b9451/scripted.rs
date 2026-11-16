@@ -125,7 +125,6 @@ pub(super) fn outcome_view(
             let checked: BTreeMap<&str, bool> = secrets
                 .iter()
                 .map(|(name, expected)| {
-                    // the mock stores credential headers hashed, so the expected value is hashed the same way
                     let mut hashed = BTreeMap::from([((*name).to_owned(), expected.clone())]);
                     redact_credentials(&mut hashed);
                     (*name, request.headers.get(*name) == hashed.get(*name))

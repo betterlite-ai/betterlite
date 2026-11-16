@@ -17,8 +17,6 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_oracle_runner::case::UpstreamAnswer;
 
-const HEADER_NAMES: [&str; 1] = ["content-type"];
-// the payload fields that hold JSON text, some with a second JSON text under "body"
 const ENCODED_FIELDS: [&str; 6] = [
     "requestHeaders",
     "responseHeaders",
@@ -84,7 +82,12 @@ pub(super) async fn run(case: &Case) -> HelperResult {
         request.body = decoded_body(&request.body)?;
     }
     let secrets = [("authorization", case.akto_api_key.clone())];
-    Ok(outcome_view(&requests, &HEADER_NAMES, &secrets, &outcome))
+    Ok(outcome_view(
+        &requests,
+        &["content-type"],
+        &secrets,
+        &outcome,
+    ))
 }
 
 fn decoded_body(body: &Value) -> Result<Value, Box<HelperError>> {
