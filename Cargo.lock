@@ -1205,6 +1205,7 @@ dependencies = [
  "indexmap 2.14.2",
  "jsonwebtoken",
  "lru",
+ "num-traits",
  "p12-keystore",
  "pem",
  "percent-encoding",
