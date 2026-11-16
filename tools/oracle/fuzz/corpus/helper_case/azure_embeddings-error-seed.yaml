@@ -1,0 +1,35 @@
+kind: helper
+name: azure-embeddings-error-seed
+call:
+  azure_embeddings:
+    steps:
+      - input: ["a"]
+        client: azure
+        answer: {reply: {status: 429, headers: {content-type: "text/plain"}, body: "slow down"}}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
+      - input: ["a"]
+        client: async_azure
+        answer: {connection: null}
+        aembedding: true
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
+env: {}
+compare: {ignore: []}

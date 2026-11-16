@@ -287,7 +287,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_search*")"
       && grep -lq 'azure_search' tools/oracle/fuzz/corpus/helper_case/azure_search* && cargo nextest run --locked
       -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_search$/)' && cargo nextest run
-      --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-azure --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_search)"
