@@ -66,12 +66,11 @@ impl OidcClock for NoTraffic {
 }
 
 pub(super) fn secret_lookup() -> SecretLookup {
-    let transport = Arc::new(NoTraffic);
     SecretLookup {
         manager: None,
-        oidc_http: Arc::clone(&transport),
-        azure_tokens: Arc::clone(&transport),
-        clock: transport,
+        oidc_http: Arc::new(NoTraffic),
+        azure_tokens: Arc::new(NoTraffic),
+        clock: Arc::new(NoTraffic),
         oidc_cache: OidcTokenCache::default(),
     }
 }
