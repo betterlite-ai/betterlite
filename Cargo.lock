@@ -1645,6 +1645,7 @@ dependencies = [
  "lru",
  "mutants",
  "num-traits",
+ "percent-encoding",
  "regex",
  "rstest",
  "rust_decimal",
