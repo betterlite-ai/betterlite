@@ -7,7 +7,7 @@ deviations:
     why: betterlite normalizes a parsed start time to one DateTime<Utc> and prints it the way str(datetime) prints a UTC time, so the stored instant and the day bucket are the same and only the rendered offset differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L399
   - what: A start-time string is read from RFC 3339, then a space or T separated datetime with an offset, then a naive datetime with seconds, then minute precision with T, then a date alone; Python's datetime.fromisoformat also accepts forms such as 20260102, 2026-01-02T03 and a minute-precision timestamp with an offset.
-    why: chrono parses the explicit shapes the spend log and the database write, and Python's full ISO grammar has no counterpart here; a start time none of the accepted shapes matches is skipped the way Python skips an unparseable one, so only payloads carrying an exotic ISO form differ.
+    why: chrono parses the explicit shapes the spend log and the database write, and Python's full ISO grammar has no counterpart here; a start time none of the accepted shapes matches is skipped the way Python skips an unparsable one, so only payloads carrying an exotic ISO form differ.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_tracking.py#L241
   - what: A unit count outside the i64 range is skipped; LiteLLM counts any positive Python int and lets the database write carry or reject the value.
     why: betterlite's unit columns and counters are i64, so a count that cannot be stored is dropped rather than overflowed; a unit count that large cannot be written back to the column either way.
