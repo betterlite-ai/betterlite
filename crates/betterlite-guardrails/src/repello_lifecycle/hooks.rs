@@ -64,7 +64,8 @@ pub async fn scan_hook(
         HookTarget::Prompt => extract_prompt_text(data),
         HookTarget::Response(response) => extract_response_text(&ResponseSource::Body(response)),
     };
-    let Some(text) = extracted.filter(|text| !text.is_empty()) else {
+    // B3793's extractors answer None where LiteLLM's `if not text` would see an empty string
+    let Some(text) = extracted else {
         tracing::warn!("RepelloAI Argus: {skipped} - skipping.");
         return Ok(());
     };
