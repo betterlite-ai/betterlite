@@ -352,3 +352,10 @@ path = "fuzz_targets/chirp_backend_event.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "batch_output_usage"
+path = "fuzz_targets/batch_output_usage.rs"
+test = false
+doc = false
+bench = false
