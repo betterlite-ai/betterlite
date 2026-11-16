@@ -1,6 +1,7 @@
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) type Markup<'render> = Result<&'render str, Box<HelperError>>;
 pub(super) type Entries = Result<Vec<(&'static str, Value)>, Box<HelperError>>;

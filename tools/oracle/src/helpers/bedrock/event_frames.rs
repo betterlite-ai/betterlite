@@ -14,7 +14,8 @@ use bytes::BytesMut;
 use input::{Frames, Input, Sse, Stream};
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod input;
 mod tests;

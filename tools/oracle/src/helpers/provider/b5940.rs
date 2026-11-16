@@ -18,7 +18,8 @@ use http::header::{HeaderName, HeaderValue};
 use secrecy::ExposeSecret;
 use serde::Deserialize;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 const FIXED_SECONDS: i64 = 1_730_882_977;
 
@@ -89,7 +90,7 @@ fn base_urls(
     explicit: &OciExplicitParams,
     env: &OciEnvValues,
     api_bases: &[Option<String>],
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let region = resolve_oci_credentials(explicit, env).oci_region;
     let mut urls = Vec::new();
     for api_base in api_bases {
@@ -104,7 +105,7 @@ fn signature(
     api_base: &str,
     request: &Json,
     headers: &BTreeMap<String, String>,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let credentials = resolve_oci_credentials(explicit, env);
     let mut header_map = HeaderMap::new();
     for (name, value) in headers {
@@ -135,7 +136,7 @@ fn signature(
     Ok(serde_json::json!({"headers": signed, "body": body_text}))
 }
 
-fn schema_output(schema: &Json) -> crate::helpers::HelperResult {
+fn schema_output(schema: &Json) -> HelperResult {
     Ok(serde_json::json!({
         "refs": resolve_oci_schema_refs(schema).map_err(oci_failure)?,
         "anyof": resolve_oci_schema_anyof(schema),
@@ -154,10 +155,10 @@ impl Clock for FixedClock {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Credentials { explicit, env } => Ok(credentials(explicit, env)),
             Input::BaseUrl {

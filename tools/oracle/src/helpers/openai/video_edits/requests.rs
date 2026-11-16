@@ -10,7 +10,7 @@ use serde_json::json;
 use super::fixture::{Prepared, character_files, file_part_value, prepared};
 use super::support::helper_error;
 use super::{CreateCharacterRequest, EditRequest, GetCharacterRequest};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn create_character_value(request: &CreateCharacterRequest) -> HelperResult {
     let mut state = prepared(&request.fixture)?;

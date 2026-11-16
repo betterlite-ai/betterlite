@@ -16,7 +16,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use self::connector::{Recorder, Sts};
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::io::Error;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -65,7 +68,7 @@ enum Failure {
     #[error("the request is not valid: {0}")]
     Request(#[from] http::Error),
     #[error("the helper runtime failed: {0}")]
-    Runtime(#[from] std::io::Error),
+    Runtime(#[from] Error),
     #[error("the case time {0} is past the clock's range")]
     Clock(u64),
 }
@@ -151,7 +154,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| failure(&Failure::Runtime(error)))?;

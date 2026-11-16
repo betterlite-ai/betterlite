@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use betterlite_azure::azure_urls::AuthParams;
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -111,10 +111,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        reports::invoke(input)
+        reports::invoke_reports_call(input)
     }
 }

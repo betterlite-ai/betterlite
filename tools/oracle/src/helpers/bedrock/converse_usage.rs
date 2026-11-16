@@ -9,7 +9,9 @@ use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::helpers::{HelperCall, HelperError, HelperResult, invoke};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::helpers::{HelperCall, invoke};
 
 mod tests;
 
@@ -99,10 +101,13 @@ impl ReasoningTokenCounter for TokenizerCounter {
         let input = serde_json::to_value(request).map_err(|error| TokenCountFailure {
             message: error.to_string(),
         })?;
-        let output = invoke(&HelperCall {
-            operation: "token_count".to_owned(),
-            input,
-        });
+        let output = invoke(
+            &[betterlite_oracle_tokenizer::GROUP],
+            &HelperCall {
+                operation: "token_count".to_owned(),
+                input,
+            },
+        );
         if let Some(error) = output.error {
             return Err(TokenCountFailure {
                 message: error.message,
@@ -169,7 +174,7 @@ fn totals(usage: &Json) -> HelperResult {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Operation;
 
     fn run(input: &Self::Input) -> HelperResult {

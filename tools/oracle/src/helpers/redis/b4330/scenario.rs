@@ -15,7 +15,8 @@ use super::failure;
 use super::input::{Arg, Call, Operation, Reply, Step};
 use super::server::{FakeServer, connect_cache};
 use super::taxonomy;
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const REPORTED: [&str; 8] = [
     "MGET",

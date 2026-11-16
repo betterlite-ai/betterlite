@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_core::shadow_evidence::{chat_text, cost, judge_reply, responses_text, routing};
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::json;
@@ -64,10 +65,10 @@ fn token_count(usage: &Json, name: &str) -> Option<u64> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let response = &input.response;
         let metadata = &input.metadata;
         match input.operation {

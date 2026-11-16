@@ -12,7 +12,8 @@ use betterlite_models::resolution::ResolutionContext;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -11,7 +11,8 @@ use betterlite_db::database_urls::settings::{AuthMode, DatabaseUrlSettings, from
 use betterlite_db::database_urls::tls::tls_params;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

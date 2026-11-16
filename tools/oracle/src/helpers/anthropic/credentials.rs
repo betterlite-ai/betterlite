@@ -19,7 +19,10 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 mod tests;
 
@@ -193,7 +196,7 @@ fn models(input: &Input, settings: &AnthropicSettings) -> HelperResult {
         reply: input.reply.as_ref(),
         seen: Mutex::new(None),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(failure)?;
@@ -233,7 +236,7 @@ fn header_object(header: Option<AuthHeader>) -> Value {
 
 fn failure<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     Box::new(HelperError {
         class: "Error".to_owned(),
