@@ -196,9 +196,7 @@ fn take_flush_hands_the_collector_over_once() {
 
 #[test]
 fn owned_spend_stops_collecting_exactly_past_the_byte_cap() {
-    let config = CountingConfig {
-        created: Arc::new(Mutex::new(Vec::new())),
-    };
+    let config = fake_config();
     let mut sink = owned_spend(config);
     {
         let chunk = vec![b'a'; MAX_COLLECTED_BYTES];
