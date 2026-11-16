@@ -3,6 +3,8 @@ mod store;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::mcp_rotation::rotation::Rotation;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -13,7 +15,6 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use self::store::{cipher, prepare_store};
-use crate::helpers::{Helper, HelperError, HelperResult};
 
 pub(crate) struct Op;
 

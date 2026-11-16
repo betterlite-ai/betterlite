@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::mcp_stored_contracts::JsonValue;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, NonceSource, StoredCipher};
@@ -13,7 +14,6 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use super::{Function, Input, helper_error};
-use crate::helpers::HelperError;
 
 pub(super) type HelperCipher = StoredCipher<FixedNonces, TracingDiagnostics>;
 
