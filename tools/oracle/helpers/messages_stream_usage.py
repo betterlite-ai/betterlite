@@ -171,8 +171,7 @@ class Wrapper(AnthropicStreamWrapper):
             "model": self.model, "index": self.current_content_block_index,
             "type": self.current_content_block_type,
             "start": start,
-            "sent_first_chunk": self.sent_first_chunk,
-            "sent_last_message": self.sent_last_message,
+            "sent_first_chunk": self.sent_first_chunk, "sent_last_message": self.sent_last_message,
             "sent_content_block_start": self.sent_content_block_start,
             "sent_content_block_finish": self.sent_content_block_finish,
             "queued_usage_chunk": self.queued_usage_chunk,
@@ -264,27 +263,28 @@ def build(input_value: Input) -> tuple[Wrapper, Logging | None]:
 
 
 def answer_step(wrapper: Wrapper, logging_obj: Logging | None, step: Step) -> JsonValue:
+    answer: JsonValue = None
     name = step.get("step")
     match name:
         case "snapshot":
-            return wrapper.stream_state(logging_obj)
+            answer = wrapper.stream_state(logging_obj)
         case "hold_stop":
             wrapper.hold_stop(step.get("event"))
-            return None
         case "initial_usage":
-            return wrapper.initial_usage()
+            answer = wrapper.initial_usage()
         case "merge_held_usage" | "choiceless":
-            return wrapper.usage_step(name, step.get("usage"))
+            answer = wrapper.usage_step(name, step.get("usage"))
         case "augment" | "refusal_stop":
-            return wrapper.event_step(name, step.get("event"))
+            answer = wrapper.event_step(name, step.get("event"))
         case "compaction":
-            return wrapper.compaction(step.get("calls"))
+            answer = wrapper.compaction(step.get("calls"))
         case "delta_has_content":
-            return wrapper.delta_has_content(step.get("event"))
+            answer = wrapper.delta_has_content(step.get("event"))
         case "is_blank" | "start_block":
-            return wrapper.choice_step(name, step.get("choices"))
+            answer = wrapper.choice_step(name, step.get("choices"))
         case _:
-            return None
+            pass
+    return answer
 
 
 def run(input_value: Input) -> JsonValue:
