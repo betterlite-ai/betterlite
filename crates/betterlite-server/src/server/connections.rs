@@ -5,7 +5,7 @@ use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 
 const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(100);
-const CONNECTION_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+pub(super) const CONNECTION_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(super) async fn accept_connection(listener: &TcpListener) -> Option<(TcpStream, SocketAddr)> {
     match timeout(ACCEPT_POLL_INTERVAL, listener.accept()).await {
