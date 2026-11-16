@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::str;
+use std::sync::atomic::AtomicUsize;
 
 use rstest::rstest;
 use tokio::runtime::Builder;
@@ -10,7 +11,7 @@ use crate::media::count::count_token_media;
 use crate::media::settings::{ImageCounting, Settings};
 use crate::media::wire::TokenMedia;
 
-use super::support;
+use super::support::{self, RefusingFetcher};
 
 fn exact() -> Settings {
     Settings {
@@ -35,12 +36,21 @@ fn replays_the_token_media_corpus(#[files("fuzz/corpus/token_media/*")] path: Pa
         return;
     };
     let fixture = support::cl100k_fixture();
+    let fetcher = RefusingFetcher {
+        calls: AtomicUsize::new(0),
+    };
     let runtime = Builder::new_current_thread().enable_all().build().unwrap();
-    let _exact = runtime.block_on(count_token_media(&fixture.texter(), &media, &exact()));
+    let _exact = runtime.block_on(count_token_media(
+        &fixture.texter(),
+        &media,
+        &exact(),
+        &fetcher,
+    ));
     let _default = runtime.block_on(count_token_media(
         &fixture.texter(),
         &media,
         &default_count(),
+        &fetcher,
     ));
 }
 
@@ -60,6 +70,14 @@ fn replays_the_upstream_media_corpus(
         return;
     };
     let fixture = support::cl100k_fixture();
+    let fetcher = RefusingFetcher {
+        calls: AtomicUsize::new(0),
+    };
     let runtime = Builder::new_current_thread().enable_all().build().unwrap();
-    let _counted = runtime.block_on(count_token_media(&fixture.texter(), &media, &exact()));
+    let _counted = runtime.block_on(count_token_media(
+        &fixture.texter(),
+        &media,
+        &exact(),
+        &fetcher,
+    ));
 }

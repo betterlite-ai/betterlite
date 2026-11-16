@@ -1,0 +1,31 @@
+kind: helper
+name: foundry-agent-requests-agent-auth-and-response-checks
+call:
+  foundry_agent_requests:
+    validations:
+      - {headers: {}, api_key: ""}
+      - {headers: {}, api_key: secret}
+      - {headers: {Authorization: "Bearer old", Content-Type: text/plain}, api_key: ""}
+      - {headers: {Authorization: "Bearer old", Content-Type: text/plain}, api_key: secret}
+      - {headers: {content-type: text/plain}, api_key: ""}
+calls:
+  - foundry_agent_requests:
+      preparations:
+        - {model: azure_ai/agents/a, api_base: "https://base.example/", api_key: secret, optional_params: {api_version: "2025-05-15-preview", thread_id: thread-1}, headers: {X-Trace: trace-1}}
+        - {model: azure_ai/agents/a, api_base: "https://base.example", api_key: "", optional_params: {api_version: null}, headers: {}}
+        - {model: azure_ai/agents/a, api_base: "https://base.example", api_key: secret, optional_params: {api_version: ""}, headers: {Authorization: "Bearer old"}}
+        - {model: azure_ai/agents/a, api_base: "https://base.example", api_key: secret, optional_params: {api_version: 2025}, headers: {}}
+        - {model: azure_ai/agents/a, api_base: "https://base.example", api_key: secret, optional_params: {api_version: true}, headers: {}}
+  - foundry_agent_requests:
+      checks:
+        - {status: 200, body: ok, expected: [200], error_msg: create-thread}
+        - {status: 202, body: accepted, expected: [200, 202], error_msg: add-message}
+        - {status: 404, body: not-found, expected: [200], error_msg: create-thread}
+        - {status: 400, body: "", expected: [], error_msg: poll-run}
+        - {status: 409, body: "conflict: thread busy", expected: [200, 202], error_msg: poll-run}
+  - foundry_agent_requests:
+      errors:
+        - {status: 401, message: unauthorized, headers: {X-Request: r1}}
+        - {status: 500, message: "boom: bad", headers: {}}
+env: {}
+compare: {ignore: []}

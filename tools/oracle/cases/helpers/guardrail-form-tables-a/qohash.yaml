@@ -1,0 +1,8 @@
+kind: helper
+name: guardrail-form-tables-a-qohash
+call:
+  b6561:
+    provider: qostodian_nexus
+env: {}
+compare:
+  ignore: []
