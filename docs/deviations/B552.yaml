@@ -1,0 +1,79 @@
+task: B552
+deviations:
+  - what: >-
+      The async image route with no api_base asks the transport for the relative /images/embeddings.
+      LiteLLM interpolates the missing value into the URL, so its HTTP client is handed
+      None/images/embeddings and fails while parsing that relative URL. Both fail before a server
+      answers; the difference is the failure that surfaces.
+    why: >-
+      Python's f-string text for an absent value is not a URL any client can resolve, and
+      docs/compatibility.md does not port str() formatting of absent values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L82
+  - what: >-
+      The async image route with no api_key sends an empty bearer, "Authorization: Bearer ".
+      LiteLLM sends "Bearer None", the str() of the missing key.
+    why: >-
+      An absent optional value takes its default under docs/compatibility.md, and the default here
+      is no credential text rather than Python's rendering of None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L87
+  - what: >-
+      The "/v1/embeddings route returned None Embeddings." check is implemented as a typed
+      TextDataMissing error, but no reply can reach it: the inherited OpenAI call parses the answer
+      through the SDK, whose response model requires the data list, so LiteLLM itself cannot reach
+      that branch with the pinned code.
+    why: >-
+      The check stays because the owned source spells it out; the reply type keeps a present null
+      data field distinct from an absent one so the branch exists in betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L197
+  - what: >-
+      Betterlite's text embedding seam takes no caller client, so the inherited OpenAI embedding
+      call is built by the text implementation. LiteLLM forwards whatever client it was given,
+      which fails inside the SDK when an async call supplies a handler instead of an SDK client.
+    why: >-
+      Client construction belongs to B173; the route passes the request fields to the text seam and
+      does not reproduce a TypeError that no working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L183-L195
+  - what: >-
+      A reply with a present null object field is a typed FieldType error naming the field.
+      LiteLLM assigns the null to the response object and returns a response whose object is null.
+    why: >-
+      docs/compatibility.md makes a value of the wrong type an error that names the field, so the
+      string field does not silently become null.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L767
+  - what: >-
+      Reply data entries are parsed into B004's embedding record, so entry fields that record does
+      not declare are dropped from the answer. LiteLLM copies the raw reply dictionaries through.
+    why: >-
+      The task binds the response projection to B004's embedding conversion, and its record is the
+      typed entry betterlite carries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L770
+  - what: >-
+      A llm_provider-num_tokens value that Python's int() accepts but a plain decimal count does
+      not, such as "9_0", "+9", "-3", a unicode digit string or a count above u32, is a typed
+      TokenCount error naming the value.
+    why: >-
+      docs/compatibility.md reads an env-like string into the field's type and refuses what does not
+      fit, instead of porting int()'s underscore, sign and unicode-digit parsing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/cohere_transformation.py#L74-L79
+kept_bugs:
+  - what: >-
+      The filtered text input is built and then only tested for emptiness: the inherited OpenAI
+      embedding call receives the original input, image data URIs included.
+    why: >-
+      A working setup embeds the image strings as text today, so the answer would change if
+      betterlite sent only the filtered list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L282-L293
+  - what: >-
+      The exception message for an empty image answer names /image/embeddings while the request
+      that produced it goes to /images/embeddings.
+    why: >-
+      The text is what a setup sees and what it may match on, so the inconsistent route name is
+      copied with the message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L180
+  - what: >-
+      A base whose trimmed path already ends /models is returned exactly as given, so a base with a
+      trailing slash produces a double slash before /images/embeddings.
+    why: >-
+      The route keeps the original string for that case, and the image URL is the literal
+      concatenation, so a setup using such a base sends the same path it sends today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L21-L28
