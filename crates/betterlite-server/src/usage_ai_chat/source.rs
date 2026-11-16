@@ -1,6 +1,5 @@
 use std::future::Future;
 
-use betterlite_analytics::canonical_date::PublicError;
 use betterlite_analytics::daily_metrics::DailySpendPage;
 use betterlite_db::daily_activity_contracts::DailyActivityProxyReads;
 use betterlite_db::daily_activity_contracts::DailyActivityScope;
@@ -146,7 +145,10 @@ where
         async move {
             get_daily_activity_aggregated(self, scope, None, false, USAGE_TOP_API_KEYS_DEFAULT)
                 .await
-                .map_err(analytics_error)
+                .map_err(|error| UsageChatError::Analytics {
+                    status_code: error.status_code,
+                    message: error.detail.error,
+                })
         }
     }
 
@@ -184,12 +186,5 @@ fn page_request<'text>(
         include_current_utc_day: false,
         entity_metadata: None,
         callbacks: PageCallbacks::default(),
-    }
-}
-
-fn analytics_error(error: PublicError) -> UsageChatError {
-    UsageChatError::Analytics {
-        status_code: error.status_code,
-        message: error.detail.error,
     }
 }

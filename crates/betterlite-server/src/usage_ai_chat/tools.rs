@@ -124,8 +124,8 @@ impl UsageTool {
         }
     }
 
-    fn parameters(self) -> ToolParameters {
-        let extra = match self {
+    const fn extra_property(self) -> (&'static str, &'static str) {
+        match self {
             Self::Usage => ("user_id", "Optional user ID filter. Omit for global view."),
             Self::Team => (
                 "team_ids",
@@ -135,18 +135,27 @@ impl UsageTool {
                 "tags",
                 "Optional comma-separated tag names. Omit for all tags.",
             ),
-        };
-        let properties = IndexMap::from([
-            (
-                "start_date".to_owned(),
-                string_property("Start date in YYYY-MM-DD format"),
-            ),
-            (
-                "end_date".to_owned(),
-                string_property("End date in YYYY-MM-DD format"),
-            ),
-            (extra.0.to_owned(), string_property(extra.1)),
-        ]);
+        }
+    }
+
+    fn parameters(self) -> ToolParameters {
+        let fields: [(&str, &str); 3] = [
+            ("start_date", "Start date in YYYY-MM-DD format"),
+            ("end_date", "End date in YYYY-MM-DD format"),
+            self.extra_property(),
+        ];
+        let properties = fields
+            .into_iter()
+            .map(|(name, description)| {
+                (
+                    name.to_owned(),
+                    ToolProperty {
+                        kind: SchemaKind::String,
+                        description: description.to_owned(),
+                    },
+                )
+            })
+            .collect();
         ToolParameters {
             kind: SchemaKind::Object,
             properties,
@@ -163,11 +172,4 @@ pub fn tools_for_role(is_admin: bool) -> Vec<ToolDefinition> {
         &[UsageTool::Usage]
     };
     selected.iter().map(|tool| tool.definition()).collect()
-}
-
-fn string_property(description: &str) -> ToolProperty {
-    ToolProperty {
-        kind: SchemaKind::String,
-        description: description.to_owned(),
-    }
 }

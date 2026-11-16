@@ -1,5 +1,5 @@
 use betterlite_analytics::daily_metrics::DailySpendPage;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::OrHelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::usage_ai_chat::fetch_args::{parse_csv_ids, resolve_fetch_kwargs};
 use betterlite_server::usage_ai_chat::prompt::build_system_prompt;
@@ -53,7 +53,10 @@ impl Helper for Op {
         match input {
             Input::Tools { is_admin } => Ok(json!({ "tools": tools_for_role(*is_admin) })),
             Input::Prompt { is_admin, today } => Ok(json!({
-                "prompt": build_system_prompt(*is_admin, day(today)?)
+                "prompt": build_system_prompt(
+                    *is_admin,
+                    NaiveDate::parse_from_str(today, "%Y-%m-%d").or_value_error()?,
+                )
             })),
             Input::CsvIds { raw } => Ok(json!({ "ids": parse_csv_ids(raw.as_deref()) })),
             Input::FetchArgs {
@@ -75,10 +78,6 @@ impl Helper for Op {
             Input::Sse { event } => Ok(json!({ "frame": sse_frame(event) })),
         }
     }
-}
-
-fn day(text: &str) -> Result<NaiveDate, Box<HelperError>> {
-    NaiveDate::parse_from_str(text, "%Y-%m-%d").or_value_error()
 }
 
 mod tests;

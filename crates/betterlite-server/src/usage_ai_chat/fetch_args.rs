@@ -50,8 +50,8 @@ pub fn resolve_fetch_kwargs(
     user_id: Option<&str>,
     is_admin: bool,
 ) -> Result<FetchArguments, UsageChatError> {
-    let start_date = argument(arguments, "start_date");
-    let end_date = argument(arguments, "end_date");
+    let start_date = arguments.get("start_date").map_or("", String::as_str);
+    let end_date = arguments.get("end_date").map_or("", String::as_str);
     if start_date.is_empty() || end_date.is_empty() {
         return Err(UsageChatError::MissingDates);
     }
@@ -84,10 +84,6 @@ fn usage_user_id(
         return Ok(Some(caller.to_owned()));
     }
     Ok(non_empty(arguments, "user_id"))
-}
-
-fn argument<'text>(arguments: &'text IndexMap<String, String>, key: &str) -> &'text str {
-    arguments.get(key).map_or("", String::as_str)
 }
 
 fn non_empty(arguments: &IndexMap<String, String>, key: &str) -> Option<String> {
