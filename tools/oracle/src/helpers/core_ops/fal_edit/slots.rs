@@ -1,3 +1,5 @@
+use std::env;
+use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
 use std::slice::{Iter, IterMut};
@@ -17,7 +19,7 @@ pub(super) struct Sources {
 }
 
 impl Sources {
-    pub(super) fn inners<'value>(&'value self) -> Vec<EditImage<'value>> {
+    pub(super) fn inners(&self) -> Vec<EditImage<'_>> {
         let mut inners = Vec::with_capacity(self.tuples.len());
         for content in &self.tuples {
             inners.push(EditImage::Bytes(content));
@@ -73,10 +75,10 @@ impl<'value> Slots<'value> {
     }
 }
 
-fn next_source<Source: Iterator>(
-    sources: &mut Source,
-    kind: &str,
-) -> Result<Source::Item, Box<HelperError>> {
+fn next_source<Source>(sources: &mut Source, kind: &str) -> Result<Source::Item, Box<HelperError>>
+where
+    Source: Iterator,
+{
     sources
         .next()
         .ok_or_else(|| helper_error(format!("the prepare case lists more {kind} than it holds")))
@@ -179,8 +181,8 @@ fn slot_positions(slots: &[Slot], readers: &mut Iter<'_, Cursor<Vec<u8>>>) -> Ve
 }
 
 pub(super) fn fixture_path(name: &str, content: &[u8]) -> Result<PathBuf, Box<HelperError>> {
-    let path = std::env::temp_dir().join(name);
-    std::fs::write(&path, content).map_err(|error| helper_error(error.to_string()))?;
+    let path = env::temp_dir().join(name);
+    fs::write(&path, content).map_err(|error| helper_error(error.to_string()))?;
     Ok(path)
 }
 
