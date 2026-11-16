@@ -6,25 +6,19 @@ use std::io::{self, Read, Seek, SeekFrom};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
-use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_openai::openai_video_identifiers::ids::encode_video_id_with_provider;
 use betterlite_openai::openai_video_identifiers::multipart::ReadSeek;
-use betterlite_openai::vector_stores::Headers;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::credential_sources::getters::VertexParams;
-use crate::token_cache::probe::AccessToken;
-use crate::vertex_interactions::mint::{MintAccessToken, MintFuture};
 
 use super::SUPPORTED_OPENAI_PARAMS;
 use super::create::{CreateForm, CreateInput, create_request};
 use super::edit::{EditInput, OperationResponse, PrefetchedOperation, SourceVideo, edit_request};
-use super::environment::validate_environment;
 use super::error::VeoRequestError;
 use super::image::{B1120Mime, ImageInput, MimeReader};
 use super::params::{
@@ -32,6 +26,8 @@ use super::params::{
     supports_resolution_inference,
 };
 use super::url::complete_url;
+
+mod environment;
 
 fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
@@ -556,10 +552,10 @@ fn source_video(
     }
 }
 
-fn prefetched(videos: Option<Vec<SourceVideo>>, done: Option<bool>) -> PrefetchedOperation {
+fn prefetched(videos: Vec<SourceVideo>, done: bool) -> PrefetchedOperation {
     PrefetchedOperation {
         done,
-        response: Some(OperationResponse { videos }),
+        response: OperationResponse { videos },
     }
 }
 
@@ -585,39 +581,32 @@ fn edit_requires_prefetched_source_data() {
 }
 
 #[rstest]
-#[case::absent(None)]
-#[case::false_flag(Some(false))]
-fn edit_requires_a_completed_source(#[case] done: Option<bool>) {
-    let operation = prefetched(Some(vec![source_video(Some("gs://v"), None, None)]), done);
+#[case::absent_done(r#"{}"#)]
+#[case::false_flag(r#"{"done": false}"#)]
+#[case::null_done(r#"{"done": null}"#)]
+fn edit_requires_a_completed_source(#[case] source: &str) {
+    let operation: PrefetchedOperation = serde_json::from_str(source).expect("it decodes");
     let error = edit(Some(&operation), None).expect_err("the source is unfinished");
     assert!(matches!(error, VeoRequestError::SourceNotDone));
 }
 
-#[test]
-fn edit_requires_at_least_one_source_video() {
-    let empty = prefetched(Some(Vec::new()), Some(true));
-    let empty_error = edit(Some(&empty), None).expect_err("there is no video");
-    assert!(matches!(empty_error, VeoRequestError::NoVideos));
-    let absent_videos = prefetched(None, Some(true));
-    let absent_error = edit(Some(&absent_videos), None).expect_err("there is no video");
-    assert!(matches!(absent_error, VeoRequestError::NoVideos));
-    let missing = PrefetchedOperation {
-        done: Some(true),
-        response: None,
-    };
-    let missing_error = edit(Some(&missing), None).expect_err("there is no response");
-    assert!(matches!(missing_error, VeoRequestError::NoVideos));
+#[rstest]
+#[case::empty_videos(r#"{"done": true, "response": {"videos": []}}"#)]
+#[case::absent_videos(r#"{"done": true, "response": {}}"#)]
+#[case::null_videos(r#"{"done": true, "response": {"videos": null}}"#)]
+#[case::absent_response(r#"{"done": true}"#)]
+#[case::null_response(r#"{"done": true, "response": null}"#)]
+fn edit_requires_at_least_one_source_video(#[case] source: &str) {
+    let operation: PrefetchedOperation = serde_json::from_str(source).expect("it decodes");
+    let error = edit(Some(&operation), None).expect_err("there is no video");
+    assert!(matches!(error, VeoRequestError::NoVideos));
 }
 
 #[test]
 fn edit_prefers_gcs_uri_by_key_presence_even_when_empty() {
     let operation = prefetched(
-        Some(vec![source_video(
-            Some(""),
-            Some("abc"),
-            Some("video/webm"),
-        )]),
-        Some(true),
+        vec![source_video(Some(""), Some("abc"), Some("video/webm"))],
+        true,
     );
     let form = edit(Some(&operation), None).expect("the edit request is built");
     assert_eq!(
@@ -637,10 +626,7 @@ fn edit_base64_sources_take_the_declared_mime(
     #[case] mime_type: Option<&str>,
     #[case] expected: &str,
 ) {
-    let operation = prefetched(
-        Some(vec![source_video(None, Some("abc"), mime_type)]),
-        Some(true),
-    );
+    let operation = prefetched(vec![source_video(None, Some("abc"), mime_type)], true);
     let form = edit(Some(&operation), None).expect("the edit request is built");
     let Some(Json::List(instances)) = form.body.get("instances") else {
         panic!("the edit request has instances");
@@ -659,17 +645,14 @@ fn edit_base64_sources_take_the_declared_mime(
 
 #[test]
 fn edit_rejects_a_source_without_media() {
-    let operation = prefetched(Some(vec![source_video(None, None, None)]), Some(true));
+    let operation = prefetched(vec![source_video(None, None, None)], true);
     let error = edit(Some(&operation), None).expect_err("the source has no media");
     assert!(matches!(error, VeoRequestError::MissingSourceVideo));
 }
 
 #[test]
 fn edit_builds_the_model_url_from_the_encoded_operation_name() {
-    let operation = prefetched(
-        Some(vec![source_video(Some("gs://v"), None, None)]),
-        Some(true),
-    );
+    let operation = prefetched(vec![source_video(Some("gs://v"), None, None)], true);
     let form = edit(Some(&operation), None).expect("the edit request is built");
     assert_eq!(
         form.url,
@@ -679,10 +662,7 @@ fn edit_builds_the_model_url_from_the_encoded_operation_name() {
 
 #[test]
 fn edit_keeps_the_url_shape_for_a_plain_video_id() {
-    let operation = prefetched(
-        Some(vec![source_video(Some("gs://v"), None, None)]),
-        Some(true),
-    );
+    let operation = prefetched(vec![source_video(Some("gs://v"), None, None)], true);
     let form = edit_request(&EditInput {
         prompt: "an edit",
         video_id: "plain-id",
@@ -709,10 +689,7 @@ fn edit_takes_the_model_from_element_seven_of_the_operation_name(
     #[case] video_id: &str,
     #[case] model: &str,
 ) {
-    let operation = prefetched(
-        Some(vec![source_video(Some("gs://v"), None, None)]),
-        Some(true),
-    );
+    let operation = prefetched(vec![source_video(Some("gs://v"), None, None)], true);
     let form = edit_request(&EditInput {
         prompt: "an edit",
         video_id,
@@ -726,10 +703,7 @@ fn edit_takes_the_model_from_element_seven_of_the_operation_name(
 
 #[test]
 fn edit_flattens_extra_body_parameters_then_flat_options() {
-    let operation = prefetched(
-        Some(vec![source_video(Some("gs://v"), None, None)]),
-        Some(true),
-    );
+    let operation = prefetched(vec![source_video(Some("gs://v"), None, None)], true);
     let extra = object([
         (
             "parameters",
@@ -752,10 +726,7 @@ fn edit_flattens_extra_body_parameters_then_flat_options() {
 
 #[test]
 fn edit_drops_a_non_object_parameters_block() {
-    let operation = prefetched(
-        Some(vec![source_video(Some("gs://v"), None, None)]),
-        Some(true),
-    );
+    let operation = prefetched(vec![source_video(Some("gs://v"), None, None)], true);
     let extra = object([
         ("parameters", text("not a dict")),
         ("aspectRatio", text("16:9")),
@@ -769,10 +740,7 @@ fn edit_drops_a_non_object_parameters_block() {
 
 #[test]
 fn edit_omits_an_empty_extra_body() {
-    let operation = prefetched(
-        Some(vec![source_video(Some("gs://v"), None, None)]),
-        Some(true),
-    );
+    let operation = prefetched(vec![source_video(Some("gs://v"), None, None)], true);
     let empty = Object::new();
     let form = edit(Some(&operation), Some(&empty)).expect("the edit request is built");
     assert_eq!(parameters_of_edit(&form), None);
@@ -913,81 +881,4 @@ fn complete_url_rejects_an_invalid_location_even_with_a_custom_base() {
     )
     .expect_err("the location cannot be a path");
     assert!(matches!(error, VeoRequestError::Location(_)));
-}
-
-struct FixedMint;
-
-impl MintAccessToken for FixedMint {
-    fn mint<'mint>(
-        &'mint self,
-        _credentials: Option<&'mint ConfiguredCredentials>,
-        project: Option<&'mint str>,
-    ) -> MintFuture<'mint> {
-        Box::pin(std::future::ready(Ok(AccessToken {
-            token: SecretString::from("minted-token"),
-            project: project.unwrap_or("project-1").to_owned(),
-        })))
-    }
-}
-
-#[tokio::test]
-async fn headers_start_with_the_minted_bearer_and_json_defaults() {
-    let settings = VertexSettings::default();
-    let headers = validate_environment(
-        Headers::new(),
-        vertex_params(Some("project-1"), None),
-        &settings,
-        &FixedMint,
-    )
-    .await
-    .expect("the headers are built");
-    assert_eq!(
-        headers
-            .get("Authorization")
-            .map(|value| value.expose_secret()),
-        Some("Bearer minted-token")
-    );
-    assert_eq!(
-        headers
-            .get("Content-Type")
-            .map(|value| value.expose_secret()),
-        Some("application/json")
-    );
-}
-
-#[tokio::test]
-async fn caller_headers_override_the_defaults_and_are_kept() {
-    let settings = VertexSettings::default();
-    let caller = Headers::from([
-        (
-            "Authorization".to_owned(),
-            SecretString::from("Bearer caller"),
-        ),
-        ("Content-Type".to_owned(), SecretString::from("text/plain")),
-        ("X-Extra".to_owned(), SecretString::from("1")),
-    ]);
-    let headers = validate_environment(
-        caller,
-        vertex_params(Some("project-1"), None),
-        &settings,
-        &FixedMint,
-    )
-    .await
-    .expect("the headers are built");
-    assert_eq!(
-        headers
-            .get("Authorization")
-            .map(|value| value.expose_secret()),
-        Some("Bearer caller")
-    );
-    assert_eq!(
-        headers
-            .get("Content-Type")
-            .map(|value| value.expose_secret()),
-        Some("text/plain")
-    );
-    assert_eq!(
-        headers.get("X-Extra").map(|value| value.expose_secret()),
-        Some("1")
-    );
 }

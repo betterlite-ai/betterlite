@@ -1,21 +1,30 @@
 use betterlite_openai::openai_video_identifiers::ids::decode_video_id_with_provider;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
+use serde_with::{DefaultOnNull, serde_as};
 
 use super::error::VeoRequestError;
 
 pub const DEFAULT_VIDEO_MIME: &str = "video/mp4";
 
 // _VeoOperation, reduced to the fields an edit reads from the prefetched source
+#[serde_as]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct PrefetchedOperation {
-    pub done: Option<bool>,
-    pub response: Option<OperationResponse>,
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
+    pub done: bool,
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
+    pub response: OperationResponse,
 }
 
+#[serde_as]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct OperationResponse {
-    pub videos: Option<Vec<SourceVideo>>,
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
+    pub videos: Vec<SourceVideo>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -44,15 +53,14 @@ pub struct EditForm {
 
 pub fn edit_request(input: &EditInput<'_>) -> Result<EditForm, VeoRequestError> {
     let prefetched = input.prefetched.ok_or(VeoRequestError::PrefetchRequired)?;
-    if !prefetched.done.unwrap_or(false) {
+    if !prefetched.done {
         return Err(VeoRequestError::SourceNotDone);
     }
-    let videos = prefetched
+    let source = prefetched
         .response
-        .as_ref()
-        .and_then(|response| response.videos.as_deref())
-        .unwrap_or_default();
-    let source = videos.first().ok_or(VeoRequestError::NoVideos)?;
+        .videos
+        .first()
+        .ok_or(VeoRequestError::NoVideos)?;
     let operation = decode_video_id_with_provider(input.video_id);
     // the model is element seven, present only in a name of eight or more components
     let model = operation.video_id.split('/').nth(7).unwrap_or_default();
