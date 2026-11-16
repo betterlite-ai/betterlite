@@ -7,10 +7,11 @@ import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.azure.azure import AzureChatCompletion
+from litellm.llms.azure.common_utils import AzureOpenAIError
 from litellm.types.utils import EmbeddingResponse
 from openai import APIError, APIStatusError, AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
 from pydantic import JsonValue as Json
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 
 from azure_embeddings.report import (
     ClientName,
@@ -167,8 +168,7 @@ def call_embedding(step: Step, session: Session, logging_obj: Logging) -> Embedd
     match outcome:
         case Awaitable():
             return asyncio.run(asyncio.wait_for(outcome, timeout=None))
-        case BaseModel():
-            return outcome
+    return outcome
 
 
 def raised_value(kind: str, status: int | None, message: str | None) -> dict[str, Json]:
@@ -193,9 +193,7 @@ def step_value(step: Step) -> dict[str, Json]:
         raised = raised_value("sdk_status", error.status_code, None)
     except APIError:
         raised = raised_value("sdk_other", None, None)
-    except Exception as error:
-        if type(error).__name__ != "AzureOpenAIError":
-            raise
+    except AzureOpenAIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L46
         raised = azure_value(error)
     return {
         "result": result,

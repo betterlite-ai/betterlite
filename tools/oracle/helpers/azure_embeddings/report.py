@@ -3,6 +3,7 @@ from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.types.utils import EmbeddingResponse
 from openai.types import CreateEmbeddingResponse
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter, ValidationError
 
@@ -80,10 +81,11 @@ class PostSnapshot(TypedDict):
 Snapshot: TypeAlias = PreSnapshot | PostSnapshot
 
 
-class ErrorFields(TypedDict):
+class ErrorFields(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     status_code: int
     message: str
-    headers: NotRequired[dict[str, Json] | None]
+    headers: dict[str, Json] | None = None
 
 
 class UsageView(TypedDict):
@@ -105,17 +107,19 @@ class ResponseView(TypedDict):
     data: list[Json]
 
 
-class Hidden(TypedDict):
+class Hidden(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     additional_headers: dict[str, Json]
-    headers: NotRequired[dict[str, Json]]
+    headers: dict[str, Json] | None = None
 
 
-class Private(TypedDict):
-    _hidden_params: Hidden
-    _response_headers: dict[str, Json]
+class Private(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    hidden_params: Hidden = Field(alias="_hidden_params")
+    response_headers: dict[str, Json] = Field(alias="_response_headers")
 
 
-ERROR_FIELDS = TypeAdapter(ErrorFields)
+REPLY_VIEW = TypeAdapter(ReplyView)
 RESPONSE_VIEW = TypeAdapter(ResponseView)
 SNAPSHOT = TypeAdapter(Snapshot)
 
@@ -177,12 +181,8 @@ class Recorder:
 
 
 def reply_value(response: EmbeddingResponse) -> dict[str, Json]:
-    view = TypeAdapter(ReplyView).validate_json(response.model_dump_json())
-    private = TypeAdapter(Private).validate_python(response, from_attributes=True)
-    hidden = private["_hidden_params"]
-    hidden_headers: dict[str, Json] | None = None
-    if "headers" in hidden:
-        hidden_headers = hidden["headers"]
+    view = REPLY_VIEW.validate_json(response.model_dump_json())
+    private = Private.model_validate(response, from_attributes=True)
     usage = view["usage"]
     return {
         "model": view["model"],
@@ -193,22 +193,23 @@ def reply_value(response: EmbeddingResponse) -> dict[str, Json]:
             "completion_tokens": usage["completion_tokens"],
             "total_tokens": usage["total_tokens"],
         },
-        "response_headers": private["_response_headers"],
-        "additional_headers": hidden["additional_headers"],
-        "hidden_headers": hidden_headers,
+        "response_headers": private.response_headers,
+        "additional_headers": private.hidden_params.additional_headers,
+        "hidden_headers": private.hidden_params.headers,
     }
 
 
 def azure_value(error: Exception) -> dict[str, Json]:
-    fields = ERROR_FIELDS.validate_python(error, from_attributes=True)
-    value: dict[str, Json] = {"kind": "azure", "status": fields["status_code"], "headers": None}
-    if "headers" in fields:
-        value["headers"] = fields["headers"]
-    message = fields["message"]
+    fields = ErrorFields.model_validate(error, from_attributes=True)
+    message = fields.message
     match error.__context__:
         case json.JSONDecodeError():
             message = DECODE_PREFIX if message.startswith(DECODE_PREFIX) else DECODE_MARKER
         case BaseException() | None:
             pass
-    value["message"] = message
-    return value
+    return {
+        "kind": "azure",
+        "status": fields.status_code,
+        "message": message,
+        "headers": fields.headers,
+    }
