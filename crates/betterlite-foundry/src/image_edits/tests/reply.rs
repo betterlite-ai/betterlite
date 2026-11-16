@@ -118,6 +118,19 @@ fn failures_keep_the_provider_status() {
         })
     ));
 
+    // a usage counter summed past i64::MAX fails with a 500, never a wrapped count
+    let error = decode_mai_edit_reply(
+        br#"{"usage": {"input_tokens": 9223372036854775807, "output_tokens": 1}}"#,
+        200,
+        NOW,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        ImageEditError::Mai(MaiImageError::TokenOverflow { .. })
+    ));
+    assert_eq!(error.status_code(), Some(500));
+
     // a body with an error object is a failure through B004's projection, not an empty reply
     let error = decode_mai_edit_reply(br#"{"error": {"message": "boom", "code": 500}}"#, 200, NOW)
         .unwrap_err();
