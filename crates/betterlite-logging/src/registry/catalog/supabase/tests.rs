@@ -204,8 +204,7 @@ fn header<'headers>(received: &'headers Received, name: &str) -> &'headers str {
     received
         .headers
         .get(name)
-        .map(String::as_str)
-        .unwrap_or_else(|| panic!("the request carries {name}"))
+        .map_or_else(|| panic!("the request carries {name}"), String::as_str)
 }
 
 #[test]
@@ -419,27 +418,30 @@ async fn initiated_body(user: Option<&str>) -> Json {
         ("SUPABASE_KEY", "service-key"),
     ]))
     .expect("the callback builds");
-    let callbacks = [InputCallback::InputEvent(&*callback)];
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles");
-    let env = PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor: &redactor,
-        log: &Silent,
-        input_callbacks: &callbacks,
-        sentry: None,
-        logger_fn: None,
-        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
-            .expect("the fixture time parses"),
-    };
-    let call: PreCall =
-        serde_json::from_str(r#"{"input": [{"role": "user", "content": "Hello"}]}"#)
-            .expect("the fixture call decodes");
-    pre_call(&mut pre_call_state(user), &call, &env).expect("the pre-call hook runs");
+    {
+        let callbacks = [InputCallback::InputEvent(&*callback)];
+        let redactor =
+            Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles");
+        let env = PrePostEnv {
+            debug: DebugSettings::default(),
+            globals: GlobalFlags::default(),
+            decision: Decision {
+                content: false,
+                key_info: false,
+            },
+            redactor: &redactor,
+            log: &Silent,
+            input_callbacks: &callbacks,
+            sentry: None,
+            logger_fn: None,
+            now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
+                .expect("the fixture time parses"),
+        };
+        let call: PreCall =
+            serde_json::from_str(r#"{"input": [{"role": "user", "content": "Hello"}]}"#)
+                .expect("the fixture call decodes");
+        pre_call(&mut pre_call_state(user), &call, &env).expect("the pre-call hook runs");
+    }
     let received = served.await;
     assert_eq!(received.method, "POST");
     assert_eq!(received.path, "/rest/v1/request_logs");
