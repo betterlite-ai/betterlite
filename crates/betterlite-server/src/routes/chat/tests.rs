@@ -430,13 +430,13 @@ async fn an_object_mock_response_is_hashed_from_the_typed_record() {
 #[case::object_arguments(r#"{"model":"g","messages":[],"mock_response":{"choices":[{"message":{"tool_calls":[{"function":{"name":"f","arguments":{"a":1}}}]}}]}}"#)]
 #[tokio::test]
 async fn a_stripped_client_mock_field_never_reaches_the_provider(#[case] request: &str) {
-    let answered = Box::pin(exchange(
+    let answered = exchange(
         "/v1/chat/completions",
         request,
         "denied-mock",
         (200, ANSWER),
         (NO_DELAY, "30"),
-    ))
+    )
     .await;
     assert_eq!(answered.status, 200);
     assert!(
@@ -501,14 +501,7 @@ async fn serves_every_chat_route_with_litellm_headers(
     #[case] request: &str,
     #[case] model: &str,
 ) {
-    let answered = Box::pin(exchange(
-        path,
-        request,
-        "call-1",
-        (200, ANSWER),
-        (NO_DELAY, "30"),
-    ))
-    .await;
+    let answered = exchange(path, request, "call-1", (200, ANSWER), (NO_DELAY, "30")).await;
     assert_eq!(answered.status, 200);
     assert_eq!(
         serde_json::from_slice::<Completion>(&answered.body)
@@ -596,13 +589,13 @@ async fn echoes_a_valid_call_id_and_generates_one_otherwise(
     #[case] call_id: &str,
     #[case] length: usize,
 ) {
-    let answered = Box::pin(exchange(
+    let answered = exchange(
         "/chat/completions",
         r#"{"model":"g","messages":[]}"#,
         call_id,
         (200, ANSWER),
         (NO_DELAY, "30"),
-    ))
+    )
     .await;
     assert_eq!(
         header(&answered.headers, "x-litellm-call-id")
@@ -625,13 +618,13 @@ async fn answers_failures_in_litellm_shape(
 ) {
     let (reply_status, reply, delay) = upstream;
     let (status, error_type, param, timeout_header) = expected;
-    let answered = Box::pin(exchange(
+    let answered = exchange(
         "/v1/chat/completions",
         request,
         "call-2",
         (reply_status, reply),
         (delay, "0.4"),
-    ))
+    )
     .await;
     assert_eq!(answered.status, status);
     let error = serde_json::from_slice::<ErrorReply>(&answered.body)
@@ -667,13 +660,13 @@ mod stream;
 
 #[tokio::test]
 async fn stream_error_preserves_param() {
-    let answered = Box::pin(exchange(
+    let answered = exchange(
         "/v1/chat/completions",
         r#"{"model":"g","messages":[],"stream":true}"#,
         "stream-error",
         (429, r#"{"error":{"type":"requests","param":"p"}}"#),
         (NO_DELAY, "0.4"),
-    ))
+    )
     .await;
     assert_eq!(answered.status, 429);
     let error = serde_json::from_slice::<ErrorReply>(&answered.body)
@@ -728,13 +721,13 @@ async fn openai_errors_openai_error_tests_behavior(
 ) {
     let (status, error_type) = match failing {
         Failing::Upstream { status, body } => {
-            let answered = Box::pin(exchange(
+            let answered = exchange(
                 "/v1/chat/completions",
                 r#"{"model":"g","messages":[]}"#,
                 "call-type",
                 (status, body),
                 (NO_DELAY, "0.4"),
-            ))
+            )
             .await;
             let error = serde_json::from_slice::<ErrorReply>(&answered.body)
                 .unwrap()
@@ -757,13 +750,13 @@ async fn openai_errors_openai_error_tests_behavior(
 #[case::partial_event("data: {\"id\":")]
 #[tokio::test]
 async fn stream_finishes_once(#[case] input: &str) {
-    let answered = Box::pin(exchange(
+    let answered = exchange(
         "/v1/chat/completions",
         r#"{"model":"g","messages":[],"stream":true}"#,
         "stream-done",
         (200, input),
         (NO_DELAY, "30"),
-    ))
+    )
     .await;
     assert_eq!(answered.body, b"data: [DONE]\n\n");
     assert_eq!(
@@ -788,13 +781,13 @@ async fn stream_finishes_once(#[case] input: &str) {
 #[case::fallbacks("x-litellm-attempted-fallbacks", "0")]
 #[tokio::test]
 async fn stream_has_success_headers(#[case] name: &str, #[case] value: &str) {
-    let answered = Box::pin(exchange(
+    let answered = exchange(
         "/v1/chat/completions",
         r#"{"model":"g","messages":[],"stream":true}"#,
         "stream-headers",
         (200, "data: [DONE]\n\n"),
         (NO_DELAY, "30"),
-    ))
+    )
     .await;
     assert_eq!(header(&answered.headers, name), Some(value));
     assert!(
@@ -820,13 +813,13 @@ async fn stream_has_success_headers(#[case] name: &str, #[case] value: &str) {
 
 #[tokio::test]
 async fn a_streaming_success_survives_a_one_second_provider_delay() {
-    let answered = Box::pin(exchange(
+    let answered = exchange(
         "/v1/chat/completions",
         r#"{"model":"g","messages":[],"stream":true}"#,
         "slow-stream",
         (200, "data: [DONE]\n\n"),
         (Duration::from_secs(1), "30"),
-    ))
+    )
     .await;
     assert_eq!(answered.status, 200);
     assert_eq!(answered.body, b"data: [DONE]\n\n");
