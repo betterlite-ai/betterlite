@@ -56,7 +56,7 @@ pub(crate) struct Caller<'caller> {
     pub(crate) timeout_seconds: f64,
 }
 
-pub(crate) const fn caller_defaults<'caller>(
+pub(crate) fn caller_defaults<'caller>(
     request: &ContainerFileUploadRequest<'caller>,
 ) -> Caller<'caller> {
     Caller {
