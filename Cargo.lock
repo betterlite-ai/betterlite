@@ -1835,6 +1835,7 @@ dependencies = [
 name = "betterlite-error"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "betterlite-redact",
  "regex",
  "rstest",
@@ -1843,6 +1844,7 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -2652,6 +2654,7 @@ name = "betterlite-oracle-auth"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "axum",
  "betterlite-auth",
  "betterlite-cache",
  "betterlite-config",
