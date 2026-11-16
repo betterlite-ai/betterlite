@@ -1,0 +1,12 @@
+task: B3631
+deviations:
+  - what: A data: payload, content_block or delta that parses as JSON but is not an object (a list, string, number or null) makes the collapse pass answer None so the bytes go through the legacy reconstruction and that frame is skipped there, where LiteLLM calls .get on the value and raises AttributeError out of the logging handler.
+    why: A non-object value is outside the Anthropic event types docs/compatibility.md covers, so betterlite keeps the rest of the stream instead of losing the whole reconstruction to a Python duck-typing accident.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L648-L661
+  - what: The usage-only scan skips a data: payload that is not a JSON object, where LiteLLM reads data.get("type") on it, raises AttributeError, and loses every usage event in the stream because its wrapper turns the exception into no answer.
+    why: The usage-only fallback must never raise on a frame it cannot read, and the declared-type rule in docs/compatibility.md keeps the readable usage events instead of discarding them all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L804-L809
+  - what: A content_block_delta whose delta text is not a string contributes an empty string, and a block index that is not an integer is read as absent, so the merged event carries index 0. LiteLLM passes both raw values through instead, which raises TypeError in "".join for a non-string text and in the block-index set for an unhashable index, and collapses a string index into a merged event that keeps it verbatim.
+    why: Anthropic declares delta.text as a string and index as an integer, so a wrong-typed value sits outside the types docs/compatibility.md covers; betterlite reads it as absent rather than reproducing a Python type error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L659-L683
+kept_bugs: []
