@@ -113,12 +113,13 @@ where
         return Ok(());
     }
     let Some(mapped_effort) = output_config_effort(reasoning_effort) else {
-        return Err(EffortError::InvalidReasoningEffort {
-            value: reasoning_effort.to_owned(),
-            model: model.to_owned(),
-            provider: CONVERSE_PROVIDER.to_owned(),
-        }
-        .into());
+        return Err(ConverseOptionsError::from(
+            EffortError::InvalidReasoningEffort {
+                value: reasoning_effort.to_owned(),
+                model: model.to_owned(),
+                provider: CONVERSE_PROVIDER.to_owned(),
+            },
+        ));
     };
     apply_adaptive_effort(model, mapped_effort, optional_params, environment, sources).await
 }
