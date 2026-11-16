@@ -1,0 +1,21 @@
+kind: helper
+name: databricks-chat-stream-seed
+call:
+  b5841:
+    function: stream
+    cases:
+    - json_mode: true
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            tool_calls:
+            - index: 0
+              function:
+                name: json_tool_call
+                arguments: '{}'
+env: {}
+compare: {ignore: []}

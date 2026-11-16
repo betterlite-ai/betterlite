@@ -1,0 +1,97 @@
+kind: helper
+name: b5841 messages-and-tool-split
+call:
+  b5841:
+    function: messages
+    cases:
+    - model: databricks-meta-llama-3-1-70b
+      messages:
+      - role: system
+        content: be nice
+      - role: user
+        content: hi
+        name: ada
+        cache_control:
+          type: ephemeral
+      - role: assistant
+        content: ''
+        tool_calls:
+        - id: a
+          type: function
+          function:
+            name: f
+            arguments: '{}'
+        - id: b
+          type: function
+          function:
+            name: g
+            arguments: '{}'
+      - role: tool
+        tool_call_id: a
+        content: one
+      - role: tool
+        tool_call_id: b
+        content: two
+      - role: assistant
+        content: ''
+        thinking_blocks:
+        - type: thinking
+          thinking: t
+    - model: databricks-claude-3-5-sonnet
+      messages:
+      - role: system
+        content: be nice
+      - role: user
+        content: hi
+        name: ada
+        cache_control:
+          type: ephemeral
+      - role: assistant
+        content: ''
+        tool_calls:
+        - id: a
+          type: function
+          function:
+            name: f
+            arguments: '{}'
+        - id: b
+          type: function
+          function:
+            name: g
+            arguments: '{}'
+      - role: tool
+        tool_call_id: a
+        content: one
+      - role: tool
+        tool_call_id: b
+        content: two
+      - role: assistant
+        content: ''
+        thinking_blocks:
+        - type: thinking
+          thinking: t
+    - model: databricks-meta-llama-3-1-70b
+      messages:
+      - role: system
+        content: one
+      - role: system
+        content: two
+      - role: user
+        name: ada
+        content: ''
+      - role: assistant
+        content: ''
+        tool_calls:
+        - id: a
+          type: function
+          function:
+            name: f
+            arguments: '{}'
+      - role: tool
+        tool_call_id: a
+        content: result
+      - role: assistant
+        content: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,177 @@
+kind: helper
+name: b5841 stream-chunks
+call:
+  b5841:
+    function: stream
+    cases:
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            content: x
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 1
+          finish_reason: tool_calls
+          logprobs:
+            a: 1
+          delta:
+            content:
+            - type: reasoning
+              summary:
+              - type: summary_text
+                text: why
+                signature: s
+            - type: text
+              text: hi
+              citations:
+              - start: 0
+                end: 1
+                supported_text: hi
+            role: assistant
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
+        service_tier: default
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            tool_calls:
+            - index: 0
+              id: c
+              function:
+                name: f
+                arguments: '{}'
+    - json_mode: true
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            tool_calls:
+            - index: 0
+              function:
+                name: json_tool_call
+                arguments: '{"a"'
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            tool_calls:
+            - index: 1
+              function:
+                arguments: '{"b":'
+    - json_mode: true
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            tool_calls:
+            - index: 0
+              function:
+                name: json_tool_call
+                arguments: '{}'
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            content: x
+        service_tier: ''
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            content:
+            - type: text
+              text: hi
+              citations:
+              - start: 0
+                end: 1
+                supported_text: hi
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            reasoning: top
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            reasoning_content: kept
+            reasoning: dropped
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: null
+        choices: []
+        usage: null
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          finish_reason: true
+          delta:
+            content: x
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            function_call:
+              name: f
+              arguments: '{"a":1}'
+              zz: 2
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,90 @@
+kind: helper
+name: b5841 response-json-mode-and-parallel-calls
+call:
+  b5841:
+    function: response
+    cases:
+    - json_mode: false
+      body:
+        id: chat-1
+        created: 1700
+        model: m
+        choices:
+        - index: 0
+          finish_reason: tool_calls
+          message:
+            role: assistant
+            content: null
+            tool_calls:
+            - id: call-1
+              type: function
+              function:
+                name: f
+                arguments: '{"a":1}'
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
+    - json_mode: true
+      body:
+        id: chat-1
+        created: 1700
+        model: m
+        choices:
+        - index: 0
+          finish_reason: tool_calls
+          message:
+            role: assistant
+            content: null
+            tool_calls:
+            - id: call-1
+              type: function
+              function:
+                name: json_tool_call
+                arguments: '{"a":1}'
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
+    - json_mode: false
+      body:
+        id: chat-1
+        created: 1700
+        model: m
+        choices:
+        - index: 0
+          finish_reason: tool_calls
+          message:
+            role: assistant
+            content: null
+            tool_calls:
+            - id: call-1
+              type: function
+              function:
+                name: multi_tool_use.parallel
+                arguments: '{"tool_uses":[{"recipient_name":"functions.f","parameters":{}},{"recipient_name":"functions.g","parameters":{}}]}'
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
+    - json_mode: false
+      body:
+        id: chat-1
+        created: 1700
+        model: m
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: hi
+            function_call:
+              name: f
+              arguments: '{}'
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
+env: {}
+compare:
+  ignore: []
