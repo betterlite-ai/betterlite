@@ -15,7 +15,7 @@ deviations:
   - what: The deferred audit writes its guardrail record through the engine's own record base and sink and has no reference to the caller's started invocation or log target.
     why: The audit runs on another thread and must own everything it touches; the invocation and log target borrow the caller's request, so they cannot cross that boundary.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L185-L195
-kept_bugs:
-  - what: Non-content streamed responses such as embeddings and rerank are released without any DLP scan.
-    why: Purview can only evaluate ModelResponse, TextCompletionResponse and ResponsesAPIResponse bodies, and a working LiteLLM setup relies on every other response type passing straight through.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L569-L573
+  - what: Betterlite has no pass-through branch for streamed responses that are neither a chat completion nor a text completion; its stream assembly builds only those two shapes, and a stream it cannot assemble fails closed with the 400 assembly message.
+    why: LiteLLM's non-content pass-through at L569-L573 is unreachable at the pinned commit. stream_chunk_builder declares and returns only ModelResponse, TextCompletionResponse or None, and the TextCompletionResponse case is scanned by the branch above, so no working setup can rely on an unscanned release.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L9011
+kept_bugs: []
