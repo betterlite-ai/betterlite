@@ -1,0 +1,32 @@
+kind: helper
+name: stream-assembly-with-content
+call:
+  b3636:
+    function: assemble
+    model: gpt-3.5-turbo
+    chunks:
+    - 'data: {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "system_fingerprint": "fp_abc", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hello"}}]}'
+    - '{"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "choices": [{"index": 0, "delta": {"content": " world"}, "finish_reason": "stop"}]}'
+    messages:
+    - {role: user, content: hello world}
+    counter: {messages: 9, response_text: 2}
+calls:
+- b3636:
+    function: assemble
+    model: gpt-3.5-turbo
+    chunks:
+    - 'data: {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "system_fingerprint": "fp_abc", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hello"}}]}'
+    - 'data: {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "choices": [{"index": 0, "delta": {"content": " world"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 7, "completion_tokens": 2, "total_tokens": 9}}'
+    messages:
+    - {role: user, content: hello world}
+    counter: {messages: 5, response_text: 5}
+- b3636:
+    function: assemble
+    model: gpt-3.5-turbo
+    chunks:
+    - 'data: {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "system_fingerprint": "fp_abc", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hello"}}]}'
+    - '{"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "choices": [{"index": 0, "delta": {"content": " world"}, "finish_reason": "stop"}]}'
+    messages: []
+    counter: {messages: 3, response_text: 2}
+env: {}
+compare: {ignore: []}
