@@ -1,14 +1,14 @@
 id: B3331
 milestone: M5 api families
 title: Video provider operation contract
-status: todo
+status: done
 depends_on: [B3330, B2202]
 file: tasks/B3331-video-provider-contract.yaml
 covers:
   - "litellm/llms/base_llm/videos/**"
 parent: B093
 split_from: B093
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2163
