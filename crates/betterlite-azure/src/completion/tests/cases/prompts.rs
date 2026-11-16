@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::decisions::Json;
+use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 
 use super::support::{
     API_BASE, MODEL, Run, async_buffered, field, float, nested, number, parts_messages,
@@ -38,6 +41,18 @@ fn token_prompt_reply(run: &Run) {
     assert_eq!(text(&original), "text_completion");
 }
 
+fn logged_headers() {
+    let mut scenario = sync_buffered("{}");
+    let trace = BTreeMap::from([("x-trace".to_owned(), "abc".to_owned())]);
+    scenario.parts.headers = Some(SecretHeaders(trace));
+    let run = scenario.execute();
+    let logged = nested(
+        &run.hooks.post[0],
+        &["additional_args", "headers", "x-trace"],
+    );
+    assert_eq!(text(&logged), "abc");
+}
+
 pub(super) fn token_prompt() {
     let run = sync_buffered(r#"{"temperature":0.5,"max_tokens":16}"#).execute();
     assert_eq!(run.create("temperature"), float(0.5));
@@ -47,6 +62,7 @@ pub(super) fn token_prompt() {
     assert_eq!(nested(&run.source.creates()[0], &["timeout"]), float(30.0));
     token_prompt_logs(&run);
     token_prompt_reply(&run);
+    logged_headers();
     let mut joined = sync_buffered("{}");
     joined.messages = parts_messages();
     assert_eq!(text(&joined.execute().pre(&["input"])), "Sys Hi");

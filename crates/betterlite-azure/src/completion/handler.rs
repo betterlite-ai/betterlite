@@ -1,5 +1,3 @@
-use std::fmt;
-
 use betterlite_models::decisions::Json;
 use betterlite_openai::text_completion_transport::stream::CompletionStream;
 
@@ -20,15 +18,6 @@ pub mod streaming;
 pub enum TextCompletionOutcome {
     Buffered(Box<ChatReply>),
     Stream(CompletionStream),
-}
-
-impl fmt::Debug for TextCompletionOutcome {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Buffered(reply) => formatter.debug_tuple("Buffered").field(reply).finish(),
-            Self::Stream(_stream) => formatter.write_str("Stream"),
-        }
-    }
 }
 
 // AzureTextCompletion.completion: the prompt comes from prompt_factory on every call
