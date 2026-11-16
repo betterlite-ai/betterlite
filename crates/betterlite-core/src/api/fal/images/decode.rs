@@ -30,7 +30,7 @@ pub struct FalImage {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FalImageReply {
     pub images: Vec<FalImage>,
-    /// The reply object's root fields other than images, in reply order.
+    // a projection reads seed, timings and has_nsfw_concepts from the remaining root fields
     pub metadata: IndexMap<String, Json>,
 }
 
@@ -109,11 +109,11 @@ pub fn decode_fal_image_reply(
     };
     let mut images = Vec::new();
     let mut metadata = IndexMap::new();
-    for (name, value) in fields {
+    for (name, field) in fields {
         if name == "images" {
-            images = fal_images_to_image_objects(&value);
+            images = fal_images_to_image_objects(&field);
         } else {
-            metadata.insert(name, value);
+            metadata.insert(name, field);
         }
     }
     Ok(FalImageReply { images, metadata })
