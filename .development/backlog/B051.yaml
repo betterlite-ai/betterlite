@@ -1,7 +1,7 @@
 id: B051
 milestone: M4 keys, spend and management
 title: Database startup, migration jobs and readiness
-status: todo
+status: done
 depends_on: [B002, B003, B710, B711, B712, B713, B714, B716, B717, B718, B719, B731, B854, B856, B857, B860, B1232]
 file: tasks/B051-database-startup.yaml
 covers:
@@ -15,7 +15,7 @@ covers:
   - "migrations/Dockerfile"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2029
