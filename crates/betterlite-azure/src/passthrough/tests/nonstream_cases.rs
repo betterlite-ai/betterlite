@@ -1,12 +1,13 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object;
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig;
 use betterlite_openai::passthrough::transformation::types::{RelayCallType, RelayedResponse};
 
 use crate::passthrough::config::AzurePassthroughConfig;
 use crate::passthrough::logging::AzureRelayedLog;
 
 use super::passthrough_cases::{CHAT_ENDPOINT, EMBEDDINGS_ENDPOINT, RESPONSES_ENDPOINT};
-use super::support::{RealChatProjection, RecordingLogging, headers, object, target};
+use super::support::{RealChatProjection, RecordingLogging, chat_chunks, headers, object, target};
 
 const IMAGES_ENDPOINT: &str = "openai/deployments/dall-e-3/images/generations";
 const CHAT_BODY: &str = r#"{"id": "chatcmpl-abc123", "object": "chat.completion", "created": 1700000000, "model": "gpt-4.1-mini-2025-04-14", "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello! How can I assist you today?"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18}}"#;
@@ -23,6 +24,51 @@ pub(super) fn nonstream_usage_case() {
     failed_relay_status_logs_nothing();
     unknown_relay_endpoint_logs_nothing();
     undecodable_relay_logs_nothing();
+    default_seams_log_nothing();
+    trait_logging_keeps_the_relay_branch();
+}
+
+fn default_seams_log_nothing() {
+    let config = AzurePassthroughConfig::default();
+    let mut logging = RecordingLogging::default();
+    let logged = config.logging_non_streaming_response(
+        &target("gpt-4.1-mini", CHAT_ENDPOINT),
+        &chat_response(),
+        &headers(&[]),
+        &chat_request_data(),
+        &mut logging,
+    );
+    assert!(logged.is_none());
+    assert_eq!(logging.call_type, None);
+    let mut logging = RecordingLogging::default();
+    let logged = config.handle_collected_chunks(
+        &chat_chunks(),
+        &mut logging,
+        &target("gpt-4.1-mini", CHAT_ENDPOINT),
+    );
+    assert!(logged.is_none());
+    assert_eq!(logging.call_type, None);
+}
+
+fn trait_logging_keeps_the_relay_branch() {
+    let config = AzurePassthroughConfig::default();
+    let response = RelayedResponse {
+        status_code: 200,
+        body: EMBEDDINGS_BODY.as_bytes(),
+    };
+    let mut logging = RecordingLogging::default();
+    let logged = BasePassthroughConfig::logging_non_streaming_response(
+        &config,
+        &target("text-embedding-3-small", EMBEDDINGS_ENDPOINT),
+        &response,
+        &object("{}"),
+        &mut logging,
+    );
+    assert!(matches!(logged, Some(AzureRelayedLog::Relay(_))));
+    assert_eq!(
+        logging.call_type.map(RelayCallType::as_str),
+        Some("aembedding")
+    );
 }
 
 fn chat_response() -> RelayedResponse<'static> {
