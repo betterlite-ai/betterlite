@@ -1,0 +1,12 @@
+task: B8140
+deviations:
+  - what: The variables are split over variables_data.tf, variables_identity.tf and variables_service.tf instead of one variables.tf.
+    why: Three parallel tasks write them, and a Terraform module reads every .tf file in the folder, so the split changes nothing for a caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/variables.tf
+  - what: The module sits in packaging/terraform/aws/, not terraform/litellm/aws/.
+    why: The repository keeps distribution files under packaging/, the same place as the Docker and provider files.
+    link: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws
+  - what: There is no gateway_metrics_scrape_cidrs ingress rule on the tasks security group.
+    why: The Prometheus sidecar it opened is not part of this module (see B8142 out_of_scope).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/network.tf#L160-L175
+kept_bugs: []
