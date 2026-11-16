@@ -6,7 +6,7 @@ from typing import Final, TypeAlias, TypedDict
 import pytest
 from pydantic import JsonValue, TypeAdapter
 
-from betterlite.types.guardrails import endpoints, params
+from betterlite.types.guardrails import content_filter, endpoints, params
 from betterlite.types.proxy.guardrails.guardrail_hooks.decision_model import DecisionModelCheck
 
 DESCRIBE_SCRIPT = """
@@ -550,7 +550,7 @@ def test_enum_names() -> None:
     ]
     info = endpoints.GuardrailInfoResponse(guardrail_name="n")
     assert info.guardrail_definition_location == "config"
-    assert {"block", "alert"} == params.MCP_SECURITY_ON_VIOLATION
+    assert {"block", "alert"} == content_filter.MCP_SECURITY_ON_VIOLATION
 
 
 def test_ui_settings_names() -> None:
