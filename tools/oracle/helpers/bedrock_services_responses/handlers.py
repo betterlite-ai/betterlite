@@ -12,7 +12,7 @@ from pydantic import JsonValue, TypeAdapter
 
 from bedrock_mantle_responses.calls import warnings_recorded
 
-from .calls import API_BASE, MODEL, Fixture, FixtureRefusalError, environment, signed_summary
+from .calls import API_BASE, MODEL, Fixture, environment, signed_summary
 from .models import (
     AuthCase,
     Calls,
@@ -123,7 +123,7 @@ def fetch_outcome(
             )
         else:
             body = calls.transform_responses_api_request(MODEL, case["input"], {}, params, {})
-    except FixtureRefusalError:
+    except KeyError:
         return {"error": "fetch", "fetched": [*fixture.fetched]}
     return {"body": body, "fetched": [*fixture.fetched]}
 

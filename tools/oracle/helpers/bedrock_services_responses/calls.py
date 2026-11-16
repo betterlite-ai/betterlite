@@ -21,11 +21,6 @@ ENVIRONMENT_KEYS: Final = (
 TIME_DEPENDENT: Final = ("Authorization", "X-Amz-Date")
 
 
-class FixtureRefusalError(Exception):
-    def __init__(self, url: str) -> None:
-        super().__init__(f"no fixture for {url}")
-
-
 class Fixture:
     def __init__(self, data_urls: dict[str, str]) -> None:
         self.data_urls = data_urls
@@ -38,17 +33,11 @@ class Fixture:
 
     def fetch(self, url: str) -> str:
         self.fetched.append(url)
-        data_url = self.data_urls.get(url)
-        if data_url is None:
-            raise FixtureRefusalError(url)
-        return data_url
+        return self.data_urls[url]
 
     async def fetch_async(self, url: str) -> str:
         self.fetched.append(url)
-        data_url = self.data_urls.get(url)
-        if data_url is None:
-            raise FixtureRefusalError(url)
-        return data_url
+        return self.data_urls[url]
 
 
 @contextmanager
