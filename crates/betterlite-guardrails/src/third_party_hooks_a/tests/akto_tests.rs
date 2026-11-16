@@ -347,3 +347,27 @@ async fn akto_error_status_is_unreachable() {
     assert_eq!(returned, inputs);
     assert_eq!(captured.lock().expect("captured").len(), 1);
 }
+
+#[tokio::test]
+async fn akto_malformed_answer_is_not_unreachable() {
+    let (base, _server, _captured) = serve(
+        "/api/http-proxy",
+        vec![(StatusCode::OK, "not json".to_owned())],
+    )
+    .await;
+    let guardrail = akto_guardrail(&base, AktoFallback::FailOpen);
+    let error = akto::apply_guardrail(
+        &guardrail,
+        akto_inputs(),
+        &akto_request_data(),
+        GuardrailInputType::Request,
+        &LitellmParamsMode::One("pre_call".to_owned()),
+    )
+    .await
+    .expect_err("malformed answer");
+    assert!(matches!(
+        &error,
+        ThirdPartyHookError::Akto(AktoError::ResponseJson { .. })
+    ));
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+}

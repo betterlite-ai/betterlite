@@ -75,7 +75,24 @@ async fn check_request(
     let payload = build_akto_payload(guardrail, &inputs, request_data, REQUEST_STATUS, false)?;
     let verdict = match verdict_of(guardrail, &payload).await {
         Ok(verdict) => verdict,
-        Err(error) => return Ok(guardrail.handle_unreachable(inputs, &error)?),
+        // only a failed connection or an error status is an unreachable service; a malformed answer
+        // propagates as itself, as LiteLLM's except clause only catches httpx request and status errors
+        Err(error) => {
+            return match error {
+                error @ (AktoError::Transport { .. }
+                | AktoError::HttpStatus { .. }
+                | AktoError::InvalidHeader { .. }) => {
+                    Ok(guardrail.handle_unreachable(inputs, &error)?)
+                }
+                error @ (AktoError::MissingBaseUrl
+                | AktoError::MissingApiKey
+                | AktoError::Encode { .. }
+                | AktoError::ResponseTooLarge { .. }
+                | AktoError::ResponseJson { .. }
+                | AktoError::ResponseField { .. }
+                | AktoError::Unreachable) => Err(ThirdPartyHookError::Akto(error)),
+            };
+        }
     };
     if verdict.allowed {
         return Ok(inputs);
