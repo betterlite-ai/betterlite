@@ -89,7 +89,10 @@ async fn route_refuses_a_non_admin_before_touching_the_target() {
 #[tokio::test]
 async fn route_admits_a_platform_admin() {
     let redis = FakeRedis::start().await;
-    let body = support::request(redis_target(&redis));
+    let mut target = redis_target(&redis);
+    target["namespace"] = json!("cache");
+    target["_backend"] = json!("none");
+    let body = support::request(target);
     let (status, text) =
         support::post(support::state(None), Some(support::platform_admin()), &body).await;
     assert_eq!(status, StatusCode::OK);

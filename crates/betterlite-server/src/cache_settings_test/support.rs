@@ -57,11 +57,7 @@ pub(crate) fn cipher() -> DbCipher {
     cipher_with(Some(SecretString::from(TEST_SIGNING_KEY)))
 }
 
-pub(crate) fn cipher_without_key() -> DbCipher {
-    cipher_with(None)
-}
-
-fn cipher_with(signing_key: Option<SecretString>) -> DbCipher {
+pub(crate) fn cipher_with(signing_key: Option<SecretString>) -> DbCipher {
     DbCipher {
         settings: CipherSettings {
             signing_key,
@@ -271,16 +267,10 @@ impl FakeRedis {
             .collect()
     }
 
-    pub(crate) fn sent_arguments(&self) -> Vec<String> {
+    pub(crate) fn sent_secret(&self, secret: &str) -> bool {
         self.recorded()
             .into_iter()
             .flat_map(|recorded| recorded.arguments)
-            .collect()
-    }
-
-    pub(crate) fn sent_secret(&self, secret: &str) -> bool {
-        self.sent_arguments()
-            .iter()
             .any(|argument| argument == secret)
     }
 

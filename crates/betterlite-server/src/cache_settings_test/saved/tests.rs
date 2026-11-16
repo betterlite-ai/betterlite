@@ -47,7 +47,7 @@ async fn saved_settings_keeps_the_stored_text_without_a_signing_key() {
     let sealed = support::sealed(support::SAVED_SECRET);
     let (_, repository) =
         support::fake_saved(SavedReply::Stored(json!({"password": sealed.as_str()})));
-    let settings = saved_settings(repository.as_deref(), &support::cipher_without_key()).await;
+    let settings = saved_settings(repository.as_deref(), &support::cipher_with(None)).await;
     assert_eq!(settings["password"].as_str(), Some(sealed.as_str()));
 }
 
