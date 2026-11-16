@@ -60,8 +60,8 @@ pub struct ImageBlock {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ImageSource {
     Base64 {
-        #[serde(default)]
-        media_type: Option<String>,
+        #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+        media_type: ImageMediaType,
         #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
         data: String,
     },
@@ -71,6 +71,16 @@ pub enum ImageSource {
     },
     #[serde(other)]
     Other,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(transparent)]
+pub struct ImageMediaType(pub String);
+
+impl Default for ImageMediaType {
+    fn default() -> Self {
+        Self("image/jpeg".to_owned())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

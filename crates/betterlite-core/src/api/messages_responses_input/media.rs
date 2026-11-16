@@ -14,10 +14,7 @@ pub(super) fn image_url(source: Option<&ImageSource>) -> Option<String> {
     match source {
         None | Some(ImageSource::Other) => None,
         Some(ImageSource::Base64 { data, .. }) if data.is_empty() => None,
-        Some(ImageSource::Base64 { media_type, data }) => Some(data_url(
-            media_type.as_deref().unwrap_or("image/jpeg"),
-            data,
-        )),
+        Some(ImageSource::Base64 { media_type, data }) => Some(data_url(&media_type.0, data)),
         Some(ImageSource::Url { url }) => url.clone().filter(|address| !address.is_empty()),
     }
 }

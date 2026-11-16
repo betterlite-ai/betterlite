@@ -5,6 +5,10 @@ call:
     messages:
     - role: user
       content:
+      - type: text
+        text: hi
+        prompt_cache_breakpoint:
+          mode: explicit
       - type: image
         source:
           type: base64

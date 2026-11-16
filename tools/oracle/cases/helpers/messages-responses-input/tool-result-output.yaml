@@ -20,6 +20,14 @@ call:
             type: base64
             data: QUJD
           title: r.pdf
+          prompt_cache_breakpoint:
+            mode: explicit
+        - type: image
+          source:
+            type: url
+            url: https://example.com/marked.png
+          prompt_cache_breakpoint:
+            mode: explicit
       - type: tool_result
         tool_use_id: toolu_empty
     usage: null
