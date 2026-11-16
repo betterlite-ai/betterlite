@@ -35,7 +35,7 @@ fn sse_bytes_join_text_deltas() {
             "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}}\n\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}}\n\n",
         ),
         sse(
-            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"x\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"x\",\"text\":\"x\"}}\n\n",
         ),
     ];
     assert_eq!(extract_text_from_sse_bytes(&chunks), "Hello");
@@ -61,9 +61,10 @@ fn event_text_reads_chat_completion_deltas() {
 
 #[test]
 fn event_text_falls_back_to_the_done_text() {
-    let chunks = vec![event(
-        r#"{"type":"response.output_text.done","text":"full"}"#,
-    )];
+    let chunks = vec![
+        event(r#"{"type":"response.created","text":"x"}"#),
+        event(r#"{"type":"response.output_text.done","text":"full"}"#),
+    ];
     assert_eq!(extract_event_text(&chunks), "full");
 }
 
