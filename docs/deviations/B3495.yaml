@@ -1,0 +1,11 @@
+task: B3495
+deviations:
+  - what: get and aget are two functions, one sync and one async, generated from the same steps; there is no _is_async flag that turns get's answer into a coroutine, and a caller-supplied aget_interaction kwarg is popped from the params and changes nothing else.
+    why: LiteLLM's get pops aget_interaction into _is_async and is annotated to return either the response or a coroutine for aget to await; Rust cannot return either type, so the async retrieval is an entry point of its own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L402-L417
+  - what: aget awaits the async transport directly instead of running get in the loop's default executor under contextvars.copy_context.
+    why: the request, the transforms, the logging calls and the response are the same, and Rust has neither the GIL nor contextvars; run_in_executor exists only because LiteLLM reuses its sync function from the async wrapper, and the workspace refuses tokio::task::spawn_blocking.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L382-L384
+  - what: The provider comes from the argument or kwargs.custom_llm_provider, and every failure carries that resolved name.
+    why: LiteLLM's kwargs can never hold custom_llm_provider, since the parameter is named and Python binds it before **kwargs, while aget's exception handler re-reads only its own argument; betterlite's kwargs map can carry the key, the agents item call resolves it the same way, and the resolved name is what selected the provider config and the client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L407-L412
