@@ -46,6 +46,32 @@ async fn updates_a_draft_with_only_the_fields_it_sets(
 }
 
 #[rstest]
+#[case::named_editor(Some("editor"), r#""editor""#)]
+#[case::anonymous(None, "null")]
+#[tokio::test]
+async fn writes_only_the_fields_the_request_sets(
+    #[case] updated_by: Option<&str>,
+    #[case] written_by: &str,
+) {
+    let fixture = Fixture::new(
+        &[policy_row("p1", "pii", "draft", "2026-01-01T00:00:00Z")],
+        &[],
+    );
+    let request: PolicyUpdateRequest =
+        serde_json::from_str(r#"{"description": "tightened"}"#).unwrap();
+    update_policy_in_db(&fixture.policy_store(), "p1", &request, updated_by)
+        .await
+        .unwrap();
+    let calls = fixture.client.policies.calls();
+    let [Call::FindUnique(_), Call::Update(_, data)] = calls.as_slice() else {
+        panic!("expected a lookup and an update, got {calls:?}");
+    };
+    let written =
+        format!(r#"{{"description":"tightened","updated_at":"{NOW}","updated_by":{written_by}}}"#);
+    assert_eq!(serde_json::to_string(data).unwrap(), written);
+}
+
+#[rstest]
 #[case::production(Some("production"), "production")]
 #[case::published(Some("published"), "published")]
 #[case::status_missing(None, "production")]
