@@ -16,52 +16,68 @@ struct Piece {
     finish_reason: Option<String>,
 }
 
+#[derive(Default)]
+struct State {
+    id: Option<String>,
+    model: Option<String>,
+    created: Option<i64>,
+    choices: BTreeMap<i64, Piece>,
+    seen: bool,
+}
+
 // LiteLLM's stream_chunk_builder, reduced to the fields a scan and a replay read.
 pub(super) fn assemble(chunks: &[Chunk]) -> Option<Assembly> {
-    let mut id = None;
-    let mut model = None;
-    let mut created = None;
-    let mut choices: BTreeMap<i64, Piece> = BTreeMap::new();
-    let mut seen = false;
+    let mut state = State::default();
     for chunk in chunks {
+        state.absorb(chunk);
+    }
+    state.into_body()
+}
+
+impl State {
+    fn absorb(&mut self, chunk: &Chunk) {
         let Some(payload) = chunk.payload() else {
-            continue;
+            return;
         };
-        seen = true;
+        self.seen = true;
         let Ok(value) = serde_json::to_value(payload) else {
-            continue;
+            return;
         };
-        if id.is_none() {
-            id = value.get("id").and_then(Value::as_str).map(str::to_owned);
+        if self.id.is_none() {
+            self.id = value.get("id").and_then(Value::as_str).map(str::to_owned);
         }
-        if model.is_none() {
-            model = value
+        if self.model.is_none() {
+            self.model = value
                 .get("model")
                 .and_then(Value::as_str)
                 .map(str::to_owned);
         }
         if let Some(number) = value.get("created").and_then(Value::as_i64) {
-            created = Some(number);
+            self.created = Some(number);
         }
         let Some(items) = value.get("choices").and_then(Value::as_array) else {
-            continue;
+            return;
         };
         for choice in items {
-            absorb(choice, &mut choices);
+            absorb_choice(choice, &mut self.choices);
         }
     }
-    if !seen {
-        return None;
+
+    fn into_body(self) -> Option<Assembly> {
+        if !self.seen {
+            return None;
+        }
+        let entries = self
+            .choices
+            .into_iter()
+            .map(|(index, piece)| piece.into_choice(index))
+            .collect();
+        let body = completion_body(self.id, self.model, self.created, entries);
+        serde_json::from_value(body).ok().map(Assembly::Model)
     }
-    let entries = choices
-        .into_iter()
-        .map(|(index, piece)| piece.into_choice(index))
-        .collect();
-    let body = completion_body(id, model, created, entries);
-    serde_json::from_value(body).ok().map(Assembly::Model)
 }
 
-fn absorb(choice: &Value, choices: &mut BTreeMap<i64, Piece>) {
+fn absorb_choice(choice: &Value, choices: &mut BTreeMap<i64, Piece>) {
     let index = choice.get("index").and_then(Value::as_i64).unwrap_or(0);
     let piece = choices.entry(index).or_default();
     let delta = choice.get("delta");

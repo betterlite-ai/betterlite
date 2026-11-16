@@ -54,48 +54,54 @@ fn event_payload(frame: &str) -> Option<Value> {
 impl Assembled {
     fn absorb(&mut self, event: &Value) {
         match event.get("type").and_then(Value::as_str) {
-            Some("message_start") => {
-                self.started = true;
-                let Some(message) = event.get("message") else {
-                    return;
-                };
-                if let Some(id) = message.get("id").and_then(Value::as_str) {
-                    self.id = Some(id.to_owned());
-                }
-                if let Some(model) = message.get("model").and_then(Value::as_str) {
-                    self.model = Some(model.to_owned());
-                }
-                if let Some(usage) = message.get("usage").filter(|usage| !usage.is_null()) {
-                    self.input_tokens = usage.get("input_tokens").and_then(integer);
-                    self.output_tokens = usage.get("output_tokens").and_then(integer);
-                }
-            }
-            Some("content_block_delta") => {
-                if let Some(text) = event
-                    .get("delta")
-                    .and_then(|fields| fields.get("text"))
-                    .and_then(Value::as_str)
-                {
-                    self.text.push_str(text);
-                }
-            }
-            Some("message_delta") => {
-                if let Some(reason) = event
-                    .get("delta")
-                    .and_then(|fields| fields.get("stop_reason"))
-                    .and_then(Value::as_str)
-                {
-                    self.stop_reason = Some(reason.to_owned());
-                }
-                if let Some(tokens) = event
-                    .get("usage")
-                    .and_then(|fields| fields.get("output_tokens"))
-                    .and_then(integer)
-                {
-                    self.output_tokens = Some(tokens);
-                }
-            }
+            Some("message_start") => self.absorb_start(event),
+            Some("content_block_delta") => self.absorb_delta(event),
+            Some("message_delta") => self.absorb_finish(event),
             Some(_) | None => {}
+        }
+    }
+
+    fn absorb_start(&mut self, event: &Value) {
+        self.started = true;
+        let Some(message) = event.get("message") else {
+            return;
+        };
+        if let Some(id) = message.get("id").and_then(Value::as_str) {
+            self.id = Some(id.to_owned());
+        }
+        if let Some(model) = message.get("model").and_then(Value::as_str) {
+            self.model = Some(model.to_owned());
+        }
+        if let Some(usage) = message.get("usage").filter(|usage| !usage.is_null()) {
+            self.input_tokens = usage.get("input_tokens").and_then(integer);
+            self.output_tokens = usage.get("output_tokens").and_then(integer);
+        }
+    }
+
+    fn absorb_delta(&mut self, event: &Value) {
+        if let Some(text) = event
+            .get("delta")
+            .and_then(|fields| fields.get("text"))
+            .and_then(Value::as_str)
+        {
+            self.text.push_str(text);
+        }
+    }
+
+    fn absorb_finish(&mut self, event: &Value) {
+        if let Some(reason) = event
+            .get("delta")
+            .and_then(|fields| fields.get("stop_reason"))
+            .and_then(Value::as_str)
+        {
+            self.stop_reason = Some(reason.to_owned());
+        }
+        if let Some(tokens) = event
+            .get("usage")
+            .and_then(|fields| fields.get("output_tokens"))
+            .and_then(integer)
+        {
+            self.output_tokens = Some(tokens);
         }
     }
 

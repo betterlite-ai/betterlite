@@ -139,5 +139,8 @@ fn error_sse_frame_wraps_the_payload_under_error() {
         panic!("the fallback frame is raw SSE");
     };
     let text = std::str::from_utf8(framed).expect("the frame is utf-8");
-    assert_eq!(text, "data: {\"code\":\"500\",\"message\":\"boom\"}\n\n");
+    assert_eq!(
+        text,
+        "data: {\"error\":{\"code\":\"500\",\"message\":\"boom\"}}\n\n"
+    );
 }

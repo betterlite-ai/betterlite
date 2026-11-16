@@ -32,17 +32,29 @@ pub enum EmitReply {
     Fail,
 }
 
-pub struct Setup {
+// The two classifiers the fake wire answers with.
+#[derive(Default)]
+pub struct WireFlags {
     pub anthropic: bool,
     pub sse_error: bool,
+}
+
+// The verdict the fake scan reaches on the content it was handed.
+#[derive(Default)]
+pub struct Verdict {
+    pub block: bool,
+    pub deidentify: bool,
+}
+
+pub struct Setup {
+    pub wire: WireFlags,
     pub chat: Option<Assembly>,
     pub anthropic_body: Option<Assembly>,
     pub model_text: Option<String>,
     pub parts: Vec<OutputParts>,
     pub scan: ScanReply,
-    pub block: bool,
+    pub verdict: Verdict,
     pub sanitized: Option<String>,
-    pub deidentify: bool,
     pub logging: GuardrailValue,
     pub block_detail: GuardrailValue,
     pub emit: EmitReply,
@@ -53,16 +65,14 @@ pub struct Setup {
 impl Default for Setup {
     fn default() -> Self {
         Self {
-            anthropic: false,
-            sse_error: false,
+            wire: WireFlags::default(),
             chat: None,
             anthropic_body: None,
             model_text: None,
             parts: Vec::new(),
             scan: ScanReply::Armor(GuardrailValue::Null),
-            block: false,
+            verdict: Verdict::default(),
             sanitized: None,
-            deidentify: false,
             logging: GuardrailValue::Null,
             block_detail: GuardrailValue::Null,
             emit: EmitReply::Chunks(Vec::new()),
@@ -130,11 +140,11 @@ impl StreamWire for FakeWire {
     type Failure = FakeFailure;
 
     fn is_anthropic_sse(&self, _chunks: &[Chunk]) -> bool {
-        self.setup.anthropic
+        self.setup.wire.anthropic
     }
 
     fn is_sse_error(&self, _chunks: &[Chunk]) -> bool {
-        self.setup.sse_error
+        self.setup.wire.sse_error
     }
 
     fn assemble_chat(&self, _chunks: &[Chunk]) -> impl Future<Output = Option<Assembly>> + Send {
@@ -198,7 +208,7 @@ impl StreamWire for FakeWire {
             .lock()
             .expect("the fake log lock")
             .push(allow_sanitization);
-        self.setup.block
+        self.setup.verdict.block
     }
 
     fn sanitized_content(&self, _armor: &GuardrailValue) -> Option<String> {
@@ -206,7 +216,7 @@ impl StreamWire for FakeWire {
     }
 
     fn has_deidentify(&self, _armor: &GuardrailValue) -> bool {
-        self.setup.deidentify
+        self.setup.verdict.deidentify
     }
 
     fn logging_response(&self, _armor: &GuardrailValue) -> GuardrailValue {
@@ -284,9 +294,7 @@ pub fn frame_text(items: &[Chunk]) -> String {
     items
         .iter()
         .filter_map(|item| match item {
-            Chunk::Bytes(bytes) => {
-                Some(String::from_utf8(bytes.clone()).expect("the frame is utf-8"))
-            }
+            Chunk::Bytes(raw) => Some(String::from_utf8(raw.clone()).expect("the frame is utf-8")),
             Chunk::Json(_) => None,
         })
         .collect()

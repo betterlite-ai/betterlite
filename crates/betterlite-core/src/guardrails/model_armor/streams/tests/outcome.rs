@@ -1,7 +1,7 @@
 use crate::guardrails::model_armor::streams::assembly::Assembly;
 use crate::guardrails::model_armor::streams::outcome::{Outcome, resolve_outcome};
 
-use super::support::{FakeWire, Setup, value};
+use super::support::{FakeWire, Setup, Verdict, value};
 
 fn model() -> Assembly {
     Assembly::Model(value(r#"{"choices": []}"#))
@@ -10,7 +10,10 @@ fn model() -> Assembly {
 #[test]
 fn resolve_outcome_blocks_a_match_even_with_masking_on() {
     let wire = FakeWire::new(Setup {
-        block: true,
+        verdict: Verdict {
+            block: true,
+            ..Verdict::default()
+        },
         ..Setup::default()
     });
     let outcome = resolve_outcome(&wire, true, "text", &model(), &value("{}"));
@@ -45,7 +48,10 @@ fn resolve_outcome_without_masking_never_rewrites() {
 #[test]
 fn resolve_outcome_fails_closed_on_a_deidentify_match_without_a_rewrite() {
     let wire = FakeWire::new(Setup {
-        deidentify: true,
+        verdict: Verdict {
+            deidentify: true,
+            ..Verdict::default()
+        },
         ..Setup::default()
     });
     let outcome = resolve_outcome(&wire, true, "secret", &model(), &value("{}"));
@@ -61,7 +67,10 @@ fn resolve_outcome_fails_closed_on_a_deidentify_match_without_a_rewrite() {
 #[test]
 fn resolve_outcome_blocks_when_the_rewrite_is_empty() {
     let wire = FakeWire::new(Setup {
-        deidentify: true,
+        verdict: Verdict {
+            deidentify: true,
+            ..Verdict::default()
+        },
         sanitized: Some(String::new()),
         ..Setup::default()
     });

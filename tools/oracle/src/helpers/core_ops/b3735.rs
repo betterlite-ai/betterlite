@@ -42,12 +42,17 @@ const METADATA_KEY: &str = "metadata";
 const LITELLM_METADATA_KEY: &str = "litellm_metadata";
 const APPLIED_KEY: &str = "applied_guardrails";
 
+// A bool on the wire; the newtype keeps struct_excessive_bools off the case input.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(transparent)]
+struct Flag(bool);
+
 #[derive(Debug, Deserialize)]
 struct Input {
     chunks: Vec<ChunkInput>,
-    mask_response_content: bool,
-    fail_on_error: bool,
-    sanitize_error_detail: bool,
+    mask_response_content: Flag,
+    fail_on_error: Flag,
+    sanitize_error_detail: Flag,
     answer_status: u16,
     answer_body: String,
 }
@@ -102,7 +107,7 @@ impl Wire {
             Some(build_api_error_detail(
                 input.answer_status,
                 &input.answer_body,
-                input.sanitize_error_detail,
+                input.sanitize_error_detail.0,
             ))
         };
         let (raw, typed) = if api_error.is_some() {
@@ -117,7 +122,7 @@ impl Wire {
             raw,
             typed,
             api_error,
-            sanitize_error_detail: input.sanitize_error_detail,
+            sanitize_error_detail: input.sanitize_error_detail.0,
             scanned: Mutex::new(None),
         })
     }
@@ -255,8 +260,8 @@ async fn evaluate(input: &Input) -> HelperResult {
     let wire = Wire::new(input).or_value_error()?;
     let mut data = RequestData::new();
     let settings = StreamSettings {
-        fail_on_error: input.fail_on_error,
-        mask_response_content: input.mask_response_content,
+        fail_on_error: input.fail_on_error.0,
+        mask_response_content: input.mask_response_content.0,
     };
     let chunks = input
         .chunks
