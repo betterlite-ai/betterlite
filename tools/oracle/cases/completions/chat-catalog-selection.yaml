@@ -1,0 +1,18 @@
+kind: helper
+name: completions-chat-catalog-selection
+call:
+  b202:
+    chat_models:
+      - gpt-4o
+    text_models:
+      - gpt-3.5-turbo-instruct
+      - babbage-002
+    models:
+      - gpt-4o
+      - gpt-3.5-turbo-instruct
+      - babbage-002
+      - openai/gpt-4o
+      - openai/gpt-3.5-turbo-instruct
+      - text-completion-openai/gpt-4o
+env: {}
+compare: {ignore: []}
