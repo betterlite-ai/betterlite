@@ -104,9 +104,9 @@ impl IntoResponse for RunsError {
     }
 }
 
-impl IntoResponse for ValidationFailure {
-    fn into_response(self) -> Response {
-        let issue = match &self {
+impl ValidationFailure {
+    fn issue(&self) -> ValidationIssue {
+        match self {
             Self::Body { source } => body_issue(source),
             Self::Trailing { .. } => ValidationIssue {
                 issue_type: "json_invalid",
@@ -130,8 +130,15 @@ impl IntoResponse for ValidationFailure {
                 loc: vec![LocPart::Field("query".to_owned())],
                 msg: "invalid query parameters".to_owned(),
             },
+        }
+    }
+}
+
+impl IntoResponse for ValidationFailure {
+    fn into_response(self) -> Response {
+        let body = ValidationBody {
+            detail: [self.issue()],
         };
-        let body = ValidationBody { detail: [issue] };
         (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
     }
 }

@@ -5,14 +5,15 @@ use betterlite_auth::auth_identity::roles::Role;
 use rstest::rstest;
 
 use super::support::{FakeStore, principal};
-use crate::workflow_runs::access::{CallerRole, RunCaller, ensure_owner, require_run};
+use crate::tracing_routes::access::TraceRole;
+use crate::workflow_runs::access::{RunCaller, require_run};
 use crate::workflow_runs::error::RunsError;
 use crate::workflow_runs::models::{
     EVENT_STATUS_MAP, MAX_SEQUENCE_RETRIES, SequenceTable, WorkflowRunStatus,
 };
 use crate::workflow_runs::sequence::next_sequence_number;
 
-fn caller(role: CallerRole, key: Option<&str>) -> RunCaller {
+fn caller(role: TraceRole, key: Option<&str>) -> RunCaller {
     RunCaller {
         role,
         key: key.map(str::to_owned),
@@ -58,40 +59,36 @@ fn a_status_is_its_lowercase_name(#[case] status: WorkflowRunStatus, #[case] tex
 }
 
 #[rstest]
-#[case::master_key(
-    principal("master_key", Vec::new(), None),
-    CallerRole::ProxyAdmin,
-    None
-)]
-#[case::platform_admin(principal("virtual-key", vec![Role::PlatformAdmin], Some("hash-1")), CallerRole::ProxyAdmin, Some("hash-1"))]
-#[case::platform_viewer(principal("virtual-key", vec![Role::PlatformViewer], Some("hash-1")), CallerRole::ProxyAdminViewOnly, Some("hash-1"))]
-#[case::admin_and_viewer(principal("virtual-key", vec![Role::PlatformViewer, Role::PlatformAdmin], None), CallerRole::ProxyAdmin, None)]
-#[case::team_member(principal("virtual-key", vec![Role::TeamMember], Some("hash-1")), CallerRole::Other, Some("hash-1"))]
+#[case::master_key(principal("master_key", Vec::new(), None), TraceRole::Admin, None)]
+#[case::platform_admin(principal("virtual-key", vec![Role::PlatformAdmin], Some("hash-1")), TraceRole::Admin, Some("hash-1"))]
+#[case::platform_viewer(principal("virtual-key", vec![Role::PlatformViewer], Some("hash-1")), TraceRole::AdminViewOnly, Some("hash-1"))]
+#[case::admin_and_viewer(principal("virtual-key", vec![Role::PlatformViewer, Role::PlatformAdmin], None), TraceRole::Admin, None)]
+#[case::team_member(principal("virtual-key", vec![Role::TeamMember], Some("hash-1")), TraceRole::Other, Some("hash-1"))]
 #[case::no_roles(
     principal("virtual-key", Vec::new(), Some("hash-1")),
-    CallerRole::Other,
+    TraceRole::Other,
     Some("hash-1")
 )]
-#[case::empty_token(principal("virtual-key", vec![Role::TeamMember], Some("")), CallerRole::Other, None)]
-#[case::key_id_fallback(keyed(Some("key-7"), None), CallerRole::Other, Some("key-7"))]
+#[case::empty_token(principal("virtual-key", vec![Role::TeamMember], Some("")), TraceRole::Other, None)]
+#[case::key_id_fallback(keyed(Some("key-7"), None), TraceRole::Other, Some("key-7"))]
 #[case::token_wins_over_key_id(
     keyed(Some("key-7"), Some("hash-1")),
-    CallerRole::Other,
+    TraceRole::Other,
     Some("hash-1")
 )]
 fn the_caller_comes_from_the_principal(
     #[case] who: Principal,
-    #[case] role: CallerRole,
+    #[case] role: TraceRole,
     #[case] key: Option<&str>,
 ) {
     assert_eq!(RunCaller::from_principal(&who), caller(role, key));
 }
 
 #[rstest]
-#[case::proxy_admin(CallerRole::ProxyAdmin, true)]
-#[case::view_only(CallerRole::ProxyAdminViewOnly, true)]
-#[case::other(CallerRole::Other, false)]
-fn only_the_admin_roles_have_admin_view(#[case] role: CallerRole, #[case] admin_view: bool) {
+#[case::proxy_admin(TraceRole::Admin, true)]
+#[case::view_only(TraceRole::AdminViewOnly, true)]
+#[case::other(TraceRole::Other, false)]
+fn only_the_admin_roles_have_admin_view(#[case] role: TraceRole, #[case] admin_view: bool) {
     let who = caller(role, Some("hash-1"));
     assert_eq!(who.has_admin_view(), admin_view);
     assert_eq!(who.read_scope().is_none(), admin_view);
@@ -103,27 +100,23 @@ fn only_the_admin_roles_have_admin_view(#[case] role: CallerRole, #[case] admin_
 
 #[rstest]
 #[case::no_scope(None, Some("hash-2"), true)]
-#[case::proxy_admin_foreign(
-    Some(caller(CallerRole::ProxyAdmin, Some("hash-9"))),
-    Some("hash-2"),
-    true
-)]
-#[case::proxy_admin_without_key(Some(caller(CallerRole::ProxyAdmin, None)), Some("hash-2"), true)]
-#[case::owner(Some(caller(CallerRole::Other, Some("hash-2"))), Some("hash-2"), true)]
+#[case::proxy_admin_foreign(Some(caller(TraceRole::Admin, Some("hash-9"))), Some("hash-2"), true)]
+#[case::proxy_admin_without_key(Some(caller(TraceRole::Admin, None)), Some("hash-2"), true)]
+#[case::owner(Some(caller(TraceRole::Other, Some("hash-2"))), Some("hash-2"), true)]
 #[case::view_only_owner(
-    Some(caller(CallerRole::ProxyAdminViewOnly, Some("hash-2"))),
+    Some(caller(TraceRole::AdminViewOnly, Some("hash-2"))),
     Some("hash-2"),
     true
 )]
 #[case::view_only_foreign(
-    Some(caller(CallerRole::ProxyAdminViewOnly, Some("hash-9"))),
+    Some(caller(TraceRole::AdminViewOnly, Some("hash-9"))),
     Some("hash-2"),
     false
 )]
-#[case::other_key(Some(caller(CallerRole::Other, Some("hash-9"))), Some("hash-2"), false)]
-#[case::member_without_key(Some(caller(CallerRole::Other, None)), Some("hash-2"), false)]
-#[case::run_without_owner(Some(caller(CallerRole::Other, Some("hash-9"))), None, false)]
-#[case::neither_has_a_key(Some(caller(CallerRole::Other, None)), None, false)]
+#[case::other_key(Some(caller(TraceRole::Other, Some("hash-9"))), Some("hash-2"), false)]
+#[case::member_without_key(Some(caller(TraceRole::Other, None)), Some("hash-2"), false)]
+#[case::run_without_owner(Some(caller(TraceRole::Other, Some("hash-9"))), None, false)]
+#[case::neither_has_a_key(Some(caller(TraceRole::Other, None)), None, false)]
 #[tokio::test]
 async fn ownership_is_checked_for_everyone_but_a_full_proxy_admin(
     #[case] scope: Option<RunCaller>,

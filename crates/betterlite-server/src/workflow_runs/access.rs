@@ -1,23 +1,13 @@
 use betterlite_auth::auth_identity::records::Principal;
-use betterlite_auth::auth_identity::roles::Role;
 
+use crate::tracing_routes::access::{TraceAuth, TraceRole};
 use crate::workflow_runs::error::RunsError;
 use crate::workflow_runs::models::WorkflowRunRow;
 use crate::workflow_runs::store::WorkflowRunStore;
 
-// the subject the master-key stage stamps; LiteLLM authenticates the master key as PROXY_ADMIN
-const MASTER_KEY_SUBJECT: &str = "master_key";
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CallerRole {
-    ProxyAdmin,
-    ProxyAdminViewOnly,
-    Other,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunCaller {
-    pub role: CallerRole,
+    pub role: TraceRole,
     // the hashed key token; None for the master key and for a caller that has no key
     pub key: Option<String>,
 }
@@ -25,29 +15,18 @@ pub struct RunCaller {
 impl RunCaller {
     #[must_use]
     pub fn from_principal(principal: &Principal) -> Self {
-        let role = if principal.subject == MASTER_KEY_SUBJECT
-            || principal.roles.contains(&Role::PlatformAdmin)
-        {
-            CallerRole::ProxyAdmin
-        } else if principal.roles.contains(&Role::PlatformViewer) {
-            CallerRole::ProxyAdminViewOnly
-        } else {
-            CallerRole::Other
-        };
-        let key = principal
-            .credential_ref
-            .token_id
-            .clone()
-            .or_else(|| principal.credential_ref.key_id.clone())
-            .filter(|token| !token.is_empty());
-        Self { role, key }
+        let auth = TraceAuth::from_principal(principal);
+        Self {
+            role: auth.role,
+            key: auth.token.filter(|token| !token.is_empty()),
+        }
     }
 
     #[must_use]
     pub const fn has_admin_view(&self) -> bool {
         match self.role {
-            CallerRole::ProxyAdmin | CallerRole::ProxyAdminViewOnly => true,
-            CallerRole::Other => false,
+            TraceRole::Admin | TraceRole::AdminViewOnly => true,
+            TraceRole::Other => false,
         }
     }
 
@@ -70,7 +49,7 @@ pub fn ensure_owner(
     let Some(scoped) = caller else {
         return Ok(run);
     };
-    if scoped.role == CallerRole::ProxyAdmin {
+    if scoped.role == TraceRole::Admin {
         return Ok(run);
     }
     let owned = matches!((&scoped.key, &run.created_by), (Some(key), Some(owner)) if key == owner);

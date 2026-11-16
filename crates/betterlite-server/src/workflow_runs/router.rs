@@ -14,7 +14,6 @@ use crate::workflow_runs::models::{
     RunCreateData, RunListResponse, RunUpdateData, RunWhere, StatusFilter,
     WorkflowRunCreateRequest, WorkflowRunRow, WorkflowRunUpdateRequest,
 };
-use crate::workflow_runs::store::WorkflowRunStore;
 
 const DEFAULT_LIMIT: u8 = 50;
 const MAX_LIMIT: u8 = 250;
@@ -36,7 +35,10 @@ pub fn router(state: WorkflowRunsState) -> Router {
         .with_state(state)
 }
 
-fn decode_body<Body: DeserializeOwned>(body: &[u8]) -> Result<Body, ValidationFailure> {
+pub fn decode_body<Request>(body: &[u8]) -> Result<Request, ValidationFailure>
+where
+    Request: DeserializeOwned,
+{
     let mut deserializer = serde_json::Deserializer::from_slice(body);
     let decoded = serde_path_to_error::deserialize(&mut deserializer).map_err(|source| {
         ValidationFailure::Body {
@@ -84,7 +86,7 @@ async fn create_run(
     };
     let caller = RunCaller::from_principal(&context.principal);
     let request: WorkflowRunCreateRequest = decode_body(&body)?;
-    let store: &dyn WorkflowRunStore = state.store.as_deref().ok_or(RunsError::DbNotConnected)?;
+    let store = state.store.as_deref().ok_or(RunsError::DbNotConnected)?;
     let data = RunCreateData::from_request(&request, caller.key)?;
     Ok(Json(store.create(&data).await?))
 }
@@ -102,7 +104,7 @@ async fn list_runs(
         return Err(RunsError::from(ValidationFailure::Query));
     };
     let take = parse_limit(query.limit.as_deref())?;
-    let store: &dyn WorkflowRunStore = state.store.as_deref().ok_or(RunsError::DbNotConnected)?;
+    let store = state.store.as_deref().ok_or(RunsError::DbNotConnected)?;
     // LiteLLM lists every run for a non-admin caller that has no key token; that caller sees none here
     let created_by = match (caller.has_admin_view(), caller.key) {
         (true, _) => None,
@@ -136,13 +138,11 @@ async fn get_run(
         return Err(RunsError::Unauthenticated);
     };
     let caller = RunCaller::from_principal(&context.principal);
-    let store: &dyn WorkflowRunStore = state.store.as_deref().ok_or(RunsError::DbNotConnected)?;
+    let store = state.store.as_deref().ok_or(RunsError::DbNotConnected)?;
     let run = store
         .find_unique_with_latest_event(&run_id)
         .await?
-        .ok_or_else(|| RunsError::NotFound {
-            run_id: run_id.clone(),
-        })?;
+        .ok_or_else(|| RunsError::NotFound { run_id })?;
     Ok(Json(ensure_owner(run, caller.read_scope())?))
 }
 
@@ -157,7 +157,7 @@ async fn update_run(
     };
     let caller = RunCaller::from_principal(&context.principal);
     let request: WorkflowRunUpdateRequest = decode_body(&body)?;
-    let store: &dyn WorkflowRunStore = state.store.as_deref().ok_or(RunsError::DbNotConnected)?;
+    let store = state.store.as_deref().ok_or(RunsError::DbNotConnected)?;
     let update = RunUpdateData::from_request(&request)?;
     if update == RunUpdateData::default() {
         return Err(RunsError::NoFieldsToUpdate);
