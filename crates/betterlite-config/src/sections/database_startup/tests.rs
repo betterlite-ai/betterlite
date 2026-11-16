@@ -124,6 +124,11 @@ fn assert_startup_view(loaded: &Config) {
     false
 )]
 #[case::nothing_set_enables_updates("general_settings: {}\n", &[], true)]
+#[case::empty_environment_counts_as_unset(
+    "general_settings: {}\n",
+    &[("DISABLE_SCHEMA_UPDATE", "")],
+    true
+)]
 #[case::quoted_true_disables_updates(
     "general_settings:\n  disable_prisma_schema_update: \"TRUE\"\n",
     &[],
@@ -197,16 +202,6 @@ fn defaults_and_precedence(
 
 #[test]
 fn timeout_defaults_and_precedence() {
-    let empty_environment = environment(&[("DISABLE_SCHEMA_UPDATE", "")]);
-    let loaded = ConfigLoader {
-        lookup: empty_environment,
-    }
-    .load("general_settings: {}\n")
-    .expect("an empty environment value counts as unset")
-    .sections
-    .database_startup;
-    assert!(loaded.updates_enabled);
-
     let inherited = config(
         "general_settings: {}\n",
         &[("LITELLM_PRISMA_COMMAND_TIMEOUT", "900")],
@@ -215,10 +210,7 @@ fn timeout_defaults_and_precedence() {
     .database_startup;
     assert_eq!(inherited.command_timeout, Duration::from_mins(15));
     assert_eq!(inherited.deploy_timeout, Duration::from_mins(15));
-}
 
-#[test]
-fn invalid_deploy_timeout_warns() {
     let pinned_deploy = config(
         "general_settings: {}\n",
         &[
@@ -241,7 +233,10 @@ fn invalid_deploy_timeout_warns() {
     .database_startup;
     // an empty deploy variable is unset, so the command budget carries over
     assert_eq!(empty_deploy.deploy_timeout, Duration::from_mins(15));
+}
 
+#[test]
+fn invalid_deploy_timeout_warns() {
     let (invalid_deploy, log) = logged(|| {
         config(
             "general_settings: {}\n",
