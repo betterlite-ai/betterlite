@@ -483,7 +483,10 @@ fn raised(error: &AzureFineTuneError) -> Raised {
             report.class = "TypeError";
             report.message = Some(source.to_string());
         }
-        AzureFineTuneError::Decode { .. } => report.class = "ValidationError",
+        AzureFineTuneError::Decode { .. } => {
+            report.class = "ValidationError";
+            report.message = None;
+        }
         AzureFineTuneError::Endpoint { .. }
         | AzureFineTuneError::ClientMissing
         | AzureFineTuneError::NotAsyncClient => {}
