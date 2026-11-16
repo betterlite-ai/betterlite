@@ -1,5 +1,4 @@
 import asyncio
-from collections.abc import Callable
 from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
@@ -8,7 +7,7 @@ from litellm.llms.openai.openai import OpenAIBatchesAPI, OpenAIFilesAPI
 from litellm.llms.openai.vector_stores.transformation import OpenAIVectorStoreConfig
 from litellm.types.llms.openai import CreateBatchRequest, CreateFileRequest
 from litellm.types.router import GenericLiteLLMParams
-from litellm.types.vector_stores import VectorStoreCreateOptionalRequestParams
+from litellm.types.vector_stores import VectorStoreCreateOptionalRequestParams as VectorStoreParams
 from openai import AsyncOpenAI
 from pydantic import JsonValue, TypeAdapter
 
@@ -21,7 +20,7 @@ JSON: Final = TypeAdapter(JsonValue)
 class VectorConfig(Protocol):
     # ast-grep-ignore: no-long-names
     def transform_create_vector_store_request(
-        self, params: VectorStoreCreateOptionalRequestParams, api_base: str
+        self, params: VectorStoreParams, api_base: str
     ) -> tuple[str, dict[str, JsonValue]]: ...
 
 
@@ -71,7 +70,7 @@ class EvalsGetCase(TypedDict):
 class VectorStoresCreateCase(TypedDict):
     case: Literal["vector_stores_create"]
     api_base: str
-    params: VectorStoreCreateOptionalRequestParams
+    params: VectorStoreParams
 
 
 Input: TypeAlias = (
@@ -100,9 +99,7 @@ def async_client(api_base: str, answer: Answer) -> AsyncOpenAI:
     )
 
 
-def files_create(case: Input) -> JsonValue:
-    if case["case"] != "files_create":
-        raise ValueError("the call is not files_create")
+def files_create(case: FilesCase) -> JsonValue:
     client = async_client(case["api_base"], Answer(case["status"], case["reply"]))
     data: CreateFileRequest = {
         "file": (case["filename"], case["content"].encode()),
@@ -114,9 +111,7 @@ def files_create(case: Input) -> JsonValue:
     return {"result": JSON.validate_json(reply.model_dump_json(exclude_none=True))}
 
 
-def batches_create(case: Input) -> JsonValue:
-    if case["case"] != "batches_create":
-        raise ValueError("the call is not batches_create")
+def batches_create(case: BatchesCase) -> JsonValue:
     client = async_client(case["api_base"], Answer(case["status"], case["reply"]))
     batch = asyncio.run(
         OpenAIBatchesAPI().acreate_batch(
@@ -135,10 +130,7 @@ def batches_create(case: Input) -> JsonValue:
     return {"result": result}
 
 
-# ast-grep-ignore: no-long-names
-def fine_tuning_create(case: Input) -> JsonValue:
-    if case["case"] != "fine_tuning_create":
-        raise ValueError("the call is not fine_tuning_create")
+def fine_tuning_create(case: FineTuningCase) -> JsonValue:
     client = async_client(case["api_base"], Answer(case["status"], case["reply"]))
     job = asyncio.run(
         OpenAIFineTuningAPI().acreate_fine_tuning_job(
@@ -157,9 +149,7 @@ def fine_tuning_create(case: Input) -> JsonValue:
     return {"result": result}
 
 
-def containers_list(case: Input) -> JsonValue:
-    if case["case"] != "containers_list":
-        raise ValueError("the call is not containers_list")
+def containers_list(case: ContainersListCase) -> JsonValue:
     config: ContainerConfig = container_config()
     url, query = config.transform_container_list_request(
         case["api_base"],
@@ -173,32 +163,29 @@ def containers_list(case: Input) -> JsonValue:
     return {"url": url, "query": query}
 
 
-def evals_get(case: Input) -> JsonValue:
-    if case["case"] != "evals_get":
-        raise ValueError("the call is not evals_get")
+def evals_get(case: EvalsGetCase) -> JsonValue:
     url, headers = EVALS.transform_get_eval_request(
         case["eval_id"], case["api_base"], GenericLiteLLMParams(), {}
     )
     return {"url": url, "headers": headers}
 
 
-def vector_stores_create(case: Input) -> JsonValue:
-    if case["case"] != "vector_stores_create":
-        raise ValueError("the call is not vector_stores_create")
+def vector_stores_create(case: VectorStoresCreateCase) -> JsonValue:
     url, body = VECTOR.transform_create_vector_store_request(case["params"], case["api_base"])
     return {"url": url, "body": body}
 
 
-HANDLERS: Final[dict[str, Callable[[Input], JsonValue]]] = {
-    "files_create": files_create,
-    "batches_create": batches_create,
-    "fine_tuning_create": fine_tuning_create,
-    "containers_list": containers_list,
-    "evals_get": evals_get,
-    "vector_stores_create": vector_stores_create,
-}
-
-
 def run(input_value: Input) -> JsonValue:
-    handler = HANDLERS[input_value["case"]]
-    return handler(input_value)
+    match input_value["case"]:
+        case "files_create":
+            return files_create(input_value)
+        case "batches_create":
+            return batches_create(input_value)
+        case "fine_tuning_create":
+            return fine_tuning_create(input_value)
+        case "containers_list":
+            return containers_list(input_value)
+        case "evals_get":
+            return evals_get(input_value)
+        case "vector_stores_create":
+            return vector_stores_create(input_value)
