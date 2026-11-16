@@ -1635,6 +1635,7 @@ dependencies = [
  "lopdf",
  "lru",
  "num-traits",
+ "percent-encoding",
  "regex",
  "rstest",
  "rust_decimal",
