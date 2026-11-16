@@ -14,11 +14,12 @@ use serde_json::{Number, json};
 use super::cost::calculate_vector_store_cost;
 use super::create::{CreateStep, transform_create_store};
 use super::payload::{PayloadError, decode_vertex_search_payload, transform_search_response};
-use super::search::{SearchQuery, SearchRequest, transform_search_request};
+use super::search::{SearchRequest, transform_search_request};
 use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 use crate::vertex_discovery_search::error::VertexDiscoverySearchError;
 use crate::vertex_discovery_search::options::VertexSearchOptions;
 use crate::vertex_rag_store::records::payload::Reply;
+use crate::vertex_rag_store::records::search::SearchQuery;
 
 fn object(text: &str) -> BTreeMap<String, Json> {
     match serde_json::from_str::<Json>(text).unwrap() {
@@ -128,6 +129,24 @@ fn a_max_num_results_replaces_the_page_size(#[case] optional: &str, #[case] page
     let (body, _logged) = request_body(optional, None, "{}");
     let body = serde_json::to_value(body).unwrap();
     assert_eq!(body["pageSize"], json!(page_size));
+}
+
+// LiteLLM reads only max_num_results from the optional params, so filters and ranking stay behind
+#[rstest]
+#[case::with_an_explicit_page(
+    r#"{"max_num_results":0,"filters":{"kind":"x"},"ranking_options":{"rank":"y"},"rewrite_query":true}"#,
+    0,
+)]
+#[case::without_one(
+    r#"{"filters":{"kind":"x"},"ranking_options":{"rank":"y"},"rewrite_query":true}"#,
+    10
+)]
+fn generic_search_options_never_reach_the_body(#[case] optional: &str, #[case] page_size: i64) {
+    let (body, _logged) = request_body(optional, None, "{}");
+    assert_eq!(
+        serde_json::to_value(body).unwrap(),
+        json!({"query": "hello", "pageSize": page_size})
+    );
 }
 
 #[rstest]
@@ -665,16 +684,16 @@ fn a_missing_catalog_entry_costs_nothing() {
     );
 }
 
-#[test]
-fn creating_a_store_is_not_supported() {
-    for step in [CreateStep::Request, CreateStep::Response] {
-        let error = transform_create_store(step).err().unwrap();
-        assert!(matches!(
-            error,
-            VertexDiscoverySearchError::CreateUnsupported
-        ));
-        assert_eq!(error.status_code(), Some(500));
-    }
+#[rstest]
+#[case::request(CreateStep::Request)]
+#[case::response(CreateStep::Response)]
+fn creating_a_store_is_not_supported(#[case] step: CreateStep) {
+    let error = transform_create_store(step).err().unwrap();
+    assert!(matches!(
+        error,
+        VertexDiscoverySearchError::CreateUnsupported
+    ));
+    assert_eq!(error.status_code(), Some(500));
 }
 
 #[rstest]

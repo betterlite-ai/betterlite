@@ -1,5 +1,5 @@
 use betterlite_vertex::vertex_discovery_search::options::{
-    DEFAULT_COLLECTION_ID, VertexSearchOptions,
+    DEFAULT_COLLECTION_ID, RawSearchOptions, VertexSearchOptions,
 };
 use serde::Deserialize;
 
@@ -14,18 +14,19 @@ struct Raw {
 #[derive(Debug, Default, Deserialize)]
 struct RawDeployment {
     #[serde(default)]
-    litellm_params: VertexSearchOptions,
+    litellm_params: RawSearchOptions,
 }
 
 // the loader's own view parses the keys until the section registry carries an entry for them
 fn load(source: &str) -> Result<VertexSearchOptions, ConfigError> {
     let (raw, _unknown) = parse_view::<Raw>(source)?;
-    Ok(raw
-        .model_list
-        .into_iter()
-        .next()
-        .map(|deployment| deployment.litellm_params)
-        .unwrap_or_default())
+    Ok(VertexSearchOptions::from(
+        raw.model_list
+            .into_iter()
+            .next()
+            .map(|deployment| deployment.litellm_params)
+            .unwrap_or_default(),
+    ))
 }
 
 fn deployment(keys: &str) -> String {

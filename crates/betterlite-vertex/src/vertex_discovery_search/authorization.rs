@@ -4,7 +4,6 @@ use std::future::Future;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_http::url_path::encode_segment;
-use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::{
     BaseVectorStoreAuthCredentials, VectorStoreIndexEndpoints,
 };
@@ -70,10 +69,15 @@ where
     })
 }
 
-fn bearer_headers(token: &SecretString) -> BTreeMap<String, Json> {
+fn bearer_headers(token: &SecretString) -> BTreeMap<String, serde_json::Value> {
     set_headers(Some(token), &BTreeMap::new())
         .into_iter()
-        .map(|(name, value)| (name, Json::Text(value.expose_secret().to_owned())))
+        .map(|(name, value)| {
+            (
+                name,
+                serde_json::Value::String(value.expose_secret().to_owned()),
+            )
+        })
         .collect()
 }
 

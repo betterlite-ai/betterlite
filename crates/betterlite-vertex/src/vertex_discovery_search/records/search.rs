@@ -94,9 +94,7 @@ pub fn transform_search_request(
 }
 
 // an explicit zero max_num_results is kept, while an absent or null one leaves the default page size
-fn page_size(
-    params: &BTreeMap<String, Json>,
-) -> Result<Option<Json>, VertexDiscoverySearchError> {
+fn page_size(params: &BTreeMap<String, Json>) -> Result<Option<Json>, VertexDiscoverySearchError> {
     match params.get("max_num_results") {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Number(number)) => match number.as_i64() {
@@ -141,12 +139,13 @@ fn filter_extra_body(
     if !unsupported.is_empty() {
         unsupported.sort_unstable();
         return Err(VertexDiscoverySearchError::UnsupportedFields {
-            mode: if is_engine { "engine/app" } else { "data store" },
+            mode: if is_engine {
+                "engine/app"
+            } else {
+                "data store"
+            },
             fields: unsupported,
-            supported: supported
-                .iter()
-                .map(|field| (*field).to_owned())
-                .collect(),
+            supported: supported.iter().map(|field| (*field).to_owned()).collect(),
         });
     }
     Ok(present
@@ -167,7 +166,8 @@ fn supported_fields(is_engine: bool) -> Vec<&'static str> {
 fn merged_query(body: &IndexMap<String, Json>) -> Result<&str, VertexDiscoverySearchError> {
     match body.get("query") {
         Some(Json::Text(text)) => Ok(text),
-        None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+        None
+        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(VertexDiscoverySearchError::ParamType("query", "a string"))
         }
     }

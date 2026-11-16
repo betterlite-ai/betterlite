@@ -10,6 +10,9 @@ pub enum CreateStep {
 
 // LiteLLM's create request and response transforms both raise a bare NotImplementedError
 pub fn transform_create_store(step: CreateStep) -> Result<Infallible, VertexDiscoverySearchError> {
-    tracing::debug!(?step, "Vertex AI Search vector store creation is not supported");
+    tracing::debug!(
+        ?step,
+        "Vertex AI Search vector store creation is not supported"
+    );
     Err(VertexDiscoverySearchError::CreateUnsupported)
 }
