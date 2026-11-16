@@ -21,6 +21,7 @@ use betterlite_vertex::studio_image_generation::url::complete_url;
 use betterlite_vertex::studio_image_generation::usage::ImageGenerationUsage;
 use betterlite_vertex::vertex_gemini_images::response::GeneratedImage;
 use http::header::HeaderMap;
+use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -204,6 +205,10 @@ fn tokens_value(tokens: &ImageInputTokens) -> Value {
 }
 
 fn cost_value(case: &CostCase) -> Result<Value, Box<HelperError>> {
+    Ok(json!({"cost": priced_cost(case)?.normalize().to_string()}))
+}
+
+fn priced_cost(case: &CostCase) -> Result<Decimal, Box<HelperError>> {
     let response = ImageGenerationResponse {
         data: image_records(case.images),
         usage: case.usage.as_ref().map(cost_usage),
@@ -211,14 +216,13 @@ fn cost_value(case: &CostCase) -> Result<Value, Box<HelperError>> {
     let pricing = CatalogPricing {
         catalog: &case.catalog,
     };
-    let cost = generation_cost(
+    generation_cost(
         &pricing,
         &case.model,
         None,
         ImageCostResponse::Image(&response),
     )
-    .map_err(|error| cost_failure(&error))?;
-    Ok(json!({"cost": cost.normalize().to_string()}))
+    .map_err(|error| cost_failure(&error))
 }
 
 fn image_records(count: usize) -> Vec<GeneratedImage> {
@@ -242,18 +246,20 @@ fn cost_usage(usage: &CostUsage) -> ImageGenerationUsage {
         image_tokens: usage.output_tokens,
         text_tokens: 0,
     };
-    ImageGenerationUsage {
+    let mut rendered = ImageGenerationUsage {
         input_tokens: usage.input_tokens,
         input_tokens_details: input_details.clone(),
         output_tokens: usage.output_tokens,
         total_tokens: usage.total_tokens,
-        prompt_tokens: usage.input_tokens,
-        prompt_tokens_details: input_details,
-        completion_tokens: usage.output_tokens,
-        completion_tokens_details: output_details.clone(),
-        output_tokens_details: output_details,
-        web_search_requests: usage.web_search_requests,
-    }
+        ..ImageGenerationUsage::default()
+    };
+    rendered.prompt_tokens = usage.input_tokens;
+    rendered.prompt_tokens_details = input_details;
+    rendered.completion_tokens = usage.output_tokens;
+    rendered.completion_tokens_details = output_details.clone();
+    rendered.output_tokens_details = output_details;
+    rendered.web_search_requests = usage.web_search_requests;
+    rendered
 }
 
 fn cost_failure(error: &StudioImageError) -> Box<HelperError> {
