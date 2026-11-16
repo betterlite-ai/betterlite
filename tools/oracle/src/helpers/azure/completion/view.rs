@@ -124,7 +124,7 @@ pub(super) fn error_value(error: &AzureTextError) -> Json {
     Json::Object(fields)
 }
 
-fn object(value: &Json) -> Option<&Extra> {
+const fn object(value: &Json) -> Option<&Extra> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,

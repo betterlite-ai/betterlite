@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Literal, cast
 
 import httpx
 from litellm.llms.azure.common_utils import AzureOpenAIError
@@ -56,16 +56,21 @@ def usage_reasoning(usage: UsageView) -> JsonValue:
     return details.get("reasoning_tokens")
 
 
+def usage_count(
+    usage: UsageView, name: Literal["prompt_tokens", "completion_tokens", "total_tokens"]
+) -> int:
+    if name in usage:
+        return usage[name]
+    return 0
+
+
 def usage_view(usage: UsageView | None) -> JsonValue:
     if usage is None:
         return None
-    prompt = usage["prompt_tokens"] if "prompt_tokens" in usage else 0
-    completion = usage["completion_tokens"] if "completion_tokens" in usage else 0
-    total = usage["total_tokens"] if "total_tokens" in usage else 0
     return {
-        "prompt_tokens": prompt,
-        "completion_tokens": completion,
-        "total_tokens": total,
+        "prompt_tokens": usage_count(usage, "prompt_tokens"),
+        "completion_tokens": usage_count(usage, "completion_tokens"),
+        "total_tokens": usage_count(usage, "total_tokens"),
         "reasoning_tokens": usage_reasoning(usage),
         "queue_time": usage.get("queue_time"),
         "details": usage.get("completion_tokens_details") is not None,

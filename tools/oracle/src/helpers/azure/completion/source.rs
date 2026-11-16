@@ -95,7 +95,7 @@ impl ClientSource for ScriptedSource {
 }
 
 #[derive(Clone)]
-pub(super) struct ScriptedTransport {
+pub(crate) struct ScriptedTransport {
     answer: Answer,
     creates: Arc<Mutex<Vec<Json>>>,
 }

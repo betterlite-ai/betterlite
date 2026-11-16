@@ -1,6 +1,6 @@
 use betterlite_azure::endpoints::projection::LiteLlmParams;
 use betterlite_models::decisions::Extra;
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::builtin::Message;
 use serde::Deserialize;

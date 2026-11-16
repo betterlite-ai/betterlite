@@ -4,12 +4,12 @@ use betterlite_streaming::stream_chunk_shaping::records::{JsonValue, StreamOptio
 use crate::azure_urls::AuthParams;
 use crate::completion::error::BUFFERED_ANSWER;
 use crate::completion::stream::requested_stream_options;
-use crate::completion::tests::fixture::object;
+use crate::completion::tests::fixture::{Answer, object};
 use crate::endpoints::projection::{ClientKind, LiteLlmParams};
 
 use super::support::{
     MODEL, Run, Scenario, async_buffered, async_stream, buffered, count, field, sync_buffered,
-    sync_stream, text,
+    sync_stream, text, usage_items,
 };
 
 // CustomStreamWrapper reads stream_options from the request data and falls back to the caller's default
@@ -55,17 +55,18 @@ pub(super) fn stream_text_choices() {
 }
 
 fn stream_usage_chunk() {
-    let base = sync_stream(r#"{"stream":true}"#).execute();
-    let params = r#"{"stream":true,"stream_options":{"include_usage":true}}"#;
-    let with_usage = sync_stream(params).execute();
+    let counted = || Scenario::new(ClientKind::AzureOpenAi, Answer::Stream(usage_items()), "{}");
+    let mut plain = counted();
+    plain.params = object(r#"{"stream":true}"#);
+    let mut asked = counted();
+    asked.params = object(r#"{"stream":true,"stream_options":{"include_usage":true}}"#);
+    let base = plain.execute();
+    let with_usage = asked.execute();
     assert_eq!(with_usage.chunks.len(), base.chunks.len().saturating_add(1));
-    assert!(base.chunks.last().unwrap().usage.is_none());
     let usage = with_usage.chunks.last().unwrap().usage.as_ref().unwrap();
-    assert_eq!(
-        usage.total_tokens,
-        usage.prompt_tokens.saturating_add(usage.completion_tokens)
-    );
-    assert!(usage.completion_tokens > 0);
+    assert_eq!(usage.prompt_tokens, 3);
+    assert_eq!(usage.completion_tokens, 2);
+    assert_eq!(usage.total_tokens, 5);
 }
 
 fn seven_retries() -> LiteLlmParams {

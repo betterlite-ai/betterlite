@@ -37,6 +37,15 @@ pub(super) fn stream_items() -> Vec<String> {
     ]
 }
 
+pub(super) fn usage_items() -> Vec<String> {
+    let mut items = stream_items();
+    let usage = format!(
+        "data: {{\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":{CLOCK},\"model\":\"{MODEL}\",\"choices\":[],\"usage\":{{\"prompt_tokens\":3,\"completion_tokens\":2,\"total_tokens\":5}}}}\n\n"
+    );
+    items.insert(2, usage);
+    items
+}
+
 pub(super) fn text_messages() -> Vec<Message> {
     serde_json::from_str(r#"[{"role":"user","content":"Hello"}]"#).unwrap()
 }

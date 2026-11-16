@@ -11,7 +11,7 @@ use betterlite_azure::endpoints::projection::ClientKind;
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 use betterlite_openai::text_completion_transport::stream::CompletionStream;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::hub::{Hub, builtin_entries};
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
