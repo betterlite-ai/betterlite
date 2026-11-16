@@ -1,6 +1,8 @@
 use std::borrow::Cow;
+use std::sync::atomic::Ordering;
 
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
+use betterlite_prompts::media::limits::MAX_REMOTE_URLS;
 
 use crate::image::tokens::{DEFAULT_BASE_TOKENS, Mode, calculate_img_tokens};
 
@@ -51,6 +53,13 @@ where
         warnings.push(Warning::RemoteImageDefaultCount);
     }
     let bytes = if remote && !default_count && mode == Mode::High {
+        // check before fetching so the url past the cap never reaches the downloader
+        if counter.remote_fetches.load(Ordering::SeqCst) >= MAX_REMOTE_URLS {
+            return Err(MediaError::TooManyRemoteFetches {
+                limit: MAX_REMOTE_URLS,
+            });
+        }
+        counter.remote_fetches.fetch_add(1, Ordering::SeqCst);
         Cow::Owned(counter.fetcher.convert_url(data).await?)
     } else {
         Cow::Borrowed(data)

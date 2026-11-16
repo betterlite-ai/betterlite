@@ -1,11 +1,25 @@
+mod guardrail;
+mod settings;
+
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "function", rename_all = "snake_case")]
+pub(crate) enum Input {
+    Settings(settings::SettingsInput),
+    Guardrail(guardrail::GuardrailInput),
+}
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("b9711")
+    fn run(input: &Self::Input) -> HelperResult {
+        match input {
+            Input::Settings(settings) => Ok(settings::run(settings)),
+            Input::Guardrail(guardrail) => guardrail::run(guardrail),
+        }
     }
 }

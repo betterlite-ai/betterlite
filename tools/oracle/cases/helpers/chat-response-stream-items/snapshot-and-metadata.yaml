@@ -1,0 +1,75 @@
+kind: helper
+name: chat-response-stream-items-snapshot-and-metadata
+call:
+  chat_response_stream_items:
+    model: gpt-4o-mini
+    request_value: hi
+    responses_api_request: {}
+    custom_llm_provider: null
+    litellm_metadata: null
+    now: 10
+    uuid_ids: []
+    steps:
+      - kind: snapshot
+        chunk:
+          id: chatcmpl-1
+          object: chat.completion.chunk
+          created: 1700000000
+          model: gpt-4o-mini
+          choices:
+            - index: 0
+              delta: {content: he}
+              finish_reason: null
+        hidden:
+          usage: {prompt_tokens: 3}
+          additional_headers: {x-test: one}
+      - kind: snapshot
+        chunk:
+          id: chatcmpl-2
+          object: chat.completion.chunk
+          created: 1700000001
+          model: gpt-4o-mini
+          choices:
+            - index: 0
+              delta: {content: llo}
+              finish_reason: stop
+          usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+        hidden:
+          usage: {prompt_tokens: 9}
+      - kind: merge_fields
+        fields: {web_search_results: [a]}
+      - kind: merge_fields
+        fields: {web_search_results: [a, b], tool_results: [t]}
+      - kind: assemble
+      - kind: snapshot
+        chunk:
+          id: chatcmpl-3
+          object: chat.completion.chunk
+          created: 1700000002
+          model: gpt-4o-mini
+          choices: []
+      - kind: snapshot
+        chunk:
+          id: chatcmpl-4
+          object: chat.completion.chunk
+          created: 1700000003
+          model: gpt-4o-mini
+          choices: []
+        hidden:
+          usage: null
+calls:
+  - chat_response_stream_items:
+      model: gpt-4o-mini
+      request_value: hi
+      responses_api_request: {}
+      custom_llm_provider: null
+      litellm_metadata: null
+      now: 10
+      uuid_ids: []
+      steps:
+        - kind: assemble
+        - kind: merge_fields
+          fields: {tool_results: [first]}
+        - kind: assemble
+env: {}
+compare: {ignore: []}
