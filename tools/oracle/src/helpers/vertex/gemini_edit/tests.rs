@@ -50,7 +50,7 @@ fn input(value: Value) -> Input {
     serde_json::from_value(value).expect("the helper input should decode")
 }
 
-fn request(image: Value) -> Input {
+fn request(image: &Value) -> Input {
     input(json!({
         "model": "gemini-2.5-flash-image",
         "prompt": null,
@@ -113,7 +113,7 @@ fn a_custom_base_is_trimmed_and_skips_authentication() {
     .expect("a custom base needs no token");
     assert_eq!(parsed["supported"], json!(["size"]));
     assert_eq!(parsed["mapped"], json!({"aspectRatio": "16:9"}));
-    assert_eq!(parsed["files"], json!(0));
+    assert_eq!(parsed["files"], json!(0_u64));
     assert_eq!(parsed["positions"], json!([null]));
     assert_eq!(
         parsed["target"]["url"],
@@ -139,11 +139,11 @@ fn a_custom_base_is_trimmed_and_skips_authentication() {
 
 #[test]
 fn a_seekable_record_is_read_from_zero_and_keeps_its_position() {
-    let parsed = Op::run(&request(json!([
-        {"kind": "seekable", "data_base64": DIGITS, "position": 7}
+    let parsed = Op::run(&request(&json!([
+        {"kind": "seekable", "data_base64": DIGITS, "position": 7_u64}
     ])))
     .expect("the stream reads");
-    assert_eq!(parsed["positions"], json!([7]));
+    assert_eq!(parsed["positions"], json!([7_u64]));
     assert_eq!(
         parsed["payload"]["contents"]["parts"][0]["inlineData"]["data"],
         json!(DIGITS)
@@ -155,14 +155,14 @@ fn a_seekable_record_is_read_from_zero_and_keeps_its_position() {
 #[case::all_none(json!([null]))]
 #[case::absent(Value::Null)]
 fn an_image_list_without_a_part_is_a_value_error(#[case] image: Value) {
-    let error = Op::run(&request(image)).expect_err("no part is refused");
+    let error = Op::run(&request(&image)).expect_err("no part is refused");
     assert_eq!(error.class, "ValueError");
     assert_eq!(error.status, None);
 }
 
 #[test]
 fn an_unsupported_record_is_a_value_error() {
-    let error = Op::run(&request(json!([{"kind": "unsupported"}])))
+    let error = Op::run(&request(&json!([{"kind": "unsupported"}])))
         .expect_err("the record carries no bytes");
     assert_eq!(error.class, "ValueError");
 }
@@ -184,7 +184,7 @@ fn an_empty_inline_data_value_is_dropped() {
                 ]}},
                 {"finishReason": "STOP"},
             ],
-            "usageMetadata": {"totalTokenCount": 9},
+            "usageMetadata": {"totalTokenCount": 9_u64},
         },
     })))
     .expect("the reply transforms");
