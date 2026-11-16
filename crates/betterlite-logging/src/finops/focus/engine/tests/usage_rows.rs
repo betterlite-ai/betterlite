@@ -99,7 +99,7 @@ fn decode_reports_a_missing_required_value() {
         number("1"),
         number("1"),
     )];
-    let error = decode(&rows).err().expect("the date is missing");
+    let error = decode(&rows).expect_err("the date is missing");
     assert!(matches!(error, UsageRowError::Missing(0, "date")));
 }
 
@@ -111,7 +111,7 @@ fn decode_reports_a_wrong_type() {
         number("1"),
         number("1"),
     )];
-    let error = decode(&rows).err().expect("the date is not text");
+    let error = decode(&rows).expect_err("the date is not text");
     assert!(matches!(error, UsageRowError::WrongType(0, "date")));
 }
 
@@ -123,9 +123,7 @@ fn decode_reports_requests_that_are_not_an_integer() {
         number("1"),
         text("7"),
     )];
-    let error = decode(&rows)
-        .err()
-        .expect("the request count is not a number");
+    let error = decode(&rows).expect_err("the request count is not a number");
     assert!(matches!(error, UsageRowError::WrongType(0, "api_requests")));
 }
 
@@ -138,9 +136,7 @@ fn decode_reports_a_spend_that_is_not_a_decimal() {
         number(huge),
         number("1"),
     )];
-    let error = decode(&rows)
-        .err()
-        .expect("the spend does not fit a decimal");
+    let error = decode(&rows).expect_err("the spend does not fit a decimal");
     assert!(matches!(error, UsageRowError::NotDecimal(0, "spend", _)));
 }
 
@@ -155,7 +151,7 @@ fn decode_reports_the_row_index() {
             number("1"),
         ),
     ];
-    let error = decode(&rows).err().expect("the second row has no date");
+    let error = decode(&rows).expect_err("the second row has no date");
     assert!(matches!(error, UsageRowError::Missing(1, "date")));
 }
 

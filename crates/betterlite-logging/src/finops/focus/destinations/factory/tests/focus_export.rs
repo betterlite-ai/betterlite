@@ -1,4 +1,4 @@
-use crate::finops::focus::destinations::factory::DestinationProvider;
+use crate::finops::focus::destinations::factory::DestinationProvider as _;
 use crate::finops::focus::destinations::factory::destination::Destination;
 use crate::finops::focus::destinations::factory::resolve::DestinationOverrides;
 
@@ -107,12 +107,12 @@ fn dispatch_uses_the_configuration_override() {
     let destination = subject
         .create("s3", PREFIX, &overrides)
         .expect("the s3 provider is supported");
-    let Destination::S3(destination) = destination else {
+    let Destination::S3(s3_destination) = destination else {
         panic!("the factory did not build an S3 destination");
     };
-    assert_eq!(destination.bucket_name, "override-bucket");
+    assert_eq!(s3_destination.bucket_name, "override-bucket");
     assert_eq!(
-        destination.client_options.region_name.as_deref(),
+        s3_destination.client_options.region_name.as_deref(),
         Some("eu-west-1")
     );
 }
@@ -123,8 +123,8 @@ fn dispatch_passes_the_prefix_to_the_destination() {
     let destination = subject
         .create("s3", PREFIX, &DestinationOverrides::default())
         .expect("the s3 provider is supported");
-    let Destination::S3(destination) = destination else {
+    let Destination::S3(s3_destination) = destination else {
         panic!("the factory did not build an S3 destination");
     };
-    assert_eq!(destination.prefix, PREFIX);
+    assert_eq!(s3_destination.prefix, PREFIX);
 }

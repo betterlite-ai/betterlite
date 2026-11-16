@@ -4,9 +4,9 @@ use std::sync::atomic::Ordering;
 use betterlite_config::loader::EnvironmentLookup;
 use flate2::read::GzDecoder;
 use http::Method as HttpMethod;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
-use crate::finops::focus::destinations::factory::DestinationProvider;
+use crate::finops::focus::destinations::factory::DestinationProvider as _;
 use crate::finops::focus::destinations::factory::destination::DeliveryError;
 use crate::finops::focus::destinations::factory::error::FactoryError;
 use crate::finops::focus::destinations::factory::resolve::{self, DestinationOverrides};
@@ -14,19 +14,20 @@ use crate::finops::focus::destinations::focus_gcs_destination::GcsDeliveryError;
 use crate::finops::focus::destinations::focus_s3_destination::S3DeliveryError;
 use crate::finops::vantage::error::DeliveryError as VantageDeliveryError;
 use crate::finops::vantage::settings::DEFAULT_BASE_URL;
-use crate::focus_records::destinations::FocusDestination;
+use crate::focus_records::destinations::FocusDestination as _;
 use crate::mavvrik_delivery::error::MavvrikDeliveryError;
 use crate::mavvrik_delivery::transport::Method as MavvrikMethod;
 use crate::mavvrik_delivery::validation::ValidationError;
 
 use super::support::{
     ACCESS_KEY, BUCKET, MAVVRIK_CONNECTION, MAVVRIK_ENDPOINT, MAVVRIK_KEY, PREFIX, SECRET_KEY,
-    SERVICE_ACCOUNT, SESSION_URI, SIGNED_URL, VANTAGE_KEY, VANTAGE_TOKEN, destination_overrides,
-    environment, factory, factory_with_gcs_status, mavvrik_reply, recording_factory, time_window,
+    SERVICE_ACCOUNT, SESSION_URI, VANTAGE_KEY, VANTAGE_TOKEN, destination_overrides, environment,
+    factory, factory_with_gcs_status, mavvrik_reply, recording_factory, script_mavvrik_delivery,
+    time_window,
 };
 
-fn configured_secret(value: &Option<SecretString>) -> Option<&str> {
-    value.as_ref().map(|secret| secret.expose_secret())
+fn configured_secret(value: Option<&SecretString>) -> Option<&str> {
+    value.map(secrecy::ExposeSecret::expose_secret)
 }
 
 fn sources<'source>(
@@ -62,8 +63,7 @@ async fn delivery_reports_a_refused_gcs_upload() {
     let error = destination
         .deliver(b"ChargePeriodStart\n2026-01-02\n", &window, "usage.csv")
         .await
-        .err()
-        .expect("the refused upload is reported");
+        .expect_err("the refused upload is reported");
     assert!(matches!(
         error,
         DeliveryError::Gcs(GcsDeliveryError::Status { status: 500, .. })
@@ -114,8 +114,7 @@ async fn delivery_reports_a_refused_s3_upload() {
             "usage.csv",
         )
         .await
-        .err()
-        .expect("the refused upload is reported");
+        .expect_err("the refused upload is reported");
     assert!(matches!(
         error,
         DeliveryError::S3(S3DeliveryError::Status { status: 503, .. })
@@ -141,6 +140,7 @@ async fn delivery_reaches_the_vantage_destination() {
     assert_eq!(posts[0].filename.as_deref(), Some("usage.csv"));
     assert_eq!(posts[0].data, b"ServiceName\nfoo\n");
     assert!(posts[0].url.contains(VANTAGE_TOKEN));
+    drop(posts);
 }
 
 #[tokio::test]
@@ -156,8 +156,7 @@ async fn delivery_reports_a_refused_vantage_upload() {
     let error = destination
         .deliver(b"ServiceName\nfoo\n", &time_window(), "usage.csv")
         .await
-        .err()
-        .expect("the refused upload is reported");
+        .expect_err("the refused upload is reported");
     assert!(matches!(
         error,
         DeliveryError::Vantage(VantageDeliveryError::Status { status: 500 })
@@ -171,26 +170,7 @@ async fn delivery_reaches_the_mavvrik_destination() {
         ("MAVVRIK_API_ENDPOINT", MAVVRIK_ENDPOINT),
         ("MAVVRIK_CONNECTION_ID", MAVVRIK_CONNECTION),
     ]);
-    {
-        let mut replies = recording.mavvrik_replies.lock().unwrap();
-        replies.push_back(mavvrik_reply(
-            200,
-            r#"{"metricsMarker": 1700000000}"#,
-            Vec::new(),
-        ));
-        replies.push_back(mavvrik_reply(
-            200,
-            &format!(r#"{{"url": "{SIGNED_URL}"}}"#),
-            Vec::new(),
-        ));
-        replies.push_back(mavvrik_reply(
-            201,
-            "",
-            vec![("location".to_owned(), SESSION_URI.to_owned())],
-        ));
-        replies.push_back(mavvrik_reply(201, "", Vec::new()));
-        replies.push_back(mavvrik_reply(200, "", Vec::new()));
-    }
+    script_mavvrik_delivery(&recording);
     let destination = subject
         .create("mavvrik", PREFIX, &DestinationOverrides::default())
         .expect("the mavvrik provider is supported");
@@ -215,6 +195,7 @@ async fn delivery_reaches_the_mavvrik_destination() {
         .read_to_end(&mut uploaded)
         .expect("the upload body is gzip");
     assert_eq!(uploaded, b"ChargePeriodStart\n2026-01-02\n");
+    drop(requests);
 }
 
 #[tokio::test]
@@ -239,8 +220,7 @@ async fn delivery_reports_a_refused_mavvrik_registration() {
             "usage.csv",
         )
         .await
-        .err()
-        .expect("the refused registration is reported");
+        .expect_err("the refused registration is reported");
     assert!(matches!(
         error,
         DeliveryError::Mavvrik(MavvrikDeliveryError::RegisterFailed { status: 400, .. })
@@ -408,15 +388,15 @@ fn config_prefers_the_s3_overrides_over_the_environment() {
         Some("https://override.example.test")
     );
     assert_eq!(
-        configured_secret(&settings.aws_access_key_id),
+        configured_secret(settings.aws_access_key_id.as_ref()),
         Some("override-access-key")
     );
     assert_eq!(
-        configured_secret(&settings.aws_secret_access_key),
+        configured_secret(settings.aws_secret_access_key.as_ref()),
         Some("override-secret-key")
     );
     assert_eq!(
-        configured_secret(&settings.aws_session_token),
+        configured_secret(settings.aws_session_token.as_ref()),
         Some("override-session-token")
     );
 }
@@ -440,15 +420,15 @@ fn config_reads_the_s3_environment() {
         Some("https://env.example.test")
     );
     assert_eq!(
-        configured_secret(&settings.aws_access_key_id),
+        configured_secret(settings.aws_access_key_id.as_ref()),
         Some(ACCESS_KEY)
     );
     assert_eq!(
-        configured_secret(&settings.aws_secret_access_key),
+        configured_secret(settings.aws_secret_access_key.as_ref()),
         Some(SECRET_KEY)
     );
     assert_eq!(
-        configured_secret(&settings.aws_session_token),
+        configured_secret(settings.aws_session_token.as_ref()),
         Some("session-token")
     );
 }
@@ -498,9 +478,12 @@ fn config_defaults_the_vantage_base_url() {
     let settings = resolve::vantage(&sources(&DestinationOverrides::default(), &variables))
         .expect("the vantage settings are configured");
     assert_eq!(settings.base_url.as_deref(), Some(DEFAULT_BASE_URL));
-    assert_eq!(configured_secret(&settings.api_key), Some(VANTAGE_KEY));
     assert_eq!(
-        configured_secret(&settings.integration_token),
+        configured_secret(settings.api_key.as_ref()),
+        Some(VANTAGE_KEY)
+    );
+    assert_eq!(
+        configured_secret(settings.integration_token.as_ref()),
         Some(VANTAGE_TOKEN)
     );
 }
@@ -530,9 +513,12 @@ fn config_prefers_the_vantage_overrides() {
     overrides.base_url = Some(String::from("https://override.example.test"));
     let settings = resolve::vantage(&sources(&overrides, &variables))
         .expect("the vantage settings are configured");
-    assert_eq!(configured_secret(&settings.api_key), Some("override-key"));
     assert_eq!(
-        configured_secret(&settings.integration_token),
+        configured_secret(settings.api_key.as_ref()),
+        Some("override-key")
+    );
+    assert_eq!(
+        configured_secret(settings.integration_token.as_ref()),
         Some("override-token")
     );
     assert_eq!(
@@ -551,7 +537,7 @@ fn config_reads_the_gcs_environment() {
         .expect("the bucket is configured by the environment");
     assert_eq!(settings.bucket_name.as_deref(), Some(BUCKET));
     assert_eq!(
-        configured_secret(&settings.service_account_json),
+        configured_secret(settings.service_account_json.as_ref()),
         Some(SERVICE_ACCOUNT)
     );
 }
@@ -569,7 +555,7 @@ fn config_prefers_the_gcs_override() {
         resolve::gcs(&sources(&overrides, &variables)).expect("the gcs settings are configured");
     assert_eq!(settings.bucket_name.as_deref(), Some("override-bucket"));
     assert_eq!(
-        configured_secret(&settings.service_account_json),
+        configured_secret(settings.service_account_json.as_ref()),
         Some("/secrets/override.json")
     );
 }
@@ -582,7 +568,10 @@ fn config_reads_the_mavvrik_environment() {
         ("MAVVRIK_CONNECTION_ID", MAVVRIK_CONNECTION),
     ]);
     let settings = resolve::mavvrik(&sources(&DestinationOverrides::default(), &variables));
-    assert_eq!(configured_secret(&settings.api_key), Some(MAVVRIK_KEY));
+    assert_eq!(
+        configured_secret(settings.api_key.as_ref()),
+        Some(MAVVRIK_KEY)
+    );
     assert_eq!(settings.api_endpoint.as_deref(), Some(MAVVRIK_ENDPOINT));
     assert_eq!(settings.connection_id.as_deref(), Some(MAVVRIK_CONNECTION));
 }
@@ -599,7 +588,10 @@ fn config_prefers_the_mavvrik_overrides() {
     overrides.api_endpoint = Some(String::from("https://override.example.test"));
     overrides.connection_id = Some(String::from("override-connection"));
     let settings = resolve::mavvrik(&sources(&overrides, &variables));
-    assert_eq!(configured_secret(&settings.api_key), Some("override-key"));
+    assert_eq!(
+        configured_secret(settings.api_key.as_ref()),
+        Some("override-key")
+    );
     assert_eq!(
         settings.api_endpoint.as_deref(),
         Some("https://override.example.test")

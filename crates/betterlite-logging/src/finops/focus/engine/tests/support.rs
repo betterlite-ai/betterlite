@@ -131,6 +131,14 @@ impl RecordingFactory {
             .expect("the factory calls mutex is not poisoned")
             .clone()
     }
+
+    fn record(&self, call: CreateCall) {
+        let mut calls = self
+            .calls
+            .lock()
+            .expect("the factory calls mutex is not poisoned");
+        calls.push(call);
+    }
 }
 
 impl DestinationProvider for RecordingFactory {
@@ -142,14 +150,11 @@ impl DestinationProvider for RecordingFactory {
         prefix: &str,
         overrides: &DestinationOverrides,
     ) -> Result<RecordingDestination, FactoryError> {
-        self.calls
-            .lock()
-            .expect("the factory calls mutex is not poisoned")
-            .push(CreateCall {
-                provider: provider.to_owned(),
-                prefix: prefix.to_owned(),
-                overrides: overrides.clone(),
-            });
+        self.record(CreateCall {
+            provider: provider.to_owned(),
+            prefix: prefix.to_owned(),
+            overrides: overrides.clone(),
+        });
         Ok(self.destination)
     }
 }
@@ -184,13 +189,6 @@ pub(super) fn refusing_transform(_rows: &[UsageRow]) -> Result<FocusTable, Trans
     Err(TransformError::Overflow {
         field: "spend",
         value: Decimal::MAX,
-    })
-}
-
-pub(super) fn empty_transform(_rows: &[UsageRow]) -> Result<FocusTable, TransformError> {
-    Ok(FocusTable {
-        rows: 0,
-        columns: Vec::new(),
     })
 }
 

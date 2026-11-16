@@ -143,6 +143,27 @@ pub(super) fn mavvrik_reply(
     }
 }
 
+pub(super) fn script_mavvrik_delivery(recording: &Recording) {
+    let mut replies = recording.mavvrik_replies.lock().unwrap();
+    replies.push_back(mavvrik_reply(
+        200,
+        r#"{"metricsMarker": 1700000000}"#,
+        Vec::new(),
+    ));
+    replies.push_back(mavvrik_reply(
+        200,
+        &format!(r#"{{"url": "{SIGNED_URL}"}}"#),
+        Vec::new(),
+    ));
+    replies.push_back(mavvrik_reply(
+        201,
+        "",
+        vec![("location".to_owned(), SESSION_URI.to_owned())],
+    ));
+    replies.push_back(mavvrik_reply(201, "", Vec::new()));
+    replies.push_back(mavvrik_reply(200, "", Vec::new()));
+}
+
 pub(super) struct Recording {
     pub(super) s3_requests: Arc<Mutex<Vec<S3Request>>>,
     pub(super) s3_status: Arc<AtomicU16>,

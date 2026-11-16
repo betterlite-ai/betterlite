@@ -11,12 +11,13 @@ use crate::finops::focus::engine::summary::{SummaryError, count_unique, sum_colu
 use crate::finops::focus::engine::{ExportError, ExportSettings, FocusExportEngine, format_for};
 use crate::focus_records::destinations::FocusTimeWindow;
 use crate::focus_records::serializers::FocusFormat;
+use crate::focus_records::table::FocusTable;
 use crate::focus_records::transformer::transform;
 
 use super::support::{
-    FailingFactory, FixedClock, PREFIX, RecordingFactory, RecordingSource, data_row,
-    empty_transform, harness, harness_with_transform, number, overrides_with_bucket_name,
-    refusing_transform, settings, text, timestamp, usage_row, window,
+    FailingFactory, FixedClock, PREFIX, RecordingFactory, RecordingSource, data_row, harness,
+    harness_with_transform, number, overrides_with_bucket_name, refusing_transform, settings, text,
+    timestamp, usage_row, window,
 };
 
 #[test]
@@ -147,7 +148,12 @@ async fn export_all_skips_when_the_normalized_data_is_empty() {
         "csv",
         vec![usage_row()],
         timestamp("2026-03-04T05:06:07Z"),
-        empty_transform,
+        |_rows| {
+            Ok(FocusTable {
+                rows: 0,
+                columns: Vec::new(),
+            })
+        },
     );
     harness
         .engine
@@ -293,7 +299,12 @@ async fn export_window_empty_skips_when_the_normalized_data_is_empty() {
         "csv",
         vec![usage_row()],
         timestamp("2026-03-04T05:06:07Z"),
-        empty_transform,
+        |_rows| {
+            Ok(FocusTable {
+                rows: 0,
+                columns: Vec::new(),
+            })
+        },
     );
     harness
         .engine
@@ -385,9 +396,7 @@ fn filename_format_pads_every_field() {
 
 #[test]
 fn filename_error_when_the_extension_is_empty() {
-    let error = filename::build(&window(), "")
-        .err()
-        .expect("the empty extension is refused");
+    let error = filename::build(&window(), "").expect_err("the empty extension is refused");
     assert_eq!(
         error.to_string(),
         "Serializer must declare a file extension"
@@ -444,9 +453,7 @@ fn sum_column_adds_the_present_values(#[case] values: Vec<&str>, #[case] expecte
 #[test]
 fn sum_column_rejects_a_text_value() {
     let rows = vec![data_row(&[("spend", text("1.5"))])];
-    let error = sum_column(&rows, "spend")
-        .err()
-        .expect("text is not a number");
+    let error = sum_column(&rows, "spend").expect_err("text is not a number");
     assert!(matches!(error, SummaryError::NotNumeric { .. }));
 }
 
@@ -457,9 +464,7 @@ fn sum_column_reports_an_overflow() {
         data_row(&[("spend", number(&maximum))]),
         data_row(&[("spend", number(&maximum))]),
     ];
-    let error = sum_column(&rows, "spend")
-        .err()
-        .expect("the sum does not fit a decimal");
+    let error = sum_column(&rows, "spend").expect_err("the sum does not fit a decimal");
     assert!(matches!(error, SummaryError::Overflow { .. }));
 }
 
@@ -467,9 +472,7 @@ fn sum_column_reports_an_overflow() {
 fn sum_column_reports_a_number_that_is_not_a_decimal() {
     let huge = "9999999999999999999999999999999999999999";
     let rows = vec![data_row(&[("spend", number(huge))])];
-    let error = sum_column(&rows, "spend")
-        .err()
-        .expect("the number does not fit a decimal");
+    let error = sum_column(&rows, "spend").expect_err("the number does not fit a decimal");
     assert!(matches!(error, SummaryError::NotDecimal { .. }));
 }
 
