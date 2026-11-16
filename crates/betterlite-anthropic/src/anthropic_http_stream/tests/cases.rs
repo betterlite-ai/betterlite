@@ -21,6 +21,8 @@ use super::fixture::{
     stream_build_with, stream_call,
 };
 
+const SYNC_RESPONSE: &str = "first stream response received";
+
 #[derive(Clone, Copy, Debug)]
 enum Scenario {
     StreamPost,
@@ -126,20 +128,9 @@ async fn sync_stream_post(supplied: bool) {
     };
     assert_served(served, &idle);
     assert!(opened.sync_stream);
-    assert_eq!(
-        &opened
-            .completion_stream
-            .converter
-            .state
-            .tool_name_reverse_map,
-        &reverse
-    );
-    assert_post_call(
-        &logger.state(),
-        &messages,
-        "first stream response received",
-        DATA,
-    );
+    let state = &opened.completion_stream.converter.state;
+    assert_eq!(&state.tool_name_reverse_map, &reverse);
+    assert_post_call(&logger.state(), &messages, SYNC_RESPONSE, DATA);
 }
 
 fn assert_served(served: &FixtureTransport, idle: &[&FixtureTransport]) {

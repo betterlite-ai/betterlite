@@ -54,9 +54,8 @@ def _logging(messages: list[dict[str, JsonValue]]) -> Logging:
     )
 
 def _picked(headers: httpx.Headers, names: list[str]) -> JsonValue:
-    picked: dict[str, str | None] = {
-        name: headers[name] if name in headers else None for name in names
-    }
+    lookup = dict(headers.items())
+    picked: dict[str, str | None] = {name: lookup.get(name.lower()) for name in names}
     return JSON.validate_python(picked)
 
 
