@@ -1636,6 +1636,7 @@ dependencies = [
  "lru",
  "num-traits",
  "regex",
+ "reqwest",
  "rstest",
  "rust_decimal",
  "secrecy",
