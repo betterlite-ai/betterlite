@@ -168,6 +168,22 @@ fn a_missing_key_gets_the_minted_bearer_token() {
 }
 
 #[test]
+fn the_minted_token_never_reaches_the_debug_text() {
+    let mint = FixedMint::new("minted-secret");
+    let headers = block_on(validate_environment(
+        EnvironmentRequest {
+            headers: caller_headers(),
+            api_key: None,
+            credentials: None,
+            project: None,
+        },
+        &mint,
+    ))
+    .unwrap();
+    assert!(!format!("{headers:?}").contains("minted-secret"));
+}
+
+#[test]
 fn an_empty_minted_token_is_refused() {
     let mint = FixedMint::new("");
     let failure = block_on(validate_environment(
