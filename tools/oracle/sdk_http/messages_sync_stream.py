@@ -9,8 +9,6 @@ from litellm.llms.anthropic.pass_through.adapters.streaming_iterator import (
 from litellm.types.llms.anthropic import (
     AppliedEdit,
     CompactionBlock,
-    ContentBlockDelta,
-    ContentTextBlockDelta,
     MessageBlockDelta,
     MessageDelta,
     UsageDelta,
@@ -21,9 +19,20 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
 from typing_extensions import override
 
+from messages_sync_stream_outcome import (
+    Diagnostic,
+    Outcome,
+    RunOutcome,
+    State,
+    StepOutcome,
+    SyncOutcome,
+    SyncValue,
+)
+
 ADAPTER_PREFIX = "Anthropic Adapter - "
 NORMALIZED_ID = "msg_00000000-0000-0000-0000-000000000000"
 PAYLOAD = TypeAdapter(dict[str, Json])
+CHUNK = TypeAdapter(ModelResponseStream)
 
 
 class Message(BaseModel):
@@ -33,12 +42,19 @@ class Message(BaseModel):
     content: str
 
 
+class TextDelta(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["text_delta"]
+    text: str
+
+
 class HeldDelta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["content_block_delta"]
     index: int
-    delta: ContentTextBlockDelta
+    delta: TextDelta
 
 
 class HeldStop(BaseModel):
@@ -78,65 +94,6 @@ class MessagesSyncStreamCall(BaseModel):
     runs: list[RunSpec]
 
 
-class State(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    pulls: int
-    index: int
-    block_type: str
-    sent_first_chunk: bool
-    sent_content_block_start: bool
-    sent_content_block_finish: bool
-    sent_last_message: bool
-    queued_usage_chunk: bool
-    queued: int
-    holding_chunk: bool
-    holding_stop_reason: bool
-    sent_compaction_block: bool
-    sent_compaction_block_start: bool
-    sent_compaction_block_delta: bool
-
-
-class Diagnostic(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    level: str
-    prefix: str
-
-
-class StepOutcome(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    events: list[dict[str, Json]]
-    end: bool
-    state: State
-    diagnostics: list[Diagnostic]
-
-
-class RunOutcome(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    steps: list[StepOutcome]
-
-
-class SyncValue(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    runs: list[RunOutcome]
-
-
-class SyncOutcome(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    value: SyncValue
-
-
-class Outcome(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    messages_sync_stream: SyncOutcome
-
-
 class EventStream(Protocol):
     def __next__(self) -> dict[str, Json]: ...
 
@@ -164,11 +121,16 @@ class ProviderChunks(Iterator[ModelResponseStream]):
             raise StopIteration
         payload = self.payloads[self.index]
         self.index += 1
-        return ModelResponseStream.model_validate(PAYLOAD.validate_json(payload))
+        return CHUNK.validate_json(payload)
 
 
 class Wrapper(AnthropicStreamWrapper):
-    def __init__(self, call: MessagesSyncStreamCall, source: ProviderChunks, initial: Initial) -> None:
+    def __init__(
+        self,
+        call: MessagesSyncStreamCall,
+        source: ProviderChunks,
+        initial: Initial,
+    ) -> None:
         super().__init__(
             completion_stream=source,
             model=call.model,
@@ -179,25 +141,27 @@ class Wrapper(AnthropicStreamWrapper):
         )
         self.queued_usage_chunk = initial.queued_usage_chunk
         self._message_id = NORMALIZED_ID
-        if initial.holding_chunk is not None:
-            self.holding_chunk = ContentBlockDelta(
-                type="content_block_delta",
-                index=initial.holding_chunk.index,
-                delta=initial.holding_chunk.delta,
-            )
-        held = initial.holding_stop_reason_chunk
-        if held is None:
+        held = initial.holding_chunk
+        if held is not None:
+            held_value: dict[str, Json] = {
+                "type": "content_block_delta",
+                "index": held.index,
+                "delta": {"type": held.delta.type, "text": held.delta.text},
+            }
+            object.__setattr__(self, "holding_chunk", held_value)
+        stopped = initial.holding_stop_reason_chunk
+        if stopped is None:
             return
-        if held.usage is None:
+        if stopped.usage is None:
             self.holding_stop_reason_chunk = MessageBlockDelta(
                 type="message_delta",
-                delta=held.delta,
+                delta=stopped.delta,
             )
             return
         self.holding_stop_reason_chunk = MessageBlockDelta(
             type="message_delta",
-            delta=held.delta,
-            usage=held.usage,
+            delta=stopped.delta,
+            usage=stopped.usage,
         )
 
 
@@ -236,8 +200,6 @@ def observe(wrapper: Wrapper, source: ProviderChunks) -> State:
         sent_content_block_finish=wrapper.sent_content_block_finish,
         sent_last_message=wrapper.sent_last_message,
         queued_usage_chunk=wrapper.queued_usage_chunk,
-        queued=len(wrapper.chunk_queue),
-        holding_chunk=wrapper.holding_chunk is not None,
         holding_stop_reason=wrapper.holding_stop_reason_chunk is not None,
         sent_compaction_block=wrapper.sent_compaction_block,
         sent_compaction_block_start=wrapper.sent_compaction_block_start,
@@ -297,10 +259,11 @@ def body(call: MessagesSyncStreamCall) -> dict[str, Json]:
 def frames(content: bytes) -> list[bytes]:
     payloads: list[bytes] = []
     for part in content.split(b"\n\n"):
-        lines: list[bytes] = []
-        for line in part.split(b"\n"):
-            if line.startswith(b"data:"):
-                lines.append(line.removeprefix(b"data:").removeprefix(b" "))
+        lines = [
+            line.removeprefix(b"data:").removeprefix(b" ")
+            for line in part.split(b"\n")
+            if line.startswith(b"data:")
+        ]
         payload = b"\n".join(lines)
         if payload:
             payloads.append(payload)

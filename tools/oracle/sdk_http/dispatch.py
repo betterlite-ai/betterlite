@@ -44,11 +44,21 @@ class OpenaiChatCall(BaseModel):
 
     openai_chat: ChatCall
 
+    def serialize(self, api_base: str) -> str:
+        return run_chat(self.openai_chat, api_base).model_dump_json(
+            by_alias=True, exclude_unset=True
+        )
+
 
 class EmbeddingExecutorCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     embedding_executor: EmbeddingCall = Field(alias="vector_store_embedding_executor")
+
+    def serialize(self, api_base: str) -> str:
+        return run_embedding(self.embedding_executor, api_base).model_dump_json(
+            by_alias=True, exclude_unset=True
+        )
 
 
 class VectorQueryEmbeddingCall(BaseModel):
@@ -56,11 +66,19 @@ class VectorQueryEmbeddingCall(BaseModel):
 
     vector_query_embedding: QueryEmbeddingCall
 
+    def serialize(self, api_base: str) -> str:
+        return run_query(self.vector_query_embedding, api_base).model_dump_json(
+            by_alias=True, exclude_unset=True
+        )
+
 
 class AnthropicBetaConfigCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     anthropic_beta_config: BetaConfigCall
+
+    def serialize(self, api_base: str) -> str:
+        return run_beta_config(self.anthropic_beta_config, api_base)
 
 
 class MessagesHeaderStreamRequest(BaseModel):
@@ -68,11 +86,17 @@ class MessagesHeaderStreamRequest(BaseModel):
 
     messages_header_stream: MessagesHeaderStreamCall
 
+    def serialize(self, api_base: str) -> str:
+        return run_messages_header_stream(self.messages_header_stream, api_base)
+
 
 class MessagesStreamLoggingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     messages_stream_logging: MessagesStreamLoggingCall
+
+    def serialize(self, api_base: str) -> str:
+        return run_messages_stream_logging(self.messages_stream_logging, api_base)
 
 
 class MessagesNativeStreamRequest(BaseModel):
@@ -80,11 +104,17 @@ class MessagesNativeStreamRequest(BaseModel):
 
     messages_native_stream: MessagesNativeStreamCall
 
+    def serialize(self, api_base: str) -> str:
+        return run_messages_native_stream(self.messages_native_stream, api_base)
+
 
 class MessagesSyncStreamRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     messages_sync_stream: MessagesSyncStreamCall
+
+    def serialize(self, api_base: str) -> str:
+        return run_messages_sync_stream(self.messages_sync_stream, api_base)
 
 
 class ContinuationRequest(BaseModel):
@@ -92,11 +122,17 @@ class ContinuationRequest(BaseModel):
 
     responses_agentic_continuation: ContinuationCall
 
+    def serialize(self, api_base: str) -> str:
+        return run_continuation(self.responses_agentic_continuation, api_base)
+
 
 class FileAzureStorageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     file_azure_storage: UploadCall | DownloadCall
+
+    def serialize(self, api_base: str) -> str:
+        return run_file_azure_storage(self.file_azure_storage, api_base)
 
 
 class Request(BaseModel):
@@ -129,34 +165,7 @@ def main() -> None:
     raw = read_request()
     request = Request.model_validate_json(raw)
     with contextlib.redirect_stdout(sys.stderr):
-        output: str
-        match request.call:
-            case OpenaiChatCall(openai_chat=chat):
-                output = run_chat(chat, request.api_base).model_dump_json(
-                    by_alias=True, exclude_unset=True
-                )
-            case AnthropicBetaConfigCall(anthropic_beta_config=beta):
-                output = run_beta_config(beta, request.api_base)
-            case MessagesHeaderStreamRequest(messages_header_stream=stream):
-                output = run_messages_header_stream(stream, request.api_base)
-            case MessagesStreamLoggingRequest(messages_stream_logging=logging_call):
-                output = run_messages_stream_logging(logging_call, request.api_base)
-            case MessagesNativeStreamRequest(messages_native_stream=relay_call):
-                output = run_messages_native_stream(relay_call, request.api_base)
-            case MessagesSyncStreamRequest(messages_sync_stream=sync_call):
-                output = run_messages_sync_stream(sync_call, request.api_base)
-            case ContinuationRequest(responses_agentic_continuation=continuation):
-                output = run_continuation(continuation, request.api_base)
-            case FileAzureStorageRequest(file_azure_storage=storage_call):
-                output = run_file_azure_storage(storage_call, request.api_base)
-            case VectorQueryEmbeddingCall(vector_query_embedding=query):
-                output = run_query(query, request.api_base).model_dump_json(
-                    by_alias=True, exclude_unset=True
-                )
-            case EmbeddingExecutorCall(embedding_executor=embedding):
-                output = run_embedding(embedding, request.api_base).model_dump_json(
-                    by_alias=True, exclude_unset=True
-                )
+        output = request.call.serialize(request.api_base)
     sys.stdout.write(output)
 
 
