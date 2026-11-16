@@ -197,7 +197,7 @@ def original_key_precedence(call: OriginalKeyPrecedence) -> JsonValue:
 
 def mapping_outcome(config: FluxConfig, non_default: Params) -> JsonValue:
     try:
-        mapped = config.map_openai_params(non_default, {}, MODEL, False)
+        mapped = config.map_openai_params(non_default, {}, MODEL, drop_params=False)
     except ValueError:
         return {"error": {"status": None}}
     return {"params": mapped}

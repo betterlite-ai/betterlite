@@ -245,9 +245,12 @@ fn hidden_outcome(reply: &ReplyCase) -> Value {
             | FalImageError::ReplyDecode { status, .. }
             | FalImageError::ReplyNotAnObject { status, .. },
         ) => json!({"error": {"status": status}}),
-        Err(FalImageError::MissingApiKey | FalImageError::UnsupportedParameters { .. }) => {
-            json!({"error": "not a reply error"})
-        }
+        Err(
+            FalImageError::MissingApiKey
+            | FalImageError::UnsupportedParameters { .. }
+            | FalImageError::SizeNotText
+            | FalImageError::FieldNotText { .. },
+        ) => json!({"error": "not a reply error"}),
     }
 }
 
