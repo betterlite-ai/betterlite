@@ -121,7 +121,7 @@ fn request_params(
 ) -> IndexMap<String, JsonValue> {
     let mut params: IndexMap<String, JsonValue> = kwargs
         .iter()
-        .map(|(name, value)| (name.clone(), json_value(value)))
+        .map(|(name, value)| (name.clone(), JsonValue::from(value)))
         .collect();
     let credentials = [
         (
@@ -140,22 +140,6 @@ fn request_params(
         }
     }
     params
-}
-
-fn json_value(value: &Json) -> JsonValue {
-    match value {
-        Json::Null => JsonValue::Null,
-        Json::Bool(flag) => JsonValue::Bool(*flag),
-        Json::Number(number) => JsonValue::Number(number.clone()),
-        Json::Text(text) => JsonValue::Text(text.clone()),
-        Json::List(items) => JsonValue::Array(items.iter().map(json_value).collect()),
-        Json::Object(fields) => JsonValue::Object(
-            fields
-                .iter()
-                .map(|(name, item)| (name.clone(), json_value(item)))
-                .collect(),
-        ),
-    }
 }
 
 // Python's `timeout or DEFAULT_REQUEST_TIMEOUT`: the declared default is already applied, and a zero picks the request timeout
