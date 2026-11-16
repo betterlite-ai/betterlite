@@ -25,14 +25,14 @@ fn an_environment_url_drops_the_stored_discrete_fields() {
 }
 
 #[test]
-fn a_stored_url_drops_the_environment_host_and_keeps_the_stored_fields() {
+fn a_stored_url_drops_the_environment_host_and_the_stored_db() {
     let current_values = view(
         r#"{"url": "redis://:secret@stored-host:6380/1", "db": 3, "type": "redis"}"#,
         &[("REDIS_HOST", "env-host"), ("REDIS_PORT", "6379")],
     );
     assert_eq!(
         current_values,
-        parse(r#"{"url": "***REDACTED***", "db": 3, "type": "redis", "redis_type": "node"}"#)
+        parse(r#"{"url": "***REDACTED***", "type": "redis", "redis_type": "node"}"#)
     );
 }
 
