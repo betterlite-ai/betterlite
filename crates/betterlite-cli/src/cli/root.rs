@@ -22,6 +22,7 @@ pub(crate) fn root_command(environment: &dyn EnvironmentLookup) -> Command {
     let hidden = hidden_command_names(environment);
     let mut subcommands = family_commands();
     subcommands.extend(agent_commands());
+    subcommands.sort_by_cached_key(|subcommand| subcommand.get_name().to_owned());
     Command::new("lite")
         .about(ABOUT)
         .disable_help_subcommand(true)
