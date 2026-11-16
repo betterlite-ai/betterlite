@@ -401,6 +401,14 @@ fn a_cost_beyond_the_decimal_range_names_the_field() {
 #[case::usage_number(r#"{"usage": 5}"#, "usage")]
 #[case::prompt_tokens_text(r#"{"usage": {"prompt_tokens": "7"}}"#, "usage.prompt_tokens")]
 #[case::prompt_tokens_float(r#"{"usage": {"prompt_tokens": 1.5}}"#, "usage.prompt_tokens")]
+#[case::prompt_tokens_overflow(
+    r#"{"usage": {"prompt_tokens": 9223372036854775808}}"#,
+    "usage.prompt_tokens"
+)]
+#[case::image_tokens_overflow(
+    r#"{"usage": {"completion_tokens_details": {"image_tokens": 9223372036854775808}}}"#,
+    "usage.completion_tokens_details.image_tokens"
+)]
 #[case::total_tokens_bool(r#"{"usage": {"total_tokens": true}}"#, "usage.total_tokens")]
 #[case::completion_details_list(
     r#"{"usage": {"completion_tokens_details": []}}"#,
@@ -446,6 +454,18 @@ fn a_wrong_shape_names_the_field(#[case] body: &str, #[case] path: &str) {
 fn a_wrong_shape_names_the_type_it_found(#[case] body: &str, #[case] message: &str) {
     let error = decode(body).expect_err("the shape is wrong");
     assert_eq!(error.to_string(), message);
+}
+
+#[test]
+fn a_duplicated_key_is_a_shape_error() {
+    let error = decode(r#"{"usage": {"prompt_tokens": 1, "prompt_tokens": 2}}"#)
+        .expect_err("the duplicate key is an error");
+    assert!(matches!(error, ReplyDecodeError::Shape { .. }));
+    let message = error.to_string();
+    assert!(
+        message.contains("duplicate field `prompt_tokens`"),
+        "{message}"
+    );
 }
 
 #[rstest]
