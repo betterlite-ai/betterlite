@@ -1,0 +1,90 @@
+kind: helper
+name: openai-assistant-dispatch-threads
+call:
+  openai_assistant_dispatch:
+    kind: threads
+    operation: create_thread
+    api_base: https://example.test/v1
+    api_key: sk-fixture
+    data:
+      messages:
+        - {role: user, content: hi}
+      metadata: {k: v}
+    replies:
+      - status: 200
+        body: {id: thread_1, object: thread, created_at: 1, metadata: {k: v}, tool_resources: null}
+calls:
+  - openai_assistant_dispatch:
+      kind: threads
+      operation: retrieve_thread
+      api_base: https://example.test/v1
+      api_key: sk-fixture
+      thread_id: thread_1
+      replies:
+        - status: 200
+          body: {id: thread_1, object: thread, created_at: 1, metadata: {k: v}, tool_resources: null}
+  - openai_assistant_dispatch:
+      kind: threads
+      operation: add_message
+      api_base: https://example.test/v1
+      api_key: sk-fixture
+      thread_id: thread_1
+      data: {role: user, content: hi}
+      replies:
+        - status: 200
+          body:
+            id: msg_1
+            object: thread.message
+            created_at: 1
+            thread_id: thread_1
+            role: user
+            content:
+              - type: text
+                text: {value: hi, annotations: []}
+            status: completed
+            assistant_id: null
+            run_id: null
+            attachments: []
+            completed_at: 1
+            incomplete_at: null
+            incomplete_details: null
+            metadata: {}
+  - openai_assistant_dispatch:
+      kind: threads
+      operation: list_messages
+      api_base: https://example.test/v1
+      api_key: sk-fixture
+      thread_id: thread_1
+      replies:
+        - status: 200
+          body:
+            object: list
+            data:
+              - id: msg_1
+                object: thread.message
+                created_at: 1
+                thread_id: thread_1
+                role: user
+                content:
+                  - type: text
+                    text: {value: hi, annotations: []}
+                status: completed
+                assistant_id: null
+                run_id: null
+                attachments: []
+                completed_at: 1
+                incomplete_at: null
+                incomplete_details: null
+                metadata: {}
+            first_id: msg_1
+            last_id: msg_1
+            has_more: false
+  - openai_assistant_dispatch:
+      kind: threads
+      operation: retrieve_thread
+      api_base: https://example.test/v1
+      api_key: null
+      thread_id: thread_1
+      replies: []
+env: {}
+compare: {ignore: []}

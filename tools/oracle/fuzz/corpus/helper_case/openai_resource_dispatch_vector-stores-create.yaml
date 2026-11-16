@@ -1,0 +1,9 @@
+kind: helper
+name: openai-resource-dispatch-vector-stores-create-seed
+call:
+  openai_resource_dispatch:
+    case: vector_stores_create
+    api_base: https://api.vectors.test/v1/vector_stores
+    params: {name: docs, file_ids: [file-1], metadata: {team: ml}}
+env: {}
+compare: {ignore: []}
