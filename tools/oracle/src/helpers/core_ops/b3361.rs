@@ -25,7 +25,7 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
-struct DecodeCall {
+pub(crate) struct DecodeCall {
     container_id: String,
     custom_llm_provider: String,
     #[serde(default)]
@@ -33,26 +33,26 @@ struct DecodeCall {
 }
 
 #[derive(Debug, Deserialize)]
-struct CreateOptionalCall {
+pub(crate) struct CreateOptionalCall {
     #[serde(default)]
     passed_params: ContainerCreateRequestParams,
 }
 
 #[derive(Debug, Deserialize)]
-struct FilterCall {
+pub(crate) struct FilterCall {
     provider: String,
     #[serde(default)]
     passed_params: ContainerCreateRequestParams,
 }
 
 #[derive(Debug, Deserialize)]
-struct ListOptionalCall {
+pub(crate) struct ListOptionalCall {
     #[serde(default)]
     passed_params: ContainerListOptionalParams,
 }
 
 #[derive(Debug, Deserialize)]
-struct EncodeCall {
+pub(crate) struct EncodeCall {
     container_id: String,
     #[serde(default)]
     custom_llm_provider: Option<String>,
@@ -63,7 +63,7 @@ struct EncodeCall {
 }
 
 #[derive(Debug, Deserialize)]
-struct ProviderConfigCall {
+pub(crate) struct ProviderConfigCall {
     custom_llm_provider: String,
 }
 
