@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use betterlite_db::auxiliary_repository::repository::TableError;
+use betterlite_db::postgres_store::{errors::DbError, session::PostgresStore};
 use rstest::rstest;
 use serde_json::Value;
 use serde_json::json;
@@ -7,6 +9,7 @@ use serde_json::json;
 use crate::cache_settings_test::support;
 use crate::cache_settings_test::support::SavedReply;
 
+use super::SavedCacheConfig;
 use super::saved_settings;
 
 #[tokio::test]
@@ -96,4 +99,16 @@ async fn saved_settings_is_empty_for_a_stored_non_object(#[case] stored: Value) 
     let (_, repository) = support::fake_saved(SavedReply::Stored(stored));
     let settings = saved_settings(repository.as_deref(), &support::cipher()).await;
     assert!(settings.is_empty());
+}
+
+#[tokio::test]
+async fn postgres_adapter_reports_a_missing_database() {
+    let store = PostgresStore { pool: None };
+    let error = SavedCacheConfig::cache_settings(&store)
+        .await
+        .expect_err("no pool, no row");
+    assert!(matches!(
+        error,
+        TableError::Database(DbError::NoDbConnected)
+    ));
 }

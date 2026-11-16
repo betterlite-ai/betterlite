@@ -50,7 +50,6 @@ use crate::cache_settings_test::saved::SavedCacheConfig;
 pub(crate) const SAVED_SECRET: &str = "saved-redis-secret";
 pub(crate) const TYPED_SECRET: &str = "typed-redis-secret";
 pub(crate) const REDACTED: &str = "***REDACTED***";
-pub(crate) const MASTER_KEY: &str = "master_key";
 
 const TEST_SIGNING_KEY: &str = "cache-settings-test-signing-key";
 
@@ -140,7 +139,7 @@ pub(crate) fn state_with_environment(environment: BTreeMap<String, String>) -> C
 }
 
 pub(crate) fn admin() -> AuthContext {
-    caller(MASTER_KEY, Vec::new())
+    caller("master_key", Vec::new())
 }
 
 pub(crate) fn platform_admin() -> AuthContext {

@@ -29,12 +29,9 @@ fn redis_target(redis: &FakeRedis) -> Value {
 }
 
 fn saved_target(redis: &FakeRedis) -> Value {
-    json!({
-        "type": "redis",
-        "host": redis.host(),
-        "port": redis.port(),
-        "password": support::sealed(support::SAVED_SECRET),
-    })
+    let mut target = redis_target(redis);
+    target["password"] = json!(support::sealed(support::SAVED_SECRET));
+    target
 }
 
 fn captured(records: &Arc<Mutex<String>>) -> String {
@@ -450,8 +447,8 @@ struct CaptureWriter(Arc<Mutex<String>>);
 
 impl io::Write for CaptureWriter {
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        let text = from_utf8(buffer)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let text =
+            from_utf8(buffer).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
