@@ -16,6 +16,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
+use tokio_util::task::TaskTracker;
 use tower::ServiceExt as _;
 
 use super::harness::{Behavior, Requests, WAIT, await_queued, await_started, gates, harness};
@@ -327,7 +328,13 @@ fn server_application() -> Router {
     .load(SATURATED)
     .unwrap();
     let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(1)).unwrap();
-    application(&config, executor, Arc::new(AtomicBool::new(false))).unwrap()
+    application(
+        &config,
+        executor,
+        Arc::new(AtomicBool::new(false)),
+        &TaskTracker::new(),
+    )
+    .unwrap()
 }
 
 async fn content_length_survives_the_stack() {

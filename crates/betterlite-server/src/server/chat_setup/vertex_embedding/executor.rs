@@ -18,6 +18,7 @@ use betterlite_vertex::token_cache::error::CredentialCacheError;
 use betterlite_vertex::token_cache::executor::{CredentialExecutor, LoadedCredential};
 use betterlite_vertex::token_cache::record::CredentialSnapshot;
 use secrecy::{ExposeSecret as _, SecretString};
+use sha2::{Digest as _, Sha256};
 
 // the SDK handle keeps its own token and reports no expiry, so a short assumed lifetime only makes the cache ask the handle again
 const ASSUMED_TOKEN_LIFETIME: Duration = Duration::from_secs(600);
@@ -31,7 +32,7 @@ impl AwsCredentialsResolver for UnavailableAws {
     }
 }
 
-// VertexBase.load_auth and refresh_auth over the SDK handles, each kept under the token it last produced
+// VertexBase.load_auth and refresh_auth over the SDK handles, each kept under the SHA-256 of the token it last produced so no plain copy of a token outlives its SecretString
 pub(crate) struct VertexCredentialExecutor {
     pub(crate) environment: AdcEnvironment,
     pub(crate) google: GoogleAuth,
@@ -51,7 +52,10 @@ impl VertexCredentialExecutor {
         if let Some(previous) = stale {
             handles.remove(previous);
         }
-        handles.insert(token.expose_secret().to_owned(), handle);
+        handles.insert(
+            hex::encode(Sha256::digest(token.expose_secret().as_bytes())),
+            handle,
+        );
         CredentialSnapshot {
             token: Some(token),
             state: None,
@@ -104,23 +108,28 @@ impl CredentialExecutor for VertexCredentialExecutor {
         Box<dyn Future<Output = Result<CredentialSnapshot, CredentialCacheError>> + Send + 'borrow>,
     > {
         Box::pin(async move {
-            let stale = credential
+            let token = credential
                 .token
                 .as_ref()
-                .ok_or(CredentialCacheError::MissingToken)?
-                .expose_secret();
+                .ok_or(CredentialCacheError::MissingToken)?;
+            let stale = hex::encode(Sha256::digest(token.expose_secret().as_bytes()));
             let found = self
                 .handles
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .get(stale)
+                .get(&stale)
                 .cloned();
             let handle = found.ok_or(CredentialCacheError::MissingCredentials)?;
-            let token = handle
+            let refreshed = handle
                 .access_token()
                 .await
                 .map_err(CredentialCacheError::Refresh)?;
-            Ok(self.track(Some(stale), handle, token, credential.project_id.clone()))
+            Ok(self.track(
+                Some(&stale),
+                handle,
+                refreshed,
+                credential.project_id.clone(),
+            ))
         })
     }
 }

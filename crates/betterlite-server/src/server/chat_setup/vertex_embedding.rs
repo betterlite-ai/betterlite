@@ -56,6 +56,7 @@ pub fn vertex_embedding_calls(
     config: &Config,
     client: &ProxiedClient,
     deployments: &[ChatDeployment],
+    tasks: &TaskTracker,
 ) -> Result<Option<Arc<dyn EmbeddingCall>>, VertexEmbeddingSetupError> {
     let embedding = &config.sections.vertex_embedding_dispatch;
     let mut pinned = BTreeMap::new();
@@ -88,10 +89,7 @@ pub fn vertex_embedding_calls(
         handles: Mutex::new(BTreeMap::new()),
     });
     let cache = Arc::new(CredentialCache::new(clock, executor));
-    let refresh = Arc::new(CredentialRefresh::new(
-        Arc::clone(&cache),
-        TaskTracker::new(),
-    ));
+    let refresh = Arc::new(CredentialRefresh::new(Arc::clone(&cache), tasks.clone()));
     let counter = RuntimeTextCounter {
         counter: token_counter(config, &transport, &catalog)?,
     };

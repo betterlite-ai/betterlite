@@ -27,4 +27,4 @@ compare:
   upstream_headers: [authorization]
   ignore:
     - {pointer: /upstream/0/body, why: the token request body is a JWT assertion signed at request time}
-    - {pointer: /error/message, why: provider SDK error text formatting differs across Vertex client versions}
+    - {pointer: /error/message, why: betterlite writes its own error message and does not copy LiteLLM's wording}

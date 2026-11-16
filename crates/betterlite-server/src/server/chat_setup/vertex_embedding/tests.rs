@@ -27,6 +27,8 @@ use betterlite_vertex::token_cache::record::CredentialSnapshot;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use secrecy::{ExposeSecret as _, SecretString};
+use sha2::{Digest as _, Sha256};
+use tokio_util::task::TaskTracker;
 
 use super::counter::{InlineCounter, RuntimeTextCounter};
 use super::executor::{UnavailableAws, VertexCredentialExecutor};
@@ -52,6 +54,10 @@ impl TokenSource for FixedSource {
     {
         Box::pin(async move { Ok(SecretString::from(self.0.to_owned())) })
     }
+}
+
+fn digest(token: &str) -> String {
+    hex::encode(Sha256::digest(token.as_bytes()))
 }
 
 fn client() -> ProxiedClient {
@@ -98,7 +104,13 @@ const VERTEX: &str = "model_list:\n  - model_name: embed\n    litellm_params:\n 
 fn a_config_without_a_vertex_deployment_builds_no_call() {
     let config = load_config(OPENAI_ONLY);
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
-    let calls = vertex_embedding_calls(&config, &chat.client, &chat.deployments).unwrap();
+    let calls = vertex_embedding_calls(
+        &config,
+        &chat.client,
+        &chat.deployments,
+        &TaskTracker::new(),
+    )
+    .unwrap();
     assert!(calls.is_none());
 }
 
@@ -106,7 +118,13 @@ fn a_config_without_a_vertex_deployment_builds_no_call() {
 fn a_vertex_deployment_builds_the_call() {
     let config = load_config(VERTEX);
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
-    let calls = vertex_embedding_calls(&config, &chat.client, &chat.deployments).unwrap();
+    let calls = vertex_embedding_calls(
+        &config,
+        &chat.client,
+        &chat.deployments,
+        &TaskTracker::new(),
+    )
+    .unwrap();
     assert!(calls.is_some());
 }
 
@@ -115,9 +133,12 @@ fn a_pin_that_is_not_text_or_an_object_names_the_deployment() {
     let yaml = "model_list:\n  - model_name: embed\n    litellm_params:\n      model: vertex_ai/text-embedding-004\n      vertex_credentials: 5\n";
     let config = load_config(yaml);
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
-    let Err(VertexEmbeddingSetupError::Pinned { model_name, .. }) =
-        vertex_embedding_calls(&config, &chat.client, &chat.deployments)
-    else {
+    let Err(VertexEmbeddingSetupError::Pinned { model_name, .. }) = vertex_embedding_calls(
+        &config,
+        &chat.client,
+        &chat.deployments,
+        &TaskTracker::new(),
+    ) else {
         panic!("a numeric credential pin must stop startup");
     };
     assert_eq!(model_name, "embed");
@@ -132,7 +153,7 @@ async fn an_aws_federated_credential_has_no_provider() {
 #[tokio::test]
 async fn refresh_moves_the_handle_to_the_new_token() {
     let source: Arc<dyn TokenSource> = Arc::new(FixedSource("new-token"));
-    let executor = build_executor(BTreeMap::from([("old-token".to_owned(), source)]));
+    let executor = build_executor(BTreeMap::from([(digest("old-token"), source)]));
     let stale = snapshot(Some("old-token"), Some("project"));
     let refreshed = executor.refresh(&stale).await.unwrap();
     assert_eq!(refreshed.token.unwrap().expose_secret(), "new-token");
@@ -142,8 +163,11 @@ async fn refresh_moves_the_handle_to_the_new_token() {
         Some(SystemTime::UNIX_EPOCH + Duration::from_secs(EPOCH_SECONDS + 600))
     );
     let handles = executor.handles.lock().unwrap();
-    assert!(handles.contains_key("new-token"));
-    assert!(!handles.contains_key("old-token"));
+    assert!(handles.contains_key(&digest("new-token")));
+    assert!(!handles.contains_key(&digest("old-token")));
+    // the map holds digests, so no key is a plain token
+    assert!(!handles.contains_key("new-token"));
+    assert!(handles.keys().all(|key| key.len() == 64));
 }
 
 #[tokio::test]

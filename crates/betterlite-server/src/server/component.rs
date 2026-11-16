@@ -13,6 +13,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use tokio::runtime::{Builder, Runtime};
+use tokio_util::task::TaskTracker;
 
 pub struct Startup {
     pub runtime: Runtime,
@@ -77,8 +78,10 @@ pub fn serve_component(
         let listener = bind(host, port).await?;
         let shutting_down = Arc::new(AtomicBool::new(false));
         let outbound = chat.client.clone();
-        let app = application(&config, chat, Arc::clone(&shutting_down))?.layer(Extension(routes));
-        Box::pin(serve(app, shutting_down, outbound, host, listener)).await
+        let tasks = TaskTracker::new();
+        let app = application(&config, chat, Arc::clone(&shutting_down), &tasks)?
+            .layer(Extension(routes));
+        Box::pin(serve(app, shutting_down, outbound, tasks, host, listener)).await
     });
     match result {
         Ok(()) => ExitCode::SUCCESS,

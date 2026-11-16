@@ -39,6 +39,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
+use tokio_util::task::TaskTracker;
 const MAX_CONNECTIONS: usize = 1024;
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(1);
 const OUTBOUND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -93,8 +94,17 @@ pub async fn run_with_listener(
 ) -> Result<(), ServerError> {
     let shutting_down = Arc::new(AtomicBool::new(false));
     let outbound = chat.client.clone();
-    let application = application(&config, chat, Arc::clone(&shutting_down))?;
-    Box::pin(serve(application, shutting_down, outbound, host, listener)).await
+    let tasks = TaskTracker::new();
+    let application = application(&config, chat, Arc::clone(&shutting_down), &tasks)?;
+    Box::pin(serve(
+        application,
+        shutting_down,
+        outbound,
+        tasks,
+        host,
+        listener,
+    ))
+    .await
 }
 
 async fn bind(host: &str, port: u16) -> Result<TcpListener, ServerError> {
@@ -108,6 +118,7 @@ async fn serve(
     application: Router,
     shutting_down: Arc<AtomicBool>,
     outbound: ProxiedClient,
+    tasks: TaskTracker,
     host: &str,
     listener: TcpListener,
 ) -> Result<(), ServerError> {
@@ -142,6 +153,9 @@ async fn serve(
         ));
     }
     drain_connections(&mut connections).await;
+    // a background token refresh uses the outbound client, so it finishes before that client drains
+    tasks.close();
+    tasks.wait().await;
     if let Err(error) = outbound.drain(OUTBOUND_DRAIN_TIMEOUT).await {
         tracing::warn!(error = %error, "outbound requests did not finish before shutdown");
     }
@@ -152,9 +166,10 @@ pub(crate) fn application(
     config: &Config,
     chat: ChatExecutor,
     shutting_down: Arc<AtomicBool>,
+    tasks: &TaskTracker,
 ) -> Result<Router, ServerError> {
     let executor = Arc::new(chat);
-    let vertex = vertex_embedding_calls(config, &executor.client, &executor.deployments)?;
+    let vertex = vertex_embedding_calls(config, &executor.client, &executor.deployments, tasks)?;
     let shared = Arc::new(Shared);
     let state = Arc::new(ServerState::new(config, Arc::clone(&executor), shared));
     let routed = router(
