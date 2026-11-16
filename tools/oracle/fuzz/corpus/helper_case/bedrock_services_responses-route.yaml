@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-services-responses-route
+call:
+  bedrock_services_responses:
+    bedrock_responses_model_route:
+      - model: chat_completions/openai.served
+        model_cost:
+          openai.served: {supported_endpoints: [/v1/responses]}
+      - model: null
+env: {}
+compare: {ignore: []}

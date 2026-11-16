@@ -1,0 +1,12 @@
+kind: helper
+name: openai-resource-dispatch-containers
+call:
+  openai_resource_dispatch:
+    case: containers_list
+    api_base: https://api.containers.test/v1
+    after: cntr_0
+    limit: 2
+    order: desc
+    extra_query: {filter: mine}
+env: {}
+compare: {ignore: []}

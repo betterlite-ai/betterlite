@@ -1,0 +1,12 @@
+kind: helper
+name: azure-fine-tuning-list
+call:
+  azure_fine_tuning:
+    steps:
+    - action: list
+      after: ft_1
+      limit: 7
+      args: {api_key: seed-2, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      reply: {status: 200, body: {object: list, data: [], has_more: false}}
+env: {}
+compare: {ignore: []}
