@@ -173,5 +173,5 @@ pitfalls:
   - "Both port methods return a ModelResponse, so their result goes through response_output's ModelResponse branch (each choice's message without null fields), never the Anthropic-message fallback that type: message gates."
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2000
   max_new_expects: 0
