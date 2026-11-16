@@ -1,0 +1,23 @@
+kind: helper
+name: databricks-chat-response-seed
+call:
+  b5841:
+    function: response
+    cases:
+    - json_mode: false
+      body:
+        id: chat-1
+        created: 1700
+        model: m
+        choices:
+        - index: 0
+          finish_reason: stop
+          message:
+            role: assistant
+            content: seeded
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
+env: {}
+compare: {ignore: []}
