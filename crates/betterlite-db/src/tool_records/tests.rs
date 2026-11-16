@@ -19,9 +19,10 @@ use crate::resource_rows::ResourceRowsError;
 use super::decode::{ToolRecordDecodeError, decode_tool_record};
 use super::owners::{attach_owners, owners_from_rows};
 use super::records::{
-    LiteLLMToolTableRow, ToolDetailResponse, ToolDiscoveryUser, ToolInputPolicy, ToolListResponse,
-    ToolOutputPolicy, ToolPolicyOption, ToolPolicyOptionsResponse, ToolPolicyOverrideRow,
-    ToolPolicyUpdateRequest, ToolPolicyUpdateResponse, ToolSpendResponse, ToolUsageLogsResponse,
+    LiteLLMToolTableRow, ToolCallPolicy, ToolDetailResponse, ToolDiscoveryUser, ToolInputPolicy,
+    ToolListResponse, ToolOutputPolicy, ToolPolicyOption, ToolPolicyOptionsResponse,
+    ToolPolicyOverrideRow, ToolPolicyUpdateRequest, ToolPolicyUpdateResponse, ToolSpendResponse,
+    ToolUsageLogsResponse,
 };
 
 fn tool(text: &str) -> LiteLLMToolTableRow {
@@ -34,6 +35,23 @@ fn token(text: &str) -> LiteLLMVerificationToken {
 
 fn user(text: &str) -> LiteLLMUserTable {
     serde_json::from_str(text).unwrap()
+}
+
+#[rstest]
+#[case::trusted(ToolCallPolicy::Trusted, "trusted")]
+#[case::untrusted(ToolCallPolicy::Untrusted, "untrusted")]
+#[case::dual_llm(ToolCallPolicy::DualLlm, "dual_llm")]
+#[case::blocked(ToolCallPolicy::Blocked, "blocked")]
+fn call_policies_use_the_litellm_literals(#[case] policy: ToolCallPolicy, #[case] text: &str) {
+    assert_eq!(
+        serde_json::to_value(policy).unwrap(),
+        serde_json::json!(text)
+    );
+    assert_eq!(
+        serde_json::from_value::<ToolCallPolicy>(serde_json::json!(text)).unwrap(),
+        policy
+    );
+    assert!(serde_json::from_value::<ToolCallPolicy>(serde_json::json!("guardrail")).is_err());
 }
 
 #[rstest]
