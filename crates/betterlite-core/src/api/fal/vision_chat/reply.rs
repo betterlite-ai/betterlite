@@ -53,15 +53,16 @@ pub fn decode_fal_chat(headers: &ImageHeaders, body: &[u8]) -> Result<FalChatRep
         serde_json::from_slice(body).map_err(|source| FalAIError::UnexpectedResponse {
             text: replaced_text(body),
             headers: headers.clone(),
-            source,
+            source: Some(source),
         })?;
     let TokenCount(prompt_tokens) = raw.usage_info.input_tokens;
     let TokenCount(completion_tokens) = raw.usage_info.output_tokens;
     let total_tokens = prompt_tokens
         .checked_add(completion_tokens)
-        .ok_or_else(|| FalAIError::UsageOverflow {
+        .ok_or_else(|| FalAIError::UnexpectedResponse {
             text: replaced_text(body),
             headers: headers.clone(),
+            source: None,
         })?;
     Ok(FalChatReply {
         output: raw.output,

@@ -78,7 +78,9 @@ pub(crate) struct HeaderCase {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReplyCase {
-    status: u16,
+    // the Python helper builds an httpx response with it; the Rust path decodes only the body and headers
+    #[serde(rename = "status")]
+    _status: u16,
     headers: ImageHeaders,
     body: String,
 }

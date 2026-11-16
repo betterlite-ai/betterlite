@@ -199,21 +199,26 @@ def mapping_outcomes(config: ChatConfig, call: ReasoningOverride) -> JsonValue:
     return {"cases": outcomes}
 
 
-def header_outcome(config: ChatConfig, case: HeaderCase) -> JsonValue:
-    url = config.get_complete_url(case["api_base"], None, case["model"], EMPTY, EMPTY)
-    try:
-        headers = config.validate_environment(
-            dict(case["headers"]),
-            case["model"],
-            NoChatMessages(),
-            EMPTY,
-            EMPTY,
-            case["api_key"],
-            None,
-        )
-    except ValueError:
-        return {"url": url, "error": {"status": None}}
-    return {"url": url, "headers": HEADERS.validate_python(headers)}
+def header_outcomes(config: ChatConfig, call: HeaderOverlay) -> JsonValue:
+    apply_environment(call["environment"])
+    outcomes: list[JsonValue] = []
+    for case in call["cases"]:
+        url = config.get_complete_url(case["api_base"], None, case["model"], EMPTY, EMPTY)
+        try:
+            headers = config.validate_environment(
+                dict(case["headers"]),
+                case["model"],
+                NoChatMessages(),
+                EMPTY,
+                EMPTY,
+                case["api_key"],
+                None,
+            )
+        except ValueError:
+            outcomes.append({"url": url, "error": {"status": None}})
+        else:
+            outcomes.append({"url": url, "headers": HEADERS.validate_python(headers)})
+    return {"cases": outcomes}
 
 
 def reply_outcome(config: FalAIChatConfig, model: str, case: ReplyCase) -> JsonValue:
@@ -266,21 +271,18 @@ def reply_outcome(config: FalAIChatConfig, model: str, case: ReplyCase) -> JsonV
     }
 
 
-def replies_outcome(config: FalAIChatConfig, call: MalformedReply | ReasoningUsage) -> JsonValue:
-    return {"cases": [reply_outcome(config, call["model"], case) for case in call["replies"]]}
-
-
 def run(input_value: Input) -> JsonValue:
     config = FalAIChatConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L69
     if input_value["operation"] == "reasoning_override":
         return mapping_outcomes(config, input_value)
     if input_value["operation"] == "header_overlay":
-        apply_environment(input_value["environment"])
-        return {"cases": [header_outcome(config, case) for case in input_value["cases"]]}
+        return header_outcomes(config, input_value)
     if input_value["operation"] == "malformed_reply":
-        return replies_outcome(config, input_value)
+        replies = input_value["replies"]
+        return {"cases": [reply_outcome(config, input_value["model"], case) for case in replies]}
     if input_value["operation"] == "reasoning_usage":
-        return replies_outcome(config, input_value)
+        replies = input_value["replies"]
+        return {"cases": [reply_outcome(config, input_value["model"], case) for case in replies]}
     return {
         "cases": [
             request_outcome(config, case["messages"], case["optional_params"])

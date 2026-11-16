@@ -29,11 +29,10 @@ pub enum FalAIError {
     UnexpectedResponse {
         text: String,
         headers: ImageHeaders,
+        // None when the body parsed and only the token total overflowed
         #[source]
-        source: serde_json::Error,
+        source: Option<serde_json::Error>,
     },
-    #[error("fal_ai returned an unexpected response body: {text}")]
-    UsageOverflow { text: String, headers: ImageHeaders },
     // what get_error_class builds for an upstream error: the status, message and headers as the provider sent them
     #[error("{message}")]
     Upstream {
@@ -49,27 +48,23 @@ impl FalAIError {
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
         match self {
+            Self::Upstream { status, .. } => Some(*status),
+            Self::MissingApiKey(_) | Self::NoChoices => None,
+            Self::UnexpectedResponse { .. } => Some(422),
             Self::OneUserMessage
             | Self::TextRequired
             | Self::OneImageRequired
             | Self::StreamingUnsupported
             | Self::StreamNotBoolean
             | Self::UnsupportedReasoningEffort { .. } => Some(400),
-            Self::UnexpectedResponse { .. } | Self::UsageOverflow { .. } => Some(422),
-            Self::Upstream { status, .. } => Some(*status),
-            Self::MissingApiKey(_) | Self::NoChoices => None,
         }
     }
 
     #[must_use]
     pub const fn headers(&self) -> Option<&ImageHeaders> {
-        if let Self::UnexpectedResponse { headers, .. }
-        | Self::UsageOverflow { headers, .. }
-        | Self::Upstream { headers, .. } = self
-        {
-            Some(headers)
-        } else {
-            None
+        if let Self::UnexpectedResponse { headers, .. } | Self::Upstream { headers, .. } = self {
+            return Some(headers);
         }
+        None
     }
 }

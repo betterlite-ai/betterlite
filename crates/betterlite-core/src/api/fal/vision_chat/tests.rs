@@ -574,8 +574,12 @@ fn an_invalid_reply_is_a_422_with_the_body_and_headers(#[case] body: &str) {
 #[case::reply_array(r#"["x", [1, 2], null, null]"#)]
 fn a_record_given_as_an_array_is_refused_as_not_an_object(#[case] body: &str) {
     let error = decode_fal_chat(&headers(&[]), body.as_bytes()).expect_err("rejected");
-    let FalAIError::UnexpectedResponse { source, .. } = error else {
-        panic!("expected an unexpected-response error");
+    let FalAIError::UnexpectedResponse {
+        source: Some(source),
+        ..
+    } = error
+    else {
+        panic!("expected a parse error");
     };
     assert!(
         source.to_string().contains("invalid type: sequence"),
@@ -610,7 +614,10 @@ fn the_total_may_reach_the_largest_count_but_not_pass_it() {
     let sent = headers(&[("x-request-id", "req-2")]);
     let body = counts("18446744073709551615", "1");
     let error = decode_fal_chat(&sent, body.as_bytes()).expect_err("overflow");
-    assert!(matches!(error, FalAIError::UsageOverflow { .. }));
+    assert!(matches!(
+        error,
+        FalAIError::UnexpectedResponse { source: None, .. }
+    ));
     assert_eq!(error.status(), Some(422));
     assert_eq!(error.headers(), Some(&sent));
     assert_eq!(
