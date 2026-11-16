@@ -56,8 +56,8 @@ fn extra_object(extra: &Extra) -> Result<Option<JsonObject>, StreamLogError> {
 }
 fn with_model<T: Serialize>(value: &T) -> Result<StreamChunk, StreamLogError> {
     let mut object: JsonObject = convert(value)?;
-    if matches!(object.get("model"), Some(JsonValue::Null)) {
-        object.insert("model".to_owned(), JsonValue::String(String::new()));
+    if let Some(model @ JsonValue::Null) = object.get_mut("model") {
+        *model = JsonValue::String(String::new());
     }
     convert(&object)
 }

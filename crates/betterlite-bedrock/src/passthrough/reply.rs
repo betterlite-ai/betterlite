@@ -65,8 +65,6 @@ pub fn logged_reply(
     let Some(tag) = resolved_tag(plan, target)? else {
         return Ok(None);
     };
-    let optional_params = Object::new();
-    let litellm_params = Object::new();
     let request = NativeReplyRequest {
         tag,
         model: target.model,
@@ -75,8 +73,8 @@ pub fn logged_reply(
         body: response.body,
         request_data,
         messages: &LOGGED_MESSAGES,
-        optional_params: &optional_params,
-        litellm_params: &litellm_params,
+        optional_params: &Object::new(),
+        litellm_params: &Object::new(),
         api_key: "",
     };
     plan.transform

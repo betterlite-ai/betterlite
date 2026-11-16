@@ -9,6 +9,9 @@ deviations:
   - what: A signed request drops the Content-Length the shared signer adds, unless the caller supplied Content-Length or Transfer-Encoding.
     why: LiteLLM's _sign_request returns the headers botocore produced, which carry no Content-Length; the shared betterlite signer prepares a bounded request, so the passthrough wrapper removes the extra header it alone would add.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1683-L1730
+  - what: The stream collector stops decoding and logs nothing once the bytes fed to it pass MAX_COLLECTED_BYTES, and drops what it kept.
+    why: LiteLLM keeps every decoded chunk for the whole stream, so an unbounded upstream stream grows memory without limit; the shared raw collector applies the same bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L98-L121
 kept_bugs:
   - what: A non-ARN model_id that contains a slash is truncated to its first path segment by the temporary endpoint regex.
     why: LiteLLM wraps the id in /model/{id}/converse, encodes ARN resources, then keeps the first /model/([^/]+)/ group, so a plain slash ends the capture; callers relying on that truncation keep it.

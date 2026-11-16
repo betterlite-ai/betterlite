@@ -23,36 +23,15 @@ use betterlite_openai::passthrough::transformation::types::{
 use betterlite_openai::passthrough::transformation::{
     BasePassthroughConfig as _, PassthroughStreamCollector as _,
 };
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_streaming::stream_base_assembly::provider_metadata::ChatConfigSelection;
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use secrecy::SecretString;
 use serde_json::{Value, json};
-use std::fmt::Display;
 use std::time::SystemTime;
 use uuid::Uuid;
-fn failure<E>(error: E) -> Box<HelperError>
-where
-    E: Display,
-{
-    Box::new(HelperError {
-        class: "BedrockPassthrough".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
-}
-fn identity(bearer: Option<String>) -> PassthroughIdentity {
-    PassthroughIdentity {
-        credentials: None,
-        bearer_token: bearer.map(SecretString::from),
-        now: SystemTime::UNIX_EPOCH,
-    }
-}
 const CLOCK: CollectorClock = CollectorClock {
     next_id: Uuid::nil,
     now: i64::default,
@@ -158,12 +137,11 @@ fn url_run(plan: &BedrockPassthroughPlan<'_>, run: &UrlRun) -> HelperResult {
         request_query_params: run.query.as_ref(),
         litellm_params: &params,
     };
-    let (url, endpoint_url) = plan.get_complete_url(&request).map_err(failure)?;
-    let streaming = plan.is_streaming_request(&run.endpoint, &Object::new());
+    let (url, endpoint_url) = plan.get_complete_url(&request).or_value_error()?;
     Ok(json!({
         "url": url.to_string(),
         "endpoint_url": endpoint_url,
-        "streaming": streaming,
+        "streaming": plan.is_streaming_request(&run.endpoint, &Object::new()),
     }))
 }
 fn sign_run(plan: &BedrockPassthroughPlan<'_>, run: &SignRun) -> HelperResult {
@@ -178,9 +156,9 @@ fn sign_run(plan: &BedrockPassthroughPlan<'_>, run: &SignRun) -> HelperResult {
     };
     let (signed, body) = plan
         .sign_request(run.headers.clone(), &context)
-        .map_err(failure)?;
-    let bytes = body.ok_or_else(|| failure("the signer returned no body"))?;
-    let text = String::from_utf8(bytes).map_err(failure)?;
+        .or_value_error()?;
+    let bytes = body.ok_or("the signer returned no body").or_value_error()?;
+    let text = String::from_utf8(bytes).or_value_error()?;
     let pairs: Vec<Value> = signed
         .iter()
         .map(|(name, value)| json!({ "name": name, "value": value }))
@@ -221,7 +199,7 @@ fn collect_run(plan: &BedrockPassthroughPlan<'_>, run: &CollectRun, stream: &[u8
     let mut logging = NullLogging;
     let view = collector
         .build_logged_response(&mut logging)
-        .map_err(failure)?;
+        .or_value_error()?;
     Ok(json!({
         "decoded": view.is_some(),
         "view": view,
@@ -254,7 +232,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
         }
         Input::Collect { runs, stream } => {
             let plan = plan(PassthroughEnvironment::default(), identity(None));
-            let bytes = hex::decode(stream).map_err(failure)?;
+            let bytes = hex::decode(stream).or_value_error()?;
             each(runs, |run| collect_run(&plan, run, &bytes))
         }
     }

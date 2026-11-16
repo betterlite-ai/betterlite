@@ -11,14 +11,11 @@ pub(super) fn optional_text(
     params: &Object,
     field: &'static str,
 ) -> Result<Option<String>, PassthroughFailure> {
-    match params.get(field) {
-        None => Ok(None),
-        Some(value) => match value.as_str() {
-            Some(text) => Ok(Some(text.to_owned())),
-            None if value.is_null() => Ok(None),
-            None => Err(PassthroughFailure::Field { field }),
-        },
-    }
+    let Some(value) = params.get(field).filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    let text = value.as_str().ok_or(PassthroughFailure::Field { field })?;
+    Ok(Some(text.to_owned()))
 }
 pub fn complete_url(
     plan: &BedrockPassthroughPlan<'_>,
