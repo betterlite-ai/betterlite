@@ -1,24 +1,35 @@
+use std::io;
+use std::str::FromStr as _;
+
+use betterlite_models::call_helpers::headers::AdditionalHeaders;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use rust_decimal::Decimal;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde::{Deserialize, Serialize};
+use serde_json::Number;
+use thiserror::Error;
+
 use super::decode::{OpenRouterImageUsage, ReplyDecodeError};
 use crate::api::image_contracts::records::{
     ImageHttpResponse, ImageInputTokens, ImageResponse, ImageUsage,
 };
 use crate::openai_base_config::Headers;
 use crate::openrouter_chat::error::OpenRouterError;
-pub use crate::openrouter_chat::error::get_error_class;
-use betterlite_models::call_helpers::headers::AdditionalHeaders;
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
-use serde_json::Number;
-use std::io;
-use thiserror::Error;
+
 pub const SUPPORTED_PARAMS: [&str; 3] = ["size", "quality", "n"];
 pub const SKIPPED_PARAMS: [&str; 3] = ["model", "messages", "modalities"];
 pub const DEFAULT_API_BASE: &str = "https://openrouter.ai/api/v1";
 pub const CHAT_COMPLETIONS: &str = "/chat/completions";
 const COST_HEADER: &str = "llm_provider-x-litellm-response-cost";
 const SQUARE_ASPECT_RATIO: &str = "1:1";
+const SIZE_ASPECT_RATIOS: [(&str, &str); 4] = [
+    ("1536x1024", "3:2"),
+    ("1792x1024", "16:9"),
+    ("1024x1536", "2:3"),
+    ("1024x1792", "9:16"),
+];
+
 #[derive(Debug, Error)]
 pub enum ImageConfigError {
     #[error("size must be a string")]
@@ -36,11 +47,15 @@ pub enum ImageConfigError {
         #[source]
         source: io::Error,
     },
-    #[error("usage.cost must be a finite number")]
-    Cost,
+    #[error("usage.cost could not be written as a JSON number: {source}")]
+    Cost {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("usage.prompt_tokens minus its input image tokens does not fit in a whole number")]
     TextTokens,
 }
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ImageHiddenParams {
@@ -51,16 +66,15 @@ pub struct ImageHiddenParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<Json>,
 }
+
 #[must_use]
 pub fn map_size_to_aspect_ratio(size: &str) -> &'static str {
-    match size {
-        "1536x1024" => "3:2",
-        "1792x1024" => "16:9",
-        "1024x1536" => "2:3",
-        "1024x1792" => "9:16",
-        _ => SQUARE_ASPECT_RATIO,
-    }
+    SIZE_ASPECT_RATIOS
+        .iter()
+        .find_map(|&(name, ratio)| (name == size).then_some(ratio))
+        .unwrap_or(SQUARE_ASPECT_RATIO)
 }
+
 #[must_use]
 pub fn map_quality_to_image_size(quality: &str) -> Option<&'static str> {
     match quality {
@@ -70,6 +84,7 @@ pub fn map_quality_to_image_size(quality: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+
 #[must_use]
 pub fn resolved_key(candidates: [Option<&SecretString>; 3]) -> Option<&SecretString> {
     for key in candidates.into_iter().flatten() {
@@ -79,6 +94,7 @@ pub fn resolved_key(candidates: [Option<&SecretString>; 3]) -> Option<&SecretStr
     }
     None
 }
+
 #[must_use]
 pub fn resolved_base(candidates: [Option<&str>; 2]) -> Option<&str> {
     for base in candidates.into_iter().flatten() {
@@ -88,6 +104,7 @@ pub fn resolved_base(candidates: [Option<&str>; 2]) -> Option<&str> {
     }
     None
 }
+
 #[must_use]
 pub fn authorization(key: Option<&SecretString>) -> String {
     match key {
@@ -95,6 +112,7 @@ pub fn authorization(key: Option<&SecretString>) -> String {
         None => String::from("Bearer None"),
     }
 }
+
 #[must_use]
 pub fn transform_error(stage: &str, message: &str) -> OpenRouterError {
     OpenRouterError {
@@ -103,6 +121,7 @@ pub fn transform_error(stage: &str, message: &str) -> OpenRouterError {
         headers: Headers::new(),
     }
 }
+
 #[must_use]
 pub fn reply_error(
     error: ReplyDecodeError,
@@ -115,18 +134,18 @@ pub fn reply_error(
             status_code: i64::from(raw.status_code),
             headers: raw.headers.clone(),
         },
-        ReplyDecodeError::Shape { source } => transform_error(stage, &source.to_string()),
+        ReplyDecodeError::Shape { message } => transform_error(stage, &message),
     }
 }
+
 fn apply_cost(
     usage: &OpenRouterImageUsage,
     hidden: &mut ImageHiddenParams,
 ) -> Result<(), ImageConfigError> {
     if let Some(cost) = usage.cost {
-        let amount = Number::from_f64(cost).ok_or(ImageConfigError::Cost)?;
         hidden
             .additional_headers
-            .insert(String::from(COST_HEADER), Json::Number(amount));
+            .insert(String::from(COST_HEADER), Json::Number(cost_number(cost)?));
     }
     if !usage.cost_details.is_empty() {
         hidden
@@ -136,35 +155,32 @@ fn apply_cost(
     }
     Ok(())
 }
-pub fn apply_generation_usage(
-    usage: &OpenRouterImageUsage,
-    response: &mut ImageResponse,
-    hidden: &mut ImageHiddenParams,
-) -> Result<(), ImageConfigError> {
-    response.usage = Some(ImageUsage {
-        input_tokens: usage.prompt_tokens,
-        input_tokens_details: ImageInputTokens {
-            image_tokens: 0,
-            text_tokens: usage.prompt_tokens,
-        },
-        output_tokens: usage.output_image_tokens,
-        total_tokens: usage.total_tokens,
-    });
-    apply_cost(usage, hidden)
+
+// the source writes float(cost), and Python's JSON keeps a decimal point on a whole float
+fn cost_number(cost: Decimal) -> Result<Number, ImageConfigError> {
+    let normalized = cost.normalize().to_string();
+    let written = if normalized.contains('.') {
+        normalized
+    } else {
+        format!("{normalized}.0")
+    };
+    Number::from_str(&written).map_err(|source| ImageConfigError::Cost { source })
 }
-pub fn apply_edit_usage(
+
+pub fn apply_usage(
     usage: &OpenRouterImageUsage,
     response: &mut ImageResponse,
     hidden: &mut ImageHiddenParams,
+    image_tokens: i64,
 ) -> Result<(), ImageConfigError> {
     let text_tokens = usage
         .prompt_tokens
-        .checked_sub(usage.input_image_tokens)
+        .checked_sub(image_tokens)
         .ok_or(ImageConfigError::TextTokens)?;
     response.usage = Some(ImageUsage {
         input_tokens: usage.prompt_tokens,
         input_tokens_details: ImageInputTokens {
-            image_tokens: usage.input_image_tokens,
+            image_tokens,
             text_tokens,
         },
         output_tokens: usage.output_image_tokens,
