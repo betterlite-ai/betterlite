@@ -808,6 +808,18 @@ fn validation_header_precedence() {
         from_positional.get("api-key").map(String::as_str),
         Some("positional-key")
     );
+    let from_globals_after_params = validate_environment(environment(
+        &[],
+        None,
+        Some(&configured),
+        Some(&params),
+        &credentials,
+    ))
+    .unwrap();
+    assert_eq!(
+        from_globals_after_params.get("api-key").map(String::as_str),
+        Some("configured-key")
+    );
     let empty = secret("");
     let from_configured = validate_environment(environment(
         &[],

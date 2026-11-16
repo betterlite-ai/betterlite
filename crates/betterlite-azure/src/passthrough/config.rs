@@ -101,6 +101,7 @@ fn passthrough_request_body(request_data: &Object) -> IndexMap<String, Json> {
         .collect()
 }
 
+// LiteLLM's get_base_model returns its argument and get_models defers to the model-info owner, so neither has an override here.
 impl<Reply, Stream> AzurePassthroughConfig<Reply, Stream> {
     #[must_use]
     pub fn get_api_base<'base>(&'base self, api_base: Option<&'base str>) -> Option<&'base str> {
