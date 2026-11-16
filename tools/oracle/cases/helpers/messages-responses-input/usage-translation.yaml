@@ -1,0 +1,14 @@
+kind: helper
+name: messages-responses-input-usage-translation
+call:
+  messages_responses_input:
+    messages: []
+    usage:
+      input_tokens: 100
+      output_tokens: 20
+      total_tokens: 120
+      input_tokens_details:
+        cached_tokens: 30
+env: {}
+compare:
+  ignore: []
