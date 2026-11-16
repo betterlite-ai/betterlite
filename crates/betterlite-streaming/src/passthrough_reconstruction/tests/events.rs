@@ -74,6 +74,9 @@ fn answers_none_for_empty_done_or_malformed_payloads() {
     assert!(extract_sse_data("data: not json").is_none());
     assert!(extract_sse_data("event: message_start").is_none());
     assert!(extract_sse_data("metadata: {\"type\":\"sneaky\"}").is_none());
+    assert!(extract_sse_data("data:\ndata: {\"type\":\"x\"}").is_none());
+    assert!(extract_sse_data("data: [DONE]\ndata: {\"type\":\"x\"}").is_none());
+    assert!(extract_sse_data("data: nope\ndata: {\"type\":\"x\"}").is_none());
 }
 
 #[test]

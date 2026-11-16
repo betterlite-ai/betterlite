@@ -281,6 +281,18 @@ fn uses_stop_for_an_empty_stop_reason() {
 }
 
 #[test]
+fn keeps_the_earlier_stop_reason_across_later_deltas() {
+    let calculator = FixtureCalculator::default();
+    let chunks = [
+        text_chunk(&delta_event("tool_use", NO_USAGE)),
+        text_chunk(&delta_event("", NO_USAGE)),
+        text_chunk("data: {\"type\":\"message_delta\",\"delta\":{},\"usage\":{}}"),
+    ];
+    let chat = chat_of(built(&chunks, &calculator));
+    assert_eq!(chat.choices[0].finish_reason, "tool_calls");
+}
+
+#[test]
 fn propagates_the_calculator_failure() {
     let calculator = FixtureCalculator {
         seen_object: Mutex::new(None),
