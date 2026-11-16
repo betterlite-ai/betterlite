@@ -17,7 +17,7 @@ use betterlite_openai::api::image_contracts::records::{
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 use self::fakes::{Clock, EmptyLookup};
@@ -26,17 +26,17 @@ use self::script::Script;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MappingCall {
-    #[serde(default)]
-    non_default_params: ImageParams,
-    #[serde(default)]
-    optional_params: ImageParams,
+    #[serde(default, rename = "non_default_params")]
+    non_default: ImageParams,
+    #[serde(default, rename = "optional_params")]
+    optional: ImageParams,
     #[serde(default)]
     drop_params: bool,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Mapping {
+pub(crate) struct Mapping {
     model: String,
     prompt: String,
     calls: Vec<MappingCall>,
@@ -60,7 +60,7 @@ struct Reply {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ResponseInput {
+pub(crate) struct ResponseInput {
     model: String,
     #[serde(default)]
     environment: BTreeMap<String, String>,
@@ -85,7 +85,7 @@ struct CostCall {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Cost {
+pub(crate) struct Cost {
     model: String,
     prices: PriceRecord,
     calls: Vec<CostCall>,
@@ -113,12 +113,12 @@ where
     })
 }
 
-fn mapping(input: &Mapping) -> HelperResult {
+fn mapping(input: &Mapping) -> Value {
     let mut results = Vec::with_capacity(input.calls.len());
     for call in &input.calls {
         let attempt = map_openai_params(
-            &call.non_default_params,
-            call.optional_params.clone(),
+            &call.non_default,
+            call.optional.clone(),
             &input.model,
             call.drop_params,
         );
@@ -129,10 +129,10 @@ fn mapping(input: &Mapping) -> HelperResult {
         let body = request_body(&input.model, &input.prompt, &mapped);
         results.push(json!({"params": mapped, "body": body}));
     }
-    Ok(json!({
+    json!({
         "supported": SUPPORTED_OPENAI_PARAMS,
         "results": results,
-    }))
+    })
 }
 
 fn response(input: &ResponseInput) -> HelperResult {
@@ -197,7 +197,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Mapping(params) => mapping(params),
+            Input::Mapping(params) => Ok(mapping(params)),
             Input::Response(params) => response(params),
             Input::Cost(params) => cost(params),
         }
