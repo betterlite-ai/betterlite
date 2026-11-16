@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::api::image_contracts::records::ImageParams;
+use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -20,9 +21,11 @@ pub(super) struct AuthStep {
     pub(super) model: String,
     pub(super) api_key: Option<String>,
     pub(super) global_api_key: Option<String>,
+    pub(super) global_api_base: Option<String>,
+    pub(super) api_base: Option<String>,
     #[serde(default)]
     pub(super) environment: BTreeMap<String, String>,
-    pub(super) params: Option<ImageParams>,
+    pub(super) params: Option<Object>,
     #[serde(default)]
     pub(super) headers: BTreeMap<String, String>,
 }

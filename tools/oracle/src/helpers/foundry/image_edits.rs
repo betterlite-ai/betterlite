@@ -9,6 +9,7 @@ use betterlite_foundry::credentials::model_info::ModelInfoAccessors;
 use betterlite_foundry::image_edits::auth::{ValidateEnvironmentRequest, validate_environment};
 use betterlite_foundry::image_edits::error::ImageEditError;
 use betterlite_foundry::image_edits::flux2::{self, Flux2EditRequest};
+use betterlite_foundry::image_edits::image_source::ImageSource;
 use betterlite_foundry::image_edits::mai::{self, MaiEditRequest};
 use betterlite_foundry::image_edits::reply::transform_mai_edit_response;
 use betterlite_foundry::image_edits::selection::ImageEditVariant;
@@ -41,13 +42,25 @@ impl Helper for Op {
         if let Some(models) = &input.models {
             answer.insert(
                 "models".to_owned(),
-                json!(models.iter().map(model_step).collect::<Vec<_>>()),
+                json!(
+                    models
+                        .iter()
+                        .map(String::as_str)
+                        .map(model_step)
+                        .collect::<Vec<_>>()
+                ),
             );
         }
         if let Some(models) = &input.supported {
             answer.insert(
                 "supported".to_owned(),
-                json!(models.iter().map(supported_step).collect::<Vec<_>>()),
+                json!(
+                    models
+                        .iter()
+                        .map(String::as_str)
+                        .map(supported_step)
+                        .collect::<Vec<_>>()
+                ),
             );
         }
         if let Some(auths) = &input.auths {
@@ -80,7 +93,7 @@ impl Helper for Op {
 
 fn model_step(model: &str) -> Value {
     ImageEditVariant::select(model).map_or_else(
-        |_| failure("ValueError", None, None),
+        |_| json!({"error": {"kind": "ValueError", "status": null, "provider": null}}),
         |variant| json!({"class": variant.class_name(), "multipart": variant.uses_multipart()}),
     )
 }
@@ -207,19 +220,16 @@ fn url_step(step: &UrlStep) -> Result<Value, Box<HelperError>> {
     })
 }
 
-fn sources(
-    step: &TransformStep,
-) -> Option<Vec<betterlite_foundry::image_edits::image_source::ImageSource>> {
+fn sources(step: &TransformStep) -> Option<Vec<ImageSource>> {
     let fields: Vec<&ImageField> = match (&step.image, &step.images) {
         (_, Some(list)) => list.iter().flatten().collect(),
         (Some(single), None) => vec![single],
         (None, None) => return None,
     };
-    Some(fields.iter().map(|field| image_source(field)).collect())
+    Some(fields.into_iter().map(image_source).collect())
 }
 
-fn image_source(field: &ImageField) -> betterlite_foundry::image_edits::image_source::ImageSource {
-    use betterlite_foundry::image_edits::image_source::ImageSource;
+fn image_source(field: &ImageField) -> ImageSource {
     let content = field.text.clone().into_bytes();
     match field.kind {
         ImageKind::Bytes => ImageSource::Bytes(content),
@@ -239,14 +249,14 @@ fn image_source(field: &ImageField) -> betterlite_foundry::image_edits::image_so
 
 fn transform_step(step: &TransformStep) -> Value {
     let Ok(variant) = ImageEditVariant::select(&step.model) else {
-        return failure("ValueError", None, None);
+        return json!({"error": {"kind": "ValueError", "status": null, "provider": null}});
     };
     match variant {
         ImageEditVariant::Flux2 => {
             // the dispatch maps the optional request params before the transform, so the probe runs the same order
             let mapped = match flux2::map_edit_params(&step.options, &step.model, false) {
                 Ok(mapped) => mapped,
-                Err(error) => return error_value(&ImageEditError::Params(error)),
+                Err(error) => return error_value(&error),
             };
             let mut built = sources(step);
             let result = flux2::transform_request(Flux2EditRequest {
@@ -256,7 +266,7 @@ fn transform_step(step: &TransformStep) -> Value {
                 options: &mapped,
             });
             match result {
-                Ok(form) => json!({"kind": "flux2", "data": form.data, "files": []}),
+                Ok(form) => json!({"value": {"kind": "flux2", "data": form.data, "files": []}}),
                 Err(error) => error_value(&error),
             }
         }
@@ -292,11 +302,10 @@ fn transform_step(step: &TransformStep) -> Value {
                         "field": field,
                         "filename": file.filename,
                         "content_type": file.content_type,
-                        "text": String::from_utf8_lossy(&file.content),
                     })
                 })
                 .collect();
-            json!({"kind": "mai", "data": form.data, "files": files})
+            json!({"value": {"kind": "mai", "data": form.data, "files": files}})
         }
         ImageEditVariant::Flux1 => Value::Null,
     }
@@ -311,7 +320,7 @@ impl ImageLogging for Recorder {
     fn post_call(&mut self, call: PostCall<'_>) {
         self.response = Some(json!({
             "input": call.input,
-            "api_key": call.api_key.map(<SecretString as ExposeSecret<str>>::expose_secret),
+            "api_key": call.api_key.map(|key| key.expose_secret().to_owned()),
             "original_response": call.original_response,
             "complete_input_dict": call.complete_input_dict,
         }));
@@ -366,12 +375,12 @@ fn reply_step(step: &ReplyStep) -> Value {
 fn error_value(error: &ImageEditError) -> Value {
     match error {
         ImageEditError::Params(inner) => params_failure(inner),
-        ImageEditError::Mai(MaiImageError::NotJson { record, .. }) => {
-            failure("OpenAIError", Some(record.status_code), None)
-        }
-        ImageEditError::Mai(_) | ImageEditError::Projection(_) => {
-            failure("ValueError", error.status_code(), None)
-        }
+        ImageEditError::Mai(MaiImageError::NotJson { record, .. }) => json!({
+            "error": {"kind": "OpenAIError", "status": record.status_code, "provider": null},
+        }),
+        ImageEditError::Mai(_) | ImageEditError::Projection(_) => json!({
+            "error": {"kind": "ValueError", "status": error.status_code(), "provider": null},
+        }),
         ImageEditError::UnsupportedModel { .. }
         | ImageEditError::ApiBaseRequired
         | ImageEditError::ApiVersionRequired
@@ -382,7 +391,9 @@ fn error_value(error: &ImageEditError) -> Value {
         | ImageEditError::UnsupportedImageType { .. }
         | ImageEditError::Url(_)
         | ImageEditError::Credentials(_)
-        | ImageEditError::ReplyEncoding(_) => failure("ValueError", None, None),
+        | ImageEditError::ReplyEncoding(_) => {
+            json!({"error": {"kind": "ValueError", "status": null, "provider": null}})
+        }
     }
 }
 
@@ -395,9 +406,11 @@ fn params_failure(error: &FoundryImageError) -> Value {
         | FoundryImageError::Decimal { .. }
         | FoundryImageError::GptParams(_) => "ValueError",
     };
-    failure(kind, error.status_code(), error.llm_provider())
-}
-
-fn failure(kind: &str, status: Option<u16>, provider: Option<&str>) -> Value {
-    json!({"error": {"kind": kind, "status": status, "provider": provider}})
+    json!({
+        "error": {
+            "kind": kind,
+            "status": error.status_code(),
+            "provider": error.llm_provider(),
+        },
+    })
 }
