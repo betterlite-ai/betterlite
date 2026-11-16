@@ -131,6 +131,19 @@ async fn exchange(
     }
 }
 
+#[test]
+fn exchange_future_stays_small() {
+    let future = exchange(
+        "/v1/chat/completions",
+        "{}",
+        "",
+        (200, ANSWER),
+        (NO_DELAY, "30"),
+    );
+    let size = size_of_val(&future);
+    assert!(size < 8192, "{size}");
+}
+
 fn header<'map>(headers: &'map HeaderMap, name: &str) -> Option<&'map str> {
     headers.get(name).map(|value| value.to_str().unwrap())
 }
