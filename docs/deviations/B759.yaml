@@ -3,7 +3,7 @@ deviations:
   - what: A team's listed models come back sorted by name, where LiteLLM returns them in whatever order the Python set it builds yields.
     why: Python set iteration order is not a contract and differs between runs and interpreters, so the only stable answer is sorted order; the model list as a set is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L153-L180
-  - what: A fallback target written as a parameter object ({"model": "x", "api_key": "..."}) is listed as the model name "x", where LiteLLM returns the whole object inside its list of fallback names.
+  - what: A fallback target written as a parameter object (a model key next to api_key and other parameters) is listed as that model name alone, where LiteLLM returns the whole object inside its list of fallback names.
     why: A listing must never echo the credentials and parameters a fallback carries, and B309's resolver hands this task model names only.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/fallback_event_handlers.py#L459-L480
   - what: A wildcard or infer_model_from_keys expansion reads the environment from the config's environment_variables section, not from the proxy process's environment.
