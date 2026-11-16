@@ -2,6 +2,7 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_openai::openai_base_config::Object as JsonMap;
 use serde::Serialize;
 
 const FIELD_REQUIRED: &str = "Field required";
@@ -33,13 +34,13 @@ pub(super) enum BodyError {
 }
 
 // The decoded "cache_settings" member: LiteLLM's request model requires an object and drops the rest of the body.
-pub(super) fn decode_request(body: &[u8]) -> Result<JsonValue, BodyError> {
+pub(super) fn decode_request(body: &[u8]) -> Result<JsonMap, BodyError> {
     if body.is_empty() {
         return Err(BodyError::MissingBody);
     }
     match serde_json::from_slice(body).map_err(|_error| BodyError::InvalidJson)? {
         JsonValue::Object(mut fields) => match fields.remove("cache_settings") {
-            Some(JsonValue::Object(cache_settings)) => Ok(JsonValue::Object(cache_settings)),
+            Some(JsonValue::Object(cache_settings)) => Ok(cache_settings),
             Some(
                 JsonValue::Null
                 | JsonValue::Bool(_)

@@ -88,16 +88,29 @@ async fn update_cache_settings(
         Ok(settings) => settings,
         Err(error) => return error.into_response(),
     };
-    if state.repository.is_none() {
+    let Some(repository) = state.repository.as_deref() else {
         return configuration_failure(NO_DATABASE);
-    }
+    };
     if !state.store_model_in_db.store_model_in_db() {
         return configuration_failure(STORE_MODEL_IN_DB_REQUIRED);
     }
-    let changed_by = headers
-        .get(CHANGED_BY_HEADER)
-        .and_then(|value| value.to_str().ok());
-    match update(&state, settings, changed_by, &context.principal).await {
+    let changed_by = headers.get(CHANGED_BY_HEADER).map(|value| {
+        value
+            .as_bytes()
+            .iter()
+            .copied()
+            .map(char::from)
+            .collect::<String>()
+    });
+    match update(
+        &state,
+        repository,
+        &settings,
+        changed_by.as_deref(),
+        &context.principal,
+    )
+    .await
+    {
         Ok(response) => response,
         Err(error) => failure(&error),
     }
