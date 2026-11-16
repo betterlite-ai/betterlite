@@ -8,7 +8,7 @@ use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedM
 use rstest::rstest;
 use serde_json::json;
 
-use super::resolve_rate_limit_provider;
+use super::{NoRouter, resolve_rate_limit_provider};
 use crate::rejection_provider::{DeploymentSnapshot, ProviderResolution, SnapshotError};
 
 struct NativeAnswer {
@@ -137,6 +137,11 @@ fn unresolved_model_preserved_with_empty_router() {
     assert_eq!(resolved, pair("tpm-locked", "litellm_proxy"));
     assert_eq!(native.calls.load(Ordering::Relaxed), 1);
     assert_eq!(router.reads.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn absent_router_reports_no_deployments() {
+    assert!(matches!(NoRouter.model_list(), Ok(None)));
 }
 
 #[test]
