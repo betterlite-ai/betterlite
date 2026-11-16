@@ -6,7 +6,7 @@ deviations:
   - what: Four lines of trailing whitespace inside the acceptance-test Terraform configs are stripped from resource_organization_test.go, resource_organization_member_test.go and resource_organization_member_add_test.go.
     why: The gate's whitespace check and the trailing-whitespace hook reject trailing whitespace, and HCL ignores the blank line either way, so no config the tests build changes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/resource_organization_test.go#L55
-  - what: packaging/terraform-provider/litellm/_typos.toml allows the word limt, so the deliberately misspelled budget_limt key in resource_key_test.go survives the typos hook.
-    why: That string is the invalid input TestKeyModelMaxBudgetValidationRequiresBudgetObjects asserts on, and correcting it would make the value valid and fail the test, so the word is exempt instead of the test data.
+  - what: packaging/terraform-provider/litellm/_typos.toml exempts the deliberately misspelled per-model budget key that resource_key_test.go uses as invalid input.
+    why: That string is what TestKeyModelMaxBudgetValidationRequiresBudgetObjects asserts on, and correcting the key would make the value valid and fail the test, so the dictionary exemption sits beside the copied file instead of the test data changing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/resource_key_test.go#L286
 kept_bugs: []
