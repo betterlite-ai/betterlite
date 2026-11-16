@@ -7,12 +7,13 @@ use url::Url;
 
 use super::{
     CancelResult, DeleteResult, Fault, InteractionLifecycleConfig, InteractionsHttpHandler,
-    LifecycleError, LifecycleRequest as Request, Operation, Outbound, check_blocking,
-    handle_failure, prepare,
+    LifecycleError, LifecycleRequest as Request, Operation, Outbound, check_status, handle_failure,
+    prepare,
 };
+use crate::interactions::base::transport::response::{read_body, response_headers};
 use crate::interactions::base::transport::{refuse_unusable_proxy, request_headers};
 use crate::interactions::base::{
-    PreparedRequest, RequestFailure, RequestHeaders, UpstreamResponse,
+    MAX_RESPONSE_BYTES, PreparedRequest, RequestFailure, RequestHeaders, UpstreamResponse,
 };
 
 impl<C> InteractionsHttpHandler<'_, C, BlockingClient>
@@ -59,7 +60,7 @@ where
             operation,
             request.timeout.unwrap_or(request.request_timeout),
         )
-        .and_then(check_blocking)
+        .and_then(finish_blocking)
         .map_err(|failure| handle_failure(self.config, failure))
     }
 }
@@ -85,4 +86,11 @@ fn send_blocking(
         .timeout(deadline)
         .send()
         .map_err(RequestFailure::Transport)
+}
+
+fn finish_blocking(sent: BlockingResponse) -> Result<UpstreamResponse, RequestFailure> {
+    let status_code = sent.status().as_u16();
+    let received = response_headers(sent.headers());
+    let body = read_body(sent, MAX_RESPONSE_BYTES)?;
+    check_status(status_code, received, body)
 }
