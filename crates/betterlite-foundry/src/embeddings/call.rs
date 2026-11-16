@@ -33,7 +33,7 @@ pub struct SuppliedClient<'client, Client> {
 }
 
 // B173 builds the clients: HTTPHandler(timeout, concurrent_limit=1) sync, azure_ai async
-pub trait EmbeddingClientFactory {
+pub trait EmbeddingClientFactory: Sync {
     type Client: ImageTransport;
 
     fn sync_client(&self, timeout: Duration) -> Self::Client;
@@ -52,7 +52,7 @@ pub struct TextEmbeddingCall<'call> {
 }
 
 // the inherited OpenAI embedding call sees the original input and returns projected headers
-pub trait TextEmbedding {
+pub trait TextEmbedding: Sync {
     fn embed(
         &self,
         call: TextEmbeddingCall<'_>,
@@ -117,24 +117,17 @@ where
     let headers = request_headers(request.api_key)?;
     let body =
         serde_json::to_vec(image).map_err(|source| FoundryEmbeddingError::Encode { source })?;
-    let reused = supplied
-        .filter(|client| client.mode == request.mode)
-        .map(|client| client.client);
-    let built;
-    let client = match reused {
-        Some(client) => client,
-        None => {
-            built = match request.mode {
-                EmbeddingMode::Sync => factory.sync_client(request.timeout),
-                EmbeddingMode::Async => factory.async_client(request.timeout),
-            };
-            &built
-        }
+    let image_request = ImageRequest::new(Method::POST, url.clone(), headers, body);
+    let outcome = if let Some(reused) = supplied.filter(|client| client.mode == request.mode) {
+        reused.client.send(image_request).await
+    } else {
+        let built = match request.mode {
+            EmbeddingMode::Sync => factory.sync_client(request.timeout),
+            EmbeddingMode::Async => factory.async_client(request.timeout),
+        };
+        built.send(image_request).await
     };
-    let sent = client
-        .send(ImageRequest::new(Method::POST, url.clone(), headers, body))
-        .await
-        .map_err(|source| FoundryEmbeddingError::Transport { url, source })?;
+    let sent = outcome.map_err(|source| FoundryEmbeddingError::Transport { url, source })?;
     // LiteLLM's HTTP client raises for any non-2xx status before the body is read as an embedding
     if !(200..300).contains(&sent.status) {
         return Err(FoundryEmbeddingError::Provider {
@@ -193,8 +186,8 @@ fn sync_guards(
     Ok(())
 }
 
-fn request_headers(key: Option<&SecretString>) -> Result<HeaderMap, FoundryEmbeddingError> {
-    let key = key.map_or("", |secret| secret.expose_secret());
+fn request_headers(api_key: Option<&SecretString>) -> Result<HeaderMap, FoundryEmbeddingError> {
+    let key = api_key.map_or("", |secret| secret.expose_secret());
     let mut headers = HeaderMap::new();
     let value = HeaderValue::from_str(&format!("Bearer {key}")).map_err(|source| {
         FoundryEmbeddingError::Header {
@@ -222,8 +215,8 @@ fn reply_data(
 #[must_use]
 pub fn projected_headers(headers: &HeaderMap) -> AdditionalHeaders {
     let mut pairs = AdditionalHeaders::new();
-    for (name, text) in flatten_headers(headers) {
-        let text = Json::Text(text);
+    for (name, value) in flatten_headers(headers) {
+        let text = Json::Text(value);
         if OPENAI_RESPONSE_HEADERS.contains(&name.as_str()) && !name.contains("reset") {
             pairs.insert(name.clone(), text.clone());
         }

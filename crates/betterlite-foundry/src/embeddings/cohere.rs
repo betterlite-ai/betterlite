@@ -17,17 +17,17 @@ pub fn map_azure_model_group(model: &str) -> &str {
 pub fn transform_response(
     response: &mut FoundryEmbeddingResponse,
 ) -> Result<(), FoundryEmbeddingError> {
-    let tokens = header_text(&response.additional_headers, "llm_provider-num_tokens")
-        .filter(|text| !text.is_empty());
-    if let Some(tokens) = tokens {
+    if let Some(tokens) = header_text(&response.additional_headers, "llm_provider-num_tokens")
+        .filter(|text| !text.is_empty())
+    {
         response.usage.prompt_tokens = token_count(tokens)?;
     }
-    let group = header_text(
+    if let Some(group) = header_text(
         &response.additional_headers,
         "llm_provider-azureml-model-group",
     )
-    .filter(|text| !text.is_empty());
-    if let Some(group) = group {
+    .filter(|text| !text.is_empty())
+    {
         response.model = Some(map_azure_model_group(group).to_owned());
     }
     Ok(())

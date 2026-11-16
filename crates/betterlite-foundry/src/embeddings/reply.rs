@@ -25,38 +25,35 @@ pub struct FoundryEmbeddingResponse {
     pub additional_headers: AdditionalHeaders,
 }
 
+// serde reads an absent key and a null alike as None; the decoder looks up which keys were sent
 #[derive(Debug, Deserialize)]
 struct RawReply {
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    object: Option<Option<String>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    model: Option<Option<String>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    data: Option<Option<Vec<EmbeddingRecord>>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    usage: Option<Option<RawUsage>>,
+    object: Option<String>,
+    model: Option<String>,
+    data: Option<Vec<EmbeddingRecord>>,
+    usage: Option<RawUsage>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawUsage {
-    #[serde(default)]
-    prompt_tokens: u32,
-    #[serde(default)]
-    completion_tokens: u32,
-    #[serde(default)]
-    total_tokens: u32,
+    #[serde(default, rename = "prompt_tokens")]
+    prompt: u32,
+    #[serde(default, rename = "completion_tokens")]
+    completion: u32,
+    #[serde(default, rename = "total_tokens")]
+    total: u32,
+}
+
+impl From<RawUsage> for EmbeddingUsage {
+    fn from(usage: RawUsage) -> Self {
+        Self {
+            prompt_tokens: usage.prompt,
+            completion_tokens: usage.completion,
+            completion_tokens_details: None,
+            prompt_tokens_details: None,
+            total_tokens: usage.total,
+        }
+    }
 }
 
 impl Default for FoundryEmbeddingResponse {
@@ -103,25 +100,34 @@ pub fn decode_foundry_embedding(body: &[u8]) -> Result<EmbeddingReply, FoundryEm
             status: failure.status,
         });
     }
-    let raw: RawReply =
-        serde_json::from_value(value).map_err(|source| FoundryEmbeddingError::Json { source })?;
-    if matches!(raw.object, Some(None)) {
+    // LiteLLM reads usage with dict lookups, which a list or a string refuses
+    if value
+        .get("usage")
+        .is_some_and(|usage| !usage.is_object() && !usage.is_null())
+    {
+        return Err(FoundryEmbeddingError::FieldType {
+            field: "usage",
+            expected: "an object",
+        });
+    }
+    if value
+        .get("object")
+        .is_some_and(|object| !object.is_string())
+    {
         return Err(FoundryEmbeddingError::FieldType {
             field: "object",
             expected: "a string",
         });
     }
+    let sent_model = value.get("model").is_some();
+    let sent_data = value.get("data").is_some();
+    let raw: RawReply =
+        serde_json::from_value(value).map_err(|source| FoundryEmbeddingError::Json { source })?;
     Ok(EmbeddingReply {
-        object: raw.object.flatten(),
-        model: raw.model,
-        data: raw.data,
-        usage: raw.usage.flatten().map(|usage| EmbeddingUsage {
-            prompt_tokens: usage.prompt_tokens,
-            completion_tokens: usage.completion_tokens,
-            completion_tokens_details: None,
-            prompt_tokens_details: None,
-            total_tokens: usage.total_tokens,
-        }),
+        object: raw.object,
+        model: sent_model.then_some(raw.model),
+        data: sent_data.then_some(raw.data),
+        usage: raw.usage.map(EmbeddingUsage::from),
         additional_headers: AdditionalHeaders::default(),
     })
 }
@@ -147,18 +153,22 @@ fn combined(
     images: &[EmbeddingRecord],
     texts: &[EmbeddingRecord],
 ) -> Result<Vec<EmbeddingRecord>, FoundryEmbeddingError> {
-    let mut images = images.iter();
-    let mut texts = texts.iter();
+    let mut image_records = images.iter();
+    let mut text_records = texts.iter();
     let mut combined = Vec::with_capacity(input_len);
     for index in 0..input_len {
         let chosen = if image_indices.contains(&index) {
-            images.next().ok_or(FoundryEmbeddingError::TooFewEntries {
-                entries: "image embeddings",
-            })?
+            image_records
+                .next()
+                .ok_or(FoundryEmbeddingError::TooFewEntries {
+                    entries: "image embeddings",
+                })?
         } else {
-            texts.next().ok_or(FoundryEmbeddingError::TooFewEntries {
-                entries: "text embeddings",
-            })?
+            text_records
+                .next()
+                .ok_or(FoundryEmbeddingError::TooFewEntries {
+                    entries: "text embeddings",
+                })?
         };
         combined.push(chosen.clone());
     }
