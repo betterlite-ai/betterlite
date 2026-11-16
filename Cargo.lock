@@ -1876,7 +1876,9 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secret-managers",
+ "betterlite-tokenizer",
  "chrono",
+ "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
@@ -1892,6 +1894,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2942,7 +2945,9 @@ dependencies = [
  "betterlite-oracle-runner",
  "betterlite-prompts",
  "betterlite-secret-managers",
+ "betterlite-tokenizer",
  "chrono",
+ "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
