@@ -18,6 +18,8 @@ use crate::chat::deployment::{ChatDeployment, DeploymentError, Provider};
 use crate::chat::execution::ChatExecutor;
 use crate::chat::mock_model;
 
+pub mod reply_error;
+
 // LiteLLM's raise_if_mock_testing_params_disallowed rejects these before a request is routed
 const GATED_MOCK_PARAMS: [&str; 2] = ["mock_delay", "mock_timeout"];
 

@@ -1,0 +1,58 @@
+kind: helper
+name: fireworks-ai-chat-hidden-params
+call:
+  b6072:
+    catalog: []
+    headers: []
+    keys: []
+    requests: []
+    replies:
+      - status: 200
+        headers: {x-request-id: r1, x-ratelimit-remaining-requests: "9", x-ratelimit-limit-tokens: "10"}
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"llama-v3","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"perf_metrics":{"request_id":"r1","tokens_per_second":7},"prompt_token_ids":[1,2],"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"a"},"raw_output":{"seen":1},"token_ids":[4,5]}]}'
+        optional_params: {}
+      - status: 200
+        headers: {x-request-id: r2}
+        body: '{"id":"chatcmpl-2","object":"chat.completion","created":1700000000,"model":"llama-v3","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"a"},"raw_output":"first"},{"index":1,"finish_reason":"stop","message":{"role":"assistant","content":"b"},"token_ids":[7]}]}'
+        optional_params: {}
+      - status: 200
+        headers: {}
+        body: '{"id":"chatcmpl-3","object":"chat.completion","created":1700000000,"model":"llama-v3","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"a"},"raw_output":null}]}'
+        optional_params: {}
+      - status: 200
+        headers: {}
+        body: '{"id":"chatcmpl-4","object":"chat.completion","created":1700000000,"model":"llama-v3","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"perf_metrics":null,"choices":[]}'
+        optional_params: {}
+      - status: 200
+        headers: {}
+        body: '{"id":"chatcmpl-5","object":"chat.completion","created":1700000000,"model":"","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"choices":[]}'
+        optional_params: {}
+      - status: 200
+        headers: {x-litellm-request-id: internal}
+        body: '{"id":"chatcmpl-6","object":"chat.completion","created":1700000000,"model":"llama-v3","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"a"}}]}'
+        optional_params: {}
+      - status: 200
+        headers: {}
+        body: '{"id":"chatcmpl-7","created":1700000000,"model":"llama-v3","usage":{"completion_tokens":4},"choices":[]}'
+        optional_params: {}
+      - status: 200
+        headers: {}
+        body: '{"id":"chatcmpl-8","created":1700000000,"model":"llama-v3","usage":{"prompt_tokens":null,"completion_tokens":4,"total_tokens":7},"choices":[]}'
+        optional_params: {}
+    chunks: []
+    models: []
+calls:
+  - b6072:
+      catalog: []
+      headers: []
+      keys: []
+      requests: []
+      replies:
+        - status: 500
+          headers: {x-request-id: failed}
+          body: not json
+          optional_params: {}
+      chunks: []
+      models: []
+env: {}
+compare: {ignore: []}
