@@ -8,8 +8,8 @@ call:
       tool_name: get_usage_data
       tool_label: global usage data
       arguments:
-        start_date: "2026-01-01"
         end_date: "2026-01-31"
+        start_date: "2026-01-01"
       status: running
 env: {}
 compare:

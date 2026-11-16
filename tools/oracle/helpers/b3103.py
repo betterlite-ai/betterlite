@@ -3,8 +3,13 @@ from datetime import date
 from typing import ClassVar, Final, Literal, TypeAlias, TypedDict, cast
 
 from litellm.proxy.management_endpoints.usage_endpoints import ai_usage_chat
-from litellm.proxy.management_endpoints.usage_endpoints.ai_usage_chat import get_tools_for_role
+from litellm.proxy.management_endpoints.usage_endpoints.ai_usage_chat import (
+    SSEChunkEvent,
+    SSEToolCallEvent,
+    get_tools_for_role,
+)
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 JSON: Final = TypeAdapter(JsonValue)
 TOOL_NAMES: Final[dict[str, str]] = {
@@ -85,8 +90,9 @@ class FixedDate(date):
     iso: ClassVar[str] = "1970-01-01"
 
     @classmethod
-    def today(cls) -> date:
-        return date.fromisoformat(cls.iso)
+    @override
+    def today(cls) -> FixedDate:
+        return cls.fromisoformat(cls.iso)
 
 
 def run(input_value: Input) -> JsonValue:
@@ -100,45 +106,58 @@ def run(input_value: Input) -> JsonValue:
     if input_value["function"] == "fetch_args":
         return {"kwargs": fetch_kwargs_value(input_value)}
     if input_value["function"] == "sse":
-        return {"frame": ai_usage_chat._sse(input_value["event"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L456-L457
+        return {"frame": sse_frame_value(input_value)}
     return {"summary": page_summary(input_value)}
 
 
 def prompt_value(call: PromptCall) -> str:
     FixedDate.iso = call["today"]
-    ai_usage_chat.date = FixedDate
-    return ai_usage_chat._build_system_prompt(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L233-L236
+    # LiteLLM does not export ai_usage_chat.date, so object.__setattr__ writes the module attribute
+    object.__setattr__(ai_usage_chat, "date", FixedDate)
+    return ai_usage_chat._build_system_prompt(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L233-L236
         call["is_admin"]
     )
 
 
 def csv_ids_value(raw: str | None) -> JsonValue:
-    ids = ai_usage_chat._parse_csv_ids(raw)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L247-L250
+    ids = ai_usage_chat._parse_csv_ids(raw)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L247-L250
     if ids is None:
         return None
     return [*ids]
 
 
 def fetch_kwargs_value(call: FetchArgsCall) -> JsonValue:
-    kwargs = ai_usage_chat._resolve_fetch_kwargs(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L460-L490
+    kwargs = ai_usage_chat._resolve_fetch_kwargs(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L460-L490
         TOOL_NAMES[call["tool"]],
         call["arguments"],
         call["user_id"],
         call["is_admin"],
     )
-    rendered: dict[str, JsonValue] = {}
-    for key, value in kwargs.items():
-        rendered[key] = value
-    return rendered
+    return JSON.validate_python(kwargs)
+
+
+def sse_frame_value(call: SseCall) -> str:
+    event = call["event"]
+    if event["type"] == "tool_call":
+        tool_call = SSEToolCallEvent(
+            type="tool_call",
+            tool_name=event["tool_name"],
+            tool_label=event["tool_label"],
+            arguments=event["arguments"],
+            status=event["status"],
+        )
+        return ai_usage_chat._sse(tool_call)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L456-L457
+    chunk = SSEChunkEvent(type="chunk", content=event["content"])
+    return ai_usage_chat._sse(chunk)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L456-L457
 
 
 def page_summary(call: SummaryUsageCall | SummaryEntityCall) -> str:
-    data = cast("ai_usage_chat._UsageDump", call["page"])  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L97-L102
+    data = cast("ai_usage_chat._UsageDump", call["page"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L97-L102
     if call["function"] == "summary_usage":
-        return ai_usage_chat._summarise_usage_data(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L371-L400
+        return ai_usage_chat._summarise_usage_data(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L371-L400
             data
         )
     label = "Team" if call["label"] == "team" else "Tag"
-    return ai_usage_chat._summarise_entity_data(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L403-L425
+    return ai_usage_chat._summarise_entity_data(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L403-L425
         data, label
     )
