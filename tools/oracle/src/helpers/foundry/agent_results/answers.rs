@@ -61,9 +61,10 @@ pub(super) async fn replies(calls: &[ReplyCall]) -> Calls {
             annotations: call.annotations.clone(),
         };
         let existing = AgentReply {
+            model: None,
+            choices: Vec::new(),
             hidden_params: call.hidden_params.clone(),
             usage: call.existing_usage,
-            ..AgentReply::default()
         };
         let reply = build_model_response(existing, &input, &counter).await;
         answers.push(json!({

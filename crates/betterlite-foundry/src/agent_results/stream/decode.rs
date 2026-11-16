@@ -5,7 +5,7 @@ use betterlite_http::error::HttpError;
 use betterlite_openai::aleph_alpha::lines::LineDecoder;
 use betterlite_prompts::arguments::json::Object;
 use futures_util::StreamExt as _;
-use futures_util::stream::BoxStream;
+use futures_util::stream::{BoxStream, empty};
 
 use super::super::error::AgentResultError;
 use super::super::event::{AgentEvent, decode_agent_event};
@@ -14,7 +14,7 @@ use super::super::reply::STOP_FINISH_REASON;
 use super::{
     AgentChunk, CHUNK_OBJECT, ChunkChoice, ChunkDelta, DATA_PREFIX, DONE_DATA, EVENT_PREFIX,
     MAX_LINE_BYTES, MESSAGE_COMPLETED_EVENT, MESSAGE_DELTA_EVENT, StreamIdentity,
-    THREAD_CREATED_EVENT, empty_body,
+    THREAD_CREATED_EVENT,
 };
 
 // LiteLLM trims every line, keeps current_event across blank lines and parses each data line on its own
@@ -121,7 +121,7 @@ impl ChunkState {
     }
 
     fn record_thread(&mut self, event: AgentEvent) {
-        if let Some(id) = event.id {
+        if let Some(id) = event.fields.get("id") {
             self.thread_id = id.as_str().map(str::to_owned);
         }
     }
@@ -203,6 +203,6 @@ impl ChunkState {
         };
         self.ready.push_back(chunk);
         self.done = true;
-        self.body = empty_body();
+        self.body = empty().boxed();
     }
 }

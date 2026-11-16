@@ -4,7 +4,7 @@ use std::task::{Context, Poll};
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_prompts::arguments::json::Object;
-use futures_util::stream::{BoxStream, empty, unfold};
+use futures_util::stream::{BoxStream, unfold};
 use futures_util::{Stream, StreamExt as _};
 use serde::Serialize;
 use uuid::Uuid;
@@ -104,7 +104,7 @@ pub async fn open_stream(
     setup: StreamSetup<'_>,
     body: BoxStream<'static, Result<Vec<u8>, HttpError>>,
 ) -> Result<AgentChunkStream, AgentResultError> {
-    if !accepted(setup.status) {
+    if setup.status != STATUS_OK && setup.status != STATUS_CREATED {
         let bytes = read_body(body, MAX_ERROR_BODY_BYTES).await?;
         let Ok(text) = String::from_utf8(bytes) else {
             return Err(AgentResultError::StreamFailedNotText {
@@ -117,10 +117,6 @@ pub async fn open_stream(
         });
     }
     Ok(AgentChunkStream::new(body, setup.model, setup.identity))
-}
-
-const fn accepted(status: u16) -> bool {
-    status == STATUS_OK || status == STATUS_CREATED
 }
 
 async fn read_body(
@@ -139,8 +135,4 @@ async fn read_body(
         collected.extend_from_slice(&chunk);
     }
     Ok(collected)
-}
-
-pub(super) fn empty_body() -> BoxStream<'static, Result<Vec<u8>, HttpError>> {
-    empty().boxed()
 }

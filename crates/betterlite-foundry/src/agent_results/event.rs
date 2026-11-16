@@ -1,25 +1,18 @@
-use betterlite_prompts::arguments::json::Json;
-use serde::{Deserialize, Deserializer};
+use betterlite_prompts::arguments::json::{Json, Object};
+use serde::Deserialize;
 use thiserror::Error;
 
 use super::messages::ContentItem;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AgentEvent {
-    // "id" in data decides whether thread.created records one, so Some(Null) clears it and absence keeps it
-    #[serde(default, deserialize_with = "present_json")]
-    pub id: Option<Json>,
     #[serde(default)]
     pub content: Option<Vec<ContentItem>>,
     #[serde(default)]
     pub delta: Option<AgentDelta>,
-}
-
-fn present_json<'de, D>(deserializer: D) -> Result<Option<Json>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Json::deserialize(deserializer).map(Some)
+    // every other member, so a present id (even null) is told apart from an absent one
+    #[serde(flatten)]
+    pub fields: Object,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
