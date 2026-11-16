@@ -165,6 +165,25 @@ fn a_reply_without_an_id_has_only_the_scheme() {
 }
 
 #[test]
+fn a_null_id_and_name_take_their_defaults() {
+    let body = format!(r#"{{"id":null,"name":null,{CREATED_JSON}}}"#);
+    let file = decode_vertex_file_metadata(body.as_bytes(), MetadataShape::Upload, &utc()).unwrap();
+    assert_eq!(file.id, "gs://");
+    assert_eq!(file.filename, "");
+}
+
+#[test]
+fn a_null_creation_time_is_the_empty_text_the_source_parses() {
+    let failure = decode_vertex_file_metadata(
+        br#"{"id":"my-bucket/o/1","timeCreated":null}"#,
+        MetadataShape::Retrieve,
+        &utc(),
+    )
+    .expect_err("an empty timeCreated never parses");
+    assert!(matches!(failure, VertexFilesError::Timestamp(_)));
+}
+
+#[test]
 fn a_reply_without_a_creation_time_is_refused() {
     let failure = decode_vertex_file_metadata(
         br#"{"id":"my-bucket/o/1"}"#,

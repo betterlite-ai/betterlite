@@ -13,14 +13,14 @@ const STREAM_CONTENT_TYPE: &str = "application/json";
 
 // B1015 decides from the purpose and the MIME B235 resolved; the body is passed so the predicate sees the file it guards
 pub trait BatchJsonlPredicate: Send + Sync {
-    fn matches(&self, purpose: Option<&str>, content_type: Option<&str>, file: &FileTypes) -> bool;
+    fn matches(&self, purpose: &str, content_type: &str, file: &FileTypes) -> bool;
 }
 
 pub struct BatchJsonlFiles;
 
 impl BatchJsonlPredicate for BatchJsonlFiles {
-    fn matches(&self, purpose: Option<&str>, content_type: Option<&str>, file: &FileTypes) -> bool {
-        is_batch_jsonl_file(purpose, content_type, Some(file))
+    fn matches(&self, purpose: &str, content_type: &str, file: &FileTypes) -> bool {
+        is_batch_jsonl_file(Some(purpose), Some(content_type), Some(file))
     }
 }
 
@@ -85,11 +85,7 @@ pub fn select_upload(
         return Ok(SelectedUpload::Passthrough(file));
     }
     let (_filename, content_type) = extract_file_metadata(request.file);
-    if predicate.matches(
-        Some(request.purpose.wire_name()),
-        Some(content_type.as_str()),
-        &file,
-    ) {
+    if predicate.matches(request.purpose.wire_name(), content_type.as_str(), &file) {
         return Ok(SelectedUpload::Converted(file));
     }
     Ok(SelectedUpload::Bytes(

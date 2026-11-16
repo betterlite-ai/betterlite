@@ -57,7 +57,20 @@ impl VertexFilesError {
     pub const fn status_code(&self) -> Option<u16> {
         match self {
             Self::PassthroughModel | Self::CustomEndpointBatch => Some(400),
-            _ => None,
+            Self::MissingApiKey
+            | Self::Credentials(_)
+            | Self::Media(_)
+            | Self::Line(_)
+            | Self::ContentUtf8(_)
+            | Self::BatchBody
+            | Self::BatchModel
+            | Self::Gcs(_)
+            | Self::ResponseTooLarge { .. }
+            | Self::Record(_)
+            | Self::Decode(_)
+            | Self::Size { .. }
+            | Self::Timestamp(_)
+            | Self::Listing => None,
         }
     }
 }

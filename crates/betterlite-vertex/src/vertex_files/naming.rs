@@ -26,11 +26,11 @@ fn passthrough_object_name(
     let model = deployment_model
         .filter(|model| !model.is_empty())
         .ok_or(VertexFilesError::PassthroughModel)?;
-    Ok(managed_object_name(strip_provider(model), true, id))
-}
-
-fn strip_provider(model: &str) -> &str {
-    model.strip_prefix("vertex_ai/").unwrap_or(model)
+    Ok(managed_object_name(
+        model.strip_prefix("vertex_ai/").unwrap_or(model),
+        true,
+        id,
+    ))
 }
 
 // a numeric endpoint id names a fine-tuned Gemini deployment, which lives under endpoints/<id>
@@ -56,7 +56,7 @@ fn batch_object_name(
     id: Uuid,
 ) -> Result<String, VertexFilesError> {
     let model = match deployment_model.filter(|model| !model.is_empty()) {
-        Some(model) => strip_provider(model).to_owned(),
+        Some(model) => model.strip_prefix("vertex_ai/").unwrap_or(model).to_owned(),
         None => batch_line_model(first)?,
     };
     Ok(managed_object_name(&model, false, id))

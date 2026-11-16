@@ -13,8 +13,8 @@ use crate::vertex_files::error::VertexFilesError;
 
 #[derive(Debug, PartialEq, Eq)]
 struct Observed {
-    purpose: Option<String>,
-    content_type: Option<String>,
+    purpose: String,
+    content_type: String,
     filename: Option<String>,
 }
 
@@ -25,14 +25,14 @@ struct RecordingPredicate {
 }
 
 impl BatchJsonlPredicate for RecordingPredicate {
-    fn matches(&self, purpose: Option<&str>, content_type: Option<&str>, file: &FileTypes) -> bool {
+    fn matches(&self, purpose: &str, content_type: &str, file: &FileTypes) -> bool {
         let filename = match file {
             FileTypes::Tuple { filename, .. } => Some(filename.clone()),
             FileTypes::Content(_) => None,
         };
         self.observed.lock().unwrap().push(Observed {
-            purpose: purpose.map(str::to_owned),
-            content_type: content_type.map(str::to_owned),
+            purpose: purpose.to_owned(),
+            content_type: content_type.to_owned(),
             filename,
         });
         self.answer
@@ -201,8 +201,8 @@ fn the_predicate_sees_the_purpose_and_the_declared_mime() {
     assert_eq!(
         *predicate.observed.lock().unwrap(),
         vec![Observed {
-            purpose: Some("batch".to_owned()),
-            content_type: Some("application/jsonl".to_owned()),
+            purpose: "batch".to_owned(),
+            content_type: "application/jsonl".to_owned(),
             filename: Some("rows.jsonl".to_owned()),
         }]
     );
@@ -233,8 +233,8 @@ fn the_filename_mime_reaches_the_predicate() {
     assert_eq!(
         *predicate.observed.lock().unwrap(),
         vec![Observed {
-            purpose: Some("batch".to_owned()),
-            content_type: Some("application/octet-stream".to_owned()),
+            purpose: "batch".to_owned(),
+            content_type: "application/octet-stream".to_owned(),
             filename: Some("rows.jsonl".to_owned()),
         }]
     );
@@ -262,8 +262,8 @@ fn a_direct_upload_reaches_the_predicate_without_a_filename() {
     assert_eq!(
         *predicate.observed.lock().unwrap(),
         vec![Observed {
-            purpose: Some("batch".to_owned()),
-            content_type: Some("application/octet-stream".to_owned()),
+            purpose: "batch".to_owned(),
+            content_type: "application/octet-stream".to_owned(),
             filename: None,
         }]
     );
@@ -314,8 +314,8 @@ fn an_empty_filename_reaches_the_predicate_without_a_name() {
     assert_eq!(
         *predicate.observed.lock().unwrap(),
         vec![Observed {
-            purpose: Some("batch".to_owned()),
-            content_type: Some("application/octet-stream".to_owned()),
+            purpose: "batch".to_owned(),
+            content_type: "application/octet-stream".to_owned(),
             filename: None,
         }]
     );

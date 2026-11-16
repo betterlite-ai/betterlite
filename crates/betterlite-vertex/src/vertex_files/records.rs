@@ -3,6 +3,7 @@ use betterlite_openai::files::records::{
 };
 use percent_encoding::percent_decode_str;
 use serde::Deserialize;
+use serde_with::{DefaultOnNull, serde_as};
 
 use crate::provider_metadata::timestamp::{LocalTimeContext, decode_vertex_timestamp};
 
@@ -17,17 +18,21 @@ pub enum MetadataShape {
 }
 
 // LiteLLM's _GcsObjectJson and its metadata record: the store's own fields, read only where it names the file
+#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MetadataRecord {
     #[serde(default)]
-    id: Option<String>,
+    #[serde_as(as = "DefaultOnNull")]
+    id: String,
     #[serde(default)]
-    name: Option<String>,
+    #[serde_as(as = "DefaultOnNull")]
+    name: String,
     #[serde(default)]
     size: Option<String>,
     #[serde(default)]
-    time_created: Option<String>,
+    #[serde_as(as = "DefaultOnNull")]
+    time_created: String,
     #[serde(default)]
     purpose: Option<FilesPurpose>,
     #[serde(default)]
@@ -60,17 +65,13 @@ pub fn decode_vertex_file_metadata(
         Some(size) => size_bytes(&size)?,
         None => 0,
     };
-    let created = record.time_created.unwrap_or_default();
-    let created_at =
-        decode_vertex_timestamp(created.as_bytes(), local).map_err(VertexFilesError::Timestamp)?;
+    let created_at = decode_vertex_timestamp(record.time_created.as_bytes(), local)
+        .map_err(VertexFilesError::Timestamp)?;
     Ok(FileObject {
-        id: format!(
-            "gs://{}",
-            parent_object(record.id.as_deref().unwrap_or_default())
-        ),
+        id: format!("gs://{}", parent_object(&record.id)),
         bytes: size,
         created_at,
-        filename: record.name.unwrap_or_default(),
+        filename: record.name,
         object: FileKind::File,
         purpose,
         status: Some(status_of(shape)),
