@@ -10,7 +10,9 @@ from litellm.types.router import GenericLiteLLMParams
 from litellm.types.videos.main import VideoObject
 from pydantic import JsonValue, TypeAdapter
 
-CONTENT_URL: Final = "https://queue.fal.run/fal-ai/kling-video/requests/req-1"
+BASE: Final = "https://queue.fal.run"
+REQUEST_ID: Final = "req-1"
+PROMPT: Final = "a cat"
 BLOCKED_HEADERS: Final[frozenset[str]] = frozenset({"host", "content-length", "transfer-encoding"})
 CREDENTIAL_HEADERS: Final[frozenset[str]] = frozenset(
     {"authorization", "proxy-authorization", "x-api-key", "api-key"}
@@ -36,33 +38,18 @@ class ContentCase(TypedDict):
     artifact_body: str
 
 
-class CompletedTerminalError(TypedDict):
-    operation: Literal["completed_terminal_error"]
+class StatusReport(TypedDict):
+    operation: Literal[
+        "completed_terminal_error",
+        "transient_probe_keeps_completed",
+        "detail_locations",
+        "recovered_request_identity",
+    ]
     cases: list[StatusCase]
 
 
-class TransientProbeKeepsCompleted(TypedDict):
-    operation: Literal["transient_probe_keeps_completed"]
-    cases: list[StatusCase]
-
-
-class DetailLocations(TypedDict):
-    operation: Literal["detail_locations"]
-    cases: list[StatusCase]
-
-
-class RecoveredRequestIdentity(TypedDict):
-    operation: Literal["recovered_request_identity"]
-    cases: list[StatusCase]
-
-
-class ArtifactWithoutCredentials(TypedDict):
-    operation: Literal["artifact_without_credentials"]
-    cases: list[ContentCase]
-
-
-class MissingVideoUrl(TypedDict):
-    operation: Literal["missing_video_url"]
+class ContentReport(TypedDict):
+    operation: Literal["artifact_without_credentials", "missing_video_url"]
     cases: list[ContentCase]
 
 
@@ -70,15 +57,7 @@ class UnsupportedRequest(TypedDict):
     operation: Literal["unsupported_request"]
 
 
-Input: TypeAlias = (
-    CompletedTerminalError
-    | TransientProbeKeepsCompleted
-    | DetailLocations
-    | RecoveredRequestIdentity
-    | ArtifactWithoutCredentials
-    | MissingVideoUrl
-    | UnsupportedRequest
-)
+Input: TypeAlias = StatusReport | ContentReport | UnsupportedRequest
 
 
 class VideoFields(TypedDict):
@@ -117,28 +96,28 @@ def answer(script: Script, request: httpx.Request) -> httpx.Response:
 def configured(script: Script) -> FalAIVideoConfig:
     transport = httpx.MockTransport(partial(answer, script))
     return FalAIVideoConfig(
-        sync_client_factory=partial(HTTPHandler, client=httpx.Client(transport=transport)),
-        async_client_factory=partial(AsyncHTTPHandler, transport=transport),
+        sync_client_factory=partial(HTTPHandler, client=httpx.Client(transport=transport)),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1376
+        async_client_factory=partial(AsyncHTTPHandler, transport=transport),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L608
     )
 
 
 def video_fields(video: VideoObject) -> JsonValue:
     fields = VIDEO_FIELDS.validate_json(video.model_dump_json())
-    return {
-        "id": fields["id"],
-        "object": fields["object"],
-        "status": fields["status"],
-        "created_at": fields["created_at"],
-        "completed_at": fields["completed_at"],
-        "expires_at": fields["expires_at"],
-        "error": fields["error"],
-        "progress": fields["progress"],
-        "remixed_from_video_id": fields["remixed_from_video_id"],
-        "seconds": fields["seconds"],
-        "size": fields["size"],
-        "model": fields["model"],
-        "usage": fields["usage"],
-    }
+    value: dict[str, JsonValue] = {}
+    value["id"] = fields["id"]
+    value["object"] = fields["object"]
+    value["status"] = fields["status"]
+    value["created_at"] = fields["created_at"]
+    value["completed_at"] = fields["completed_at"]
+    value["expires_at"] = fields["expires_at"]
+    value["error"] = fields["error"]
+    value["progress"] = fields["progress"]
+    value["remixed_from_video_id"] = fields["remixed_from_video_id"]
+    value["seconds"] = fields["seconds"]
+    value["size"] = fields["size"]
+    value["model"] = fields["model"]
+    value["usage"] = fields["usage"]
+    return value
 
 
 def request_values(script: Script, names: frozenset[str]) -> list[JsonValue]:
@@ -182,18 +161,6 @@ def status_outcome(kind: ClientKind, case: StatusCase) -> JsonValue:
     return answer_value
 
 
-def status_report(cases: list[StatusCase]) -> JsonValue:
-    outcomes: list[JsonValue] = []
-    for case in cases:
-        outcome: dict[str, JsonValue] = {
-            "sync": status_outcome("sync", case),
-            "async": status_outcome("async", case),
-        }
-        outcomes.append(outcome)
-    answer_value: dict[str, JsonValue] = {"cases": outcomes}
-    return answer_value
-
-
 def content_bytes(config: FalAIVideoConfig, kind: ClientKind, raw: httpx.Response) -> bytes:
     if kind == "sync":
         return config.transform_video_content_response(raw, None)
@@ -207,13 +174,13 @@ def content_outcome(kind: ClientKind, case: ContentCase) -> JsonValue:
         status_code=case["status"],
         content=case["body"].encode(),
         headers=case["response_headers"],
-        request=httpx.Request("GET", CONTENT_URL),
+        request=httpx.Request("GET", f"{BASE}/fal-ai/kling-video/requests/req-1"),
     )
     answer_value: dict[str, JsonValue] = {"body": None, "error": None, "requests": []}
     body: bytes | None = None
     try:
         body = content_bytes(config, kind, raw)
-    except FalAIVideoError as error:
+    except FalAIVideoError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L36
         answer_value["error"] = {
             "kind": "fal",
             "status": error.status_code,
@@ -243,14 +210,14 @@ def content_outcome(kind: ClientKind, case: ContentCase) -> JsonValue:
     return answer_value
 
 
-def content_report(cases: list[ContentCase]) -> JsonValue:
+def case_report(cases: list[T], outcome: Callable[[ClientKind, T], JsonValue]) -> JsonValue:
     outcomes: list[JsonValue] = []
     for case in cases:
-        outcome: dict[str, JsonValue] = {
-            "sync": content_outcome("sync", case),
-            "async": content_outcome("async", case),
+        pair: dict[str, JsonValue] = {
+            "sync": outcome("sync", case),
+            "async": outcome("async", case),
         }
-        outcomes.append(outcome)
+        outcomes.append(pair)
     answer_value: dict[str, JsonValue] = {"cases": outcomes}
     return answer_value
 
@@ -269,83 +236,29 @@ def unsupported_report() -> JsonValue:
     config = FalAIVideoConfig()
     params = GenericLiteLLMParams()
     headers: dict[str, str] = {}
-    operations: list[JsonValue] = [
-        attempted(
-            "remix",
-            partial(
-                config.transform_video_remix_request,
-                "req-1",
-                "a cat",
-                "https://queue.fal.run",
-                params,
-                headers,
-            ),
-        ),
-        attempted(
-            "list",
-            partial(
-                config.transform_video_list_request,
-                "https://queue.fal.run",
-                params,
-                headers,
-            ),
-        ),
-        attempted(
-            "delete",
-            partial(
-                config.transform_video_delete_request,
-                "req-1",
-                "https://queue.fal.run",
-                params,
-                headers,
-            ),
-        ),
+    remix = config.transform_video_remix_request
+    listing = config.transform_video_list_request
+    delete = config.transform_video_delete_request
+    create_character = config.transform_video_create_character_request
+    get_character = config.transform_video_get_character_request
+    edit = config.transform_video_edit_request
+    extension = config.transform_video_extension_request
+    calls: list[JsonValue] = [
+        attempted("remix", partial(remix, REQUEST_ID, PROMPT, BASE, params, headers)),
+        attempted("list", partial(listing, BASE, params, headers)),
+        attempted("delete", partial(delete, REQUEST_ID, BASE, params, headers)),
         attempted(
             "character_create",
-            partial(
-                config.transform_video_create_character_request,
-                "character",
-                "req-1",
-                "https://queue.fal.run",
-                params,
-                headers,
-            ),
+            partial(create_character, "character", REQUEST_ID, BASE, params, headers),
         ),
         attempted(
             "character_get",
-            partial(
-                config.transform_video_get_character_request,
-                "character-1",
-                "https://queue.fal.run",
-                params,
-                headers,
-            ),
+            partial(get_character, "character-1", REQUEST_ID, BASE, params, headers),
         ),
-        attempted(
-            "edit",
-            partial(
-                config.transform_video_edit_request,
-                "a cat",
-                "req-1",
-                "https://queue.fal.run",
-                params,
-                headers,
-            ),
-        ),
-        attempted(
-            "extension",
-            partial(
-                config.transform_video_extension_request,
-                "a cat",
-                "req-1",
-                "4",
-                "https://queue.fal.run",
-                params,
-                headers,
-            ),
-        ),
+        attempted("edit", partial(edit, PROMPT, REQUEST_ID, BASE, params, headers)),
+        attempted("extension", partial(extension, PROMPT, REQUEST_ID, "4", BASE, params, headers)),
     ]
-    answer_value: dict[str, JsonValue] = {"operations": operations}
+    answer_value: dict[str, JsonValue] = {"operations": calls}
     return answer_value
 
 
@@ -357,8 +270,8 @@ def run(input_value: Input) -> JsonValue:
             | "detail_locations"
             | "recovered_request_identity"
         ):
-            return status_report(input_value["cases"])
+            return case_report(input_value["cases"], status_outcome)
         case "artifact_without_credentials" | "missing_video_url":
-            return content_report(input_value["cases"])
+            return case_report(input_value["cases"], content_outcome)
         case "unsupported_request":
             return unsupported_report()
