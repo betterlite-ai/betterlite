@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::PoisonError;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_logging::logging_state::LoggingState;
