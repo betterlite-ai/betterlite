@@ -262,6 +262,42 @@ fn encode_container_id_uses_the_first_target_model_from_a_list() {
 }
 
 #[test]
+fn encode_container_id_trims_python_whitespace_from_a_target_model_name() {
+    let extra_body = json_map(r#"{"target_model_names": "\u001cm1\u001c, m2"}"#);
+    let encoded =
+        encode_container_id_in_response("container_1", Some("azure"), None, Some(&extra_body))
+            .expect("a target model name encodes");
+    assert_eq!(
+        encoded,
+        build_container_id(Some("azure"), Some("m1"), "container_1")
+    );
+}
+
+#[test]
+fn encode_container_id_trims_python_whitespace_from_a_target_model() {
+    let extra_body = json_map(r#"{"target_model_names": ["\u001cm3\u001c", "m4"]}"#);
+    let encoded =
+        encode_container_id_in_response("container_1", Some("azure"), None, Some(&extra_body))
+            .expect("a target model list encodes");
+    assert_eq!(
+        encoded,
+        build_container_id(Some("azure"), Some("m3"), "container_1")
+    );
+}
+
+#[test]
+fn encode_container_id_encodes_a_null_target_model_names() {
+    let extra_body = json_map(r#"{"target_model_names": null}"#);
+    let encoded =
+        encode_container_id_in_response("container_1", Some("azure"), None, Some(&extra_body))
+            .expect("a present null target encodes without a model");
+    assert_eq!(
+        encoded,
+        build_container_id(Some("azure"), None, "container_1")
+    );
+}
+
+#[test]
 fn encode_container_id_returns_the_raw_id_without_routing_metadata() {
     let metadata = json_map(r#"{"model_info": {}}"#);
     let extra_body = json_map(r#"{"other": 1}"#);
