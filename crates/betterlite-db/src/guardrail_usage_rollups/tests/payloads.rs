@@ -40,27 +40,27 @@ fn maps_a_guardrail_status_to_its_action(
 }
 
 #[rstest]
-#[case::rfc3339_utc(r#""2026-01-02T03:04:05Z""#, Some(("2026-01-02", 1_767_323_045)))]
-#[case::rfc3339_offset(r#""2026-01-02T01:04:05+04:00""#, Some(("2026-01-01", 1_767_301_445)))]
-#[case::naive(r#""2026-01-02T03:04:05""#, Some(("2026-01-02", 1_767_323_045)))]
-#[case::naive_micros(r#""2026-01-02T03:04:05.123456""#, Some(("2026-01-02", 1_767_323_045)))]
-#[case::space(r#""2026-01-02 03:04:05""#, Some(("2026-01-02", 1_767_323_045)))]
-#[case::python_text(r#""2026-01-02 03:04:05+00:00""#, Some(("2026-01-02", 1_767_323_045)))]
-#[case::database_text(r#""2026-01-02 01:04:05+04:00""#, Some(("2026-01-01", 1_767_301_445)))]
-#[case::minutes(r#""2026-01-02T03:04""#, Some(("2026-01-02", 1_767_323_040)))]
-#[case::date_only(r#""2026-01-02""#, Some(("2026-01-02", 1_767_312_000)))]
+#[case::rfc3339_utc(r#""2026-01-02T03:04:05Z""#, Some(("2026-01-02", 1_767_323_045, 0)))]
+#[case::rfc3339_offset(r#""2026-01-02T01:04:05+04:00""#, Some(("2026-01-01", 1_767_301_445, 0)))]
+#[case::naive(r#""2026-01-02T03:04:05""#, Some(("2026-01-02", 1_767_323_045, 0)))]
+#[case::naive_micros(r#""2026-01-02T03:04:05.123456""#, Some(("2026-01-02", 1_767_323_045, 123_456_000)))]
+#[case::space(r#""2026-01-02 03:04:05""#, Some(("2026-01-02", 1_767_323_045, 0)))]
+#[case::python_text(r#""2026-01-02 03:04:05+00:00""#, Some(("2026-01-02", 1_767_323_045, 0)))]
+#[case::database_text(r#""2026-01-02 01:04:05+04:00""#, Some(("2026-01-01", 1_767_301_445, 0)))]
+#[case::minutes(r#""2026-01-02T03:04""#, Some(("2026-01-02", 1_767_323_040, 0)))]
+#[case::date_only(r#""2026-01-02""#, Some(("2026-01-02", 1_767_312_000, 0)))]
 #[case::garbage(r#""yesterday""#, None)]
 #[case::null("null", None)]
 fn reads_the_utc_date_from_the_payload_start_time(
     #[case] start: &str,
-    #[case] expected: Option<(&str, i64)>,
+    #[case] expected: Option<(&str, i64, u32)>,
 ) {
     assert_eq!(
         stamp_of(start),
-        expected.map(|(date, instant)| {
+        expected.map(|(date, instant, nanos)| {
             (
                 date.to_owned(),
-                DateTime::from_timestamp(instant, 0).expect("a test instant"),
+                DateTime::from_timestamp(instant, nanos).expect("a test instant"),
             )
         })
     );
