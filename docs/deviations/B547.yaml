@@ -1,0 +1,12 @@
+task: B547
+deviations: []
+kept_bugs:
+  - what: Azure video lists seconds, size, user and the rest as supported but leaves out characters, and map_openai_params still copies a supplied characters list because it copies every key whatever drop_params says.
+    why: A request that carries characters reaches the video body today, and trimming it to the advertised list would change what those requests send.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/videos/transformation.py#L31-L52
+  - what: The container URL reads the api-version out of the base and cuts the /openai/responses suffix only from the api_base argument. A base that comes from litellm.api_base or AZURE_API_BASE keeps its suffix and its own query.
+    why: LiteLLM falls back to those values inside the shared URL builder, after the container code has finished, and a setup that relies on the base it configured gets this URL today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/containers/transformation.py#L56-L83
+  - what: The container config builds its credentials from the positional api_key alone, so a deployment's azure_ad_token, tenant and client settings never reach the container authentication.
+    why: Only the environment and module settings can supply a token for containers in LiteLLM today, and a setup that works with them depends on that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/containers/transformation.py#L27-L35

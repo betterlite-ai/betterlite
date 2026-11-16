@@ -1,0 +1,8 @@
+kind: helper
+name: azure-resource-urls-container_api_version_query-seed
+call:
+  azure_resource_urls:
+    container_api_version_query:
+      - {api_base: "https://r.example/openai/responses?api-version=2025-04-01-preview", api_version: "2025-01-01", module: {}, environment: {}}
+env: {}
+compare: {ignore: []}
