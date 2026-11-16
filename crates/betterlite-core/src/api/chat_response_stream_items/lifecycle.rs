@@ -42,14 +42,11 @@ fn lifecycle_response<Context>(
     state: &mut ChatStreamState<Context>,
     sources: &EventSources,
 ) -> Result<ResponsesApiResponse, StreamItemsError> {
-    let raw_id = match state.progress.cached_response_id.clone() {
-        Some(response_id) => response_id,
-        None => {
-            let response_id = format!("resp_{}", (sources.ids)());
-            state.progress.cached_response_id = Some(response_id.clone());
-            response_id
-        }
-    };
+    let raw_id = state
+        .progress
+        .cached_response_id
+        .get_or_insert_with(|| format!("resp_{}", (sources.ids)()))
+        .clone();
     let response_id = encoded_response_id(state, &raw_id)?;
     let mut data = response_data(state, sources)?;
     data.insert("id".to_owned(), Json::Text(response_id));

@@ -63,14 +63,11 @@ pub(super) fn ensure_cached_item_id<Context>(
     state: &mut ChatStreamState<Context>,
     sources: &EventSources,
 ) -> String {
-    match state.progress.cached_item_id.clone() {
-        Some(item_id) => item_id,
-        None => {
-            let item_id = format!("msg_{}", (sources.ids)());
-            state.progress.cached_item_id = Some(item_id.clone());
-            item_id
-        }
-    }
+    state
+        .progress
+        .cached_item_id
+        .get_or_insert_with(|| format!("msg_{}", (sources.ids)()))
+        .clone()
 }
 
 fn message_item(item_id: &str) -> Extra {
