@@ -1,0 +1,44 @@
+kind: helper
+name: shadow-judge-reply-valid
+call:
+  b4081:
+    operation: judge_shape
+    response:
+      model: judge-model
+      choices:
+        - message:
+            role: assistant
+            content: '{"preference": "A", "confidence": 0.9}'
+          finish_reason: stop
+    metadata: {}
+    routed_model: ""
+calls:
+  - b4081:
+      operation: judge_shape
+      response:
+        model: judge-model
+        choices:
+          - message:
+              role: assistant
+              content: ""
+            finish_reason: stop
+      metadata: {}
+      routed_model: ""
+  - b4081:
+      operation: judge_shape
+      response:
+        model: judge-model
+        choices: []
+      metadata: {}
+      routed_model: ""
+  - b4081:
+      operation: judge_shape
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: ab
+      metadata: {}
+      routed_model: ""
+env: {}
+compare: {ignore: []}

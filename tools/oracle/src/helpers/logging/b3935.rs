@@ -5,6 +5,7 @@ use betterlite_logging::datadog_llm_obs::messages::to_dd_messages;
 use betterlite_logging::datadog_llm_obs::response_messages::response_messages;
 use betterlite_logging::datadog_llm_obs::tool_definitions::to_dd_tool_definitions;
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -26,10 +27,10 @@ pub(crate) enum Input {
     },
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let value = match input {
             Input::Messages { messages } => serde_json::to_value(to_dd_messages(messages.as_ref())),
             Input::ToolArguments { arguments } => Ok(Value::Array(

@@ -3,11 +3,12 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperCall, ORACLE_DIR, invoke};
 
 #[test]
 fn helper_seeds_select_catalog_generalizations() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<HelperCase> = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -29,10 +30,13 @@ fn helper_seeds_select_catalog_generalizations() {
         .filter_map(|seed| {
             let input =
                 (seed.call.operation == "catalog_generalizations").then_some(&seed.call.input)?;
-            serde_json::to_string(&crate::helpers::invoke(&crate::helpers::HelperCall {
-                operation: "catalog_generalizations".to_owned(),
-                input: input.clone(),
-            }))
+            serde_json::to_string(&invoke(
+                &[crate::GROUP],
+                &HelperCall {
+                    operation: "catalog_generalizations".to_owned(),
+                    input: input.clone(),
+                },
+            ))
             .ok()
         })
         .collect();

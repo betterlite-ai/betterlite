@@ -1,10 +1,13 @@
 use betterlite_openai::search::records::SearchResponse;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_websearch::call_transformation::wire::{
     Assistant, Call, Response, Results, Thinking,
 };
 use betterlite_websearch::call_transformation::{WebSearchTransformation, native};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use std::fmt::Display;
 
 pub(crate) struct Op;
 
@@ -41,10 +44,10 @@ struct Output {
     #[serde(skip_serializing_if = "Option::is_none")]
     messages: Option<Results>,
 }
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.operation {
             Operation::Detect => detect(input),
             Operation::Native => {
@@ -62,7 +65,7 @@ impl crate::helpers::Helper for Op {
         }
     }
 }
-fn detect(input: &Input) -> crate::helpers::HelperResult {
+fn detect(input: &Input) -> HelperResult {
     let response: Response =
         serde_json::from_str(input.response.as_deref().map_or("{}", RawValue::get))
             .map_err(failure)?;
@@ -86,12 +89,12 @@ fn detect(input: &Input) -> crate::helpers::HelperResult {
     })
     .map_err(failure)
 }
-fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     let message = error.to_string();
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "TransformationError".to_owned(),
         message,
         status: None,

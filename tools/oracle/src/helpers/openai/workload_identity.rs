@@ -1,6 +1,6 @@
 mod script;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use std::collections::BTreeMap;
 use std::fs;
 use std::mem;
@@ -23,7 +23,7 @@ use tempfile::TempDir;
 use tokio::runtime::Builder;
 use tokio::task;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use script::{Reply, Script, Sdk, error_json};
 
 #[derive(Deserialize)]

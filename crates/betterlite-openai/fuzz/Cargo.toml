@@ -324,6 +324,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_containers"
+path = "fuzz_targets/openai_containers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "openai_evals"
 path = "fuzz_targets/openai_evals.rs"
 test = false
@@ -611,6 +618,20 @@ bench = false
 [[bin]]
 name = "ovhcloud_reply"
 path = "fuzz_targets/ovhcloud_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "host_rerank"
+path = "fuzz_targets/host_rerank.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_video_edits"
+path = "fuzz_targets/openai_video_edits.rs"
 test = false
 doc = false
 bench = false

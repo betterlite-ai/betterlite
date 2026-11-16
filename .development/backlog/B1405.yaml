@@ -1,14 +1,14 @@
 id: B1405
 milestone: M3 providers
 title: Grok Voice realtime event normalization
-status: todo
+status: done
 depends_on: [B528, B1004, B171]
 file: tasks/B1405-xai-realtime.yaml
 covers:
   - "litellm/llms/xai/realtime/**"
 parent: B036
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1980

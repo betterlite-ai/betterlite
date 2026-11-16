@@ -6,9 +6,8 @@ deviations:
       before any provider transport. Inline file_data and provider-forwardable image_url descriptors
       continue unchanged.
     why: >-
-      The URL-download product decision is open. Betterlite builds no downloader and opens no request-path
-      file, so a caller whose LiteLLM setup relies on fetching a PDF URL gets this 400 until the decision
-      lands.
+      B5083's downloader is not wired into this path yet, so a caller whose LiteLLM setup relies on
+      fetching a PDF URL gets this 400 until an R2 fix task wires it in (decision 2026-10-31).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L240-L248
   - what: >-
       A file content part whose "file" field is present but not an object raises the same typed

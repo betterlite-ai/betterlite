@@ -12,7 +12,7 @@ use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use thiserror::Error;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Debug, Error)]
 #[error("the oracle cache never fails an increment")]

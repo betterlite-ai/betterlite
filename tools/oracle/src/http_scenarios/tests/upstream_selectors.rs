@@ -3,10 +3,10 @@
 use serde_json::{Map, Value};
 
 use super::support::{capture_with_provider, provider_request, step_with_compare};
-use crate::case::Ignore;
 use crate::http_scenarios::compare::compare_transcripts;
 use crate::http_scenarios::model::{Step, StepCompare};
 use crate::http_scenarios::run::StepCapture;
+use betterlite_oracle_runner::case::Ignore;
 
 fn body(text: &str) -> Value {
     let mut body = Map::new();

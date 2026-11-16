@@ -5,12 +5,13 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/gdc-auth-projection")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -49,7 +50,7 @@ fn project_of(identity: &str) -> String {
 
 #[test]
 fn helper_seeds_select_gdc_auth_projection() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -70,7 +71,7 @@ fn helper_seeds_select_gdc_auth_projection() {
 
 #[test]
 fn invalid_json_is_a_bearer_token_and_a_json_literal_is_rejected() {
-    let output = run_case("invalid-json-is-bearer.yaml");
+    let output = run_case_file("invalid-json-is-bearer.yaml");
     assert_eq!(
         output["scenarios"][0]["keys"],
         json!([
@@ -95,7 +96,7 @@ fn invalid_json_is_a_bearer_token_and_a_json_literal_is_rejected() {
 
 #[test]
 fn header_casing_follows_the_source_dict_rules() {
-    let output = run_case("invalid-json-is-bearer.yaml");
+    let output = run_case_file("invalid-json-is-bearer.yaml");
     let headers = &output["scenarios"][0]["validations"][1]["headers"];
     assert_eq!(headers["Authorization"], "Bearer own");
     assert_eq!(headers["authorization"], "lower");
@@ -107,7 +108,7 @@ fn header_casing_follows_the_source_dict_rules() {
 
 #[test]
 fn other_google_credential_kinds_are_authentication_failures() {
-    let output = run_case("valid-json-other-credential-rejected.yaml");
+    let output = run_case_file("valid-json-other-credential-rejected.yaml");
     let keys = output["scenarios"][0]["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 8);
     assert!(
@@ -124,7 +125,7 @@ fn other_google_credential_kinds_are_authentication_failures() {
 
 #[test]
 fn the_cache_key_is_the_stripped_audience_and_the_exact_credential() {
-    let output = run_case("gdch-audience-and-credential-identity.yaml");
+    let output = run_case_file("gdch-audience-and-credential-identity.yaml");
     assert_eq!(
         output["scenarios"][0]["keys"],
         json!([{"ok": true, "kind": "service_account"}])
@@ -161,7 +162,7 @@ fn the_cache_key_is_the_stripped_audience_and_the_exact_credential() {
 
 #[test]
 fn the_service_token_overwrites_exact_authorization_and_every_quota_variant() {
-    let output = run_case("authorization-and-quota-header-casing.yaml");
+    let output = run_case_file("authorization-and-quota-header-casing.yaml");
     let first = &output["scenarios"][0]["validations"][0]["headers"];
     assert_eq!(first["Authorization"], "Bearer fixture-token");
     assert_eq!(first["authorization"], "lowercase");

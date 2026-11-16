@@ -5,7 +5,7 @@ use betterlite_vertex::gemini_usage::usage::{apply_grounding_counters, calculate
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

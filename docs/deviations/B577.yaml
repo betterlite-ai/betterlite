@@ -1,0 +1,21 @@
+task: B577
+deviations:
+  - what: betterlite does not fetch request URLs on this path yet. An http:// image selected for local inlining fails before provider transport with ImageFetchError status 400; HTTPS/provider-supported URL descriptors are forwarded without gateway fetching, and supplied inline bytes remain usable.
+    why: B5083's downloader is not wired into this path yet. Request media URLs are fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1877-L1894
+  - what: An optional_params.tools that is null, is not a list, or holds an entry that is not an object never crashes the request. Null keeps the value as sent and reads as declaring no tools for the hosted-tool beta scan and the code-execution insertion; a non-list answers 400 "tools must be a list" and a non-object entry answers 400 "tools entry N is not an object". LiteLLM iterates the value and calls .get on each entry, raising TypeError or AttributeError, which surfaces as a 500.
+    why: docs/compatibility.md makes null mean the default and a wrong type an error that names the field; a crash on a documented OpenAI parameter is a bug no working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1853-L1862
+  - what: A malformed context_management edit list is either ignored or answered 400. A dict whose edits is absent or null adds no beta header; edits that is not a list answers 400 "context_management.edits must be a list"; an edit that is not an object answers 400 "context_management edit N is not an object". LiteLLM iterates the null list and calls .get on each edit, so it raises TypeError or AttributeError, which surfaces as a 500.
+    why: The request field is the caller's, so a malformed value belongs in a 400 that names it rather than a crash, and no working setup sends a malformed edit list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1803-L1837
+  - what: A control-plane metadata.user_id that is neither null nor a string answers 400 "metadata.user_id must be a string". LiteLLM passes the value to re.match inside _valid_user_id, which raises TypeError for a number, boolean, list or object, surfacing as a 500.
+    why: The user id reaches the body as sent, so an unusable type is a caller error and belongs in a 400 naming the field; no working setup sends a non-string user id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2038-L2044
+kept_bugs:
+  - what: The code_execution tool that add_code_execution_tool appends is written back to the request only when the resulting list holds more than one tool. A container_upload message with no declared tools therefore sends no code_execution tool at all, and the provider rejects the request.
+    why: Setups that declare tools alongside container_upload rely on the append arriving; setups without tools already fail upstream, and the len(tools) > 1 gate is LiteLLM's pinned behavior in the transform_request range this task owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2022-L2025
+  - what: A metadata.user_id that arrives in optional_params is reduced to that one field but never validated, so an email or phone number the control-plane path rejects still travels to the provider.
+    why: A caller that sets metadata itself has already chosen the value, and a setup that sends metadata.user_id relies on it reaching the request unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2046-L2052
