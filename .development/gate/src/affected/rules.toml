@@ -20,6 +20,16 @@ mark-changed = []
 globs = ["rust-toolchain.toml"]
 mark-changed = "all"
 
+# Helm, Terraform, the Terraform provider and the Homebrew formula are checked by their own task tools, and no crate reads them
+[[path-rule]]
+globs = [
+  "packaging/helm/**",
+  "packaging/terraform/**",
+  "packaging/terraform-provider/**",
+  "packaging/homebrew/**",
+]
+mark-changed = []
+
 # the dashboard sources and scripts belong to no crate, so only the browser test reads them instead of every package
 [[path-rule]]
 globs = ["ui/dashboard/**", "tools/dashboard/**", "packaging/ui/**"]

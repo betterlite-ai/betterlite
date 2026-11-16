@@ -1,0 +1,17 @@
+task: B7770
+deviations:
+  - what: The package name, display name, publisher, vendor id, refresh command id, class and type names, error text and user agent say Betterlite, not LiteLLM. A VS Code setup whose vendor setting is litellm does not carry over.
+    why: >-
+      Rule litellm-boundaries keeps LiteLLM's name out of every artifact this repo ships. The wire names the extension uses (the /model_group/info and /v1/chat/completions paths, model_group, supported_reasoning_efforts, reasoning_effort, stream_options, Authorization Bearer, maxRetries 0) stay as LiteLLM spells them, so the gateway sees the same requests. The manifest, rebrand and bundle checks prove it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/package.json#L1-L6
+  - what: The package.json repository points at this repo with directory ui/vscode-extension, and homepage and bugs are dropped.
+    why: The LiteLLM values name Berri AI's documentation site and issue tracker, which do not describe this extension.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/package.json#L8-L16
+  - what: The unit tests live in tests/ rather than in test/.
+    why: The gate's changed-line budget skips folders named tests, and the copied tests are about a thousand lines. tsconfig.json, vitest.config.mts and .vscodeignore point at the new folder.
+    link: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/test
+  - what: Nothing is published. The gate builds the bundle and packages a .vsix, and no script other than vscode:prepublish has publish in its name.
+    why: >-
+      A marketplace release needs a publisher account and a token, which no check can hold. The architect publishes by hand at the first release under the publisher betterlite-ai.
+    link: ""
+kept_bugs: []
