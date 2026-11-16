@@ -4,6 +4,8 @@ use std::time::Duration;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use serde_json::Number;
 
 use crate::api::interactions::lifecycle::delete;
 use crate::api::interactions::lifecycle::error::InteractionLifecycleError;
@@ -43,6 +45,42 @@ fn delete_reaches_the_provider_config_and_answers_with_its_result() {
     assert_eq!(received.body, "");
     assert!(received.head.to_lowercase().contains("x-extra: yes"));
     assert_eq!(config.params().get("custom_llm_provider"), None);
+}
+
+#[test]
+fn delete_carries_every_json_shape_into_the_handler_parameters() {
+    let serving = serve(reply(200, "{}"));
+    let config = fixture();
+    let object = IndexMap::from([("flag".to_owned(), Json::Bool(true))]);
+    let call = Call::new("int-1")
+        .at(serving.address)
+        .kwarg("nothing", Json::Null)
+        .kwarg("count", Json::Number(Number::from(3)))
+        .kwarg("names", Json::List(vec![Json::Text("a".to_owned())]))
+        .kwarg("object", Json::Object(object.clone()));
+    let mut handler = handler(&config);
+    let mut logging = state("gemini-2.5-flash", "call-1");
+    let redactor = redactor();
+    delete(&mut handler, deps(&mut logging, &redactor), &call.request())
+        .expect("the fixture answers");
+    let params = config.params();
+    assert_eq!(params.get("nothing"), Some(&JsonValue::Null));
+    assert_eq!(
+        params.get("count"),
+        Some(&JsonValue::Number(Number::from(3)))
+    );
+    assert_eq!(
+        params.get("names"),
+        Some(&JsonValue::Array(vec![JsonValue::Text("a".to_owned())]))
+    );
+    assert_eq!(
+        params.get("object"),
+        Some(&JsonValue::Object(IndexMap::from([(
+            "flag".to_owned(),
+            JsonValue::Bool(true)
+        )])))
+    );
+    drop(received(serving));
 }
 
 #[rstest::rstest]
