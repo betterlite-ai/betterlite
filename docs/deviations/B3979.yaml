@@ -1,0 +1,24 @@
+task: B3979
+deviations:
+  - what: The Supabase Python SDK is never imported and no package is installed when it is missing; betterlite sends the PostgREST requests the SDK builds, at POST {url}/rest/v1/{table} with the apikey and bearer headers, ?on_conflict=litellm_call_id on the upserts and Prefer return=representation on the initiated insert.
+    why: LiteLLM runs a pip install at import time when the supabase package is absent, and betterlite has no Python runtime or package management inside a request; the HTTP request is what a working setup depends on, and the SDK objects are not.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L21-L31
+  - what: Rows are serialized from typed Rust structs and delivered through the shared Delivery transport; the table().insert(), table().upsert() and execute() calls have no Python bridge.
+    why: The SDK call is an HTTP request with a JSON body, which the typed rows and the shared delivery deadline cover; the task leaves an SDK bridge out of scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L36-L43
+  - what: A failure event writes its row from a response object betterlite builds out of the payload model and error string; LiteLLM hands log_event None as the result at the failure dispatch, so its choices membership test raises inside the try and no failure row is ever written.
+    why: No working setup can rely on a failure row that never exists, and dropping the failure upsert is lost data that leaves the initiated row without a terminal record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3923
+  - what: The row's total_cost is the standard logging payload's response_cost, the value B068's completion_cost produced for the response, instead of a second completion_cost call inside the logger.
+    why: betterlite-core depends on betterlite-logging for the cost_breakdown types, so betterlite-logging cannot call completion_cost without a dependency cycle; the payload carries the identical value and the unknown-model zeroing still applies to it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L62
+  - what: The initiated insert and the sync success and failure upserts are delivered on the callback's task tracker instead of inside the logging call, so a slow Supabase never blocks the LLM request; the async hooks await the same delivery.
+    why: betterlite's sync CallbackLogger hooks answer without blocking the request path, where LiteLLM's logging body performs the Supabase write inline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1428
+  - what: The table name is read once from callback_settings.supabase.table_name when the logger is built; LiteLLM's modify_integration sets the class attribute Supabase.supabase_table_name, which later writes read.
+    why: The betterlite logger is shared immutably, and the public modify_integration function belongs to B157; the configured value reaches the place the class attribute filled.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6867-L6871
+  - what: A response error that is not a JSON string is dropped with a warning; LiteLLM's membership test over an error object checks its keys and then writes the object into the row.
+    why: The failure branch's error is a string on the response contract, and Python's membership over a non-string is duck typing that docs/compatibility.md excludes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L83
+kept_bugs: []
