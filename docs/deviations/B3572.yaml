@@ -22,11 +22,18 @@ deviations:
       The provider stream collector is built at flush time by an owning adapter over a
       bounded copy of the relayed chunks, instead of once in the stream constructor.
     why: >-
-      B3570's create_stream_collector borrows the provider config, and the flush runs in a
-      background task that outlives the request borrow. The adapter keeps the same 16 MiB
-      bound as B3570 and feeds the provider collector the identical bytes in the same order
-      before build_logged_response, so what gets logged does not change; a stream that never
-      reaches a flush never constructs a collector.
+      B3570's create_stream_collector borrows the provider config and returns a boxed
+      collector tied to &self, and the flush runs in a background task that outlives the
+      request borrow, so a collector built from that borrow cannot move into the task.
+      Sharing one collector through Arc with a Mutex was rejected because the collector still
+      borrows the config and the relay would take a lock per chunk. Leaking the request-scoped
+      config was rejected because it leaks one config per stream. The clean fix is an owning
+      collector in betterlite-openai (create_stream_collector taking the config by value, or a
+      bounded chunk buffer both collectors use and move chunks between), which is a change to
+      B3570's collector contract and outside this task's scope. Until then the adapter keeps
+      the same 16 MiB bound as B3570 and feeds the provider collector the identical bytes in
+      the same order before build_logged_response, so what gets logged does not change; a
+      stream that never reaches a flush never constructs a collector.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L42-L47
   - what: >-
       The status_code and headers property guard is a typed PassthroughStreamError::NotInitialized
