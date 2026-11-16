@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::error::Error as _;
+
 use betterlite_models::prompt_spec::PromptSpec;
 use rstest::rstest;
 
@@ -27,7 +29,7 @@ fn an_invalid_prompt_error_names_the_index_and_never_its_content(
     let debug = format!("{error:?}");
     assert!(debug.contains("index 2"), "{debug}");
     assert!(!debug.contains(marker), "{debug}");
-    assert!(std::error::Error::source(&error).is_some());
+    assert!(error.source().is_some());
 }
 
 #[test]
@@ -42,5 +44,5 @@ fn an_initialize_error_prints_the_prompt_id_and_the_registry_cause() {
         error.to_string(),
         "prompt greeting could not be initialized: Unsupported prompt: langfuse"
     );
-    assert!(std::error::Error::source(&error).is_some());
+    assert!(error.source().is_some());
 }

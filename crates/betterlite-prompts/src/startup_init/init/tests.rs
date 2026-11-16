@@ -72,8 +72,8 @@ fn capture_debug_messages() -> (Arc<Mutex<Vec<String>>>, DefaultGuard) {
 }
 
 fn prompt_list_logs(messages: &Arc<Mutex<Vec<String>>>) -> usize {
-    let messages = messages.lock().expect("the capture is not poisoned");
-    messages
+    let captured = messages.lock().expect("the capture is not poisoned");
+    captured
         .iter()
         .filter(|message| message.contains("Prompt List:"))
         .count()
