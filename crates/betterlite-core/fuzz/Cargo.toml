@@ -312,6 +312,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "fal_chat_reply"
+path = "fuzz_targets/fal_chat_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "interactions_sse"
 path = "fuzz_targets/interactions_sse.rs"
 test = false
@@ -321,6 +328,13 @@ bench = false
 [[bin]]
 name = "responses_chat_event_line"
 path = "fuzz_targets/responses_chat_event_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "recraft_images"
+path = "fuzz_targets/recraft_images.rs"
 test = false
 doc = false
 bench = false
@@ -342,6 +356,20 @@ bench = false
 [[bin]]
 name = "muse_frames"
 path = "fuzz_targets/muse_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "chirp_backend_event"
+path = "fuzz_targets/chirp_backend_event.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "batch_output_usage"
+path = "fuzz_targets/batch_output_usage.rs"
 test = false
 doc = false
 bench = false

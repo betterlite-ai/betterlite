@@ -9,6 +9,7 @@ use betterlite_mcp::client::sessions::negotiate::InitializeRequest;
 use betterlite_mcp::client::sessions::runtime::HttpClientHandle;
 use betterlite_mcp::client::sessions::transport::StdioServerParameters;
 use serde::Deserialize;
+use std::mem;
 use thiserror::Error;
 use tokio::time::{Instant, sleep};
 
@@ -146,7 +147,7 @@ impl HttpClientHandle for FakeHttp {
     }
 
     fn finish_cleanup(&self) -> Vec<Arc<TestError>> {
-        std::mem::take(&mut *self.errors.lock().unwrap_or_else(PoisonError::into_inner))
+        mem::take(&mut *self.errors.lock().unwrap_or_else(PoisonError::into_inner))
     }
 }
 

@@ -7,6 +7,7 @@ use betterlite_openai::xai_tokens::error::XaiOauthError;
 use secrecy::SecretString;
 
 use super::Settings;
+use std::io::Error;
 
 pub(super) struct Oauth {
     api_base: String,
@@ -32,13 +33,13 @@ pub(super) struct CapabilityLookup {
     pub(super) outcome: Option<bool>,
 }
 
-impl ReasoningLookup<std::io::Error> for CapabilityLookup {
+impl ReasoningLookup<Error> for CapabilityLookup {
     fn supports_reasoning(
         &mut self,
         _model: &str,
-    ) -> impl Future<Output = Result<bool, std::io::Error>> + Send {
+    ) -> impl Future<Output = Result<bool, Error>> + Send {
         let outcome = self.outcome;
-        async move { outcome.ok_or_else(|| std::io::Error::other("the capability lookup failed")) }
+        async move { outcome.ok_or_else(|| Error::other("the capability lookup failed")) }
     }
 }
 

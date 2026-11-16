@@ -10,7 +10,8 @@ use betterlite_openai::response_resources::request::InputItemsOrder;
 use betterlite_prompts::arguments::json::Object;
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]

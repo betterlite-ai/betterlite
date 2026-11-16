@@ -8,6 +8,8 @@ use betterlite_core::api::batch_records::{
 use betterlite_core::routes::CallType;
 use betterlite_error::proxy_exception::ProxyException;
 use betterlite_openai::files::records::FilesPurpose;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -44,8 +46,8 @@ pub(crate) enum Input {
     },
 }
 
-fn invalid(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: String::from("InvalidInput"),
         status: None,
         error_type: None,
@@ -157,10 +159,10 @@ fn service_input(input: &Input) -> Result<BatchRecordsInput, String> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let service = BatchRecords {
             limits: ApiLimits::default(),
         };

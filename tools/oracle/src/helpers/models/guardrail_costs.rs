@@ -5,7 +5,11 @@ use betterlite_models::guardrail_pricing::entries::{
     GuardrailInformation, GuardrailInformationEntry, billed_guardrail_cost_by_unit,
     guardrail_information_cost,
 };
-use betterlite_models::guardrail_pricing::{azure_prompt_shield_cost, guardrail_cost_total};
+use betterlite_models::guardrail_pricing::{
+    GuardrailPricingError, azure_prompt_shield_cost, guardrail_cost_total,
+};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -20,18 +24,18 @@ const fn default_guardrail_information() -> GuardrailInformation {
 #[derive(Debug, thiserror::Error)]
 enum RunError {
     #[error(transparent)]
-    GuardrailPricing(#[from] betterlite_models::guardrail_pricing::GuardrailPricingError),
+    GuardrailPricing(#[from] GuardrailPricingError),
     #[error(transparent)]
     CostBreakdown(#[from] CostBreakdownError),
 }
 
-impl From<RunError> for Box<crate::helpers::HelperError> {
+impl From<RunError> for Box<HelperError> {
     fn from(error: RunError) -> Self {
         let class = match &error {
             RunError::GuardrailPricing(_) => "GuardrailPricingError",
             RunError::CostBreakdown(_) => "CostBreakdownError",
         };
-        Self::new(crate::helpers::HelperError {
+        Self::new(HelperError {
             class: class.to_owned(),
             status: None,
             error_type: None,
@@ -70,10 +74,10 @@ pub(crate) struct Input {
     breakdown: Option<BreakdownInput>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let scalar_cost: Decimal =
             guardrail_information_cost(&input.guardrail_information).map_err(RunError::from)?;
         let rollup = entries_of(&input.guardrail_information)
@@ -99,9 +103,7 @@ fn entries_of(information: &GuardrailInformation) -> Vec<&GuardrailInformationEn
     }
 }
 
-fn rollup_entry_result(
-    entry: &GuardrailInformationEntry,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn rollup_entry_result(entry: &GuardrailInformationEntry) -> Result<Value, Box<HelperError>> {
     let cost_by_unit = billed_guardrail_cost_by_unit(entry).map_err(RunError::from)?;
     let total = guardrail_cost_total(cost_by_unit.as_ref()).map_err(RunError::from)?;
     Ok(json!({
@@ -113,9 +115,7 @@ fn rollup_entry_result(
     }))
 }
 
-fn azure_results(
-    scenarios: &[AzureScenario],
-) -> Result<Vec<Value>, Box<crate::helpers::HelperError>> {
+fn azure_results(scenarios: &[AzureScenario]) -> Result<Vec<Value>, Box<HelperError>> {
     let mut results = Vec::new();
     for scenario in scenarios {
         results.push(azure_scenario_cost(scenario)?);
@@ -123,9 +123,7 @@ fn azure_results(
     Ok(results)
 }
 
-fn azure_scenario_cost(
-    scenario: &AzureScenario,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn azure_scenario_cost(scenario: &AzureScenario) -> Result<Value, Box<HelperError>> {
     let cost = azure_prompt_shield_cost(
         &scenario.usage_units,
         scenario.cost_tier.as_deref(),
@@ -137,9 +135,7 @@ fn azure_scenario_cost(
     }))
 }
 
-fn breakdown_steps(
-    breakdown: Option<&BreakdownInput>,
-) -> Result<Vec<Value>, Box<crate::helpers::HelperError>> {
+fn breakdown_steps(breakdown: Option<&BreakdownInput>) -> Result<Vec<Value>, Box<HelperError>> {
     let Some(sequence) = breakdown else {
         return Ok(Vec::new());
     };

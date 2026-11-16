@@ -5,6 +5,7 @@ use betterlite_models::ptu_pricing::{
     PtuModelInfo, declares_ptu, ptu_config_error, ptu_identity_error, ptu_terms,
 };
 use betterlite_models::tiered_pricing::Scalar;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -35,10 +36,10 @@ pub(crate) struct Input {
     additional_headers: Option<BTreeMap<String, String>>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let model_info = PtuModelInfo::from(&input.model_info);
         let value = match input.operation {
             Operation::Terms => match ptu_terms(&model_info) {

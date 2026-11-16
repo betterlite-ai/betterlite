@@ -1,7 +1,7 @@
 id: B8130
 milestone: M11 distribution
 title: Standalone Helm chart core
-status: todo
+status: done
 depends_on: []
 file: tasks/B8130-helm-chart-core.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "helm/litellm-helm/templates/configmap-litellm.yaml"
 parent: B151
 split_from: B152
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2071

@@ -12,8 +12,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
+use betterlite_models::model_catalog_keys::ModelCostKeys;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
+use tracing::subscriber;
 use warnings::Warnings;
 
 mod fixture;
@@ -64,30 +68,26 @@ struct StepContext<'context> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let fixture = fixture::Fixture::load(&input.fixture).or_config_error()?;
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .or_config_error()?;
         let warnings = Warnings::default();
         let subscriber = tracing_subscriber::registry().with(warnings.clone());
-        tracing::subscriber::with_default(subscriber, || {
+        subscriber::with_default(subscriber, || {
             runtime.block_on(run_steps(input, &fixture, &warnings))
         })
     }
 }
 
-async fn run_steps(
-    input: &Input,
-    fixture: &fixture::Fixture,
-    warnings: &Warnings,
-) -> crate::helpers::HelperResult {
+async fn run_steps(input: &Input, fixture: &fixture::Fixture, warnings: &Warnings) -> HelperResult {
     let resolution = fixture.resolution();
-    let mut keys = betterlite_models::model_catalog_keys::ModelCostKeys::default();
+    let mut keys = ModelCostKeys::default();
     let dynamic = NoDynamicMetadata;
     let catalogs = fixture.catalogs();
     let budgets = Settings::default();

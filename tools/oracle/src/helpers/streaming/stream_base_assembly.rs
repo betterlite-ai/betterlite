@@ -1,3 +1,4 @@
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_streaming::stream_base_assembly::records::Chunk;
 use betterlite_streaming::stream_chunk_shaping::records::JsonObject;
 use serde::Deserialize;
@@ -77,10 +78,10 @@ enum ProjectionFixture {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Batch { cases } => {
                 let results: Result<Vec<Value>, _> = cases.iter().map(Self::run).collect();

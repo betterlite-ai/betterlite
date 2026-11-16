@@ -12,8 +12,10 @@ use betterlite_models::model_metadata_resolution::dynamic::{
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fixture::{Fixture, FixtureError};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -90,7 +92,7 @@ pub(crate) struct Input {
     steps: Vec<Step>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -108,7 +110,7 @@ impl crate::helpers::Helper for Op {
         let mut keys = ModelCostKeys::default();
         let dynamic = NoDynamicMetadata;
         let mut environment = fixture.environment(&resolution, &mut keys, &dynamic);
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|source| {

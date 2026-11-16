@@ -7,7 +7,8 @@ use betterlite_models::decisions::Json;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 
@@ -28,10 +29,10 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         let registry = AgentRegistry::default();
         registry
             .load_agents_from_config(input.config.as_deref())

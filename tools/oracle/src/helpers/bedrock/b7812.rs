@@ -1,3 +1,4 @@
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_provider::api::vector_store_contracts::config::{Headers, Params};
 use betterlite_rag::s3_vectors_search::config::{
     RegionEnvironment, complete_url, query_embedding_model,
@@ -43,10 +44,10 @@ struct ResponseCall {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let outcomes = input.calls.iter().map(|call| {
             let outcome = match call {
                 Call::Request(request) => request_value(request),

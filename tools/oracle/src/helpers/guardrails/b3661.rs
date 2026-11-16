@@ -13,7 +13,8 @@ use betterlite_guardrails::guardrail_translation::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[path = "b3661/guardrail_provider_options/tests.rs"]
 mod guardrail_provider_options;

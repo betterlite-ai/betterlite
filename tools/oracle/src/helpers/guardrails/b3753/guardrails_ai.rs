@@ -8,8 +8,9 @@ use serde_json::json;
 
 use super::request::GuardrailsAiProcessRequest;
 use super::{OracleBlockable, fail, finish, prepare};
-use crate::helpers::HelperResult;
-use crate::mock::MockProvider;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use betterlite_oracle_runner::mock::MockProvider;
+use std::time::Duration;
 
 pub(super) fn guardrails_ai_construct(
     guard_name: Option<String>,
@@ -35,7 +36,7 @@ pub(super) fn guardrails_ai_process_input(request: &GuardrailsAiProcessRequest) 
             input_format: request.input_format,
         },
         client: reqwest::Client::new(),
-        timeout: std::time::Duration::from_secs(30),
+        timeout: Duration::from_secs(30),
     };
     let result = runtime.block_on(guardrail.process_input(
         request.last_user_message.clone(),

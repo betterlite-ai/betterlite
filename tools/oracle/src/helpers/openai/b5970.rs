@@ -15,8 +15,11 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use script::{Requests, Script, environment, error_value, header_json};
+use std::mem;
+use tokio::runtime::Builder;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -78,7 +81,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .build()
             .map_err(|source| {
@@ -111,7 +114,7 @@ async fn execute(input: &Input) -> Value {
     let mut steps = Vec::new();
     for step in &input.steps {
         let result = run_step(&auth, &clock, step).await;
-        let sent = std::mem::take(&mut *requests.lock().unwrap_or_else(PoisonError::into_inner));
+        let sent = mem::take(&mut *requests.lock().unwrap_or_else(PoisonError::into_inner));
         steps.push(json!({"result": result, "requests": sent}));
     }
     json!({"steps": steps})

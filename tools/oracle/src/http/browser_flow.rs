@@ -14,7 +14,7 @@ use crate::OracleError;
 use crate::case::Request;
 use crate::case::browser_flow::form::{FormCaptureError, parse_form_projection};
 use crate::case::browser_flow::{PlaceholderError, Step};
-use crate::multipart_oracle::error::MultipartError;
+use betterlite_oracle_runner::multipart_oracle::error::MultipartError;
 
 mod capture;
 mod interpolate;

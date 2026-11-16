@@ -17,7 +17,9 @@ use betterlite_router::deployment_pricing::register::register_deployment_pricing
 use serde::Deserialize;
 use serde_json::{Number, Value};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 const RATE_FIELDS: [&str; 2] = ["input_cost_per_token", "output_cost_per_token"];
 // get_model_info reads a name like responses/gpt-4.1 as another provider, so only the providers the cases use are stripped.
@@ -163,11 +165,11 @@ async fn answer(input: &Input) -> HelperResult {
     Ok(serde_json::json!({"by_id": by_id, "shared": shared}))
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        tokio::runtime::Builder::new_current_thread()
+        Builder::new_current_thread()
             .enable_all()
             .build()
             .or_value_error()?

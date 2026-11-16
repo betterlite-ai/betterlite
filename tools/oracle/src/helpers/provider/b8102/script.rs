@@ -5,7 +5,8 @@ use betterlite_prompts::message_content::Message;
 use secrecy::SecretString;
 use serde::Deserialize;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use tokio::runtime::{Builder, Runtime};
 
 #[derive(Deserialize)]
 pub(crate) struct InfoCase {
@@ -53,8 +54,8 @@ pub(super) fn helper_error(class: &str, message: String) -> Box<HelperError> {
     })
 }
 
-pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|source| helper_error("Runtime", source.to_string()))

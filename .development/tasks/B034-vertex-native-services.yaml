@@ -103,7 +103,7 @@ oracle_cases:
   - tools/oracle/cases/api/vertex-services/discovery-search.yaml
 deviations:
   - what: Enterprise-managed files and batches remain unavailable. A unified managed file deletion or required-managed ownership check without the hook returns HTTP 500, type internal_server_error, param null and code 500; native provider IDs still follow OSS routing.
-    why: Max has not chosen a managed-resource implementation. Preserve the open-source hook-absent behavior and build no replacement hook or dependent managed workflow.
+    why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1558-L1584
 out_of_scope:
   - B1368/B1369/B1371-B1377/B1383-B1389/B1393 own service callables and their declared records; the retained empty interactions initializer introduces no method.

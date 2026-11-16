@@ -4,10 +4,11 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::OracleError;
-use crate::case::{Compare, Ignore, Request, UpstreamAnswer};
-use crate::http;
-use crate::multipart_oracle::request::request_body;
-use crate::routing_mock_scripts::{Outcome, ScriptedReply, Wait};
+use crate::case::{Compare, Request};
+use betterlite_oracle_runner::case::{Ignore, UpstreamAnswer};
+use betterlite_oracle_runner::mock::MAX_BODY;
+use betterlite_oracle_runner::multipart_oracle::request::decode_request_body;
+use betterlite_oracle_runner::routing_mock_scripts::{Outcome, ScriptedReply, Wait};
 
 pub(crate) mod compare;
 pub(crate) mod run;
@@ -66,7 +67,7 @@ const fn default_deadline_ms() -> u64 {
 }
 
 pub fn parse_scenario(bytes: &[u8]) -> Result<Scenario, OracleError> {
-    if bytes.len() > http::MAX_BODY {
+    if bytes.len() > MAX_BODY {
         return Err(OracleError::ScenarioTooLarge { bytes: bytes.len() });
     }
     let scenario = serde_json::from_slice::<Scenario>(bytes).map_err(OracleError::ScenarioParse)?;
@@ -161,7 +162,7 @@ fn validate_http_step(step: &HttpStep) -> Result<(), String> {
     if step.request.path.is_empty() {
         return Err("scenario request.path cannot be empty".to_owned());
     }
-    request_body(&step.request.body, step.request.body_kind)
+    decode_request_body(&step.request.body, step.request.body_kind)
         .map_err(|source| source.to_string())?;
     ignores_are_valid(&step.compare.ignore)
 }

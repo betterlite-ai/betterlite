@@ -9,9 +9,11 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::capture::{Answer, Capture};
+use tokio::runtime::Builder;
 
 mod capture;
 
@@ -94,7 +96,7 @@ enum Action {
 }
 
 fn collect(scenarios: &[Scenario], action: Action) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| helper("RuntimeError", &error.to_string()))?;

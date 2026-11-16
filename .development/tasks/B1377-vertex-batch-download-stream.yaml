@@ -82,7 +82,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_download.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_batch_download)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_batch_download_corpus)'
       why: New split and malformed downloads enter decode_vertex_batch_download_chunk.
     - id: download-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_download*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::batch_download::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_download*')" && cargo nextest run --locked -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^batch_download::/)'
       why: Shared-parser replay checks the call.vertex_batch_download tag on every added fixture.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-batch-download/unknown-binary.yaml

@@ -6,9 +6,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
 
-use super::{BodyKind, Compare, Request, RequestBody, validate_contracts, validate_ignores};
+use super::{Compare, Request, validate_contracts};
 use crate::OracleError;
-use crate::multipart_oracle::request::request_body;
+use betterlite_oracle_runner::case::{BodyKind, RequestBody, validate_ignores};
+use betterlite_oracle_runner::multipart_oracle::request::decode_request_body;
 
 pub mod form;
 
@@ -129,8 +130,8 @@ fn validate_step(
             "step {index} request.path cannot be empty"
         )));
     }
-    let decoded =
-        request_body(&step.request.body, step.request.body_kind).map_err(OracleError::Multipart)?;
+    let decoded = decode_request_body(&step.request.body, step.request.body_kind)
+        .map_err(OracleError::Multipart)?;
     validate_ignores(path, &step.compare.ignore)?;
     validate_contracts(path, &step.compare)?;
     let refs = step_placeholder_refs(step, &decoded).map_err(|source| {

@@ -19,8 +19,9 @@ use serde::Deserialize;
 
 use super::state::{details_value, state};
 use super::tokenizer::Cl100kCounter;
-use crate::compare::helper::HelperError;
-use crate::helpers::a2a::b4810::helper_error;
+use crate::b4810::helper_error;
+use betterlite_oracle_helper_api::error::HelperError;
+use tokio::runtime::Builder;
 
 #[derive(Deserialize)]
 pub(crate) struct IterateInstance {
@@ -169,7 +170,7 @@ async fn iterate(
 
 pub(super) fn run(instances: &[IterateInstance]) -> Result<AgentJson, Box<HelperError>> {
     let counter = Cl100kCounter::new()?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| helper_error("RuntimeError", error.to_string()))?;

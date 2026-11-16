@@ -32,7 +32,7 @@ use serde_json::Value;
 use tokio::runtime::Runtime;
 
 use super::invalid;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 fn region_model(model: &str) -> (Option<&str>, &str) {
     match model.split_once('/') {

@@ -49,7 +49,7 @@ pub enum GeminiHttpError {
 }
 
 impl GeminiHttpError {
-    pub(super) fn transport(source: PostError) -> Self {
+    pub(crate) fn transport(source: PostError) -> Self {
         match source {
             PostError::Timeout => Self::Timeout(VertexAiError {
                 status_code: 408,

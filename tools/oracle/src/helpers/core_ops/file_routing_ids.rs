@@ -11,6 +11,8 @@ use betterlite_core::api::file_routing_ids::routing::{
 };
 use betterlite_models::decisions::Json;
 use betterlite_openai::batches::records::BatchObject;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -83,10 +85,10 @@ impl IdType {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let answers = input
             .calls
             .iter()
@@ -96,8 +98,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn invalid(error: &serde_json::Error) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(error: &serde_json::Error) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "FileRoutingIdsInput".to_owned(),
         status: None,
         error_type: None,
@@ -146,7 +148,7 @@ fn batch_answer(response: &BatchObject, model: &str) -> Result<Value, serde_json
     serde_json::to_value(encoded)
 }
 
-fn run_call(call: &Call) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
     Ok(match call {
         Call::ValidateLimit { limit } => limit_answer(*limit),
         Call::Convert { value } => json!(convert_b64_uid_to_unified_uid(value)),

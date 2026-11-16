@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::{Input, Op};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
 
 #[test]
 fn split_leading_system_run_separates_the_leading_run_from_the_rest() {

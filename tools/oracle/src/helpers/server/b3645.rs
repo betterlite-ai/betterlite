@@ -5,7 +5,8 @@ use betterlite_transcribe::polling::aws_error_type;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function")]

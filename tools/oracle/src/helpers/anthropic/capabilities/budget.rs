@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 #[derive(Debug, Deserialize)]
 pub(super) struct CapStep {

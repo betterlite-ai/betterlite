@@ -1,169 +1,26 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
-use std::future::IntoFuture as _;
-use std::io::Error as IoError;
 use std::process;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use axum::Json;
-use axum::Router;
-use axum::extract::State;
-use axum::http::header::CONTENT_TYPE;
-use axum::http::{HeaderMap, StatusCode};
-use axum::routing::post;
+use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use secrecy::SecretString;
-use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
-use tokio::task::JoinSet;
 use tracing::subscriber::set_default;
 
+use super::support::{
+    Analysis, PostedBody, Redacted, action, assert_header, build, chat_data, no_action,
+    raw_answer_of_size, serve, serve_raw,
+};
 use super::{array_of, body, field_text, list, object, text};
 use crate::cato::error::{CatoError, INVALID_REQUEST_ERROR};
 use crate::cato::{
     CallHook, CatoGuardrail, CatoParams, DEFAULT_BLOCK_MESSAGE, DEFAULT_TIMEOUT, LITELLM_VERSION,
     MAX_RESPONSE_BYTES,
 };
-
-type Captured = Arc<Mutex<Vec<(BTreeMap<String, String>, String)>>>;
-type Server = JoinSet<Result<(), IoError>>;
-
-#[derive(Debug, Clone, Serialize)]
-struct Action {
-    action_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    detection_message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct Analysis {
-    policy_drill_down: BTreeMap<String, GuardrailValue>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct Redacted {
-    all_redacted_messages: Vec<GuardrailValue>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct Answer {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    required_action: Option<Action>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    analysis_result: Option<Analysis>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    redacted_chat: Option<Redacted>,
-}
-
-fn no_action() -> Answer {
-    Answer {
-        required_action: None,
-        analysis_result: None,
-        redacted_chat: None,
-    }
-}
-
-fn action(action_type: &str, detection_message: Option<&str>) -> Answer {
-    Answer {
-        required_action: Some(Action {
-            action_type: action_type.to_owned(),
-            detection_message: detection_message.map(str::to_owned),
-        }),
-        analysis_result: None,
-        redacted_chat: None,
-    }
-}
-
-async fn serve(status: StatusCode, answer: Answer) -> (String, Server, Captured) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    let captured: Captured = Arc::new(Mutex::new(Vec::new()));
-    let router = Router::new()
-        .route("/fw/v1/analyze", post(handle))
-        .with_state((Arc::clone(&captured), status, answer));
-    let mut server = JoinSet::new();
-    server.spawn(axum::serve(listener, router).into_future());
-    (base, server, captured)
-}
-
-async fn serve_raw(raw: String) -> (String, Server) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    let router = Router::new().route(
-        "/fw/v1/analyze",
-        post(move || {
-            let payload = raw.clone();
-            async move { ([(CONTENT_TYPE, "application/json")], payload) }
-        }),
-    );
-    let mut server = JoinSet::new();
-    server.spawn(axum::serve(listener, router).into_future());
-    (base, server)
-}
-
-fn raw_answer_of_size(size: usize) -> String {
-    format!(
-        "{{\"padding\":\"{}\"}}",
-        "a".repeat(size.saturating_sub(14))
-    )
-}
-
-fn assert_header(headers: &BTreeMap<String, String>, name: &str, value: &str) {
-    assert_eq!(headers.get(name).map(String::as_str), Some(value));
-}
-
-async fn handle(
-    State((captured, status, answer)): State<(Captured, StatusCode, Answer)>,
-    headers: HeaderMap,
-    request_body: String,
-) -> (StatusCode, Json<Answer>) {
-    let mut recorded = BTreeMap::new();
-    for (name, value) in &headers {
-        if let Ok(header_value) = value.to_str() {
-            recorded.insert(name.as_str().to_owned(), header_value.to_owned());
-        }
-    }
-    captured
-        .lock()
-        .expect("captured")
-        .push((recorded, request_body));
-    (status, Json(answer))
-}
-
-#[derive(Debug, Deserialize)]
-struct PostedBody {
-    messages: Vec<GuardrailValue>,
-}
-
-fn build(base: &str) -> CatoGuardrail {
-    CatoGuardrail::new(
-        CatoParams {
-            guardrail_name: Some("cato".to_owned()),
-            api_key: Some(SecretString::from("test-key")),
-            api_base: Some(base.to_owned()),
-            inspect_embeddings: None,
-            ssl_verify: None,
-            timeout: None,
-        },
-        &BTreeMap::<String, String>::new(),
-    )
-    .expect("guardrail")
-}
-
-fn chat_data() -> BTreeMap<String, GuardrailValue> {
-    body(&[
-        ("litellm_call_id", text("call-1")),
-        (
-            "messages",
-            list(&[object(&[
-                ("content", text("hello")),
-                ("role", text("user")),
-            ])]),
-        ),
-    ])
-}
 
 #[tokio::test]
 async fn cato_guardrail_call_posts_the_analyze_messages_and_headers() {

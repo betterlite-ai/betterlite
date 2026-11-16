@@ -13,10 +13,13 @@ use serde_json::json;
 
 use super::request::request_values;
 use super::{Environment, Settings, configure, failure};
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::MockScript;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{MockScript, ProviderCall};
+use std::io::Error;
+use tokio::runtime::{Builder, Runtime};
 
 const MOCK_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -52,7 +55,7 @@ fn mock_for(
     answer: Option<&UpstreamAnswer>,
     calls: usize,
 ) -> Result<(Option<MockProvider>, TcpListener, String), Box<HelperError>> {
-    let io = |error: std::io::Error| failure("OSError", error.to_string());
+    let io = |error: Error| failure("OSError", error.to_string());
     // with no answer this listener stays bound and silent while the caller holds it, so the call times out
     let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
     // the orchestrator makes one call per text, and MockProvider serves one scripted reply per call
@@ -70,17 +73,15 @@ fn mock_for(
     Ok((mock, silent, base))
 }
 
-fn finish_mock(
-    mock: Option<MockProvider>,
-) -> Result<Vec<crate::routing_mock_scripts::ProviderCall>, Box<HelperError>> {
+fn finish_mock(mock: Option<MockProvider>) -> Result<Vec<ProviderCall>, Box<HelperError>> {
     mock.map(MockProvider::finish)
         .transpose()
         .map_err(|error| failure("MockError", error.to_string()))
         .map(Option::unwrap_or_default)
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("OSError", error.to_string()))
@@ -88,7 +89,7 @@ fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
 
 fn scan_orchestrator(
     client: &IbmDetectorClient,
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
     contents: &[String],
 ) -> (GuardrailStatus, Option<Vec<Vec<Detection>>>) {
     let mut results = Vec::with_capacity(contents.len());

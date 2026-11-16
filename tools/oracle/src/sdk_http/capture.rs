@@ -18,7 +18,7 @@ use super::{
 };
 use crate::OracleError;
 use crate::compare::multipart::masked_boundary;
-use crate::mock::{MockProvider, ProviderRequest};
+use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
 
 pub(crate) struct Execution {
     pub(crate) result: Result<SdkResult, SdkHttpError>,

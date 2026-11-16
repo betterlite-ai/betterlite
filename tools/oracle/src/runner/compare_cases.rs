@@ -7,7 +7,7 @@ use crate::artifacts;
 use crate::case::Case;
 use crate::compare;
 use crate::http::Response;
-use crate::mock::ProviderRequest;
+use betterlite_oracle_runner::mock::ProviderRequest;
 
 pub(crate) fn compare_group(
     root: &Path,

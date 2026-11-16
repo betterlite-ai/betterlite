@@ -12,6 +12,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use super::script::{Recorded, ScriptError};
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Debug, Error)]
 pub(super) enum CallError {
@@ -78,11 +79,11 @@ pub(super) const fn kind(error: &CallError) -> &'static str {
     }
 }
 
-pub(super) fn helper_error<M>(class: &str, message: M) -> Box<crate::helpers::HelperError>
+pub(super) fn helper_error<M>(class: &str, message: M) -> Box<HelperError>
 where
     M: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,

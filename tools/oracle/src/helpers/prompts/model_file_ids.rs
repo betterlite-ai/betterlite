@@ -1,4 +1,5 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::file_ids::limits::{FileIdsError, check_messages};
 use betterlite_prompts::file_ids::managed_id::get_format_from_file_id;
 use betterlite_prompts::file_ids::mapping::FileIdMapping;

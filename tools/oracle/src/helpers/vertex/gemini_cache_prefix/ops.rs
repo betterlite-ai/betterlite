@@ -14,9 +14,10 @@ use betterlite_vertex::model_policy::capabilities::{
 use jiff::Timestamp;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -96,18 +97,16 @@ impl RemoteMediaFetcher for OfflineMedia {
 }
 
 pub(super) fn run(input: &Input) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .map_err(|error| {
-            Box::new(HelperError {
-                class: "RuntimeError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })?;
+    let runtime = Builder::new_current_thread().build().map_err(|error| {
+        Box::new(HelperError {
+            class: "RuntimeError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })?;
     let mut results = Vec::with_capacity(input.cases.len());
     for case in &input.cases {
         results.push(case_value(case, &runtime)?);

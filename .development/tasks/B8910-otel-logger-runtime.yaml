@@ -122,7 +122,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger_runtime::tests::hooks::/)'
     - id: helper-python
       why: The pure factory decision comparison has no independently checked Python adapter.
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b8910::/)'
+      run: cargo nextest run --locked -p betterlite-oracle-logging --no-tests=fail -E 'test(/^b8910::/)'
     - id: legacy-span-tests
       why: Legacy parent creation, route attributes or the response-status setter is missing.
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger_runtime::tests::legacy::/)'

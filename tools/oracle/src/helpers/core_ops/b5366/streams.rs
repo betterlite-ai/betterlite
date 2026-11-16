@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::errors;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const DELTA_CHUNK_ID: &str = "b5366-delta";
 

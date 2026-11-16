@@ -5,24 +5,25 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 fn case_input(file: &str) -> Value {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/sambanova-wire")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     case.call.input
 }
 
-fn run_case(file: &str) -> Value {
+fn run_case_file(file: &str) -> Value {
     super::Op::decode_and_run(&case_input(file)).unwrap()
 }
 
 #[test]
 fn helper_seeds_select_sambanova_wire() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -44,7 +45,7 @@ fn helper_seeds_select_sambanova_wire() {
 
 #[test]
 fn the_chat_case_reports_the_pinned_supported_params_and_mapping() {
-    let result = run_case("chat-params-and-messages.yaml");
+    let result = run_case_file("chat-params-and-messages.yaml");
     assert_eq!(
         result["chat_supported"][0]["supported"],
         json!([
@@ -84,7 +85,7 @@ fn the_chat_case_reports_the_pinned_supported_params_and_mapping() {
 
 #[test]
 fn the_embedding_case_reports_the_urls() {
-    let result = run_case("embedding-url-headers-body.yaml");
+    let result = run_case_file("embedding-url-headers-body.yaml");
     assert_eq!(
         result["embedding_urls"][0]["url"],
         json!("https://api.sambanova.ai/v1/embeddings")
@@ -94,7 +95,7 @@ fn the_embedding_case_reports_the_urls() {
 
 #[test]
 fn the_embedding_case_reports_the_headers() {
-    let result = run_case("embedding-url-headers-body.yaml");
+    let result = run_case_file("embedding-url-headers-body.yaml");
     assert_eq!(
         result["embedding_headers"][1]["headers"]["Authorization"],
         json!("Bearer None")
@@ -123,7 +124,7 @@ fn the_embedding_case_reports_the_headers() {
 
 #[test]
 fn the_embedding_case_reports_the_request_bodies() {
-    let result = run_case("embedding-url-headers-body.yaml");
+    let result = run_case_file("embedding-url-headers-body.yaml");
     assert_eq!(
         result["embedding_requests"][2]["request"],
         json!({"input": "text", "model": "other"})
@@ -132,7 +133,7 @@ fn the_embedding_case_reports_the_request_bodies() {
 
 #[test]
 fn the_embedding_case_reports_the_replies() {
-    let result = run_case("embedding-url-headers-body.yaml");
+    let result = run_case_file("embedding-url-headers-body.yaml");
     assert_eq!(
         result["embedding_replies"][0]["model"],
         json!("embed-model")
@@ -159,7 +160,7 @@ fn the_embedding_case_reports_the_replies() {
 
 #[test]
 fn the_embedding_case_reports_the_errors() {
-    let result = run_case("embedding-url-headers-body.yaml");
+    let result = run_case_file("embedding-url-headers-body.yaml");
     assert_eq!(
         result["embedding_errors"][0]["request_url"],
         json!("https://docs.litellm.ai/docs")

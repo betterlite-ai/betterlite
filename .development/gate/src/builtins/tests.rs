@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
@@ -8,7 +9,11 @@ use crate::builtins::expect_budget;
 use crate::builtins::file_size::size_problem;
 use crate::builtins::globs::glob_set;
 use crate::builtins::module_tree::Walk;
+use crate::builtins::shared_names::{name_problems, shared_names};
 use crate::spec::catalog::FileSize;
+
+const PIN: &str =
+    "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/";
 
 #[test]
 fn a_single_star_stays_inside_one_directory() {
@@ -49,8 +54,8 @@ fn the_expect_budget_counts_inner_and_outer_attributes() {
         "#![expect(dead_code, reason = \"wired in the next task\")]".to_owned(),
         "let budget = 1;".to_owned(),
     ];
-    assert!(expect_budget::check(2, &lines, &[]).is_empty());
-    assert_eq!(expect_budget::check(1, &lines, &[]).len(), 3);
+    assert!(expect_budget::check(2, PIN, &lines, &[], &[]).is_empty());
+    assert_eq!(expect_budget::check(1, PIN, &lines, &[], &[]).len(), 3);
 }
 
 #[test]
@@ -62,8 +67,8 @@ fn the_expect_budget_counts_python_casts_and_ignores_once_per_line() {
         "import litellm.types.utils  # pyright:ignore[reportMissingTypeStubs]".to_owned(),
         "    hidden = ours._hidden_params  # noqa: SLF001".to_owned(),
     ];
-    assert!(expect_budget::check(5, &[], &lines).is_empty());
-    assert_eq!(expect_budget::check(4, &[], &lines).len(), 6);
+    assert!(expect_budget::check(5, PIN, &[], &lines, &[]).is_empty());
+    assert_eq!(expect_budget::check(4, PIN, &[], &lines, &[]).len(), 6);
 }
 
 #[test]
@@ -74,15 +79,28 @@ fn the_expect_budget_skips_python_lines_that_only_name_a_cast_or_a_hash() {
         "    color = \"#ffffff\"  # the theme's own white".to_owned(),
         "    note = \"type: ignore\"".to_owned(),
     ];
-    assert!(expect_budget::check(0, &[], &lines).is_empty());
+    assert!(expect_budget::check(0, PIN, &[], &lines, &[]).is_empty());
 }
 
 #[test]
 fn the_expect_budget_shares_one_limit_between_rust_and_python() {
     let rust = ["#[expect(dead_code, reason = \"wired in the next task\")]".to_owned()];
     let python = ["    view = cast(Json, raw)".to_owned()];
-    assert!(expect_budget::check(2, &rust, &python).is_empty());
-    assert_eq!(expect_budget::check(1, &rust, &python).len(), 3);
+    assert!(expect_budget::check(2, PIN, &rust, &python, &[]).is_empty());
+    assert_eq!(expect_budget::check(1, PIN, &rust, &python, &[]).len(), 3);
+}
+
+#[test]
+fn the_expect_budget_frees_an_oracle_helper_line_linked_to_litellm_at_the_pin() {
+    let linked = format!("    view = cast(Json, event.model_dump())  # {PIN}litellm/utils.py#L10");
+    let helper = [
+        linked.clone(),
+        "    view = cast(Json, raw)  # https://github.com/BerriAI/litellm/blob/0000000000000000000000000000000000000000/litellm/utils.py#L10".to_owned(),
+        "    hidden = ours._hidden_params  # noqa: SLF001".to_owned(),
+    ];
+    assert!(expect_budget::check(2, PIN, &[], &[], &helper).is_empty());
+    assert_eq!(expect_budget::check(1, PIN, &[], &[], &helper).len(), 3);
+    assert_eq!(expect_budget::check(0, PIN, &[], &[linked], &[]).len(), 2);
 }
 
 #[test]
@@ -196,4 +214,22 @@ fn http_case_pointers_are_left_to_the_oracle() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn a_free_function_cannot_take_a_shared_oracle_function_name() {
+    let shared = BTreeSet::from(["invoke".to_owned(), "run_case".to_owned()]);
+    let source = "fn run_case() {}\nimpl Op { fn invoke(&self) {} }\nfn outer() { fn invoke() {} }\nmod inner { pub(crate) fn run_case_file() {} }\n";
+    let items = syn::parse_file(source).unwrap().items;
+    let problems = name_problems("tools/oracle/src/probe.rs", &items, &shared);
+    assert_eq!(problems.len(), 2);
+    assert!(problems[0].starts_with("tools/oracle/src/probe.rs: fn run_case "));
+    assert!(problems[1].starts_with("tools/oracle/src/probe.rs: fn invoke "));
+}
+
+#[test]
+fn the_shared_oracle_functions_include_run_case_and_invoke() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let names = shared_names(&root).unwrap();
+    assert!(names.contains("run_case") && names.contains("invoke"));
 }

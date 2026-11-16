@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use super::calls::{HeaderMap, context_of, outcome, params_object};
 use super::{Operation, Probe, invalid_input};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn create_update_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
     let headers = probe.headers.clone().unwrap_or_default();

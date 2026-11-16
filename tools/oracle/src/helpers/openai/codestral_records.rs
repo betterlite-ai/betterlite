@@ -6,6 +6,8 @@ use betterlite_openai::codestral_records::options::{
     CodestralSettings, SUPPORTED_PARAMS, map_params,
 };
 use betterlite_openai::codestral_records::reply::{PostCall, PostCallLogger, process_response};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
@@ -58,8 +60,8 @@ impl PostCallLogger for Recorder {
     }
 }
 
-fn invalid(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: String::from("InvalidInput"),
         status: None,
         error_type: None,
@@ -73,7 +75,7 @@ fn reply(
     status: u16,
     call: PostCall<'_>,
     source: &RecordSource,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<HelperError>> {
     let mut recorder = Recorder(Vec::new());
     let outcome = match process_response(status, call, &mut recorder, source) {
         Ok(reply) => json!({"kind": "reply", "reply": reply}),
@@ -88,10 +90,7 @@ fn reply(
     Ok(json!({"events": recorder.0, "outcome": outcome}))
 }
 
-fn execute(
-    step: &Step,
-    config: &Map<String, Value>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn execute(step: &Step, config: &Map<String, Value>) -> Result<Value, Box<HelperError>> {
     let source = RecordSource {
         id: Uuid::nil(),
         created: 0,
@@ -136,10 +135,10 @@ fn execute(
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let config =
             provider_config(&input.settings).map_err(|error| invalid(error.to_string()))?;
         input

@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::failure;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const PRICE_SCALE: u32 = 12;
 

@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::helper_error;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct RequestedInput {

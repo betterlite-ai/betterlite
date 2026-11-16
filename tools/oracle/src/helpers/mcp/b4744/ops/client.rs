@@ -14,7 +14,7 @@ use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::super::fixtures::Fixture;
 use super::super::input::{AuthKind, AuthValueInput, SettingsInput, TlsInput};

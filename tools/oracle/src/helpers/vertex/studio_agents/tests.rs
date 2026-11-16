@@ -5,12 +5,13 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/studio-agents")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -19,7 +20,7 @@ fn run_case(file: &str) -> Value {
 
 #[test]
 fn helper_seeds_select_studio_agents() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -40,7 +41,7 @@ fn helper_seeds_select_studio_agents() {
 
 #[test]
 fn oracle_create_body_keeps_only_the_allowlisted_values() {
-    let result = run_case("create-allowlist.yaml");
+    let result = run_case_file("create-allowlist.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["headers"],
@@ -59,7 +60,7 @@ fn oracle_create_body_keeps_only_the_allowlisted_values() {
 
 #[test]
 fn oracle_empty_native_values_survive_the_allowlist() {
-    let result = run_case("empty-native-values.yaml");
+    let result = run_case_file("empty-native-values.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["body"],
@@ -70,7 +71,7 @@ fn oracle_empty_native_values_survive_the_allowlist() {
 
 #[test]
 fn oracle_identity_defaults_are_compared() {
-    let result = run_case("absent-versus-null-identity.yaml");
+    let result = run_case_file("absent-versus-null-identity.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["agent"],
@@ -88,20 +89,20 @@ fn oracle_identity_defaults_are_compared() {
 
 #[test]
 fn oracle_malformed_replies_fall_back_with_the_create_warning() {
-    let created = run_case("malformed-create-warning.yaml");
+    let created = run_case_file("malformed-create-warning.yaml");
     assert_eq!(created["calls"][0]["agent"]["id"], "request-name");
     assert_eq!(
         created["calls"][0]["warnings"],
         json!(["malformed_create_reply"])
     );
-    let fetched = run_case("malformed-get-fallback.yaml");
+    let fetched = run_case_file("malformed-get-fallback.yaml");
     assert_eq!(fetched["calls"][0]["agent"]["name"], "request-name");
     assert_eq!(fetched["calls"][0]["warnings"], json!([]));
 }
 
 #[test]
 fn oracle_malformed_pages_are_empty() {
-    let result = run_case("malformed-list-empty.yaml");
+    let result = run_case_file("malformed-list-empty.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(calls[0], json!({"agents": [], "next_page_token": null}));
     assert_eq!(
@@ -112,7 +113,7 @@ fn oracle_malformed_pages_are_empty() {
 
 #[test]
 fn oracle_pagination_drops_empty_limits() {
-    let result = run_case("zero-pagination-omitted.yaml");
+    let result = run_case_file("zero-pagination-omitted.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0],
@@ -133,7 +134,7 @@ fn oracle_pagination_drops_empty_limits() {
 
 #[test]
 fn oracle_versions_and_deletes_project_native_fields() {
-    let versions = run_case("versions-field.yaml");
+    let versions = run_case_file("versions-field.yaml");
     let calls = versions["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["url"],
@@ -150,7 +151,7 @@ fn oracle_versions_and_deletes_project_native_fields() {
             "next_page_token": "t",
         })
     );
-    let deleted = run_case("successful-empty-delete.yaml");
+    let deleted = run_case_file("successful-empty-delete.yaml");
     let delete_calls = deleted["calls"].as_array().unwrap();
     assert_eq!(
         delete_calls[0],
@@ -164,9 +165,9 @@ fn oracle_versions_and_deletes_project_native_fields() {
 
 #[test]
 fn oracle_custom_base_refusal_keeps_the_environment_key_out() {
-    use crate::helpers::Helper as _;
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/studio-agents/custom-base-requires-explicit-key.yaml");
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     let failure =

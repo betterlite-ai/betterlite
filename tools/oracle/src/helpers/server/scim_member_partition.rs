@@ -13,7 +13,8 @@ use betterlite_server::scim_member_identity::member_value::{
 use betterlite_server::scim_records::group::{Member, MemberKind};
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

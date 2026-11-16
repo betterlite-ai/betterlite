@@ -13,10 +13,14 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, Outcome, ProviderCall, ScriptedReply, Wait};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{
+    MockScript, Outcome, ProviderCall, ScriptedReply, Wait,
+};
+use tokio::runtime::{Builder, Runtime};
 
 pub(crate) struct Op;
 
@@ -111,7 +115,7 @@ struct Output {
     texts: Option<Vec<String>>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -219,8 +223,8 @@ fn script(call: &Call) -> Result<MockScript, Box<HelperError>> {
         .map_err(|error| failure("ValueError", None, error.to_string()))
 }
 
-fn build_runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+fn build_runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("RuntimeError", None, error.to_string()))

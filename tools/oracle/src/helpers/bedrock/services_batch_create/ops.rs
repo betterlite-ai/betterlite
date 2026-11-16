@@ -16,7 +16,8 @@ use serde_json::{Value, json};
 
 use super::input::{Input, Operation, Scenario};
 use super::support::{epoch, runtime, secrets};
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn run(input: &Input) -> HelperResult {
     let call: fn(&Scenario) -> Value = match input.operation {

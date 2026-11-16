@@ -9,6 +9,7 @@ use betterlite_auth::resource_hints::nvidia::{
     DeploymentHint, MODEL_PREFIX, PROVIDER, model_group_in_path, model_groups,
     router_model_in_endpoint as nim_model_in_endpoint,
 };
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::Subscriber;
@@ -79,10 +80,10 @@ impl<S: Subscriber> Layer<S> for DebugCounter {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(Value::Array(input.steps.iter().map(run_step).collect()))
     }
 }

@@ -1,0 +1,9 @@
+task: B1346
+deviations:
+  - what: A reply body over 16 MiB is refused with a typed TooLarge error before it is decoded, where LiteLLM passes the body to httpx.Response.json() with no size limit.
+    why: Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the shared reply decoder's cap; a reply that large is not an Imagen result any working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_imagen_transformation.py#L222-L229
+  - what: A reply whose root is JSON but not an object, whose predictions is null, a string, number, boolean or object rather than a list, whose prediction entry is not an object (a list or null included), or whose bytesBase64Encoded is neither a string nor null fails with a typed Shape error naming the path. LiteLLM duck-types the reply instead and either raises an uncaught AttributeError, TypeError or pydantic validation error as an HTTP 500, or silently appends nothing when it iterates the value or tests for the key in it.
+    why: The reply's declared shape is an object holding a predictions list of objects with an optional string, so such a reply is malformed; betterlite names the failure instead of crashing the request, and no working setup receives one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_imagen_transformation.py#L236-L247
+kept_bugs: []

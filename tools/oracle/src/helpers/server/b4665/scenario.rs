@@ -19,7 +19,10 @@ use serde_json::{Value, json};
 
 use super::fakes::{ManualClock, PostState, RecordingCache, ScriptedPost};
 use super::input::{ConfigSpec, Input, StepOp, StepSpec, token_config};
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::mem;
+use tokio::runtime::Builder;
 
 const DEFAULT_SERVER_ID: &str = "srv";
 const DEFAULT_CONCURRENT_CALLERS: usize = 2;
@@ -88,7 +91,7 @@ fn step_server(config: &ConfigSpec) -> ServerSpec {
 }
 
 pub(super) fn run(input: &Input) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .or_value_error()?;
@@ -132,7 +135,7 @@ async fn scenario(input: &Input) -> HelperResult {
 
 fn take_events(events: &Arc<Mutex<Vec<Value>>>) -> Vec<Value> {
     let mut guard = events.lock().unwrap_or_else(PoisonError::into_inner);
-    let taken = std::mem::take(&mut *guard);
+    let taken = mem::take(&mut *guard);
     drop(guard);
     taken
 }

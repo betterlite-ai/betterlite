@@ -16,6 +16,7 @@ use tracing_subscriber::layer::SubscriberExt as _;
 
 use super::fixture::{Capture, CapturedEvent, FixtureClock, FixtureTransport, NOW};
 use super::steps::{Observe, Step};
+use tracing::subscriber;
 
 const CREDENTIAL_ARGUMENTS: [&str; 3] = ["client_id", "password", "username"];
 
@@ -250,7 +251,7 @@ fn debug_json(events: &[CapturedEvent], step: &Step) -> Vec<Value> {
 pub(super) fn construction_step(step: &Step) -> Value {
     let capture = Capture::default();
     let subscriber = tracing_subscriber::registry().with(capture.clone());
-    let mut value = tracing::subscriber::with_default(subscriber, || {
+    let mut value = subscriber::with_default(subscriber, || {
         with_provider(step, |provider, attempt| {
             if step.calls.is_some_and(|calls| calls > 0)
                 && let Err(error) = provider.token()

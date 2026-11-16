@@ -5,8 +5,12 @@ mod fakes;
 mod scenario;
 mod scripted;
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fakes::Effect;
 use scenario::run_scenario;
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -148,11 +152,11 @@ struct Report {
     failed_reader: Flag,
 }
 
-fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
@@ -162,11 +166,11 @@ where
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .build()
             .map_err(failure)?;

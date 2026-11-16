@@ -77,7 +77,7 @@ description: >-
   so it adds no cargo-fuzz target; replays_corpus is not required.
 
 
-  Register HelperCall::ResponsesMcpFollowup in tools/oracle/src/helpers/mod.rs (and helpers.rs when it owns the
+  Register HelperCall::ResponsesMcpFollowup in tools/oracle/src/helpers.rs (and helpers.rs when it owns the
   re-export) and tools/oracle/helpers/dispatch.py. Each helper fixture uses call:
   {responses_mcp_followup: <typed input>}; responses_mcp_followup is the Python protocol key, not a fixture tag.
   The Rust adapter calls this production service and the Python adapter invokes the pinned MIT functions with

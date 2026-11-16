@@ -1,4 +1,3 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_bedrock::aws_settings::tls::resolve_tls;
 use betterlite_bedrock::aws_settings::{
     assume_role_parameters, bedrock_bearer_token, canonicalize_tags, pop_aws_auth_params,
@@ -13,6 +12,8 @@ use betterlite_config::sections::{
     bedrock_aws_settings::AwsS3Settings, bedrock_settings::AwsSettings,
 };
 use betterlite_openai::error::{ErrorRequest, ErrorResponse};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::Input;
 use secrecy::ExposeSecret as _;
 use serde_json::json;

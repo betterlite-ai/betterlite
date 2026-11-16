@@ -11,10 +11,12 @@ use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use self::fixture::Fixture;
 use self::fixture::transport::{Reply, Shared};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::io::{self, Error, ErrorKind};
 
 mod fixture;
 mod tests;
@@ -80,15 +82,15 @@ impl ArcHost for Fixture {
         "${ProgramFiles}".to_owned()
     }
 
-    fn file_size(&self, path: &str) -> std::io::Result<u64> {
-        u64::try_from(self.read_text(path)?.len()).map_err(std::io::Error::other)
+    fn file_size(&self, path: &str) -> io::Result<u64> {
+        u64::try_from(self.read_text(path)?.len()).map_err(Error::other)
     }
 
-    fn read_text(&self, path: &str) -> std::io::Result<String> {
+    fn read_text(&self, path: &str) -> io::Result<String> {
         self.files
             .get(path)
             .cloned()
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, path.to_owned()))
+            .ok_or_else(|| Error::new(ErrorKind::NotFound, path.to_owned()))
     }
 
     fn now_unix_seconds(&self) -> i64 {
@@ -221,10 +223,10 @@ fn token_step(step: &TokenStep) -> Result<Value, Failure> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let steps = input
             .steps
             .iter()

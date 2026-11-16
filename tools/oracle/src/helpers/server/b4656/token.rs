@@ -3,7 +3,7 @@ use betterlite_server::mcp::outbound_credentials::presented_store::PresentedOAut
 use serde_json::Value;
 
 use super::{parse_token, runtime, value_error, view};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn token(input: &Value) -> HelperResult {
     let minted = parse_token(input.get("token").unwrap_or(&Value::Null))?;

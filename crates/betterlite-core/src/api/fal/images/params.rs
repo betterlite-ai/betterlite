@@ -15,11 +15,22 @@ pub fn image_generation_body(prompt: &str, optional_params: ImageParams) -> Imag
     body
 }
 
-pub fn map_openai_params(
+pub(crate) type SizeTranslation = fn(&Json) -> Result<(&'static str, Json), FalImageError>;
+
+// the pinned Bria and Recraft classes advertise n and response_format but send neither, and rename size
+#[derive(Clone, Copy)]
+pub(crate) enum SizeMapping {
+    Verbatim,
+    UrlOnly(SizeTranslation),
+}
+
+// an original key already in the options suppresses its translation; an unlisted key fails unless dropped
+pub(crate) fn map_params(
     non_default_params: &ImageParams,
     optional_params: ImageParams,
     model: &str,
     drop_params: bool,
+    sizes: SizeMapping,
 ) -> Result<ImageParams, FalImageError> {
     let mut mapped = optional_params;
     for (name, value) in non_default_params {
@@ -35,7 +46,32 @@ pub fn map_openai_params(
                 model: model.to_owned(),
             });
         }
-        mapped.insert(name.clone(), value.clone());
+        match sizes {
+            SizeMapping::Verbatim => {
+                mapped.insert(name.clone(), value.clone());
+            }
+            SizeMapping::UrlOnly(translate_size) => {
+                if name == "size" {
+                    let (destination, translated) = translate_size(value)?;
+                    mapped.insert(destination.to_owned(), translated);
+                }
+            }
+        }
     }
     Ok(mapped)
+}
+
+pub fn map_openai_params(
+    non_default_params: &ImageParams,
+    optional_params: ImageParams,
+    model: &str,
+    drop_params: bool,
+) -> Result<ImageParams, FalImageError> {
+    map_params(
+        non_default_params,
+        optional_params,
+        model,
+        drop_params,
+        SizeMapping::Verbatim,
+    )
 }

@@ -3,11 +3,13 @@ use betterlite_db::database_faults::reconnect::{
     DbReconnect, RetryPolicy, Timeout, call_with_db_reconnect_retry,
 };
 use betterlite_db::database_faults::{DbError, ErrorType};
+use betterlite_oracle_helper_api::error::HelperError;
 use futures_util::FutureExt as _;
 use serde::{Deserialize, Serialize};
 use std::future::{Future, ready};
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
+use tracing::subscriber;
 use tracing_subscriber::layer::SubscriberExt as _;
 
 #[derive(Deserialize)]
@@ -57,7 +59,7 @@ impl DbReconnect for Client<'_> {
         self.capture
             .0
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .push(Effect::Reconnect {
                 reason: reason.to_owned(),
                 timeout_seconds,
@@ -67,12 +69,12 @@ impl DbReconnect for Client<'_> {
     }
 }
 
-pub(super) fn run(script: &Script) -> Result<Report, Box<crate::helpers::HelperError>> {
+pub(super) fn run(script: &Script) -> Result<Report, Box<HelperError>> {
     let capture = Capture(Arc::new(Mutex::new(Vec::new())));
     let subscriber = tracing_subscriber::registry().with(capture.clone());
-    let outcome = tracing::subscriber::with_default(subscriber, || execute(script, &capture))
-        .ok_or_else(|| {
-            Box::new(crate::helpers::HelperError {
+    let outcome =
+        subscriber::with_default(subscriber, || execute(script, &capture)).ok_or_else(|| {
+            Box::new(HelperError {
                 class: "ScriptPending".to_owned(),
                 status: None,
                 error_type: None,
@@ -89,7 +91,7 @@ pub(super) fn run(script: &Script) -> Result<Report, Box<crate::helpers::HelperE
     let effects = capture
         .0
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(PoisonError::into_inner)
         .clone();
     Ok(Report {
         name: script.name.clone(),
@@ -123,7 +125,7 @@ fn execute(script: &Script, capture: &Capture) -> Option<Result<i32, DbError>> {
             capture
                 .0
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .unwrap_or_else(PoisonError::into_inner)
                 .push(Effect::Read);
             ready(reads.next().cloned().unwrap_or_else(|| {
                 Err(DbError {

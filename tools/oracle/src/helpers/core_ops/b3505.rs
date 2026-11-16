@@ -16,12 +16,14 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Number, Value, json};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use fixture::{FixtureConfig, FixtureError};
 use harness::Harness;
+use std::fmt::Display;
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -58,7 +60,7 @@ impl Helper for Op {
     fn run(input: &Input) -> HelperResult {
         let (address, captured) = server::serve(input.status, &input.body)?;
         let mut harness = Harness::new(&input.litellm_call_id)?;
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| failed(&error))?;
@@ -147,7 +149,7 @@ fn wanted(input: &Input) -> Vec<String> {
     names
 }
 
-pub(super) fn failed(error: &dyn std::fmt::Display) -> Box<HelperError> {
+pub(super) fn failed(error: &dyn Display) -> Box<HelperError> {
     Box::new(HelperError {
         class: "OSError".to_owned(),
         status: None,
