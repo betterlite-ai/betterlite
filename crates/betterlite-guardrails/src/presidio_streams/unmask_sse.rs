@@ -82,7 +82,7 @@ fn unmask_block(block: &mut Box<RawValue>, tokens: &PiiTokens) -> Result<bool, s
     if unmasked == found {
         return Ok(false);
     }
-    *text = to_raw(&unmasked)?;
+    *text = RawValue::from_string(serde_json::to_string(&unmasked)?)?;
     *block = RawValue::from_string(serde_json::to_string(&fields)?)?;
     Ok(true)
 }
