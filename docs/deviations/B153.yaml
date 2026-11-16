@@ -1,6 +1,6 @@
 task: B153
 deviations:
-  - what: The formula and the README runbook build and checksum the Rust crate crates/betterlite-cli from a GitHub tag archive with cargo; LiteLLM builds the PyPI sdist into a Python 3.13 virtualenv.
+  - what: The formula and the README runbook build and checksum the Rust crate crates/betterlite-cli from a GitHub tag archive with one cargo install, so bin/lite comes from cargo and there is no install_symlink; LiteLLM builds the PyPI sdist into a Python 3.13 virtualenv, installs it with pip and symlinks lite into bin.
     why: betterlite has no Python package and no PyPI release; the tag archive is the only published source.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/packaging/homebrew/lite.rb#L23-L28
   - what: The tap is betterlite-ai/homebrew-betterlite, installed with brew install betterlite-ai/betterlite/lite, instead of BerriAI/homebrew-litellm.
