@@ -1,0 +1,19 @@
+kind: helper
+name: vertex-imagen-generation-custom-complete-base
+call:
+  vertex_imagen_generation:
+    model: imagen-3.0-generate-002
+    mappings:
+      - prompt: a red fox
+        non_default_params: {size: 1792x1024}
+        optional_params: {}
+        litellm_params: null
+    target:
+      api_base: https://proxy.example/predict///
+      params_api_base: null
+      project: proj
+      location: us-central1
+      headers: {x-goog-user-project: billing}
+    response: null
+env: {}
+compare: {ignore: []}

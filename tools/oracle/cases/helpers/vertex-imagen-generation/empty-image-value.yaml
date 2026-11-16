@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-imagen-generation-empty-image-value
+call:
+  vertex_imagen_generation:
+    model: imagen-3.0-generate-002
+    mappings: []
+    target: null
+    response:
+      predictions:
+        - bytesBase64Encoded: ""
+env: {}
+compare: {ignore: []}
