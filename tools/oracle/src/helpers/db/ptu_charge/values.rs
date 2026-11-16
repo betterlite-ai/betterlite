@@ -46,7 +46,7 @@ struct ParsedRecord<'model> {
     model_name: &'model str,
     team_id: &'model str,
     ptu_count: u32,
-    cost_per_ptu_per_hour: f64,
+    cost_per_ptu_per_hour: serde_json::Number,
     effective_from_micros: i64,
     effective_to_micros: Option<i64>,
 }
@@ -60,7 +60,7 @@ impl<'model> TryFrom<&'model PtuModel> for ParsedRecord<'model> {
             model_name: &model.model_name,
             team_id: &model.team_id,
             ptu_count: model.ptu_count,
-            cost_per_ptu_per_hour: float_value(model.cost_per_ptu_per_hour)?,
+            cost_per_ptu_per_hour: json_number(model.cost_per_ptu_per_hour)?,
             effective_from_micros: model.effective_from.timestamp_micros(),
             effective_to_micros: model.effective_to.map(|instant| instant.timestamp_micros()),
         })
@@ -68,8 +68,8 @@ impl<'model> TryFrom<&'model PtuModel> for ParsedRecord<'model> {
 }
 
 pub(super) fn parsed_value(model: &PtuModel) -> Result<Value, Box<HelperError>> {
-    let record = ParsedRecord::try_from(model)?;
-    serde_json::to_value(record).map_err(|error| value_error(error.to_string()))
+    serde_json::to_value(ParsedRecord::try_from(model)?)
+        .map_err(|error| value_error(error.to_string()))
 }
 
 pub(super) fn charge_value(charge: &PtuCharge) -> Result<Value, Box<HelperError>> {
@@ -77,7 +77,7 @@ pub(super) fn charge_value(charge: &PtuCharge) -> Result<Value, Box<HelperError>
         "team_id": charge.team_id,
         "model_id": charge.model_id,
         "model_name": charge.model_name,
-        "flat_cost": float_value(charge.flat_cost)?,
+        "flat_cost": json_number(charge.flat_cost)?,
     }))
 }
 
@@ -91,10 +91,12 @@ pub(super) fn utc_day(text: &str) -> Result<NaiveDate, Box<HelperError>> {
         .map_err(|error| value_error(format!("day '{text}': {error}")))
 }
 
-pub(super) fn float_value(amount: Decimal) -> Result<f64, Box<HelperError>> {
-    amount
+pub(super) fn json_number(amount: Decimal) -> Result<serde_json::Number, Box<HelperError>> {
+    let value = amount
         .to_f64()
-        .ok_or_else(|| value_error(format!("amount {amount} does not fit an f64")))
+        .ok_or_else(|| value_error(format!("amount {amount} does not fit an f64")))?;
+    serde_json::Number::from_f64(value)
+        .ok_or_else(|| value_error(format!("amount {amount} is not a JSON number")))
 }
 
 pub(super) fn value_error(message: String) -> Box<HelperError> {

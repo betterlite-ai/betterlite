@@ -14,7 +14,7 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::{Value, json};
 
 use self::values::{
-    charge_value, float_value, parsed_models, parsed_value, ptu_model, router_entry, utc_day,
+    charge_value, json_number, parsed_models, parsed_value, ptu_model, router_entry, utc_day,
     utc_instant, value_error,
 };
 
@@ -151,24 +151,20 @@ fn hours_answer(input: &ModelInput, day: &str) -> Result<Value, Box<HelperError>
     let model = ptu_model(input)?;
     let hours = active_hours_on_day(&model, utc_day(day)?)
         .map_err(|error| value_error(error.to_string()))?;
-    Ok(json!(float_value(hours)?))
+    Ok(Value::Number(json_number(hours)?))
 }
 
 fn cost_answer(input: &ModelInput, day: &str) -> Result<Value, Box<HelperError>> {
     let model = ptu_model(input)?;
     let cost =
         daily_flat_cost(&model, utc_day(day)?).map_err(|error| value_error(error.to_string()))?;
-    Ok(json!(float_value(cost)?))
+    Ok(Value::Number(json_number(cost)?))
 }
 
 fn aggregate_answer(inputs: &[ModelInput], day: &str) -> Result<Value, Box<HelperError>> {
     let charges = aggregate_charges(&parsed_models(inputs)?, utc_day(day)?)
         .map_err(|error| value_error(error.to_string()))?;
-    let values = charges
-        .iter()
-        .map(charge_value)
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(Value::Array(values))
+    charges.iter().map(charge_value).collect()
 }
 
 fn config_answer(entries: &[EntryInput], owned_by_db: &[String]) -> Value {
