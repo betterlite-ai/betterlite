@@ -1,5 +1,5 @@
 use betterlite_openai::response_resources::request::{
-    ListInputItemsQuery, ResourceOperation, ResourceRequest,
+    InputItemsOrder, ListInputItemsQuery, ResourceOperation, ResourceRequest,
 };
 use serde_json::{Value, json};
 
@@ -86,11 +86,22 @@ fn input_items() {
     );
     // an empty include list is not a query parameter
     let empty = ListInputItemsQuery {
+        after: None,
+        before: None,
         include: Some(Vec::new()),
-        limit: None,
-        order: None,
-        ..ListInputItemsQuery::default()
+        limit: Some(20),
+        order: Some(InputItemsOrder::Desc),
     };
     let request = list_input_items("https://host", "resp_1", &empty).unwrap();
     assert_eq!(payload(&request), json!({"limit": 20, "order": "desc"}));
+    // an explicit None limit and order write no query parameter at all
+    let omitted = ListInputItemsQuery {
+        after: None,
+        before: None,
+        include: None,
+        limit: None,
+        order: None,
+    };
+    let request = list_input_items("https://host", "resp_1", &omitted).unwrap();
+    assert_eq!(payload(&request), json!({}));
 }

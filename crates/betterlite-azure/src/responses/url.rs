@@ -1,5 +1,6 @@
 use betterlite_config::sections::azure_responses::Settings as ResponsesSettings;
 use betterlite_http::user_url::httpx_url::HttpxUrl;
+use percent_encoding::percent_decode_str;
 
 use super::error::ResponsesError;
 use crate::azure_urls::{AzureUrlError, get_base_azure_url};
@@ -24,29 +25,34 @@ pub fn complete_url(
     )
 }
 
-// httpx's copy_with(scheme=..., path=..., query=None): the path is re-parsed, the fragment is kept
+// httpx's copy_with(scheme=..., path=..., query=None): the decoded path is quoted again, the fragment is kept
 pub fn websocket_url(api_base: Option<&str>) -> Result<String, ResponsesError> {
     let Some(base) = api_base else {
         return Err(ResponsesError::MissingWebsocketApiBase);
     };
     let parsed = HttpxUrl::parse(base)?;
+    // httpx's URL.path is percent-decoded, and copy_with(path=...) parses the result as a path component
+    let decoded = percent_decode_str(&parsed.path).decode_utf8_lossy();
+    if decoded.contains(['?', '#']) {
+        return Err(ResponsesError::Url(AzureUrlError::UnrewritablePath));
+    }
     // one suffix comes off, in LiteLLM's order, so a base already at the websocket route is not appended twice
-    let trimmed = parsed.path.trim_end_matches('/');
+    let trimmed = decoded.trim_end_matches('/');
     let path = trimmed
         .strip_suffix(WEBSOCKET_ROUTE)
         .or_else(|| trimmed.strip_suffix(ROUTE))
         .unwrap_or(trimmed);
     let mut authority = parsed.clone();
+    authority.scheme = if parsed.scheme == "https" {
+        String::from("wss")
+    } else {
+        String::from("ws")
+    };
     authority.path = String::new();
     authority.query = None;
     authority.fragment = None;
     let composed = format!("{}{path}{WEBSOCKET_ROUTE}", authority.href());
     let mut websocket = HttpxUrl::parse(&composed)?;
-    websocket.scheme = if parsed.scheme == "https" {
-        String::from("wss")
-    } else {
-        String::from("ws")
-    };
     websocket.query = None;
     websocket.fragment = parsed.fragment;
     Ok(websocket.href())

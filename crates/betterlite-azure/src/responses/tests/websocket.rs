@@ -1,3 +1,4 @@
+use crate::azure_urls::AzureUrlError;
 use crate::responses::error::ResponsesError;
 use crate::responses::url::{
     MODEL_IN_WEBSOCKET_URL, SUPPORTS_NATIVE_WEBSOCKET, WEBSOCKET_ROUTE, websocket_url,
@@ -45,4 +46,27 @@ pub(super) fn websocket_model_query() {
         websocket_url(Some("wss://host/base")).unwrap(),
         "ws://host/base/openai/v1/responses"
     );
+    // httpx decodes the path before the suffix check and the new route is quoted again
+    assert_eq!(
+        websocket_url(Some("https://h/a%2Fb")).unwrap(),
+        "wss://h/a/b/openai/v1/responses"
+    );
+    assert_eq!(
+        websocket_url(Some("https://h/openai%2Fresponses")).unwrap(),
+        "wss://h/openai/v1/responses"
+    );
+    // one decode only: an escaped percent stays quoted for httpx's path
+    assert_eq!(
+        websocket_url(Some("http://h/a%252Fb")).unwrap(),
+        "ws://h/a%2Fb/openai/v1/responses"
+    );
+    // a decoded '?' or '#' cannot be written back as a path component
+    assert!(matches!(
+        websocket_url(Some("https://h/a%3Fb")),
+        Err(ResponsesError::Url(AzureUrlError::UnrewritablePath))
+    ));
+    assert!(matches!(
+        websocket_url(Some("https://h/a%23b")),
+        Err(ResponsesError::Url(AzureUrlError::UnrewritablePath))
+    ));
 }
