@@ -102,12 +102,11 @@ impl OciStream {
     }
 
     fn finish(&mut self) -> Result<(), OciError> {
-        if !self.carry.is_empty() {
-            let text = String::from_utf8_lossy(&self.carry).into_owned();
-            let items = self.decoder.push(&text)?;
-            self.pending.extend(items);
-            self.carry.clear();
-        }
+        // the lossy text goes in even when no bytes are carried, since an empty push leaves the decoder as it was
+        let tail = String::from_utf8_lossy(&self.carry).into_owned();
+        self.carry.clear();
+        let items = self.decoder.push(&tail)?;
+        self.pending.extend(items);
         let items = self.decoder.finish()?;
         self.pending.extend(items);
         self.done = true;
@@ -117,12 +116,13 @@ impl OciStream {
 
 // httpx's iter_text decodes lossily and carries an incomplete UTF-8 sequence over to the next read
 fn split_text(bytes: &[u8]) -> (String, usize) {
-    match std::str::from_utf8(bytes) {
-        Ok(text) => (text.to_owned(), bytes.len()),
-        Err(error) if error.error_len().is_none() => {
-            let valid = error.valid_up_to();
-            (String::from_utf8_lossy(&bytes[..valid]).into_owned(), valid)
-        }
-        Err(_) => (String::from_utf8_lossy(bytes).into_owned(), bytes.len()),
+    let error = match std::str::from_utf8(bytes) {
+        Ok(text) => return (text.to_owned(), bytes.len()),
+        Err(error) => error,
+    };
+    let valid = error.valid_up_to();
+    match error.error_len() {
+        None => (String::from_utf8_lossy(&bytes[..valid]).into_owned(), valid),
+        Some(_) => (String::from_utf8_lossy(bytes).into_owned(), bytes.len()),
     }
 }

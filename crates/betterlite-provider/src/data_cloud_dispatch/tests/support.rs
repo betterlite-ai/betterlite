@@ -63,7 +63,7 @@ impl OidcClock for Offline {
     }
 }
 
-fn secrets() -> SecretLookup {
+pub(super) fn secrets() -> SecretLookup {
     SecretLookup {
         manager: None,
         oidc_http: Arc::new(Offline),

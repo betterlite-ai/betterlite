@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_models::decisions::Json;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::data_cloud_dispatch::chat::{complete_databricks, dispatch};
 use crate::data_cloud_dispatch::context::{CallLogging, DispatchGlobals};
@@ -121,7 +121,11 @@ fn databricks_completion_prefers_the_global_key_over_the_databricks_key() {
 
 #[test]
 fn databricks_completion_logs_a_failure_and_returns_the_same_error() {
-    let fixture = Fixture::new();
+    let mut fixture = Fixture::new();
+    fixture.headers = Some(BTreeMap::from([(
+        String::from("X-Request-Tag"),
+        String::from("one"),
+    )]));
     let handler = Recorder::failing(500);
     let redactor = redactor();
     let (mut state, env) = logging(&redactor);
@@ -151,10 +155,29 @@ fn databricks_completion_logs_a_failure_and_returns_the_same_error() {
         details.get("log_event_type"),
         Some(&Json::Text(String::from("post_api_call")))
     );
-    assert!(matches!(
-        details.get("additional_args"),
-        Some(Json::Object(fields)) if fields.contains_key("headers")
-    ));
+    let Some(Json::List(input)) = details.get("input") else {
+        panic!("the post_call log holds the message list");
+    };
+    assert_eq!(input.len(), 1);
+    let Some(Json::Object(args)) = details.get("additional_args") else {
+        panic!("the post_call log holds the additional arguments");
+    };
+    let Some(Json::Object(headers)) = args.get("headers") else {
+        panic!("the post_call log holds the headers");
+    };
+    assert_eq!(
+        headers.get("X-Request-Tag"),
+        Some(&Json::Text(String::from("one")))
+    );
+}
+
+#[test]
+fn handler_errors_report_their_status() {
+    assert_eq!(
+        HandlerError::Upstream { status_code: 502 }.status_code(),
+        Some(502)
+    );
+    assert_eq!(HandlerError::EmptyReply.status_code(), None);
 }
 
 #[test]
@@ -314,4 +337,80 @@ fn oci_completion_passes_the_context_values_without_a_fallback() {
     assert!(call.headers.is_none());
     assert_eq!(call.custom_llm_provider, "oci");
     assert!(state.model_call_details.get("original_response").is_none());
+}
+
+#[test]
+fn databricks_completion_treats_an_empty_context_setting_as_unset() {
+    let mut fixture = Fixture::new();
+    fixture.environment = environment(&[("DATABRICKS_API_BASE", "https://env.example.com")]);
+    fixture.api_base = Some(String::new());
+    fixture.api_key = Some(SecretString::from(String::new()));
+    let mut globals = OwnedGlobals::empty();
+    globals.api_base = Some(String::from("https://global.example.com"));
+    globals.api_key = Some(SecretString::from("global-key"));
+    let handler = Recorder::succeeding();
+    let redactor = redactor();
+    let (mut state, env) = logging(&redactor);
+    let mut log = CallLogging {
+        state: &mut state,
+        env: &env,
+    };
+    let outcome = complete_databricks(&fixture.context(globals.borrowed()), &handler, &mut log);
+    assert!(outcome.is_ok());
+    let calls = handler.calls();
+    let call = &calls[0];
+    assert_eq!(call.api_base.as_deref(), Some("https://global.example.com"));
+    assert_eq!(
+        call.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some(&String::from("global-key"))
+    );
+}
+
+#[test]
+fn databricks_completion_skips_an_empty_global_key() {
+    let mut fixture = Fixture::new();
+    fixture.environment = environment(&[("DATABRICKS_API_KEY", "env-key")]);
+    let mut globals = OwnedGlobals::empty();
+    globals.api_key = Some(SecretString::from(String::new()));
+    globals.databricks_key = Some(SecretString::from("databricks-key"));
+    let handler = Recorder::succeeding();
+    let redactor = redactor();
+    let (mut state, env) = logging(&redactor);
+    let mut log = CallLogging {
+        state: &mut state,
+        env: &env,
+    };
+    let outcome = complete_databricks(&fixture.context(globals.borrowed()), &handler, &mut log);
+    assert!(outcome.is_ok());
+    assert_eq!(
+        handler.calls()[0]
+            .api_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some(&String::from("databricks-key"))
+    );
+}
+
+#[test]
+fn databricks_completion_skips_an_empty_databricks_key() {
+    let mut fixture = Fixture::new();
+    fixture.environment = environment(&[("DATABRICKS_API_KEY", "env-key")]);
+    let mut globals = OwnedGlobals::empty();
+    globals.databricks_key = Some(SecretString::from(String::new()));
+    let handler = Recorder::succeeding();
+    let redactor = redactor();
+    let (mut state, env) = logging(&redactor);
+    let mut log = CallLogging {
+        state: &mut state,
+        env: &env,
+    };
+    let outcome = complete_databricks(&fixture.context(globals.borrowed()), &handler, &mut log);
+    assert!(outcome.is_ok());
+    assert_eq!(
+        handler.calls()[0]
+            .api_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some(&String::from("env-key"))
+    );
 }
