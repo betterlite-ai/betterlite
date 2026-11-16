@@ -171,8 +171,9 @@ fn assert_events(driver: &mut Driver, frames: &[&str]) {
     assert_eq!(events, expected);
 }
 
-fn assert_message(start: &Object) {
-    assert_eq!(kind(start), "message_start");
+fn assert_message(stream: &mut Driver) {
+    let start = next(stream);
+    assert_eq!(kind(&start), "message_start");
     let announced = start
         .get("message")
         .and_then(Json::as_object)
@@ -189,13 +190,21 @@ fn assert_message(start: &Object) {
         .get("id")
         .and_then(Json::as_str)
         .expect("the message names its id");
-    assert!(id.starts_with("msg_"), "a fresh msg_ uuid");
+    let suffix = id
+        .strip_prefix("msg_")
+        .expect("the message id carries the msg_ prefix");
+    Uuid::parse_str(suffix).expect("the message id holds a uuid");
+    assert_eq!(
+        id,
+        stream.state.message_id.as_str(),
+        "the announced id is the stream's own"
+    );
 }
 
 #[test]
 fn initial_events_precede_provider_pulls() {
     let mut stream = driver(vec![text("A")]);
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_eq!(stream.state.completion_stream.source.pulls, 0);
     assert_events(&mut stream, &[TEXT_START, DELTA_A]);
     assert_eq!(
@@ -219,7 +228,7 @@ fn compaction_frames_precede_every_pull() {
             ..setup()
         },
     );
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(
         &mut stream,
         &[
@@ -250,7 +259,7 @@ fn text_thinking_tool_transitions() {
         r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"x\":1}"}}]},"finish_reason":null}]}"#,
     );
     let mut stream = driver(vec![role, text("A"), reasoning, tool, finish("stop")]);
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(&mut stream, &[TEXT_START, DELTA_A]);
     assert_eq!(
         stream.state.completion_stream.source.pulls, 2,
@@ -278,7 +287,7 @@ fn a_block_after_a_closed_message_skips_the_transition() {
         r#"{"choices":[{"index":0,"delta":{"reasoning_content":"R"},"finish_reason":null}]}"#,
     );
     let mut stream = driver(vec![text("A"), finish("stop"), reasoning]);
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(
         &mut stream,
         &[
@@ -298,7 +307,7 @@ fn a_named_tool_with_empty_arguments_starts_at_once() {
         r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_2","type":"function","function":{"name":"lookup","arguments":""}}]},"finish_reason":null}]}"#,
     );
     let mut stream = driver(vec![tool]);
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(&mut stream, &[TOOL_START_CALL_2]);
     assert_eq!(
         stream.state.completion_stream.source.pulls, 1,
@@ -313,7 +322,7 @@ fn an_empty_unsigned_thinking_delta_opens_nothing() {
         r#"{"choices":[{"index":0,"delta":{"thinking_blocks":[{"type":"thinking","thinking":""}]},"finish_reason":null}]}"#,
     );
     let mut stream = driver(vec![thinking, text("A")]);
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(&mut stream, &[TEXT_START]);
     assert_eq!(stream.state.completion_stream.source.pulls, 2);
 }
@@ -323,7 +332,7 @@ fn combined_content_and_finish_are_split() {
     let combined =
         chunk(r#"{"choices":[{"index":0,"delta":{"content":"C"},"finish_reason":"stop"}]}"#);
     let mut stream = driver(vec![combined]);
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(
         &mut stream,
         &[
@@ -341,7 +350,7 @@ fn finish_waits_for_usage() {
         vec![text("A"), finish("stop"), usage_chunk(5, 2)],
         polyfilled(),
     );
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(
         &mut stream,
         &[TEXT_START, DELTA_A, STOP_0, STOP_WITH_EDITS, MESSAGE_STOP],
@@ -365,7 +374,7 @@ fn a_usage_bearing_choice_chunk_merges_into_a_held_stop() {
         r#"{"choices":[{"index":0,"delta":{"content":"B"},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3}}"#,
     );
     let mut stream = driver(vec![text("A"), finish("stop"), with_usage]);
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(
         &mut stream,
         &[
@@ -386,7 +395,7 @@ fn usage_stops_the_stream_after_the_final_message_delta() {
         text("Z"),
         finish("stop"),
     ]);
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(
         &mut stream,
         &[
@@ -403,7 +412,7 @@ fn usage_stops_the_stream_after_the_final_message_delta() {
 #[test]
 fn finish_without_usage_flushes() {
     let mut stream = started(vec![text("A"), finish("stop")], polyfilled());
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(
         &mut stream,
         &[
@@ -421,7 +430,7 @@ fn finish_without_usage_flushes() {
 fn refusal_text_overrides_the_stop_reason() {
     let mut stream = driver(vec![finish("stop")]);
     stream.state.refusal_text = "No".to_owned();
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(
         &mut stream,
         &[
@@ -439,7 +448,7 @@ fn hidden_usage_closes_a_chunk_without_one() {
         r#"{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"hidden_params":{"usage":{"prompt_tokens":9,"completion_tokens":3}}}"#,
     );
     let mut stream = driver(vec![hidden]);
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(&mut stream, &[TEXT_START, STOP_0, HELD_STOP, MESSAGE_STOP]);
 }
 
@@ -456,7 +465,7 @@ fn an_unclosed_block_is_stopped_before_the_flushed_delta() {
 #[test]
 fn a_pure_eof_emits_only_the_message_start_and_stop() {
     let mut stream = driver(Vec::new());
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(&mut stream, &[MESSAGE_STOP]);
     assert_eq!(stream.state.completion_stream.source.pulls, 1);
     assert!(stream.next_event().is_none());
@@ -465,7 +474,7 @@ fn a_pure_eof_emits_only_the_message_start_and_stop() {
 #[test]
 fn a_finish_only_chunk_opens_and_closes_an_empty_text_block() {
     let mut stream = driver(vec![finish("stop")]);
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(
         &mut stream,
         &[TEXT_START, STOP_0, MESSAGE_DELTA, MESSAGE_STOP],
@@ -564,7 +573,7 @@ fn sync_stream_failure_ends_iteration() {
         state: StreamState::new(None, source, setup()),
         ids: FixedIds,
     };
-    assert_message(&next(&mut stream));
+    assert_message(&mut stream);
     assert_events(&mut stream, &[TEXT_START, DELTA_A]);
     assert!(
         stream.next_event().is_none(),

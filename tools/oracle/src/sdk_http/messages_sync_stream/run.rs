@@ -12,6 +12,7 @@ use serde_json::Value;
 use tracing::subscriber::set_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::registry;
+use uuid::Uuid;
 
 use super::diagnostics::Diagnostics;
 use super::source::Prefetched;
@@ -61,14 +62,14 @@ fn run_step(
     let end = match step {
         SyncStep::Next => match stream.next_event() {
             Some(event) => {
-                events.push(normalized(&event)?);
+                events.push(normalized(&event, &stream.state.message_id)?);
                 false
             }
             None => true,
         },
         SyncStep::Drain => {
             while let Some(event) = stream.next_event() {
-                events.push(normalized(&event)?);
+                events.push(normalized(&event, &stream.state.message_id)?);
             }
             true
         }
@@ -109,13 +110,16 @@ where
 }
 
 // The uuid is fresh per stream, so both sides replace it with one value before comparing
-fn normalized<E: Serialize>(event: &E) -> Result<Value, SdkHttpError> {
+fn normalized<E: Serialize>(event: &E, message_id: &str) -> Result<Value, SdkHttpError> {
     let mut value = serde_json::to_value(event).map_err(SdkHttpError::Serialize)?;
     if let Value::Object(fields) = &mut value
         && fields.get("type").and_then(Value::as_str) == Some("message_start")
         && let Some(Value::Object(message)) = fields.get_mut("message")
         && let Some(Value::String(id)) = message.get_mut("id")
-        && id.starts_with("msg_")
+        && id.as_str() == message_id
+        && id
+            .strip_prefix("msg_")
+            .is_some_and(|suffix| Uuid::parse_str(suffix).is_ok())
     {
         NORMALIZED_ID.clone_into(id);
     }
