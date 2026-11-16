@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast, override
 
 import litellm
 from litellm.responses.litellm_completion_transformation import streaming_iterator
@@ -100,10 +100,15 @@ class Input(TypedDict):
     steps: list[Step]
 
 
-class FixedTime:
+class ClockSource(Protocol):
+    def time(self) -> float: ...
+
+
+class FixedTime(ClockSource):
     def __init__(self, now: int) -> None:
         self.now = now
 
+    @override
     def time(self) -> float:
         return float(self.now)
 
@@ -126,8 +131,9 @@ def no_response_cost(result: Json) -> Json:
 
 
 def build_iterator(input_value: Input) -> StreamIterator:
+    details: dict[str, Json] = {}
     logging = SimpleNamespace(
-        model_call_details={},
+        model_call_details=details,
         _response_cost_calculator=no_response_cost,
     )
     wrapper = SimpleNamespace(logging_obj=logging)
@@ -180,7 +186,7 @@ def chunk_view(fields: ChunkFields) -> ModelResponseStream:
         choices=choices,
     )
     if "usage" in fields:
-        chunk.usage = fields["usage"]  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2136
+        chunk.usage = fields["usage"]  # type: ignore[assignment]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2136
     return chunk
 
 
@@ -212,7 +218,7 @@ def snapshot_step(iterator: StreamIterator, step: SnapshotStep) -> Json:
     chunk = chunk_view(step["chunk"])
     hidden = step.get("hidden")
     if hidden is not None:
-        chunk._hidden_params = dict(hidden)
+        chunk._hidden_params = dict(hidden)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088
     snapshot = iterator._snapshot_chunk_for_stream_chunk_builder(chunk)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L658
     iterator.collected_chat_completion_chunks.append(snapshot)
     view = OBJECT.validate_python(cast(Json, snapshot))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L658
@@ -220,7 +226,7 @@ def snapshot_step(iterator: StreamIterator, step: SnapshotStep) -> Json:
 
 
 def merge_step(iterator: StreamIterator, step: MergeStep) -> Json:
-    iterator._merge_provider_specific_fields(step["fields"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L618
+    iterator._merge_provider_specific_fields(step["fields"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L618
     return OBJECT.validate_python(iterator._accumulated_provider_specific_fields)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L150
 
 
@@ -228,7 +234,7 @@ def assembled_view(response: ModelResponse | None) -> Json:
     if response is None:
         return None
     dumped = DUMPED.validate_json(response.model_dump_json())
-    hidden = OBJECT.validate_python(response._hidden_params)  # type: ignore[misc]  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType,reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088
+    hidden = OBJECT.validate_python(response._hidden_params)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType,reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088
     return {
         "content": dumped["choices"][0]["message"]["content"],
         "provider_specific_fields": hidden.get("provider_specific_fields"),
@@ -290,7 +296,5 @@ def state_step(iterator: StreamIterator, step: Step) -> Json:
 
 def run(input_value: Input) -> Json:
     iterator = build_iterator(input_value)
-    results: list[Json] = []
-    for step in input_value["steps"]:
-        results.append(apply_step(iterator, step))
+    results: list[Json] = [apply_step(iterator, step) for step in input_value["steps"]]
     return {"results": results}
