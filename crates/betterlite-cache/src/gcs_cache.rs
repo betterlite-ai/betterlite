@@ -100,10 +100,7 @@ where
     pub async fn async_set_cache(&self, key: &str, value: &CachedEntry) {
         let serialized = match serde_json::to_vec(value) {
             Ok(serialized) => serialized,
-            Err(source) => {
-                tracing::debug!(key = %key, error = %source, "GCS cache write failed");
-                return;
-            }
+            Err(source) => return failed_write(key, &source),
         };
         let headers = match build_headers(
             &self.base,
@@ -113,10 +110,7 @@ where
         .await
         {
             Ok(headers) => headers,
-            Err(source) => {
-                tracing::debug!(key = %key, error = %source, "GCS cache write failed");
-                return;
-            }
+            Err(source) => return failed_write(key, &source),
         };
         let name = object_name(&self.key_prefix, key);
         let url = format!(
@@ -134,7 +128,7 @@ where
             content: Some(serialized),
         });
         if let Err(source) = self.base.client.send(request).await {
-            tracing::debug!(key = %key, error = %source, "GCS cache write failed");
+            failed_write(key, &source);
         }
     }
 
@@ -160,10 +154,7 @@ where
         .await
         {
             Ok(headers) => headers,
-            Err(source) => {
-                tracing::error!(key = %key, error = %source, "GCS cache read failed");
-                return None;
-            }
+            Err(source) => return failed_read(key, &source),
         };
         let name = object_name(&self.key_prefix, key);
         let url = format!(
@@ -178,20 +169,14 @@ where
         });
         let response = match self.base.client.send(request).await {
             Ok(response) => response,
-            Err(source) => {
-                tracing::error!(key = %key, error = %source, "GCS cache read failed");
-                return None;
-            }
+            Err(source) => return failed_read(key, &source),
         };
         if response.status != 200 {
             return None;
         }
         match decode_body(&response.body) {
             Ok(value) => Some(value),
-            Err(source) => {
-                tracing::error!(key = %key, error = %source, "GCS cache read failed");
-                None
-            }
+            Err(source) => failed_read(key, &source),
         }
     }
 
@@ -247,4 +232,19 @@ fn object_name(prefix: &str, key: &str) -> String {
     let name = format!("{prefix}{key}");
     let encoded = utf8_percent_encode(&name, &QUOTE_SAFE_NONE);
     encoded.to_string()
+}
+
+fn failed_write<E>(key: &str, source: &E)
+where
+    E: fmt::Display,
+{
+    tracing::debug!(key = %key, error = %source, "GCS cache write failed");
+}
+
+fn failed_read<E>(key: &str, source: &E) -> Option<CachedEntry>
+where
+    E: fmt::Display,
+{
+    tracing::error!(key = %key, error = %source, "GCS cache read failed");
+    None
 }
