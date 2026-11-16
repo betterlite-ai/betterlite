@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::iter::repeat_with;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::api::api_boundaries::ApiLimits;
@@ -314,7 +315,7 @@ async fn an_assembly_failure_is_raised(#[case] assembly: Assembly, #[case] scans
 }
 
 fn padded(chunks: usize, bytes: usize) -> Vec<Result<GuardrailValue, ModelStreamError>> {
-    std::iter::repeat_with(|| Ok(GuardrailValue::Text("x".repeat(bytes))))
+    repeat_with(|| Ok(GuardrailValue::Text("x".repeat(bytes))))
         .take(chunks)
         .collect()
 }
