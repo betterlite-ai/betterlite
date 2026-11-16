@@ -1,0 +1,7 @@
+kind: helper
+name: prefetch-default-none
+call:
+  b3331:
+    function: prefetch_default
+env: {}
+compare: {ignore: []}
