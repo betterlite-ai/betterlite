@@ -1,0 +1,36 @@
+kind: helper
+name: watsonx-chat-tools-lose-strict-and-additional-properties
+env: {}
+compare: {ignore: []}
+call:
+  b5971:
+    env: {}
+    maps:
+      - non_default:
+          tools:
+            - type: function
+              function:
+                name: lookup
+                strict: true
+                parameters:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    inner: {type: object, additionalProperties: false, strict: false}
+                    open: {type: object, additionalProperties: true}
+                    typed: {type: object, additionalProperties: {type: string}}
+                    items:
+                      type: array
+                      items: [{type: object, additionalProperties: false}]
+          tool_choice: auto
+          temperature: 0.3
+        optional: {}
+      - non_default: {tools: null, temperature: 0.1}
+        optional: {tools: [{type: function}]}
+      - non_default: {tools: []}
+        optional: {}
+      - non_default: {tools: [{type: function, strict: true}], max_tokens: 5}
+        optional: {tools: [{type: old}]}
+    infos: []
+    urls: []
+    plans: []

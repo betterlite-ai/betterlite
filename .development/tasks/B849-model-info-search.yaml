@@ -150,7 +150,7 @@ checks:
       why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model-info-search-*")"
         && grep -rlq "model_info_search" tools/oracle/fuzz/corpus/helper_case/model-info-search-* && cargo
-        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/model-info-search/date-sort.yaml
   - tools/oracle/cases/helpers/model-info-search/invalid-date-fallback.yaml

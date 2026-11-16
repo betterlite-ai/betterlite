@@ -166,12 +166,12 @@ checks:
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/prometheus_exporter-*")" &&
         grep -lE '^[[:space:]]+b3875:' tools/oracle/fuzz/corpus/helper_case/prometheus_exporter-* &&
         test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
-        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-logging --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: exporter-oracle
       why: the registered collector listing differs from LiteLLM's for some settings
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/prometheus-exporter)" &&
-        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/prometheus-exporter
+        cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-logging -- tools/oracle/cases/helpers/prometheus-exporter
 
 oracle_cases:
   - tools/oracle/cases/helpers/prometheus-exporter/defaults.yaml

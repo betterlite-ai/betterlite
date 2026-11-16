@@ -609,6 +609,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "dashscope_image_reply"
+path = "fuzz_targets/dashscope_image_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "mistral_resource"
 path = "fuzz_targets/mistral_resource.rs"
 test = false
@@ -653,6 +660,13 @@ bench = false
 [[bin]]
 name = "text_response"
 path = "fuzz_targets/text_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fireworks_ai_models_response"
+path = "fuzz_targets/fireworks_ai_models_response.rs"
 test = false
 doc = false
 bench = false

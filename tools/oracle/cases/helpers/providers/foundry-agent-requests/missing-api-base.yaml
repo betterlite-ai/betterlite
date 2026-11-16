@@ -1,0 +1,23 @@
+kind: helper
+name: foundry-agent-requests-missing-api-base
+call:
+  foundry_agent_requests:
+    complete_urls:
+      - {api_base: null}
+calls:
+  - foundry_agent_requests:
+      complete_urls:
+        - {api_base: ""}
+        - {api_base: "https://base.example"}
+        - {api_base: "https://base.example/"}
+        - {api_base: "https://base.example///"}
+  - foundry_agent_requests:
+      preparations:
+        - {model: azure_ai/agents/a, api_base: "https://base.example/", api_key: "", optional_params: {}, headers: {}}
+        - {model: azure_ai/agents/a, api_base: "", api_key: "", optional_params: {}, headers: {}}
+        - {model: azure_ai/agents/a, api_base: "https://base.example", api_key: secret, optional_params: {agent_id: explicit-agent}, headers: {}}
+  - foundry_agent_requests:
+      paths:
+        - {function: threads, api_base: "", api_version: "2025-05-01", thread_id: t, run_id: r}
+env: {}
+compare: {ignore: []}
