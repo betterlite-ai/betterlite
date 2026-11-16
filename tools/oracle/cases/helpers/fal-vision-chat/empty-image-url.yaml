@@ -1,0 +1,49 @@
+kind: helper
+name: fal-vision-chat-empty-image-url
+call:
+  fal_vision_chat:
+    operation: empty_image_url
+    cases:
+      - messages:
+          - role: user
+            content: [{type: text, text: t}, {type: image_url, image_url: ""}]
+        optional_params: {}
+      - messages:
+          - role: user
+            content: [{type: text, text: t}, {type: image_url, image_url: {url: ""}}]
+        optional_params: {}
+      - messages:
+          - role: user
+            content: [{type: text, text: t}, {type: image_url, image_url: ""}, {type: image_url, image_url: u}]
+        optional_params: {}
+      - messages:
+          - role: user
+            content: [{type: text, text: t}, {type: image_url, image_url: 5}]
+        optional_params: {}
+      - messages:
+          - role: user
+            content: [{type: text, text: t}, {type: image_url, image_url: null}]
+        optional_params: {}
+      - messages:
+          - role: user
+            content: [{type: text, text: t}, {type: image_url, image_url: {detail: low}}]
+        optional_params: {}
+      - messages:
+          - role: user
+            content: [{type: text, text: t}, {type: image_url, image_url: {url: 3}}]
+        optional_params: {}
+      - messages:
+          - role: user
+            content: [{type: text, text: t}, {type: image_url, image_url: [u]}]
+        optional_params: {}
+      - messages:
+          - role: user
+            content: [{type: text, text: t}, {type: image_url}]
+        optional_params: {}
+      - messages:
+          - role: user
+            content: [{type: text, text: t}, {type: image_url, image_url: 7}, {type: image_url, image_url: {url: kept}}]
+        optional_params: {}
+env: {}
+compare:
+  ignore: []
