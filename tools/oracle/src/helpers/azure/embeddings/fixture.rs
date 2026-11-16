@@ -100,7 +100,7 @@ impl EmbeddingClient for Sdk {
             .unwrap_or_else(PoisonError::into_inner)
             .push(wire_view(data));
         ready(match &self.answer {
-            Answer::Connection(_) => Err(SdkError {
+            Answer::Connection(()) => Err(SdkError {
                 status_code: None,
                 headers: None,
                 response: None,
