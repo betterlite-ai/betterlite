@@ -267,6 +267,40 @@ async fn a_float_score_in_a_blocked_answer_is_printed_as_a_number() {
 }
 
 #[tokio::test]
+async fn a_float_nested_in_policies_applied_is_recorded_as_a_number() {
+    let mock = mock_repello(
+        StatusCode::OK,
+        r#"{"verdict": "passed", "policies_applied": [{"meta": {"scores": [0.25], "note": "kept"}}]}"#,
+    )
+    .await;
+    let run = run_hook(
+        &guardrail(settings(&mock.base)),
+        prompt_data(),
+        HookTarget::Prompt,
+        &BTreeSet::new(),
+    )
+    .await;
+    assert!(run.result.is_ok());
+    let recorded = records(&run.data);
+    let response = field(&recorded[0], "guardrail_response").unwrap();
+    let Some(GuardrailValue::Array(applied)) = field(response, "policies_applied") else {
+        panic!("expected the applied policies");
+    };
+    let Some(GuardrailValue::Object(meta)) = field(&applied[0], "meta") else {
+        panic!("expected the policy metadata");
+    };
+    assert_eq!(
+        meta.get("note"),
+        Some(&GuardrailValue::Text(String::from("kept")))
+    );
+    let Some(GuardrailValue::Array(scores)) = meta.get("scores") else {
+        panic!("expected the scores");
+    };
+    assert_eq!(scores.len(), 1);
+    assert_eq!(scores[0], GuardrailValue::Decimal(0.25));
+}
+
+#[tokio::test]
 async fn an_answer_with_a_large_policy_list_is_read_whole() {
     let filler = "x".repeat(3_000);
     let reply = format!(r#"{{"verdict": "passed", "request_id": "{filler}"}}"#);
