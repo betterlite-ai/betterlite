@@ -8,7 +8,10 @@ call:
       instructions: be brief
       temperature: 0.2
       text: {format: {type: text}}
-      tools: []
+      tools:
+        - type: function
+          name: f
+          parameters: {type: object, properties: {}}
       top_p: 0.9
       truncation: disabled
       user: grace
