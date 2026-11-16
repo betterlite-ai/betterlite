@@ -106,8 +106,9 @@ const fn token(error: &HostedSkillOpsError) -> &'static str {
         HostedSkillOpsError::Store(StoreError::NoDatabase) => "no_database",
         HostedSkillOpsError::Store(
             StoreError::Repository { .. } | StoreError::Metadata(_) | StoreError::Cache(_),
-        ) => "exception",
-        HostedSkillOpsError::Context(_) | HostedSkillOpsError::Timestamp(_) => "exception",
+        )
+        | HostedSkillOpsError::Context(_)
+        | HostedSkillOpsError::Timestamp(_) => "exception",
     }
 }
 
