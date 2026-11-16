@@ -36,6 +36,9 @@ description: >-
   100 adapters and 95 fuzz lines, cap 800.
 scope:
   paths:
+    - "crates/betterlite-config/src/sections"
+    - "crates/betterlite-config/src/loader.rs"
+    - "crates/betterlite-config/src"
     - crates/betterlite-vertex/src/gemini_live_setup.rs
     - crates/betterlite-vertex/src/gemini_live_setup/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
