@@ -45,10 +45,10 @@ fn exposed(values: &UserEnvVars) -> HelperResult {
 
 // what the sealed column holds once opened, so a case shows the stored contents and not just the map
 fn row_values(cipher: &DbCipher, stored: Option<&str>) -> Value {
-    let Some(stored) = stored else {
+    let Some(sealed_text) = stored else {
         return Value::Null;
     };
-    let sealed = StoredValue::<()>::Text(SecretString::from(stored.to_owned()));
+    let sealed = StoredValue::<()>::Text(SecretString::from(sealed_text.to_owned()));
     let policy = DecryptPolicy {
         log: FailureLog::Debug,
         value: FailureValue::Nothing,
@@ -59,20 +59,17 @@ fn row_values(cipher: &DbCipher, stored: Option<&str>) -> Value {
         return Value::Null;
     };
     let plaintext = decrypted.expose_secret();
-    match serde_json::from_str(plaintext) {
-        Ok(value) => value,
-        Err(_) => Value::String(plaintext.to_owned()),
-    }
+    serde_json::from_str(plaintext).unwrap_or_else(|_| Value::String(plaintext.to_owned()))
 }
 
 fn text_value(row: &JsonData, name: &str) -> Value {
-    match text(row, name) {
-        Some(value) => Value::String(value.to_owned()),
-        None => Value::Null,
-    }
+    let Some(value) = text(row, name) else {
+        return Value::Null;
+    };
+    Value::String(value.to_owned())
 }
 
-fn output(env: &HelperStore, result: Value) -> HelperResult {
+fn output(env: &HelperStore, result: &Value) -> Value {
     let stored = env.table.rows();
     let mut views = Vec::with_capacity(stored.len());
     for row in &stored {
@@ -82,12 +79,12 @@ fn output(env: &HelperStore, result: Value) -> HelperResult {
             "values": row_values(&env.cipher, text(row, "values_b64")),
         }));
     }
-    Ok(json!({
+    json!({
         "result": result,
         "rows": views,
         "events": env.table.events(),
         "locks": env.table.locks(),
-    }))
+    })
 }
 
 pub(super) async fn get(call: &Get) -> HelperResult {
@@ -96,7 +93,7 @@ pub(super) async fn get(call: &Get) -> HelperResult {
         .get_user_env_vars(&call.user_id, &call.server_id)
         .await
         .or_value_error()?;
-    output(&env, exposed(&values)?)
+    Ok(output(&env, &exposed(&values)?))
 }
 
 pub(super) async fn bulk(call: &Bulk) -> HelperResult {
@@ -109,7 +106,8 @@ pub(super) async fn bulk(call: &Bulk) -> HelperResult {
     for (server_id, values) in &found {
         result.insert(server_id.clone(), exposed(values)?);
     }
-    output(&env, serde_json::to_value(result).or_value_error()?)
+    let result_value = serde_json::to_value(result).or_value_error()?;
+    Ok(output(&env, &result_value))
 }
 
 pub(super) async fn merge(call: &Merge) -> HelperResult {
@@ -124,7 +122,7 @@ pub(super) async fn merge(call: &Merge) -> HelperResult {
         .merge_user_env_vars(&call.user_id, &call.server_id, &updates, &allowed)
         .await
         .or_value_error()?;
-    output(&env, exposed(&merged)?)
+    Ok(output(&env, &exposed(&merged)?))
 }
 
 pub(super) async fn delete(call: &Delete) -> HelperResult {
@@ -132,5 +130,5 @@ pub(super) async fn delete(call: &Delete) -> HelperResult {
     env.delete_user_env_vars(&call.user_id, &call.server_id)
         .await
         .or_value_error()?;
-    output(&env, Value::Null)
+    Ok(output(&env, &Value::Null))
 }

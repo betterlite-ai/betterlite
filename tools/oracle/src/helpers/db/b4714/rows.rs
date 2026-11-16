@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::future::ready;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use betterlite_db::budget_permission_rows::JsonData;
@@ -130,30 +132,35 @@ pub(super) fn text<'row>(row: &'row JsonData, name: &str) -> Option<&'row str> {
 }
 
 impl UserEnvVarTable for RowStore {
-    async fn find_unique(
+    fn find_unique(
         &self,
         user_id: &str,
         server_id: &str,
-    ) -> Result<Option<JsonData>, UserEnvVarsError> {
+    ) -> impl Future<Output = Result<Option<JsonData>, UserEnvVarsError>> + Send {
         let state = recording(&self.state, "find_unique");
-        Ok(state.find(user_id, server_id))
+        ready(Ok(state.find(user_id, server_id)))
     }
 
-    async fn find_many(
+    fn find_many(
         &self,
         user_id: &str,
         server_ids: &[String],
-    ) -> Result<Vec<JsonData>, UserEnvVarsError> {
-        Ok(recording(&self.state, "find_many").select(user_id, server_ids))
+    ) -> impl Future<Output = Result<Vec<JsonData>, UserEnvVarsError>> + Send {
+        let state = recording(&self.state, "find_many");
+        ready(Ok(state.select(user_id, server_ids)))
     }
 
-    async fn delete_many(&self, user_id: &str, server_id: &str) -> Result<(), UserEnvVarsError> {
+    fn delete_many(
+        &self,
+        user_id: &str,
+        server_id: &str,
+    ) -> impl Future<Output = Result<(), UserEnvVarsError>> + Send {
         let mut state = recording(&self.state, "delete_many");
         state.rows.retain(|row| {
             text(row, "user_id") != Some(user_id) || text(row, "server_id") != Some(server_id)
         });
         drop(state);
-        Ok(())
+        ready(Ok(()))
     }
 }
 
