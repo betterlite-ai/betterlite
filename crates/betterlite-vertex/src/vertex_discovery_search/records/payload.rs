@@ -177,6 +177,6 @@ struct ChunkMetadata {
 fn positional_score(position: usize) -> Result<Score, PayloadError> {
     Decimal::ONE
         .checked_div(Decimal::from(position.saturating_add(1)))
-        .map(Score)
+        .map(|ratio| Score(ratio.normalize()))
         .ok_or(PayloadError::Field("score", "a representable decimal"))
 }
