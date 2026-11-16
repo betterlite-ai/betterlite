@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use axum::http::StatusCode;
 use axum::http::header::HeaderValue;
-use axum::response::IntoResponse;
+use axum::response::IntoResponse as _;
 use betterlite_redact::structured::Payload;
 use rstest::rstest;
 use serde_json::json;
