@@ -76,6 +76,21 @@ where
     F: FnOnce(SchemaDatabase) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
+    let (database, fixture) = provision().await;
+    let pool = database.pool.clone();
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        timeout(TEST_TIMEOUT, test(database))
+            .await
+            .expect("the test deadline");
+    });
+    let outcome = tasks.join_next().await.expect("the test task");
+    pool.close();
+    fixture.close_async().await.expect("the fixture closes");
+    outcome.expect("the test task joins");
+}
+
+async fn provision() -> (SchemaDatabase, PostgresFixture) {
     let configured = Environment::parse_from(["database-startup-tests"])
         .url
         .map(SecretString::from);
@@ -102,20 +117,11 @@ where
         .expect("current_schema reads")
         .get(0);
     let database = SchemaDatabase {
-        pool: pool.clone(),
+        pool,
         url: SecretString::from(fixture.options.url.expose_secret().to_owned()),
         schema,
     };
-    let mut tasks = JoinSet::new();
-    tasks.spawn(async move {
-        timeout(TEST_TIMEOUT, test(database))
-            .await
-            .expect("the test deadline");
-    });
-    let outcome = tasks.join_next().await.expect("the test task");
-    pool.close();
-    fixture.close_async().await.expect("the fixture closes");
-    outcome.expect("the test task joins");
+    (database, fixture)
 }
 
 pub(crate) fn migration(name: &str, sql: &str) -> Migration {

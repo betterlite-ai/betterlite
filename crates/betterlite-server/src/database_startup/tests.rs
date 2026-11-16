@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fs;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
@@ -16,6 +16,7 @@ use betterlite_config::sections::database_startup::startup::{
     StartupSettings, StartupSwitch, build_request_log_indexes, setup_database,
 };
 use betterlite_config::types::Config;
+use betterlite_db::database_refresh::endpoint::DatabaseUrlSlot;
 use betterlite_db::database_refresh::generation::GenerationOptions;
 use betterlite_db::database_refresh::native::NativePoolProvider;
 use betterlite_db::database_refresh_loop::clock::SystemClock;
@@ -24,6 +25,7 @@ use betterlite_db::database_refresh_loop::lifecycle::{DatabaseRefreshLoop, Refre
 use betterlite_db::database_refresh_loop::minting::TokenMinter;
 use betterlite_db::database_tokens::endpoint::IAMEndpoint;
 use betterlite_db::database_tokens::expiry::TokenAuthKind;
+use betterlite_db::migration_deploy::catalog::Migration;
 use betterlite_db::migration_drift::comparison::SchemaCheck;
 use betterlite_db::migration_recovery::RecoveryError;
 use betterlite_db::worker_heartbeat::HostnameError;
@@ -34,8 +36,8 @@ use tokio::task::JoinSet;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use self::postgres::{
-    NoJitter, catalog_request_log_indexes, ledger_rows, migration, present_request_log_indexes,
-    row_count, table_exists, with_schema,
+    NoJitter, SchemaDatabase, catalog_request_log_indexes, ledger_rows, migration,
+    present_request_log_indexes, row_count, table_exists, with_schema,
 };
 use super::fixtures::{
     BuildAnswer, HeartbeatCall, JobBuild, MigrationAnswer, ScriptedHeartbeat, ScriptedRefresh,
@@ -131,10 +133,10 @@ async fn policy_error(answer: MigrationAnswer) -> StartupError {
         migrate: answer,
         ..ScriptedStartup::new()
     });
-    start_scripted(pinned(), scripted)
-        .await
-        .err()
-        .expect("the startup policy fails")
+    let Err(error) = start_scripted(pinned(), scripted).await else {
+        panic!("the startup policy fails");
+    };
+    error
 }
 
 #[rstest]
@@ -246,8 +248,8 @@ async fn deploy_timeout_precedence() {
         "general_settings: {}\n",
         &[("LITELLM_PRISMA_COMMAND_TIMEOUT", "900")],
     );
-    assert_eq!(inherited.command_timeout, Duration::from_secs(900));
-    assert_eq!(inherited.deploy_timeout, Duration::from_secs(900));
+    assert_eq!(inherited.command_timeout, Duration::from_mins(15));
+    assert_eq!(inherited.deploy_timeout, Duration::from_mins(15));
 
     let pinned_deploy = settings_from(
         "general_settings: {}\n",
@@ -256,7 +258,7 @@ async fn deploy_timeout_precedence() {
             ("LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT", "1200"),
         ],
     );
-    assert_eq!(pinned_deploy.deploy_timeout, Duration::from_secs(1200));
+    assert_eq!(pinned_deploy.deploy_timeout, Duration::from_mins(20));
 
     let (invalid_deploy, log) = logged(|| {
         settings_from(
@@ -366,10 +368,9 @@ async fn startup_migration_failure() {
         migrate: MigrationAnswer::Unverified,
         ..ScriptedStartup::new()
     });
-    let error = start_scripted(pinned(), Arc::clone(&scripted))
-        .await
-        .err()
-        .expect("a failed migration stops startup");
+    let Err(error) = start_scripted(pinned(), Arc::clone(&scripted)).await else {
+        panic!("a failed migration stops startup");
+    };
     match &error {
         StartupError::Unrecoverable { source } => {
             assert!(
@@ -486,20 +487,7 @@ async fn heartbeat_beats_immediately_and_deregisters_on_stop() {
 
 #[tokio::test(start_paused = true)]
 async fn shutdown_drains() {
-    let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let scripted = Arc::new(ScriptedStartup {
-        build: BuildAnswer::WaitForRelease,
-        finished: Arc::clone(&finished),
-        ..ScriptedStartup::new()
-    });
-    let settings = pinned();
-    let state = DatabaseState {
-        configured: settings.database_url.is_some(),
-    };
-    let started = start_scripted(settings, Arc::clone(&scripted))
-        .await
-        .expect("startup returns without the background build");
-    tokio::task::yield_now().await;
+    let (scripted, started, finished) = waiting_startup().await;
     assert_eq!(
         *scripted.calls.lock().expect("calls"),
         vec!["migrate", "build"]
@@ -512,15 +500,15 @@ async fn shutdown_drains() {
         HeartbeatTask::start(Arc::new(heartbeat("worker-a")), Arc::clone(&fake_heartbeat)).await;
     tokio::task::yield_now().await;
     let running = Running {
-        state,
+        state: DatabaseState { configured: true },
         startup: Some(started),
         heartbeat: Some(heartbeat_task),
-        refresh: Some(refresh.clone()),
+        refresh: Some(Arc::clone(&refresh)),
         pool: None,
     };
     let (log_file, guard) = capture_log();
     // the build is never released, so only an abort lets shutdown end before the paused clock's deadline
-    tokio::time::timeout(Duration::from_secs(3600), running.shutdown())
+    tokio::time::timeout(Duration::from_hours(1), running.shutdown())
         .await
         .expect("shutdown aborts the index build instead of waiting for it");
     drop(guard);
@@ -537,6 +525,20 @@ async fn shutdown_drains() {
         fake_heartbeat.calls.lock().expect("calls").last(),
         Some(&HeartbeatCall::Deregister)
     );
+}
+
+async fn waiting_startup() -> (Arc<ScriptedStartup>, Startup, Arc<AtomicBool>) {
+    let finished = Arc::new(AtomicBool::new(false));
+    let scripted = Arc::new(ScriptedStartup {
+        build: BuildAnswer::WaitForRelease,
+        finished: Arc::clone(&finished),
+        ..ScriptedStartup::new()
+    });
+    let started = start_scripted(pinned(), Arc::clone(&scripted))
+        .await
+        .expect("startup returns without the background build");
+    tokio::task::yield_now().await;
+    (scripted, started, finished)
 }
 
 #[rstest]
@@ -569,11 +571,9 @@ async fn native_database_with_a_url_is_configured() {
     let scripted = Arc::new(ScriptedStartup::new());
     let database =
         NativeDatabase::<ScriptedStartup>::with_startup(Arc::clone(&scripted), pinned(), None);
-    let error = database
-        .start()
-        .await
-        .err()
-        .expect("an unusable DATABASE_URL cannot open the pool");
+    let Err(error) = database.start().await else {
+        panic!("an unusable DATABASE_URL cannot open the pool");
+    };
     assert!(matches!(error, StartupError::Pool { .. }), "{error}");
     assert_eq!(error.exit_code(), 1);
     // the configured state ran the migration before the pool failed
@@ -655,23 +655,29 @@ async fn migration_job_waits() {
         assert_eq!(outcome, JobOutcome::Completed);
         assert!(finished.load(Ordering::SeqCst));
         assert!(table_exists(&database, "B051_Job").await);
-
-        // a failed index build does not undo the applied migration; it reports the index exit
-        let failing = JobBuild::immediate(false);
-        let settings = database.settings();
-        let outcome = run_migration_job(
-            &settings,
-            &catalog,
-            packaged::SCHEMA_PRISMA,
-            &NoJitter,
-            &failing,
-        )
-        .await
-        .expect("the job reports a failed build");
-        assert_eq!(outcome, JobOutcome::IndexJobFailed);
-        assert_eq!(ledger_rows(&database).await.len(), 1);
+        assert_failed_index_build_keeps_the_migration(&database, &catalog).await;
     })
     .await;
+}
+
+// a failed index build does not undo the applied migration; it reports the index exit
+async fn assert_failed_index_build_keeps_the_migration(
+    database: &SchemaDatabase,
+    catalog: &[Migration],
+) {
+    let failing = JobBuild::immediate(false);
+    let settings = database.settings();
+    let outcome = run_migration_job(
+        &settings,
+        catalog,
+        packaged::SCHEMA_PRISMA,
+        &NoJitter,
+        &failing,
+    )
+    .await
+    .expect("the job reports a failed build");
+    assert_eq!(outcome, JobOutcome::IndexJobFailed);
+    assert_eq!(ledger_rows(database).await.len(), 1);
 }
 
 #[tokio::test]
@@ -686,47 +692,9 @@ async fn postgres_pinned_rows() {
         )
         .await
         .expect("the packaged migrations apply");
-        let catalog = packaged::migrations();
-        assert!(
-            catalog
-                .iter()
-                .any(|migration| migration.name == "20250326162113_baseline"),
-            "the packaged catalog carries the baseline migration"
-        );
-        let rows = ledger_rows(&database).await;
-        let ledger: Vec<(String, String, bool, bool)> = rows
-            .iter()
-            .map(|row| {
-                (
-                    row.name.clone(),
-                    row.checksum.clone(),
-                    row.finished,
-                    row.rolled_back,
-                )
-            })
-            .collect();
-        let pinned: Vec<(String, String, bool, bool)> = catalog
-            .iter()
-            .map(|migration| {
-                (
-                    migration.name.clone(),
-                    migration.checksum.clone(),
-                    true,
-                    false,
-                )
-            })
-            .collect();
-        assert_eq!(ledger, pinned, "the ledger records every packaged migration");
+        assert_packaged_ledger(&database).await;
 
-        let client = database.pool.get().await.expect("a fixture connection");
-        client
-            .execute(
-                "INSERT INTO \"LiteLLM_SpendLogs\" (\"request_id\", \"call_type\", \"startTime\", \"endTime\") \
-                 VALUES ('b051-row', 'acompletion', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-                &[],
-            )
-            .await
-            .expect("a pinned spend-log row inserts");
+        insert_spend_log(&database).await;
         setup_database(
             &settings,
             &packaged::migrations(),
@@ -736,66 +704,106 @@ async fn postgres_pinned_rows() {
         .await
         .expect("a second startup keeps the schema");
         assert_eq!(row_count(&database, "LiteLLM_SpendLogs").await, 1);
-
         assert!(build_request_log_indexes(&settings).await);
         assert_eq!(
             present_request_log_indexes(&database).await,
             catalog_request_log_indexes(),
             "the build created every request-log index"
         );
-
-        let replica_identity: String = client
-            .query_one(
-                "SELECT c.relreplident::text FROM pg_class c \
-                 JOIN pg_namespace n ON n.oid = c.relnamespace \
-                 WHERE n.nspname = $1 AND c.relname = 'LiteLLM_SpendLogs'",
-                &[&database.schema],
-            )
-            .await
-            .expect("the replica identity reads")
-            .get(0);
-        assert_eq!(replica_identity, "d");
-        let mut full_identity = settings;
-        full_identity.set_replica_identity_full = StartupSwitch(true);
-        setup_database(
-            &full_identity,
-            &packaged::migrations(),
-            packaged::SCHEMA_PRISMA,
-            &NoJitter,
-        )
-        .await
-        .expect("the opt-in identity pass runs");
-        let replica_identity: String = client
-            .query_one(
-                "SELECT c.relreplident::text FROM pg_class c \
-                 JOIN pg_namespace n ON n.oid = c.relnamespace \
-                 WHERE n.nspname = $1 AND c.relname = 'LiteLLM_SpendLogs'",
-                &[&database.schema],
-            )
-            .await
-            .expect("the replica identity reads")
-            .get(0);
-        assert_eq!(replica_identity, "f");
+        assert_eq!(spend_log_replica_identity(&database).await, "d");
+        assert_replica_identity_full(&database, &settings).await;
     })
     .await;
+}
+
+async fn assert_packaged_ledger(database: &SchemaDatabase) {
+    let catalog = packaged::migrations();
+    assert!(
+        catalog
+            .iter()
+            .any(|migration| migration.name == "20250326162113_baseline"),
+        "the packaged catalog carries the baseline migration"
+    );
+    let rows = ledger_rows(database).await;
+    let ledger: Vec<(String, String, bool, bool)> = rows
+        .iter()
+        .map(|row| {
+            (
+                row.name.clone(),
+                row.checksum.clone(),
+                row.finished,
+                row.rolled_back,
+            )
+        })
+        .collect();
+    let pinned: Vec<(String, String, bool, bool)> = catalog
+        .iter()
+        .map(|migration| {
+            (
+                migration.name.clone(),
+                migration.checksum.clone(),
+                true,
+                false,
+            )
+        })
+        .collect();
+    assert_eq!(
+        ledger, pinned,
+        "the ledger records every packaged migration"
+    );
+}
+
+async fn insert_spend_log(database: &SchemaDatabase) {
+    database
+        .pool
+        .get()
+        .await
+        .expect("a fixture connection")
+        .execute(
+            "INSERT INTO \"LiteLLM_SpendLogs\" (\"request_id\", \"call_type\", \"startTime\", \"endTime\") \
+             VALUES ('b051-row', 'acompletion', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            &[],
+        )
+        .await
+        .expect("a pinned spend-log row inserts");
+}
+
+async fn spend_log_replica_identity(database: &SchemaDatabase) -> String {
+    database
+        .pool
+        .get()
+        .await
+        .expect("a fixture connection")
+        .query_one(
+            "SELECT c.relreplident::text FROM pg_class c \
+             JOIN pg_namespace n ON n.oid = c.relnamespace \
+             WHERE n.nspname = $1 AND c.relname = 'LiteLLM_SpendLogs'",
+            &[&database.schema],
+        )
+        .await
+        .expect("the replica identity reads")
+        .get(0)
+}
+
+async fn assert_replica_identity_full(database: &SchemaDatabase, settings: &StartupSettings) {
+    let mut full_identity = settings.clone();
+    full_identity.set_replica_identity_full = StartupSwitch(true);
+    setup_database(
+        &full_identity,
+        &packaged::migrations(),
+        packaged::SCHEMA_PRISMA,
+        &NoJitter,
+    )
+    .await
+    .expect("the opt-in identity pass runs");
+    assert_eq!(spend_log_replica_identity(database).await, "f");
 }
 
 #[tokio::test]
 async fn postgres_failure_effects() {
     with_schema(|database| async move {
         let settings = database.settings();
-        let catalog = [
-            migration(
-                "20260101000001_b051_first",
-                "CREATE TABLE \"B051_First\" (id integer); \
-                 INSERT INTO \"B051_First\" (id) VALUES (1);",
-            ),
-            migration(
-                "20260101000002_b051_second",
-                "CREATE TABLE \"B051_Second\" (id integer); \
-                 INSERT INTO \"B051_Missing\" (id) VALUES (1);",
-            ),
-        ];
+        let catalog = failing_catalog();
         let recovery = setup_database(&settings, &catalog, packaged::SCHEMA_PRISMA, &NoJitter)
             .await
             .expect_err("the failing migration stops setup");
@@ -809,35 +817,57 @@ async fn postgres_failure_effects() {
         assert!(table_exists(&database, "B051_First").await);
         assert_eq!(row_count(&database, "B051_First").await, 1);
         assert!(!table_exists(&database, "B051_Second").await);
-
-        let rows = ledger_rows(&database).await;
-        assert_eq!(rows.len(), 2);
-        assert!(rows[0].finished);
-        assert!(!rows[0].rolled_back);
-        assert!(!rows[1].finished);
-        assert!(!rows[1].rolled_back);
-        let logs = rows[1].logs.as_deref().expect("the failure is logged");
-        assert!(logs.contains("B051_Missing"), "{logs}");
-
-        // the unfinished row blocks the job like LiteLLM's P3018 until an operator resolves it
-        let build = JobBuild::immediate(true);
-        let error = run_migration_job(
-            &settings,
-            &catalog,
-            packaged::SCHEMA_PRISMA,
-            &NoJitter,
-            &build,
-        )
-        .await
-        .expect_err("the unfinished history stops the job");
-        assert_eq!(classify(&error), SetupFailure::Unrecoverable);
-        assert!(
-            error.to_string().contains("could not be verified"),
-            "{error}"
-        );
-        assert_eq!(ledger_rows(&database).await.len(), 2);
+        assert_failed_ledger_row(&database).await;
+        assert_unfinished_history_stops_the_job(&database, &catalog).await;
     })
     .await;
+}
+
+fn failing_catalog() -> [Migration; 2] {
+    [
+        migration(
+            "20260101000001_b051_first",
+            "CREATE TABLE \"B051_First\" (id integer); \
+             INSERT INTO \"B051_First\" (id) VALUES (1);",
+        ),
+        migration(
+            "20260101000002_b051_second",
+            "CREATE TABLE \"B051_Second\" (id integer); \
+             INSERT INTO \"B051_Missing\" (id) VALUES (1);",
+        ),
+    ]
+}
+
+async fn assert_failed_ledger_row(database: &SchemaDatabase) {
+    let rows = ledger_rows(database).await;
+    assert_eq!(rows.len(), 2);
+    assert!(rows[0].finished);
+    assert!(!rows[0].rolled_back);
+    assert!(!rows[1].finished);
+    assert!(!rows[1].rolled_back);
+    let logs = rows[1].logs.as_deref().expect("the failure is logged");
+    assert!(logs.contains("B051_Missing"), "{logs}");
+}
+
+// the unfinished row blocks the job like LiteLLM's P3018 until an operator resolves it
+async fn assert_unfinished_history_stops_the_job(database: &SchemaDatabase, catalog: &[Migration]) {
+    let build = JobBuild::immediate(true);
+    let settings = database.settings();
+    let error = run_migration_job(
+        &settings,
+        catalog,
+        packaged::SCHEMA_PRISMA,
+        &NoJitter,
+        &build,
+    )
+    .await
+    .expect_err("the unfinished history stops the job");
+    assert_eq!(classify(&error), SetupFailure::Unrecoverable);
+    assert!(
+        error.to_string().contains("could not be verified"),
+        "{error}"
+    );
+    assert_eq!(ledger_rows(database).await.len(), 2);
 }
 
 #[tokio::test]
@@ -899,9 +929,13 @@ impl TokenMinter for NoMint {
 #[tokio::test]
 async fn credential_refresh_starts_and_stops_the_token_refresh_task() {
     let options = GenerationOptions {
+        iam_token_db_auth: false,
         token_auth: Some(TokenAuthKind::Rds),
+        db_url_env_var: "DATABASE_URL".to_owned(),
+        url: DatabaseUrlSlot::default(),
+        iam_endpoint: None,
+        recreate_uses_datasource: false,
         log_prefix: "[test]".to_owned(),
-        ..GenerationOptions::default()
     };
     let refresh = DatabaseRefreshLoop::<NativePoolProvider, NoMint, Infallible>::new(
         Arc::new(NativePoolProvider),

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use tempfile::NamedTempFile;
 use tracing::subscriber::with_default;
 
@@ -74,17 +74,23 @@ fn loads_settings() {
     );
     assert_eq!(settings.command_timeout, Duration::from_secs(90));
     assert_eq!(settings.lock_timeout, Duration::from_secs(450));
-    assert_eq!(settings.deploy_timeout, Duration::from_secs(1200));
+    assert_eq!(settings.deploy_timeout, Duration::from_mins(20));
     assert_eq!(settings.bootstrap_inputs, IGNORED_BOOTSTRAP_INPUTS.to_vec());
+    assert_startup_view(&loaded);
+}
 
-    let startup = StartupSettings::from_config(&loaded);
+fn assert_startup_view(loaded: &Config) {
+    let startup = StartupSettings::from_config(loaded);
     assert!(startup.updates_enabled.0);
     assert_eq!(
-        startup.database_url.as_ref().map(|url| url.expose_secret()),
+        startup
+            .database_url
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
         Some("postgresql://writer/db?schema=tenant")
     );
     assert_eq!(
-        startup.direct_url.as_ref().map(|url| url.expose_secret()),
+        startup.direct_url.as_ref().map(ExposeSecret::expose_secret),
         Some("postgresql://direct/db")
     );
     assert!(!startup.use_v2_migration_resolver.0);
@@ -92,7 +98,7 @@ fn loads_settings() {
     assert!(startup.set_replica_identity_full.0);
     assert_eq!(startup.command_timeout, Duration::from_secs(90));
     assert_eq!(startup.lock_timeout, Duration::from_secs(450));
-    assert_eq!(startup.deploy_timeout, Duration::from_secs(1200));
+    assert_eq!(startup.deploy_timeout, Duration::from_mins(20));
     assert_eq!(startup.bootstrap_inputs, IGNORED_BOOTSTRAP_INPUTS.to_vec());
 }
 
@@ -207,9 +213,12 @@ fn timeout_defaults_and_precedence() {
     )
     .sections
     .database_startup;
-    assert_eq!(inherited.command_timeout, Duration::from_secs(900));
-    assert_eq!(inherited.deploy_timeout, Duration::from_secs(900));
+    assert_eq!(inherited.command_timeout, Duration::from_mins(15));
+    assert_eq!(inherited.deploy_timeout, Duration::from_mins(15));
+}
 
+#[test]
+fn invalid_deploy_timeout_warns() {
     let pinned_deploy = config(
         "general_settings: {}\n",
         &[
@@ -219,7 +228,7 @@ fn timeout_defaults_and_precedence() {
     )
     .sections
     .database_startup;
-    assert_eq!(pinned_deploy.deploy_timeout, Duration::from_secs(1200));
+    assert_eq!(pinned_deploy.deploy_timeout, Duration::from_mins(20));
 
     let empty_deploy = config(
         "general_settings: {}\n",
@@ -231,7 +240,7 @@ fn timeout_defaults_and_precedence() {
     .sections
     .database_startup;
     // an empty deploy variable is unset, so the command budget carries over
-    assert_eq!(empty_deploy.deploy_timeout, Duration::from_secs(900));
+    assert_eq!(empty_deploy.deploy_timeout, Duration::from_mins(15));
 
     let (invalid_deploy, log) = logged(|| {
         config(
@@ -295,7 +304,7 @@ fn invalid_value_fallback(#[case] invalid: &str) {
 }
 
 #[test]
-fn invalid_values_name_their_source() {
+fn invalid_command_timeout_warns() {
     let (inherited, log) = logged(|| {
         config(
             "general_settings: {}\n",
@@ -307,47 +316,54 @@ fn invalid_values_name_their_source() {
     assert_eq!(inherited.deploy_timeout, Duration::from_secs(600));
     // the deploy read inherits the command budget, so an unusable command warns twice per section
     assert_eq!(fallback_warnings(&log), 4);
+}
 
-    let error = ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
-    }
-    .load("general_settings:\n  disable_prisma_schema_update: [true]\n")
-    .err()
-    .expect("a list is not a bool or a string");
+#[test]
+fn invalid_values_name_their_source() {
+    let list = load_error(
+        "general_settings:\n  disable_prisma_schema_update: [true]\n",
+        &[],
+    );
     assert!(
         matches!(
-            &error,
+            &list,
             ConfigError::InvalidScalar { path, .. }
                 if path.as_str() == "general_settings.disable_prisma_schema_update"
         ),
-        "{error}"
+        "{list}"
     );
 
-    let error = ConfigLoader {
-        lookup: environment(&[("DISABLE_SCHEMA_UPDATE", "maybe")]),
-    }
-    .load("general_settings: {}\n")
-    .err()
-    .expect("unrecognized environment text names its variable");
+    let environment_error = load_error(
+        "general_settings: {}\n",
+        &[("DISABLE_SCHEMA_UPDATE", "maybe")],
+    );
     assert!(
         matches!(
-            &error,
-            ConfigError::Environment { source } if source.to_string().contains("DISABLE_SCHEMA_UPDATE")
+            &environment_error,
+            ConfigError::Environment { source }
+                if source.to_string().contains("DISABLE_SCHEMA_UPDATE")
         ),
-        "{error}"
+        "{environment_error}"
     );
 
-    let error = ConfigLoader {
-        lookup: environment(&[("SCHEMA_UPDATES_OFF", "maybe")]),
-    }
-    .load("general_settings:\n  disable_prisma_schema_update: os.environ/SCHEMA_UPDATES_OFF\n")
-    .err()
-    .expect("unrecognized referenced text names its variable");
+    let reference = load_error(
+        "general_settings:\n  disable_prisma_schema_update: os.environ/SCHEMA_UPDATES_OFF\n",
+        &[("SCHEMA_UPDATES_OFF", "maybe")],
+    );
     assert!(
         matches!(
-            &error,
-            ConfigError::Environment { source } if source.to_string().contains("SCHEMA_UPDATES_OFF")
+            &reference,
+            ConfigError::Environment { source }
+                if source.to_string().contains("SCHEMA_UPDATES_OFF")
         ),
-        "{error}"
+        "{reference}"
     );
+}
+
+fn load_error(source: &str, pairs: &[(&str, &str)]) -> ConfigError {
+    ConfigLoader {
+        lookup: environment(pairs),
+    }
+    .load(source)
+    .expect_err("the config should fail")
 }

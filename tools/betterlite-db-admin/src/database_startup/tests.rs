@@ -105,10 +105,7 @@ async fn dispatches_native_operation() {
         database.fixture.options.url.expose_secret(),
         database.schema
     );
-    let backend = crate::backend();
-    let (status, lines) = timeout(TEST_TIMEOUT, run_command(&["migrate"], &url, &backend))
-        .await
-        .expect("the migrate command finishes");
+    let (status, lines) = run_migrate(&url).await;
     assert_eq!(status, ExitStatus::Success);
     assert_eq!(
         lines,
@@ -117,16 +114,55 @@ async fn dispatches_native_operation() {
             "err|Migration job completed successfully.".to_owned(),
         ]
     );
-    let rows = database
+    assert_eq!(
+        ledger_rows(&database).await.len(),
+        packaged::migrations().len()
+    );
+    assert!(ledger_rows_are_finished(&database).await);
+    assert_eq!(
+        present_indexes(&database).await,
+        expected_indexes(),
+        "the migration job built every request-log index"
+    );
+
+    // a repeated command finds the schema current and leaves the ledger alone
+    let (second_status, second_lines) = run_migrate(&url).await;
+    assert_eq!(second_status, ExitStatus::Success);
+    assert_eq!(second_lines, lines);
+    assert_eq!(
+        ledger_rows(&database).await.len(),
+        packaged::migrations().len()
+    );
+    assert!(ledger_rows_are_finished(&database).await);
+    database.close().await;
+}
+
+async fn run_migrate(url: &str) -> (ExitStatus, Vec<String>) {
+    let backend = crate::backend();
+    timeout(TEST_TIMEOUT, run_command(&["migrate"], url, &backend))
+        .await
+        .expect("the migrate command finishes")
+}
+
+async fn ledger_rows(database: &Postgres) -> Vec<tokio_postgres::Row> {
+    database
         .client
         .query(
             "SELECT migration_name, finished_at IS NOT NULL FROM _prisma_migrations",
             &[],
         )
         .await
-        .expect("the migration ledger reads");
-    assert_eq!(rows.len(), packaged::migrations().len());
-    assert!(rows.iter().all(|row| row.get::<_, bool>(1)));
+        .expect("the migration ledger reads")
+}
+
+async fn ledger_rows_are_finished(database: &Postgres) -> bool {
+    ledger_rows(database)
+        .await
+        .iter()
+        .all(|row| row.get::<_, bool>(1))
+}
+
+async fn present_indexes(database: &Postgres) -> Vec<String> {
     let names: Vec<&str> = REQUEST_LOG_INDEXES.iter().map(|index| index.name).collect();
     let mut present: Vec<String> = database
         .client
@@ -141,34 +177,16 @@ async fn dispatches_native_operation() {
         .map(|row| row.get(0))
         .collect();
     present.sort();
+    present
+}
+
+fn expected_indexes() -> Vec<String> {
     let mut expected: Vec<String> = REQUEST_LOG_INDEXES
         .iter()
         .map(|index| index.name.to_owned())
         .collect();
     expected.sort();
-    assert_eq!(
-        present, expected,
-        "the migration job built every request-log index"
-    );
-
-    // a repeated command finds the schema current and leaves the ledger alone
-    let (second_status, second_lines) =
-        timeout(TEST_TIMEOUT, run_command(&["migrate"], &url, &backend))
-            .await
-            .expect("the second migrate command finishes");
-    assert_eq!(second_status, ExitStatus::Success);
-    assert_eq!(second_lines, lines);
-    let rows = database
-        .client
-        .query(
-            "SELECT finished_at IS NOT NULL FROM _prisma_migrations",
-            &[],
-        )
-        .await
-        .expect("the migration ledger reads");
-    assert_eq!(rows.len(), packaged::migrations().len());
-    assert!(rows.iter().all(|row| row.get::<_, bool>(0)));
-    database.close().await;
+    expected
 }
 
 #[rstest::rstest]
