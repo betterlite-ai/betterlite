@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-image-policy-token-price-beats-image-price
+call:
+  vertex_image_policy:
+    models: []
+    billing:
+      - {kind: generation, model: oracle-vertex-image, catalog: {output_cost_per_image: 0.5, input_cost_per_token: 0.5, output_cost_per_token: 0.25}, response: {images: 2, usage: {input_tokens: 10, output_tokens: 20, total_tokens: 30, web_search_requests: 1}}}
+    replies: []
+env: {}
+compare: {ignore: []}
