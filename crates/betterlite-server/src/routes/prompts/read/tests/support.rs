@@ -24,6 +24,7 @@ use betterlite_prompts::registry::prompt_registry::InMemoryPromptRegistry;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tower::ServiceExt as _;
@@ -185,12 +186,14 @@ pub(super) fn state(
 }
 
 pub(super) fn registry(specs: Vec<PromptSpec>) -> Arc<RwLock<InMemoryPromptRegistry>> {
-    let mut registry = InMemoryPromptRegistry::default();
-    registry.in_memory_prompts = specs
+    let in_memory_prompts = specs
         .into_iter()
         .map(|spec| (spec.prompt_id.clone(), spec))
         .collect();
-    Arc::new(RwLock::new(registry))
+    Arc::new(RwLock::new(InMemoryPromptRegistry {
+        in_memory_prompts,
+        prompt_id_to_custom_prompt: IndexMap::new(),
+    }))
 }
 
 pub(super) fn config_prompt(prompt_id: &str, environment: &str) -> PromptSpec {
@@ -242,11 +245,12 @@ pub(super) fn stored_prompt_with_content(
     environment: &str,
     dotprompt_content: &str,
 ) -> PromptRow {
-    let params = serde_json::json!({
-        "prompt_id": prompt_id,
-        "prompt_integration": "dotprompt",
-        "dotprompt_content": dotprompt_content,
-    });
+    let params = serde_json::to_string(&StoredParams {
+        prompt_id,
+        prompt_integration: "dotprompt",
+        dotprompt_content,
+    })
+    .expect("the stored params serialize");
     PromptRow {
         id: format!("{prompt_id}-{environment}-{version}"),
         prompt_id: prompt_id.to_owned(),
@@ -255,9 +259,16 @@ pub(super) fn stored_prompt_with_content(
         created_by: None,
         created_at: timestamp(),
         updated_at: timestamp(),
-        litellm_params: PromptRowJson::Text(params.to_string()),
+        litellm_params: PromptRowJson::Text(params),
         prompt_info: None,
     }
+}
+
+#[derive(Serialize)]
+struct StoredParams<'a> {
+    prompt_id: &'a str,
+    prompt_integration: &'a str,
+    dotprompt_content: &'a str,
 }
 
 fn timestamp() -> DateTime<Utc> {

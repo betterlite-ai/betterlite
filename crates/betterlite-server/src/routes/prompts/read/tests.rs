@@ -6,11 +6,11 @@ use std::sync::Arc;
 
 use axum::http::StatusCode;
 use betterlite_auth::auth_identity::roles::Role;
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_prompts::registry::prompt_endpoint_contracts::table::{
     PromptColumn, PromptRowOrder,
 };
 use rstest::rstest;
-use serde_json::json;
 
 use super::VERSIONS_ADMIN_ONLY;
 use crate::cache_settings::REDACTED_VALUE;
@@ -39,15 +39,17 @@ async fn oneshot_list_metadata_allowlist_narrows_to_the_named_prompt() {
 }
 
 #[rstest]
-#[case::base_id("alpha")]
-#[case::versioned_id("alpha.v2")]
+#[case::base_id(r#"{"metadata": {"prompts": ["alpha"]}}"#)]
+#[case::versioned_id(r#"{"metadata": {"prompts": ["alpha.v2"]}}"#)]
 #[tokio::test]
-async fn oneshot_list_metadata_allowlist_accepts_the_base_or_versioned_id(#[case] allowed: &str) {
+async fn oneshot_list_metadata_allowlist_accepts_the_base_or_versioned_id(
+    #[case] key_fields: &str,
+) {
     let prompts = registry(vec![
         config_prompt("alpha", "development"),
         config_prompt("alpha.v2", "development"),
     ]);
-    let key = key_context(&json!({"metadata": {"prompts": [allowed]}}).to_string());
+    let key = key_context(key_fields);
     let (status, body) = call(state(prompts, None), "/prompts/list", key).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["prompts"].as_array().unwrap().len(), 1);
@@ -55,12 +57,12 @@ async fn oneshot_list_metadata_allowlist_accepts_the_base_or_versioned_id(#[case
 }
 
 #[rstest]
-#[case::base_id("alpha")]
-#[case::versioned_id("alpha.v2")]
+#[case::base_id(r#"{"metadata": {"prompts": ["alpha"]}}"#)]
+#[case::versioned_id(r#"{"metadata": {"prompts": ["alpha.v2"]}}"#)]
 #[tokio::test]
-async fn oneshot_list_metadata_allowlist_reads_a_versioned_only_prompt(#[case] allowed: &str) {
+async fn oneshot_list_metadata_allowlist_reads_a_versioned_only_prompt(#[case] key_fields: &str) {
     let prompts = registry(vec![config_prompt("alpha.v2", "development")]);
-    let key = key_context(&json!({"metadata": {"prompts": [allowed]}}).to_string());
+    let key = key_context(key_fields);
     let (status, body) = call(state(prompts, None), "/prompts/list", key).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["prompts"].as_array().unwrap().len(), 1);
@@ -117,7 +119,7 @@ async fn oneshot_list_without_an_allowlist_is_empty_for_an_ordinary_key(#[case] 
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["prompts"], json!([]));
+    assert_eq!(body["prompts"], JsonValue::Array(Vec::new()));
 }
 
 #[tokio::test]
@@ -170,9 +172,9 @@ async fn oneshot_versions_admin_reads_the_history_newest_first() {
     assert_eq!(status, StatusCode::OK);
     let listed = body["prompts"].as_array().unwrap();
     assert_eq!(listed.len(), 3);
-    assert_eq!(listed[0]["version"], json!(3));
-    assert_eq!(listed[1]["version"], json!(2));
-    assert_eq!(listed[2]["version"], json!(1));
+    assert_eq!(listed[0]["version"], JsonValue::from(3_i64));
+    assert_eq!(listed[1]["version"], JsonValue::from(2_i64));
+    assert_eq!(listed[2]["version"], JsonValue::from(1_i64));
     assert_eq!(listed[0]["prompt_id"], "alpha");
     let queries = table.queries();
     assert_eq!(queries.len(), 1);
@@ -201,7 +203,7 @@ async fn oneshot_versions_ignores_the_version_suffix_in_the_path() {
     assert_eq!(status, StatusCode::OK);
     let listed = body["prompts"].as_array().unwrap();
     assert_eq!(listed.len(), 2);
-    assert_eq!(listed[0]["version"], json!(2));
+    assert_eq!(listed[0]["version"], JsonValue::from(2_i64));
     assert_eq!(
         table.queries()[0].filter.prompt_id.as_deref(),
         Some("alpha")
@@ -252,7 +254,7 @@ async fn oneshot_versions_environment_query_filters_the_history() {
     assert_eq!(status, StatusCode::OK);
     let listed = body["prompts"].as_array().unwrap();
     assert_eq!(listed.len(), 2);
-    assert_eq!(listed[0]["version"], json!(2));
+    assert_eq!(listed[0]["version"], JsonValue::from(2_i64));
     assert_eq!(
         table.queries()[0].filter.environment.as_deref(),
         Some("development")
@@ -275,8 +277,8 @@ async fn oneshot_versions_fallback_without_a_table_sorts_the_registry() {
     assert_eq!(status, StatusCode::OK);
     let listed = body["prompts"].as_array().unwrap();
     assert_eq!(listed.len(), 3);
-    assert_eq!(listed[0]["version"], json!(3));
-    assert_eq!(listed[2]["version"], json!(1));
+    assert_eq!(listed[0]["version"], JsonValue::from(3_i64));
+    assert_eq!(listed[2]["version"], JsonValue::from(1_i64));
 }
 
 #[tokio::test]
@@ -295,7 +297,7 @@ async fn oneshot_versions_fallback_environment_filters_the_registry() {
     assert_eq!(status, StatusCode::OK);
     let listed = body["prompts"].as_array().unwrap();
     assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0]["version"], json!(3));
+    assert_eq!(listed[0]["version"], JsonValue::from(3_i64));
 }
 
 #[tokio::test]
@@ -344,7 +346,7 @@ async fn oneshot_info_environment_selects_the_stored_version(
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["prompt_spec"]["prompt_id"], "alpha");
-    assert_eq!(body["prompt_spec"]["version"], json!(shown));
+    assert_eq!(body["prompt_spec"]["version"], JsonValue::from(shown));
     let queries = table.queries();
     assert_eq!(queries.len(), 2);
     assert_eq!(queries[1].filter.version, queried);
@@ -385,8 +387,8 @@ async fn oneshot_info_environment_picks_the_registry_prompt() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["prompt_spec"]["environment"], "production");
-    assert_eq!(body["prompt_spec"]["version"], json!(3));
-    assert_eq!(body["environments"], json!([]));
+    assert_eq!(body["prompt_spec"]["version"], JsonValue::from(3_i64));
+    assert_eq!(body["environments"], JsonValue::Array(Vec::new()));
 }
 
 #[tokio::test]
@@ -441,7 +443,7 @@ async fn oneshot_info_dotprompt_content_becomes_the_raw_template() {
     assert_eq!(body["raw_prompt_template"]["litellm_prompt_id"], "alpha");
     assert_eq!(body["raw_prompt_template"]["content"], "Hello {{name}}");
     assert_eq!(body["raw_prompt_template"]["metadata"]["model"], "gpt-4o");
-    assert_eq!(body["prompt_spec"]["version"], json!(1));
+    assert_eq!(body["prompt_spec"]["version"], JsonValue::from(1_i64));
 }
 
 #[tokio::test]
@@ -472,7 +474,7 @@ async fn oneshot_info_malformed_dotprompt_content_has_no_template() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["raw_prompt_template"].is_null());
-    assert_eq!(body["prompt_spec"]["version"], json!(1));
+    assert_eq!(body["prompt_spec"]["version"], JsonValue::from(1_i64));
 }
 
 #[tokio::test]
@@ -492,7 +494,13 @@ async fn oneshot_info_environments_are_sorted_and_distinct() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["environments"], json!(["development", "production"]));
+    assert_eq!(
+        body["environments"],
+        JsonValue::Array(vec![
+            JsonValue::from("development"),
+            JsonValue::from("production"),
+        ])
+    );
     let queries = table.queries();
     assert_eq!(queries.len(), 1);
     assert_eq!(queries[0].filter.prompt_id.as_deref(), Some("alpha"));
@@ -552,7 +560,7 @@ async fn oneshot_list_empty_allowlist_hides_everything_from_an_admin() {
     let key = key_context(r#"{"user_role": "proxy_admin", "metadata": {"prompts": []}}"#);
     let (status, body) = call(state(prompts, None), "/prompts/list", key).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["prompts"], json!([]));
+    assert_eq!(body["prompts"], JsonValue::Array(Vec::new()));
 }
 
 #[tokio::test]
@@ -567,7 +575,12 @@ async fn oneshot_info_empty_dotprompt_content_is_used_as_given() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["raw_prompt_template"]["litellm_prompt_id"], "alpha");
     assert_eq!(body["raw_prompt_template"]["content"], "");
-    assert_eq!(body["raw_prompt_template"]["metadata"], json!({}));
+    assert!(
+        body["raw_prompt_template"]["metadata"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]

@@ -17,6 +17,7 @@ use axum::Router;
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::get;
+use betterlite_models::prompt_spec::PromptSpec;
 use betterlite_prompts::registry::prompt_endpoint_contracts::spec_conversion::get_latest_prompt_versions;
 use betterlite_prompts::registry::prompt_endpoint_contracts::table::PromptTableActions;
 use betterlite_prompts::registry::prompt_registry::InMemoryPromptRegistry;
@@ -28,8 +29,8 @@ use tokio::sync::RwLock;
 
 use self::access::{PromptKeyView, has_admin_view, info_access, names_prompt};
 use self::error::PromptReadError;
-use self::rows::{prompt_environments, prompt_version_history, resolve_spec};
-use self::specs::{filter_environment, not_found_detail, prompt_specs, prompt_template};
+use self::rows::{prompt_environments, resolve_spec, version_history_response};
+use self::specs::{filter_environment, not_found_detail, prompt_template};
 use self::wire::{ListPromptsResponse, PromptInfoResponse, display_wire};
 use crate::auth::auth_identity::AuthContext;
 
@@ -83,13 +84,19 @@ where
     // A key's metadata.prompts allowlist limits the list; a key without one lists nothing unless it has admin view
     let view =
         PromptKeyView::from_principal(&context.principal).map_err(PromptReadError::KeyMetadata)?;
-    let allowlist = view.allowlist();
+    let allowlist = view
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.prompts.as_deref());
     if allowlist.is_none() && !has_admin_view(&context.principal) {
         return Ok(Json(ListPromptsResponse {
             prompts: Vec::new(),
         }));
     }
-    let mut visible = prompt_specs(&state).await;
+    let mut visible: Vec<PromptSpec> = {
+        let registry = state.prompts.read().await;
+        registry.in_memory_prompts.values().cloned().collect()
+    };
     if let Some(allowed) = allowlist {
         visible.retain(|spec| names_prompt(allowed, &spec.prompt_id));
     }
@@ -115,22 +122,9 @@ where
             detail: VERSIONS_ADMIN_ONLY.to_owned(),
         });
     }
-    let base_prompt_id = get_base_prompt_id(&prompt_id);
-    let versions =
-        prompt_version_history(&state, &base_prompt_id, query.environment.as_deref()).await?;
-    // LiteLLM answers 404 when the prompt has no stored versions
-    if versions.is_empty() {
-        return Err(PromptReadError::Denied {
-            status: StatusCode::NOT_FOUND,
-            detail: format!("No versions found for prompt ID {base_prompt_id}"),
-        });
-    }
-    Ok(Json(ListPromptsResponse {
-        prompts: versions
-            .iter()
-            .map(|spec| display_wire(spec, Some(get_version_number(&spec.prompt_id))))
-            .collect(),
-    }))
+    Ok(Json(
+        version_history_response(&state, &prompt_id, query.environment.as_deref()).await?,
+    ))
 }
 
 async fn get_prompt_info<Table>(
@@ -145,20 +139,8 @@ where
     info_access::<Table::Failure>(&context.principal, &prompt_id)?;
     let base_prompt_id = get_base_prompt_id(&prompt_id);
     let wanted_environment = query.environment.as_deref();
-    let environments = prompt_environments(&state, &base_prompt_id).await?;
-    let requested_version = if prompt_id == base_prompt_id {
-        None
-    } else {
-        Some(get_version_number(&prompt_id))
-    };
-    let resolved = resolve_spec(
-        &state,
-        &base_prompt_id,
-        &prompt_id,
-        requested_version,
-        wanted_environment,
-    )
-    .await?;
+    let environments = prompt_environments(state.table.as_deref(), &base_prompt_id).await?;
+    let resolved = resolve_spec(&state, &base_prompt_id, &prompt_id, wanted_environment).await?;
     let Some(spec) = resolved else {
         return Err(PromptReadError::Denied {
             status: StatusCode::BAD_REQUEST,

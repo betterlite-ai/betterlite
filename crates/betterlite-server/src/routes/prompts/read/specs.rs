@@ -1,5 +1,7 @@
 use std::cmp::Reverse;
+use std::error::Error as StdError;
 
+use axum::http::StatusCode;
 use betterlite_models::prompt_spec::PromptSpec;
 use betterlite_prompts::dotprompt_templates::content::dotprompt_content_to_json;
 use betterlite_prompts::registry::prompt_registry_helpers::{
@@ -7,7 +9,35 @@ use betterlite_prompts::registry::prompt_registry_helpers::{
 };
 
 use super::PromptReadState;
-use super::wire::PromptTemplateBase;
+use super::error::PromptReadError;
+use super::wire::{ListPromptsResponse, PromptTemplateBase, display_wire};
+
+// LiteLLM answers 404 when a prompt has no stored versions
+pub(super) fn history_or_missing<TableError>(
+    versions: Vec<PromptSpec>,
+    base_prompt_id: &str,
+) -> Result<Vec<PromptSpec>, PromptReadError<TableError>>
+where
+    TableError: StdError + 'static,
+{
+    if versions.is_empty() {
+        return Err(PromptReadError::Denied {
+            status: StatusCode::NOT_FOUND,
+            detail: format!("No versions found for prompt ID {base_prompt_id}"),
+        });
+    }
+    Ok(versions)
+}
+
+// Every history record repeats its base prompt id with the row's own version number
+pub(super) fn history_response(versions: &[PromptSpec]) -> ListPromptsResponse {
+    ListPromptsResponse {
+        prompts: versions
+            .iter()
+            .map(|spec| display_wire(spec, Some(get_version_number(&spec.prompt_id))))
+            .collect(),
+    }
+}
 
 pub(super) fn not_found_detail(prompt_id: &str, environment: Option<&str>) -> String {
     let Some(wanted) = environment else {
@@ -29,17 +59,15 @@ pub(super) fn filter_environment(
         .collect()
 }
 
-pub(super) async fn prompt_specs<Table>(state: &PromptReadState<Table>) -> Vec<PromptSpec> {
-    let registry = state.prompts.read().await;
-    registry.in_memory_prompts.values().cloned().collect()
-}
-
 // LiteLLM serves history from the registry, newest first, when the proxy has no database
 pub(super) async fn in_memory_versions<Table>(
     state: &PromptReadState<Table>,
     base_prompt_id: &str,
     environment: Option<&str>,
-) -> Vec<PromptSpec> {
+) -> Vec<PromptSpec>
+where
+    Table: Send + Sync,
+{
     let mut versions: Vec<PromptSpec> = {
         let registry = state.prompts.read().await;
         registry

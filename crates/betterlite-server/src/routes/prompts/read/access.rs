@@ -26,13 +26,13 @@ pub(super) fn has_admin_view(principal: &Principal) -> bool {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(super) struct PromptKeyView {
-    metadata: Option<PromptKeyMetadata>,
+    pub(super) metadata: Option<PromptKeyMetadata>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
-struct PromptKeyMetadata {
-    prompts: Option<Vec<String>>,
+pub(super) struct PromptKeyMetadata {
+    pub(super) prompts: Option<Vec<String>>,
 }
 
 impl PromptKeyView {
@@ -41,10 +41,6 @@ impl PromptKeyView {
             return Ok(Self::default());
         };
         serde_json::from_value(serde_json::to_value(key)?)
-    }
-
-    pub(super) fn allowlist(&self) -> Option<&[String]> {
-        self.metadata.as_ref()?.prompts.as_deref()
     }
 }
 
@@ -65,7 +61,11 @@ where
     TableError: StdError + 'static,
 {
     let view = PromptKeyView::from_principal(principal).map_err(PromptReadError::KeyMetadata)?;
-    if let Some(allowed) = view.allowlist()
+    let allowed = view
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.prompts.as_deref());
+    if let Some(allowed) = allowed
         && !allowed.iter().any(|entry| entry.as_str() == prompt_id)
     {
         return Err(PromptReadError::Denied {
