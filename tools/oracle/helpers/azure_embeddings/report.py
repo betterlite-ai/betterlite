@@ -23,7 +23,7 @@ class ReplyAnswer(TypedDict):
 
 
 class ConnectionAnswer(TypedDict):
-    connection: dict[str, str]
+    connection: None
 
 
 class LiteLlmParams(TypedDict, total=False):

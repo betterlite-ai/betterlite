@@ -61,7 +61,7 @@ call:
         litellm_params: {}
       - input: ["a"]
         client: azure
-        answer: {connection: {}}
+        answer: {connection: null}
         model: my-deployment
         api_base: "https://example.openai.azure.com"
         api_version: "2024-02-01"
@@ -75,7 +75,7 @@ call:
         litellm_params: {}
       - input: ["a"]
         client: async_azure
-        answer: {connection: {}}
+        answer: {connection: null}
         aembedding: true
         model: my-deployment
         api_base: "https://example.openai.azure.com"

@@ -34,7 +34,7 @@ pub(super) struct Reply {
 #[serde(rename_all = "snake_case")]
 pub(super) enum Answer {
     Reply(Reply),
-    Connection(BTreeMap<String, String>),
+    Connection(()),
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
