@@ -92,6 +92,11 @@ class ResponseView:
     def __init__(self, response: dict[str, JsonValue]) -> None:
         self._response = response
 
+    # LiteLLM reads the background flag off the response object, so the view carries it too
+    @property
+    def background(self) -> JsonValue:
+        return self._response.get("background")
+
     def get(self, key: Literal["usage"], /) -> TokenUsage | None:
         usage = self._response.get(key)
         if usage is None:
