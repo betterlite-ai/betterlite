@@ -1,3 +1,4 @@
+use std::str;
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
@@ -132,7 +133,7 @@ fn reject(
     if status == 401 {
         guardrail.evict_obo_token(evaluation.assertion);
     }
-    let body = std::str::from_utf8(&evaluation.reply.body).unwrap_or_default();
+    let body = str::from_utf8(&evaluation.reply.body).unwrap_or_default();
     let text: String = body.chars().take(MAX_ERROR_TEXT_CHARS).collect();
     let reason = format!("HTTP {status}: {text}");
     record_verdict(

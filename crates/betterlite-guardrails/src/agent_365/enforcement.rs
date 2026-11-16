@@ -259,8 +259,8 @@ fn evaluation_headers(token: &SecretString) -> Result<HeaderMap, InvalidHeaderVa
     let mut authorization = HeaderValue::from_str(value.expose_secret())?;
     authorization.set_sensitive(true);
     let mut headers = HeaderMap::new();
-    let _replaced = headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE));
-    let _replaced = headers.insert(AUTHORIZATION, authorization);
+    let _content_type = headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE));
+    let _authorization = headers.insert(AUTHORIZATION, authorization);
     Ok(headers)
 }
 

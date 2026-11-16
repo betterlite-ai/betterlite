@@ -25,7 +25,7 @@ pub(super) enum Refusal<'call> {
 }
 
 impl<'call> Refusal<'call> {
-    fn names(&self) -> (&'call str, &'call str) {
+    const fn names(&self) -> (&'call str, &'call str) {
         match *self {
             Self::CallerFault {
                 tool_name, reason, ..

@@ -34,7 +34,7 @@ const MISSING_BEARER_REASON: &str = "the caller did not present an Entra bearer 
 const TOKEN_ENDPOINT: &str = "https://login.microsoftonline.com/tenant-abc/oauth2/v2.0/token";
 const FIXED_NOW_NANOS: u64 = 1_000_000_000_000_000;
 const LATENCY_STEP_NANOS: u64 = 123_456_000;
-const LATENCY_SECONDS: f64 = 0.123456;
+const LATENCY_SECONDS: f64 = 0.123_456;
 const LATENCY_MILLIS: f64 = 123.5;
 const QUARTER_MILLI_NANOS: u64 = 250_000;
 
@@ -161,13 +161,9 @@ fn request_data() -> Data {
 fn harness(fallback: UnreachableFallback) -> Harness {
     let now = Arc::new(AtomicU64::new(FIXED_NOW_NANOS));
     let poster = Arc::new(FakePoster::new(Arc::clone(&now)));
-    let guardrail = Agent365Guardrail::new(
-        settings(fallback),
-        Arc::clone(&poster),
-        true,
-        clock_handle(now),
-    )
-    .unwrap();
+    let posted_by = Arc::clone(&poster);
+    let guardrail =
+        Agent365Guardrail::new(settings(fallback), posted_by, true, clock_handle(now)).unwrap();
     Harness {
         guardrail,
         poster,
@@ -507,7 +503,7 @@ async fn a_quarter_millisecond_latency_rounds_away_from_zero() {
     });
     let guardrail = Agent365Guardrail::new(
         settings(UnreachableFallback::FailClosed),
-        Arc::clone(&poster),
+        poster,
         true,
         handle,
     )

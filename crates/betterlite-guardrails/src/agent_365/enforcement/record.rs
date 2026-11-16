@@ -54,7 +54,7 @@ pub(super) fn record_verdict(
         guardrail_status: status_for(record.verdict),
         start_time: None,
         end_time: None,
-        duration: duration_of(record),
+        duration: record.latency.map(|latency| latency.as_secs_f64()),
         masked_entity_count: None,
         guardrail_provider: Some(GUARDRAIL_PROVIDER.to_owned()),
         event_type: Some(GuardrailEventHooks::PreMcpCall),
@@ -105,11 +105,4 @@ const fn status_for(verdict: Verdict) -> GuardrailStatus {
             GuardrailStatus::GuardrailFailedToRespond
         }
     }
-}
-
-fn duration_of(record: &VerdictRecord<'_>) -> Option<f64> {
-    let Some(latency) = record.latency else {
-        return None;
-    };
-    Some(latency.as_secs_f64())
 }

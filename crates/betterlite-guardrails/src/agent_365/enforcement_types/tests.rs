@@ -79,7 +79,7 @@ fn rejects_a_non_json_body() {
         "the Agent 365 endpoint returned a non-JSON body"
     );
     assert!(matches!(error, EvaluateResponseError::NonJsonBody { .. }));
-    let truncated = decode(r#"{"allowed":tru"#).unwrap_err();
+    let truncated = decode(r#"{"allowed":true"#).unwrap_err();
     assert!(matches!(
         truncated,
         EvaluateResponseError::NonJsonBody { .. }

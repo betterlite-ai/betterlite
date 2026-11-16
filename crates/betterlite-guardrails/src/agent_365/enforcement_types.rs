@@ -100,10 +100,7 @@ fn text_of(value: Option<&JsonValue>) -> Option<String> {
 impl EvaluateVerdict {
     #[must_use]
     pub fn defender_evaluated(&self) -> bool {
-        match self.defender.status.as_deref() {
-            Some(status) => status == DEFENDER_STATUS_EVALUATED,
-            None => false,
-        }
+        self.defender.status.as_deref() == Some(DEFENDER_STATUS_EVALUATED)
     }
 
     // LiteLLM's f"Microsoft Defender did not evaluate the call (defender.status={defender_status or 'missing'})"
@@ -117,12 +114,14 @@ impl EvaluateVerdict {
 
     #[must_use]
     pub fn blocked_message(&self, tool_name: &str) -> String {
-        match self.defender.message.as_deref() {
-            Some(message) => message.to_owned(),
-            None => format!(
-                "Invocation of '{tool_name}' is blocked by Microsoft Threat Detection policies configured by your administrator."
-            ),
-        }
+        self.defender.message.as_deref().map_or_else(
+            || {
+                format!(
+                    "Invocation of '{tool_name}' is blocked by Microsoft Threat Detection policies configured by your administrator."
+                )
+            },
+            str::to_owned,
+        )
     }
 }
 
@@ -164,18 +163,16 @@ impl From<&BlockedDetail> for UnavailableDetail {
     }
 }
 
-fn correlation_value(correlation_id: Option<&str>) -> GuardrailValue {
-    match correlation_id {
-        Some(correlation_id) => GuardrailValue::Text(correlation_id.to_owned()),
-        None => GuardrailValue::Null,
-    }
-}
-
 impl BlockedDetail {
     #[must_use]
     pub fn detail(&self) -> IndexMap<String, GuardrailValue> {
         let mut detail = UnavailableDetail::from(self).detail();
-        let correlation = correlation_value(self.correlation_id.as_deref());
+        let correlation = self
+            .correlation_id
+            .as_deref()
+            .map_or(GuardrailValue::Null, |id| {
+                GuardrailValue::Text(id.to_owned())
+            });
         detail.insert("correlation_id".to_owned(), correlation);
         detail
     }

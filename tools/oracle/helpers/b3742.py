@@ -87,7 +87,8 @@ class ScriptedReplies:
 
 
 def capture_request(request: httpx.Request) -> Captured:
-    content_type = request.headers.get("content-type")
+    headers: dict[str, str] = dict(request.headers.items())
+    content_type = headers.get("content-type")
     if content_type == FORM_CONTENT_TYPE:
         parsed = urllib.parse.parse_qs(request.content.decode(), keep_blank_values=True)
         fields = {name: values[0] for name, values in parsed.items()}
@@ -96,7 +97,7 @@ def capture_request(request: httpx.Request) -> Captured:
         body = JSON.validate_json(request.content)
     return {
         "url": str(request.url),
-        "authorization": request.headers.get("authorization"),
+        "authorization": headers.get("authorization"),
         "content_type": content_type,
         "body": body,
     }
@@ -116,7 +117,7 @@ def records_of(data: dict[str, JsonValue]) -> list[JsonValue]:
 
 async def call_hook(
     hook: PreCallHook, auth: UserAPIKeyAuth, invocation: Invocation
-) -> JsonValue:
+) -> dict[str, JsonValue]:
     try:
         await hook.async_pre_call_hook(
             user_api_key_dict=auth,
@@ -126,10 +127,8 @@ async def call_hook(
         )
     except HTTPException as error:
         detail = JSON.validate_python(error.detail)
-        return JSON.validate_python(
-            {"kind": "rejected", "status_code": error.status_code, "detail": detail}
-        )
-    return JSON.validate_python({"kind": "allowed"})
+        return {"kind": "rejected", "status_code": error.status_code, "detail": detail}
+    return {"kind": "allowed"}
 
 
 async def run_invocations(
@@ -167,6 +166,8 @@ def run(input_value: Enforcement) -> JsonValue:
     finally:
         time.time = wall_clock
         time.perf_counter = perf_clock
-    return JSON.validate_python(
-        {"outcomes": outcomes, "records": records, "requests": replies.requests}
-    )
+    return {
+        "outcomes": JSON.validate_python(outcomes),
+        "records": JSON.validate_python(records),
+        "requests": JSON.validate_python(replies.requests),
+    }
