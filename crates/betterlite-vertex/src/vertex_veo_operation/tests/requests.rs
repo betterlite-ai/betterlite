@@ -1,15 +1,18 @@
 use rstest::rstest;
 
-use super::{OPERATION, VIDEO_ID, object, text};
+use super::{MODEL, OPERATION, VIDEO_ID, object, text};
 use crate::vertex_veo_operation::error::VeoOperationError;
 use crate::vertex_veo_operation::request::fetch_operation_request;
 
-const API_BASE: &str = "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models/veo-3.0-generate-001";
+const API_BASE: &str = "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models";
 
 #[test]
 fn a_poll_reads_the_operation_from_the_video_id() {
     let request = fetch_operation_request(VIDEO_ID, API_BASE).expect("the video id decodes");
-    assert_eq!(request.url, format!("{API_BASE}:fetchPredictOperation"));
+    assert_eq!(
+        request.url,
+        format!("{API_BASE}/{MODEL}:fetchPredictOperation")
+    );
     assert_eq!(request.params, object([("operationName", text(OPERATION))]));
 }
 
@@ -17,7 +20,10 @@ fn a_poll_reads_the_operation_from_the_video_id() {
 fn a_trailing_slash_on_the_api_base_is_dropped() {
     let request =
         fetch_operation_request(VIDEO_ID, &format!("{API_BASE}//")).expect("the video id decodes");
-    assert_eq!(request.url, format!("{API_BASE}:fetchPredictOperation"));
+    assert_eq!(
+        request.url,
+        format!("{API_BASE}/{MODEL}:fetchPredictOperation")
+    );
 }
 
 #[rstest]

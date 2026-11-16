@@ -36,7 +36,8 @@ deviations:
       not an object is a typed error instead of the AttributeError LiteLLM raises on it.
     why: >-
       float(True) and str(True) are the duck typing and str text that docs/compatibility.md says betterlite does
-      not port, and a working setup sends a number of seconds and a resolution name. An absent or null parameters
-      block still reads as the empty default, so the default duration LiteLLM reports is unchanged.
+      not port, and a working setup sends a number of seconds and a resolution name. An absent parameters block
+      reads as the empty default, as it does in LiteLLM, and a null block takes that same default where LiteLLM
+      raises an AttributeError on it, since docs/compatibility.md reads a null value as the default.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L48-L102
 kept_bugs: []
