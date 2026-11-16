@@ -1,4 +1,4 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal, Protocol, TypedDict, runtime_checkable
@@ -44,15 +44,26 @@ class ImageConfig(Protocol):
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
-    @property
     def transform_image_generation_request(  # ast-grep-ignore: no-long-names
         self,
-    ) -> Callable[..., dict[str, JsonValue]]: ...
+        model: str,
+        prompt: str,
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        headers: dict[str, JsonValue],
+    ) -> dict[str, JsonValue]: ...
 
-    @property
     def transform_image_generation_response(  # ast-grep-ignore: no-long-names
         self,
-    ) -> Callable[..., ImageResponse]: ...
+        model: str,
+        raw_response: httpx.Response,
+        model_response: ImageResponse,
+        logging_obj: Logging,
+        request_data: dict[str, JsonValue],
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        encoding: None,
+    ) -> ImageResponse: ...
 
 
 class ImageSeed(TypedDict):
@@ -209,9 +220,8 @@ def logging_object(model: str) -> Logging:
     )
 
 
-def mapping_value(input_value: MappingInput) -> JsonValue:
+def mapping_value(config: ImageConfig, input_value: MappingInput) -> JsonValue:
     params = input_value["params"]
-    config: ImageConfig = get_runwayml_image_generation_config(params["model"])
     results: list[JsonValue] = []
     for call in params["calls"]:
         try:
@@ -234,9 +244,8 @@ def mapping_value(input_value: MappingInput) -> JsonValue:
     return JSON.validate_python(answer)
 
 
-def transform_value(input_value: ResponseInput) -> JsonValue:
+def transform_value(config: ImageConfig, input_value: ResponseInput) -> JsonValue:
     params = input_value["params"]
-    config: ImageConfig = get_runwayml_image_generation_config(params["model"])
     scripted = Scripted(params["replies"])
     holder = LLMClientCache()
     litellm.in_memory_llm_clients_cache = holder
@@ -293,7 +302,13 @@ def cost_value(input_value: CostInput) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     if input_value["operation"] == "mapping":
-        return mapping_value(input_value)
+        return mapping_value(
+            get_runwayml_image_generation_config(input_value["params"]["model"]),
+            input_value,
+        )
     if input_value["operation"] == "response":
-        return transform_value(input_value)
+        return transform_value(
+            get_runwayml_image_generation_config(input_value["params"]["model"]),
+            input_value,
+        )
     return cost_value(input_value)

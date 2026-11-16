@@ -27,11 +27,11 @@ pub fn apply_task_output(task: &RunwayTask, mut response: ImageResponse) -> Imag
             }),
             TaskOutput::Unsupported(raw) => {
                 // B1534 leaves a mapping with a non-string value undecoded; LiteLLM appends an entry only for a JSON object
-                if let Ok(member) = serde_json::from_str::<BTreeMap<String, TextOrOther>>(raw) {
+                if let Ok(entry) = serde_json::from_str::<BTreeMap<String, TextOrOther>>(raw) {
                     data.push(ImageData {
-                        b64_json: member.get("b64_json").and_then(text_of),
+                        b64_json: entry.get("b64_json").and_then(text_of),
                         revised_prompt: None,
-                        url: member.get("url").and_then(text_of),
+                        url: entry.get("url").and_then(text_of),
                     });
                 }
             }

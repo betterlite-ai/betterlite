@@ -816,6 +816,13 @@ impl Catalog {
             seen: Mutex::new(Vec::new()),
         }
     }
+
+    fn note(&self, model: &str, custom_llm_provider: Option<&str>) {
+        self.seen
+            .lock()
+            .unwrap()
+            .push((model.to_owned(), custom_llm_provider.map(str::to_owned)));
+    }
 }
 
 impl PriceLookup for Catalog {
@@ -824,10 +831,7 @@ impl PriceLookup for Catalog {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        self.seen
-            .lock()
-            .unwrap()
-            .push((model.to_owned(), custom_llm_provider.map(str::to_owned)));
+        self.note(model, custom_llm_provider);
         self.entries.get(model).cloned()
     }
 
@@ -835,18 +839,15 @@ impl PriceLookup for Catalog {
         self.entries.get(key).cloned()
     }
 
-    fn effective_priced_model(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<PricedModel> {
-        self.effective_model_info(model, custom_llm_provider)
-            .map(|record| PricedModel {
-                record,
-                tiered_pricing: Vec::new(),
-                off_peak_pricing: None,
-                off_peak_cache_read_present: false,
-            })
+    fn effective_priced_model(&self, name: &str, provider: Option<&str>) -> Option<PricedModel> {
+        self.note(name, provider);
+        let record = self.entries.get(name)?.clone();
+        Some(PricedModel {
+            record,
+            tiered_pricing: Vec::new(),
+            off_peak_pricing: None,
+            off_peak_cache_read_present: false,
+        })
     }
 }
 
