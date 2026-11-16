@@ -190,7 +190,9 @@ def auth_value(step: AuthStep) -> JsonValue:
             headers = config.validate_environment(step["headers"], MODEL, litellm_params)
         except AuthenticationError as error:
             return {"raised": error.status_code}
-    shown = {name: value for name, value in headers.items() if name != "x-request-id"}
+    shown: dict[str, JsonValue] = {
+        name: value for name, value in headers.items() if name != "x-request-id"
+    }
     return {"headers": shown, "request_id": "x-request-id" in headers}
 
 

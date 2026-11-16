@@ -33,24 +33,23 @@ fn answer(name: &str) -> Value {
 
 #[test]
 fn every_copilot_responses_seed_is_a_valid_helper_case() {
-    let mut seen = 0_usize;
-    for entry in fs::read_dir(corpus()).expect("the helper corpus should exist") {
-        let path = entry.expect("a corpus entry").path();
-        let named = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with("copilot_responses_"));
-        if !named {
-            continue;
-        }
-        let source = fs::read_to_string(&path).expect("a seed is readable");
+    let sources: Vec<String> = fs::read_dir(corpus())
+        .expect("the helper corpus should exist")
+        .map(|entry| entry.expect("a corpus entry").path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("copilot_responses_"))
+        })
+        .map(|path| fs::read_to_string(path).expect("a seed is readable"))
+        .collect();
+    assert_eq!(sources.len(), 9_usize);
+    assert!(sources.iter().all(|source| {
         let case: HelperCase =
-            serde_saphyr::from_str(&source).expect("a seed parses as a helper case");
-        serde_saphyr::from_str::<Seed>(&source).expect("a seed calls copilot_responses");
-        assert!(validate_helper(Path::new("<helper>"), &case).is_ok());
-        seen = seen.saturating_add(1);
-    }
-    assert_eq!(seen, 9_usize);
+            serde_saphyr::from_str(source).expect("a seed parses as a helper case");
+        serde_saphyr::from_str::<Seed>(source).expect("a seed calls copilot_responses");
+        validate_helper(Path::new("<helper>"), &case).is_ok()
+    }));
 }
 
 #[test]

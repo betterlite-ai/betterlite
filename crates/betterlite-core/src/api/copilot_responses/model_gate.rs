@@ -54,7 +54,12 @@ where
     let Some(Json::Text(key)) = info.fields.get("key") else {
         return false;
     };
-    let Some(canonical) = catalog.lookup.get(key.as_str()) else {
+    lists_responses_endpoint(catalog, key)
+}
+
+// LiteLLM reads the raw model_cost entry at the resolved key; a key without an entry lists nothing
+fn lists_responses_endpoint(catalog: &ModelCatalog, key: &str) -> bool {
+    let Some(canonical) = catalog.lookup.get(key) else {
         return false;
     };
     catalog
