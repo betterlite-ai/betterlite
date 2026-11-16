@@ -1,7 +1,7 @@
 id: B1535
 milestone: M3 providers
 title: Complete Runway image jobs and charge returned image counts
-status: done
+status: todo
 depends_on: [B1534, B997, B068, B171]
 file: tasks/B1535-runway-images.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/runwayml/cost_calculator.py"
 parent: B046
 split_from: null
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2010
+pr: null
