@@ -401,7 +401,8 @@ impl Harness {
     }
 
     pub(super) fn router(&self) -> Router {
-        let archives: Arc<dyn ArchiveBuilder> = Arc::clone(&self.archives);
+        let scripted = Arc::clone(&self.archives);
+        let archives: Arc<dyn ArchiveBuilder> = scripted;
         self.router_with(archives)
     }
 
