@@ -3,8 +3,8 @@ deviations:
   - what: "The text after \"Error updating cache settings: \" is betterlite's own error text, not the Python exception text."
     why: "Python exception strings have no Rust equivalent; the 500 status, the prefix and the string shape of detail match."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L670-L675
-  - what: "params_equal renders a number with Rust's shortest round-trip form, so a float prints 1 where Python's str() prints 1.0, and a float Python prints in exponent form (1e-05) prints 0.00001."
-    why: "Both compared maps came through JSON, so a value renders the same way on both sides; only the equality result matters, and a caller that saves 1 and later sends 1.0 compares equal here where LiteLLM's str() texts differ and the cache is rebuilt."
+  - what: "params_equal compares a number by its JSON literal text, so 1.0 and 1 differ as in Python's str(), but a literal Python would print another way (0.00001 as 1e-05, 1E5 as 100000.0, 1.50 as 1.5) keeps its own text."
+    why: "Both compared maps came through JSON and only the equality result matters; the literal is what the caller sent, and a number that only matches another value's Python text in a rewritten form is treated as changed and the cache is rebuilt."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L340-L369
   - what: "Inside list and object values, numbers and booleans compare by JSON literal and type, so [1] differs from [1.0], while Python compares them by value (1 == 1.0 and True == 1)."
     why: "betterlite's Json keeps serde_json's arbitrary-precision number literal, and a typed value cannot be equal to a value of another type; a cache param whose list carries the same number in a different literal form is treated as changed and the cache is rebuilt."

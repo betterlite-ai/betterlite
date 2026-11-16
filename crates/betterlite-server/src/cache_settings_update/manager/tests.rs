@@ -31,7 +31,9 @@ fn params_equal_compares_python_str_forms() {
     assert!(!params_equal(&typed, &other_ratio));
     let float_ttl = support::params(r#"{"ttl":1.0}"#);
     let int_ttl = support::params(r#"{"ttl":1}"#);
-    assert!(params_equal(&float_ttl, &int_ttl));
+    assert!(!params_equal(&float_ttl, &int_ttl));
+    let float_text = support::params(r#"{"ttl":"1.0"}"#);
+    assert!(params_equal(&float_ttl, &float_text));
 }
 
 #[test]

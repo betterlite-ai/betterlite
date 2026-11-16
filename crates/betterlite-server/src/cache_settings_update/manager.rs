@@ -8,7 +8,6 @@ use betterlite_db::database_faults::reconnect::{
 };
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_models::decisions::{Extra, Json};
-use serde_json::Number;
 use thiserror::Error;
 
 use super::store::CacheConfigRepository;
@@ -167,27 +166,9 @@ fn normalized(params: &CacheParams) -> CacheParams {
 fn compared_value(value: &Json) -> Json {
     match value {
         Json::Bool(flag) => Json::Text(if *flag { "True" } else { "False" }.to_owned()),
-        Json::Number(number) => Json::Text(number_text(number)),
+        Json::Number(number) => Json::Text(number.to_string()),
         Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => value.clone(),
     }
-}
-
-fn number_text(number: &Number) -> String {
-    if let Some(value) = number.as_i64() {
-        return value.to_string();
-    }
-    if let Some(value) = number.as_u64() {
-        return value.to_string();
-    }
-    if let Some(value) = number.as_i128() {
-        return value.to_string();
-    }
-    if let Some(value) = number.as_u128() {
-        return value.to_string();
-    }
-    number
-        .as_f64()
-        .map_or_else(|| number.to_string(), |value| value.to_string())
 }
 
 mod tests;
