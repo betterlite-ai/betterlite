@@ -64,8 +64,9 @@ where
 
     async fn store_attempt(&self, attempt: &ShadowAttemptRow) -> Result<(), tokio_postgres::Error> {
         let id = Uuid::new_v4().to_string();
+        let id_text = id.as_str();
         let outcome = attempt.outcome.as_str();
-        let parameters = attempt_parameters(&id, outcome, attempt);
+        let parameters = attempt_parameters(&id_text, &outcome, attempt);
         self.client
             .execute_raw(INSERT_ATTEMPT_SQL, parameters)
             .await?;
@@ -130,8 +131,8 @@ where
 }
 
 fn attempt_parameters<'attempt>(
-    id: &'attempt str,
-    outcome: &'attempt str,
+    id: &'attempt &'attempt str,
+    outcome: &'attempt &'attempt str,
     attempt: &'attempt ShadowAttemptRow,
 ) -> [&'attempt (dyn ToSql + Sync); 16] {
     [
