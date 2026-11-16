@@ -1,0 +1,19 @@
+kind: helper
+name: chirp-adapter-unsupported-event-drop
+call:
+  chirp_adapter:
+    function: commands
+    project: oracle-project
+    location: null
+    model: chirp_2
+    session_id: null
+    steps:
+      - '{"type":"response.create","response":{}}'
+      - '{"type":"session.created","session":{}}'
+      - '{"type":"conversation.item.create","item":{}}'
+      - '{}'
+      - '{"type":5}'
+      - '[1]'
+      - '{'
+env: {}
+compare: {ignore: []}

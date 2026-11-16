@@ -372,7 +372,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_claude_invoke*")"
       && grep -lq 'bedrock_claude_invoke' tools/oracle/fuzz/corpus/helper_case/bedrock_claude_invoke* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_claude_invoke$/)'
+      run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_claude_invoke$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-async-media-order
     why: uses_async_transform_request returns True. Async first invokes B183 async_inline_remote_media on messages
