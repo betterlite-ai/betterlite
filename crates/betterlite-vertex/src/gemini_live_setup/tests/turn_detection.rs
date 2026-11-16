@@ -38,6 +38,10 @@ use super::support::{as_json, json, turn_detection};
     r#"{"type": "server_vad", "prefix_padding_ms": "20", "silence_duration_ms": 500}"#,
     Some(r#"{"disabled": false, "silenceDurationMs": 500}"#)
 )]
+#[case::negative_duration(
+    r#"{"type": "server_vad", "prefix_padding_ms": -5}"#,
+    Some(r#"{"disabled": false, "prefixPaddingMs": -5}"#)
+)]
 fn automatic_detection_follows_the_override_rules(
     #[case] source: &str,
     #[case] expected: Option<&str>,
