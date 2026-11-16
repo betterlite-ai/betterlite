@@ -376,6 +376,49 @@ async fn cancel_then_retrieve() {
     assert!(seen[1].query.is_empty());
 }
 
+// raise_for_status passes every 2xx answer of the cancel POST on to the follow-up GET
+#[rstest]
+#[case::created(201)]
+#[case::no_content(204)]
+#[case::last_success(299)]
+#[tokio::test]
+async fn cancel_post_2xx_goes_on_to_the_get(#[case] status: u16) {
+    let transport = Scripted::new(vec![reply(status, ""), reply(200, CANCELLING)]);
+    let prepared = prepare_batch_cancel(&base(None, None), "777", ready(Ok(access("tokproj"))))
+        .await
+        .unwrap();
+    let object = execute_batch_cancel(&transport, prepared, &local())
+        .await
+        .unwrap();
+    assert_eq!(object.id, "777");
+    assert_eq!(object.status, BatchStatus::Cancelling);
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[0].method, Method::POST);
+    assert_eq!(seen[1].method, Method::GET);
+}
+
+// an unfollowed 3xx fails the POST and aborts the GET
+#[rstest]
+#[case::multiple_choices(300)]
+#[case::not_modified(304)]
+#[tokio::test]
+async fn cancel_post_outside_2xx_aborts_the_get(#[case] status: u16) {
+    let transport = Scripted::new(vec![reply(status, "moved")]);
+    let prepared = prepare_batch_cancel(&base(None, None), "777", ready(Ok(access("tokproj"))))
+        .await
+        .unwrap();
+    let error = execute_batch_cancel(&transport, prepared, &local())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        VertexBatchLifecycleError::CancelStatus { .. }
+    ));
+    assert_eq!(error.status_code(), status);
+    assert_eq!(transport.requests().len(), 1);
+}
+
 #[tokio::test]
 async fn cancel_failure_no_get() {
     let body = "y".repeat(1500);
