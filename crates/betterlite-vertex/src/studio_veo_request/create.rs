@@ -1,4 +1,5 @@
 use betterlite_prompts::arguments::json::{Json, Object};
+use serde::{Deserialize, Serialize};
 
 use super::error::StudioVeoError;
 use super::image::gemini_image;
@@ -11,25 +12,50 @@ pub struct CreateInput<'media> {
     pub mapped: MappedParams<'media>,
 }
 
+// GeminiVideoGenerationRequest, after LiteLLM's model
+#[derive(Debug, Serialize)]
+pub struct CreateBody {
+    pub instances: Vec<Instance>,
+    pub parameters: Parameters,
+}
+
+// GeminiVideoGenerationInstance
+#[derive(Debug, Serialize)]
+pub struct Instance {
+    pub prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<Object>,
+}
+
+// GeminiVideoGenerationParameters, in declaration order, with absent and null alike dropped
+#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Parameters {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aspect_ratio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub negative_prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_frame: Option<Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_images: Option<Vec<Json>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video: Option<Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub person_generation: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct CreateForm {
-    pub body: Object,
+    pub body: CreateBody,
     pub url: String,
 }
 
-// GeminiVideoGenerationParameters, in declaration order
-const PARAMETER_FIELDS: [&str; 8] = [
-    "aspectRatio",
-    "durationSeconds",
-    "resolution",
-    "negativePrompt",
-    "lastFrame",
-    "referenceImages",
-    "video",
-    "personGeneration",
-];
-
-// transform_video_create_request: the image leaves the options, and the parameter model keeps its eight declared fields
+// transform_video_create_request: the image leaves the options, and the parameters carry their declared types
 pub fn create_request(
     input: CreateInput<'_>,
     mime: &dyn MimeReader,
@@ -40,95 +66,35 @@ pub fn create_request(
         mapped,
     } = input;
     let MappedParams { image, options } = mapped;
-    let mut instance = Object::new();
-    instance.insert("prompt".to_owned(), Json::Text(prompt.to_owned()));
-    if let Some(chosen) = image
-        && !matches!(&chosen, ImageInput::Json(Json::Null))
-    {
-        instance.insert(
-            "image".to_owned(),
-            Json::Object(gemini_image(chosen, mime)?),
-        );
-    }
-    let mut body = Object::new();
-    body.insert(
-        "instances".to_owned(),
-        Json::List(vec![Json::Object(instance)]),
-    );
-    body.insert(
-        "parameters".to_owned(),
-        Json::Object(typed_parameters(&options)?),
-    );
+    let image = match image {
+        Some(ImageInput::Json(Json::Null)) | None => None,
+        Some(chosen) => Some(gemini_image(chosen, mime)?),
+    };
     Ok(CreateForm {
-        body,
+        body: CreateBody {
+            instances: vec![Instance {
+                prompt: prompt.to_owned(),
+                image,
+            }],
+            parameters: parameters_from(options)?,
+        },
         url: api_base.to_owned(),
     })
 }
 
-fn typed_parameters(options: &Object) -> Result<Object, StudioVeoError> {
-    let mut parameters = Object::new();
-    for name in PARAMETER_FIELDS {
-        let Some(value) = options.get(name) else {
-            continue;
-        };
-        if matches!(value, Json::Null) {
-            continue;
+// GeminiVideoGenerationParameters(**params_copy): unknown keys are ignored, null becomes None and a wrong type names its field
+fn parameters_from(options: Object) -> Result<Parameters, StudioVeoError> {
+    let text = serde_json::to_string(&Json::Object(options)).map_err(|source| {
+        StudioVeoError::Parameters {
+            path: "parameters".to_owned(),
+            source,
         }
-        if let Some(kept) = parameter_value(name, value)? {
-            parameters.insert(name.to_owned(), kept);
+    })?;
+    let mut deserializer = serde_json::Deserializer::from_str(&text);
+    serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
+        StudioVeoError::Parameters {
+            path: error.path().to_string(),
+            source: error.into_inner(),
         }
-    }
-    Ok(parameters)
-}
-
-fn parameter_value(name: &'static str, value: &Json) -> Result<Option<Json>, StudioVeoError> {
-    let kept = match name {
-        "aspectRatio" | "resolution" | "negativePrompt" | "personGeneration" => {
-            text_parameter(name, value)?
-        }
-        "durationSeconds" => integer_parameter(name, value)?,
-        "referenceImages" => list_parameter(name, value)?,
-        "lastFrame" | "video" => value.clone(),
-        _ => return Ok(None),
-    };
-    Ok(Some(kept))
-}
-
-fn text_parameter(name: &'static str, value: &Json) -> Result<Json, StudioVeoError> {
-    match value {
-        Json::Text(_) => Ok(value.clone()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(StudioVeoError::ParameterType {
-                field: name,
-                expected: "a string",
-            })
-        }
-    }
-}
-
-fn integer_parameter(name: &'static str, value: &Json) -> Result<Json, StudioVeoError> {
-    match value {
-        Json::Number(number) if number.is_i64() || number.is_u64() => Ok(value.clone()),
-        Json::Null
-        | Json::Bool(_)
-        | Json::Number(_)
-        | Json::Text(_)
-        | Json::List(_)
-        | Json::Object(_) => Err(StudioVeoError::ParameterType {
-            field: name,
-            expected: "an integer",
-        }),
-    }
-}
-
-fn list_parameter(name: &'static str, value: &Json) -> Result<Json, StudioVeoError> {
-    match value {
-        Json::List(_) => Ok(value.clone()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-            Err(StudioVeoError::ParameterType {
-                field: name,
-                expected: "a list",
-            })
-        }
-    }
+    })
 }

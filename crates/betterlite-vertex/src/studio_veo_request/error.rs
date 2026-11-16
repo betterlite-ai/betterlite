@@ -12,9 +12,10 @@ pub enum StudioVeoError {
     ImageNotAFile,
     #[error("the image file could not be read")]
     ImageRead(#[source] VeoRequestError),
-    #[error("{field} must be {expected}")]
-    ParameterType {
-        field: &'static str,
-        expected: &'static str,
+    #[error("the video parameter {path} does not match the Gemini model: {source}")]
+    Parameters {
+        path: String,
+        #[source]
+        source: serde_json::Error,
     },
 }

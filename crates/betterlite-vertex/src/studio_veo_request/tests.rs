@@ -14,7 +14,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::vertex_veo_request::image::{B1120Mime, ImageInput, MimeReader};
 
 use super::SUPPORTED_OPENAI_PARAMS;
-use super::create::{CreateForm, CreateInput, create_request};
+use super::create::{CreateForm, CreateInput, Parameters, create_request};
 use super::environment::{KeySources, validate_environment};
 use super::error::StudioVeoError;
 use super::params::{MapInput, MappedParams, Reference, map_openai_params};
@@ -252,18 +252,17 @@ fn create(mapped: MappedParams<'_>, mime: &dyn MimeReader) -> Result<CreateForm,
     )
 }
 
-fn image_of(form: &CreateForm) -> Option<&Json> {
-    let Some(Json::List(instances)) = form.body.get("instances") else {
-        return None;
-    };
-    let Some(Json::Object(first)) = instances.first() else {
-        return None;
-    };
-    first.get("image")
+fn image_of(form: &CreateForm) -> Option<&Object> {
+    form.body.instances.first()?.image.as_ref()
 }
 
-fn parameters_of(form: &CreateForm) -> Option<&Json> {
-    form.body.get("parameters")
+fn parameters_of(form: &CreateForm) -> &Parameters {
+    &form.body.parameters
+}
+
+fn body_json(form: &CreateForm) -> Json {
+    let value = serde_json::to_value(&form.body).expect("the body serializes");
+    serde_json::from_value(value).expect("the body is JSON")
 }
 
 #[test]
@@ -280,12 +279,12 @@ fn create_seeks_a_file_image_to_zero_and_leaves_it_consumed() {
     assert_eq!(form.url, "https://mock/veo-3");
     assert_eq!(
         image_of(&form),
-        Some(&Json::Object(object([
+        Some(&object([
             ("bytesBase64Encoded", Json::Text(STANDARD.encode(&data))),
             ("mimeType", text("image/png")),
-        ])))
+        ]))
     );
-    assert_eq!(parameters_of(&form), Some(&Json::Object(Object::new())));
+    assert_eq!(parameters_of(&form), &Parameters::default());
 }
 
 #[test]
@@ -299,7 +298,7 @@ fn create_passes_an_image_dictionary_through_without_reading_it() {
         Object::new(),
     );
     let form = create(mapped, &RefusingMime).expect("the create request is built");
-    assert_eq!(image_of(&form), Some(&Json::Object(image)));
+    assert_eq!(image_of(&form), Some(&image));
 }
 
 #[rstest]
@@ -317,21 +316,21 @@ fn create_drops_a_null_image() {
     let mapped = mapped(Some(ImageInput::Json(Json::Null)), Object::new());
     let form = create(mapped, &RefusingMime).expect("the create request is built");
     assert_eq!(image_of(&form), None);
-    assert_eq!(parameters_of(&form), Some(&Json::Object(Object::new())));
+    assert_eq!(parameters_of(&form), &Parameters::default());
 }
 
 #[test]
 fn create_always_sends_a_parameters_block() {
     let form = create(mapped(None, Object::new()), &RefusingMime).expect("the body is built");
     assert_eq!(
-        form.body,
-        object([
+        body_json(&form),
+        Json::Object(object([
             (
                 "instances",
                 Json::List(vec![Json::Object(object([("prompt", text("a prompt"))]))]),
             ),
             ("parameters", Json::Object(Object::new())),
-        ])
+        ]))
     );
 }
 
@@ -357,19 +356,8 @@ fn the_parameter_model_keeps_its_eight_declared_fields() {
     ]);
     let form = create(mapped(None, options), &RefusingMime).expect("the body is built");
     assert_eq!(
-        parameters_of(&form),
-        Some(&Json::Object(object([
-            ("aspectRatio", text("16:9")),
-            ("durationSeconds", number(8)),
-            ("resolution", text("720p")),
-            ("negativePrompt", text("blurry")),
-            (
-                "lastFrame",
-                Json::Object(object([("a", Json::Null), ("b", number(1))])),
-            ),
-            ("referenceImages", Json::List(vec![number(1), Json::Null])),
-            ("video", text("files/abc")),
-        ])))
+        serde_json::to_string(parameters_of(&form)).expect("the parameters serialize"),
+        r#"{"aspectRatio":"16:9","durationSeconds":8,"resolution":"720p","negativePrompt":"blurry","lastFrame":{"a":null,"b":1},"referenceImages":[1,null],"video":"files/abc"}"#
     );
 }
 
@@ -381,8 +369,8 @@ fn the_parameter_model_keeps_an_empty_resolution() {
     )
     .expect("the body is built");
     assert_eq!(
-        parameters_of(&form),
-        Some(&Json::Object(object([("resolution", text(""))])))
+        serde_json::to_string(parameters_of(&form)).expect("the parameters serialize"),
+        r#"{"resolution":""}"#
     );
 }
 
@@ -393,46 +381,23 @@ fn the_parameter_model_drops_a_null_resolution() {
         &RefusingMime,
     )
     .expect("the body is built");
-    assert_eq!(parameters_of(&form), Some(&Json::Object(Object::new())));
+    assert_eq!(parameters_of(&form), &Parameters::default());
 }
 
 #[rstest]
-#[case::aspect_ratio("aspectRatio", number(5), "a string")]
-#[case::duration_fraction("durationSeconds", fraction(8.5), "an integer")]
-#[case::duration_text("durationSeconds", text("8"), "an integer")]
-#[case::references_object("referenceImages", Json::Object(Object::new()), "a list")]
-#[case::negative_prompt("negativePrompt", number(5), "a string")]
-#[case::person_generation("personGeneration", Json::Bool(true), "a string")]
-fn the_parameter_model_rejects_a_field_of_another_type(
-    #[case] field: &str,
-    #[case] value: Json,
-    #[case] expected: &str,
-) {
+#[case::aspect_ratio("aspectRatio", number(5))]
+#[case::duration_fraction("durationSeconds", fraction(8.5))]
+#[case::duration_text("durationSeconds", text("8"))]
+#[case::references_object("referenceImages", Json::Object(Object::new()))]
+#[case::negative_prompt("negativePrompt", number(5))]
+#[case::person_generation("personGeneration", Json::Bool(true))]
+fn the_parameter_model_rejects_a_field_of_another_type(#[case] field: &str, #[case] value: Json) {
     let error = create(mapped(None, object([(field, value)])), &RefusingMime)
         .expect_err("the field type does not match");
-    let StudioVeoError::ParameterType {
-        field: reported,
-        expected: reported_expected,
-    } = error
-    else {
+    let StudioVeoError::Parameters { path, .. } = error else {
         panic!("the error names the field");
     };
-    assert_eq!(reported, field);
-    assert_eq!(reported_expected, expected);
-}
-
-#[test]
-fn the_parameter_model_rejects_a_fractional_duration() {
-    let error = create(
-        mapped(None, object([("durationSeconds", fraction(8.5))])),
-        &RefusingMime,
-    )
-    .expect_err("a fractional duration is not an integer");
-    let StudioVeoError::ParameterType { field, expected } = error else {
-        panic!("the error names the field");
-    };
-    assert_eq!(field, "durationSeconds");
-    assert_eq!(expected, "an integer");
+    assert_eq!(path, field);
 }
 
 fn settings(environment: [Option<&str>; 2], generic: Option<&str>) -> Settings {
