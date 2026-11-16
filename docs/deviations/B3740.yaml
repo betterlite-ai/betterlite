@@ -16,6 +16,6 @@ deviations:
     why: The audit runs on another thread and must own everything it touches; the invocation and log target borrow the caller's request, so they cannot cross that boundary.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L185-L195
   - what: Betterlite has no pass-through branch for streamed responses that are neither a chat completion nor a text completion; its stream assembly builds only those two shapes, and a stream it cannot assemble fails closed with the 400 assembly message.
-    why: A non-empty non-content stream cannot reach LiteLLM's pass-through at L569-L573: stream_chunk_builder declares and returns only ModelResponse, TextCompletionResponse or None, and the TextCompletionResponse case is scanned by the branch above, so the pass-through only ever sees an empty stream. No working setup can rely on unscanned content being released.
+    why: "A non-empty non-content stream cannot reach LiteLLM's pass-through at L569-L573: stream_chunk_builder declares and returns only ModelResponse, TextCompletionResponse or None, and the TextCompletionResponse case is scanned by the branch above, so the pass-through only ever sees an empty stream. No working setup can rely on unscanned content being released."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L9011
 kept_bugs: []
