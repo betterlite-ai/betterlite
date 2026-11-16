@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use crate::loader::{ConfigError, ConfigLoader};
@@ -142,14 +143,45 @@ fn resolves_environment_references() {
     assert_eq!(settings.path, "cache");
 }
 
-#[test]
-fn missing_environment_reference_is_an_error() {
-    let error = load("litellm_settings:\n  cache: true\n  cache_params:\n    type: gcs\n    gcs_bucket_name: os.environ/UNSET_BUCKET\n")
-        .expect_err("the reference is unresolved");
+#[rstest]
+#[case::bucket(
+    "gcs_bucket_name: os.environ/UNSET",
+    "litellm_settings.cache_params.gcs_bucket_name"
+)]
+#[case::service_account(
+    "gcs_bucket_name: responses\n    gcs_path_service_account: os.environ/UNSET",
+    "litellm_settings.cache_params.gcs_path_service_account"
+)]
+#[case::path(
+    "gcs_bucket_name: responses\n    gcs_path: os.environ/UNSET",
+    "litellm_settings.cache_params.gcs_path"
+)]
+fn missing_reference_names_its_path(#[case] params: &str, #[case] path: &str) {
+    let yaml =
+        format!("litellm_settings:\n  cache: true\n  cache_params:\n    type: gcs\n    {params}\n");
+    let error = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&yaml)
+    .expect_err("the reference is unresolved");
     assert!(matches!(
         error,
-        ConfigError::MissingEnvironment { variable, .. } if variable == "UNSET_BUCKET"
+        ConfigError::MissingEnvironment {
+            variable,
+            path: error_path,
+        } if variable == "UNSET" && error_path == path
     ));
+}
+
+#[test]
+fn empty_service_account_environment_is_none() {
+    let mut lookup = BTreeMap::new();
+    lookup.insert("GCS_PATH_SERVICE_ACCOUNT".to_owned(), String::new());
+    let config = ConfigLoader { lookup }
+        .load("litellm_settings:\n  cache: true\n  cache_params:\n    type: gcs\n    gcs_bucket_name: responses\n")
+        .expect("the bucket comes from the config");
+    let settings = config.sections.gcs_response_cache.unwrap();
+    assert!(settings.service_account_path.is_none());
 }
 
 #[test]
