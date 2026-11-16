@@ -153,6 +153,33 @@ fn absent_router_falls_back_after_native_failure() {
 }
 
 #[test]
+fn alias_rows_whose_underlying_model_fails_are_skipped() {
+    let native = FakeNative::new(&[("openai/gpt-4o-mini", "gpt-4o-mini", "openai")]);
+    let router = FakeRouter::new(vec![
+        deployment("tpm-locked", "unknown/underlying"),
+        deployment("tpm-locked", "openai/gpt-4o-mini"),
+    ]);
+    let resolved = resolve_rate_limit_provider(Some("tpm-locked"), &native, Some(&router));
+    assert_eq!(resolved, pair("gpt-4o-mini", "openai"));
+    assert_eq!(native.calls.load(Ordering::Relaxed), 3);
+}
+
+#[test]
+fn alias_rows_without_a_provider_are_skipped() {
+    let native = FakeNative::new(&[
+        ("custom/one", "resolved-one", ""),
+        ("openai/gpt-4o-mini", "gpt-4o-mini", "openai"),
+    ]);
+    let router = FakeRouter::new(vec![
+        deployment("tpm-locked", "custom/one"),
+        deployment("tpm-locked", "openai/gpt-4o-mini"),
+    ]);
+    let resolved = resolve_rate_limit_provider(Some("tpm-locked"), &native, Some(&router));
+    assert_eq!(resolved, pair("gpt-4o-mini", "openai"));
+    assert_eq!(native.calls.load(Ordering::Relaxed), 3);
+}
+
+#[test]
 fn malformed_alias_rows_fall_back() {
     let native = FakeNative::new(&[("openai/gpt-4o-mini", "gpt-4o-mini", "openai")]);
     let router = FakeRouter::new(rows(&[
