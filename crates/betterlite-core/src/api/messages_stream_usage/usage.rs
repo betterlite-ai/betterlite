@@ -61,16 +61,16 @@ pub fn augment_message_delta_usage<S>(
     state: &StreamState<S>,
     chunk: Object,
 ) -> Result<Object, StreamStateError> {
-    let mut chunk = attach_context_edits(state, chunk)?;
+    let mut augmented = attach_context_edits(state, chunk)?;
     let Some(iterations) = &state.iterations_usage else {
-        return Ok(chunk);
+        return Ok(augmented);
     };
-    let found = chunk.get("usage").and_then(Json::as_object).cloned();
+    let found = augmented.get("usage").and_then(Json::as_object).cloned();
     let Some(mut usage) = found else {
-        return Ok(chunk);
+        return Ok(augmented);
     };
     if usage.contains_key("iterations") {
-        return Ok(chunk);
+        return Ok(augmented);
     }
     let input_tokens = counter(usage.get("input_tokens"));
     let output_tokens = counter(usage.get("output_tokens"));
@@ -93,8 +93,8 @@ pub fn augment_message_delta_usage<S>(
         appended.push(Json::Object(iteration));
     }
     usage.insert("iterations".to_owned(), Json::List(appended));
-    chunk.insert("usage".to_owned(), Json::Object(usage));
-    Ok(chunk)
+    augmented.insert("usage".to_owned(), Json::Object(usage));
+    Ok(augmented)
 }
 
 // The held message_delta keeps its stop fields and takes this usage in place, never as a second usage
