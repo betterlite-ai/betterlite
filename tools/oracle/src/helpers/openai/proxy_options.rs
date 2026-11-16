@@ -11,14 +11,15 @@ use betterlite_openai::proxy::images::{ImageEndpoint, image_headers, image_url};
 use betterlite_openai::proxy::models::{ModelsRequest, get_models};
 use betterlite_openai::proxy::responses::{PROVIDER, SUPPORTS_NATIVE_WEBSOCKET, responses_url};
 use betterlite_openai::proxy::{ProxyOptions, map_params, transform_request};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use http::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::runtime::{Builder, Runtime};
 use tokio::task::yield_now;
 use url::Url;
-
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 const DEADLINE: Duration = Duration::from_secs(600);
 
@@ -161,7 +162,7 @@ impl Helper for Op {
                 Ok(json!({ "results": results }))
             }
             Input::Models { params } => {
-                let runtime = tokio::runtime::Builder::new_current_thread()
+                let runtime = Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .or_value_error()?;
@@ -265,7 +266,7 @@ fn image_value(case: &ImageCase) -> Value {
     }
 }
 
-fn models_value(runtime: &tokio::runtime::Runtime, case: &ModelsCase) -> Value {
+fn models_value(runtime: &Runtime, case: &ModelsCase) -> Value {
     let options = ProxyOptions {
         api_base: case.environment_base.clone(),
         api_key: case.environment_key.as_deref().map(SecretString::from),

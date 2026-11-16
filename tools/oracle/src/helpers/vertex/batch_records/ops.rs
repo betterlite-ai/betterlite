@@ -23,7 +23,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -152,7 +152,10 @@ fn job_outcome(response: &Value, local: &LocalTimeContext) -> Value {
     }
 }
 
-// a payload that is not a batch response has no provider status, and a projection error keeps its own
+#[expect(
+    clippy::map_err_ignore,
+    reason = "a payload that is not a batch response has no provider status, and a projection error keeps its own"
+)]
 fn batch_of(response: &Value, local: &LocalTimeContext) -> Result<BatchObject, Option<u16>> {
     let job = serde_json::from_value::<VertexBatchPredictionResponse>(response.clone())
         .map_err(|_| None)?;

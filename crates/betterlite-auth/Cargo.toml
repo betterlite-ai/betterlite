@@ -37,9 +37,10 @@ speedate = "0.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tokio.workspace = true
+tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 tracing.workspace = true
 unicode-normalization = "0.1.26"
-uuid = { version = "1.29.0", features = ["serde"] }
+uuid = { version = "1.29.0", features = ["serde", "v4"] }
 
 [dev-dependencies]
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }

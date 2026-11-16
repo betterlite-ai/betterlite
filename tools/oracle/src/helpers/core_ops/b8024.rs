@@ -7,7 +7,9 @@ use betterlite_openai::search::provider::SearchQuery;
 use secrecy::SecretString;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 enum ProviderName {
@@ -121,7 +123,7 @@ where
 
 fn value_error<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     Box::new(HelperError {
         class: "ValueError".to_owned(),
