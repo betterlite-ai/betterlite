@@ -5,22 +5,23 @@ use std::sync::Arc;
 use betterlite_logging::verbose_hooks::VerboseHooks;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
+use rstest::rstest;
 
 use crate::tool_permission_responses::tests::support::services;
 
 use super::{SilentConsole, SilentLogger};
 
-#[test]
-fn silent_logger_keeps_every_level_in_the_hook_result() {
-    let hooks = services().hooks();
-    for level in ["DEBUG", "INFO", "ERROR"] {
-        let result = hooks.utils_print_verbose(
-            Payload::String("hello".to_owned()),
-            level,
-            &Payload::Bool(false),
-        );
-        assert_eq!(result.logs.len(), 1);
-    }
+#[rstest]
+#[case::debug("DEBUG")]
+#[case::info("INFO")]
+#[case::error("ERROR")]
+fn silent_logger_keeps_every_level_in_the_hook_result(#[case] level: &str) {
+    let result = services().hooks().utils_print_verbose(
+        Payload::String("hello".to_owned()),
+        level,
+        &Payload::Bool(false),
+    );
+    assert_eq!(result.logs.len(), 1);
 }
 
 #[test]

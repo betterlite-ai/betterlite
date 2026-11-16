@@ -21,24 +21,21 @@ fn text_of(value: &GuardrailValue) -> Value {
     }
 }
 
-fn field_text(fields: &Object, key: &str) -> Value {
-    fields.get(key).map_or(Value::Null, text_of)
-}
-
 fn tool_call_view(call: &GuardrailValue) -> Value {
     let function = mapping_value(call, "function");
+    let id = mapping_value(call, "id").map_or(Value::Null, text_of);
+    let kind = mapping_value(call, "type").map_or(Value::Null, text_of);
+    let name = function
+        .and_then(|function| mapping_value(function, "name"))
+        .map_or(Value::Null, text_of);
+    let arguments = function
+        .and_then(|function| mapping_value(function, "arguments"))
+        .map_or(Value::Null, text_of);
     serde_json::json!({
-        "id": field_text_of(call, "id"),
-        "type": field_text_of(call, "type"),
-        "function": {
-            "name": function.map_or(Value::Null, |function| field_text_of(function, "name")),
-            "arguments": function.map_or(Value::Null, |function| field_text_of(function, "arguments")),
-        },
+        "id": id,
+        "type": kind,
+        "function": {"name": name, "arguments": arguments},
     })
-}
-
-fn field_text_of(value: &GuardrailValue, key: &str) -> Value {
-    mapping_value(value, key).map_or(Value::Null, text_of)
 }
 
 fn tool_calls_view(calls: Option<&GuardrailValue>) -> Value {
@@ -52,18 +49,21 @@ fn function_view(function: Option<&GuardrailValue>) -> Value {
     let Some(function) = function else {
         return Value::Null;
     };
-    serde_json::json!({
-        "name": field_text_of(function, "name"),
-        "arguments": field_text_of(function, "arguments"),
-    })
+    let name = mapping_value(function, "name").map_or(Value::Null, text_of);
+    let arguments = mapping_value(function, "arguments").map_or(Value::Null, text_of);
+    serde_json::json!({"name": name, "arguments": arguments})
 }
 
 fn message_view(message: &GuardrailValue) -> Value {
+    let role = mapping_value(message, "role").map_or(Value::Null, text_of);
+    let content = mapping_value(message, "content").map_or(Value::Null, text_of);
+    let tool_calls = tool_calls_view(mapping_value(message, "tool_calls"));
+    let function_call = function_view(mapping_value(message, "function_call"));
     serde_json::json!({
-        "role": field_text_of(message, "role"),
-        "content": field_text_of(message, "content"),
-        "tool_calls": tool_calls_view(mapping_value(message, "tool_calls")),
-        "function_call": function_view(mapping_value(message, "function_call")),
+        "role": role,
+        "content": content,
+        "tool_calls": tool_calls,
+        "function_call": function_call,
     })
 }
 
@@ -77,9 +77,13 @@ pub(crate) fn choices_view(response: &Object) -> Value {
             let message = mapping_value(choice, "message")
                 .or_else(|| mapping_value(choice, "delta"))
                 .map_or(Value::Null, message_view);
+            let index = mapping_value(choice, "index").map_or(Value::Null, |value| {
+                serde_json::to_value(value).unwrap_or(Value::Null)
+            });
+            let finish_reason = mapping_value(choice, "finish_reason").map_or(Value::Null, text_of);
             serde_json::json!({
-                "index": mapping_value(choice, "index").map_or(Value::Null, exact),
-                "finish_reason": field_text_of(choice, "finish_reason"),
+                "index": index,
+                "finish_reason": finish_reason,
                 "message": message,
             })
         })
@@ -87,17 +91,12 @@ pub(crate) fn choices_view(response: &Object) -> Value {
     Value::Array(projected)
 }
 
-fn exact(value: &GuardrailValue) -> Value {
-    serde_json::to_value(value).unwrap_or(Value::Null)
-}
-
 fn block_view(block: &GuardrailValue) -> Value {
-    serde_json::json!({
-        "type": field_text_of(block, "type"),
-        "text": field_text_of(block, "text"),
-        "id": field_text_of(block, "id"),
-        "name": field_text_of(block, "name"),
-    })
+    let kind = mapping_value(block, "type").map_or(Value::Null, text_of);
+    let text = mapping_value(block, "text").map_or(Value::Null, text_of);
+    let id = mapping_value(block, "id").map_or(Value::Null, text_of);
+    let name = mapping_value(block, "name").map_or(Value::Null, text_of);
+    serde_json::json!({"type": kind, "text": text, "id": id, "name": name})
 }
 
 fn anthropic_view(response: &Object) -> Value {
@@ -105,9 +104,10 @@ fn anthropic_view(response: &Object) -> Value {
         .get("content")
         .and_then(object_list)
         .map_or_else(Vec::new, |blocks| blocks.iter().map(block_view).collect());
+    let stop_reason = response.get("stop_reason").map_or(Value::Null, text_of);
     serde_json::json!({
         "content": Value::Array(content),
-        "stop_reason": field_text(response, "stop_reason"),
+        "stop_reason": stop_reason,
     })
 }
 

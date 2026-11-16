@@ -56,8 +56,7 @@ pub async fn post_call_streaming_iterator_hook(
     if denied.is_empty() {
         return relay(&output, chunks).await;
     }
-    // The assembled Anthropic stream is an OpenAI-shaped response, so LiteLLM rewrites it with the OpenAI rewrite
-    // before translating it back to Anthropic SSE.
+    // The assembled Anthropic stream is OpenAI-shaped, so LiteLLM rewrites it before translating it back to SSE.
     rewrite_openai_responses(&mut assembled.response, &denied);
     let record = rewritten_record(&assembled.response, &assembled.record)?;
     let frames = sse_chunks_from_response(&record)?;

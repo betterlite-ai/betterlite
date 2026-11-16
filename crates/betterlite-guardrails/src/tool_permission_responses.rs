@@ -14,5 +14,4 @@ pub mod unparseable;
 mod reconstruct;
 mod stream_assembly;
 
-#[cfg(test)]
 mod tests;

@@ -2,7 +2,6 @@ use std::convert::Infallible;
 use std::future::Future;
 
 use betterlite_anthropic::stream_events::StreamEventConverter;
-use betterlite_anthropic::stream_events::chunk::StreamEventChunk;
 use betterlite_anthropic::stream_state::state::{StreamOptions, StreamState, UuidV4};
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -10,8 +9,7 @@ use betterlite_core::api::messages_chat_output::records::{
     ChoiceRecord, ResponseRecord, ToolCallRecord,
 };
 use betterlite_models::decisions::Json;
-use betterlite_streaming::streamed_response_assembly::records::Chunk;
-use betterlite_streaming::streamed_response_assembly::response::{ChatResponse, Response};
+use betterlite_streaming::streamed_response_assembly::response::Response;
 use betterlite_streaming::streamed_response_assembly::{Request, stream_chunk_builder};
 
 use crate::anthropic_sse::assemble_anthropic_sse_stream::{
@@ -34,7 +32,8 @@ pub(crate) async fn assemble_openai_chunks(
             // A chunk that is not a JSON object is outside the declared chunk type, so nothing assembles.
             return Ok(None);
         };
-        chunks.push(chunk_record(fields)?);
+        let encoded = serde_json::to_string(fields)?;
+        chunks.push(serde_json::from_str(&encoded)?);
     }
     if chunks.is_empty() {
         return Ok(None);
@@ -51,21 +50,22 @@ pub(crate) async fn assemble_openai_chunks(
     };
     let hooks = services.hooks();
     match stream_chunk_builder(&request, &hooks).await {
-        Ok(Some(Response::Chat(chat))) => Ok(Some(response_object(&chat)?)),
+        Ok(Some(Response::Chat(chat))) => {
+            let value = serde_json::to_value(&chat)?;
+            Ok(Some(serde_json::from_value::<Object>(value)?))
+        }
         Ok(Some(Response::Text(_)) | None) => Ok(None),
         Err(error) => Err(ResponseToolError::Assembly(error)),
     }
 }
 
-// The Anthropic stream assembles to an OpenAI-shaped record, which the permission check reads and the
-// re-encoder turns back into Anthropic frames.
+// The Anthropic stream assembles to an OpenAI-shaped record that the check reads and the re-encoder turns back into frames.
 pub(crate) struct AssembledAnthropicStream {
     pub(crate) response: Object,
     pub(crate) record: ResponseRecord,
 }
 
-// LiteLLM's assemble_anthropic_sse_stream over the shared decoder, with identity off as the hook calls it;
-// every failure reads as no response to check.
+// LiteLLM's assemble_anthropic_sse_stream over the shared decoder, identity off, every failure read as no response.
 pub(crate) async fn assemble_anthropic_stream(
     items: &[StreamItem],
     services: &StreamServices<'_>,
@@ -76,8 +76,7 @@ pub(crate) async fn assemble_anthropic_stream(
     Some(AssembledAnthropicStream { response, record })
 }
 
-// The rewrite works on the OpenAI message shape, so the identity and usage the stream carried are put back
-// on the record the re-encoder reads.
+// The rewrite works on the OpenAI shape, so the stream's identity and usage go back onto the record the re-encoder reads.
 pub(crate) fn rewritten_record(
     response: &Object,
     original: &ResponseRecord,
@@ -126,7 +125,8 @@ async fn assemble_events(events: &[Json], services: &StreamServices<'_>) -> Opti
     let mut chunks = Vec::with_capacity(events.len());
     for event in events {
         let chunk = converter.chunk_parser(event).ok()?;
-        chunks.push(event_record(&chunk)?);
+        let encoded = serde_json::to_string(&chunk).ok()?;
+        chunks.push(serde_json::from_str(&encoded).ok()?);
     }
     if chunks.is_empty() {
         return None;
@@ -143,19 +143,12 @@ async fn assemble_events(events: &[Json], services: &StreamServices<'_>) -> Opti
     };
     let hooks = services.hooks();
     match stream_chunk_builder(&request, &hooks).await {
-        Ok(Some(Response::Chat(chat))) => response_record(&chat),
+        Ok(Some(Response::Chat(chat))) => {
+            let encoded = serde_json::to_string(&chat).ok()?;
+            serde_json::from_str(&encoded).ok()
+        }
         Ok(Some(Response::Text(_)) | None) | Err(_) => None,
     }
-}
-
-fn event_record(chunk: &StreamEventChunk) -> Option<Chunk> {
-    let encoded = serde_json::to_string(chunk).ok()?;
-    serde_json::from_str(&encoded).ok()
-}
-
-fn response_record(response: &ChatResponse) -> Option<ResponseRecord> {
-    let encoded = serde_json::to_string(response).ok()?;
-    serde_json::from_str(&encoded).ok()
 }
 
 // The rewrite helpers read the OpenAI message shape; the record keeps the stream identity, tools and reasons.
@@ -223,16 +216,6 @@ fn tool_call_view(call: &ToolCallRecord) -> GuardrailValue {
     );
     fields.insert("function".to_owned(), GuardrailValue::Object(function));
     GuardrailValue::Object(fields)
-}
-
-fn chunk_record(fields: &Object) -> Result<Chunk, ResponseToolError> {
-    let encoded = serde_json::to_string(fields)?;
-    Ok(serde_json::from_str(&encoded)?)
-}
-
-fn response_object(response: &ChatResponse) -> Result<Object, ResponseToolError> {
-    let value = serde_json::to_value(response)?;
-    Ok(serde_json::from_value::<Object>(value)?)
 }
 
 mod tests;

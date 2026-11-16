@@ -288,27 +288,42 @@ fn openai_tool_stream() -> Vec<StreamItem> {
     .collect()
 }
 
-#[tokio::test]
-async fn post_call_streaming_iterator_hook_rewrites_a_denied_openai_stream() {
-    let (sender, receiver) = mpsc::channel(4);
-    for item in openai_tool_stream() {
+async fn run_openai(
+    guardrail: &crate::tool_permission::ToolPermissionGuardrail,
+    chunks: Vec<StreamItem>,
+) -> Vec<StreamItem> {
+    let (sender, receiver) = mpsc::channel(chunks.len().max(1));
+    for item in chunks {
         sender.send(item).await.expect("send");
     }
     drop(sender);
     let (output, mut output_receiver) = mpsc::channel(8);
     post_call_streaming_iterator_hook(
-        &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
+        guardrail,
         StreamBufferLimits::default(),
         &services(),
         receiver,
         output,
     )
     .await
-    .expect("the stream rewrites");
-    let Some(StreamItem::Json(GuardrailValue::Object(chunk))) = output_receiver.recv().await else {
+    .expect("the stream checks");
+    let mut items = Vec::new();
+    while let Some(item) = output_receiver.recv().await {
+        items.push(item);
+    }
+    items
+}
+
+#[tokio::test]
+async fn post_call_streaming_iterator_hook_rewrites_a_denied_openai_stream() {
+    let items = run_openai(
+        &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
+        openai_tool_stream(),
+    )
+    .await;
+    let [StreamItem::Json(GuardrailValue::Object(chunk))] = items.as_slice() else {
         panic!("one reconstructed json chunk");
     };
-    assert!(output_receiver.recv().await.is_none());
     assert_eq!(chunk.get("id"), Some(&text("chatcmpl-1")));
     assert_eq!(chunk.get("object"), Some(&text("chat.completion.chunk")));
     let choice = chunk
