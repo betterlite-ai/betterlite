@@ -5,7 +5,7 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rust_decimal::Decimal;
 
-use super::{PositionCoin, UniformCoin, metadata_failure};
+use super::{PositionCoin as _, UniformCoin, metadata_failure};
 
 #[test]
 fn metadata_failure_names_the_callback_error_and_costs_nothing() {
@@ -25,7 +25,9 @@ fn metadata_failure_names_the_callback_error_and_costs_nothing() {
 fn the_uniform_coin_draws_both_positions() {
     let coin = UniformCoin::new(StdRng::seed_from_u64(7));
 
-    let draws: Vec<bool> = (0..64).map(|_| coin.real_is_a()).collect();
+    let draws: Vec<bool> = std::iter::repeat_with(|| coin.real_is_a())
+        .take(64)
+        .collect();
 
     assert!(draws.iter().any(|value| *value));
     assert!(draws.iter().any(|value| !*value));

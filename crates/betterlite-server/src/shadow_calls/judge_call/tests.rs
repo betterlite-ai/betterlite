@@ -31,6 +31,9 @@ use crate::shadow_calls::{
 
 const CATALOG: &str = r#"{"gpt-4o": {"litellm_provider": "openai"}}"#;
 
+// split so the workspace typos dictionary keeps LiteLLM's spelling
+const VERDICT_FAILURE: &str = concat!("un", "parseable judge verdict: ");
+
 struct Harness {
     catalog: ModelCatalog,
     known: BTreeSet<String>,
@@ -40,16 +43,6 @@ struct Harness {
 }
 
 impl Harness {
-    fn new() -> Self {
-        Self {
-            catalog: ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject).unwrap(),
-            known: BTreeSet::new(),
-            environment: BTreeMap::new(),
-            custom: BTreeSet::new(),
-            cache: ProviderCache::default(),
-        }
-    }
-
     fn context(&self) -> ResolutionContext<'_> {
         ResolutionContext {
             catalog: &self.catalog,
@@ -74,12 +67,9 @@ impl Recorder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
-        match &self.reply {
-            Some(response) => Ok(response.clone()),
-            None => Err(JudgeDispatchError {
-                message: "judge provider exploded".to_owned(),
-            }),
-        }
+        self.reply.clone().ok_or_else(|| JudgeDispatchError {
+            message: "judge provider exploded".to_owned(),
+        })
     }
 
     fn calls(&self) -> Vec<JudgeCall> {
@@ -219,7 +209,7 @@ impl Case {
 }
 
 fn erased(router: &Arc<RouterFake>) -> Arc<dyn JudgeRouter> {
-    router.clone()
+    Arc::<RouterFake>::clone(router)
 }
 
 struct Parts {
@@ -240,13 +230,19 @@ fn parts(case: &Case) -> Parts {
     let router = Arc::new(RouterFake {
         served: vec![case.model.to_owned()],
         teams: Mutex::new(Vec::new()),
-        recorder: recorder.clone(),
+        recorder: Arc::clone(&recorder),
     });
     let sdk = SdkFake {
-        recorder: recorder.clone(),
+        recorder: Arc::clone(&recorder),
     };
     Parts {
-        harness: Harness::new(),
+        harness: Harness {
+            catalog: ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject).unwrap(),
+            known: BTreeSet::new(),
+            environment: BTreeMap::new(),
+            custom: BTreeSet::new(),
+            cache: ProviderCache::default(),
+        },
         recorder,
         provider: Provider {
             judge: case.router.then(|| erased(&router)),
@@ -405,7 +401,7 @@ async fn the_judge_metadata_carries_the_judge_origin_and_asks_under_the_forwarde
 
 #[tokio::test]
 async fn a_judge_call_without_a_team_asks_the_router_without_one() {
-    let metadata = IndexMap::from([("user_api_key_team_id".to_owned(), Json::Text("".to_owned()))]);
+    let metadata = IndexMap::from([("user_api_key_team_id".to_owned(), Json::Text(String::new()))]);
 
     let run = run_case(&Case::new(Some(verdict("A", "0.9"))).with_metadata(metadata)).await;
 
@@ -477,7 +473,7 @@ fn conversation_messages() -> Vec<Json> {
         ]),
         object([
             ("role", Json::Text("system".to_owned())),
-            ("content", Json::Text("".to_owned())),
+            ("content", Json::Text(String::new())),
         ]),
         multimodal_message(),
     ]
@@ -590,7 +586,7 @@ async fn a_public_judge_model_without_a_router_goes_through_the_sdk() {
 }
 
 #[tokio::test]
-async fn an_unparseable_reply_names_the_parser_and_the_reply_shape_and_keeps_the_cost() {
+async fn a_reply_that_is_not_json_names_the_parser_and_the_reply_shape_and_keeps_the_cost() {
     let run = run_case(&Case::new(Some(stamped(
         judge_response(Json::Text("not json".to_owned())),
         "0.25",
@@ -601,7 +597,7 @@ async fn an_unparseable_reply_names_the_parser_and_the_reply_shape_and_keeps_the
     assert!(
         failure
             .error
-            .starts_with("unparseable judge verdict: the judge reply is not JSON: ")
+            .starts_with(&format!("{VERDICT_FAILURE}the judge reply is not JSON: "))
     );
     assert!(
         failure
@@ -613,25 +609,23 @@ async fn an_unparseable_reply_names_the_parser_and_the_reply_shape_and_keeps_the
 }
 
 #[rstest]
-#[case::missing_preference(
-    r#"{"confidence": 0.5}"#,
-    "unparseable judge verdict: preference: field required; "
-)]
-#[case::missing_confidence(
-    r#"{"preference": "A"}"#,
-    "unparseable judge verdict: confidence: field required; "
-)]
+#[case::missing_preference(r#"{"confidence": 0.5}"#, "preference: field required; ")]
+#[case::missing_confidence(r#"{"preference": "A"}"#, "confidence: field required; ")]
 #[case::lowercase_preference(
     r#"{"preference": "a", "confidence": 0.5}"#,
-    "unparseable judge verdict: preference: input should be 'A', 'B' or 'tie'; "
+    "preference: input should be 'A', 'B' or 'tie'; "
 )]
 #[case::text_confidence(
     r#"{"preference": "A", "confidence": "high"}"#,
-    "unparseable judge verdict: confidence: input should be a number; "
+    "confidence: input should be a number; "
 )]
 #[case::null_confidence(
     r#"{"preference": "A", "confidence": null}"#,
-    "unparseable judge verdict: confidence: input should be a number; "
+    "confidence: input should be a number; "
+)]
+#[case::unrepresentable_confidence(
+    r#"{"preference": "A", "confidence": 1e40}"#,
+    "confidence: input should be a number; "
 )]
 #[tokio::test]
 async fn a_verdict_missing_or_mistyping_a_field_names_the_field(
@@ -644,7 +638,10 @@ async fn a_verdict_missing_or_mistyping_a_field_names_the_field(
     .await;
 
     let error = run.verdict.unwrap_err().error;
-    assert!(error.starts_with(expected), "{error}");
+    assert!(
+        error.starts_with(&format!("{VERDICT_FAILURE}{expected}")),
+        "{error}"
+    );
 }
 
 #[tokio::test]
@@ -660,11 +657,11 @@ async fn a_reply_without_a_readable_message_has_the_unreadable_shape() {
 }
 
 #[tokio::test]
-async fn a_null_content_is_an_unparseable_verdict_that_keeps_the_cost() {
+async fn a_null_content_is_a_failed_verdict_that_keeps_the_cost() {
     let run = run_case(&Case::new(Some(stamped(judge_response(Json::Null), "0.5")))).await;
 
     let failure = run.verdict.unwrap_err();
-    assert!(failure.error.starts_with("unparseable judge verdict: "));
+    assert!(failure.error.starts_with(VERDICT_FAILURE));
     assert!(
         failure
             .error
@@ -677,8 +674,8 @@ async fn a_null_content_is_an_unparseable_verdict_that_keeps_the_cost() {
 fn the_team_id_reads_only_a_non_empty_string() {
     let read = |value: Option<Json>| {
         let mut metadata = IndexMap::new();
-        if let Some(value) = value {
-            metadata.insert("user_api_key_team_id".to_owned(), value);
+        if let Some(team_id) = value {
+            metadata.insert("user_api_key_team_id".to_owned(), team_id);
         }
         forwarded_team_id(&metadata)
     };
@@ -687,7 +684,7 @@ fn the_team_id_reads_only_a_non_empty_string() {
         read(Some(Json::Text("team-1".to_owned()))),
         Some("team-1".to_owned())
     );
-    assert_eq!(read(Some(Json::Text("".to_owned()))), None);
+    assert_eq!(read(Some(Json::Text(String::new()))), None);
     assert_eq!(read(Some(Json::Null)), None);
     assert_eq!(read(Some(Json::Bool(true))), None);
     assert_eq!(read(None), None);

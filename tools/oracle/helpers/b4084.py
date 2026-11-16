@@ -49,7 +49,7 @@ def unmask(input_value: Input) -> JsonValue:
 
 
 def response_format(_: Input) -> JsonValue:
-    schema = JSON.validate_python(type_to_response_format_param(shadow_eval_logger.PairwiseVerdict))  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
+    schema = JSON.validate_python(type_to_response_format_param(shadow_eval_logger.PairwiseVerdict))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
     return {"response_format": schema}
 
 

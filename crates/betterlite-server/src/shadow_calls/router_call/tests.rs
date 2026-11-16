@@ -82,17 +82,14 @@ impl ShadowRouter for RouterFake {
             call.metadata
                 .insert("routing_decision".to_owned(), decision.clone());
         }
-        match &self.response {
-            Some(response) => Ok(response.clone()),
-            None => Err(ShadowRouterError {
-                class: "RouterError".to_owned(),
-                location: Some(Location {
-                    file: "/srv/app/router.py",
-                    line: 42,
-                }),
-                message: "provider exploded".to_owned(),
+        self.response.clone().ok_or_else(|| ShadowRouterError {
+            class: "RouterError".to_owned(),
+            location: Some(Location {
+                file: "/srv/app/router.py",
+                line: 42,
             }),
-        }
+            message: "provider exploded".to_owned(),
+        })
     }
 }
 
@@ -158,7 +155,7 @@ impl Harness {
 }
 
 fn erased(fake: &Arc<RouterFake>) -> Arc<dyn ShadowRouter> {
-    fake.clone()
+    Arc::<RouterFake>::clone(fake)
 }
 
 fn object<const SIZE: usize>(entries: [(&str, Json); SIZE]) -> Json {
@@ -272,7 +269,7 @@ async fn the_router_gets_the_target_model_the_messages_zero_retries_no_fallbacks
         "shadow reply",
         "shadow-served",
     )));
-    let harness = Harness::new(Some(fake.clone()), Decimal::ZERO);
+    let harness = Harness::new(Some(Arc::clone(&fake)), Decimal::ZERO);
 
     let shadow = harness.call().await.unwrap();
 
@@ -292,7 +289,7 @@ async fn the_router_gets_detached_identity_metadata_and_leaves_the_parent_alone(
         "shadow reply",
         "shadow-served",
     )));
-    let harness = Harness::new(Some(fake.clone()), Decimal::ZERO);
+    let harness = Harness::new(Some(Arc::clone(&fake)), Decimal::ZERO);
     let before = harness.metadata.clone();
 
     harness.call().await.unwrap();
@@ -447,44 +444,22 @@ async fn a_reply_keeps_the_billed_cost_and_the_classifier_cost_the_router_wrote_
     assert_eq!(shadow.classifier_cost, Decimal::new(5, 1));
 }
 
-fn tool_call(name: &str, arguments: &str) -> Json {
-    Json::Object(IndexMap::from([(
-        "function".to_owned(),
-        Json::Object(IndexMap::from([
-            ("name".to_owned(), Json::Text(name.to_owned())),
-            ("arguments".to_owned(), Json::Text(arguments.to_owned())),
-        ])),
-    )]))
-}
-
-fn tool_call_response() -> Json {
-    Json::Object(IndexMap::from([
-        ("model".to_owned(), Json::Text("served".to_owned())),
-        (
-            "choices".to_owned(),
-            Json::List(vec![Json::Object(IndexMap::from([
-                (
-                    "message".to_owned(),
-                    object([
-                        ("content", Json::Null),
-                        (
-                            "tool_calls",
-                            Json::List(vec![tool_call("get_weather", "{\"city\":\"Paris\"}")]),
-                        ),
-                    ]),
-                ),
-                (
-                    "finish_reason".to_owned(),
-                    Json::Text("tool_calls".to_owned()),
-                ),
-            ]))]),
-        ),
-    ]))
-}
+const TOOL_CALL_RESPONSE: &str = r#"{
+    "model": "served",
+    "choices": [{
+        "message": {
+            "content": null,
+            "tool_calls": [{"function": {"name": "get_weather", "arguments": "{\"city\":\"Paris\"}"}}]
+        },
+        "finish_reason": "tool_calls"
+    }]
+}"#;
 
 #[tokio::test]
 async fn a_tool_call_is_the_reply_text_when_no_prose_was_written() {
-    let fake = Arc::new(RouterFake::reply(tool_call_response()));
+    let fake = Arc::new(RouterFake::reply(
+        serde_json::from_str(TOOL_CALL_RESPONSE).unwrap(),
+    ));
 
     let shadow = Harness::new(Some(fake), Decimal::ZERO)
         .call()

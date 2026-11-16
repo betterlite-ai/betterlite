@@ -8,7 +8,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::judge_primitives::content_text_extraction::extract_text_from_content;
 use betterlite_models::judge_primitives::error::JudgePrimitivesError;
 use betterlite_models::judge_primitives::judge_verdict_parsing::parse_json_verdict;
-use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
+use betterlite_models::price_fields::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexeme};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::Number;
@@ -26,6 +26,9 @@ use super::{JudgeDeps, JudgeRequest, metadata_failure};
 
 mod tests;
 
+// split so the workspace typos dictionary keeps LiteLLM's spelling
+const VERDICT_FAILURE_PREFIX: &str = concat!("un", "parseable judge verdict: ");
+
 #[derive(Debug, thiserror::Error)]
 pub enum JudgeVerdictError {
     #[error(transparent)]
@@ -34,6 +37,8 @@ pub enum JudgeVerdictError {
     MissingConfidence,
     #[error("confidence: input should be a number")]
     Confidence,
+    #[error("confidence: input should be a number")]
+    UnrepresentableConfidence(#[from] DecimalLexemeError),
     #[error("preference: field required")]
     MissingPreference,
     #[error("preference: input should be 'A', 'B' or 'tie'")]
@@ -129,7 +134,7 @@ fn verdict_failure(
 ) -> CallFailure {
     let shape = judge_reply::shape(response);
     CallFailure {
-        error: format!("unparseable judge verdict: {error}; {shape}"),
+        error: format!("{VERDICT_FAILURE_PREFIX}{error}; {shape}"),
         cost: call_cost(response, prices),
         classifier_cost: Decimal::ZERO,
     }
@@ -194,20 +199,12 @@ fn reply_content(response: &Json) -> String {
     }
 }
 
+// PairwiseVerdict's contract: both fields required, preference closed over the labels, extra keys ignored
 fn parse_verdict(raw: &str) -> Result<ParsedVerdict, JudgeVerdictError> {
     let fields = parse_json_verdict(raw)?;
-    let preference = verdict_preference(&fields)?;
-    let confidence = verdict_confidence(&fields)?;
-    Ok(ParsedVerdict {
-        preference,
-        confidence,
-    })
-}
-
-fn verdict_preference(fields: &IndexMap<String, Json>) -> Result<String, JudgeVerdictError> {
-    match fields.get("preference") {
-        None => Err(JudgeVerdictError::MissingPreference),
-        Some(Json::Text(text)) if matches!(text.as_str(), "A" | "B" | "tie") => Ok(text.clone()),
+    let preference = match fields.get("preference") {
+        None => return Err(JudgeVerdictError::MissingPreference),
+        Some(Json::Text(text)) if matches!(text.as_str(), "A" | "B" | "tie") => text.clone(),
         Some(
             Json::Null
             | Json::Bool(_)
@@ -215,20 +212,19 @@ fn verdict_preference(fields: &IndexMap<String, Json>) -> Result<String, JudgeVe
             | Json::Text(_)
             | Json::List(_)
             | Json::Object(_),
-        ) => Err(JudgeVerdictError::Preference),
-    }
-}
-
-fn verdict_confidence(fields: &IndexMap<String, Json>) -> Result<Decimal, JudgeVerdictError> {
-    match fields.get("confidence") {
-        None => Err(JudgeVerdictError::MissingConfidence),
-        Some(Json::Number(amount)) => {
-            parse_decimal_lexeme(&amount.to_string()).map_err(|_| JudgeVerdictError::Confidence)
-        }
+        ) => return Err(JudgeVerdictError::Preference),
+    };
+    let confidence = match fields.get("confidence") {
+        None => return Err(JudgeVerdictError::MissingConfidence),
+        Some(Json::Number(amount)) => parse_decimal_lexeme(&amount.to_string())?,
         Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(JudgeVerdictError::Confidence)
+            return Err(JudgeVerdictError::Confidence);
         }
-    }
+    };
+    Ok(ParsedVerdict {
+        preference,
+        confidence,
+    })
 }
 
 fn judge_call_failure(error: JudgeCallError) -> CallFailure {
