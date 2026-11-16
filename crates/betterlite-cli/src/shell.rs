@@ -136,12 +136,16 @@ fn report_in_session(session: &mut Session<'_>, failure: &Failure) -> Result<(),
     Ok(())
 }
 
+fn too_short(size: Option<(u16, u16)>) -> bool {
+    let Some((rows, _columns)) = size else {
+        return true;
+    };
+    rows < MIN_HEIGHT
+}
+
 fn prompt(session: &mut Session<'_>, reader: &mut dyn LineReader) -> io::Result<Option<String>> {
     let out = &mut session.streams.stdout;
-    if console::Term::stdout()
-        .size_checked()
-        .is_none_or(|(rows, _columns)| rows < MIN_HEIGHT)
-    {
+    if too_short(console::Term::stdout().size_checked()) {
         writeln!(out, "\n\n\n")?;
     }
     let rule = format!("+{}+", "-".repeat(BORDER_WIDTH));

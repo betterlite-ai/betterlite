@@ -80,10 +80,10 @@ pub(crate) fn resolve_for_run(mut request: Request<'_>) -> Result<CliContext, Fa
         api_key: explicit_api_key,
         api_key_from_token_file: from_token_file,
     };
-    if !from_token_file {
-        return Ok(context);
+    if from_token_file {
+        return with_stored_key(context, &mut request);
     }
-    with_stored_key(context, &mut request)
+    Ok(context)
 }
 
 fn base_url_choice(

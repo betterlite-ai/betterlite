@@ -96,6 +96,16 @@ fn stored_config_is_used_without_a_flag_or_environment() {
 }
 
 #[test]
+fn an_empty_stored_base_url_counts_as_unset() {
+    let home = tempfile::tempdir().unwrap();
+    store_base_url(home.path(), "");
+    let environment = FakeEnvironment::with_home(home.path().to_path_buf());
+    let context = resolve(&environment, flags(None, None), Some("models")).unwrap();
+    assert_eq!(context.base_url, "http://localhost:4000");
+    assert!(!context.base_url_explicit);
+}
+
+#[test]
 fn trailing_slashes_are_stripped() {
     let context = resolve(
         &FakeEnvironment::default(),

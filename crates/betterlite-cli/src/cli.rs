@@ -55,6 +55,7 @@ pub struct Cli<'cli> {
     stdin_is_terminal: bool,
 }
 
+#[cfg_attr(test, mutants::skip)]
 pub fn run(arguments: &[String]) -> u8 {
     let variables = process_environment();
     let environment = HomeEnvironment {

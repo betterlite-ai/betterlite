@@ -6,7 +6,7 @@ use std::io;
 use rstest::rstest;
 
 use crate::cli::Failure;
-use crate::cli::tests::support::{Captured, FakeEnvironment, FakeVault, session};
+use crate::cli::tests::support::{Captured, FakeEnvironment, FakeVault, proxy_context, session};
 use crate::commands_listing::show_commands;
 use crate::shell::{LineReader, report_in_session, run};
 
@@ -35,7 +35,8 @@ fn run_shell(lines: &[&str]) -> Run {
     let mut vault = FakeVault;
     let out = Captured::default();
     let err = Captured::default();
-    let mut session = session(&environment, &mut vault, "http://proxy.example", &out, &err);
+    let context = proxy_context("http://proxy.example");
+    let mut session = session(&context, &environment, &mut vault, &out, &err);
     let mut reader = Scripted::new(lines);
     let result = run(&mut session, &mut reader);
     Run {
@@ -103,6 +104,27 @@ fn exit_and_quit_both_end_the_session(#[case] word: &str) {
         outcome.stdout.trim_end().ends_with("Goodbye!"),
         "{word} must say goodbye"
     );
+    assert!(
+        !outcome.stdout.contains("Unknown command"),
+        "{word} must not be run as a command"
+    );
+    assert_eq!(
+        outcome.stdout.matches("| > ").count(),
+        1,
+        "{word} must end the session at once"
+    );
+}
+
+#[rstest]
+#[case::unknown(None, true)]
+#[case::short(Some((9, 80)), true)]
+#[case::exactly_minimum(Some((10, 80)), false)]
+#[case::tall(Some((40, 80)), false)]
+fn only_an_unknown_or_short_terminal_gets_the_padding(
+    #[case] size: Option<(u16, u16)>,
+    #[case] short: bool,
+) {
+    assert_eq!(super::too_short(size), short, "{size:?}");
 }
 
 #[test]
@@ -166,7 +188,8 @@ fn an_aborted_command_prints_command_aborted_on_stdout() {
     let mut vault = FakeVault;
     let out = Captured::default();
     let err = Captured::default();
-    let mut session = session(&environment, &mut vault, "http://proxy.example", &out, &err);
+    let context = proxy_context("http://proxy.example");
+    let mut session = session(&context, &environment, &mut vault, &out, &err);
     report_in_session(&mut session, &Failure::Aborted(String::from("stopped"))).unwrap();
     assert_eq!(out.text(), "Command aborted.\n");
     assert!(err.text().is_empty());
@@ -178,7 +201,8 @@ fn a_failed_command_prints_one_error_line_on_stderr() {
     let mut vault = FakeVault;
     let out = Captured::default();
     let err = Captured::default();
-    let mut session = session(&environment, &mut vault, "http://proxy.example", &out, &err);
+    let context = proxy_context("http://proxy.example");
+    let mut session = session(&context, &environment, &mut vault, &out, &err);
     report_in_session(&mut session, &Failure::Plain(String::from("bad"))).unwrap();
     assert_eq!(err.text(), "Error: bad\n");
     assert!(out.text().is_empty());
