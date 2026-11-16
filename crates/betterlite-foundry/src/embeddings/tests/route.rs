@@ -16,6 +16,7 @@ pub(super) fn foundry_models_embeddings_route() {
     image_url();
     sync_guards();
     sync_text_only_has_no_guard();
+    text_call_gets_the_route_base();
     async_without_guards();
 }
 
@@ -143,6 +144,27 @@ fn sync_text_only_has_no_guard() {
     assert_eq!(response.data.len(), 1);
     assert_eq!(text.calls()[0].api_base, None);
     assert!(factory.requests().is_empty());
+}
+
+// the inherited text call gets the /models base and the key, in the caller's mode
+fn text_call_gets_the_route_base() {
+    let input = strings(&["hello"]);
+    let secret = key("text-key");
+    let base = format!("{BASE}/v1");
+    for mode in [EmbeddingMode::Sync, EmbeddingMode::Async] {
+        let mut call = request(MODEL, &input);
+        call.mode = mode;
+        call.api_base = Some(&base);
+        call.api_key = Some(&secret);
+        let factory = Factory::new(Answer::json(IMAGE_ONE));
+        let text = Text::replying(TEXT_ONE);
+        run(&call, None, &factory, &text).unwrap();
+        let calls = text.calls();
+        let seen = &calls[0];
+        assert_eq!(seen.api_base, Some(format!("{BASE}/v1/models")));
+        assert_eq!(seen.api_key.as_deref(), Some("text-key"));
+        assert_eq!(seen.mode, mode);
+    }
 }
 
 fn async_without_guards() {
