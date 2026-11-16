@@ -3,6 +3,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::error::VeoOperationError;
 
+#[derive(Debug)]
 pub struct FetchRequest {
     pub url: String,
     pub params: Object,

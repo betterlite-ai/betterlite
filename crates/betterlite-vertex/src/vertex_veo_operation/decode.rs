@@ -1,3 +1,8 @@
+#![expect(
+    clippy::disallowed_types,
+    reason = "LiteLLM copies the provider's operation error dict unchanged into VideoObject.error, a Dict[str, Any]"
+)]
+
 use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -23,10 +28,6 @@ pub struct VertexVeoOperation {
     #[serde(default)]
     #[serde_as(as = "DefaultOnNull")]
     pub response: VeoOperationResponse,
-    #[expect(
-        clippy::disallowed_types,
-        reason = "LiteLLM copies the provider error dict unchanged into VideoObject.error (Dict[str, Any])"
-    )]
     #[serde(default)]
     pub error: Option<Map<String, Value>>,
 }
