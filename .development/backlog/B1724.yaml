@@ -1,14 +1,14 @@
 id: B1724
 milestone: M4 keys, spend and management
 title: Project monthly spend views and team totals for the dashboard
-status: todo
+status: done
 depends_on: [B002, B003, B204, B722, B724, B726, B732, B860]
 file: tasks/B1724-spend-totals.yaml
 covers:
   - "litellm/proxy/spend_tracking/spend_management_endpoints.py"
 parent: B069
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2074
