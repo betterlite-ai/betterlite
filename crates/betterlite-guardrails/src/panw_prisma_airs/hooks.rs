@@ -11,3 +11,4 @@ pub mod prompt;
 pub mod response;
 pub mod scan_metadata;
 pub mod streaming;
+mod tests;
