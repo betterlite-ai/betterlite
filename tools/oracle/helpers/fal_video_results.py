@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Callable
 from functools import partial
-from typing import Final, Literal, TypeAlias, TypeVar, TypedDict
+from typing import Final, Literal, TypeAlias, TypedDict, TypeVar
 
 import httpx
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
@@ -12,7 +12,9 @@ from pydantic import JsonValue, TypeAdapter
 
 CONTENT_URL: Final = "https://queue.fal.run/fal-ai/kling-video/requests/req-1"
 BLOCKED_HEADERS: Final[frozenset[str]] = frozenset({"host", "content-length", "transfer-encoding"})
-CREDENTIAL_HEADERS: Final[frozenset[str]] = frozenset({"authorization", "proxy-authorization", "x-api-key", "api-key"})
+CREDENTIAL_HEADERS: Final[frozenset[str]] = frozenset(
+    {"authorization", "proxy-authorization", "x-api-key", "api-key"}
+)
 ClientKind: TypeAlias = Literal["sync", "async"]
 T = TypeVar("T")
 
