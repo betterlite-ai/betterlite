@@ -10,7 +10,6 @@ mod tests;
 
 pub type PendingRelay = BoxFuture<'static, Result<AsyncResponse, PassthroughStreamError>>;
 
-// The response once its send completes: status and headers are in hand and the body is pulled a chunk at a time
 pub trait AsyncChunkSource: Send {
     fn next_chunk(&mut self) -> BoxFuture<'_, Result<Option<Vec<u8>>, HttpError>>;
 
@@ -19,7 +18,6 @@ pub trait AsyncChunkSource: Send {
     fn close(&mut self) -> BoxFuture<'_, Result<(), HttpError>>;
 }
 
-// The blocking form of the same source, over a response that is already in hand
 pub trait SyncChunkSource: Send {
     fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, HttpError>;
 

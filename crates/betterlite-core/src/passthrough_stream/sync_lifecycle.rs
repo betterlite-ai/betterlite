@@ -5,7 +5,7 @@ use http::HeaderMap;
 
 use super::flush_scheduling::start_sync_flush;
 use super::logging::{SpendLogging, SyncFlushExecutor};
-use super::response::{SyncChunkSource, SyncResponse};
+use super::response::SyncChunkSource;
 use super::spend_collection::{SpendCollection, SpendSink};
 
 mod tests;
@@ -30,25 +30,6 @@ where
     L: SpendLogging<S::Logged>,
     E: SyncFlushExecutor,
 {
-    #[must_use]
-    pub fn new(
-        response: SyncResponse,
-        spend: SpendCollection<S>,
-        logging: Arc<L>,
-        executor: E,
-    ) -> Self {
-        Self {
-            status_code: response.status_code,
-            headers: response.headers,
-            source: response.source,
-            spend,
-            logging,
-            executor,
-            flush_scheduled: false,
-        }
-    }
-
-    // LiteLLM's PassthroughStreamingResponse.__next__: status and headers are already in hand, bytes pass through
     pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, HttpError> {
         match self.source.next_chunk() {
             Ok(Some(chunk)) => {
@@ -63,7 +44,6 @@ where
         }
     }
 
-    // LiteLLM's close: schedule the flush once and close, so a finally plus a __del__ close is safe
     pub fn close(&mut self) {
         start_sync_flush(self);
         self.close_response();

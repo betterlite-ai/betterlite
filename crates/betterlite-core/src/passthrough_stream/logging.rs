@@ -5,7 +5,6 @@ use betterlite_openai::passthrough::transformation::types::PassthroughTarget;
 
 use super::spend_collection::BoxedCollector;
 
-// The logging object a relayed stream reports through: LiteLLM's litellm_logging_obj flush methods and its model fields
 #[async_trait]
 pub trait SpendLogging<Logged: Send + 'static>: Send + Sync + 'static {
     type FlushError: Error + Send + Sync + 'static;

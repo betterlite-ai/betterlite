@@ -3,12 +3,10 @@
 use std::sync::{Arc, PoisonError};
 
 use betterlite_openai::passthrough::transformation::PassthroughStreamCollector;
-use betterlite_openai::passthrough::transformation::types::{
-    MAX_COLLECTED_BYTES, PassthroughTarget,
-};
+use betterlite_openai::passthrough::transformation::types::MAX_COLLECTED_BYTES;
 use tracing::Level;
 
-use super::{OwnedProviderSpend, provider_spend};
+use super::{OwnedProviderSpend, SpendCollection};
 use crate::passthrough_stream::tests::{
     ENDPOINT, FakeConfig, MODEL, NoopPassthroughLogging, PROVIDER, capture, collection, fake_config,
 };
@@ -26,17 +24,14 @@ fn owned_spend(config: FakeConfig) -> OwnedProviderSpend<FakeConfig> {
 }
 
 #[test]
-fn provider_spend_replays_chunks_into_the_provider_collector() {
+fn owned_spend_replays_chunks_into_the_provider_collector() {
     let config = fake_config();
     let collected = Arc::clone(&config.collected);
-    let mut spend = provider_spend(
-        config,
-        PassthroughTarget {
-            model: MODEL,
-            custom_llm_provider: PROVIDER,
-            endpoint: ENDPOINT,
-        },
-    );
+    let mut spend = SpendCollection {
+        sink: Some(owned_spend(config)),
+        chunk_count: 0,
+        failed: false,
+    };
     spend.add(b"data: one\n\n");
     spend.add(b"data: two\n\n");
     let (collector, chunk_count) = spend.take_flush().expect("two chunks flush");

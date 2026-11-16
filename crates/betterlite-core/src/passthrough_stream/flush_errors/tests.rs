@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use http::HeaderMap;
+use indexmap::IndexMap;
 use tokio_util::task::TaskTracker;
 use tracing::Level;
 
@@ -78,12 +80,18 @@ async fn async_stream_end_survives_a_failing_flush() {
     let logging = Arc::new(FakeLogging::fixture().failing());
     let (spend, _sink) = collection();
     let tracker = TaskTracker::new();
-    let mut stream = AsyncPassthroughStream::new(
-        ReplyFixture::ok(script(chunk_steps(&["one"]))).into_pending(),
+    let mut stream = AsyncPassthroughStream {
+        initialized: false,
+        status_code: 0,
+        headers: HeaderMap::new(),
+        pending: Some(ReplyFixture::ok(script(chunk_steps(&["one"]))).into_pending()),
+        source: None,
         spend,
-        Arc::clone(&logging),
-        tracker.clone(),
-    );
+        logging: Arc::clone(&logging),
+        background_tasks: tracker.clone(),
+        flush_scheduled: false,
+        hidden_params: IndexMap::new(),
+    };
     let (captured, _guard) = capture();
     assert_eq!(
         stream.next_chunk().await.expect("first chunk"),
@@ -103,12 +111,16 @@ fn sync_stream_end_survives_a_failing_flush() {
     let logging = Arc::new(FakeLogging::fixture().failing());
     let (spend, _sink) = collection();
     let executor = inline_executor();
-    let mut stream = PassthroughStreamingResponse::new(
-        ReplyFixture::ok(script(chunk_steps(&["one"]))).into_sync(),
+    let response = ReplyFixture::ok(script(chunk_steps(&["one"]))).into_sync();
+    let mut stream = PassthroughStreamingResponse {
+        status_code: response.status_code,
+        headers: response.headers,
+        source: response.source,
         spend,
-        Arc::clone(&logging),
-        executor.clone(),
-    );
+        logging: Arc::clone(&logging),
+        executor: executor.clone(),
+        flush_scheduled: false,
+    };
     let (captured, _guard) = capture();
     assert_eq!(
         stream.next_chunk().expect("first chunk"),

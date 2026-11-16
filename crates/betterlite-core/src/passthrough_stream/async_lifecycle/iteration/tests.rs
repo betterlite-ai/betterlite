@@ -3,6 +3,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use http::HeaderMap;
+use indexmap::IndexMap;
 use tokio::sync::Notify;
 use tokio_util::task::TaskTracker;
 
@@ -207,12 +209,18 @@ async fn the_relay_returns_before_the_flush_finishes() {
     let logging = Arc::new(FakeLogging::fixture().gated(Arc::clone(&gate)));
     let (spend, _sink) = collection();
     let tracker = TaskTracker::new();
-    let mut stream = AsyncPassthroughStream::new(
-        ReplyFixture::ok(script(chunk_steps(&["one"]))).into_pending(),
+    let mut stream = AsyncPassthroughStream {
+        initialized: false,
+        status_code: 0,
+        headers: HeaderMap::new(),
+        pending: Some(ReplyFixture::ok(script(chunk_steps(&["one"]))).into_pending()),
+        source: None,
         spend,
-        Arc::clone(&logging),
-        tracker.clone(),
-    );
+        logging: Arc::clone(&logging),
+        background_tasks: tracker.clone(),
+        flush_scheduled: false,
+        hidden_params: IndexMap::new(),
+    };
     assert_eq!(
         stream.next_chunk().await.expect("first chunk"),
         Some(b"one".to_vec())

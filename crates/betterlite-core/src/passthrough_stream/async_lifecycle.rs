@@ -40,27 +40,6 @@ where
     S: SpendSink,
     L: SpendLogging<S::Logged>,
 {
-    #[must_use]
-    pub fn new(
-        pending: PendingRelay,
-        spend: SpendCollection<S>,
-        logging: Arc<L>,
-        background_tasks: TaskTracker,
-    ) -> Self {
-        Self {
-            initialized: false,
-            status_code: 0,
-            headers: HeaderMap::new(),
-            pending: Some(pending),
-            source: None,
-            spend,
-            logging,
-            background_tasks,
-            flush_scheduled: false,
-            hidden_params: IndexMap::new(),
-        }
-    }
-
     pub const fn status_code(&self) -> Result<u16, PassthroughStreamError> {
         if self.initialized {
             Ok(self.status_code)
@@ -79,7 +58,6 @@ where
         }
     }
 
-    // LiteLLM's __await__ / _init: read the response, expose it, then raise on a status a caller can't stream
     pub async fn init(&mut self) -> Result<(), PassthroughStreamError> {
         if self.initialized {
             return Ok(());
@@ -117,7 +95,6 @@ where
         )))
     }
 
-    // LiteLLM's __anext__: bytes pass through untouched while the spend collector sees a copy
     pub async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, PassthroughStreamError> {
         if !self.initialized {
             self.init().await?;
@@ -139,7 +116,6 @@ where
         }
     }
 
-    // LiteLLM's aclose: schedule the flush once, then close; a cleanup error never masks the caller's own
     pub async fn aclose(&mut self) {
         start_async_flush(self);
         if !self.initialized {

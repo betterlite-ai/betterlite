@@ -25,6 +25,7 @@ use betterlite_openai::passthrough::transformation::{
 };
 use futures_util::future::BoxFuture;
 use http::{HeaderMap, HeaderValue, Method};
+use indexmap::IndexMap;
 use tokio::sync::Notify;
 use tokio_util::task::TaskTracker;
 use tracing::field::{Field, Visit};
@@ -601,8 +602,18 @@ impl Fixture {
         let (spend, sink) = collection();
         let logging = Arc::new(FakeLogging::fixture());
         let tracker = TaskTracker::new();
-        let stream =
-            AsyncPassthroughStream::new(pending, spend, Arc::clone(&logging), tracker.clone());
+        let stream = AsyncPassthroughStream {
+            initialized: false,
+            status_code: 0,
+            headers: HeaderMap::new(),
+            pending: Some(pending),
+            source: None,
+            spend,
+            logging: Arc::clone(&logging),
+            background_tasks: tracker.clone(),
+            flush_scheduled: false,
+            hidden_params: IndexMap::new(),
+        };
         Self {
             stream,
             sink,
@@ -642,12 +653,16 @@ impl SyncFixture {
         let source = reply.log();
         let (spend, sink) = collection();
         let logging = Arc::new(FakeLogging::fixture());
-        let stream = PassthroughStreamingResponse::new(
-            reply.into_sync(),
+        let response = reply.into_sync();
+        let stream = PassthroughStreamingResponse {
+            status_code: response.status_code,
+            headers: response.headers,
+            source: response.source,
             spend,
-            Arc::clone(&logging),
-            executor.clone(),
-        );
+            logging: Arc::clone(&logging),
+            executor: executor.clone(),
+            flush_scheduled: false,
+        };
         Self {
             stream,
             sink,

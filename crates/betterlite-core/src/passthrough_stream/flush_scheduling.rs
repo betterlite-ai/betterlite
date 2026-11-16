@@ -10,7 +10,6 @@ use super::sync_lifecycle::PassthroughStreamingResponse;
 
 mod tests;
 
-// LiteLLM's create_task: runs the flush off the iterating task, and a missing runtime is its RuntimeError
 pub(super) fn start_async_flush<S, L>(stream: &mut AsyncPassthroughStream<S, L>)
 where
     S: SpendSink,
@@ -39,7 +38,6 @@ where
     );
 }
 
-// LiteLLM's executor.submit for the blocking relay: a shut-down executor refuses the job and the chunks are dropped
 pub(super) fn start_sync_flush<S, L, E>(stream: &mut PassthroughStreamingResponse<S, L, E>)
 where
     S: SpendSink,

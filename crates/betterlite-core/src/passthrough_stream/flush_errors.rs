@@ -21,7 +21,6 @@ pub(super) async fn run_async_flush<L, Logged>(
     }
 }
 
-// The executor job for the blocking relay: same best-effort rule as the async task
 pub(super) fn run_sync_flush<L, Logged>(
     logging: &L,
     collector: BoxedCollector<Logged>,

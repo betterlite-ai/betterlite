@@ -12,7 +12,6 @@ mod tests;
 
 pub type BoxedCollector<Logged> = Box<dyn PassthroughStreamCollector<Logged = Logged> + Send>;
 
-// A collector whose add can raise the way LiteLLM's collector.add can
 pub trait SpendSink: Send + 'static {
     type Logged: Send + 'static;
     type Failure: Error + Send + Sync + 'static;
@@ -22,7 +21,6 @@ pub trait SpendSink: Send + 'static {
     fn into_collector(self) -> BoxedCollector<Self::Logged>;
 }
 
-// LiteLLM's _SpendCollection: feeds the collector until one add raises, then drops the rest of the stream's spend
 pub struct SpendCollection<S: SpendSink> {
     pub(crate) sink: Option<S>,
     pub(crate) chunk_count: usize,
@@ -58,7 +56,7 @@ impl<S: SpendSink> SpendCollection<S> {
     }
 }
 
-// The provider's collector, owned so the background flush outlives the request; it copies the bytes it feeds back in
+// Owned so the background flush outlives the request borrow
 pub struct OwnedProviderSpend<C> {
     pub(crate) config: C,
     pub(crate) model: String,
@@ -127,30 +125,5 @@ where
 
     fn into_collector(self) -> BoxedCollector<C::Logged> {
         Box::new(self)
-    }
-}
-
-// LiteLLM's _SpendCollection.__init__: the collector is built over the logging object's model, provider and endpoint
-#[must_use]
-pub fn provider_spend<C>(
-    config: C,
-    target: PassthroughTarget<'_>,
-) -> SpendCollection<OwnedProviderSpend<C>>
-where
-    C: BasePassthroughConfig + Sync + Send + 'static,
-    C::Logged: Send + 'static,
-{
-    SpendCollection {
-        sink: Some(OwnedProviderSpend {
-            config,
-            model: target.model.to_owned(),
-            custom_llm_provider: target.custom_llm_provider.to_owned(),
-            endpoint: target.endpoint.to_owned(),
-            chunks: Vec::new(),
-            collected_bytes: 0,
-            disabled: false,
-        }),
-        chunk_count: 0,
-        failed: false,
     }
 }
