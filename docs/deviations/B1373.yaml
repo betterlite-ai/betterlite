@@ -12,7 +12,4 @@ deviations:
   - what: "The cancel POST and its follow-up GET use betterlite's 10-second connect timeout, where LiteLLM's cached client allows 5 seconds to connect."
     why: "B173 owns the transport limits every provider shares; a per-provider connect timeout would need a pool-level change outside this task, so a host that accepts the connection between 5 and 10 seconds succeeds here where LiteLLM gives up."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167"
-kept_bugs:
-  - what: "A cancel POST that the provider answers with a non-2xx status reaches the caller as a 500 instead of the provider's status."
-    why: "LiteLLM's sync post raises a MaskedHTTPStatusError, which its exception mapping turns into an APIConnectionError and the proxy answers with 500; betterlite keeps that 500 so a client handling a failed cancel sees what LiteLLM gave it, while the provider status and the first 1000 body characters still reach the log."
-    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1514-L1523"
+kept_bugs: []

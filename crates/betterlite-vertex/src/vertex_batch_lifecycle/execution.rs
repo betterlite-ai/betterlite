@@ -126,9 +126,11 @@ pub async fn execute_batch_retrieve<Fetch>(
 where
     Fetch: ProtectedGet,
 {
+    // LiteLLM's safe_get has no handler, so a timeout there reaches the proxy without a status of its own
     let reply = fetcher
         .get(&prepared.target, &prepared.headers, DEFAULT_CLIENT_DEADLINE)
-        .await?;
+        .await
+        .map_err(|source| VertexBatchLifecycleError::ProtectedGet { source })?;
     if reply.status != 200 {
         return Err(VertexBatchLifecycleError::RetrieveStatus {
             status: reply.status,

@@ -322,7 +322,10 @@ async fn retrieve_transport_failure_is_a_500() {
     let error = execute_batch_retrieve(&transport, prepared, &local())
         .await
         .unwrap_err();
-    assert!(matches!(error, VertexBatchLifecycleError::Batch(_)));
+    assert!(matches!(
+        error,
+        VertexBatchLifecycleError::ProtectedGet { .. }
+    ));
     assert_eq!(error.status_code(), 500);
 }
 
@@ -389,8 +392,7 @@ async fn cancel_failure_no_get() {
         error,
         VertexBatchLifecycleError::CancelStatus { .. }
     ));
-    // LiteLLM re-raises the HTTPStatusError, which carries no status_code, so the proxy answers 500
-    assert_eq!(error.status_code(), 500);
+    assert_eq!(error.status_code(), 400);
     let seen = transport.requests();
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].method, Method::POST);

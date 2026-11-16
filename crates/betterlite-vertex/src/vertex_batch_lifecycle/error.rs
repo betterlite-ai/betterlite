@@ -41,6 +41,11 @@ pub enum VertexBatchLifecycleError {
     },
     #[error("the Vertex batch retrieve request returned HTTP {status}: {message}")]
     RetrieveStatus { status: u16, message: String },
+    #[error("the Vertex batch retrieve request failed: {source}")]
+    ProtectedGet {
+        #[source]
+        source: VertexBatchCreateError,
+    },
     #[error("the Vertex batch list request returned HTTP {status}: {message}")]
     ListStatus { status: u16, message: String },
     #[error("the Vertex batch list request failed: {source}")]
@@ -70,7 +75,7 @@ pub enum VertexBatchLifecycleError {
 }
 
 impl VertexBatchLifecycleError {
-    // LiteLLM keeps the upstream status on retrieve, list and retrieve-after-cancel failures, while a failed cancel POST reaches the proxy as a 500 and a cancel timeout as a 408
+    // LiteLLM's proxy answers with each provider status it holds, including a failed cancel POST, while an error with no status of its own is a 500
     #[must_use]
     pub fn status_code(&self) -> u16 {
         match self {
@@ -78,6 +83,7 @@ impl VertexBatchLifecycleError {
             Self::Records { source } => source.status_code().unwrap_or(500),
             Self::RetrieveStatus { status, .. }
             | Self::ListStatus { status, .. }
+            | Self::CancelStatus { status, .. }
             | Self::RetrieveAfterCancelStatus { status, .. } => *status,
             Self::CancelTimeout { .. } => 408,
             Self::Credentials { .. }
@@ -85,8 +91,8 @@ impl VertexBatchLifecycleError {
             | Self::Segment { .. }
             | Self::Target(_)
             | Self::Url { .. }
+            | Self::ProtectedGet { .. }
             | Self::ListTransport { .. }
-            | Self::CancelStatus { .. }
             | Self::CancelTransport { .. }
             | Self::RetrieveTransport { .. } => 500,
         }
