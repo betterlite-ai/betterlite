@@ -187,6 +187,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "workflow_event_body"
+path = "fuzz_targets/workflow_event_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "workflow_run_body"
 path = "fuzz_targets/workflow_run_body.rs"
 test = false
