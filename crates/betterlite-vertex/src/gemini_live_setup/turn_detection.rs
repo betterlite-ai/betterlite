@@ -24,14 +24,14 @@ pub fn map_automatic_turn_detection(value: &TurnDetection) -> Option<AutomaticAc
     };
     Some(AutomaticActivityDetection {
         disabled: Some(disabled),
-        prefix_padding_ms: integer_only(&value.prefix_padding_ms),
-        silence_duration_ms: integer_only(&value.silence_duration_ms),
+        prefix_padding_ms: integer_only(value.prefix_padding_ms.as_ref()),
+        silence_duration_ms: integer_only(value.silence_duration_ms.as_ref()),
         start_of_speech_sensitivity: None,
         end_of_speech_sensitivity: None,
     })
 }
 
-fn integer_only(value: &Option<Json>) -> Option<Json> {
+fn integer_only(value: Option<&Json>) -> Option<Json> {
     match value {
         Some(json) if is_json_integer(json) => Some(json.clone()),
         Some(_) | None => None,
