@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use betterlite_db::database_faults::ErrorType;
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -80,6 +81,17 @@ async fn the_repository_answers_none_without_the_row() {
     let (fixture, pool) = database().await;
     let stored = repository(&pool).stored_cache_settings().await.unwrap();
     assert!(stored.is_none());
+    close(fixture, pool).await;
+}
+
+#[tokio::test]
+async fn the_repository_reports_a_closed_pool_as_a_connect_fault() {
+    let (fixture, pool) = database().await;
+    let repository = repository(&pool);
+    pool.close();
+    let error = repository.stored_cache_settings().await.unwrap_err();
+    assert_eq!(error.error_type, ErrorType::Connect);
+    assert_eq!(error.message, "database pool unavailable");
     close(fixture, pool).await;
 }
 

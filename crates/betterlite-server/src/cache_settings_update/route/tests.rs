@@ -179,13 +179,19 @@ async fn route_merges_the_saved_secret_and_keeps_redis_type_out_of_the_cache() {
     let (fake, repository) = support::fake_repository();
     fake.push_read(Ok(Some(saved_target())));
     let reinit = support::reinit();
-    let harness = support::harness(Some(repository), reinit.clone(), support::audit(true));
+    let audit = support::audit(true);
+    let harness = support::harness(Some(repository), reinit.clone(), audit.clone());
     let body = support::request_body(support::json(
         r#"{"type":"redis","host":"saved-host","password":"***REDACTED***","redis_type":"cluster"}"#,
     ));
     let (status, text) = support::post(&harness, Some(support::master_key()), &body).await;
     assert_eq!(status, StatusCode::OK);
     assert!(text.contains(r#""password":"***REDACTED***""#));
+    support::run_tasks(&harness.spawner).await;
+    assert_eq!(
+        audit.entries()[0].before_value,
+        r#"{"settings":{"host":"***REDACTED***","password":"***REDACTED***","redis_type":"***REDACTED***","type":"***REDACTED***"}}"#
+    );
     let initialized = &reinit.params()[0];
     assert_eq!(
         initialized.get("password"),
