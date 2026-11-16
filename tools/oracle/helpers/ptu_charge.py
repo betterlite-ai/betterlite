@@ -254,29 +254,28 @@ def prune_step(step: PruneStep) -> list[JsonValue]:
 
 
 def step_value(step: Step) -> JsonValue:
+    result: JsonValue
     if step["kind"] == "decode":
-        return decode_step(step)
-    if step["kind"] == "parse":
-        return parse_step(step)
-    if step["kind"] == "hours":
-        return hours_step(step)
-    if step["kind"] == "cost":
-        return cost_step(step)
-    if step["kind"] == "aggregate":
-        return aggregate_step(step)
-    if step["kind"] == "config":
-        return config_step(step)
-    if step["kind"] == "lapsed":
-        return lapsed_step(step)
-    if step["kind"] == "backfill":
-        return backfill_step(step)
-    if step["kind"] == "prune":
-        return prune_step(step)
-    raise ValueError("unknown ptu_charge step")
+        result = decode_step(step)
+    elif step["kind"] == "parse":
+        result = parse_step(step)
+    elif step["kind"] == "hours":
+        result = hours_step(step)
+    elif step["kind"] == "cost":
+        result = cost_step(step)
+    elif step["kind"] == "aggregate":
+        result = aggregate_step(step)
+    elif step["kind"] == "config":
+        result = config_step(step)
+    elif step["kind"] == "lapsed":
+        result = lapsed_step(step)
+    elif step["kind"] == "backfill":
+        result = backfill_step(step)
+    else:
+        result = prune_step(step)
+    return result
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:
-    answers: dict[str, JsonValue] = {}
-    for name, step in input_value["steps"].items():
-        answers[name] = step_value(step)
-    return answers
+    steps = input_value["steps"]
+    return {name: step_value(step) for name, step in steps.items()}
