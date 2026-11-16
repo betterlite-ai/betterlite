@@ -39,6 +39,7 @@ where
         let Some(row) = self.table.find_unique(user_id, server_id).await? else {
             return Ok(UserEnvVars::new());
         };
+        // values_b64 is a non-null text column, so a row without one is an error and not an unset value
         Ok(decode_user_env_vars(
             text_field(&row, "values_b64").ok_or(UserEnvVarsError::MissingValues)?,
             &self.cipher,
@@ -138,7 +139,6 @@ where
     }
 }
 
-// values_b64 is a non-null text column, so a row without one is an error and not an unset value
 fn text_field<'row>(row: &'row JsonData, name: &str) -> Option<&'row str> {
     let JsonData::Object(fields) = row else {
         return None;
