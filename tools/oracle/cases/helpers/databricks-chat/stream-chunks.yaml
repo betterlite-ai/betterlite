@@ -195,6 +195,85 @@ call:
               name: f
               arguments: '{"a":1}'
               zz: 2
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            function_call:
+              arguments: '{"a":1}'
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            function_call:
+              name:
+              arguments: x
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            tool_calls:
+            - custom:
+                name: f
+                input: x
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            tool_calls:
+            - type:
+              custom:
+                name: f
+                input: x
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            tool_calls:
+            - type:
+              function:
+                name: f
+                arguments: x
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            content: x
+            provider_specific_fields: {}
+    - json_mode: false
+      chunks:
+      - id: i
+        created: 1
+        model: m
+        choices:
+        - index: 0
+          delta:
+            content: x
+            provider_specific_fields:
 env: {}
 compare:
   ignore: []

@@ -5,7 +5,6 @@ from typing import Literal, Protocol, TypedDict, TypeVar, runtime_checkable
 import httpx
 from litellm.exceptions import BadRequestError
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.databricks.chat.transformation import DatabricksConfig
 from litellm.llms.databricks.common_utils import DatabricksException
 from litellm.types.utils import CallTypes, ModelResponse, ModelResponseStream
 from pydantic import ConfigDict, JsonValue, TypeAdapter
@@ -104,7 +103,7 @@ class ChatApi(Protocol):
         headers: Object,
     ) -> Object: ...
 
-    def transform_response(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/chat/transformation.py#L643-L656
+    def transform_response(
         self,
         _model: str,
         raw_response: httpx.Response,
@@ -130,7 +129,8 @@ class ChatApi(Protocol):
     ) -> StreamIterator: ...
 
 
-CHAT: ChatApi = TypeAdapter(ChatApi, config=ARBITRARY).validate_python(DatabricksConfig())
+def chat_api(config: object) -> ChatApi:
+    return TypeAdapter(ChatApi, config=ARBITRARY).validate_python(config)
 
 
 def logging_object() -> Logging:
@@ -155,6 +155,8 @@ def cases_of(input_value: Input) -> list[JsonValue]:
 def guarded(call: Callable[[CaseT], Object], case: CaseT) -> Object:
     try:
         result = call(case)
-    except (DatabricksException, BadRequestError) as error:
+    except DatabricksException as error:
+        return {"status": error.status_code}
+    except BadRequestError as error:
         return {"status": error.status_code}
     return result

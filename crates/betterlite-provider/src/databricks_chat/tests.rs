@@ -15,7 +15,7 @@ fn replays_the_databricks_chat_reply_corpus() {
         .map(|entry| entry.expect("the corpus entry reads").path())
         .filter_map(|path| fs::read(path).ok())
         .filter_map(|bytes| String::from_utf8(bytes).ok())
-        .flat_map(|text| [false, true].map(|json_mode| (text, json_mode)))
+        .flat_map(|text| [false, true].map(|json_mode| (text.clone(), json_mode)))
         .map(|(text, json_mode)| {
             let reply = transform_response(ResponseInput {
                 body: &text,

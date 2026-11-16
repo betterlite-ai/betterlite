@@ -315,7 +315,7 @@ fn effort_budget(effort: &str) -> Result<Option<Thinking>, ReasoningEffortError>
         "medium" => 2048,
         "high" => 4096,
         "xhigh" => 8192,
-        "max" => 16384,
+        "max" => 0x4000,
         _ => {
             return Err(ReasoningEffortError::Unmapped {
                 value: effort.to_owned(),
@@ -487,7 +487,7 @@ async fn an_uppercase_claude_model_keeps_response_format_but_maps_the_effort() {
 #[case::medium("medium", 2048, 6144)]
 #[case::high("high", 4096, 8192)]
 #[case::xhigh("xhigh", 8192, 12288)]
-#[case::max("max", 16384, 20480)]
+#[case::max("max", 0x4000, 20480)]
 #[tokio::test]
 async fn a_reasoning_effort_fills_the_thinking_budget(
     #[case] effort: &str,
@@ -512,7 +512,7 @@ async fn a_reasoning_effort_fills_the_thinking_budget(
 #[case::medium("medium", "medium", 2048, 6144)]
 #[case::high("high", "high", 4096, 8192)]
 #[case::xhigh("xhigh", "xhigh", 8192, 12288)]
-#[case::max("max", "max", 16384, 20480)]
+#[case::max("max", "max", 0x4000, 20480)]
 #[tokio::test]
 async fn an_adaptive_model_also_gets_an_output_config_effort(
     #[case] effort: &str,

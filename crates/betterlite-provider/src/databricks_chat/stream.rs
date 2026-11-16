@@ -5,9 +5,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Serialize;
 use serde_json::Number;
 
-use crate::databricks_chat::content::{
-    Arguments, DatabricksContent, extract_content_str, extract_reasoning,
-};
+use crate::databricks_chat::content::{Arguments, DatabricksContent};
 use crate::databricks_chat::error::DatabricksChatError;
 use crate::databricks_chat::response::Usage;
 use crate::databricks_chat::response::usage::usage_from;
@@ -152,7 +150,7 @@ fn transform_choice(
     } else {
         clear_empty_arguments(&mut delta)?;
     }
-    add_citation(&mut delta);
+    add_citation(&mut delta)?;
     let index = match given.index {
         Some(Some(index)) => Some(index),
         Some(None) => None,
@@ -260,7 +258,7 @@ fn converted_arguments(raw: &str) -> String {
 }
 
 // The first citation of the first content block goes to provider_specific_fields.citation
-fn add_citation(delta: &mut DatabricksDelta) {
+fn add_citation(delta: &mut DatabricksDelta) -> Result<(), DatabricksChatError> {
     let first_citation = match &delta.content {
         Some(DatabricksContent::Blocks(blocks)) => blocks
             .first()
@@ -269,10 +267,26 @@ fn add_citation(delta: &mut DatabricksDelta) {
             .cloned(),
         Some(DatabricksContent::Text(_)) | None => None,
     };
-    if let Some(citation) = first_citation {
-        delta
-            .provider_specific_fields
-            .get_or_insert_with(Object::new)
-            .insert(String::from("citation"), citation);
+    let Some(citation) = first_citation else {
+        return Ok(());
+    };
+    match &mut delta.provider_specific_fields {
+        None => {
+            delta.provider_specific_fields = Some(Some(Object::from_iter([(
+                String::from("citation"),
+                citation,
+            )])));
+        }
+        Some(Some(fields)) => {
+            fields.insert(String::from("citation"), citation);
+        }
+        Some(None) => {
+            return Err(DatabricksChatError::Shape {
+                message: String::from(
+                    "a delta with a citation cannot take a null provider_specific_fields",
+                ),
+            });
+        }
     }
+    Ok(())
 }

@@ -1,6 +1,6 @@
 use betterlite_logging::python_json::dumps_object;
 use betterlite_models::decisions::Json as EncodedJson;
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 

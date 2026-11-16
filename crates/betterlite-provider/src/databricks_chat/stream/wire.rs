@@ -55,8 +55,8 @@ pub(super) struct DatabricksDelta {
     pub tool_calls: Option<Vec<DeltaToolCall>>,
     #[serde(default)]
     pub function_call: Option<DeltaFunctionCall>,
-    #[serde(default)]
-    pub provider_specific_fields: Option<Object>,
+    #[serde(default, with = "double_option")]
+    pub provider_specific_fields: Option<Option<Object>>,
     // audio, images, annotations and reasoning items are OpenAI records Delta forwards as sent
     #[serde(default)]
     pub audio: Option<Json>,
@@ -75,8 +75,8 @@ pub(super) struct DatabricksDelta {
 pub(super) struct DeltaToolCall {
     #[serde(default, with = "double_option")]
     pub id: Option<Option<String>>,
-    #[serde(rename = "type", default)]
-    pub kind: Option<String>,
+    #[serde(rename = "type", default, with = "double_option")]
+    pub kind: Option<Option<String>>,
     #[serde(default)]
     pub index: Option<Number>,
     #[serde(default)]
@@ -87,12 +87,16 @@ pub(super) struct DeltaToolCall {
     pub extra: Object,
 }
 
-// FunctionCall(**function_call): arguments is required and the call keeps the keys it does not name
+// FunctionCall(**function_call): arguments is required, an unset name stays absent and extra keys stay
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DeltaFunctionCall {
     pub arguments: String,
-    #[serde(default)]
-    pub name: Option<String>,
+    #[serde(
+        default,
+        with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub name: Option<Option<String>>,
     #[serde(flatten)]
     pub extra: Object,
 }

@@ -4,7 +4,8 @@ use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
-use super::{DatabricksToolCall, ReplyFunction, ReplyToolCall};
+use super::wire::DatabricksToolCall;
+use super::{ReplyFunction, ReplyToolCall};
 use crate::databricks_chat::error::DatabricksChatError;
 use crate::ollama_chat::ids::IdSource;
 

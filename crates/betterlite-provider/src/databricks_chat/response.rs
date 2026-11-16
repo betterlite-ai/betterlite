@@ -4,21 +4,22 @@ use betterlite_openai::chat::choice_finish_reason;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, Message};
 use betterlite_prompts::reasoning_fields::content_split::extract_reasoning_content;
-use serde::Deserialize;
 use serde::Serialize;
-use serde_with::rust::double_option;
 
 use crate::databricks_chat::content::{
-    DatabricksContent, DatabricksFunction, ThinkingBlock, extract_citations, extract_content_str,
-    extract_reasoning,
+    ThinkingBlock, extract_citations, extract_content_str, extract_reasoning,
 };
 use crate::databricks_chat::error::DatabricksChatError;
 use crate::databricks_chat::response::usage::usage_from;
+use crate::databricks_chat::response::wire::{
+    DatabricksChoice, DatabricksMessage, DatabricksResponse,
+};
 use crate::ollama_chat::ids::IdSource;
 
 mod tests;
 mod tool_calls;
 pub(crate) mod usage;
+mod wire;
 
 pub struct ResponseInput<'value> {
     pub body: &'value str,
@@ -93,51 +94,6 @@ pub struct Usage {
     pub prompt_tokens_details: Option<Object>,
     #[serde(flatten)]
     pub extra: Object,
-}
-
-// The response dict DatabricksResponse(**raw_response.json()) reads
-#[derive(Debug, Deserialize)]
-struct DatabricksResponse {
-    id: String,
-    created: i64,
-    #[serde(default)]
-    model: Option<String>,
-    choices: Vec<DatabricksChoice>,
-    // Usage(**block) forwards every key it does not name, so the block stays open here
-    usage: Object,
-}
-
-#[derive(Debug, Deserialize)]
-struct DatabricksChoice {
-    #[serde(default, with = "double_option")]
-    index: Option<Option<i64>>,
-    message: DatabricksMessage,
-    #[serde(default, with = "double_option")]
-    finish_reason: Option<Option<String>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct DatabricksMessage {
-    #[serde(default, with = "double_option")]
-    content: Option<Option<DatabricksContent>>,
-    #[serde(default)]
-    tool_calls: Option<Vec<DatabricksToolCall>>,
-    #[serde(default, with = "double_option")]
-    reasoning_content: Option<Option<String>>,
-    #[serde(default, with = "double_option")]
-    reasoning: Option<Option<String>>,
-}
-
-// ChatCompletionMessageToolCall reads a function from every call and keeps the keys it does not name
-#[derive(Debug, Deserialize)]
-struct DatabricksToolCall {
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(rename = "type", default)]
-    kind: Option<String>,
-    function: DatabricksFunction,
-    #[serde(flatten)]
-    extra: Object,
 }
 
 // transform_response: parse the body, then each choice through _transform_dbrx_choices

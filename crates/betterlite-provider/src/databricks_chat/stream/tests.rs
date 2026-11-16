@@ -473,12 +473,65 @@ fn a_custom_tool_call_without_a_type_passes_through() {
     }))));
     assert_eq!(
         delta["tool_calls"],
-        json!([{
-            "type": null,
-            "custom": {"name": "f"},
-            "index": 0
-        }])
+        json!([{"custom": {"name": "f"}, "index": 0}])
     );
+}
+
+#[test]
+fn a_custom_tool_call_with_a_null_type_dumps_the_null() {
+    let delta = delta_of(&success(&body(json!({
+        "tool_calls": [{"type": null, "custom": {"name": "f"}}]
+    }))));
+    assert_eq!(
+        delta["tool_calls"],
+        json!([{"type": null, "custom": {"name": "f"}, "index": 0}])
+    );
+}
+
+#[rstest]
+#[case::absent(json!({"function": {"name": "f", "arguments": "x"}}))]
+#[case::null(json!({"type": null, "function": {"name": "f", "arguments": "x"}}))]
+fn a_function_tool_call_without_a_type_defaults_to_function(#[case] call: Value) {
+    let delta = delta_of(&success(&body(json!({"tool_calls": [call]}))));
+    assert_eq!(delta["tool_calls"][0]["type"], json!("function"));
+}
+
+#[test]
+fn a_function_call_without_a_name_leaves_the_name_out() {
+    let delta = delta_of(&success(&body(
+        json!({"function_call": {"arguments": "x"}}),
+    )));
+    assert_eq!(delta["function_call"], json!({"arguments": "x"}));
+}
+
+#[test]
+fn a_function_call_with_a_null_name_dumps_the_null() {
+    let delta = delta_of(&success(&body(
+        json!({"function_call": {"name": null, "arguments": "x"}}),
+    )));
+    assert_eq!(
+        delta["function_call"],
+        json!({"arguments": "x", "name": null})
+    );
+}
+
+#[rstest]
+#[case::empty(json!({}))]
+#[case::null(json!(null))]
+fn an_explicit_provider_specific_fields_value_is_dumped_as_given(#[case] value: Value) {
+    let delta = delta_of(&success(&body(
+        json!({"content": "x", "provider_specific_fields": value}),
+    )));
+    assert_eq!(delta["provider_specific_fields"], value);
+}
+
+#[test]
+fn a_citation_over_null_provider_specific_fields_is_an_error() {
+    let error = failure(&body(json!({
+        "content": [{"type": "text", "text": "a", "citations": [{"start": 0}]}],
+        "provider_specific_fields": null
+    })));
+    assert_eq!(error.status_code(), 500);
 }
 
 #[test]

@@ -1,18 +1,21 @@
 import httpx
+from litellm.llms.databricks.chat.transformation import DatabricksConfig
 from litellm.types.utils import ModelResponse
 from pydantic import JsonValue, TypeAdapter
 
 from .common import (
-    CHAT,
     JSON_ADAPTER,
     MODEL,
     Input,
     Object,
     ResponseCase,
     cases_of,
+    chat_api,
     guarded,
     logging_object,
 )
+
+CHAT = chat_api(DatabricksConfig())
 
 
 def reply_of(case: ResponseCase) -> Object:

@@ -30,7 +30,7 @@ pub struct Delta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking_blocks: Option<Vec<ThinkingBlock>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider_specific_fields: Option<Object>,
+    pub provider_specific_fields: Option<Option<Object>>,
 }
 
 // chunk_parser rewrites content, reasoning_content and thinking_blocks, then Delta(**delta) reads it
@@ -39,8 +39,7 @@ pub(super) fn build_delta(delta: DatabricksDelta) -> Result<Delta, DatabricksCha
     let (block_reasoning, thinking_blocks) = extract_reasoning(delta.content.as_ref());
     let mut extra = delta.extra;
     extra.shift_remove("thinking_blocks");
-    // Delta maps reasoning onto reasoning_content only when chunk_parser left that unset, and keeps
-    // a reasoning key that lost the mapping as an extra
+    // Delta maps reasoning onto reasoning_content only when chunk_parser left it unset
     let mut reasoning_content = block_reasoning.or(delta.reasoning_content);
     match (reasoning_content.is_some(), &delta.reasoning) {
         (true, Some(reasoning)) => {
@@ -64,9 +63,7 @@ pub(super) fn build_delta(delta: DatabricksDelta) -> Result<Delta, DatabricksCha
         reasoning_items: delta.reasoning_items,
         reasoning_content,
         thinking_blocks,
-        provider_specific_fields: delta
-            .provider_specific_fields
-            .filter(|fields| !fields.is_empty()),
+        provider_specific_fields: delta.provider_specific_fields,
     })
 }
 
@@ -91,15 +88,15 @@ pub struct FunctionDeltaCall {
     pub index: Number,
 }
 
-// ChatCompletionDeltaCustomToolCall: the type stays null when the call names none
+// ChatCompletionDeltaCustomToolCall: an unset id or type stays absent, a null one dumps as null
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CustomDeltaCall {
     #[serde(flatten)]
     pub extra: Object,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<Option<String>>,
-    #[serde(rename = "type")]
-    pub kind: Option<String>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<Option<String>>,
     pub custom: CustomPayload,
     pub index: Number,
 }
@@ -124,7 +121,8 @@ fn normalize(calls: Vec<DeltaToolCall>) -> Result<Vec<DeltaCall>, DatabricksChat
 
 // is_custom_tool_call_dict picks the custom shape; every other call needs its function
 fn coerced(call: DeltaToolCall, index: Number) -> Result<DeltaCall, DatabricksChatError> {
-    if call.kind.as_deref() == Some("custom") || call.custom.is_some() {
+    let named_kind = call.kind.clone().flatten();
+    if named_kind.as_deref() == Some("custom") || call.custom.is_some() {
         let Some(custom) = call.custom else {
             return Err(DatabricksChatError::Shape {
                 message: String::from("a custom delta tool call is missing its custom payload"),
@@ -153,7 +151,7 @@ fn coerced(call: DeltaToolCall, index: Number) -> Result<DeltaCall, DatabricksCh
             name: function.name,
         },
         id: call.id,
-        kind: call.kind.unwrap_or_else(|| String::from("function")),
+        kind: named_kind.unwrap_or_else(|| String::from("function")),
         index,
     }))
 }

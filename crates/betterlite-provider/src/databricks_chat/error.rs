@@ -54,7 +54,7 @@ pub enum DatabricksChatError {
 
 impl DatabricksChatError {
     #[must_use]
-    pub const fn status_code(&self) -> u16 {
+    pub fn status_code(&self) -> u16 {
         match self {
             Self::Databricks(error) => error.status_code,
             Self::Tools(error) => error.status_code().unwrap_or(400),
