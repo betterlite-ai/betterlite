@@ -19,11 +19,11 @@ use crate::api::soniox::prepare::options::HandlerOptions;
 use crate::api::soniox::remote::SonioxRemote;
 use crate::api::soniox::remote::transport::{RemoteTransport, Sleeper};
 
-pub const API_BASE: &str = "https://api.soniox.test";
-pub const BOUNDARY: &str = "boundary-7";
-pub const TIMEOUT: Duration = Duration::from_millis(2500);
+pub(super) const API_BASE: &str = "https://api.soniox.test";
+pub(super) const BOUNDARY: &str = "boundary-7";
+pub(super) const TIMEOUT: Duration = Duration::from_millis(2500);
 
-pub enum Outcome {
+pub(super) enum Outcome {
     Reply {
         status: u16,
         headers: Vec<(&'static str, &'static str)>,
@@ -33,13 +33,8 @@ pub enum Outcome {
 }
 
 #[derive(Clone, Debug)]
-pub enum RecordedBody {
+pub(super) enum RecordedBody {
     Empty,
-    Json(Vec<u8>),
-    Bytes {
-        content_type: HeaderValue,
-        data: Vec<u8>,
-    },
     Multipart {
         boundary: String,
         parts: Vec<MultipartPart>,
@@ -47,28 +42,28 @@ pub enum RecordedBody {
 }
 
 #[derive(Clone, Debug)]
-pub struct Call {
-    pub method: Method,
-    pub url: String,
-    pub headers: HeaderMap,
-    pub body: RecordedBody,
-    pub deadline: Duration,
+pub(super) struct Call {
+    pub(super) method: Method,
+    pub(super) url: String,
+    pub(super) headers: HeaderMap,
+    pub(super) body: RecordedBody,
+    pub(super) deadline: Duration,
 }
 
-pub struct Script {
+pub(super) struct Script {
     answers: Mutex<VecDeque<Outcome>>,
     calls: Mutex<Vec<Call>>,
 }
 
 impl Script {
-    pub fn new(answers: Vec<Outcome>) -> Self {
+    pub(super) fn new(answers: Vec<Outcome>) -> Self {
         Self {
             answers: Mutex::new(VecDeque::from(answers)),
             calls: Mutex::new(Vec::new()),
         }
     }
 
-    pub fn calls(&self) -> Vec<Call> {
+    pub(super) fn calls(&self) -> Vec<Call> {
         self.calls.lock().unwrap().clone()
     }
 }
@@ -87,9 +82,10 @@ impl RemoteTransport for Script {
 fn record(request: OutboundRequest) -> Call {
     let body = match request.body {
         RequestBody::Empty => RecordedBody::Empty,
-        RequestBody::Json(data) => RecordedBody::Json(data),
-        RequestBody::Bytes { content_type, data } => RecordedBody::Bytes { content_type, data },
         RequestBody::Multipart { boundary, parts } => RecordedBody::Multipart { boundary, parts },
+        RequestBody::Json(_) | RequestBody::Bytes { .. } => {
+            panic!("a Soniox remote call sends only an empty or a multipart body")
+        }
     };
     Call {
         method: request.method,
@@ -127,12 +123,12 @@ fn header_map(headers: &[(&'static str, &'static str)]) -> HeaderMap {
 }
 
 #[derive(Default)]
-pub struct Clock {
+pub(super) struct Clock {
     sleeps: Mutex<Vec<Duration>>,
 }
 
 impl Clock {
-    pub fn sleeps(&self) -> Vec<Duration> {
+    pub(super) fn sleeps(&self) -> Vec<Duration> {
         self.sleeps.lock().unwrap().clone()
     }
 }
@@ -144,7 +140,7 @@ impl Sleeper for Clock {
     }
 }
 
-pub fn remote<'call>(
+pub(super) fn remote<'call>(
     transport: &'call Script,
     sleeper: &'call Clock,
     prepared: &'call Prepared,
@@ -159,7 +155,7 @@ pub fn remote<'call>(
     }
 }
 
-pub fn prepared(options: HandlerOptions, headers: &[(&str, &str)]) -> Prepared {
+pub(super) fn prepared(options: HandlerOptions, headers: &[(&str, &str)]) -> Prepared {
     let mut auth_headers = Headers::new();
     for &(name, value) in headers {
         auth_headers.insert(name.to_owned(), value.to_owned());
@@ -172,7 +168,7 @@ pub fn prepared(options: HandlerOptions, headers: &[(&str, &str)]) -> Prepared {
     }
 }
 
-pub fn options() -> HandlerOptions {
+pub(super) fn options() -> HandlerOptions {
     HandlerOptions {
         poll_interval: Decimal::ONE,
         max_attempts: 3,
@@ -184,7 +180,7 @@ pub fn options() -> HandlerOptions {
     }
 }
 
-pub fn audio() -> ProcessedAudioFile {
+pub(super) fn audio() -> ProcessedAudioFile {
     ProcessedAudioFile {
         file_content: b"RIFF-data".to_vec(),
         filename: "audio.mp3".to_owned(),
@@ -192,6 +188,6 @@ pub fn audio() -> ProcessedAudioFile {
     }
 }
 
-pub fn auth() -> [(&'static str, &'static str); 2] {
+pub(super) fn auth() -> [(&'static str, &'static str); 2] {
     [("Authorization", "Bearer sk-local"), ("x-client", "suite")]
 }

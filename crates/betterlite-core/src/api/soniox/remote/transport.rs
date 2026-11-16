@@ -7,7 +7,8 @@ use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use tokio::time::sleep;
 
-pub trait RemoteTransport {
+// Both traits require Sync so a request borrows its transport into a future any worker can drive
+pub trait RemoteTransport: Sync {
     fn call(
         &self,
         request: OutboundRequest,
@@ -20,7 +21,7 @@ impl RemoteTransport for ProxiedClient {
     }
 }
 
-pub trait Sleeper {
+pub trait Sleeper: Sync {
     fn sleep(&self, duration: Duration) -> impl Future<Output = ()> + Send;
 }
 

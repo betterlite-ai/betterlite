@@ -11,6 +11,7 @@ use super::support::{
 use crate::api::soniox::prepare::options::HandlerOptions;
 use crate::api::soniox::prepare::response::TranscriptionMeta;
 use crate::api::soniox::remote::error::RemoteError;
+use crate::api::soniox::remote::poll::poll_until_completed;
 
 async fn poll_with(
     answers: Vec<Outcome>,
@@ -20,7 +21,7 @@ async fn poll_with(
     let transport = Script::new(answers);
     let sleeper = Clock::default();
     let ready = prepared(chosen, &auth());
-    let outcome = remote(&transport, &sleeper, &ready).poll(id).await;
+    let outcome = poll_until_completed(&remote(&transport, &sleeper, &ready), id).await;
     (outcome, transport, sleeper)
 }
 
@@ -230,8 +231,7 @@ async fn poll_reports_a_header_the_request_cannot_carry() {
             ("x-bad", "line\nbreak"),
         ],
     );
-    let error = remote(&transport, &sleeper, &ready)
-        .poll("job-1")
+    let error = poll_until_completed(&remote(&transport, &sleeper, &ready), "job-1")
         .await
         .unwrap_err();
     let RemoteError::HeaderValue { name, .. } = error else {
@@ -245,7 +245,7 @@ async fn poll_reports_a_header_the_request_cannot_carry() {
 async fn poll_joins_repeated_reply_headers_and_reads_text() {
     let body = Outcome::Reply {
         status: 200,
-        headers: vec![("via", "1.1 a"), ("via", "1.1 b"), ("x-note", "café")],
+        headers: vec![("via", "1.1 a"), ("via", "1.1 b"), ("x-note", "caf\u{e9}")],
         body: r#"{"status":"error","error_message":"bad audio"}"#,
     };
     let (outcome, _, _) = poll_with(vec![body], options(), "job-1").await;
@@ -254,7 +254,7 @@ async fn poll_joins_repeated_reply_headers_and_reads_text() {
     };
     let headers = provider.headers.unwrap();
     assert_eq!(headers.get("via").map(String::as_str), Some("1.1 a, 1.1 b"));
-    assert_eq!(headers.get("x-note").map(String::as_str), Some("café"));
+    assert_eq!(headers.get("x-note").map(String::as_str), Some("caf\u{e9}"));
 }
 
 #[tokio::test]

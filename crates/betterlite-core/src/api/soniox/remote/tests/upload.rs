@@ -9,6 +9,7 @@ use crate::api::soniox::prepare::Prepared;
 use crate::api::soniox::prepare::error::ReplyError;
 use crate::api::soniox::prepare::options::HandlerOptions;
 use crate::api::soniox::remote::error::RemoteError;
+use crate::api::soniox::remote::upload::upload_file;
 
 fn uploaded_filename(transport: &Script) -> Option<String> {
     let calls = transport.calls();
@@ -31,7 +32,7 @@ fn armed(options: HandlerOptions) -> (Script, Clock, Prepared) {
 async fn upload_sends_only_the_authorization_header() {
     let (transport, sleeper, ready) = armed(options());
     let soniox = remote(&transport, &sleeper, &ready);
-    let id = soniox.upload(&audio()).await.unwrap();
+    let id = upload_file(&soniox, &audio()).await.unwrap();
     assert_eq!(id, "file-1");
     let calls = transport.calls();
     assert_eq!(calls.len(), 1);
@@ -62,7 +63,7 @@ async fn upload_uses_the_filename_override() {
     chosen.filename_override = Some("renamed.wav".to_owned());
     let (transport, sleeper, ready) = armed(chosen);
     let soniox = remote(&transport, &sleeper, &ready);
-    soniox.upload(&audio()).await.unwrap();
+    upload_file(&soniox, &audio()).await.unwrap();
     assert_eq!(
         uploaded_filename(&transport).as_deref(),
         Some("renamed.wav")
@@ -73,7 +74,7 @@ async fn upload_uses_the_filename_override() {
 async fn upload_falls_back_when_the_override_is_absent() {
     let (transport, sleeper, ready) = armed(options());
     let soniox = remote(&transport, &sleeper, &ready);
-    soniox.upload(&audio()).await.unwrap();
+    upload_file(&soniox, &audio()).await.unwrap();
     assert_eq!(uploaded_filename(&transport).as_deref(), Some("audio.mp3"));
 }
 
@@ -83,7 +84,7 @@ async fn upload_falls_back_when_the_override_is_empty() {
     chosen.filename_override = Some(String::new());
     let (transport, sleeper, ready) = armed(chosen);
     let soniox = remote(&transport, &sleeper, &ready);
-    soniox.upload(&audio()).await.unwrap();
+    upload_file(&soniox, &audio()).await.unwrap();
     assert_eq!(uploaded_filename(&transport).as_deref(), Some("audio.mp3"));
 }
 
@@ -97,7 +98,7 @@ async fn upload_reports_the_provider_error_before_the_id() {
     let sleeper = Clock::default();
     let ready = prepared(options(), &auth());
     let soniox = remote(&transport, &sleeper, &ready);
-    let error = soniox.upload(&audio()).await.unwrap_err();
+    let error = upload_file(&soniox, &audio()).await.unwrap_err();
     let RemoteError::Provider(provider) = error else {
         panic!("a 500 must surface as the provider error");
     };
@@ -124,7 +125,7 @@ async fn upload_requires_the_id_of_a_successful_reply() {
     let sleeper = Clock::default();
     let ready = prepared(options(), &auth());
     let soniox = remote(&transport, &sleeper, &ready);
-    let error = soniox.upload(&audio()).await.unwrap_err();
+    let error = upload_file(&soniox, &audio()).await.unwrap_err();
     assert!(matches!(
         error,
         RemoteError::Reply(ReplyError::Missing { field: "id" })
@@ -137,7 +138,7 @@ async fn upload_reports_the_missing_authorization_header() {
     let sleeper = Clock::default();
     let ready = prepared(options(), &[("x-client", "suite")]);
     let soniox = remote(&transport, &sleeper, &ready);
-    let error = soniox.upload(&audio()).await.unwrap_err();
+    let error = upload_file(&soniox, &audio()).await.unwrap_err();
     assert!(matches!(
         error,
         RemoteError::MissingHeader {
@@ -160,7 +161,7 @@ async fn upload_propagates_a_transport_failure_without_retrying() {
     let sleeper = Clock::default();
     let ready = prepared(options(), &auth());
     let soniox = remote(&transport, &sleeper, &ready);
-    let error = soniox.upload(&audio()).await.unwrap_err();
+    let error = upload_file(&soniox, &audio()).await.unwrap_err();
     assert!(matches!(
         error,
         RemoteError::Transport(TransportError::Closed)

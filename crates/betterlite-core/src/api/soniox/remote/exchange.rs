@@ -1,8 +1,10 @@
 use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_openai::files::stream::flatten_headers;
 use betterlite_openai::openai_base_config::Headers;
+use http::Method;
 use http::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
@@ -10,6 +12,7 @@ use url::Url;
 
 use super::error::RemoteError;
 use crate::api::api_boundaries::ApiLimits;
+use crate::api::soniox::prepare::Prepared;
 use crate::api::soniox::prepare::decode::{SonioxReply, decode_soniox_reply};
 
 pub const AUTHORIZATION_NAME: &str = "Authorization";
@@ -57,8 +60,26 @@ pub(super) fn authorization_only(headers: &Headers) -> Result<HeaderMap, RemoteE
     Ok(sent)
 }
 
+pub(super) fn transcription_request(
+    prepared: &Prepared,
+    transcription_id: &str,
+    timeout: Duration,
+) -> Result<OutboundRequest, RemoteError> {
+    Ok(OutboundRequest {
+        method: Method::GET,
+        url: endpoint_url(&format!(
+            "{}/v1/transcriptions/{transcription_id}",
+            prepared.api_base
+        ))?,
+        query: Vec::new(),
+        headers: header_map(&prepared.auth_headers)?,
+        body: RequestBody::Empty,
+        deadline: timeout,
+    })
+}
+
 pub(super) fn reply(
-    response: UpstreamResponse,
+    response: &UpstreamResponse,
     limits: &ApiLimits,
 ) -> Result<SonioxReply, RemoteError> {
     let headers = flatten_headers(&response.headers).into_iter().collect();

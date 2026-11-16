@@ -5,6 +5,7 @@ use http::header::AUTHORIZATION;
 use super::support::{
     Clock, Outcome, RecordedBody, Script, TIMEOUT, auth, options, prepared, remote,
 };
+use crate::api::soniox::remote::cleanup::clean_up;
 
 fn ok() -> Outcome {
     Outcome::Reply {
@@ -32,9 +33,12 @@ async fn cleanup_with(
     let transport = Script::new(vec![ok(), ok()]);
     let sleeper = Clock::default();
     let ready = prepared(chosen, &auth());
-    remote(&transport, &sleeper, &ready)
-        .cleanup(transcription_id, file_id)
-        .await;
+    clean_up(
+        &remote(&transport, &sleeper, &ready),
+        transcription_id,
+        file_id,
+    )
+    .await;
     urls(&transport)
 }
 
@@ -54,9 +58,12 @@ async fn cleanup_deletes_the_transcription_before_the_file() {
     let transport = Script::new(vec![ok(), ok()]);
     let sleeper = Clock::default();
     let ready = prepared(chosen, &auth());
-    remote(&transport, &sleeper, &ready)
-        .cleanup(Some("job-1"), Some("file-1"))
-        .await;
+    clean_up(
+        &remote(&transport, &sleeper, &ready),
+        Some("job-1"),
+        Some("file-1"),
+    )
+    .await;
     let calls = transport.calls();
     assert_eq!(
         urls(&transport),
@@ -128,9 +135,12 @@ async fn cleanup_attempts_the_file_after_the_transcription_fails() {
     let transport = Script::new(vec![Outcome::Fail(TransportError::Closed), ok()]);
     let sleeper = Clock::default();
     let ready = prepared(options(), &auth());
-    remote(&transport, &sleeper, &ready)
-        .cleanup(Some("job-1"), Some("file-1"))
-        .await;
+    clean_up(
+        &remote(&transport, &sleeper, &ready),
+        Some("job-1"),
+        Some("file-1"),
+    )
+    .await;
     assert_eq!(
         urls(&transport),
         vec![
@@ -152,9 +162,12 @@ async fn cleanup_ignores_the_delete_status() {
     ]);
     let sleeper = Clock::default();
     let ready = prepared(options(), &auth());
-    remote(&transport, &sleeper, &ready)
-        .cleanup(Some("job-1"), Some("file-1"))
-        .await;
+    clean_up(
+        &remote(&transport, &sleeper, &ready),
+        Some("job-1"),
+        Some("file-1"),
+    )
+    .await;
     assert_eq!(transport.calls().len(), 2);
 }
 
@@ -164,12 +177,18 @@ async fn cleanup_sends_the_request_local_credential() {
     let sleeper = Clock::default();
     let other = prepared(options(), &[("Authorization", "Bearer sk-neighbour")]);
     let ready = prepared(options(), &[("Authorization", "Bearer sk-local")]);
-    remote(&transport, &sleeper, &other)
-        .cleanup(Some("job-n"), Some("file-n"))
-        .await;
-    remote(&transport, &sleeper, &ready)
-        .cleanup(Some("job-1"), Some("file-1"))
-        .await;
+    clean_up(
+        &remote(&transport, &sleeper, &other),
+        Some("job-n"),
+        Some("file-n"),
+    )
+    .await;
+    clean_up(
+        &remote(&transport, &sleeper, &ready),
+        Some("job-1"),
+        Some("file-1"),
+    )
+    .await;
     let sent: Vec<(String, String)> = transport
         .calls()
         .iter()
