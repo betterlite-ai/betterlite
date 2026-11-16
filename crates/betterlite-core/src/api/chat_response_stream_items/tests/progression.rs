@@ -1,5 +1,5 @@
 use crate::api::chat_response_stream_items::error::StreamItemsError;
-use crate::api::chat_response_stream_items::items::queue_message_item_added_events;
+use crate::api::chat_response_stream_items::items::queue_message_added;
 use crate::api::chat_response_stream_items::progression::{
     is_stream_finished, return_default_done_events, return_default_initial_events,
 };
@@ -102,7 +102,7 @@ fn default_done_progression_queues_the_message_for_final_content() {
 fn default_done_progression_still_completes_an_added_message_with_empty_content() {
     let mut state = state_with_details("{}", None, None);
     let sources = sources(10, &["u"]);
-    queue_message_item_added_events(&mut state, &sources).expect("the message queues");
+    queue_message_added(&mut state, &sources).expect("the message queues");
     state.progress.litellm_model_response = Some(completion(&json("\"stored\""), "[]"));
     let text = return_default_done_events(&mut state, &sources, &empty_completion())
         .expect("the text done event builds")

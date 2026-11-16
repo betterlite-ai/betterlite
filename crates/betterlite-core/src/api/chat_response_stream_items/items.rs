@@ -11,7 +11,7 @@ use super::error::StreamItemsError;
 use super::sources::EventSources;
 use super::support::numbered;
 
-pub fn queue_message_item_added_events<Context>(
+pub fn queue_message_added<Context>(
     state: &mut ChatStreamState<Context>,
     sources: &EventSources,
 ) -> Result<(), StreamItemsError> {
@@ -37,12 +37,12 @@ pub fn queue_message_item_added_events<Context>(
             item: RequiredNullable::Value(message_item(&item_id)),
             extra: numbered(sequence_number),
         }));
-    let content_part = create_content_part_added_event(state, sources)?;
+    let content_part = content_part_added(state, sources)?;
     state.progress.pending_response_events.push(content_part);
     Ok(())
 }
 
-pub fn create_content_part_added_event<Context>(
+pub fn content_part_added<Context>(
     state: &mut ChatStreamState<Context>,
     sources: &EventSources,
 ) -> Result<KnownResponseEvent, StreamItemsError> {

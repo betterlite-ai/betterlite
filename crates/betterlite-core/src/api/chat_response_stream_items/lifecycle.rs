@@ -16,28 +16,26 @@ use super::support::numbered;
 
 const DEFAULT_TOP_P: f64 = 1.0;
 
-pub fn create_response_created_event<Context>(
-    state: &mut ChatStreamState<Context>,
-    sources: &EventSources,
-) -> Result<KnownResponseEvent, StreamItemsError> {
-    let response = lifecycle_response(state, sources)?;
-    let sequence_number = next_sequence(state)?;
-    Ok(KnownResponseEvent::ResponseCreated(ResponseEvent {
-        response,
-        extra: numbered(sequence_number),
-    }))
+#[derive(Clone, Copy)]
+pub enum LifecycleKind {
+    Created,
+    InProgress,
 }
 
-pub fn create_response_in_progress_event<Context>(
+pub fn create_lifecycle_event<Context>(
     state: &mut ChatStreamState<Context>,
     sources: &EventSources,
+    kind: LifecycleKind,
 ) -> Result<KnownResponseEvent, StreamItemsError> {
     let response = lifecycle_response(state, sources)?;
-    let sequence_number = next_sequence(state)?;
-    Ok(KnownResponseEvent::ResponseInProgress(ResponseEvent {
+    let event = ResponseEvent {
         response,
-        extra: numbered(sequence_number),
-    }))
+        extra: numbered(next_sequence(state)?),
+    };
+    Ok(match kind {
+        LifecycleKind::Created => KnownResponseEvent::ResponseCreated(event),
+        LifecycleKind::InProgress => KnownResponseEvent::ResponseInProgress(event),
+    })
 }
 
 fn lifecycle_response<Context>(

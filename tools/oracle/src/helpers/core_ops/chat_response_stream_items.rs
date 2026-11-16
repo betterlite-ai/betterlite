@@ -3,13 +3,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::chat_response_stream_items::done::{
-    create_output_content_part_done_event, create_output_item_done_event,
-    create_output_text_done_event, create_reasoning_output_item_done_event,
-    create_reasoning_summary_part_done_event, create_reasoning_summary_text_done_event,
+    MessageDone, ReasoningDone, message_done_event, reasoning_done_event,
 };
 use betterlite_core::api::chat_response_stream_items::error::StreamItemsError;
 use betterlite_core::api::chat_response_stream_items::items::{
-    create_content_part_added_event, queue_message_item_added_events,
+    content_part_added, queue_message_added,
 };
 use betterlite_core::api::chat_response_stream_items::progression::{
     is_stream_finished, return_default_done_events, return_default_initial_events,
@@ -136,11 +134,11 @@ fn apply_step(
             None => Ok(Value::Null),
         },
         Step::MessageItems => {
-            queue_message_item_added_events(state, sources).or_value_error()?;
+            queue_message_added(state, sources).or_value_error()?;
             pending_events(state)
         }
         Step::ContentPart => {
-            let event = create_content_part_added_event(state, sources).or_value_error()?;
+            let event = content_part_added(state, sources).or_value_error()?;
             serde_json::to_value(&event).or_value_error()
         }
         Step::Done { completion } => done_events(state, sources, completion),
@@ -175,10 +173,12 @@ fn done_events(
     sources: &EventSources,
     completion: &Json,
 ) -> Result<Value, Box<HelperError>> {
-    let text = create_output_text_done_event(state, sources, completion).or_value_error()?;
-    let part =
-        create_output_content_part_done_event(state, sources, completion).or_value_error()?;
-    let item = create_output_item_done_event(state, sources, completion).or_value_error()?;
+    let text =
+        message_done_event(state, sources, completion, MessageDone::Text).or_value_error()?;
+    let part = message_done_event(state, sources, completion, MessageDone::ContentPart)
+        .or_value_error()?;
+    let item =
+        message_done_event(state, sources, completion, MessageDone::Item).or_value_error()?;
     let views = [&text, &part, &item]
         .into_iter()
         .map(serde_json::to_value)
@@ -193,9 +193,9 @@ fn reasoning_events(
     sequence_number: i64,
 ) -> Result<Value, Box<HelperError>> {
     let events = [
-        create_reasoning_summary_text_done_event(item_id, content, sequence_number),
-        create_reasoning_summary_part_done_event(item_id, content, sequence_number),
-        create_reasoning_output_item_done_event(item_id, content, sequence_number),
+        reasoning_done_event(item_id, content, sequence_number, ReasoningDone::Text),
+        reasoning_done_event(item_id, content, sequence_number, ReasoningDone::Part),
+        reasoning_done_event(item_id, content, sequence_number, ReasoningDone::Item),
     ];
     let views = events
         .iter()
