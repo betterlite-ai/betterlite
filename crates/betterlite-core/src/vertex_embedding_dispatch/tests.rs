@@ -1,0 +1,287 @@
+#![cfg(test)]
+
+use std::io;
+use std::sync::{Arc, Mutex};
+
+use betterlite_config::sections::vertex_credential_sources::VertexSettings;
+use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
+use betterlite_config::sections::vertex_embedding_dispatch::Settings as EmbeddingSettings;
+use betterlite_models::catalog::{ModelCatalog, UnknownFields};
+use betterlite_models::decisions::{Extra, Json};
+use secrecy::SecretString;
+use tracing::subscriber::{DefaultGuard, set_default};
+
+use super::{Defaults, MULTIMODAL_EMBEDDING_MODELS, Native, SelectionRequest, select};
+
+const MODEL: &str = "text-embedding-005";
+const EMBED_CONTENT_MODEL: &str = "gemini-embedding-2";
+
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Captured {
+    fn text(&self) -> String {
+        let bytes = self.0.lock().expect("the capture lock").clone();
+        String::from_utf8(bytes).expect("the captured log is UTF-8")
+    }
+}
+
+impl io::Write for Captured {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn capture() -> (Captured, DefaultGuard) {
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_max_level(tracing::Level::DEBUG)
+        .with_ansi(false)
+        .finish();
+    (captured, set_default(subscriber))
+}
+
+fn catalog(source: &str) -> ModelCatalog {
+    ModelCatalog::parse(source.as_bytes(), UnknownFields::Reject).expect("a catalog")
+}
+
+fn params(source: &str) -> Extra {
+    serde_json::from_str(source).expect("optional params")
+}
+
+fn credentials(text: &str) -> ConfiguredCredentials {
+    ConfiguredCredentials::Text(SecretString::from(text.to_owned()))
+}
+
+fn resolution(
+    model: &str,
+    optional_params: &Extra,
+    vertex: &VertexSettings,
+    embedding: &EmbeddingSettings,
+    catalog: &ModelCatalog,
+) -> super::Resolution {
+    select(
+        SelectionRequest {
+            model,
+            api_base: None,
+            optional_params,
+        },
+        Defaults { vertex, embedding },
+        catalog,
+    )
+    .expect("a resolved request")
+}
+
+#[test]
+fn catalog_before_media() {
+    let catalog = catalog(&format!(
+        r#"{{"vertex_ai/{EMBED_CONTENT_MODEL}": {{"litellm_provider": "vertex_ai", "mode": "embedding", "uses_embed_content": true}}}}"#
+    ));
+    let optional_params =
+        params(r#"{"image": "gs://bucket/cat.png", "video": "gs://bucket/dog.mp4"}"#);
+    let vertex = VertexSettings::default();
+    let embedding = EmbeddingSettings::default();
+    let resolved = resolution(
+        EMBED_CONTENT_MODEL,
+        &optional_params,
+        &vertex,
+        &embedding,
+        &catalog,
+    );
+    assert_eq!(resolved.native, Native::EmbedContent);
+}
+
+#[test]
+fn null_image_selects_media() {
+    let catalog = ModelCatalog::default();
+    let vertex = VertexSettings::default();
+    let embedding = EmbeddingSettings::default();
+    for source in [
+        r#"{"image": null}"#,
+        r#"{"video": null}"#,
+        r#"{"image": null, "video": null}"#,
+    ] {
+        let optional_params = params(source);
+        let resolved = resolution(MODEL, &optional_params, &vertex, &embedding, &catalog);
+        assert_eq!(resolved.native, Native::Multimodal);
+        // the media keys stay in the params the multimodal handler reads
+        assert_eq!(resolved.optional_params, optional_params);
+    }
+    let empty = params("{}");
+    assert_eq!(
+        resolution(MODEL, &empty, &vertex, &embedding, &catalog).native,
+        Native::Text
+    );
+}
+
+#[test]
+fn unknown_model_text_fallback() {
+    let catalog = catalog(
+        r#"{"vertex_ai/other-embedding": {"litellm_provider": "vertex_ai", "mode": "embedding"}}"#,
+    );
+    let optional_params = params(r#"{"dimensions": 3}"#);
+    let vertex = VertexSettings::default();
+    let embedding = EmbeddingSettings::default();
+    let (captured, _guard) = capture();
+    let resolved = resolution(MODEL, &optional_params, &vertex, &embedding, &catalog);
+    assert_eq!(resolved.native, Native::Text);
+    // main.py's except block is silent, so the fallback adds no warning either
+    assert!(!captured.text().contains("WARN"), "{}", captured.text());
+}
+
+#[test]
+fn alias_pop_short_circuit() {
+    let catalog = ModelCatalog::default();
+    let vertex = VertexSettings::default();
+    let embedding = EmbeddingSettings::default();
+    let both = params(r#"{"vertex_project": "listed", "vertex_ai_project": "second"}"#);
+    let resolved = resolution(MODEL, &both, &vertex, &embedding, &catalog);
+    assert_eq!(resolved.project.as_deref(), Some("listed"));
+    // the first truthy alias stops the chain before the second pop
+    assert!(!resolved.optional_params.contains_key("vertex_project"));
+    assert_eq!(
+        resolved.optional_params.get("vertex_ai_project"),
+        Some(&Json::Text("second".to_owned()))
+    );
+
+    let first_null = params(r#"{"vertex_project": null, "vertex_ai_project": "second"}"#);
+    let nested = resolution(MODEL, &first_null, &vertex, &embedding, &catalog);
+    assert_eq!(nested.project.as_deref(), Some("second"));
+    assert!(nested.optional_params.is_empty());
+}
+
+#[test]
+fn multimodal_model_names_match_exactly() {
+    let catalog = ModelCatalog::default();
+    let optional_params = params("{}");
+    let vertex = VertexSettings::default();
+    let embedding = EmbeddingSettings::default();
+    for model in MULTIMODAL_EMBEDDING_MODELS {
+        assert_eq!(
+            resolution(model, &optional_params, &vertex, &embedding, &catalog).native,
+            Native::Multimodal
+        );
+    }
+    // main.py compares the split model by name, so a near miss falls through to text
+    for model in ["multimodalembedding@002", "MultimodalEmbedding"] {
+        assert_eq!(
+            resolution(model, &optional_params, &vertex, &embedding, &catalog).native,
+            Native::Text
+        );
+    }
+}
+
+#[test]
+fn environment_aliases_fall_back_in_source_order() {
+    let catalog = ModelCatalog::default();
+    let optional_params = params("{}");
+    let embedding = EmbeddingSettings {
+        project: Some("vertex-project".to_owned()),
+        credentials: Some(credentials("vertex-key")),
+        api_base: Some("https://vertex.example".to_owned()),
+    };
+    let vertex = VertexSettings {
+        project: Some("vertex-ai-project".to_owned()),
+        location: Some("vertex-ai-location".to_owned()),
+        credentials: Some(credentials("vertex-ai-key")),
+        ..VertexSettings::default()
+    };
+    let resolved = resolution(MODEL, &optional_params, &vertex, &embedding, &catalog);
+    assert_eq!(resolved.project.as_deref(), Some("vertex-ai-project"));
+    assert_eq!(resolved.location.as_deref(), Some("vertex-ai-location"));
+    assert!(matches!(
+        resolved.credentials,
+        Some(ConfiguredCredentials::Text(_))
+    ));
+    assert_eq!(resolved.api_base.as_deref(), Some("https://vertex.example"));
+}
+
+#[test]
+fn the_section_input_is_the_last_fallback() {
+    let catalog = ModelCatalog::default();
+    let optional_params = params("{}");
+    let embedding = EmbeddingSettings {
+        project: Some("vertex-project".to_owned()),
+        credentials: None,
+        api_base: Some("https://vertex.example".to_owned()),
+    };
+    let vertex = VertexSettings::default();
+    let resolved = resolution(MODEL, &optional_params, &vertex, &embedding, &catalog);
+    assert_eq!(resolved.project.as_deref(), Some("vertex-project"));
+    assert_eq!(resolved.api_base.as_deref(), Some("https://vertex.example"));
+}
+
+#[test]
+fn an_explicit_api_base_and_option_credentials_win() {
+    let catalog = ModelCatalog::default();
+    let vertex = VertexSettings {
+        location: Some("settings-location".to_owned()),
+        ..VertexSettings::default()
+    };
+    let embedding = EmbeddingSettings {
+        api_base: Some("https://settings.example".to_owned()),
+        ..EmbeddingSettings::default()
+    };
+    let optional_params = params(
+        r#"{"vertex_credentials": "{\"type\": \"service_account\"}", "vertex_location": "option-location"}"#,
+    );
+    let resolved = select(
+        SelectionRequest {
+            model: MODEL,
+            api_base: Some("https://explicit.example"),
+            optional_params: &optional_params,
+        },
+        Defaults {
+            vertex: &vertex,
+            embedding: &embedding,
+        },
+        &catalog,
+    )
+    .expect("a resolved request");
+    assert_eq!(
+        resolved.api_base.as_deref(),
+        Some("https://explicit.example")
+    );
+    assert_eq!(resolved.location.as_deref(), Some("option-location"));
+    assert!(matches!(
+        resolved.credentials,
+        Some(ConfiguredCredentials::Source(_))
+    ));
+    assert!(resolved.optional_params.is_empty());
+}
+
+#[test]
+fn a_wrong_typed_alias_names_its_field() {
+    let catalog = ModelCatalog::default();
+    let vertex = VertexSettings::default();
+    let embedding = EmbeddingSettings::default();
+    let optional_params = params(r#"{"vertex_project": 5}"#);
+    let error = select(
+        SelectionRequest {
+            model: MODEL,
+            api_base: None,
+            optional_params: &optional_params,
+        },
+        Defaults {
+            vertex: &vertex,
+            embedding: &embedding,
+        },
+        &catalog,
+    )
+    .err()
+    .expect("a rejected option");
+    assert_eq!(
+        error.to_string(),
+        "the vertex_project option must be a string"
+    );
+}
