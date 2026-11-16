@@ -96,7 +96,7 @@ impl CacheSettingsManager {
         if !carries_value(&raw) {
             return Ok(());
         }
-        let decrypted = stored_from_raw(&raw, cipher)?;
+        let decrypted = stored_from_raw(&stored_object(&raw)?, cipher)?;
         let mut params: CacheParams = serde_json::from_value(JsonValue::Object(decrypted))?;
         params.shift_remove(REDIS_TYPE_FIELD);
         if let Some(last) = self.last_params()
@@ -113,6 +113,24 @@ impl CacheSettingsManager {
     }
 }
 
+// LiteLLM's stored-settings adapter: a JSON string must decode to an object, an already-parsed object is used as is.
+fn stored_object(raw: &JsonValue) -> Result<JsonValue, InitError> {
+    match raw {
+        JsonValue::Object(_) => Ok(raw.clone()),
+        JsonValue::String(text) => {
+            let parsed: JsonValue = serde_json::from_str(text)?;
+            if matches!(parsed, JsonValue::Object(_)) {
+                Ok(parsed)
+            } else {
+                Err(InitError::NotAnObject)
+            }
+        }
+        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) => {
+            Err(InitError::NotAnObject)
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 enum InitError {
     #[error(transparent)]
@@ -123,6 +141,8 @@ enum InitError {
     Json(#[from] serde_json::Error),
     #[error(transparent)]
     Reinit(#[from] CacheReinitError),
+    #[error("stored cache settings are not a JSON object")]
+    NotAnObject,
 }
 
 #[must_use]

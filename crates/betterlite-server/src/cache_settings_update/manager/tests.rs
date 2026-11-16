@@ -154,6 +154,32 @@ async fn init_from_db_ignores_a_missing_or_empty_row() {
 }
 
 #[tokio::test]
+async fn init_from_db_logs_and_skips_a_stored_value_that_is_not_an_object() {
+    let (logs, _guard) = support::capture_logs();
+    let (fake, erased) = support::fake_repository();
+    fake.push_read(Ok(Some(JsonValue::String("null".to_owned()))));
+    let manager = CacheSettingsManager::default();
+    let reinit = support::reinit();
+    let cipher = support::cipher();
+    manager
+        .init_from_db(
+            erased.as_ref(),
+            &cipher,
+            reinit.as_ref(),
+            None::<&mut support::FakeReconnect>,
+        )
+        .await;
+    assert!(reinit.calls().is_empty());
+    assert!(manager.last_params().is_none());
+    assert_eq!(fake.read_count(), 1);
+    let text = logs.text();
+    assert!(text.contains(
+        "cache_settings_endpoints.py::CacheSettingsManager::init_cache_settings_in_db - "
+    ));
+    assert!(text.contains("stored cache settings are not a JSON object"));
+}
+
+#[tokio::test]
 async fn init_from_db_logs_and_swallows_a_failed_lookup() {
     let (logs, _guard) = support::capture_logs();
     let (fake, erased) = support::fake_repository();
