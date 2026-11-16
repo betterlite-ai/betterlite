@@ -16,8 +16,8 @@ use tokio::net::TcpListener;
 use tokio::time::sleep;
 use url::Url;
 
-use crate::api::bfl::generation_call::submit::{SubmitRequest, SubmitTransport};
-use crate::api::bfl::poll::PollTransport;
+use crate::api::bfl::generation_call::submit::{SubmitRequest, SubmitTransport as _};
+use crate::api::bfl::poll::PollTransport as _;
 
 const REPLY: &str = "HTTP/1.1 201 Created\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}";
 const SHORT_READ_LIMIT: TransportLimits = TransportLimits {
@@ -73,12 +73,12 @@ async fn the_provider_client_posts_the_json_body_with_the_headers() {
         timeout: None,
     };
 
-    let (response, sent) = tokio::join!(
+    let (answered, sent) = tokio::join!(
         client.post(request),
         serve_once(listener, br#"{"prompt":"a cat"}"#)
     );
 
-    let response = response.expect("the submission is answered");
+    let response = answered.expect("the submission is answered");
     assert_eq!(response.status, 201);
     assert_eq!(response.body, b"{}");
     assert!(sent.starts_with("POST /v1/flux-pro-1.1 HTTP/1.1"));
@@ -94,12 +94,12 @@ async fn the_provider_client_polls_with_a_get_carrying_the_headers() {
     let (listener, address, client) = local_server(TransportLimits::DEFAULT).await;
     let url = Url::parse(&format!("http://{address}/v1/get_result?id=1")).expect("the URL");
 
-    let (response, sent) = tokio::join!(
+    let (answered, sent) = tokio::join!(
         client.get(url, key_header()),
         serve_once(listener, b"\r\n\r\n")
     );
 
-    let response = response.expect("the poll is answered");
+    let response = answered.expect("the poll is answered");
     assert_eq!(response.status, 201);
     assert_eq!(response.body, b"{}");
     assert!(sent.starts_with("GET /v1/get_result?id=1 HTTP/1.1"));

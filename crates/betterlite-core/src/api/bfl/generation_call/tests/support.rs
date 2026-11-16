@@ -66,14 +66,21 @@ pub(super) struct RecordedGet {
     pub(super) headers: HeaderMap,
 }
 
+#[derive(Clone, Copy, Default)]
+pub(super) enum PostMode {
+    #[default]
+    Answer,
+    Hang,
+    Fail,
+}
+
 pub(super) struct Script {
     pub(super) submission: Reply,
     pub(super) polls: Mutex<VecDeque<Reply>>,
     pub(super) posts: Mutex<Vec<RecordedPost>>,
     pub(super) gets: Mutex<Vec<RecordedGet>>,
-    pub(super) hang_post: bool,
+    pub(super) post_mode: PostMode,
     pub(super) hang_get: bool,
-    pub(super) fail_post: bool,
     pub(super) cancelled: Arc<AtomicBool>,
 }
 
@@ -84,9 +91,8 @@ impl Script {
             polls: Mutex::new(VecDeque::from(polls)),
             posts: Mutex::default(),
             gets: Mutex::default(),
-            hang_post: false,
+            post_mode: PostMode::Answer,
             hang_get: false,
-            fail_post: false,
             cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -131,11 +137,11 @@ impl SubmitTransport for Script {
                 body: request.body.clone(),
                 timeout: request.timeout,
             });
-        if self.hang_post {
+        if matches!(self.post_mode, PostMode::Hang) {
             let _keep = Token(Arc::clone(&self.cancelled));
             return pending::<Result<UpstreamResponse, SubmitError>>().await;
         }
-        if self.fail_post {
+        if matches!(self.post_mode, PostMode::Fail) {
             return Err(SubmitError::Transport(TransportError::Closed));
         }
         Ok(self.submission.response())

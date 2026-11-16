@@ -22,8 +22,8 @@ use super::{GenerationCall, GenerationExecutor, LogContext, prepare_call};
 use crate::api::bfl::generation::BflImageResponse;
 use crate::api::bfl::poll::PollError;
 use support::{
-    BASE, MODEL, PROMPT, READY, RecordedPost, Recorder, SUBMITTED, Script, Sink, StepClock,
-    logging_env, logging_state, poll_once, reply,
+    BASE, MODEL, PROMPT, PostMode, READY, RecordedPost, Recorder, SUBMITTED, Script, Sink,
+    StepClock, logging_env, logging_state, poll_once, reply,
 };
 
 fn key() -> CallParams {
@@ -33,10 +33,10 @@ fn key() -> CallParams {
     }
 }
 
-fn generation_call<'text>(
-    optional_params: &'text IndexMap<String, Json>,
+fn generation_call(
+    optional_params: &IndexMap<String, Json>,
     params: CallParams,
-) -> GenerationCall<'text> {
+) -> GenerationCall<'_> {
     GenerationCall {
         model: MODEL,
         prompt: PROMPT,
@@ -65,26 +65,27 @@ async fn run(
 ) -> Outcome {
     let (redactor, mut state) = logging_state();
     let sink = Sink::default();
-    let env = logging_env(&redactor, &sink);
+    let preparation = {
+        let env = logging_env(&redactor, &sink);
+        let mut log = LogContext {
+            state: &mut state,
+            env: &env,
+        };
+        prepare_call(call, &mut log)
+    };
     let executor = GenerationExecutor {
         provider: script,
         clock,
         sleeper,
     };
     let supplied: Option<SuppliedTransport<'_, Script>> = None;
-    let result = {
-        let mut log = LogContext {
-            state: &mut state,
-            env: &env,
-        };
-        match prepare_call(call, &mut log) {
-            Ok(prepared) => {
-                executor
-                    .image_generation(call, &prepared, supplied, data)
-                    .await
-            }
-            Err(error) => Err(error),
+    let result = match preparation {
+        Ok(prepared) => {
+            executor
+                .image_generation(call, &prepared, supplied, data)
+                .await
         }
+        Err(error) => Err(error),
     };
     Outcome {
         result,
@@ -124,7 +125,7 @@ async fn the_pre_call_records_the_prompt_url_headers_and_body() {
 
     let outcome = run(&script, &clock, &sleeper, &call, Vec::new()).await;
 
-    assert!(outcome.result.is_ok());
+    outcome.result.expect("the generation call succeeds");
     assert_eq!(text(outcome.details.get("input")), PROMPT);
     assert_eq!(text(outcome.details.get("log_event_type")), "pre_api_call");
     let additional = object(outcome.details.get("additional_args"));
@@ -152,7 +153,7 @@ async fn the_submission_carries_the_validated_headers_and_the_requested_timeout(
 
     let outcome = run(&script, &clock, &sleeper, &call, Vec::new()).await;
 
-    assert!(outcome.result.is_ok());
+    outcome.result.expect("the generation call succeeds");
     let post = script.last_post();
     assert_eq!(post.url, format!("{BASE}/v1/flux-pro-1.1"));
     assert_eq!(post.timeout, Some(Duration::from_millis(12_500)));
@@ -179,7 +180,7 @@ async fn an_absent_timeout_leaves_the_submission_deadline_to_the_client() {
 
     let outcome = run(&script, &clock, &sleeper, &call, Vec::new()).await;
 
-    assert!(outcome.result.is_ok());
+    outcome.result.expect("the generation call succeeds");
     assert_eq!(script.last_post().timeout, None);
 }
 
@@ -198,12 +199,13 @@ async fn extra_headers_replace_the_validated_headers_and_the_polling_key() {
 
     let outcome = run(&script, &clock, &sleeper, &call, Vec::new()).await;
 
-    assert!(outcome.result.is_ok());
+    outcome.result.expect("the generation call succeeds");
     let post = script.last_post();
     assert_eq!(value_of(&post, "x-key"), "caller-key");
     assert_eq!(value_of(&post, "x-trace"), "t-1");
     let gets = script.gets.lock().expect("the gets lock is not poisoned");
     assert_eq!(gets.len(), 1);
+    assert_eq!(gets[0].url, "https://gateway.bfl.ai/v1/get_result?id=1");
     assert_eq!(
         gets[0]
             .headers
@@ -217,7 +219,7 @@ async fn extra_headers_replace_the_validated_headers_and_the_polling_key() {
 #[rstest]
 #[case("bad name", "value")]
 #[case("x-trace", "bad\nvalue")]
-#[case("x-trace", "café")]
+#[case("x-trace", "caf\u{e9}")]
 #[tokio::test]
 async fn an_extra_header_the_wire_cannot_carry_is_a_500_before_the_submission(
     #[case] name: &str,
@@ -285,7 +287,7 @@ async fn a_rejected_submission_is_a_500_and_stops_before_a_poll() {
 #[tokio::test]
 async fn a_failed_submission_post_is_a_500_after_the_pre_call_record() {
     let mut script = Script::ready();
-    script.fail_post = true;
+    script.post_mode = PostMode::Fail;
     let clock = StepClock::stepping(0);
     let sleeper = Recorder::new(&clock);
     let optional_params = IndexMap::new();
@@ -355,7 +357,7 @@ async fn the_last_2xx_submission_status_is_still_polled() {
 
     let outcome = run(&script, &clock, &sleeper, &call, Vec::new()).await;
 
-    assert!(outcome.result.is_ok());
+    outcome.result.expect("the generation call succeeds");
 }
 
 #[tokio::test]
@@ -503,7 +505,7 @@ fn a_dict_params_reads_the_key_and_base() {
     let params = CallParams::from_dict(&dict).expect("the dict params are typed");
 
     assert_eq!(
-        params.api_key.as_ref().map(|key| key.expose_secret()),
+        params.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-dict")
     );
     assert_eq!(params.api_base.as_deref(), Some(BASE));
@@ -512,7 +514,7 @@ fn a_dict_params_reads_the_key_and_base() {
 #[test]
 fn a_dict_params_naming_its_fields_rejects_a_non_text_value() {
     let mut dict = IndexMap::new();
-    dict.insert(String::from("api_key"), Json::Number(Number::from(7)));
+    dict.insert(String::from("api_key"), Json::Number(Number::from(7_i32)));
 
     let error = CallParams::from_dict(&dict).expect_err("a number is not a key");
 
@@ -537,7 +539,7 @@ fn typed_params_read_the_key_and_base() {
     });
 
     assert_eq!(
-        params.api_key.as_ref().map(|key| key.expose_secret()),
+        params.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-typed")
     );
     assert_eq!(params.api_base.as_deref(), Some(BASE));
@@ -573,7 +575,7 @@ async fn a_sync_call_uses_a_sync_supplied_transport() {
         .image_generation(&call, &prepared, Some(handed), Vec::new())
         .await;
 
-    assert!(result.is_ok());
+    result.expect("the generation call succeeds");
     assert_eq!(supplied.post_count(), 1);
     assert_eq!(provider.post_count(), 0);
 }
@@ -608,7 +610,7 @@ async fn a_sync_call_discards_an_async_supplied_transport() {
         .image_generation(&call, &prepared, Some(handed), Vec::new())
         .await;
 
-    assert!(result.is_ok());
+    result.expect("the generation call succeeds");
     assert_eq!(provider.post_count(), 1);
     assert_eq!(supplied.post_count(), 0);
 }
@@ -644,7 +646,7 @@ async fn an_async_call_uses_an_async_supplied_transport() {
         .image_generation(&call, &prepared, Some(handed), Vec::new())
         .await;
 
-    assert!(result.is_ok());
+    result.expect("the generation call succeeds");
     assert_eq!(supplied.post_count(), 1);
     assert_eq!(provider.post_count(), 0);
 }
@@ -680,7 +682,7 @@ async fn an_async_call_discards_a_sync_supplied_transport() {
         .image_generation(&call, &prepared, Some(handed), Vec::new())
         .await;
 
-    assert!(result.is_ok());
+    result.expect("the generation call succeeds");
     assert_eq!(provider.post_count(), 1);
     assert_eq!(supplied.post_count(), 0);
 }
@@ -688,7 +690,7 @@ async fn an_async_call_discards_a_sync_supplied_transport() {
 #[test]
 fn dropping_a_pending_generation_call_cancels_the_submission() {
     let mut script = Script::ready();
-    script.hang_post = true;
+    script.post_mode = PostMode::Hang;
     let clock = StepClock::stepping(0);
     let sleeper = Recorder::new(&clock);
     let optional_params = IndexMap::new();

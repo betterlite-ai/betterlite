@@ -619,12 +619,12 @@ async fn a_poll_transport_failure_keeps_its_shared_error_path() {
     struct Unreachable;
 
     impl PollTransport for Unreachable {
-        async fn get(
+        fn get(
             &self,
             _url: Url,
             _headers: HeaderMap,
-        ) -> Result<UpstreamResponse, TransportError> {
-            Err(TransportError::Closed)
+        ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+            ready(Err(TransportError::Closed))
         }
     }
 
@@ -680,7 +680,7 @@ async fn the_polling_get_carries_only_the_x_key_header(#[case] carrying_key: boo
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .first()
-        .and_then(|(_, headers)| headers.get("x-key").cloned())
+        .and_then(|(_, sent)| sent.get("x-key").cloned())
         .expect("the poll has an x-key");
     let expected = if carrying_key { "secret" } else { "" };
     assert_eq!(x_key.to_str().expect("a visible key"), expected);
