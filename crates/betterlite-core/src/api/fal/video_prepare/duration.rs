@@ -36,7 +36,8 @@ pub fn numeric_duration(value: Option<&Json>) -> Option<String> {
 
 fn truncate_decimal(text: &str) -> Option<String> {
     let trimmed = text.trim();
-    let (negative, unsigned) = sign_parts(trimmed);
+    let negative = trimmed.starts_with('-');
+    let unsigned = trimmed.strip_prefix(['-', '+']).unwrap_or(trimmed);
     let (mantissa, exponent) = split_exponent(unsigned)?;
     let (digits, fraction_len) = mantissa_digits(mantissa)?;
     let significant = digits.trim_start_matches('0');
@@ -56,7 +57,8 @@ fn split_exponent(text: &str) -> Option<(&str, Exponent)> {
     match text.split_once(['e', 'E']) {
         None => Some((text, Exponent::Value(0))),
         Some((mantissa, exponent)) => {
-            let (negative, digits) = sign_parts(exponent);
+            let negative = exponent.starts_with('-');
+            let digits = exponent.strip_prefix(['-', '+']).unwrap_or(exponent);
             if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
                 return None;
             }
@@ -78,11 +80,6 @@ fn split_exponent(text: &str) -> Option<(&str, Exponent)> {
             Some((mantissa, Exponent::Value(value)))
         }
     }
-}
-
-fn sign_parts(text: &str) -> (bool, &str) {
-    let unsigned = text.strip_prefix(['-', '+']).unwrap_or(text);
-    (text.starts_with('-'), unsigned)
 }
 
 fn mantissa_digits(mantissa: &str) -> Option<(String, i64)> {
