@@ -5,6 +5,7 @@ use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use serde_json::{Map, Value, json};
+use tokio::runtime::Builder;
 
 use super::services::{Adjustments, listen_outcome};
 use super::{DeepgramCall, failure, relay_answer};
@@ -28,9 +29,7 @@ pub(super) fn deepgram_answer(call: &DeepgramCall) -> Result<Value, Box<HelperEr
     let kwargs = PassThroughLoggingKwargs {
         entries: call.kwargs.clone(),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .map_err(failure)?;
+    let runtime = Builder::new_current_thread().build().map_err(failure)?;
     let listen = runtime.block_on(listen_outcome(
         &call.catalog,
         &adjustments,

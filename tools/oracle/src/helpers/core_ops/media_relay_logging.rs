@@ -135,7 +135,7 @@ fn kwargs_view(kwargs: &PassThroughLoggingKwargs, cost: Option<Decimal>) -> Valu
     }
     view.insert(
         "response_cost".to_owned(),
-        json!(cost.map(|cost| cost.normalize().to_string())),
+        json!(cost.map(|value| value.normalize().to_string())),
     );
     Value::Object(view)
 }

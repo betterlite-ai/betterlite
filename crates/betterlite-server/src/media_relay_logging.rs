@@ -8,7 +8,7 @@ use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
 pub(crate) fn write_spend(logging_obj: &StreamLoggingObject, spend: &MediaSpend) {
     let entries = spend.entries();
     logging_obj.edit(&mut |state| {
-        state.model = spend.model.clone();
+        state.model.clone_from(&spend.model);
         for (key, value) in &entries {
             state.model_call_details.insert(key.clone(), value.clone());
         }
