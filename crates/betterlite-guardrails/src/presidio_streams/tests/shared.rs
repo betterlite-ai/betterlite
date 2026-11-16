@@ -94,9 +94,9 @@ fn response(text: &str) -> ChatModelResponse {
 }
 
 fn tool_response(arguments: &str) -> ChatModelResponse {
-    let arguments = serde_json::to_string(arguments).unwrap();
+    let encoded = serde_json::to_string(arguments).unwrap();
     let message = format!(
-        r#"{{"choices":[{{"message":{{"role":"assistant","tool_calls":[{{"id":"t1","type":"function","function":{{"name":"lookup","arguments":{arguments}}}}}]}}}}]}}"#
+        r#"{{"choices":[{{"message":{{"role":"assistant","tool_calls":[{{"id":"t1","type":"function","function":{{"name":"lookup","arguments":{encoded}}}}}]}}}}]}}"#
     );
     serde_json::from_str(&message).unwrap()
 }
