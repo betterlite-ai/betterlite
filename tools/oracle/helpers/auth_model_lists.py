@@ -157,7 +157,7 @@ def grants(call: GrantsInput) -> list[str]:
 
 
 def complete_model_list(call: CompleteModelListInput) -> list[str]:
-    model_checks.get_valid_models = Catalog(call["catalog"])  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L16
+    model_checks.get_valid_models = Catalog(call["catalog"])  # type: ignore[attr-defined,assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py#L16
     credentials: list[CredentialItem] = []
     for entry in call["credentials"]:
         row: dict[str, JsonValue] = {
@@ -165,7 +165,7 @@ def complete_model_list(call: CompleteModelListInput) -> list[str]:
             "credential_info": {},
             "credential_values": dict(entry["credential_values"]),
         }
-        credentials.append(CredentialItem.model_validate(row))
+        credentials.append(CredentialItem.model_validate(row))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/credentials.py#L18
     litellm.credential_list = credentials
     return get_complete_model_list(
         key_models=call["key_models"],
