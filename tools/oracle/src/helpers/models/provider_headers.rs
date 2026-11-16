@@ -1,6 +1,7 @@
 use betterlite_models::headers::provider_specific::{
     ProviderSpecificHeader, provider_specific_headers,
 };
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -14,10 +15,10 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         let headers =
             provider_specific_headers(Some(&input.entries), input.custom_llm_provider.as_deref());
         Ok(json!(headers))

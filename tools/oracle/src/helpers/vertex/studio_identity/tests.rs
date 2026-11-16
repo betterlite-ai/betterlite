@@ -5,12 +5,13 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/studio-identity")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -19,7 +20,7 @@ fn run_case(file: &str) -> Value {
 
 #[test]
 fn helper_seeds_select_studio_identity() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -40,7 +41,7 @@ fn helper_seeds_select_studio_identity() {
 
 #[test]
 fn oracle_google_key_precedes_gemini() {
-    let result = run_case("google-key-first.yaml");
+    let result = run_case_file("google-key-first.yaml");
     let call = &result["calls"][0];
     assert_eq!(call["api_key"], "google-key");
     assert_eq!(call["env_key"], "google-key");
@@ -52,7 +53,7 @@ fn oracle_google_key_precedes_gemini() {
 
 #[test]
 fn oracle_request_key_precedes_the_environment() {
-    let result = run_case("request-key-first.yaml");
+    let result = run_case_file("request-key-first.yaml");
     let call = &result["calls"][0];
     assert_eq!(call["api_key"], "request-key");
     assert_eq!(call["env_key"], "google-key");
@@ -61,7 +62,7 @@ fn oracle_request_key_precedes_the_environment() {
 
 #[test]
 fn oracle_native_headers_merge_in_order() {
-    let result = run_case("native-header-override.yaml");
+    let result = run_case_file("native-header-override.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["headers"],
@@ -94,7 +95,7 @@ fn oracle_native_headers_merge_in_order() {
 
 #[test]
 fn oracle_base_defaults_to_the_generative_language_host() {
-    let result = run_case("base-default.yaml");
+    let result = run_case_file("base-default.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["api_base"],
@@ -106,7 +107,7 @@ fn oracle_base_defaults_to_the_generative_language_host() {
 
 #[test]
 fn oracle_repeated_prefixes_are_replaced() {
-    let result = run_case("repeated-prefix.yaml");
+    let result = run_case_file("repeated-prefix.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(calls[0]["base_model"], "gemini-2.0-flash");
     assert_eq!(
@@ -121,7 +122,7 @@ fn oracle_repeated_prefixes_are_replaced() {
 
 #[test]
 fn oracle_missing_key_leaves_no_auth_header() {
-    let result = run_case("missing-key.yaml");
+    let result = run_case_file("missing-key.yaml");
     let call = &result["calls"][0];
     assert_eq!(call["api_key"], Value::Null);
     assert_eq!(call["env_key"], Value::Null);

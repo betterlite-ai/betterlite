@@ -1,0 +1,25 @@
+kind: helper
+name: policy-update-request-partial
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyUpdateRequest
+    value:
+      policy_name: renamed-policy
+      inherit: baseline-policy
+      description: Updated description
+      guardrails_add: [phi]
+      guardrails_remove: [pii]
+      condition:
+        model: gpt-4
+      pipeline:
+        mode: pre_call
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyUpdateRequest
+      value: {}
+env: {}
+compare: {ignore: []}

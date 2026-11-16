@@ -1,0 +1,7 @@
+# retrieval returns null when all three dates miss
+kind: helper
+name: gcs-bucket-logging-payload-retrieval-returns-none
+call:
+  b3998: {"bucket": "logs-bucket", "request_id": "req-1", "start_time": 1715947200, "replies": [{"status": 404, "body": ""}, {"status": 404, "body": ""}, {"status": 404, "body": ""}], "steps": [{"do": "retrieve"}]}
+env: {}
+compare: {ignore: []}

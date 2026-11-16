@@ -1,5 +1,4 @@
 mod rest;
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_config::spend_storage::{load_spend_storage_policy, runtime_max_prompt_length};
 use betterlite_logging::spend_bodies::SpendStoragePolicy;
 use betterlite_logging::spend_bodies::messages::storage_messages;
@@ -7,6 +6,8 @@ use betterlite_logging::spend_bodies::request::{RequestKwargs, storage_request_b
 use betterlite_logging::spend_bodies::response::{ResponseKwargs, storage_response};
 use betterlite_logging::spend_sanitize::SpendSanitizePolicy;
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;

@@ -1,8 +1,9 @@
 use serde_json::Value;
 
-use crate::case::Ignore;
-use crate::compare::{Difference, first_difference, remove_pointer};
 use crate::oracle_comparison_contracts::{self, ExpectedDifference, NumericRule};
+use betterlite_oracle_runner::case::Ignore;
+use betterlite_oracle_runner::compare::Difference;
+use betterlite_oracle_runner::compare::value::{first_difference, remove_pointer};
 
 pub(crate) struct Documents<'input> {
     pub(crate) reference: &'input Value,

@@ -11,7 +11,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -55,7 +56,7 @@ struct EmbeddingOptions {
     options: IndexMap<String, Json>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

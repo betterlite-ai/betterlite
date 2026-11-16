@@ -8,10 +8,11 @@ use betterlite_db::database_refresh_loop::schedule::{
 use betterlite_db::database_tokens::expiry::{ExpiryError, TokenAuthKind};
 use chrono::NaiveDateTime;
 use serde::Deserialize;
-use tracing::{Event, Subscriber};
+use tracing::{Event, Subscriber, subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -131,7 +132,7 @@ where
 {
     let levels = Levels::default();
     let subscriber = tracing_subscriber::registry().with(levels.clone());
-    let value = tracing::subscriber::with_default(subscriber, run);
+    let value = subscriber::with_default(subscriber, run);
     let captured = levels
         .0
         .lock()

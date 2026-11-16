@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::loader::ConfigError;
 use betterlite_config::replicate_price::load_replicate_gpu_price;
 use betterlite_core::cost::special::error::ReplicateError;
 use betterlite_core::cost::special::replicate::replicate_charge;
 use betterlite_models::decisions::Json;
 use betterlite_models::protocol_cost::error::ProtocolCostError;
 use betterlite_models::protocol_cost::{A2aCall, A2aUsage, McpCall, ProtocolCall, protocol_charge};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
@@ -65,13 +68,13 @@ enum Failure {
     #[error("invalid total_time: {0}")]
     TotalTime(String),
     #[error(transparent)]
-    Price(#[from] betterlite_config::loader::ConfigError),
+    Price(#[from] ConfigError),
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let cost = match input {
             Input::A2a { a2a: None } | Input::Mcp { mcp: None } => Ok(Decimal::ZERO),
             Input::A2a { a2a: Some(agent) } => {
@@ -86,7 +89,7 @@ impl crate::helpers::Helper for Op {
             .map_err(Failure::from),
             Input::Replicate { replicate_charge } => replicate_cost(replicate_charge),
         }
-        .map_err(Box::<crate::helpers::HelperError>::from)?;
+        .map_err(Box::<HelperError>::from)?;
         let mut output = json!({"cost": cost});
         canonical_numbers(&mut output);
         Ok(output)
@@ -157,9 +160,9 @@ fn canonical_numbers(value: &mut serde_json::Value) {
     }
 }
 
-impl From<Failure> for Box<crate::helpers::HelperError> {
+impl From<Failure> for Box<HelperError> {
     fn from(failure: Failure) -> Self {
-        Self::new(crate::helpers::HelperError {
+        Self::new(HelperError {
             class: "ValueError".to_owned(),
             status: None,
             error_type: None,

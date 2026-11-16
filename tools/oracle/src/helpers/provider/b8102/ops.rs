@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use super::script::{
     HeadersCase, InfoCase, ReplyCase, RequestCase, UrlCase, helper_error, runtime,
 };
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 struct WordsCounter;
 

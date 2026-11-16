@@ -1,0 +1,24 @@
+kind: helper
+name: policy-db-response-version-defaults
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyDBResponse
+    value:
+      policy_id: p1
+      policy_name: baseline
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyDBResponse
+      value:
+        policy_id: p2
+        policy_name: healthcare
+        version_number: 2
+        version_status: published
+        parent_version_id: p1
+        is_latest: false
+env: {}
+compare: {ignore: []}

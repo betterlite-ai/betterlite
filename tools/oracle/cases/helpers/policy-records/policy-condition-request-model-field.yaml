@@ -1,0 +1,17 @@
+kind: helper
+name: policy-condition-request-model-field
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyConditionRequest
+    value:
+      model: "gpt-4.*"
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyConditionRequest
+      value: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,32 @@
+kind: helper
+name: attachment-db-response-location
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyAttachmentDBResponse
+    value:
+      attachment_id: a1
+      policy_name: baseline
+      scope: "*"
+      teams: [healthcare-team]
+      keys: []
+      models: [gpt-4]
+      tags: [prod]
+      priority: -1
+      default: true
+      created_at: "2024-01-01T00:00:00Z"
+      updated_at: "2024-01-02T00:00:00Z"
+      created_by: alice
+      updated_by: bob
+      definition_location: config
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyAttachmentDBResponse
+      value:
+        attachment_id: a2
+        policy_name: baseline
+env: {}
+compare: {ignore: []}

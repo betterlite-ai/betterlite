@@ -93,7 +93,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(token_endpoint)'
     - id: refresh-coordinator-tests
       why: the refresh coordinator or distributed lock tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^(distributed_lock|refresh_coordinator)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::(distributed_lock|refresh_coordinator)/)'
     - id: token-endpoint-coordination-oracle
       why: oracle cases for distributed refresh or token endpoint calls fail
       run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/outbound-credentials

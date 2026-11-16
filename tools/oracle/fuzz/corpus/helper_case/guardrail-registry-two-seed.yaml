@@ -1,0 +1,5 @@
+kind: helper
+name: guardrail-registry-two-seed
+call: {b3682: {function: stable_guardrail_id, guardrail_name: invoice-guard, existing_ids: [6eb2ab9d-f705-50a3-bf39-86f2e5736288, cbaa94ca-f8e2-50e5-92eb-95a54f00f02c]}}
+env: {}
+compare: {ignore: []}

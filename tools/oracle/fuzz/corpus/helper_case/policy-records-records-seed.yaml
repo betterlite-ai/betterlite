@@ -1,0 +1,5 @@
+kind: helper
+name: policy-records-records-seed
+call: {"b3242": {group: policy_records_records, operation: validate, model: PolicyDBResponse, value: {policy_id: p1, policy_name: baseline}}}
+env: {}
+compare: {ignore: []}

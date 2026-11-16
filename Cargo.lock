@@ -1141,11 +1141,16 @@ dependencies = [
  "betterlite-context",
  "betterlite-db",
  "betterlite-error",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-paths",
+ "betterlite-postgres-fixture",
  "betterlite-redis",
  "betterlite-secrets",
  "chrono",
+ "clap",
+ "deadpool-postgres",
+ "futures-util",
  "hex",
  "indexmap 2.14.2",
  "lru",
@@ -1157,12 +1162,14 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "sha2 0.11.1",
  "speedate",
  "strum",
  "thiserror",
  "tokio",
+ "tokio-postgres",
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",
@@ -1188,6 +1195,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
@@ -1607,12 +1615,16 @@ dependencies = [
  "betterlite-openai",
  "betterlite-paths",
  "betterlite-policy",
+ "betterlite-postgres-fixture",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-redis",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "caseless",
  "chrono",
+ "clap",
+ "deadpool-postgres",
  "futures-util",
  "hex",
  "http 1.5.0",
@@ -1732,6 +1744,7 @@ dependencies = [
  "tokio-postgres",
  "tokio-postgres-rustls-improved",
  "tokio-rustls",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",
@@ -1906,12 +1919,14 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
+ "betterlite-db",
  "betterlite-env",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-redis",
  "chrono",
  "fancy-regex 0.19.2",
  "futures-util",
@@ -1943,6 +1958,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-postgres",
  "tokio-rustls",
  "tokio-tungstenite",
  "tokio-util",
@@ -2170,6 +2186,7 @@ dependencies = [
  "deadpool-postgres",
  "flate2",
  "futures-util",
+ "google-cloud-auth",
  "h2",
  "hex",
  "hmac 0.13.0",
@@ -2449,88 +2466,89 @@ name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "aws-credential-types",
- "aws-smithy-async",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "aws-types",
  "axum",
- "base64 0.23.1",
  "betterlite",
  "betterlite-a2a",
  "betterlite-anthropic",
- "betterlite-auth",
- "betterlite-azure",
- "betterlite-bedrock",
- "betterlite-cache",
  "betterlite-cli",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
- "betterlite-cost",
- "betterlite-db",
  "betterlite-env",
  "betterlite-error",
- "betterlite-foundry",
- "betterlite-guardrails",
- "betterlite-harness",
  "betterlite-http",
- "betterlite-lens",
  "betterlite-logging",
- "betterlite-mcp",
  "betterlite-models",
- "betterlite-ocr",
  "betterlite-openai",
- "betterlite-openapi",
+ "betterlite-oracle-a2a",
+ "betterlite-oracle-anthropic",
+ "betterlite-oracle-auth",
+ "betterlite-oracle-azure",
+ "betterlite-oracle-bedrock",
+ "betterlite-oracle-cache",
+ "betterlite-oracle-cli",
+ "betterlite-oracle-config",
+ "betterlite-oracle-context",
  "betterlite-oracle-core-ops",
+ "betterlite-oracle-cost",
+ "betterlite-oracle-db",
+ "betterlite-oracle-error",
+ "betterlite-oracle-foundry",
+ "betterlite-oracle-guardrails",
+ "betterlite-oracle-harness",
  "betterlite-oracle-helper-api",
+ "betterlite-oracle-http",
+ "betterlite-oracle-lens",
+ "betterlite-oracle-logging",
+ "betterlite-oracle-mcp",
+ "betterlite-oracle-models",
+ "betterlite-oracle-ocr",
+ "betterlite-oracle-openai",
+ "betterlite-oracle-openapi",
+ "betterlite-oracle-paths",
+ "betterlite-oracle-policy",
+ "betterlite-oracle-prometheus",
+ "betterlite-oracle-prompts",
+ "betterlite-oracle-provider",
+ "betterlite-oracle-proxy",
+ "betterlite-oracle-pyhost",
+ "betterlite-oracle-rate-limit",
  "betterlite-oracle-redact",
+ "betterlite-oracle-redis",
+ "betterlite-oracle-reporting",
+ "betterlite-oracle-roi",
+ "betterlite-oracle-runner",
+ "betterlite-oracle-sdk",
+ "betterlite-oracle-secret-store",
+ "betterlite-oracle-secrets",
  "betterlite-oracle-server",
- "betterlite-paths",
- "betterlite-policy",
+ "betterlite-oracle-streaming",
+ "betterlite-oracle-tokenizer",
+ "betterlite-oracle-vertex",
+ "betterlite-oracle-websearch",
  "betterlite-postgres-fixture",
- "betterlite-prompts",
  "betterlite-provider",
- "betterlite-proxy",
- "betterlite-pyhost",
- "betterlite-rag",
- "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
- "betterlite-roi",
  "betterlite-router",
  "betterlite-sdk",
- "betterlite-secret-managers",
- "betterlite-secrets",
- "betterlite-semantic",
  "betterlite-server",
- "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
- "betterlite-vertex",
  "betterlite-websearch",
  "bytes",
  "chrono",
  "clap",
  "cookie_store",
- "flate2",
  "futures-util",
- "google-cloud-speech-v2",
- "google-cloud-wkt",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
- "opentelemetry",
- "opentelemetry-http",
- "opentelemetry_sdk",
  "percent-encoding",
- "pyo3",
- "quick-xml",
  "rand 0.10.3",
  "redis",
  "reqwest",
- "rmcp",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -2539,19 +2557,273 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
- "soft-canonicalize",
  "tempfile",
  "thiserror",
  "tl",
  "tokio",
  "tokio-postgres",
  "tokio-tungstenite",
- "tokio-util",
  "tower",
  "tracing",
  "tracing-subscriber",
- "ulid",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-a2a"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-a2a",
+ "betterlite-bedrock",
+ "betterlite-core",
+ "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-redact",
+ "betterlite-server",
+ "betterlite-tokenizer",
+ "chrono",
+ "futures-util",
+ "indexmap 2.14.2",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "serde_with",
+ "thiserror",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-anthropic"
+version = "0.1.0"
+dependencies = [
+ "betterlite-anthropic",
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-http",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-oracle-tokenizer",
+ "betterlite-prompts",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
+ "chrono",
+ "futures-util",
+ "hex",
+ "http 1.5.0",
+ "indexmap 2.14.2",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-auth"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-auth",
+ "betterlite-cache",
+ "betterlite-config",
+ "betterlite-core",
+ "betterlite-db",
+ "betterlite-error",
+ "betterlite-models",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-secrets",
+ "chrono",
+ "hex",
+ "indexmap 2.14.2",
+ "jiff",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "betterlite-oracle-azure"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "betterlite-azure",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-http",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-prompts",
+ "betterlite-redact",
+ "http 1.5.0",
+ "indexmap 2.14.2",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "betterlite-oracle-bedrock"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "base64 0.23.1",
+ "betterlite-anthropic",
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-core",
+ "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-oracle-tokenizer",
+ "betterlite-prompts",
+ "betterlite-provider",
+ "betterlite-rag",
+ "betterlite-redact",
+ "betterlite-redis",
+ "betterlite-secret-managers",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
+ "bytes",
+ "chrono",
+ "futures-util",
+ "hex",
+ "http 1.5.0",
+ "indexmap 2.14.2",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-cache"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-cache",
+ "betterlite-context",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-oracle-helper-api",
+ "betterlite-redact",
+ "betterlite-redis",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "betterlite-oracle-cli"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-cli",
+ "betterlite-config",
+ "betterlite-logging",
+ "betterlite-oracle-helper-api",
+ "betterlite-secrets",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "betterlite-oracle-config"
+version = "0.1.0"
+dependencies = [
+ "aws-credential-types",
+ "betterlite-config",
+ "betterlite-db",
+ "betterlite-logging",
+ "betterlite-oracle-helper-api",
+ "chrono",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "betterlite-oracle-context"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-a2a",
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-redact",
+ "betterlite-websearch",
+ "indexmap 2.14.2",
+ "rstest",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 
@@ -2576,8 +2848,8 @@ dependencies = [
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
- "betterlite-oracle",
  "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
  "betterlite-policy",
  "betterlite-prompts",
  "betterlite-provider",
@@ -2609,11 +2881,90 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-oracle-cost"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-cost",
+ "betterlite-oracle-helper-api",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "betterlite-oracle-db"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-db",
+ "betterlite-env",
+ "betterlite-lens",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-redact",
+ "betterlite-secrets",
+ "chrono",
+ "futures-util",
+ "hex",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-error"
+version = "0.1.0"
+dependencies = [
+ "betterlite-error",
+ "betterlite-oracle-helper-api",
+ "betterlite-redact",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "betterlite-oracle-foundry"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-azure",
+ "betterlite-config",
+ "betterlite-core",
+ "betterlite-foundry",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-prompts",
+ "betterlite-secret-managers",
+ "chrono",
+ "jiff",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "betterlite-oracle-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-logging",
  "betterlite-oracle",
+ "betterlite-oracle-runner",
  "chrono",
  "libfuzzer-sys",
  "quick-xml",
@@ -2621,6 +2972,52 @@ dependencies = [
  "serde-saphyr",
  "thiserror",
  "tl",
+]
+
+[[package]]
+name = "betterlite-oracle-guardrails"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-core",
+ "betterlite-guardrails",
+ "betterlite-http",
+ "betterlite-models",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-prompts",
+ "betterlite-server",
+ "chrono",
+ "futures-util",
+ "indexmap 2.14.2",
+ "reqwest",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "ulid",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-harness"
+version = "0.1.0"
+dependencies = [
+ "betterlite-harness",
+ "betterlite-oracle-helper-api",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2633,15 +3030,484 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-oracle-http"
+version = "0.1.0"
+dependencies = [
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "bytes",
+ "http 1.5.0",
+ "reqwest",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-lens"
+version = "0.1.0"
+dependencies = [
+ "betterlite-lens",
+ "betterlite-oracle-helper-api",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "betterlite-oracle-logging"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "betterlite-config",
+ "betterlite-core",
+ "betterlite-error",
+ "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-redact",
+ "betterlite-server",
+ "chrono",
+ "flate2",
+ "http 1.5.0",
+ "indexmap 2.14.2",
+ "jiff",
+ "opentelemetry",
+ "opentelemetry-http",
+ "opentelemetry_sdk",
+ "regex",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "serde_with",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-mcp"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-db",
+ "betterlite-http",
+ "betterlite-mcp",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-prompts",
+ "betterlite-redact",
+ "betterlite-secrets",
+ "betterlite-server",
+ "chrono",
+ "hex",
+ "http 1.5.0",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "betterlite-oracle-models"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-db",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-prompts",
+ "betterlite-provider",
+ "betterlite-server",
+ "betterlite-tokenizer",
+ "chrono",
+ "futures-util",
+ "indexmap 2.14.2",
+ "jiff",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "betterlite-oracle-ocr"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-ocr",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "bytes",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "betterlite-oracle-openai"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-core",
+ "betterlite-error",
+ "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-prompts",
+ "betterlite-provider",
+ "betterlite-redact",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
+ "chrono",
+ "futures-util",
+ "hex",
+ "http 1.5.0",
+ "indexmap 2.14.2",
+ "jiff",
+ "reqwest",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-openapi"
+version = "0.1.0"
+dependencies = [
+ "betterlite-openapi",
+ "betterlite-oracle-helper-api",
+ "betterlite-server",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "betterlite-oracle-paths"
+version = "0.1.0"
+dependencies = [
+ "betterlite-oracle-helper-api",
+ "betterlite-paths",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "betterlite-oracle-policy"
+version = "0.1.0"
+dependencies = [
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-policy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "betterlite-oracle-prometheus"
+version = "0.1.0"
+dependencies = [
+ "betterlite-oracle-helper-api",
+ "serde_json",
+]
+
+[[package]]
+name = "betterlite-oracle-prompts"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-http",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-prompts",
+ "betterlite-provider",
+ "chrono",
+ "futures-util",
+ "http 1.5.0",
+ "indexmap 2.14.2",
+ "reqwest",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-provider"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-anthropic",
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-core",
+ "betterlite-http",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-prompts",
+ "betterlite-provider",
+ "betterlite-secret-managers",
+ "betterlite-tokenizer",
+ "betterlite-vertex",
+ "chrono",
+ "futures-util",
+ "hex",
+ "http 1.5.0",
+ "indexmap 2.14.2",
+ "jiff",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-proxy"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-oracle-helper-api",
+ "betterlite-proxy",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "betterlite-oracle-pyhost"
+version = "0.1.0"
+dependencies = [
+ "betterlite-oracle-helper-api",
+ "betterlite-pyhost",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "betterlite-oracle-rate-limit"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-auth",
+ "betterlite-config",
+ "betterlite-db",
+ "betterlite-oracle-helper-api",
+ "betterlite-rate-limit",
+ "betterlite-redis",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "betterlite-oracle-redact"
 version = "0.1.0"
 dependencies = [
- "betterlite-oracle",
  "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
  "betterlite-redact",
  "rstest",
  "serde",
  "serde-saphyr",
+ "serde_json",
+]
+
+[[package]]
+name = "betterlite-oracle-redis"
+version = "0.1.0"
+dependencies = [
+ "betterlite-oracle-helper-api",
+ "betterlite-redis",
+ "redis",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "betterlite-oracle-reporting"
+version = "0.1.0"
+dependencies = [
+ "betterlite-oracle-helper-api",
+ "serde_json",
+]
+
+[[package]]
+name = "betterlite-oracle-roi"
+version = "0.1.0"
+dependencies = [
+ "betterlite-models",
+ "betterlite-oracle-helper-api",
+ "betterlite-roi",
+ "betterlite-server",
+ "indexmap 2.14.2",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "betterlite-oracle-runner"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "betterlite-oracle-helper-api",
+ "futures-util",
+ "hex",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+ "tokio",
+ "ulid",
+]
+
+[[package]]
+name = "betterlite-oracle-sdk"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-config",
+ "betterlite-core",
+ "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-oracle-helper-api",
+ "betterlite-redact",
+ "betterlite-sdk",
+ "chrono",
+ "indexmap 2.14.2",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "betterlite-oracle-secret-store"
+version = "0.1.0"
+dependencies = [
+ "aws-credential-types",
+ "betterlite-context",
+ "betterlite-oracle-helper-api",
+ "betterlite-secret-managers",
+ "http 1.5.0",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-secrets"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-oracle-helper-api",
+ "betterlite-secrets",
+ "hex",
+ "rstest",
+ "secrecy",
+ "serde",
  "serde_json",
 ]
 
@@ -2667,8 +3533,8 @@ dependencies = [
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-ocr",
- "betterlite-oracle",
  "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
  "betterlite-redact",
  "betterlite-roi",
  "betterlite-semantic",
@@ -2700,6 +3566,97 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-oracle-streaming"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-context",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-redact",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-tokenizer"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-models",
+ "betterlite-oracle-helper-api",
+ "betterlite-prompts",
+ "betterlite-tokenizer",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "betterlite-oracle-vertex"
+version = "0.1.0"
+dependencies = [
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-core",
+ "betterlite-http",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-oracle-runner",
+ "betterlite-prompts",
+ "betterlite-redact",
+ "betterlite-tokenizer",
+ "betterlite-vertex",
+ "futures-util",
+ "google-cloud-speech-v2",
+ "google-cloud-wkt",
+ "http 1.5.0",
+ "indexmap 2.14.2",
+ "jiff",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-websearch"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-context",
+ "betterlite-error",
+ "betterlite-openai",
+ "betterlite-oracle-helper-api",
+ "betterlite-prompts",
+ "betterlite-websearch",
+ "indexmap 2.14.2",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "betterlite-paths"
 version = "0.1.0"
 dependencies = [
@@ -2723,6 +3680,7 @@ name = "betterlite-policy"
 version = "0.1.0"
 dependencies = [
  "betterlite-auth",
+ "chrono",
  "fancy-regex 0.19.2",
  "indexmap 2.14.2",
  "mutants",
@@ -2865,6 +3823,7 @@ dependencies = [
  "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "betterlite-vertex",
  "chrono",
  "futures-util",
  "hex",
@@ -3016,9 +3975,11 @@ name = "betterlite-rate-limit"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
+ "betterlite-db",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
@@ -3319,8 +4280,11 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-credential-types",
+ "aws-smithy-async",
  "aws-smithy-eventstream",
+ "aws-smithy-http-client",
  "aws-smithy-types",
+ "aws-types",
  "axum",
  "base64 0.23.1",
  "betterlite-a2a",
@@ -3372,15 +4336,19 @@ dependencies = [
  "icu_properties",
  "indexmap 2.14.2",
  "jiff",
+ "jsonwebtoken",
  "multipart-rs",
  "mutants",
  "num-traits",
  "opentelemetry",
  "opentelemetry_sdk",
+ "pem",
  "percent-encoding",
  "phf",
+ "pkcs8",
  "rand 0.10.3",
  "rcgen",
+ "redis",
  "regex",
  "rmcp",
  "rquickjs",
@@ -3390,6 +4358,7 @@ dependencies = [
  "scrypt 0.11.0",
  "secrecy",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "serde_path_to_error",
  "serde_with",
@@ -10642,6 +11611,7 @@ dependencies = [
  "getrandom 0.4.3",
  "js-sys",
  "serde_core",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 
