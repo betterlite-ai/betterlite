@@ -78,6 +78,7 @@ fn a_readable_duration_is_a_float(#[case] duration: Json, #[case] seconds: f64) 
 }
 
 #[rstest]
+#[case::true_flag(Json::Bool(true))]
 #[case::words(text("six"))]
 #[case::list(Json::List(vec![number(6)]))]
 #[case::object(Json::Object(object([("seconds", number(6))])))]
