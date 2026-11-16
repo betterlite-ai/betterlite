@@ -14,7 +14,9 @@ use crate::supabase::supabase_logging::callback::SupabaseCallback;
 use crate::supabase::supabase_logging::settings::SupabaseSettings;
 
 pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
-    Ok(build_callback(inputs)?)
+    let logger = build_callback(inputs)?;
+    let callback: Arc<dyn CallbackLogger> = logger;
+    Ok(callback)
 }
 
 // The same callback is the terminal logger and the pre-call InputEventSink for input_callback.

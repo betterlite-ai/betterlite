@@ -100,10 +100,10 @@ fn terminal_row<'row>(row: &RequestRow<'row>, response_time: Decimal) -> Option<
 
 // LiteLLM reads response_obj["choices"][0]["message"]["content"] and lets a missing one raise into the catch
 fn first_content(choices: &Json) -> Option<&Json> {
-    let Json::List(choices) = choices else {
+    let Json::List(entries) = choices else {
         return None;
     };
-    let Json::Object(first) = choices.first()? else {
+    let Json::Object(first) = entries.first()? else {
         return None;
     };
     let Json::Object(message) = first.get("message")? else {

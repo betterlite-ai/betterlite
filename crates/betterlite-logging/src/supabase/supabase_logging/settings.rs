@@ -30,21 +30,21 @@ impl SupabaseSettings {
     pub fn from_environment(
         environment: &dyn EnvironmentLookup,
     ) -> Result<Self, SupabaseSettingsError> {
-        let url = environment
+        let url_value = environment
             .lookup(URL_VARIABLE)
             .filter(|value| !value.is_empty());
-        let key = environment
+        let key_value = environment
             .lookup(KEY_VARIABLE)
             .filter(|value| !value.is_empty());
-        let (Some(url), Some(key)) = (url, key) else {
+        let (Some(url), Some(key)) = (url_value, key_value) else {
             return Err(SupabaseSettingsError::MissingCredentials);
         };
-        let url = Url::parse(&url).map_err(SupabaseSettingsError::Url)?;
-        if !matches!(url.scheme(), "http" | "https") {
+        let parsed_url = Url::parse(&url).map_err(SupabaseSettingsError::Url)?;
+        if !matches!(parsed_url.scheme(), "http" | "https") {
             return Err(SupabaseSettingsError::Scheme);
         }
         Ok(Self {
-            url,
+            url: parsed_url,
             key: SecretString::from(key),
             table_name: DEFAULT_TABLE_NAME.to_owned(),
         })

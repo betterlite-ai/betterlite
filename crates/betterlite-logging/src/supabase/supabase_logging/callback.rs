@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -39,7 +40,7 @@ impl<D: Delivery + 'static> SupabaseCallback<D> {
 
 #[async_trait]
 impl<D: Delivery + 'static> CallbackLogger for SupabaseCallback<D> {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "supabase"
     }
 
@@ -92,55 +93,53 @@ async fn deliver_row<D>(
         tracing::warn!("the supabase failure event carries no call id");
         return;
     };
-    let failure_response;
-    let response_obj = match outcome {
-        Outcome::Success => {
-            // litellm.completion_cost raises for a model with no price entry, and log_event's catch writes no row
-            if payload.cost_failure_info.is_some() {
-                tracing::warn!(
-                    "the supabase success row is skipped, its cost could not be calculated"
-                );
-                return;
-            }
-            let Some(response) = payload.response.as_ref() else {
-                return;
-            };
-            response
-        }
-        Outcome::Failure => {
-            let Some(error) = payload.error_str.as_ref() else {
-                return;
-            };
-            failure_response = Json::Object(IndexMap::from([
-                ("model".to_owned(), Json::Text(payload.model.clone())),
-                ("error".to_owned(), Json::Text(error.clone())),
-            ]));
-            &failure_response
-        }
+    let Some(response_obj) = response_object(payload, outcome) else {
+        return;
     };
-    post_row(logger, payload, &call_id, response_obj, outcome).await;
-}
-
-async fn post_row<D>(
-    logger: &SupabaseLogger<D>,
-    payload: &StandardLoggingPayload,
-    call_id: &str,
-    response_obj: &Json,
-    outcome: Outcome,
-) where
-    D: Delivery,
-{
+    // success defaults the optional_params user; failure keeps model_call_details' user or none
+    let user = match payload.model_parameters.get("user") {
+        Some(Json::Text(text)) => Some(text.as_str()),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        | None => None,
+    };
+    let end_user = match outcome {
+        Outcome::Success => Some(user.unwrap_or(DEFAULT_END_USER)),
+        Outcome::Failure => user,
+    };
     let row = RequestRow {
         messages: payload.messages.as_ref(),
-        end_user: request_user(payload, outcome),
-        response_obj,
+        end_user,
+        response_obj: response_obj.as_ref(),
         start_time: payload.start_time,
         end_time: payload.end_time,
-        litellm_call_id: call_id,
+        litellm_call_id: &call_id,
         total_cost: payload.response_cost,
     };
     if let Err(error) = logger.log_event(&row).await {
         tracing::warn!(%error, "the supabase request row could not be written");
+    }
+}
+
+// LiteLLM hands log_event None as the result at the failure dispatch, so this object stands in for it
+fn response_object(payload: &StandardLoggingPayload, outcome: Outcome) -> Option<Cow<'_, Json>> {
+    match outcome {
+        Outcome::Success => {
+            // completion_cost raises for a model with no price entry, and log_event's catch then writes no row
+            if payload.cost_failure_info.is_some() {
+                tracing::warn!(
+                    "the supabase success row is skipped, its cost could not be calculated"
+                );
+                return None;
+            }
+            Some(Cow::Borrowed(payload.response.as_ref()?))
+        }
+        Outcome::Failure => {
+            let error = payload.error_str.as_ref()?;
+            Some(Cow::Owned(Json::Object(IndexMap::from([
+                ("model".to_owned(), Json::Text(payload.model.clone())),
+                ("error".to_owned(), Json::Text(error.clone())),
+            ]))))
+        }
     }
 }
 
@@ -150,19 +149,6 @@ fn call_id(payload: &StandardLoggingPayload, outcome: Outcome) -> Option<String>
         (Some(call_id), _) => Some(call_id),
         (None, Outcome::Success) => Some(Uuid::new_v4().to_string()),
         (None, Outcome::Failure) => None,
-    }
-}
-
-// The success site reads optional_params.get("user", "default"), the failure site model_call_details["user"], None without one
-fn request_user(payload: &StandardLoggingPayload, outcome: Outcome) -> Option<&str> {
-    let user = match payload.model_parameters.get("user") {
-        Some(Json::Text(user)) => Some(user.as_str()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
-    };
-    match outcome {
-        Outcome::Success => Some(user.unwrap_or(DEFAULT_END_USER)),
-        Outcome::Failure => user,
     }
 }
 
