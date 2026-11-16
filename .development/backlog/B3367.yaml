@@ -1,14 +1,14 @@
 id: B3367
 milestone: M5 api families
 title: Explicit container file upload
-status: todo
+status: done
 depends_on: [B3360, B3361, B3363, B247, B185]
 file: tasks/B3367-container-file-upload.yaml
 covers:
   - "litellm/containers/main.py"
 parent: B094
 split_from: B094
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2211
