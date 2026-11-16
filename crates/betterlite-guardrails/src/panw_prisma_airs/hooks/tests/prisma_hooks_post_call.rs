@@ -549,3 +549,19 @@ async fn a_suppressed_guardrail_leaves_the_response_untouched() {
     assert_eq!(support::text_content(message), "answer");
     assert!(server.body_texts().await.is_empty());
 }
+
+#[tokio::test]
+async fn a_second_post_call_is_deduplicated() {
+    let server = support::serve(StatusCode::OK, ALLOW).await;
+    let guardrail = support::blocking(&server.base);
+    let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
+    let mut model_response = response(ANSWER);
+    support::run_post_call(&guardrail, &mut request_data, &mut model_response)
+        .await
+        .expect("first");
+    let mut second_response = response(ANSWER);
+    support::run_post_call(&guardrail, &mut request_data, &mut second_response)
+        .await
+        .expect("second");
+    assert_eq!(server.body_texts().await.len(), 1);
+}
