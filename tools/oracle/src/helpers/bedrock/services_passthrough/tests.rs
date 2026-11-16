@@ -26,7 +26,7 @@ fn seed_input(source: &str) -> Input {
     let case: HelperCase = serde_saphyr::from_str(source).unwrap();
     validate_helper(Path::new("<helper>"), &case).unwrap();
     assert_eq!(case.call.operation, "bedrock_services_passthrough");
-    serde_json::from_value(case.call.input.clone()).unwrap()
+    serde_json::from_value(case.call.input).unwrap()
 }
 
 #[test]

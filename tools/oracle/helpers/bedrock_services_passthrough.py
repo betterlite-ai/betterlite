@@ -142,7 +142,7 @@ def params_of(
 
 def url_run(run: UrlRun) -> JsonValue:
     request_data: dict[str, JsonValue] = {}
-    url, endpoint_url = CONFIG.get_complete_url(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L171-L178
+    url, endpoint_url = CONFIG.get_complete_url(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L171-L178
         api_base=run.get("api_base"),
         api_key=None,
         model=run["model"],
@@ -155,7 +155,7 @@ def url_run(run: UrlRun) -> JsonValue:
     return {
         "url": str(url),
         "endpoint_url": endpoint_url,
-        "streaming": CONFIG.is_streaming_request(run["endpoint"], request_data),  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L136-L137
+        "streaming": CONFIG.is_streaming_request(run["endpoint"], request_data),  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L136-L137
     }
 
 
@@ -178,7 +178,7 @@ def reply_run(run: ReplyRun) -> JsonValue:
     request_data: dict[str, JsonValue] = {}
     response = httpx.Response(200, content=run["body"].encode())
     try:
-        logged = CONFIG.logging_non_streaming_response(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L234-L275
+        logged = CONFIG.logging_non_streaming_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L234-L275
             model="m",
             custom_llm_provider=run["provider"],
             httpx_response=response,

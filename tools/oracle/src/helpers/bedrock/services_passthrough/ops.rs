@@ -16,12 +16,10 @@ use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::error::ProviderError;
 use betterlite_openai::openai_base_config::Object;
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughLogging, PassthroughSigning, PassthroughTarget, PassthroughUrlRequest,
     RelayCallType, RelayedResponse,
-};
-use betterlite_openai::passthrough::transformation::{
-    BasePassthroughConfig as _, PassthroughStreamCollector as _,
 };
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -30,6 +28,7 @@ use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use secrecy::SecretString;
 use serde_json::{Value, json};
+use std::iter::once;
 use std::time::SystemTime;
 use uuid::Uuid;
 const CLOCK: CollectorClock = CollectorClock {
@@ -97,16 +96,33 @@ impl StreamLogAssembler for ViewAssembler {
         serde_json::from_str(&view.to_string()).ok()
     }
 }
-const fn plan(
-    environment: PassthroughEnvironment,
-    identity: PassthroughIdentity,
-) -> BedrockPassthroughPlan<'static> {
+fn plan_for(input: &Input) -> BedrockPassthroughPlan<'static> {
     static SELECTOR: Selector = Selector;
     static TRANSFORM: EchoTransform = EchoTransform;
     static ASSEMBLER: ViewAssembler = ViewAssembler;
+    let (environment, bearer_token) = match input {
+        Input::Url { environment, .. } => (
+            PassthroughEnvironment {
+                region_name: environment.region_name.clone(),
+                region: None,
+                session_region: None,
+                runtime_endpoint: environment.runtime_endpoint.clone(),
+            },
+            None,
+        ),
+        Input::Sign { bearer, .. } => (
+            PassthroughEnvironment::default(),
+            bearer.clone().map(SecretString::from),
+        ),
+        Input::Reply { .. } | Input::Collect { .. } => (PassthroughEnvironment::default(), None),
+    };
     BedrockPassthroughPlan {
         environment,
-        identity,
+        identity: PassthroughIdentity {
+            credentials: None,
+            bearer_token,
+            now: SystemTime::UNIX_EPOCH,
+        },
         selector: &SELECTOR,
         transform: &TRANSFORM,
         assembler: &ASSEMBLER,
@@ -145,9 +161,8 @@ fn url_run(plan: &BedrockPassthroughPlan<'_>, run: &UrlRun) -> HelperResult {
     }))
 }
 fn sign_run(plan: &BedrockPassthroughPlan<'_>, run: &SignRun) -> HelperResult {
-    let params: Object = [("api_key".to_owned(), Value::String("sk-ignored".to_owned()))]
-        .into_iter()
-        .collect();
+    let params: Object =
+        once(("api_key".to_owned(), Value::String("sk-ignored".to_owned()))).collect();
     let context = PassthroughSigning {
         litellm_params: &params,
         request_data: run.data.as_ref(),
@@ -165,7 +180,7 @@ fn sign_run(plan: &BedrockPassthroughPlan<'_>, run: &SignRun) -> HelperResult {
         .collect();
     Ok(json!({ "headers": pairs, "body": text }))
 }
-fn reply_run(plan: &BedrockPassthroughPlan<'_>, run: &ReplyRun) -> HelperResult {
+fn reply_run(plan: &BedrockPassthroughPlan<'_>, run: &ReplyRun) -> Value {
     let target = PassthroughTarget {
         model: "m",
         custom_llm_provider: &run.provider,
@@ -176,7 +191,7 @@ fn reply_run(plan: &BedrockPassthroughPlan<'_>, run: &ReplyRun) -> HelperResult 
         body: run.body.as_bytes(),
     };
     let logged = logged_reply(plan, &target, &response, &Object::new());
-    Ok(json!({ "logged": matches!(logged, Ok(Some(_))), "raised": logged.is_err() }))
+    json!({ "logged": matches!(logged, Ok(Some(_))), "raised": logged.is_err() })
 }
 fn collect_run(plan: &BedrockPassthroughPlan<'_>, run: &CollectRun, stream: &[u8]) -> HelperResult {
     let warning = match decoder_selection(&run.model, &run.endpoint, plan.clock) {
@@ -203,42 +218,18 @@ fn collect_run(plan: &BedrockPassthroughPlan<'_>, run: &CollectRun, stream: &[u8
     }))
 }
 pub(super) fn run(input: &Input) -> HelperResult {
-    let bearer_token = match input {
-        Input::Sign { bearer, .. } => bearer.clone().map(SecretString::from),
-        Input::Url { .. } | Input::Reply { .. } | Input::Collect { .. } => None,
-    };
-    let identity = PassthroughIdentity {
-        credentials: None,
-        bearer_token,
-        now: SystemTime::UNIX_EPOCH,
-    };
+    let plan = plan_for(input);
     let values = match input {
-        Input::Url { environment, runs } => {
-            let settings = PassthroughEnvironment {
-                region_name: environment.region_name.clone(),
-                region: None,
-                session_region: None,
-                runtime_endpoint: environment.runtime_endpoint.clone(),
-            };
-            let plan = plan(settings, identity);
-            runs.iter()
-                .map(|run| url_run(&plan, run))
-                .collect::<Result<Vec<_>, _>>()?
-        }
-        Input::Sign { runs, .. } => {
-            let plan = plan(PassthroughEnvironment::default(), identity);
-            runs.iter()
-                .map(|run| sign_run(&plan, run))
-                .collect::<Result<Vec<_>, _>>()?
-        }
-        Input::Reply { runs } => {
-            let plan = plan(PassthroughEnvironment::default(), identity);
-            runs.iter()
-                .map(|run| reply_run(&plan, run))
-                .collect::<Result<Vec<_>, _>>()?
-        }
+        Input::Url { runs, .. } => runs
+            .iter()
+            .map(|run| url_run(&plan, run))
+            .collect::<Result<Vec<_>, _>>()?,
+        Input::Sign { runs, .. } => runs
+            .iter()
+            .map(|run| sign_run(&plan, run))
+            .collect::<Result<Vec<_>, _>>()?,
+        Input::Reply { runs } => runs.iter().map(|run| reply_run(&plan, run)).collect(),
         Input::Collect { runs, stream } => {
-            let plan = plan(PassthroughEnvironment::default(), identity);
             let bytes = hex::decode(stream).or_value_error()?;
             runs.iter()
                 .map(|run| collect_run(&plan, run, &bytes))
