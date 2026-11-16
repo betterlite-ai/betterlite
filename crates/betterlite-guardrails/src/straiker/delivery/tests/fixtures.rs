@@ -153,14 +153,14 @@ impl WebhookPost for FakePost {
         &self,
         request: WebhookRequest<'_>,
     ) -> impl Future<Output = Result<WebhookReply, WebhookFailure>> + Send {
-        let sent = Sent {
+        let record = Sent {
             url: request.url.to_owned(),
             body: request.body.to_owned(),
             headers: request.headers.values.clone(),
             authorization: request.headers.authorization.expose_secret().to_owned(),
             timeout: request.timeout,
         };
-        self.sent.lock().unwrap().push(sent);
+        self.sent.lock().unwrap().push(record);
         let scheduled = self.replies.lock().unwrap().pop_front().unwrap_or_else(|| {
             Err(WebhookFailure {
                 message: "no scripted reply".to_owned(),

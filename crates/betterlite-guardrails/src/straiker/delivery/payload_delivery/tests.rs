@@ -20,13 +20,15 @@ use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::straiker::delivery::StraikerDelivery;
 use crate::straiker::delivery::blocked_turns::BlockedTurns;
+use crate::straiker::delivery::envelope::response_shape;
 use crate::straiker::delivery::fixtures::{
-    Clock, FakeDelay, Fakes, V1_ALLOW, api_inputs, caps, delivery, inputs, network_error, object,
-    permanent_error, raw, reply, request_data, run, sent, settings,
+    Clock, FakeDelay, Fakes, V1_ALLOW, V3_ALLOW, api_inputs, caps, delivery, inputs, network_error,
+    object, permanent_error, raw, reply, request_data, run, sent, settings, v3_raw,
 };
 use crate::straiker::delivery::headers::WebhookHeaders;
 use crate::straiker::delivery::payload::{PayloadError, encode};
 use crate::straiker::delivery::transport::{PooledPost, WebhookPost, WebhookRequest};
+use crate::straiker::v3::answer_shape::Response;
 
 const FULL_INPUTS: &str = r#"{
     "texts": ["hi"],
@@ -639,4 +641,55 @@ async fn a_non_utf8_answer_is_a_permanent_failure() {
     };
     assert!(!blocked_content);
     assert!(message.contains("not UTF-8"), "got {message}");
+}
+
+#[tokio::test]
+async fn a_v3_request_posts_the_provider_body() {
+    let fakes = Fakes::default();
+    let handler = delivery(settings(&v3_raw()), vec![reply(200, V3_ALLOW)]);
+    let mut data =
+        request_data(r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}"#);
+    let call = fakes.call(Some("completion"), None);
+    run(
+        &handler,
+        &mut data,
+        inputs(&[]),
+        GuardrailInputType::Request,
+        &call,
+    )
+    .await
+    .expect("an allowed call");
+    let posts = sent(&handler);
+    let body = object(&posts.first().unwrap().body);
+    assert_eq!(body.get("model"), Some(&Json::Text("gpt-4o".to_owned())));
+    match body.get("messages") {
+        Some(Json::List(rows)) => assert_eq!(rows.len(), 1),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_))
+        | None => panic!("the provider body carries the conversation"),
+    }
+}
+
+#[test]
+fn a_chat_answer_is_shaped_as_chat() {
+    let data = object(
+        r#"{"response":{"id":"r1","object":"chat.completion","created":5,"model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}}"#,
+    );
+    assert!(matches!(response_shape(&data), Ok(Response::Chat(_))));
+}
+
+#[test]
+fn a_text_completion_answer_is_shaped_as_one() {
+    let data = object(
+        r#"{"response":{"id":"cmpl-1","object":"text_completion","created":5,"model":"davinci","choices":[{"index":0,"finish_reason":"stop","text":"hi"}]}}"#,
+    );
+    assert!(matches!(
+        response_shape(&data),
+        Ok(Response::TextCompletion(_))
+    ));
+}
+
+#[test]
+fn an_answer_that_is_not_an_object_stays_opaque() {
+    let data = object(r#"{"response":"plain"}"#);
+    assert!(matches!(response_shape(&data), Ok(Response::Other(_))));
 }
