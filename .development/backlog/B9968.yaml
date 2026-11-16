@@ -1,13 +1,13 @@
 id: B9968
 milestone: R2 bug fixes
 title: Terraform provider client bounds every request
-status: todo
+status: done
 depends_on: [B7760]
 file: tasks/B9968-terraform-provider-client-bounds.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2186

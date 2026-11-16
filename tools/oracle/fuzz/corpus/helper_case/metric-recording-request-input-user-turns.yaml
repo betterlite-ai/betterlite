@@ -1,0 +1,12 @@
+kind: helper
+name: request-input-user-turns
+call:
+  b3857:
+    function: request_input
+    data:
+      messages:
+      - {role: user, content: hello}
+      - {role: assistant, content: hi}
+env: {}
+compare:
+  ignore: []

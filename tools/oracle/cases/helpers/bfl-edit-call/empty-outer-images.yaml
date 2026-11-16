@@ -1,0 +1,21 @@
+kind: helper
+name: bfl-edit-call-empty-outer-images
+call:
+  bfl_edit_call:
+    jobs:
+      - model: black_forest_labs/flux-kontext-pro
+        prompt: make it blue
+        image: {kind: list, items: []}
+        optional_params: {}
+        litellm_params: {api_key: sk-request, api_base: https://api.bfl.ai}
+        params_kind: dict
+        extra_headers: {}
+        timeout_millis: null
+        configured: {api_key: null, api_base: https://api.bfl.ai}
+        clock: {start_millis: 0, tick_millis: 0, sleep_advance_millis: 1500}
+        submission:
+          status: 200
+          body: '{"id":"job-1","polling_url":"https://gateway.bfl.ai/v1/get_result?id=1"}'
+        polls: []
+env: {}
+compare: {ignore: []}

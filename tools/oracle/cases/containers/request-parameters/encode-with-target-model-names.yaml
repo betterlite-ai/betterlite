@@ -1,0 +1,30 @@
+kind: helper
+name: encode-with-target-model-names
+call:
+  b3361:
+    function: encode_container_id
+    container_id: "container_1"
+    custom_llm_provider: "azure"
+    litellm_metadata: null
+    extra_body: {target_model_names: " m1 , m2"}
+calls:
+  - b3361:
+      function: encode_container_id
+      container_id: "container_1"
+      custom_llm_provider: "azure"
+      litellm_metadata: null
+      extra_body: {target_model_names: [" m3 ", "m4"]}
+  - b3361:
+      function: encode_container_id
+      container_id: "container_1"
+      custom_llm_provider: "azure"
+      litellm_metadata: null
+      extra_body: {target_model_names: "\u001cm5\u001c, m6"}
+  - b3361:
+      function: encode_container_id
+      container_id: "container_1"
+      custom_llm_provider: "azure"
+      litellm_metadata: null
+      extra_body: {target_model_names: null}
+env: {}
+compare: {ignore: []}
