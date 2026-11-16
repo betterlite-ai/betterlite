@@ -125,6 +125,7 @@ out_of_scope:
   - B068 binds generic pricing later; B157 supplies Python object bindings. The composition exports native capabilities without inventing either interface.
 pitfalls:
   - Request media is fetched as LiteLLM fetches it (decision 2026-10-31), so build B5083's Fetcher once from the route's UserUrlFetcher, B173's shared client and MAX_IMAGE_URL_DOWNLOAD_SIZE_MB and pass it as the fetcher in B1327's CallDeps (crates/betterlite-vertex/src/gemini_call.rs), never a refusing fetcher, so B9965's Vertex and AI Studio request media pass fetches.
+  - Pass the same shared B173 ProxiedClient as B9961's GCS metadata transport in B1327's CallDeps beside the fetcher (it implements GcsTransport, so no second client), with the token coming from the VertexLlm cache CallDeps already carries.
   - Main dispatch intentionally omits the VERTEX_LOCATION fallback that VertexBase's safe location getter accepts.
   - A truthy vertex_project leaves vertex_ai_project in the provider's copied options because Python or short-circuits the second pop.
   - An Agent Engine request must receive resolved credentials in litellm_params before its base HTTP handler runs.

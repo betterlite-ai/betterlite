@@ -178,7 +178,9 @@ scope:
     - crates/betterlite-server/src/app/edge.rs
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/state/health.rs
+    - crates/betterlite-server/src/cost_service/tests.rs
     - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/tests.rs
     - crates/betterlite/Cargo.toml
     - crates/betterlite/src/lifespan.rs
     - crates/betterlite/src/lifespan/**
@@ -252,6 +254,7 @@ out_of_scope:
   - "HealthSlot's contents and the five health routers: B8540. ShutdownState and its drain: B4448. The in-flight counter and the admission layer: B022."
   - "A router embedder field: not in Shared; the router's embedding call is built by the inference part from ServerState (see the report notes)."
 pitfalls:
+  - crates/betterlite-server/src/cost_service/tests.rs (Slot::new(&config, &Shared)) and crates/betterlite-server/src/routes/tests.rs (Arc::new(Shared)) build the unit Shared main has today. Once Shared has fields, give both a Shared built from test parts and keep what they assert.
   - axum applies a layer only to routes added before it, so an area route merged after the auth layers would skip authentication, and a public route merged before them would need a key.
   - Router::merge panics when both routers have a fallback, so a mount_public router or the wrap step that sets one crashes the server at boot.
   - The WebSocket pass must check both the upgrade header and the path; an upgrade header alone would let any GET skip the master key stage.

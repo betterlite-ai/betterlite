@@ -65,8 +65,11 @@ description: >-
   The Python adapter calls pinned methods with fixture catalog/cache state; compare values, complete
   ValueError messages, debug/error events and input immutability. Refresh is effectful: Rust tests
   call the real B1425 transport against a local mock, including request headers and failure isolation.
-  No new byte decoder or config loader is introduced. Keep B2219's current local-only Hugging Face
-  behavior, recorded as a deviation below, until an R2 fix task adds the download.
+  No new byte decoder or config loader is introduced. Read a huggingface model's max_position_embeddings
+  through the shared resolver (get_model_info_helper_cached), which fetches
+  https://huggingface.co/{model}/raw/main/config.json through the caller's ModelInfoClient as LiteLLM does.
+  Take that client the way the resolver does, as a type parameter the caller supplies; tests pass a fake
+  ModelInfoClient, and B9966 adds the production transport. Keep no local-asset path.
 
   Method ranges contain 369 nonblank, noncomment lines including overloads/docstrings. The immutable
   records and cache initialization add 22. Allow 330 production, 330 tests, 90 adapters and 40 wiring
@@ -153,7 +156,7 @@ dod:
       no_custom_id_no_discovery, numeric_strings_and_shallow_nested_merge,
       absent_prices_become_null and explicit_zero_or_null_price_key_present.'
     proof: [behavior-tests, oracle]
-  - text: native_huggingface_metadata_uses_local_assets_only returns absent max_tokens without a local asset and makes no Hugging Face request.
+  - text: native_huggingface_metadata_fetches_the_config returns max_tokens 4096 when the fetched config.json carries max_position_embeddings 4096, and absent max_tokens when the fetch fails or the answer omits the field.
     proof: [behavior-tests]
 checks:
   optional:
@@ -186,10 +189,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/deployment-model-info/raw-identity-and-group.yaml
   - tools/oracle/cases/helpers/deployment-model-info/custom-builtin-base-and-failures.yaml
   - tools/oracle/cases/helpers/deployment-model-info/absent-versus-explicit-token-prices.yaml
-deviations:
-  - what: Hugging Face metadata uses B2219's supplied local config only. Without a usable asset, max_tokens is None instead of downloading config.json; no new HTTP status or error code is emitted.
-    why: Hugging Face downloads are not wired in yet. betterlite downloads what LiteLLM downloads, from the same place (decision 2026-10-31), and an R2 fix task wires it in.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5847-L5867
+deviations: []
 out_of_scope:
   - B2306 owns deployment credential resolution, including _get_team_public_name_deployment,
     _deployment_usable_by_team, _get_model_group_deployment_usable_by_team,

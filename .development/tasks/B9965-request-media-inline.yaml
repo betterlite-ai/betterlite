@@ -66,6 +66,7 @@ description: >-
   diff is about 300 lines, the adapters about 220 and the cases and seeds about 130.
 scope:
   paths:
+    - crates/betterlite-vertex/src/gemini_call/tests/ordered_effects.rs
     - crates/betterlite-vertex/src/gemini_request/media_prepare.rs
     - crates/betterlite-vertex/src/gemini_request/orchestration.rs
     - crates/betterlite-vertex/src/gemini_request/orchestration/async_media.rs
@@ -153,6 +154,7 @@ out_of_scope:
   - Constructing B5083's Fetcher for the gateway route is B1316 and B1327 wiring, recorded in this task's notes for the architect.
   - The extensionless gs:// reference is B9961.
 pitfalls:
+  - crates/betterlite-vertex/src/gemini_call/tests/ordered_effects.rs ordered_effects_remote_tool_media_follows_the_branch_transform asserts that the async branch refuses remote tool media with zero fetches. Once prepare fetches it, update that case to the fetched outcome and its fetch count; change nothing else in the file.
   - The oracle helper for this task is pre-registered as b9965 in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/b9965.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b9965.py. The registry files (tools/oracle/src/helpers/vertex/lib.rs and tools/oracle/helpers/dispatch.py) are not this task's to edit.
   - The predicate reads RemoteMedia.fields, which is the image_url object for an image part and the file object for a file part; reading format from the wrong object turns a passthrough into a download.
   - Assistant images always follow the Vertex predicate, even for gemini, because LiteLLM handles them inside _process_gemini_media and not in the Studio prepass.
