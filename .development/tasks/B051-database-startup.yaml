@@ -87,6 +87,7 @@ description: >-
   The operation adapter assembles native betterlite-db services directly.
 scope:
   paths:
+    - .config/nextest.toml
     - crates/betterlite-server/src/database_startup.rs
     - crates/betterlite-server/src/database_startup/**
     - crates/betterlite-server/Cargo.toml
