@@ -88,7 +88,7 @@ where
     })
 }
 
-fn resolve_provider(request: &InteractionLifecycleRequest<'_>) -> String {
+pub(crate) fn resolve_provider(request: &InteractionLifecycleRequest<'_>) -> String {
     match request.custom_llm_provider {
         Some(provider) if !provider.is_empty() => provider.to_owned(),
         Some(_) | None => DEFAULT_PROVIDER.to_owned(),
