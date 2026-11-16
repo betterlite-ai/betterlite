@@ -35,6 +35,7 @@ async fn the_proxied_transport_sends_the_request_and_reports_the_refused_connect
             | TransportError::ConnectTimeout(_)
             | TransportError::Deadline(_)
             | TransportError::Request(_)
+            | TransportError::Rejected(_)
     ));
 }
 
