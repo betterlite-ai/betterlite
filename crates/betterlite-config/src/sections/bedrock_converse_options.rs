@@ -4,19 +4,17 @@ use serde::Deserialize;
 use serde_json::Number;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::raw::RawNumber;
+use crate::resolve::{parse_float, resolve_number};
 use crate::sections::Section;
 
 // LiteLLM's AmazonConverseConfig annotates every field None and stores only the values a caller passes.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ConverseOptionValues {
-    #[serde(rename = "maxTokens")]
     pub max_tokens: Option<i64>,
-    #[serde(rename = "stopSequences")]
     pub stop_sequences: Option<Vec<String>>,
     pub temperature: Option<Number>,
-    #[serde(rename = "topP")]
     pub top_p: Option<Number>,
-    #[serde(rename = "topK")]
     pub top_k: Option<i64>,
 }
 
@@ -61,29 +59,80 @@ pub struct Raw {
     #[serde(default)]
     model_list: Vec<RawDeployment>,
     #[serde(default)]
-    litellm_settings: ConverseOptionValues,
+    litellm_settings: RawValues,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct RawDeployment {
     #[serde(default)]
-    litellm_params: ConverseOptionValues,
+    litellm_params: RawValues,
+}
+
+// Numbers take a RawNumber so an os.environ/ reference reads into the field's type instead of failing
+// the YAML view every section parses.
+#[derive(Debug, Default, Deserialize)]
+struct RawValues {
+    #[serde(rename = "maxTokens")]
+    max_tokens: Option<RawNumber>,
+    #[serde(rename = "stopSequences")]
+    stop_sequences: Option<Vec<String>>,
+    temperature: Option<RawNumber>,
+    #[serde(rename = "topP")]
+    top_p: Option<RawNumber>,
+    #[serde(rename = "topK")]
+    top_k: Option<RawNumber>,
 }
 
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L>(self, _lookup: &L) -> Result<Settings, ConfigError>
+    fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
     where
         L: EnvironmentLookup,
     {
+        let mut deployments = Vec::with_capacity(self.model_list.len());
+        for (index, deployment) in self.model_list.into_iter().enumerate() {
+            let prefix = format!("model_list.{index}.litellm_params");
+            deployments.push(option_values(deployment.litellm_params, &prefix, lookup)?);
+        }
         Ok(Settings {
-            deployments: self
-                .model_list
-                .into_iter()
-                .map(|deployment| deployment.litellm_params)
-                .collect(),
-            litellm_settings: self.litellm_settings,
+            deployments,
+            litellm_settings: option_values(self.litellm_settings, "litellm_settings", lookup)?,
         })
     }
+}
+
+fn option_values<L>(
+    raw: RawValues,
+    prefix: &str,
+    lookup: &L,
+) -> Result<ConverseOptionValues, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let path = |key: &str| format!("{prefix}.{key}");
+    Ok(ConverseOptionValues {
+        max_tokens: resolve_number(raw.max_tokens, &path("maxTokens"), lookup, integer)?,
+        stop_sequences: raw.stop_sequences,
+        temperature: resolve_number(raw.temperature, &path("temperature"), lookup, number)?,
+        top_p: resolve_number(raw.top_p, &path("topP"), lookup, number)?,
+        top_k: resolve_number(raw.top_k, &path("topK"), lookup, integer)?,
+    })
+}
+
+fn integer(text: &str, path: &str) -> Result<i64, ConfigError> {
+    text.parse().map_err(|source| ConfigError::InvalidInteger {
+        path: path.to_owned(),
+        source,
+    })
+}
+
+// Keep the integer or decimal spelling the YAML gave, as LiteLLM's Python value does.
+fn number(text: &str, path: &str) -> Result<Number, ConfigError> {
+    // the shared float parser names a non-numeric value the way every other float field does
+    let _validated = parse_float(text, path)?;
+    text.parse().map_err(|_source| ConfigError::InvalidScalar {
+        path: path.to_owned(),
+        value: false,
+    })
 }

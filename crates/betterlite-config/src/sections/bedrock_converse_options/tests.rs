@@ -9,12 +9,18 @@ use super::{ConverseOptionValues, Settings};
 use crate::loader::{ConfigError, ConfigLoader};
 
 fn load(source: &str) -> Result<Settings, ConfigError> {
-    Ok(ConfigLoader {
-        lookup: BTreeMap::new(),
-    }
-    .load(source)?
-    .sections
-    .bedrock_converse_options)
+    load_with(source, &[])
+}
+
+fn load_with(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
+    let lookup = environment
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    Ok(ConfigLoader { lookup }
+        .load(source)?
+        .sections
+        .bedrock_converse_options)
 }
 
 fn deployment(fields: &str) -> String {
@@ -157,8 +163,48 @@ fn bedrock_converse_options_config_cases(#[case] field: Field) {
                 Some(0),
                 "an explicit zero is used as given"
             );
+            let referenced = load_with(
+                &deployment("maxTokens: os.environ/CONVERSE_MAX_TOKENS"),
+                &[("CONVERSE_MAX_TOKENS", "64")],
+            )
+            .unwrap();
+            assert_eq!(
+                referenced.deployments.first().unwrap().max_tokens,
+                Some(64),
+                "an os.environ reference reads into the field"
+            );
+            let missing = load(&deployment(
+                "maxTokens: os.environ/ABSENT_CONVERSE_MAX_TOKENS",
+            ))
+            .unwrap_err();
+            assert!(
+                matches!(
+                    &missing,
+                    ConfigError::MissingEnvironment { variable, path }
+                        if variable == "ABSENT_CONVERSE_MAX_TOKENS"
+                            && path == "model_list.0.litellm_params.maxTokens"
+                ),
+                "{missing}"
+            );
+            let invalid = load(&deployment("maxTokens: 'many'")).unwrap_err();
+            assert!(
+                matches!(&invalid, ConfigError::InvalidInteger { path, .. } if path == "model_list.0.litellm_params.maxTokens"),
+                "{invalid}"
+            );
         }
-        Field::TopK => assert_i64("topK", 8, 4, |values| values.top_k),
+        Field::TopK => {
+            assert_i64("topK", 8, 4, |values| values.top_k);
+            let referenced = load_with(
+                &deployment("topK: os.environ/CONVERSE_TOP_K"),
+                &[("CONVERSE_TOP_K", "12")],
+            )
+            .unwrap();
+            assert_eq!(
+                referenced.deployments.first().unwrap().top_k,
+                Some(12),
+                "an os.environ reference reads into the field"
+            );
+        }
         Field::Temperature => {
             assert_number("temperature", "0.5", "0.25", |values| {
                 values.temperature.clone()
@@ -174,8 +220,64 @@ fn bedrock_converse_options_config_cases(#[case] field: Field) {
                 Some("0".to_owned()),
                 "an explicit zero is used as given"
             );
+            let referenced = load_with(
+                &deployment("temperature: os.environ/CONVERSE_TEMPERATURE"),
+                &[("CONVERSE_TEMPERATURE", "0.75")],
+            )
+            .unwrap();
+            assert_eq!(
+                referenced
+                    .deployments
+                    .first()
+                    .unwrap()
+                    .temperature
+                    .as_ref()
+                    .map(Number::to_string),
+                Some("0.75".to_owned()),
+                "an os.environ reference reads into the field"
+            );
+            let quoted = load(&deployment("temperature: '0.75'")).unwrap();
+            assert_eq!(
+                quoted
+                    .deployments
+                    .first()
+                    .unwrap()
+                    .temperature
+                    .as_ref()
+                    .map(Number::to_string),
+                Some("0.75".to_owned()),
+                "a quoted decimal reads as a number"
+            );
+            let invalid = load(&deployment("temperature: 'abc'")).unwrap_err();
+            assert!(
+                matches!(&invalid, ConfigError::InvalidFloat { path, .. } if path == "model_list.0.litellm_params.temperature"),
+                "{invalid}"
+            );
+            let unparsable = load(&deployment("temperature: '1.'")).unwrap_err();
+            assert!(
+                matches!(&unparsable, ConfigError::InvalidScalar { path, value: false } if path == "model_list.0.litellm_params.temperature"),
+                "{unparsable}"
+            );
         }
-        Field::TopP => assert_number("topP", "0.9", "1", |values| values.top_p.clone()),
+        Field::TopP => {
+            assert_number("topP", "0.9", "1", |values| values.top_p.clone());
+            let referenced = load_with(
+                &deployment("topP: os.environ/CONVERSE_TOP_P"),
+                &[("CONVERSE_TOP_P", "0.6")],
+            )
+            .unwrap();
+            assert_eq!(
+                referenced
+                    .deployments
+                    .first()
+                    .unwrap()
+                    .top_p
+                    .as_ref()
+                    .map(Number::to_string),
+                Some("0.6".to_owned()),
+                "an os.environ reference reads into the field"
+            );
+        }
         Field::StopSequences => {
             let default = load("").unwrap();
             assert_eq!(default.litellm_settings.stop_sequences, None);
