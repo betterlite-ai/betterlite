@@ -1,0 +1,45 @@
+{
+  "kind": "helper",
+  "name": "both-project-id-header",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 1,
+        "api_id": "id",
+        "api_key": "key"
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "texts": [
+          "hello"
+        ]
+      },
+      "request_data": {
+        "proxy_server_request": {
+          "headers": {
+            "hl-project-id": "proj-1"
+          }
+        }
+      },
+      "input_type": "request",
+      "answers": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {}
+        }
+      ],
+      "saas": true,
+      "tokens": [
+        "jwt-one"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
