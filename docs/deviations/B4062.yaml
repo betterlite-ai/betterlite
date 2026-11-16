@@ -12,6 +12,9 @@ deviations:
   - what: "A registry that cannot initialize or reload a prompt answers 500 with the registry's own error text (for example \"Unsupported prompt: unknown\"), where LiteLLM answers 500 with \"Failed to initialize prompt\", \"Failed to update prompt\" or \"Failed to patch prompt\"."
     why: The registry returns a typed error instead of None, so the cause is kept and reported; the status is the same and the database write stays, as in LiteLLM.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L677-L682
+  - what: A caller who is not a proxy admin and sends a body that does not fit the model gets 422 with the field location; LiteLLM's FastAPI solves the user_api_key_auth dependency before it validates the body, so the same call there answers 403.
+    why: The body is decoded and the guard is asked in one step, which answers the more actionable error first; the status for a non-admin with a well-formed body is 403 in both, and so is the 422 for a missing database with a body that does not fit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L591-L596
 kept_bugs:
   - what: When the registry cannot initialize or reload a prompt after the database write succeeded, the route answers 500 and leaves the new or changed row in the database; the next restart loads it again.
     why: Working setups can rely on the row surviving a registry failure, since a later fix of the integration makes it load without a second write; rolling back would also hide which row failed.
