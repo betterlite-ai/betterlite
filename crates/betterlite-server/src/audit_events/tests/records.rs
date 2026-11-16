@@ -134,6 +134,15 @@ fn audit_json_masking() {
     assert_eq!(quoted_null, Some(JsonValue::String("null".to_owned())));
     let (nulls, _) = masked_fields(r#"{"name": null, "key": null}"#, "null");
     assert_eq!(nulls, Some(parsed(r#"{"name": "None", "key": ""}"#)));
+    let mut structured = parsed(RECORD);
+    structured["before_value"] = parsed(r#"{"api_key": "sk-1234567890"}"#);
+    structured["updated_values"] = parsed(r#"{"name": "team"}"#);
+    let decoded = decode_audit_record(structured.to_string().as_bytes()).unwrap();
+    assert_eq!(
+        decoded.before_value,
+        Some(parsed(r#"{"api_key": "sk-1*****7890"}"#))
+    );
+    assert_eq!(decoded.updated_values, Some(parsed(r#"{"name": "team"}"#)));
 }
 
 #[test]
