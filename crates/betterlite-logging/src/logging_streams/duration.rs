@@ -36,7 +36,7 @@ pub fn record_call_duration(
     let micros = elapsed
         .num_microseconds()
         .ok_or(CallDurationError::DurationOverflow)?;
-    let millis = decimal_number(Decimal::from(micros) / Decimal::from(1_000))?;
+    let millis = scaled_number(micros, 1_000)?;
     state
         .model_call_details
         .insert(DURATION_KEY.to_owned(), millis);
@@ -59,19 +59,27 @@ fn write_windows(
     let [metadata, litellm_metadata] = params.get_disjoint_mut(["metadata", "litellm_metadata"]);
     let metadata = object_slot(metadata, "metadata")?;
     let litellm_metadata = object_slot(litellm_metadata, "litellm_metadata")?;
-    match (metadata, litellm_metadata) {
-        (metadata, Some(litellm_metadata)) if !litellm_metadata.is_empty() => {
-            if let Some(metadata) = metadata {
-                for (name, value) in metadata {
-                    if name.contains(SPEND_METADATA_MARKER) {
-                        litellm_metadata.insert(name.clone(), value.clone());
-                    }
-                }
-            }
-            write_window(litellm_metadata, start_time, end_time)
+    if let Some(litellm_metadata) = litellm_metadata.filter(|slots| !slots.is_empty()) {
+        copy_spend_keys(metadata, litellm_metadata);
+        return append_window(litellm_metadata, start_time, end_time);
+    }
+    let Some(metadata) = metadata.filter(|slots| !slots.is_empty()) else {
+        return Ok(());
+    };
+    append_window(metadata, start_time, end_time)
+}
+
+fn copy_spend_keys(
+    metadata: Option<&mut IndexMap<String, Json>>,
+    litellm_metadata: &mut IndexMap<String, Json>,
+) {
+    let Some(metadata) = metadata else {
+        return;
+    };
+    for (name, value) in metadata {
+        if name.contains(SPEND_METADATA_MARKER) {
+            litellm_metadata.insert(name.clone(), value.clone());
         }
-        (Some(metadata), _) if !metadata.is_empty() => write_window(metadata, start_time, end_time),
-        _ => Ok(()),
     }
 }
 
@@ -88,7 +96,7 @@ fn object_slot<'slot>(
     }
 }
 
-fn write_window(
+fn append_window(
     metadata: &mut IndexMap<String, Json>,
     start_time: DateTime<FixedOffset>,
     end_time: DateTime<FixedOffset>,
@@ -135,11 +143,14 @@ fn window_pair(
     start_time: DateTime<FixedOffset>,
     end_time: DateTime<FixedOffset>,
 ) -> Result<Json, CallDurationError> {
-    let start_micros = start_time.timestamp_micros();
-    let end_micros = end_time.timestamp_micros();
-    let start = decimal_number(Decimal::from(start_micros) / Decimal::from(1_000_000))?;
-    let end = decimal_number(Decimal::from(end_micros) / Decimal::from(1_000_000))?;
-    Ok(Json::List(vec![start, end]))
+    Ok(Json::List(vec![
+        scaled_number(start_time.timestamp_micros(), 1_000_000)?,
+        scaled_number(end_time.timestamp_micros(), 1_000_000)?,
+    ]))
+}
+
+fn scaled_number(units: i64, per: i64) -> Result<Json, CallDurationError> {
+    decimal_number(Decimal::from(units) / Decimal::from(per))
 }
 
 fn decimal_number(value: Decimal) -> Result<Json, CallDurationError> {
