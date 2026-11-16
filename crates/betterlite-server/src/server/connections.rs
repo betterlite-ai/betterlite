@@ -1,4 +1,5 @@
 use axum::Router;
+use betterlite_http::proxy::ProxiedClient;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
@@ -7,6 +8,9 @@ use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
+use tokio_util::task::TaskTracker;
+
+use super::OUTBOUND_DRAIN_TIMEOUT;
 
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(1);
 const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -60,5 +64,21 @@ pub(crate) async fn serve_connection(
         .await
     {
         tracing::debug!(address = ?remote_address, error = ?error, "HTTP connection stopped");
+    }
+}
+
+// the work that outlives the connections: refresh tasks finish first, since they send through the outbound client
+pub(crate) struct Background {
+    pub(crate) outbound: ProxiedClient,
+    pub(crate) tasks: TaskTracker,
+}
+
+impl Background {
+    pub(super) async fn drain(self) {
+        self.tasks.close();
+        self.tasks.wait().await;
+        if let Err(error) = self.outbound.drain(OUTBOUND_DRAIN_TIMEOUT).await {
+            tracing::warn!(error = %error, "outbound requests did not finish before shutdown");
+        }
     }
 }

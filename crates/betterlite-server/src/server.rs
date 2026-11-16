@@ -10,7 +10,8 @@ use crate::routes::chat::headers::failure_headers;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
 use crate::server::connections::{
-    accept_connection, configure_connection_builder, drain_connections, serve_connection,
+    Background, accept_connection, configure_connection_builder, drain_connections,
+    serve_connection,
 };
 use crate::server::filter::filter_route;
 use crate::shutdown::build_shutdown_signal;
@@ -23,7 +24,6 @@ use axum::{Json, Router};
 use betterlite_config::types::Config;
 use betterlite_error::envelope::EnvelopeError;
 use betterlite_error::envelope::error_body_call_id;
-use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::chat::execution::ChatExecutor;
@@ -85,14 +85,15 @@ pub async fn run_with_listener(
     host: &str,
 ) -> Result<(), ServerError> {
     let shutting_down = Arc::new(AtomicBool::new(false));
-    let outbound = chat.client.clone();
-    let tasks = TaskTracker::new();
-    let application = application(&config, chat, Arc::clone(&shutting_down), &tasks)?;
+    let background = Background {
+        outbound: chat.client.clone(),
+        tasks: TaskTracker::new(),
+    };
+    let application = application(&config, chat, Arc::clone(&shutting_down), &background.tasks)?;
     Box::pin(serve(
         application,
         shutting_down,
-        outbound,
-        tasks,
+        background,
         host,
         listener,
     ))
@@ -109,8 +110,7 @@ async fn bind(host: &str, port: u16) -> Result<TcpListener, ServerError> {
 async fn serve(
     application: Router,
     shutting_down: Arc<AtomicBool>,
-    outbound: ProxiedClient,
-    tasks: TaskTracker,
+    background: Background,
     host: &str,
     listener: TcpListener,
 ) -> Result<(), ServerError> {
@@ -145,11 +145,7 @@ async fn serve(
         ));
     }
     drain_connections(&mut connections).await;
-    tasks.close();
-    tasks.wait().await;
-    if let Err(error) = outbound.drain(OUTBOUND_DRAIN_TIMEOUT).await {
-        tracing::warn!(error = %error, "outbound requests did not finish before shutdown");
-    }
+    background.drain().await;
     Ok(())
 }
 

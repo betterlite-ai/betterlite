@@ -257,7 +257,7 @@ fn environment_aliases_fall_back_in_source_order() {
     let optional_params = params("{}");
     let embedding = EmbeddingSettings {
         project: Some("vertex-project".to_owned()),
-        credentials: Some(credentials("vertex-key")),
+        credentials: Some(Box::new(credentials("vertex-key"))),
         api_base: Some("https://vertex.example".to_owned()),
         deployments: Vec::new(),
     };

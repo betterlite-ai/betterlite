@@ -1,4 +1,5 @@
 use super::chat_setup::chat_executor;
+use super::connections::Background;
 use super::filter::ComponentRoutes;
 use super::{application, bind, serve};
 use axum::Extension;
@@ -77,11 +78,13 @@ pub fn serve_component(
     let result = runtime.block_on(async {
         let listener = bind(host, port).await?;
         let shutting_down = Arc::new(AtomicBool::new(false));
-        let outbound = chat.client.clone();
-        let tasks = TaskTracker::new();
-        let app = application(&config, chat, Arc::clone(&shutting_down), &tasks)?
+        let background = Background {
+            outbound: chat.client.clone(),
+            tasks: TaskTracker::new(),
+        };
+        let app = application(&config, chat, Arc::clone(&shutting_down), &background.tasks)?
             .layer(Extension(routes));
-        Box::pin(serve(app, shutting_down, outbound, tasks, host, listener)).await
+        Box::pin(serve(app, shutting_down, background, host, listener)).await
     });
     match result {
         Ok(()) => ExitCode::SUCCESS,

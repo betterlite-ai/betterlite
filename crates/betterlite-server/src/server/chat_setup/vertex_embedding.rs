@@ -5,9 +5,10 @@ mod tests;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
+use betterlite_config::sections::vertex_embedding_dispatch::Settings as EmbeddingSettings;
 use betterlite_config::types::Config;
 use betterlite_core::operation::embedding::EmbeddingCall;
-use betterlite_core::vertex_embedding_dispatch::{VertexEmbeddingDispatchError, pin};
+use betterlite_core::vertex_embedding_dispatch::{Pinned, VertexEmbeddingDispatchError, pin};
 use betterlite_http::hub_oauth::clock::{HubClock, SystemHubClock};
 use betterlite_http::hub_token::{HubTokenFileReader, HubTokenResolver, TokioHubTokenFileReader};
 use betterlite_http::proxy::ProxiedClient;
@@ -59,20 +60,7 @@ pub fn vertex_embedding_calls(
     tasks: &TaskTracker,
 ) -> Result<Option<Arc<dyn EmbeddingCall>>, VertexEmbeddingSetupError> {
     let embedding = &config.sections.vertex_embedding_dispatch;
-    let mut pinned = BTreeMap::new();
-    for (deployment, params) in deployments.iter().zip(&embedding.deployments) {
-        let DeploymentProvider::Unsupported { model } = &deployment.provider else {
-            continue;
-        };
-        if !model.starts_with("vertex_ai/") {
-            continue;
-        }
-        let params = pin(&params.0).map_err(|source| VertexEmbeddingSetupError::Pinned {
-            model_name: deployment.model_group.clone(),
-            source,
-        })?;
-        pinned.insert(deployment.model_id.clone(), params);
-    }
+    let pinned = pinned_deployments(deployments, embedding)?;
     if pinned.is_empty() {
         return Ok(None);
     }
@@ -105,6 +93,28 @@ pub fn vertex_embedding_calls(
     })))
 }
 
+// each vertex_ai deployment's own options, keyed by model_id, read once at startup
+fn pinned_deployments(
+    deployments: &[ChatDeployment],
+    embedding: &EmbeddingSettings,
+) -> Result<BTreeMap<String, Pinned>, VertexEmbeddingSetupError> {
+    let mut pinned = BTreeMap::new();
+    for (deployment, params) in deployments.iter().zip(&embedding.deployments) {
+        let DeploymentProvider::Unsupported { model } = &deployment.provider else {
+            continue;
+        };
+        if !model.starts_with("vertex_ai/") {
+            continue;
+        }
+        let pins = pin(&params.0).map_err(|source| VertexEmbeddingSetupError::Pinned {
+            model_name: deployment.model_group.clone(),
+            source,
+        })?;
+        pinned.insert(deployment.model_id.clone(), pins);
+    }
+    Ok(pinned)
+}
+
 // the chain the tokenizer's own tests build: a bundled vocabulary needs no download, and the hub is reached only for a custom tokenizer
 fn token_counter(
     config: &Config,
@@ -126,24 +136,9 @@ fn token_counter(
         None,
         Arc::clone(&service),
     ));
-    let hub = config.sections.huggingface_hub.clone();
-    let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
-    let hub_clock: Arc<dyn HubClock> = Arc::new(SystemHubClock::default());
-    let resolver = Arc::new(HubTokenResolver::new(
-        hub.clone(),
-        config.sections.huggingface_oidc.clone(),
-        Arc::clone(client),
-        reader,
-        hub_clock,
-    ));
-    let downloader = Arc::new(HubDownloader::new(
-        Arc::new(hub),
-        resolver,
-        Arc::new(Instant::now),
-    ));
     let selector = Arc::new(Selector::new(
         Arc::clone(&fetcher),
-        downloader,
+        hub_downloader(config, client),
         Arc::clone(catalog),
         Arc::clone(&service),
         false,
@@ -154,5 +149,23 @@ fn token_counter(
         service,
         Arc::clone(catalog),
         settings,
+    ))
+}
+
+fn hub_downloader(config: &Config, client: &Arc<ProxiedClient>) -> Arc<HubDownloader> {
+    let hub = config.sections.huggingface_hub.clone();
+    let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
+    let hub_clock: Arc<dyn HubClock> = Arc::new(SystemHubClock::default());
+    let resolver = Arc::new(HubTokenResolver::new(
+        hub.clone(),
+        config.sections.huggingface_oidc.clone(),
+        Arc::clone(client),
+        reader,
+        hub_clock,
+    ));
+    Arc::new(HubDownloader::new(
+        Arc::new(hub),
+        resolver,
+        Arc::new(Instant::now),
     ))
 }

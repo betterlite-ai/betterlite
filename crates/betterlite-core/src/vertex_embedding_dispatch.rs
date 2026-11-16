@@ -122,7 +122,7 @@ pub fn select(
         .or_else(|| defaults.vertex.location.clone());
     let credentials = take_credentials(&mut optional_params, &pinned.credentials)?
         .or_else(|| defaults.vertex.credentials.clone())
-        .or_else(|| defaults.embedding.credentials.clone());
+        .or_else(|| defaults.embedding.credentials.as_deref().cloned());
     let api_base = request
         .api_base
         .map(str::to_owned)

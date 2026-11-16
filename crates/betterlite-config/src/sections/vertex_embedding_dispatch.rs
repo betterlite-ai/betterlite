@@ -44,7 +44,8 @@ struct RawSettings {
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub project: Option<String>,
-    pub credentials: Option<ConfiguredCredentials>,
+    // boxed so this section adds little to every Config held across an await
+    pub credentials: Option<Box<ConfiguredCredentials>>,
     pub api_base: Option<String>,
     // one entry per model_list entry, in file order
     pub deployments: Vec<PinParams>,
@@ -120,12 +121,14 @@ fn read(lookup: &dyn EnvironmentLookup, names: &[&str]) -> Option<String> {
         .find_map(|name| lookup.lookup(name).filter(|text| !text.is_empty()))
 }
 
-fn parse_credentials(text: Option<String>) -> Result<Option<ConfiguredCredentials>, ConfigError> {
+fn parse_credentials(
+    text: Option<String>,
+) -> Result<Option<Box<ConfiguredCredentials>>, ConfigError> {
     let Some(credentials) = text else {
         return Ok(None);
     };
     ConfiguredCredentials::from_text(credentials)
-        .map(Some)
+        .map(|parsed| Some(Box::new(parsed)))
         .map_err(|_source| ConfigError::InvalidScalar {
             path: "VERTEX_CREDENTIALS".to_owned(),
             value: false,

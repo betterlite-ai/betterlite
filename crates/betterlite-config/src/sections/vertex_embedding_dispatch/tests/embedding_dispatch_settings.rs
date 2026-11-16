@@ -40,7 +40,7 @@ fn loads_every_embedding_alias() {
     .unwrap();
     assert_eq!(environment.project.as_deref(), Some("vertex-project"));
     assert!(matches!(
-        environment.credentials,
+        environment.credentials.as_deref(),
         Some(ConfiguredCredentials::Text(_))
     ));
     assert_eq!(environment.api_base.as_deref(), Some("vertexai-base"));
@@ -107,7 +107,7 @@ fn parses_vertex_credentials_as_a_credential_source() {
     let source = r#"{"type": "service_account", "project_id": "project", "private_key": "key", "client_email": "svc@example.com"}"#;
     let parsed = load("", &[("VERTEX_CREDENTIALS", source)]).unwrap();
     assert!(matches!(
-        parsed.credentials,
+        parsed.credentials.as_deref(),
         Some(ConfiguredCredentials::Source(_))
     ));
 }

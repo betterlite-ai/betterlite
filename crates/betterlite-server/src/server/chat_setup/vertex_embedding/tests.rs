@@ -6,6 +6,8 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
+use betterlite_bedrock::aws_settings::sources::SourceError;
+use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
@@ -36,12 +38,16 @@ use super::{VertexEmbeddingSetupError, token_counter, vertex_embedding_calls};
 use crate::server::chat_setup::chat_executor;
 
 const EPOCH_SECONDS: u64 = 1_000;
+// the fixed clock plus the executor's assumed 600 second token lifetime
+const REFRESHED_EXPIRY_SECONDS: u64 = 1_600;
 
 struct FixedClock;
 
 impl CredentialClock for FixedClock {
     fn now(&self) -> SystemTime {
-        SystemTime::UNIX_EPOCH + Duration::from_secs(EPOCH_SECONDS)
+        SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_secs(EPOCH_SECONDS))
+            .unwrap()
     }
 }
 
@@ -147,7 +153,10 @@ fn a_pin_that_is_not_text_or_an_object_names_the_deployment() {
 #[tokio::test]
 async fn an_aws_federated_credential_has_no_provider() {
     let result = UnavailableAws.credentials(&AwsSettings::default()).await;
-    assert!(result.is_err());
+    assert!(matches!(
+        result,
+        Err(CredentialError::Source(SourceError::MissingProvider))
+    ));
 }
 
 #[tokio::test]
@@ -160,7 +169,7 @@ async fn refresh_moves_the_handle_to_the_new_token() {
     assert_eq!(refreshed.project_id.as_deref(), Some("project"));
     assert_eq!(
         refreshed.expires_at,
-        Some(SystemTime::UNIX_EPOCH + Duration::from_secs(EPOCH_SECONDS + 600))
+        SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(REFRESHED_EXPIRY_SECONDS))
     );
     let handles = executor.handles.lock().unwrap();
     assert!(handles.contains_key(&digest("new-token")));
@@ -168,6 +177,7 @@ async fn refresh_moves_the_handle_to_the_new_token() {
     // the map holds digests, so no key is a plain token
     assert!(!handles.contains_key("new-token"));
     assert!(handles.keys().all(|key| key.len() == 64));
+    drop(handles);
 }
 
 #[tokio::test]

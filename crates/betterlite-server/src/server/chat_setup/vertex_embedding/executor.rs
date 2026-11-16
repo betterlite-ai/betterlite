@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -29,8 +29,11 @@ const ASSUMED_TOKEN_LIFETIME: Duration = Duration::from_secs(600);
 pub(crate) struct UnavailableAws;
 
 impl AwsCredentialsResolver for UnavailableAws {
-    async fn credentials(&self, _settings: &AwsSettings) -> Result<Credentials, CredentialError> {
-        Err(CredentialError::Source(SourceError::MissingProvider))
+    fn credentials(
+        &self,
+        _settings: &AwsSettings,
+    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send {
+        ready(Err(CredentialError::Source(SourceError::MissingProvider)))
     }
 }
 
@@ -58,6 +61,7 @@ impl VertexCredentialExecutor {
             hex::encode(Sha256::digest(token.expose_secret().as_bytes())),
             handle,
         );
+        drop(handles);
         CredentialSnapshot {
             token: Some(token),
             state: None,
