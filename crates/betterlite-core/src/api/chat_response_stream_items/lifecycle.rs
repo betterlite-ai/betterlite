@@ -118,13 +118,13 @@ fn response_data<Context>(
             .cloned()
             .unwrap_or_else(|| Json::List(Vec::new())),
     );
-    data.insert(
-        "top_p".to_owned(),
-        request
-            .get("top_p")
-            .cloned()
-            .unwrap_or_else(|| Number::from_f64(DEFAULT_TOP_P).map_or(Json::Null, Json::Number)),
-    );
+    let top_p = match request.get("top_p") {
+        Some(value) => value.clone(),
+        None => Json::Number(
+            Number::from_f64(DEFAULT_TOP_P).ok_or(StreamItemsError::DefaultTopPNotFinite)?,
+        ),
+    };
+    data.insert("top_p".to_owned(), top_p);
     Ok(data)
 }
 

@@ -9,5 +9,4 @@ pub mod support;
 
 mod completion;
 
-#[path = "chat_response_stream_items/tests.rs"]
 mod tests;
