@@ -72,4 +72,11 @@ deviations:
       record keeps a typed flat cost of zero until the row type selects the column and the gate decides it, so
       the accumulation path needs no second variant.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L188-L207
+  - what: >-
+      Adding one record's metrics past the representable range fails the read with PagesError::Overflow, where
+      LiteLLM's float sums become inf past the float range and its int sums are unbounded.
+    why: >-
+      Each metric is a typed Decimal or i64, so a page whose sums leave that range cannot be represented; a
+      typed error says so instead of serializing a non-finite float.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L210-L236
 kept_bugs: []

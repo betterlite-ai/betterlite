@@ -32,6 +32,16 @@ fn records_are_grouped_by_date() {
         money("3")
     );
     assert_eq!(aggregated.results[1].breakdown.api_keys.len(), 2);
+    assert!(
+        aggregated.results[1].breakdown.models["gpt-4o"]
+            .metadata
+            .is_empty()
+    );
+    assert!(
+        aggregated.results[1].breakdown.providers["unknown"]
+            .metadata
+            .is_empty()
+    );
 }
 
 #[test]
