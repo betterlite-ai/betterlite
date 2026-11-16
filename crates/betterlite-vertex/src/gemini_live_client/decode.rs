@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::str::from_utf8;
 
 use betterlite_prompts::arguments::json::Json;
 use serde::Deserialize;
@@ -138,7 +139,7 @@ pub fn decode_gemini_live_client_event(
 }
 
 fn top_level_error(source: serde_json::Error, bytes: &[u8]) -> LiveClientError {
-    let text = match std::str::from_utf8(bytes) {
+    let text = match from_utf8(bytes) {
         Ok(text) => text,
         Err(error) => {
             return LiveClientError::InvalidJson {
