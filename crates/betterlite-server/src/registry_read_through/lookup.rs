@@ -13,26 +13,32 @@ pub trait GuardrailLookup: Send + Sync {
     fn initialized(&self, guardrail_name: &str) -> Option<&GuardrailCallback>;
 }
 
-pub async fn get_agent_with_read_through<L: AgentLookup, R: Resync>(
+pub async fn get_agent_with_read_through<L, R>(
     lookup: &L,
     read_through: &RegistryReadThrough<R>,
     key: &str,
-) -> Option<AgentResponse> {
-    if let Some(agent) = lookup.by_id_or_name(key) {
-        return Some(agent);
+) -> Option<AgentResponse>
+where
+    L: AgentLookup,
+    R: Resync,
+{
+    let cached = lookup.by_id_or_name(key);
+    if cached.is_none() && read_through.attempt(key).await {
+        return lookup.by_id_or_name(key);
     }
-    if !read_through.attempt(key).await {
-        return None;
-    }
-    lookup.by_id_or_name(key)
+    cached
 }
 
 // ast-grep-ignore: no-long-names
-pub async fn get_guardrail_with_read_through<'lookup, L: GuardrailLookup, R: Resync>(
+pub async fn get_guardrail_with_read_through<'lookup, L, R>(
     lookup: &'lookup L,
     read_through: &RegistryReadThrough<R>,
     guardrail_name: &str,
-) -> Option<&'lookup GuardrailCallback> {
+) -> Option<&'lookup GuardrailCallback>
+where
+    L: GuardrailLookup,
+    R: Resync,
+{
     if let Some(callback) = lookup.initialized(guardrail_name) {
         return Some(callback);
     }

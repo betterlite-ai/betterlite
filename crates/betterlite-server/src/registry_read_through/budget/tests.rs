@@ -96,7 +96,10 @@ fn spend_resync_budget(state: &mut State, attempts: usize) -> Vec<bool> {
     granted
 }
 
-async fn exhaust_budget<R: Resync>(read_through: &RegistryReadThrough<R>) {
+async fn exhaust_budget<R>(read_through: &RegistryReadThrough<R>)
+where
+    R: Resync,
+{
     for index in 0..READ_THROUGH_MAX_RESYNCS {
         let key = format!("missing-model-{index}");
         assert!(!read_through.attempt(&key).await);
