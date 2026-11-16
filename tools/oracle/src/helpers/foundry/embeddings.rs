@@ -20,12 +20,13 @@ use http::header::{
 };
 use secrecy::SecretString;
 use serde_json::{Value, json};
+use tokio::runtime::{Builder, Runtime};
 
 mod failure;
 mod input;
 mod tests;
 
-use failure::{Failure, failure, helper_error};
+use failure::{failure, helper_error};
 use input::{ClientName, FlowCall, Input, ReplyCall};
 
 #[derive(Default)]
@@ -169,12 +170,8 @@ fn error_view(error: &FoundryEmbeddingError) -> Result<Value, Box<HelperError>> 
     let Some(mapped) = failure(error) else {
         return Err(helper_error("EmbeddingError", error.to_string()));
     };
-    let (kind, status) = match mapped {
-        Failure::Class(kind) => (kind, Value::Null),
-        Failure::Status(status) => ("HTTPStatusError", json!(status)),
-        Failure::Reply(status) => ("Exception", json!(status)),
-    };
-    Ok(json!({"kind": kind, "status": status}))
+    let status = mapped.status.map_or(Value::Null, |status| json!(status));
+    Ok(json!({"kind": mapped.class, "status": status}))
 }
 
 // one flow's answer: the recorded calls and clients, then the response or the error class
@@ -213,10 +210,7 @@ fn fixtures(flow: &FlowCall) -> (Shared, Option<Recorder>, Factory) {
     (state, held, factory)
 }
 
-fn flow_outcome(
-    flow: &FlowCall,
-    runtime: &tokio::runtime::Runtime,
-) -> Result<Value, Box<HelperError>> {
+fn flow_outcome(flow: &FlowCall, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
     let (state, held, factory) = fixtures(flow);
     let text = Recorder {
         state: Arc::clone(&state),
@@ -246,7 +240,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| helper_error("RuntimeError", error.to_string()))?;
         let flows = input

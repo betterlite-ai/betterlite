@@ -1,30 +1,54 @@
 use betterlite_foundry::embeddings::error::FoundryEmbeddingError;
 use betterlite_oracle_helper_api::error::HelperError;
 
-// the Python class each failure corresponds to in LiteLLM's conversion path
-pub(super) enum Failure {
-    Class(&'static str),
-    Status(u16),
-    Reply(u16),
+// the Python class a failure lands in, with the status LiteLLM sets on the raised object
+pub(super) struct Failure {
+    pub(super) class: &'static str,
+    pub(super) status: Option<u16>,
 }
 
 pub(super) fn failure(error: &FoundryEmbeddingError) -> Option<Failure> {
     match error {
         FoundryEmbeddingError::ApiBaseMissing
         | FoundryEmbeddingError::ApiKeyMissing
-        | FoundryEmbeddingError::TokenCount { .. } => Some(Failure::Class("ValueError")),
+        | FoundryEmbeddingError::TokenCount { .. } => Some(Failure {
+            class: "ValueError",
+            status: None,
+        }),
         FoundryEmbeddingError::ImageDataMissing | FoundryEmbeddingError::TextDataMissing => {
-            Some(Failure::Class("Exception"))
+            Some(Failure {
+                class: "Exception",
+                status: None,
+            })
         }
-        FoundryEmbeddingError::Provider { status } => Some(Failure::Status(*status)),
-        FoundryEmbeddingError::ReplyError { status } => Some(Failure::Reply(*status)),
-        FoundryEmbeddingError::Json { source } if source.is_data() => {
-            Some(Failure::Class("ResponseValidationError"))
-        }
-        FoundryEmbeddingError::Json { .. } => Some(Failure::Class("JSONDecodeError")),
-        FoundryEmbeddingError::DataMissing => Some(Failure::Class("KeyError")),
-        FoundryEmbeddingError::TooFewEntries { .. } => Some(Failure::Class("IndexError")),
-        FoundryEmbeddingError::Transport { .. } => Some(Failure::Class("TransportError")),
+        FoundryEmbeddingError::Provider { status } => Some(Failure {
+            class: "HTTPStatusError",
+            status: Some(*status),
+        }),
+        FoundryEmbeddingError::ReplyError { status } => Some(Failure {
+            class: "Exception",
+            status: Some(*status),
+        }),
+        FoundryEmbeddingError::Json { source } if source.is_data() => Some(Failure {
+            class: "ResponseValidationError",
+            status: None,
+        }),
+        FoundryEmbeddingError::Json { .. } => Some(Failure {
+            class: "JSONDecodeError",
+            status: None,
+        }),
+        FoundryEmbeddingError::DataMissing => Some(Failure {
+            class: "KeyError",
+            status: None,
+        }),
+        FoundryEmbeddingError::TooFewEntries { .. } => Some(Failure {
+            class: "IndexError",
+            status: None,
+        }),
+        FoundryEmbeddingError::Transport { .. } => Some(Failure {
+            class: "TransportError",
+            status: None,
+        }),
         FoundryEmbeddingError::FieldType { .. }
         | FoundryEmbeddingError::Encode { .. }
         | FoundryEmbeddingError::Header { .. }
