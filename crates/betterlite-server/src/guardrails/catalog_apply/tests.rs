@@ -395,6 +395,37 @@ async fn blocked_words_reads_yes_as_a_boolean_like_pyyaml() {
     );
 }
 
+// PyYAML reads these spellings as text; serde-saphyr reads them as a boolean or a number (deviation)
+#[rstest]
+#[case::one_letter("y")]
+#[case::letter_n("n")]
+#[case::leading_zero("08")]
+#[case::explicit_octal("0o17")]
+#[case::exponent_only("1e3")]
+#[tokio::test]
+async fn blocked_words_reports_pyyaml_string_spellings_as_non_text(#[case] keyword: &str) {
+    let world = World::new();
+    let content = format!("blocked_words:\n  - keyword: {keyword}\n    action: BLOCK\n");
+    let (status, verdict) = blocked_words(&world, &file_body(&content)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        verdict,
+        value(r#"{"valid":false,"errors":["Entry 0: 'keyword' must be a string"]}"#)
+    );
+}
+
+#[tokio::test]
+async fn blocked_words_reads_a_quoted_spelling_as_text() {
+    let world = World::new();
+    let content = "blocked_words:\n  - keyword: \"08\"\n    action: BLOCK\n";
+    let (status, verdict) = blocked_words(&world, &file_body(content)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        verdict,
+        value(r#"{"valid":true,"message":"Valid YAML file with 1 blocked word(s)"}"#)
+    );
+}
+
 #[derive(Deserialize)]
 struct ValidationBody {
     detail: Vec<ValidationIssue>,
