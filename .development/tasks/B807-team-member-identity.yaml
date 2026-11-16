@@ -147,7 +147,7 @@ checks:
       why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-member-identity-*")"
         && grep -rlq "team_member_identity" tools/oracle/fuzz/corpus/helper_case/team-member-identity-*
-        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: postgres-tests
       why: Prove same-connection locked roster writes, rollback and add/delete serialization on Postgres.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_member_identity::tests::postgres_/)'

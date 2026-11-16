@@ -1,0 +1,49 @@
+kind: helper
+name: foundry-agent-requests-message-content-conversion
+call:
+  foundry_agent_requests:
+    requests:
+      - model: azure_ai/agents/a
+        optional_params: {}
+        messages:
+          - {role: user, content: hello}
+          - {content: no-role}
+          - {role: assistant}
+          - {role: user, content: null}
+          - {role: user, content: 5}
+          - {role: user, content: -2}
+          - {role: user, content: true}
+          - {role: user, content: false}
+          - {role: user, content: 1.5}
+          - {role: user, content: ""}
+          - {role: null, content: x}
+          - {role: user, content: named, name: ignored}
+          - role: user
+            content:
+              - {type: text, text: one}
+              - {type: text, text: two}
+          - role: user
+            content:
+              - {type: image_url, image_url: {url: "https://image.example"}}
+          - role: user
+            content:
+              - {type: text, text: ""}
+              - {type: text}
+          - role: user
+            content: []
+          - role: user
+            content:
+              - {type: text, text: base}
+            search_results:
+              - source: src
+                title: title
+                content:
+                  - {text: block}
+                citations:
+                  - id: 1
+          - role: user
+            content: plain
+            search_results:
+              - {source: src, title: title}
+env: {}
+compare: {ignore: []}

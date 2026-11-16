@@ -1,0 +1,10 @@
+kind: helper
+name: foundry-chat-required-fields
+call:
+  foundry_chat:
+    model_cost: {}
+    chat_models: []
+    text_models: []
+    fields: true
+env: {}
+compare: {ignore: []}
