@@ -161,6 +161,38 @@ async fn merge_creates_and_overwrites_one_sealed_row_in_a_transaction() {
         .await
         .expect("the merge commits");
     assert_eq!(exposed(&created), texts([("EXTRA", "x"), ("K", "one")]));
+    let kept = store
+        .merge_user_env_vars(
+            "alice",
+            "srv-1",
+            &secrets([("K", "two")]),
+            &names(&["K", "EXTRA"]),
+        )
+        .await
+        .expect("the second merge commits");
+    assert_eq!(exposed(&kept), texts([("EXTRA", "x"), ("K", "two")]));
+    let reread = store
+        .get_user_env_vars("alice", "srv-1")
+        .await
+        .expect("the merged row reads back");
+    assert_eq!(exposed(&reread), texts([("EXTRA", "x"), ("K", "two")]));
+}
+
+#[tokio::test]
+async fn merge_prunes_names_outside_the_allowed_set() {
+    let (_fixture, db) = seeded().await;
+    let availability = Availability::default();
+    let store = store_for(&db, &availability);
+    let created = store
+        .merge_user_env_vars(
+            "alice",
+            "srv-1",
+            &secrets([("K", "one"), ("EXTRA", "x")]),
+            &names(&["K", "EXTRA"]),
+        )
+        .await
+        .expect("the first merge commits");
+    assert_eq!(exposed(&created), texts([("EXTRA", "x"), ("K", "one")]));
     let pruned = store
         .merge_user_env_vars("alice", "srv-1", &secrets([("K", "two")]), &names(&["K"]))
         .await
@@ -169,7 +201,7 @@ async fn merge_creates_and_overwrites_one_sealed_row_in_a_transaction() {
     let reread = store
         .get_user_env_vars("alice", "srv-1")
         .await
-        .expect("the merged row reads back");
+        .expect("the pruned row reads back");
     assert_eq!(exposed(&reread), texts([("K", "two")]));
 }
 
