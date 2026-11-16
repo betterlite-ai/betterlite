@@ -1,0 +1,65 @@
+kind: helper
+name: chirp-adapter-response-state-preserved
+call:
+  chirp_adapter:
+    function: responses
+    project: oracle-project
+    location: null
+    model: chirp_2
+    session_id: sess_log
+    configure: '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":16000},"transcription":{"model":"chirp_2","language":"en-US"}}}}}'
+    state:
+      session_configuration_request: '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"chirp_2"}}}}}'
+      current_output_item_id: item_previous
+      current_response_id: resp_previous
+      current_delta_chunks:
+        - type: response.text.delta
+          event_id: event_previous_delta
+          item_id: item_previous
+          output_index: 0
+          content_index: 0
+          response_id: resp_previous
+          delta: prior text
+      current_item_chunks:
+        - type: response.output_item.done
+          event_id: event_previous_item
+          output_index: 0
+          response_id: resp_previous
+          item:
+            id: item_previous
+            type: message
+            status: completed
+      current_conversation_id: conv_previous
+      current_delta_type: text
+    frames:
+      - kind: text
+        value: '{"kind":"configured"}'
+      - kind: text
+        value: '{"kind":"response","speech_event":"begin","results":[],"billed_seconds":0.5}'
+      - kind: text
+        value: '{"kind":"response","speech_event":"none","results":[{"transcript":"hello","is_final":false}],"billed_seconds":1.5}'
+      - kind: bytes
+        base64: /wD+
+      - kind: text
+        value: '{"kind":"response","speech_event":"end","results":[],"billed_seconds":0.25}'
+      - kind: text
+        value: '{"kind":"unknown"}'
+env: {}
+compare:
+  ignore:
+    - pointer: /value/created/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/responses/0/result/response/0/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/responses/1/result/response/0/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/responses/1/result/response/0/item_id
+      why: both sides generate their own item ids
+    - pointer: /value/responses/2/result/response/0/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/responses/2/result/response/0/item_id
+      why: both sides generate their own item ids
+    - pointer: /value/responses/4/result/response/0/event_id
+      why: both sides generate their own event ids
+    - pointer: /value/responses/4/result/response/0/item_id
+      why: both sides generate their own item ids

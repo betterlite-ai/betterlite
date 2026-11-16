@@ -1,0 +1,13 @@
+id: B9963
+milestone: R2 bug fixes
+title: Image token counting fetches remote images
+status: todo
+depends_on: [B258, B197, B5083, B183]
+file: tasks/B9963-image-token-remote-fetch.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

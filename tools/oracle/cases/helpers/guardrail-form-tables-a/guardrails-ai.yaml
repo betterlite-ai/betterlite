@@ -1,0 +1,8 @@
+kind: helper
+name: guardrail-form-tables-a-guardrails-ai
+call:
+  b6561:
+    provider: guardrails_ai
+env: {}
+compare:
+  ignore: []

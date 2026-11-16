@@ -1,0 +1,7 @@
+kind: helper
+name: shadow-pairwise-system-prompt
+call:
+  b4084:
+    operation: system_prompt
+env: {}
+compare: {ignore: []}

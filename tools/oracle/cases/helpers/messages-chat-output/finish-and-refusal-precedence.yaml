@@ -1,0 +1,31 @@
+kind: helper
+name: messages-chat-output-finish-and-refusal-precedence
+call:
+  messages_chat_output:
+    operation: response
+    response:
+      id: msg_finish
+      model: claude-sonnet-4-5
+      choices:
+      - finish_reason: content_filter
+        message:
+          content: partial
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: I cannot help with that
+          provider_specific_fields: null
+      usage:
+        prompt_tokens: 100
+        completion_tokens: 7
+        prompt_tokens_details: null
+        server_tool_use: null
+        cache_read_input_tokens: null
+        cache_creation_input_tokens: null
+        _cache_read_input_tokens: null
+        _cache_creation_input_tokens: null
+    tool_name_mapping: null
+    polyfill_result: null
+env: {}
+compare:
+  ignore: []

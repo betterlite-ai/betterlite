@@ -1,5 +1,6 @@
 pub mod equivalence;
 pub mod error;
+pub mod gcs_metadata;
 pub mod mime;
 pub mod part;
 pub mod policy;
