@@ -1838,6 +1838,7 @@ dependencies = [
 name = "betterlite-error"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "betterlite-redact",
  "regex",
  "rstest",
@@ -1846,6 +1847,7 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -2058,6 +2060,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-interactions",
  "betterlite-models",
  "bytes",
  "crc32fast",
@@ -2655,6 +2658,7 @@ name = "betterlite-oracle-auth"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "axum",
  "betterlite-auth",
  "betterlite-cache",
  "betterlite-config",
@@ -3336,6 +3340,7 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-core",
+ "betterlite-foundry",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
@@ -3398,6 +3403,7 @@ dependencies = [
  "betterlite-auth",
  "betterlite-config",
  "betterlite-db",
+ "betterlite-models",
  "betterlite-oracle-helper-api",
  "betterlite-rate-limit",
  "betterlite-redis",
@@ -3835,6 +3841,7 @@ dependencies = [
  "async-trait",
  "aws-lc-rs",
  "base64 0.23.1",
+ "betterlite-a2a",
  "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-bedrock",
@@ -3843,6 +3850,7 @@ dependencies = [
  "betterlite-core",
  "betterlite-env",
  "betterlite-error",
+ "betterlite-foundry",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",

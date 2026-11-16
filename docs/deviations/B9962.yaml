@@ -1,0 +1,5 @@
+task: B9962
+deviations:
+  - what: The Bedrock llama3 or llama4 instruct and deepseek_r1 prompt arms read the factory cache and download tokenizer_config.json and then chat_template.jinja or chat_template.jinja2 from huggingface.co on a miss, where LiteLLM's built-in known_tokenizer_config already holds both models and never downloads for them.
+    why: betterlite's cache is seeded by whoever builds the PromptFactory; a factory built from builtin_entries answers with no request like LiteLLM, and one built without them renders instead of failing as B2205's row described.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5305-L5309
