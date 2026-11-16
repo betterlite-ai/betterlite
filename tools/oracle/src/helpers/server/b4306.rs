@@ -1,5 +1,5 @@
 use betterlite_server::cache_settings::merge::merge_over_saved;
-use betterlite_server::cache_settings::parse::parse_stored_settings;
+use betterlite_server::cache_settings::parse::{ParseStoredSettingsError, parse_stored_settings};
 use betterlite_server::cache_settings::precedence::resolve_cache_url_precedence;
 use betterlite_server::cache_settings::redact::{
     is_credential_field, redact_credentials, redact_settings,
@@ -9,7 +9,8 @@ use betterlite_server::cache_settings::target::{has_connection_target, target_re
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -75,9 +76,7 @@ impl Helper for Op {
     }
 }
 
-fn parse_error(
-    error: &betterlite_server::cache_settings::parse::ParseStoredSettingsError,
-) -> Box<HelperError> {
+fn parse_error(error: &ParseStoredSettingsError) -> Box<HelperError> {
     Box::new(HelperError {
         class: "JSONDecodeError".to_owned(),
         status: None,

@@ -1,5 +1,6 @@
 use betterlite_error::facts::ProviderErrorFacts;
 use betterlite_error::vertex_errors::map_vertex_exception;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 
 pub(crate) struct Op;
@@ -13,10 +14,10 @@ pub(crate) struct Input {
     status_code: Option<u16>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let facts = ProviderErrorFacts {
             status_code: input.status_code,
             status_code_is_synthesized: false,

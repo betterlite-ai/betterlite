@@ -1,4 +1,5 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::concatenated::{
     salvage_concatenated_arguments, split_concatenated_json,
 };

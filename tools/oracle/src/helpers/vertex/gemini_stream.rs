@@ -1,5 +1,6 @@
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 use betterlite_models::usage_sum::Usage;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_vertex::gemini_response_parts::projection::CallMode;
 use betterlite_vertex::gemini_stream::chunk::{Choice, StreamChunk};
 use betterlite_vertex::gemini_stream::error::StreamError;

@@ -15,7 +15,9 @@ use serde_json::Value;
 use serde_json::json;
 
 use self::fixture::{Fixture, Recorder, logging_view, request_view};
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 const BODY_LIMIT: usize = 1024 * 1024;
 
@@ -27,9 +29,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let fixture = Fixture::new(input.reply.as_ref()).map_err(failure)?;
         let mut recorder = Recorder::default();
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .map_err(failure)?;
+        let runtime = Builder::new_current_thread().build().map_err(failure)?;
         let outcome = runtime.block_on(exercise(input, &fixture, &mut recorder));
         Ok(json!({
             "client": client_view(input).unwrap_or_else(|error| failure_view(&error)),

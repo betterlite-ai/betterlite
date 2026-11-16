@@ -13,13 +13,15 @@ use betterlite_openai::cohere_legacy_embedding::execute::{
 };
 use betterlite_openai::cohere_legacy_embedding::plan::{PlanInput, plan};
 use betterlite_openai::cohere_legacy_embedding::{EmbeddingHooks, PostCall, PreCall, SdkMode};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Object;
 use betterlite_tokenizer::engine::error::EngineError;
 use http::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
 pub(crate) struct Op;
 #[derive(Deserialize)]
@@ -157,22 +159,20 @@ fn scenario(runtime: &Runtime, input: &Call, run: &Run) -> Value {
     json!({"hooks": recorder.records, "outcome": outcome(value)})
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Call;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .map_err(|error| {
-                Box::new(crate::helpers::HelperError {
-                    class: String::from("CohereLegacyEmbedError"),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })
-            })?;
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = Builder::new_current_thread().build().map_err(|error| {
+            Box::new(HelperError {
+                class: String::from("CohereLegacyEmbedError"),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
         let runs: Vec<Value> = input
             .runs
             .iter()

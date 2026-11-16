@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_config::proxy::{ProxyPolicy, ProxyRoute};
 use betterlite_config::types::ProxyTrust;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use reqwest::Url;
 use secrecy::ExposeSecret as _;
 
@@ -14,9 +16,9 @@ pub(crate) struct ProxyPolicyInput {
     pub(crate) disable_aiohttp_trust_env: bool,
 }
 
-pub(crate) fn invoke(
+pub(crate) fn invoke_proxy_policy(
     input: &ProxyPolicyInput,
-) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
+) -> Result<serde_json::Value, Box<HelperError>> {
     let trust = ProxyTrust {
         aiohttp_trust_env: input.aiohttp_trust_env,
         disable_aiohttp_trust_env: input.disable_aiohttp_trust_env,
@@ -45,7 +47,7 @@ pub(crate) fn invoke(
             Ok(Some(ProxyRoute::Invalid { name })) => format!("the {name} proxy URL is not valid"),
         },
     };
-    Err(Box::new(crate::helpers::HelperError {
+    Err(Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
@@ -57,10 +59,10 @@ pub(crate) fn invoke(
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = ProxyPolicyInput;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        invoke(input)
+    fn run(input: &Self::Input) -> HelperResult {
+        invoke_proxy_policy(input)
     }
 }

@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use serde_json::value::RawValue;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(crate) const fn default_moment() -> DateTime<Utc> {
     DateTime::UNIX_EPOCH

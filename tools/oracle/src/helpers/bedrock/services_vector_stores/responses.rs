@@ -11,7 +11,8 @@ use serde_json::{Value, json};
 
 use super::operations::message_failure;
 use super::{Input, RequestScenario, ResponseScenario};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use serde::de::DeserializeOwned;
 
 #[derive(Clone, Copy)]
 pub(super) enum DecodeShape {
@@ -106,7 +107,7 @@ fn request_outcome(scenario: &RequestScenario) -> Value {
 
 fn decode_json<T>(value: &Json) -> Result<T, Box<HelperError>>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
     match serde_json::to_value(value) {
         Ok(shape) => {

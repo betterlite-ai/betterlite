@@ -1,8 +1,8 @@
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 macro_rules! helper_error {
     ($class:expr, $message:expr) => {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: $class.to_owned(),
             status: None,
             error_type: None,

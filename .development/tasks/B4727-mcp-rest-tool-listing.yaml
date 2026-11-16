@@ -31,7 +31,7 @@ description: >-
   non-search contexts, supports admin-only include_disabled_tools to bypass filters, and resolves
   effective auth when a toolset name is given.
 
-  The plan registers helper operation b4727 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b4727.rs, write tools/oracle/helpers/b4727.py, and leave both registries as they are.
+  The plan registers helper operation b4727 as a not_built stub in tools/oracle/src/helpers/mcp/lib.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b4727.rs, write tools/oracle/helpers/b4727.py, and leave both registries as they are.
 
 scope:
   paths:

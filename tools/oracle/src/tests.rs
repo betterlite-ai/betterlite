@@ -23,21 +23,23 @@ use serde_json::Value;
 
 use crate::OracleError;
 use crate::artifacts;
-use crate::case::{
-    Case, Compare, HelperCase, Ignore, LoadedCase, UpstreamAnswer, helper::validate_helper,
-    load_cases,
-};
+use crate::case::{Case, Compare, LoadedCase, load_cases, parse_case};
 use crate::cli::{Arguments, Options, helper_cases_calling};
 use crate::compare;
 use crate::gateway::{self, GatewayInput};
-use crate::helpers::HelperOutput;
-use crate::http::{MAX_BODY, Response, client, ready, send};
-use crate::mock::MockProvider;
-use crate::mock::ProviderRequest;
+use crate::http::{Response, client, ready, send};
 use crate::paths;
-use crate::process::{Gateway, GatewaySpec, sync_litellm};
-use crate::routing_mock_scripts::MockScript;
+use crate::process::{Gateway, GatewaySpec};
 use crate::runner;
+use betterlite_oracle_helper_api::error::{ErrorCode, HelperError};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::case::{Ignore, UpstreamAnswer};
+use betterlite_oracle_runner::compare::compare_helper;
+use betterlite_oracle_runner::compare::helper::{HelperOutput, HelperWarning};
+use betterlite_oracle_runner::mock::{MAX_BODY, MockProvider, ProviderRequest};
+use betterlite_oracle_runner::routing_mock_scripts::MockScript;
+
+mod multipart;
 
 fn response(body: Value) -> Response {
     Response {
@@ -199,7 +201,6 @@ fn oracle_error_preserves_typed_sources() {
 fn oracle_modules_return_the_crate_error() {
     let _: fn(&[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> = load_cases;
     let _: fn() -> Result<Client, OracleError> = client;
-    let _: fn(&Path) -> Result<(), OracleError> = sync_litellm;
     let _: fn() -> Result<PathBuf, OracleError> = paths::artifact_root;
 }
 
@@ -488,13 +489,6 @@ fn process_starts_waits_and_stops_gateways() {
 }
 
 #[test]
-fn litellm_sync_reports_a_missing_project() {
-    let error =
-        sync_litellm(Path::new("/definitely-missing-betterlite-oracle-project")).unwrap_err();
-    assert!(matches!(error, OracleError::ProcessSync(_)));
-}
-
-#[test]
 fn runner_helpers_create_safe_artifact_paths_and_ports() {
     assert_eq!(paths::safe_name("a/b c-underscore_"), "a_b_c-underscore_");
     assert_eq!(paths::safe_name(""), "case");
@@ -524,9 +518,10 @@ fn replays_the_helper_case_corpus() {
         .unwrap()
         .map(|entry| {
             let path = entry.unwrap().path();
-            let source = fs::read_to_string(path).unwrap();
-            let parsed = serde_saphyr::from_str(&source).map_err(|error| error.to_string())?;
-            validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+            let source = fs::read_to_string(&path).unwrap();
+            parse_case(&path, &source)
+                .map(drop)
+                .map_err(|error| error.to_string())
         })
         .collect::<Result<Vec<_>, _>>();
     results.unwrap();
@@ -584,7 +579,7 @@ fn k_fails_when_no_helper_case_calls_the_operation(#[case] operation: &str) {
 fn helper_comparison_reports_differences() {
     let left: HelperOutput = serde_json::from_str(r#"{"ok":true,"value":"left"}"#).unwrap();
     let right: HelperOutput = serde_json::from_str(r#"{"ok":true,"value":"right"}"#).unwrap();
-    compare::compare_helper(&left, &right, &[]).unwrap();
+    compare_helper(&left, &right, &[]).unwrap();
 }
 
 #[test]
@@ -597,19 +592,19 @@ fn helper_comparison_skips_error_class_and_message() {
         r#"{"ok":false,"error":{"class":"TypeError","status":400,"message":"right message"}}"#,
     )
     .unwrap();
-    assert!(compare::compare_helper(&left, &right, &[]).is_none());
+    assert!(compare_helper(&left, &right, &[]).is_none());
 }
 
 fn error_output(status: u16, error_type: &str, param: &str, code: &str) -> HelperOutput {
     HelperOutput {
         ok: false,
         value: None,
-        error: Some(compare::helper::HelperError {
+        error: Some(HelperError {
             class: "Error".to_owned(),
             status: Some(status),
             error_type: Some(Some(error_type.to_owned())),
             param: Some(Some(param.to_owned())),
-            code: Some(Some(compare::helper::ErrorCode::Text(code.to_owned()))),
+            code: Some(Some(ErrorCode::Text(code.to_owned()))),
             message: "failed".to_owned(),
         }),
         warnings: Vec::new(),
@@ -649,7 +644,7 @@ fn helper_comparison_compares_error_codes(
 ) {
     let left = error_output(400_u16, "invalid_request_error", "model", "missing_model");
     let right = error_output(status, error_type, param, code);
-    let difference = compare::compare_helper(&left, &right, &[]).unwrap();
+    let difference = compare_helper(&left, &right, &[]).unwrap();
     assert_eq!(difference.pointer, pointer);
 }
 
@@ -660,7 +655,7 @@ fn warning_output(warnings: &[(&str, &str)]) -> HelperOutput {
         error: None,
         warnings: warnings
             .iter()
-            .map(|(subject, message)| compare::helper::HelperWarning {
+            .map(|(subject, message)| HelperWarning {
                 subject: (*subject).to_owned(),
                 message: (*message).to_owned(),
             })
@@ -673,14 +668,14 @@ fn warning_output(warnings: &[(&str, &str)]) -> HelperOutput {
 fn helper_comparison_skips_every_warning_message() {
     let left = warning_output(&[("alpha", "left one"), ("beta", "left two")]);
     let right = warning_output(&[("alpha", "right one"), ("beta", "right two")]);
-    assert!(compare::compare_helper(&left, &right, &[]).is_none());
+    assert!(compare_helper(&left, &right, &[]).is_none());
 }
 
 #[test]
 fn helper_comparison_names_the_differing_warning_subject() {
     let left = warning_output(&[("alpha", "left message"), ("beta", "left message")]);
     let right = warning_output(&[("alpha", "right message"), ("gamma", "right message")]);
-    let difference = compare::compare_helper(&left, &right, &[]).unwrap();
+    let difference = compare_helper(&left, &right, &[]).unwrap();
     assert_eq!(difference.pointer, "/warnings/1/subject");
 }
 
@@ -696,7 +691,7 @@ fn helper_comparison_rejects_skipped_ignores(#[case] pointer: &str) {
         pointer: pointer.to_owned(),
         why: "no longer needed".to_owned(),
     }];
-    let difference = compare::compare_helper(&output, &output, &ignores).unwrap();
+    let difference = compare_helper(&output, &output, &ignores).unwrap();
     assert_eq!(
         difference.message,
         "compare.ignore names a field helper comparisons skip"

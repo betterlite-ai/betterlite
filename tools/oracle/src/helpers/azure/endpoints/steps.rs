@@ -7,11 +7,14 @@ use betterlite_azure::endpoints::projection::{ClientKind, SuppliedClient};
 use betterlite_config::sections::azure_endpoints::Settings;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::fixture::{Cache, Sources, callable};
 use super::reports;
 use super::{ClientStep, CloudflareStep, Defaults, DynamicStep, Input, SuppliedKind, SuppliedStep};
+use betterlite_azure::endpoints::dynamic;
+use betterlite_azure::endpoints::dynamic::DynamicVersionError;
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
@@ -47,12 +50,12 @@ fn run_steps<S>(steps: &[S], one: fn(&S) -> Result<Value, EndpointError>) -> Hel
 }
 
 fn dynamic_step(step: &DynamicStep) -> Value {
-    match betterlite_azure::endpoints::dynamic::check_dynamic_azure_params(
+    match dynamic::check_dynamic_azure_params(
         step.api_version.as_deref(),
         step.custom_query.as_ref(),
     ) {
         Ok(changed) => json!({"changed": changed}),
-        Err(betterlite_azure::endpoints::dynamic::DynamicVersionError::MissingApiVersion) => {
+        Err(DynamicVersionError::MissingApiVersion) => {
             json!({"error": "KeyError"})
         }
     }
