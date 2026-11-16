@@ -336,12 +336,17 @@ def answer_outcome(state: FlowState, response: EmbeddingResponse) -> dict[str, J
         "completion_tokens": view["usage"]["completion_tokens"],
         "total_tokens": view["usage"]["total_tokens"],
     }
+    # an input with no image and no text entries performs no call, so no conversion sets the headers
+    additional_headers: dict[str, JsonValue] = {}
+    supplied: JsonValue = hidden.get("additional_headers")
+    if supplied is not None:
+        additional_headers = JSON_OBJECT.validate_python(supplied)
     answer: dict[str, JsonValue] = {
         "object": view["object"],
         "model": view["model"],
         "data": view["data"],
         "usage": usage,
-        "additional_headers": hidden["additional_headers"],
+        "additional_headers": additional_headers,
     }
     return outcome(state, answer, None)
 
