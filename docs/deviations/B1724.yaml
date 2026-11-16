@@ -48,6 +48,16 @@ deviations:
       already see different orders. betterlite returns the same aliases in sorted
       order.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4153
+  - what: >-
+      A spend amount that Postgres returns as NaN or Infinity, or as a value
+      Decimal cannot represent, answers the route's 500 error body. LiteLLM
+      passes it through and serializes the NaN or Infinity number.
+    why: >-
+      json.dumps writes NaN and Infinity as bare literals, which no strict JSON
+      parser accepts, so such a response is already broken for a client. betterlite
+      treats an amount it cannot represent as unreadable spend data and keeps the
+      typed parse cause in the error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3951-L3957
 kept_bugs:
   - what: >-
       An internal viewer's /global/spend/keys ignores the limit it sends and always
