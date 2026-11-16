@@ -1,0 +1,41 @@
+kind: helper
+name: guardrail-usage-window-defaults-and-format
+call:
+  b3689:
+    function: resolve_window
+    cases:
+      - start_date: null
+        end_date: null
+        now: "2026-11-16T12:00:00+00:00"
+      - start_date: null
+        end_date: null
+        now: "2026-03-16T00:30:00+02:00"
+      - start_date: null
+        end_date: null
+        now: "2026-01-03T23:59:59-05:00"
+      - start_date: null
+        end_date: null
+        now: "2026-11-03T00:00:00+00:00"
+      - start_date: "2026-03-01"
+        end_date: null
+        now: "2026-03-20T00:00:00+00:00"
+      - start_date: null
+        end_date: "2026-03-20"
+        now: "2026-03-20T00:00:00+00:00"
+      - start_date: "2026-03-01"
+        end_date: "2026-03-08"
+        now: "2026-11-16T12:00:00+00:00"
+      - start_date: "0001-01-01"
+        end_date: "0001-01-02"
+        now: "2026-11-16T12:00:00+00:00"
+      - start_date: "2026-02-28"
+        end_date: "2026-03-01"
+        now: "2026-11-16T12:00:00+00:00"
+      - start_date: "2028-02-28"
+        end_date: "2028-03-01"
+        now: "2026-11-16T12:00:00+00:00"
+      - start_date: "9999-12-30"
+        end_date: "9999-12-31"
+        now: "2026-11-16T12:00:00+00:00"
+env: {}
+compare: {ignore: []}

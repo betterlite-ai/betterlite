@@ -1,0 +1,13 @@
+kind: helper
+name: plain-text-ssml-escaping
+call:
+  azure_native_speech:
+    plain_text_ssml_escaping:
+      inputs:
+        - 'plain text'
+        - 'a & b < c > d " e '' f'
+        - '&lt;already escaped&gt;'
+        - ''
+        - "line one\nline two"
+env: {}
+compare: {ignore: []}

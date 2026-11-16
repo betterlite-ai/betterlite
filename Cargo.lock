@@ -1207,6 +1207,7 @@ dependencies = [
  "indexmap 2.14.2",
  "jsonwebtoken",
  "lru",
+ "num-traits",
  "p12-keystore",
  "pem",
  "percent-encoding",
@@ -1789,6 +1790,7 @@ dependencies = [
  "betterlite-secrets",
  "libfuzzer-sys",
  "secrecy",
+ "serde_json",
  "uuid",
 ]
 
@@ -4504,6 +4506,7 @@ name = "betterlite-tokenizer-fuzz"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "betterlite-prompts",
  "betterlite-tokenizer",
  "libfuzzer-sys",
  "tokio",
