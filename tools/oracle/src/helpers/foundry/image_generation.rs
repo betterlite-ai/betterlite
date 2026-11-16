@@ -90,7 +90,10 @@ fn failure(error: &FoundryImageError) -> Value {
     })
 }
 
-fn outcome<T: Serialize>(result: Result<T, FoundryImageError>) -> Value {
+fn outcome<T>(result: Result<T, FoundryImageError>) -> Value
+where
+    T: Serialize,
+{
     match result {
         Ok(value) => json!({ "value": value }),
         Err(error) => failure(&error),

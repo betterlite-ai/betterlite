@@ -115,6 +115,11 @@ fn guidance_field() {
 }
 
 fn conversion_errors() {
+    whole_number_errors();
+    decimal_errors();
+}
+
+fn whole_number_errors() {
     let count = mapped(r#"{"n":"two"}"#, "{}", FLUX2, false).expect_err("a whole number");
     assert_eq!(
         count,
@@ -138,6 +143,9 @@ fn conversion_errors() {
             value: String::from("6.5"),
         }
     );
+}
+
+fn decimal_errors() {
     let guidance = mapped(r#"{"guidance":"fast"}"#, "{}", FLUX2, false).expect_err("a number");
     assert_eq!(
         guidance,
