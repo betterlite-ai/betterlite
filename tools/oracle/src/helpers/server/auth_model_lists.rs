@@ -88,11 +88,18 @@ fn key_models(case: &Grants) -> HelperResult {
 }
 // LiteLLM builds a Python set here, so the sorted answer is the comparable one.
 fn team_models(case: &Grants) -> HelperResult {
+    let Grants {
+        team_models,
+        proxy_model_list,
+        model_access_groups,
+        include_model_access_groups,
+        ..
+    } = case;
     let mut models = get_team_models(
-        &case.team_models,
-        &case.proxy_model_list,
-        &case.model_access_groups,
-        case.include_model_access_groups,
+        team_models,
+        proxy_model_list,
+        model_access_groups,
+        *include_model_access_groups,
     );
     models.sort();
     to_value(models)
