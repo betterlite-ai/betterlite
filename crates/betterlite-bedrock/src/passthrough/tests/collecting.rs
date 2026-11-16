@@ -1,13 +1,16 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
-use betterlite_openai::passthrough::transformation::PassthroughStreamCollector;
+use betterlite_openai::passthrough::transformation::types::PassthroughTarget;
+use betterlite_openai::passthrough::transformation::{
+    BasePassthroughConfig as _, PassthroughStreamCollector,
+};
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 
 use super::super::CollectorClock;
 use super::super::collector::BedrockEventStreamCollector;
 use super::super::record::{DecodedChunk, EventChunkDecoder, StreamLogError};
-use super::{TestAssembler, TestLogging, clock, fixtures, json};
+use super::{TestAssembler, TestLogging, clock, default_plan, fixtures, json};
 
 const FAIL_PAYLOAD: &[u8] = br#"{"fail":true}"#;
 const ASSEMBLED: &str = r#"{"id":"assembled"}"#;
@@ -157,9 +160,36 @@ fn trait_collector_keeps_the_failure() {
     assert_eq!(after, None);
 }
 
+fn plan_builds_the_collector_for_its_endpoint() {
+    let services = fixtures();
+    let config = default_plan(&services);
+    let delta = event_frame(
+        "contentBlockDelta",
+        br#"{"contentBlockIndex":0,"delta":{"text":"hi"}}"#,
+    );
+    let converse = PassthroughTarget {
+        model: "anthropic.claude-3",
+        custom_llm_provider: "bedrock",
+        endpoint: "model/x/converse-stream",
+    };
+    let mut stream = config.create_stream_collector(&converse);
+    stream.add(&delta);
+    let logged = stream.build_logged_response(&mut TestLogging).unwrap();
+    assert_eq!(logged, Some(json(ASSEMBLED)));
+    let other = PassthroughTarget {
+        endpoint: "model/x/other",
+        ..converse
+    };
+    let mut disabled = config.create_stream_collector(&other);
+    disabled.add(&delta);
+    let skipped = disabled.build_logged_response(&mut TestLogging).unwrap();
+    assert_eq!(skipped, None);
+}
+
 pub(super) fn event_stream_collector() {
     fragments_and_generic_records();
     disabled_and_empty_collectors();
     decoder_and_frame_errors_propagate();
     trait_collector_keeps_the_failure();
+    plan_builds_the_collector_for_its_endpoint();
 }

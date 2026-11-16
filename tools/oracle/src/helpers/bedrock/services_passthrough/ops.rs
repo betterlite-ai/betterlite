@@ -21,7 +21,7 @@ use betterlite_openai::passthrough::transformation::types::{
     RelayCallType, RelayedResponse,
 };
 use betterlite_openai::passthrough::transformation::{
-    BasePassthroughConfig, PassthroughStreamCollector,
+    BasePassthroughConfig as _, PassthroughStreamCollector as _,
 };
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;

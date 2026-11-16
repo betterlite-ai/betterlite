@@ -411,7 +411,7 @@ fn signed_with_the_configured_bearer() {
         String::from_utf8(body.unwrap()).unwrap(),
         r#"{"input": "hi"}"#
     );
-    assert_eq!(get_bedrock_bearer_token(&params), None);
+    assert!(get_bedrock_bearer_token(&params).is_none());
 }
 
 fn signed_with_sigv4_credentials() {
@@ -449,6 +449,20 @@ fn supplied_content_type_is_kept() {
     assert_eq!(types.count(), 1);
 }
 
+fn caller_authorization_and_length_win() {
+    let services = fixtures();
+    let config = default_plan(&services);
+    let params = object(r#"{"aws_region_name":"eu-west-1"}"#);
+    let mut supplied = Headers::new();
+    supplied.insert("authorization".to_owned(), "Bearer supplied".to_owned());
+    supplied.insert("Content-Length".to_owned(), "5".to_owned());
+    let context = signing_context(&params, None);
+    let (signed, _) = config.sign_request(supplied, &context).unwrap();
+    assert_eq!(signed["Authorization"], "Bearer supplied");
+    assert!(!signed.contains_key("authorization"));
+    assert_eq!(signed["Content-Length"], "5");
+}
+
 fn error_class_keeps_status_message_and_headers() {
     let services = fixtures();
     let config = default_plan(&services);
@@ -474,6 +488,7 @@ fn bearer_selection() {
     signed_with_the_configured_bearer();
     signed_with_sigv4_credentials();
     supplied_content_type_is_kept();
+    caller_authorization_and_length_win();
     error_class_keeps_status_message_and_headers();
 }
 
@@ -717,7 +732,7 @@ fn converse_and_other_endpoints() {
     let DecoderChoice::Converse(mut decoder) = converse else {
         panic!("expected a converse decoder");
     };
-    let text = r#"{"contentBlockDelta":{"delta":{"text":"hi"}}}"#;
+    let text = r#"{"contentBlockIndex":0,"delta":{"text":"hi"}}"#;
     let chunk = decode_chunk(&mut decoder, text);
     assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("hi"));
     assert_eq!(chunk.model, "mystery.v9");
@@ -739,7 +754,7 @@ fn legacy_factory_has_no_moonshot_branch() {
         panic!("expected an invoke decoder");
     };
     assert_eq!(provider.name(), "moonshot");
-    let text = r#"{"contentBlockDelta":{"delta":{"text":"hi"}}}"#;
+    let text = r#"{"contentBlockIndex":0,"delta":{"text":"hi"}}"#;
     let chunk = decode_chunk(&mut decoder, text);
     assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("hi"));
     let boxed = decoder_box(decoder_selection(
