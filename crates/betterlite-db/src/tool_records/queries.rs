@@ -25,7 +25,8 @@ pub async fn list_tools<Client>(
 where
     Client: GenericClient + Sync,
 {
-    match fetch_tools(client, input_policy).await {
+    let policy = input_policy.map(ToolInputPolicy::as_str);
+    match read_tools(client, LIST_TOOLS_SQL, policy).await {
         Ok(tools) => tools,
         Err(error) => {
             // LiteLLM answers a failed read with an empty list rather than an error
@@ -35,42 +36,49 @@ where
     }
 }
 
-async fn fetch_tools<Client>(
+pub async fn get_tool<Client>(
     client: Option<&Client>,
-    input_policy: Option<ToolInputPolicy>,
+    tool_name: &str,
+) -> Option<LiteLLMToolTableRow>
+where
+    Client: GenericClient + Sync,
+{
+    read_tools(client, GET_TOOL_SQL, Some(tool_name))
+        .await
+        .inspect_err(|error| tracing::error!("tool_registry_writer get_tool error: {error}"))
+        .ok()
+        .and_then(|tools| tools.into_iter().next())
+}
+
+async fn read_tools<Client>(
+    client: Option<&Client>,
+    sql: &str,
+    parameter: Option<&str>,
 ) -> Result<Vec<LiteLLMToolTableRow>, ToolRecordsError>
 where
     Client: GenericClient + Sync,
 {
-    let mut tools = tool_rows(client, input_policy).await?;
+    let connected = client.ok_or_else(|| ToolRecordsError::Tools {
+        source: DbError::NoDbConnected,
+    })?;
+    let rows = connected
+        .query(sql, &[&parameter])
+        .await
+        .map_err(|source| ToolRecordsError::Tools {
+            source: backend(source),
+        })?;
+    let mut tools = rows
+        .iter()
+        .map(decode_tool_row)
+        .collect::<Result<Vec<_>, _>>()?;
     let key_hashes: BTreeSet<String> = tools
         .iter()
         .filter_map(|tool| tool.key_hash.clone())
         .filter(|key| !key.is_empty())
         .collect();
-    let owners = key_owners_or_none(client, &key_hashes).await?;
+    let owners = key_owners_or_none(connected, &key_hashes).await?;
     attach_owners(&mut tools, &owners);
     Ok(tools)
-}
-
-async fn tool_rows<Client>(
-    client: Option<&Client>,
-    input_policy: Option<ToolInputPolicy>,
-) -> Result<Vec<LiteLLMToolTableRow>, ToolRecordsError>
-where
-    Client: GenericClient + Sync,
-{
-    let client = client.ok_or_else(|| ToolRecordsError::Tools {
-        source: DbError::NoDbConnected,
-    })?;
-    let policy = input_policy.map(ToolInputPolicy::as_str);
-    let rows = client
-        .query(LIST_TOOLS_SQL, &[&policy])
-        .await
-        .map_err(|source| ToolRecordsError::Tools {
-            source: backend(source),
-        })?;
-    rows.iter().map(decode_tool_row).collect()
 }
 
 fn decode_tool_row(row: &Row) -> Result<LiteLLMToolTableRow, ToolRecordsError> {
@@ -82,55 +90,8 @@ fn decode_tool_row(row: &Row) -> Result<LiteLLMToolTableRow, ToolRecordsError> {
     })
 }
 
-pub async fn get_tool<Client>(
-    client: Option<&Client>,
-    tool_name: &str,
-) -> Option<LiteLLMToolTableRow>
-where
-    Client: GenericClient + Sync,
-{
-    match fetch_tool(client, tool_name).await {
-        Ok(tool) => tool,
-        Err(error) => {
-            tracing::error!("tool_registry_writer get_tool error: {error}");
-            None
-        }
-    }
-}
-
-async fn fetch_tool<Client>(
-    client: Option<&Client>,
-    tool_name: &str,
-) -> Result<Option<LiteLLMToolTableRow>, ToolRecordsError>
-where
-    Client: GenericClient + Sync,
-{
-    let client = client.ok_or_else(|| ToolRecordsError::Tools {
-        source: DbError::NoDbConnected,
-    })?;
-    let row = client
-        .query_opt(GET_TOOL_SQL, &[&tool_name])
-        .await
-        .map_err(|source| ToolRecordsError::Tools {
-            source: backend(source),
-        })?;
-    let Some(row) = row else {
-        return Ok(None);
-    };
-    let mut tool = decode_tool_row(&row)?;
-    let key_hashes: BTreeSet<String> = tool
-        .key_hash
-        .iter()
-        .filter(|key| !key.is_empty())
-        .cloned()
-        .collect();
-    let owners = key_owners_or_none(Some(client), &key_hashes).await?;
-    attach_owners(std::slice::from_mut(&mut tool), &owners);
-    Ok(Some(tool))
-}
-
 async fn key_owners<Client>(
-    client: Option<&Client>,
+    client: &Client,
     key_hashes: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, ToolDiscoveryUser>, ToolRecordsError>
 where
@@ -139,9 +100,6 @@ where
     if key_hashes.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let client = client.ok_or_else(|| ToolRecordsError::Tokens {
-        source: DbError::NoDbConnected,
-    })?;
     let hashes: Vec<String> = key_hashes.iter().cloned().collect();
     let tokens = Repository {
         client: Some(client),
@@ -168,7 +126,7 @@ where
 }
 
 async fn key_owners_or_none<Client>(
-    client: Option<&Client>,
+    client: &Client,
     key_hashes: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, ToolDiscoveryUser>, ToolRecordsError>
 where

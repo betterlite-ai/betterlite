@@ -51,7 +51,7 @@ fn call_policies_use_the_litellm_literals(#[case] policy: ToolCallPolicy, #[case
         serde_json::from_value::<ToolCallPolicy>(serde_json::json!(text)).unwrap(),
         policy
     );
-    assert!(serde_json::from_value::<ToolCallPolicy>(serde_json::json!("guardrail")).is_err());
+    drop(serde_json::from_value::<ToolCallPolicy>(serde_json::json!("guardrail")).unwrap_err());
 }
 
 #[rstest]
@@ -358,7 +358,6 @@ fn attach_owners_leaves_tools_without_a_known_owner_null() {
 }
 
 #[rstest]
-#[files("fuzz/corpus/tool_record/*")]
-fn replays_the_tool_record_corpus(path: PathBuf) {
+fn replays_the_tool_record_corpus(#[files("fuzz/corpus/tool_record/*")] path: PathBuf) {
     drop(decode_tool_record(&fs::read(path).unwrap()));
 }

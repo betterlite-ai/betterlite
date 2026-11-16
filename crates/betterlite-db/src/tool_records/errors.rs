@@ -32,7 +32,7 @@ pub(crate) enum ToolRecordsError {
 
 impl ToolRecordsError {
     // LiteLLM's owner lookup catches only prisma's database error, so a row that fails validation still escapes it
-    pub(crate) fn is_database_failure(&self) -> bool {
+    pub(crate) const fn is_database_failure(&self) -> bool {
         match self {
             Self::Tools { source } => is_driver_failure(source),
             Self::Tokens { source } => is_driver_failure(source),
@@ -42,7 +42,7 @@ impl ToolRecordsError {
     }
 }
 
-fn is_driver_failure<Failure>(error: &DbError<Failure>) -> bool {
+const fn is_driver_failure<Failure>(error: &DbError<Failure>) -> bool {
     match error {
         DbError::NoDbConnected
         | DbError::Pool { .. }

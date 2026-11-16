@@ -2,7 +2,7 @@ import asyncio
 import sys
 import types
 from collections.abc import Mapping, Sequence
-from typing import TypedDict
+from typing import Generic, TypedDict, TypeVar
 
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.db.tool_registry_writer import list_tools
@@ -26,6 +26,7 @@ _PRISMA = PrismaModule("prisma")
 sys.modules.setdefault("prisma", _PRISMA)
 sys.modules.setdefault("prisma.errors", _PRISMA.errors)
 
+RowT = TypeVar("RowT")
 ROW_VALUE: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 
 
@@ -61,40 +62,27 @@ class FakeToolTable:
         return self.rows
 
 
-class FakeTokenTable:
-    def __init__(self, rows: Sequence[TokenRow]) -> None:
+class FakeMembershipTable(Generic[RowT]):
+    def __init__(self, column: str, rows: Sequence[tuple[str, RowT]]) -> None:
+        self.column = column
         self.rows = rows
 
     async def find_many(
         self,
         *,
         where: Mapping[str, Mapping[str, Sequence[str]]],
-    ) -> Sequence[TokenRow]:
+    ) -> Sequence[RowT]:
         await asyncio.sleep(0)
-        wanted = where["token"]["in"]
-        return [row for row in self.rows if row["token"] in wanted]
-
-
-class FakeUserTable:
-    def __init__(self, rows: Sequence[UserRow]) -> None:
-        self.rows = rows
-
-    async def find_many(
-        self,
-        *,
-        where: Mapping[str, Mapping[str, Sequence[str]]],
-    ) -> Sequence[UserRow]:
-        await asyncio.sleep(0)
-        wanted = where["user_id"]["in"]
-        return [row for row in self.rows if row["user_id"] in wanted]
+        wanted = where[self.column]["in"]
+        return [row for key, row in self.rows if key in wanted]
 
 
 class FakeDb(PrismaWrapper):
     def __init__(
         self,
         tools: FakeToolTable,
-        tokens: FakeTokenTable,
-        users: FakeUserTable,
+        tokens: FakeMembershipTable[TokenRow],
+        users: FakeMembershipTable[UserRow],
     ) -> None:
         self.litellm_tooltable = tools
         self.litellm_verificationtoken = tokens
@@ -105,8 +93,8 @@ class FakeClient(PrismaClient):
     def __init__(self, input_value: Input) -> None:
         self.db = FakeDb(
             FakeToolTable(input_value["rows"]),
-            FakeTokenTable(input_value["tokens"]),
-            FakeUserTable(input_value["users"]),
+            FakeMembershipTable("token", [(row["token"], row) for row in input_value["tokens"]]),
+            FakeMembershipTable("user_id", [(row["user_id"], row) for row in input_value["users"]]),
         )
 
 

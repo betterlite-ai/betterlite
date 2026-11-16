@@ -28,7 +28,7 @@ pub fn decode_tool_record(bytes: &[u8]) -> Result<LiteLLMToolTableRow, ToolRecor
     let JsonData::Object(mut fields) = record else {
         return Err(ToolRecordDecodeError::NotAnObject);
     };
-    apply_falsy_defaults(&mut fields);
+    apply_unset_defaults(&mut fields);
     // LiteLLM's row converter never reads an owner column; the owner lookup fills the field afterwards
     fields.remove("user");
     let text = serde_json::to_string(&JsonData::Object(fields))
@@ -37,7 +37,7 @@ pub fn decode_tool_record(bytes: &[u8]) -> Result<LiteLLMToolTableRow, ToolRecor
 }
 
 // LiteLLM writes `row.get(policy) or "untrusted"` and `int(row.get("call_count") or 0)`
-fn apply_falsy_defaults(fields: &mut BTreeMap<String, JsonData>) {
+fn apply_unset_defaults(fields: &mut BTreeMap<String, JsonData>) {
     for name in ["input_policy", "output_policy"] {
         if fields
             .get(name)
@@ -52,7 +52,7 @@ fn apply_falsy_defaults(fields: &mut BTreeMap<String, JsonData>) {
     {
         fields.insert(
             String::from("call_count"),
-            JsonData::Number(Number::from(0)),
+            JsonData::Number(Number::from(0_i32)),
         );
     }
 }

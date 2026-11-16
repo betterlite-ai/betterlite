@@ -33,10 +33,10 @@ async fn fetch_overrides<Client>(
 where
     Client: GenericClient + Sync,
 {
-    let client = client.ok_or_else(|| ToolRecordsError::Overrides {
+    let connected = client.ok_or_else(|| ToolRecordsError::Overrides {
         source: DbError::NoDbConnected,
     })?;
-    let rows = client
+    let rows = connected
         .query(OVERRIDE_SQL, &[&tool_name])
         .await
         .map_err(override_failure)?;

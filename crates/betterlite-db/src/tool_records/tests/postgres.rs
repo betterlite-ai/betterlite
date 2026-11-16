@@ -1,147 +1,76 @@
 use deadpool_postgres::Client;
-use tokio_postgres::types::ToSql;
 
 use super::support::{Db, captured_logs};
 use crate::tool_records::overrides::list_overrides_for_tool;
 use crate::tool_records::queries::{get_tool, list_tools};
 use crate::tool_records::records::{ToolDiscoveryUser, ToolInputPolicy, ToolPolicyOverrideRow};
 
-const INSERT_TOOL_SQL: &str = "INSERT INTO \"LiteLLM_ToolTable\" \
-     (tool_id, tool_name, key_hash, input_policy, output_policy, call_count, created_at, updated_at) \
-     VALUES ($1, $2, $3, $4, 'untrusted', 0, $5::timestamp, $5::timestamp)";
-const INSERT_TOKEN_SQL: &str = "INSERT INTO \"LiteLLM_VerificationToken\" \
-     (token, key_alias, user_id, object_permission_id, models) \
-     VALUES ($1, $2, $3, $4, ARRAY[]::TEXT[])";
-const INSERT_USER_SQL: &str = "INSERT INTO \"LiteLLM_UserTable\" \
-     (user_id, user_email, user_alias) VALUES ($1, $2, $3)";
-const INSERT_TEAM_SQL: &str = "INSERT INTO \"LiteLLM_TeamTable\" \
-     (team_id, team_alias, object_permission_id) VALUES ($1, $2, $3)";
+const TOOL_INSERT: &str = "INSERT INTO \"LiteLLM_ToolTable\" \
+     (tool_id, tool_name, key_hash, input_policy, created_at) VALUES ";
+const TOKEN_INSERT: &str = "INSERT INTO \"LiteLLM_VerificationToken\" \
+     (token, key_alias, user_id, object_permission_id, models) VALUES ";
+const OWNER_SQL: &str = "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email, user_alias) \
+     VALUES ('user-1', 'owner@example.com', 'owner alias')";
 
-struct ToolSeed<'row> {
-    id: &'row str,
-    name: &'row str,
-    key_hash: Option<&'row str>,
-    policy: ToolInputPolicy,
-    created_at: &'row str,
+fn owner() -> ToolDiscoveryUser {
+    ToolDiscoveryUser {
+        user_id: "user-1".to_owned(),
+        user_email: Some("owner@example.com".to_owned()),
+        user_alias: Some("owner alias".to_owned()),
+    }
 }
 
-async fn insert_tool(db: &Db, seed: ToolSeed<'_>) {
-    let policy = seed.policy.as_str();
-    let params: [&(dyn ToSql + Sync); 5] = [
-        &seed.id,
-        &seed.name,
-        &seed.key_hash,
-        &policy,
-        &seed.created_at,
-    ];
-    db.execute(INSERT_TOOL_SQL, &params).await;
-}
-
-struct TokenSeed<'row> {
-    token: &'row str,
-    key_alias: Option<&'row str>,
-    user_id: Option<&'row str>,
-    object_permission_id: Option<&'row str>,
-}
-
-async fn insert_token(db: &Db, seed: TokenSeed<'_>) {
-    let params: [&(dyn ToSql + Sync); 4] = [
-        &seed.token,
-        &seed.key_alias,
-        &seed.user_id,
-        &seed.object_permission_id,
-    ];
-    db.execute(INSERT_TOKEN_SQL, &params).await;
-}
-
-async fn seed_owner(db: &Db) {
-    let user_id = "user-1";
-    let email = Some("owner@example.com");
-    let alias = Some("owner alias");
-    let params: [&(dyn ToSql + Sync); 3] = [&user_id, &email, &alias];
-    db.execute(INSERT_USER_SQL, &params).await;
+fn blocked_row(
+    key_hash: Option<&str>,
+    key_alias: Option<&str>,
+    team_id: Option<&str>,
+) -> ToolPolicyOverrideRow {
+    ToolPolicyOverrideRow {
+        override_id: "perm-blocking".to_owned(),
+        tool_name: "echo".to_owned(),
+        team_id: team_id.map(str::to_owned),
+        key_hash: key_hash.map(str::to_owned),
+        input_policy: ToolInputPolicy::Blocked,
+        key_alias: key_alias.map(str::to_owned),
+        created_at: None,
+        updated_at: None,
+    }
 }
 
 #[tokio::test]
 async fn list_tools_orders_newest_first_and_attaches_the_discovering_owner() {
     let db = Db::start().await;
-    seed_owner(&db).await;
-    insert_token(
-        &db,
-        TokenSeed {
-            token: "key-shared",
-            key_alias: Some("shared"),
-            user_id: Some("user-1"),
-            object_permission_id: None,
-        },
-    )
+    db.batch(OWNER_SQL).await;
+    db.batch(&format!(
+        "{TOKEN_INSERT}('key-shared', 'shared', 'user-1', NULL, '{{}}'), \
+         ('key-unknown', NULL, 'user-missing', NULL, '{{}}'), \
+         ('key-ownerless', NULL, NULL, NULL, '{{}}')"
+    ))
     .await;
-    insert_token(
-        &db,
-        TokenSeed {
-            token: "key-unknown",
-            key_alias: None,
-            user_id: Some("user-missing"),
-            object_permission_id: None,
-        },
-    )
+    db.batch(&format!(
+        "{TOOL_INSERT}('tool-old', 'tool-old', 'key-shared', 'untrusted', '2026-01-01'), \
+         ('tool-mid', 'tool-mid', 'key-shared', 'untrusted', '2026-01-02'), \
+         ('tool-new', 'tool-new', 'key-unknown', 'untrusted', '2026-01-03'), \
+         ('tool-none', 'tool-none', NULL, 'untrusted', '2026-01-04'), \
+         ('tool-ownerless', 'tool-ownerless', 'key-ownerless', 'untrusted', '2026-01-05')"
+    ))
     .await;
-    insert_token(
-        &db,
-        TokenSeed {
-            token: "key-ownerless",
-            key_alias: None,
-            user_id: None,
-            object_permission_id: None,
-        },
-    )
-    .await;
-    for (id, key_hash, created_at) in [
-        ("tool-old", Some("key-shared"), "2026-01-01 00:00:00"),
-        ("tool-mid", Some("key-shared"), "2026-01-02 00:00:00"),
-        ("tool-new", Some("key-unknown"), "2026-01-03 00:00:00"),
-        ("tool-none", None, "2026-01-04 00:00:00"),
-        (
-            "tool-ownerless",
-            Some("key-ownerless"),
-            "2026-01-05 00:00:00",
-        ),
-    ] {
-        insert_tool(
-            &db,
-            ToolSeed {
-                id,
-                name: id,
-                key_hash,
-                policy: ToolInputPolicy::Untrusted,
-                created_at,
-            },
-        )
-        .await;
-    }
     let client = db.client().await;
     let tools = list_tools(Some(&client), None).await;
-    let ids: Vec<&str> = tools.iter().map(|tool| tool.tool_id.as_str()).collect();
+    let owners: Vec<(&str, Option<ToolDiscoveryUser>)> = tools
+        .iter()
+        .map(|tool| (tool.tool_id.as_str(), tool.user.clone()))
+        .collect();
     assert_eq!(
-        ids,
+        owners,
         [
-            "tool-ownerless",
-            "tool-none",
-            "tool-new",
-            "tool-mid",
-            "tool-old"
+            ("tool-ownerless", None),
+            ("tool-none", None),
+            ("tool-new", None),
+            ("tool-mid", Some(owner())),
+            ("tool-old", Some(owner())),
         ]
     );
-    let owner = ToolDiscoveryUser {
-        user_id: "user-1".to_owned(),
-        user_email: Some("owner@example.com".to_owned()),
-        user_alias: Some("owner alias".to_owned()),
-    };
-    assert_eq!(tools[0].user, None);
-    assert_eq!(tools[1].user, None);
-    assert_eq!(tools[2].user, None);
-    assert_eq!(tools[3].user, Some(owner.clone()));
-    assert_eq!(tools[4].user, Some(owner));
     drop(client);
     db.close().await;
 }
@@ -149,40 +78,13 @@ async fn list_tools_orders_newest_first_and_attaches_the_discovering_owner() {
 #[tokio::test]
 async fn list_tools_filters_by_input_policy_newest_first() {
     let db = Db::start().await;
-    for (id, policy, created_at) in [
-        (
-            "tool-trusted",
-            ToolInputPolicy::Trusted,
-            "2026-01-01 00:00:00",
-        ),
-        (
-            "tool-blocked-old",
-            ToolInputPolicy::Blocked,
-            "2026-01-02 00:00:00",
-        ),
-        (
-            "tool-blocked-new",
-            ToolInputPolicy::Blocked,
-            "2026-01-03 00:00:00",
-        ),
-        (
-            "tool-untrusted",
-            ToolInputPolicy::Untrusted,
-            "2026-01-04 00:00:00",
-        ),
-    ] {
-        insert_tool(
-            &db,
-            ToolSeed {
-                id,
-                name: id,
-                key_hash: None,
-                policy,
-                created_at,
-            },
-        )
-        .await;
-    }
+    db.batch(&format!(
+        "{TOOL_INSERT}('tool-trusted', 'tool-trusted', NULL, 'trusted', '2026-01-01'), \
+         ('tool-blocked-old', 'tool-blocked-old', NULL, 'blocked', '2026-01-02'), \
+         ('tool-blocked-new', 'tool-blocked-new', NULL, 'blocked', '2026-01-03'), \
+         ('tool-untrusted', 'tool-untrusted', NULL, 'untrusted', '2026-01-04')"
+    ))
+    .await;
     let client = db.client().await;
     let blocked = list_tools(Some(&client), Some(ToolInputPolicy::Blocked)).await;
     let ids: Vec<&str> = blocked.iter().map(|tool| tool.tool_id.as_str()).collect();
@@ -201,30 +103,11 @@ async fn list_tools_filters_by_input_policy_newest_first() {
 #[tokio::test]
 async fn an_owner_lookup_failure_keeps_the_tools_and_logs() {
     let db = Db::start().await;
-    insert_token(
-        &db,
-        TokenSeed {
-            token: "key-1",
-            key_alias: None,
-            user_id: Some("user-1"),
-            object_permission_id: None,
-        },
-    )
-    .await;
-    insert_tool(
-        &db,
-        ToolSeed {
-            id: "tool-1",
-            name: "tool-1",
-            key_hash: Some("key-1"),
-            policy: ToolInputPolicy::Untrusted,
-            created_at: "2026-01-01 00:00:00",
-        },
-    )
-    .await;
-    db.batch(
-        "ALTER TABLE \"LiteLLM_VerificationToken\" RENAME TO \"LiteLLM_VerificationToken_hidden\"",
-    )
+    db.batch(&format!(
+        "{TOKEN_INSERT}('key-1', NULL, 'user-1', NULL, '{{}}'); \
+         {TOOL_INSERT}('tool-1', 'tool-1', 'key-1', 'untrusted', '2026-01-01'); \
+         ALTER TABLE \"LiteLLM_VerificationToken\" RENAME TO \"LiteLLM_VerificationToken_hidden\""
+    ))
     .await;
     let (logs, guard) = captured_logs();
     let client = db.client().await;
@@ -244,25 +127,11 @@ async fn an_owner_lookup_failure_keeps_the_tools_and_logs() {
 #[tokio::test]
 async fn a_token_row_that_cannot_be_decoded_reaches_the_outer_catch() {
     let db = Db::start().await;
-    let token = "key-broken";
-    let user_id = Some("user-1");
-    let params: [&(dyn ToSql + Sync); 2] = [&token, &user_id];
-    db.execute(
+    db.batch(&format!(
         "INSERT INTO \"LiteLLM_VerificationToken\" (token, user_id, models, budget_fallbacks) \
-         VALUES ($1, $2, ARRAY[]::TEXT[], '5'::JSONB)",
-        &params,
-    )
-    .await;
-    insert_tool(
-        &db,
-        ToolSeed {
-            id: "tool-1",
-            name: "tool-1",
-            key_hash: Some("key-broken"),
-            policy: ToolInputPolicy::Untrusted,
-            created_at: "2026-01-01 00:00:00",
-        },
-    )
+         VALUES ('key-broken', 'user-1', '{{}}', '5'::JSONB); \
+         {TOOL_INSERT}('tool-1', 'tool-1', 'key-broken', 'untrusted', '2026-01-01')"
+    ))
     .await;
     let (logs, guard) = captured_logs();
     let client = db.client().await;
@@ -279,24 +148,11 @@ async fn a_token_row_that_cannot_be_decoded_reaches_the_outer_catch() {
 #[tokio::test]
 async fn an_empty_key_hash_never_reaches_the_owner_lookup() {
     let db = Db::start().await;
-    let token = "";
-    let params: [&(dyn ToSql + Sync); 1] = [&token];
-    db.execute(
+    db.batch(&format!(
         "INSERT INTO \"LiteLLM_VerificationToken\" (token, models, budget_fallbacks) \
-         VALUES ($1, ARRAY[]::TEXT[], '5'::JSONB)",
-        &params,
-    )
-    .await;
-    insert_tool(
-        &db,
-        ToolSeed {
-            id: "tool-empty-key",
-            name: "tool-empty-key",
-            key_hash: Some(""),
-            policy: ToolInputPolicy::Untrusted,
-            created_at: "2026-01-01 00:00:00",
-        },
-    )
+         VALUES ('', '{{}}', '5'::JSONB); \
+         {TOOL_INSERT}('tool-empty-key', 'tool-empty-key', '', 'untrusted', '2026-01-01')"
+    ))
     .await;
     let client = db.client().await;
     let tools = list_tools(Some(&client), None).await;
@@ -312,40 +168,17 @@ async fn an_empty_key_hash_never_reaches_the_owner_lookup() {
 #[tokio::test]
 async fn get_tool_returns_the_row_with_its_owner_and_none_for_an_unknown_name() {
     let db = Db::start().await;
-    seed_owner(&db).await;
-    insert_token(
-        &db,
-        TokenSeed {
-            token: "key-1",
-            key_alias: None,
-            user_id: Some("user-1"),
-            object_permission_id: None,
-        },
-    )
-    .await;
-    insert_tool(
-        &db,
-        ToolSeed {
-            id: "tool-1",
-            name: "tool-one",
-            key_hash: Some("key-1"),
-            policy: ToolInputPolicy::Blocked,
-            created_at: "2026-01-01 00:00:00",
-        },
-    )
+    db.batch(OWNER_SQL).await;
+    db.batch(&format!(
+        "{TOKEN_INSERT}('key-1', NULL, 'user-1', NULL, '{{}}'); \
+         {TOOL_INSERT}('tool-1', 'tool-one', 'key-1', 'blocked', '2026-01-01')"
+    ))
     .await;
     let client = db.client().await;
     let tool = get_tool(Some(&client), "tool-one").await.unwrap();
     assert_eq!(tool.tool_id, "tool-1");
     assert_eq!(tool.input_policy, ToolInputPolicy::Blocked);
-    assert_eq!(
-        tool.user,
-        Some(ToolDiscoveryUser {
-            user_id: "user-1".to_owned(),
-            user_email: Some("owner@example.com".to_owned()),
-            user_alias: Some("owner alias".to_owned()),
-        })
-    );
+    assert_eq!(tool.user, Some(owner()));
     assert_eq!(get_tool(Some(&client), "tool-missing").await, None);
     drop(client);
     db.close().await;
@@ -354,89 +187,24 @@ async fn get_tool_returns_the_row_with_its_owner_and_none_for_an_unknown_name() 
 #[tokio::test]
 async fn overrides_project_keys_and_teams_of_blocking_permissions() {
     let db = Db::start().await;
-    let permissions: [&(dyn ToSql + Sync); 2] = [&"perm-blocking", &"perm-other"];
-    db.execute(
+    db.batch(&format!(
         "INSERT INTO \"LiteLLM_ObjectPermissionTable\" (object_permission_id, blocked_tools) \
-         VALUES ($1, ARRAY['echo']::TEXT[]), ($2, ARRAY['other']::TEXT[])",
-        &permissions,
-    )
+         VALUES ('perm-blocking', ARRAY['echo']), ('perm-other', ARRAY['other']), \
+         ('perm-empty', ARRAY['echo']); \
+         {TOKEN_INSERT}('key-a', 'alias-a', NULL, 'perm-blocking', '{{}}'), \
+         ('key-b', NULL, NULL, 'perm-blocking', '{{}}'), \
+         ('key-c', NULL, NULL, 'perm-other', '{{}}'); \
+         INSERT INTO \"LiteLLM_TeamTable\" (team_id, team_alias, object_permission_id) \
+         VALUES ('team-1', 'team alias', 'perm-blocking')"
+    ))
     .await;
-    db.execute(
-        "INSERT INTO \"LiteLLM_ObjectPermissionTable\" (object_permission_id, blocked_tools) \
-         VALUES ('perm-empty', ARRAY['echo']::TEXT[])",
-        &[],
-    )
-    .await;
-    insert_token(
-        &db,
-        TokenSeed {
-            token: "key-a",
-            key_alias: Some("alias-a"),
-            user_id: None,
-            object_permission_id: Some("perm-blocking"),
-        },
-    )
-    .await;
-    insert_token(
-        &db,
-        TokenSeed {
-            token: "key-b",
-            key_alias: None,
-            user_id: None,
-            object_permission_id: Some("perm-blocking"),
-        },
-    )
-    .await;
-    insert_token(
-        &db,
-        TokenSeed {
-            token: "key-c",
-            key_alias: None,
-            user_id: None,
-            object_permission_id: Some("perm-other"),
-        },
-    )
-    .await;
-    let team_id = "team-1";
-    let team_alias = Some("team alias");
-    let permission_id = Some("perm-blocking");
-    let team: [&(dyn ToSql + Sync); 3] = [&team_id, &team_alias, &permission_id];
-    db.execute(INSERT_TEAM_SQL, &team).await;
     let client = db.client().await;
-    let overrides = list_overrides_for_tool(Some(&client), "echo").await;
     assert_eq!(
-        overrides,
+        list_overrides_for_tool(Some(&client), "echo").await,
         [
-            ToolPolicyOverrideRow {
-                override_id: "perm-blocking".to_owned(),
-                tool_name: "echo".to_owned(),
-                team_id: None,
-                key_hash: Some("key-a".to_owned()),
-                input_policy: ToolInputPolicy::Blocked,
-                key_alias: Some("alias-a".to_owned()),
-                created_at: None,
-                updated_at: None,
-            },
-            ToolPolicyOverrideRow {
-                override_id: "perm-blocking".to_owned(),
-                tool_name: "echo".to_owned(),
-                team_id: None,
-                key_hash: Some("key-b".to_owned()),
-                input_policy: ToolInputPolicy::Blocked,
-                key_alias: None,
-                created_at: None,
-                updated_at: None,
-            },
-            ToolPolicyOverrideRow {
-                override_id: "perm-blocking".to_owned(),
-                tool_name: "echo".to_owned(),
-                team_id: Some("team-1".to_owned()),
-                key_hash: None,
-                input_policy: ToolInputPolicy::Blocked,
-                key_alias: Some("team alias".to_owned()),
-                created_at: None,
-                updated_at: None,
-            },
+            blocked_row(Some("key-a"), Some("alias-a"), None),
+            blocked_row(Some("key-b"), None, None),
+            blocked_row(None, Some("team alias"), Some("team-1")),
         ]
     );
     assert!(
