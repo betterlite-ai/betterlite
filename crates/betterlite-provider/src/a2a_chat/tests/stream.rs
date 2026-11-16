@@ -3,7 +3,7 @@ use rstest::rstest;
 
 use crate::a2a_chat::error::A2aError;
 use crate::a2a_chat::stream::chunk_parser;
-use crate::ollama_chat::ids::RandomIds;
+use crate::ollama_chat::ids::{IdSource, RandomIds};
 
 fn chunk_error(wire: &str) -> A2aError {
     chunk_parser(wire.as_bytes()).unwrap_err()

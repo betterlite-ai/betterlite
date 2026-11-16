@@ -3,9 +3,9 @@ use std::collections::BTreeMap;
 use betterlite_a2a::a2a_text::{
     A2aResponse, Field, RecordOr, Shape, extract_text_from_a2a_response,
 };
+use betterlite_prompts::arguments::json::Json;
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
 use serde::Deserialize;
-use serde::de::IgnoredAny;
 
 use super::MAX_TEXT_DEPTH;
 use super::error::{A2aError, ErrorDetail, error_message, get_error_class};
@@ -39,7 +39,7 @@ struct ChunkEnvelope {
     result: Option<RecordOr<ResultStatus>>,
     // flatten makes a chunk that is not a JSON object fail instead of reading as a field list
     #[serde(flatten)]
-    _unread: BTreeMap<String, IgnoredAny>,
+    _unread: BTreeMap<String, Json>,
 }
 
 pub fn chunk_parser(chunk: &[u8]) -> Result<GenericChunk, A2aError> {

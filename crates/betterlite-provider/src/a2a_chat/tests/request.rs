@@ -9,6 +9,7 @@ use crate::a2a_chat::request::{
     SUPPORTED_OPENAI_PARAMS, convert_messages_to_prompt, get_complete_url, map_openai_params,
     stream_requested, transform_request, validate_environment,
 };
+use crate::ollama_chat::ids::IdSource;
 
 use super::support::{CountedIds, header_map, messages, object, secret};
 

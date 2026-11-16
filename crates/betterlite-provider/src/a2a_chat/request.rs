@@ -15,7 +15,7 @@ pub const SUPPORTED_OPENAI_PARAMS: [&str; 4] = ["stream", "temperature", "max_to
 
 // LiteLLM copies stream only when it is exactly true, since the method and blocking flag follow it
 pub fn map_openai_params(non_default: &Object, optional: &mut Object) {
-    if let Some(Json::Bool(true)) = non_default.get("stream") {
+    if matches!(non_default.get("stream"), Some(Json::Bool(true))) {
         optional.insert(String::from("stream"), Json::Bool(true));
     }
 }
@@ -42,10 +42,9 @@ pub fn validate_environment(
 }
 
 pub fn get_complete_url(api_base: Option<&str>) -> Result<String, A2aFailure> {
-    match api_base {
-        Some(base) => Ok(base.trim_end_matches('/').to_owned()),
-        None => Err(A2aFailure::MissingApiBase),
-    }
+    api_base.map_or(Err(A2aFailure::MissingApiBase), |base| {
+        Ok(base.trim_end_matches('/').to_owned())
+    })
 }
 
 #[must_use]

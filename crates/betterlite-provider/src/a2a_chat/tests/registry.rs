@@ -376,7 +376,7 @@ fn an_entra_agent_takes_the_key_from_the_resolver() {
 #[rstest]
 #[case::upper("Authorization")]
 #[case::lower("authorization")]
-#[case::mixed("AuThOrIzAtIoN")]
+#[case::caps("AUTHORIZATION")]
 fn an_entra_agent_drops_the_stored_authorization_header(#[case] name: &str) {
     let params = format!(r#"{{"azure_ad_token":"t","headers":{{"{name}":"gone","X":"1"}}}}"#);
     let lookup = FakeLookup::new(Some(agent("{}", &params)));

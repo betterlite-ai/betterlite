@@ -56,18 +56,6 @@ fn card_url(card: &Object) -> Result<Option<String>, A2aFailure> {
     }
 }
 
-fn custom_provider(params: &Object) -> Result<Option<&str>, A2aFailure> {
-    match params.get("custom_llm_provider") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(provider)) => Ok(Some(provider)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(A2aFailure::OptionType {
-                field: "custom_llm_provider",
-            })
-        }
-    }
-}
-
 fn registry_api_key(
     params: &Object,
     uses_entra: bool,
@@ -137,10 +125,16 @@ fn fill_from_agent(
     optional_params: &mut Object,
     entra: &dyn EntraResolver,
 ) -> Result<RegistryResolved, A2aFailure> {
-    let uses_entra = a2a_hop_uses_entra(
-        &agent.litellm_params,
-        custom_provider(&agent.litellm_params)?,
-    );
+    let provider = match agent.litellm_params.get("custom_llm_provider") {
+        Some(Json::Text(text)) => Some(text.as_str()),
+        Some(Json::Null) | None => None,
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(A2aFailure::OptionType {
+                field: "custom_llm_provider",
+            });
+        }
+    };
+    let uses_entra = a2a_hop_uses_entra(&agent.litellm_params, provider);
     let mut api_base = input.api_base.map(str::to_owned);
     if api_base.is_none() && !agent.agent_card_params.is_empty() {
         api_base = card_url(&agent.agent_card_params)?;
@@ -150,7 +144,7 @@ fn fill_from_agent(
         api_key = registry_api_key(&agent.litellm_params, uses_entra, entra)?;
     }
     let mut headers = input.headers.cloned();
-    if !input.headers.is_some_and(|given| !given.is_empty()) {
+    if input.headers.is_none_or(|given| given.is_empty()) {
         headers = registry_headers(&agent.litellm_params, uses_entra)?
             .filter(|stored| !stored.is_empty())
             .or(headers);
@@ -177,12 +171,14 @@ pub fn resolve_agent_config(
     } else {
         lookup.and_then(|registry| registry.agent_by_name(input.agent_name))
     };
-    match agent {
-        Some(agent) => fill_from_agent(input, &agent, optional_params, entra),
-        None => Ok(RegistryResolved {
-            api_base: input.api_base.map(str::to_owned),
-            api_key: input.api_key.cloned(),
-            headers: input.headers.cloned(),
-        }),
-    }
+    agent.map_or_else(
+        || {
+            Ok(RegistryResolved {
+                api_base: input.api_base.map(str::to_owned),
+                api_key: input.api_key.cloned(),
+                headers: input.headers.cloned(),
+            })
+        },
+        |found| fill_from_agent(input, &found, optional_params, entra),
+    )
 }

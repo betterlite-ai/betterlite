@@ -191,12 +191,7 @@ fn an_empty_string_reply_id_is_kept() {
     assert_eq!(response.id, "");
 }
 
-#[rstest]
-#[case::number(r#"{"id":7,"result":{"parts":[]}}"#)]
-#[case::flag(r#"{"id":true,"result":{"parts":[]}}"#)]
-#[case::list(r#"{"id":[],"result":{"parts":[]}}"#)]
-#[case::object(r#"{"id":{},"result":{"parts":[]}}"#)]
-fn a_non_string_reply_id_names_it(#[case] body: &str) {
+fn reply_failure(body: &str) -> A2aError {
     let ids = CountedIds::new();
     let counter = FixedCounter {
         prompt_tokens: 0,
@@ -204,8 +199,20 @@ fn a_non_string_reply_id_names_it(#[case] body: &str) {
     };
     let error = reply(body, 200, &ids, &counter).unwrap_err();
     assert_eq!(error.status_code, 200);
-    assert_eq!(error.message, "the A2A reply id is not a string");
     assert_eq!(error.headers, header_map(&[("x", "y")]));
+    error
+}
+
+#[rstest]
+#[case::number(r#"{"id":7,"result":{"parts":[]}}"#)]
+#[case::flag(r#"{"id":true,"result":{"parts":[]}}"#)]
+#[case::list(r#"{"id":[],"result":{"parts":[]}}"#)]
+#[case::object(r#"{"id":{},"result":{"parts":[]}}"#)]
+fn a_non_string_reply_id_names_it(#[case] body: &str) {
+    assert_eq!(
+        reply_failure(body).message,
+        "the A2A reply id is not a string"
+    );
 }
 
 #[test]
@@ -257,14 +264,10 @@ fn a_body_that_is_not_json_is_the_parse_error() {
 #[case::number("7")]
 #[case::null("null")]
 fn a_body_that_is_not_an_object_names_the_reply(#[case] body: &str) {
-    let ids = CountedIds::new();
-    let counter = FixedCounter {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-    };
-    let error = reply(body, 200, &ids, &counter).unwrap_err();
-    assert_eq!(error.status_code, 200);
-    assert_eq!(error.message, "the A2A reply is not a JSON object");
+    assert_eq!(
+        reply_failure(body).message,
+        "the A2A reply is not a JSON object"
+    );
 }
 
 #[rstest]

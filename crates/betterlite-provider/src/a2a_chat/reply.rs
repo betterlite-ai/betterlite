@@ -69,6 +69,24 @@ async fn estimate_usage(
     })
 }
 
+fn reply_id(
+    id: Option<Shape>,
+    input: &ReplyInput<'_>,
+    ids: &dyn IdSource,
+) -> Result<String, A2aError> {
+    match id {
+        None | Some(Shape::Null) => Ok(ids.next_id()),
+        Some(Shape::Text(text)) => Ok(text),
+        Some(Shape::Flag(_) | Shape::Number(_) | Shape::List(_) | Shape::Object(_)) => {
+            Err(get_error_class(
+                "the A2A reply id is not a string",
+                input.status,
+                input.headers.clone(),
+            ))
+        }
+    }
+}
+
 pub async fn transform_response(
     input: &ReplyInput<'_>,
     ids: &dyn IdSource,
@@ -90,17 +108,7 @@ pub async fn transform_response(
                 input.headers.clone(),
             )
         })?;
-    let id = match envelope.id {
-        None | Some(Shape::Null) => ids.next_id(),
-        Some(Shape::Text(id)) => id,
-        Some(Shape::Flag(_) | Shape::Number(_) | Shape::List(_) | Shape::Object(_)) => {
-            return Err(get_error_class(
-                "the A2A reply id is not a string",
-                input.status,
-                input.headers.clone(),
-            ));
-        }
-    };
+    let id = reply_id(envelope.id, input, ids)?;
     let usage = estimate_usage(&content, input.messages, counter).await;
     Ok(A2aReply {
         id,
