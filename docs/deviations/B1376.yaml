@@ -1,0 +1,9 @@
+task: B1376
+deviations:
+  - what: A GCS metadata reply larger than 1 MiB is refused with a typed VertexFilesError before it is decoded, where LiteLLM reads the whole response body into memory and parses it.
+    why: An unbounded reply is held whole in memory for a record whose fields are a few hundred bytes, and every input betterlite reads has a limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L1109
+  - what: An upload reply that is valid JSON but not an object is refused with a typed record error, where LiteLLM wraps the TypeError from GcsBucketResponse(**reply) in VertexAIError carrying the reply's own HTTP status, 200 for a successful read.
+    why: An error shaped like the provider's 2xx reply is a bug no working setup relies on, and the typed error names the malformed record instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L1112
+kept_bugs: []
