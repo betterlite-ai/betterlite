@@ -18,15 +18,6 @@ pub enum Assembly {
     Responses(GuardrailValue),
 }
 
-impl Assembly {
-    #[must_use]
-    pub fn body(&self) -> &GuardrailValue {
-        match self {
-            Self::Model(body) | Self::Completion(body) | Self::Responses(body) => body,
-        }
-    }
-}
-
 // LiteLLM's _assemble_stream: one builder per wire format, and none for frames it cannot read.
 pub async fn assemble<W: StreamWire>(
     wire: &W,
