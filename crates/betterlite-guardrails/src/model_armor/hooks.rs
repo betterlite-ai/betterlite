@@ -36,7 +36,6 @@ mod timing;
 use error_handling::HookError;
 use events::HookPhase;
 use logging_information::ApplyVerdict;
-use timing::RecordTimes;
 
 pub const MODEL_ARMOR_PROVIDER: &str = "model_armor";
 
@@ -115,31 +114,34 @@ impl<T: ArmorTokens> ModelArmorHooks<'_, T> {
             logging::process_response(self, data, context)?;
             return Ok(inputs);
         }
-        let started_at = (self.clock)();
-        let result = self
-            .transport
-            .make_model_armor_request(Some(&text), logging_only::source(input_type), None)
-            .await;
-        let times = timing::between(started_at, (self.clock)());
-        match result {
-            Ok(armor) => self.record_and_block(data, input_type, context, &armor, times)?,
-            Err(error) => {
-                let verdict = logging_only::failure_verdict(error)?;
-                logging_information::record_apply_guardrail(self, data, context, verdict, times)?;
-            }
-        }
+        self.scan_and_record(data, input_type, context, &text)
+            .await?;
         Ok(inputs)
     }
 
-    // LiteLLM's apply_guardrail verdict: record it, then block a flagged one outside logging_only mode
-    fn record_and_block(
+    // The scan apply_guardrail sends: the request, its timing, and the verdict it records
+    async fn scan_and_record(
         &self,
         data: &mut Data,
         input_type: GuardrailInputType,
         context: &mut HookContext<'_>,
-        armor: &ArmorResponse,
-        times: RecordTimes,
+        text: &str,
     ) -> Result<(), HookError<T::Error>> {
+        let started_at = (self.clock)();
+        let result = self
+            .transport
+            .make_model_armor_request(Some(text), logging_only::source(input_type), None)
+            .await;
+        let times = timing::between(started_at, (self.clock)());
+        let armor = match result {
+            Ok(armor) => armor,
+            Err(error) => {
+                let verdict = logging_only::failure_verdict(error)?;
+                return logging_information::record_apply_guardrail(
+                    self, data, context, verdict, times,
+                );
+            }
+        };
         let flagged = should_block_content(&armor.verdict, false);
         let response = build_logging_response(&armor.body, self.guardrail.sanitize_error_detail);
         let verdict = if flagged {
@@ -148,6 +150,16 @@ impl<T: ArmorTokens> ModelArmorHooks<'_, T> {
             ApplyVerdict::Success { response }
         };
         logging_information::record_apply_guardrail(self, data, context, verdict, times)?;
+        self.block_when_flagged(input_type, &armor, flagged)
+    }
+
+    // The block half of apply_guardrail: a flagged verdict becomes a 400 unless logging_only mode is on
+    fn block_when_flagged(
+        &self,
+        input_type: GuardrailInputType,
+        armor: &ArmorResponse,
+        flagged: bool,
+    ) -> Result<(), HookError<T::Error>> {
         if !flagged
             || self
                 .guardrail
