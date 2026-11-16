@@ -4,7 +4,7 @@ use std::fmt::Display;
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]

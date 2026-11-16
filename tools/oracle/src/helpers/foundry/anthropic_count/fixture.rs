@@ -24,7 +24,7 @@ use tracing_subscriber::layer::{Context, Layer};
 
 use super::input::{Globals, Reply, failure};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(crate) const COUNT_HEADERS: [&str; 6] = [
     "content-type",
