@@ -1,0 +1,11 @@
+kind: helper
+name: cache-settings-read-view-type-not-redis
+call:
+  b4307:
+    stored:
+      type: "local"
+      host: "local-host"
+      redis_startup_nodes: [["127.0.0.1", 7000]]
+    environment: {}
+env: {}
+compare: {ignore: []}

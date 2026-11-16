@@ -1,0 +1,19 @@
+kind: helper
+name: container-api-version-query
+call:
+  azure_resource_urls:
+    container_api_version_query:
+      - {api_base: "https://r.example/openai/responses?api-version=2025-04-01-preview", api_version: "2024-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/openai/responses?api-version=", api_version: "2024-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/openai/responses?api-version=first&api-version=second", api_version: "2024-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/openai/responses?api-version=&api-version=second", api_version: "2024-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/openai/responses?x=1&y=2", api_version: "2024-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example/openai/responses?api-version=latest", api_version: "2024-01-01", module: {}, environment: {}}
+      - {api_base: "https://r.example", module: {}, environment: {}}
+      - {api_base: "https://r.example", api_version: "preview", module: {}, environment: {}}
+      - {api_base: "https://r.example", api_version: "", module: {}, environment: {}}
+      - {api_base: "https://r.example/openai/responses?api-version=%32%30", api_version: "2024-01-01", module: {}, environment: {}}
+      - {api_version: "2025-01-01", module: {api_base: "https://m.example/openai/responses?api-version=2025-04-01-preview"}, environment: {}}
+      - {api_version: "2025-01-01", module: {}, environment: {AZURE_API_BASE: https://env.example/openai/responses}}
+env: {}
+compare: {ignore: []}
