@@ -1,0 +1,38 @@
+kind: helper
+name: chat-response-stream-items-message-item-indices
+call:
+  chat_response_stream_items:
+    model: m
+    request_value: hi
+    responses_api_request: {}
+    custom_llm_provider: null
+    litellm_metadata: null
+    logging_marker: ctx
+    now: 10
+    uuid_ids: [r1, m1]
+    steps:
+      - kind: initial
+      - kind: initial
+      - kind: initial
+      - kind: message_items
+      - kind: set
+        cached_reasoning_item_id: rs_a
+        next_tool_output_index: 3
+      - kind: message_items
+      - kind: message_items
+calls:
+  - chat_response_stream_items:
+      model: m
+      request_value: hi
+      responses_api_request: {}
+      custom_llm_provider: azure
+      litellm_metadata: {model_info: {id: deployment-1}}
+      logging_marker: ctx
+      now: 10
+      uuid_ids: [r1, m1, m2]
+      steps:
+        - kind: content_part
+        - kind: message_items
+        - kind: content_part
+env: {}
+compare: {ignore: []}
