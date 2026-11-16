@@ -1,0 +1,68 @@
+kind: helper
+name: fal-video-results-completed-terminal-error
+call:
+  fal_video_results:
+    operation: completed_terminal_error
+    cases:
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-1/status"
+        headers:
+          authorization: "Bearer queue-key"
+          x-trace-id: "trace-1"
+          X-Api-Key: "api-key-1"
+          host: "queue.fal.run"
+          content-length: "0"
+        body: '{"status": "COMPLETED", "request_id": "req-1"}'
+        probe_status: 400
+        probe_body: '{"detail": "the generation failed"}'
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-2/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-2"}'
+        probe_status: 400
+        probe_body: '{"detail": [{"loc": ["body", "prompt"], "msg": "field required"}, {"loc": "seconds", "msg": "invalid"}, {"msg": "bare"}]}'
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-3/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-3"}'
+        probe_status: 404
+        probe_body: "no such request"
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-4/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-4"}'
+        probe_status: 422
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-5/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-5"}'
+        probe_status: 400
+        probe_body: '["fail"]'
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-6/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-6"}'
+        probe_status: 200
+        probe_body: '{"status": "OK"}'
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-7/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-7"}'
+        probe_status: 400
+        probe_body: '{"detail": [{"loc": "a"}], "error": "fallback error"}'
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-8/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "detail": "body error", "request_id": "req-8"}'
+        probe_status: 400
+        probe_body: '{"detail": "probe error"}'
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-9/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-9"}'
+        probe_status: 400
+        probe_body: '{"error": "bare error"}'
+        provider: "fal_ai_custom"
+env: {}
+compare:
+  ignore: []
