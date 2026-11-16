@@ -1,0 +1,71 @@
+kind: helper
+name: fal-vision-chat-joined-text
+call:
+  fal_vision_chat:
+    operation: joined_text
+    cases:
+      - messages:
+          - role: user
+            content:
+              - {type: text, text: first}
+              - {type: text, text: second}
+              - {type: image_url, image_url: {url: "https://img.test/a.png"}}
+        optional_params: {}
+      - messages:
+          - role: user
+            content:
+              - {type: text, text: ""}
+              - {type: text, text: kept}
+              - {type: text, text: ""}
+              - {type: image_url, image_url: u}
+        optional_params: {}
+      - messages:
+          - role: user
+            content:
+              - {type: text, text: 5}
+              - {type: text, text: null}
+              - {type: text}
+              - {type: text, text: kept}
+              - {type: image_url, image_url: u}
+        optional_params: {}
+      - messages:
+          - role: user
+            content:
+              - {type: audio, text: ignored}
+              - {type: text, text: kept}
+              - {type: image_url, image_url: u}
+        optional_params: {}
+      - messages:
+          - role: user
+            content:
+              - {type: image_url, image_url: u}
+              - {type: text, text: after}
+              - {type: text, text: image}
+        optional_params: {}
+      - messages:
+          - role: user
+            content:
+              - {type: image_url, image_url: u}
+        optional_params: {}
+      - messages:
+          - role: user
+            content:
+              - {type: text, text: ""}
+              - {type: image_url, image_url: 5}
+        optional_params: {}
+      - messages:
+          - role: user
+            content:
+              - {type: text, text: only text}
+        optional_params: {}
+      - messages:
+          - role: user
+            content: []
+        optional_params: {}
+      - messages:
+          - role: user
+            content: null
+        optional_params: {}
+env: {}
+compare:
+  ignore: []

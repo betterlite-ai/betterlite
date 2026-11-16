@@ -1,0 +1,33 @@
+kind: helper
+name: fal-vision-chat-one-user-required
+call:
+  fal_vision_chat:
+    operation: one_user_required
+    cases:
+      - messages: []
+        optional_params: {}
+      - messages:
+          - {role: user, content: [{type: text, text: a}, {type: image_url, image_url: u}]}
+          - {role: user, content: [{type: text, text: b}, {type: image_url, image_url: u}]}
+        optional_params: {}
+      - messages:
+          - {role: system, content: [{type: text, text: a}, {type: image_url, image_url: u}]}
+        optional_params: {}
+      - messages:
+          - {role: assistant, content: [{type: text, text: a}, {type: image_url, image_url: u}]}
+        optional_params: {}
+      - messages:
+          - {role: developer, content: [{type: text, text: a}, {type: image_url, image_url: u}]}
+        optional_params: {}
+      - messages:
+          - {role: user, content: ""}
+        optional_params: {}
+      - messages:
+          - {role: user, content: describe this}
+        optional_params: {}
+      - messages:
+          - {role: user, content: [{type: text, text: a}, {type: image_url, image_url: u}]}
+        optional_params: {}
+env: {}
+compare:
+  ignore: []

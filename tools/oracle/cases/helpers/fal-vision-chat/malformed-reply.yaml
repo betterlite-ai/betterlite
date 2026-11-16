@@ -1,0 +1,27 @@
+kind: helper
+name: fal-vision-chat-malformed-reply
+call:
+  fal_vision_chat:
+    operation: malformed_reply
+    model: fal_ai/model
+    replies:
+      - {status: 200, headers: {x-request-id: req-1}, body: "not json at all"}
+      - {status: 200, headers: {}, body: ""}
+      - {status: 200, headers: {x-request-id: req-2}, body: '{"output": "a cat"}'}
+      - {status: 200, headers: {}, body: '{"output": ""}'}
+      - {status: 200, headers: {}, body: '{"output": "a", "usage_info": null}'}
+      - {status: 200, headers: {}, body: '{"output": "a", "usage_info": {"input_tokens": 1}}'}
+      - {status: 200, headers: {}, body: '{"output": 5, "usage_info": {"input_tokens": 1, "output_tokens": 1}}'}
+      - {status: 200, headers: {}, body: '{"usage_info": {"input_tokens": 1, "output_tokens": 1}}'}
+      - {status: 200, headers: {}, body: '{"output": "a", "usage_info": {"input_tokens": "many", "output_tokens": 1}}'}
+      - {status: 200, headers: {}, body: '{"output": "a", "usage_info": {"input_tokens": 2.5, "output_tokens": 1}}'}
+      - {status: 200, headers: {}, body: '{"output": "a", "usage_info": {"input_tokens": null, "output_tokens": 1}}'}
+      - {status: 200, headers: {}, body: '{"output": "a", "usage_info": {"input_tokens": 1, "output_tokens": 1}, "reasoning": 5}'}
+      - {status: 200, headers: {}, body: '{"output": "a", "usage_info": {"input_tokens": 1, "output_tokens": 1}, "finish_reason": true}'}
+      - {status: 500, headers: {content-type: text/html}, body: "<html>bad gateway</html>"}
+      - {status: 200, headers: {}, body: '{"output": "a", "usage_info": {"input_tokens": 1, "output_tokens": 1}} trailing'}
+      - {status: 200, headers: {}, body: '[{"output": "a"}]'}
+      - {status: 200, headers: {}, body: "null"}
+env: {}
+compare:
+  ignore: []

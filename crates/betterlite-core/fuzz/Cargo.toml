@@ -312,6 +312,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "fal_chat_reply"
+path = "fuzz_targets/fal_chat_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "interactions_sse"
 path = "fuzz_targets/interactions_sse.rs"
 test = false

@@ -1,0 +1,23 @@
+kind: helper
+name: fal-vision-chat-reasoning-usage
+call:
+  fal_vision_chat:
+    operation: reasoning_usage
+    model: fal_ai/moondream3-preview/query
+    replies:
+      - {status: 200, headers: {}, body: '{"output": "a cat", "usage_info": {"input_tokens": 12, "output_tokens": 3}, "reasoning": "saw one", "finish_reason": "stop", "extra": [1], "request_id": "abc"}'}
+      - {status: 200, headers: {}, body: '{"output": "a cat", "usage_info": {"input_tokens": 12, "output_tokens": 3}}'}
+      - {status: 200, headers: {}, body: '{"output": "a cat", "usage_info": {"input_tokens": 1, "output_tokens": 1}, "reasoning": null, "finish_reason": null}'}
+      - {status: 200, headers: {}, body: '{"output": "", "usage_info": {"input_tokens": 0, "output_tokens": 0}, "reasoning": "", "finish_reason": ""}'}
+      - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": 1, "output_tokens": 1}, "finish_reason": "length"}'}
+      - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": 1, "output_tokens": 1}, "finish_reason": "tool_calls"}'}
+      - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": 1, "output_tokens": 1}, "finish_reason": "content_filter"}'}
+      - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": 1, "output_tokens": 1}, "finish_reason": "end_turn"}'}
+      - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": 1, "output_tokens": 1}, "finish_reason": "something_new"}'}
+      - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": "1_0", "output_tokens": 2.0}}'}
+      - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": true, "output_tokens": " 7 "}}'}
+      - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": "2.00", "output_tokens": 1e2}}'}
+      - {status: 200, headers: {}, body: '{"output": "x", "usage_info": {"input_tokens": 18446744073709551614, "output_tokens": 1}}'}
+env: {}
+compare:
+  ignore: []

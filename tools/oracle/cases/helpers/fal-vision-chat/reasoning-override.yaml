@@ -1,0 +1,26 @@
+kind: helper
+name: fal-vision-chat-reasoning-override
+call:
+  fal_vision_chat:
+    operation: reasoning_override
+    model: fal_ai/model
+    cases:
+      - {non_default: {reasoning_effort: none}, optional: {}, drop_params: false}
+      - {non_default: {reasoning_effort: minimal}, optional: {}, drop_params: false}
+      - {non_default: {reasoning_effort: low}, optional: {}, drop_params: false}
+      - {non_default: {reasoning_effort: medium}, optional: {}, drop_params: false}
+      - {non_default: {reasoning_effort: high}, optional: {}, drop_params: false}
+      - {non_default: {reasoning_effort: xhigh}, optional: {}, drop_params: false}
+      - {non_default: {reasoning_effort: xhigh, temperature: 0.5}, optional: {top_p: 1}, drop_params: true}
+      - {non_default: {reasoning_effort: 1}, optional: {}, drop_params: false}
+      - {non_default: {reasoning_effort: null}, optional: {}, drop_params: true}
+      - {non_default: {reasoning_effort: none}, optional: {reasoning: true}, drop_params: false}
+      - {non_default: {temperature: 0, top_p: 0.5}, optional: {temperature: 1, top_p: 1}, drop_params: false}
+      - {non_default: {temperature: null}, optional: {temperature: 1}, drop_params: false}
+      - {non_default: {max_tokens: 5, stream: true, n: 2}, optional: {seed: 1}, drop_params: false}
+      - {non_default: {}, optional: {stream: true, temperature: 1}, drop_params: false}
+      - {non_default: {}, optional: {stream: false, max_tokens: 3, seed: 9, temperature: 1}, drop_params: false}
+      - {non_default: {}, optional: {stream: null, prompt: x, image_url: y, reasoning: false}, drop_params: false}
+env: {}
+compare:
+  ignore: []

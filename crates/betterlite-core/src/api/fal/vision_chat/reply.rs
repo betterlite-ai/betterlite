@@ -1,0 +1,117 @@
+use betterlite_models::call_helpers::finish_reason::map_finish_reason;
+use betterlite_openai::api::image_contracts::records::ImageHeaders;
+use betterlite_openai::chat::response::{
+    AssistantMessage, ChatResponse, ChatUsage, MessageProviderFields,
+};
+use serde::Deserialize;
+
+use crate::api::fal::vision_chat::error::FalAIError;
+use crate::api::fal::vision_chat::token_count::TokenCount;
+
+// fields Fal sends beyond these are ignored, as LiteLLM's model does
+#[derive(Debug, Deserialize)]
+struct RawUsage {
+    input_tokens: TokenCount,
+    output_tokens: TokenCount,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawReply {
+    output: String,
+    usage_info: RawUsage,
+    reasoning: Option<String>,
+    finish_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FalChatReply {
+    pub output: String,
+    pub reasoning: Option<String>,
+    pub finish_reason: Option<String>,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub total_tokens: u64,
+}
+
+// the record's assistant message has no reasoning_content field, so the reasoning travels beside it
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FalChatCompletion {
+    pub response: ChatResponse,
+    pub reasoning_content: Option<String>,
+}
+
+pub fn decode_fal_chat(headers: &ImageHeaders, body: &[u8]) -> Result<FalChatReply, FalAIError> {
+    let raw: RawReply =
+        serde_json::from_slice(body).map_err(|source| FalAIError::UnexpectedResponse {
+            text: replaced_text(body),
+            headers: headers.clone(),
+            source,
+        })?;
+    let TokenCount(prompt_tokens) = raw.usage_info.input_tokens;
+    let TokenCount(completion_tokens) = raw.usage_info.output_tokens;
+    let total_tokens = prompt_tokens
+        .checked_add(completion_tokens)
+        .ok_or_else(|| FalAIError::UsageOverflow {
+            text: replaced_text(body),
+            headers: headers.clone(),
+        })?;
+    Ok(FalChatReply {
+        output: raw.output,
+        reasoning: raw.reasoning,
+        finish_reason: raw.finish_reason,
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+    })
+}
+
+// the first choice is rewritten and every other field of the response keeps what it had
+pub fn transform_response(
+    model: &str,
+    headers: &ImageHeaders,
+    body: &[u8],
+    mut response: ChatResponse,
+    created: u64,
+) -> Result<FalChatCompletion, FalAIError> {
+    let reply = decode_fal_chat(headers, body)?;
+    let choice = response.choices.first_mut().ok_or(FalAIError::NoChoices)?;
+    choice.message = AssistantMessage {
+        role: "assistant".to_owned(),
+        content: Some(reply.output),
+        tool_calls: None,
+        annotations: None,
+        audio: None,
+        refusal: None,
+        provider_specific_fields: MessageProviderFields::default(),
+    };
+    let finish_reason = reply
+        .finish_reason
+        .filter(|reason| !reason.is_empty())
+        .unwrap_or_else(|| "stop".to_owned());
+    choice.finish_reason = Some(map_finish_reason(&finish_reason).reason.as_str().to_owned());
+    response.created = created;
+    model.clone_into(&mut response.model);
+    response.usage = ChatUsage {
+        prompt_tokens: reply.prompt_tokens,
+        completion_tokens: reply.completion_tokens,
+        total_tokens: reply.total_tokens,
+        prompt_tokens_details: None,
+        completion_tokens_details: None,
+    };
+    Ok(FalChatCompletion {
+        response,
+        reasoning_content: reply.reasoning,
+    })
+}
+
+// httpx replaces each invalid sequence with one U+FFFD, which clippy.toml keeps String::from_utf8_lossy from doing
+fn replaced_text(body: &[u8]) -> String {
+    let mut text = String::with_capacity(body.len());
+    for chunk in body.utf8_chunks() {
+        text.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
+    text
+}

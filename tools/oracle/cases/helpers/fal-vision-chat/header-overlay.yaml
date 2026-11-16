@@ -1,0 +1,17 @@
+kind: helper
+name: fal-vision-chat-header-overlay
+call:
+  fal_vision_chat:
+    operation: header_overlay
+    environment: {FAL_AI_API_KEY: env-key, FAL_AI_API_BASE: "https://env.fal.test//"}
+    cases:
+      - {headers: {}, api_key: null, api_base: null, model: "fal_ai/fal-ai/moondream3-preview/query"}
+      - {headers: {}, api_key: explicit-key, api_base: "https://proxy.test/fal///", model: "fal-ai/model"}
+      - {headers: {}, api_key: "", api_base: "", model: "fal_ai/fal_ai/model"}
+      - {headers: {content-type: "application/x-ndjson"}, api_key: null, api_base: null, model: "x/fal_ai/model"}
+      - {headers: {Content-Type: "text/plain"}, api_key: null, api_base: null, model: "fal_ai/m"}
+      - {headers: {Authorization: "Bearer other", x-request-id: req-1}, api_key: null, api_base: null, model: "fal_ai/m"}
+      - {headers: {authorization: "Bearer lower"}, api_key: explicit-key, api_base: null, model: "fal_ai/"}
+env: {}
+compare:
+  ignore: []

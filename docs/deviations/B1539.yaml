@@ -1,0 +1,15 @@
+task: B1539
+deviations:
+  - what: A reply whose token count is negative, above 2^64-1, or whose prompt and completion counts add up past 2^64-1 gets the 422 unexpected-response error, and a count written as a decimal with a nonzero fraction beyond float precision (1.0000000000000000001) is refused where pydantic rounds it through a float.
+    why: The chat record stores usage as unsigned 64-bit counts, so the values LiteLLM would pass on as Python integers or rounded floats cannot be held, and no real Fal reply carries them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/chat/transformation.py#L33-L38
+  - what: A reply body that repeats a JSON key (two output members, for example) is refused with the 422 error, where pydantic keeps the last value.
+    why: serde rejects a duplicate field, and a body that repeats a key is not something a Fal endpoint sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/chat/transformation.py#L40-L49
+  - what: The reply's reasoning text comes back beside the chat response as reasoning_content, and the response's assistant message does not carry it, where LiteLLM sets message.reasoning_content.
+    why: The shared chat reply record (ChatResponse and AssistantMessage, owned by B004) has no reasoning_content field, and extending it is outside this task's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/chat/transformation.py#L218-L222
+  - what: A finish_reason that LiteLLM does not map is turned into stop without the "Unmapped finish_reason" warning log.
+    why: The decoder is a pure function with no logger injected, and the mapped value is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L253-L258
+kept_bugs: []
