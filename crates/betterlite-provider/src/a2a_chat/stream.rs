@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 
-use betterlite_a2a::a2a_text::{A2aResponse, extract_text_from_a2a_response};
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_a2a::a2a_text::{
+    A2aResponse, Field, RecordOr, Shape, extract_text_from_a2a_response,
+};
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
+use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 use super::MAX_TEXT_DEPTH;
-use super::error::{A2aError, get_error_class};
+use super::error::{A2aError, ErrorDetail, error_message, get_error_class};
 
 const EMPTY_CHUNK: GenericChunk = GenericChunk {
     text: String::new(),
@@ -17,56 +20,61 @@ const EMPTY_CHUNK: GenericChunk = GenericChunk {
     provider_specific_fields: None,
 };
 
-fn part_text(chunk: &Json) -> Option<String> {
-    let shape = serde_json::to_value(chunk).ok()?;
-    let response: A2aResponse = serde_json::from_value(shape).ok()?;
-    extract_text_from_a2a_response(&response, MAX_TEXT_DEPTH).ok()
+#[derive(Deserialize)]
+struct StatusState {
+    state: Option<Shape>,
 }
 
-fn finish_reason(fields: &Object) -> Option<&'static str> {
-    if let Some(Json::Object(result)) = fields.get("result")
-        && let Some(Json::Object(status)) = result.get("status")
-        && let Some(Json::Text(state)) = status.get("state")
-        && (state == "completed" || state == "failed")
-    {
-        return Some("stop");
-    }
-    if let Some(Json::Bool(true)) = fields.get("done") {
-        return Some("stop");
-    }
-    None
+#[derive(Deserialize)]
+struct ResultStatus {
+    status: Option<RecordOr<StatusState>>,
 }
 
-fn build_chunk(chunk: &Json, fields: &Object) -> GenericChunk {
-    let Some(text) = part_text(chunk) else {
-        return EMPTY_CHUNK;
+// result is read here for its state, so the text comes from a second pass over the same bytes
+#[derive(Deserialize)]
+struct ChunkEnvelope {
+    #[serde(default)]
+    error: Field<RecordOr<ErrorDetail>>,
+    done: Option<Shape>,
+    result: Option<RecordOr<ResultStatus>>,
+    // flatten makes a chunk that is not a JSON object fail instead of reading as a field list
+    #[serde(flatten)]
+    _unread: BTreeMap<String, IgnoredAny>,
+}
+
+pub fn chunk_parser(chunk: &[u8]) -> Result<GenericChunk, A2aError> {
+    let Ok(envelope) = serde_json::from_slice::<ChunkEnvelope>(chunk) else {
+        return Ok(EMPTY_CHUNK);
     };
-    let reason = finish_reason(fields);
-    GenericChunk {
+    if let Field::Present(error @ RecordOr::Record(_)) = &envelope.error {
+        return Err(get_error_class(&error_message(error), 500, BTreeMap::new()));
+    }
+    let Ok(response) = serde_json::from_slice::<A2aResponse>(chunk) else {
+        return Ok(EMPTY_CHUNK);
+    };
+    let Ok(text) = extract_text_from_a2a_response(&response, MAX_TEXT_DEPTH) else {
+        return Ok(EMPTY_CHUNK);
+    };
+    let state_finishes = matches!(
+        &envelope.result,
+        Some(RecordOr::Record(ResultStatus {
+            status: Some(RecordOr::Record(StatusState {
+                state: Some(Shape::Text(state)),
+            })),
+        })) if state == "completed" || state == "failed"
+    );
+    let is_finished = state_finishes || matches!(envelope.done, Some(Shape::Flag(true)));
+    Ok(GenericChunk {
         text,
         tool_use: None,
-        is_finished: reason.is_some(),
-        finish_reason: reason.unwrap_or_default().to_owned(),
+        is_finished,
+        finish_reason: if is_finished {
+            String::from("stop")
+        } else {
+            String::new()
+        },
         usage: None,
         index: Some(0),
         provider_specific_fields: None,
-    }
-}
-
-pub fn chunk_parser(chunk: &Json) -> Result<GenericChunk, A2aError> {
-    let Json::Object(fields) = chunk else {
-        return Ok(EMPTY_CHUNK);
-    };
-    if let Some(Json::Object(error)) = fields.get("error") {
-        let detail = error
-            .get("message")
-            .and_then(Json::as_str)
-            .unwrap_or("Unknown error");
-        return Err(get_error_class(
-            &format!("A2A error: {detail}"),
-            500,
-            BTreeMap::new(),
-        ));
-    }
-    Ok(build_chunk(chunk, fields))
+    })
 }

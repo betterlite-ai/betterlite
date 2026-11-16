@@ -12,11 +12,11 @@ pub trait EntraResolver: Send + Sync {
 }
 
 #[must_use]
-pub fn a2a_hop_uses_entra(params: Option<&Object>, custom_llm_provider: Option<&str>) -> bool {
+pub fn a2a_hop_uses_entra(params: &Object, custom_llm_provider: Option<&str>) -> bool {
     if !custom_llm_provider.is_none_or(str::is_empty) {
         return false;
     }
-    has_azure_entra_params(params)
+    has_azure_entra_params(Some(params))
 }
 
 pub fn resolve_a2a_hop_auth_header(
@@ -24,7 +24,7 @@ pub fn resolve_a2a_hop_auth_header(
     custom_llm_provider: Option<&str>,
     resolver: &dyn EntraResolver,
 ) -> Result<Option<BTreeMap<String, String>>, CredentialsError> {
-    if !a2a_hop_uses_entra(Some(params), custom_llm_provider) {
+    if !a2a_hop_uses_entra(params, custom_llm_provider) {
         return Ok(None);
     }
     resolver.auth_header(params).map(Some)

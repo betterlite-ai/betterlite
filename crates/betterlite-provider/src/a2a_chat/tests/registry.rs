@@ -558,3 +558,36 @@ fn a_failing_entra_resolver_carries_its_error() {
         .unwrap_err();
     assert!(matches!(error, A2aFailure::Credentials(_)));
 }
+
+#[test]
+fn a_caller_base_without_a_key_still_asks_the_lookup() {
+    let lookup = FakeLookup::new(Some(agent("{}", r#"{"api_key":"stored"}"#)));
+    let caller = header_map(&[("A", "b")]);
+    let mut optional_params = Object::new();
+    let input = RegistryInput {
+        agent_name: "agent",
+        api_base: Some("http://caller"),
+        api_key: None,
+        headers: Some(&caller),
+    };
+    let resolved = resolve(&input, &mut optional_params, &lookup).unwrap();
+    assert_eq!(lookup.names(), vec![String::from("agent")]);
+    assert_eq!(api_key_of(&resolved), Some("stored"));
+}
+
+#[test]
+fn a_caller_key_without_a_base_still_asks_the_lookup() {
+    let lookup = FakeLookup::new(Some(agent(r#"{"url":"http://card"}"#, "{}")));
+    let key = secret("caller-key");
+    let caller = header_map(&[("A", "b")]);
+    let mut optional_params = Object::new();
+    let input = RegistryInput {
+        agent_name: "agent",
+        api_base: None,
+        api_key: Some(&key),
+        headers: Some(&caller),
+    };
+    let resolved = resolve(&input, &mut optional_params, &lookup).unwrap();
+    assert_eq!(lookup.names(), vec![String::from("agent")]);
+    assert_eq!(resolved.api_base, Some(String::from("http://card")));
+}

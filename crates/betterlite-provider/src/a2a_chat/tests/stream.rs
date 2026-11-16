@@ -1,4 +1,3 @@
-use betterlite_prompts::arguments::json::Json;
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
 use rstest::rstest;
 
@@ -6,16 +5,12 @@ use crate::a2a_chat::error::A2aError;
 use crate::a2a_chat::stream::chunk_parser;
 use crate::ollama_chat::ids::RandomIds;
 
-fn json(wire: &str) -> Json {
-    serde_json::from_str(wire).unwrap()
-}
-
-fn parsed_chunk(wire: &str) -> A2aError {
-    chunk_parser(&json(wire)).unwrap_err()
+fn chunk_error(wire: &str) -> A2aError {
+    chunk_parser(wire.as_bytes()).unwrap_err()
 }
 
 fn chunk(wire: &str) -> GenericChunk {
-    chunk_parser(&json(wire)).unwrap()
+    chunk_parser(wire.as_bytes()).unwrap()
 }
 
 #[test]
@@ -72,7 +67,7 @@ fn a_plain_chunk_has_text_and_no_finish() {
 
 #[test]
 fn an_error_object_is_a_500_a2a_error() {
-    let error = parsed_chunk(r#"{"jsonrpc":"2.0","error":{"code":1,"message":"boom"}}"#);
+    let error = chunk_error(r#"{"jsonrpc":"2.0","error":{"code":1,"message":"boom"}}"#);
     assert_eq!(error.status_code, 500);
     assert_eq!(error.message, "A2A error: boom");
     assert!(error.headers.is_empty());
@@ -82,7 +77,7 @@ fn an_error_object_is_a_500_a2a_error() {
 #[case::empty_object(r#"{"error":{}}"#)]
 #[case::null_message(r#"{"error":{"message":null}}"#)]
 fn an_error_object_without_a_message_says_unknown(#[case] wire: &str) {
-    let error = parsed_chunk(wire);
+    let error = chunk_error(wire);
     assert_eq!(error.status_code, 500);
     assert_eq!(error.message, "A2A error: Unknown error");
 }
@@ -108,6 +103,7 @@ fn an_unreadable_chunk_is_an_empty_unfinished_chunk() {
 #[case::text(r#""text""#)]
 #[case::number("7")]
 #[case::null("null")]
+#[case::not_json("{")]
 fn a_non_object_chunk_is_an_empty_chunk(#[case] wire: &str) {
     let parsed = chunk(wire);
     assert_eq!(parsed.text, "");

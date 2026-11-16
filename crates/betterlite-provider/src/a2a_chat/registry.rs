@@ -46,14 +46,6 @@ pub struct RegistryResolved {
     pub headers: Option<BTreeMap<String, String>>,
 }
 
-fn unchanged(input: &RegistryInput<'_>) -> RegistryResolved {
-    RegistryResolved {
-        api_base: input.api_base.map(str::to_owned),
-        api_key: input.api_key.cloned(),
-        headers: input.headers.cloned(),
-    }
-}
-
 fn card_url(card: &Object) -> Result<Option<String>, A2aFailure> {
     match card.get("url") {
         None | Some(Json::Null) => Ok(None),
@@ -146,7 +138,7 @@ fn fill_from_agent(
     entra: &dyn EntraResolver,
 ) -> Result<RegistryResolved, A2aFailure> {
     let uses_entra = a2a_hop_uses_entra(
-        Some(&agent.litellm_params),
+        &agent.litellm_params,
         custom_provider(&agent.litellm_params)?,
     );
     let mut api_base = input.api_base.map(str::to_owned);
@@ -180,14 +172,17 @@ pub fn resolve_agent_config(
     let explicit = input.api_base.is_some()
         && input.api_key.is_some()
         && input.headers.is_some_and(|headers| !headers.is_empty());
-    if input.agent_name.is_empty() || explicit {
-        return Ok(unchanged(input));
+    let agent = if input.agent_name.is_empty() || explicit {
+        None
+    } else {
+        lookup.and_then(|registry| registry.agent_by_name(input.agent_name))
+    };
+    match agent {
+        Some(agent) => fill_from_agent(input, &agent, optional_params, entra),
+        None => Ok(RegistryResolved {
+            api_base: input.api_base.map(str::to_owned),
+            api_key: input.api_key.cloned(),
+            headers: input.headers.cloned(),
+        }),
     }
-    let Some(lookup) = lookup else {
-        return Ok(unchanged(input));
-    };
-    let Some(agent) = lookup.agent_by_name(input.agent_name) else {
-        return Ok(unchanged(input));
-    };
-    fill_from_agent(input, &agent, optional_params, entra)
 }

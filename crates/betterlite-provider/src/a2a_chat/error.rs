@@ -1,10 +1,27 @@
 use std::collections::BTreeMap;
 
+use betterlite_a2a::a2a_text::{RecordOr, Shape};
 use betterlite_foundry::credentials::error::CredentialsError;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
+use serde::Deserialize;
 use thiserror::Error;
 
-// LiteLLM's A2AError: the HTTP status, message and headers of an A2A failure
+#[derive(Debug, Deserialize)]
+pub struct ErrorDetail {
+    message: Option<Shape>,
+}
+
+#[must_use]
+pub fn error_message(error: &RecordOr<ErrorDetail>) -> String {
+    let detail = match error {
+        RecordOr::Record(ErrorDetail {
+            message: Some(Shape::Text(text)),
+        }) => text.as_str(),
+        RecordOr::Record(_) | RecordOr::Other(_) => "Unknown error",
+    };
+    format!("A2A error: {detail}")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{message}")]
 pub struct A2aError {
@@ -27,7 +44,6 @@ impl From<A2aError> for ProviderError {
     }
 }
 
-// LiteLLM's get_error_class builds the error from the message, status and headers of the failed reply
 #[must_use]
 pub fn get_error_class(
     message: &str,

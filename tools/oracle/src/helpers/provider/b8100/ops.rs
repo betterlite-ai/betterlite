@@ -194,8 +194,9 @@ pub(super) fn responses(cases: &[ResponseCase]) -> HelperResult {
 pub(super) fn chunks(cases: &[StreamCase]) -> HelperResult {
     let mut found = Vec::with_capacity(cases.len());
     for case in cases {
-        let chunk = Json::Object(case.chunk.clone());
-        found.push(match chunk_parser(&chunk) {
+        let wire = serde_json::to_vec(&case.chunk)
+            .map_err(|failure| helper_error("ValueError", failure.to_string()))?;
+        found.push(match chunk_parser(&wire) {
             Ok(parsed) => json!({"chunk": {
                 "text": parsed.text,
                 "is_finished": parsed.is_finished,

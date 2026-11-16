@@ -225,6 +225,7 @@ fn the_error_key_carries_the_reply_status_and_message() {
 #[rstest]
 #[case::empty_object(r#"{"error":{}}"#, 503)]
 #[case::non_object(r#"{"error":"boom"}"#, 200)]
+#[case::list(r#"{"error":[{"message":"boom"}]}"#, 200)]
 #[case::null(r#"{"error":null}"#, 200)]
 fn an_error_without_a_message_says_unknown(#[case] body: &str, #[case] status: u16) {
     let ids = CountedIds::new();

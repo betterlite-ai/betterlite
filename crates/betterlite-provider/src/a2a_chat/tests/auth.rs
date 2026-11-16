@@ -20,12 +20,7 @@ fn a2a_hop_uses_entra_truth_table(
     #[case] expected: bool,
 ) {
     let parsed = object(params);
-    assert_eq!(a2a_hop_uses_entra(Some(&parsed), provider), expected);
-}
-
-#[test]
-fn no_params_means_no_entra_hop() {
-    assert!(!a2a_hop_uses_entra(None, None));
+    assert_eq!(a2a_hop_uses_entra(&parsed, provider), expected);
 }
 
 #[test]
