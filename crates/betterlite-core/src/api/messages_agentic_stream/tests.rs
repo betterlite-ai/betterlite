@@ -526,9 +526,8 @@ fn follow_up_reply(kind: ReplyKind) -> HookReply {
 async fn server_tool_held_back(#[case] kind: ReplyKind) {
     let effects = EffectLog::default();
     let seen = HookSeen::default();
-    let frames = server_tool_stream("web_search");
     let mut stream = MessagesAgenticStream::new(
-        ScriptedInner::open(frames.clone(), &effects),
+        ScriptedInner::open(server_tool_stream("web_search"), &effects),
         resolved_interceptor(follow_up_reply(kind), &effects, &seen),
         agentic_input(Some(policy(&["web_search"]))),
         immediate_sleep(),
@@ -541,7 +540,8 @@ async fn server_tool_held_back(#[case] kind: ReplyKind) {
     let chunks = drain(&mut stream).await;
     assert!(seen_tool_use(&seen, "web_search"));
     assert_eq!(effects.count("hook-start"), 1);
-    assert!(chunks.iter().all(|chunk| !frames.contains(chunk)));
+    // the replacement may share framing bytes with the held stream, but never the held tool call
+    assert!(!contains_text(&chunks, "toolu_1"));
     if matches!(kind, ReplyKind::Frames) {
         assert_eq!(chunks, replacement_frames());
     } else {
