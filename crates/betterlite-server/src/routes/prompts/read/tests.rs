@@ -533,6 +533,44 @@ async fn oneshot_info_missing_prompt_is_a_bad_request(#[case] uri: &str, #[case]
 }
 
 #[tokio::test]
+async fn oneshot_list_allowlist_narrows_even_for_an_admin() {
+    let prompts = registry(vec![
+        config_prompt("alpha", "development"),
+        config_prompt("beta", "development"),
+    ]);
+    let key = key_context(r#"{"user_role": "proxy_admin", "metadata": {"prompts": ["alpha"]}}"#);
+    let (status, body) = call(state(prompts, None), "/prompts/list", key).await;
+    assert_eq!(status, StatusCode::OK);
+    let listed = body["prompts"].as_array().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["prompt_id"], "alpha");
+}
+
+#[tokio::test]
+async fn oneshot_list_empty_allowlist_hides_everything_from_an_admin() {
+    let prompts = registry(vec![config_prompt("alpha", "development")]);
+    let key = key_context(r#"{"user_role": "proxy_admin", "metadata": {"prompts": []}}"#);
+    let (status, body) = call(state(prompts, None), "/prompts/list", key).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["prompts"], json!([]));
+}
+
+#[tokio::test]
+async fn oneshot_info_empty_dotprompt_content_is_used_as_given() {
+    let prompts = registry(vec![dotprompt_prompt("alpha", "development", "")]);
+    let (status, body) = call(
+        state(prompts, None),
+        "/prompts/alpha/info",
+        master_context(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["raw_prompt_template"]["litellm_prompt_id"], "alpha");
+    assert_eq!(body["raw_prompt_template"]["content"], "");
+    assert_eq!(body["raw_prompt_template"]["metadata"], json!({}));
+}
+
+#[tokio::test]
 async fn oneshot_list_redacts_stored_api_keys() {
     let prompts = registry(vec![keyed_prompt("alpha", "sk-prompt-secret")]);
     let (status, body) = call(state(prompts, None), "/prompts/list", master_context()).await;
