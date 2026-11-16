@@ -2,20 +2,21 @@ kind: helper
 name: soniox-pipeline-create-failure-cleans-file
 call:
   soniox_pipeline:
-    model: soniox/stt-async-v4
-    timeout_millis: 2500
-    api_key: sk-local
-    api_base: https://api.soniox.test
-    optional_params: {}
-    audio:
-      filename: audio.mp3
-      content: RIFF-data
-    answers:
-    - status: 200
-      body: '{"id": "file_1"}'
-    - status: 500
-      body: '{"error_message": "bad model"}'
-    - status: 200
-      body: '{"id": "file_1"}'
+    pipeline:
+      model: soniox/stt-async-v4
+      timeout_millis: 2500
+      api_key: sk-local
+      api_base: https://api.soniox.test
+      optional_params: {}
+      audio:
+        filename: audio.mp3
+        content: RIFF-data
+      answers:
+      - status: 200
+        body: '{"id": "file_1"}'
+      - status: 500
+        body: '{"error_message": "bad model"}'
+      - status: 200
+        body: '{"id": "file_1"}'
 compare: {ignore: []}
 env: {}
