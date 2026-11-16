@@ -12,7 +12,7 @@ use super::latency::{
     LatencyContext, record_api_latency_metric, record_seconds, record_tpot_metric,
     record_ttft_metric,
 };
-use crate::logging_privacy::internal::{Origin, call_category, is_unbilled};
+use crate::logging_privacy::internal::unbilled_call;
 use crate::otel::integrations::arize_attributes::truthy::is_truthy;
 use crate::otel::legacy_policy::config::OpenTelemetryConfig;
 use crate::otel::legacy_policy::semconv_attrs::semconv_latest_experimental;
@@ -22,8 +22,6 @@ use crate::otel::model::utils::time::FixedLocalTimeResolver;
 use crate::otel_provider_assembly::metric_instruments::MetricInstruments;
 
 mod tests;
-
-const BACKGROUND_COST_POLL_ORIGIN: &str = "background_response_cost_poll";
 
 pub struct LegacyMetricRecorder {
     instruments: MetricInstruments,
@@ -69,7 +67,15 @@ impl LegacyMetricRecorder {
             .filter
             .filter_attributes(common_attributes(call.kwargs, self.semconv_latest)?)?;
         record_seconds(&self.instruments.operation_duration, duration, &attributes);
-        let unbilled = is_unbilled_call(call.kwargs, call.response);
+        let unbilled = unbilled_call(
+            call.kwargs
+                .get("call_type")
+                .and_then(OtelModelValue::as_str),
+            call.kwargs
+                .get("litellm_params")
+                .and_then(OtelModelValue::as_object),
+            call.response,
+        );
         let usage = call
             .response
             .filter(|response| is_truthy(response))
@@ -153,34 +159,4 @@ fn decimal_field(
         field,
         expected: "a number",
     })
-}
-
-// a read or management call replays usage a create already billed, unless it polls a background response
-fn is_unbilled_call(kwargs: &MetadataMap, response: Option<&OtelModelValue>) -> bool {
-    let call_type = kwargs.get("call_type").and_then(OtelModelValue::as_str);
-    let background = response
-        .and_then(OtelModelValue::as_object)
-        .and_then(|fields| fields.get("background"))
-        .and_then(OtelModelValue::as_bool)
-        == Some(true);
-    is_unbilled(
-        call_category(call_type),
-        cost_poll_origin(kwargs),
-        background,
-    )
-}
-
-// metadata wins over litellm_metadata key by key, and only the cost-poll origin matters here
-fn cost_poll_origin(kwargs: &MetadataMap) -> Option<Origin> {
-    let params = kwargs
-        .get("litellm_params")
-        .and_then(OtelModelValue::as_object)?;
-    let origin = ["metadata", "litellm_metadata"].iter().find_map(|name| {
-        params
-            .get(*name)
-            .and_then(OtelModelValue::as_object)
-            .and_then(|fields| fields.get("internal_call_origin"))
-    });
-    let named = origin.and_then(OtelModelValue::as_str)?;
-    (named == BACKGROUND_COST_POLL_ORIGIN).then_some(Origin::BackgroundResponseCostPoll)
 }
