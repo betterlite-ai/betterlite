@@ -165,6 +165,7 @@ fn decimal_number(text: &str) -> Option<Number> {
 
 // Python allows an underscore only between two digits
 fn without_underscores(text: &str) -> Option<String> {
+    // no shared cleaner fits: betterlite-models' is private and accepts 1_.5, betterlite-bedrock's is i64-only
     let mut cleaned = String::with_capacity(text.len());
     let mut previous_was_digit = false;
     let mut after_underscore = false;
