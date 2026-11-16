@@ -1,0 +1,8 @@
+kind: helper
+name: provider-config-openai
+call:
+  b3361:
+    function: provider_config
+    custom_llm_provider: "openai"
+env: {}
+compare: {ignore: []}
