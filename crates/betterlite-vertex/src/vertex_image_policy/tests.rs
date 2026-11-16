@@ -298,6 +298,10 @@ fn edit_billing_resolves_model_info_before_the_response_type_check() {
     r#"{"predictions": [{"bytesBase64Encoded": "AAA"}, {"raiFilteredReason": "x"}]}"#,
     true
 )]
+#[case::later_non_object_is_not_checked(
+    r#"{"predictions": [{"bytesBase64Encoded": "AAA"}, null]}"#,
+    true
+)]
 #[case::no_predictions_key(r#"{"other": []}"#, false)]
 fn detection_reads_the_first_prediction_only(#[case] source: &str, #[case] expected: bool) {
     assert_eq!(

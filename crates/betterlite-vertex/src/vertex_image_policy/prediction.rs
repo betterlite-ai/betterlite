@@ -18,8 +18,8 @@ const fn kind(value: &Json) -> &'static str {
     }
 }
 
-// the reply's predictions as decoded objects, None when the key is absent
-fn predictions(reply: &Extra) -> Result<Option<Vec<&Extra>>, PredictionError> {
+// the reply's predictions list, None when the key is absent
+fn prediction_list(reply: &Extra) -> Result<Option<&[Json]>, PredictionError> {
     let Some(value) = reply.get(PREDICTIONS) else {
         return Ok(None);
     };
@@ -29,26 +29,26 @@ fn predictions(reply: &Extra) -> Result<Option<Vec<&Extra>>, PredictionError> {
             found: kind(value),
         });
     };
-    let mut objects = Vec::with_capacity(items.len());
-    for (index, item) in items.iter().enumerate() {
-        let Json::Object(fields) = item else {
-            return Err(PredictionError::Shape {
-                path: format!("{PREDICTIONS}[{index}]"),
-                found: kind(item),
-            });
-        };
-        objects.push(fields);
-    }
-    Ok(Some(objects))
+    Ok(Some(items))
+}
+
+fn prediction_object(item: &Json, index: usize) -> Result<&Extra, PredictionError> {
+    let Json::Object(fields) = item else {
+        return Err(PredictionError::Shape {
+            path: format!("{PREDICTIONS}[{index}]"),
+            found: kind(item),
+        });
+    };
+    Ok(fields)
 }
 
 // is_image_generation_response looks at the first prediction only, and an empty list is an IndexError
 pub fn is_image_generation_response(reply: &Extra) -> Result<bool, PredictionError> {
-    let Some(all) = predictions(reply)? else {
+    let Some(items) = prediction_list(reply)? else {
         return Ok(false);
     };
-    let first = all.first().ok_or(PredictionError::EmptyPredictions)?;
-    Ok(first.contains_key(IMAGE_KEY))
+    let first = items.first().ok_or(PredictionError::EmptyPredictions)?;
+    Ok(prediction_object(first, 0)?.contains_key(IMAGE_KEY))
 }
 
 // ast-grep-ignore: no-long-names
@@ -56,9 +56,13 @@ pub fn process_image_generation_response(
     reply: &Extra,
     response: &mut ImagenGenerationResponse,
 ) -> Result<(), PredictionError> {
-    let all = predictions(reply)?.ok_or(PredictionError::MissingPredictions)?;
-    let mut images = Vec::with_capacity(all.len());
-    for (index, fields) in all.into_iter().enumerate() {
+    let items = prediction_list(reply)?.ok_or(PredictionError::MissingPredictions)?;
+    let mut objects = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        objects.push(prediction_object(item, index)?);
+    }
+    let mut images = Vec::with_capacity(objects.len());
+    for (index, fields) in objects.into_iter().enumerate() {
         let b64_json = match fields.get(IMAGE_KEY) {
             None => return Err(PredictionError::MissingImageKey { index }),
             Some(Json::Null) => None,
