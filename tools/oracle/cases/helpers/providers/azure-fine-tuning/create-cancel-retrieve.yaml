@@ -1,0 +1,25 @@
+kind: helper
+name: create-cancel-retrieve
+call:
+  azure_fine_tuning:
+    steps:
+    - action: create
+      args: {api_key: cc-1, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {model: m, training_file: f}
+      reply: {status: 200, body: {id: ft_1, created_at: 1, error: {code: null, message: null, param: null}, fine_tuned_model: null, finished_at: null, hyperparameters: {batch_size: null, learning_rate_multiplier: null, n_epochs: 3}, model: gpt-4o-mini, object: fine_tuning.job, organization_id: org, result_files: [], seed: 5, status: queued, trained_tokens: null, training_file: file_a, validation_file: null, estimated_finish: null, integrations: null, metadata: null, method: null}}
+    - action: create
+      is_async: true
+      args: {api_key: cc-2, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      data: {model: m, training_file: f, seed: 4}
+      reply: {status: 200, body: {id: ft_1, created_at: 1, error: null, fine_tuned_model: null, finished_at: null, hyperparameters: {batch_size: null, learning_rate_multiplier: null, n_epochs: 3}, model: gpt-4o-mini, object: fine_tuning.job, organization_id: org, result_files: [], seed: 5, status: queued, trained_tokens: null, training_file: file_a, validation_file: null, estimated_finish: null, integrations: null, metadata: null, method: null}}
+    - action: retrieve
+      job_id: ft_retrieve
+      args: {api_key: cc-3, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      reply: {status: 200, body: {id: ft_1, created_at: 1, error: null, fine_tuned_model: null, finished_at: null, hyperparameters: {batch_size: null, learning_rate_multiplier: null, n_epochs: 3}, model: gpt-4o-mini, object: fine_tuning.job, organization_id: org, result_files: [], seed: 5, status: queued, trained_tokens: null, training_file: file_a, validation_file: null, estimated_finish: null, integrations: null, metadata: null, method: null}}
+    - action: cancel
+      is_async: true
+      job_id: ft_cancel
+      args: {api_key: cc-4, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+      reply: {status: 200, body: {id: ft_1, created_at: 1, error: null, fine_tuned_model: null, finished_at: null, hyperparameters: {batch_size: null, learning_rate_multiplier: null, n_epochs: 3}, model: gpt-4o-mini, object: fine_tuning.job, organization_id: org, result_files: [], seed: 5, status: canceled, trained_tokens: null, training_file: file_a, validation_file: null, estimated_finish: null, integrations: null, metadata: null, method: null}}
+env: {}
+compare: {ignore: []}
