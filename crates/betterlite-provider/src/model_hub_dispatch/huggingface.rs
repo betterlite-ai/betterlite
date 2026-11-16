@@ -9,18 +9,17 @@ use betterlite_openai::huggingface_chat::request::transform_request;
 use betterlite_openai::huggingface_chat::url::get_complete_url;
 use betterlite_openai::openai_base_config::Object as ChatObject;
 use betterlite_prompts::arguments::json::{Json, Object};
-use betterlite_prompts::builtin::Message;
 use http::Method;
 use secrecy::SecretString;
 use url::Url;
 
 use super::credentials::{huggingface_chat_key, huggingface_env, huggingface_hub_token};
 use super::hub::{self, PrefetchedHub};
+use super::json;
 use super::{ChatContext, DispatchDeps, HubDispatchError};
 use crate::prepared::{PreparedChat, PreparedHttp, PreparedRequest};
 use crate::transform_retry::TransformRetry;
 
-// LiteLLM asks the hub for the provider mapping only without a base and with a provider segment left in the model
 async fn mapping_source(
     model: &str,
     api_base: Option<&str>,
@@ -29,41 +28,28 @@ async fn mapping_source(
     if api_base.is_some_and(|base| !base.is_empty()) {
         return Ok(None);
     }
-    let Some(rest) = model.split_once('/').map(|(_, rest)| rest) else {
+    let Some((_, rest)) = model.split_once('/') else {
         return Ok(None);
     };
     if !rest.contains('/') {
         return Ok(None);
     }
     let token = huggingface_hub_token(deps.environment);
-    let response = hub::fetch_mapping(deps.hub, rest, token.as_ref()).await?;
-    Ok(Some(PrefetchedHub(response)))
+    Ok(Some(PrefetchedHub(
+        hub::fetch_mapping(deps.hub, rest, token.as_ref()).await?,
+    )))
 }
 
-fn chat_messages(messages: &[Message]) -> Result<Vec<ChatMessage>, HubDispatchError> {
-    messages
-        .iter()
-        .map(|message| {
-            let value = serde_json::to_value(message)
-                .map_err(|source| HubDispatchError::Messages { source })?;
-            serde_json::from_value(value).map_err(|source| HubDispatchError::Messages { source })
-        })
-        .collect()
-}
-
-fn chat_params(optional_params: &Object) -> Result<ChatObject, HubDispatchError> {
-    let value = serde_json::to_value(optional_params)
-        .map_err(|source| HubDispatchError::Encode { source })?;
-    serde_json::from_value(value).map_err(|source| HubDispatchError::Encode { source })
-}
-
-// main.py L3181-L3221 hands the context provider and base to the shared HTTP completion handler
 async fn request_body(
     call: &ChatContext<'_>,
     deps: &DispatchDeps<'_>,
 ) -> Result<ChatObject, HubDispatchError> {
-    let params = chat_params(call.optional_params)?;
-    let messages = chat_messages(call.messages)?;
+    let params: ChatObject = json::convert(call.optional_params)?;
+    let messages: Vec<ChatMessage> = call
+        .messages
+        .iter()
+        .map(|message| json::convert(message))
+        .collect::<Result<_, _>>()?;
     let body = match mapping_source(call.model, call.api_base, deps).await? {
         Some(prefetched) => {
             let token = huggingface_hub_token(deps.environment);
@@ -120,7 +106,6 @@ pub async fn chat_request(
     prepared(call, deps, key.as_ref(), &body)
 }
 
-// the request transform reaches this source only when a mapping is needed, and a missing map answers as an empty one does
 struct NoMapping;
 
 impl ProviderMappingSource for NoMapping {

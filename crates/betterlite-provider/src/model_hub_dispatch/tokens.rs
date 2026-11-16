@@ -1,19 +1,14 @@
-use std::sync::Arc;
-
+use super::HubDispatchError;
 use betterlite_openai::huggingface_embedding::response::OrdinaryEncoder;
 use betterlite_openai::huggingface_rerank::TextTokenCounter;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::engine::Engine;
 use betterlite_tokenizer::engine::assets;
 use betterlite_tokenizer::engine::tiktoken::{Encoding, TiktokenEngine};
-
-use super::HubDispatchError;
-
-// main.py's _get_encoding and embedding/handler.py L205 both count with tiktoken's cl100k_base, which B195 bundles
+use std::sync::Arc;
 pub struct Cl100k {
     engine: Engine,
 }
-
 impl Cl100k {
     pub fn new() -> Result<Self, HubDispatchError> {
         let vocabulary =
@@ -25,13 +20,11 @@ impl Cl100k {
         })
     }
 }
-
 impl OrdinaryEncoder for Cl100k {
     fn encode_ordinary(&self, text: &str) -> usize {
         self.engine.encode(text).map_or(0, |ids| ids.len())
     }
 }
-
 impl TextTokenCounter for Cl100k {
     fn count(&self, _model: &str, text: &str) -> Result<u64, CountError> {
         let ids = self.engine.encode(text)?;

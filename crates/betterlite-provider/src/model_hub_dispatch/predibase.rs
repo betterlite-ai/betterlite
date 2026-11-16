@@ -8,7 +8,6 @@ use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
-use betterlite_prompts::builtin::Message;
 use betterlite_prompts::factory::custom::CustomPromptTemplate;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
@@ -24,7 +23,6 @@ use crate::predibase::error::{PredibaseSetupError, get_error_class};
 use crate::predibase::reply::{PredibaseResponse, ReplyInput, transform_response};
 use crate::predibase::request::{CustomPrompt, RequestBody, RequestContext};
 
-// make_call reads the whole error body into its message, and betterlite bounds how much a stream may hold
 const ERROR_BODY_LIMIT: usize = 0x400_0000;
 
 pub enum Completion {
@@ -32,7 +30,6 @@ pub enum Completion {
     Stream(Box<StreamResponse>),
 }
 
-// everything main.py L3936-L3968 resolves before B5846 builds the request
 struct Endpoint {
     url: String,
     headers: Headers,
@@ -40,73 +37,45 @@ struct Endpoint {
     stream: bool,
 }
 
-fn custom_prompt(
-    model: &str,
-    template: &CustomPromptTemplate,
-) -> Result<CustomPrompt, HubDispatchError> {
-    let raw =
-        serde_json::to_value(template).map_err(|source| HubDispatchError::CustomPrompt {
-            model: model.to_owned(),
-            source,
-        })?;
-    serde_json::from_value(raw).map_err(|source| HubDispatchError::CustomPrompt {
-        model: model.to_owned(),
-        source,
-    })
-}
-
 fn custom_prompts(
     table: &CustomPromptTable,
 ) -> Result<BTreeMap<String, CustomPrompt>, HubDispatchError> {
     let mut converted = BTreeMap::new();
     for (model, template) in table {
-        converted.insert(model.clone(), custom_prompt(model, template)?);
+        let error = |source| HubDispatchError::CustomPrompt {
+            model: model.clone(),
+            source,
+        };
+        let raw = serde_json::to_value(template).map_err(error)?;
+        let prompt = serde_json::from_value(raw).map_err(error)?;
+        converted.insert(model.clone(), prompt);
     }
     Ok(converted)
 }
 
-fn logged_headers(headers: &Headers) -> IndexMap<String, Json> {
+fn log_headers(headers: &Headers) -> IndexMap<String, Json> {
     headers
         .iter()
         .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
         .collect()
 }
 
-// LiteLLM's handlers read data.get("inputs", ""), so a prompt the factory left out logs as an empty string
-fn logged_input(data: &RequestBody) -> Json {
-    Json::Text(data.inputs.clone().unwrap_or_default())
-}
-
-fn logged_body(data: &RequestBody) -> Result<RawBody, HubDispatchError> {
-    json::convert(data).map(RawBody::Object)
-}
-
-fn logged_messages(messages: &[Message]) -> Result<Json, HubDispatchError> {
-    json::convert(messages)
-}
-
-fn reply_headers(headers: &http::HeaderMap) -> BTreeMap<String, String> {
-    headers
-        .iter()
-        .filter_map(|(name, value)| {
-            let text = value.to_str().ok()?;
-            Some((name.as_str().to_owned(), text.to_owned()))
-        })
-        .collect()
-}
-
-fn pre_call_args(url: &str, headers: &Headers, body: RawBody, acompletion: bool) -> AdditionalArgs {
+fn args(
+    api_base: Option<String>,
+    headers: Option<IndexMap<String, Json>>,
+    body: Option<RawBody>,
+    passthrough: IndexMap<String, Json>,
+) -> AdditionalArgs {
     AdditionalArgs {
-        api_base: Some(url.to_owned()),
-        headers: Some(logged_headers(headers)),
-        complete_input_dict: Some(body),
+        api_base,
+        headers,
+        complete_input_dict: body,
         request_str: None,
         openai_sdk: None,
-        passthrough: IndexMap::from([(String::from("acompletion"), Json::Bool(acompletion))]),
+        passthrough,
     }
 }
 
-// async_streaming sets data["stream"] = True, which the request transform already took out of parameters
 fn stream_body(data: &RequestBody) -> Result<String, HubDispatchError> {
     let mut fields: IndexMap<String, Json> = json::convert(data)?;
     fields.insert(String::from("stream"), Json::Bool(true));
@@ -117,8 +86,8 @@ fn endpoint(
     call: &mut ChatContext<'_>,
     deps: &DispatchDeps<'_>,
 ) -> Result<Endpoint, HubDispatchError> {
-    let tenant = predibase_tenant_id(call.optional_params, deps.globals, deps.environment)?;
-    let Some(tenant) = tenant else {
+    let Some(tenant) = predibase_tenant_id(call.optional_params, deps.globals, deps.environment)?
+    else {
         return Err(HubDispatchError::PredibaseSetup(
             PredibaseSetupError::MissingTenantId,
         ));
@@ -172,7 +141,19 @@ async fn request_body(
     Ok(data)
 }
 
-// main.py L3936-L3992: the tenant id and base pops first, then the module's request, call and reply
+async fn stream_error(response: StreamResponse) -> HubDispatchError {
+    let status = response.response.status().as_u16();
+    match response.buffered(ERROR_BODY_LIMIT).await {
+        Ok(buffered) => match from_utf8(&buffered.body) {
+            Ok(text) => {
+                HubDispatchError::Predibase(get_error_class(text, status, &BTreeMap::new()))
+            }
+            Err(source) => HubDispatchError::BodyNotUtf8 { source },
+        },
+        Err(source) => HubDispatchError::Operation(OperationError::from(source)),
+    }
+}
+
 pub async fn complete(
     call: &mut ChatContext<'_>,
     deps: &DispatchDeps<'_>,
@@ -180,18 +161,17 @@ pub async fn complete(
 ) -> Result<Completion, HubDispatchError> {
     let endpoint = endpoint(call, deps)?;
     let data = request_body(call, deps, &endpoint.options).await?;
-    let args = pre_call_args(
-        &endpoint.url,
-        &endpoint.headers,
-        logged_body(&data)?,
-        call.acompletion,
-    );
     pre_call(
         log.state,
         &PreCall {
-            input: logged_input(&data),
+            input: Json::Text(data.inputs.clone().unwrap_or_default()),
             model: None,
-            additional_args: args,
+            additional_args: args(
+                Some(endpoint.url.clone()),
+                Some(log_headers(&endpoint.headers)),
+                Some(json::convert(&data).map(RawBody::Object)?),
+                IndexMap::from([(String::from("acompletion"), Json::Bool(call.acompletion))]),
+            ),
         },
         log.env,
     )
@@ -211,7 +191,6 @@ async fn called(
     }
     let body = serde_json::to_vec(data).map_err(|source| HubDispatchError::Encode { source })?;
     if endpoint.stream {
-        // the sync path returns the open stream without a status check or a post_call, as LiteLLM's wrapper does
         let response = deps
             .post
             .post_stream(&endpoint.url, &endpoint.headers, &body, deps.timeout)
@@ -223,44 +202,6 @@ async fn called(
         .post(&endpoint.url, &endpoint.headers, &body, deps.timeout)
         .await?;
     replied(call, deps, log, &response, data, &endpoint.options).await
-}
-
-// make_call raises PredibaseError with the whole error body as its message
-async fn stream_error(response: StreamResponse) -> HubDispatchError {
-    let status = response.response.status().as_u16();
-    match response.buffered(ERROR_BODY_LIMIT).await {
-        Ok(buffered) => match from_utf8(&buffered.body) {
-            Ok(text) => {
-                HubDispatchError::Predibase(get_error_class(text, status, &BTreeMap::new()))
-            }
-            Err(source) => HubDispatchError::BodyNotUtf8 { source },
-        },
-        Err(source) => HubDispatchError::Operation(OperationError::from(source)),
-    }
-}
-
-fn stream_post_call(
-    log: &mut CallLogging<'_, '_>,
-    call: &ChatContext<'_>,
-    body: String,
-) -> Result<(), HubDispatchError> {
-    post_call(
-        log.state,
-        &PostCall {
-            original_response: Json::Null,
-            input: logged_messages(call.messages)?,
-            additional_args: AdditionalArgs {
-                api_base: None,
-                headers: None,
-                complete_input_dict: Some(RawBody::Text(body)),
-                request_str: None,
-                openai_sdk: None,
-                passthrough: IndexMap::new(),
-            },
-        },
-        log.env,
-    );
-    Ok(())
 }
 
 async fn streamed(
@@ -283,33 +224,16 @@ async fn streamed(
     if response.response.status() != 200 {
         return Err(stream_error(response).await);
     }
-    stream_post_call(log, call, body)?;
-    Ok(Completion::Stream(Box::new(response)))
-}
-
-fn reply_post_call(
-    log: &mut CallLogging<'_, '_>,
-    call: &ChatContext<'_>,
-    response: &UpstreamResponse,
-    data: &RequestBody,
-) -> Result<(), HubDispatchError> {
     post_call(
         log.state,
         &PostCall {
-            original_response: json::logged_reply(&response.body),
-            input: logged_messages(call.messages)?,
-            additional_args: AdditionalArgs {
-                api_base: None,
-                headers: None,
-                complete_input_dict: Some(logged_body(data)?),
-                request_str: None,
-                openai_sdk: None,
-                passthrough: IndexMap::new(),
-            },
+            original_response: Json::Null,
+            input: json::convert(call.messages)?,
+            additional_args: args(None, None, Some(RawBody::Text(body)), IndexMap::new()),
         },
         log.env,
     );
-    Ok(())
+    Ok(Completion::Stream(Box::new(response)))
 }
 
 async fn replied(
@@ -331,12 +255,33 @@ async fn replied(
     ) {
         return Err(HubDispatchError::Predibase(error));
     }
-    reply_post_call(log, call, response, data)?;
+    let headers: BTreeMap<String, String> = response
+        .headers
+        .iter()
+        .filter_map(|(name, value)| {
+            let text = value.to_str().ok()?;
+            Some((name.as_str().to_owned(), text.to_owned()))
+        })
+        .collect();
+    post_call(
+        log.state,
+        &PostCall {
+            original_response: json::logged_reply(&response.body),
+            input: json::convert(call.messages)?,
+            additional_args: args(
+                None,
+                None,
+                Some(json::convert(data).map(RawBody::Object)?),
+                IndexMap::new(),
+            ),
+        },
+        log.env,
+    );
     let reply = transform_response(
         &ReplyInput {
             body: &response.body,
             status: response.status,
-            headers: &reply_headers(&response.headers),
+            headers: &headers,
             request_body: data,
             options,
             messages: call.messages,

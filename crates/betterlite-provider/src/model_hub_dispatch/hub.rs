@@ -1,5 +1,5 @@
-use std::time::Duration;
-
+use super::HubDispatchError;
+use crate::operation::OperationError;
 use async_trait::async_trait;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -11,16 +11,11 @@ use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::Json;
 use http::Method;
 use secrecy::{ExposeSecret as _, SecretString};
+use std::time::Duration;
 use url::Url;
-
-use super::HubDispatchError;
-use crate::operation::OperationError;
-
 pub const HUB_URL: &str = "https://huggingface.co";
 const EXPAND: (&str, &str) = ("expand", "inferenceProviderMapping");
 const PIPELINE_TAG: &str = "pipeline_tag";
-
-// the pooled client answers the hub GET, which the sync provider sources cannot await themselves
 #[async_trait]
 pub trait HubGetAsync: Send + Sync {
     async fn get(
@@ -30,12 +25,10 @@ pub trait HubGetAsync: Send + Sync {
         query: &[(&str, &str)],
     ) -> Result<HubResponse, HubDispatchError>;
 }
-
 pub struct PooledHub<'client> {
     pub client: &'client ProxiedClient,
     pub deadline: Duration,
 }
-
 #[async_trait]
 impl HubGetAsync for PooledHub<'_> {
     async fn get(
@@ -70,8 +63,6 @@ impl HubGetAsync for PooledHub<'_> {
         })
     }
 }
-
-// the hub headers are only read back for an error, so a value that is not text is left out
 fn headers_from(headers: http::HeaderMap) -> Headers {
     headers
         .iter()
@@ -81,8 +72,6 @@ fn headers_from(headers: http::HeaderMap) -> Headers {
         })
         .collect()
 }
-
-// common_utils.py L79-L82: the mapping GET carries an Accept header and the token variable alone
 fn mapping_headers(token: Option<&SecretString>) -> Headers {
     let mut headers = Headers::from([(String::from("Accept"), String::from("application/json"))]);
     let supplied = token.filter(|token| !token.expose_secret().is_empty());
@@ -94,7 +83,6 @@ fn mapping_headers(token: Option<&SecretString>) -> Headers {
     }
     headers
 }
-
 pub async fn fetch_mapping(
     hub: &dyn HubGetAsync,
     model_id: &str,
@@ -103,8 +91,6 @@ pub async fn fetch_mapping(
     let url = format!("{HUB_URL}/api/models/{model_id}");
     hub.get(&url, &mapping_headers(token), &[EXPAND]).await
 }
-
-// handler.py L48: the pipeline tag GET has no auth header, no query and no status check
 pub async fn fetch_pipeline_tag(
     hub: &dyn HubGetAsync,
     model: &str,
@@ -112,10 +98,7 @@ pub async fn fetch_pipeline_tag(
     let url = format!("{HUB_URL}/api/models/{model}");
     hub.get(&url, &Headers::new(), &[]).await
 }
-
-// the answer the async GET already holds, replayed to B5990's sync mapping source
 pub struct PrefetchedHub(pub HubResponse);
-
 impl HubGet for PrefetchedHub {
     fn get(
         &self,
@@ -126,21 +109,19 @@ impl HubGet for PrefetchedHub {
         Ok(self.0.clone())
     }
 }
-
-// the answer the async GET already holds, replayed to B5991's sync pipeline tag source
 pub struct PrefetchedTag(pub HubResponse);
-
 impl PipelineTagSource for PrefetchedTag {
     fn tag(
         &self,
         _model: &str,
         _task_type: Option<&str>,
     ) -> Result<Option<String>, HuggingfaceError> {
-        let value: Json = serde_json::from_slice(&self.0.body).map_err(|_error| HuggingfaceError {
-            status_code: 500,
-            message: String::from("the Hugging Face model info is not JSON"),
-            headers: Headers::new(),
-        })?;
+        let value: Json =
+            serde_json::from_slice(&self.0.body).map_err(|_error| HuggingfaceError {
+                status_code: 500,
+                message: String::from("the Hugging Face model info is not JSON"),
+                headers: Headers::new(),
+            })?;
         Ok(value
             .as_object()
             .and_then(|object| object.get(PIPELINE_TAG))

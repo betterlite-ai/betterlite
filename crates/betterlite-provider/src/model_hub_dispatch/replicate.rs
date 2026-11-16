@@ -1,13 +1,3 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
-
-use betterlite_logging::logging_pre_post::args::AdditionalArgs;
-use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
-use betterlite_models::decisions::Json;
-use betterlite_prompts::builtin::Message;
-use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
-
 use super::credentials::{replicate_base, replicate_key};
 use super::json;
 use super::{CallLogging, ChatContext, DispatchDeps, HubDispatchError};
@@ -15,10 +5,15 @@ use crate::replicate::poll::ReplicateCompletion;
 use crate::replicate::poll::completion::{Replicate, ReplicateCall};
 use crate::replicate::poll::{OutputPolicy, ReplicatePolling};
 use crate::replicate::request::ReplicateDefaults;
-
+use betterlite_logging::logging_pre_post::args::AdditionalArgs;
+use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
+use betterlite_models::decisions::Json;
+use betterlite_prompts::builtin::Message;
+use indexmap::IndexMap;
+use secrecy::ExposeSecret as _;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 pub type Completion = ReplicateCompletion;
-
-// main.py L2811-L2816: a streamed call is logged after the module returns the wrapper, with no request data
 fn stream_post_call(
     log: &mut CallLogging<'_, '_>,
     messages: &[Message],
@@ -41,7 +36,6 @@ fn stream_post_call(
     );
     Ok(())
 }
-
 fn module<'deps, 'call>(
     deps: &'call DispatchDeps<'deps>,
     acompletion: bool,
@@ -66,15 +60,12 @@ where
         },
     }
 }
-
-// main.py L2773-L2824: the key and base chains, then the module's completion and the stream post_call it leaves to the caller
 pub async fn complete(
     call: &mut ChatContext<'_>,
     deps: &DispatchDeps<'_>,
     log: &mut CallLogging<'_, '_>,
 ) -> Result<Completion, HubDispatchError> {
     let key = replicate_key(call.api_key, deps.globals, deps.environment);
-    // L2795: LiteLLM resolves this base and ReplicateConfig.get_complete_url overwrites it, so it never reaches a request
     let _base = replicate_base(call.api_base, deps.globals, deps.environment);
     let empty = BTreeMap::new();
     let prompts = call
