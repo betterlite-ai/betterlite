@@ -142,7 +142,8 @@ pub fn status_video_object(
         }),
     };
     let value = serde_json::to_value(wire).map_err(FalVideoError::VideoObjectEncode)?;
-    let video = serde_json::from_value(value).map_err(FalVideoError::VideoObjectDecode)?;
+    let video =
+        serde_json::from_value::<VideoObject>(value).map_err(FalVideoError::VideoObjectDecode)?;
     Ok(video)
 }
 
