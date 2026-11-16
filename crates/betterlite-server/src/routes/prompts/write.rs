@@ -57,7 +57,7 @@ where
         .with_state(state)
 }
 
-// POST and PUT decode the body, answer 403 and 500, then reject ambiguous data, in LiteLLM's order
+// POST and PUT decode the body, ask the guard for 403 and 500, then reject ambiguous data
 fn prompt_write_request<'state, Table>(
     state: &'state PromptWriteState<Table>,
     context: &AuthContext,

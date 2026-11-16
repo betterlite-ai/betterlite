@@ -195,6 +195,16 @@ async fn oneshot_create_locates_the_field_a_body_gets_wrong() {
 }
 
 #[tokio::test]
+async fn oneshot_create_names_the_body_alone_when_the_json_is_not_an_object() {
+    let harness = Harness::new(master_key(), TableMode::Working);
+    let (status, response) = harness.send(Method::POST, "/prompts", "[]").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    let validation: ValidationBody = serde_json::from_str(&response).expect("a validation body");
+    assert_eq!(validation.detail.len(), 1);
+    assert_eq!(validation.detail[0].loc, ["body"]);
+}
+
+#[tokio::test]
 async fn oneshot_create_allocates_version_one_and_initializes_the_registry() {
     let harness = Harness::new(master_key(), TableMode::Working);
     let (status, response) = harness.send(Method::POST, "/prompts", PROMPT_BODY).await;
