@@ -1,7 +1,15 @@
 mock_provider "google" {
   override_during = plan
 
-  mock_resource "google_compute_network" {}
+  # The SQL instance validates that private_network is a VPC resource id or self link, so the
+  # network's computed id and self_link need a value of that shape rather than a generated one.
+  mock_resource "google_compute_network" {
+    defaults = {
+      id        = "projects/test-project/global/networks/tenant-test-betterlite"
+      self_link = "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/tenant-test-betterlite"
+    }
+  }
+
   mock_resource "google_secret_manager_secret" {}
 }
 
