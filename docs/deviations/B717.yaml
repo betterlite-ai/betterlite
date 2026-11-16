@@ -14,9 +14,9 @@ deviations:
       exact ledger identity instead of Prisma CLI stderr and P-code text. A nonempty namespace without
       migration history is detected from the catalog before deployment, unfinished history is read from
       _prisma_migrations by name and started_at, a failed step keeps its database SQLSTATE, and
-      advisory-lock contention is a deploy deadline with the Prisma lock still held by another session.
-      A statement canceled at the deploy deadline (SQLSTATE 57014) is the native equivalent of the
-      subprocess timeout.
+      advisory-lock contention is a deploy deadline that expires before the Prisma lock is acquired.
+      A deploy deadline that expires after the lock is acquired is the native equivalent of the
+      subprocess timeout, whether or not the statement cancellation (SQLSTATE 57014) arrives.
     why: >-
       Native deployment preserves the recovery decisions, retry budgets and manual-recovery guidance
       without fabricating subprocess failures or parsing a CLI the gateway cannot run.

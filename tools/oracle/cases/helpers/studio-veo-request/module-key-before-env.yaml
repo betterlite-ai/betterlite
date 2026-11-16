@@ -1,0 +1,42 @@
+kind: helper
+name: studio-veo-module-key-before-env
+call:
+  studio_veo_request:
+    requests:
+      - model: veo-3
+        prompt: a prompt
+        api_key: explicit
+        params_api_key: params
+        generic_key: module
+        env: {GOOGLE_API_KEY: google, GEMINI_API_KEY: gemini}
+      - model: veo-3
+        prompt: a prompt
+        api_key: ''
+        params_api_key: params
+        generic_key: module
+        env: {GOOGLE_API_KEY: google}
+      - model: veo-3
+        prompt: a prompt
+        params_api_key: ''
+        generic_key: module
+        env: {GOOGLE_API_KEY: google}
+      - model: veo-3
+        prompt: a prompt
+        generic_key: ''
+        env: {GOOGLE_API_KEY: google, GEMINI_API_KEY: gemini}
+      - model: veo-3
+        prompt: a prompt
+        env: {GOOGLE_API_KEY: '', GEMINI_API_KEY: gemini}
+      - model: veo-3
+        prompt: a prompt
+        env: {GEMINI_API_KEY: gemini}
+      - model: veo-3
+        prompt: a prompt
+        api_key: explicit
+        headers: {x-goog-api-key: caller, Content-Type: text/plain, X-Extra: '1'}
+calls:
+  - studio_veo_request:
+      requests:
+        - {model: veo-3, prompt: a prompt}
+env: {}
+compare: {ignore: []}
