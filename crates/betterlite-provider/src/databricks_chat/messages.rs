@@ -113,7 +113,8 @@ fn is_bare_assistant(message: &Message) -> bool {
     if message.role != "assistant" {
         return false;
     }
-    let has_content = message.content.as_ref().is_some_and(content_has_value);
+    // the empty content cleanup already dropped blank text and empty block lists
+    let has_content = message.content.is_some();
     let has_tool_calls = message
         .provider_specific_fields
         .get(TOOL_CALLS)
@@ -123,13 +124,6 @@ fn is_bare_assistant(message: &Message) -> bool {
         .get("function_call")
         .is_some_and(Json::is_truthy);
     !(has_content || has_tool_calls || has_function_call)
-}
-
-fn content_has_value(content: &Content) -> bool {
-    match content {
-        Content::Text(text) => !text.is_empty(),
-        Content::Parts(parts) => !parts.is_empty(),
-    }
 }
 
 // _split_parallel_tool_calls re-emits each result right after an assistant message holding its call
