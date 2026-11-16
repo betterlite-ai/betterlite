@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-table-access-pinned-tools-absent
+call:
+  b4711:
+    function: pinned_tools
+    salt_key: b4711-salt
+    server_id: srv-missing
+    pinned_tools: null
+    touched_by: admin
+    rows:
+      - {server_id: srv-good, server_name: good, transport: sse, approval_status: active}
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}

@@ -1,0 +1,316 @@
+use std::collections::BTreeMap;
+use std::future::{Future, ready};
+use std::sync::{Arc, Mutex};
+
+use betterlite_db::budget_permission_rows::JsonData;
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
+
+use crate::finops::focus::destinations::factory::DestinationProvider;
+use crate::finops::focus::destinations::factory::error::FactoryError;
+use crate::finops::focus::destinations::factory::resolve::DestinationOverrides;
+use crate::finops::focus::engine::source::UsageSource;
+use crate::finops::focus::engine::{ExportSettings, FocusExportEngine, format_for};
+use crate::finops::metering::clock::UtcClock;
+use crate::focus_records::destinations::{FocusDestination, FocusTimeWindow};
+use crate::focus_records::table::FocusTable;
+use crate::focus_records::transformer::{TransformError, UsageRow, transform};
+
+pub(super) const PREFIX: &str = "focus-exports";
+
+#[derive(Debug, thiserror::Error)]
+#[error("the recording source failed")]
+pub(super) struct SourceFailed;
+
+#[derive(Debug, thiserror::Error)]
+#[error("the recording destination failed")]
+pub(super) struct DeliveryFailed;
+
+#[derive(Clone, Debug)]
+pub(super) struct Delivery {
+    pub(super) content: Vec<u8>,
+    pub(super) window: FocusTimeWindow,
+    pub(super) filename: String,
+}
+
+#[derive(Clone, Default)]
+pub(super) struct RecordingDestination {
+    deliveries: Arc<Mutex<Vec<Delivery>>>,
+}
+
+impl RecordingDestination {
+    pub(super) fn deliveries(&self) -> Vec<Delivery> {
+        self.deliveries
+            .lock()
+            .expect("the deliveries mutex is not poisoned")
+            .clone()
+    }
+}
+
+impl FocusDestination for RecordingDestination {
+    type Error = DeliveryFailed;
+
+    fn deliver<'delivery>(
+        &'delivery self,
+        content: &'delivery [u8],
+        time_window: &'delivery FocusTimeWindow,
+        filename: &'delivery str,
+    ) -> impl Future<Output = Result<(), DeliveryFailed>> + Send + 'delivery {
+        self.deliveries
+            .lock()
+            .expect("the deliveries mutex is not poisoned")
+            .push(Delivery {
+                content: content.to_vec(),
+                window: time_window.clone(),
+                filename: filename.to_owned(),
+            });
+        ready(Ok(()))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct SourceCall {
+    pub(super) limit: Option<i64>,
+    pub(super) start_time_utc: Option<DateTime<Utc>>,
+    pub(super) end_time_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Default)]
+pub(super) struct RecordingSource {
+    calls: Arc<Mutex<Vec<SourceCall>>>,
+    rows: Vec<UsageRow>,
+}
+
+impl RecordingSource {
+    pub(super) fn calls(&self) -> Vec<SourceCall> {
+        self.calls
+            .lock()
+            .expect("the source calls mutex is not poisoned")
+            .clone()
+    }
+}
+
+impl UsageSource for RecordingSource {
+    type Error = SourceFailed;
+
+    fn usage_data(
+        &self,
+        limit: Option<i64>,
+        start_time_utc: Option<DateTime<Utc>>,
+        end_time_utc: Option<DateTime<Utc>>,
+    ) -> impl Future<Output = Result<Vec<UsageRow>, SourceFailed>> + Send {
+        self.calls
+            .lock()
+            .expect("the source calls mutex is not poisoned")
+            .push(SourceCall {
+                limit,
+                start_time_utc,
+                end_time_utc,
+            });
+        ready(Ok(self.rows.clone()))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct CreateCall {
+    pub(super) provider: String,
+    pub(super) prefix: String,
+    pub(super) overrides: DestinationOverrides,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) enum CreateOutcome {
+    #[default]
+    Builds,
+    Rejects,
+}
+
+#[derive(Clone, Default)]
+pub(super) struct RecordingFactory {
+    calls: Arc<Mutex<Vec<CreateCall>>>,
+    destination: RecordingDestination,
+    outcome: CreateOutcome,
+}
+
+impl RecordingFactory {
+    pub(super) fn rejecting() -> Self {
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            destination: RecordingDestination::default(),
+            outcome: CreateOutcome::Rejects,
+        }
+    }
+
+    pub(super) fn calls(&self) -> Vec<CreateCall> {
+        self.calls
+            .lock()
+            .expect("the factory calls mutex is not poisoned")
+            .clone()
+    }
+
+    fn record(&self, call: CreateCall) {
+        let mut calls = self
+            .calls
+            .lock()
+            .expect("the factory calls mutex is not poisoned");
+        calls.push(call);
+    }
+}
+
+impl DestinationProvider for RecordingFactory {
+    type Destination = RecordingDestination;
+
+    fn create(
+        self,
+        provider: &str,
+        prefix: &str,
+        overrides: &DestinationOverrides,
+    ) -> Result<RecordingDestination, FactoryError> {
+        self.record(CreateCall {
+            provider: provider.to_owned(),
+            prefix: prefix.to_owned(),
+            overrides: overrides.clone(),
+        });
+        match self.outcome {
+            CreateOutcome::Builds => Ok(self.destination),
+            CreateOutcome::Rejects => Err(FactoryError::MissingS3BucketName),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct FixedClock {
+    pub(super) now: DateTime<Utc>,
+}
+
+impl UtcClock for FixedClock {
+    fn now(&self) -> DateTime<Utc> {
+        self.now
+    }
+}
+
+pub(super) fn refusing_transform(_rows: &[UsageRow]) -> Result<FocusTable, TransformError> {
+    Err(TransformError::Overflow {
+        field: "spend",
+        value: Decimal::MAX,
+    })
+}
+
+pub(super) fn timestamp(value: &str) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(value)
+        .expect("the test timestamp is valid RFC 3339")
+        .with_timezone(&Utc)
+}
+
+pub(super) fn window() -> FocusTimeWindow {
+    FocusTimeWindow {
+        start_time: timestamp("2026-01-02T03:04:05Z"),
+        end_time: timestamp("2026-01-02T04:05:06Z"),
+        frequency: String::from("daily"),
+    }
+}
+
+pub(super) fn settings(export_format: &str) -> ExportSettings {
+    ExportSettings {
+        provider: String::from("s3"),
+        export_format: export_format.to_owned(),
+        prefix: String::from(PREFIX),
+        destination_config: DestinationOverrides::default(),
+    }
+}
+
+pub(super) fn overrides_with_bucket_name(bucket_name: &str) -> DestinationOverrides {
+    DestinationOverrides {
+        bucket_name: Some(bucket_name.to_owned()),
+        region_name: None,
+        endpoint_url: None,
+        aws_access_key_id: None,
+        aws_secret_access_key: None,
+        aws_session_token: None,
+        api_key: None,
+        integration_token: None,
+        base_url: None,
+        service_account_json: None,
+        api_endpoint: None,
+        connection_id: None,
+    }
+}
+
+pub(super) fn usage_row() -> UsageRow {
+    UsageRow {
+        date: String::from("2026-03-04"),
+        api_key: String::from("api-key-hash"),
+        spend: Decimal::new(125, 2),
+        api_requests: 3,
+        user_id: Some(String::from("user-1")),
+        model: Some(String::from("gpt-4o")),
+        model_group: Some(String::from("gpt-4o")),
+        custom_llm_provider: Some(String::from("openai")),
+        team_id: Some(String::from("team-1")),
+        team_alias: Some(String::from("Team One")),
+        organization_id: Some(String::from("org-1")),
+        organization_alias: Some(String::from("Org One")),
+        user_email: Some(String::from("user@example.com")),
+        api_key_alias: Some(String::from("key-alias")),
+    }
+}
+
+pub(super) fn data_row(fields: &[(&str, JsonData)]) -> BTreeMap<String, JsonData> {
+    fields
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), value.clone()))
+        .collect()
+}
+
+pub(super) fn number(value: &str) -> JsonData {
+    serde_json::from_str(value).expect("the test number is valid JSON")
+}
+
+pub(super) fn text(value: &str) -> JsonData {
+    JsonData::String(value.to_owned())
+}
+
+pub(super) struct Harness {
+    pub(super) engine: FocusExportEngine<RecordingDestination, RecordingSource, FixedClock>,
+    destination: RecordingDestination,
+    source: RecordingSource,
+}
+
+impl Harness {
+    pub(super) fn deliveries(&self) -> Vec<Delivery> {
+        self.destination.deliveries()
+    }
+
+    pub(super) fn source_calls(&self) -> Vec<SourceCall> {
+        self.source.calls()
+    }
+}
+
+pub(super) fn harness(export_format: &str, rows: Vec<UsageRow>, now: DateTime<Utc>) -> Harness {
+    harness_with_transform(export_format, rows, now, transform)
+}
+
+pub(super) fn harness_with_transform(
+    export_format: &str,
+    rows: Vec<UsageRow>,
+    now: DateTime<Utc>,
+    transform: fn(&[UsageRow]) -> Result<FocusTable, TransformError>,
+) -> Harness {
+    let destination = RecordingDestination::default();
+    let source = RecordingSource {
+        calls: Arc::new(Mutex::new(Vec::new())),
+        rows,
+    };
+    let engine = FocusExportEngine {
+        format: format_for(export_format).expect("the test names a supported format"),
+        destination: destination.clone(),
+        source: source.clone(),
+        clock: FixedClock { now },
+        transform,
+    };
+    Harness {
+        engine,
+        destination,
+        source,
+    }
+}
