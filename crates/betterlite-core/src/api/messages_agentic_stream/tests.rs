@@ -2,6 +2,7 @@
 
 use std::collections::VecDeque;
 use std::convert::Infallible;
+use std::fmt::Debug;
 use std::fs;
 use std::future::{Future, poll_fn};
 use std::path::Path;
@@ -18,20 +19,33 @@ use betterlite_models::decisions::Json;
 use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use rstest::rstest;
+use tracing::Event;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::{DefaultGuard, Subscriber, set_default};
+use tracing_subscriber::layer::{Context as LayerContext, Layer, SubscriberExt as _};
+use tracing_subscriber::registry;
 
-use super::interceptor::{AgenticFollowUp, AgenticHookFuture, AgenticInterceptor};
+use super::interceptor::{
+    AgenticFollowUp, AgenticHookFuture, AgenticInterceptor, MessagesFakeFollowUp,
+};
 use super::stream::MessagesAgenticStream;
 use super::{
-    HoldBackPolicy, KEEPALIVE_PING, MessagesAgenticStreamInput, MessagesAgenticStreamResult,
-    PING_INTERVAL_SECONDS, decode_messages_agentic_stream, is_server_fulfilled_tool_leak_error,
+    HoldBackPolicy, KEEPALIVE_PING, MessagesAgenticError, MessagesAgenticStreamInput,
+    MessagesAgenticStreamResult, PING_INTERVAL_SECONDS, decode_messages_agentic_stream,
+    is_server_fulfilled_tool_leak_error,
 };
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::messages_fake_stream::{MessagesFakeStream, MessagesFakeStreamError};
 use crate::api::messages_sse_events::stream::MessagesProviderStream;
 use crate::meta_muse_realtime::request::Sleep;
 
+mod rebuild;
+
 type EffectLog = Recorder<String>;
 type DelayLog = Recorder<u64>;
+
+// a stream that yields more than this never ends, so a drain loop fails instead of hanging
+const MAX_DRAINED: usize = 64;
 
 // ordered side effects of the scripted streams and the interceptor, as the oracle records them
 #[derive(Clone, Default)]
@@ -67,6 +81,32 @@ impl Recorder<String> {
             .filter(|entry| entry.as_str() == event)
             .count()
     }
+}
+
+// every tracing event as "LEVEL message", in the order the iterator logged them
+impl<Inner: Subscriber> Layer<Inner> for Recorder<String> {
+    fn on_event(&self, event: &Event<'_>, _context: LayerContext<'_, Inner>) {
+        let mut message = MessageText::default();
+        event.record(&mut message);
+        self.record(&format!("{} {}", event.metadata().level(), message.0));
+    }
+}
+
+#[derive(Default)]
+struct MessageText(String);
+
+impl Visit for MessageText {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
+    }
+}
+
+fn capture_logs() -> (EffectLog, DefaultGuard) {
+    let logs = EffectLog::default();
+    let guard = set_default(registry().with(logs.clone()));
+    (logs, guard)
 }
 
 // what the interceptor was handed, so a test can prove the rebuilt response reached it
@@ -332,6 +372,7 @@ async fn drain(
     let mut chunks = Vec::new();
     while let Some(chunk) = stream.next_chunk().await.expect("the stream yields") {
         chunks.push(chunk);
+        assert!(chunks.len() <= MAX_DRAINED, "the stream ends");
     }
     chunks
 }
@@ -578,6 +619,7 @@ async fn followup_stream(#[case] kind: ReplyKind) {
     );
     let first = stream.next_chunk().await.expect("the live read");
     assert_eq!(first, Some(frames[0].clone()));
+    assert!(!buffered(&stream));
     let chunks = drain(&mut stream).await;
     let (live, follow_up) = chunks.split_at(frames[1..].len());
     assert_eq!(live, &frames[1..]);
@@ -597,6 +639,8 @@ async fn followup_stream(#[case] kind: ReplyKind) {
     assert_eq!(seen.entries()[0].1, "claude-test");
 }
 
+const LEAK_LOG: &str = "ERROR AgenticStreamingIterator: hooks did not replace a message containing a server-fulfilled tool_use [model=claude-test]; emitting an SSE error instead of leaking the tool call to the client";
+
 // an unreplaced server-fulfilled tool call becomes the SSE error frame once and ends the turn
 #[rstest]
 #[case::exact_name("web_search", true)]
@@ -604,6 +648,7 @@ async fn followup_stream(#[case] kind: ReplyKind) {
 #[case::name_prefix("web", false)]
 #[tokio::test]
 async fn leaked_server_tool_error(#[case] tool_name: &str, #[case] leaks: bool) {
+    let (logs, _guard) = capture_logs();
     let effects = EffectLog::default();
     let seen = HookSeen::default();
     let frames = server_tool_stream(tool_name);
@@ -621,6 +666,13 @@ async fn leaked_server_tool_error(#[case] tool_name: &str, #[case] leaks: bool) 
     let chunks = drain(&mut stream).await;
     assert!(seen_tool_use(&seen, tool_name));
     assert_eq!(effects.count("hook-start"), 1);
+    assert_eq!(
+        chunks
+            .iter()
+            .any(|chunk| is_server_fulfilled_tool_leak_error(chunk)),
+        leaks
+    );
+    assert_eq!(logs.count(LEAK_LOG), usize::from(leaks));
     if leaks {
         assert_eq!(chunks.len(), 1);
         assert!(is_server_fulfilled_tool_leak_error(&chunks[0]));
@@ -699,18 +751,42 @@ fn fallback_reply(fallback: Fallback) -> HookReply {
 
 // a hook answer no iterator can serve is logged and skipped, leaving the live bytes alone
 #[rstest]
-#[case::unexpected_result(Fallback::Unexpected)]
-#[case::hook_error(Fallback::Failed)]
-#[case::unbuildable_message(Fallback::Unbuildable)]
+#[case::unexpected_result(
+    Fallback::Unexpected,
+    Some("call-1"),
+    "WARN AgenticStreamingIterator: Unexpected result type from hooks: dict"
+)]
+#[case::hook_error(
+    Fallback::Failed,
+    Some("call-1"),
+    "ERROR AgenticStreamingIterator: Error in agentic hook processing [call_id=call-1 model=claude-test]: callback scripted-hook failed: hook exploded"
+)]
+#[case::hook_error_without_call_id(
+    Fallback::Failed,
+    None,
+    "ERROR AgenticStreamingIterator: Error in agentic hook processing [call_id=unknown model=claude-test]: callback scripted-hook failed: hook exploded"
+)]
+#[case::unbuildable_message(
+    Fallback::Unbuildable,
+    Some("call-1"),
+    "ERROR AgenticStreamingIterator: Error in agentic hook processing [call_id=call-1 model=claude-test]: 'NoneType' object is not iterable"
+)]
 #[tokio::test]
-async fn hook_outcome_fallbacks(#[case] fallback: Fallback) {
+async fn hook_outcome_fallbacks(
+    #[case] fallback: Fallback,
+    #[case] call_id: Option<&str>,
+    #[case] logged: &str,
+) {
+    let (logs, _guard) = capture_logs();
     let effects = EffectLog::default();
     let seen = HookSeen::default();
     let frames = text_stream();
+    let mut input = agentic_input(None);
+    input.logging.call_id = call_id.map(str::to_owned);
     let mut stream = MessagesAgenticStream::new(
         ScriptedInner::open(frames.clone(), &effects),
         resolved_interceptor(fallback_reply(fallback), &effects, &seen),
-        agentic_input(None),
+        input,
         immediate_sleep(),
         ApiLimits::default(),
     );
@@ -718,6 +794,7 @@ async fn hook_outcome_fallbacks(#[case] fallback: Fallback) {
     assert_eq!(chunks, frames);
     assert_eq!(effects.count("hook-start"), 1);
     assert_eq!(seen.entries().len(), 1);
+    assert_eq!(logs.count(logged), 1);
 }
 
 #[derive(Clone, Copy)]
@@ -741,10 +818,17 @@ fn unrebuildable(shape: BufferShape) -> Vec<Vec<u8>> {
 
 // bytes that rebuild to nothing skip the hooks instead of failing the turn
 #[rstest]
-#[case::no_message_start(BufferShape::NoMessageStart)]
-#[case::wrong_shape(BufferShape::WrongShape)]
+#[case::no_message_start(
+    BufferShape::NoMessageStart,
+    "DEBUG AgenticStreamingIterator: Could not rebuild response from SSE bytes"
+)]
+#[case::wrong_shape(
+    BufferShape::WrongShape,
+    "ERROR AgenticStreamingIterator: Error in agentic hook processing [call_id=call-1 model=claude-test]: the data field of an agentic stream event is not an object"
+)]
 #[tokio::test]
-async fn unrebuildable_buffer_skips_hooks(#[case] shape: BufferShape) {
+async fn unrebuildable_buffer_skips_hooks(#[case] shape: BufferShape, #[case] logged: &str) {
+    let (logs, _guard) = capture_logs();
     let effects = EffectLog::default();
     let seen = HookSeen::default();
     let frames = unrebuildable(shape);
@@ -759,6 +843,7 @@ async fn unrebuildable_buffer_skips_hooks(#[case] shape: BufferShape) {
     assert_eq!(chunks, frames);
     assert_eq!(effects.count("hook-start"), 0);
     assert!(seen.entries().is_empty());
+    assert_eq!(logs.count(logged), 1);
 }
 
 // an exhausted stream that collected nothing never calls the interceptor
@@ -783,6 +868,54 @@ async fn empty_buffer_skips_hooks(#[case] held_back: bool) {
         assert!(chunks.is_empty());
     }
     assert_eq!(effects.count("hook-start"), 0);
+}
+
+// the collected provider bytes stop at the JSON boundary, so a long stream cannot grow the buffer
+#[rstest]
+#[case::at_limit(0, true)]
+#[case::over_limit(1, false)]
+#[tokio::test]
+async fn collected_bytes_respect_limits(#[case] overflow: usize, #[case] fits: bool) {
+    let effects = EffectLog::default();
+    let seen = HookSeen::default();
+    let frames = text_stream();
+    let total = frames.iter().map(Vec::len).sum::<usize>();
+    let limits = ApiLimits {
+        max_json_bytes: total.saturating_sub(overflow),
+        ..ApiLimits::default()
+    };
+    let mut stream = MessagesAgenticStream::new(
+        ScriptedInner::open(frames.clone(), &effects),
+        resolved_interceptor(HookReply::Empty, &effects, &seen),
+        agentic_input(None),
+        immediate_sleep(),
+        limits,
+    );
+    let mut reads = Vec::new();
+    for _frame in &frames {
+        reads.push(stream.next_chunk().await);
+    }
+    let last = reads.pop().expect("one read per frame");
+    assert!(reads.iter().all(Result::is_ok));
+    assert_eq!(last.is_ok(), fits);
+    assert_eq!(matches!(last, Err(MessagesAgenticError::Limit(_))), !fits);
+}
+
+// a whole-message hook answer replays as the same frames the fake stream builds
+#[tokio::test]
+async fn fake_follow_up_replays_message() {
+    let expected = MessagesFakeStream::new(&replacement())
+        .expect("the replacement builds frames")
+        .collect::<Vec<_>>();
+    let mut follow_up =
+        MessagesFakeFollowUp::from_response(&replacement()).expect("the follow-up builds");
+    let mut chunks = Vec::new();
+    while let Some(chunk) = follow_up.next_chunk().await.expect("the follow-up yields") {
+        chunks.push(chunk);
+        assert!(chunks.len() <= MAX_DRAINED, "the follow-up ends");
+    }
+    assert!(!expected.is_empty());
+    assert_eq!(chunks, expected);
 }
 
 #[test]
