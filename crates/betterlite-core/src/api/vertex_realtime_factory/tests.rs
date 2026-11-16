@@ -51,13 +51,11 @@ fn chirp_selection() {
         UnusedFactory,
     )
     .expect("the Speech-to-Text config builds");
-    let VertexRealtimeConfig::Chirp(config) = config else {
+    let VertexRealtimeConfig::Chirp(chirp) = config else {
         panic!("chirp_2 must select the Speech-to-Text backend");
     };
     assert_eq!(
-        config
-            .complete_url(None, "chirp_2")
-            .expect("the url builds"),
+        chirp.complete_url(None, "chirp_2").expect("the url builds"),
         "europe-west4-speech.googleapis.com"
     );
     let live = vertex_realtime_config(
@@ -129,7 +127,7 @@ fn invalid_project_is_rejected() {
     ));
 }
 
-fn live_target(location: Option<&str>, catalog: &Arc<ModelCatalog>) -> Box<VertexLiveTarget> {
+fn live_target(location: Option<&str>, catalog: &Arc<ModelCatalog>) -> VertexLiveTarget {
     let config = vertex_realtime_config(
         input("gemini-2.5-flash", "my-project", location, catalog),
         &PassThroughRegion,
@@ -139,7 +137,7 @@ fn live_target(location: Option<&str>, catalog: &Arc<ModelCatalog>) -> Box<Verte
     let VertexRealtimeConfig::Live(target) = config else {
         panic!("a Gemini Live model must select Vertex Live");
     };
-    target
+    *target
 }
 
 fn project_outcome(project: &str, catalog: &Arc<ModelCatalog>) -> VertexRealtimeError {

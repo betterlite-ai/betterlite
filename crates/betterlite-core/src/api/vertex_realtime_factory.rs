@@ -54,11 +54,14 @@ pub enum VertexRealtimeError {
     Target(#[from] VertexLocationError),
 }
 
-pub fn vertex_realtime_config<Factory: ChirpBackendFactory>(
+pub fn vertex_realtime_config<Factory>(
     input: VertexRealtimeInput<'_>,
     regions: &dyn VertexRegionPolicy,
     factory: Factory,
-) -> Result<VertexRealtimeConfig<Factory>, VertexRealtimeError> {
+) -> Result<VertexRealtimeConfig<Factory>, VertexRealtimeError>
+where
+    Factory: ChirpBackendFactory,
+{
     if is_vertex_speech_to_text_model(&input.catalog, input.model) {
         let settings = ChirpSettings {
             project: input.project.to_owned(),
