@@ -1,16 +1,15 @@
-use std::str::from_utf8;
-
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::api::messages_chat_output::records::ResponseRecord;
 use betterlite_core::guardrails::model_armor::streams::assembly::Assembly;
 use betterlite_core::guardrails::model_armor::streams::chunk::Chunk;
 use betterlite_core::guardrails::model_armor::streams::errors::HttpError;
 use betterlite_guardrails::anthropic_sse::sse_chunks_from_response::sse_chunks_from_response;
+use betterlite_guardrails::anthropic_sse::sse_stream::{
+    anthropic_message_start, joined_sse_stream, parsed_sse_events,
+};
 use serde_json::{Map, Value, json};
 
-use super::WireError;
-
-const DATA_PREFIX: &str = "data:";
+use super::{WireError, stream_items};
 
 #[derive(Default)]
 struct Assembled {
@@ -20,52 +19,31 @@ struct Assembled {
     output_tokens: Option<i64>,
     text: String,
     stop_reason: Option<String>,
-    started: bool,
 }
 
-// LiteLLM's assemble_anthropic_sse_stream, reduced to the fields a scan and a replay read.
+// LiteLLM's Anthropic assembly, reduced to the fields a scan and a replay read; the frame reading is B3669's.
 pub(super) fn assemble(chunks: &[Chunk]) -> Option<Assembly> {
+    let parsed = parsed_sse_events(&joined_sse_stream(&stream_items(chunks))?);
+    let message = serde_json::to_value(anthropic_message_start(&parsed)?).ok()?;
+    let events = serde_json::to_value(parsed).ok()?;
     let mut state = Assembled::default();
-    for chunk in chunks {
-        let Chunk::Bytes(bytes) = chunk else {
-            continue;
-        };
-        let Ok(frame) = from_utf8(bytes) else {
-            continue;
-        };
-        let Some(event) = event_payload(frame) else {
-            continue;
-        };
-        state.absorb(&event);
-    }
-    if !state.started {
-        return None;
+    state.absorb_start(&message);
+    for event in events.as_array()? {
+        state.absorb(event);
     }
     Some(Assembly::Model(state.into_body()?))
-}
-
-fn event_payload(frame: &str) -> Option<Value> {
-    let data = frame
-        .lines()
-        .find_map(|line| line.strip_prefix(DATA_PREFIX))?;
-    serde_json::from_str(data.trim()).ok()
 }
 
 impl Assembled {
     fn absorb(&mut self, event: &Value) {
         match event.get("type").and_then(Value::as_str) {
-            Some("message_start") => self.absorb_start(event),
             Some("content_block_delta") => self.absorb_delta(event),
             Some("message_delta") => self.absorb_finish(event),
             Some(_) | None => {}
         }
     }
 
-    fn absorb_start(&mut self, event: &Value) {
-        self.started = true;
-        let Some(message) = event.get("message") else {
-            return;
-        };
+    fn absorb_start(&mut self, message: &Value) {
         if let Some(id) = message.get("id").and_then(Value::as_str) {
             self.id = Some(id.to_owned());
         }
