@@ -133,7 +133,7 @@ impl Harness {
             params: shadow_params(),
             metadata: parent_metadata(),
             provider: Provider {
-                shadow: fake.map(|fake| erased(&fake)),
+                shadow: fake.map(|router| erased(&router)),
             },
             prices: Prices(priced),
         }
@@ -429,6 +429,22 @@ async fn the_billed_cost_falls_back_to_the_price_map() {
 
     assert_eq!(shadow.cost, Decimal::new(125, 3));
     assert_eq!(shadow.classifier_cost, Decimal::ZERO);
+}
+
+#[tokio::test]
+async fn a_reply_keeps_the_billed_cost_and_the_classifier_cost_the_router_wrote_back() {
+    let fake = Arc::new(
+        RouterFake::reply(stamped(text_response("text", "served"), "0.75"))
+            .writing(object([("classifier_cost", number("0.5"))])),
+    );
+
+    let shadow = Harness::new(Some(fake), Decimal::ZERO)
+        .call()
+        .await
+        .unwrap();
+
+    assert_eq!(shadow.cost, Decimal::new(75, 2));
+    assert_eq!(shadow.classifier_cost, Decimal::new(5, 1));
 }
 
 fn tool_call(name: &str, arguments: &str) -> Json {

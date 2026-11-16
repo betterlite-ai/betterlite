@@ -228,16 +228,43 @@ fn judge_prompt_and_the_tool_cap_count_characters_not_bytes() {
 }
 
 #[test]
-fn the_system_prompt_keeps_litellms_text_and_two_line_json_shape() {
-    assert!(PAIRWISE_JUDGE_SYSTEM_PROMPT.starts_with(
-        "You are an impartial quality judge comparing two responses to the same conversation."
-    ));
-    assert!(
-        PAIRWISE_JUDGE_SYSTEM_PROMPT
-            .contains("Criteria: correctness, completeness, clarity, conciseness.")
+fn judge_prompt_counts_non_ascii_characters_in_the_budget() {
+    let conversation = "\u{e9}".repeat(30_000);
+    let tool_text = "\u{fc}".repeat(100);
+    let reply = "\u{436}".repeat(MAX_JUDGE_RESPONSE_CHARS);
+    let budget = MAX_JUDGE_PROMPT_CHARS - MAX_JUDGE_RESPONSE_CHARS - 1 - 102;
+    let tail = "\u{e9}".repeat(budget);
+
+    let prompt = judge_user_prompt(&conversation, &reply, "b", &tool_text);
+
+    assert_eq!(
+        prompt,
+        format!(
+            "{tool_text}\n\nConversation:\n{tail}\n\nResponse A:\n{reply}\n\nResponse B:\nb\n\nWhich response is better?"
+        )
     );
-    assert!(PAIRWISE_JUDGE_SYSTEM_PROMPT.contains(
-        "{\n  \"preference\": \"A\" | \"B\" | \"tie\",\n  \"confidence\": <0.0 to 1.0>\n}"
-    ));
-    assert!(PAIRWISE_JUDGE_SYSTEM_PROMPT.ends_with("no other text:\n{\n  \"preference\": \"A\" | \"B\" | \"tie\",\n  \"confidence\": <0.0 to 1.0>\n}"));
+}
+
+const LITELLM_SYSTEM_PROMPT: &str = concat!(
+    "You are an impartial quality judge comparing two responses to the same conversation.\n",
+    "\n",
+    "The responses are labeled A and B in random order. You do not know which system produced which.\n",
+    "\n",
+    "A response may be prose, or a tool call shown as `[tool call] name(arguments)` if the\n",
+    "assistant chose to act instead of answering directly. A tool call is not a defect: judge\n",
+    "whether calling that tool was the right response to the conversation, the same as you\n",
+    "would judge prose.\n",
+    "\n",
+    "Criteria: correctness, completeness, clarity, conciseness.\n",
+    "\n",
+    "Return ONLY valid JSON in this exact format, no other text:\n",
+    "{\n",
+    "  \"preference\": \"A\" | \"B\" | \"tie\",\n",
+    "  \"confidence\": <0.0 to 1.0>\n",
+    "}",
+);
+
+#[test]
+fn the_system_prompt_keeps_litellms_text_and_two_line_json_shape() {
+    assert_eq!(PAIRWISE_JUDGE_SYSTEM_PROMPT, LITELLM_SYSTEM_PROMPT);
 }

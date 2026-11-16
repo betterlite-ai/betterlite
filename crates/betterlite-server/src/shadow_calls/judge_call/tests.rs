@@ -18,7 +18,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Number;
 
-use super::{call_judge, conversation_text, forwarded_team_id, judge_call_failure, message};
+use super::{call_judge, conversation_text, forwarded_team_id, judge_call_failure};
 use crate::judge_targets::call::JudgeCall;
 use crate::judge_targets::error::{JudgeCallError, JudgeDispatchError};
 use crate::judge_targets::router::JudgeRouter;
@@ -258,7 +258,7 @@ fn parts(case: &Case) -> Parts {
     }
 }
 
-async fn run(case: &Case) -> Run {
+async fn run_case(case: &Case) -> Run {
     let case_parts = parts(case);
     let context = case_parts.harness.context();
     let deps = JudgeDeps {
@@ -277,9 +277,9 @@ async fn run(case: &Case) -> Run {
         tools: &case.tools,
         parent_metadata: &case.parent_metadata,
     };
-    let verdict = call_judge(&request, &deps).await;
+    let outcome = call_judge(&request, &deps).await;
     Run {
-        verdict,
+        verdict: outcome,
         calls: case_parts.recorder.calls(),
         teams: case_parts.router.teams(),
     }
@@ -327,13 +327,20 @@ fn stamped(mut response: Json, cost: &str) -> Json {
     response
 }
 
+fn chat_message(role: &str, content: &str) -> Json {
+    object([
+        ("role", Json::Text(role.to_owned())),
+        ("content", Json::Text(content.to_owned())),
+    ])
+}
+
 fn bound_prompt(conversation: &str) -> String {
     judge_user_prompt(conversation, "real reply", "shadow reply", "")
 }
 
 #[tokio::test]
 async fn the_judge_call_sends_the_system_and_user_messages_and_the_fixed_params() {
-    let run = run(&Case::new(Some(verdict("A", "0.9")))).await;
+    let run = run_case(&Case::new(Some(verdict("A", "0.9")))).await;
     let call = run.calls.first().unwrap();
 
     assert_eq!(call.model, "gpt-4o");
@@ -343,8 +350,8 @@ async fn the_judge_call_sends_the_system_and_user_messages_and_the_fixed_params(
     assert_eq!(
         call.messages,
         vec![
-            message("system", PAIRWISE_JUDGE_SYSTEM_PROMPT),
-            message("user", &bound_prompt("")),
+            chat_message("system", PAIRWISE_JUDGE_SYSTEM_PROMPT),
+            chat_message("user", &bound_prompt("")),
         ]
     );
     assert_eq!(
@@ -379,7 +386,7 @@ async fn the_judge_metadata_carries_the_judge_origin_and_asks_under_the_forwarde
         ),
     ]);
 
-    let run = run(&Case::new(Some(verdict("A", "0.9"))).with_metadata(metadata)).await;
+    let run = run_case(&Case::new(Some(verdict("A", "0.9"))).with_metadata(metadata)).await;
 
     let expected = object([
         ("user_api_key", Json::Text("sk-shadowed".to_owned())),
@@ -400,7 +407,7 @@ async fn the_judge_metadata_carries_the_judge_origin_and_asks_under_the_forwarde
 async fn a_judge_call_without_a_team_asks_the_router_without_one() {
     let metadata = IndexMap::from([("user_api_key_team_id".to_owned(), Json::Text("".to_owned()))]);
 
-    let run = run(&Case::new(Some(verdict("A", "0.9"))).with_metadata(metadata)).await;
+    let run = run_case(&Case::new(Some(verdict("A", "0.9"))).with_metadata(metadata)).await;
 
     assert_eq!(run.teams, vec![None]);
 }
@@ -416,18 +423,18 @@ async fn the_verdict_is_unmasked_for_both_coin_results(
     #[case] preference: &str,
     #[case] expected: &str,
 ) {
-    let run = run(&Case::new(Some(verdict(preference, "0.5"))).with_coin(coin)).await;
+    let run = run_case(&Case::new(Some(verdict(preference, "0.5"))).with_coin(coin)).await;
 
     assert_eq!(run.verdict.unwrap().preference, expected);
 }
 
 #[tokio::test]
 async fn the_judge_sees_the_shadow_reply_as_a_when_the_coin_says_shadow_first() {
-    let run = run(&Case::new(Some(verdict("A", "0.9"))).with_coin(false)).await;
+    let run = run_case(&Case::new(Some(verdict("A", "0.9"))).with_coin(false)).await;
 
     assert_eq!(
         run.calls.first().unwrap().messages.get(1),
-        Some(&message(
+        Some(&chat_message(
             "user",
             &judge_user_prompt("", "shadow reply", "real reply", "")
         ))
@@ -480,13 +487,13 @@ fn conversation_messages() -> Vec<Json> {
 async fn the_conversation_text_skips_null_content_and_uppercases_the_roles() {
     let case = Case::new(Some(verdict("A", "0.9"))).with_messages(conversation_messages());
 
-    let run = run(&case).await;
+    let run = run_case(&case).await;
 
     let conversation =
         "USER: hello\nUSER: no role\nNONE: null role\nSYSTEM: \nTOOL: part one part two";
     assert_eq!(
         run.calls.first().unwrap().messages.get(1),
-        Some(&message("user", &bound_prompt(conversation)))
+        Some(&chat_message("user", &bound_prompt(conversation)))
     );
 }
 
@@ -497,12 +504,12 @@ async fn the_judge_prompt_carries_the_tool_definitions() {
     )
     .unwrap();
 
-    let run = run(&Case::new(Some(verdict("A", "0.9"))).with_tools(tools)).await;
+    let run = run_case(&Case::new(Some(verdict("A", "0.9"))).with_tools(tools)).await;
 
     let tool_text = "Tools available to both responses:\n- get_weather: Get the weather";
     assert_eq!(
         run.calls.first().unwrap().messages.get(1),
-        Some(&message(
+        Some(&chat_message(
             "user",
             &judge_user_prompt("", "real reply", "shadow reply", tool_text)
         ))
@@ -515,7 +522,7 @@ async fn the_judge_prompt_carries_the_tool_definitions() {
 #[case::inside_the_range("0.4", "0.4")]
 #[tokio::test]
 async fn confidence_outside_zero_and_one_is_clamped(#[case] given: &str, #[case] expected: &str) {
-    let run = run(&Case::new(Some(verdict("tie", given)))).await;
+    let run = run_case(&Case::new(Some(verdict("tie", given)))).await;
 
     assert_eq!(
         run.verdict.unwrap().confidence,
@@ -524,8 +531,31 @@ async fn confidence_outside_zero_and_one_is_clamped(#[case] given: &str, #[case]
 }
 
 #[tokio::test]
+async fn a_parsed_verdict_carries_the_billed_judge_cost() {
+    let run = run_case(&Case::new(Some(stamped(verdict("A", "0.9"), "0.3")))).await;
+
+    let parsed = run.verdict.unwrap();
+    assert_eq!(parsed.preference, "real");
+    assert_eq!(parsed.cost, Decimal::new(3, 1));
+}
+
+#[tokio::test]
+async fn a_verdict_with_extra_keys_still_parses() {
+    let content = r#"{"preference": "B", "confidence": 0.5, "reason": "B is shorter"}"#;
+
+    let run = run_case(&Case::new(Some(judge_response(Json::Text(
+        content.to_owned(),
+    )))))
+    .await;
+
+    let parsed = run.verdict.unwrap();
+    assert_eq!(parsed.preference, "shadow");
+    assert_eq!(parsed.confidence, Decimal::new(5, 1));
+}
+
+#[tokio::test]
 async fn a_dispatch_error_gives_a_failed_call_without_cost() {
-    let run = run(&Case::new(None)).await;
+    let run = run_case(&Case::new(None)).await;
 
     let failure = run.verdict.unwrap_err();
     assert_eq!(failure.error, "judge call failed: judge provider exploded");
@@ -535,9 +565,11 @@ async fn a_dispatch_error_gives_a_failed_call_without_cost() {
 
 #[tokio::test]
 async fn an_unqualifiable_judge_model_fails_without_reaching_the_sdk() {
-    let run = run(&Case::new(Some(verdict("A", "0.9")))
-        .with_router(false)
-        .with_model("brand-new-judge"))
+    let run = run_case(
+        &Case::new(Some(verdict("A", "0.9")))
+            .with_router(false)
+            .with_model("brand-new-judge"),
+    )
     .await;
 
     let failure = run.verdict.unwrap_err();
@@ -550,7 +582,7 @@ async fn an_unqualifiable_judge_model_fails_without_reaching_the_sdk() {
 
 #[tokio::test]
 async fn a_public_judge_model_without_a_router_goes_through_the_sdk() {
-    let run = run(&Case::new(Some(verdict("A", "0.9"))).with_router(false)).await;
+    let run = run_case(&Case::new(Some(verdict("A", "0.9"))).with_router(false)).await;
 
     let call = run.calls.first().unwrap();
     assert_eq!(call.fallbacks, None);
@@ -559,7 +591,7 @@ async fn a_public_judge_model_without_a_router_goes_through_the_sdk() {
 
 #[tokio::test]
 async fn an_unparseable_reply_names_the_parser_and_the_reply_shape_and_keeps_the_cost() {
-    let run = run(&Case::new(Some(stamped(
+    let run = run_case(&Case::new(Some(stamped(
         judge_response(Json::Text("not json".to_owned())),
         "0.25",
     ))))
@@ -606,7 +638,7 @@ async fn a_verdict_missing_or_mistyping_a_field_names_the_field(
     #[case] content: &str,
     #[case] expected: &str,
 ) {
-    let run = run(&Case::new(Some(judge_response(Json::Text(
+    let run = run_case(&Case::new(Some(judge_response(Json::Text(
         content.to_owned(),
     )))))
     .await;
@@ -617,7 +649,7 @@ async fn a_verdict_missing_or_mistyping_a_field_names_the_field(
 
 #[tokio::test]
 async fn a_reply_without_a_readable_message_has_the_unreadable_shape() {
-    let run = run(&Case::new(Some(object([
+    let run = run_case(&Case::new(Some(object([
         ("model", Json::Text("judge-model".to_owned())),
         ("choices", Json::List(Vec::new())),
     ]))))
@@ -629,7 +661,7 @@ async fn a_reply_without_a_readable_message_has_the_unreadable_shape() {
 
 #[tokio::test]
 async fn a_null_content_is_an_unparseable_verdict_that_keeps_the_cost() {
-    let run = run(&Case::new(Some(stamped(judge_response(Json::Null), "0.5")))).await;
+    let run = run_case(&Case::new(Some(stamped(judge_response(Json::Null), "0.5")))).await;
 
     let failure = run.verdict.unwrap_err();
     assert!(failure.error.starts_with("unparseable judge verdict: "));

@@ -67,10 +67,10 @@ fn shadow_response(
     deps: &ShadowDeps<'_>,
 ) -> Result<ShadowResponse, CallFailure> {
     let text = chat_text::final_text(response);
-    let metadata = Json::Object(metadata);
-    let decision = routing::decision(&metadata);
+    let metadata_json = Json::Object(metadata);
+    let decision = routing::decision(&metadata_json);
     let model = served_model(response, &decision);
-    let classifier_cost = routing::classifier_cost(&metadata);
+    let classifier_cost = routing::classifier_cost(&metadata_json);
     let cost = call_cost(response, deps.prices);
     if text.is_empty() {
         return Err(CallFailure {
@@ -82,7 +82,7 @@ fn shadow_response(
     Ok(ShadowResponse {
         text,
         model,
-        tier: routing::routed_tier(&metadata),
+        tier: routing::routed_tier(&metadata_json),
         cost,
         classifier_cost,
     })

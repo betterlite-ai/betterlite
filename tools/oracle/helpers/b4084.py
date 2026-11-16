@@ -10,7 +10,9 @@ unmask_preference, tool_definitions_text, judge_user_prompt = (shadow_eval_logge
 
 
 class Input(TypedDict, total=False):
-    operation: Required[Literal["tool_definitions", "judge_prompt", "unmask", "response_format"]]
+    operation: Required[
+        Literal["tool_definitions", "judge_prompt", "unmask", "response_format", "system_prompt"]
+    ]
     conversation: str
     response_a: str
     response_b: str
@@ -51,8 +53,14 @@ def response_format(_: Input) -> JsonValue:
     return {"response_format": schema}
 
 
+def system_prompt(_: Input) -> JsonValue:
+    return {"text": shadow_eval_logger.PAIRWISE_JUDGE_SYSTEM_PROMPT}
+
+
 def run(input_value: Input) -> JsonValue:
     operation = input_value["operation"]
+    if operation == "system_prompt":
+        return system_prompt(input_value)
     if operation == "tool_definitions":
         return tool_definitions(input_value)
     if operation == "judge_prompt":

@@ -1,4 +1,6 @@
-use betterlite_server::shadow_calls::judge_prompt::{judge_user_prompt, tool_definitions_text};
+use betterlite_server::shadow_calls::judge_prompt::{
+    PAIRWISE_JUDGE_SYSTEM_PROMPT, judge_user_prompt, tool_definitions_text,
+};
 use betterlite_server::shadow_calls::response_format::pairwise_judge_response_format;
 use betterlite_server::shadow_calls::unmask::unmask_preference;
 use serde::Deserialize;
@@ -33,6 +35,7 @@ enum Operation {
     JudgePrompt,
     Unmask,
     ResponseFormat,
+    SystemPrompt,
 }
 
 pub(crate) struct Op;
@@ -62,6 +65,7 @@ impl Helper for Op {
             Operation::ResponseFormat => {
                 Ok(json!({"response_format": pairwise_judge_response_format()}))
             }
+            Operation::SystemPrompt => Ok(json!({"text": PAIRWISE_JUDGE_SYSTEM_PROMPT})),
         }
     }
 }

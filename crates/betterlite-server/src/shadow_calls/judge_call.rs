@@ -160,15 +160,15 @@ fn message(role: &str, content: &str) -> Json {
 
 fn conversation_text(messages: &[Json]) -> String {
     let mut lines: Vec<String> = Vec::new();
-    for message in messages {
-        let content =
-            chat_text::field(message, "content").filter(|value| !matches!(value, Json::Null));
-        let Some(content) = content else {
+    for turn in messages {
+        let Some(content) =
+            chat_text::field(turn, "content").filter(|value| !matches!(value, Json::Null))
+        else {
             continue;
         };
-        let role =
-            chat_text::field(message, "role").map_or_else(|| "user".to_owned(), string_value);
-        let role = role.to_uppercase();
+        let role = chat_text::field(turn, "role")
+            .map_or_else(|| "user".to_owned(), string_value)
+            .to_uppercase();
         let text = extract_text_from_content(content);
         lines.push(format!("{role}: {text}"));
     }
@@ -183,10 +183,10 @@ fn reply_content(response: &Json) -> String {
             return String::new();
         }
     };
-    let message = choices
+    let content = choices
         .first()
-        .and_then(|choice| chat_text::field(choice, "message"));
-    let content = message.and_then(|message| chat_text::field(message, "content"));
+        .and_then(|choice| chat_text::field(choice, "message"))
+        .and_then(|reply| chat_text::field(reply, "content"));
     match content {
         Some(Json::Text(text)) => text.clone(),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
