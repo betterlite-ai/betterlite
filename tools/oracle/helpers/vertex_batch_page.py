@@ -33,6 +33,7 @@ def run(input_value: Input) -> Json:
     projected: dict[str, Json] = {
         "batchPredictionJobs": TypeAdapter(Json).validate_python(page.get("batchPredictionJobs"))
     }
-    if "nextPageToken" in page:
-        projected["nextPageToken"] = page["nextPageToken"]
+    token = page.get("nextPageToken")
+    if token is not None:
+        projected["nextPageToken"] = token
     return projected
