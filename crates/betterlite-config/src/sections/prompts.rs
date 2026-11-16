@@ -2,9 +2,11 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
+use self::environment::{ENTRY_DEPTH, resolve_mapping};
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
+mod environment;
 mod tests;
 
 #[derive(Debug, Default, Deserialize)]
@@ -21,36 +23,35 @@ pub struct Settings {
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L>(self, _lookup: &L) -> Result<Self::Settings, ConfigError>
+    fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
     where
         L: EnvironmentLookup,
     {
         let Some(prompts) = self.prompts else {
             return Ok(Settings::default());
         };
-        match prompts {
-            Json::Null => Ok(Settings::default()),
-            Json::List(entries) => {
-                let mut configured = Vec::with_capacity(entries.len());
-                for (index, entry) in entries.into_iter().enumerate() {
-                    let Json::Object(fields) = entry else {
-                        return Err(ConfigError::InvalidScalar {
-                            path: format!("prompts[{index}]"),
-                            value: false,
-                        });
-                    };
-                    configured.push(fields);
-                }
-                Ok(Settings {
-                    prompts: configured,
-                })
-            }
+        let entries = match prompts {
+            Json::Null => return Ok(Settings::default()),
+            Json::List(entries) => entries,
             Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-                Err(ConfigError::InvalidScalar {
+                return Err(ConfigError::InvalidScalar {
                     path: "prompts".to_owned(),
                     value: false,
-                })
+                });
             }
+        };
+        let mut configured = Vec::with_capacity(entries.len());
+        for (index, entry) in entries.into_iter().enumerate() {
+            let Json::Object(fields) = entry else {
+                return Err(ConfigError::InvalidScalar {
+                    path: format!("prompts[{index}]"),
+                    value: false,
+                });
+            };
+            configured.push(resolve_mapping(fields, ENTRY_DEPTH, lookup));
         }
+        Ok(Settings {
+            prompts: configured,
+        })
     }
 }

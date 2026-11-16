@@ -9,16 +9,26 @@ use rstest::rstest;
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::prompts::Settings;
 
+fn loaded_with(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
+    let lookup = environment
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    ConfigLoader { lookup }
+        .load(source)
+        .map(|config| config.sections.prompts)
+}
+
 fn loaded(source: &str) -> Result<Settings, ConfigError> {
-    ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
-    }
-    .load(source)
-    .map(|config| config.sections.prompts)
+    loaded_with(source, &[])
 }
 
 fn settings(source: &str) -> Settings {
     loaded(source).expect("the prompts settings load")
+}
+
+fn settings_with(source: &str, environment: &[(&str, &str)]) -> Settings {
+    loaded_with(source, environment).expect("the prompts settings load")
 }
 
 #[test]
@@ -86,4 +96,79 @@ fn a_bad_entry_is_named_by_its_position() {
     let source = "prompts:\n  - prompt_id: greeting\n    litellm_params:\n      prompt_integration: dotprompt\n  - not-a-mapping\n";
     let error = loaded(source).expect_err("the second entry is not a mapping");
     assert!(matches!(&error, ConfigError::InvalidScalar { path, .. } if path == "prompts[1]"));
+}
+
+#[test]
+fn environment_references_in_an_entry_are_resolved() {
+    let source = "prompts:\n  - prompt_id: greeting\n    api_key: os.environ/PROMPT_KEY\n    api_base: os.environ/PROMPT_BASE\n    litellm_params:\n      prompt_integration: gitlab\n      gitlab_config:\n        access_token: os.environ/GITLAB_TOKEN\n";
+    let settings = settings_with(
+        source,
+        &[
+            ("PROMPT_KEY", "sk-test-key"),
+            ("PROMPT_BASE", "https://gitlab.example.test"),
+            ("GITLAB_TOKEN", "glpat-token"),
+        ],
+    );
+    let entry = &settings.prompts[0];
+    assert_eq!(
+        entry.get("api_key"),
+        Some(&Json::Text("sk-test-key".to_owned()))
+    );
+    assert_eq!(
+        entry.get("api_base"),
+        Some(&Json::Text("https://gitlab.example.test".to_owned()))
+    );
+    let Some(Json::Object(params)) = entry.get("litellm_params") else {
+        panic!("litellm_params is a mapping");
+    };
+    let Some(Json::Object(gitlab)) = params.get("gitlab_config") else {
+        panic!("gitlab_config is a mapping");
+    };
+    assert_eq!(
+        gitlab.get("access_token"),
+        Some(&Json::Text("glpat-token".to_owned()))
+    );
+}
+
+#[test]
+fn a_missing_variable_becomes_null() {
+    let source = "prompts:\n  - prompt_id: greeting\n    api_key: os.environ/ABSENT\n";
+    let settings = settings_with(source, &[]);
+    assert_eq!(settings.prompts[0].get("api_key"), Some(&Json::Null));
+}
+
+#[test]
+fn an_empty_variable_becomes_null() {
+    let source = "prompts:\n  - prompt_id: greeting\n    api_key: os.environ/EMPTY\n";
+    let settings = settings_with(source, &[("EMPTY", "")]);
+    assert_eq!(settings.prompts[0].get("api_key"), Some(&Json::Null));
+}
+
+#[test]
+fn a_string_that_only_contains_the_prefix_later_is_left_as_written() {
+    let source = "prompts:\n  - prompt_id: greeting\n    api_base: https://example.test/os.environ/PROMPT_BASE\n";
+    let settings = settings_with(source, &[("PROMPT_BASE", "https://gitlab.example.test")]);
+    assert_eq!(
+        settings.prompts[0].get("api_base"),
+        Some(&Json::Text(
+            "https://example.test/os.environ/PROMPT_BASE".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn mapping_items_inside_a_list_are_resolved_and_plain_items_are_left() {
+    let source = "prompts:\n  - prompt_id: greeting\n    params:\n      - os.environ/PLAIN\n      - api_key: os.environ/LIST_KEY\n";
+    let settings = settings_with(source, &[("PLAIN", "kept"), ("LIST_KEY", "list-key")]);
+    let Some(Json::List(items)) = settings.prompts[0].get("params") else {
+        panic!("params is a list");
+    };
+    assert_eq!(items[0], Json::Text("os.environ/PLAIN".to_owned()));
+    let Some(Json::Object(item)) = items.get(1) else {
+        panic!("the second item is a mapping");
+    };
+    assert_eq!(
+        item.get("api_key"),
+        Some(&Json::Text("list-key".to_owned()))
+    );
 }
