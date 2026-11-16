@@ -15,6 +15,7 @@ pub(super) fn embedding_error() {
     answered_status();
     malformed_replies();
     conversion_failure();
+    short_result_lists();
 }
 
 fn keyed<'call>(
@@ -104,7 +105,10 @@ fn malformed_replies() {
     for body in ["not json", "[1,2]", r#"{"data":"text"}"#] {
         let factory = Factory::new(Answer::json(body));
         let error = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap_err();
-        assert!(matches!(error, FoundryEmbeddingError::Json { .. }), "{body}");
+        assert!(
+            matches!(error, FoundryEmbeddingError::Json { .. }),
+            "{body}"
+        );
     }
     let factory = Factory::new(Answer::json(r#"{"object":null,"data":[]}"#));
     let error = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap_err();
@@ -133,4 +137,30 @@ fn conversion_failure() {
     let factory = Factory::new(Answer::headed(&negative, IMAGE_ONE));
     let error = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap_err();
     assert!(matches!(error, FoundryEmbeddingError::TokenCount { .. }));
+}
+
+fn short_result_lists() {
+    let secret = key("case-key");
+    let mixed = strings(&[IMAGE_URI, "hello"]);
+    let mut call = keyed(&mixed, &secret);
+    let empty_image = r#"{"object":"list","data":[],"model":"image-model"}"#;
+    let factory = Factory::new(Answer::json(empty_image));
+    let error = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap_err();
+    assert!(matches!(
+        error,
+        FoundryEmbeddingError::TooFewEntries {
+            source: "image embeddings"
+        }
+    ));
+    let images = strings(&[IMAGE_URI, "hello", IMAGE_URI]);
+    let mut call = keyed(&images, &secret);
+    let two = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]},{"object":"embedding","index":1,"embedding":[0.2]}],"model":"image-model"}"#;
+    let factory = Factory::new(Answer::json(two));
+    let error = run(&call, None, &factory, &Text::replying(TEXT_EMPTY)).unwrap_err();
+    assert!(matches!(
+        error,
+        FoundryEmbeddingError::TooFewEntries {
+            source: "text embeddings"
+        }
+    ));
 }

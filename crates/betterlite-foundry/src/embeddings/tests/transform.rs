@@ -41,7 +41,10 @@ fn text_group_header() {
     let mut call = request(MODEL, &input);
     call.api_key = Some(&secret);
     let factory = Factory::new(Answer::json(IMAGE_ONE));
-    let multilingual = [("llm_provider-azureml-model-group", "offer-cohere-embed-multili-paygo")];
+    let multilingual = [(
+        "llm_provider-azureml-model-group",
+        "offer-cohere-embed-multili-paygo",
+    )];
     let response = run(
         &call,
         None,
@@ -53,7 +56,10 @@ fn text_group_header() {
         response.model.as_deref(),
         Some("Cohere-embed-v3-multilingual")
     );
-    let english = [("llm_provider-azureml-model-group", "offer-cohere-embed-english-paygo")];
+    let english = [(
+        "llm_provider-azureml-model-group",
+        "offer-cohere-embed-english-paygo",
+    )];
     let response = run(&call, None, &factory, &Text::headed(&english, TEXT_ONE)).unwrap();
     assert_eq!(response.model.as_deref(), Some("Cohere-embed-v3-english"));
     let custom = [("llm_provider-azureml-model-group", "custom-group")];
@@ -69,7 +75,10 @@ fn image_group_header() {
     let secret = key("case-key");
     let mut call = request(MODEL, &input);
     call.api_key = Some(&secret);
-    let headers = [("llm_provider-azureml-model-group", "offer-cohere-embed-english-paygo")];
+    let headers = [(
+        "llm_provider-azureml-model-group",
+        "offer-cohere-embed-english-paygo",
+    )];
     let factory = Factory::new(Answer::headed(&headers, IMAGE_ONE));
     let response = run(&call, None, &factory, &Text::replying(TEXT_EMPTY)).unwrap();
     assert_eq!(response.model.as_deref(), Some("Cohere-embed-v3-english"));
@@ -116,7 +125,10 @@ fn options_copied() {
     ));
     assert_eq!(body, expected);
     let calls = text.calls();
-    assert_eq!(calls[0].options.input_type.as_deref(), Some("search_document"));
+    assert_eq!(
+        calls[0].options.input_type.as_deref(),
+        Some("search_document")
+    );
     assert_eq!(calls[0].options.truncate.as_deref(), Some("END"));
     assert_eq!(
         calls[0].options.passthrough.get("custom"),
@@ -192,9 +204,13 @@ fn available_lists() {
     let empty: Vec<String> = Vec::new();
     let mut call = request(MODEL, &empty);
     call.api_key = Some(&secret);
-    let response = run(&call, None, &factory, &Text::replying(TEXT_EMPTY)).unwrap();
+    let fresh = Factory::new(Answer::json(IMAGE_TWO));
+    let text = Text::replying(TEXT_TWO);
+    let response = run(&call, None, &fresh, &text).unwrap();
     assert!(response.data.is_empty());
-    assert_eq!(factory.requests().len(), 1);
+    assert!(fresh.requests().is_empty());
+    assert!(fresh.sync_timeouts().is_empty());
+    assert!(text.calls().is_empty());
 }
 
 fn usage_from_headers() {
@@ -208,6 +224,12 @@ fn usage_from_headers() {
     assert_eq!(response.usage.prompt_tokens, 9);
     assert_eq!(response.usage.completion_tokens, 0);
     assert_eq!(response.usage.total_tokens, 2);
+    let bare = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model"}"#;
+    let factory = Factory::new(Answer::headed(&tokens, bare));
+    let response = run(&call, None, &factory, &Text::replying(TEXT_EMPTY)).unwrap();
+    assert_eq!(response.usage.prompt_tokens, 9);
+    assert_eq!(response.usage.completion_tokens, 0);
+    assert_eq!(response.usage.total_tokens, 0);
 }
 
 fn usage_from_last_conversion() {
@@ -217,7 +239,10 @@ fn usage_from_last_conversion() {
     call.api_key = Some(&secret);
     let image_headers = [
         ("llm_provider-num_tokens", "9"),
-        ("llm_provider-azureml-model-group", "offer-cohere-embed-english-paygo"),
+        (
+            "llm_provider-azureml-model-group",
+            "offer-cohere-embed-english-paygo",
+        ),
     ];
     let image_body = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model","usage":{"prompt_tokens":4,"completion_tokens":1,"total_tokens":5}}"#;
     let text_body = r#"{"object":"list","data":[{"object":"embedding","index":1,"embedding":[0.2]}],"model":"text-model"}"#;
