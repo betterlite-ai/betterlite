@@ -1,8 +1,5 @@
-# a Veo deployment: DEFAULT_GOOGLE_VIDEO_DURATION_SECONDS comes from the environment, not the file
 litellm_settings:
   num_retries: 2
-  vertex_project: project-example
-  vertex_location: us-central1
 
 model_list:
   - model_name: veo-3.0-generate-001

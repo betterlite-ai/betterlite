@@ -39,7 +39,7 @@ fn loads_default_google_video_duration(
 #[case::a_fraction("8.0")]
 #[case::separators("1_0")]
 #[case::beyond_the_integer_range("99999999999999999999")]
-fn a_bad_duration_names_the_variable_and_not_the_value(#[case] text: &str) {
+fn loads_default_google_video_duration_rejects_an_invalid_integer(#[case] text: &str) {
     let error = load(&[(VIDEO_DURATION_ENV, text)]).unwrap_err();
     assert!(matches!(
         &error,
