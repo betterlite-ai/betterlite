@@ -1,0 +1,23 @@
+apiVersion: v2
+
+# The name keeps the -helm suffix because the betterlite image lives in the same OCI namespace
+name: betterlite-helm
+description: LiteLLM-compatible AI gateway written in Rust
+type: application
+
+# The chart version and the app version LiteLLM's chart declares at the pinned commit
+version: 1.1.3
+appVersion: v1.85.1
+
+annotations:
+  org.opencontainers.image.source: "https://github.com/betterlite-ai/betterlite"
+
+dependencies:
+  - name: "postgresql"
+    version: "14.3.1"
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: db.deployStandalone
+  - name: redis
+    version: "18.19.1"
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: redis.enabled
