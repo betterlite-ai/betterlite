@@ -19,6 +19,7 @@ use betterlite_http::proxy::base_builder;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
+use tokio::runtime::{Builder, Runtime};
 use uuid::Uuid;
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -264,8 +265,8 @@ fn roundtrip(request_data: &BTreeMap<String, GuardrailValue>) -> Value {
         .unwrap_or(Value::Null)
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .or_config_error()
