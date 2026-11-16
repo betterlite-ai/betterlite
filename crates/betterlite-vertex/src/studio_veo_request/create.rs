@@ -28,7 +28,7 @@ pub struct Instance {
 }
 
 // GeminiVideoGenerationParameters, in declaration order, with absent and null alike dropped
-#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Parameters {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -65,8 +65,11 @@ pub fn create_request(
         api_base,
         mapped,
     } = input;
-    let MappedParams { image, options } = mapped;
-    let image = match image {
+    let MappedParams {
+        image: image_option,
+        options,
+    } = mapped;
+    let image = match image_option {
         Some(ImageInput::Json(Json::Null)) | None => None,
         Some(chosen) => Some(gemini_image(chosen, mime)?),
     };

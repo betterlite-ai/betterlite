@@ -237,7 +237,7 @@ fn an_absent_input_reference_keeps_the_image_option() {
     ));
 }
 
-fn mapped<'media>(image: Option<ImageInput<'media>>, options: Object) -> MappedParams<'media> {
+fn mapped(image: Option<ImageInput<'_>>, options: Object) -> MappedParams<'_> {
     MappedParams { image, options }
 }
 
@@ -417,13 +417,13 @@ fn headers_for(
     params_api_key: Option<&str>,
     settings: &Settings,
 ) -> Result<BTreeMap<String, SecretString>, StudioVeoError> {
-    let api_key = api_key.map(SecretString::from);
-    let params_api_key = params_api_key.map(SecretString::from);
+    let explicit_key = api_key.map(SecretString::from);
+    let params_key = params_api_key.map(SecretString::from);
     validate_environment(
         caller,
         KeySources {
-            api_key: api_key.as_ref(),
-            litellm_params_api_key: params_api_key.as_ref(),
+            api_key: explicit_key.as_ref(),
+            litellm_params_api_key: params_key.as_ref(),
         },
         settings,
     )
