@@ -125,7 +125,7 @@ impl CallbackLogger for CiscoMcpToolHook {
 
     async fn async_post_mcp_tool_call_hook(
         &self,
-        mut call: McpToolHookCall<'_>,
+        call: McpToolHookCall<'_>,
     ) -> Result<Option<McpPostCallResponse>, LoggerError> {
         if self.guardrail.settings.inspection_type != InspectionType::Mcp {
             return Ok(None);

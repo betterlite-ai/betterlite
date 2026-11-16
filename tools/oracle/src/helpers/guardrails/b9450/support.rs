@@ -33,15 +33,17 @@ pub(super) struct Harness {
 
 impl Harness {
     pub(super) fn start(answer: &UpstreamAnswer) -> Result<Self, Box<HelperError>> {
-        let script = MockScript::try_from(slice::from_ref(answer))
-            .map_err(|error| fail("MockError", error.to_string()))?;
-        let provider =
-            MockProvider::start(script).map_err(|error| fail("MockError", error.to_string()))?;
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| fail("OSError", error.to_string()))?;
-        Ok(Self { provider, runtime })
+        match MockScript::try_from(slice::from_ref(answer)) {
+            Ok(script) => match MockProvider::start(script) {
+                Ok(provider) => Ok(Self { provider, runtime }),
+                Err(error) => Err(fail("MockError", error.to_string())),
+            },
+            Err(error) => Err(fail("MockError", error.to_string())),
+        }
     }
 
     pub(super) fn guardrail(
@@ -66,21 +68,15 @@ impl Harness {
 }
 
 pub(super) fn selection(settings: &Value) -> Result<GuardrailBase, Box<HelperError>> {
-    let event_hook = settings
-        .get("event_hook")
-        .filter(|value| !value.is_null())
-        .map(|value| serde_json::from_value::<LitellmParamsMode>(value.clone()))
-        .transpose()
-        .map_err(|error| fail("InvalidInput", error.to_string()))?;
-    GuardrailBase::new(guardrail_settings(event_hook, settings), true)
-        .map_err(|error| fail("GuardrailBaseError", error.to_string()))
-}
-
-fn guardrail_settings(
-    event_hook: Option<LitellmParamsMode>,
-    settings: &Value,
-) -> GuardrailSettings {
-    GuardrailSettings {
+    let event_hook = match settings.get("event_hook") {
+        None | Some(Value::Null) => None,
+        Some(value) => {
+            let mode = serde_json::from_value::<LitellmParamsMode>(value.clone())
+                .map_err(|error| fail("InvalidInput", error.to_string()))?;
+            Some(mode)
+        }
+    };
+    let configured = GuardrailSettings {
         guardrail_name: Some("cisco-ai-defense".to_owned()),
         supported_event_hooks: None,
         event_hook,
@@ -99,7 +95,9 @@ fn guardrail_settings(
         only_scan_new_messages: false,
         timeout: None,
         switches: GuardrailSwitches::default(),
-    }
+    };
+    GuardrailBase::new(configured, true)
+        .map_err(|error| fail("GuardrailBaseError", error.to_string()))
 }
 
 pub(super) fn applied_guardrails(request_data: &Fields) -> Vec<String> {
@@ -135,6 +133,9 @@ fn configured(settings: &Value, api_base: &str) -> Result<Configured, Box<Helper
             "settings must be an object".to_owned(),
         ));
     };
+    // the gate's event_hook and default_on come from `selection`; the config section has no such keys
+    fields.remove("event_hook");
+    fields.remove("default_on");
     fields.insert("guardrail".to_owned(), json!("cisco_ai_defense"));
     fields.insert("api_base".to_owned(), json!(api_base));
     let entry = json!({"guardrails": [{"guardrail_name": "cisco-ai-defense", "litellm_params": parameters}]});
