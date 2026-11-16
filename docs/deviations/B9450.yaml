@@ -48,4 +48,14 @@ deviations:
       object), so its own no-payload branch is unreachable too; B9650's dispatch always builds the
       copy from a content list, which is never null.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L276-L281
+  - what: >-
+      With original_response present, an MCP output redaction rewrites call.original's text content
+      but leaves the original's structured_content / structuredContent mirror with its old text.
+    why: >-
+      LiteLLM runs _set_mcp_tool_response_text against the original object, so it also replaces the
+      mirror with {"result": <sanitized text>}; inspect_mcp_response computes its TextUpdate against
+      the scanned response (the copy's content list), and TextUpdate carries neither the mirror nor
+      the sanitized text, so the hook cannot update the original's mirror without changing B3762's
+      entry point.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L532-L575
 kept_bugs: []
