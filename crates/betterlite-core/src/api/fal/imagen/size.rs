@@ -12,6 +12,7 @@ const SIZE_ALIASES: [(&str, &str); 6] = [
 const FALLBACK_ASPECT_RATIO: &str = "1:1";
 
 // the pair is width and a positive height, so a negative height flips both signs instead of every comparison
+#[must_use]
 pub fn positive_dimensions(size: &str) -> Option<(i128, i128)> {
     if !size.contains('x') || size.contains("-x-") {
         return None;
