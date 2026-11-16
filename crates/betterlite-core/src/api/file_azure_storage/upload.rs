@@ -3,7 +3,6 @@ use std::time::Duration;
 use betterlite_logging::azure_storage_logging::http_ops::{StorageAuthorization, storage_request};
 use http::Method;
 use percent_encoding::utf8_percent_encode;
-use secrecy::SecretString;
 
 use super::AzureBlobStorageBackend;
 use super::error::AzureFileStorageError;
@@ -29,9 +28,22 @@ pub(super) async fn upload_file(
         |prefix| format!("{}/{object_name}", prefix.trim_matches('/')),
     );
     if let Some(key) = backend.settings.account_key.as_ref() {
-        upload_with_account_key(backend, content, &full_path, key, now).await?;
+        // the SDK checks the filesystem and the directory before it writes through them
+        let auth = StorageAuthorization::SharedKey {
+            account: backend.settings.account_name.as_str(),
+            key,
+        };
+        ensure_target(backend, StorageTarget::FileSystem, &auth, now).await?;
+        let file_url = ensure_file_url(backend, &full_path, &auth, now).await?;
+        write_file(backend, &file_url, content, &auth, now).await?;
     } else {
-        upload_with_token(backend, content, &full_path, now).await?;
+        let token = backend.logger.set_valid_azure_ad_token().await?;
+        let auth = StorageAuthorization::Bearer(&token);
+        let target = format!(
+            "{}/{}/{full_path}",
+            backend.settings.dfs_endpoint, backend.settings.file_system
+        );
+        write_file(backend, &target, content, &auth, now).await?;
     }
     Ok(format!(
         "{}/{}/{}",
@@ -39,41 +51,10 @@ pub(super) async fn upload_file(
     ))
 }
 
-async fn upload_with_account_key(
-    backend: &AzureBlobStorageBackend,
-    content: &[u8],
-    full_path: &str,
-    key: &SecretString,
-    now: Duration,
-) -> Result<(), AzureFileStorageError> {
-    let auth = StorageAuthorization::SharedKey {
-        account: backend.settings.account_name.as_str(),
-        key,
-    };
-    ensure_target(backend, StorageTarget::FileSystem, &auth, now).await?;
-    let file_url = ensure_file_url(backend, full_path, &auth, now).await?;
-    write_file(backend, &file_url, content, &auth, now).await
-}
-
-async fn upload_with_token(
-    backend: &AzureBlobStorageBackend,
-    content: &[u8],
-    full_path: &str,
-    now: Duration,
-) -> Result<(), AzureFileStorageError> {
-    let token = backend.logger.set_valid_azure_ad_token().await?;
-    let auth = StorageAuthorization::Bearer(&token);
-    let base_url = format!(
-        "{}/{}/{full_path}",
-        backend.settings.dfs_endpoint, backend.settings.file_system
-    );
-    write_file(backend, &base_url, content, &auth, now).await
-}
-
 #[derive(Clone, Copy)]
-enum StorageTarget<'a> {
+enum StorageTarget<'path> {
     FileSystem,
-    Directory(&'a str),
+    Directory(&'path str),
 }
 
 // the SDK checks both targets through its blob client, creating a directory through its data lake client
