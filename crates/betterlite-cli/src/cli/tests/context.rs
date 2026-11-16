@@ -236,7 +236,7 @@ fn a_stored_login_supplies_the_api_key() {
         subcommand: Some("models"),
         vault: &mut vault,
         clock: Arc::new(CliClock),
-        token_path: Some(&token_path),
+        token_path: Some(token_path.as_path()),
         stderr: channel(Box::new(stderr)),
     })
     .unwrap();
