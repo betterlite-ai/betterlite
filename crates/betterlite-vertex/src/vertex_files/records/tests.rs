@@ -53,10 +53,10 @@ fn check_corpus_seed(name: &str, bytes: &[u8]) {
         let retrieve = decode_vertex_file_metadata(bytes, MetadataShape::Retrieve, &utc());
         assert!(upload.is_err() && retrieve.is_err(), "{name} decodes");
     }
-    if let Ok(text) = str::from_utf8(bytes) {
-        if name.starts_with("unusable-delete-url") {
-            assert_eq!(deleted_file(Some(text)).id, "deleted", "{name}");
-        }
+    if let Ok(text) = str::from_utf8(bytes)
+        && name.starts_with("unusable-delete-url")
+    {
+        assert_eq!(deleted_file(Some(text)).id, "deleted", "{name}");
     }
 }
 

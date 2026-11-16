@@ -157,8 +157,8 @@ fn an_upload_reply_is_a_file_record() {
         value,
         json!({"file": {
             "id": "gs://my-bucket/litellm-vertex-files/uploads/row",
-            "bytes": 2,
-            "created_at": 1733349192,
+            "bytes": 2_i64,
+            "created_at": 1_733_349_192_i64,
             "filename": "litellm-vertex-files/uploads/row",
             "object": "file",
             "purpose": "batch",

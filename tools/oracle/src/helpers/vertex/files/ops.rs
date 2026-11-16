@@ -20,6 +20,7 @@ use jiff::tz::TimeZone;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::runtime::Builder;
 use uuid::Uuid;
 
 use betterlite_oracle_helper_api::error::HelperError;
@@ -43,7 +44,7 @@ pub(crate) enum Input {
     DeleteReply {
         url: Option<String>,
     },
-    List {},
+    List,
 }
 
 // the naming inputs both preparation operations read; upload_url also reads the bucket and the host
@@ -90,7 +91,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::UploadReply { body } => file_reply(body, MetadataShape::Upload),
         Input::RetrieveReply { body } => file_reply(body, MetadataShape::Retrieve),
         Input::DeleteReply { url } => Ok(delete_record(url.as_deref())),
-        Input::List {} => Err(files_error(VertexFilesError::Listing)),
+        Input::List => Err(files_error(&VertexFilesError::Listing)),
     }
 }
 
@@ -113,7 +114,7 @@ fn prepared(call: &NameCall, answer: Answer) -> HelperResult {
     let id = Uuid::from_u128(u128::from(call.uuid));
     match answer {
         Answer::Name => {
-            let name = get_object_name(&file_request, id).map_err(files_error)?;
+            let name = get_object_name(&file_request, id).map_err(|error| files_error(&error))?;
             Ok(json!({ "name": name }))
         }
         Answer::Url => {
@@ -124,14 +125,14 @@ fn prepared(call: &NameCall, answer: Answer) -> HelperResult {
                 environment: None,
             };
             let url = upload_url(&file_request, call.api_base.as_deref(), &candidates, id)
-                .map_err(files_error)?;
+                .map_err(|error| files_error(&error))?;
             Ok(json!({ "url": url }))
         }
     }
 }
 
 fn environment_headers(headers: &BTreeMap<String, String>, api_key: &str) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let key = SecretString::from(api_key.to_owned());
     let environment = EnvironmentRequest {
         headers: headers.clone(),
@@ -141,7 +142,7 @@ fn environment_headers(headers: &BTreeMap<String, String>, api_key: &str) -> Hel
     };
     let validated = runtime
         .block_on(validate_environment(environment, &NoMint))
-        .map_err(files_error)?;
+        .map_err(|error| files_error(&error))?;
     let exposed = validated
         .into_iter()
         .map(|(name, value)| (name, value.expose_secret().to_owned()))
@@ -153,7 +154,8 @@ fn file_reply(body: &str, shape: MetadataShape) -> HelperResult {
     let local = LocalTimeContext {
         zone: TimeZone::UTC,
     };
-    let file = decode_vertex_file_metadata(body.as_bytes(), shape, &local).map_err(files_error)?;
+    let file = decode_vertex_file_metadata(body.as_bytes(), shape, &local)
+        .map_err(|error| files_error(&error))?;
     Ok(json!({ "file": file_record(&file) }))
 }
 
@@ -196,7 +198,7 @@ fn file_data(file: &FileInput) -> FileData {
     }
 }
 
-fn files_error(error: VertexFilesError) -> Box<HelperError> {
+fn files_error(error: &VertexFilesError) -> Box<HelperError> {
     let class = if matches!(error, VertexFilesError::Listing) {
         "NotImplementedError"
     } else {

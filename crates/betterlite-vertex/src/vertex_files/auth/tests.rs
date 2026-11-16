@@ -5,7 +5,7 @@ use std::future::{Future, ready};
 use std::sync::Mutex;
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use tokio::runtime::Builder;
 
 use crate::token_cache::error::CredentialCacheError;
@@ -48,6 +48,7 @@ impl MintAccessToken for FixedMint {
     ) -> MintFuture<'mint> {
         let mut calls = self.calls.lock().unwrap();
         *calls = calls.saturating_add(1);
+        drop(calls);
         let Some(token) = self.token else {
             return Box::pin(ready(Err(CredentialCacheError::MissingCredentials)));
         };
@@ -131,7 +132,7 @@ fn an_empty_key_counts_as_unset() {
     assert_eq!(
         headers
             .get("Authorization")
-            .map(|value| value.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("Bearer minted")
     );
     assert_eq!(mint.calls(), 1);
