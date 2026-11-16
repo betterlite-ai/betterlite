@@ -10,10 +10,9 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{
     ImageData, ImageHeaders, ImageParams, ImageResponse,
 };
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
-
-use crate::helpers::{Helper, HelperResult};
 
 type Environment = BTreeMap<String, String>;
 
