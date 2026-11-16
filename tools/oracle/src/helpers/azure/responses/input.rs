@@ -20,7 +20,6 @@ pub(crate) enum Input {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Steps<T> {
-    #[serde(default)]
     pub(crate) steps: Vec<T>,
 }
 #[derive(Debug, Deserialize)]

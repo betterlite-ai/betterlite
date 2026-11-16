@@ -42,15 +42,15 @@ class ResponsesConfig(Protocol):
     @property
     def custom_llm_provider(self) -> LlmProviders: ...
     @property
-    def transform_get_response_api_request(self) -> Writer: ...  # ast-grep-ignore
+    def transform_get_response_api_request(self) -> Writer: ...
     @property
-    def transform_delete_response_api_request(self) -> Writer: ...  # ast-grep-ignore
+    def transform_delete_response_api_request(self) -> Writer: ...
     @property
-    def transform_cancel_response_api_request(self) -> Writer: ...  # ast-grep-ignore
+    def transform_cancel_response_api_request(self) -> Writer: ...
     @property
-    def transform_list_input_items_request(self) -> Listing: ...  # ast-grep-ignore
+    def transform_list_input_items_request(self) -> Listing: ...
     @property
-    def transform_cancel_response_api_response(self) -> Cancellation: ...  # ast-grep-ignore
+    def transform_cancel_response_api_response(self) -> Cancellation: ...
     def get_supported_openai_params(self, model: str) -> list[str]: ...
     def map_openai_params(
         self, response_api_optional_params: RequestParams, model: str, *, drop_params: bool
@@ -64,7 +64,7 @@ class ResponsesConfig(Protocol):
     def get_websocket_url(
         self, api_base: str | None, litellm_params: dict[str, JsonValue]
     ) -> str: ...
-    def transform_responses_api_request(  # ast-grep-ignore
+    def transform_responses_api_request(
         self,
         model: str,
         input_value: str | ResponseInputParam,

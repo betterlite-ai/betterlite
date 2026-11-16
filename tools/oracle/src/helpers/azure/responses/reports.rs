@@ -52,7 +52,7 @@ fn base_row(step: &UrlStep, settings: &Settings) -> Value {
         azure_username: None,
         azure_password: None,
     };
-    let headers = validate_azure_environment(EnvironmentHeadersRequest {
+    let validated = validate_azure_environment(EnvironmentHeadersRequest {
         headers: step.headers.clone(),
         api_key: key.as_ref(),
         credentials: &credentials,
@@ -60,22 +60,20 @@ fn base_row(step: &UrlStep, settings: &Settings) -> Value {
         provider: None,
         sources: &NoSources,
     });
-    let base = step.api_base.as_deref();
-    match (
-        complete_url(base, step.api_version.as_deref(), settings),
-        headers,
-    ) {
-        (Ok(url), Ok(headers)) => {
-            json!({"ok": true, "url": url, "headers": headers, "status": Value::Null})
-        }
-        _ => {
-            json!({"ok": false, "url": Value::Null, "headers": Value::Null, "status": Value::Null})
-        }
+    let built = complete_url(
+        step.api_base.as_deref(),
+        step.api_version.as_deref(),
+        settings,
+    );
+    if let (Ok(url), Ok(headers)) = (built, validated) {
+        json!({"ok": true, "url": url, "headers": headers, "status": Value::Null})
+    } else {
+        json!({"ok": false, "url": Value::Null, "headers": Value::Null, "status": Value::Null})
     }
 }
 pub(super) fn projected_body(step: &TransformStep) -> Result<Value, Box<HelperError>> {
     let body = transform_request(&step.model, &step.input, &step.params, None).or_value_error()?;
-    let value = serde_json::to_value(&body).expect("the request body serializes");
+    let value = serde_json::to_value(&body)?;
     let projected: serde_json::Map<String, Value> = PROJECTED
         .into_iter()
         .filter_map(|key| value.get(key).map(|found| (key.to_owned(), found.clone())))
@@ -95,38 +93,34 @@ fn websocket_step(step: &WebsocketStep) -> Value {
         Err(error) => json!({"ok": false, "url": Value::Null, "status": error.http_status()}),
     }
 }
-pub(super) fn resource_row(step: &ResourceStep) -> Value {
+fn sent_request(step: &ResourceStep) -> Result<ResourceRequest, ResponsesError> {
     let (base, id) = (&step.api_base, &step.response_id);
-    let result = match step.endpoint {
-        Endpoint::List => list_request(step),
-        Endpoint::Get => resource_request(base, id, ResourceOperation::Get),
-        Endpoint::Delete => resource_request(base, id, ResourceOperation::Delete),
-        Endpoint::Cancel => resource_request(base, id, ResourceOperation::Cancel),
+    let operation = match step.endpoint {
+        Endpoint::List => {
+            let query = ListInputItemsQuery {
+                after: step.after.clone(),
+                before: step.before.clone(),
+                include: step.include.clone(),
+                limit: Some(step.limit.unwrap_or(DEFAULT_INPUT_ITEMS_LIMIT)),
+                order: Some(step.order.unwrap_or(InputItemsOrder::Desc)),
+            };
+            return list_input_items(base, id, &query);
+        }
+        Endpoint::Get => ResourceOperation::Get,
+        Endpoint::Delete => ResourceOperation::Delete,
+        Endpoint::Cancel => ResourceOperation::Cancel,
     };
-    match result {
-        Ok(request) => json!({
-            "ok": true,
-            "url": request.url,
-            "data": serde_json::to_value(&request.payload).expect("the data serializes"),
-            "status": Value::Null,
-        }),
-        Err(error) => json!({
-            "ok": false,
-            "url": Value::Null,
-            "data": Value::Null,
-            "status": error.http_status(),
-        }),
-    }
+    resource_request(base, id, operation)
 }
-fn list_request(step: &ResourceStep) -> Result<ResourceRequest, ResponsesError> {
-    let query = ListInputItemsQuery {
-        after: step.after.clone(),
-        before: step.before.clone(),
-        include: step.include.clone(),
-        limit: Some(step.limit.unwrap_or(DEFAULT_INPUT_ITEMS_LIMIT)),
-        order: Some(step.order.unwrap_or(InputItemsOrder::Desc)),
-    };
-    list_input_items(&step.api_base, &step.response_id, &query)
+pub(super) fn resource_row(step: &ResourceStep) -> Value {
+    match sent_request(step) {
+        Ok(request) => {
+            json!({"ok": true, "url": request.url, "data": request.payload, "status": Value::Null})
+        }
+        Err(error) => {
+            json!({"ok": false, "url": Value::Null, "data": Value::Null, "status": error.http_status()})
+        }
+    }
 }
 pub(super) fn reply_row(step: &ReplyStep) -> Value {
     let headers = IndexMap::new();
@@ -135,22 +129,14 @@ pub(super) fn reply_row(step: &ReplyStep) -> Value {
         headers: &headers,
         text: &step.body,
     };
-    let response = match cancel_reply(&reply) {
-        Ok(response) => response,
-        Err(error) => {
-            return json!({"ok": false, "value": Value::Null, "status": error.http_status()});
-        }
-    };
-    json!({
-        "ok": true,
-        "value": {
-            "id": response.id,
-            "created_at": response.created_at,
-            "status": response.status,
-            "model": response.model,
+    cancel_reply(&reply).map_or_else(
+        |error| json!({"ok": false, "value": Value::Null, "status": error.http_status()}),
+        |record| {
+            let value = json!({"id": record.id, "created_at": record.created_at,
+                "status": record.status, "model": record.model});
+            json!({"ok": true, "value": value, "status": Value::Null})
         },
-        "status": Value::Null,
-    })
+    )
 }
 pub(super) fn capability_report(runtime: &Runtime, call: &CapabilityCall) -> Value {
     let models = call
@@ -201,7 +187,7 @@ fn map_row(runtime: &Runtime, install: &Install, step: &MapStep) -> Value {
     match runtime.block_on(map_params(&mut fixture, &options, drop, &mut bundled)) {
         Ok(value) => json!({
             "ok": true,
-            "value": serde_json::to_value(value).expect("the mapped params serialize"),
+            "value": value,
             "status": Value::Null,
         }),
         Err(error) => json!({"ok": false, "value": Value::Null, "status": error.status_code()}),
@@ -215,7 +201,7 @@ fn o_series_row(step: &MapStep) -> Value {
     let mapped = o_series_map_params(&step.model, &step.params, drop);
     json!({
         "ok": true,
-        "value": serde_json::to_value(mapped).expect("the mapped params serialize"),
+        "value": mapped,
         "status": Value::Null,
     })
 }

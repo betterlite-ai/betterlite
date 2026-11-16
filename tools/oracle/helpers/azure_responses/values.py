@@ -1,5 +1,3 @@
-import io
-from contextlib import redirect_stdout
 from datetime import UTC, datetime
 from typing import Final
 
@@ -15,7 +13,6 @@ from .contracts import (
     AZURE,
     JSON,
     OSERIES,
-    Call,
     CapabilityCall,
     Failure,
     Install,
@@ -34,7 +31,6 @@ UNSUPPORTED: Final[type[Exception]] = UnsupportedParamsError
 CANCEL_ERROR: Final[type[Exception]] = AzureOpenAIError
 PROJECTED: Final[tuple[str, ...]] = ("model", "input", "tools")
 LIMIT: Final[int] = 20
-litellm.suppress_debug_info = True
 
 
 def install(source: Install) -> None:
@@ -59,11 +55,10 @@ def logging_object() -> Logging:
 
 
 def url_row(step: UrlStep) -> JsonValue:
+    params = GenericLiteLLMParams(api_key=step["api_key"])
     try:
         url = AZURE.get_complete_url(step["api_base"], {"api_version": step["api_version"]})
-        headers = AZURE.validate_environment(
-            step["headers"], "gpt-5", GenericLiteLLMParams(api_key=step["api_key"])
-        )
+        headers = AZURE.validate_environment(step["headers"], "gpt-5", params)
     except ValueError:
         return {"ok": False, "url": None, "headers": None, "status": None}
     return {"ok": True, "url": url, "headers": JSON.validate_python(headers), "status": None}
@@ -195,22 +190,3 @@ def capability_report(call: CapabilityCall) -> JsonValue:
         "map_steps": [map_row(step) for step in call["map_steps"]],
         "o_series_steps": [o_series_row(step) for step in call["o_series_steps"]],
     }
-
-
-def run(input_value: Call) -> JsonValue:
-    result: JsonValue
-    with redirect_stdout(io.StringIO()):
-        match input_value["function"]:
-            case "base_and_api_version":
-                result = {"steps": [url_row(step) for step in input_value["steps"]]}
-            case "strip_model_prefix" | "reasoning_null_fields":
-                result = {"steps": [transform_row(step) for step in input_value["steps"]]}
-            case "websocket_model_query":
-                result = websocket_report(input_value)
-            case "resource_id_before_query":
-                result = {"steps": [resource_row(step) for step in input_value["steps"]]}
-            case "cancel_response":
-                result = {"steps": [reply_row(step) for step in input_value["steps"]]}
-            case "azure_responses_capabilities" | "o_series_options":
-                result = capability_report(input_value)
-    return result
