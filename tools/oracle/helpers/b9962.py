@@ -1,7 +1,7 @@
 from typing import Literal, NotRequired, Protocol, TypedDict, cast
 
-import litellm
-from litellm.litellm_core_utils.prompt_templates import huggingface_template_handler
+from litellm.constants import known_tokenizer_config
+from litellm.litellm_core_utils.prompt_templates import huggingface_template_handler as templates
 from litellm.llms.bedrock.chat.invoke_transformations.base_invoke_transformation import (
     AmazonInvokeConfig,
 )
@@ -59,9 +59,9 @@ class CaseTemplates:
 
 
 def run_case(invoke: InvokeApi, case: Case) -> JsonValue:
-    litellm.known_tokenizer_config.clear()
-    saved = (huggingface_template_handler._get_tokenizer_config, huggingface_template_handler._get_chat_template_file)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py#L41-L114
-    huggingface_template_handler._get_tokenizer_config = huggingface_template_handler._get_chat_template_file = CaseTemplates(case)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py#L41-L114
+    known_tokenizer_config.clear()
+    saved = (templates._get_tokenizer_config, templates._get_chat_template_file)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py#L41-L114
+    templates._get_tokenizer_config = templates._get_chat_template_file = CaseTemplates(case)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py#L41-L114
     try:
         prompt, chat_history = invoke.convert_messages_to_prompt(
             case["model"], case["messages"], case.get("provider"), {}
@@ -69,7 +69,7 @@ def run_case(invoke: InvokeApi, case: Case) -> JsonValue:
     except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L592-L630
         return {"message": str(error)}
     finally:
-        huggingface_template_handler._get_tokenizer_config, huggingface_template_handler._get_chat_template_file = saved  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py#L41-L114
+        templates._get_tokenizer_config, templates._get_chat_template_file = saved  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py#L41-L114
     return {"prompt": prompt, "chat_history": chat_history}
 
 
