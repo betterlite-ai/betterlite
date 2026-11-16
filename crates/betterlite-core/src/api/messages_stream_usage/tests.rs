@@ -16,6 +16,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use chrono::DateTime;
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -505,37 +506,38 @@ fn zero_counters_keep_only_summary_iterations() {
     );
 }
 
-#[test]
-fn single_sided_counters_still_append_a_message_iteration() {
+#[rstest]
+#[case::input_only(
+    r#"{"type": "message_delta", "usage": {"input_tokens": 5, "output_tokens": 0}}"#,
+    5,
+    0
+)]
+#[case::output_only(
+    r#"{"type": "message_delta", "usage": {"input_tokens": 0, "output_tokens": 2}}"#,
+    0,
+    2
+)]
+fn single_sided_counters_still_append_a_message_iteration(
+    #[case] event: &str,
+    #[case] input: i64,
+    #[case] output: i64,
+) {
     let state = iterations_state();
-    for (event, input, output) in [
-        (
-            r#"{"type": "message_delta", "usage": {"input_tokens": 5, "output_tokens": 0}}"#,
-            5_i64,
-            0_i64,
-        ),
-        (
-            r#"{"type": "message_delta", "usage": {"input_tokens": 0, "output_tokens": 2}}"#,
-            0_i64,
-            2_i64,
-        ),
-    ] {
-        let augmented = state
-            .augment_message_delta_usage(object(event))
-            .expect("augmented");
-        assert_eq!(
-            serde_json::to_value(augmented.get("usage").expect("usage"))
-                .expect("the fixture serializes"),
-            json!({
-                "input_tokens": input,
-                "output_tokens": output,
-                "iterations": [
-                    {"type": "compaction", "input_tokens": 12, "output_tokens": 3},
-                    {"type": "message", "input_tokens": input, "output_tokens": output},
-                ],
-            })
-        );
-    }
+    let augmented = state
+        .augment_message_delta_usage(object(event))
+        .expect("augmented");
+    assert_eq!(
+        serde_json::to_value(augmented.get("usage").expect("usage"))
+            .expect("the fixture serializes"),
+        json!({
+            "input_tokens": input,
+            "output_tokens": output,
+            "iterations": [
+                {"type": "compaction", "input_tokens": 12, "output_tokens": 3},
+                {"type": "message", "input_tokens": input, "output_tokens": output},
+            ],
+        })
+    );
 }
 
 #[test]
@@ -563,33 +565,29 @@ fn missing_counters_keep_only_summary_iterations() {
     );
 }
 
-#[test]
-fn existing_iterations_block_the_message_iteration() {
-    let state = iterations_state();
-    for event in [
-        r#"{"type": "message_delta", "usage": {"input_tokens": 5, "output_tokens": 2, "iterations": []}}"#,
-        r#"{"type": "message_delta", "usage": {"input_tokens": 5, "output_tokens": 2, "iterations": null}}"#,
-    ] {
-        let augmented = state
-            .augment_message_delta_usage(object(event))
-            .expect("augmented");
-        assert_eq!(augmented, object(event));
-    }
+#[rstest]
+#[case::empty_iterations(
+    r#"{"type": "message_delta", "usage": {"input_tokens": 5, "output_tokens": 2, "iterations": []}}"#
+)]
+#[case::null_iterations(
+    r#"{"type": "message_delta", "usage": {"input_tokens": 5, "output_tokens": 2, "iterations": null}}"#
+)]
+fn existing_iterations_block_the_message_iteration(#[case] event: &str) {
+    let augmented = iterations_state()
+        .augment_message_delta_usage(object(event))
+        .expect("augmented");
+    assert_eq!(augmented, object(event));
 }
 
-#[test]
-fn non_object_usage_blocks_iterations() {
-    let state = iterations_state();
-    for event in [
-        r#"{"type": "message_delta"}"#,
-        r#"{"type": "message_delta", "usage": null}"#,
-        r#"{"type": "message_delta", "usage": []}"#,
-    ] {
-        let augmented = state
-            .augment_message_delta_usage(object(event))
-            .expect("augmented");
-        assert_eq!(augmented, object(event));
-    }
+#[rstest]
+#[case::usage_absent(r#"{"type": "message_delta"}"#)]
+#[case::usage_null(r#"{"type": "message_delta", "usage": null}"#)]
+#[case::usage_a_list(r#"{"type": "message_delta", "usage": []}"#)]
+fn non_object_usage_blocks_iterations(#[case] event: &str) {
+    let augmented = iterations_state()
+        .augment_message_delta_usage(object(event))
+        .expect("augmented");
+    assert_eq!(augmented, object(event));
 }
 
 #[test]
@@ -669,21 +667,21 @@ fn compaction_flags_follow_the_returned_event() {
     assert_eq!(state.current_content_block_index, 1);
 }
 
-#[test]
-fn compaction_delta_without_summary_is_empty() {
-    for content in [None, Some("")] {
-        let mut state = compaction_state(content);
-        assert!(state.next_compaction_event().is_some());
-        let delta = state.next_compaction_event().expect("delta");
-        assert_eq!(
-            serde_json::to_value(&delta).expect("the fixture serializes"),
-            json!({
-                "type": "content_block_delta",
-                "index": 0,
-                "delta": {"type": "compaction_delta", "content": ""},
-            })
-        );
-    }
+#[rstest]
+#[case::block_without_content(None)]
+#[case::block_with_empty_content(Some(""))]
+fn compaction_delta_without_summary_is_empty(#[case] content: Option<&str>) {
+    let mut state = compaction_state(content);
+    assert!(state.next_compaction_event().is_some());
+    let delta = state.next_compaction_event().expect("delta");
+    assert_eq!(
+        serde_json::to_value(&delta).expect("the fixture serializes"),
+        json!({
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "compaction_delta", "content": ""},
+        })
+    );
 }
 
 #[test]
@@ -696,88 +694,80 @@ fn absent_compaction_block_emits_nothing() {
     assert_eq!(state.current_content_block_index, 0);
 }
 
-#[test]
-fn nonempty_delta_predicates() {
-    let cases = [
-        (
-            r#"{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "x"}}"#,
-            true,
-        ),
-        (
-            r#"{"type": "content_block_delta", "delta": {"type": "text_delta", "text": ""}}"#,
-            false,
-        ),
-        (
-            r#"{"type": "content_block_delta", "delta": {"type": "text_delta"}}"#,
-            false,
-        ),
-        (
-            r#"{"type": "content_block_delta", "delta": {"type": "input_json_delta", "partial_json": "{}"}}"#,
-            true,
-        ),
-        (
-            r#"{"type": "content_block_delta", "delta": {"type": "thinking_delta", "thinking": "t"}}"#,
-            true,
-        ),
-        (
-            r#"{"type": "content_block_delta", "delta": {"type": "signature_delta", "signature": "s"}}"#,
-            true,
-        ),
-        (
-            r#"{"type": "content_block_delta", "delta": {"type": "text_delta", "partial_json": "x"}}"#,
-            false,
-        ),
-        (
-            r#"{"type": "content_block_delta", "delta": {"type": "compaction_delta", "content": "x"}}"#,
-            false,
-        ),
-        (
-            r#"{"type": "content_block_delta", "delta": {"type": "unknown_delta", "text": "x"}}"#,
-            false,
-        ),
-        (r#"{"type": "content_block_delta", "delta": null}"#, false),
-        (
-            r#"{"type": "message_delta", "delta": {"type": "text_delta", "text": "x"}}"#,
-            false,
-        ),
-        (r#"{"delta": {"type": "text_delta", "text": "x"}}"#, false),
-    ];
-    for (source, expected) in cases {
-        assert_eq!(delta_has_content(&object(source)), expected, "{source}");
-    }
+#[rstest]
+#[case::text_present(
+    r#"{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "x"}}"#,
+    true
+)]
+#[case::text_empty(
+    r#"{"type": "content_block_delta", "delta": {"type": "text_delta", "text": ""}}"#,
+    false
+)]
+#[case::text_absent(
+    r#"{"type": "content_block_delta", "delta": {"type": "text_delta"}}"#,
+    false
+)]
+#[case::input_json_present(
+    r#"{"type": "content_block_delta", "delta": {"type": "input_json_delta", "partial_json": "{}"}}"#,
+    true
+)]
+#[case::thinking_present(
+    r#"{"type": "content_block_delta", "delta": {"type": "thinking_delta", "thinking": "t"}}"#,
+    true
+)]
+#[case::signature_present(
+    r#"{"type": "content_block_delta", "delta": {"type": "signature_delta", "signature": "s"}}"#,
+    true
+)]
+#[case::text_delta_reads_only_its_own_payload(
+    r#"{"type": "content_block_delta", "delta": {"type": "text_delta", "partial_json": "x"}}"#,
+    false
+)]
+#[case::compaction_delta_is_not_a_translated_type(
+    r#"{"type": "content_block_delta", "delta": {"type": "compaction_delta", "content": "x"}}"#,
+    false
+)]
+#[case::unknown_delta_type(
+    r#"{"type": "content_block_delta", "delta": {"type": "unknown_delta", "text": "x"}}"#,
+    false
+)]
+#[case::delta_not_an_object(r#"{"type": "content_block_delta", "delta": null}"#, false)]
+#[case::outer_type_is_message_delta(
+    r#"{"type": "message_delta", "delta": {"type": "text_delta", "text": "x"}}"#,
+    false
+)]
+#[case::outer_type_absent(r#"{"delta": {"type": "text_delta", "text": "x"}}"#, false)]
+fn nonempty_delta_predicates(#[case] source: &str, #[case] expected: bool) {
+    assert_eq!(delta_has_content(&object(source)), expected, "{source}");
 }
 
-#[test]
-fn blank_delta_predicates() {
-    let cases = [
-        (r#"{"finish_reason": "stop", "delta": {}}"#, false),
-        (r#"{"finish_reason": "", "delta": {}}"#, false),
-        (
-            r#"{"delta": {"tool_calls": [{"id": "t", "function": {"name": "short", "arguments": "{}"}}]}}"#,
-            false,
-        ),
-        (r#"{"delta": {"content": "x"}}"#, false),
-        (r#"{"delta": {"content": ""}}"#, true),
-        (r#"{"delta": {"refusal": "no"}}"#, false),
-        (r#"{"delta": {"refusal": ""}}"#, true),
-        (
-            r#"{"delta": {"refusal": null, "provider_specific_fields": {"refusal": "No"}}}"#,
-            false,
-        ),
-        (
-            r#"{"delta": {"refusal": null, "provider_specific_fields": {"refusal": ""}}}"#,
-            true,
-        ),
-        (r#"{"delta": {"reasoning_content": "r"}}"#, false),
-        (r#"{"delta": {}}"#, true),
-        (r#"{"delta": {"thinking_blocks": []}}"#, true),
-        (r#"{"delta": {"thinking_blocks": null}}"#, true),
-    ];
-    for (source, expected) in cases {
-        let choices = vec![choice(source)];
-        let blank = is_blank_delta(&choices).expect("one choice");
-        assert_eq!(blank, expected, "{source}");
-    }
+#[rstest]
+#[case::finish_reason_present(r#"{"finish_reason": "stop", "delta": {}}"#, false)]
+#[case::finish_reason_empty_string(r#"{"finish_reason": "", "delta": {}}"#, false)]
+#[case::tool_calls_present(
+    r#"{"delta": {"tool_calls": [{"id": "t", "function": {"name": "short", "arguments": "{}"}}]}}"#,
+    false
+)]
+#[case::content_present(r#"{"delta": {"content": "x"}}"#, false)]
+#[case::content_empty_string(r#"{"delta": {"content": ""}}"#, true)]
+#[case::refusal_present(r#"{"delta": {"refusal": "no"}}"#, false)]
+#[case::refusal_empty_string(r#"{"delta": {"refusal": ""}}"#, true)]
+#[case::refusal_in_provider_specific_fields(
+    r#"{"delta": {"refusal": null, "provider_specific_fields": {"refusal": "No"}}}"#,
+    false
+)]
+#[case::provider_specific_fields_refusal_empty_string(
+    r#"{"delta": {"refusal": null, "provider_specific_fields": {"refusal": ""}}}"#,
+    true
+)]
+#[case::reasoning_content_present(r#"{"delta": {"reasoning_content": "r"}}"#, false)]
+#[case::empty_delta(r#"{"delta": {}}"#, true)]
+#[case::empty_thinking_blocks(r#"{"delta": {"thinking_blocks": []}}"#, true)]
+#[case::absent_thinking_blocks(r#"{"delta": {"thinking_blocks": null}}"#, true)]
+fn blank_delta_predicates(#[case] source: &str, #[case] expected: bool) {
+    let choices = vec![choice(source)];
+    let blank = is_blank_delta(&choices).expect("one choice");
+    assert_eq!(blank, expected, "{source}");
 }
 
 #[test]
@@ -971,24 +961,20 @@ fn nonterminal_or_empty_refusal_is_unchanged() {
     assert_eq!(content_result, content);
 }
 
-#[test]
-fn malformed_refusal_events_are_errors() {
+#[rstest]
+#[case::delta_absent(r#"{"type": "message_delta"}"#, "delta")]
+#[case::delta_null(r#"{"type": "message_delta", "delta": null}"#, "delta")]
+#[case::type_absent(r#"{"delta": {"stop_reason": "end_turn"}}"#, "type")]
+fn malformed_refusal_events_are_errors(#[case] event: &str, #[case] field: &str) {
     let mut state = state();
     assert!(!start(&mut state, r#"{"delta": {"refusal": "No"}}"#));
-    let cases = [
-        (r#"{"type": "message_delta"}"#, "delta"),
-        (r#"{"type": "message_delta", "delta": null}"#, "delta"),
-        (r#"{"delta": {"stop_reason": "end_turn"}}"#, "type"),
-    ];
-    for (event, field) in cases {
-        assert!(
-            matches!(
-                state.with_refusal_stop_details(object(event)),
-                Err(StreamStateError::MalformedEvent { field: missing }) if missing == field
-            ),
-            "{event}"
-        );
-    }
+    assert!(
+        matches!(
+            state.with_refusal_stop_details(object(event)),
+            Err(StreamStateError::MalformedEvent { field: missing }) if missing == field
+        ),
+        "{event}"
+    );
 }
 
 #[test]
