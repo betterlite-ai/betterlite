@@ -1,0 +1,9 @@
+task: B3796
+deviations:
+  - what: Prompt token ids are decoded through a PromptTokenDecoder passed in by the caller instead of a tiktoken lookup inside the function. A decoder with no tokenizer, an id it cannot decode, a negative id or an id past u32 gives None, so the raw prompt is relayed untouched.
+    why: The text-davinci-003 vocabulary is a downloaded asset that lives with the tokenizer crate, and the guardrails crate takes outside dependencies as constructor arguments. LiteLLM reaches the same None through a blanket except around tiktoken.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L500-L508
+  - what: Conversation prefixes hash each message as compact UTF-8 JSON with sorted keys followed by a 0x1e byte, and a system preamble given as blocks is relayed as compact JSON, so digests and derived session ids differ from the ones LiteLLM computes for the same body.
+    why: Python's json.dumps spacing and ASCII escaping are not part of the contract (docs/compatibility.md). The digests only name a conversation inside one process or one derived session, so any stable encoding does the job.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L654-L675
+kept_bugs: []
