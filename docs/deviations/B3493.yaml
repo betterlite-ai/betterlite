@@ -12,7 +12,7 @@ deviations:
   - what: The caller's timeout, or litellm.request_timeout when the caller names none, is one reqwest request deadline covering connect, send and the whole body read, so a stream that runs longer in total fails here; LiteLLM passes the value to httpx, which applies it to connect, read, write and pool separately, so a stream there succeeds as long as each chunk arrives in time.
     why: reqwest has one total request timeout while httpx's Timeout applies per operation; the same difference between the two clients is recorded under B8211.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L172-L195
-  - what: A failed connection before an answer is not retried: the async create POST goes out at most once and such a failure is the transport error the caller receives.
+  - what: A failed connection before an answer is not retried, and the async create POST goes out at most once, so such a failure is the transport error the caller receives.
     why: LiteLLM's async create repeats the POST once on ConnectError or RemoteProtocolError on a fresh single-connection client, while its sync create does not retry at all; betterlite's outbound client attempts each request once, so a create is never delivered twice.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851
 kept_bugs: []
