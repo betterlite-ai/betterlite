@@ -35,7 +35,7 @@ fn delta_carries_more_than_text(delta: &StreamDelta) -> bool {
             .any(|value| !matches!(value, JsonValue::Null))
 }
 fn seal_run(chunks: &mut [StreamChunk], parts: &[String]) {
-    if parts.len() > 1
+    if !parts.is_empty()
         && let Some(choice) = chunks
             .last_mut()
             .and_then(|chunk| chunk.choices.first_mut())

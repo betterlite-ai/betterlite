@@ -712,10 +712,18 @@ fn decode_chunk(decoder: &mut dyn EventChunkDecoder, source: &str) -> Box<Stream
 
 fn invoke_provider_selection() {
     let invoke = decoder_selection("anthropic.claude-3", "model/x/invoke", clock());
-    let DecoderChoice::Invoke { provider, .. } = invoke else {
+    let DecoderChoice::Invoke {
+        provider,
+        mut decoder,
+    } = invoke
+    else {
         panic!("expected an invoke decoder");
     };
     assert_eq!(provider.name(), "anthropic");
+    let event =
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"#;
+    let chunk = decode_chunk(&mut decoder, event);
+    assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("hi"));
     let missing = decoder_selection("mystery.v9", "model/x/invoke", clock());
     let DecoderChoice::Disabled { warning } = missing else {
         panic!("expected a disabled decoder");
@@ -736,6 +744,11 @@ fn converse_and_other_endpoints() {
     let chunk = decode_chunk(&mut decoder, text);
     assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("hi"));
     assert_eq!(chunk.model, "mystery.v9");
+    assert!(chunk.provider_specific_fields.is_none());
+    let traced = r#"{"contentBlockIndex":0,"delta":{"text":"hi"},"trace":{"guardrail":{"a":1}}}"#;
+    let with_trace = decode_chunk(&mut decoder, traced);
+    let fields = with_trace.provider_specific_fields.unwrap();
+    assert!(fields.contains_key("trace"));
     let other = decoder_selection("mystery.v9", "model/x/other", clock());
     let DecoderChoice::Disabled { warning } = other else {
         panic!("expected a disabled decoder");
