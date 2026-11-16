@@ -51,13 +51,15 @@ where
         Ok(_initialized) => tracing::info!(
             "Immediate sync: Successfully initialized guardrail '{name}' (ID: {guardrail_id})"
         ),
-        Err(error) if is_configuration_error(&error) => {
-            rollback(database, &guardrail_id).await;
-            return Err(MutationError::Configuration { source: error });
+        Err(error) => {
+            if is_configuration_error(&error) {
+                rollback(database, &guardrail_id).await;
+                return Err(MutationError::Configuration { source: error });
+            }
+            tracing::warn!(
+                "Immediate sync: Failed to initialize guardrail '{name}' (ID: {guardrail_id}) in memory: {error}"
+            );
         }
-        Err(error) => tracing::warn!(
-            "Immediate sync: Failed to initialize guardrail '{name}' (ID: {guardrail_id}) in memory: {error}"
-        ),
     }
     Ok(Json(CreatedGuardrail {
         guardrail_id,

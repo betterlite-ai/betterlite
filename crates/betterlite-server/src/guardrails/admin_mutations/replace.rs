@@ -51,16 +51,18 @@ where
         Ok(_held) => tracing::info!(
             "Immediate sync: Successfully updated guardrail '{name}' (ID: {guardrail_id})"
         ),
-        Err(error) if is_configuration_error(&error) => {
-            registry
-                .update_guardrail_in_db(&guardrail_id, &existing, Utc::now())
-                .await
-                .map_err(MutationError::internal)?;
-            return Err(MutationError::UpdateRejected { source: error });
+        Err(error) => {
+            if is_configuration_error(&error) {
+                registry
+                    .update_guardrail_in_db(&guardrail_id, &existing, Utc::now())
+                    .await
+                    .map_err(MutationError::internal)?;
+                return Err(MutationError::UpdateRejected { source: error });
+            }
+            tracing::warn!(
+                "Immediate sync: Failed to update '{name}' (ID: {guardrail_id}) in memory: {error}"
+            );
         }
-        Err(error) => tracing::warn!(
-            "Immediate sync: Failed to update '{name}' (ID: {guardrail_id}) in memory: {error}"
-        ),
     }
     // Prisma's update returns every column; the review columns come from a second read of the row
     let review = database

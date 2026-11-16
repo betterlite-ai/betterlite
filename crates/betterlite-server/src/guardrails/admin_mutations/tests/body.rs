@@ -152,6 +152,28 @@ fn body_create_bad_utf8_is_reported() {
 }
 
 #[test]
+fn body_create_non_object_info_is_reported() {
+    let issue = create_error(
+        r#"{"guardrail":{"guardrail_name":"g","litellm_params":{"guardrail":"bedrock","mode":"pre_call"},"guardrail_info":5}}"#,
+    );
+    assert_eq!(issue_type(&issue), "value_error");
+    assert_eq!(issue_loc(&issue).len(), 3);
+    assert_eq!(loc_field(&issue, 2), "guardrail_info");
+    assert!(matches!(field(&issue, "input"), JsonData::Number(_)));
+}
+
+#[test]
+fn body_create_wrong_type_name_is_reported() {
+    let issue = create_error(
+        r#"{"guardrail":{"guardrail_name":5,"litellm_params":{"guardrail":"bedrock","mode":"pre_call"}}}"#,
+    );
+    assert_eq!(issue_type(&issue), "value_error");
+    assert_eq!(issue_loc(&issue).len(), 3);
+    assert_eq!(loc_field(&issue, 2), "guardrail_name");
+    assert!(matches!(field(&issue, "input"), JsonData::Number(_)));
+}
+
+#[test]
 fn body_create_non_object_body_is_reported() {
     let issue = create_error("[]");
     assert_eq!(issue_type(&issue), "value_error");
