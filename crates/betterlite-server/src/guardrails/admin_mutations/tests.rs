@@ -276,7 +276,8 @@ pub(super) fn detail(body: &str) -> String {
 }
 
 pub(super) fn first_issue(body: &str) -> JsonData {
-    let detail = field(&parse(body), "detail");
+    let parsed = parse(body);
+    let detail = field(&parsed, "detail");
     let JsonData::Array(items) = detail else {
         panic!("the detail is not a list: {detail:?}");
     };
