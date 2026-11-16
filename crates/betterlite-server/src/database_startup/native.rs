@@ -168,7 +168,7 @@ impl Running {
     pub async fn shutdown(self) {
         if let Some(heartbeat) = self.heartbeat
             && let Err(error) = heartbeat.stop().await
-            && !error.is_cancelled()
+            && error.is_panic()
         {
             tracing::error!("the proxy worker heartbeat task stopped with an error: {error}");
         }

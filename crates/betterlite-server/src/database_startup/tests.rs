@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 use std::fs;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -15,6 +16,14 @@ use betterlite_config::sections::database_startup::startup::{
     StartupSettings, StartupSwitch, build_request_log_indexes, setup_database,
 };
 use betterlite_config::types::Config;
+use betterlite_db::database_refresh::generation::GenerationOptions;
+use betterlite_db::database_refresh::native::NativePoolProvider;
+use betterlite_db::database_refresh_loop::clock::SystemClock;
+use betterlite_db::database_refresh_loop::endpoint::WriterEndpoint;
+use betterlite_db::database_refresh_loop::lifecycle::{DatabaseRefreshLoop, RefreshLoopConfig};
+use betterlite_db::database_refresh_loop::minting::TokenMinter;
+use betterlite_db::database_tokens::endpoint::IAMEndpoint;
+use betterlite_db::database_tokens::expiry::TokenAuthKind;
 use betterlite_db::migration_drift::comparison::SchemaCheck;
 use betterlite_db::migration_recovery::RecoveryError;
 use betterlite_db::worker_heartbeat::HostnameError;
@@ -34,6 +43,7 @@ use super::fixtures::{
 };
 use super::heartbeat::HeartbeatTask;
 use super::native::{NativeDatabase, NativeStartup, Running};
+use super::refresh::CredentialRefresh;
 use super::serving::{ServingStartup, Startup, StartupError, StartupOutcome};
 use super::state::{DatabaseState, DatabaseStatus};
 
@@ -677,6 +687,12 @@ async fn postgres_pinned_rows() {
         .await
         .expect("the packaged migrations apply");
         let catalog = packaged::migrations();
+        assert!(
+            catalog
+                .iter()
+                .any(|migration| migration.name == "20250326162113_baseline"),
+            "the packaged catalog carries the baseline migration"
+        );
         let rows = ledger_rows(&database).await;
         let ledger: Vec<(String, String, bool, bool)> = rows
             .iter()
@@ -867,4 +883,48 @@ async fn native_betterlite_db_admin_migrate_replaces_python_migrations_run_py_an
         assert_eq!(outcome, JobOutcome::IndexJobFailed);
     })
     .await;
+}
+
+// The refresh task only mints when the loop serves a token-authenticated pool; nothing here reaches a database.
+struct NoMint;
+
+impl TokenMinter for NoMint {
+    type Error = Infallible;
+
+    fn token(&self, _endpoint: &IAMEndpoint) -> Result<Option<SecretString>, Infallible> {
+        Ok(None)
+    }
+}
+
+#[tokio::test]
+async fn credential_refresh_starts_and_stops_the_token_refresh_task() {
+    let options = GenerationOptions {
+        token_auth: Some(TokenAuthKind::Rds),
+        log_prefix: "[test]".to_owned(),
+        ..GenerationOptions::default()
+    };
+    let refresh = DatabaseRefreshLoop::<NativePoolProvider, NoMint, Infallible>::new(
+        Arc::new(NativePoolProvider),
+        options,
+        None,
+        RefreshLoopConfig {
+            writer_endpoint: WriterEndpoint {
+                host: None,
+                port: "5432".to_owned(),
+                user: None,
+                name: None,
+                schema: None,
+            },
+            minter: NoMint,
+            clock: Arc::new(SystemClock),
+        },
+        None,
+    )
+    .expect("the refresh loop builds");
+    CredentialRefresh::start(&refresh);
+    assert!(refresh.has_task(), "start spawns the token refresh task");
+    CredentialRefresh::stop(&refresh)
+        .await
+        .expect("the refresh task stops");
+    assert!(!refresh.has_task(), "stop clears the refresh task");
 }
