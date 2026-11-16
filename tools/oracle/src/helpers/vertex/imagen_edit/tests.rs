@@ -79,7 +79,7 @@ fn helper_seeds_select_vertex_imagen_edit() {
 #[case::base64_key_fallback("base64-key-fallback")]
 #[case::depth_boundary("depth-boundary")]
 #[case::empty_image_list_mask("empty-image-list-mask")]
-#[case::base64_stops_at_pad("base64-stops-at-pad")]
+#[case::base64_mid_string_pads("base64-mid-string-pads")]
 #[case::reply_created_and_usage("reply-created-and-usage")]
 fn the_edit_cases_match_litellm(#[case] name: &str) {
     let path = Path::new(ORACLE_DIR).join(format!("cases/helpers/vertex-imagen-edit/{name}.yaml"));
@@ -165,27 +165,27 @@ fn an_empty_image_list_sends_the_mask_alone() {
 }
 
 #[test]
-fn a_pad_run_that_completes_a_quad_ends_the_base64_text() {
+fn a_mid_string_pad_run_is_skipped_and_a_partial_quad_falls_through() {
     let parsed = Op::run(&input(json!({
         "model": "imagen-3.0-capability-001",
         "prompt": "paint",
         "image": [
             {"kind": "mapping", "data": "QQ==QUJDRA==", "bytes": null, "content": null, "path": null},
-            {"kind": "mapping", "data": "QUI=QUJD", "bytes": null, "content": null, "path": null},
+            {"kind": "mapping", "data": "YQ=Q", "bytes": PNG, "content": null, "path": null},
         ],
         "mask": null,
         "optional_params": {},
         "target": null,
         "response": null,
     })))
-    .expect("the text before the pad run answers");
+    .expect("the padded text decodes and the partial quad falls through");
     assert_eq!(
         reference(&parsed, 0)["referenceImage"]["bytesBase64Encoded"],
-        json!("QQ==")
+        json!("QQQUJDRA")
     );
     assert_eq!(
         reference(&parsed, 1)["referenceImage"]["bytesBase64Encoded"],
-        json!("QUI=")
+        json!(PNG)
     );
 }
 

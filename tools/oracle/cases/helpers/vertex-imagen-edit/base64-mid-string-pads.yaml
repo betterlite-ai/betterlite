@@ -1,5 +1,5 @@
 kind: helper
-name: vertex-imagen-edit-base64-stops-at-pad
+name: vertex-imagen-edit-base64-mid-string-pads
 call:
   vertex_imagen_edit:
     model: imagen-3.0-capability-001
@@ -11,8 +11,8 @@ call:
         content: null
         path: null
       - kind: mapping
-        data: "QUI=QUJD"
-        bytes: null
+        data: "YQ=Q"
+        bytes: "YWJj"
         content: null
         path: null
     mask: null
