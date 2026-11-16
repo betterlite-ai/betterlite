@@ -1,8 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use betterlite_config::sections::fallback_plans::Settings;
 use betterlite_config::sections::fallback_plans::chains::{FallbackChainEntry, FallbackTarget};
@@ -10,10 +9,6 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use indexmap::IndexMap;
 use rstest::rstest;
-use tracing::Subscriber;
-use tracing::subscriber::with_default;
-use tracing_subscriber::layer::SubscriberExt as _;
-use tracing_subscriber::layer::{Context, Layer};
 
 use super::access_groups::{AccessGroupScope, models_from_access_groups};
 use super::complete_list::{ListingFlags, ListingRequest, get_complete_model_list};
@@ -171,56 +166,58 @@ impl DeploymentLookup for FakeDeployments {
 struct FakeFallbacks {
     plans: BTreeMap<String, Vec<String>>,
     fails: bool,
-    seen_chains: Mutex<usize>,
+    seen: Mutex<Vec<Vec<String>>>,
 }
 
 impl FakeFallbacks {
     fn new(plans: &[(&str, &[&str])]) -> Self {
+        let mut by_model = BTreeMap::new();
+        for (model, models) in plans {
+            by_model.insert((*model).to_owned(), strings(models));
+        }
         Self {
-            plans: plans
-                .iter()
-                .map(|(model, models)| ((*model).to_owned(), strings(models)))
-                .collect(),
+            plans: by_model,
             fails: false,
-            seen_chains: Mutex::new(0),
+            seen: Mutex::new(Vec::new()),
         }
     }
 
     fn seen_chains(&self) -> usize {
-        *self.seen_chains.lock().expect("the fake counts its chains")
+        self.seen.lock().expect("the fake records its chains").len()
+    }
+
+    // the last chain's own group names, so a test can tell which category reached the resolver
+    fn seen_groups(&self) -> Vec<String> {
+        self.seen
+            .lock()
+            .expect("the fake records its chains")
+            .last()
+            .cloned()
+            .unwrap_or_default()
     }
 }
 
 impl FallbackGroups for FakeFallbacks {
     fn fallback_group(
         &self,
-        _chain: &[FallbackChainEntry],
+        chain: &[FallbackChainEntry],
         model: &str,
     ) -> Result<Option<Vec<String>>, FallbackError> {
-        *self.seen_chains.lock().expect("the fake counts its chains") += 1;
+        let names: Vec<String> = chain
+            .iter()
+            .flat_map(|entry| match entry {
+                FallbackChainEntry::Group(group) => group.keys().cloned().collect::<Vec<_>>(),
+                FallbackChainEntry::Target(_) => Vec::new(),
+            })
+            .collect();
+        self.seen
+            .lock()
+            .expect("the fake records its chains")
+            .push(names);
         if self.fails {
             return Err(FallbackError::Unresolvable);
         }
         Ok(self.plans.get(model).cloned())
-    }
-}
-
-// the chain's own group names, so a test can tell which category reached the resolver
-struct KeyEcho;
-
-impl FallbackGroups for KeyEcho {
-    fn fallback_group(
-        &self,
-        chain: &[FallbackChainEntry],
-        _model: &str,
-    ) -> Result<Option<Vec<String>>, FallbackError> {
-        let mut names = Vec::new();
-        for entry in chain {
-            if let FallbackChainEntry::Group(group) = entry {
-                names.extend(group.keys().cloned());
-            }
-        }
-        Ok(Some(names))
     }
 }
 
@@ -240,42 +237,6 @@ impl ObjectPermissions for FakePermissions {
         }
         Ok(self.servers.clone())
     }
-}
-
-#[derive(Clone)]
-struct EventCapture {
-    warnings: Arc<AtomicUsize>,
-    errors: Arc<AtomicUsize>,
-}
-
-impl<S: Subscriber> Layer<S> for EventCapture {
-    fn on_event(&self, event: &tracing::Event<'_>, _context: Context<'_, S>) {
-        match *event.metadata().level() {
-            tracing::Level::WARN => {
-                self.warnings.fetch_add(1, Ordering::Relaxed);
-            }
-            tracing::Level::ERROR => {
-                self.errors.fetch_add(1, Ordering::Relaxed);
-            }
-            _ => {}
-        }
-    }
-}
-
-fn captured<T, F: FnOnce() -> T>(run: F) -> (T, usize, usize) {
-    let warnings = Arc::new(AtomicUsize::new(0));
-    let errors = Arc::new(AtomicUsize::new(0));
-    let capture = EventCapture {
-        warnings: Arc::clone(&warnings),
-        errors: Arc::clone(&errors),
-    };
-    let subscriber = tracing_subscriber::registry().with(capture);
-    let value = with_default(subscriber, run);
-    (
-        value,
-        warnings.load(Ordering::Relaxed),
-        errors.load(Ordering::Relaxed),
-    )
 }
 
 #[rstest]
@@ -941,39 +902,44 @@ async fn mcp_missing_context_and_query_error_silently_empty() {
 #[test]
 fn fallback_three_categories() {
     let settings = settings_with_groups();
-    assert_eq!(
-        get_all_fallbacks("any-model", "general", Some(&settings), &KeyEcho),
-        strings(&["general-key"])
+    let resolver = FakeFallbacks::new(&[]);
+    assert!(get_all_fallbacks("any-model", "general", Some(&settings), &resolver).is_empty());
+    assert_eq!(resolver.seen_groups(), strings(&["general-key"]));
+    assert!(
+        get_all_fallbacks("any-model", "context_window", Some(&settings), &resolver).is_empty()
     );
-    assert_eq!(
-        get_all_fallbacks("any-model", "context_window", Some(&settings), &KeyEcho),
-        strings(&["context-key"])
+    assert_eq!(resolver.seen_groups(), strings(&["context-key"]));
+    assert!(
+        get_all_fallbacks("any-model", "content_policy", Some(&settings), &resolver).is_empty()
     );
-    assert_eq!(
-        get_all_fallbacks("any-model", "content_policy", Some(&settings), &KeyEcho),
-        strings(&["policy-key"])
-    );
+    assert_eq!(resolver.seen_groups(), strings(&["policy-key"]));
     let empty = Settings::default();
-    assert!(get_all_fallbacks("any-model", "general", Some(&empty), &KeyEcho).is_empty());
-    assert!(get_all_fallbacks("any-model", "general", None, &KeyEcho).is_empty());
-    let resolver = FakeFallbacks::new(&[("gpt-4o", &["claude", "gemini"])]);
+    assert!(get_all_fallbacks("any-model", "general", Some(&empty), &resolver).is_empty());
+    assert!(get_all_fallbacks("any-model", "general", None, &resolver).is_empty());
     assert_eq!(
-        get_all_fallbacks("gpt-4o", "general", Some(&settings), &resolver),
+        resolver.seen_chains(),
+        3,
+        "an empty or absent list never reaches the plans"
+    );
+    let planned = FakeFallbacks::new(&[("gpt-4o", &["claude", "gemini"])]);
+    assert_eq!(
+        get_all_fallbacks("gpt-4o", "general", Some(&settings), &planned),
         strings(&["claude", "gemini"])
     );
-    assert!(get_all_fallbacks("unknown", "general", Some(&settings), &resolver).is_empty());
+    assert!(get_all_fallbacks("unknown", "general", Some(&settings), &planned).is_empty());
 }
 
 #[test]
 fn unknown_fallback_warns_only_with_router() {
     let settings = settings_with_groups();
-    let (value, warnings, errors) =
-        captured(|| get_all_fallbacks("any-model", "bogus", Some(&settings), &KeyEcho));
-    assert!(value.is_empty());
-    assert_eq!((warnings, errors), (1, 0));
     let resolver = FakeFallbacks::new(&[]);
     let (value, warnings, errors) =
-        captured(|| get_all_fallbacks("any-model", "bogus", None, &resolver));
+        events::captured(|| get_all_fallbacks("any-model", "bogus", Some(&settings), &resolver));
+    assert!(value.is_empty());
+    assert_eq!((warnings, errors), (1, 0));
+    assert_eq!(resolver.seen_chains(), 0, "an unknown type never resolves");
+    let (value, warnings, errors) =
+        events::captured(|| get_all_fallbacks("any-model", "bogus", None, &resolver));
     assert!(value.is_empty());
     assert_eq!((warnings, errors), (0, 0));
     assert_eq!(
@@ -989,13 +955,14 @@ fn fallback_resolver_error_logs_and_returns_empty() {
     let failing = FakeFallbacks {
         plans: BTreeMap::new(),
         fails: true,
-        seen_chains: Mutex::new(0),
+        seen: Mutex::new(Vec::new()),
     };
     let (value, warnings, errors) =
-        captured(|| get_all_fallbacks("any-model", "general", Some(&settings), &failing));
+        events::captured(|| get_all_fallbacks("any-model", "general", Some(&settings), &failing));
     assert!(value.is_empty());
     assert_eq!((warnings, errors), (0, 1));
     assert_eq!(failing.seen_chains(), 1);
 }
 
+mod events;
 mod shapes;
