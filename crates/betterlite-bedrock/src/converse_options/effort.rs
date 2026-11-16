@@ -62,14 +62,16 @@ where
     if !ADAPTIVE_EFFORTS.contains(&text.as_str()) {
         return Err(adaptive_error(model, effort));
     }
-    match validate_effort_for_model(model, Some(text), "bedrock", environment, catalogs).await {
-        Some(message) => Err(ConverseOptionsError::UnsupportedEffort {
-            message,
-            model: model.to_owned(),
-            provider: BEDROCK_CONVERSE_PROVIDER.to_owned(),
-        }),
-        None => Ok(()),
-    }
+    let Some(message) =
+        validate_effort_for_model(model, Some(text), "bedrock", environment, catalogs).await
+    else {
+        return Ok(());
+    };
+    Err(ConverseOptionsError::UnsupportedEffort {
+        message,
+        model: model.to_owned(),
+        provider: BEDROCK_CONVERSE_PROVIDER.to_owned(),
+    })
 }
 
 fn adaptive_error(model: &str, effort: &ParamValue) -> ConverseOptionsError {

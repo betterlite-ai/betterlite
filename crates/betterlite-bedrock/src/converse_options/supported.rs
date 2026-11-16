@@ -178,7 +178,9 @@ async fn push_capability_params<Source, Transport>(
         || (!deepseek && is_nova_2_model(model));
     if raw_effort {
         params.push("reasoning_effort".to_owned());
-    } else if accepts_thinking_param(model, base_model, environment).await {
+        return;
+    }
+    if accepts_thinking_param(model, base_model, environment).await {
         params.extend(["thinking", "reasoning_effort", "output_config"].map(str::to_owned));
     }
 }
