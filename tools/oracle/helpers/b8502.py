@@ -1,7 +1,7 @@
 from typing import Literal, TypedDict
 
 from litellm.proxy.management_endpoints.cache_settings_endpoints import (
-    CacheSettingsManager,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L331-L369
+    CacheSettingsManager,
     _redact_settings,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L262-L275
 )
 

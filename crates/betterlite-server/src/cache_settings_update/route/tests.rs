@@ -220,7 +220,7 @@ async fn route_answers_a_string_detail_when_the_cache_refuses_the_params() {
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
         text,
-        r#"{"detail":"Error updating cache settings: the cache could not be initialised: the cache refused the parameters"}"#
+        r#"{"detail":"Error updating cache settings: the cache could not be initialised: cache type 'gcs' is not yet implemented"}"#
     );
     assert!(harness.manager.last_params().is_none());
     assert_eq!(fake.upserted().len(), 1);
@@ -290,7 +290,7 @@ async fn route_audits_the_key_identity_and_the_changed_by_header() {
         &harness,
         Some(support::user_key("admin-user", "sk-test-key")),
         &body,
-        Some("reviewer"),
+        Some(b"reviewer"),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -304,5 +304,26 @@ async fn route_audits_the_key_identity_and_the_changed_by_header() {
             .as_ref()
             .map(|key| key.expose_secret().to_owned()),
         Some(safe_hash_api_key("sk-test-key"))
+    );
+}
+
+#[tokio::test]
+async fn route_decodes_a_non_ascii_changed_by_header_as_latin1() {
+    let (_fake, repository) = support::fake_repository();
+    let audit = support::audit(true);
+    let harness = support::harness(Some(repository), support::reinit(), audit.clone());
+    let body = support::request_body(support::json(r#"{"type":"local"}"#));
+    let (status, _text) = support::post_with_header(
+        &harness,
+        Some(support::master_key()),
+        &body,
+        Some(b"Jos\xe9"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    support::run_tasks(&harness.spawner).await;
+    assert_eq!(
+        audit.entries()[0].litellm_changed_by.as_deref(),
+        Some("José")
     );
 }

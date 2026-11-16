@@ -1,5 +1,6 @@
 use std::sync::{Mutex, PoisonError};
 
+use betterlite_cache::configuration::backend_construction::BackendConstructionError;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::database_faults::DbError;
 use betterlite_db::database_faults::reconnect::{
@@ -22,8 +23,11 @@ pub type CacheParams = Extra;
 
 #[derive(Debug, Error)]
 pub enum CacheReinitError {
-    #[error("the cache could not be initialised: {message}")]
-    Init { message: String },
+    #[error("the cache could not be initialised: {source}")]
+    Init {
+        #[from]
+        source: BackendConstructionError,
+    },
 }
 
 pub trait CacheReinit: Send + Sync {

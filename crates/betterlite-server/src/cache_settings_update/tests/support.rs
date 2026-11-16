@@ -11,12 +11,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use axum::body::{Body, to_bytes};
-use axum::http::{Request, StatusCode, header};
+use axum::http::{HeaderValue, Request, StatusCode, header};
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
+use betterlite_cache::configuration::backend_construction::BackendConstructionError;
+use betterlite_cache::configuration::type_not_supported::CacheTypeNotSupportedError;
+use betterlite_cache::types::cache_type::LiteLlmCacheType;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_faults::reconnect::DbReconnect;
@@ -304,7 +307,11 @@ impl CacheReinit for RecordingReinit {
             .push(params.clone());
         if self.failing {
             return Err(CacheReinitError::Init {
-                message: "the cache refused the parameters".to_owned(),
+                source: BackendConstructionError::Unsupported(
+                    CacheTypeNotSupportedError::NotImplemented {
+                        cache_type: LiteLlmCacheType::Gcs,
+                    },
+                ),
             });
         }
         Ok(())
@@ -540,7 +547,7 @@ pub(crate) async fn post_with_header(
     harness: &Harness,
     auth: Option<AuthContext>,
     body: &str,
-    changed_by: Option<&str>,
+    changed_by: Option<&[u8]>,
 ) -> (StatusCode, String) {
     let application = router(harness.state.clone());
     let mut builder = Request::builder()
@@ -548,7 +555,10 @@ pub(crate) async fn post_with_header(
         .uri("/cache/settings")
         .header(header::CONTENT_TYPE, "application/json");
     if let Some(value) = changed_by {
-        builder = builder.header(CHANGED_BY, value);
+        builder = builder.header(
+            CHANGED_BY,
+            HeaderValue::from_bytes(value).expect("the test header builds"),
+        );
     }
     let mut request = builder
         .body(Body::from(body.to_owned()))

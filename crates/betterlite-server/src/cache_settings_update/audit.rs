@@ -39,8 +39,7 @@ pub struct SinkCacheSettingsAudit {
     pub sink: Arc<AuditEventSink>,
 }
 
-// The POST route's audit row goes straight to B2330's update path: _redact_settings already removed the values,
-// so the record is not masked a second time and no changed-by metadata opt-in applies.
+// _redact_settings already blanked the values, so the row skips B2330's masking and its changed-by opt-in.
 #[async_trait]
 impl CacheSettingsAudit for SinkCacheSettingsAudit {
     fn enabled(&self) -> bool {
