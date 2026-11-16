@@ -85,7 +85,7 @@ fn build_recorder(
         config,
         callback_name.map(str::to_owned),
         Arc::new(NoSettings),
-        FixedOffset::east_opt(0).expect("utc"),
+        FixedOffset::east_opt(3600).expect("offset"),
     )
     .expect("recorder");
     (recorder, provider)
@@ -429,8 +429,8 @@ fn response_duration_runs_from_the_api_call_start_to_the_end(
 }
 
 #[rstest]
-#[case::with_microseconds("1970-01-01 00:00:10.500000", "2.5")]
-#[case::without_microseconds("1970-01-01 00:00:10", "3")]
+#[case::with_microseconds("1970-01-01 01:00:10.500000", "2.5")]
+#[case::without_microseconds("1970-01-01 01:00:10", "3")]
 fn timestamp_text_is_read_in_the_configured_local_offset(
     #[case] text: &str,
     #[case] expected: &str,
