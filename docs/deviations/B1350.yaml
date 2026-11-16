@@ -1,0 +1,21 @@
+task: B1350
+deviations:
+  - what: A reply whose usageMetadata is absent or null leaves usage away and attaches no search count, while LiteLLM's image pipeline hands the transform an ImageResponse whose constructor filled in a zero usage; an absent key keeps that zero usage and takes the search count, and a null value crashes the request on .get.
+    why: The task requires absent usage to stay absent and search counts to attach only to existing usage; a zero usage would report token counts the reply never sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2685-L2693
+  - what: A reply body over 16 MiB is refused with a typed TooLarge error before it is decoded, where LiteLLM passes the body to httpx.Response.json() with no size limit.
+    why: Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the shared generate-content decoder's reply cap; a reply that large is not an image result any working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_generation/transformation.py#L182-L189
+  - what: A reply whose root is not a JSON object, or whose candidates, content or parts are not lists, fails with a typed Shape error naming the path, where LiteLLM's candidate loop raises an uncaught AttributeError or TypeError and the proxy answers HTTP 500.
+    why: The declared shapes are an object holding a candidates list of objects, so such a reply is malformed; betterlite names the failure instead of answering 500, and no working setup receives one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_generation/transformation.py#L197-L204
+  - what: A present usageMetadata that is not an object fails with a typed UsageShape error, where LiteLLM calls .get on the value and the proxy answers HTTP 500.
+    why: The declared usage type is an object, so such a reply is malformed; betterlite names the failure instead of crashing the request, and no working setup receives one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_generation/transformation.py#L218-L219
+  - what: An inlineData part whose data is null appends no image, where LiteLLM checks only that the key is present and appends an image whose b64_json is null.
+    why: A null image carries no bytes, so an image record for it would only be a placeholder a caller has to filter out; no working setup receives one from Google.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_generation/transformation.py#L203-L215
+  - what: TEXT or IMAGE detail counts whose sum leaves the signed 64-bit range fail with a typed TokenOverflow error, where LiteLLM adds unbounded Python integers.
+    why: betterlite's token counts are i64, and a reply summing past that is not one any working setup returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_usage_transformation.py#L25-L34
+kept_bugs: []
