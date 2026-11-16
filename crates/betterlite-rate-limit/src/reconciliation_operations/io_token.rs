@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::PoisonError;
 
 use crate::limiter_records::{ReservationAwareIncrement, ReservationWindowIdentity};
-use crate::request_stash::{RequestStashSlot, StashState};
+use crate::request_stash::RequestStashSlot;
 use crate::token_adjustments::builders::{TokenReconciliation, build_project_reservation_ops};
 use crate::usage_resolution::{
     ResponseObject, ResponseUsage, Usage, aggregate_only_total_tokens, reconcile_io_usage,
@@ -31,20 +31,17 @@ pub fn io_token_reservation_ops(
     call_id: Option<&str>,
     reconciliation: &IoTokenReconciliation<'_>,
 ) -> Result<Vec<ReservationAwareIncrement>, ReconciliationError> {
-    let Some(stash) = slot.for_call(call_id) else {
+    let Some(state) = reservation_snapshot(slot, call_id) else {
         return Ok(Vec::new());
     };
-    let state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
-    let input_reserved = state.itpm_reserved_tokens;
-    let output_reserved = state.otpm_reserved_tokens;
-    if input_reserved <= 0 && output_reserved <= 0 {
+    if state.itpm_reserved_tokens <= 0 && state.otpm_reserved_tokens <= 0 {
         return Ok(Vec::new());
     }
     let usage = io_usage(reconciliation);
     if usage.unresolved() && !state.reservation_released {
         return Ok(Vec::new());
     }
-    let counts = usage.counts(input_reserved, output_reserved);
+    let counts = usage.counts(state.itpm_reserved_tokens, state.otpm_reserved_tokens);
     let window_size = reconciliation.window_size;
     if state.reservation_released
         || (state.itpm_reserved_windows.is_empty() && state.otpm_reserved_windows.is_empty())
@@ -54,8 +51,35 @@ pub fn io_token_reservation_ops(
     guarded_sides(&state, counts, window_size)
 }
 
+struct ReservationSnapshot {
+    itpm_reserved_tokens: i64,
+    itpm_reserved_scopes: BTreeSet<(String, String)>,
+    itpm_reserved_windows: BTreeSet<ReservationWindowIdentity>,
+    otpm_reserved_tokens: i64,
+    otpm_reserved_scopes: BTreeSet<(String, String)>,
+    otpm_reserved_windows: BTreeSet<ReservationWindowIdentity>,
+    reservation_released: bool,
+}
+
+fn reservation_snapshot(
+    slot: &RequestStashSlot,
+    call_id: Option<&str>,
+) -> Option<ReservationSnapshot> {
+    let stash = slot.for_call(call_id)?;
+    let state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
+    Some(ReservationSnapshot {
+        itpm_reserved_tokens: state.itpm_reserved_tokens,
+        itpm_reserved_scopes: state.itpm_reserved_scopes.clone(),
+        itpm_reserved_windows: state.itpm_reserved_windows.clone(),
+        otpm_reserved_tokens: state.otpm_reserved_tokens,
+        otpm_reserved_scopes: state.otpm_reserved_scopes.clone(),
+        otpm_reserved_windows: state.otpm_reserved_windows.clone(),
+        reservation_released: state.reservation_released,
+    })
+}
+
 fn unguarded_sides(
-    state: &StashState,
+    state: &ReservationSnapshot,
     counts: (i64, i64),
     window_size: i64,
 ) -> Result<Vec<ReservationAwareIncrement>, ReconciliationError> {
@@ -78,7 +102,7 @@ fn unguarded_sides(
 }
 
 fn guarded_sides(
-    state: &StashState,
+    state: &ReservationSnapshot,
     counts: (i64, i64),
     window_size: i64,
 ) -> Result<Vec<ReservationAwareIncrement>, ReconciliationError> {
