@@ -582,8 +582,8 @@ async fn keys_report_no_database_as_a_detail_error() {
     )
     .await;
     assert_eq!(global.status, StatusCode::INTERNAL_SERVER_ERROR);
-    let body: DetailMessageEnvelope = decode(&global);
-    assert_eq!(body.detail.error, "No db connected");
+    let global_body: DetailMessageEnvelope = decode(&global);
+    assert_eq!(global_body.detail.error, "No db connected");
     let per_user = call(
         "/global/spend/keys",
         Some(&internal("u1")),
@@ -591,8 +591,8 @@ async fn keys_report_no_database_as_a_detail_error() {
     )
     .await;
     assert_eq!(per_user.status, StatusCode::INTERNAL_SERVER_ERROR);
-    let body_2: DetailMessageEnvelope = decode(&per_user);
-    assert_eq!(body_2.detail.error, "No db connected");
+    let per_user_body: DetailMessageEnvelope = decode(&per_user);
+    assert_eq!(per_user_body.detail.error, "No db connected");
 }
 
 #[tokio::test]
@@ -612,28 +612,31 @@ async fn keys_report_no_database_before_rejecting_a_nonpositive_limit() {
 async fn keys_report_a_store_failure() {
     let mut failed = spend_store();
     failed.failure = Some(FakeFailure::InvalidAmount);
-    let store = store_with(failed);
-    let reply = call(
+    let failing_store = store_with(failed);
+    let invalid_amount_reply = call(
         "/global/spend/keys",
         Some(&admin()),
-        state(Some(&store), None, Decimal::ZERO),
+        state(Some(&failing_store), None, Decimal::ZERO),
     )
     .await;
-    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
-    let body: InternalEnvelope = decode(&reply);
-    assert_eq!(body.error.message, "Internal server error");
-    assert_eq!(body.error.kind, "internal_server_error");
+    assert_eq!(
+        invalid_amount_reply.status,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    let invalid_amount_body: InternalEnvelope = decode(&invalid_amount_reply);
+    assert_eq!(invalid_amount_body.error.message, "Internal server error");
+    assert_eq!(invalid_amount_body.error.kind, "internal_server_error");
     let mut missing = spend_store();
     missing.failure = Some(FakeFailure::NoDatabase);
-    let store_2 = store_with(missing);
-    let reply_2 = call(
+    let no_database_store = store_with(missing);
+    let no_database_reply = call(
         "/global/spend/keys",
         Some(&admin()),
-        state(Some(&store_2), None, Decimal::ZERO),
+        state(Some(&no_database_store), None, Decimal::ZERO),
     )
     .await;
-    let body_2: DetailMessageEnvelope = decode(&reply_2);
-    assert_eq!(body_2.detail.error, "No db connected");
+    let no_database_body: DetailMessageEnvelope = decode(&no_database_reply);
+    assert_eq!(no_database_body.detail.error, "No db connected");
 }
 
 #[tokio::test]
@@ -723,17 +726,17 @@ async fn models_use_the_user_aggregation_for_an_internal_viewer() {
         state(Some(&store), None, Decimal::ZERO),
     )
     .await;
-    let body: Vec<UserModelBody> = decode(&limited);
-    assert_eq!(body.len(), 1);
-    assert_eq!(body[0].total_tokens, 12);
+    let limited_body: Vec<UserModelBody> = decode(&limited);
+    assert_eq!(limited_body.len(), 1);
+    assert_eq!(limited_body[0].total_tokens, 12);
     let default = call(
         "/global/spend/models",
         Some(&internal("u1")),
         state(Some(&store), None, Decimal::ZERO),
     )
     .await;
-    let body_2: Vec<UserModelBody> = decode(&default);
-    assert_eq!(body_2.len(), 1);
+    let default_body: Vec<UserModelBody> = decode(&default);
+    assert_eq!(default_body.len(), 1);
     assert_eq!(
         store.calls(),
         vec![
@@ -767,8 +770,8 @@ async fn models_report_no_database_as_a_detail_error() {
     )
     .await;
     assert_eq!(global.status, StatusCode::INTERNAL_SERVER_ERROR);
-    let body: DetailMessageEnvelope = decode(&global);
-    assert_eq!(body.detail.error, "No db connected");
+    let global_body: DetailMessageEnvelope = decode(&global);
+    assert_eq!(global_body.detail.error, "No db connected");
     let per_user = call(
         "/global/spend/models",
         Some(&internal("u1")),
@@ -776,8 +779,8 @@ async fn models_report_no_database_as_a_detail_error() {
     )
     .await;
     assert_eq!(per_user.status, StatusCode::INTERNAL_SERVER_ERROR);
-    let body_2: DetailMessageEnvelope = decode(&per_user);
-    assert_eq!(body_2.detail.error, "No db connected");
+    let per_user_body: DetailMessageEnvelope = decode(&per_user);
+    assert_eq!(per_user_body.detail.error, "No db connected");
 }
 
 #[tokio::test]
