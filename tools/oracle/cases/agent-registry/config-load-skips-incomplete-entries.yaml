@@ -1,0 +1,27 @@
+kind: helper
+name: config-load-skips-incomplete-entries
+call:
+  b4776:
+    config:
+      - {}
+      - agent_name: ""
+      - agent_name: cardless
+      - {agent_name: empty-card, agent_card_params: {}}
+      - agent_name: kept
+        agent_card_params:
+          name: kept
+    reload: false
+    reload_config: null
+    db_agents: []
+    public_groups: null
+    ids_for:
+      - 79f076abdd19a752db7267bfff2f9022161d120dea919fdaca2ffdfc24ca8c96
+    stable_ids:
+      - 0db21a4e8ded5f3d6415e017a2169f868611aa3eb62c60149a8e5da98fb705c7
+    by_id: []
+    by_name:
+      - kept
+    deregister: []
+env: {}
+compare:
+  ignore: []

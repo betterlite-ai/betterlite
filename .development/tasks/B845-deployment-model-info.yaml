@@ -66,7 +66,7 @@ description: >-
   ValueError messages, debug/error events and input immutability. Refresh is effectful: Rust tests
   call the real B1425 transport against a local mock, including request headers and failure isolation.
   No new byte decoder or config loader is introduced. Keep B2219's current local-only Hugging Face
-  behavior, recorded as a deviation below, until Max resolves downloads.
+  behavior, recorded as a deviation below, until an R2 fix task adds the download.
 
   Method ranges contain 369 nonblank, noncomment lines including overloads/docstrings. The immutable
   records and cache initialization add 22. Allow 330 production, 330 tests, 90 adapters and 40 wiring
@@ -188,7 +188,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/deployment-model-info/absent-versus-explicit-token-prices.yaml
 deviations:
   - what: Hugging Face metadata uses B2219's supplied local config only. Without a usable asset, max_tokens is None instead of downloading config.json; no new HTTP status or error code is emitted.
-    why: Preserve the current no-download behavior until Max decides whether Hugging Face downloads are allowed.
+    why: Hugging Face downloads are not wired in yet. betterlite downloads what LiteLLM downloads, from the same place (decision 2026-10-31), and an R2 fix task wires it in.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5847-L5867
 out_of_scope:
   - B2306 owns deployment credential resolution, including _get_team_public_name_deployment,
