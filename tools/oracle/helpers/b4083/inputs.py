@@ -1,12 +1,13 @@
 from datetime import datetime
 from typing import Literal, TypedDict
 
+from litellm.types.management_endpoints.auto_router_endpoints import ShadowEvalTargetType
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 
 class JobRecord(BaseModel):
     id: str
-    target_type: str
+    target_type: ShadowEvalTargetType
     target_id: str
     stopped_at: datetime | None = None
     router_name: str

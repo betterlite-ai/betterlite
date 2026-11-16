@@ -75,7 +75,13 @@ pub(crate) fn fake_tables(rows: Vec<ShadowJobRow>) -> FakeTables {
     FakeTables {
         state: Mutex::new(TablesState {
             rows,
-            ..TablesState::default()
+            stats: Vec::new(),
+            find_calls: 0,
+            stats_requests: Vec::new(),
+            inserts: Vec::new(),
+            fail_find: false,
+            fail_stats: false,
+            fail_insert: false,
         }),
         events: event_log(),
     }
