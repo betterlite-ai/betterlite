@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-update-redact-settings-seed
+call:
+  b8502:
+    function: redact_settings
+    settings: {host: "h", password: "secret"}
+env: {}
+compare: {ignore: []}

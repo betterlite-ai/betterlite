@@ -1,0 +1,27 @@
+task: B3807
+deviations:
+  - what: The streaming hooks read events from a bounded channel and write the events to send into another bounded channel, and they return Err when LiteLLM's generator would raise. A reader that drops its end stops the run without an error, the way closing a generator does.
+    why: Rust has no async generators. A run that owns both channel ends keeps LiteLLM's order (leading frames first, buffered chunks flushed before an unknown event) without a detached task, and the server decides where the run executes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1649-L1677
+  - what: stream_chunk_builder, convert_model_response_to_streaming, is_anthropic_sse_stream, assemble_anthropic_sse_stream, model_response_text and anthropic_sse_chunks_from_response are a StreamAssembly trait the caller passes in, and the stream chunk, the assembled response and the Responses API event are JSON values instead of LiteLLM's pydantic objects.
+    why: The helpers belong to B2227 and B3669, and their crates depend on the guardrails crate, so the guardrails crate cannot call them. The trait keeps each call at the place LiteLLM makes it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1423-L1436
+  - what: A response.completed event is unmasked through its JSON, so the dict form and the object form of a content block are one case, and a block or output item that is not a JSON object is skipped.
+    why: A JSON event has no attribute-style objects. LiteLLM skips an item that has no text attribute, which is the same set of skipped items.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1551-L1572
+  - what: The buffers the hooks keep (the chat chunks of the masking and unmasking paths, and the raw frames of the Anthropic path) fail with an OverBudget error once they pass 16 MiB of chunk content or 64 * 1024 chunks, and the buffered chunks are not flushed. LiteLLM buffers a stream without a limit.
+    why: The buffers hold untrusted provider output, so they stay inside the byte and item limits ApiBoundaries applies to a reply body and an item list, through the shared RetentionBudget, as the Noma streaming hook does. A real answer reaches neither limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1438-L1500
+  - what: The raw Anthropic SSE path decides whether masking changed the response by comparing the whole assembled response before and after, so masked tool_calls and function_call arguments rebuild the frames. LiteLLM compares only the message text, so a response whose only PII sat in a tool call goes out as the original unmasked frames.
+    why: process_response_for_pii masks the arguments next to the content, and comparing the text alone drops that masked result and replays the provider frames with the PII still in them. That is a leak in a working setup, so betterlite fixes it. The whole response still differs whenever LiteLLM's text comparison differs, and it also differs for a masked tool argument.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1514-L1518
+kept_bugs:
+  - what: A failure while masking buffered chat chunks that is not a blocked entity (the Presidio call failing, the assembly failing) is logged and the buffered chunks go out unmasked, so the stream fails open.
+    why: A setup that streams through an unreliable Presidio today still gets its answers, and failing closed would turn those into errors. The non-streaming path fails closed, which makes the two paths differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1495-L1500
+  - what: The streaming hook unmasks only when the guardrail's own output_parse_pii is set. The global litellm.output_parse_pii that the non-streaming hook also honors does not start unmasking a stream.
+    why: A setup that turned the global flag on and streams today gets masked tokens in the stream, and switching on unmasking would change its output.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1671-L1677
+  - what: Raw Anthropic SSE chunks are unmasked one chunk at a time, so a token split across two chunks stays masked, and every chunk of a request that has tokens comes back with the trailing carriage return of each line removed, whether or not a token was found.
+    why: Clients read both line endings, and splitting a token across chunks is what a working setup already lives with.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1526-L1549
