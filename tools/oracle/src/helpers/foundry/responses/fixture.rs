@@ -7,7 +7,7 @@ use betterlite_azure::credentials::source::{
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use secrecy::{ExposeSecret as _, SecretString};
 
-// each grant answers with its arguments, so one token carries the whole identity; the Python side builds the same string
+// the case scripts the client-secret grant, so its token carries the whole identity; the Python side builds the same string
 pub(super) struct EchoSources;
 
 struct EchoProvider {
@@ -43,20 +43,12 @@ impl CredentialSources for EchoSources {
         Ok(Arc::new(EchoProvider { token }))
     }
 
+    // the case scripts only the client-secret grant, so every other grant refuses as the unpatched Python side would
     fn username_password<'source>(
         &'source self,
-        record: &UsernamePasswordRecord,
+        _record: &UsernamePasswordRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        let fields = [
-            String::from("username_password"),
-            format!("client={}", record.client_id),
-            format!("user={}", record.username),
-            format!("password={}", record.password.expose_secret()),
-            format!("scope={}", record.scope),
-        ];
-        Ok(Arc::new(EchoProvider {
-            token: fields.join(" "),
-        }))
+        Err(offline())
     }
 
     fn sdk_refresh<'source>(

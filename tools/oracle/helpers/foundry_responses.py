@@ -2,6 +2,7 @@ import os
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
+from unittest import mock
 
 import httpx
 import litellm
@@ -68,7 +69,9 @@ class Input(TypedDict):
 
 
 class ResponsesConfig(Protocol):
-    def get_complete_url(self, api_base: str | None, litellm_params: dict[str, JsonValue]) -> str: ...
+    def get_complete_url(
+        self, api_base: str | None, litellm_params: dict[str, JsonValue]
+    ) -> str: ...
 
     def supports_native_websocket(self) -> bool: ...
 
@@ -80,7 +83,7 @@ class ResponsesConfig(Protocol):
     def custom_llm_provider(self) -> LlmProviders: ...
 
 
-RESPONSES: ResponsesConfig = AzureAIResponsesAPIConfig()
+RESPONSES: ResponsesConfig = AzureAIResponsesAPIConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/responses/transformation.py#L27-L28
 
 
 class ScriptedToken:
@@ -113,20 +116,6 @@ def grant_overrides() -> Generator[None]:
 
 
 @contextmanager
-def environment(values: dict[str, str]) -> Generator[None]:
-    saved: dict[str, str | None] = {name: os.environ.get(name) for name in values}
-    os.environ.update(values)
-    try:
-        yield
-    finally:
-        for name, previous in saved.items():
-            if previous is None:
-                del os.environ[name]
-            else:
-                os.environ[name] = previous
-
-
-@contextmanager
 def global_settings(api_base: str | None, api_key: str | None) -> Generator[None]:
     saved_base = litellm.api_base
     saved_key = litellm.api_key
@@ -142,11 +131,15 @@ def global_settings(api_base: str | None, api_key: str | None) -> Generator[None
         litellm.enable_azure_ad_token_refresh = saved_refresh
 
 
-def url_answer(step: UrlStep) -> Object:
+def step_environment(step: UrlStep | AuthStep) -> dict[str, str]:
     values = step.get("environment")
-    if values is None:
-        values = {}
-    with environment(values), global_settings(step.get("global_api_base"), None):
+    return {} if values is None else values
+
+
+def url_answer(step: UrlStep) -> Object:
+    with mock.patch.dict(os.environ, step_environment(step)), global_settings(
+        step.get("global_api_base"), None
+    ):
         try:
             url = RESPONSES.get_complete_url(step.get("api_base"), {})
         except (ValueError, httpx.InvalidURL):
@@ -155,28 +148,16 @@ def url_answer(step: UrlStep) -> Object:
 
 
 def auth_params(step: AuthStep) -> GenericLiteLLMParams:
-    raw = step.get("params")
-    params: EntraParams = {} if raw is None else raw
+    params: EntraParams = step.get("params", {})
     return GenericLiteLLMParams(
-        api_key=step.get("api_key"),
-        api_base=step.get("api_base"),
-        azure_ad_token=params.get("azure_ad_token"),
-        tenant_id=params.get("tenant_id"),
-        client_id=params.get("client_id"),
-        client_secret=params.get("client_secret"),
-        azure_scope=params.get("azure_scope"),
-        azure_username=params.get("azure_username"),
-        azure_password=params.get("azure_password"),
+        **params, api_key=step.get("api_key"), api_base=step.get("api_base")
     )
 
 
 def auth_answer(step: AuthStep) -> Object:
-    values = step.get("environment")
-    if values is None:
-        values = {}
     given = step.get("headers")
     with (
-        environment(values),
+        mock.patch.dict(os.environ, step_environment(step)),
         global_settings(step.get("global_api_base"), step.get("global_api_key")),
         grant_overrides(),
     ):
@@ -216,12 +197,13 @@ def decisions_answer(step: DecisionsStep) -> Object:
 def run(input_value: Input) -> list[Object]:
     answers: list[Object] = []
     for step in input_value["steps"]:
-        if step["kind"] == "auth":
-            answers.append(auth_answer(step))
-        elif step["kind"] == "decisions_route":
-            answers.append(decisions_answer(step))
-        elif step["kind"] == "no_native_websocket":
-            answers.append(websocket_answer())
-        else:
-            answers.append(url_answer(step))
+        match step["kind"]:
+            case "auth":
+                answers.append(auth_answer(step))
+            case "decisions_route":
+                answers.append(decisions_answer(step))
+            case "no_native_websocket":
+                answers.append(websocket_answer())
+            case _:
+                answers.append(url_answer(step))
     return answers

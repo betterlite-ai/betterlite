@@ -73,15 +73,11 @@ fn decisions_answer(step: &DecisionsStep) -> Value {
         .api_base
         .as_deref()
         .map(|api_base| config.get_complete_url(api_base, &step.model));
+    // the trait asks for a plain fn pointer, so the case's environment values never reach these two resolutions
     json!({
         "kind": "decisions_route",
         "url": url,
-        "api_base": config.resolve_api_base(step.api_base.as_deref(), empty_secret),
-        "api_key": config.resolve_api_key(step.api_key.as_deref(), empty_secret),
+        "api_base": config.resolve_api_base(step.api_base.as_deref(), |_name| String::new()),
+        "api_key": config.resolve_api_key(step.api_key.as_deref(), |_name| String::new()),
     })
-}
-
-// the trait asks for a plain fn pointer, so a case's environment values cannot reach these two resolutions
-const fn empty_secret(_name: &str) -> String {
-    String::new()
 }
