@@ -1,0 +1,26 @@
+kind: helper
+name: watsonx-chat-plan-deployment-empty-model
+env: {}
+compare: {ignore: []}
+call:
+  b5971:
+    env: {}
+    maps: []
+    infos: []
+    urls: []
+    plans:
+      - model: deployment/abc
+        api_base: https://host
+        api_key: null
+        headers: {Authorization: Bearer caller}
+        options: {temperature: 0.1}
+      - model: deployment/abc
+        api_base: https://host
+        api_key: null
+        headers: {Authorization: Bearer caller}
+        options: {project_id: project-1, stream: true, temperature: 0.1}
+      - model: deployment/a/b
+        api_base: https://host
+        api_key: null
+        headers: {Authorization: Bearer caller}
+        options: {stream: false}

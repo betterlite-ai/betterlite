@@ -4377,6 +4377,7 @@ dependencies = [
  "betterlite-router",
  "betterlite-secrets",
  "betterlite-semantic",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-tracing",
  "betterlite-vertex",
