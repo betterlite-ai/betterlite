@@ -34,15 +34,6 @@ pub struct DeferredCall {
 }
 
 impl AuditEngine {
-    fn targets(&self) -> RecordTargets<'_> {
-        RecordTargets {
-            base: &self.record_base,
-            invocation: None,
-            sink: self.sink.as_ref(),
-            log_target: None,
-        }
-    }
-
     pub(super) fn audit_blocking(&self, mut call: DeferredCall) {
         let Ok(runtime) = Builder::new_current_thread().enable_all().build() else {
             tracing::error!("Purview audit background logging error: no runtime");
@@ -98,7 +89,13 @@ async fn audit_prompt(
         block_on_violation: false,
         request_data,
     };
-    if let Err(error) = scan_and_record(&engine.guardrail, kwargs, &scan, engine.targets()).await {
+    let targets = RecordTargets {
+        base: &engine.record_base,
+        invocation: None,
+        sink: engine.sink.as_ref(),
+        log_target: None,
+    };
+    if let Err(error) = scan_and_record(&engine.guardrail, kwargs, &scan, targets).await {
         tracing::error!("Purview audit logging error (prompt): {error}");
     }
 }
@@ -126,7 +123,13 @@ async fn audit_response(
         block_on_violation: false,
         request_data,
     };
-    if let Err(error) = scan_parts(&engine.guardrail, kwargs, &scan, engine.targets()).await {
+    let targets = RecordTargets {
+        base: &engine.record_base,
+        invocation: None,
+        sink: engine.sink.as_ref(),
+        log_target: None,
+    };
+    if let Err(error) = scan_parts(&engine.guardrail, kwargs, &scan, targets).await {
         tracing::error!("Purview audit logging error (response): {error}");
     }
 }

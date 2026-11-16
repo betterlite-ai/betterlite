@@ -3,7 +3,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use crate::purview_dlp_evaluation::MicrosoftPurviewDLPGuardrail;
 use crate::purview_dlp_evaluation::user_id_blocking::resolve_user_id_for_blocking;
 
-use super::context::HookContext;
+use super::context::{HookContext, RecordTargets};
 use super::error::PurviewHookError;
 use super::scan::{PartsScan, scan_parts};
 use super::{Data, conversion, response_parts};
@@ -25,7 +25,13 @@ pub async fn async_post_call_success_hook(
             block_on_violation: true,
             request_data: &request_data,
         };
-        scan_parts(guardrail, data, &scan, context.targets()).await?;
+        let targets = RecordTargets {
+            base: context.record_base,
+            invocation: context.invocation.as_deref_mut(),
+            sink: context.sink,
+            log_target: context.log_target.as_deref_mut(),
+        };
+        scan_parts(guardrail, data, &scan, targets).await?;
     }
     Ok(response)
 }

@@ -98,7 +98,7 @@ fn logging_sync(input: &Input, setup: &Setup) -> Result<Option<u16>, Box<HelperE
         result: required(input.result.as_ref(), "result")?.clone(),
         call_type: call_type(input)?,
     };
-    let _returned = logging_hook(&engine(setup), call, &InlineSpawner);
+    let _returned = logging_hook(&setup.engine, call, &InlineSpawner);
     Ok(None)
 }
 
@@ -113,19 +113,10 @@ fn logging_async(input: &Input, setup: &Setup) -> Result<Option<u16>, Box<Helper
     let result = required(input.result.as_ref(), "result")?;
     let call_type = call_type(input)?;
     let mut kwargs = input.data.clone();
-    let engine = engine(setup);
+    let engine = &setup.engine;
     let runtime = runtime()?;
-    runtime.block_on(async_logging_hook(&engine, &mut kwargs, result, call_type));
+    runtime.block_on(async_logging_hook(engine, &mut kwargs, result, call_type));
     Ok(None)
-}
-
-fn engine(setup: &Setup) -> AuditEngine {
-    AuditEngine {
-        guardrail: Arc::clone(&setup.guardrail),
-        record_base: setup.record_base.clone(),
-        cache: Arc::clone(&setup.cache),
-        sink: Arc::new(DiscardSink),
-    }
 }
 
 fn identity(input: &Input) -> KeyIdentity<'_> {
@@ -201,6 +192,7 @@ struct Setup {
     record_base: GuardrailBase,
     cache: Arc<DualLocalCache>,
     redactor: Arc<Redactor>,
+    engine: AuditEngine,
 }
 
 impl Setup {
@@ -220,13 +212,22 @@ impl Setup {
             Arc::new(|| 0.0_f64),
             diagnostics,
         ));
+        let record_base =
+            GuardrailBase::new(GuardrailSettings::default(), false).or_config_error()?;
+        let guardrail = Arc::new(guardrail);
+        let engine = AuditEngine {
+            guardrail: Arc::clone(&guardrail),
+            record_base: record_base.clone(),
+            cache: Arc::clone(&cache),
+            sink: Arc::new(DiscardSink),
+        };
         Ok(Self {
             mock,
-            guardrail: Arc::new(guardrail),
-            record_base: GuardrailBase::new(GuardrailSettings::default(), false)
-                .or_config_error()?,
+            guardrail,
+            record_base,
             cache,
             redactor,
+            engine,
         })
     }
 

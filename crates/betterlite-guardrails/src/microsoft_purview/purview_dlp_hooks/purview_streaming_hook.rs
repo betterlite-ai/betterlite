@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_logging::verbose_hooks::VerboseHooks;
-use betterlite_openai::api::responses_event_records::records::ResponsesAPIStreamingResponse;
 use betterlite_redact::secret::Redactor;
 use betterlite_redact::structured::Payload;
 use betterlite_streaming::streamed_response_assembly::records::Chunk;
@@ -16,7 +15,7 @@ use crate::purview_dlp_evaluation::error_handling;
 use crate::purview_dlp_evaluation::stream_assembly::assemble_responses_stream;
 use crate::purview_dlp_evaluation::user_id_blocking::resolve_user_id_for_blocking;
 
-use super::context::HookContext;
+use super::context::{HookContext, RecordTargets};
 use super::error::PurviewHookError;
 use super::scan::{PartsScan, scan_parts};
 use super::{Data, conversion, response_parts};
@@ -28,11 +27,6 @@ pub(super) const INCOMPLETE_ERROR: &str = "Microsoft Purview DLP: Incomplete Res
 
 mod services;
 mod tests;
-
-fn parse_event(chunk: &GuardrailValue) -> Option<ResponsesAPIStreamingResponse> {
-    let encoded = serde_json::to_string(chunk).ok()?;
-    serde_json::from_str(&encoded).ok()
-}
 
 async fn assemble_chat(chunks: &[GuardrailValue], redactor: &Arc<Redactor>) -> Option<Response> {
     let mut parsed = Vec::with_capacity(chunks.len());
@@ -65,11 +59,6 @@ async fn assemble_chat(chunks: &[GuardrailValue], redactor: &Arc<Redactor>) -> O
     }
 }
 
-fn response_value(response: &Response) -> Result<GuardrailValue, serde_json::Error> {
-    let encoded = serde_json::to_string(response)?;
-    serde_json::from_str(&encoded)
-}
-
 // Nothing leaves the buffered stream until the scan passes: the caller gets the chunks back only on Ok.
 pub async fn async_post_call_streaming_iterator_hook(
     guardrail: &MicrosoftPurviewDLPGuardrail,
@@ -82,7 +71,10 @@ pub async fn async_post_call_streaming_iterator_hook(
     if chunks.is_empty() {
         return Ok(chunks);
     }
-    let events: Vec<_> = chunks.iter().filter_map(parse_event).collect();
+    let events: Vec<_> = chunks
+        .iter()
+        .filter_map(|chunk| serde_json::from_str(&serde_json::to_string(chunk).ok()?).ok())
+        .collect();
     let (marked, assembled) = assemble_responses_stream(&events);
     let parts = if marked {
         let Some(response) = assembled else {
@@ -93,7 +85,9 @@ pub async fn async_post_call_streaming_iterator_hook(
         let Some(response) = assemble_chat(&chunks, &context.redactor).await else {
             return Err(error_handling::message_error(ASSEMBLY_ERROR).into());
         };
-        let Ok(value) = response_value(&response) else {
+        let Ok(value) =
+            serde_json::to_string(&response).and_then(|encoded| serde_json::from_str(&encoded))
+        else {
             return Err(error_handling::message_error(ASSEMBLY_ERROR).into());
         };
         response_parts::parts(&value)?
@@ -105,7 +99,13 @@ pub async fn async_post_call_streaming_iterator_hook(
             block_on_violation: true,
             request_data: &request_data,
         };
-        scan_parts(guardrail, data, &scan, context.targets()).await?;
+        let targets = RecordTargets {
+            base: context.record_base,
+            invocation: context.invocation.as_deref_mut(),
+            sink: context.sink,
+            log_target: context.log_target.as_deref_mut(),
+        };
+        scan_parts(guardrail, data, &scan, targets).await?;
     }
     Ok(chunks)
 }

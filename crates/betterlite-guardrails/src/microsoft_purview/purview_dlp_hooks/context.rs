@@ -27,14 +27,3 @@ pub struct HookContext<'context> {
     pub sink: &'context dyn GuardrailSpanSink,
     pub log_target: Option<&'context mut GuardrailLogTarget>,
 }
-
-impl HookContext<'_> {
-    pub(super) fn targets(&mut self) -> RecordTargets<'_> {
-        RecordTargets {
-            base: self.record_base,
-            invocation: self.invocation.as_deref_mut(),
-            sink: self.sink,
-            log_target: self.log_target.as_deref_mut(),
-        }
-    }
-}
