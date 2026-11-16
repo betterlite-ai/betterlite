@@ -133,8 +133,8 @@ pub struct RunListResponse {
     pub count: usize,
 }
 
-fn json_column(value: Option<&JsonObject>) -> Result<Option<String>, RunsError> {
-    let Some(value) = value else {
+fn json_column(object: Option<&JsonObject>) -> Result<Option<String>, RunsError> {
+    let Some(value) = object else {
         return Ok(None);
     };
     Ok(Some(serde_json::to_string(value)?))
