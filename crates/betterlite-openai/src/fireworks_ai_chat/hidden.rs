@@ -12,7 +12,7 @@ const TOP_LEVEL_FIELDS: [(&str, &str); 2] = [
 
 // _extract_fireworks_hidden_params: a key appears only when a payload field is present, so null counts
 #[must_use]
-pub fn extract_fireworks_hidden_params(payload: &Value) -> HiddenParams {
+pub fn extract_hidden_params(payload: &Value) -> HiddenParams {
     let mut hidden = HiddenParams::new();
     if let Some(fields) = payload.as_object() {
         for (field, destination) in TOP_LEVEL_FIELDS {

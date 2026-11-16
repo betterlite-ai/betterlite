@@ -107,7 +107,16 @@ fn tool_calls_body_with_one_call() -> Vec<u8> {
 
 #[test]
 fn non_json_reply_is_a_fireworks_error_with_status_and_headers() {
-    let error = reply_body(b"not json", None).expect_err("not JSON");
+    let headers = response_headers(&[("x-request-id", "req-1")]);
+    let error = transform_response(&ReplyInput {
+        status: 502,
+        headers: &headers,
+        body: b"not json",
+        tools: None,
+        identifier: fixed_id,
+        clock: fixed_clock,
+    })
+    .expect_err("not JSON");
     assert_eq!(error.status_code(), Some(502));
     let message = error.to_string();
     assert!(message.starts_with("Unable to get json response - "));
@@ -240,8 +249,16 @@ fn content_that_is_not_a_declared_function_stays_content() {
 }
 
 #[test]
-fn json_tool_call_name_is_never_converted() {
-    assert_eq!(JSON_TOOL_NAME, "json_tool_call");
+fn a_declared_json_tool_call_function_is_never_converted() {
+    let tools: Json = serde_json::from_value(json!([
+        {"type": "function", "function": {"name": JSON_TOOL_NAME}}
+    ]))
+    .expect("declared tools");
+    let content = format!(r#"{{"name":"{JSON_TOOL_NAME}","arguments":"{{}}"}}"#);
+    let reply = reply_body(&choice_body(&content), Some(&tools)).expect("reply");
+    let choice = &reply.response.choices[0];
+    assert_eq!(choice.message.content.as_deref(), Some(content.as_str()));
+    assert!(choice.message.tool_calls.is_none());
 }
 
 #[test]

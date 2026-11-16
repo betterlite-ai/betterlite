@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::chat::response::ChatResponse;
 use crate::chat::{FunctionCall, ToolCall, choice_finish_reason};
 use crate::fireworks_ai_chat::error::FireworksChatError;
-use crate::fireworks_ai_chat::hidden::extract_fireworks_hidden_params;
+use crate::fireworks_ai_chat::hidden::extract_hidden_params;
 use crate::fireworks_ai_chat::tools::{FUNCTION, function_names};
 use crate::fireworks_ai_chat::{JSON_TOOL_NAME, MODEL_PREFIX};
 use crate::fireworks_ai_common::error::FireworksError;
@@ -42,7 +42,7 @@ pub struct Reply {
 pub fn transform_response(input: &ReplyInput<'_>) -> Result<Reply, FireworksChatError> {
     let mut payload: Value =
         serde_json::from_slice(input.body).map_err(|source| not_json(input, &source))?;
-    let fireworks = extract_fireworks_hidden_params(&payload);
+    let fireworks = extract_hidden_params(&payload);
     // ModelResponse reads usage only from a non-null block, so a null counts as none
     if let Some(fields) = payload.as_object_mut()
         && fields.get(USAGE).is_some_and(Value::is_null)

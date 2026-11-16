@@ -38,6 +38,7 @@ call:
         optional_params:
           tools:
             - {type: function, function: {name: lookup}}
+            - {type: function, function: {name: json_tool_call}}
       - status: 200
         headers: {x-request-id: req-1}
         body: '{"id":"chatcmpl-6","object":"chat.completion","created":1700000000,"model":"llama-v3","usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7},"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"{\"name\":\"undeclared\",\"arguments\":\"{}\"}"}}]}'
