@@ -1,0 +1,19 @@
+kind: helper
+name: mcp-user-credentials-is-expired-absent
+call:
+  b4713:
+    function: is_expired
+    credential: {type: oauth2, access_token: tok-live}
+    buffer_seconds: 0
+calls:
+  - b4713:
+      function: is_expired
+      credential: {type: oauth2, access_token: tok-live, expires_at: null}
+      buffer_seconds: 0
+  - b4713:
+      function: is_expired
+      credential: {type: oauth2, access_token: tok-live}
+      buffer_seconds: 3600
+env:
+  LITELLM_SALT_KEY: b4713-salt
+compare: {ignore: []}

@@ -90,7 +90,8 @@ fn log_config_error(error: &ConfigError, location: &Path) {
         | ConfigError::InvalidFloat { .. }
         | ConfigError::InvalidInteger { .. }
         | ConfigError::InvalidScalar { .. }
-        | ConfigError::Environment { .. } => {
+        | ConfigError::Environment { .. }
+        | ConfigError::LoadThread { .. } => {
             tracing::error!(
                 category = error.category(),
                 location = %location.display(),
@@ -99,3 +100,5 @@ fn log_config_error(error: &ConfigError, location: &Path) {
         }
     }
 }
+
+mod tests;

@@ -1,0 +1,19 @@
+kind: helper
+name: mcp-server-create-identifier-conflict
+call:
+  b4712:
+    function: create_if_free
+    salt_key: b4712-salt
+    touched_by: admin
+    payload:
+      server_id: srv-new
+      server_name: weather tools
+      url: https://weather.test/mcp
+    rows:
+      - {server_id: srv-other, server_name: Weather Tools, transport: sse}
+    server_id: ''
+    ttl_seconds: 0
+    users: []
+env:
+  LITELLM_SALT_KEY: b4712-salt
+compare: {ignore: []}
