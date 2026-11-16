@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_identity::records::Principal;
@@ -10,7 +10,7 @@ use betterlite_context::dynamic_logging_cache::Clock;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::managed_resource_rows::skills::SkillTable;
 use betterlite_semantic::{DEFAULT_MAX_CACHED_VECTORS, EmbedError, Embedder, Vector};
-use serde_json::json;
+use tokio::runtime::{Builder, Runtime};
 
 use super::{
     DEFAULT_SKILL_SEARCH_TOP_K, HostedSkillSearchError, HostedSkillSearchRequest,
@@ -130,7 +130,7 @@ impl SkillRepository for ScriptedRepository {
     fn availability(&self) -> Result<(), TableError> {
         self.state
             .lock()
-            .expect("state lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .effects
             .push(Effect::Availability);
         Ok(())
@@ -162,12 +162,14 @@ impl SkillRepository for ScriptedRepository {
         let result = {
             let mut state = self.state.lock().expect("state lock");
             state.effects.push(Effect::FindMany { page, created_by });
-            match state.page_failure {
-                Some(message) => Err(TableError::Publish {
-                    message: message.to_owned(),
-                }),
-                None => Ok(state.page.clone()),
-            }
+            state.page_failure.map_or_else(
+                || Ok(state.page.clone()),
+                |message| {
+                    Err(TableError::Publish {
+                        message: message.to_owned(),
+                    })
+                },
+            )
         };
         ready(result)
     }
@@ -179,19 +181,27 @@ impl SkillRepository for ScriptedRepository {
     }
 }
 
-fn runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("a runtime")
+fn runtime() -> Runtime {
+    Builder::new_current_thread().build().expect("a runtime")
 }
 
 fn skill_row(skill_id: &str, title: Option<&str>, description: Option<&str>) -> SkillTable {
-    serde_json::from_value(json!({
-        "skill_id": skill_id,
-        "display_title": title,
-        "description": description,
-    }))
-    .expect("a scripted skill row")
+    SkillTable {
+        skill_id: skill_id.to_owned(),
+        display_title: title.map(str::to_owned),
+        description: description.map(str::to_owned),
+        instructions: None,
+        source: "custom".to_owned(),
+        latest_version: None,
+        file_content: None,
+        file_name: None,
+        file_type: None,
+        metadata: None,
+        created_at: None,
+        created_by: None,
+        updated_at: None,
+        updated_by: None,
+    }
 }
 
 fn vectors(items: &[(&str, [f64; 2])]) -> BTreeMap<String, Vector> {
@@ -212,11 +222,11 @@ fn ranked_skills() -> Vec<SkillTable> {
 
 fn ranked_vectors() -> BTreeMap<String, Vector> {
     vectors(&[
-        ("q", [1.0, 0.0]),
-        ("Alpha", [1.0, 1.0]),
-        ("Beta", [1.0, 1.0]),
-        ("Gamma", [1.0, 3.0]),
-        ("Delta", [3.0, 1.0]),
+        ("q", [1.0_f64, 0.0_f64]),
+        ("Alpha", [1.0_f64, 1.0_f64]),
+        ("Beta", [1.0_f64, 1.0_f64]),
+        ("Gamma", [1.0_f64, 3.0_f64]),
+        ("Delta", [3.0_f64, 1.0_f64]),
     ])
 }
 
@@ -276,7 +286,7 @@ fn hosted_outcome(
     embedder: &FixedEmbedder,
     index: &SkillSearchIndex,
 ) -> Result<SkillSearchOutcome, HostedSkillSearchError> {
-    let embedder: Option<&dyn Embedder> = Some(embedder);
+    let router_embedder: Option<&dyn Embedder> = Some(embedder);
     runtime().block_on(search_hosted_skills(
         store,
         principal,
@@ -285,7 +295,7 @@ fn hosted_outcome(
             query: "q",
             top_k: 10,
             runtime: SkillSearchRuntime {
-                embedder,
+                embedder: router_embedder,
                 embedding_model: Some(MODEL),
                 index,
             },
@@ -319,20 +329,24 @@ fn alice_scopes() -> Vec<String> {
     .to_vec()
 }
 
-fn skill_ids(outcome: &SkillSearchOutcome) -> Vec<&str> {
+fn hits_of(outcome: &SkillSearchOutcome) -> &[SkillSearchHit] {
     match outcome {
-        SkillSearchOutcome::Hits(hits) => {
-            hits.iter().map(|hit| hit.skill.skill_id.as_str()).collect()
-        }
-        other => panic!("expected hits, got {other:?}"),
+        SkillSearchOutcome::Hits(hits) => hits,
+        other @ (SkillSearchOutcome::NotConfigured { .. }
+        | SkillSearchOutcome::EmbeddingFailed { .. }
+        | SkillSearchOutcome::UnsupportedProvider { .. }) => panic!("expected hits, got {other:?}"),
     }
 }
 
+fn skill_ids(outcome: &SkillSearchOutcome) -> Vec<&str> {
+    hits_of(outcome)
+        .iter()
+        .map(|hit| hit.skill.skill_id.as_str())
+        .collect()
+}
+
 fn scores(outcome: &SkillSearchOutcome) -> Vec<f64> {
-    match outcome {
-        SkillSearchOutcome::Hits(hits) => hits.iter().map(|hit| hit.score).collect(),
-        other => panic!("expected hits, got {other:?}"),
-    }
+    hits_of(outcome).iter().map(|hit| hit.score).collect()
 }
 
 fn score_bits(text: &str) -> u64 {
@@ -370,13 +384,13 @@ fn search_text_joins_the_present_parts() {
 #[test]
 fn search_text_cuts_at_the_unicode_character_limit() {
     let mut exact = skill_row("litellm_skill_a", None, None);
-    exact.instructions = Some("é".repeat(4000));
+    exact.instructions = Some("\u{e9}".repeat(4000));
     assert_eq!(skill_search_text(&exact).chars().count(), 4000);
     let mut over = skill_row("litellm_skill_b", None, None);
-    over.instructions = Some("é".repeat(4001));
+    over.instructions = Some("\u{e9}".repeat(4001));
     let cut = skill_search_text(&over);
     assert_eq!(cut.chars().count(), 4000);
-    assert_eq!(cut, "é".repeat(4000));
+    assert_eq!(cut, "\u{e9}".repeat(4000));
 }
 
 #[test]
@@ -411,7 +425,7 @@ fn rank_orders_by_score_and_keeps_ties() {
 fn rank_keeps_the_store_order_for_large_ties() {
     let entries: Vec<(u32, String, String)> = (0..25_u32)
         .map(|step| {
-            let number = (step * 7) % 25;
+            let number = (step * 7).rem_euclid(25);
             (
                 step,
                 format!("litellm_skill_{number:02}"),
@@ -427,14 +441,14 @@ fn rank_keeps_the_store_order_for_large_ties() {
         .iter()
         .map(|entry| {
             let vector = if entry.0.is_multiple_of(2) {
-                vec![1.0_f64, 0.0]
+                vec![1.0_f64, 0.0_f64]
             } else {
-                vec![0.0, 1.0]
+                vec![0.0_f64, 1.0_f64]
             };
             (entry.2.clone(), vector)
         })
         .collect();
-    text_vectors.insert("q".to_owned(), vec![1.0_f64, 0.0]);
+    text_vectors.insert("q".to_owned(), vec![1.0_f64, 0.0_f64]);
     let expected: Vec<String> = entries
         .iter()
         .filter(|entry| entry.0.is_multiple_of(2))
@@ -503,10 +517,10 @@ fn rank_propagates_an_http_failure() {
 
 #[test]
 fn rank_rejects_a_non_finite_score() {
-    let mut embedder = FixedEmbedder::new(vectors(&[("q", [1e308, 1e308])]));
+    let mut embedder = FixedEmbedder::new(vectors(&[("q", [1e308_f64, 1e308_f64])]));
     embedder
         .vectors
-        .insert("Alpha".to_owned(), vec![1e308, 1e308]);
+        .insert("Alpha".to_owned(), vec![1e308_f64, 1e308_f64]);
     let outcome = rank_in(
         &SkillSearchIndex::new(10),
         &embedder,
@@ -532,10 +546,10 @@ fn rank_rejects_a_non_finite_score_before_the_slice() {
         skill_row("litellm_skill_c", Some("Gamma"), None),
     ];
     let embedder = FixedEmbedder::new(vectors(&[
-        ("q", [1e308, 1e308]),
-        ("Alpha", [1.0, 0.0]),
-        ("Beta", [1e308, 1e308]),
-        ("Gamma", [0.0, 1.0]),
+        ("q", [1e308_f64, 1e308_f64]),
+        ("Alpha", [1.0_f64, 0.0_f64]),
+        ("Beta", [1e308_f64, 1e308_f64]),
+        ("Gamma", [0.0_f64, 1.0_f64]),
     ]));
     let outcome = rank_in(&SkillSearchIndex::new(10), &embedder, &skills, 1, MODEL)
         .expect("a non-finite score is an outcome");
@@ -552,7 +566,7 @@ fn rank_rejects_a_non_finite_score_before_the_slice() {
 fn rank_projects_the_skill_fields() {
     let hit = SkillSearchHit {
         skill: skill_row("litellm_skill_a", Some("Alpha"), None),
-        score: 0.5,
+        score: 0.5_f64,
     };
     let result = skill_search_result(&hit);
     assert_eq!(result.skill_id, "litellm_skill_a");
@@ -569,7 +583,7 @@ fn rank_projects_the_skill_fields() {
 fn score_json_keeps_the_float_type() {
     let hit = SkillSearchHit {
         skill: skill_row("litellm_skill_a", Some("Alpha"), None),
-        score: 1.0,
+        score: 1.0_f64,
     };
     assert_eq!(
         serde_json::to_string(&skill_search_result(&hit)).expect("a projected result"),
@@ -607,7 +621,10 @@ fn model_is_checked_before_the_router() {
 
 #[test]
 fn search_skills_embeds_through_the_injected_embedder() {
-    let embedder = FixedEmbedder::new(vectors(&[("q", [1.0, 0.0]), ("Alpha", [1.0, 1.0])]));
+    let embedder = FixedEmbedder::new(vectors(&[
+        ("q", [1.0_f64, 0.0_f64]),
+        ("Alpha", [1.0_f64, 1.0_f64]),
+    ]));
     let skills = vec![skill_row("litellm_skill_a", Some("Alpha"), None)];
     let outcome = search_outcome(
         &SkillSearchIndex::new(10),
@@ -653,9 +670,9 @@ fn hosted_search_ranks_the_store_page() {
     ]);
     let store = store_of(repository.clone());
     let embedder = FixedEmbedder::new(vectors(&[
-        ("q", [1.0, 0.0]),
-        ("Alpha", [1.0, 1.0]),
-        ("Beta", [1.0, 3.0]),
+        ("q", [1.0_f64, 0.0_f64]),
+        ("Alpha", [1.0_f64, 1.0_f64]),
+        ("Beta", [1.0_f64, 3.0_f64]),
     ]));
     let index = SkillSearchIndex::new(10);
     let owner = principal();
@@ -704,9 +721,9 @@ fn hosted_search_reports_a_store_failure() {
 #[test]
 fn repeat_query() {
     let embedder = FixedEmbedder::new(vectors(&[
-        ("q", [1.0, 0.0]),
-        ("Alpha", [1.0, 1.0]),
-        ("Beta", [1.0, 3.0]),
+        ("q", [1.0_f64, 0.0_f64]),
+        ("Alpha", [1.0_f64, 1.0_f64]),
+        ("Beta", [1.0_f64, 3.0_f64]),
     ]));
     let index = SkillSearchIndex::new(10);
     let skills = vec![
@@ -726,7 +743,10 @@ fn repeat_query() {
 
 #[test]
 fn model_change() {
-    let embedder = FixedEmbedder::new(vectors(&[("q", [1.0, 0.0]), ("Alpha", [1.0, 1.0])]));
+    let embedder = FixedEmbedder::new(vectors(&[
+        ("q", [1.0_f64, 0.0_f64]),
+        ("Alpha", [1.0_f64, 1.0_f64]),
+    ]));
     let index = SkillSearchIndex::new(10);
     let skills = vec![skill_row("litellm_skill_a", Some("Alpha"), None)];
     rank_in(&index, &embedder, &skills, 10, "first-embedding").expect("a ranked search");
@@ -743,9 +763,9 @@ fn model_change() {
 #[test]
 fn small_index_evicts_the_oldest_text() {
     let embedder = FixedEmbedder::new(vectors(&[
-        ("q", [1.0, 0.0]),
-        ("Alpha", [1.0, 1.0]),
-        ("Beta", [1.0, 3.0]),
+        ("q", [1.0_f64, 0.0_f64]),
+        ("Alpha", [1.0_f64, 1.0_f64]),
+        ("Beta", [1.0_f64, 3.0_f64]),
     ]));
     let index = SkillSearchIndex::new(1);
     let skills = vec![
@@ -765,19 +785,19 @@ fn small_index_evicts_the_oldest_text() {
 
 #[test]
 fn default_index_keeps_the_candidate_limit() {
-    let skills = (0..5001)
+    let skills = (0_i32..5_001_i32)
         .map(|index| {
-            serde_json::from_value(json!({
-                "skill_id": format!("litellm_skill_{index}"),
-                "display_title": format!("skill-{index}"),
-            }))
-            .expect("a scripted skill row")
+            skill_row(
+                &format!("litellm_skill_{index}"),
+                Some(format!("skill-{index}").as_str()),
+                None,
+            )
         })
         .collect::<Vec<SkillTable>>();
-    let mut text_vectors = (0..5001)
-        .map(|index| (format!("skill-{index}"), vec![1.0_f64, 1.0]))
+    let mut text_vectors = (0_i32..5_001_i32)
+        .map(|index| (format!("skill-{index}"), vec![1.0_f64, 1.0_f64]))
         .collect::<BTreeMap<String, Vector>>();
-    text_vectors.insert("q".to_owned(), vec![1.0_f64, 0.0]);
+    text_vectors.insert("q".to_owned(), vec![1.0_f64, 0.0_f64]);
     let embedder = FixedEmbedder::new(text_vectors);
     let index = SkillSearchIndex::default();
     rank_in(&index, &embedder, &skills, 10, MODEL).expect("a ranked search");

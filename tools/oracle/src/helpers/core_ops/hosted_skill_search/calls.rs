@@ -61,7 +61,7 @@ pub(super) async fn ranked_value(
     )
     .await
     .map_err(|error| hosted_error(&HostedSkillSearchError::from(error)))?;
-    outcome_value(&outcome, effects.take())
+    outcome_value(&outcome, &effects.take())
 }
 
 pub(super) async fn hosted_value(input: &Input, effects: &Effects) -> HelperResult {
@@ -90,5 +90,5 @@ pub(super) async fn hosted_value(input: &Input, effects: &Effects) -> HelperResu
     )
     .await
     .map_err(|error| hosted_error(&error))?;
-    outcome_value(&outcome, effects.take())
+    outcome_value(&outcome, &effects.take())
 }

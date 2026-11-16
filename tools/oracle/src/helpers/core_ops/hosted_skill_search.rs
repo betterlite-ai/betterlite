@@ -4,6 +4,7 @@ mod scripted;
 mod values;
 
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 use input::Input;
 
@@ -14,7 +15,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let effects = scripted::Effects::default();
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| values::invalid_input(error.to_string()))?;
         match input.function.as_str() {

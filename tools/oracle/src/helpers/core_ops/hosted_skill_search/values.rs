@@ -81,7 +81,7 @@ pub(super) fn principal_of(fields: &PrincipalFields) -> Result<Principal, Box<He
 
 pub(super) fn outcome_value(
     outcome: &SkillSearchOutcome,
-    effects: Vec<Value>,
+    effects: &[Value],
 ) -> Result<Value, Box<HelperError>> {
     match outcome {
         SkillSearchOutcome::Hits(hits) => {
