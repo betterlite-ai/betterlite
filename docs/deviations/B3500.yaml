@@ -17,13 +17,23 @@ deviations:
       coroutine; Rust cannot return either type, so the async transport is chosen by which function the caller calls.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L512-L521
   - what: >-
-      The provider config and its HTTP handler, the logging state, the redactor and adelete's settlement registry
-      and fetch are injected into each entry point, where LiteLLM reads litellm_logging_obj out of kwargs, builds
-      the provider config from a registry table and keeps running polls in the module-level _ACTIVE_POLLS map.
+      The provider config, the client cache and pre-call record B3494's handler runs on, the logging state, the
+      redactor and adelete's settlement registry and fetch are injected into each entry point, where LiteLLM reads
+      litellm_logging_obj out of kwargs, builds the provider config from a registry table, takes its client from the
+      process-wide client cache and keeps running polls in the module-level _ACTIVE_POLLS map.
     why: >-
       betterlite forbids globals and passes dependencies through constructors; a call without a logging object,
       which LiteLLM fails on at its update_from_kwargs call, cannot be expressed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L519-L527
+  - what: >-
+      The client cache lives for one entry-point call: each delete, cancel or adelete takes an HttpClients value and
+      drops it with the handler it builds, where LiteLLM's _get_httpx_client answers every delete and cancel from the
+      process-wide in_memory_llm_clients_cache.
+    why: >-
+      B3494's handler owns the cache it sends through and names its reqwest client type in every method, so this
+      crate cannot lend it a caller-owned cache and take it back without naming that type; the difference is one
+      client build per call, which no caller of this task exists yet to observe.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1767-L1805
   - what: >-
       timeout arrives as an already parsed Duration and the fallback as B198's resolved RequestTimeout, where
       LiteLLM forwards the float or httpx.Timeout and lets the HTTP handler write `timeout or request_timeout`.

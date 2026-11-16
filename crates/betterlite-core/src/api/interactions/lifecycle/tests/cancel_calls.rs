@@ -1,11 +1,12 @@
+use betterlite_http::interactions::base::Logging;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 
 use crate::api::interactions::lifecycle::{acancel, cancel};
 
 use super::support::{
-    Call, Script, answer, deps, fixture, handler, host, received, redactor, registry_with, reply,
-    serve, state, text,
+    Call, Script, answer, deps, fixture, host, received, redactor, registry_with, reply, serve,
+    state, text,
 };
 
 #[test]
@@ -16,11 +17,15 @@ fn cancel_posts_the_transformed_body_and_withdraws_its_own_async_flag() {
         .at(serving.address)
         .kwarg("adelete_interaction", Json::Bool(true))
         .kwarg("acancel_interaction", Json::Bool(true));
-    let mut handler = handler(&config);
+    let mut http = Logging::default();
     let mut logging = state("gemini-2.5-flash", "call-1");
     let redactor = redactor();
-    let result = cancel(&mut handler, deps(&mut logging, &redactor), &call.request())
-        .expect("the fixture answers");
+    let result = cancel(
+        &config,
+        deps(&mut http, &mut logging, &redactor),
+        &call.request(),
+    )
+    .expect("the fixture answers");
     assert_eq!(result.id.as_deref(), Some("int-1"));
     assert_eq!(result.status.as_deref(), Some("cancelled"));
     assert_eq!(
@@ -50,12 +55,16 @@ async fn acancel_posts_the_transformed_body_without_settling() {
     let settlement_host = host();
     let _registry = registry_with(settlement_host.clone());
     let script = Script::returning(answer());
-    let mut handler = handler(&config);
+    let mut http = Logging::default();
     let mut logging = state("gemini-2.5-flash", "call-1");
     let redactor = redactor();
-    let result = acancel(&mut handler, deps(&mut logging, &redactor), &call.request())
-        .await
-        .expect("the cancellation answers");
+    let result = acancel(
+        &config,
+        deps(&mut http, &mut logging, &redactor),
+        &call.request(),
+    )
+    .await
+    .expect("the cancellation answers");
     assert_eq!(result.id.as_deref(), Some("int-1"));
     assert_eq!(script.calls(), 0);
     assert!(settlement_host.billed().is_empty());

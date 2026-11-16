@@ -1,12 +1,13 @@
 use betterlite_error::error::ErrorClass;
+use betterlite_http::interactions::base::Logging;
 
 use crate::api::interactions::lifecycle::adelete;
 use crate::api::interactions::lifecycle::error::InteractionLifecycleError;
 use crate::api::interactions::lifecycle::request::BackgroundSettlement;
 
 use super::support::{
-    Call, Script, answer, deps, fixture, handler, host, received, redactor, registry_with, reply,
-    serve, state,
+    Call, Script, answer, deps, fixture, host, received, redactor, registry_with, reply, serve,
+    state,
 };
 
 #[tokio::test]
@@ -17,12 +18,12 @@ async fn adelete_settles_a_tracked_interaction_before_deleting() {
     let settlement_host = host();
     let registry = registry_with(settlement_host.clone());
     let script = Script::returning(answer());
-    let mut handler = handler(&config);
+    let mut http = Logging::default();
     let mut logging = state("gemini-2.5-flash", "call-1");
     let redactor = redactor();
     let result = adelete(
-        &mut handler,
-        deps(&mut logging, &redactor),
+        &config,
+        deps(&mut http, &mut logging, &redactor),
         &call.request(),
         BackgroundSettlement {
             registry: &registry,
@@ -47,12 +48,12 @@ async fn adelete_stops_the_delete_when_settlement_cannot_be_billed() {
     let settlement_host = host().failing_billing();
     let registry = registry_with(settlement_host.clone());
     let script = Script::returning(answer());
-    let mut handler = handler(&config);
+    let mut http = Logging::default();
     let mut logging = state("gemini-2.5-flash", "call-1");
     let redactor = redactor();
     let failed = adelete(
-        &mut handler,
-        deps(&mut logging, &redactor),
+        &config,
+        deps(&mut http, &mut logging, &redactor),
         &call.request(),
         BackgroundSettlement {
             registry: &registry,

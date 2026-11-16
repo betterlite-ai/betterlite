@@ -17,9 +17,7 @@ use betterlite_http::interactions::base::{
     UpstreamResponse,
 };
 use betterlite_http::interactions::get::{EnvironmentRequest, InteractionIdRequest};
-use betterlite_http::interactions::lifecycle::{
-    InteractionLifecycleConfig, InteractionsHttpHandler,
-};
+use betterlite_http::interactions::lifecycle::InteractionLifecycleConfig;
 use betterlite_interactions::polling::context::{InteractionPollContext, SettlementFlag};
 use betterlite_interactions::polling::host::{
     FetchFuture, FetchInteraction, SettlementFuture, SettlementHost,
@@ -171,22 +169,14 @@ fn prepared_request(request: &InteractionIdRequest<'_>, suffix: &str) -> Prepare
     }
 }
 
-pub(crate) fn handler<ClientType>(
-    config: &Config,
-) -> InteractionsHttpHandler<'_, Config, ClientType> {
-    InteractionsHttpHandler {
-        config,
-        clients: HttpClients::new(policy(), proxy()),
-        logging: Logging::default(),
-        supplied: None,
-    }
-}
-
 pub(crate) fn deps<'deps>(
+    http: &'deps mut Logging,
     state: &'deps mut LoggingState,
     redactor: &'deps Redactor,
 ) -> InteractionLifecycleDeps<'deps> {
     InteractionLifecycleDeps {
+        clients: HttpClients::new(policy(), proxy()),
+        http,
         logging: state,
         redactor,
     }

@@ -6,8 +6,11 @@ mod tests;
 
 use std::error::Error as StdError;
 use std::fmt::Display;
+use std::mem::take;
 
+use betterlite_http::interactions::base::Logging;
 use betterlite_http::interactions::base::RequestHeaders;
+use betterlite_http::interactions::base::clients::HttpClients;
 use betterlite_http::interactions::lifecycle::{
     InteractionLifecycleConfig, InteractionsHttpHandler, LifecycleError as HttpError,
     LifecycleRequest as HttpRequest,
@@ -16,8 +19,6 @@ use betterlite_interactions::polling::host::SettlementHost;
 use betterlite_interactions::settlement::settle_before_delete;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_redact::secret::Redactor;
-use reqwest::Client;
-use reqwest::blocking::Client as BlockingClient;
 use secrecy::SecretString;
 
 use self::call::{Operation, Prepared, prepare, resolve_provider};
@@ -25,8 +26,11 @@ use self::error::{InteractionLifecycleError, InteractionLifecycleFailure, failur
 use self::request::{BackgroundSettlement, InteractionLifecycleRequest};
 use crate::api::agents::item::error::ProviderFailure;
 
-// the collaborators one operation writes into: the typed logging state and the redactor exception_type scrubs with
+// what one operation writes into: the handler's client cache and pre-call record, B247's logging state, the redactor
 pub struct InteractionLifecycleDeps<'deps> {
+    // owned because the handler holds it, and betterlite-core cannot name the reqwest client type its methods resolve
+    pub clients: HttpClients,
+    pub http: &'deps mut Logging,
     pub logging: &'deps mut LoggingState,
     pub redactor: &'deps Redactor,
 }
@@ -35,7 +39,7 @@ pub struct InteractionLifecycleDeps<'deps> {
 macro_rules! lifecycle_entries {
     (sync $name:ident, $send:ident, $operation:ident, $output:ident) => {
         pub fn $name<Config>(
-            handler: &mut InteractionsHttpHandler<'_, Config, BlockingClient>,
+            config: &Config,
             deps: InteractionLifecycleDeps<'_>,
             request: &InteractionLifecycleRequest<'_>,
         ) -> Result<Config::$output, InteractionLifecycleFailure<Config::Error>>
@@ -43,17 +47,28 @@ macro_rules! lifecycle_entries {
             Config: InteractionLifecycleConfig,
             Config::Error: ProviderFailure,
         {
-            let InteractionLifecycleDeps { logging, redactor } = deps;
+            let InteractionLifecycleDeps {
+                clients,
+                http,
+                logging,
+                redactor,
+            } = deps;
             let prepared = prepare(request, Operation::$operation, logging, redactor)?;
             let sent = http_request(request, &prepared);
-            handler
-                .$send(&sent)
-                .map_err(|carried| finish(carried, &prepared, redactor))
+            let mut handler = InteractionsHttpHandler {
+                config,
+                clients,
+                logging: take(http),
+                supplied: None,
+            };
+            let sent_result = handler.$send(&sent);
+            *http = handler.logging;
+            sent_result.map_err(|carried| finish(carried, &prepared, redactor))
         }
     };
     (async $name:ident, $send:ident, $operation:ident, $output:ident) => {
         pub async fn $name<Config>(
-            handler: &mut InteractionsHttpHandler<'_, Config, Client>,
+            config: &Config,
             deps: InteractionLifecycleDeps<'_>,
             request: &InteractionLifecycleRequest<'_>,
         ) -> Result<Config::$output, InteractionLifecycleFailure<Config::Error>>
@@ -61,13 +76,23 @@ macro_rules! lifecycle_entries {
             Config: InteractionLifecycleConfig,
             Config::Error: ProviderFailure,
         {
-            let InteractionLifecycleDeps { logging, redactor } = deps;
+            let InteractionLifecycleDeps {
+                clients,
+                http,
+                logging,
+                redactor,
+            } = deps;
             let prepared = prepare(request, Operation::$operation, logging, redactor)?;
             let sent = http_request(request, &prepared);
-            handler
-                .$send(&sent)
-                .await
-                .map_err(|carried| finish(carried, &prepared, redactor))
+            let mut handler = InteractionsHttpHandler {
+                config,
+                clients,
+                logging: take(http),
+                supplied: None,
+            };
+            let sent_result = handler.$send(&sent).await;
+            *http = handler.logging;
+            sent_result.map_err(|carried| finish(carried, &prepared, redactor))
         }
     };
 }
@@ -75,7 +100,7 @@ macro_rules! lifecycle_entries {
 lifecycle_entries!(sync delete, delete_interaction, Delete, DeleteOutput);
 
 pub async fn adelete<Config, Host, FetchError>(
-    handler: &mut InteractionsHttpHandler<'_, Config, Client>,
+    config: &Config,
     deps: InteractionLifecycleDeps<'_>,
     request: &InteractionLifecycleRequest<'_>,
     settlement: BackgroundSettlement<'_, Host, FetchError>,
@@ -86,7 +111,12 @@ where
     Host: SettlementHost + Clone,
     FetchError: Display,
 {
-    let InteractionLifecycleDeps { logging, redactor } = deps;
+    let InteractionLifecycleDeps {
+        clients,
+        http,
+        logging,
+        redactor,
+    } = deps;
     let provider = resolve_provider(request);
     settle_before_delete(
         settlement.registry,
@@ -103,10 +133,15 @@ where
     })?;
     let prepared = prepare(request, Operation::Delete, logging, redactor)?;
     let sent = http_request(request, &prepared);
-    handler
-        .async_delete_interaction(&sent)
-        .await
-        .map_err(|carried| finish(carried, &prepared, redactor))
+    let mut handler = InteractionsHttpHandler {
+        config,
+        clients,
+        logging: take(http),
+        supplied: None,
+    };
+    let sent_result = handler.async_delete_interaction(&sent).await;
+    *http = handler.logging;
+    sent_result.map_err(|carried| finish(carried, &prepared, redactor))
 }
 
 lifecycle_entries!(sync cancel, cancel_interaction, Cancel, CancelOutput);
