@@ -1,0 +1,41 @@
+kind: helper
+name: semantic-event-prompt-completion-default
+call:
+  b3857:
+    function: record_success
+    config: {enable_events: true, capture_mode: SPAN_AND_EVENT}
+    kwargs:
+      model: gpt-4o
+      messages:
+      - {role: system, content: be brief}
+      - {role: user, content: hello}
+      - {role: tool, id: call-1, content: '42'}
+      call_type: acompletion
+      optional_params: {}
+      litellm_params:
+        custom_llm_provider: openai
+        metadata: {}
+      standard_logging_object:
+        call_type: acompletion
+        request_id: request-1
+        litellm_call_id: call-1
+        metadata:
+          user_api_key_alias: key-a
+          requester_metadata: {team: 1}
+        hidden_params: {api_base: 'https://api.openai.com'}
+    response:
+      id: chatcmpl-1
+      model: gpt-4o
+      choices:
+      - index: 0
+        finish_reason: stop
+        message: {role: assistant, content: one}
+      - index: 1
+        finish_reason: length
+        message: {role: assistant, content: two}
+      usage: {prompt_tokens: 2, completion_tokens: 4, total_tokens: 6}
+    start_time: 10.0
+    end_time: 13.0
+env: {}
+compare:
+  ignore: []
