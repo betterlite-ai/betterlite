@@ -15,7 +15,7 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::SecretString;
 use serde::Deserialize;
 
-pub(super) const BODY: &str = concat!(
+const BODY: &str = concat!(
     r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"#,
     r#""model":"gpt-35-turbo-instruct","#,
     r#""choices":[{"text":"Hello!","index":0,"logprobs":null,"finish_reason":"stop"}],"#,
@@ -66,7 +66,7 @@ impl ScriptedSource {
             base_url: self.base_url.clone(),
             transport: ScriptedTransport {
                 answer: self.answer.clone(),
-                creates: self.creates.clone(),
+                creates: Arc::clone(&self.creates),
             },
         }
     }
@@ -101,11 +101,11 @@ pub(super) struct ScriptedTransport {
 }
 
 impl CompletionsTransport for ScriptedTransport {
-    fn create<'a>(
-        &'a self,
-        data: &'a Extra,
+    fn create<'call>(
+        &'call self,
+        data: &'call Extra,
         _timeout: Option<f64>,
-    ) -> Pin<Box<dyn Future<Output = Result<RawCompletion, SdkError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<RawCompletion, SdkError>> + Send + 'call>> {
         let mut record = Extra::new();
         record.insert("data".to_owned(), Json::Object(data.clone()));
         self.creates
@@ -119,8 +119,11 @@ impl CompletionsTransport for ScriptedTransport {
 
 fn header_map(headers: &BTreeMap<String, String>) -> HeaderMap {
     let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        if let (Ok(name), Ok(value)) = (name.parse::<HeaderName>(), value.parse::<HeaderValue>()) {
+    for (raw_name, raw_value) in headers {
+        if let (Ok(name), Ok(value)) = (
+            raw_name.parse::<HeaderName>(),
+            raw_value.parse::<HeaderValue>(),
+        ) {
             map.insert(name, value);
         }
     }
@@ -151,26 +154,21 @@ fn answer_once(answer: &Answer) -> Result<RawCompletion, SdkError> {
             code: None,
         })));
     }
-    match &answer.events {
-        Some(events) => {
-            let items: Vec<Result<Vec<u8>, SdkError>> = events
-                .iter()
-                .map(|event| Ok(event.clone().into_bytes()))
-                .collect();
-            Ok(RawCompletion::Stream {
-                status,
-                headers,
-                body: Box::pin(stream::iter(items)),
-            })
-        }
-        None => Ok(RawCompletion::Buffered {
+    if let Some(events) = &answer.events {
+        let items: Vec<Result<Vec<u8>, SdkError>> = events
+            .iter()
+            .map(|event| Ok(event.clone().into_bytes()))
+            .collect();
+        return Ok(RawCompletion::Stream {
             status,
             headers,
-            body: answer
-                .body
-                .clone()
-                .unwrap_or_else(|| BODY.to_owned())
-                .into_bytes(),
-        }),
+            body: Box::pin(stream::iter(items)),
+        });
     }
+    let body = answer.body.clone().unwrap_or_else(|| BODY.to_owned());
+    Ok(RawCompletion::Buffered {
+        status,
+        headers,
+        body: body.into_bytes(),
+    })
 }

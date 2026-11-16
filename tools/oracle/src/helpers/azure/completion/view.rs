@@ -181,7 +181,7 @@ fn usage_value(usage: &Json) -> Json {
             fields
                 .get(name)
                 .cloned()
-                .unwrap_or(Json::Number(Number::from(0_u8))),
+                .unwrap_or_else(|| Json::Number(Number::from(0_u8))),
         );
     }
     out.insert("reasoning_tokens".to_owned(), reasoning);

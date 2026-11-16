@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use betterlite_azure::completion::arguments::{CompletionCall, Runtime};
 use betterlite_azure::completion::config::AzureOpenAITextConfig;
 use betterlite_azure::completion::error::AzureTextError;
-use betterlite_azure::completion::handler::{AzureTextCompletion, TextCompletionOutcome};
+use betterlite_azure::completion::handler::{TextCompletionOutcome, completion as run_completion};
 use betterlite_azure::completion::request::validate_environment;
 use betterlite_azure::endpoints::cloudflare::CloudflareParams;
 use betterlite_azure::endpoints::projection::ClientKind;
@@ -23,38 +23,47 @@ use uuid::Uuid;
 
 use super::CallCase;
 use super::hooks::Recorder;
-use super::source::ScriptedSource;
+use super::source::{ScriptedSource, ScriptedTransport};
 use super::view;
 
-mod stream;
+pub(super) mod stream;
 
 const CLOCK: i64 = 1_700_000_000;
+const STREAM_TIMESTAMP: f64 = 1_700_000_000.0;
+static IDENTIFIER: fn() -> Uuid = || Uuid::from_u128(1);
+static CLOCK_READ: fn() -> i64 = || CLOCK;
 
-// the clocks and ids the handler reads instead of the process clock
+// the prompt factory and the clock the handler reads instead of the process clock
 pub(super) struct Fixed {
     factory: PromptFactory,
     now: DateTime<Utc>,
-    identifier: Box<dyn Fn() -> Uuid>,
-    clock: Box<dyn Fn() -> i64>,
-    stream_now: fn() -> StreamInstant,
-    stream_id: fn() -> Uuid,
 }
 
-impl Fixed {
-    pub(super) fn new() -> Self {
+impl Default for Fixed {
+    fn default() -> Self {
         Self {
             factory: PromptFactory {
                 cache: Mutex::new(builtin_entries()),
                 hub: Hub::Unreachable,
             },
             now: DateTime::from_timestamp(CLOCK, 0).unwrap_or(DateTime::<Utc>::UNIX_EPOCH),
-            identifier: Box::new(|| Uuid::from_u128(1)),
-            clock: Box::new(|| CLOCK),
-            stream_now: || StreamInstant {
-                seconds: CLOCK,
-                timestamp: CLOCK as f64,
-            },
-            stream_id: || Uuid::from_u128(2),
+        }
+    }
+}
+
+// the key, token and headers a call borrows for its whole run
+pub(super) struct Secrets {
+    key: Option<SecretString>,
+    token: Option<SecretString>,
+    headers: Option<SecretHeaders>,
+}
+
+impl Secrets {
+    pub(super) fn of(case: &CallCase) -> Self {
+        Self {
+            key: case.api_key.clone().map(SecretString::from),
+            token: case.azure_ad_token.clone().map(SecretString::from),
+            headers: case.headers.clone().map(SecretHeaders),
         }
     }
 }
@@ -63,14 +72,20 @@ pub(super) fn runtime(fixed: &Fixed) -> Runtime<'_> {
     Runtime {
         prompts: &fixed.factory,
         now: fixed.now,
-        identifier: fixed.identifier.as_ref(),
-        clock: fixed.clock.as_ref(),
-        stream_now: fixed.stream_now,
-        stream_id: fixed.stream_id,
+        identifier: &IDENTIFIER,
+        clock: &CLOCK_READ,
+        stream_now: || StreamInstant {
+            seconds: CLOCK,
+            timestamp: STREAM_TIMESTAMP,
+        },
+        stream_id: || Uuid::from_u128(2),
     }
 }
 
-pub(super) fn block_on<Fut: Future>(future: Fut) -> Result<Fut::Output, Box<HelperError>> {
+pub(super) fn block_on<Fut>(future: Fut) -> Result<Fut::Output, Box<HelperError>>
+where
+    Fut: Future,
+{
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
@@ -78,20 +93,7 @@ pub(super) fn block_on<Fut: Future>(future: Fut) -> Result<Fut::Output, Box<Help
     Ok(runtime.block_on(future))
 }
 
-pub(super) fn collect(stream: CompletionStream) -> Result<Vec<Json>, Box<HelperError>> {
-    let values: Result<Vec<Json>, Box<HelperError>> = block_on(async move {
-        let mut stream = stream;
-        let mut values = Vec::new();
-        while let Some(item) = stream.next().await {
-            let chunk = item.map_err(|error| view::failure(&error))?;
-            values.push(view::chunk_value(&chunk));
-        }
-        Ok(values)
-    })?;
-    values
-}
-
-// the SDK client the fixture builds: the case may ask for the other kind to reach the isinstance guard
+// the SDK client the fixture builds: the case may ask for the other kind than acompletion selects
 pub(super) fn source(case: &CallCase) -> ScriptedSource {
     let asynchronous = match case.client.as_deref() {
         Some("sync") => false,
@@ -113,16 +115,40 @@ pub(super) fn source(case: &CallCase) -> ScriptedSource {
                 .as_ref()
                 .map(|_token| "<missing API key>".to_owned())
         });
-    let base_url = match case.api_base.as_deref() {
-        Some(base) => format!("{}/openai/", base.trim_end_matches('/')),
-        None => "https://unit.test/openai/".to_owned(),
-    };
+    let base_url = case.api_base.as_deref().map_or_else(
+        || "https://unit.test/openai/".to_owned(),
+        |base| format!("{}/openai/", base.trim_end_matches('/')),
+    );
     ScriptedSource::new(
         kind,
         key.map(SecretString::from),
         &base_url,
         case.answer.clone(),
     )
+}
+
+pub(super) fn build_call<'case>(
+    case: &'case CallCase,
+    secrets: &'case Secrets,
+    params: &'case mut Extra,
+    source: &ScriptedSource,
+) -> CompletionCall<'case, ScriptedTransport> {
+    CompletionCall {
+        model: case.model.as_deref(),
+        messages: case.messages.as_deref(),
+        api_key: secrets.key.as_ref(),
+        api_base: case.api_base.as_deref(),
+        api_version: case.api_version.as_deref(),
+        azure_ad_token: secrets.token.as_ref(),
+        azure_ad_token_provider: None,
+        timeout: case.timeout,
+        optional_params: params,
+        litellm_params: case.litellm_params.clone(),
+        cloudflare_params: CloudflareParams::default(),
+        acompletion: case.acompletion,
+        headers: secrets.headers.as_ref(),
+        supplied: Some(source.handle()),
+    }
 }
 
 pub(super) fn error_report(
@@ -142,44 +168,46 @@ pub(super) fn error_report(
     )
 }
 
+pub(super) fn stream_report(
+    source: &ScriptedSource,
+    recorder: &Recorder,
+    mut stream: CompletionStream,
+) -> Result<Json, Box<HelperError>> {
+    let chunks = block_on(async move {
+        let mut values = Vec::new();
+        while let Some(item) = stream.next().await {
+            let chunk = item.map_err(|error| view::failure(&error))?;
+            values.push(view::chunk_value(&chunk));
+        }
+        Ok::<Vec<Json>, Box<HelperError>>(values)
+    })??;
+    Ok(view::report(
+        source,
+        recorder,
+        view::Outcome {
+            name: "stream",
+            reply: Json::Null,
+            chunks: Json::List(chunks),
+            error: Json::Null,
+        },
+    ))
+}
+
 pub(super) fn completion(case: &CallCase) -> Result<Json, Box<HelperError>> {
     let source = source(case);
-    let handle = source.handle();
+    let secrets = Secrets::of(case);
     let mut params = case.optional_params.clone();
-    let headers = case.headers.clone().map(SecretHeaders);
-    let call = CompletionCall {
-        model: case.model.as_deref(),
-        messages: case.messages.as_deref(),
-        api_key: case
-            .api_key
-            .as_ref()
-            .map(|value| SecretString::from(value.clone())),
-        api_base: case.api_base.as_deref(),
-        api_version: case.api_version.as_deref(),
-        azure_ad_token: case
-            .azure_ad_token
-            .as_ref()
-            .map(|value| SecretString::from(value.clone())),
-        azure_ad_token_provider: None,
-        timeout: case.timeout,
-        optional_params: &mut params,
-        litellm_params: case.litellm_params.clone(),
-        cloudflare_params: CloudflareParams::default(),
-        acompletion: case.acompletion,
-        headers: headers.as_ref(),
-        supplied: Some(handle),
-    };
-    let fixed = Fixed::new();
+    let mut call = build_call(case, &secrets, &mut params, &source);
+    let fixed = Fixed::default();
     let mut recorder = Recorder::default();
-    let handler = AzureTextCompletion {
-        source: source.clone(),
-    };
-    let outcome = match block_on(handler.completion(call, &runtime(&fixed), &mut recorder))? {
-        Ok(outcome) => outcome,
-        Err(error) => return Ok(error_report(&source, &recorder, &error)),
-    };
-    let value = match outcome {
-        TextCompletionOutcome::Buffered(reply) => view::report(
+    let outcome = block_on(run_completion(
+        &source,
+        &mut call,
+        &runtime(&fixed),
+        &mut recorder,
+    ))?;
+    match outcome {
+        Ok(TextCompletionOutcome::Buffered(reply)) => Ok(view::report(
             &source,
             &recorder,
             view::Outcome {
@@ -188,34 +216,15 @@ pub(super) fn completion(case: &CallCase) -> Result<Json, Box<HelperError>> {
                 chunks: Json::Null,
                 error: Json::Null,
             },
-        ),
-        TextCompletionOutcome::Stream(stream) => {
-            let chunks = collect(stream)?;
-            view::report(
-                &source,
-                &recorder,
-                view::Outcome {
-                    name: "stream",
-                    reply: Json::Null,
-                    chunks: Json::List(chunks),
-                    error: Json::Null,
-                },
-            )
-        }
-    };
-    Ok(value)
+        )),
+        Ok(TextCompletionOutcome::Stream(stream)) => stream_report(&source, &recorder, stream),
+        Err(error) => Ok(error_report(&source, &recorder, &error)),
+    }
 }
 
 pub(super) fn auth(case: &CallCase) -> Json {
-    let key = case
-        .api_key
-        .as_ref()
-        .map(|value| SecretString::from(value.clone()));
-    let token = case
-        .azure_ad_token
-        .as_ref()
-        .map(|value| SecretString::from(value.clone()));
-    let headers = validate_environment(key.as_ref(), token.as_ref());
+    let secrets = Secrets::of(case);
+    let headers = validate_environment(secrets.key.as_ref(), secrets.token.as_ref());
     let fields: Extra = headers
         .0
         .iter()
