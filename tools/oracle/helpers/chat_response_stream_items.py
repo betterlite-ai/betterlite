@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast, override
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 import litellm
 from litellm.responses.litellm_completion_transformation import streaming_iterator
@@ -9,8 +9,8 @@ from litellm.responses.litellm_completion_transformation.streaming_iterator impo
 from litellm.types.llms.base import BaseLiteLLMOpenAIResponseObject as BaseResponse
 from litellm.types.llms.openai import ResponsesAPIOptionalRequestParams as RequestParams
 from litellm.types.utils import Delta, ModelResponse, ModelResponseStream, StreamingChoices
-from pydantic import JsonValue as Json
-from pydantic import TypeAdapter
+from pydantic import JsonValue as Json, TypeAdapter
+from typing_extensions import override
 
 OBJECT: TypeAdapter[dict[str, Json]] = TypeAdapter(dict[str, Json])
 
