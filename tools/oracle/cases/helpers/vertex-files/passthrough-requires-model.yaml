@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-files-passthrough-requires-model
+call:
+  vertex_files:
+    operation: object_name
+    file:
+      content: '{"custom_id":"a","body":{"model":"gemini-2.0-flash"}}'
+      filename: batch.jsonl
+    purpose: batch
+    passthrough: true
+    uuid: 1
+env: {}
+compare: {ignore: []}

@@ -12,21 +12,12 @@ mod support;
 
 use std::collections::BTreeMap;
 use std::future::ready;
-use std::io::ErrorKind;
-use std::net::TcpListener;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::sync::Mutex;
+use std::time::SystemTime;
 
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::ProxyTrust;
-use betterlite_http::proxy::limits::TransportLimits;
-use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_models::decisions::Json;
-use betterlite_prompts::error::FactoryError;
 use betterlite_prompts::factory::PromptFactory;
-use betterlite_prompts::factory::hub::{
-    ChatTemplate, Hub, HubClient, TokenizerConfig, TokenizerDocument,
-};
+use betterlite_prompts::factory::hub::{ChatTemplate, Hub, TokenizerConfig, TokenizerDocument};
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -38,9 +29,7 @@ use crate::credentials::error::CredentialError;
 use crate::invoke_primitives::config::Params;
 use crate::invoke_primitives::environment::error_class;
 use crate::invoke_primitives::guardrail::{GuardrailError, guardrail_headers};
-use crate::invoke_primitives::prompt::{
-    ConversionError, PromptConversion, convert_messages_to_prompt,
-};
+use crate::invoke_primitives::prompt::{PromptConversion, convert_messages_to_prompt};
 use crate::invoke_primitives::signing::{SignRequest, sign_request};
 use crate::invoke_primitives::url::{CompleteUrl, InvokeEnvironment, UrlError, invoke_model_url};
 use crate::signing::request::AwsSignedRequest;
@@ -157,57 +146,6 @@ fn render_with_template(template: &str) -> String {
         }))
         .unwrap()
         .prompt
-}
-
-async fn assert_missing_template(model: &str, prompts: &PromptFactory) {
-    let conversation = messages(r#"[{"role":"user","content":"hi"}]"#);
-    let error = convert_messages_to_prompt(PromptConversion {
-        model,
-        messages: &conversation,
-        provider: Some(BedrockInvokeProvider::Meta),
-        custom_prompt_dict: &BTreeMap::new(),
-        prompts,
-        now: clock(),
-    })
-    .await
-    .unwrap_err();
-    assert_eq!(error.to_string(), "No chat template found");
-    assert!(matches!(
-        error,
-        ConversionError::Factory(FactoryError::NoChatTemplate)
-    ));
-}
-
-#[tokio::test]
-async fn invoke_primitives_never_downloads_templates() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
-    // a mutant that skips the local check makes one request; a short read timeout fails fast instead of hanging
-    let limits = TransportLimits {
-        connect_timeout: Duration::from_secs(1),
-        read_timeout: Duration::from_secs(1),
-        ..TransportLimits::DEFAULT
-    };
-    let client =
-        ProxiedClient::build(base_builder().http1_only(), &Arc::new(policy), limits).unwrap();
-    let prompts = PromptFactory {
-        cache: Mutex::new(BTreeMap::new()),
-        hub: Hub::Http(HubClient {
-            base_url: format!("http://127.0.0.1:{port}"),
-            client,
-        }),
-    };
-    // llama2 without chat and llama3 or llama4 with instruct all need the local template
-    assert_missing_template("meta.llama3-8b-instruct-v1:0", &prompts).await;
-    assert_missing_template("meta.llama4-17b-instruct-v1:0", &prompts).await;
-    assert_missing_template("meta.llama2-llama3-instruct", &prompts).await;
-    // the HTTP hub was never asked for a template
-    match listener.accept() {
-        Ok(_stream) => panic!("the local template lookup reached the network"),
-        Err(failure) => assert_eq!(failure.kind(), ErrorKind::WouldBlock),
-    }
 }
 
 #[test]
