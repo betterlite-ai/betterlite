@@ -1,0 +1,66 @@
+kind: helper
+name: fireworks-ai-chat-tool-cleanup
+call:
+  b6072:
+    catalog: []
+    headers: []
+    keys: []
+    requests:
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params:
+          tools:
+            - type: function
+              function:
+                name: lookup
+                strict: true
+                parameters: {type: object, properties: {city: {type: string}}}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params:
+          tools:
+            - type: function
+              function:
+                name: run
+                strict: false
+                parameters:
+                  type: object
+                  properties:
+                    pet: {$ref: "#/definitions/Pet"}
+                  definitions:
+                    Pet: {type: object, properties: {name: {type: string}}}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params:
+          tools:
+            - type: custom
+              custom: {name: shell, description: run, format: {type: text}}
+            - type: function
+              function: {name: lookup}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {tools: null, tool_choice: auto}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {tools: [], tool_choice: auto}
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params:
+          tool_choice: required
+          tools:
+            - type: function
+              function:
+                name: lookup
+                strict: true
+                parameters: {type: object}
+    replies: []
+    chunks: []
+    models: []
+env: {}
+compare: {ignore: []}
