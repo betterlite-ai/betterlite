@@ -1,7 +1,7 @@
 id: B3361
 milestone: M5 api families
 title: Container request parameters and provider selection
-status: done
+status: todo
 depends_on: [B3360, B522, B547, B903]
 file: tasks/B3361-container-request-parameters.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/utils.py"
 parent: B094
 split_from: B094
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2149
+pr: null
