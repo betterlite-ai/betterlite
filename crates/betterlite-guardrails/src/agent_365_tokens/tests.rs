@@ -14,6 +14,7 @@ use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_http::proxy::base_builder;
+use betterlite_http::proxy::limits::ReadError;
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use rstest::rstest;
@@ -24,7 +25,9 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tracing::subscriber::with_default;
 
-use super::poster::{Agent365Poster, Agent365PosterError, HttpPoster, PostReply};
+use super::poster::{
+    Agent365Poster, Agent365PosterError, HttpPoster, MAX_RESPONSE_BYTES, PostReply,
+};
 use super::{
     Agent365Guardrail, Agent365Settings, DEFAULT_TIMEOUT_SECONDS, DEFENDER_STATUS_EVALUATED,
     EVALUATE_URL, SUPPORTED_EVENT_HOOKS,
@@ -706,6 +709,45 @@ fn test_http_poster_returns_error_statuses() -> ScenarioFuture {
     })
 }
 
+fn test_oversized_response_is_refused() -> ScenarioFuture {
+    Box::pin(async {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let declared = MAX_RESPONSE_BYTES + 1;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {declared}\r\nconnection: close\r\n\r\n"
+        );
+        let mut tasks = JoinSet::new();
+        tasks.spawn(async move {
+            let (mut stream, _peer) = listener.accept().await?;
+            let mut buffer = vec![0_u8; 4096];
+            let _read = stream.read(&mut buffer).await?;
+            stream.write_all(response.as_bytes()).await
+        });
+        let poster = HttpPoster {
+            client: base_builder().build().unwrap(),
+        };
+        let error = poster
+            .post(
+                &format!("http://{address}/token"),
+                &HeaderMap::new(),
+                b"grant_type=x",
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Agent365PosterError::Body {
+                source: ReadError::TooLarge { limit },
+                ..
+            } if limit == MAX_RESPONSE_BYTES
+        ));
+        let joined = tasks.join_all().await;
+        assert!(joined.iter().all(Result::is_ok));
+    })
+}
+
 fn test_constants() -> ScenarioFuture {
     Box::pin(async {
         assert_eq!(
@@ -843,6 +885,7 @@ fn test_invalid_timeouts_are_rejected() -> ScenarioFuture {
 #[case::construction_logs_the_initialized_guardrail(
     test_construction_logs_the_initialized_guardrail
 )]
+#[case::oversized_response_is_refused(test_oversized_response_is_refused)]
 #[tokio::test]
 async fn agent_365_token_behaviors(#[case] scenario: Scenario) {
     scenario().await;
