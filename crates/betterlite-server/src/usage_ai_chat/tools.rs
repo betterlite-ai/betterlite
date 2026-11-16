@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -43,7 +43,8 @@ pub struct ToolProperty {
     pub description: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UsageTool {
     Usage,
     Team,
@@ -124,35 +125,28 @@ impl UsageTool {
     }
 
     fn parameters(self) -> ToolParameters {
-        let mut properties: IndexMap<String, ToolProperty> = IndexMap::new();
-        properties.insert(
-            "start_date".to_owned(),
-            string_property("Start date in YYYY-MM-DD format"),
-        );
-        properties.insert(
-            "end_date".to_owned(),
-            string_property("End date in YYYY-MM-DD format"),
-        );
-        match self {
-            Self::Usage => {
-                properties.insert(
-                    "user_id".to_owned(),
-                    string_property("Optional user ID filter. Omit for global view."),
-                );
-            }
-            Self::Team => {
-                properties.insert(
-                    "team_ids".to_owned(),
-                    string_property("Optional comma-separated team IDs. Omit for all teams."),
-                );
-            }
-            Self::Tag => {
-                properties.insert(
-                    "tags".to_owned(),
-                    string_property("Optional comma-separated tag names. Omit for all tags."),
-                );
-            }
-        }
+        let extra = match self {
+            Self::Usage => ("user_id", "Optional user ID filter. Omit for global view."),
+            Self::Team => (
+                "team_ids",
+                "Optional comma-separated team IDs. Omit for all teams.",
+            ),
+            Self::Tag => (
+                "tags",
+                "Optional comma-separated tag names. Omit for all tags.",
+            ),
+        };
+        let properties = IndexMap::from([
+            (
+                "start_date".to_owned(),
+                string_property("Start date in YYYY-MM-DD format"),
+            ),
+            (
+                "end_date".to_owned(),
+                string_property("End date in YYYY-MM-DD format"),
+            ),
+            (extra.0.to_owned(), string_property(extra.1)),
+        ]);
         ToolParameters {
             kind: SchemaKind::Object,
             properties,

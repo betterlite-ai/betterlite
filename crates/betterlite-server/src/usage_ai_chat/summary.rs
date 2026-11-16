@@ -3,11 +3,13 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use indexmap::map::Entry;
 use rust_decimal::Decimal;
+use serde::Deserialize;
 
 use super::constants::{TOP_N_MODELS, TOP_N_PROVIDERS};
 use super::error::UsageChatError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EntityLabel {
     Team,
     Tag,
@@ -59,9 +61,7 @@ impl Totals {
 #[derive(Debug)]
 struct EntityTotals {
     alias: String,
-    spend: Decimal,
-    api_requests: i64,
-    total_tokens: i64,
+    totals: Totals,
 }
 
 pub fn summarise_usage_data(page: &DailySpendPage) -> Result<String, UsageChatError> {
@@ -90,7 +90,12 @@ pub fn summarise_usage_data(page: &DailySpendPage) -> Result<String, UsageChatEr
             totals.api_requests,
         )
     });
-    Ok(usage_sections(header, model_lines, provider_lines))
+    let mut sections: Vec<String> = vec![header, String::new(), "Top Models by Spend:".to_owned()];
+    sections.extend(listing(model_lines));
+    sections.push(String::new());
+    sections.push("Top Providers by Spend:".to_owned());
+    sections.extend(listing(provider_lines));
+    Ok(sections.join("\n"))
 }
 
 pub fn summarise_entity_data(
@@ -119,9 +124,9 @@ pub fn summarise_entity_data(
         lines.push(format!(
             "- {} (ID: {id}): ${:.4} | {} reqs | {} tokens",
             totals.alias,
-            totals.spend.round_dp(4),
-            totals.api_requests,
-            totals.total_tokens,
+            totals.totals.spend.round_dp(4),
+            totals.totals.api_requests,
+            totals.totals.total_tokens,
         ));
     }
     Ok(lines.join("\n"))
@@ -157,23 +162,10 @@ fn entity_totals(page: &DailySpendPage) -> Result<IndexMap<String, EntityTotals>
                 Entry::Occupied(slot) => slot.into_mut(),
                 Entry::Vacant(slot) => slot.insert(EntityTotals {
                     alias: entity_alias(&entry.metadata, id)?,
-                    spend: Decimal::ZERO,
-                    api_requests: 0,
-                    total_tokens: 0,
+                    totals: Totals::default(),
                 }),
             };
-            totals.spend = totals
-                .spend
-                .checked_add(entry.metrics.spend)
-                .ok_or(UsageChatError::Overflow)?;
-            totals.api_requests = totals
-                .api_requests
-                .checked_add(entry.metrics.api_requests)
-                .ok_or(UsageChatError::Overflow)?;
-            totals.total_tokens = totals
-                .total_tokens
-                .checked_add(entry.metrics.total_tokens)
-                .ok_or(UsageChatError::Overflow)?;
+            totals.totals.add(&entry.metrics)?;
         }
     }
     Ok(per_entity)
@@ -204,15 +196,6 @@ where
         .into_iter()
         .map(|(name, totals)| format(name, totals))
         .collect()
-}
-
-fn usage_sections(header: String, models: Vec<String>, providers: Vec<String>) -> String {
-    let mut sections: Vec<String> = vec![header, String::new(), "Top Models by Spend:".to_owned()];
-    sections.extend(listing(models));
-    sections.push(String::new());
-    sections.push("Top Providers by Spend:".to_owned());
-    sections.extend(listing(providers));
-    sections.join("\n")
 }
 
 fn listing(lines: Vec<String>) -> Vec<String> {

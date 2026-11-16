@@ -1,23 +1,28 @@
 use indexmap::IndexMap;
+use serde::Serialize;
 
 use super::error::UsageChatError;
 use super::tools::UsageTool;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
 pub enum FetchArguments {
     Global {
         start_date: String,
         end_date: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         user_id: Option<String>,
     },
     Team {
         start_date: String,
         end_date: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         team_ids: Option<String>,
     },
     Tag {
         start_date: String,
         end_date: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         tags: Option<String>,
     },
 }

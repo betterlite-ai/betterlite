@@ -1,4 +1,3 @@
-use betterlite_analytics::daily_metrics::DailySpendPage;
 use chrono::NaiveDate;
 use futures_util::StreamExt;
 use indexmap::IndexMap;
@@ -31,26 +30,35 @@ pub async fn stream_usage_ai_chat<Model, Data, Clock>(
     Data: UsageDataSource,
     Clock: Fn() -> NaiveDate + Sync,
 {
-    let model = resolve_model(request.model);
-    let mut chat = build_chat_messages(parts, request);
+    let model = request
+        .model
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(DEFAULT_CHAT_MODEL);
+    let skip = request.messages.len().saturating_sub(MAX_CHAT_MESSAGES);
+    let mut chat = vec![ChatMessage::System {
+        content: build_system_prompt(request.is_admin, (parts.clock)()),
+    }];
+    chat.extend(request.messages.iter().skip(skip).cloned());
     match run_chat(parts, model, &mut chat, request, sink).await {
         Ok(()) | Err(UsageChatError::ClientDisconnected) => {}
-        Err(error) => send_failure(sink, error).await,
+        Err(error) => {
+            tracing::error!("AI usage chat failed: {error}");
+            let frame = sse_frame(&SseEvent::Error {
+                message: GENERIC_ERROR.to_owned(),
+            });
+            let _sent: Result<(), mpsc::error::SendError<String>> = sink.send(frame).await;
+        }
     }
 }
 
-async fn run_chat<Model, Data, Clock>(
+async fn run_chat<Model: UsageChatModel, Data: UsageDataSource, Clock>(
     parts: &UsageChatParts<Model, Data, Clock>,
     model: &str,
     chat: &mut Vec<ChatMessage>,
     request: &UsageChatRequest<'_>,
     sink: &mpsc::Sender<String>,
-) -> Result<(), UsageChatError>
-where
-    Model: UsageChatModel,
-    Data: UsageDataSource,
-    Clock: Fn() -> NaiveDate + Sync,
-{
+) -> Result<(), UsageChatError> {
     send_event(
         sink,
         &SseEvent::Status {
@@ -69,7 +77,10 @@ where
         })
         .await?;
     if reply.tool_calls.is_empty() {
-        return answer_without_tools(reply, sink).await;
+        if let Some(content) = reply.content.filter(|text| !text.is_empty()) {
+            send_event(sink, &SseEvent::Chunk { content }).await?;
+        }
+        return send_event(sink, &SseEvent::Done).await;
     }
     let ModelReply {
         content,
@@ -80,26 +91,23 @@ where
         tool_calls: tool_calls.clone(),
     });
     for call in tool_calls {
-        process_tool_call(parts, &call, chat, request, sink).await?;
+        process_tool_call(&parts.data, &call, chat, request, sink).await?;
     }
-    stream_final_response(parts, model, chat.as_slice(), sink).await?;
+    stream_final_response(&parts.model, model, chat.as_slice(), sink).await?;
     send_event(sink, &SseEvent::Done).await
 }
 
-async fn process_tool_call<Model, Data, Clock>(
-    parts: &UsageChatParts<Model, Data, Clock>,
+async fn process_tool_call<Data: UsageDataSource>(
+    data: &Data,
     call: &ModelToolCall,
     chat: &mut Vec<ChatMessage>,
     request: &UsageChatRequest<'_>,
     sink: &mpsc::Sender<String>,
-) -> Result<(), UsageChatError>
-where
-    Model: UsageChatModel,
-    Data: UsageDataSource,
-    Clock: Fn() -> NaiveDate + Sync,
-{
+) -> Result<(), UsageChatError> {
     let arguments = decode_tool_arguments(&call.arguments)?;
-    let Some(tool) = allowed_tool(&call.name, request.is_admin) else {
+    let Some(tool) =
+        UsageTool::from_name(&call.name).filter(|tool| tool.allowed_for(request.is_admin))
+    else {
         chat.push(ChatMessage::Tool {
             tool_call_id: call.id.clone(),
             content: format!("Tool not available: {}", call.name),
@@ -108,9 +116,15 @@ where
     };
     let running = tool_event(tool, &call.name, &arguments, ToolCallStatus::Running);
     send_event(sink, &running).await?;
-    let (content, status) = match execute_tool(parts, tool, &arguments, request).await {
+    let (content, status) = match execute_tool(data, tool, &arguments, request).await {
         Ok(text) => (text, ToolCallStatus::Complete),
-        Err(error) => tool_failure(tool, &call.name, error),
+        Err(error) => {
+            tracing::error!("Tool {} failed: {error}", call.name);
+            (
+                format!("Error fetching {}. Please try again.", tool.label()),
+                ToolCallStatus::Error,
+            )
+        }
     };
     let finished = tool_event(tool, &call.name, &arguments, status);
     send_event(sink, &finished).await?;
@@ -121,17 +135,12 @@ where
     Ok(())
 }
 
-async fn execute_tool<Model, Data, Clock>(
-    parts: &UsageChatParts<Model, Data, Clock>,
+async fn execute_tool<Data: UsageDataSource>(
+    data: &Data,
     tool: UsageTool,
     arguments: &IndexMap<String, String>,
     request: &UsageChatRequest<'_>,
-) -> Result<String, UsageChatError>
-where
-    Model: UsageChatModel,
-    Data: UsageDataSource,
-    Clock: Fn() -> NaiveDate + Sync,
-{
+) -> Result<String, UsageChatError> {
     let fetch = resolve_fetch_kwargs(tool, arguments, request.user_id, request.is_admin)?;
     let page = match &fetch {
         FetchArguments::Global {
@@ -139,9 +148,7 @@ where
             end_date,
             user_id,
         } => {
-            parts
-                .data
-                .global(start_date, end_date, user_id.as_deref())
+            data.global(start_date, end_date, user_id.as_deref())
                 .await?
         }
         FetchArguments::Team {
@@ -150,10 +157,7 @@ where
             team_ids,
         } => {
             let ids = parse_csv_ids(team_ids.as_deref());
-            parts
-                .data
-                .teams(start_date, end_date, ids.as_deref())
-                .await?
+            data.teams(start_date, end_date, ids.as_deref()).await?
         }
         FetchArguments::Tag {
             start_date,
@@ -161,26 +165,22 @@ where
             tags,
         } => {
             let ids = parse_csv_ids(tags.as_deref());
-            parts
-                .data
-                .tags(start_date, end_date, ids.as_deref())
-                .await?
+            data.tags(start_date, end_date, ids.as_deref()).await?
         }
     };
-    summarise(tool, &page)
+    match tool {
+        UsageTool::Usage => summarise_usage_data(&page),
+        UsageTool::Team => summarise_entity_data(&page, EntityLabel::Team),
+        UsageTool::Tag => summarise_entity_data(&page, EntityLabel::Tag),
+    }
 }
 
-async fn stream_final_response<Model, Data, Clock>(
-    parts: &UsageChatParts<Model, Data, Clock>,
-    model: &str,
+async fn stream_final_response<Model: UsageChatModel>(
+    model: &Model,
+    name: &str,
     messages: &[ChatMessage],
     sink: &mpsc::Sender<String>,
-) -> Result<(), UsageChatError>
-where
-    Model: UsageChatModel,
-    Data: UsageDataSource,
-    Clock: Fn() -> NaiveDate + Sync,
-{
+) -> Result<(), UsageChatError> {
     send_event(
         sink,
         &SseEvent::Status {
@@ -189,12 +189,12 @@ where
     )
     .await?;
     let request = ModelRequest {
-        model,
+        model: name,
         messages,
         tools: None,
         temperature: USAGE_AI_TEMPERATURE,
     };
-    let mut stream = Box::pin(parts.model.stream(&request).await?);
+    let mut stream = Box::pin(model.stream(&request).await?);
     while let Some(delta) = stream.next().await {
         let content = delta?;
         if !content.is_empty() {
@@ -204,71 +204,11 @@ where
     Ok(())
 }
 
-async fn answer_without_tools(
-    reply: ModelReply,
-    sink: &mpsc::Sender<String>,
-) -> Result<(), UsageChatError> {
-    if let Some(content) = reply.content.filter(|text| !text.is_empty()) {
-        send_event(sink, &SseEvent::Chunk { content }).await?;
-    }
-    send_event(sink, &SseEvent::Done).await
-}
-
 async fn send_event(sink: &mpsc::Sender<String>, event: &SseEvent) -> Result<(), UsageChatError> {
     match sink.send(sse_frame(event)).await {
         Ok(()) => Ok(()),
         Err(_) => Err(UsageChatError::ClientDisconnected),
     }
-}
-
-async fn send_failure(sink: &mpsc::Sender<String>, error: UsageChatError) {
-    tracing::error!("AI usage chat failed: {error}");
-    let frame = sse_frame(&SseEvent::Error {
-        message: GENERIC_ERROR.to_owned(),
-    });
-    let _sent: Result<(), mpsc::error::SendError<String>> = sink.send(frame).await;
-}
-
-fn build_chat_messages<Model, Data, Clock>(
-    parts: &UsageChatParts<Model, Data, Clock>,
-    request: &UsageChatRequest<'_>,
-) -> Vec<ChatMessage>
-where
-    Clock: Fn() -> NaiveDate,
-{
-    let skip = request.messages.len().saturating_sub(MAX_CHAT_MESSAGES);
-    let mut chat = vec![ChatMessage::System {
-        content: build_system_prompt(request.is_admin, (parts.clock)()),
-    }];
-    chat.extend(request.messages.iter().skip(skip).cloned());
-    chat
-}
-
-fn resolve_model(model: Option<&str>) -> &str {
-    model
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .unwrap_or(DEFAULT_CHAT_MODEL)
-}
-
-fn allowed_tool(name: &str, is_admin: bool) -> Option<UsageTool> {
-    UsageTool::from_name(name).filter(|tool| tool.allowed_for(is_admin))
-}
-
-fn summarise(tool: UsageTool, page: &DailySpendPage) -> Result<String, UsageChatError> {
-    match tool {
-        UsageTool::Usage => summarise_usage_data(page),
-        UsageTool::Team => summarise_entity_data(page, EntityLabel::Team),
-        UsageTool::Tag => summarise_entity_data(page, EntityLabel::Tag),
-    }
-}
-
-fn tool_failure(tool: UsageTool, name: &str, error: UsageChatError) -> (String, ToolCallStatus) {
-    tracing::error!("Tool {name} failed: {error}");
-    (
-        format!("Error fetching {}. Please try again.", tool.label()),
-        ToolCallStatus::Error,
-    )
 }
 
 fn tool_event(
