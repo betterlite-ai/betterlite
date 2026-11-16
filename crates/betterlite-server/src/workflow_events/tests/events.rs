@@ -325,6 +325,11 @@ async fn an_event_append_without_a_caller_is_unauthorized() {
 #[case::type_is_a_number(r#"{"event_type":3,"step_name":"build"}"#, "value_error", &["body", "event_type"])]
 #[case::step_is_a_list(r#"{"event_type":"a","step_name":["x"]}"#, "value_error", &["body", "step_name"])]
 #[case::data_is_a_list(r#"{"event_type":"a","step_name":"b","data":[1]}"#, "value_error", &["body", "data"])]
+#[case::data_repeats_a_key(
+    r#"{"event_type":"a","step_name":"b","data":{"k":1,"k":2}}"#,
+    "value_error",
+    &["body", "data"]
+)]
 #[case::not_json("not json", "json_invalid", &["body"])]
 #[case::second_value(r#"{"event_type":"a","step_name":"b"} {}"#, "json_invalid", &["body"])]
 #[tokio::test]
