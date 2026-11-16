@@ -7,9 +7,6 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_redact::error::RedactionError;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize as _;
-use serde::de::IntoDeserializer as _;
-use serde::de::value::{Error as ValueError, StrDeserializer};
 use thiserror::Error;
 
 use crate::guardrail_base::error::GuardrailBaseError;
@@ -122,19 +119,16 @@ where
 pub fn event_hook_from_mode(
     mode: &LitellmParamsMode,
 ) -> Result<LitellmParamsMode, RepelloLifecycleError> {
-    match mode {
-        LitellmParamsMode::Tagged(_) => {}
-        LitellmParamsMode::Many(names) => {
-            names.iter().try_for_each(|name| check_event_hook(name))?;
-        }
-        LitellmParamsMode::One(name) => check_event_hook(name)?,
-    }
-    Ok(mode.clone())
+    let checked = match mode {
+        LitellmParamsMode::Tagged(_) => Ok(()),
+        LitellmParamsMode::Many(names) => names.iter().try_for_each(|name| check_event_hook(name)),
+        LitellmParamsMode::One(name) => check_event_hook(name),
+    };
+    checked.map(|()| mode.clone())
 }
 
 fn check_event_hook(name: &str) -> Result<(), RepelloLifecycleError> {
-    let deserializer: StrDeserializer<'_, ValueError> = name.into_deserializer();
-    GuardrailEventHooks::deserialize(deserializer)
+    serde_json::from_value::<GuardrailEventHooks>(serde_json::Value::from(name))
         .map(|_hook| ())
         .map_err(|_unknown| RepelloLifecycleError::InvalidEventHook {
             hook: name.to_owned(),

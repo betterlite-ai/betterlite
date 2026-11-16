@@ -83,7 +83,6 @@ impl RepelloAILifecycle {
         result
     }
 
-    // A permanent configuration answer never falls through to the fallback mode.
     async fn analyze(&self, text: &str, stage: &'static str) -> Outcome {
         match self.post(text, stage).await {
             Ok(response) => {
@@ -203,20 +202,17 @@ fn http_object(detail: Detail) -> GuardrailFailure {
 }
 
 fn detail(message: &str, status: Option<u16>, error_type: Option<&str>) -> Detail {
-    let mut detail = Detail::new();
-    detail.insert("error".to_owned(), GuardrailValue::Text(message.to_owned()));
-    if let Some(code) = status {
-        detail.insert(
-            "status_code".to_owned(),
-            GuardrailValue::UnsignedInteger(u64::from(code)),
-        );
-    }
-    if let Some(kind) = error_type {
-        detail.insert(
+    let mut detail = Detail::from([("error".to_owned(), GuardrailValue::Text(message.to_owned()))]);
+    detail.extend(status.map(|code| {
+        let number = GuardrailValue::UnsignedInteger(u64::from(code));
+        ("status_code".to_owned(), number)
+    }));
+    detail.extend(error_type.map(|kind| {
+        (
             "error_type".to_owned(),
             GuardrailValue::Text(kind.to_owned()),
-        );
-    }
+        )
+    }));
     detail
 }
 
