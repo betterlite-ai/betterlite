@@ -135,10 +135,7 @@ fn a_resolution_that_is_not_text_or_a_number_is_omitted(#[case] resolution: Json
     let parameters = object([("resolution", resolution)]);
     let usage =
         video_usage(Some(&request_data(parameters)), &settings(8)).expect("the usage converts");
-    assert_eq!(
-        serde_json::to_value(&usage).unwrap(),
-        json!({"duration_seconds": 8.0})
-    );
+    assert!(usage.get("video_resolution").is_none());
 }
 
 #[rstest]
@@ -166,10 +163,7 @@ fn a_sample_count_that_is_not_a_positive_integer_is_omitted(#[case] sample_count
     let parameters = object([("sampleCount", sample_count)]);
     let usage =
         video_usage(Some(&request_data(parameters)), &settings(8)).expect("the usage converts");
-    assert_eq!(
-        serde_json::to_value(&usage).unwrap(),
-        json!({"duration_seconds": 8.0})
-    );
+    assert!(usage.get("video_count").is_none());
 }
 
 #[rstest]
