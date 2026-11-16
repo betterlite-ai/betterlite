@@ -142,38 +142,41 @@ fn split_parallel_tool_calls(messages: &[Message]) -> Result<Vec<Message>, Datab
             index = index.saturating_add(1);
             continue;
         };
-        let mut run_end = index.saturating_add(1);
-        let mut tool_messages: Vec<&Message> = Vec::new();
-        while let Some(next) = messages.get(run_end) {
-            if next.role != "tool" {
-                break;
-            }
-            tool_messages.push(next);
-            run_end = run_end.saturating_add(1);
-        }
+        let tool_messages: Vec<&Message> = messages
+            .iter()
+            .skip(index.saturating_add(1))
+            .take_while(|next| next.role == "tool")
+            .collect();
         let Some(matched) = matched_calls(calls, &tool_messages) else {
             result.push(message.clone());
             index = index.saturating_add(1);
             continue;
         };
-        for (position, (call, tool_message)) in matched.iter().zip(tool_messages.iter()).enumerate()
-        {
-            let assistant = match position {
-                0 => {
-                    let mut first = message.clone();
-                    first
-                        .provider_specific_fields
-                        .insert(TOOL_CALLS.to_owned(), Json::List(vec![(*call).clone()]));
-                    first
-                }
-                _ => later_call_assistant((*call).clone()),
-            };
-            result.push(assistant);
-            result.push((*tool_message).clone());
-        }
-        index = run_end;
+        expand_group(message, &matched, &tool_messages, &mut result);
+        index = index.saturating_add(1).saturating_add(tool_messages.len());
     }
     Ok(result)
+}
+
+// The first expanded message keeps the assistant fields, later ones carry only role and tool_calls
+fn expand_group(
+    message: &Message,
+    matched: &[&Json],
+    tool_messages: &[&Message],
+    result: &mut Vec<Message>,
+) {
+    for (position, (call, tool_message)) in matched.iter().zip(tool_messages).enumerate() {
+        if position == 0 {
+            let mut first = message.clone();
+            first
+                .provider_specific_fields
+                .insert(TOOL_CALLS.to_owned(), Json::List(vec![Json::clone(call)]));
+            result.push(first);
+        } else {
+            result.push(later_call_assistant(Json::clone(call)));
+        }
+        result.push(Message::clone(tool_message));
+    }
 }
 
 // Only an assistant message with two or more tool calls starts a run Python would expand

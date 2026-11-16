@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::Future;
+use std::future::{Future, ready};
 
 use async_trait::async_trait;
 use betterlite_anthropic::anthropic_capability_catalog::OptionalParams;
@@ -248,8 +248,7 @@ impl ThinkingCapabilities for FakeCapabilities {
         key: &str,
         _provider: &str,
     ) -> impl Future<Output = bool> + Send {
-        let matched = self.adaptive && model.contains("adaptive") && key == ADAPTIVE_THINKING;
-        async move { matched }
+        ready(self.adaptive && model.contains("adaptive") && key == ADAPTIVE_THINKING)
     }
 
     fn map_effort<'seam>(

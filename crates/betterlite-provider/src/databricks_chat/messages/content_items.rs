@@ -76,24 +76,15 @@ fn transform_file(
     if file.is_empty() {
         return Ok(());
     }
-    let pdf_url = match file.get(FILE_ID) {
-        Some(Json::Text(file_id))
-            if PDF_URL_PREFIXES
+    let pdf_url = file
+        .get(FILE_ID)
+        .and_then(Json::as_str)
+        .filter(|file_id| {
+            PDF_URL_PREFIXES
                 .iter()
-                .any(|prefix| file_id.starts_with(prefix)) =>
-        {
-            Some(file_id.clone())
-        }
-        None
-        | Some(
-            Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::Text(_)
-            | Json::List(_)
-            | Json::Object(_),
-        ) => None,
-    };
+                .any(|prefix| file_id.starts_with(prefix))
+        })
+        .map(str::to_owned);
     if let Some(url) = pdf_url {
         file.insert(
             String::from(FILE_DATA),

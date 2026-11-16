@@ -186,8 +186,7 @@ async fn apply_reasoning_effort<Capabilities: ThinkingCapabilities + Send>(
             value: effort.unwrap_or_default().to_owned(),
         });
     };
-    let mut output_config = Params::new();
-    output_config.insert("effort".to_owned(), Json::Text(level.to_owned()));
+    let output_config = Params::from([("effort".to_owned(), Json::Text(level.to_owned()))]);
     mapped.insert("output_config".to_owned(), Json::Object(output_config));
     Ok(())
 }

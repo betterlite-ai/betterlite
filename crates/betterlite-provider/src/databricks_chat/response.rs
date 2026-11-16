@@ -58,33 +58,45 @@ fn transform_choice(
     ids: &dyn IdSource,
 ) -> Result<Choice, DatabricksChatError> {
     let index = match choice.index {
-        Keyed::Given(index) => index,
+        Keyed::Given(given) => given,
         Keyed::Null => 0,
         Keyed::Missing => return Err(DatabricksChatError::MissingKey { key: "index" }),
     };
     let calls = tool_calls::normalize(choice.message.tool_calls.as_deref(), ids)?;
     let repaired = match &calls {
-        Some(calls) => tool_calls::repair(calls)?,
+        Some(normalized) => tool_calls::repair(normalized)?,
         None => Vec::new(),
     };
     if let Some(content) = tool_calls::json_mode_content(&repaired, json_mode) {
+        let json_message = ReplyMessage {
+            content: Some(content),
+            role: String::from("assistant"),
+            tool_calls: None,
+            function_call: None,
+            reasoning_content: None,
+            thinking_blocks: None,
+            provider_specific_fields: None,
+        };
         return Ok(Choice {
             finish_reason: String::from("stop"),
             index,
-            message: ReplyMessage {
-                content: Some(content),
-                role: String::from("assistant"),
-                tool_calls: None,
-                function_call: None,
-                reasoning_content: None,
-                thinking_blocks: None,
-                provider_specific_fields: None,
-            },
+            message: json_message,
             provider_specific_fields: None,
         });
     }
     let message = translated_message(&choice.message, calls)?;
-    let raw = match choice.finish_reason {
+    let (finish_reason, provider_specific_fields) = finish_reason_of(choice.finish_reason)?;
+    Ok(Choice {
+        finish_reason,
+        index,
+        message,
+        provider_specific_fields,
+    })
+}
+
+// Choices maps a given finish_reason and keeps the raw one when the mapping changed it
+fn finish_reason_of(raw: Keyed<String>) -> Result<(String, Option<Object>), DatabricksChatError> {
+    let given = match raw {
         Keyed::Given(text) => Some(text),
         Keyed::Null => None,
         Keyed::Missing => {
@@ -93,7 +105,7 @@ fn transform_choice(
             });
         }
     };
-    let (finish_reason, native) = choice_finish_reason(raw.as_deref());
+    let (finish_reason, native) = choice_finish_reason(given.as_deref());
     let mut native_fields = Object::new();
     for (name, value) in native {
         native_fields.insert(
@@ -101,12 +113,10 @@ fn transform_choice(
             serde_json::from_value(value).map_err(DatabricksChatError::Decode)?,
         );
     }
-    Ok(Choice {
+    Ok((
         finish_reason,
-        index,
-        message,
-        provider_specific_fields: (!native_fields.is_empty()).then_some(native_fields),
-    })
+        (!native_fields.is_empty()).then_some(native_fields),
+    ))
 }
 
 // Message(role="assistant", ...) from the message content, its reasoning blocks and its citations

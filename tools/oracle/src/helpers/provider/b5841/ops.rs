@@ -93,17 +93,17 @@ pub(super) fn params(cases: &[ParamsCase]) -> HelperResult {
 fn params_of(case: &ParamsCase, runtime: &Runtime) -> serde_json::Value {
     let mut optional = case.optional_params.clone();
     let mut capabilities = FakeCapabilities;
-    let outcome = runtime.block_on(map_openai_params(
+    let mapping = map_openai_params(
         &case.non_default_params,
         &mut optional,
         &case.model,
         true,
         &mut capabilities,
-    ));
-    match outcome {
-        Ok(()) => json!({"params": optional}),
-        Err(error) => json!({"status": error.status_code()}),
+    );
+    if let Err(error) = runtime.block_on(mapping) {
+        return json!({"status": error.status_code()});
     }
+    json!({"params": optional})
 }
 
 pub(super) fn messages_of(case: &MessagesCase) -> serde_json::Value {

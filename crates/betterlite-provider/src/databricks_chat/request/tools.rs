@@ -39,23 +39,19 @@ pub(crate) fn convert_anthropic_tool(value: &Json) -> Result<Json, DatabricksCha
             message: "a mapped Anthropic tool is missing its name".to_owned(),
         });
     };
-    let parameters = match fields.get("input_schema") {
-        Some(schema) if schema.is_truthy() => schema.clone(),
-        None
-        | Some(
-            Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::Text(_)
-            | Json::List(_)
-            | Json::Object(_),
-        ) => Json::Object(Object::new()),
-    };
-    Ok(build_tool(name, parameters, fields.get("description")))
+    Ok(build_tool(
+        name,
+        fields.get("input_schema"),
+        fields.get("description"),
+    ))
 }
 
 // A Databricks tool is {"type": "function", "function": {name, parameters, description?}}
-pub(crate) fn build_tool(name: &str, parameters: Json, description: Option<&Json>) -> Json {
+pub(crate) fn build_tool(name: &str, schema: Option<&Json>, description: Option<&Json>) -> Json {
+    let parameters = schema
+        .filter(|given| given.is_truthy())
+        .cloned()
+        .unwrap_or_else(|| Json::Object(Object::new()));
     let mut function = Object::new();
     function.insert("name".to_owned(), Json::Text(name.to_owned()));
     function.insert("parameters".to_owned(), parameters);
@@ -79,14 +75,9 @@ pub(crate) fn response_format_tool(value: &Json) -> Result<Option<Json>, Databri
     let Some(tool) = map_tool(Some(&format))? else {
         return Ok(None);
     };
-    let parameters = if tool.input_schema.is_truthy() {
-        tool.input_schema
-    } else {
-        Json::Object(Object::new())
-    };
     Ok(Some(build_tool(
         RESPONSE_FORMAT_TOOL_NAME,
-        parameters,
+        Some(&tool.input_schema),
         None,
     )))
 }

@@ -34,7 +34,11 @@ pub(super) fn transform(
             message: String::from("the delta of a Databricks stream choice is null"),
         });
     };
-    prepare_tool_calls(&mut delta, parser, chunk)?;
+    if parser.json_mode {
+        convert_json_tool_call(&mut delta, parser, chunk)?;
+    } else {
+        clear_empty_arguments(&mut delta);
+    }
     add_citation(&mut delta);
     let mut extra = choice.extra;
     extra.shift_remove("message");
@@ -54,27 +58,25 @@ pub(super) fn transform(
     })
 }
 
-// The json-mode conversion of a json_tool_call, or outside json mode the "{}" arguments cleanup
-fn prepare_tool_calls(
+// Outside json mode an arguments value of exactly "{}" becomes "", so the caller never sees invalid json
+fn clear_empty_arguments(delta: &mut DatabricksDelta) {
+    for call in delta.tool_calls.iter_mut().flatten() {
+        if let Some(function) = &mut call.function
+            && let Some(Arguments::Text(text)) = &mut function.arguments
+            && text.as_str() == "{}"
+        {
+            text.clear();
+        }
+    }
+}
+
+// In json mode the json_tool_call arguments become the delta content and the tool calls go away
+fn convert_json_tool_call(
     delta: &mut DatabricksDelta,
     parser: &mut ChunkParser,
     chunk: &str,
 ) -> Result<(), DatabricksChatError> {
-    let Some(calls) = delta.tool_calls.as_mut() else {
-        return Ok(());
-    };
-    if !parser.json_mode {
-        for call in calls.iter_mut() {
-            if let Some(function) = &mut call.function
-                && let Some(Arguments::Text(text)) = &mut function.arguments
-                && text.as_str() == "{}"
-            {
-                text.clear();
-            }
-        }
-        return Ok(());
-    }
-    let Some(first) = calls.first() else {
+    let Some(first) = delta.tool_calls.as_ref().and_then(|calls| calls.first()) else {
         return Ok(());
     };
     if let Some(name) = first
