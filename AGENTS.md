@@ -4,7 +4,7 @@ betterlite is a Rust workspace. The binary crate lives in `crates/betterlite`;
 later gateway, configuration, provider, and routing crates live beside it.
 
 Run `cargo gate run <ID>` for the complete task gate. It runs only the tests the
-task's own commands name; a push to main runs the whole suite. During development,
+task's own commands name; main's scheduled runs test the rest. During development,
 `cargo fmt --all` and `cargo clippy -p <crate> --lib --locked -- -D warnings`
 on the crates you changed cover formatting and linting; use `--tests` instead of
 `--lib` when you changed a tests.rs too. The gate's clippy check lints all targets,

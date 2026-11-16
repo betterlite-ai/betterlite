@@ -1,0 +1,21 @@
+kind: helper
+name: fal-flux-exact-vs-custom-ratio
+call:
+  fal_flux:
+    operation: exact_vs_custom_ratio
+    profiles: [ultra, pro_v11, schnell, dev]
+    sizes:
+      - "1500x1000"
+      - "1536x1024"
+      - "1024x1024"
+      - "512x512"
+      - "1792x1024"
+      - "1024x1792"
+      - "1024x768"
+      - "768x1024"
+      - "1024x1536"
+      - "2048x876"
+      - "876x2048"
+env: {}
+compare:
+  ignore: []
