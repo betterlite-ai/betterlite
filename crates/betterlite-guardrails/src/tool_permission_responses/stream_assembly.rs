@@ -122,8 +122,8 @@ fn kept_tool_call_ids(message: &GuardrailValue) -> BTreeSet<&str> {
     }
 }
 
-struct AnthropicAssembler<'services, 'a> {
-    services: &'services StreamServices<'a>,
+struct AnthropicAssembler<'services, 'ids> {
+    services: &'services StreamServices<'ids>,
 }
 
 struct ZeroReasoning;

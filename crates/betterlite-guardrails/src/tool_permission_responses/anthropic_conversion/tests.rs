@@ -53,6 +53,6 @@ fn anthropic_content_blocks_needs_an_object_with_a_content_list() {
     assert_eq!(anthropic_content_blocks(&response).map(<[_]>::len), Some(1));
     assert!(anthropic_content_blocks(&text("hi")).is_none());
     assert!(anthropic_content_blocks(&json(r#"{"content":"hi"}"#)).is_none());
-    assert!(anthropic_content_blocks(&json(r#"{}"#)).is_none());
+    assert!(anthropic_content_blocks(&json("{}")).is_none());
     assert!(anthropic_content_blocks(&json(r#"{"content":null}"#)).is_none());
 }
