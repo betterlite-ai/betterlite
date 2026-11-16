@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::mcp::table_access::McpIdentifierConflict;
 use betterlite_db::mcp::table_access::rows::{RowFields, ServerUpdate};
 use betterlite_db::mcp::table_access::types::{
-    LockedWrite, LockedWriteOutcome, McpTableError, ServerWrite,
+    IdentifierField, LockedWrite, LockedWriteOutcome, McpTableError, ServerWrite,
 };
-use betterlite_db::mcp::table_access::{IdentifierField, McpIdentifierConflict};
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_server::mcp::server_writes::{
     ChildTable, ServerWriteStore, TokenCacheError, TokenCacheInvalidation,
