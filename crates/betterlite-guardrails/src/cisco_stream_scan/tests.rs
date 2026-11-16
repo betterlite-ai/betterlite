@@ -9,15 +9,15 @@ use axum::routing::post;
 use betterlite_config::sections::cisco_verdict_contracts::{
     Configured, FallbackAction, FlaggedAction, InspectionType,
 };
+use betterlite_streaming::stream_usage_assembly::UsageTokenCounter as _;
 use betterlite_streaming::streamed_response_assembly::records::Chunk;
 use futures_util::stream;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
-use crate::cisco_conversation::Fields;
-use crate::cisco_conversation::Role;
 use crate::cisco_conversation::json::Json;
+use crate::cisco_conversation::{Fields, InspectMessage, Role};
 use crate::cisco_inspection::construct::CiscoInspectionGuardrail;
 use crate::cisco_inspection::hooks::PostCallArgs;
 use crate::cisco_stream_scan::{StreamItem, scan_stream};
@@ -452,4 +452,38 @@ fn an_unserializable_response_is_reported() {
     response.insert(vec![1_u8, 2, 3], "value");
 
     assert!(super::assembly::response_fields(&response).is_err());
+}
+
+#[test]
+fn the_assembled_contents_are_joined_with_one_space() {
+    let messages = vec![
+        InspectMessage {
+            role: Role::Assistant,
+            content: "first".to_owned(),
+        },
+        InspectMessage {
+            role: Role::Assistant,
+            content: "second".to_owned(),
+        },
+    ];
+
+    assert_eq!(super::delivery::joined_contents(&messages), "first second");
+}
+
+#[tokio::test]
+async fn the_scan_counter_counts_zero_tokens() {
+    let counter = super::assembly::ZeroCounter;
+
+    assert_eq!(
+        counter
+            .count_response_text("gpt-4o", "text")
+            .await
+            .expect("count"),
+        0
+    );
+    assert_eq!(counter.count_text("text").await.expect("count"), 0);
+    assert_eq!(
+        counter.count_messages("gpt-4o", None).await.expect("count"),
+        0
+    );
 }

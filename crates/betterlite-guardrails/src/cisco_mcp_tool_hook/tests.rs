@@ -11,6 +11,7 @@ use axum::routing::post;
 use betterlite_config::sections::cisco_verdict_contracts::{
     Configured, FallbackAction, FlaggedAction, InspectionType,
 };
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::mcp_tool_hook::types::{
@@ -507,4 +508,73 @@ async fn a_block_leaves_the_originals_structured_mirror_and_error_flag_alone() {
     assert_eq!(original.content, reply.mcp_tool_call_response);
     assert_eq!(original.structured_content, Some(mirror));
     assert!(!original.is_error);
+}
+
+#[test]
+fn the_callback_is_named_after_the_guardrail() {
+    let hook = hook(
+        guardrail(InspectionType::Mcp, "http://127.0.0.1:1".to_owned()),
+        "\"during_mcp_call\"",
+    );
+
+    assert_eq!(hook.callback_name(), "cisco-ai-defense");
+}
+
+#[test]
+fn the_gate_data_carries_every_request_field_value() {
+    let Json::Object(fields) = Json::parse(
+        r#"{"n":null,"b":true,"i":-3,"u":18446744073709551615,"d":1.5,"t":"s","l":[1,"x"],"o":{"k":false}}"#,
+    ) else {
+        panic!("expected an object");
+    };
+
+    let data = super::request::guardrail_data(&fields);
+
+    let expected = BTreeMap::from([
+        ("n".to_owned(), GuardrailValue::Null),
+        ("b".to_owned(), GuardrailValue::Boolean(true)),
+        ("i".to_owned(), GuardrailValue::SignedInteger(-3)),
+        (
+            "u".to_owned(),
+            GuardrailValue::UnsignedInteger(18_446_744_073_709_551_615),
+        ),
+        ("d".to_owned(), GuardrailValue::Decimal(1.5)),
+        ("t".to_owned(), GuardrailValue::Text("s".to_owned())),
+        (
+            "l".to_owned(),
+            GuardrailValue::Array(vec![
+                GuardrailValue::SignedInteger(1),
+                GuardrailValue::Text("x".to_owned()),
+            ]),
+        ),
+        (
+            "o".to_owned(),
+            GuardrailValue::Object(BTreeMap::from([(
+                "k".to_owned(),
+                GuardrailValue::Boolean(false),
+            )])),
+        ),
+    ]);
+    assert_eq!(data, expected);
+}
+
+#[tokio::test]
+async fn the_trait_hook_copies_the_kwargs_and_returns_the_block() {
+    let (base, _server) = serve(StatusCode::OK, br#"{"action":"block"}"#.to_vec()).await;
+    let hook = hook(guardrail(InspectionType::Mcp, base), "\"during_mcp_call\"");
+    let kwargs = kwargs(r#"{"mcp_tool_name":"get_weather","metadata":{}}"#);
+    let mut response = response_copy();
+    let mut original = tool_result();
+
+    let reply = hook
+        .async_post_mcp_tool_call_hook(call(&kwargs, &mut response, &mut original))
+        .await
+        .expect("hook")
+        .expect("blocking reply");
+
+    assert!(blocking_text(&reply).contains("Blocked by Cisco AI Defense Guardrail"));
+    assert_eq!(
+        response.mcp_tool_call_response,
+        reply.mcp_tool_call_response
+    );
 }

@@ -37,19 +37,23 @@ pub(super) enum AssembleError {
 struct SilentLogs;
 
 impl LoggerSink for SilentLogs {
+    #[cfg_attr(test, mutants::skip)]
     fn debug(&self, _payload: &Payload) -> bool {
         false
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn info(&self, _payload: &Payload) -> bool {
         false
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn error(&self, payload: &Payload) -> bool {
         tracing::error!("{payload}");
         true
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn debug_enabled(&self) -> bool {
         false
     }
@@ -58,6 +62,7 @@ impl LoggerSink for SilentLogs {
 struct SilentConsole;
 
 impl ConsoleSink for SilentConsole {
+    #[cfg_attr(test, mutants::skip)]
     fn print(&self, _payload: &Payload) -> bool {
         false
     }
@@ -66,6 +71,7 @@ impl ConsoleSink for SilentConsole {
 struct NoCosts;
 
 impl StreamCostCalculator for NoCosts {
+    #[cfg_attr(test, mutants::skip)]
     fn completion_cost(
         &self,
         _input: &CostInput<'_>,
@@ -74,6 +80,7 @@ impl StreamCostCalculator for NoCosts {
         Ok(None)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn prompt_completion_cost(
         &self,
         _model: &str,
@@ -83,7 +90,7 @@ impl StreamCostCalculator for NoCosts {
     }
 }
 
-struct ZeroCounter;
+pub(super) struct ZeroCounter;
 
 #[async_trait]
 impl UsageTokenCounter for ZeroCounter {
