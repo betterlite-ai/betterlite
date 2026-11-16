@@ -75,7 +75,8 @@ impl Default for Settings {
 }
 
 impl Section for Raw {
-    type Settings = Settings;
+    // boxed so the loaded Config stays small enough for futures that hold it across an await
+    type Settings = Box<Settings>;
 
     fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
     where
@@ -86,7 +87,7 @@ impl Section for Raw {
         let command = present(PRISMA_COMMAND_TIMEOUT_ENV_VAR);
         let lock = present(MIGRATION_LOCK_TIMEOUT_ENV_VAR);
         let deploy = present(PRISMA_DEPLOY_TIMEOUT_ENV_VAR);
-        Ok(Settings {
+        Ok(Box::new(Settings {
             updates_enabled: !disable,
             command_timeout: timeout_from_env(
                 PRISMA_COMMAND_TIMEOUT_ENV_VAR,
@@ -103,7 +104,7 @@ impl Section for Raw {
                 .into_iter()
                 .filter(|name| present(name).is_some())
                 .collect(),
-        })
+        }))
     }
 }
 
