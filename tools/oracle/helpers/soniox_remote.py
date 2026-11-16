@@ -3,7 +3,7 @@ import base64
 from collections.abc import Callable, Coroutine
 from functools import partial
 from types import SimpleNamespace
-from typing import Final, Generic, Literal, Protocol, TypeAlias, TypedDict, TypeVar, cast
+from typing import Final, Generic, Literal, Protocol, Required, TypeAlias, TypedDict, TypeVar, cast
 
 import httpx
 import litellm
@@ -28,9 +28,9 @@ Result = TypeVar("Result")
 
 
 class Answer(TypedDict, total=False):
-    status: int
-    headers: dict[str, str]
-    body: str
+    status: Required[int]
+    headers: Required[dict[str, str]]
+    body: Required[str]
     fail: bool
 
 
