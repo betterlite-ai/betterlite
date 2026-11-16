@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::future::{Future, ready};
-use std::mem::take;
 use std::str;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
@@ -31,7 +30,7 @@ const TRANSPORT_HEADERS: [&str; 6] = [
 pub(super) struct Wire<'job> {
     submission: &'job Reply,
     polls: Mutex<VecDeque<Reply>>,
-    effects: Mutex<Vec<Value>>,
+    pub(super) effects: Mutex<Vec<Value>>,
     index: AtomicUsize,
     millis: AtomicU64,
     tick: u64,
@@ -56,10 +55,6 @@ impl<'job> Wire<'job> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(effect);
-    }
-
-    pub(super) fn take_effects(&self) -> Vec<Value> {
-        take(&mut *self.effects.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     // the last scripted poll repeats, so a job that stays Pending only needs one reply

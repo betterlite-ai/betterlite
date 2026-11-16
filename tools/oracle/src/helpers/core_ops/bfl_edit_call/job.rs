@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::mem::take;
+use std::sync::PoisonError;
 use std::time::Duration;
 
 use base64::Engine as _;
@@ -44,7 +46,7 @@ pub(super) fn run_job(job: &Job, runtime: &Runtime) -> HelperResult {
         &mut image,
         max_depth,
     ));
-    let recorded = wire.take_effects();
+    let recorded = take(&mut *wire.effects.lock().unwrap_or_else(PoisonError::into_inner));
     Ok(json!({"effects": recorded, "outcome": outcome(result)}))
 }
 
