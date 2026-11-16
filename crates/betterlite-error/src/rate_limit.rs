@@ -68,9 +68,6 @@ impl ProxyRateLimitError {
     // Prometheus' exception_class label stays HTTPException, which is what proxy-side 429s were before this class.
     pub const PROMETHEUS_EXCEPTION_CLASS: &str = "HTTPException";
 
-    /// # Errors
-    ///
-    /// Returns [`InvalidRateLimitHeader`] naming the first header whose name or value HTTP cannot carry.
     pub fn new(init: ProxyRateLimitErrorInit) -> Result<Self, InvalidRateLimitHeader> {
         let ProxyRateLimitErrorInit {
             detail,
