@@ -34,8 +34,9 @@ fn stream_options_from_data() {
 pub(super) fn stream_text_choices() {
     let run = sync_stream(r#"{"stream":true}"#).execute();
     assert_eq!(run.contents(), ["Hi ", "there"]);
-    assert_eq!(run.chunks[0].model, MODEL);
-    let provider = run.chunks[0].hidden_params.get("custom_llm_provider");
+    let first = &run.chunks[0];
+    assert_eq!(first.model, MODEL);
+    let provider = first.hidden_params.get("custom_llm_provider");
     assert_eq!(provider, Some(&JsonValue::String("azure_text".to_owned())));
     let last = run.chunks.last().unwrap();
     assert_eq!(last.choices[0].finish_reason.as_deref(), Some("stop"));

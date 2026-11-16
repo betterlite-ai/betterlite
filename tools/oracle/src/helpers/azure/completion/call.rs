@@ -243,7 +243,7 @@ pub(super) fn config(constructor: Option<&Extra>) -> Result<Json, Box<HelperErro
         ("frequency_penalty", config.frequency_penalty),
         ("logit_bias", config.logit_bias),
         ("max_tokens", config.max_tokens),
-        ("n", config.n),
+        ("n", config.number),
         ("presence_penalty", config.presence_penalty),
         ("stop", config.stop),
         ("temperature", config.temperature),

@@ -72,9 +72,10 @@ pub(super) fn cloudflare_model_null() {
     let run = scenario.execute();
     let gateways = run.source.gateways();
     assert_eq!(gateways.len(), 1);
-    assert_eq!(text(&field(&gateways[0], "model")), MODEL);
-    assert_eq!(text(&field(&gateways[0], "api_base")), gateway);
-    assert_eq!(number(&field(&gateways[0], "max_retries")), 2);
+    let record = &gateways[0];
+    assert_eq!(text(&field(record, "model")), MODEL);
+    assert_eq!(text(&field(record, "api_base")), gateway);
+    assert_eq!(number(&field(record, "max_retries")), 2);
     assert!(run.source.gets().is_empty());
     assert_eq!(run.create("model"), Json::Null);
     assert_eq!(text(&run.create("prompt")), "Hello");

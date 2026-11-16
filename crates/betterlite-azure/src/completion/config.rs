@@ -19,8 +19,8 @@ pub struct AzureOpenAITextConfig {
     pub logit_bias: Option<Json>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<Json>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub n: Option<Json>,
+    #[serde(rename = "n", skip_serializing_if = "Option::is_none")]
+    pub number: Option<Json>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub presence_penalty: Option<Json>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -23,7 +23,7 @@ fn config_forwards_its_eight_parameters() {
         frequency_penalty: Some(count(1)),
         logit_bias: Some(count(2)),
         max_tokens: Some(count(3)),
-        n: Some(count(4)),
+        number: Some(count(4)),
         presence_penalty: Some(count(5)),
         stop: Some(Json::Text("END".to_owned())),
         temperature: Some(count(6)),
