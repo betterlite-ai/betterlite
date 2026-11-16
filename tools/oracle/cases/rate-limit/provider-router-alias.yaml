@@ -1,0 +1,12 @@
+kind: helper
+name: rate-limit-provider-router-alias
+call:
+  b3017:
+    provider_resolution:
+      model: tpm-locked
+      router: deployments
+      deployments:
+        - model_name: tpm-locked
+          litellm_params: {model: openai/gpt-4o-mini}
+env: {}
+compare: {ignore: []}

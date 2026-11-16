@@ -1,0 +1,10 @@
+kind: helper
+name: rate-limit-provider-native-resolution
+call:
+  b3017:
+    provider_resolution:
+      model: openai/gpt-4o-mini
+      router: absent
+      deployments: []
+env: {}
+compare: {ignore: []}

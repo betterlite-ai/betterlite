@@ -1,0 +1,12 @@
+kind: helper
+name: rate-limit-provider-fallback-empty
+call:
+  b3017:
+    provider_resolution:
+      model: ''
+      router: deployments
+      deployments:
+        - model_name: tpm-locked
+          litellm_params: {model: openai/gpt-4o-mini}
+env: {}
+compare: {ignore: []}

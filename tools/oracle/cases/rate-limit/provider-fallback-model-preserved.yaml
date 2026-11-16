@@ -1,0 +1,12 @@
+kind: helper
+name: rate-limit-provider-fallback-model-preserved
+call:
+  b3017:
+    provider_resolution:
+      model: unknown-alias
+      router: deployments
+      deployments:
+        - model_name: other
+          litellm_params: {model: openai/gpt-4o-mini}
+env: {}
+compare: {ignore: []}
