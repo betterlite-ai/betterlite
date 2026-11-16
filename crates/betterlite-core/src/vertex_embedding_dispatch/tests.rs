@@ -1,8 +1,10 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::io;
 use std::sync::{Arc, Mutex};
 
+use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_config::sections::vertex_embedding_dispatch::Settings as EmbeddingSettings;
@@ -78,6 +80,31 @@ fn resolution(
         },
         Defaults { vertex, embedding },
         catalog,
+    )
+    .expect("a resolved request")
+}
+
+// the two settings snapshots a real config load hands the dispatch
+fn loaded_resolution(source: &str, environment: &[(&str, &str)]) -> super::Resolution {
+    let lookup: BTreeMap<String, String> = environment
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    let loaded = ConfigLoader { lookup }
+        .load(source)
+        .expect("a loaded config");
+    let empty = params("{}");
+    select(
+        SelectionRequest {
+            model: MODEL,
+            api_base: None,
+            optional_params: &empty,
+        },
+        Defaults {
+            vertex: &loaded.sections.vertex_credential_sources,
+            embedding: &loaded.sections.vertex_embedding_dispatch,
+        },
+        &ModelCatalog::default(),
     )
     .expect("a resolved request")
 }
@@ -204,6 +231,60 @@ fn environment_aliases_fall_back_in_source_order() {
         Some(ConfiguredCredentials::Text(_))
     ));
     assert_eq!(resolved.api_base.as_deref(), Some("https://vertex.example"));
+}
+
+#[test]
+fn settings_win_over_the_environment_through_the_loader() {
+    let resolved = loaded_resolution(
+        "litellm_settings:\n  vertex_project: settings-project\n  vertex_location: settings-location\n  api_base: settings-base\n",
+        &[
+            ("VERTEXAI_PROJECT", "ai-project"),
+            ("VERTEX_PROJECT", "env-project"),
+            ("VERTEXAI_LOCATION", "ai-location"),
+            ("VERTEX_LOCATION", "env-location"),
+            ("VERTEXAI_CREDENTIALS", "ai-creds"),
+            ("VERTEX_CREDENTIALS", "env-creds"),
+            ("VERTEXAI_API_BASE", "ai-base"),
+            ("VERTEX_API_BASE", "env-base"),
+        ],
+    );
+    assert_eq!(resolved.project.as_deref(), Some("settings-project"));
+    assert_eq!(resolved.location.as_deref(), Some("settings-location"));
+    assert_eq!(
+        resolved
+            .credentials
+            .as_ref()
+            .and_then(ConfiguredCredentials::as_text),
+        Some("ai-creds")
+    );
+    assert_eq!(resolved.api_base.as_deref(), Some("settings-base"));
+}
+
+#[test]
+fn environment_aliases_keep_the_loader_order() {
+    let resolved = loaded_resolution(
+        "",
+        &[
+            ("VERTEXAI_PROJECT", "ai-project"),
+            ("VERTEX_PROJECT", "env-project"),
+            ("VERTEXAI_LOCATION", "ai-location"),
+            ("VERTEX_LOCATION", "env-location"),
+            ("VERTEXAI_CREDENTIALS", "ai-creds"),
+            ("VERTEX_CREDENTIALS", "env-creds"),
+            ("VERTEXAI_API_BASE", "ai-base"),
+            ("VERTEX_API_BASE", "env-base"),
+        ],
+    );
+    assert_eq!(resolved.project.as_deref(), Some("ai-project"));
+    assert_eq!(resolved.location.as_deref(), Some("ai-location"));
+    assert_eq!(
+        resolved
+            .credentials
+            .as_ref()
+            .and_then(ConfiguredCredentials::as_text),
+        Some("ai-creds")
+    );
+    assert_eq!(resolved.api_base.as_deref(), Some("ai-base"));
 }
 
 #[test]
