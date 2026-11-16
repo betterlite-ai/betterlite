@@ -8,7 +8,7 @@ from pydantic import JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from typing_extensions import override
 
-QueryArgs: TypeAlias = Mapping[str, object]  # ast-grep-ignore: no-loose-types
+QueryArgs: TypeAlias = Mapping[str, object]
 OrderBy: TypeAlias = QueryArgs | Sequence[QueryArgs] | None
 UNIMPLEMENTED: Final = "the router weight helper reads rows only through find_many"
 
