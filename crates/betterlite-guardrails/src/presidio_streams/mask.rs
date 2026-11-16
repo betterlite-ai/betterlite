@@ -123,51 +123,53 @@ where
             run.out.send(coalesced.into_event()).await?;
             continue;
         };
-        if mask_event(run, state, event, &mut stream).await? {
+        if state.handle(run, event, &mut stream).await? {
             return Ok(());
         }
     }
     mask_remaining_chunks(run, &state.all_chunks, state.passthrough).await
 }
 
-// Handles one event after the first frame; true when the Anthropic path has taken the rest of the stream
-async fn mask_event<A>(
-    run: &mut StreamRun<'_, A>,
-    state: &mut MaskState,
-    event: StreamEvent,
-    stream: &mut Coalescer<'_>,
-) -> Result<bool, StreamError<A>>
-where
-    A: StreamAssembly,
-{
-    match event {
-        StreamEvent::Chat(chunk) if !state.passthrough => {
-            state.retention.accept::<A::Error>(chunk.get().len())?;
-            state.all_chunks.push(chunk);
-        }
-        StreamEvent::Bytes(chunk)
-            if !state.passthrough
-                && state.all_chunks.is_empty()
-                && run.assembly.is_anthropic_sse_stream(&chunk) =>
-        {
-            for masked in mask_anthropic_sse_stream(run, chunk, stream).await? {
-                run.out.send(masked).await?;
+impl MaskState {
+    // Handles one event after the first frame; true when the Anthropic path has taken the rest of the stream
+    async fn handle<A>(
+        &mut self,
+        run: &mut StreamRun<'_, A>,
+        event: StreamEvent,
+        stream: &mut Coalescer<'_>,
+    ) -> Result<bool, StreamError<A>>
+    where
+        A: StreamAssembly,
+    {
+        match event {
+            StreamEvent::Chat(chunk) if !self.passthrough => {
+                self.retention.accept::<A::Error>(chunk.get().len())?;
+                self.all_chunks.push(chunk);
             }
-            return Ok(true);
+            StreamEvent::Bytes(chunk)
+                if !self.passthrough
+                    && self.all_chunks.is_empty()
+                    && run.assembly.is_anthropic_sse_stream(&chunk) =>
+            {
+                for masked in mask_anthropic_sse_stream(run, chunk, stream).await? {
+                    run.out.send(masked).await?;
+                }
+                return Ok(true);
+            }
+            StreamEvent::Bytes(chunk) => {
+                self.passthrough = self.passthrough || self.all_chunks.is_empty();
+                run.out.send(StreamEvent::Bytes(chunk)).await?;
+            }
+            StreamEvent::Chat(_) => run.out.send(event).await?,
+            StreamEvent::Other(_) => {
+                flush_unmaskable_buffer::<A>(&self.all_chunks, run.out).await?;
+                self.all_chunks.clear();
+                self.passthrough = true;
+                run.out.send(event).await?;
+            }
         }
-        StreamEvent::Bytes(chunk) => {
-            state.passthrough = state.passthrough || state.all_chunks.is_empty();
-            run.out.send(StreamEvent::Bytes(chunk)).await?;
-        }
-        StreamEvent::Chat(_) => run.out.send(event).await?,
-        StreamEvent::Other(_) => {
-            flush_unmaskable_buffer::<A>(&state.all_chunks, run.out).await?;
-            state.all_chunks.clear();
-            state.passthrough = true;
-            run.out.send(event).await?;
-        }
+        Ok(false)
     }
-    Ok(false)
 }
 
 async fn mask_remaining_chunks<A>(

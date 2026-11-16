@@ -32,6 +32,18 @@ async fn changed_text_is_replayed_as_rebuilt_frames() {
 }
 
 #[tokio::test]
+async fn masked_tool_arguments_are_replayed_as_rebuilt_frames() {
+    let mut harness = Harness::new();
+    harness.assembly.builder = Builder::Tool;
+    let mut request = request_data("{}");
+    let arguments_frame = "event: content_block_delta\ndata: {\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"Alice\"}}\n\n";
+    let events = ok(vec![bytes(START_FRAME), bytes(arguments_frame)]);
+    let (sent, result) = harness.run(Kind::Mask, &mut request, events).await;
+    result.unwrap();
+    assert_eq!(sent, ["bytes rebuilt:;args:MASKED"]);
+}
+
+#[tokio::test]
 async fn a_stream_that_does_not_assemble_is_returned_with_a_warning() {
     let (captured, _guard) = capture_logs();
     let mut harness = Harness::new();

@@ -20,11 +20,11 @@ fn preserve_usage_cases(
     #[case] expected: Option<&str>,
 ) {
     let mut response: ChatModelResponse = serde_json::from_str(assembled).unwrap();
-    let chunks: Vec<Box<RawValue>> = chunks
+    let parsed: Vec<Box<RawValue>> = chunks
         .iter()
         .map(|chunk| RawValue::from_string((*chunk).to_owned()).unwrap())
         .collect();
-    preserve_usage_from_last_chunk(&mut response, &chunks);
+    preserve_usage_from_last_chunk(&mut response, &parsed);
     let usage = response.extra.get("usage").map(|raw| raw.get().to_owned());
     assert_eq!(usage.as_deref(), expected);
 }

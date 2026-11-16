@@ -27,8 +27,8 @@ const PLAIN: &str =
     "event: x\ndata: {\"type\":\"ping\"}\n\n"
 )]
 #[case::non_ascii_text_is_not_escaped(
-    r#"data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"<PERSON_1> ü"}}"#,
-    r#"data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Alice ü"}}"#
+    "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"<PERSON_1> \u{fc}\"}}",
+    "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Alice \u{fc}\"}}"
 )]
 fn unmask_sse_delta_cases(#[case] chunk: &str, #[case] expected: &str) {
     let unmasked = unmask_sse_bytes_chunk(chunk.as_bytes(), &tokens());

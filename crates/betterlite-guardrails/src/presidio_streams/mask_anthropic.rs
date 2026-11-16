@@ -42,9 +42,12 @@ where
         );
         return Ok(chunks);
     };
-    let original_text = run.assembly.model_response_text(&assembled);
+    let original =
+        serde_json::to_string(&assembled).map_err(|source| PresidioStreamError::Json { source })?;
     process_response_for_pii(run.context, &mut assembled, run.request_data, Mode::Mask).await?;
-    if run.assembly.model_response_text(&assembled) == original_text {
+    if serde_json::to_string(&assembled).map_err(|source| PresidioStreamError::Json { source })?
+        == original
+    {
         return Ok(chunks);
     }
     let masked = run

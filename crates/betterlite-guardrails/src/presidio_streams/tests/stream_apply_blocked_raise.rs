@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::io::Error;
+
 use betterlite_config::sections::guardrail_identity::enums::PiiAction;
 use betterlite_core::api::api_boundaries::ApiLimits;
 
@@ -7,6 +9,7 @@ use super::shared::{
     Events, Harness, Kind, START_FRAME, bytes, capture_logs, chat, logged_text, ok, request_data,
     spawn_person_analyzer, upstream_failure,
 };
+use crate::presidio_actions::error::PresidioActionsError;
 use crate::presidio_streams::error::PresidioStreamError;
 
 #[tokio::test]
@@ -110,13 +113,11 @@ async fn an_anthropic_stream_past_the_byte_ceiling_is_raised() {
 
 #[test]
 fn only_a_blocked_entity_is_a_blocked_error() {
-    let blocked = PresidioStreamError::<std::io::Error>::Actions(
-        crate::presidio_actions::error::PresidioActionsError::BlockedEntity {
-            entity_type: "PERSON".to_owned(),
-            guardrail_name: "g".to_owned(),
-        },
-    );
+    let blocked = PresidioStreamError::<Error>::Actions(PresidioActionsError::BlockedEntity {
+        entity_type: "PERSON".to_owned(),
+        guardrail_name: "g".to_owned(),
+    });
     assert!(blocked.is_blocked());
-    let closed = PresidioStreamError::<std::io::Error>::ConsumerClosed;
+    let closed = PresidioStreamError::<Error>::ConsumerClosed;
     assert!(!closed.is_blocked());
 }

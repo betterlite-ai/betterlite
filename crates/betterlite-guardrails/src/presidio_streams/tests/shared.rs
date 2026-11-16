@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::future::{Future, ready};
 use std::io::{self, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Router;
@@ -25,7 +26,7 @@ use crate::presidio_actions::{AnonymizerSettings, PresidioAnonymizer};
 use crate::presidio_analysis::wire::{MockRedactedItem, MockRedactedText};
 use crate::presidio_analysis::{AnalyzerSettings, DEFAULT_CHUNK_SIZE_BYTES, PresidioAnalyzer};
 use crate::presidio_response::HookContext;
-use crate::presidio_response::wire::{ChatModelResponse, Content};
+use crate::presidio_response::wire::{ChatModelResponse, Content, ToolCallItem};
 use crate::presidio_streams::assembly::StreamAssembly;
 use crate::presidio_streams::coalesce::{Coalesced, Coalescer};
 use crate::presidio_streams::error::StreamError;
@@ -55,6 +56,7 @@ pub(super) enum Builder {
     Chat,
     NotAModel,
     Fails,
+    Tool,
 }
 
 // Stands in for the helpers B2227 and B3669 own: it joins the delta texts of chat chunks and the text_delta texts of SSE frames
@@ -91,6 +93,14 @@ fn response(text: &str) -> ChatModelResponse {
     serde_json::from_str(&message).unwrap()
 }
 
+fn tool_response(arguments: &str) -> ChatModelResponse {
+    let arguments = serde_json::to_string(arguments).unwrap();
+    let message = format!(
+        r#"{{"choices":[{{"message":{{"role":"assistant","tool_calls":[{{"id":"t1","type":"function","function":{{"name":"lookup","arguments":{arguments}}}}}]}}}}]}}"#
+    );
+    serde_json::from_str(&message).unwrap()
+}
+
 #[derive(Deserialize)]
 struct Frame {
     delta: FrameDelta,
@@ -98,7 +108,8 @@ struct Frame {
 
 #[derive(Deserialize)]
 struct FrameDelta {
-    text: String,
+    text: Option<String>,
+    partial_json: Option<String>,
 }
 
 impl StreamAssembly for FakeAssembly {
@@ -108,19 +119,19 @@ impl StreamAssembly for FakeAssembly {
         str::from_utf8(chunk).is_ok_and(|text| text.contains("event: message_start"))
     }
 
-    async fn stream_chunk_builder(
+    fn stream_chunk_builder(
         &self,
         chunks: &[Box<RawValue>],
         messages: Option<&RawValue>,
-    ) -> Result<Option<ChatModelResponse>, FakeFailure> {
+    ) -> impl Future<Output = Result<Option<ChatModelResponse>, FakeFailure>> + Send {
         self.seen_messages
             .lock()
             .unwrap()
             .push(messages.map(|value| value.get().to_owned()));
-        match self.builder {
+        ready(match self.builder {
             Builder::Fails => Err(FakeFailure),
             Builder::NotAModel => Ok(None),
-            Builder::Chat => {
+            Builder::Chat | Builder::Tool => {
                 let text: String = chunks
                     .iter()
                     .map(|chunk| serde_json::from_str::<Chunk>(chunk.get()).unwrap())
@@ -129,29 +140,48 @@ impl StreamAssembly for FakeAssembly {
                     .collect();
                 Ok(Some(response(&text)))
             }
-        }
+        })
     }
 
     fn convert_to_streaming(
         &self,
         response: &ChatModelResponse,
     ) -> Result<Box<RawValue>, FakeFailure> {
-        Ok(raw(&serde_json::to_string(response).unwrap()))
+        let Ok(encoded) = serde_json::to_string(response) else {
+            return Err(FakeFailure);
+        };
+        Ok(raw(&encoded))
     }
 
-    async fn assemble_anthropic_sse_stream(&self, chunks: &[Vec<u8>]) -> Option<ChatModelResponse> {
+    fn assemble_anthropic_sse_stream(
+        &self,
+        chunks: &[Vec<u8>],
+    ) -> impl Future<Output = Option<ChatModelResponse>> + Send {
         self.seen_frames.lock().unwrap().push(chunks.to_vec());
         let frames = String::from_utf8(chunks.concat()).unwrap();
         if self.builder == Builder::NotAModel || !frames.contains("event: message_start") {
-            return None;
+            return ready(None);
         }
-        let text: String = frames
+        let mut text = String::new();
+        let mut arguments = String::new();
+        for line in frames
             .lines()
             .filter_map(|line| line.strip_prefix("data: "))
-            .filter_map(|json| serde_json::from_str::<Frame>(json).ok())
-            .map(|frame| frame.delta.text)
-            .collect();
-        Some(response(&text))
+        {
+            let Ok(frame) = serde_json::from_str::<Frame>(line) else {
+                continue;
+            };
+            if let Some(found) = frame.delta.text {
+                text.push_str(&found);
+            }
+            if let Some(found) = frame.delta.partial_json {
+                arguments.push_str(&found);
+            }
+        }
+        ready(Some(match self.builder {
+            Builder::Tool => tool_response(&arguments),
+            Builder::Chat | Builder::NotAModel | Builder::Fails => response(&text),
+        }))
     }
 
     fn model_response_text(&self, response: &ChatModelResponse) -> String {
@@ -172,7 +202,27 @@ impl StreamAssembly for FakeAssembly {
         response: &ChatModelResponse,
     ) -> Result<Vec<Vec<u8>>, FakeFailure> {
         let text = self.model_response_text(response);
-        Ok(vec![format!("rebuilt:{text}").into_bytes()])
+        let arguments: String = response
+            .choices
+            .iter()
+            .flatten()
+            .filter_map(|choice| choice.message.as_ref())
+            .filter_map(|message| message.tool_calls.as_ref())
+            .flatten()
+            .filter_map(|call| {
+                let ToolCallItem::Object(call) = call else {
+                    return None;
+                };
+                call.function.as_ref()
+            })
+            .filter_map(|function| function.arguments.clone())
+            .collect();
+        let rebuilt = if arguments.is_empty() {
+            format!("rebuilt:{text}")
+        } else {
+            format!("rebuilt:{text};args:{arguments}")
+        };
+        Ok(vec![rebuilt.into_bytes()])
     }
 }
 
@@ -247,7 +297,7 @@ pub(super) fn describe(event: &StreamEvent) -> String {
     match event {
         StreamEvent::Chat(chunk) => format!("chat {}", chunk.get()),
         StreamEvent::Bytes(frame) => format!("bytes {}", str::from_utf8(frame).unwrap()),
-        StreamEvent::Other(event) => format!("other {}", event.get()),
+        StreamEvent::Other(other_event) => format!("other {}", other_event.get()),
     }
 }
 
@@ -398,7 +448,8 @@ struct Sink(Arc<Mutex<Vec<u8>>>);
 
 impl Write for Sink {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        let mut captured = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        captured.extend_from_slice(buf);
         Ok(buf.len())
     }
 

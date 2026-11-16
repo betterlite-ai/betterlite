@@ -1,6 +1,4 @@
 use indexmap::IndexMap;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 
 use crate::presidio_actions::tokens::unmask_pii_text;
@@ -50,53 +48,61 @@ pub fn unmask_sse_bytes_chunk(chunk: &[u8], tokens: &PiiTokens) -> Vec<u8> {
     lines.join("\n").into_bytes()
 }
 
-// Parses the JSON in raw as T, lets edit change it and writes it back; a value that is not a T stays as it was
-fn edit_raw<T, Edit>(raw: &mut Box<RawValue>, edit: Edit) -> Result<(), serde_json::Error>
+// Applies edit to every entry of the JSON array in raw and writes the array back when edit changed one entry; a value that is not an array stays as it was
+fn edit_list<Edit>(raw: &mut Box<RawValue>, mut edit: Edit) -> Result<bool, serde_json::Error>
 where
-    T: DeserializeOwned + Serialize,
-    Edit: FnOnce(&mut T) -> Result<(), serde_json::Error>,
+    Edit: FnMut(&mut Box<RawValue>) -> Result<bool, serde_json::Error>,
 {
-    let Ok(mut value) = serde_json::from_str::<T>(raw.get()) else {
-        return Ok(());
+    let Ok(mut entries) = serde_json::from_str::<Vec<Box<RawValue>>>(raw.get()) else {
+        return Ok(false);
     };
-    edit(&mut value)?;
-    *raw = RawValue::from_string(serde_json::to_string(&value)?)?;
-    Ok(())
-}
-
-fn edit_field<T, Edit>(fields: &mut Fields, key: &str, edit: Edit) -> Result<(), serde_json::Error>
-where
-    T: DeserializeOwned + Serialize,
-    Edit: FnOnce(&mut T) -> Result<(), serde_json::Error>,
-{
-    fields
-        .get_mut(key)
-        .map_or(Ok(()), |raw| edit_raw::<T, _>(raw, edit))
-}
-
-// Applies edit to each list entry that is a JSON object and skips the rest
-fn edit_objects<Edit>(
-    entries: &mut [Box<RawValue>],
-    mut edit: Edit,
-) -> Result<(), serde_json::Error>
-where
-    Edit: FnMut(&mut Fields) -> Result<(), serde_json::Error>,
-{
-    for entry in entries {
-        edit_raw::<Fields, _>(entry, &mut edit)?;
+    let mut changed = false;
+    for entry in &mut entries {
+        changed |= edit(entry)?;
     }
-    Ok(())
+    if !changed {
+        return Ok(false);
+    }
+    *raw = RawValue::from_string(serde_json::to_string(&entries)?)?;
+    Ok(true)
 }
 
-fn unmask_item(item: &mut Fields, tokens: &PiiTokens) -> Result<(), serde_json::Error> {
-    edit_field::<Vec<Box<RawValue>>, _>(item, "content", |blocks| {
-        edit_objects(blocks, |block| {
-            edit_field::<String, _>(block, "text", |text| {
-                *text = unmask_pii_text(text, tokens);
-                Ok(())
-            })
-        })
-    })
+// Unmasks the text of one content block; true when the text changed
+fn unmask_block(block: &mut Box<RawValue>, tokens: &PiiTokens) -> Result<bool, serde_json::Error> {
+    let Ok(mut fields) = serde_json::from_str::<Fields>(block.get()) else {
+        return Ok(false);
+    };
+    let Some(text) = fields.get_mut("text") else {
+        return Ok(false);
+    };
+    let Ok(found) = serde_json::from_str::<String>(text.get()) else {
+        return Ok(false);
+    };
+    let unmasked = unmask_pii_text(&found, tokens);
+    if unmasked == found {
+        return Ok(false);
+    }
+    *text = to_raw(&unmasked)?;
+    *block = RawValue::from_string(serde_json::to_string(&fields)?)?;
+    Ok(true)
+}
+
+// Unmasks the content blocks of one output item; true when a text changed
+fn unmask_output_item(
+    item: &mut Box<RawValue>,
+    tokens: &PiiTokens,
+) -> Result<bool, serde_json::Error> {
+    let Ok(mut fields) = serde_json::from_str::<Fields>(item.get()) else {
+        return Ok(false);
+    };
+    let Some(content) = fields.get_mut("content") else {
+        return Ok(false);
+    };
+    if !edit_list(content, |block| unmask_block(block, tokens))? {
+        return Ok(false);
+    }
+    *item = RawValue::from_string(serde_json::to_string(&fields)?)?;
+    Ok(true)
 }
 
 // LiteLLM's _unmask_responses_api_completed_chunk: unmasks the text of every content block of every output item of a response.completed event
@@ -104,11 +110,20 @@ pub fn unmask_completed_event(
     event: &mut Fields,
     tokens: &PiiTokens,
 ) -> Result<(), serde_json::Error> {
-    edit_field::<Fields, _>(event, "response", |response| {
-        edit_field::<Vec<Box<RawValue>>, _>(response, "output", |items| {
-            edit_objects(items, |item| unmask_item(item, tokens))
-        })
-    })
+    let Some(response) = event.get_mut("response") else {
+        return Ok(());
+    };
+    let Ok(mut fields) = serde_json::from_str::<Fields>(response.get()) else {
+        return Ok(());
+    };
+    let Some(output) = fields.get_mut("output") else {
+        return Ok(());
+    };
+    if !edit_list(output, |item| unmask_output_item(item, tokens))? {
+        return Ok(());
+    }
+    *response = RawValue::from_string(serde_json::to_string(&fields)?)?;
+    Ok(())
 }
 
 // Unmasks a response.completed event and leaves any other event alone

@@ -16,7 +16,9 @@ fn replays_the_presidio_streams_sse_corpus(
     let bytes = fs::read(path).unwrap();
     drop(unmask_sse_bytes_chunk(&bytes, &tokens()));
     let (preface, rest) = split_sse_preface(&bytes);
-    assert_eq!([preface, rest].concat(), bytes);
+    let mut joined = preface.to_vec();
+    joined.extend_from_slice(rest);
+    assert_eq!(joined, bytes);
 }
 
 #[rstest]
