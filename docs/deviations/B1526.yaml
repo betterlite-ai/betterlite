@@ -1,0 +1,15 @@
+task: B1526
+deviations:
+  - what: A Fal edit reply whose JSON root is not an object returns a typed reply error that keeps the response status and headers, while LiteLLM calls .get on whatever json() returned and lets the AttributeError escape the transform.
+    why: LiteLLM's uncaught AttributeError turns a bad provider reply into an unexplained server error. No working setup can depend on that attribute error, so betterlite reports the reply decode failure instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_edit/transformation.py#L174
+  - what: A Fal edit reply larger than 16 MiB returns a typed reply error, while LiteLLM decodes any size httpx accepted.
+    why: betterlite bounds every provider reply it decodes, so one oversized edit response cannot exhaust the process. The limit comes from the shared Fal image reply decoder.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_edit/transformation.py#L166
+  - what: A local image path that cannot be read, and a seekable reader whose seek or read fails, return a typed image input error that carries the operating system error, while LiteLLM lets the OSError or io error propagate unchanged.
+    why: betterlite converts every image input failure into this module's error type, so a caller sees one error surface for bad input. The message still carries the operating system's own text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_edit/transformation.py#L54
+kept_bugs:
+  - what: 'An empty mask list is treated as the mask value itself, so mask=[] fails conversion with "Unsupported image type for Fal AI image edit: list" instead of meaning no mask was supplied.'
+    why: LiteLLM's _first returns the empty list itself because an empty list is falsy, and the task and the oracle pin that exact behavior, so a caller that sends mask=[] keeps getting the same ValueError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_edit/transformation.py#L144

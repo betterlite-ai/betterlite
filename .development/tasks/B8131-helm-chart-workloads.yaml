@@ -20,6 +20,7 @@ scope:
     - packaging/helm/betterlite-helm/tests/collector_tests.yaml
     - packaging/helm/betterlite-helm/tests/metrics_server_tests.yaml
     - packaging/helm/betterlite-helm/tests/service_tests.yaml
+    - packaging/helm/betterlite-helm/tests/connection_pool_tests.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/deployment.yaml#L1-L250
@@ -47,6 +48,8 @@ dod:
     proof: [job-suite]
   - text: The Services, the metrics Service and the metrics port render as described.
     proof: [service-suites]
+  - text: The pgbouncer variables from B8130's betterlite.proxyEnv appear in the Deployment only when db.connectionPool.enabled is true.
+    proof: [pool-suite]
   - text: The chart lints and renders as a whole with the CI values.
     proof: [chart-lint]
 checks:
@@ -58,6 +61,9 @@ checks:
     - id: collector-suite
       why: the collector sidecar behavior is missing
       run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/collector_tests.yaml
+    - id: pool-suite
+      why: the pgbouncer variables are missing or always present
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/connection_pool_tests.yaml
     - id: job-suite
       why: a migrations Job behavior is missing
       run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/migrations_job_tests.yaml

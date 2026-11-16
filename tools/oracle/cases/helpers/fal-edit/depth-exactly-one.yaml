@@ -1,0 +1,72 @@
+kind: helper
+name: fal-edit-depth-exactly-one
+call:
+  fal_edit:
+    operation: prepare
+    model: fal-ai/flux-lora-depth
+    prompt: depth edit
+    images:
+      - kind: bytes
+        content: [137, 80, 78, 71, 13, 10, 26, 10]
+    mask: []
+    params:
+      mask: "https://mask.test/dropped.png"
+      n: 1
+      size: 512x768
+calls:
+  - fal_edit:
+      operation: prepare
+      model: fal-ai/flux-lora-depth
+      prompt: null control image
+      images:
+        - null
+      mask: []
+      params: {}
+  - fal_edit:
+      operation: prepare
+      model: fal-ai/flux-lora-depth
+      prompt: absent control image
+      images: []
+      mask: []
+      params: {}
+  - fal_edit:
+      operation: prepare
+      model: fal-ai/flux-lora-depth
+      prompt: tuple control image
+      images:
+        - kind: tuple
+          content: [255, 216, 255, 1, 2, 3]
+      mask: []
+      params: {}
+  - fal_edit:
+      operation: prepare
+      model: fal-ai/flux-lora-depth
+      prompt: two control images
+      images:
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+        - kind: bytes
+          content: [255, 216, 255, 1, 2, 3]
+      mask: []
+      params: {}
+  - fal_edit:
+      operation: prepare
+      model: fal-ai/flux-lora-depth
+      prompt: null then a control image
+      images:
+        - null
+        - kind: bytes
+          content: [255, 216, 255, 1, 2, 3]
+      mask: []
+      params: {}
+  - fal_edit:
+      operation: url
+      environment: {}
+      api_bases: [null, "https://explicit.test/"]
+      models:
+        - fal-ai/flux-lora-depth
+        - fal-ai/Flux-Lora-Depth/edit
+        - openai/gpt-image-2/edit
+env: {}
+compare:
+  ignore: []

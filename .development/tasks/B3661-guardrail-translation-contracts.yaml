@@ -89,7 +89,7 @@ checks:
       run: grep -q "BedrockChecksContentFilterCategory" crates/betterlite-guardrails/src/*.rs && grep -q "BedrockChecksConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "_require_at_least_one_check" crates/betterlite-config/src/sections/*.rs
     - id: bedrock-validator-works
       why: The Bedrock validator does not enforce at least one check
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_translation::(.*::)?guardrail_provider_options::.*bedrock.*validator/)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_guardrail_provider_options_corpus)'
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_translation::(.*::)?guardrail_provider_options::.*bedrock.*validator/)' && cargo nextest run --locked -p betterlite-oracle-guardrails --no-tests=fail -E 'test(replays_the_guardrail_provider_options_corpus)'
     - id: provider-config-types-exist
       why: Provider config types are missing or incomplete
       run: grep -q "BedrockGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "LakeraV2GuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "PillarGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "NomaGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "ZscalerAIGuardConfigModel" crates/betterlite-config/src/sections/*.rs && grep -q "JavelinGuardrailConfigModel" crates/betterlite-config/src/sections/*.rs
