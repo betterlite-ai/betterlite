@@ -185,7 +185,7 @@ def chunk_value(chunk: ChunkDump) -> JsonValue:
 
 def item_value(item: ModelResponseStream | str) -> JsonValue:
     match item:
-        case ModelResponseStream():
+        case ModelResponseStream():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103-L2106
             return chunk_value(CHUNK.validate_json(item.model_dump_json()))
         case str():
             return sse_value(item)
@@ -220,7 +220,7 @@ def stream_items(chunks: list[JsonValue]) -> list[ModelResponseStream | dict[str
         if text_only:
             items.append(RAW_CHUNK.validate_python(raw))
         else:
-            items.append(ModelResponseStream.model_validate(raw))
+            items.append(ModelResponseStream.model_validate(raw))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103-L2106
     return items
 
 
@@ -250,10 +250,12 @@ async def mcp_async(input_value: McpInput) -> JsonValue:
     script = Script(input_value["answer"])
     cisco = build_guardrail(input_value["settings"], script)
     content = input_value["tool_response"]
-    response = MCPPostCallResponseObject.model_validate(
-        {"mcp_tool_call_response": content, "hidden_params": {"response_cost": None}}
-    )
-    original = CallToolResult.model_validate({"content": content})
+    payload: dict[str, JsonValue] = {
+        "mcp_tool_call_response": content,
+        "hidden_params": {"response_cost": None},
+    }
+    response = MCPPostCallResponseObject.model_validate(payload)
+    original = CallToolResult.model_validate({"content": content})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L97-L173
     kwargs: dict[str, JsonValue | CallToolResult] = dict(input_value["kwargs"])
     if kwargs.get("original_response") is not None:
         kwargs["original_response"] = original
@@ -280,7 +282,8 @@ async def mcp_async(input_value: McpInput) -> JsonValue:
             for item in response_dump["mcp_tool_call_response"]
         ],
         "original": [
-            {"type": item["type"], "text": parsed_text(item["text"])} for item in original_dump["content"]
+            {"type": item["type"], "text": parsed_text(item["text"])}
+            for item in original_dump["content"]
         ],
         "path": path,
         "request": request,

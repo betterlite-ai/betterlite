@@ -160,10 +160,5 @@ fn configured(settings: &Value, api_base: &str) -> Result<Configured, Box<Helper
         .guardrails
         .into_iter()
         .next()
-        .ok_or_else(|| {
-            fail(
-                "ConfigError",
-                "no Cisco AI Defense guardrail was configured".to_owned(),
-            )
-        })
+        .ok_or_else(|| fail("ConfigError", "no Cisco guardrail configured".to_owned()))
 }

@@ -46,21 +46,36 @@ pub(super) fn run(args: &McpArgs) -> HelperResult {
         }))
         .map_err(|error| fail("LoggerError", error.to_string()))?;
     let (path, inspected) = harness.recorded()?;
-    let returned_items = match &returned {
-        Some(value) => Value::Array(
+    Ok(report(
+        returned.as_ref(),
+        &response,
+        &original,
+        path,
+        inspected,
+    ))
+}
+
+fn report(
+    returned: Option<&McpPostCallResponse>,
+    response: &McpPostCallResponse,
+    original: &McpToolResult,
+    path: Option<String>,
+    inspected: Option<Value>,
+) -> Value {
+    let returned_items = returned.map_or(Value::Null, |value| {
+        Value::Array(
             value
                 .mcp_tool_call_response
                 .iter()
                 .map(projection::content_item)
                 .collect(),
-        ),
-        None => Value::Null,
-    };
-    Ok(json!({
+        )
+    });
+    json!({
         "returned": returned_items,
         "response": Value::Array(response.mcp_tool_call_response.iter().map(projection::content_item).collect()),
         "original": Value::Array(original.content.iter().map(projection::content_item).collect()),
-        "path": path,
-        "request": inspected,
-    }))
+        "path": path.map_or(Value::Null, Value::String),
+        "request": inspected.unwrap_or(Value::Null),
+    })
 }

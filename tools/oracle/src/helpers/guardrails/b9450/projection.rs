@@ -63,7 +63,11 @@ pub(super) fn content_item(item: &ContentJson) -> Value {
             }
             Value::Object(projected)
         }
-        other => json_value(other),
+        other @ ContentJson::Null
+        | other @ ContentJson::Bool(_)
+        | other @ ContentJson::Number(_)
+        | other @ ContentJson::Text(_)
+        | other @ ContentJson::List(_) => json_value(other),
     }
 }
 
@@ -72,7 +76,11 @@ fn text_field(value: &ContentJson) -> Value {
         ContentJson::Text(text) => {
             serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.clone()))
         }
-        other => json_value(other),
+        other @ ContentJson::Null
+        | other @ ContentJson::Bool(_)
+        | other @ ContentJson::Number(_)
+        | other @ ContentJson::List(_)
+        | other @ ContentJson::Object(_) => json_value(other),
     }
 }
 
@@ -86,7 +94,7 @@ fn json_value(value: &ContentJson) -> Value {
         ContentJson::Object(fields) => Value::Object(
             fields
                 .iter()
-                .map(|(key, value)| (key.clone(), json_value(value)))
+                .map(|(key, item)| (key.clone(), json_value(item)))
                 .collect(),
         ),
     }
