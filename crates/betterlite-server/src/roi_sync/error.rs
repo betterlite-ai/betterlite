@@ -35,7 +35,7 @@ where
     #[error("the gateway spend could not be read")]
     Spend(#[source] DbError),
     #[error("the stored report or pull record could not be read")]
-    Repository(#[from] Store),
+    Repository(#[source] Store),
     #[error("the analysis date range is out of bounds")]
     DateRange,
     #[error("the analysis has more pull requests than it can count")]

@@ -64,7 +64,9 @@ where
     context.status.apply(StatusChange::Repositories);
     let repositories =
         read_repositories(context.github, &context.settings.repos, start, end).await?;
-    let previous = previous_report(repository).await?;
+    let previous = previous_report(repository)
+        .await
+        .map_err(RunError::Repository)?;
     let plan = index_pulls(
         context.settings,
         context.models,

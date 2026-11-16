@@ -1,9 +1,6 @@
-use std::error::Error as StdError;
 use std::sync::{Arc, PoisonError};
 
-use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_roi::estimator::models::EstimatorModel;
-use betterlite_roi::records::ROIReport;
 use betterlite_roi::settings::ROISettings;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -93,8 +90,12 @@ where
                 }
             }
             None => {
-                let value = encode_report(&execution.report)?;
-                self.repository.set_param(REPORT_PARAM, value).await?;
+                let bytes = serde_json::to_vec(&execution.report)?;
+                let value = serde_json::from_slice(&bytes)?;
+                self.repository
+                    .set_param(REPORT_PARAM, value)
+                    .await
+                    .map_err(RunError::Repository)?;
             }
         }
         let mut stored = self
@@ -105,12 +106,4 @@ where
         *stored = completed;
         Ok(())
     }
-}
-
-fn encode_report<Store>(report: &ROIReport) -> Result<JsonData, RunError<Store>>
-where
-    Store: StdError + 'static,
-{
-    let bytes = serde_json::to_vec(report)?;
-    Ok(serde_json::from_slice(&bytes)?)
 }

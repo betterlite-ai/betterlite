@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error as StdError;
 use std::sync::Arc;
 
 use betterlite_db::budget_permission_rows::JsonData;
@@ -70,7 +69,10 @@ where
     ) -> Result<ProcessedPull, RunError<Repository::Error>> {
         let saved = self.saved_record(item).await?;
         let cached = match saved.as_ref() {
-            Some(value) => Some(read_record(value)?),
+            Some(value) => {
+                let bytes = serde_json::to_vec(value)?;
+                Some(serde_json::from_slice::<ROIPullRecord>(&bytes)?)
+            }
             None => item
                 .key
                 .as_deref()
@@ -94,8 +96,10 @@ where
             return Ok(None);
         };
         let name = format!("{PULL_PARAM_PREFIX}{key}");
-        let saved = self.repository.get_param(&name).await?;
-        Ok(saved)
+        self.repository
+            .get_param(&name)
+            .await
+            .map_err(RunError::Repository)
     }
 
     async fn reuse(
@@ -154,14 +158,6 @@ where
             metadata_unavailable: false,
         })
     }
-}
-
-fn read_record<Store>(value: &JsonData) -> Result<ROIPullRecord, RunError<Store>>
-where
-    Store: StdError + 'static,
-{
-    let bytes = serde_json::to_vec(value)?;
-    Ok(serde_json::from_slice(&bytes)?)
 }
 
 fn refreshed_record(cached: &ROIPullRecord, profile: &str) -> ROIPullRecord {

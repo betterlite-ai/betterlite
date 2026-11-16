@@ -6,7 +6,6 @@ use uuid::Uuid;
 
 use crate::roi_github::client::GitHub;
 use crate::roi_github::error::SourceError;
-use crate::roi_github::transport::Transport;
 
 pub type GitHubFactory<T> =
     Arc<dyn Fn(&ROISettings, Option<T>) -> Result<GitHub<T>, SourceError> + Send + Sync>;
