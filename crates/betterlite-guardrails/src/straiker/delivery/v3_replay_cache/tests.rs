@@ -2,6 +2,7 @@
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
+use crate::straiker::delivery::blocked_turns::system_clock;
 use crate::straiker::delivery::fixtures::{
     Clock, Fakes, V3_ALLOW, V3_BLOCK, V3_BLOCK_STATE, delivery_at, inputs, reply, request_data,
     run, sent, settings, v3_raw,
@@ -198,4 +199,10 @@ async fn a_message_too_large_for_the_cache_is_not_remembered() {
     .await
     .expect("the oversized message never reached the cache");
     assert_eq!(sent(&handler).len(), 2);
+}
+
+#[test]
+fn the_system_clock_reads_wall_time_in_seconds() {
+    let now = system_clock()();
+    assert!(now > 1_700_000_000.0_f64, "got {now}");
 }
