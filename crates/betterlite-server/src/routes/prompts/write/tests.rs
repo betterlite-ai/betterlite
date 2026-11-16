@@ -615,22 +615,9 @@ async fn oneshot_delete_scopes_rows_and_registry_to_the_requested_environment() 
         harness.rows.lock().expect("rows")[0].environment,
         "development"
     );
-    assert!(
-        harness
-            .registry
-            .lock()
-            .await
-            .in_memory_prompts
-            .contains_key("greeting.v1::development")
-    );
-    assert!(
-        !harness
-            .registry
-            .lock()
-            .await
-            .in_memory_prompts
-            .contains_key("greeting.v1::production")
-    );
+    let prompts = harness.registry.lock().await.in_memory_prompts.clone();
+    assert!(prompts.contains_key("greeting.v1::development"));
+    assert!(!prompts.contains_key("greeting.v1::production"));
 }
 
 #[tokio::test]
