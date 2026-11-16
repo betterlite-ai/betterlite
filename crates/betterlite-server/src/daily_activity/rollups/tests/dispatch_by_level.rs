@@ -23,7 +23,7 @@ fn aggregate(records: &[GroupingSetsRow]) -> AggregatedSpendData {
 
 #[test]
 fn grand_total_row_sets_totals_without_a_date_bucket() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         spend: Some(5),
         prompt_tokens: Some(3),
         completion_tokens: Some(4),
@@ -37,7 +37,7 @@ fn grand_total_row_sets_totals_without_a_date_bucket() {
 
 #[test]
 fn date_row_sets_the_bucket_metrics() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         spend: Some(5),
         ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
     })];
@@ -54,11 +54,11 @@ fn date_row_sets_the_bucket_metrics() {
 #[test]
 fn two_date_rows_for_one_date_replace_metrics_instead_of_summing() {
     let records = [
-        row(RowParts {
+        row(&RowParts {
             spend: Some(5),
             ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
         }),
-        row(RowParts {
+        row(&RowParts {
             spend: Some(9),
             ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
         }),
@@ -70,7 +70,7 @@ fn two_date_rows_for_one_date_replace_metrics_instead_of_summing() {
 
 #[test]
 fn model_row_lands_in_the_model_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         model: Some("gpt-4"),
         spend: Some(5),
         ..RowParts::new(GROUP_DATE_MODEL, Some(DAY_ONE))
@@ -87,7 +87,7 @@ fn model_row_lands_in_the_model_breakdown() {
 
 #[test]
 fn model_group_row_lands_in_the_model_group_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         model_group: Some("chat"),
         spend: Some(5),
         ..RowParts::new(GROUP_DATE_MODEL_GROUP, Some(DAY_ONE))
@@ -103,7 +103,7 @@ fn model_group_row_lands_in_the_model_group_breakdown() {
 
 #[test]
 fn mcp_row_lands_in_the_mcp_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         mcp: Some("github__search"),
         spend: Some(5),
         ..RowParts::new(GROUP_DATE_MCP, Some(DAY_ONE))
@@ -119,7 +119,7 @@ fn mcp_row_lands_in_the_mcp_breakdown() {
 
 #[test]
 fn endpoint_row_lands_in_the_endpoint_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         endpoint: Some("/v1/chat/completions"),
         spend: Some(5),
         ..RowParts::new(GROUP_DATE_ENDPOINT, Some(DAY_ONE))
@@ -135,7 +135,7 @@ fn endpoint_row_lands_in_the_endpoint_breakdown() {
 
 #[test]
 fn provider_row_lands_in_the_provider_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         provider: Some("openai"),
         spend: Some(5),
         ..RowParts::new(GROUP_DATE_PROVIDER, Some(DAY_ONE))
@@ -151,7 +151,7 @@ fn provider_row_lands_in_the_provider_breakdown() {
 
 #[test]
 fn api_key_row_lands_in_the_api_key_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         api_key: Some(KEY_ONE),
         spend: Some(5),
         ..RowParts::new(GROUP_DATE_API_KEY, Some(DAY_ONE))
@@ -168,7 +168,7 @@ fn api_key_row_lands_in_the_api_key_breakdown() {
 
 #[test]
 fn rolled_model_row_without_a_key_lands_in_the_model_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         model: Some("gpt-4"),
         spend: Some(5),
         ..RowParts::new(GROUP_DATE_MODEL, Some(DAY_ONE))
@@ -180,7 +180,7 @@ fn rolled_model_row_without_a_key_lands_in_the_model_breakdown() {
 
 #[test]
 fn model_api_key_row_builds_a_parent_and_key_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         model: Some("gpt-4"),
         api_key: Some(KEY_ONE),
         spend: Some(5),
@@ -195,7 +195,7 @@ fn model_api_key_row_builds_a_parent_and_key_breakdown() {
 
 #[test]
 fn model_group_api_key_row_builds_a_parent_and_key_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         model_group: Some("chat"),
         api_key: Some(KEY_ONE),
         spend: Some(5),
@@ -216,7 +216,7 @@ fn model_group_api_key_row_builds_a_parent_and_key_breakdown() {
 
 #[test]
 fn provider_api_key_row_builds_a_parent_and_key_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         provider: Some("openai"),
         api_key: Some(KEY_ONE),
         spend: Some(5),
@@ -236,7 +236,7 @@ fn provider_api_key_row_builds_a_parent_and_key_breakdown() {
 
 #[test]
 fn mcp_api_key_row_builds_a_parent_and_key_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         mcp: Some("github__search"),
         api_key: Some(KEY_ONE),
         spend: Some(5),
@@ -256,7 +256,7 @@ fn mcp_api_key_row_builds_a_parent_and_key_breakdown() {
 
 #[test]
 fn endpoint_api_key_row_builds_a_parent_and_key_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         endpoint: Some("/v1/chat/completions"),
         api_key: Some(KEY_ONE),
         spend: Some(5),
@@ -277,13 +277,13 @@ fn endpoint_api_key_row_builds_a_parent_and_key_breakdown() {
 #[test]
 fn model_row_replaces_parent_metrics_and_keeps_the_key_breakdown() {
     let records = [
-        row(RowParts {
+        row(&RowParts {
             model: Some("gpt-4"),
             api_key: Some(KEY_ONE),
             spend: Some(2),
             ..RowParts::new(GROUP_DATE_MODEL_API_KEY, Some(DAY_ONE))
         }),
-        row(RowParts {
+        row(&RowParts {
             model: Some("gpt-4"),
             spend: Some(7),
             ..RowParts::new(GROUP_DATE_MODEL, Some(DAY_ONE))
@@ -298,12 +298,12 @@ fn model_row_replaces_parent_metrics_and_keeps_the_key_breakdown() {
 #[test]
 fn key_breakdown_row_keeps_parent_metrics_assigned_first() {
     let records = [
-        row(RowParts {
+        row(&RowParts {
             model: Some("gpt-4"),
             spend: Some(7),
             ..RowParts::new(GROUP_DATE_MODEL, Some(DAY_ONE))
         }),
-        row(RowParts {
+        row(&RowParts {
             model: Some("gpt-4"),
             api_key: Some(KEY_ONE),
             spend: Some(2),
@@ -321,7 +321,7 @@ fn key_breakdown_row_keeps_parent_metrics_assigned_first() {
 
 #[test]
 fn unknown_level_creates_an_empty_date_bucket() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         spend: Some(5),
         ..RowParts::new(7, Some(DAY_ONE))
     })];
@@ -334,7 +334,7 @@ fn unknown_level_creates_an_empty_date_bucket() {
 
 #[test]
 fn dimension_row_without_its_name_creates_only_a_date_bucket() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         spend: Some(5),
         ..RowParts::new(GROUP_DATE_MODEL, Some(DAY_ONE))
     })];
@@ -346,7 +346,7 @@ fn dimension_row_without_its_name_creates_only_a_date_bucket() {
 
 #[test]
 fn grand_total_row_without_a_date_does_not_error() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         spend: Some(5),
         ..RowParts::new(GROUP_GRAND_TOTAL, None)
     })];
@@ -356,7 +356,7 @@ fn grand_total_row_without_a_date_does_not_error() {
 
 #[test]
 fn date_row_without_a_date_is_an_error() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         spend: Some(5),
         ..RowParts::new(GROUP_DATE, None)
     })];
@@ -366,9 +366,7 @@ fn date_row_without_a_date_is_an_error() {
 
 #[test]
 fn date_row_with_an_invalid_date_is_an_error() {
-    let records = [row(RowParts {
-        ..RowParts::new(GROUP_DATE, Some("2024-13-01"))
-    })];
+    let records = [row(&RowParts::new(GROUP_DATE, Some("2024-13-01")))];
     let error = aggregate_grouping_rows_sync(&records, &BTreeMap::new()).unwrap_err();
     let DailyActivityAggregateError::Date { value } = error else {
         panic!("expected a date error");
@@ -379,11 +377,11 @@ fn date_row_with_an_invalid_date_is_an_error() {
 #[test]
 fn multiple_dates_produce_one_result_per_date_in_reverse_order() {
     let records = [
-        row(RowParts {
+        row(&RowParts {
             spend: Some(5),
             ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
         }),
-        row(RowParts {
+        row(&RowParts {
             spend: Some(9),
             ..RowParts::new(GROUP_DATE, Some(DAY_TWO))
         }),

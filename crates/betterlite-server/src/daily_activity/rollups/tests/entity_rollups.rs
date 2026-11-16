@@ -24,7 +24,7 @@ fn team_metadata() -> super::EntityMetadata {
 #[test]
 fn fold_writes_entity_metrics_onto_the_matching_date() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         rolled: true,
         spend: Some(5),
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
@@ -39,7 +39,7 @@ fn fold_writes_entity_metrics_onto_the_matching_date() {
 #[test]
 fn fold_maps_a_null_entity_id_to_unassigned() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         rolled: true,
         spend: Some(5),
         ..EntityParts::new(Some(DAY_ONE), None)
@@ -52,7 +52,7 @@ fn fold_maps_a_null_entity_id_to_unassigned() {
 #[test]
 fn fold_maps_an_empty_entity_id_to_unassigned() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         rolled: true,
         spend: Some(5),
         ..EntityParts::new(Some(DAY_ONE), Some(""))
@@ -65,7 +65,7 @@ fn fold_maps_an_empty_entity_id_to_unassigned() {
 #[test]
 fn fold_drops_rows_for_unknown_dates() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         rolled: true,
         spend: Some(5),
         ..EntityParts::new(Some(DAY_TWO), Some("team-alpha"))
@@ -78,7 +78,7 @@ fn fold_drops_rows_for_unknown_dates() {
 #[test]
 fn fold_drops_rows_without_a_date() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         rolled: true,
         spend: Some(5),
         ..EntityParts::new(None, Some("team-alpha"))
@@ -90,7 +90,7 @@ fn fold_drops_rows_without_a_date() {
 #[test]
 fn fold_creates_a_bucket_for_sentinel_key_rows() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         api_key: Some(SENTINEL),
         spend: Some(5),
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
@@ -104,7 +104,7 @@ fn fold_creates_a_bucket_for_sentinel_key_rows() {
 #[test]
 fn fold_uses_entity_metadata_for_a_new_bucket() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         rolled: true,
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
     })];
@@ -129,7 +129,7 @@ fn fold_keeps_the_metadata_of_an_existing_bucket() {
             api_key_breakdown: IndexMap::new(),
         },
     );
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         rolled: true,
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
     })];
@@ -143,12 +143,12 @@ fn fold_keeps_the_metadata_of_an_existing_bucket() {
 fn fold_assigns_each_date_bucket_separately() {
     let mut results = vec![day(DAY_ONE), day(DAY_TWO)];
     let rows = [
-        entity(EntityParts {
+        entity(&EntityParts {
             rolled: true,
             spend: Some(1),
             ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
         }),
-        entity(EntityParts {
+        entity(&EntityParts {
             rolled: true,
             spend: Some(2),
             ..EntityParts::new(Some(DAY_TWO), Some("team-alpha"))
@@ -181,12 +181,12 @@ fn fold_assigns_each_date_bucket_separately() {
 async fn fold_fetches_metadata_for_non_sentinel_entity_keys() {
     let mut results = vec![day(DAY_ONE)];
     let rows = [
-        entity(EntityParts {
+        entity(&EntityParts {
             api_key: Some(KEY_ONE),
             spend: Some(5),
             ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
         }),
-        entity(EntityParts {
+        entity(&EntityParts {
             api_key: Some(SENTINEL),
             spend: Some(5),
             ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
@@ -210,7 +210,7 @@ async fn fold_fetches_metadata_for_non_sentinel_entity_keys() {
 #[tokio::test]
 async fn fold_skips_metadata_when_only_sentinel_entity_keys() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         api_key: Some(SENTINEL),
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
     })];
@@ -234,7 +234,7 @@ async fn fold_skips_metadata_without_entity_rows() {
 #[tokio::test]
 async fn fold_propagates_metadata_errors() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         api_key: Some(KEY_ONE),
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
     })];
@@ -251,7 +251,7 @@ async fn fold_propagates_metadata_errors() {
 #[tokio::test]
 async fn fold_attaches_key_metadata_from_the_repository() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         api_key: Some(KEY_ONE),
         spend: Some(5),
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))

@@ -13,7 +13,7 @@ use super::support::{
 #[test]
 fn rolled_row_assigns_the_entity_total_metrics() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         rolled: true,
         spend: Some(5),
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
@@ -26,7 +26,7 @@ fn rolled_row_assigns_the_entity_total_metrics() {
 #[test]
 fn rolled_row_skips_the_key_breakdown() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         api_key: Some(KEY_ONE),
         rolled: true,
         spend: Some(5),
@@ -40,7 +40,7 @@ fn rolled_row_skips_the_key_breakdown() {
 #[test]
 fn rolled_row_with_a_sentinel_key_assigns_total_metrics() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         api_key: Some(SENTINEL),
         rolled: true,
         spend: Some(5),
@@ -54,7 +54,7 @@ fn rolled_row_with_a_sentinel_key_assigns_total_metrics() {
 #[test]
 fn key_row_assigns_a_key_breakdown() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         api_key: Some(KEY_ONE),
         spend: Some(5),
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
@@ -71,7 +71,7 @@ fn key_row_assigns_a_key_breakdown() {
 #[test]
 fn key_row_skips_the_ptu_sentinel() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         api_key: Some(SENTINEL),
         spend: Some(5),
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
@@ -85,7 +85,7 @@ fn key_row_skips_the_ptu_sentinel() {
 #[test]
 fn key_row_without_an_api_key_leaves_the_bucket_empty() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         spend: Some(5),
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
     })];
@@ -98,7 +98,7 @@ fn key_row_without_an_api_key_leaves_the_bucket_empty() {
 #[test]
 fn key_row_attaches_key_metadata() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         api_key: Some(KEY_ONE),
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
     })];
@@ -118,7 +118,7 @@ fn key_row_attaches_key_metadata() {
 #[test]
 fn key_row_marks_a_missing_key() {
     let mut results = vec![day(DAY_ONE)];
-    let rows = [entity(EntityParts {
+    let rows = [entity(&EntityParts {
         api_key: Some(KEY_ONE),
         ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
     })];
@@ -138,12 +138,12 @@ fn key_row_marks_a_missing_key() {
 fn key_row_replaces_a_previous_key_row() {
     let mut results = vec![day(DAY_ONE)];
     let rows = [
-        entity(EntityParts {
+        entity(&EntityParts {
             api_key: Some(KEY_ONE),
             spend: Some(1),
             ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
         }),
-        entity(EntityParts {
+        entity(&EntityParts {
             api_key: Some(KEY_ONE),
             spend: Some(2),
             ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
@@ -165,12 +165,12 @@ fn key_row_replaces_a_previous_key_row() {
 fn rolled_row_keeps_the_existing_key_breakdown() {
     let mut results = vec![day(DAY_ONE)];
     let rows = [
-        entity(EntityParts {
+        entity(&EntityParts {
             api_key: Some(KEY_ONE),
             spend: Some(1),
             ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
         }),
-        entity(EntityParts {
+        entity(&EntityParts {
             rolled: true,
             spend: Some(9),
             ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
@@ -189,12 +189,12 @@ fn rolled_row_keeps_the_existing_key_breakdown() {
 fn key_rows_on_different_dates_land_in_their_buckets() {
     let mut results = vec![day(DAY_ONE), day(DAY_TWO)];
     let rows = [
-        entity(EntityParts {
+        entity(&EntityParts {
             api_key: Some(KEY_ONE),
             spend: Some(1),
             ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
         }),
-        entity(EntityParts {
+        entity(&EntityParts {
             api_key: Some(KEY_ONE),
             spend: Some(2),
             ..EntityParts::new(Some(DAY_TWO), Some("team-alpha"))

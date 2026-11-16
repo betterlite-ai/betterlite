@@ -43,24 +43,25 @@ pub(super) fn non_sentinel_key(metrics: &RollupMetricsRow) -> Option<&str> {
     }
 }
 
-pub(super) fn metadata_keys<Record: RecordMetrics>(records: &[Record]) -> BTreeSet<String> {
-    let mut keys = BTreeSet::new();
-    for record in records {
-        if let Some(api_key) = non_sentinel_key(record.metrics_row()) {
-            keys.insert(api_key.to_owned());
-        }
-    }
-    keys
+pub(super) fn metadata_keys<Record>(records: &[Record]) -> BTreeSet<String>
+where
+    Record: RecordMetrics,
+{
+    records
+        .iter()
+        .filter_map(|record| non_sentinel_key(record.metrics_row()))
+        .map(str::to_owned)
+        .collect()
 }
 
-pub(super) fn record_dates<Record: RecordMetrics>(records: &[Record]) -> BTreeSet<String> {
-    let mut dates = BTreeSet::new();
-    for record in records {
-        if let Some(date) = record.metrics_row().date.as_ref() {
-            dates.insert(date.clone());
-        }
-    }
-    dates
+pub(super) fn record_dates<Record>(records: &[Record]) -> BTreeSet<String>
+where
+    Record: RecordMetrics,
+{
+    records
+        .iter()
+        .filter_map(|record| record.metrics_row().date.clone())
+        .collect()
 }
 
 pub(super) fn key_metadata(

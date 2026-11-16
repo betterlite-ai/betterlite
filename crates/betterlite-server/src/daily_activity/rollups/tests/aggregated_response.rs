@@ -7,29 +7,28 @@ use indexmap::IndexMap;
 use super::get_daily_activity_aggregated;
 use super::levels::{GROUP_DATE, GROUP_DATE_API_KEY, GROUP_GRAND_TOTAL};
 use super::support::{
-    DAY_ONE, DAY_TWO, EntityParts, KEY_ONE, RepositoryCall, RowParts, amount, distinct_column_row,
-    empty_aggregated, entity, fake, fake_failing_aggregate, fake_failing_metadata, recorded_calls,
-    row, scope,
+    DAY_ONE, DAY_TWO, EntityParts, KEY_ONE, RepositoryCall, RowParts, amount, empty_aggregated,
+    entity, fake, fake_failing_aggregate, fake_failing_metadata, recorded_calls, row, scope,
 };
 
 fn entity_total_rows() -> Vec<EntityRollupRow> {
     vec![
-        entity(EntityParts {
+        entity(&EntityParts {
             rolled: true,
             distinct_api_keys: Some(2),
             ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))
         }),
-        entity(EntityParts {
+        entity(&EntityParts {
             rolled: true,
             distinct_api_keys: Some(3),
             ..EntityParts::new(Some(DAY_ONE), Some("team-beta"))
         }),
-        entity(EntityParts {
+        entity(&EntityParts {
             api_key: Some(KEY_ONE),
             distinct_api_keys: Some(9),
             ..EntityParts::new(Some(DAY_ONE), Some("team-gamma"))
         }),
-        entity(EntityParts {
+        entity(&EntityParts {
             rolled: true,
             distinct_api_keys: Some(4),
             ..EntityParts::new(Some(DAY_ONE), None)
@@ -41,15 +40,15 @@ fn entity_total_rows() -> Vec<EntityRollupRow> {
 async fn returns_a_single_page_with_the_requested_limit() {
     let repository = fake(AggregatedRows {
         grouping_rows: vec![
-            row(RowParts {
+            row(&RowParts {
                 spend: Some(12),
                 ..RowParts::new(GROUP_GRAND_TOTAL, None)
             }),
-            row(RowParts {
+            row(&RowParts {
                 spend: Some(5),
                 ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
             }),
-            row(RowParts {
+            row(&RowParts {
                 spend: Some(7),
                 ..RowParts::new(GROUP_DATE, Some(DAY_TWO))
             }),
@@ -89,7 +88,7 @@ async fn passes_the_scope_and_arguments_to_the_repository() {
 #[tokio::test]
 async fn metadata_carries_the_grand_total_metrics() {
     let repository = fake(AggregatedRows {
-        grouping_rows: vec![row(RowParts {
+        grouping_rows: vec![row(&RowParts {
             spend: Some(12),
             flat_cost: Some(2),
             prompt_tokens: Some(10),
@@ -112,7 +111,25 @@ async fn metadata_carries_the_grand_total_metrics() {
 #[tokio::test]
 async fn metadata_copies_every_grand_total_column() {
     let repository = fake(AggregatedRows {
-        grouping_rows: vec![distinct_column_row(GROUP_GRAND_TOTAL, None)],
+        grouping_rows: vec![row(&RowParts {
+            spend: Some(1),
+            flat_cost: Some(2),
+            compression_savings_spend: Some(8),
+            prompt_caching_savings_spend: Some(9),
+            gateway_cache_savings_spend: Some(10),
+            autorouter_savings_spend: Some(11),
+            prompt_tokens: Some(3),
+            completion_tokens: Some(4),
+            cache_read_input_tokens: Some(5),
+            cache_creation_input_tokens: Some(6),
+            compression_saved_tokens: Some(7),
+            api_requests: Some(12),
+            successful_requests: Some(13),
+            failed_requests: Some(14),
+            total_response_time_ms: Some(15),
+            timed_requests: Some(16),
+            ..RowParts::new(GROUP_GRAND_TOTAL, None)
+        })],
         entity_rows: None,
         distinct_api_keys: 0,
     });
@@ -141,7 +158,7 @@ async fn metadata_copies_every_grand_total_column() {
 #[tokio::test]
 async fn metadata_has_entity_api_key_totals_when_the_breakdown_is_on() {
     let repository = fake(AggregatedRows {
-        grouping_rows: vec![row(RowParts {
+        grouping_rows: vec![row(&RowParts {
             spend: Some(5),
             ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
         })],
@@ -185,7 +202,7 @@ async fn repository_errors_become_a_500() {
 #[tokio::test]
 async fn metadata_errors_become_a_500() {
     let repository = fake_failing_metadata(AggregatedRows {
-        grouping_rows: vec![row(RowParts {
+        grouping_rows: vec![row(&RowParts {
             api_key: Some(KEY_ONE),
             ..RowParts::new(GROUP_DATE_API_KEY, Some(DAY_ONE))
         })],
@@ -201,7 +218,7 @@ async fn metadata_errors_become_a_500() {
 #[tokio::test]
 async fn date_errors_become_a_500_that_names_the_value() {
     let repository = fake(AggregatedRows {
-        grouping_rows: vec![row(RowParts::new(GROUP_DATE, Some("not-a-date")))],
+        grouping_rows: vec![row(&RowParts::new(GROUP_DATE, Some("not-a-date")))],
         entity_rows: None,
         distinct_api_keys: 0,
     });
@@ -219,11 +236,11 @@ async fn folds_entity_rows_with_the_entity_metadata() {
     let mut entity_metadata = super::EntityMetadata::new();
     entity_metadata.insert("team-alpha".to_owned(), fields);
     let repository = fake(AggregatedRows {
-        grouping_rows: vec![row(RowParts {
+        grouping_rows: vec![row(&RowParts {
             spend: Some(5),
             ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
         })],
-        entity_rows: Some(vec![entity(EntityParts {
+        entity_rows: Some(vec![entity(&EntityParts {
             rolled: true,
             spend: Some(5),
             ..EntityParts::new(Some(DAY_ONE), Some("team-alpha"))

@@ -15,9 +15,9 @@ const DAY_THREE: &str = "2024-03-07";
 #[test]
 fn results_are_sorted_by_date_descending() {
     let records = vec![
-        row(RowParts::new(GROUP_DATE, Some(DAY_TWO))),
-        row(RowParts::new(GROUP_DATE, Some(DAY_ONE))),
-        row(RowParts::new(GROUP_DATE, Some(DAY_THREE))),
+        row(&RowParts::new(GROUP_DATE, Some(DAY_TWO))),
+        row(&RowParts::new(GROUP_DATE, Some(DAY_ONE))),
+        row(&RowParts::new(GROUP_DATE, Some(DAY_THREE))),
     ];
     let aggregated = aggregate_grouping_rows_sync(&records, &BTreeMap::new()).unwrap();
     let dates: Vec<NaiveDate> = aggregated.results.iter().map(|day| day.date).collect();
@@ -30,13 +30,13 @@ fn results_are_sorted_by_date_descending() {
 #[test]
 fn a_grand_total_between_date_rows_sets_the_totals() {
     let records = vec![
-        row(RowParts::new(GROUP_DATE, Some(DAY_ONE))),
-        row(RowParts {
+        row(&RowParts::new(GROUP_DATE, Some(DAY_ONE))),
+        row(&RowParts {
             spend: Some(9),
             prompt_tokens: Some(3),
             ..RowParts::new(GROUP_GRAND_TOTAL, None)
         }),
-        row(RowParts::new(GROUP_DATE, Some(DAY_TWO))),
+        row(&RowParts::new(GROUP_DATE, Some(DAY_TWO))),
     ];
     let aggregated = aggregate_grouping_rows_sync(&records, &BTreeMap::new()).unwrap();
     assert_eq!(aggregated.totals.spend, amount(9));
@@ -47,7 +47,7 @@ fn a_grand_total_between_date_rows_sets_the_totals() {
 
 #[test]
 fn a_grand_total_row_creates_no_date_group() {
-    let records = vec![row(RowParts {
+    let records = vec![row(&RowParts {
         spend: Some(12),
         ..RowParts::new(GROUP_GRAND_TOTAL, None)
     })];
@@ -58,7 +58,7 @@ fn a_grand_total_row_creates_no_date_group() {
 
 #[test]
 fn a_date_row_without_metrics_stays_zero() {
-    let records = vec![row(RowParts::new(GROUP_DATE, Some(DAY_ONE)))];
+    let records = vec![row(&RowParts::new(GROUP_DATE, Some(DAY_ONE)))];
     let aggregated = aggregate_grouping_rows_sync(&records, &BTreeMap::new()).unwrap();
     assert_eq!(aggregated.results.len(), 1);
     assert_eq!(aggregated.results[0].metrics, zero_metrics());
@@ -68,11 +68,11 @@ fn a_date_row_without_metrics_stays_zero() {
 async fn response_results_are_sorted_by_date_descending() {
     let repository = fake(AggregatedRows {
         grouping_rows: vec![
-            row(RowParts {
+            row(&RowParts {
                 spend: Some(5),
                 ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
             }),
-            row(RowParts {
+            row(&RowParts {
                 spend: Some(7),
                 ..RowParts::new(GROUP_DATE, Some(DAY_TWO))
             }),

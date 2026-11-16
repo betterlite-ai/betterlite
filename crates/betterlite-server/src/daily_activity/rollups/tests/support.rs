@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::ready;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
@@ -48,6 +49,7 @@ pub(crate) const fn blank_metrics() -> RollupMetricsRow {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct RowParts<'row> {
     pub(crate) level: i64,
     pub(crate) date: Option<&'row str>,
@@ -76,37 +78,16 @@ pub(crate) struct RowParts<'row> {
 }
 
 impl<'row> RowParts<'row> {
-    pub(crate) const fn new(level: i64, date: Option<&'row str>) -> Self {
+    pub(crate) fn new(level: i64, date: Option<&'row str>) -> Self {
         Self {
             level,
             date,
-            api_key: None,
-            model: None,
-            model_group: None,
-            provider: None,
-            mcp: None,
-            endpoint: None,
-            spend: None,
-            flat_cost: None,
-            compression_savings_spend: None,
-            prompt_caching_savings_spend: None,
-            gateway_cache_savings_spend: None,
-            autorouter_savings_spend: None,
-            prompt_tokens: None,
-            completion_tokens: None,
-            cache_read_input_tokens: None,
-            cache_creation_input_tokens: None,
-            compression_saved_tokens: None,
-            api_requests: None,
-            successful_requests: None,
-            failed_requests: None,
-            total_response_time_ms: None,
-            timed_requests: None,
+            ..Self::default()
         }
     }
 }
 
-pub(crate) fn row(parts: RowParts<'_>) -> GroupingSetsRow {
+pub(crate) fn row(parts: &RowParts<'_>) -> GroupingSetsRow {
     GroupingSetsRow {
         metrics: RollupMetricsRow {
             date: parts.date.map(str::to_owned),
@@ -138,28 +119,7 @@ pub(crate) fn row(parts: RowParts<'_>) -> GroupingSetsRow {
     }
 }
 
-pub(crate) fn distinct_column_row(level: i64, date: Option<&str>) -> GroupingSetsRow {
-    row(RowParts {
-        spend: Some(1),
-        flat_cost: Some(2),
-        compression_savings_spend: Some(8),
-        prompt_caching_savings_spend: Some(9),
-        gateway_cache_savings_spend: Some(10),
-        autorouter_savings_spend: Some(11),
-        prompt_tokens: Some(3),
-        completion_tokens: Some(4),
-        cache_read_input_tokens: Some(5),
-        cache_creation_input_tokens: Some(6),
-        compression_saved_tokens: Some(7),
-        api_requests: Some(12),
-        successful_requests: Some(13),
-        failed_requests: Some(14),
-        total_response_time_ms: Some(15),
-        timed_requests: Some(16),
-        ..RowParts::new(level, date)
-    })
-}
-
+#[derive(Default)]
 pub(crate) struct EntityParts<'row> {
     pub(crate) date: Option<&'row str>,
     pub(crate) entity_id: Option<&'row str>,
@@ -170,19 +130,16 @@ pub(crate) struct EntityParts<'row> {
 }
 
 impl<'row> EntityParts<'row> {
-    pub(crate) const fn new(date: Option<&'row str>, entity_id: Option<&'row str>) -> Self {
+    pub(crate) fn new(date: Option<&'row str>, entity_id: Option<&'row str>) -> Self {
         Self {
             date,
             entity_id,
-            api_key: None,
-            rolled: false,
-            distinct_api_keys: None,
-            spend: None,
+            ..Self::default()
         }
     }
 }
 
-pub(crate) fn entity(parts: EntityParts<'_>) -> EntityRollupRow {
+pub(crate) fn entity(parts: &EntityParts<'_>) -> EntityRollupRow {
     EntityRollupRow {
         metrics: RollupMetricsRow {
             date: parts.date.map(str::to_owned),
@@ -221,12 +178,13 @@ pub(crate) fn day(date: &str) -> DailySpendData {
 }
 
 pub(crate) fn key_row(api_key: &str, key_exists: bool) -> KeyMetadataRow {
+    let metadata = key_metadata_for(api_key, key_exists);
     KeyMetadataRow {
         api_key: api_key.to_owned(),
-        key_alias: Some(format!("alias-{api_key}")),
-        team_id: Some("team-alpha".to_owned()),
-        user_id: Some("user-alpha".to_owned()),
-        user_email: Some(format!("{api_key}@example.com")),
+        key_alias: metadata.key_alias,
+        team_id: metadata.team_id,
+        user_id: metadata.user_id,
+        user_email: metadata.user_email,
         key_exists,
         tags: Vec::new(),
     }
@@ -337,12 +295,12 @@ pub(crate) fn recorded_calls(repository: &FakeRepository) -> Vec<RepositoryCall>
 }
 
 impl AggregatedActivityRepository for FakeRepository {
-    async fn read_aggregated(
+    fn read_aggregated(
         &self,
         scope: &DailyActivityScope,
         include_entity_breakdown: bool,
         api_key_limit: i64,
-    ) -> Result<AggregatedRows, DailyActivityRepositoryError> {
+    ) -> impl Future<Output = Result<AggregatedRows, DailyActivityRepositoryError>> + Send {
         let input = scope.as_ref();
         self.calls.lock().unwrap().push(RepositoryCall::Aggregated {
             start_date: input.start_date.clone(),
@@ -351,27 +309,28 @@ impl AggregatedActivityRepository for FakeRepository {
             api_key_limit,
         });
         if self.aggregate_fails {
-            return Err(DailyActivityRepositoryError::from(
+            return ready(Err(DailyActivityRepositoryError::from(
                 DailyActivitySqlError::Timezone,
-            ));
+            )));
         }
-        Ok(self.rows.clone())
+        ready(Ok(self.rows.clone()))
     }
 
-    async fn read_key_metadata(
+    fn read_key_metadata(
         &self,
         api_keys: &BTreeSet<String>,
         window: Option<SpendLogsWindow>,
-    ) -> Result<BTreeMap<String, KeyMetadataRow>, DailyActivityRepositoryError> {
+    ) -> impl Future<Output = Result<BTreeMap<String, KeyMetadataRow>, DailyActivityRepositoryError>>
+    + Send {
         self.calls.lock().unwrap().push(RepositoryCall::Metadata {
             api_keys: api_keys.clone(),
             window,
         });
         if self.metadata_fails {
-            return Err(DailyActivityRepositoryError::from(
+            return ready(Err(DailyActivityRepositoryError::from(
                 DailyActivitySqlError::Timezone,
-            ));
+            )));
         }
-        Ok(self.metadata.clone())
+        ready(Ok(self.metadata.clone()))
     }
 }

@@ -16,7 +16,7 @@ use super::support::{
 
 #[test]
 fn a_date_row_bucket_starts_zeroed() {
-    let records = [row(RowParts::new(GROUP_DATE, Some(DAY_ONE)))];
+    let records = [row(&RowParts::new(GROUP_DATE, Some(DAY_ONE)))];
     let aggregated = aggregate_grouping_rows_sync(&records, &BTreeMap::new()).unwrap();
     assert_eq!(aggregated.results.len(), 1);
     assert_eq!(aggregated.results[0].metrics, zero_metrics());
@@ -26,12 +26,12 @@ fn a_date_row_bucket_starts_zeroed() {
 #[test]
 fn rows_for_one_date_share_a_single_bucket() {
     let records = [
-        row(RowParts {
+        row(&RowParts {
             model: Some("gpt-4"),
             spend: Some(5),
             ..RowParts::new(GROUP_DATE_MODEL, Some(DAY_ONE))
         }),
-        row(RowParts {
+        row(&RowParts {
             model_group: Some("chat"),
             spend: Some(7),
             ..RowParts::new(GROUP_DATE_MODEL_GROUP, Some(DAY_ONE))
@@ -64,11 +64,11 @@ fn rows_for_one_date_share_a_single_bucket() {
 #[test]
 fn distinct_dates_get_distinct_buckets() {
     let records = [
-        row(RowParts {
+        row(&RowParts {
             spend: Some(1),
             ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
         }),
-        row(RowParts {
+        row(&RowParts {
             spend: Some(2),
             ..RowParts::new(GROUP_DATE, Some(DAY_TWO))
         }),
@@ -198,7 +198,7 @@ fn assign_api_key_breakdown_attaches_known_key_metadata() {
 
 #[test]
 fn only_a_grand_total_row_creates_no_date_bucket() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         spend: Some(5),
         ..RowParts::new(GROUP_GRAND_TOTAL, None)
     })];
@@ -209,9 +209,7 @@ fn only_a_grand_total_row_creates_no_date_bucket() {
 
 #[test]
 fn a_date_row_creates_its_bucket_before_dispatch() {
-    let records = [row(RowParts {
-        ..RowParts::new(GROUP_DATE_MODEL, Some(DAY_ONE))
-    })];
+    let records = [row(&RowParts::new(GROUP_DATE_MODEL, Some(DAY_ONE)))];
     let aggregated = aggregate_grouping_rows_sync(&records, &BTreeMap::new()).unwrap();
     assert_eq!(aggregated.results.len(), 1);
     assert!(aggregated.results[0].breakdown.models.is_empty());
@@ -219,7 +217,7 @@ fn a_date_row_creates_its_bucket_before_dispatch() {
 
 #[test]
 fn a_date_row_with_metrics_creates_the_bucket_with_those_metrics() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         spend: Some(5),
         ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
     })];

@@ -99,8 +99,7 @@ where
         include_entity_breakdown: bool,
         api_key_limit: i64,
     ) -> Result<AggregatedRows, DailyActivityRepositoryError> {
-        DailyActivityRepository::aggregated(self, scope, include_entity_breakdown, api_key_limit)
-            .await
+        Self::aggregated(self, scope, include_entity_breakdown, api_key_limit).await
     }
 
     #[cfg_attr(test, mutants::skip)]
@@ -109,7 +108,7 @@ where
         api_keys: &BTreeSet<String>,
         window: Option<SpendLogsWindow>,
     ) -> Result<BTreeMap<String, KeyMetadataRow>, DailyActivityRepositoryError> {
-        DailyActivityRepository::key_metadata(self, api_keys, window).await
+        Self::key_metadata(self, api_keys, window).await
     }
 }
 

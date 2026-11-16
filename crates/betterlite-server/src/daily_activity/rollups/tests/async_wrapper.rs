@@ -17,11 +17,11 @@ use super::support::{
 #[tokio::test]
 async fn wrapper_aggregates_the_grouping_rows() {
     let records = vec![
-        row(RowParts {
+        row(&RowParts {
             spend: Some(5),
             ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
         }),
-        row(RowParts {
+        row(&RowParts {
             spend: Some(9),
             ..RowParts::new(GROUP_DATE, Some(DAY_TWO))
         }),
@@ -38,7 +38,7 @@ async fn wrapper_aggregates_the_grouping_rows() {
 
 #[tokio::test]
 async fn wrapper_matches_the_sync_function() {
-    let records = vec![row(RowParts {
+    let records = vec![row(&RowParts {
         model: Some("gpt-4"),
         api_key: Some(KEY_ONE),
         spend: Some(5),
@@ -56,11 +56,11 @@ async fn wrapper_matches_the_sync_function() {
 #[tokio::test]
 async fn wrapper_fetches_metadata_for_non_sentinel_keys() {
     let records = vec![
-        row(RowParts {
+        row(&RowParts {
             api_key: Some(KEY_ONE),
             ..RowParts::new(GROUP_DATE_API_KEY, Some(DAY_ONE))
         }),
-        row(RowParts {
+        row(&RowParts {
             api_key: Some(SENTINEL),
             ..RowParts::new(GROUP_DATE_API_KEY, Some(DAY_ONE))
         }),
@@ -80,7 +80,7 @@ async fn wrapper_fetches_metadata_for_non_sentinel_keys() {
 
 #[tokio::test]
 async fn wrapper_skips_metadata_when_only_sentinels_are_present() {
-    let records = vec![row(RowParts {
+    let records = vec![row(&RowParts {
         api_key: Some(SENTINEL),
         ..RowParts::new(GROUP_DATE_API_KEY, Some(DAY_ONE))
     })];
@@ -91,9 +91,7 @@ async fn wrapper_skips_metadata_when_only_sentinels_are_present() {
 
 #[tokio::test]
 async fn wrapper_skips_metadata_when_there_are_no_api_keys() {
-    let records = vec![row(RowParts {
-        ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
-    })];
+    let records = vec![row(&RowParts::new(GROUP_DATE, Some(DAY_ONE)))];
     let repository = fake(empty_aggregated());
     aggregate_grouping_rows(&repository, records).await.unwrap();
     assert!(recorded_calls(&repository).is_empty());
@@ -102,11 +100,11 @@ async fn wrapper_skips_metadata_when_there_are_no_api_keys() {
 #[tokio::test]
 async fn wrapper_window_spans_the_earliest_and_latest_dates() {
     let records = vec![
-        row(RowParts {
+        row(&RowParts {
             api_key: Some(KEY_ONE),
             ..RowParts::new(GROUP_DATE_API_KEY, Some(DAY_TWO))
         }),
-        row(RowParts {
+        row(&RowParts {
             api_key: Some(KEY_TWO),
             ..RowParts::new(GROUP_DATE_API_KEY, Some(DAY_ONE))
         }),
@@ -125,7 +123,7 @@ async fn wrapper_window_spans_the_earliest_and_latest_dates() {
 
 #[tokio::test]
 async fn wrapper_attaches_key_metadata_from_the_repository() {
-    let records = vec![row(RowParts {
+    let records = vec![row(&RowParts {
         api_key: Some(KEY_ONE),
         ..RowParts::new(GROUP_DATE_API_KEY, Some(DAY_ONE))
     })];
@@ -142,7 +140,7 @@ async fn wrapper_attaches_key_metadata_from_the_repository() {
 
 #[tokio::test]
 async fn wrapper_propagates_metadata_errors() {
-    let records = vec![row(RowParts {
+    let records = vec![row(&RowParts {
         api_key: Some(KEY_ONE),
         ..RowParts::new(GROUP_DATE_API_KEY, Some(DAY_ONE))
     })];
@@ -155,9 +153,7 @@ async fn wrapper_propagates_metadata_errors() {
 
 #[tokio::test]
 async fn wrapper_returns_worker_errors() {
-    let records = vec![row(RowParts {
-        ..RowParts::new(GROUP_DATE, None)
-    })];
+    let records = vec![row(&RowParts::new(GROUP_DATE, None))];
     let repository = fake(empty_aggregated());
     let error = aggregate_grouping_rows(&repository, records)
         .await

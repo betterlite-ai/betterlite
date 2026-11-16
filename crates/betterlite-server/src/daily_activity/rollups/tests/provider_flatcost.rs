@@ -11,7 +11,7 @@ use super::support::{DAY_ONE, KEY_ONE, RowParts, SENTINEL, amount, row};
 
 #[test]
 fn provider_row_zeroes_the_flat_cost() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         provider: Some("openai"),
         spend: Some(5),
         flat_cost: Some(7),
@@ -31,7 +31,7 @@ fn provider_row_zeroes_the_flat_cost() {
 
 #[test]
 fn sentinel_provider_row_still_creates_the_unknown_bucket() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         api_key: Some(SENTINEL),
         spend: Some(5),
         flat_cost: Some(9),
@@ -49,7 +49,7 @@ fn sentinel_provider_row_still_creates_the_unknown_bucket() {
 
 #[test]
 fn provider_api_key_row_keeps_the_flat_cost() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         provider: Some("openai"),
         api_key: Some(KEY_ONE),
         flat_cost: Some(7),
@@ -69,7 +69,7 @@ fn provider_api_key_row_keeps_the_flat_cost() {
 
 #[test]
 fn model_row_keeps_the_flat_cost() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         model: Some("gpt-4"),
         flat_cost: Some(7),
         ..RowParts::new(GROUP_DATE_MODEL, Some(DAY_ONE))
@@ -81,7 +81,7 @@ fn model_row_keeps_the_flat_cost() {
 
 #[test]
 fn model_group_row_keeps_the_flat_cost() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         model_group: Some("chat"),
         flat_cost: Some(7),
         ..RowParts::new(GROUP_DATE_MODEL_GROUP, Some(DAY_ONE))
@@ -97,7 +97,7 @@ fn model_group_row_keeps_the_flat_cost() {
 
 #[test]
 fn mcp_row_keeps_the_flat_cost() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         mcp: Some("github__search"),
         flat_cost: Some(7),
         ..RowParts::new(GROUP_DATE_MCP, Some(DAY_ONE))
@@ -113,7 +113,7 @@ fn mcp_row_keeps_the_flat_cost() {
 
 #[test]
 fn endpoint_row_keeps_the_flat_cost() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         endpoint: Some("/v1/chat/completions"),
         flat_cost: Some(7),
         ..RowParts::new(GROUP_DATE_ENDPOINT, Some(DAY_ONE))
@@ -129,7 +129,7 @@ fn endpoint_row_keeps_the_flat_cost() {
 
 #[test]
 fn api_key_row_keeps_the_flat_cost() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         api_key: Some(KEY_ONE),
         flat_cost: Some(7),
         ..RowParts::new(GROUP_DATE_API_KEY, Some(DAY_ONE))
@@ -145,7 +145,7 @@ fn api_key_row_keeps_the_flat_cost() {
 
 #[test]
 fn date_row_keeps_the_flat_cost() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         flat_cost: Some(7),
         ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
     })];

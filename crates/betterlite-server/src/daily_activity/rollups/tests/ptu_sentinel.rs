@@ -12,7 +12,7 @@ use super::support::{DAY_ONE, KEY_ONE, RowParts, SENTINEL, amount, row};
 
 #[test]
 fn sentinel_api_key_row_is_skipped_in_the_api_key_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         api_key: Some(SENTINEL),
         spend: Some(5),
         ..RowParts::new(GROUP_DATE_API_KEY, Some(DAY_ONE))
@@ -23,7 +23,7 @@ fn sentinel_api_key_row_is_skipped_in_the_api_key_breakdown() {
 
 #[test]
 fn regular_key_row_is_kept_in_the_api_key_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         api_key: Some(KEY_ONE),
         spend: Some(5),
         ..RowParts::new(GROUP_DATE_API_KEY, Some(DAY_ONE))
@@ -39,7 +39,7 @@ fn regular_key_row_is_kept_in_the_api_key_breakdown() {
 
 #[test]
 fn sentinel_model_api_key_row_creates_no_model_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         model: Some("gpt-4"),
         api_key: Some(SENTINEL),
         spend: Some(5),
@@ -52,7 +52,7 @@ fn sentinel_model_api_key_row_creates_no_model_breakdown() {
 
 #[test]
 fn sentinel_model_group_api_key_row_creates_no_model_group_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         model_group: Some("chat"),
         api_key: Some(SENTINEL),
         spend: Some(5),
@@ -64,7 +64,7 @@ fn sentinel_model_group_api_key_row_creates_no_model_group_breakdown() {
 
 #[test]
 fn sentinel_provider_api_key_row_creates_no_provider_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         provider: Some("openai"),
         api_key: Some(SENTINEL),
         spend: Some(5),
@@ -76,7 +76,7 @@ fn sentinel_provider_api_key_row_creates_no_provider_breakdown() {
 
 #[test]
 fn sentinel_mcp_api_key_row_is_kept_in_the_mcp_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         mcp: Some("github__search"),
         api_key: Some(SENTINEL),
         spend: Some(5),
@@ -93,7 +93,7 @@ fn sentinel_mcp_api_key_row_is_kept_in_the_mcp_breakdown() {
 
 #[test]
 fn sentinel_endpoint_api_key_row_is_kept_in_the_endpoint_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         endpoint: Some("/v1/chat/completions"),
         api_key: Some(SENTINEL),
         spend: Some(5),
@@ -110,7 +110,7 @@ fn sentinel_endpoint_api_key_row_is_kept_in_the_endpoint_breakdown() {
 
 #[test]
 fn sentinel_date_row_contributes_to_the_date_metrics() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         api_key: Some(SENTINEL),
         spend: Some(5),
         flat_cost: Some(3),
@@ -123,7 +123,7 @@ fn sentinel_date_row_contributes_to_the_date_metrics() {
 
 #[test]
 fn sentinel_model_row_lands_in_the_model_breakdown() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         api_key: Some(SENTINEL),
         model: Some("gpt-4"),
         spend: Some(5),
@@ -136,7 +136,7 @@ fn sentinel_model_row_lands_in_the_model_breakdown() {
 
 #[test]
 fn sentinel_grand_total_row_sets_the_totals() {
-    let records = [row(RowParts {
+    let records = [row(&RowParts {
         api_key: Some(SENTINEL),
         spend: Some(5),
         flat_cost: Some(3),
