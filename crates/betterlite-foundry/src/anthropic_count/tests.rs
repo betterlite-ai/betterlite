@@ -25,6 +25,12 @@ use support::{
     handle_headers, run_counter, run_handle,
 };
 
+const KEY_SUBJECT: &str = "No Azure AI API key found for token counting";
+const BASE_SUBJECT: &str = "No Azure AI API base found for token counting";
+const ENV_BASE: &str = "https://env.services.ai.azure.com";
+const ENV_URL: &str = "https://env.services.ai.azure.com/anthropic/v1/messages/count_tokens";
+const DEPLOYMENT_URL: &str = "https://r.services.ai.azure.com/anthropic/v1/messages/count_tokens";
+
 #[derive(Clone, Copy)]
 enum Planned {
     Endpoint,
@@ -95,12 +101,13 @@ fn count_tokens_endpoint() {
 }
 
 fn azure_auth_and_beta() {
-    azure_auth_and_beta_plain();
-    azure_auth_and_beta_other();
-    azure_auth_and_beta_typed();
+    azure_auth_and_beta_static();
+    azure_auth_and_beta_keys();
+    azure_auth_and_beta_typed_keys();
+    azure_auth_and_beta_bearer();
 }
 
-fn azure_auth_and_beta_plain() {
+fn azure_auth_and_beta_static() {
     let beta = beta_version(&BTreeMap::new());
     assert_eq!(beta, DEFAULT_BETA_VERSION);
 
@@ -110,69 +117,74 @@ fn azure_auth_and_beta_plain() {
     assert_eq!(plain["anthropic-beta"], beta.as_str());
     assert_eq!(plain["x-api-key"], ARGUMENT_KEY);
     assert_eq!(plain["api-key"], PARAMS_KEY);
-
-    let absent = handle_headers(&Call {
-        params: Params::Absent,
-        ..Call::standard()
-    });
-    assert_eq!(absent["x-api-key"], ARGUMENT_KEY);
-    assert_eq!(absent["api-key"], ARGUMENT_KEY);
 }
 
-fn azure_auth_and_beta_other() {
-    let other = Call {
-        params: Params::Key(SecretString::from("other-params-key")),
-        ..Call::standard()
-    };
-    let different = handle_headers(&other);
-    assert_eq!(different["x-api-key"], ARGUMENT_KEY);
-    assert_eq!(different["api-key"], "other-params-key");
+// x-api-key always carries the argument key, while api-key follows the params shape and the configured key
+fn assert_key_headers(call: &Call, azure_key: &str) {
+    let headers = handle_headers(call);
+    assert_eq!(headers["x-api-key"], ARGUMENT_KEY);
+    assert_eq!(headers["api-key"], azure_key);
+}
 
-    let configured = Call {
-        params: Params::Null,
-        configured_key: Some(SecretString::from("configured-key")),
-        ..Call::standard()
-    };
-    let nulled = handle_headers(&configured);
-    assert_eq!(nulled["x-api-key"], ARGUMENT_KEY);
-    assert_eq!(nulled["api-key"], "configured-key");
+fn azure_auth_and_beta_keys() {
+    assert_key_headers(
+        &Call {
+            params: Params::Absent,
+            ..Call::standard()
+        },
+        ARGUMENT_KEY,
+    );
+    assert_key_headers(
+        &Call {
+            params: Params::Key(SecretString::from("other-params-key")),
+            ..Call::standard()
+        },
+        "other-params-key",
+    );
+    assert_key_headers(
+        &Call {
+            params: Params::Null,
+            configured_key: Some(SecretString::from("configured-key")),
+            ..Call::standard()
+        },
+        "configured-key",
+    );
+}
 
-    let bearer = Call {
+fn azure_auth_and_beta_typed_keys() {
+    assert_key_headers(
+        &Call {
+            params: Params::Typed(Some(SecretString::from("typed-key"))),
+            ..Call::standard()
+        },
+        "typed-key",
+    );
+    assert_key_headers(
+        &Call {
+            params: Params::Typed(Some(SecretString::from(""))),
+            ..Call::standard()
+        },
+        ARGUMENT_KEY,
+    );
+    assert_key_headers(
+        &Call {
+            params: Params::Key(SecretString::from("")),
+            configured_key: Some(SecretString::from("configured-key")),
+            ..Call::standard()
+        },
+        "configured-key",
+    );
+}
+
+fn azure_auth_and_beta_bearer() {
+    let headers = handle_headers(&Call {
         params: Params::Null,
         token: Some("azure-token".to_owned()),
         ..Call::standard()
-    };
-    let entranced = handle_headers(&bearer);
-    assert_eq!(entranced["x-api-key"], ARGUMENT_KEY);
-    assert_eq!(entranced["authorization"], "Bearer azure-token");
-    assert!(!entranced.contains_key("api-key"));
-}
-
-fn azure_auth_and_beta_typed() {
-    let typed = Call {
-        params: Params::Typed(Some(SecretString::from("typed-key"))),
-        ..Call::standard()
-    };
-    let typed_headers = handle_headers(&typed);
-    assert_eq!(typed_headers["x-api-key"], ARGUMENT_KEY);
-    assert_eq!(typed_headers["api-key"], "typed-key");
-
-    let typed_empty = Call {
-        params: Params::Typed(Some(SecretString::from(""))),
-        ..Call::standard()
-    };
-    let typed_empty_headers = handle_headers(&typed_empty);
-    assert_eq!(typed_empty_headers["x-api-key"], ARGUMENT_KEY);
-    assert_eq!(typed_empty_headers["api-key"], ARGUMENT_KEY);
-
-    let empty_key_configured = Call {
-        params: Params::Key(SecretString::from("")),
-        configured_key: Some(SecretString::from("configured-key")),
-        ..Call::standard()
-    };
-    let empty_key_headers = handle_headers(&empty_key_configured);
-    assert_eq!(empty_key_headers["x-api-key"], ARGUMENT_KEY);
-    assert_eq!(empty_key_headers["api-key"], "configured-key");
+    });
+    assert_eq!(headers["x-api-key"], ARGUMENT_KEY);
+    assert_eq!(headers["authorization"], "Bearer azure-token");
+    assert!(!headers.contains_key("api-key"));
 }
 
 fn native_count_result() {
@@ -248,140 +260,118 @@ fn native_count_result_falsey_messages() {
 }
 
 fn optional_native_selection() {
-    optional_native_selection_from_environment();
-    optional_native_selection_no_key();
-    optional_native_selection_empty();
-    optional_native_selection_empty_deployment_base();
-    optional_native_selection_credentials_only();
+    optional_native_selection_environment();
+    optional_native_selection_empty_values();
+    optional_native_selection_missing_key();
+    optional_native_selection_missing_base();
 }
 
-fn optional_native_selection_from_environment() {
-    let from_environment = run_counter(&Call {
-        params: Params::Absent,
-        api_base: None,
-        environment_key: Some(SecretString::from("environment-key")),
-        environment_base: Some("https://env.services.ai.azure.com".to_owned()),
-        ..Call::standard()
-    });
-    let environment_seen = from_environment.seen.expect("a request");
-    assert_eq!(
-        environment_seen.url,
-        "https://env.services.ai.azure.com/anthropic/v1/messages/count_tokens"
-    );
-    assert_eq!(environment_seen.headers["x-api-key"], "environment-key");
-
-    let deployment = run_counter(&Call::standard());
-    let deployment_seen = deployment.seen.expect("a request");
-    assert_eq!(
-        deployment_seen.url,
-        "https://r.services.ai.azure.com/anthropic/v1/messages/count_tokens"
-    );
-    assert_eq!(deployment_seen.headers["x-api-key"], PARAMS_KEY);
+// The call reaches the transport with the given endpoint and x-api-key
+fn assert_requested(call: &Call, url: &str, key: &str) {
+    let seen = run_counter(call).seen.expect("a request");
+    assert_eq!(seen.url, url);
+    assert_eq!(seen.headers["x-api-key"], key);
 }
 
-fn optional_native_selection_no_key() {
-    let no_key = run_counter(&Call {
-        params: Params::Absent,
-        ..Call::standard()
-    });
-    assert!(no_key.result.is_none());
-    assert!(no_key.seen.is_none());
+// The call stops before the transport and logs only the missing-credential warning
+fn assert_skipped(call: &Call, subject: &str) {
+    let outcome = run_counter(call);
+    assert!(outcome.result.is_none());
+    assert!(outcome.seen.is_none());
     assert_eq!(
-        no_key.warnings,
+        outcome.warnings,
         [Warning {
-            subject: "No Azure AI API key found for token counting".to_owned(),
-            status: None,
-        }]
-    );
-
-    let no_base = run_counter(&Call {
-        api_base: None,
-        ..Call::standard()
-    });
-    assert!(no_base.result.is_none());
-    assert!(no_base.seen.is_none());
-    assert_eq!(
-        no_base.warnings,
-        [Warning {
-            subject: "No Azure AI API base found for token counting".to_owned(),
+            subject: subject.to_owned(),
             status: None,
         }]
     );
 }
 
-fn optional_native_selection_empty() {
-    let empty = run_counter(&Call {
-        params: Params::Key(SecretString::from("")),
-        environment_key: Some(SecretString::from("environment-key")),
-        ..Call::standard()
-    });
-    let empty_seen = empty.seen.expect("a request");
-    assert_eq!(empty_seen.headers["x-api-key"], "environment-key");
+fn optional_native_selection_environment() {
+    assert_requested(
+        &Call {
+            params: Params::Absent,
+            api_base: None,
+            environment_key: Some(SecretString::from("environment-key")),
+            environment_base: Some(ENV_BASE.to_owned()),
+            ..Call::standard()
+        },
+        ENV_URL,
+        "environment-key",
+    );
+    assert_requested(&Call::standard(), DEPLOYMENT_URL, PARAMS_KEY);
+}
 
-    let empty_environment_key = run_counter(&Call {
-        params: Params::Absent,
-        environment_key: Some(SecretString::from("")),
-        ..Call::standard()
-    });
-    assert!(empty_environment_key.result.is_none());
-    assert!(empty_environment_key.seen.is_none());
-    assert_eq!(
-        empty_environment_key.warnings,
-        [Warning {
-            subject: "No Azure AI API key found for token counting".to_owned(),
-            status: None,
-        }]
+fn optional_native_selection_empty_values() {
+    assert_requested(
+        &Call {
+            params: Params::Key(SecretString::from("")),
+            environment_key: Some(SecretString::from("environment-key")),
+            ..Call::standard()
+        },
+        DEPLOYMENT_URL,
+        "environment-key",
+    );
+    assert_requested(
+        &Call {
+            api_base: Some(String::new()),
+            environment_base: Some(ENV_BASE.to_owned()),
+            ..Call::standard()
+        },
+        ENV_URL,
+        PARAMS_KEY,
     );
 }
 
-fn optional_native_selection_empty_deployment_base() {
-    let empty_deployment_base = run_counter(&Call {
-        api_base: Some(String::new()),
-        environment_base: Some("https://env.services.ai.azure.com".to_owned()),
-        ..Call::standard()
-    });
-    let empty_deployment_seen = empty_deployment_base.seen.expect("a request");
-    assert_eq!(
-        empty_deployment_seen.url,
-        "https://env.services.ai.azure.com/anthropic/v1/messages/count_tokens"
+fn optional_native_selection_missing_key() {
+    assert_skipped(
+        &Call {
+            params: Params::Absent,
+            ..Call::standard()
+        },
+        KEY_SUBJECT,
     );
-
-    let empty_environment_base = run_counter(&Call {
-        api_base: None,
-        environment_base: Some(String::new()),
-        ..Call::standard()
-    });
-    assert!(empty_environment_base.result.is_none());
-    assert!(empty_environment_base.seen.is_none());
-    assert_eq!(
-        empty_environment_base.warnings,
-        [Warning {
-            subject: "No Azure AI API base found for token counting".to_owned(),
-            status: None,
-        }]
+    assert_skipped(
+        &Call {
+            params: Params::Absent,
+            environment_key: Some(SecretString::from("")),
+            ..Call::standard()
+        },
+        KEY_SUBJECT,
+    );
+    assert_skipped(
+        &Call {
+            params: Params::Absent,
+            token: Some("azure-token".to_owned()),
+            ..Call::standard()
+        },
+        KEY_SUBJECT,
+    );
+    assert_skipped(
+        &Call {
+            params: Params::Absent,
+            configured_key: Some(SecretString::from("configured-key")),
+            ..Call::standard()
+        },
+        KEY_SUBJECT,
     );
 }
 
-fn optional_native_selection_credentials_only() {
-    let credentials_only = run_counter(&Call {
-        params: Params::Absent,
-        token: Some("azure-token".to_owned()),
-        ..Call::standard()
-    });
-    assert!(
-        credentials_only.result.is_none(),
-        "Entra credentials never replace the key"
+fn optional_native_selection_missing_base() {
+    assert_skipped(
+        &Call {
+            api_base: None,
+            ..Call::standard()
+        },
+        BASE_SUBJECT,
     );
-    assert!(credentials_only.seen.is_none());
-
-    let configured_only = run_counter(&Call {
-        params: Params::Absent,
-        configured_key: Some(SecretString::from("configured-key")),
-        ..Call::standard()
-    });
-    assert!(
-        configured_only.result.is_none(),
-        "the global key is not a counter fallback"
+    assert_skipped(
+        &Call {
+            api_base: None,
+            environment_base: Some(String::new()),
+            ..Call::standard()
+        },
+        BASE_SUBJECT,
     );
 }
 

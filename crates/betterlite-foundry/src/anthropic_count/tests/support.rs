@@ -209,18 +209,7 @@ pub(super) fn run_counter(call: &Call) -> CounterOutcome {
         environment_api_base: call.environment_base.clone(),
     };
     let (result, warnings) = with_token(call, |token| {
-        let data = CountTokensCall {
-            model_to_use: &call.model,
-            messages: call.messages.as_ref(),
-            contents: None,
-            params_key: params_key(&call.params),
-            api_base: call.api_base.as_deref(),
-            token,
-            request_model: &call.request_model,
-            tools: call.tools.as_ref(),
-            system: call.system.as_ref(),
-        };
-        captured(|| run_blocking(counter.count_tokens(&data)))
+        captured(|| run_blocking(counter.count_tokens(&counter_call(call, token))))
     });
     CounterOutcome {
         selected: [
@@ -257,6 +246,20 @@ pub(super) fn run_handle(call: &Call) -> HandleOutcome {
     HandleOutcome {
         result: outcome.map(|reply| reply.document),
         seen: first_request(&handler.transport),
+    }
+}
+
+fn counter_call<'a>(call: &'a Call, token: &'a TokenSource<'a>) -> CountTokensCall<'a> {
+    CountTokensCall {
+        model_to_use: &call.model,
+        messages: call.messages.as_ref(),
+        contents: None,
+        params_key: params_key(&call.params),
+        api_base: call.api_base.as_deref(),
+        token,
+        request_model: &call.request_model,
+        tools: call.tools.as_ref(),
+        system: call.system.as_ref(),
     }
 }
 

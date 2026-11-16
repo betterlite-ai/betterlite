@@ -63,7 +63,7 @@ def prepare(case: HandleCase | CounterCase) -> None:
     litellm.azure_key = None if overrides is None else overrides.get("azure_key")
     litellm.enable_azure_ad_token_refresh = False
     seconds = case.get("request_timeout")
-    litellm.request_timeout = default_timeout if seconds is None else seconds  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L89  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L89
+    litellm.request_timeout = default_timeout if seconds is None else seconds  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L89  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L89
 
 
 async def answered(sent: Sent, response: Awaitable[Outcome]) -> Outcome:
@@ -71,10 +71,9 @@ async def answered(sent: Sent, response: Awaitable[Outcome]) -> Outcome:
     return await response
 
 
-async def handled(
-    sent: Sent, handler: AzureAIAnthropicCountTokensHandler, case: HandleCase
-) -> Json:
+async def handled(sent: Sent, case: HandleCase) -> Json:
     install(sent)
+    handler = AzureAIAnthropicCountTokensHandler()
     return DECODER.validate_python(await handler.handle_count_tokens_request(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/handler.py#L27-L127
         model=case["model"],
         messages=case["messages"],
@@ -96,9 +95,8 @@ def endpoint(call: EndpointCall) -> Json:
 def handle_case(case: HandleCase) -> Json:
     prepare(case)
     sent = Sent(case.get("reply"))
-    handler = AzureAIAnthropicCountTokensHandler()
     try:
-        response: Json = {"value": asyncio.run(handled(sent, handler, case))}
+        response: Json = {"value": asyncio.run(handled(sent, case))}
     except AnthropicError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L309
         response = {
             "error": {

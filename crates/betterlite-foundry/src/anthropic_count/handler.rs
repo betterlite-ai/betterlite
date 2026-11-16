@@ -5,6 +5,7 @@ use betterlite_anthropic::count_tokens::error::CountTokensError;
 use betterlite_anthropic::count_tokens::handler::CountTokensTransport;
 use betterlite_anthropic::count_tokens::validate::validate_request;
 use betterlite_anthropic::count_tokens::wire::{CountTokensBody, transform_request};
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use http::Method;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
@@ -49,14 +50,7 @@ impl<T: CountTokensTransport> FoundryCountHandler<T> {
                 .send(prepared?)
                 .await
                 .map_err(|source| CountTokensError::Transport { source })?;
-            if response.status != 200 {
-                let status_code = response.status;
-                let text = String::from_utf8(response.body).unwrap_or_else(|error| {
-                    format!("{} bytes that are not UTF-8", error.as_bytes().len())
-                });
-                return Err(ApiError::Upstream { status_code, text });
-            }
-            Ok(decode_foundry_count_reply(&response.body)?)
+            reply_from(response)
         }
     }
 
@@ -93,6 +87,17 @@ impl<T: CountTokensTransport> FoundryCountHandler<T> {
             deadline: request.timeout.unwrap_or(self.request_timeout),
         })
     }
+}
+
+// Only status 200 counts; any other status keeps its raw text as the AnthropicError
+fn reply_from(response: UpstreamResponse) -> Result<FoundryCountReply, ApiError> {
+    if response.status != 200 {
+        let status_code = response.status;
+        let text = String::from_utf8(response.body)
+            .unwrap_or_else(|error| format!("{} bytes that are not UTF-8", error.as_bytes().len()));
+        return Err(ApiError::Upstream { status_code, text });
+    }
+    Ok(decode_foundry_count_reply(&response.body)?)
 }
 
 // LiteLLM's httpx client refuses a header name or value it cannot carry, before sending anything
