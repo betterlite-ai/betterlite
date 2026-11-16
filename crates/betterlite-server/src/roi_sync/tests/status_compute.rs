@@ -71,6 +71,13 @@ fn status_rounds_a_half_towards_the_even_second() {
 }
 
 #[test]
+fn status_rounds_a_fraction_of_a_second_up() {
+    let clock = TestClock::at("2026-01-10T00:00:04Z");
+    let status = reporter(running_status(3, 8), &clock).snapshot();
+    assert_eq!(status.remaining_seconds, Some(7));
+}
+
+#[test]
 fn status_reports_no_remaining_time_for_a_finished_run() {
     let clock = TestClock::at("2026-01-10T05:00:00Z");
     let mut stored = running_status(3, 6);
