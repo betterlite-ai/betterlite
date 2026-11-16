@@ -178,6 +178,46 @@ async fn async_create_interaction_returns_a_connection_failure_to_the_caller() {
 }
 
 #[tokio::test]
+async fn async_create_interaction_does_not_follow_a_redirect() {
+    let serving = serve_with_body(
+        base::reply(
+            "302 Found",
+            &[("location", "http://127.0.0.1:1/elsewhere")],
+            "",
+        ),
+        None,
+    );
+    let fixture = Fixture::new();
+
+    let (outcome, _logging) = run_async(&fixture, &Call::new(serving.address)).await;
+
+    assert_eq!(provider_error(outcome), FixtureError::Refused(302));
+    let calls = fixture.calls();
+    assert!(calls.contains(&"error|302||-".to_owned()), "{calls:?}");
+    serving.request.join().unwrap();
+}
+
+#[tokio::test]
+async fn async_create_interaction_passes_an_invalid_url_through_the_error_handler() {
+    let fixture = Fixture::new();
+    let mut call = Call::new(dead_address());
+    call.params.insert(
+        "api_base".to_owned(),
+        JsonValue::Text("not a url".to_owned()),
+    );
+
+    let (outcome, _logging) = run_async(&fixture, &call).await;
+
+    assert!(matches!(transport_error(outcome), RequestFailure::Url(_)));
+    assert!(
+        fixture
+            .calls()
+            .iter()
+            .all(|recorded| !recorded.starts_with("error|"))
+    );
+}
+
+#[tokio::test]
 async fn async_create_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_directly() {
     let fixture = Fixture::new();
     let mut clients = HttpClients::new(

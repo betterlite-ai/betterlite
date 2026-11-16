@@ -12,7 +12,25 @@ deviations:
   - what: The caller's timeout, or litellm.request_timeout when the caller names none, is one reqwest request deadline covering connect, send and the whole body read, so a stream that runs longer in total fails here; LiteLLM passes the value to httpx, which applies it to connect, read, write and pool separately, so a stream there succeeds as long as each chunk arrives in time.
     why: reqwest has one total request timeout while httpx's Timeout applies per operation; the same difference between the two clients is recorded under B8211.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L172-L195
-  - what: A failed connection before an answer is not retried, and the async create POST goes out at most once, so such a failure is the transport error the caller receives.
-    why: LiteLLM's async create repeats the POST once on ConnectError or RemoteProtocolError on a fresh single-connection client, while its sync create does not retry at all; betterlite's outbound client attempts each request once, so a create is never delivered twice.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851
+  - what: A connection or protocol error on create's async POST returns the transport error and is not retried, and a deadline it passes returns the transport error instead of litellm.Timeout.
+    why: LiteLLM's async create repeats the POST once on ConnectError or RemoteProtocolError on a fresh single-connection client, while its sync create does not retry at all; betterlite's outbound client attempts each request once, so a create is never delivered twice, and reqwest reports the deadline as the request's own error for the caller to classify.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L834-L866
+  - what: A timeout on create's blocking POST returns the transport error instead of litellm.Timeout.
+    why: reqwest reports its deadline as the request's own error, and the shared transport passes it through handle_error unchanged for the caller to classify, as B3492's blocking interactions already do.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1516-L1521
+  - what: A client built here follows no redirect, so a 3xx answer becomes a provider error instead of the redirect target, while a client the caller supplies keeps its own redirect settings; every answer either direction reads is capped at the transport's 16 MiB.
+    why: Both directions send through one HTTP client crate so TLS, proxy, timeout and no-retry settings apply everywhere, and B3492 records the same two limits for the same clients; LiteLLM's httpx handlers follow redirects and read an unbounded body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1404-L1424
+  - what: The caller's timeout and the request_timeout fallback arrive as resolved Durations; this module never reads REQUEST_TIMEOUT and never applies the 6000 second default itself.
+    why: betterlite reads the environment once into its config crate, so the REQUEST_TIMEOUT value and the 6000 second default are parsed and defaulted with the routing timeouts and passed in, while LiteLLM builds the module-level request_timeout constant at import time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L561-L577
+  - what: An absent or null litellm_params.api_base reaches get_complete_url and transform_request as an empty string, not as None.
+    why: B3492's api_base helper reads the field once and passes a plain &str to a config trait that has no optional string, and docs/compatibility.md has an absent value take the default, so an empty base means no base at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L142-L148
+  - what: The error message an HTTP failure becomes is the response body decoded as UTF-8 with errors="replace", one U+FFFD per invalid sequence, and the charset parameter of Content-Type is not read.
+    why: LiteLLM hands _handle_error e.response.text, which httpx builds with the charset the response header declares and falls back to UTF-8 decoded with errors="replace"; betterlite decodes only UTF-8, the encoding provider JSON error bodies use, and keeps the replacement behavior for bytes outside it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L46-L53
+  - what: A request whose proxy setting betterlite cannot use (an https or other non-http proxy scheme, or an unparsable proxy URL) is refused with a typed error naming the scheme or the setting, while a client the caller supplies keeps its own proxy settings and is not checked.
+    why: LiteLLM's httpx clients send such a request through the configured proxy, but betterlite's proxy policy carries only http:// forwarders, and connecting directly would bypass the proxy a deployment demands; a supplied client belongs to its caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1404-L1424
 kept_bugs: []

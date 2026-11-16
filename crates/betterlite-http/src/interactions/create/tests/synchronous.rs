@@ -274,6 +274,46 @@ fn create_interaction_uses_the_callers_timeout_else_the_request_timeout(#[case] 
 }
 
 #[test]
+fn create_interaction_does_not_follow_a_redirect() {
+    let serving = serve_with_body(
+        base::reply(
+            "302 Found",
+            &[("location", "http://127.0.0.1:1/elsewhere")],
+            "",
+        ),
+        None,
+    );
+    let fixture = Fixture::new();
+
+    let (outcome, _logging) = run(&fixture, &Call::new(serving.address));
+
+    assert_eq!(provider_error(outcome), FixtureError::Refused(302));
+    let calls = fixture.calls();
+    assert!(calls.contains(&"error|302||-".to_owned()), "{calls:?}");
+    serving.request.join().unwrap();
+}
+
+#[test]
+fn create_interaction_passes_an_invalid_url_through_the_error_handler() {
+    let fixture = Fixture::new();
+    let mut call = Call::new(dead_address());
+    call.params.insert(
+        "api_base".to_owned(),
+        JsonValue::Text("not a url".to_owned()),
+    );
+
+    let (outcome, _logging) = run(&fixture, &call);
+
+    assert!(matches!(transport_error(outcome), RequestFailure::Url(_)));
+    assert!(
+        fixture
+            .calls()
+            .iter()
+            .all(|recorded| !recorded.starts_with("error|"))
+    );
+}
+
+#[test]
 fn create_interaction_skips_the_proxy_check_for_a_supplied_client() {
     let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
     let fixture = Fixture::new();
