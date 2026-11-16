@@ -5,20 +5,9 @@ from openai.pagination import AsyncCursorPage, SyncCursorPage
 from openai.types.beta import Assistant
 from pydantic import JsonValue
 
-from .support import (
-    AsyncFacade,
-    Helpers,
-    Input,
-    SyncFacade,
-    Wire,
-    async_client,
-    credentials,
-    sync_client,
-)
+from .support import Input, Wire, async_client, credentials, sync_client
 
-HELPERS: Helpers = OpenAIAssistantsAPI()
-SYNC_FACADE: SyncFacade = OpenAIAssistantsAPI()
-ASYNC_FACADE: AsyncFacade = OpenAIAssistantsAPI()
+HELPERS: OpenAIAssistantsAPI = OpenAIAssistantsAPI()
 
 
 def assistants_answer(input_value: Input, wire: Wire) -> JsonValue:
@@ -26,7 +15,7 @@ def assistants_answer(input_value: Input, wire: Wire) -> JsonValue:
     payload: dict[str, JsonValue]
     if operation == "create_assistant":
         created = asyncio.run(
-            HELPERS.async_create_assistants(
+            HELPERS.async_create_assistants(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2417-L2426
                 **credentials(input_value),
                 client=async_client(input_value, wire),
                 create_assistant_data=input_value["data"],
@@ -54,14 +43,14 @@ def assistants_answer(input_value: Input, wire: Wire) -> JsonValue:
             page = asyncio.run(listed)
         elif aget_assistants:
             # the async facade drops the caller's pagination and lists with the SDK defaults
-            facade = ASYNC_FACADE.get_assistants(
+            facade = HELPERS.get_assistants(
                 **credentials(input_value),
                 client=async_client(input_value, wire),
                 aget_assistants=True,
             )
             page = asyncio.run(facade)
         else:
-            page = SYNC_FACADE.get_assistants(
+            page = HELPERS.get_assistants(
                 **credentials(input_value),
                 client=sync_client(input_value, wire),
                 aget_assistants=False,

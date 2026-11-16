@@ -7,26 +7,15 @@ from pydantic import JsonValue
 from .assistants import assistants_answer
 from .decisions import decisions_answer
 from .realtime import realtime_answer
-from .support import (
-    AsyncFacade,
-    Helpers,
-    Input,
-    SyncFacade,
-    Wire,
-    async_client,
-    credentials,
-    sync_client,
-)
+from .support import Input, Wire, async_client, credentials, sync_client
 from .threads import threads_answer
 
-STREAMS: Helpers = OpenAIAssistantsAPI()
-SYNC_RUNS: SyncFacade = OpenAIAssistantsAPI()
-ASYNC_RUNS: AsyncFacade = OpenAIAssistantsAPI()
+RUNS: OpenAIAssistantsAPI = OpenAIAssistantsAPI()
 
 
 # The stream manager sends nothing until it is entered, so a refused open surfaces while reading.
 async def stream_answer(input_value: Input, wire: Wire) -> dict[str, JsonValue]:
-    manager = STREAMS.async_run_thread_stream(
+    manager = RUNS.async_run_thread_stream(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L3003-L3014
         **input_value["request"], client=async_client(input_value, wire), event_handler=None
     )
     sent_at_dispatch = len(wire.seen)
@@ -50,7 +39,7 @@ def runs_answer(input_value: Input, wire: Wire) -> dict[str, JsonValue]:
         return asyncio.run(stream_answer(input_value, wire))
     body = input_value["request"]
     if input_value["arun_thread"]:
-        polled = ASYNC_RUNS.run_thread(
+        polled = RUNS.run_thread(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L3073-L3115
             **body,
             **credentials(input_value),
             stream=False,
@@ -60,7 +49,7 @@ def runs_answer(input_value: Input, wire: Wire) -> dict[str, JsonValue]:
         )
         run_object = asyncio.run(polled)
     else:
-        run_object = SYNC_RUNS.run_thread(
+        run_object = RUNS.run_thread(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L3119
             **body,
             **credentials(input_value),
             stream=False,

@@ -1,21 +1,12 @@
 import ssl as ssl_module
-from collections.abc import Coroutine, Iterable
 from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, Unpack
 
 import httpx
 import openai
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.types.llms.openai import Thread
 from litellm.types.realtime import RealtimeQueryParams
-from openai.lib.streaming import (
-    AssistantEventHandler,
-    AsyncAssistantEventHandler,
-    AsyncAssistantStreamManager,
-)
-from openai.pagination import AsyncCursorPage, SyncCursorPage
-from openai.types.beta import Assistant, AssistantDeleted, AssistantToolParam
+from openai.types.beta import AssistantToolParam
 from openai.types.beta.thread_create_params import Message as NewThreadMessage
-from openai.types.beta.threads import Message, Run
 from pydantic import JsonValue, TypeAdapter
 
 ORG = "org-fixture"
@@ -70,74 +61,13 @@ class Input(TypedDict):
     environment: dict[str, str]
 
 
-# Each call lists the keywords of one LiteLLM method, so the protocols type its untyped dicts.
+# Each call lists the keywords of one LiteLLM method, so every typed dict types the kwargs it unpacks.
 class Credentials(TypedDict):
     api_key: str | None
     api_base: str | None
     timeout: float
     max_retries: int | None
     organization: str | None
-
-
-class Client(Credentials):
-    client: openai.AsyncOpenAI | None
-
-
-class Listing(Client):
-    order: str | None
-    limit: int | None
-    before: str | None
-    after: str | None
-
-
-class NewAssistant(Client):
-    create_assistant_data: dict[str, JsonValue]
-
-
-class AssistantRef(Client):
-    assistant_id: str
-
-
-class ThreadRef(Client):
-    thread_id: str
-
-
-class NewMessage(ThreadRef):
-    message_data: dict[str, JsonValue]
-
-
-class NewThread(Client):
-    metadata: dict[str, str] | None
-    messages: Iterable[NewThreadMessage] | None
-
-
-class SyncListing(Credentials):
-    client: openai.OpenAI | None
-    aget_assistants: Literal[False]
-
-
-class AsyncListing(Credentials):
-    client: openai.AsyncOpenAI | None
-    aget_assistants: Literal[True]
-
-
-class SyncRun(RunFields, Credentials):
-    stream: bool | None
-    client: openai.OpenAI
-    arun_thread: Literal[False]
-    event_handler: AssistantEventHandler | None
-
-
-class AsyncRun(RunFields, Credentials):
-    stream: bool | None
-    client: openai.AsyncOpenAI
-    arun_thread: Literal[True]
-    event_handler: AssistantEventHandler | None
-
-
-class StreamRun(RunFields):
-    client: openai.AsyncOpenAI
-    event_handler: AssistantEventHandler | None
 
 
 class ClientOptions(TypedDict):
@@ -153,40 +83,6 @@ class NewThreadBody(TypedDict):
 
 
 THREAD_BODY: TypeAdapter[NewThreadBody] = TypeAdapter(NewThreadBody)
-
-
-class Helpers(Protocol):
-    async def async_get_assistants(self, **call: Unpack[Listing]) -> AsyncCursorPage[Assistant]: ...
-
-    async def async_create_assistants(self, **call: Unpack[NewAssistant]) -> Assistant: ...
-
-    async def async_delete_assistant(self, **call: Unpack[AssistantRef]) -> AssistantDeleted: ...
-
-    async def a_add_message(self, **call: Unpack[NewMessage]) -> Message: ...
-
-    async def async_get_messages(self, **call: Unpack[ThreadRef]) -> AsyncCursorPage[Message]: ...
-
-    async def async_create_thread(self, **call: Unpack[NewThread]) -> Thread: ...
-
-    async def async_get_thread(self, **call: Unpack[ThreadRef]) -> Thread: ...
-
-    def async_run_thread_stream(
-        self, **call: Unpack[StreamRun]
-    ) -> AsyncAssistantStreamManager[AsyncAssistantEventHandler]: ...
-
-
-class SyncFacade(Protocol):
-    def get_assistants(self, **call: Unpack[SyncListing]) -> SyncCursorPage[Assistant]: ...
-
-    def run_thread(self, **call: Unpack[SyncRun]) -> Run: ...
-
-
-class AsyncFacade(Protocol):
-    def get_assistants(
-        self, **call: Unpack[AsyncListing]
-    ) -> Coroutine[None, None, AsyncCursorPage[Assistant]]: ...
-
-    def run_thread(self, **call: Unpack[AsyncRun]) -> Coroutine[None, None, Run]: ...
 
 
 class ClientSocket(Protocol):
