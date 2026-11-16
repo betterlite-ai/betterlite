@@ -18,7 +18,6 @@ use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use betterlite_models::prompt_spec::PromptSpec;
-use betterlite_prompts::registry::prompt_endpoint_contracts::spec_conversion::get_latest_prompt_versions;
 use betterlite_prompts::registry::prompt_endpoint_contracts::table::PromptTableActions;
 use betterlite_prompts::registry::prompt_registry::InMemoryPromptRegistry;
 use betterlite_prompts::registry::prompt_registry_helpers::{
@@ -27,10 +26,10 @@ use betterlite_prompts::registry::prompt_registry_helpers::{
 use serde::Deserialize;
 use tokio::sync::RwLock;
 
-use self::access::{PromptKeyView, has_admin_view, info_access, names_prompt};
+use self::access::{PromptKeyView, has_admin_view, info_access};
 use self::error::PromptReadError;
 use self::rows::{prompt_environments, resolve_spec, version_history_response};
-use self::specs::{filter_environment, not_found_detail, prompt_template};
+use self::specs::{listable_prompts, not_found_detail, prompt_template};
 use self::wire::{ListPromptsResponse, PromptInfoResponse, display_wire};
 use crate::auth::auth_identity::AuthContext;
 
@@ -93,20 +92,17 @@ where
             prompts: Vec::new(),
         }));
     }
-    let mut visible: Vec<PromptSpec> = {
+    let visible: Vec<PromptSpec> = {
         let registry = state.prompts.read().await;
         registry.in_memory_prompts.values().cloned().collect()
     };
-    if let Some(allowed) = allowlist {
-        visible.retain(|spec| names_prompt(allowed, &spec.prompt_id));
-    }
-    let latest =
-        get_latest_prompt_versions(filter_environment(visible, query.environment.as_deref()));
+    let latest = listable_prompts(visible, allowlist, query.environment.as_deref());
     Ok(Json(ListPromptsResponse {
         prompts: latest.iter().map(|spec| display_wire(spec, None)).collect(),
     }))
 }
 
+// Non-admins get 403, and a prompt with no stored versions answers 404
 async fn get_prompt_versions<Table>(
     State(state): State<PromptReadState<Table>>,
     Extension(context): Extension<AuthContext>,

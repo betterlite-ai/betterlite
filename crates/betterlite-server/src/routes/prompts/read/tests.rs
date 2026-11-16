@@ -106,6 +106,28 @@ async fn oneshot_list_environment_query_keeps_only_that_environment() {
     assert_eq!(body["prompts"][0]["environment"], "production");
 }
 
+#[tokio::test]
+async fn oneshot_list_allowlist_environment_filter_keeps_litellm_order() {
+    let prompts = registry(vec![
+        config_prompt("alpha_v1", "production"),
+        config_prompt("alpha_v2", "development"),
+        config_prompt("beta", "development"),
+    ]);
+    let key = key_context(r#"{"metadata": {"prompts": ["alpha", "beta"]}}"#);
+    let (status, body) = call(
+        state(prompts, None),
+        "/prompts/list?environment=development",
+        key,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let listed = body["prompts"].as_array().unwrap();
+    assert_eq!(listed.len(), 2);
+    assert_eq!(listed[0]["prompt_id"], "alpha");
+    assert_eq!(listed[0]["environment"], "development");
+    assert_eq!(listed[1]["prompt_id"], "beta");
+}
+
 #[rstest]
 #[case::no_metadata("{}")]
 #[case::null_allowlist(r#"{"metadata": {"prompts": null}}"#)]

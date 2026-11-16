@@ -4,11 +4,13 @@ use std::error::Error as StdError;
 use axum::http::StatusCode;
 use betterlite_models::prompt_spec::PromptSpec;
 use betterlite_prompts::dotprompt_templates::content::dotprompt_content_to_json;
+use betterlite_prompts::registry::prompt_endpoint_contracts::spec_conversion::get_latest_prompt_versions;
 use betterlite_prompts::registry::prompt_registry_helpers::{
     get_base_prompt_id, get_version_number,
 };
 
 use super::PromptReadState;
+use super::access::names_prompt;
 use super::error::PromptReadError;
 use super::wire::{ListPromptsResponse, PromptTemplateBase, display_wire};
 
@@ -57,6 +59,19 @@ pub(super) fn filter_environment(
         .into_iter()
         .filter(|spec| spec.environment == wanted)
         .collect()
+}
+
+// LiteLLM picks the latest version before the environment filter on the allowlist path, and after it on the admin path
+pub(super) fn listable_prompts(
+    mut visible: Vec<PromptSpec>,
+    allowlist: Option<&[String]>,
+    environment: Option<&str>,
+) -> Vec<PromptSpec> {
+    let Some(allowed) = allowlist else {
+        return get_latest_prompt_versions(filter_environment(visible, environment));
+    };
+    visible.retain(|spec| names_prompt(allowed, &spec.prompt_id));
+    filter_environment(get_latest_prompt_versions(visible), environment)
 }
 
 // LiteLLM serves history from the registry, newest first, when the proxy has no database
