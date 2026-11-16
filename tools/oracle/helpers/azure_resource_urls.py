@@ -1,11 +1,11 @@
+from dataclasses import dataclass
 from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 import litellm
-from litellm.llms.azure.containers.transformation import AzureContainerConfig
-from litellm.llms.azure.vector_stores.transformation import AzureOpenAIVectorStoreConfig
-from litellm.llms.azure.videos.transformation import AzureVideoConfig
 from litellm.types.router import GenericLiteLLMParams
-from litellm.types.videos.main import VideoCreateOptionalRequestParams
+from litellm.types.utils import LlmProviders
+from litellm.types.videos.main import VideoCreateOptionalRequestParams as VideoOptions
+from litellm.utils import ProviderConfigManager
 from pydantic import JsonValue
 
 from azure_urls import environment
@@ -30,7 +30,7 @@ class VideoConfig(Protocol):
 
     def map_openai_params(
         self,
-        video_create_optional_params: VideoCreateOptionalRequestParams,
+        video_create_optional_params: VideoOptions,
         model: str,
         *,
         drop_params: bool,
@@ -55,6 +55,13 @@ class VectorStoreConfig(Protocol):
     def validate_environment(
         self, headers: dict[str, str], litellm_params: GenericLiteLLMParams | None
     ) -> Report: ...
+
+
+@dataclass(frozen=True)
+class Configs:
+    container: ContainerConfig
+    video: VideoConfig
+    vector_store: VectorStoreConfig
 
 
 class Module(TypedDict, total=False):
@@ -85,7 +92,7 @@ class AuthStep(TypedDict):
 
 
 class VideoStep(TypedDict):
-    options: VideoCreateOptionalRequestParams
+    options: VideoOptions
     drop_params: bool
 
 
@@ -108,27 +115,24 @@ def apply_module(module: Module) -> None:
     litellm.azure_key = module.get("azure_key")
 
 
-def url_report(resource: Resource, step: UrlStep) -> Report:
+def url_report(configs: Configs, resource: Resource, step: UrlStep) -> Report:
     params: dict[str, str] = {}
     api_version = step.get("api_version")
     if api_version is not None:
         params["api_version"] = api_version
+    api_base = step.get("api_base")
     apply_module(step["module"])
     with environment(step["environment"]):
-        match resource:
-            case "container":
-                container: ContainerConfig = AzureContainerConfig()
-                url = container.get_complete_url(step.get("api_base"), params)
-            case "video":
-                video: VideoConfig = AzureVideoConfig()
-                url = video.get_complete_url(MODEL, step.get("api_base"), params)
-            case "vector_store":
-                vector_store: VectorStoreConfig = AzureOpenAIVectorStoreConfig()
-                url = vector_store.get_complete_url(step.get("api_base"), params)
-    return {"url": url, "params_api_version": params.get("api_version")}
+        if resource == "container":
+            url = configs.container.get_complete_url(api_base, params)
+        elif resource == "video":
+            url = configs.video.get_complete_url(MODEL, api_base, params)
+        else:
+            url = configs.vector_store.get_complete_url(api_base, params)
+        return {"url": url, "params_api_version": params.get("api_version")}
 
 
-def auth_report(step: AuthStep) -> Report:
+def auth_report(configs: Configs, step: AuthStep) -> Report:
     params = step.get("params")
     supplied = (
         None
@@ -142,46 +146,55 @@ def auth_report(step: AuthStep) -> Report:
     headers = dict(step["headers"])
     resource = step["resource"]
     with environment(step["environment"]):
-        match resource:
-            case "container":
-                container: ContainerConfig = AzureContainerConfig()
-                result = container.validate_environment(headers, step.get("api_key"))
-            case "video":
-                video: VideoConfig = AzureVideoConfig()
-                result = video.validate_environment(headers, MODEL, step.get("api_key"), supplied)
-            case "vector_store":
-                vector_store: VectorStoreConfig = AzureOpenAIVectorStoreConfig()
-                result = vector_store.validate_environment(headers, supplied)
-    return {"headers": result, "params_api_key": None if supplied is None else supplied.api_key}
+        if resource == "container":
+            result = configs.container.validate_environment(headers, step.get("api_key"))
+        elif resource == "video":
+            result = configs.video.validate_environment(
+                headers, MODEL, step.get("api_key"), supplied
+            )
+        else:
+            result = configs.vector_store.validate_environment(headers, supplied)
+        return {"headers": result, "params_api_key": None if supplied is None else supplied.api_key}
 
 
-def video_fields_report(step: VideoStep) -> Report:
-    video: VideoConfig = AzureVideoConfig()
+def video_fields_report(configs: Configs, step: VideoStep) -> Report:
+    video = configs.video
     return {
         "supported": video.get_supported_openai_params(MODEL),
         "mapped": video.map_openai_params(step["options"], MODEL, drop_params=step["drop_params"]),
     }
 
 
-def urls_and_auth_report(resource: Resource, steps: UrlsAndAuth) -> Reports:
+def urls_and_auth_report(configs: Configs, resource: Resource, steps: UrlsAndAuth) -> Reports:
     return {
-        "urls": [url_report(resource, step) for step in steps["urls"]],
-        "auth": [auth_report(step) for step in steps["auth"]],
+        "urls": [url_report(configs, resource, step) for step in steps["urls"]],
+        "auth": [auth_report(configs, step) for step in steps["auth"]],
     }
 
 
+def azure_configs() -> Configs:
+    container = ProviderConfigManager.get_provider_container_config(LlmProviders.AZURE)
+    video = ProviderConfigManager.get_provider_video_config(MODEL, LlmProviders.AZURE)
+    vector_store = ProviderConfigManager.get_provider_vector_stores_config(LlmProviders.AZURE)
+    if container is None or video is None or vector_store is None:
+        raise ValueError("litellm has no azure container, video or vector store config")
+    return Configs(container, video, vector_store)
+
+
 def run(input_value: Input) -> Reports:
+    configs = azure_configs()
     if "container_api_version_query" in input_value:
         queries = input_value["container_api_version_query"]
-        return {"steps": [url_report("container", step) for step in queries]}
+        return {"steps": [url_report(configs, "container", step) for step in queries]}
     if "container_normalized_base" in input_value:
         bases = input_value["container_normalized_base"]
-        return {"steps": [url_report("container", step) for step in bases]}
+        return {"steps": [url_report(configs, "container", step) for step in bases]}
     if "video_supported_fields" in input_value:
         videos = input_value["video_supported_fields"]
-        return {"steps": [video_fields_report(step) for step in videos]}
+        return {"steps": [video_fields_report(configs, step) for step in videos]}
     if "video_auth_and_url" in input_value:
-        return urls_and_auth_report("video", input_value["video_auth_and_url"])
+        return urls_and_auth_report(configs, "video", input_value["video_auth_and_url"])
     if "vector_search_azure_base" in input_value:
-        return urls_and_auth_report("vector_store", input_value["vector_search_azure_base"])
+        search = input_value["vector_search_azure_base"]
+        return urls_and_auth_report(configs, "vector_store", search)
     raise ValueError("expected one azure_resource_urls variant")

@@ -1,4 +1,5 @@
 use betterlite_http::user_url::error::UrlParseError;
+use betterlite_http::user_url::split::{Parsed, urlparse};
 use betterlite_openai::videos::create::VideoCreate;
 
 use crate::azure_urls::AzureUrlError;
@@ -11,6 +12,10 @@ use crate::resource_urls::{
 use super::cases::{
     CONTAINER_BASE_CASES, CONTAINER_QUERY_CASES, MODULE_BASE, UrlCase, VECTOR_CASES,
 };
+
+fn parsed(api_base: &str) -> Parsed {
+    urlparse(api_base, "").unwrap()
+}
 
 pub(super) fn expect_urls(resource: AzureResource, cases: &[UrlCase]) {
     for (api_base, api_version, expected) in cases {
@@ -31,11 +36,11 @@ pub(super) fn container_api_version_query() {
     expect_urls(AzureResource::Container, &CONTAINER_QUERY_CASES);
     let encoded = "https://r.example/openai/responses?api-version=%32%30";
     assert_eq!(
-        container_api_version(encoded).unwrap(),
+        container_api_version(&parsed(encoded).query),
         Some("20".to_owned())
     );
     assert_eq!(
-        container_api_version("https://r.example/openai/responses").unwrap(),
+        container_api_version(&parsed("https://r.example/openai/responses").query),
         None
     );
     let invalid = UrlRequest {
@@ -57,10 +62,10 @@ pub(super) fn container_normalized_base() {
         "https://r.example/openai/responses/extra",
         "",
     ] {
-        assert_eq!(container_resource_root(unchanged).unwrap(), unchanged);
+        assert_eq!(container_resource_root(&parsed(unchanged)), None);
     }
     assert_eq!(
-        container_resource_root("HTTPS://R.example/a/openai/responses/?q#f").unwrap(),
+        container_resource_root(&parsed("HTTPS://R.example/a/openai/responses/?q#f")).unwrap(),
         "https://R.example/a"
     );
     container_fallback_base();

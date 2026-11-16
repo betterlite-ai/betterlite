@@ -59,21 +59,20 @@ pub struct ResourceAuth<'data> {
     pub sources: &'data dyn CredentialSources,
 }
 
-fn container_api_version(api_base: &str) -> Result<Option<String>, ResourceUrlError> {
-    let query = urlparse(api_base, "")
-        .map_err(ResourceUrlError::Parse)?
-        .query;
-    Ok(form_urlencoded::parse(query.as_bytes())
+fn container_api_version(query: &str) -> Option<String> {
+    form_urlencoded::parse(query.as_bytes())
         .find(|(name, value)| name == "api-version" && !value.is_empty())
-        .map(|(_, value)| value.into_owned()))
+        .map(|(_, value)| value.into_owned())
 }
 
-fn container_resource_root(api_base: &str) -> Result<String, ResourceUrlError> {
-    let parsed = urlparse(api_base, "").map_err(ResourceUrlError::Parse)?;
+// None when the path does not end in a known endpoint, so the caller keeps the base as given
+fn container_resource_root(parsed: &Parsed) -> Option<String> {
     let trimmed = parsed.path.trim_end_matches('/');
-    for ending in CONTAINER_ENDPOINT_PATHS {
-        if let Some(root) = trimmed.strip_suffix(ending) {
-            return Ok(Parsed {
+    CONTAINER_ENDPOINT_PATHS
+        .into_iter()
+        .find_map(|ending| trimmed.strip_suffix(ending))
+        .map(|root| {
+            Parsed {
                 scheme: parsed.scheme.clone(),
                 netloc: parsed.netloc.clone(),
                 path: root.to_owned(),
@@ -81,10 +80,8 @@ fn container_resource_root(api_base: &str) -> Result<String, ResourceUrlError> {
                 query: String::new(),
                 fragment: String::new(),
             }
-            .unparse());
-        }
-    }
-    Ok(api_base.to_owned())
+            .unparse()
+        })
 }
 
 pub fn complete_url(
@@ -101,8 +98,9 @@ pub fn complete_url(
     if resource == AzureResource::Container
         && let Some(base) = request.api_base.filter(|text| !text.is_empty())
     {
-        api_version = container_api_version(base)?.or(api_version);
-        api_base = Some(container_resource_root(base)?);
+        let parsed = urlparse(base, "").map_err(ResourceUrlError::Parse)?;
+        api_version = container_api_version(&parsed.query).or(api_version);
+        api_base = Some(container_resource_root(&parsed).unwrap_or_else(|| base.to_owned()));
     }
     let base = api_base
         .as_deref()
@@ -117,9 +115,10 @@ pub fn validate_environment<'data>(
     auth: ResourceAuth<'data>,
     params_api_key: Option<&'data SecretString>,
 ) -> Result<BTreeMap<String, String>, ResourceUrlError> {
-    let api_key = params_api_key
-        .filter(|candidate| !candidate.expose_secret().is_empty())
-        .or(auth.fallback_api_key);
+    let api_key = match params_api_key {
+        Some(key) if !key.expose_secret().is_empty() => Some(key),
+        _ => auth.fallback_api_key,
+    };
     validate_azure_environment(EnvironmentHeadersRequest {
         headers: auth.headers,
         api_key,
@@ -137,10 +136,12 @@ pub fn video_validate_environment(
     api_key: Option<&SecretString>,
     params_api_key: &mut Option<SecretString>,
 ) -> Result<BTreeMap<String, String>, ResourceUrlError> {
-    if let Some(key) = api_key.filter(|candidate| !candidate.expose_secret().is_empty())
-        && params_api_key
-            .as_ref()
-            .is_none_or(|current| current.expose_secret().is_empty())
+    let params_blank = params_api_key
+        .as_ref()
+        .is_none_or(|current| current.expose_secret().is_empty());
+    if let Some(key) = api_key
+        && params_blank
+        && !key.expose_secret().is_empty()
     {
         *params_api_key = Some(key.clone());
     }

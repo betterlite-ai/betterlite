@@ -175,16 +175,18 @@ fn azure_resources_secret_safe_failure() {
     assert!(!debug.contains("fixture-client-secret"));
     let failure = validate_environment(auth(&[], None, &credentials), None).unwrap_err();
     assert!(matches!(failure, ResourceUrlError::Token(_)));
-    for text in [format!("{failure}"), format!("{failure:?}")] {
-        assert!(!text.contains("fixture-client-secret"));
-        assert!(!text.contains("fixture-token"));
-    }
+    let texts = [format!("{failure}"), format!("{failure:?}")];
+    assert!(texts.iter().all(|text| {
+        !text.contains("fixture-client-secret") && !text.contains("fixture-token")
+    }));
     let embedded = Some("https://user:fixture-api-key@[:::1]/openai/responses");
-    for resource in [
+    let leaking: Vec<AzureResource> = [
         AzureResource::Container,
         AzureResource::Video,
         AzureResource::VectorStore,
-    ] {
+    ]
+    .into_iter()
+    .filter(|&resource| {
         let request = UrlRequest {
             api_base: embedded,
             fallback_api_base: None,
@@ -192,8 +194,10 @@ fn azure_resources_secret_safe_failure() {
         };
         let error = complete_url(resource, &request).unwrap_err();
         let source = error.source().unwrap().to_string();
-        for text in [format!("{error}"), format!("{error:?}"), source] {
-            assert!(!text.contains("fixture-api-key"), "{resource:?}: {text}");
-        }
-    }
+        [format!("{error}"), format!("{error:?}"), source]
+            .iter()
+            .any(|text| text.contains("fixture-api-key"))
+    })
+    .collect();
+    assert!(leaking.is_empty(), "{leaking:?}");
 }

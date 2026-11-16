@@ -32,25 +32,27 @@ fn helper_seeds_select_azure_resource_urls() {
         .filter(|(name, _source)| name.starts_with("azure_resource_urls"))
         .collect();
     assert!(!seeds.is_empty(), "no azure_resource_urls seeds");
-    let mut seen = BTreeSet::new();
-    for (name, source) in &seeds {
-        let case: HelperCase = serde_saphyr::from_str(source).unwrap();
-        let variant = case
-            .call
-            .input
-            .as_object()
-            .unwrap()
-            .keys()
-            .next()
-            .unwrap()
-            .clone();
-        assert_eq!(case.call.operation, "azure_resource_urls");
-        assert!(
-            VARIANTS.contains(&variant.as_str()),
-            "{name} names {variant}"
-        );
-        validate_helper(Path::new("<helper>"), &case).unwrap();
-        seen.insert(variant);
-    }
+    let seen: BTreeSet<String> = seeds
+        .iter()
+        .map(|(name, source)| {
+            let case: HelperCase = serde_saphyr::from_str(source).unwrap();
+            let variant = case
+                .call
+                .input
+                .as_object()
+                .unwrap()
+                .keys()
+                .next()
+                .unwrap()
+                .clone();
+            assert_eq!(case.call.operation, "azure_resource_urls");
+            assert!(
+                VARIANTS.contains(&variant.as_str()),
+                "{name} names {variant}"
+            );
+            validate_helper(Path::new("<helper>"), &case).unwrap();
+            variant
+        })
+        .collect();
     assert_eq!(seen.len(), VARIANTS.len());
 }
