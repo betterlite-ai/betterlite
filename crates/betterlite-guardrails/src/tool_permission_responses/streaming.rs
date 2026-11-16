@@ -1,6 +1,8 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use tokio::sync::mpsc;
 
+use crate::anthropic_sse::is_raw_sse_stream::is_raw_sse_stream;
+use crate::anthropic_sse::sse_chunks_from_response::sse_chunks_from_response;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::{Object, StreamItem};
 use crate::tool_permission::ToolPermissionGuardrail;
@@ -11,9 +13,8 @@ use super::evaluate::{DeniedToolCall, evaluate_tool_calls};
 use super::extraction::extract_response_tools;
 use super::openai_rewrite::rewrite_openai_responses;
 use super::reconstruct::reconstruct_chunk;
-use super::stream_assembly::{assemble_anthropic_stream, assemble_openai_chunks};
+use super::stream_assembly::{assemble_anthropic_stream, assemble_openai_chunks, rewritten_record};
 use super::stream_services::StreamServices;
-use super::stream_support::is_raw_item;
 use super::unparseable::unparseable_stream_failure;
 
 // LiteLLM's async_post_call_streaming_iterator_hook: every chunk is buffered before the response is checked
@@ -26,7 +27,7 @@ pub async fn post_call_streaming_iterator_hook(
 ) -> Result<(), ResponseToolError> {
     let chunks = buffer_stream(guardrail, limits, &mut input).await?;
     // LiteLLM only builds a chunk list when no chunk is raw wire data; one raw chunk makes the whole stream raw.
-    let raw = chunks.iter().any(is_raw_item);
+    let raw = is_raw_sse_stream(&chunks);
     if !raw && let Some(mut response) = assemble_openai_chunks(&chunks, services).await? {
         let denied = check_assembled_stream(guardrail, &response)?;
         if !denied.is_empty() {
@@ -40,7 +41,7 @@ pub async fn post_call_streaming_iterator_hook(
         .await;
     }
     // A raw stream is assembled as Anthropic SSE; any assembly failure reads as no response to check.
-    let Some(mut response) = assemble_anthropic_stream(&chunks, services).await else {
+    let Some(mut assembled) = assemble_anthropic_stream(&chunks, services).await else {
         if raw {
             return Err(ResponseToolError::Guardrail(unparseable_stream_failure(
                 &guardrail.args.name,
@@ -48,14 +49,15 @@ pub async fn post_call_streaming_iterator_hook(
         }
         return relay(&output, chunks).await;
     };
-    let denied = check_assembled_stream(guardrail, &response)?;
+    let denied = check_assembled_stream(guardrail, &assembled.response)?;
     if denied.is_empty() {
         return relay(&output, chunks).await;
     }
     // The assembled Anthropic stream is an OpenAI-shaped response, so LiteLLM rewrites it with the OpenAI rewrite
     // before translating it back to Anthropic SSE.
-    rewrite_openai_responses(&mut response, &denied);
-    let frames = super::anthropic_reencode::encode_anthropic_stream(&response)?;
+    rewrite_openai_responses(&mut assembled.response, &denied);
+    let record = rewritten_record(&assembled.response, &assembled.record)?;
+    let frames = sse_chunks_from_response(&record)?;
     relay(&output, frames.into_iter().map(StreamItem::Bytes).collect()).await
 }
 

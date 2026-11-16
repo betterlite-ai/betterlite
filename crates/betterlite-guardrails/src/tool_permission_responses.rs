@@ -11,11 +11,8 @@ pub mod streaming;
 pub mod success_hook;
 pub mod unparseable;
 
-mod anthropic_chunks;
-mod anthropic_reencode;
 mod reconstruct;
 mod stream_assembly;
-mod stream_support;
 
 #[cfg(test)]
 mod tests;

@@ -1935,6 +1935,7 @@ dependencies = [
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-compression",
  "betterlite-config",
  "betterlite-context",
