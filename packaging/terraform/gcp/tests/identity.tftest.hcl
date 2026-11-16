@@ -65,10 +65,12 @@ run "license_and_ui_password_secrets_exist_when_set" {
       local.ui_password_set == true,
       length(google_secret_manager_secret.license) == 1,
       google_secret_manager_secret.license[0].secret_id == "tenant-test-betterlite-license",
+      google_secret_manager_secret.license[0].labels["managed_by"] == "terraform",
       length(google_secret_manager_secret_version.license) == 1,
       google_secret_manager_secret_version.license[0].secret_data == var.litellm_license,
       length(google_secret_manager_secret.ui_password) == 1,
       google_secret_manager_secret.ui_password[0].secret_id == "tenant-test-betterlite-ui-password",
+      google_secret_manager_secret.ui_password[0].labels["managed_by"] == "terraform",
       length(google_secret_manager_secret_version.ui_password) == 1,
       google_secret_manager_secret_version.ui_password[0].secret_data == var.ui_password,
     ])
