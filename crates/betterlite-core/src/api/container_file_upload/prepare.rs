@@ -125,7 +125,7 @@ fn request_params(
     request: &ContainerFileUploadRequest<'_>,
     kwargs: &IndexMap<String, Json>,
 ) -> Result<IndexMap<String, JsonValue>, serde_json::Error> {
-    // Json and JsonValue are the same closed JSON shape in two types, already serialized identically, so one serde pass bridges them
+    // Json and JsonValue are the same closed JSON shape in two types, both already serialized identically, and the text keeps the caller's key order
     let encoded = serde_json::to_string(kwargs)?;
     let mut params: IndexMap<String, JsonValue> = serde_json::from_str(&encoded)?;
     let credentials = [
