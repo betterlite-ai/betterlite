@@ -5,8 +5,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use tokio::sync::Notify;
 use tokio::task::yield_now;
-use tokio::time::advance;
+use tokio::time::{advance, timeout};
 
 use crate::registry_read_through::tests::support::{CountingResync, FailingResync, capture_logs};
 use crate::registry_read_through::{
@@ -131,6 +132,32 @@ async fn two_tasks_that_ask_for_the_same_missing_key_run_the_resync_once() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
+#[tokio::test(start_paused = true)]
+async fn a_remembered_miss_is_answered_while_another_key_resyncs() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let read_through = Arc::new(RegistryReadThrough::new(BlockingResync {
+        calls: Arc::clone(&calls),
+        started: Arc::clone(&started),
+        release: Arc::clone(&release),
+    }));
+    assert!(!read_through.attempt("a").await);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let slow = tokio::spawn({
+        let read_through = Arc::clone(&read_through);
+        async move { read_through.attempt("b").await }
+    });
+    started.notified().await;
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    let answered = timeout(Duration::from_millis(1), read_through.attempt("a")).await;
+    assert_eq!(answered, Ok(false));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    release.notify_one();
+    assert!(!slow.await.unwrap());
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
 async fn remember_misses(read_through: &RegistryReadThrough<CountingResync>, count: usize) {
     for index in 0..count {
         let key = format!("missing-{index:04}");
@@ -146,6 +173,23 @@ impl Resync for YieldingResync {
     async fn resync(&self, _key: &str) -> Result<bool, ResyncError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         yield_now().await;
+        Ok(false)
+    }
+}
+
+struct BlockingResync {
+    calls: Arc<AtomicUsize>,
+    started: Arc<Notify>,
+    release: Arc<Notify>,
+}
+
+impl Resync for BlockingResync {
+    async fn resync(&self, key: &str) -> Result<bool, ResyncError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        if key == "b" {
+            self.started.notify_one();
+            self.release.notified().await;
+        }
         Ok(false)
     }
 }

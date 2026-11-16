@@ -1,5 +1,6 @@
 mod tests;
 
+use std::sync::PoisonError;
 use std::time::Duration;
 
 use tokio::sync::Mutex;
@@ -18,21 +19,27 @@ impl<R: Resync> RegistryReadThrough<R> {
             miss_ttl: READ_THROUGH_MISS_TTL,
             max_resyncs_per_window: READ_THROUGH_MAX_RESYNCS,
             window: READ_THROUGH_RESYNC_WINDOW,
+            recent_misses: std::sync::Mutex::new(RecentMisses::default()),
             state: Mutex::new(State::default()),
         }
     }
 
-    // the miss map sits under the resync lock, so the fast path asks for that lock without waiting
     pub async fn attempt(&self, key: &str) -> bool {
         let remembered = self
-            .state
-            .try_lock()
-            .is_ok_and(|state| state.recent_misses.contains(key, Instant::now()));
+            .recent_misses
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(key, Instant::now());
         if remembered {
             return false;
         }
         let mut state = self.state.lock().await;
-        if state.recent_misses.contains(key, Instant::now()) {
+        let remembered = self
+            .recent_misses
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(key, Instant::now());
+        if remembered {
             return false;
         }
         if !state.consume_resync_budget(self.max_resyncs_per_window, self.window) {
@@ -47,8 +54,9 @@ impl<R: Resync> RegistryReadThrough<R> {
         match self.resync.resync(key).await {
             Ok(true) => true,
             Ok(false) => {
-                state
-                    .recent_misses
+                self.recent_misses
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
                     .remember(key, Instant::now(), self.miss_ttl);
                 false
             }

@@ -31,12 +31,13 @@ pub struct RegistryReadThrough<R: Resync> {
     miss_ttl: Duration,
     max_resyncs_per_window: usize,
     window: Duration,
+    // never held across an await, so the fast path reads it while a resync holds `state`
+    recent_misses: std::sync::Mutex<RecentMisses>,
     state: Mutex<State>,
 }
 
 #[derive(Debug, Default)]
 struct State {
-    recent_misses: RecentMisses,
     window_started_at: Option<Instant>,
     window_resyncs: usize,
 }
