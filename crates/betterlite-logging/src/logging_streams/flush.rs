@@ -20,49 +20,42 @@ pub fn flush_passthrough<C>(
     handler: &SuccessHandler<'_>,
     state: &mut LoggingState,
     correlation: &mut CorrelationContext,
-    collector: &C,
+    source: &C,
 ) -> Result<(), C::Error>
 where
     C: StreamCollector + ?Sized,
 {
-    let Some(result) = collector.build_logged_response(state)? else {
+    let Some(request) = collected_request(source, state)? else {
         return Ok(());
     };
-    success_handler(
-        handler,
-        state,
-        correlation,
-        &SuccessRequest {
-            result,
-            start_time: None,
-            end_time: None,
-            cache_hit: None,
-            prefer_async_handlers: false,
-            standard_logging_object: None,
-            guardrail_snapshot: None,
-        },
-    );
+    success_handler(handler, state, correlation, &request);
     Ok(())
 }
 
 // LiteLLM's async_flush_passthrough_collected_chunks.
-pub async fn async_flush_passthrough<C>(
+pub async fn async_flush_passthrough<C: StreamCollector + Sync + ?Sized>(
     handler: &SuccessHandler<'_>,
-    state: &mut LoggingState,
-    correlation: &mut CorrelationContext,
+    logging: &mut LoggingState,
+    context: &mut CorrelationContext,
     collector: &C,
-) -> Result<(), C::Error>
+) -> Result<(), C::Error> {
+    if let Some(request) = collected_request(collector, logging)? {
+        async_success_handler(handler, logging, context, &request).await;
+    }
+    Ok(())
+}
+
+// LiteLLM's flush hands its success handler no times and no cache hit.
+fn collected_request<C>(
+    collector: &C,
+    state: &mut LoggingState,
+) -> Result<Option<SuccessRequest>, C::Error>
 where
-    C: StreamCollector + Sync + ?Sized,
+    C: StreamCollector + ?Sized,
 {
-    let Some(result) = collector.build_logged_response(state)? else {
-        return Ok(());
-    };
-    async_success_handler(
-        handler,
-        state,
-        correlation,
-        &SuccessRequest {
+    Ok(collector
+        .build_logged_response(state)?
+        .map(|result| SuccessRequest {
             result,
             start_time: None,
             end_time: None,
@@ -70,8 +63,5 @@ where
             prefer_async_handlers: false,
             standard_logging_object: None,
             guardrail_snapshot: None,
-        },
-    )
-    .await;
-    Ok(())
+        }))
 }
