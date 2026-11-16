@@ -73,15 +73,15 @@ pub async fn run(
 ) -> Result<(), ServerError> {
     let listener = bind(host, port).await?;
     // a taken port stops startup before the application is built
-    Box::pin(run_with_listener(config, chat, host, listener)).await
+    Box::pin(run_with_listener(config, chat, listener, host)).await
 }
 
 // tests bind and keep their own listener, so no other test can take its port before the server serves on it
 pub async fn run_with_listener(
     config: Config,
     chat: ChatExecutor,
-    host: &str,
     listener: TcpListener,
+    host: &str,
 ) -> Result<(), ServerError> {
     let shutting_down = Arc::new(AtomicBool::new(false));
     let outbound = chat.client.clone();

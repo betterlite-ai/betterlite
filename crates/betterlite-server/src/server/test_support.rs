@@ -35,7 +35,10 @@ pub fn port_in_line(line: &str) -> Option<u16> {
 }
 
 // the caller keeps the reader open afterwards, because a closed stderr pipe would break the server's later log writes
-pub fn listening_port<Output: BufRead>(output: &mut Output) -> Result<u16, ListeningPortError> {
+pub fn listening_port<Output>(output: &mut Output) -> Result<u16, ListeningPortError>
+where
+    Output: BufRead,
+{
     for read in output.lines() {
         let line = read.map_err(|source| ListeningPortError::Read { source })?;
         if let Some(port) = port_in_line(&line) {

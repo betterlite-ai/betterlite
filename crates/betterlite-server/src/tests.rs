@@ -35,7 +35,7 @@ async fn run_serves_requests_with_the_chat_executor_it_was_given() {
     let (served, response) = tokio::join!(
         timeout(
             Duration::from_secs(3),
-            run_with_listener(config, chat, "127.0.0.1", listener)
+            run_with_listener(config, chat, listener, "127.0.0.1")
         ),
         timeout(Duration::from_secs(3), post_chat_once_listening(port))
     );
@@ -181,7 +181,7 @@ async fn bind_listener() -> (TcpListener, u16) {
 fn boot(config: Config, listener: TcpListener, tasks: &mut JoinSet<()>) {
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(7)).unwrap();
     tasks.spawn(async move {
-        let serving = Box::pin(run_with_listener(config, chat, "127.0.0.1", listener));
+        let serving = Box::pin(run_with_listener(config, chat, listener, "127.0.0.1"));
         let _served = timeout(Duration::from_secs(10), serving).await;
     });
 }

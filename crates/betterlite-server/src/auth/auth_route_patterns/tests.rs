@@ -235,7 +235,7 @@ async fn stage_is_registered() {
     .unwrap();
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(7)).unwrap();
     let mut server = JoinSet::new();
-    server.spawn(run_with_listener(config, chat, "127.0.0.1", listener));
+    server.spawn(run_with_listener(config, chat, listener, "127.0.0.1"));
     let response = request_models(address).await;
     assert!(
         server.try_join_next().is_none(),

@@ -104,7 +104,7 @@ async fn http_pool_tests_behavior(#[case] release: Option<Duration>, #[case] war
     let (served, _kept) = tokio::join!(
         timeout(
             limit,
-            run_with_listener(config, chat, "127.0.0.1", listener)
+            run_with_listener(config, chat, listener, "127.0.0.1")
         ),
         shut_down(&path, held, release)
     );

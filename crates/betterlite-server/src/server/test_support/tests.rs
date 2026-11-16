@@ -10,7 +10,7 @@ const LISTENING: &str = r#"{"timestamp":"t","level":"INFO","host":"127.0.0.1","p
 #[case::lowest_port(r#"{"port":0,"message":"betterlite server listening"}"#, Some(0_u16))]
 #[case::highest_port(
     r#"{"port":65535,"message":"betterlite server listening"}"#,
-    Some(65535_u16)
+    Some(0xFFFF_u16)
 )]
 #[case::port_past_the_range(r#"{"port":65536,"message":"betterlite server listening"}"#, None)]
 #[case::other_message_with_a_port(
