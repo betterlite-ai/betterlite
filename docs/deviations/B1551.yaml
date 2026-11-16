@@ -1,0 +1,15 @@
+task: B1551
+deviations:
+  - what: Dropping the transcription job future, as a cancelled request does, sends no cleanup requests, where LiteLLM's try/finally runs _sync_cleanup or awaits _async_cleanup while the call unwinds.
+    why: Rust cancels a request by dropping its future, and the async deletes cannot run from Drop without blocking the runtime or detaching a task the server does not own, so a cancelled proxy request can leave the Soniox transcription and the file this call uploaded behind.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L471-L480
+  - what: An audio_duration_ms that is a JSON string or boolean fails the call with a typed duration error, where Python's float() reads "1500" as 1500.0 and true as 1.0.
+    why: The provider reply declares audio_duration_ms as a number, and docs/compatibility.md makes a value of the wrong type an error that names the field; a working Soniox setup never receives a string or boolean there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L461-L467
+  - what: Seconds come from dividing the exact decimal milliseconds and rounding once, where LiteLLM converts to a float first and divides that float, so an integral duration past 2^53 can land one ulp away; 9007199254740995 ms is 9007199254740.994 here and 9007199254740.996 in LiteLLM.
+    why: The task pins Decimal arithmetic at this stage, and dividing the decimal keeps every digit the reply carried; the two roundings only differ for durations no recording reaches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L466
+kept_bugs:
+  - what: A create reply that carries no id leaves the remote transcription undeleted, because the pipeline never learns the id and cleans up only the file it uploaded.
+    why: LiteLLM assigns transcription_id from the reply object and its finally can only delete an id it read; a lookup or a delete of an unknown id would claim the id was known and invent a transaction LiteLLM does not have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L429-L430
