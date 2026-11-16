@@ -151,7 +151,7 @@ class BaseLitellmParams(ContentFilterConfigModel):
         return self
 
 
-class LitellmParams(  # pyright: ignore[reportIncompatibleVariableOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192
+class LitellmParams(  # pyright: ignore[reportGeneralTypeIssues, reportIncompatibleVariableOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192
     CiscoAIDefenseGuardrailConfigModel,  # ast-grep-ignore: no-long-names
     PresidioConfigModel,
     BedrockGuardrailConfigModel,
