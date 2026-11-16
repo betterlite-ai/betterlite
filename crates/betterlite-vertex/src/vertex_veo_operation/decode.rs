@@ -1,5 +1,6 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_with::{DefaultOnNull, serde_as};
 
 use super::error::VeoOperationError;
@@ -36,7 +37,7 @@ pub fn decode_vertex_veo_operation(bytes: &[u8]) -> Result<VertexVeoOperation, V
 // the usage and error dicts LiteLLM passes through unchanged, read back into the typed wire field
 pub(crate) fn decoded_json<T>(value: Object) -> Result<T, VeoOperationError>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
     serde_json::from_value(serde_json::to_value(value).map_err(VeoOperationError::Encode)?)
         .map_err(VeoOperationError::Encode)
