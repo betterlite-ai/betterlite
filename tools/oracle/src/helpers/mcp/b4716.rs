@@ -97,16 +97,19 @@ impl Helper for Op {
         }
     }
 }
-fn serialized<T: Serialize>(built: Result<T, RequestError>) -> HelperResult {
+fn serialized<T>(built: Result<T, RequestError>) -> HelperResult
+where
+    T: Serialize,
+{
     match built {
         Ok(request) => Ok(serde_json::to_value(&request)?),
-        Err(error) => Ok(request_error(error)),
+        Err(error) => Ok(json!({ "tag": "error", "message": error.to_string() })),
     }
 }
 fn validate_payload(call: &PayloadInput) -> HelperResult {
     let mut request = match NewMCPServerRequest::from_value(&call.payload, &call.stdio) {
         Ok(request) => request,
-        Err(error) => return Ok(request_error(error)),
+        Err(error) => return Ok(json!({ "tag": "error", "message": error.to_string() })),
     };
     let rules = PayloadRules {
         prefix_separator: "-".to_owned(),
@@ -130,8 +133,7 @@ fn conflict_message(field: &ConflictField, value: &str, server_id: &str) -> Valu
 }
 fn convert_connectors(connectors: &Json, stdio: &StdioPolicy) -> HelperResult {
     let request = ConnectorImportRequest::from_slice(&serde_json::to_vec(connectors)?)?;
-    let outcomes = convert_connector_entries(&request, stdio);
-    let entries = outcomes
+    let entries = convert_connector_entries(&request, stdio)
         .into_iter()
         .map(outcome_value)
         .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
@@ -147,13 +149,6 @@ fn outcome_value(outcome: ConnectorOutcome) -> Result<Value, Box<HelperError>> {
             Ok(json!({ "name": failure.name, "error": failure.error }))
         }
     }
-}
-fn request_error(error: RequestError) -> Value {
-    let message = match error {
-        RequestError::Value(message) => message,
-        RequestError::Shape(source) => source.to_string(),
-    };
-    json!({ "tag": "error", "message": message })
 }
 fn validation_error(error: &PayloadError) -> Value {
     let status = if matches!(error, PayloadError::UnknownRequiredFields { .. }) {

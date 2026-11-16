@@ -45,11 +45,11 @@ fn an_empty_list_loads() {
 
 #[test]
 fn a_non_list_value_is_a_config_error() {
-    assert!(load("general_settings:\n  mcp_required_fields: server_name").is_err());
-    assert!(load("general_settings:\n  mcp_required_fields: 5").is_err());
+    load("general_settings:\n  mcp_required_fields: server_name").unwrap_err();
+    load("general_settings:\n  mcp_required_fields: 5").unwrap_err();
 }
 
 #[test]
 fn a_non_string_entry_is_a_config_error() {
-    assert!(load("general_settings:\n  mcp_required_fields:\n    - url: x\n").is_err());
+    load("general_settings:\n  mcp_required_fields:\n    - url: x\n").unwrap_err();
 }

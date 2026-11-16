@@ -165,7 +165,7 @@ fn the_display_name_pattern_follows_python_dollar() {
 #[case::two_trailing_newlines("abc\n\n", false)]
 #[case::dot("a.b", false)]
 #[case::space("a b", false)]
-#[case::non_ascii("caf\u{e9}", false)]
+#[case::non_ascii("\u{e9}", false)]
 #[case::only_a_newline("\n", false)]
 #[case::plain("abc", true)]
 #[case::underscore("a_b", true)]

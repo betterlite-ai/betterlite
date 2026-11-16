@@ -73,7 +73,7 @@ fn stdio_flag_follows_the_shared_parser(#[case] value: &str, #[case] expected: b
 
 #[test]
 fn a_stdio_flag_that_is_not_a_bool_is_a_config_error() {
-    assert!(load(&[("LITELLM_ENABLE_MCP_STDIO", "truex")]).is_err());
+    load(&[("LITELLM_ENABLE_MCP_STDIO", "truex")]).unwrap_err();
 }
 
 #[test]
