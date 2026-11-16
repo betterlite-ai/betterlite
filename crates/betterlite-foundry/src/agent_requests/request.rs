@@ -74,18 +74,17 @@ fn secret_text(
 }
 
 pub fn complete_url(api_base: Option<&str>) -> Result<String, AgentRequestError> {
-    match api_base {
-        None => Err(AgentRequestError::ApiBaseRequired),
-        Some(base) => Ok(base.trim_end_matches('/').to_owned()),
-    }
+    api_base
+        .map(|base| base.trim_end_matches('/').to_owned())
+        .ok_or(AgentRequestError::ApiBaseRequired)
 }
 
 #[must_use]
 pub fn agent_id_from_model(model: &str) -> String {
-    match model.split_once("agents/") {
-        Some((_, suffix)) => suffix.to_owned(),
-        None => model.to_owned(),
-    }
+    model
+        .split_once("agents/")
+        .map_or(model, |(_, suffix)| suffix)
+        .to_owned()
 }
 
 pub fn agent_id(model: &str, optional_params: &Object) -> Result<String, AgentRequestError> {

@@ -29,8 +29,11 @@ pub(super) struct AgentIdCall {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ParamsCall {
-    pub(super) model: String,
-    pub(super) non_default_params: Object,
+    // the agent route maps no parameter, so only optional_params is read
+    #[serde(rename = "model")]
+    pub(super) _model: String,
+    #[serde(rename = "non_default_params")]
+    pub(super) _non_default_params: Object,
     pub(super) optional_params: Object,
 }
 
