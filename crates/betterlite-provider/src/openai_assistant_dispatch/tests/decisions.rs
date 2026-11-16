@@ -158,20 +158,12 @@ async fn decisions_malformed_payload() {
 }
 
 // Nothing explicit is supplied, so the leaf resolves from the globals first and the environment after them.
-async fn credential_resolution() {
-    let environment = env(&[
-        ("OPENAI_API_KEY", "sk-env"),
-        ("OPENAI_BASE_URL", "https://env.test/v1"),
-    ]);
+async fn credential_resolution(environment: BTreeMap<String, String>) {
     let globals = LiteLlmGlobals {
         api_base: Some(String::from("https://global.test/v1")),
         api_key: Some(SecretString::from("sk-global-api")),
         openai_key: Some(SecretString::from("sk-global-openai")),
         organization: None,
-    };
-    let openai_key_only = LiteLlmGlobals {
-        openai_key: Some(SecretString::from("sk-global-openai")),
-        ..LiteLlmGlobals::default()
     };
     decisions_resolution(
         LiteLlmGlobals::default(),
@@ -182,11 +174,21 @@ async fn credential_resolution() {
     .await;
     decisions_resolution(
         globals,
-        environment.clone(),
+        environment,
         "https://global.test/v1",
         Some("sk-global-api"),
     )
     .await;
+}
+
+// The globals' openai_key answers when the environment has a key and a base but no globals supply either.
+async fn openai_key_credential_resolution(environment: BTreeMap<String, String>) {
+    let openai_key_only = LiteLlmGlobals {
+        api_base: None,
+        api_key: None,
+        openai_key: Some(SecretString::from("sk-global-openai")),
+        organization: None,
+    };
     decisions_resolution(
         openai_key_only,
         environment,
@@ -209,7 +211,12 @@ async fn default_credential_resolution() {
 
 pub(super) async fn case() {
     decisions_request().await;
-    credential_resolution().await;
+    let environment = env(&[
+        ("OPENAI_API_KEY", "sk-env"),
+        ("OPENAI_BASE_URL", "https://env.test/v1"),
+    ]);
+    credential_resolution(environment.clone()).await;
+    openai_key_credential_resolution(environment).await;
     default_credential_resolution().await;
     decisions_response().await;
     decisions_malformed_payload().await;
