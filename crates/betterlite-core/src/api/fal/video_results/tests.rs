@@ -323,7 +323,7 @@ async fn a_refused_probe_connection_keeps_the_completed_status() {
             .expect("the listener");
         listener.local_addr().expect("the address")
     };
-    let client = outbound_client(TransportLimits::DEFAULT);
+    let client = outbound_client(SHORT_READ_LIMIT);
     let clients = VideoClients {
         sync: &client,
         asynchronous: &client,
