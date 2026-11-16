@@ -36,7 +36,7 @@ pub(super) fn block(
     }
     record_applied_guardrail(request_data, guardrail_name);
     tracing::warn!(
-        "Cisco AI Defense guardrail ({guardrail_name}): MCP response blocked — tool output replaced with synthesized violation message."
+        "Cisco AI Defense guardrail ({guardrail_name}): MCP response blocked \u{2014} tool output replaced with synthesized violation message."
     );
     McpPostCallResponse {
         mcp_tool_call_response: call.response.mcp_tool_call_response.clone(),

@@ -125,11 +125,11 @@ fn applied_guardrails(request_data: &Fields) -> Vec<String> {
 }
 
 fn unsupported_event() -> String {
-    "data: {\"error\":{\"message\":\"Cisco AI Defense: unsupported streaming format — response withheld for safety\",\"type\":\"guardrail_unsupported_stream\",\"code\":400,\"guardrail\":\"cisco-ai-defense\"}}\n\n".to_owned()
+    "data: {\"error\":{\"message\":\"Cisco AI Defense: unsupported streaming format \u{2014} response withheld for safety\",\"type\":\"guardrail_unsupported_stream\",\"code\":400,\"guardrail\":\"cisco-ai-defense\"}}\n\n".to_owned()
 }
 
 fn scan_error_event() -> String {
-    "data: {\"error\":{\"message\":\"Cisco AI Defense streaming scan failed — response withheld.\",\"type\":\"guardrail_scan_error\",\"code\":500,\"guardrail\":\"cisco-ai-defense\"}}\n\n".to_owned()
+    "data: {\"error\":{\"message\":\"Cisco AI Defense streaming scan failed \u{2014} response withheld.\",\"type\":\"guardrail_scan_error\",\"code\":500,\"guardrail\":\"cisco-ai-defense\"}}\n\n".to_owned()
 }
 
 fn blocked_event() -> String {

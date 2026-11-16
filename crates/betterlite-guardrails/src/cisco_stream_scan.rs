@@ -124,7 +124,7 @@ async fn scan_chat(
     let name = guardrail.settings.guardrail_name.as_str();
     if first_item_is_text_completion(chunks) {
         tracing::warn!(
-            "Cisco AI Defense guardrail ({name}): unsupported streaming chunk shape — failing closed."
+            "Cisco AI Defense guardrail ({name}): unsupported streaming chunk shape \u{2014} failing closed."
         );
         return events::event(name, events::UNSUPPORTED);
     }
@@ -135,7 +135,7 @@ async fn scan_chat(
     };
     let Response::Chat(response) = assembled else {
         tracing::warn!(
-            "Cisco AI Defense guardrail ({name}): assembled streaming response has unsupported shape — failing closed."
+            "Cisco AI Defense guardrail ({name}): assembled streaming response has unsupported shape \u{2014} failing closed."
         );
         return events::event(name, events::UNSUPPORTED);
     };

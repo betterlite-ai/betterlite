@@ -80,7 +80,7 @@ where
 
 fn blocked_stream(guardrail_name: &str, status_code: u16, detail: Json) -> Vec<StreamItem> {
     tracing::warn!(
-        "Cisco AI Defense guardrail ({guardrail_name}): streaming response blocked — emitting SSE error event instead of delivering buffered chunks."
+        "Cisco AI Defense guardrail ({guardrail_name}): streaming response blocked \u{2014} emitting SSE error event instead of delivering buffered chunks."
     );
     let exception = GuardrailException {
         status_code,

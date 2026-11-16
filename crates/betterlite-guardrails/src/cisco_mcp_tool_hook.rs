@@ -63,7 +63,7 @@ impl CiscoMcpToolHook {
         let name = self.guardrail.settings.guardrail_name.as_str();
         if !self.runs(&guardrail_data(request_data, name)?)? {
             tracing::debug!(
-                "Cisco AI Defense guardrail ({name}): no MCP mode configured — skipping MCP response scan."
+                "Cisco AI Defense guardrail ({name}): no MCP mode configured \u{2014} skipping MCP response scan."
             );
             return Ok(None);
         }

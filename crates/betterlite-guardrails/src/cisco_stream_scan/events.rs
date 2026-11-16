@@ -5,9 +5,9 @@ use crate::cisco_stream_scan::StreamItem;
 use crate::cisco_verdict_enforcement::support::insert_serialized;
 
 pub(super) const UNSUPPORTED_MESSAGE: &str =
-    "Cisco AI Defense: unsupported streaming format — response withheld for safety";
+    "Cisco AI Defense: unsupported streaming format \u{2014} response withheld for safety";
 pub(super) const SCAN_ERROR_MESSAGE: &str =
-    "Cisco AI Defense streaming scan failed — response withheld.";
+    "Cisco AI Defense streaming scan failed \u{2014} response withheld.";
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct EventSpec {

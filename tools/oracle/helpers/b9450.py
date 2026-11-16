@@ -261,7 +261,7 @@ async def mcp_async(input_value: McpInput) -> JsonValue:
     kwargs: dict[str, JsonValue | CallToolResult] = dict(input_value["kwargs"])
     if kwargs.get("original_response") is not None:
         kwargs["original_response"] = original
-    returned = await cisco.async_post_mcp_tool_call_hook(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L97-L173
+    returned = await cisco.async_post_mcp_tool_call_hook(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L97-L173
         kwargs=kwargs,
         response_obj=response,
         start_time=TIMESTAMP,
