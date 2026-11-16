@@ -72,6 +72,19 @@ fn wire_view(data: &Fields) -> Value {
     json!({"body": body})
 }
 
+// a case lists only the headers its provider sent; the Python fixture's httpx response adds the body's length
+fn reply_headers(reply: &Reply) -> BTreeMap<String, String> {
+    let mut headers: BTreeMap<String, String> = reply
+        .headers
+        .iter()
+        .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
+        .collect();
+    headers
+        .entry("content-length".to_owned())
+        .or_insert_with(|| reply.body.len().to_string());
+    headers
+}
+
 impl EmbeddingClient for Sdk {
     fn kind(&self) -> ClientKind {
         self.kind
@@ -94,11 +107,7 @@ impl EmbeddingClient for Sdk {
                 message: "Connection error.".to_owned(),
             }),
             Answer::Reply(reply) => {
-                let headers: BTreeMap<String, String> = reply
-                    .headers
-                    .iter()
-                    .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
-                    .collect();
+                let headers = reply_headers(reply);
                 if reply.status >= 400 {
                     Err(SdkError::status(reply.status, headers, reply.body.clone()))
                 } else {

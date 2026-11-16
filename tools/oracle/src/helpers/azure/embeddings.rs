@@ -50,6 +50,25 @@ struct Step {
     litellm_params: LiteLlmParams,
 }
 
+fn request<'step>(step: &'step Step, client: &'step Sdk) -> EmbeddingCall<'step, Sdk> {
+    EmbeddingCall {
+        model: &step.model,
+        input: &step.input,
+        api_base: &step.api_base,
+        api_version: Some(&step.api_version),
+        timeout: step.timeout,
+        optional_params: step.optional_params.clone(),
+        api_key: Some(SecretString::from(step.api_key.clone())),
+        azure_ad_token: step.azure_ad_token.clone().map(SecretString::from),
+        max_retries: step.max_retries,
+        client: Some(client),
+        aembedding: step.aembedding,
+        headers: step.headers.clone(),
+        litellm_params: step.litellm_params.clone(),
+        model_response: ModelResponse::Embedding,
+    }
+}
+
 fn run_step(step: &Step, runtime: &Runtime) -> Value {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let client = Sdk {
@@ -63,23 +82,7 @@ fn run_step(step: &Step, runtime: &Runtime) -> Value {
     let mut cache = Cache::default();
     let mut refresh_cache = RefreshProviderCache::new(&sources);
     let mut recorder = Recorder::default();
-    let call = EmbeddingCall {
-        model: &step.model,
-        input: &step.input,
-        api_base: &step.api_base,
-        api_version: Some(&step.api_version),
-        timeout: step.timeout,
-        optional_params: step.optional_params.clone(),
-        api_key: Some(SecretString::from(step.api_key.clone())),
-        azure_ad_token: step.azure_ad_token.clone().map(SecretString::from),
-        max_retries: step.max_retries,
-        client: Some(&client),
-        aembedding: step.aembedding,
-        headers: step.headers.clone(),
-        litellm_params: step.litellm_params.clone(),
-        model_response: ModelResponse::Embedding,
-    };
-    let outcome = begin(call, &mut recorder).and_then(|begun| {
+    let outcome = begin(request(step, &client), &mut recorder).and_then(|begun| {
         let setup = ClientSetup {
             provider: None,
             settings: &settings,
@@ -90,8 +93,7 @@ fn run_step(step: &Step, runtime: &Runtime) -> Value {
             cache: &mut cache,
             refresh_cache: &mut refresh_cache,
         };
-        let resolved = resolve(&begun, setup);
-        let sent = runtime.block_on(send(&begun, resolved, &NoFactory));
+        let sent = runtime.block_on(send(&begun, resolve(&begun, setup), &NoFactory));
         finish(&begun, sent, &mut recorder)
     });
     let seen = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
