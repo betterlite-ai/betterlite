@@ -85,6 +85,25 @@ fn prepare_logs_the_resolved_provider_and_the_path_params() {
 }
 
 #[test]
+fn prepare_logs_the_callers_metadata_into_litellm_params() {
+    let fixture = fixture();
+    let logging = logging();
+    let endpoints = fixture.endpoints();
+    let mut call = list_call();
+    let metadata = IndexMap::from([("user_api_key".to_owned(), Json::Text("hash".to_owned()))]);
+    call.extra
+        .insert("metadata".to_owned(), Json::Object(metadata.clone()));
+    endpoints
+        .container_file_call("list_container_files", &call, &logging, TIMEOUT_SECONDS)
+        .expect("the handler answers");
+    let state = logging.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(
+        state.litellm_params.get("metadata"),
+        Some(&Json::Object(metadata))
+    );
+}
+
+#[test]
 fn prepare_logs_a_null_call_id_when_the_caller_gave_none() {
     let fixture = fixture();
     let logging = logging();
@@ -124,7 +143,7 @@ fn prepare_skips_decoding_without_a_container_id() {
     assert!(fixture.decoder.seen().is_empty());
     assert_eq!(fixture.lookup.asked(), vec![ProviderId::Openai]);
     let recorded = fixture.handler.seen();
-    assert!(recorded[0].values.get("container_id").is_none());
+    assert!(!recorded[0].values.contains_key("container_id"));
     assert_eq!(
         recorded[0].values.get("file_id"),
         Some(&ParamValue::Text("cfile_1".to_owned()))
