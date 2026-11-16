@@ -91,11 +91,7 @@ where
 }
 
 // docs/compatibility.md rejects a value outside the declared type with a 400 naming the field
-fn field_type_class(
-    field: &'static str,
-    expected: &'static str,
-    provider: Option<&str>,
-) -> ErrorClass {
+fn field_type_class(field: &str, expected: &str, provider: Option<&str>) -> ErrorClass {
     let context = ErrorContext {
         message: format!("litellm_params.{field} must be {expected}"),
         model: Some(String::new()),
