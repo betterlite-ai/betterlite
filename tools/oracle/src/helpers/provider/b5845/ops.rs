@@ -210,6 +210,10 @@ fn environments_output(calls: &[EnvironmentCall]) -> Value {
     Value::Array(outcomes)
 }
 
+#[expect(
+    clippy::map_err_ignore,
+    reason = "the step answer is only ok and an HTTP status, and a config that fails to prepare has no status"
+)]
 fn embedding_call_output(call: &EmbeddingCall) -> Value {
     match call {
         EmbeddingCall::Request {

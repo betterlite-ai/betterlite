@@ -10,7 +10,7 @@ use betterlite_prompts::arguments::json::Json;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::failure;
 

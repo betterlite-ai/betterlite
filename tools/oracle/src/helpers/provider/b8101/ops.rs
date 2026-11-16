@@ -9,7 +9,9 @@ use serde_json::{Value, json};
 
 use super::fixture::{OneTokenCounter, secrets};
 use super::script::{FlowInput, ReplyCase, RequestCase, SignCase, UrlCase, ValidateCase};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 pub(super) fn flow(input: &FlowInput) -> HelperResult {
     let secrets = secrets();
@@ -77,7 +79,7 @@ pub(super) fn requests(cases: &[RequestCase], signatures: &[SignCase]) -> Value 
 }
 
 pub(super) fn replies(cases: &[ReplyCase]) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|source| {

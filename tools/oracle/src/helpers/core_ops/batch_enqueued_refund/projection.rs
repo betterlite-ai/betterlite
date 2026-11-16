@@ -8,7 +8,7 @@ use serde_json::{Map, Value, json};
 
 use super::error::failure;
 use super::local_store::RecordingStore;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 fn cached_value(value: CacheValue) -> Value {
     if let CacheValue::Text(text) = value {

@@ -1,5 +1,4 @@
 use super::{failure, input::Cache};
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_bedrock::aws_settings::{
     credential_cache::CredentialCache,
     sources::{Credentials, ResolvedCredentials, SourceError},
@@ -8,6 +7,8 @@ use betterlite_context::local_ttl_cache::{
     LocalTtlCache,
     dual::{Diagnostics, DualLocalCache},
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_redact::secret::Redactor;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;

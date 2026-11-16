@@ -2,7 +2,7 @@ use betterlite_streaming::stream_chunk_shaping::StreamShapeError;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn encoded<T>(value: &T) -> Result<Value, Box<HelperError>>
 where

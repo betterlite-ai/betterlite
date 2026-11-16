@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_http::tls::{configure_curve, parse_ca_pem};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,13 +19,13 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let policy = resolve_policy(input)?;
         let (_provider, curve_fallback) =
-            configure_curve(&policy).map_err(|error| crate::helpers::HelperError {
+            configure_curve(&policy).map_err(|error| HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,
@@ -49,13 +51,13 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn resolve_policy(input: &Input) -> Result<TlsPolicy, Box<crate::helpers::HelperError>> {
+fn resolve_policy(input: &Input) -> Result<TlsPolicy, Box<HelperError>> {
     let config_yaml = config_yaml(input);
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
     .load(&config_yaml)
-    .map_err(|error| crate::helpers::HelperError {
+    .map_err(|error| HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
@@ -64,7 +66,7 @@ fn resolve_policy(input: &Input) -> Result<TlsPolicy, Box<crate::helpers::Helper
         message: error.to_string(),
     })?;
     TlsPolicy::resolve(&config, &input.environment, input.deployment_ssl_verify).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "ValueError".to_owned(),
             status: None,
             error_type: None,
