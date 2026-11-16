@@ -6,7 +6,7 @@ use crate::image::tokens::Mode;
 use super::count::{MediaCounter, Warning, apply_fallback, count_items, count_text};
 use super::error::MediaError;
 use super::image_count::{image_source_tokens, image_tokens, image_url_parts};
-use super::wire::{Block, Document, NestedContent, Object, Source};
+use super::wire::{Block, Document, FileObject, NestedContent, Object, Source};
 
 pub(crate) async fn count_block<Fetcher>(
     counter: &MediaCounter<'_, Fetcher>,
@@ -36,17 +36,7 @@ where
             };
             count_document(counter, document, depth, warnings).await
         }
-        Block::File { file } => {
-            let name_tokens = count_text(counter.texter, &file.filename).await?;
-            let data_tokens = if file.file_data.is_empty() {
-                0
-            } else {
-                image_tokens(counter, &file.file_data, Mode::Auto, warnings).await?
-            };
-            name_tokens
-                .checked_add(data_tokens)
-                .ok_or(MediaError::Overflow)
-        }
+        Block::File { file } => count_file(counter, file, warnings).await,
         Block::ToolUse {
             name,
             input,
@@ -91,6 +81,24 @@ where
         }
     };
     total.checked_add(nested).ok_or(MediaError::Overflow)
+}
+
+async fn count_file<Fetcher>(
+    counter: &MediaCounter<'_, Fetcher>,
+    file: FileObject,
+    warnings: &mut Vec<Warning>,
+) -> Result<u64, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
+    let name_tokens = count_text(counter.texter, &file.filename).await?;
+    if file.file_data.is_empty() {
+        return Ok(name_tokens);
+    }
+    let data_tokens = image_tokens(counter, &file.file_data, Mode::Auto, warnings).await?;
+    name_tokens
+        .checked_add(data_tokens)
+        .ok_or(MediaError::Overflow)
 }
 
 async fn count_tool_use(

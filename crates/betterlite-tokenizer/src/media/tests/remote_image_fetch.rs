@@ -10,11 +10,9 @@ use super::support::{
     self, CaseOptions, MappingFetcher, RefusingFetcher, image_url, image_url_string, plain,
 };
 
-// 1024x1024: resized to 768x768 that is four 512 tiles and 765 tokens, so counting the 300x300 default
-// dimensions after the fetch (255) fails the assertions instead of passing them
+// 1024x1024 counts 765 after the fetch, so a fallback to the 300x300 default (255) fails here
 const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQA";
-// what the downloader returns for a 200 that declares image/tiff: a non-generic type the dimension parser
-// cannot place, unlike a generic or missing type, which the downloader refuses as UnknownMediaType
+// image/tiff reaches the dimension parser as an unknown type, unlike the generic types the downloader refuses
 const UNKNOWN: &str = "data:image/tiff;base64,AAAA";
 const REMOTE: &str = "https://example.com/image.png";
 const DISABLED: &str = "Error: Image URL download is disabled (MAX_IMAGE_URL_DOWNLOAD_SIZE_MB=0). url=https://example.com/image.png";
@@ -99,8 +97,7 @@ async fn remote_high_exact_fetches_default_dimensions_for_unknown_bytes() {
     let counted = support::count(&fixture, &image_url(REMOTE, "high"), &settings, &fetcher)
         .await
         .unwrap();
-    // the mapped bytes name no image, so this can only be the 300x300 defaults: PNG's parsed 1024x1024
-    // would count 765, and a generic or missing declared type never reaches the parser at all
+    // the mapped bytes name no image, so only the 300x300 defaults can answer 255 here
     assert_eq!(counted.tokens, 255);
     assert_eq!(fetcher.calls.load(Ordering::SeqCst), 1);
 }
