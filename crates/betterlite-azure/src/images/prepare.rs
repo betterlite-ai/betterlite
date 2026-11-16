@@ -181,7 +181,8 @@ fn resolve_token(
         return Ok(None);
     };
     match selected.0.token().map_err(ClassifiedError::from)? {
-        TokenReply::Text(token) if !token.expose_secret().is_empty() => Ok(Some(token)),
-        TokenReply::Text(_) | TokenReply::NonText { .. } => Ok(None),
+        // an empty provider token reaches B529, which treats it as no token
+        TokenReply::Text(token) => Ok(Some(token)),
+        TokenReply::NonText { .. } => Ok(None),
     }
 }
