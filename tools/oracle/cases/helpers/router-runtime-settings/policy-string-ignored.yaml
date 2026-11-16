@@ -1,0 +1,11 @@
+kind: helper
+name: router-runtime-settings-policy-string-ignored
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["retry_policy", "x"]
+      - ["num_retries", 1]
+env: {}
+compare: {ignore: []}

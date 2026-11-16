@@ -1,0 +1,38 @@
+kind: helper
+name: clear-keeps-usage
+call:
+  gemini_live_client:
+    op: client
+    steps:
+      - kind: message
+        message: '{"type": "input_audio_buffer.append", "audio": "QUJD"}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.clear"}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.clear"}'
+      - {kind: audio_pending}
+calls:
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '{"type": "input_audio_buffer.clear"}'
+        - {kind: audio_pending}
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'
+        - kind: message
+          message: '{"type": "input_audio_buffer.clear"}'
+        - kind: message
+          message: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'
+        - kind: message
+          message: '{"type": "input_audio_buffer.commit"}'
+        - {kind: audio_pending}
+  - gemini_live_client:
+      op: client
+      steps:
+        - {kind: audio_pending}
+env: {}
+compare: {ignore: []}

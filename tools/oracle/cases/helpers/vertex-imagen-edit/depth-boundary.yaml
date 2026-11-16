@@ -1,0 +1,36 @@
+kind: helper
+name: vertex-imagen-edit-depth-boundary
+call:
+  vertex_imagen_edit:
+    model: imagen-3.0-capability-001
+    prompt: paint the sky teal
+    image:
+      - kind: sequence
+        items:
+          - kind: sequence
+            items:
+              - kind: sequence
+                items:
+                  - {kind: bytes, data_base64: iVBORw0KGgo=}
+    mask: null
+    optional_params: {}
+    target: null
+    response: null
+    max_recurse_depth: 2
+calls:
+  - vertex_imagen_edit:
+      model: imagen-3.0-capability-001
+      prompt: paint the sky teal
+      image:
+        - kind: sequence
+          items:
+            - kind: sequence
+              items:
+                - {kind: bytes, data_base64: iVBORw0KGgo=}
+      mask: null
+      optional_params: {}
+      target: null
+      response: null
+      max_recurse_depth: 2
+env: {DEFAULT_MAX_RECURSE_DEPTH: "2"}
+compare: {ignore: []}

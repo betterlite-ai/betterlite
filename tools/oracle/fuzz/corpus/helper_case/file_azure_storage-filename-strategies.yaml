@@ -1,0 +1,12 @@
+kind: helper
+name: file-azure-storage-filename-seed
+call:
+  file_azure_storage:
+    calls:
+      - {filename: dir/a b.TXT, strategy: original_filename, now_seconds: 1.234, uuid: '00000000-0000-0000-0000-000000000001'}
+      - {filename: report.PDF, strategy: timestamp, now_seconds: 1000.5, uuid: '00000000-0000-0000-0000-000000000002'}
+      - {filename: '..', strategy: uuid, now_seconds: 7, uuid: '00000000-0000-0000-0000-000000000003'}
+env:
+  AZURE_STORAGE_ACCOUNT_NAME: acct
+  AZURE_STORAGE_FILE_SYSTEM: files
+compare: {ignore: []}

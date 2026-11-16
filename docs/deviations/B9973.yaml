@@ -1,0 +1,13 @@
+task: B9973
+deviations:
+  - what: >-
+      The deployment id after deployment/ in a Watsonx chat or text model is percent-encoded per path segment, so a
+      ? or # stays inside /ml/v1/deployments/<id>/, and an id with an empty, "." or ".." segment is refused with a
+      400 before any request is sent.
+    why: >-
+      LiteLLM formats the raw id into the URL path, so a request or config model can move the call to another path
+      on the watsonx host while it carries the IAM bearer token. Deployment ids are plain names or GUIDs, so no
+      working setup relies on the raw form.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/chat/transformation.py#L91-L96
+kept_bugs: []
