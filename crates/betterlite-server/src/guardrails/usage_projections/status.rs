@@ -2,7 +2,6 @@ use std::ops::Sub;
 
 use serde::{Deserialize, Serialize};
 
-/// The dashboard's verdict on a fail rate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UsageStatus {
@@ -11,7 +10,6 @@ pub enum UsageStatus {
     Critical,
 }
 
-/// How a fail rate moved against the previous window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UsageTrend {

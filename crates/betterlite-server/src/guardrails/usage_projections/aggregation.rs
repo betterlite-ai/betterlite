@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use super::records::UsageCounterRow;
 
-/// Which column a counter group is keyed by: LiteLLM's counter name, team, key or guardrail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UsageUnitKey {
     #[serde(rename = "usage_unit")]
@@ -18,7 +17,7 @@ pub enum UsageUnitKey {
     Guardrail,
 }
 
-/// A row's untracked units: a row written before the cost column is untracked in full.
+// a row written before the cost column existed is untracked in full
 #[must_use]
 pub const fn row_untracked_units(row: &UsageCounterRow) -> i64 {
     match row.cost {
@@ -27,7 +26,7 @@ pub const fn row_untracked_units(row: &UsageCounterRow) -> i64 {
     }
 }
 
-/// A row's cost, kept only when it prices at least one unit of the row.
+// LiteLLM keeps a cost only when it prices at least one unit of the row
 #[must_use]
 pub const fn row_tracked_cost(row: &UsageCounterRow) -> Option<Decimal> {
     match row.cost {
@@ -36,7 +35,6 @@ pub const fn row_tracked_cost(row: &UsageCounterRow) -> Option<Decimal> {
     }
 }
 
-/// Units summed per counter name.
 #[must_use]
 pub fn sum_counter_units(rows: &[&UsageCounterRow]) -> BTreeMap<String, i64> {
     let mut sums: BTreeMap<String, i64> = BTreeMap::new();
@@ -47,7 +45,6 @@ pub fn sum_counter_units(rows: &[&UsageCounterRow]) -> BTreeMap<String, i64> {
     sums
 }
 
-/// Untracked units summed per counter name; a counter with none left out of the mapping.
 #[must_use]
 pub fn sum_untracked_units(rows: &[&UsageCounterRow]) -> BTreeMap<String, i64> {
     let mut sums: BTreeMap<String, i64> = BTreeMap::new();
@@ -59,7 +56,6 @@ pub fn sum_untracked_units(rows: &[&UsageCounterRow]) -> BTreeMap<String, i64> {
     sums
 }
 
-/// Costs summed over the rows that price at least one unit; none when no row does.
 #[must_use]
 pub fn sum_tracked_cost(rows: &[&UsageCounterRow]) -> Option<Decimal> {
     let mut total: Option<Decimal> = None;
@@ -75,7 +71,6 @@ pub fn sum_tracked_cost(rows: &[&UsageCounterRow]) -> Option<Decimal> {
     total
 }
 
-/// Groups the rows by one column and reduces each group into the mapping LiteLLM builds.
 #[must_use]
 pub fn by<T, R>(rows: &[UsageCounterRow], key: UsageUnitKey, reduce: R) -> BTreeMap<String, T>
 where
@@ -97,7 +92,6 @@ where
         .collect()
 }
 
-/// The first of `lookup_keys` that `mapping` holds, else the default LiteLLM passes in.
 #[must_use]
 pub fn first_match<'map, T>(
     lookup_keys: &[&str],

@@ -11,7 +11,6 @@ use super::records::{GuardrailRecord, PolicyRecord};
 use super::response::UsageOverviewRow;
 use super::status::{status_from_fail_rate, trend_from_comparison};
 
-/// What the overview rows read: per-key metrics, the previous window's rates and the unit maps.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 pub struct UsageAggregates {
     pub metrics: BTreeMap<String, MetricTotals>,
@@ -21,7 +20,6 @@ pub struct UsageAggregates {
     pub untracked: BTreeMap<String, BTreeMap<String, i64>>,
 }
 
-/// One row per guardrail record, then one per metrics key no record covers.
 #[must_use]
 pub fn guardrail_overview_rows(
     guardrails: &[GuardrailRecord],
@@ -101,7 +99,6 @@ fn metric_only_rows(
     rows
 }
 
-/// One row per policy, looked up by the policy's own id.
 #[must_use]
 pub fn policy_overview_rows(
     policies: &[PolicyRecord],

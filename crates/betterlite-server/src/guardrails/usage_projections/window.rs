@@ -1,16 +1,15 @@
 use chrono::{DateTime, Datelike as _, Days, NaiveDate, Utc};
+use http::StatusCode;
 use thiserror::Error;
 
 use super::USAGE_MAX_RANGE_DAYS;
 
-/// The window a usage query covers, both ends as `YYYY-MM-DD` text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageWindow {
     pub start: String,
     pub end: String,
 }
 
-/// Why a usage window was refused; LiteLLM answers each of these with a 400.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum UsageWindowError {
     #[error("start_date and end_date must be in YYYY-MM-DD format")]
@@ -19,6 +18,22 @@ pub enum UsageWindowError {
     OutOfOrder,
     #[error("Date range too large; maximum is {USAGE_MAX_RANGE_DAYS} days")]
     RangeTooLarge,
+}
+
+impl UsageWindowError {
+    #[must_use]
+    pub const fn status_code(self) -> StatusCode {
+        match self {
+            Self::DateFormat | Self::OutOfOrder | Self::RangeTooLarge => StatusCode::BAD_REQUEST,
+        }
+    }
+
+    #[must_use]
+    pub const fn error_type(self) -> &'static str {
+        match self {
+            Self::DateFormat | Self::OutOfOrder | Self::RangeTooLarge => "bad_request",
+        }
+    }
 }
 
 fn parse_usage_date(text: &str) -> Option<NaiveDate> {

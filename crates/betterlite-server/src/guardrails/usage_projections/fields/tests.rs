@@ -102,7 +102,7 @@ fn field_access_defaults_the_type_when_info_is_absent_or_untyped() {
     );
     assert_eq!(guardrail_type(&absent), "Guardrail");
     assert_eq!(guardrail_type(&untyped), "Guardrail");
-    assert_eq!(guardrail_type(&numeric), "Guardrail");
+    assert_eq!(guardrail_type(&numeric), "7");
 }
 
 #[test]
@@ -114,6 +114,8 @@ fn field_access_returns_text_and_the_default_otherwise() {
     assert_eq!(field_str(&mapping, "type", "Guardrail"), "presidio");
     assert_eq!(field_str(&mapping, "missing", "Guardrail"), "Guardrail");
     assert_eq!(field_str(&mapping, "count", "Guardrail"), "Guardrail");
+    let nothing = info(&[("type", GuardrailValue::Null)]);
+    assert_eq!(field_str(&nothing, "type", "Guardrail"), "Guardrail");
     let empty = BTreeMap::new();
     assert_eq!(
         field_str(&OpaqueParams(empty), "type", "Guardrail"),
@@ -139,4 +141,24 @@ fn field_access_treats_absent_info_as_an_empty_mapping() {
         Some(info(&[("type", text("presidio"))])),
     );
     assert_eq!(guardrail_type(&present), "presidio");
+}
+
+#[test]
+fn field_access_stringifies_numbers_like_python_str() {
+    let numbers = info(&[
+        ("signed", GuardrailValue::SignedInteger(-7)),
+        ("unsigned", GuardrailValue::UnsignedInteger(u64::MAX)),
+        ("whole", GuardrailValue::Decimal(2.0)),
+        ("fraction", GuardrailValue::Decimal(1.5)),
+        ("large", GuardrailValue::Decimal(1.5e16)),
+        ("small", GuardrailValue::Decimal(1.5e-7)),
+        ("edge", GuardrailValue::Decimal(0.0001)),
+    ]);
+    assert_eq!(field_str(&numbers, "signed", "d"), "-7");
+    assert_eq!(field_str(&numbers, "unsigned", "d"), "18446744073709551615");
+    assert_eq!(field_str(&numbers, "whole", "d"), "2.0");
+    assert_eq!(field_str(&numbers, "fraction", "d"), "1.5");
+    assert_eq!(field_str(&numbers, "large", "d"), "1.5e+16");
+    assert_eq!(field_str(&numbers, "small", "d"), "1.5e-07");
+    assert_eq!(field_str(&numbers, "edge", "d"), "0.0001");
 }

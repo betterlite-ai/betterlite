@@ -10,6 +10,9 @@ call:
           - {guardrail_id: c, guardrail_name: "", litellm_params: {}, guardrail_info: {}}
           - {guardrail_id: d, guardrail_name: Delta, litellm_params: {guardrail: ""}, guardrail_info: {type: ""}}
           - {guardrail_id: e, guardrail_name: Echo, litellm_params: {guardrail: custom-x, other: 1}, guardrail_info: {type: content-filter, model: m}}
+          - {guardrail_id: f, guardrail_name: Foxtrot, guardrail_info: {type: 7}}
+          - {guardrail_id: g, guardrail_name: Golf, guardrail_info: {type: 1.5}}
+          - {guardrail_id: h, guardrail_name: Hotel, guardrail_info: {type: 2.0}}
         aggregates:
           metrics: {}
           previous_rates: {}

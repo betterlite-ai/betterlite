@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::status::{UsageStatus, UsageTrend};
 
-/// One day of the overview chart; `score` stays absent until something fills it.
+// score stays absent until something fills it
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UsageChartPoint {
     pub date: String,
@@ -15,7 +15,6 @@ pub struct UsageChartPoint {
     pub score: Option<f64>,
 }
 
-/// One dashboard row: a guardrail, a policy, or a metrics key with no guardrail record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UsageOverviewRow {
     pub id: String,
@@ -41,7 +40,6 @@ pub struct UsageOverviewRow {
     pub untracked_usage_units: BTreeMap<String, i64>,
 }
 
-/// The whole dashboard payload for one window.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UsageOverviewResponse {
     pub rows: Vec<UsageOverviewRow>,

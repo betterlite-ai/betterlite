@@ -130,7 +130,7 @@ fn resolve_window_cases(cases: &[WindowCase]) -> HelperResult {
         );
         let value = match window {
             Ok(window) => json!({"start": window.start, "end": window.end}),
-            Err(_) => json!({"status": 400}),
+            Err(error) => json!({"status": error.status_code().as_u16()}),
         };
         results.push(value);
     }

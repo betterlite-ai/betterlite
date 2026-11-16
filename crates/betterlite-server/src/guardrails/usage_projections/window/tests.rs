@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use chrono::{DateTime, Utc};
+use http::StatusCode;
 use rstest::rstest;
 
 use super::{UsageWindow, UsageWindowError, resolve_usage_window};
@@ -142,4 +143,13 @@ fn format_strict_keeps_the_normalized_window_strings() {
     let resolved = resolve_usage_window(Some("2026-11-01"), Some("2026-11-16"), now).unwrap();
     assert_eq!(resolved.start, "2026-11-01");
     assert_eq!(resolved.end, "2026-11-16");
+}
+
+#[rstest]
+#[case::format(UsageWindowError::DateFormat)]
+#[case::order(UsageWindowError::OutOfOrder)]
+#[case::range(UsageWindowError::RangeTooLarge)]
+fn window_validation_answers_every_error_with_a_400_bad_request(#[case] error: UsageWindowError) {
+    assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
+    assert_eq!(error.error_type(), "bad_request");
 }

@@ -11,16 +11,29 @@ pub const DEFAULT_GUARDRAIL_TYPE: &str = "Guardrail";
 
 static EMPTY_PARAMS: OpaqueParams = OpaqueParams(BTreeMap::new());
 
-/// `mapping[key]` as text, or `default` when the key is absent or holds something else.
 #[must_use]
 pub fn field_str(mapping: &OpaqueParams, key: &str, default: &str) -> String {
     match mapping.0.get(key) {
         Some(GuardrailValue::Text(text)) => text.clone(),
+        Some(GuardrailValue::SignedInteger(number)) => number.to_string(),
+        Some(GuardrailValue::UnsignedInteger(number)) => number.to_string(),
+        Some(GuardrailValue::Decimal(number)) => python_float_text(*number),
         Some(_) | None => default.to_owned(),
     }
 }
 
-/// The guardrail the record runs, from `litellm_params.guardrail`.
+// Python's str(float) writes the exponent with a sign and two digits at least; Rust's Debug does neither
+fn python_float_text(number: f64) -> String {
+    let text = format!("{number:?}");
+    let Some((mantissa, exponent)) = text.split_once('e') else {
+        return text;
+    };
+    let Ok(exponent) = exponent.parse::<i32>() else {
+        return text;
+    };
+    format!("{mantissa}e{exponent:+03}")
+}
+
 #[must_use]
 pub fn guardrail_provider(record: &GuardrailRecord) -> String {
     record
@@ -31,7 +44,6 @@ pub fn guardrail_provider(record: &GuardrailRecord) -> String {
         .to_owned()
 }
 
-/// The record's kind, from `guardrail_info.type`; an absent info reads as empty.
 #[must_use]
 pub fn guardrail_type(record: &GuardrailRecord) -> String {
     field_str(
@@ -41,7 +53,6 @@ pub fn guardrail_type(record: &GuardrailRecord) -> String {
     )
 }
 
-/// The record's id and display name; the name falls back to the id, then to empty.
 #[must_use]
 pub fn guardrail_attrs(record: &GuardrailRecord) -> (String, String) {
     let id = record.guardrail_id.clone().unwrap_or_default();

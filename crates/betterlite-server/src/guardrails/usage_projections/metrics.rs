@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use super::records::UsageMetricRow;
 use super::response::UsageChartPoint;
 
-/// The four counters a dashboard metric group adds up.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MetricTotals {
     pub requests: i64,
@@ -16,7 +15,6 @@ pub struct MetricTotals {
     pub flagged: i64,
 }
 
-/// A fail rate and the one-decimal rate the response carries.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct FailRate {
     pub(crate) exact: f64,
@@ -64,7 +62,6 @@ pub(crate) fn metric_rate(blocked: i64, requests: i64) -> FailRate {
     }
 }
 
-/// The four counters summed per id, over the days of the window.
 #[must_use]
 pub fn aggregate_daily_metrics(metrics: &[UsageMetricRow]) -> BTreeMap<String, MetricTotals> {
     let mut totals: BTreeMap<String, MetricTotals> = BTreeMap::new();
@@ -80,7 +77,7 @@ pub fn aggregate_daily_metrics(metrics: &[UsageMetricRow]) -> BTreeMap<String, M
     totals
 }
 
-/// The previous window's fail rate per id; an id with no requests counts as zero.
+// an id with no requests counts as a zero fail rate
 #[must_use]
 pub fn prev_fail_rates(metrics: &[UsageMetricRow]) -> BTreeMap<String, f64> {
     let mut counts: BTreeMap<String, PeriodCounts> = BTreeMap::new();
@@ -103,7 +100,6 @@ pub fn prev_fail_rates(metrics: &[UsageMetricRow]) -> BTreeMap<String, f64> {
         .collect()
 }
 
-/// Passed and blocked per day, oldest first.
 #[must_use]
 pub fn chart_from_metrics(metrics: &[UsageMetricRow]) -> Vec<UsageChartPoint> {
     let mut days: BTreeMap<String, DailyCounts> = BTreeMap::new();

@@ -23,4 +23,10 @@ deviations:
       expansions can differ in the last bits (0.1 + 0.2 is 0.3 here and 0.30000000000000004 there).
     why: rust_decimal keeps money exact end to end and the response carries the decimal as a JSON number.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L195-L198
+  - what: >-
+      A guardrail_info.type that is null, a boolean, a list or an object shows the default "Guardrail" in the overview
+      row; LiteLLM shows Python's str() of it ("None", "True", "[1]", "{'a': 1}"). Numbers and text are shown as LiteLLM
+      shows them.
+    why: those texts are Python repr output, which docs/compatibility.md says betterlite does not copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L432-L434
 kept_bugs: []
