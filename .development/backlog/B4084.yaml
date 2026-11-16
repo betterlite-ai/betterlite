@@ -1,14 +1,14 @@
 id: B4084
 milestone: M7 observability
 title: Execute shadow calls and blind pairwise judgments
-status: todo
+status: done
 depends_on: [B4080, B4081, B188]
 file: tasks/B4084-shadow-calls-and-judgments.yaml
 covers:
   - "litellm/integrations/shadow_eval_logger.py"
 parent: B118
 split_from: B118
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2028
