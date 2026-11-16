@@ -40,6 +40,12 @@ fn the_base_scheme_is_converted_for_the_websocket(#[case] base: &str, #[case] co
 }
 
 #[test]
+fn an_explicit_empty_base_is_used_as_given() {
+    let url = connect_url(Some(""), Some(&key("studio-key")), None).expect("the url builds");
+    assert_eq!(url.expose_secret(), format!("{RPC_PATH}?key=studio-key"));
+}
+
+#[test]
 fn an_explicit_empty_key_is_kept() {
     let url =
         connect_url(None, Some(&key("")), Some(&key("environment-key"))).expect("the url builds");

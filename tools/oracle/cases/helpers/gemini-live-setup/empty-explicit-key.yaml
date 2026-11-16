@@ -20,6 +20,10 @@ call:
         api_key: studio-key
       - op: endpoint
         model: gemini-2.5-flash
+        api_base: ""
+        api_key: studio-key
+      - op: endpoint
+        model: gemini-2.5-flash
         api_base: http://localhost:8080
         api_key: studio-key
 calls:
