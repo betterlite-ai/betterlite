@@ -1,0 +1,25 @@
+kind: helper
+name: fireworks-ai-completion-responses-seed
+call:
+  b5832:
+    catalog:
+      - {key: "fireworks_ai/accounts/fireworks/models/reasoner", model_info: {litellm_provider: fireworks_ai, supports_reasoning: true}}
+    steps:
+      - op: supported
+      - {op: map_params, non_default_params: {max_tokens: 3, temperature: null}, optional_params: {existing: true}}
+      - op: extra_body
+        model: "reasoner"
+        optional_params: {temperature: 0.1, extra_body: {truncate_prompt_tokens: 4, chat_template_kwargs: {low_effort: true}, guided_json: {type: object}}}
+      - {op: completion, model: "accounts/fireworks/models/x", messages: [{role: user, content: [1, 2]}], optional_params: {response_format: {type: json_object}}}
+      - {op: headers, headers: {X-Test: "1"}, api_key: null, session: {litellm_session_id: "s"}, env: {fireworks_api_key: "k", api_base: "https://base.example/v1"}}
+      - {op: url, api_base: "https://arg.example/v1/", env: {api_base: "https://env.example/v1"}}
+      - op: transform
+        model: "fireworks_ai/my-model"
+        input:
+          - {role: system, content: "s"}
+          - {role: developer, content: [{type: input_text, text: "d"}]}
+          - {role: user, content: "u"}
+        optional_params: {instructions: "i"}
+      - {op: delete, path: "/responses/resp%252Fid"}
+env: {}
+compare: {ignore: []}
