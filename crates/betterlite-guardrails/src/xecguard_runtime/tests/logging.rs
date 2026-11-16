@@ -86,9 +86,17 @@ fn assert_logging_entry(entry: &GuardrailValue) {
         "guardrail_intervened"
     );
     assert_eq!(field(entry, "masked_entity_count"), &GuardrailValue::Null);
-    assert!((number(field(entry, "start_time")) - 1_700_000_000.0_f64).abs() < 1e-6_f64);
-    assert!((number(field(entry, "end_time")) - 1_700_000_001.0_f64).abs() < 1e-6_f64);
-    assert!((number(field(entry, "duration")) - 1.0_f64).abs() < 1e-6_f64);
+    assert!(
+        number(field(entry, "start_time"))
+            .total_cmp(&1_700_000_000.0_f64)
+            .is_eq()
+    );
+    assert!(
+        number(field(entry, "end_time"))
+            .total_cmp(&1_700_000_001.0_f64)
+            .is_eq()
+    );
+    assert!(number(field(entry, "duration")).total_cmp(&1.0_f64).is_eq());
     assert_eq!(
         text(field(field(entry, "guardrail_response"), "decision")),
         "UNSAFE"
