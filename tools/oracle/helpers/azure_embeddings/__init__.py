@@ -60,6 +60,15 @@ def call_embedding(step: Step, session: Session, logging_obj: Logging) -> Embedd
             return outcome
 
 
+def raised_value(kind: str, status: int | None, message: str | None) -> dict[str, Json]:
+    return {
+        "kind": kind,
+        "status": status,
+        "message": message,
+        "headers": None,
+    }
+
+
 def step_value(step: Step) -> dict[str, Json]:
     session = Session(step)
     recorder = Recorder()
@@ -70,26 +79,11 @@ def step_value(step: Step) -> dict[str, Json]:
     except AzureOpenAIError as error:
         raised = azure_value(error)
     except ValueError as error:
-        raised = {
-            "kind": "value",
-            "status": None,
-            "message": str(error),
-            "headers": None,
-        }
+        raised = raised_value("value", None, str(error))
     except APIStatusError as error:
-        raised = {
-            "kind": "sdk_status",
-            "status": error.status_code,
-            "message": None,
-            "headers": None,
-        }
+        raised = raised_value("sdk_status", error.status_code, None)
     except APIError:
-        raised = {
-            "kind": "sdk_other",
-            "status": None,
-            "message": None,
-            "headers": None,
-        }
+        raised = raised_value("sdk_other", None, None)
     return {
         "result": result,
         "raised": raised,

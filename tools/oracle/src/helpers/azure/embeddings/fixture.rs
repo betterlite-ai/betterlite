@@ -57,31 +57,19 @@ impl ClientName {
     }
 }
 
-// the SDK sends extra_headers as HTTP headers, so the wire view lists them apart from the JSON body
 pub(super) struct Sdk {
     pub(super) kind: ClientKind,
     pub(super) answer: Answer,
-    pub(super) names: Vec<String>,
     pub(super) calls: Calls,
 }
 
-fn wire_view(data: &Fields, names: &[String], timeout: f64) -> Value {
+// the SDK sends extra_headers as HTTP headers, so the wire body leaves them out
+fn wire_view(data: &Fields, timeout: f64) -> Value {
     let mut body = serde_json::to_value(data).unwrap_or(Value::Null);
-    let extra = body
-        .as_object_mut()
-        .and_then(|fields| fields.remove("extra_headers"));
-    let headers: BTreeMap<&str, Option<&Value>> = names
-        .iter()
-        .map(|name| {
-            let found = extra.as_ref().and_then(Value::as_object).and_then(|sent| {
-                sent.iter()
-                    .find(|(sent_name, _value)| sent_name.eq_ignore_ascii_case(name))
-                    .map(|(_name, value)| value)
-            });
-            (name.as_str(), found)
-        })
-        .collect();
-    json!({"body": body, "headers": headers, "timeout": timeout})
+    if let Some(fields) = body.as_object_mut() {
+        fields.remove("extra_headers");
+    }
+    json!({"body": body, "timeout": timeout})
 }
 
 impl EmbeddingClient for Sdk {
@@ -97,7 +85,7 @@ impl EmbeddingClient for Sdk {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(wire_view(data, &self.names, timeout));
+            .push(wire_view(data, timeout));
         ready(match &self.answer {
             Answer::Connection {} => Err(SdkError {
                 status_code: None,
@@ -160,14 +148,6 @@ fn original_view(record: &PostCallRecord) -> Value {
     })
 }
 
-fn kind_name(kind: ResponseKind) -> &'static str {
-    match kind {
-        ResponseKind::SdkObject => "sdk_object",
-        ResponseKind::Dumped => "dumped",
-        ResponseKind::ErrorText => "error_text",
-    }
-}
-
 impl EmbeddingLogger for Recorder {
     fn pre_call(&mut self, record: PreCallRecord) -> Result<(), PrePostError> {
         self.pre.push(json!({
@@ -183,7 +163,7 @@ impl EmbeddingLogger for Recorder {
         self.post.push(json!({
             "input": record.input,
             "api_key": record.api_key.as_ref().map(ExposeSecret::expose_secret),
-            "kind": kind_name(record.kind),
+            "kind": record.kind,
             "original_response": original_view(&record),
             "complete_input_dict": record.complete_input_dict,
             "api_base": record.api_base,

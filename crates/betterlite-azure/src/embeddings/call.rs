@@ -3,7 +3,6 @@ use betterlite_config::sections::azure_endpoints::Settings;
 use betterlite_models::decisions::Json;
 use betterlite_openai::embedding::{EmbeddingInput, EmbeddingResponse};
 use secrecy::SecretString;
-use serde_json::Number;
 
 use crate::credentials::cache::RefreshProviderCache;
 use crate::credentials::source::CredentialSources;
@@ -17,6 +16,7 @@ use super::client::{
     ClientFactory, EmbeddingClient as _, Fields, Headers, ParseError, Parsed, RawEmbedding,
 };
 use super::error::{AzureOpenAiError, EmbeddingError};
+use super::input::input_json;
 use super::logging::{EmbeddingLogger, PostCallRecord, PreCallRecord, ResponseKind};
 use super::reply::{EmbeddingReply, ModelResponse, convert_embedding};
 
@@ -62,28 +62,6 @@ pub struct Dependencies<'data, 'run, Factory> {
 struct Prepared {
     input: Json,
     data: Fields,
-}
-
-fn tokens_json(tokens: &[u32]) -> Json {
-    Json::List(
-        tokens
-            .iter()
-            .map(|token| Json::Number(Number::from(*token)))
-            .collect(),
-    )
-}
-
-fn input_json(input: &EmbeddingInput) -> Json {
-    match input {
-        EmbeddingInput::Text(text) => Json::Text(text.clone()),
-        EmbeddingInput::Texts(texts) => {
-            Json::List(texts.iter().map(|text| Json::Text(text.clone())).collect())
-        }
-        EmbeddingInput::Tokens(tokens) => tokens_json(tokens),
-        EmbeddingInput::TokenLists(lists) => {
-            Json::List(lists.iter().map(|tokens| tokens_json(tokens)).collect())
-        }
-    }
 }
 
 // {model, input, **optional_params}: an option named model or input replaces the value and keeps the position
@@ -147,20 +125,16 @@ fn resolve<'data, Factory: ClientFactory>(
 }
 
 fn require_client_family(kind: ClientKind, is_async: bool) -> Result<(), EmbeddingError> {
-    if is_async {
-        return match kind {
-            ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi => Ok(()),
-            ClientKind::AzureOpenAi | ClientKind::OpenAi | ClientKind::Other => {
-                Err(EmbeddingError::Value {
-                    message: "Azure client is not an instance of AsyncAzureOpenAI or AsyncOpenAI"
-                        .to_owned(),
-                })
-            }
-        };
-    }
-    match kind {
-        ClientKind::AzureOpenAi | ClientKind::OpenAi => Ok(()),
-        ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi | ClientKind::Other => {
+    match (is_async, kind) {
+        (false, ClientKind::AzureOpenAi | ClientKind::OpenAi)
+        | (true, ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi) => Ok(()),
+        (true, ClientKind::AzureOpenAi | ClientKind::OpenAi | ClientKind::Other) => {
+            Err(EmbeddingError::Value {
+                message: "Azure client is not an instance of AsyncAzureOpenAI or AsyncOpenAI"
+                    .to_owned(),
+            })
+        }
+        (false, ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi | ClientKind::Other) => {
             Err(EmbeddingError::Azure(AzureOpenAiError {
                 status_code: DEFAULT_STATUS,
                 message: "azure_client is not an instance of AzureOpenAI or OpenAI".to_owned(),

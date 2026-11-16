@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -8,9 +8,9 @@ use betterlite_openai::embedding::EmbeddingInput;
 use secrecy::SecretString;
 use tokio::runtime::Builder;
 
-use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
+use super::fakes::{Cache, NoSources};
+
 use crate::credentials::cache::RefreshProviderCache;
-use crate::credentials::source::{CallableTokenProvider, CredentialSources, SourceFailure};
 use crate::embeddings::call::{ClientContext, Dependencies, EmbeddingCall, embedding};
 use crate::embeddings::client::{
     ClientFactory, EmbeddingClient, Fields, Headers, RawEmbedding, SdkError,
@@ -18,11 +18,9 @@ use crate::embeddings::client::{
 use crate::embeddings::error::EmbeddingError;
 use crate::embeddings::logging::{EmbeddingLogger, PostCallRecord, PreCallRecord};
 use crate::embeddings::reply::{EmbeddingReply, ModelResponse};
-use crate::endpoints::get_client::ClientCache;
 use crate::endpoints::projection::{
-    ClientIdentity, ClientInputs, ClientKind, ClientOutcome, LiteLlmParams, SessionKind,
+    ClientInputs, ClientKind, ClientOutcome, LiteLlmParams, SessionKind,
 };
-use crate::oidc_exchange::OidcExchangeInput;
 
 pub(super) const BODY: &str = r#"{"object":"list","data":[{"object":"embedding","embedding":[0.5,0.25],"index":0}],"model":"text-embedding-3-small","usage":{"prompt_tokens":3,"total_tokens":3}}"#;
 
@@ -103,7 +101,6 @@ impl EmbeddingClient for Sdk {
 pub(super) struct Built {
     pub(super) kind: ClientKind,
     pub(super) endpoint: Option<String>,
-    pub(super) api_version: Option<String>,
     pub(super) max_retries: Option<i64>,
     pub(super) timeout: Option<f64>,
 }
@@ -121,14 +118,12 @@ impl ClientFactory for Factory {
         let mut built = Built {
             kind: outcome.kind,
             endpoint: None,
-            api_version: None,
             max_retries: None,
             timeout: None,
         };
         match &outcome.inputs {
             Some(ClientInputs::Azure(inputs)) => {
                 built.endpoint.clone_from(&inputs.endpoint.azure_endpoint);
-                built.api_version = Some(inputs.api_version.clone());
                 built.max_retries = Some(inputs.max_retries);
                 built.timeout = inputs.timeout;
             }
@@ -171,53 +166,6 @@ impl EmbeddingLogger for Recorder {
 
     fn post_call(&mut self, record: PostCallRecord) {
         self.post.push(record);
-    }
-}
-
-#[derive(Default)]
-struct Cache(HashMap<ClientIdentity, ClientKind>);
-
-impl ClientCache for Cache {
-    fn get(&self, identity: &ClientIdentity) -> Option<ClientKind> {
-        self.0.get(identity).copied()
-    }
-
-    fn set(&mut self, identity: ClientIdentity, kind: ClientKind, _owned: bool) {
-        self.0.insert(identity, kind);
-    }
-}
-
-fn no_source() -> SourceFailure {
-    SourceFailure {
-        class: "RuntimeError".to_owned(),
-        status: None,
-        message: "no credential source in this fixture".to_owned(),
-    }
-}
-
-struct NoSources;
-
-type Provider<'source> = Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure>;
-
-impl CredentialSources for NoSources {
-    fn client_secret(&self, _record: &ClientSecretRecord) -> Provider<'_> {
-        Err(no_source())
-    }
-
-    fn username_password(&self, _record: &UsernamePasswordRecord) -> Provider<'_> {
-        Err(no_source())
-    }
-
-    fn sdk_refresh(&self, _scope: &str) -> Provider<'_> {
-        Err(no_source())
-    }
-
-    fn default_credential(&self, _scope: &str) -> Option<Arc<dyn CallableTokenProvider + '_>> {
-        None
-    }
-
-    fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        Err(no_source())
     }
 }
 

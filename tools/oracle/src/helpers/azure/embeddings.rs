@@ -79,25 +79,11 @@ fn default_api_key() -> String {
     "azure-key".to_owned()
 }
 
-// the lower-cased names the case sends as extra headers, which the wire view lists for both sides
-fn header_names(step: &Step) -> Vec<String> {
-    let mut names: Vec<String> = step
-        .headers
-        .keys()
-        .map(|name| name.to_ascii_lowercase())
-        .collect();
-    if let Some(Json::Object(extra)) = step.optional_params.get("extra_headers") {
-        names.extend(extra.keys().map(|name| name.to_ascii_lowercase()));
-    }
-    names
-}
-
 async fn run_step(step: &Step) -> Value {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let client = Sdk {
         kind: step.client.kind(),
         answer: step.answer.clone(),
-        names: header_names(step),
         calls: Arc::clone(&calls),
     };
     let settings = Settings::default();

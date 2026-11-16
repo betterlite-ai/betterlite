@@ -7,6 +7,7 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Serialize;
 
 use super::client::Fields;
 
@@ -18,7 +19,8 @@ pub struct PreCallRecord {
 }
 
 // the sync path logs the SDK object, the async path its dumped dict, and a failed async call str(error)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ResponseKind {
     SdkObject,
     Dumped,

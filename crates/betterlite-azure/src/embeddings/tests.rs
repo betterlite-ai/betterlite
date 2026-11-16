@@ -2,6 +2,7 @@
 
 mod cases;
 mod error_cases;
+mod fakes;
 mod logging_cases;
 mod support;
 

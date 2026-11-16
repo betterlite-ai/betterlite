@@ -39,6 +39,7 @@ impl AzureOpenAiError {
     // the sync catch-all: status_code or 500, headers or response.headers, and response.text once the headers came from it
     #[must_use]
     pub fn wrapped(error: EmbeddingError) -> Self {
+        let message = error.to_string();
         match error {
             EmbeddingError::Azure(raised) => raised,
             EmbeddingError::Sdk(raised) => {
@@ -52,39 +53,29 @@ impl AzureOpenAiError {
                     },
                     (headers, _response) => Self {
                         status_code,
-                        message: raised.message,
+                        message,
                         headers,
                         cause: None,
                     },
                 }
             }
-            EmbeddingError::Endpoint(raised) => Self {
-                status_code: raised.status().unwrap_or(DEFAULT_STATUS),
-                message: raised.to_string(),
-                headers: None,
-                cause: None,
-            },
             EmbeddingError::Parse(raised) => Self {
                 status_code: DEFAULT_STATUS,
-                message: raised.to_string(),
+                message,
                 headers: None,
                 cause: Some(raised),
             },
-            EmbeddingError::Value { message } => Self {
-                status_code: DEFAULT_STATUS,
+            EmbeddingError::Endpoint(raised) => Self {
+                status_code: raised.status().unwrap_or(DEFAULT_STATUS),
                 message,
                 headers: None,
                 cause: None,
             },
-            EmbeddingError::Logging(raised) => Self {
+            EmbeddingError::Value { .. }
+            | EmbeddingError::Logging(_)
+            | EmbeddingError::Encode(_) => Self {
                 status_code: DEFAULT_STATUS,
-                message: raised.to_string(),
-                headers: None,
-                cause: None,
-            },
-            EmbeddingError::Encode(raised) => Self {
-                status_code: DEFAULT_STATUS,
-                message: raised.to_string(),
+                message,
                 headers: None,
                 cause: None,
             },
