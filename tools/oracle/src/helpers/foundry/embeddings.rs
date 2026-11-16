@@ -151,34 +151,21 @@ impl TextEmbedding for Recorder {
     }
 }
 
-fn flow_answer(
-    calls: Vec<Value>,
-    constructed: Vec<Value>,
-    response: &FoundryEmbeddingResponse,
-) -> Value {
+fn response_view(response: &FoundryEmbeddingResponse) -> Value {
     json!({
-        "calls": calls,
-        "constructed": constructed,
-        "response": {
-            "object": &response.object,
-            "model": &response.model,
-            "data": &response.data,
-            "usage": {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens,
-            },
-            "additional_headers": &response.additional_headers,
+        "object": &response.object,
+        "model": &response.model,
+        "data": &response.data,
+        "usage": {
+            "prompt_tokens": response.usage.prompt_tokens,
+            "completion_tokens": response.usage.completion_tokens,
+            "total_tokens": response.usage.total_tokens,
         },
-        "error": null,
+        "additional_headers": &response.additional_headers,
     })
 }
 
-fn flow_failure(
-    calls: Vec<Value>,
-    constructed: Vec<Value>,
-    error: &FoundryEmbeddingError,
-) -> Result<Value, Box<HelperError>> {
+fn error_view(error: &FoundryEmbeddingError) -> Result<Value, Box<HelperError>> {
     let Some(mapped) = failure(error) else {
         return Err(helper_error("EmbeddingError", error.to_string()));
     };
@@ -187,11 +174,27 @@ fn flow_failure(
         Failure::Status(status) => ("HTTPStatusError", json!(status)),
         Failure::Reply(status) => ("Exception", json!(status)),
     };
+    Ok(json!({"kind": kind, "status": status}))
+}
+
+// one flow's answer: the recorded calls and clients, then the response or the error class
+fn flow_record(
+    state: &Shared,
+    outcome: Result<FoundryEmbeddingResponse, FoundryEmbeddingError>,
+) -> Result<Value, Box<HelperError>> {
+    let (calls, constructed) = {
+        let mut trail = state.lock().unwrap_or_else(PoisonError::into_inner);
+        (take(&mut trail.calls), take(&mut trail.constructed))
+    };
+    let (response, error) = match outcome {
+        Ok(response) => (response_view(&response), Value::Null),
+        Err(error) => (Value::Null, error_view(&error)?),
+    };
     Ok(json!({
         "calls": calls,
         "constructed": constructed,
-        "response": null,
-        "error": {"kind": kind, "status": status},
+        "response": response,
+        "error": error,
     }))
 }
 
@@ -234,14 +237,7 @@ fn flow_outcome(
         mode: flow.mode.mode(),
     };
     let outcome = runtime.block_on(embedding(&request, supplied, &factory, &text));
-    let (calls, constructed) = {
-        let mut trail = state.lock().unwrap_or_else(PoisonError::into_inner);
-        (take(&mut trail.calls), take(&mut trail.constructed))
-    };
-    match outcome {
-        Ok(response) => Ok(flow_answer(calls, constructed, &response)),
-        Err(error) => flow_failure(calls, constructed, &error),
-    }
+    flow_record(&state, outcome)
 }
 
 pub(crate) struct Op;
