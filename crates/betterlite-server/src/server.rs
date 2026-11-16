@@ -72,6 +72,7 @@ pub async fn run(
     port: u16,
 ) -> Result<(), ServerError> {
     let listener = bind(host, port).await?;
+    // a taken port stops startup before the application is built
     Box::pin(run_with_listener(config, chat, host, listener)).await
 }
 
@@ -287,6 +288,6 @@ mod connections;
 pub mod filter;
 pub mod inputs;
 pub mod listener;
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(any(test, feature = "testing"))]
 pub mod test_support;
 mod tests;
