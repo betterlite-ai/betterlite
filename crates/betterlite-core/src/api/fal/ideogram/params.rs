@@ -12,7 +12,7 @@ pub fn map_openai_params(
 ) -> Result<ImageParams, IdeogramError> {
     let mut mapped = optional_params;
     for (name, value) in non_default_params {
-        // LiteLLM tests the OpenAI name, so a provider option already holds the destination
+        // LiteLLM tests the OpenAI name, so optional_params carrying it wins over the mapping
         if mapped.contains_key(name) {
             continue;
         }
