@@ -36,7 +36,7 @@ func TestNewClientBoundsTheTransport(t *testing.T) {
 		t.Error("transport.Proxy is set, want nil so HTTP_PROXY and HTTPS_PROXY stay ignored")
 	}
 	if transport.DialContext == nil {
-		t.Error("transport.DialContext is nil, want the dialer timeout")
+		t.Error("transport.DialContext is nil, want the client's dialer")
 	}
 	if transport.TLSHandshakeTimeout != 10*time.Second {
 		t.Errorf("TLSHandshakeTimeout = %s, want 10s", transport.TLSHandshakeTimeout)
@@ -125,6 +125,31 @@ func TestRequestFailsWhenTransportErrors(t *testing.T) {
 	_, err := client.GetKey("sk-test")
 	if err == nil {
 		t.Fatal("GetKey succeeded after its server closed")
+	}
+}
+
+func TestRequestFailsWhenDialTimesOut(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"key": "sk-test"}`))
+	}))
+	defer server.Close()
+
+	client := newClient(server.URL, "sk-test", false, clientLimits{
+		requestTimeout:      5 * time.Second,
+		dialTimeout:         time.Nanosecond,
+		tlsHandshakeTimeout: time.Second,
+		maxResponseBytes:    1 << 20,
+	})
+
+	_, err := client.GetKey("sk-test")
+	if err == nil {
+		t.Fatal("GetKey succeeded, want the expired dial deadline to fail it")
+	}
+	if !strings.Contains(err.Error(), "dial tcp") {
+		t.Errorf("GetKey error = %q, want it to name the failed dial", err)
+	}
+	if !strings.Contains(err.Error(), "i/o timeout") {
+		t.Errorf("GetKey error = %q, want an i/o timeout", err)
 	}
 }
 
