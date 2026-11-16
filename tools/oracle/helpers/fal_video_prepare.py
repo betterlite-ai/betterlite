@@ -320,5 +320,5 @@ def run(input_value: Input) -> JsonValue:
             return provider_report(config, input_value)
         case "queue_base_literal":
             return queue_report(config, input_value)
-        case _:
+        case "workflow_job_path":
             return job_report(config, input_value)
