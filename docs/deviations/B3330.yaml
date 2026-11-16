@@ -1,0 +1,6 @@
+task: B3330
+deviations:
+  - what: extract_model_from_target_model_names strips and filters empty entries only for comma-separated string input; list input returns its first element unfiltered, so ["", "foo"] answers "" and not "foo".
+    why: LiteLLM splits and filters a string but indexes a list directly, and copying that asymmetry keeps betterlite's answer identical for both input shapes a caller can send.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/utils.py#L8-L13
+kept_bugs: []
