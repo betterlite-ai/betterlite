@@ -1,0 +1,5 @@
+kind: helper
+name: azure_native_speech-binary_native_speech-seed
+call: {azure_native_speech: {binary_native_speech: {cases: [{status: 200, body: 'ID3audio', content_type: audio/mpeg}, {status: 500, body: ''}]}}}
+env: {}
+compare: {ignore: []}

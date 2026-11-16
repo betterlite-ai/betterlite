@@ -1,16 +1,16 @@
 #![cfg(test)]
+use betterlite_server::server::test_support::listening_port;
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
 use serde::Deserialize;
 use std::env;
 use std::fs;
+use std::io::BufReader;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::time::Duration;
+use std::process::{Child, ChildStderr, Command, Stdio};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpStream;
-use tokio::time::sleep;
 
 const BINARY: &str = env!("CARGO_BIN_EXE_betterlite-backend");
 const EMPTY_CONFIG: &str = "model_list: []\n";
@@ -30,14 +30,13 @@ fn config_file(source: &str) -> (tempfile::TempDir, PathBuf) {
     (directory, path)
 }
 
-fn free_port() -> u16 {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-    listener.local_addr().unwrap().port()
-}
-
 fn command(config: &Path, port: u16) -> Command {
-    let mut command = Command::new(BINARY);
+    let mut command = Command::new("setpriv");
     command.args([
+        "--pdeathsig",
+        "KILL",
+        "--",
+        BINARY,
         "--config",
         config.to_str().unwrap(),
         "--host",
@@ -48,7 +47,31 @@ fn command(config: &Path, port: u16) -> Command {
     command
 }
 
-fn terminate(mut child: Child) -> Option<i32> {
+// port 0 lets the kernel pick, and the server logs the port it got on its listening line
+fn start(command: &mut Command) -> Server {
+    let mut child = command
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut output = BufReader::new(child.stderr.take().unwrap());
+    let port = listening_port(&mut output).unwrap();
+    Server {
+        child: Some(child),
+        port,
+        _output: output,
+    }
+}
+
+// the pipe stays open until the test ends, so the server's later log writes do not fail
+struct Server {
+    child: Option<Child>,
+    port: u16,
+    _output: BufReader<ChildStderr>,
+}
+
+fn terminate(mut server: Server) -> Option<i32> {
+    let mut child = server.child.take()?;
     kill(
         Pid::from_raw(i32::try_from(child.id()).unwrap()),
         Signal::SIGTERM,
@@ -57,22 +80,21 @@ fn terminate(mut child: Child) -> Option<i32> {
     child.wait().unwrap().code()
 }
 
+impl Drop for Server {
+    fn drop(&mut self) {
+        if let Some(child) = self.child.as_mut() {
+            let _killed = child.kill();
+            let _status = child.wait();
+        }
+    }
+}
+
 fn stderr_lines(stderr: Vec<u8>) -> Vec<LogLine> {
     let text = String::from_utf8(stderr).unwrap();
     text.lines()
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
-}
-
-async fn wait_until_listening(port: u16) {
-    for _ in 0_u32..200_u32 {
-        if TcpStream::connect(("127.0.0.1", port)).await.is_ok() {
-            return;
-        }
-        sleep(Duration::from_millis(50)).await;
-    }
-    panic!("the server never started listening on {port}");
 }
 
 async fn raw_response(port: u16, path: &str) -> String {
@@ -94,29 +116,16 @@ async fn status_and_body(port: u16, path: &str) -> (u16, String) {
 #[tokio::test]
 async fn shutdown_exits_zero_on_sigterm() {
     let (_directory, config) = config_file(EMPTY_CONFIG);
-    let port = free_port();
-    let child = command(&config, port)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    wait_until_listening(port).await;
-    assert_eq!(terminate(child), Some(0_i32));
+    let server = start(&mut command(&config, 0));
+    assert_eq!(terminate(server), Some(0_i32));
 }
 
 #[tokio::test]
 async fn shutdown_exits_zero_with_a_config_that_reads_the_process_environment() {
     let (_directory, config) =
         config_file("general_settings:\n  master_key: os.environ/B4471_MASTER\n");
-    let port = free_port();
-    let child = command(&config, port)
-        .env("B4471_MASTER", "environment-master")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    wait_until_listening(port).await;
-    assert_eq!(terminate(child), Some(0_i32));
+    let server = start(command(&config, 0).env("B4471_MASTER", "environment-master"));
+    assert_eq!(terminate(server), Some(0_i32));
 }
 
 #[tokio::test]
@@ -147,7 +156,7 @@ async fn stderr_json_lines_on_a_bad_config() {
 async fn stderr_json_names_the_category_of_a_config_error() {
     let (_directory, config) =
         config_file("general_settings:\n  master_key: os.environ/B4471_UNSET\n");
-    let output = command(&config, free_port()).output().unwrap();
+    let output = command(&config, 0).output().unwrap();
     assert_eq!(output.status.code(), Some(1_i32));
     let lines = stderr_lines(output.stderr);
     assert!(
@@ -160,13 +169,8 @@ async fn stderr_json_names_the_category_of_a_config_error() {
 #[tokio::test]
 async fn shutdown_exits_zero_after_filtering_requests_by_path() {
     let (_directory, config) = config_file(EMPTY_CONFIG);
-    let port = free_port();
-    let child = command(&config, port)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    wait_until_listening(port).await;
+    let server = start(&mut command(&config, 0));
+    let port = server.port;
     let (blocked_status, blocked_body) = status_and_body(port, "/not-a-route").await;
     assert_eq!(blocked_status, 404);
     assert!(blocked_body.contains("Not Found"));
@@ -175,19 +179,14 @@ async fn shutdown_exits_zero_after_filtering_requests_by_path() {
     let (chat_status, chat_body) = status_and_body(port, "/v1/chat/completions").await;
     assert_eq!(chat_status, 404);
     assert!(chat_body.contains("Not Found"));
-    assert_eq!(terminate(child), Some(0_i32));
+    assert_eq!(terminate(server), Some(0_i32));
 }
 
 #[tokio::test]
 async fn blocked_route_404_carries_the_security_headers() {
     let (_directory, config) = config_file(EMPTY_CONFIG);
-    let port = free_port();
-    let child = command(&config, port)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    wait_until_listening(port).await;
+    let server = start(&mut command(&config, 0));
+    let port = server.port;
     let blocked = raw_response(port, "/v1/chat/completions").await;
     let missing = raw_response(port, "/not-a-route").await;
     assert!(blocked.starts_with("HTTP/1.1 404"));
@@ -201,5 +200,15 @@ async fn blocked_route_404_carries_the_security_headers() {
             .to_lowercase()
             .contains("x-content-type-options: nosniff")
     );
-    assert_eq!(terminate(child), Some(0_i32));
+    assert_eq!(terminate(server), Some(0_i32));
+}
+
+#[tokio::test]
+async fn dropping_the_server_stops_the_process_and_closes_its_port() {
+    let (_directory, config) = config_file(EMPTY_CONFIG);
+    let server = start(&mut command(&config, 0));
+    let port = server.port;
+    TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    drop(server);
+    TcpStream::connect(("127.0.0.1", port)).await.unwrap_err();
 }
