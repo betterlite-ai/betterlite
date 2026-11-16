@@ -157,17 +157,7 @@ pub(super) fn auth_report(call: &AuthCall) -> Result<Value, Box<HelperError>> {
         .get("api_key")
         .and_then(Value::as_str)
         .map(SecretString::from);
-    let source = json!({
-        "litellm_settings": {"api_key": null, "azure_key": null},
-        "model_list": [{"litellm_params": {}}],
-    });
-    let raw: KeyRaw = serde_json::from_value(source).or_config_error()?;
-    let resolved = Section::convert(raw, &call.environment).or_config_error()?;
-    let configured = resolved
-        .deployments
-        .into_iter()
-        .next()
-        .and_then(|deployment| deployment.api_key);
+    let configured = auth_configured_key(call)?;
     let credentials = DeploymentSettings {
         azure_ad_token: None,
         tenant_id: None,
@@ -194,6 +184,20 @@ pub(super) fn auth_report(call: &AuthCall) -> Result<Value, Box<HelperError>> {
         Ok(headers) => json!(headers),
         Err(_) => json!({"error": {"kind": "EnvironmentError"}}),
     })
+}
+
+fn auth_configured_key(call: &AuthCall) -> Result<Option<SecretString>, Box<HelperError>> {
+    let source = json!({
+        "litellm_settings": {"api_key": null, "azure_key": null},
+        "model_list": [{"litellm_params": {}}],
+    });
+    let raw: KeyRaw = serde_json::from_value(source).or_config_error()?;
+    let resolved = Section::convert(raw, &call.environment).or_config_error()?;
+    Ok(resolved
+        .deployments
+        .into_iter()
+        .next()
+        .and_then(|deployment| deployment.api_key))
 }
 
 struct NoSources;
