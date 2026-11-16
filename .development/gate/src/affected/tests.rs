@@ -194,3 +194,31 @@ fn a_root_manifest_edit_marks_every_package_unless_it_only_touches_workspace_dep
         assert_eq!(edited, expected, "{edit}");
     }
 }
+
+#[test]
+fn a_file_no_package_owns_marks_every_package_only_in_the_full_set() {
+    let everything = ["alpha", "beta", "betterlite-dashboard-browser", "gamma"].map(str::to_owned);
+    for (file, text, edited_expected) in [
+        ("ui/vscode-extension/package.json", "{}\n", Vec::new()),
+        (
+            ".cargo/config.toml",
+            "[net]\nretry = 3\n",
+            everything.to_vec(),
+        ),
+    ] {
+        let folder = tempfile::tempdir().unwrap();
+        let root = folder.path();
+        let base = workspace(root);
+        let path = root.join(file);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+        commit(root);
+        let graph = package_graph(root).unwrap();
+        let mut full = packages(root, &base, &graph, false).unwrap();
+        full.sort_unstable();
+        let mut edited = packages(root, &base, &graph, true).unwrap();
+        edited.sort_unstable();
+        assert_eq!(full, everything.to_vec(), "{file}");
+        assert_eq!(edited, edited_expected, "{file}");
+    }
+}

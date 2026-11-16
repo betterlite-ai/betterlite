@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use camino::Utf8PathBuf;
 use clap::Args;
 use determinator::Determinator;
-use determinator::rules::DeterminatorRules;
+use determinator::rules::{DeterminatorRules, PathMatch};
 use guppy::CargoMetadata;
 use guppy::graph::{DependencyDirection, PackageGraph, PackageMetadata};
 
@@ -112,6 +112,10 @@ fn packages(
             what: "the affected-package rules".to_owned(),
             source: Box::new(source),
         })?;
+    // determinator marks every package for a file no package owns and no rule names, so B7770's ui/vscode-extension change tested the whole workspace on one runner (11-16); the full set keeps that, edited drops the file
+    if only_edited {
+        changed.retain(|path| determinator.match_path(path, |_| {}) != PathMatch::NoMatches);
+    }
     determinator.add_changed_paths(&changed);
     let computed = determinator.compute();
     // the summary diff also marks every package whose dependencies gained a feature, 130 packages for B4711 adding blake2 on 11-16, so edited means the files it changed
