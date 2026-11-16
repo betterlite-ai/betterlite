@@ -1,0 +1,17 @@
+kind: helper
+name: null_reasoning_fields
+call:
+  copilot_responses:
+    settings: {}
+    steps:
+      - step: reasoning
+        input: [{type: reasoning, id: rs_1, summary: [], encrypted_content: enc, status: null, content: null}]
+      - step: reasoning
+        input: [{type: reasoning, id: rs_2, summary: [], encrypted_content: null}]
+      - step: reasoning
+        input: [{type: function_call_output, call_id: c1, output: ok, status: null}]
+      - step: reasoning
+        input: hello
+env: {}
+compare:
+  ignore: []

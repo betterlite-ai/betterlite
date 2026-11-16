@@ -1,0 +1,26 @@
+kind: helper
+name: runway-image-non-string-member
+call:
+  runway_images:
+    operation: response
+    params:
+      model: gen4_image
+      environment: {}
+      submission:
+        status: 200
+        headers: {}
+        body: '{"id":"task_non_string","status":"RUNNING"}'
+      request_headers:
+        Authorization: Bearer case-token
+        X-Runway-Version: "2024-11-06"
+      created: 21
+      data:
+        - b64_json: null
+          url: https://delivery.test/old.png
+          revised_prompt: kept
+      step_millis: 0
+      replies:
+        - status: 200
+          body: '{"id":"task_non_string","status":"SUCCEEDED","output":[{"url":"https://delivery.test/sized.png","width":1024},{"url":null},{"b64_json":"QUJD","meta":{"a":1}}]}'
+env: {}
+compare: {ignore: []}

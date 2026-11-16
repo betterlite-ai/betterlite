@@ -1,0 +1,26 @@
+kind: helper
+name: messages_responses_input-tool-result-image-seed
+call:
+  messages_responses_input:
+    messages:
+    - role: user
+      content:
+      - type: tool_result
+        tool_use_id: toolu_seed
+        content:
+        - type: text
+          text: summary
+        - type: image
+          source:
+            type: url
+            url: https://example.com/seed.png
+    - role: assistant
+      content:
+      - type: thinking
+        thinking: plan
+      - type: text
+        text: done
+    usage: null
+env: {}
+compare:
+  ignore: []
