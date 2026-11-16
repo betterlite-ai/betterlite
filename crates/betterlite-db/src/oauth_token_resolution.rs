@@ -273,7 +273,7 @@ where
     }
     if request.prefetched.is_none()
         && let Some(token) =
-            resolve::cached(services, cache, request.server, user_id, server_id).await
+            resolve::cached(services.binding, cache, request.server, user_id, server_id).await
     {
         return Some(token);
     }

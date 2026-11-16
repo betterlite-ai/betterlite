@@ -97,22 +97,19 @@ where
             return None;
         }
     };
-    enforce_exchange(services, server, user_id, refresh_token, body).await
+    enforce_exchange(services.binding, server, user_id, refresh_token, body).await
 }
 
 // LiteLLM's enforce_oauth_identity_binding call: the presented refresh token proves ownership, and a denial reads as no token.
-async fn enforce_exchange<A, P, B, H>(
-    services: &TokenServices<'_, A, P, B, H>,
+async fn enforce_exchange<P>(
+    binding: &P,
     server: &P::Server,
     user_id: &str,
     refresh_token: &SecretString,
     body: TokenResponse,
 ) -> Option<TokenExchange>
 where
-    A: CredentialRows,
     P: OauthBindingPort,
-    B: TokenRequestBuilder<P::Server>,
-    H: TokenEndpointPost,
 {
     let ownership = P::Ownership::from(refresh_token.clone());
     let request = EnforceRequest {
@@ -122,7 +119,7 @@ where
         grant_type: REFRESH_GRANT,
         ownership: Some(&ownership),
     };
-    let enforced = services.binding.enforce(&request).await;
+    let enforced = binding.enforce(&request).await;
     match enforced {
         Ok(identity_binding_proof) => Some(TokenExchange {
             body,

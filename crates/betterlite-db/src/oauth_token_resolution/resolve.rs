@@ -16,27 +16,23 @@ use super::ports::{
 use super::{OauthBindingPort, resolve_valid_user_oauth_token};
 
 // The Redis fast path: a non-binding server reads the plain token, a binding-enforced one proves the cached token before returning it.
-pub(super) async fn cached<A, P, B, H, C>(
-    services: &TokenServices<'_, A, P, B, H>,
+pub(super) async fn cached<P, C>(
+    binding: &P,
     cache: &C,
     server: &P::Server,
     user_id: &str,
     server_id: &str,
 ) -> Option<SecretString>
 where
-    A: CredentialRows,
     P: OauthBindingPort,
     P::Server: TokenServer,
-    B: TokenRequestBuilder<P::Server>,
-    H: TokenEndpointPost,
     C: PerUserTokenCache,
 {
     if !server.binding_enforced() {
         return cache.get(user_id, server_id).await;
     }
     let token = cache.get_token(user_id, server_id).await?;
-    if services
-        .binding
+    if binding
         .proof_matches(server, user_id, token.identity_binding_proof.as_deref())
         .await
     {

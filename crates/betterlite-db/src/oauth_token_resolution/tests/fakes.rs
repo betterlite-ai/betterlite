@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::future::{Future, ready};
 use std::sync::Mutex;
 
 use secrecy::{ExposeSecret as _, SecretString};
@@ -164,10 +165,10 @@ impl OauthBindingPort for FakeBinding {
     type Ownership = FakeOwnership;
     type Denied = FakeDenied;
 
-    async fn enforce(
+    fn enforce(
         &self,
         request: &EnforceRequest<'_, FakeServer, FakeOwnership>,
-    ) -> Result<Option<String>, FakeDenied> {
+    ) -> impl Future<Output = Result<Option<String>, FakeDenied>> + Send {
         self.recorded
             .lock()
             .expect("the fake binding calls are not poisoned")
@@ -181,17 +182,17 @@ impl OauthBindingPort for FakeBinding {
                 body_fields: request.token_response.keys().cloned().collect(),
             });
         if self.deny_exchange {
-            return Err(FakeDenied);
+            return ready(Err(FakeDenied));
         }
-        Ok(self.exchange_proof.clone())
+        ready(Ok(self.exchange_proof.clone()))
     }
 
-    async fn proof_matches(
+    fn proof_matches(
         &self,
         server: &FakeServer,
         user_id: &str,
         stored_proof: Option<&str>,
-    ) -> bool {
+    ) -> impl Future<Output = bool> + Send {
         self.recorded
             .lock()
             .expect("the fake binding calls are not poisoned")
@@ -205,7 +206,7 @@ impl OauthBindingPort for FakeBinding {
             .lock()
             .expect("the fake proof answers are not poisoned")
             .pop_front();
-        queued.unwrap_or(!self.proof_disagrees)
+        ready(queued.unwrap_or(!self.proof_disagrees))
     }
 }
 
@@ -259,16 +260,20 @@ impl FakeBuilder {
             .expect("the fake builder calls are not poisoned")
             .clone()
     }
+
+    fn record(&self, server_id: &str) {
+        self.recorded
+            .lock()
+            .expect("the fake builder calls are not poisoned")
+            .push(server_id.to_owned());
+    }
 }
 
 impl TokenRequestBuilder<FakeServer> for FakeBuilder {
     type Error = FakeError;
 
     fn token_request(&self, server: &FakeServer) -> Result<TokenRequest, FakeError> {
-        self.recorded
-            .lock()
-            .expect("the fake builder calls are not poisoned")
-            .push(server.server_id.clone());
+        self.record(&server.server_id);
         self.outcome.clone()
     }
 }
@@ -318,12 +323,12 @@ fn exposed_map(values: &BTreeMap<String, SecretString>) -> BTreeMap<String, Stri
 impl TokenEndpointPost for FakePost {
     type Error = FakeError;
 
-    async fn post_token(
+    fn post_token(
         &self,
         url: &str,
         headers: &BTreeMap<String, SecretString>,
         form: &BTreeMap<String, SecretString>,
-    ) -> Result<TokenResponse, FakeError> {
+    ) -> impl Future<Output = Result<TokenResponse, FakeError>> + Send {
         self.recorded
             .lock()
             .expect("the fake post calls are not poisoned")
@@ -332,7 +337,7 @@ impl TokenEndpointPost for FakePost {
                 headers: exposed_map(headers),
                 form: exposed_map(form),
             });
-        self.outcome.clone()
+        ready(self.outcome.clone())
     }
 }
 
@@ -436,22 +441,28 @@ impl CacheCall {
 }
 
 impl PerUserTokenCache for FakeCache {
-    async fn get(&self, user_id: &str, server_id: &str) -> Option<SecretString> {
+    #[rustfmt::skip]
+    fn get(&self, user_id: &str, server_id: &str) -> impl Future<Output = Option<SecretString>> + Send {
         self.record(CacheCall::get(user_id, server_id));
-        self.plain.clone()
+        ready(self.plain.clone())
     }
 
-    async fn get_token(&self, user_id: &str, server_id: &str) -> Option<CachedUserToken> {
+    #[rustfmt::skip]
+    fn get_token(&self, user_id: &str, server_id: &str) -> impl Future<Output = Option<CachedUserToken>> + Send {
         self.record(CacheCall::get_token(user_id, server_id));
-        self.token.clone()
+        ready(self.token.clone())
     }
 
-    async fn set(&self, user_id: &str, server_id: &str, token: &CachedUserToken, ttl_seconds: i64) {
+    #[rustfmt::skip]
+    fn set(&self, user_id: &str, server_id: &str, token: &CachedUserToken, ttl_seconds: i64) -> impl Future<Output = ()> + Send {
         self.record(CacheCall::set(user_id, server_id, token, ttl_seconds));
+        ready(())
     }
 
-    async fn delete(&self, user_id: &str, server_id: &str) {
+    #[rustfmt::skip]
+    fn delete(&self, user_id: &str, server_id: &str) -> impl Future<Output = ()> + Send {
         self.record(CacheCall::delete(user_id, server_id));
+        ready(())
     }
 }
 
@@ -573,15 +584,19 @@ impl UserTokenCaches for FakeCaches {
         self.record(CacheEvent::discovery(server_id));
     }
 
-    async fn invalidate_oauth_store(
+    fn invalidate_oauth_store(
         &self,
         user_id: &str,
         server_id: &str,
-    ) -> Result<(), FakeError> {
-        self.drop_cached_entry(CacheEvent::store(user_id, server_id), self.fail_store)
+    ) -> impl Future<Output = Result<(), FakeError>> + Send {
+        ready(self.drop_cached_entry(CacheEvent::store(user_id, server_id), self.fail_store))
     }
 
-    async fn delete_legacy(&self, user_id: &str, server_id: &str) -> Result<(), FakeError> {
-        self.drop_cached_entry(CacheEvent::legacy(user_id, server_id), self.fail_legacy)
+    fn delete_legacy(
+        &self,
+        user_id: &str,
+        server_id: &str,
+    ) -> impl Future<Output = Result<(), FakeError>> + Send {
+        ready(self.drop_cached_entry(CacheEvent::legacy(user_id, server_id), self.fail_legacy))
     }
 }

@@ -261,7 +261,7 @@ fn refresh_treats_an_empty_access_token_as_missing() {
 
 #[test]
 fn refresh_treats_a_non_text_access_token_as_missing() {
-    let body = token_response(&[("access_token", JsonValue::Number(Number::from(5)))]);
+    let body = token_response(&[("access_token", JsonValue::Number(Number::from(5_i32)))]);
     assert!(refreshed_with_body(body).is_none());
 }
 
@@ -305,7 +305,7 @@ fn refresh_stores_a_token_without_an_expiry_when_expires_in_is_absent() {
 
 #[rstest]
 #[case::number(
-    with_expiry(JsonValue::Number(Number::from(3600))),
+    with_expiry(JsonValue::Number(Number::from(3_600_i32))),
     Some(expires_at(3600))
 )]
 #[case::float(
@@ -319,7 +319,7 @@ fn refresh_stores_a_token_without_an_expiry_when_expires_in_is_absent() {
     Some(expires_at(600))
 )]
 #[case::negative_number(
-    with_expiry(JsonValue::Number(Number::from(-10))),
+    with_expiry(JsonValue::Number(Number::from(-10_i32))),
     Some(expires_at(-10))
 )]
 #[case::fractional_string(
