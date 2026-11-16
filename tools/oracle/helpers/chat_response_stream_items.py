@@ -9,7 +9,8 @@ from litellm.responses.litellm_completion_transformation.streaming_iterator impo
 from litellm.types.llms.base import BaseLiteLLMOpenAIResponseObject as BaseResponse
 from litellm.types.llms.openai import ResponsesAPIOptionalRequestParams as RequestParams
 from litellm.types.utils import Delta, ModelResponse, ModelResponseStream, StreamingChoices
-from pydantic import JsonValue as Json, TypeAdapter
+from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
 from typing_extensions import override
 
 OBJECT: TypeAdapter[dict[str, Json]] = TypeAdapter(dict[str, Json])
@@ -19,12 +20,8 @@ class CompletionFields(TypedDict):
     choices: list[dict[str, dict[str, Json]]]
 
 
-class AssembledMessage(TypedDict):
-    content: Json
-
-
 class AssembledChoice(TypedDict):
-    message: AssembledMessage
+    message: dict[str, Json]
 
 
 class AssembledFields(TypedDict):
