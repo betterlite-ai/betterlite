@@ -1,0 +1,19 @@
+kind: helper
+name: admission-session-id-from-metadata
+call:
+  b3007:
+    memory:
+      "{session_budget:s1}:spend": 1.0
+    agents:
+      - agent_id: agent-1
+        agent_name: alpha
+        agent_card_params: {model: gpt-4o}
+        litellm_params: {max_budget_per_session: 1.0}
+    pre_calls:
+      - agent_id: agent-1
+        data:
+          model: gpt-4o
+          metadata: {session_id: s1}
+          litellm_metadata: {session_id: untracked}
+env: {}
+compare: {ignore: []}
