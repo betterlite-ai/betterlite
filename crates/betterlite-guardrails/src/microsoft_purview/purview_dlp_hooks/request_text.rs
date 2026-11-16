@@ -38,40 +38,25 @@ fn messages_text(data: &Data) -> Result<Option<String>, PurviewDlpHttpError> {
     Ok(prompt_text_for_dlp(&parsed))
 }
 
-pub(super) fn blocking_prompt_text(
+// LiteLLM rejects token-id completion prompts and raises on failed Responses input only in blocking mode.
+pub(super) fn prompt_text(
     data: &Data,
     request_data: &Object,
     call_type: Option<CallType>,
     cache: &DualLocalCache,
+    blocking: bool,
 ) -> Result<Option<String>, PurviewDlpHttpError> {
     match call_type {
         Some(CallType::Responses | CallType::Aresponses) => {
-            responses_api_input_to_str(request_data, cache, true)
+            responses_api_input_to_str(request_data, cache, blocking)
         }
         Some(CallType::TextCompletion | CallType::AtextCompletion) => {
             let prompt = data.get("prompt").map(conversion::to_json);
-            if is_token_id_prompt(prompt.as_ref()) {
+            if blocking && is_token_id_prompt(prompt.as_ref()) {
                 return Err(error_handling::message_error(TOKEN_ID_ERROR));
             }
             Ok(completion_prompt_to_str(prompt.as_ref()))
         }
-        _ => messages_text(data),
-    }
-}
-
-pub(super) fn audit_prompt_text(
-    data: &Data,
-    request_data: &Object,
-    call_type: Option<CallType>,
-    cache: &DualLocalCache,
-) -> Result<Option<String>, PurviewDlpHttpError> {
-    match call_type {
-        Some(CallType::Responses | CallType::Aresponses) => {
-            responses_api_input_to_str(request_data, cache, false)
-        }
-        Some(CallType::TextCompletion | CallType::AtextCompletion) => Ok(completion_prompt_to_str(
-            data.get("prompt").map(conversion::to_json).as_ref(),
-        )),
         _ => messages_text(data),
     }
 }

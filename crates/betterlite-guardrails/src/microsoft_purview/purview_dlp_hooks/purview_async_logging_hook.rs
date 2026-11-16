@@ -13,7 +13,6 @@ use crate::purview_graph_client::user_id_resolution::resolve_logging_user_id;
 use crate::purview_graph_client::wire::Activity;
 
 use super::context::RecordTargets;
-use super::error::PurviewHookError;
 use super::scan::{PartsScan, ScanRequest, scan_and_record, scan_parts};
 use super::{Data, conversion, request_text, response_parts};
 
@@ -34,12 +33,6 @@ pub struct DeferredCall {
     pub call_type: Option<CallType>,
 }
 
-pub struct AuditCall<'call> {
-    pub kwargs: &'call mut Data,
-    pub result: &'call GuardrailValue,
-    pub call_type: Option<CallType>,
-}
-
 impl AuditEngine {
     fn targets(&self) -> RecordTargets<'_> {
         RecordTargets {
@@ -51,14 +44,11 @@ impl AuditEngine {
     }
 
     pub(super) fn audit_blocking(&self, mut call: DeferredCall) {
-        let runtime = match Builder::new_current_thread().enable_all().build() {
-            Ok(runtime) => runtime,
-            Err(error) => {
-                tracing::error!("Purview audit background logging error: {error}");
-                return;
-            }
+        let Ok(runtime) = Builder::new_current_thread().enable_all().build() else {
+            tracing::error!("Purview audit background logging error: no runtime");
+            return;
         };
-        runtime.block_on(audit_call(
+        runtime.block_on(async_logging_hook(
             self,
             &mut call.kwargs,
             &call.result,
@@ -68,7 +58,7 @@ impl AuditEngine {
 }
 
 // LiteLLM wraps each audit call in its own try/except, so a prompt failure never stops the response audit.
-async fn audit_call(
+pub async fn async_logging_hook(
     engine: &AuditEngine,
     kwargs: &mut Data,
     result: &GuardrailValue,
@@ -90,22 +80,16 @@ async fn audit_prompt(
     user_id: &str,
     call_type: Option<CallType>,
 ) {
-    if let Err(error) = prompt_scan(engine, kwargs, request_data, user_id, call_type).await {
-        tracing::error!("Purview audit logging error (prompt): {error}");
-    }
-}
-
-async fn prompt_scan(
-    engine: &AuditEngine,
-    kwargs: &mut Data,
-    request_data: &Object,
-    user_id: &str,
-    call_type: Option<CallType>,
-) -> Result<(), PurviewHookError> {
-    let Some(text) =
-        request_text::audit_prompt_text(kwargs, request_data, call_type, &engine.cache)?
-    else {
-        return Ok(());
+    let text =
+        match request_text::prompt_text(kwargs, request_data, call_type, &engine.cache, false) {
+            Ok(text) => text,
+            Err(error) => {
+                tracing::error!("Purview audit logging error (prompt): {error}");
+                return;
+            }
+        };
+    let Some(text) = text else {
+        return;
     };
     let scan = ScanRequest {
         user_id,
@@ -114,7 +98,9 @@ async fn prompt_scan(
         block_on_violation: false,
         request_data,
     };
-    scan_and_record(&engine.guardrail, kwargs, &scan, engine.targets()).await
+    if let Err(error) = scan_and_record(&engine.guardrail, kwargs, &scan, engine.targets()).await {
+        tracing::error!("Purview audit logging error (prompt): {error}");
+    }
 }
 
 async fn audit_response(
@@ -124,22 +110,15 @@ async fn audit_response(
     user_id: &str,
     result: &GuardrailValue,
 ) {
-    match response_scan(engine, kwargs, request_data, user_id, result).await {
-        Ok(()) => {}
-        Err(error) => tracing::error!("Purview audit logging error (response): {error}"),
-    }
-}
-
-async fn response_scan(
-    engine: &AuditEngine,
-    kwargs: &mut Data,
-    request_data: &Object,
-    user_id: &str,
-    result: &GuardrailValue,
-) -> Result<(), PurviewHookError> {
-    let parts = response_parts::parts(result)?;
+    let parts = match response_parts::parts(result) {
+        Ok(parts) => parts,
+        Err(error) => {
+            tracing::error!("Purview audit logging error (response): {error}");
+            return;
+        }
+    };
     if parts.is_empty() {
-        return Ok(());
+        return;
     }
     let scan = PartsScan {
         user_id,
@@ -147,12 +126,9 @@ async fn response_scan(
         block_on_violation: false,
         request_data,
     };
-    scan_parts(&engine.guardrail, kwargs, &scan, engine.targets()).await
-}
-
-// Audit never raises: both scans log their failures and the caller gets its arguments back untouched.
-pub async fn async_logging_hook(engine: &AuditEngine, call: AuditCall<'_>) {
-    audit_call(engine, call.kwargs, call.result, call.call_type).await;
+    if let Err(error) = scan_parts(&engine.guardrail, kwargs, &scan, engine.targets()).await {
+        tracing::error!("Purview audit logging error (response): {error}");
+    }
 }
 
 mod tests;

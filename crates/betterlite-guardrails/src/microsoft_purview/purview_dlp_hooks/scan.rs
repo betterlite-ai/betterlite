@@ -42,19 +42,13 @@ pub(super) async fn scan_and_record(
         block_on_violation: scan.block_on_violation,
     };
     let outcome = check_content(&guardrail.base, &check).await;
-    let RecordTargets {
-        base,
-        invocation,
-        sink,
-        log_target,
-    } = targets;
     let mut record_context = GuardrailRecordContext {
-        base,
+        base: targets.base,
         request_data: data,
-        log_target,
-        sink,
+        log_target: targets.log_target,
+        sink: targets.sink,
     };
-    if let Some(invocation) = invocation {
+    if let Some(invocation) = targets.invocation {
         return outcome
             .write_record(invocation, &mut record_context)
             .map_err(PurviewHookError::from);

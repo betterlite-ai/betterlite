@@ -5,22 +5,19 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::local_ttl_cache::Settings;
 use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache};
 use betterlite_core::routes::CallType;
-use betterlite_guardrails::guardrail_base::GuardrailBase;
-use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
+use betterlite_guardrails::guardrail_base::{GuardrailBase, settings::GuardrailSettings};
 use betterlite_guardrails::guardrail_records::error::GuardrailSpanError;
 use betterlite_guardrails::guardrail_records::record::{
     GuardrailInvocationRecord, GuardrailSpanSink,
 };
-use betterlite_guardrails::microsoft_purview::purview_dlp_hooks::context::HookContext;
-use betterlite_guardrails::microsoft_purview::purview_dlp_hooks::error::PurviewHookError;
-use betterlite_guardrails::microsoft_purview::purview_dlp_hooks::purview_async_logging_hook::{
-    AuditCall, AuditEngine, DeferredCall, async_logging_hook,
+use betterlite_guardrails::microsoft_purview::purview_dlp_hooks::{
+    context::HookContext,
+    error::PurviewHookError,
+    purview_async_logging_hook::{AuditEngine, DeferredCall, async_logging_hook},
+    purview_logging_hook::{AuditSpawner, logging_hook},
+    purview_post_success_hook::async_post_call_success_hook,
+    purview_pre_call_hook::async_pre_call_hook,
 };
-use betterlite_guardrails::microsoft_purview::purview_dlp_hooks::purview_logging_hook::{
-    AuditSpawner, logging_hook,
-};
-use betterlite_guardrails::microsoft_purview::purview_dlp_hooks::purview_post_success_hook::async_post_call_success_hook;
-use betterlite_guardrails::microsoft_purview::purview_dlp_hooks::purview_pre_call_hook::async_pre_call_hook;
 // ast-grep-ignore: no-long-names
 use betterlite_guardrails::microsoft_purview::purview_dlp_hooks::purview_streaming_hook::async_post_call_streaming_iterator_hook as streaming_hook;
 use betterlite_guardrails::purview_dlp_evaluation::{
@@ -48,18 +45,9 @@ pub(crate) fn run(input: &Input) -> HelperResult {
         Function::PreCall => response_status(pre_call(input, &setup)?),
         Function::PostSuccess => response_status(post_success(input, &setup)?),
         Function::Streaming => response_status(streaming(input, &setup)?),
-        Function::LoggingSync => {
-            logging_sync(input, &setup)?;
-            None
-        }
-        Function::LoggingDeferred => {
-            logging_deferred(input, &setup)?;
-            None
-        }
-        Function::LoggingAsync => {
-            logging_async(input, &setup)?;
-            None
-        }
+        Function::LoggingSync => logging_sync(input, &setup)?,
+        Function::LoggingDeferred => logging_deferred(input, &setup)?,
+        Function::LoggingAsync => logging_async(input, &setup)?,
     };
     Ok(json!({"scans": setup.mock.scans(), "status": status}))
 }
@@ -104,47 +92,31 @@ fn streaming(input: &Input, setup: &Setup) -> Result<Outcome, Box<HelperError>> 
     Ok(outcome)
 }
 
-fn logging_sync(input: &Input, setup: &Setup) -> Result<(), Box<HelperError>> {
-    let call = deferred(input)?;
-    let engine = engine(setup);
-    let _returned = logging_hook(&engine, call, &InlineSpawner);
-    Ok(())
+fn logging_sync(input: &Input, setup: &Setup) -> Result<Option<u16>, Box<HelperError>> {
+    let call = DeferredCall {
+        kwargs: input.data.clone(),
+        result: required(input.result.as_ref(), "result")?.clone(),
+        call_type: call_type(input)?,
+    };
+    let _returned = logging_hook(&engine(setup), call, &InlineSpawner);
+    Ok(None)
 }
 
 // Inside a runtime the sync hook defers to the framework's async hook, so nothing is scanned here.
-fn logging_deferred(input: &Input, setup: &Setup) -> Result<(), Box<HelperError>> {
-    let call = deferred(input)?;
-    let engine = engine(setup);
+fn logging_deferred(input: &Input, setup: &Setup) -> Result<Option<u16>, Box<HelperError>> {
     let runtime = runtime()?;
-    {
-        let _entered = runtime.enter();
-        let _returned = logging_hook(&engine, call, &InlineSpawner);
-    }
-    Ok(())
+    let _entered = runtime.enter();
+    logging_sync(input, setup)
 }
 
-fn logging_async(input: &Input, setup: &Setup) -> Result<(), Box<HelperError>> {
+fn logging_async(input: &Input, setup: &Setup) -> Result<Option<u16>, Box<HelperError>> {
     let result = required(input.result.as_ref(), "result")?;
     let call_type = call_type(input)?;
     let mut kwargs = input.data.clone();
     let engine = engine(setup);
     let runtime = runtime()?;
-    let call = AuditCall {
-        kwargs: &mut kwargs,
-        result,
-        call_type,
-    };
-    runtime.block_on(async_logging_hook(&engine, call));
-    Ok(())
-}
-
-fn deferred(input: &Input) -> Result<DeferredCall, Box<HelperError>> {
-    let result = required(input.result.as_ref(), "result")?.clone();
-    Ok(DeferredCall {
-        kwargs: input.data.clone(),
-        result,
-        call_type: call_type(input)?,
-    })
+    runtime.block_on(async_logging_hook(&engine, &mut kwargs, result, call_type));
+    Ok(None)
 }
 
 fn engine(setup: &Setup) -> AuditEngine {
@@ -203,17 +175,15 @@ fn required<'value, T>(
     value: Option<&'value T>,
     field: &str,
 ) -> Result<&'value T, Box<HelperError>> {
-    value.ok_or_else(|| invalid(field))
-}
-
-fn invalid(field: &str) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: format!("{field} is required for this function"),
+    value.ok_or_else(|| {
+        Box::new(HelperError {
+            class: "InvalidInput".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: format!("{field} is required for this function"),
+        })
     })
 }
 

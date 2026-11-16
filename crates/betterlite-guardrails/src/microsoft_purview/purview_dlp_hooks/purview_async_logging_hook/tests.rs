@@ -8,7 +8,7 @@ use betterlite_core::routes::CallType;
 use crate::guardrail_records::record::GuardrailStatus;
 use crate::microsoft_purview::purview_dlp_hooks::Data;
 use crate::microsoft_purview::purview_dlp_hooks::purview_async_logging_hook::{
-    AuditCall, AuditEngine, async_logging_hook,
+    AuditEngine, async_logging_hook,
 };
 use crate::microsoft_purview::purview_dlp_hooks::test_support::{
     Reply, Scan, Script, TestSink, blocking_actions, cache, data, guardrail_at, passing_actions,
@@ -35,15 +35,7 @@ async fn audit(
     result: &GuardrailValue,
     call_type: Option<CallType>,
 ) {
-    async_logging_hook(
-        engine,
-        AuditCall {
-            kwargs,
-            result,
-            call_type,
-        },
-    )
-    .await;
+    async_logging_hook(engine, kwargs, result, call_type).await;
 }
 
 #[tokio::test]

@@ -3,7 +3,6 @@ use std::sync::Arc;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_logging::verbose_hooks::VerboseHooks;
 use betterlite_openai::api::responses_event_records::records::ResponsesAPIStreamingResponse;
-use betterlite_prompts::arguments::json::Object;
 use betterlite_redact::secret::Redactor;
 use betterlite_redact::structured::Payload;
 use betterlite_streaming::streamed_response_assembly::records::Chunk;
@@ -33,23 +32,6 @@ mod tests;
 fn parse_event(chunk: &GuardrailValue) -> Option<ResponsesAPIStreamingResponse> {
     let encoded = serde_json::to_string(chunk).ok()?;
     serde_json::from_str(&encoded).ok()
-}
-
-// LiteLLM tells a Responses API stream by its event type prefix, and takes the latest event body as the response.
-fn responses_events(chunks: &[GuardrailValue]) -> (bool, Vec<ResponsesAPIStreamingResponse>) {
-    let mut looks_like = false;
-    let mut events = Vec::new();
-    for chunk in chunks {
-        if let GuardrailValue::Object(fields) = chunk
-            && let Some(GuardrailValue::Text(kind)) = fields.get("type")
-        {
-            looks_like |= kind.starts_with("response.");
-        }
-        if let Some(event) = parse_event(chunk) {
-            events.push(event);
-        }
-    }
-    (looks_like, events)
 }
 
 async fn assemble_chat(chunks: &[GuardrailValue], redactor: &Arc<Redactor>) -> Option<Response> {
@@ -100,9 +82,9 @@ pub async fn async_post_call_streaming_iterator_hook(
     if chunks.is_empty() {
         return Ok(chunks);
     }
-    let (looks_like_responses, events) = responses_events(&chunks);
+    let events: Vec<_> = chunks.iter().filter_map(parse_event).collect();
     let (marked, assembled) = assemble_responses_stream(&events);
-    let parts = if looks_like_responses || marked {
+    let parts = if marked {
         let Some(response) = assembled else {
             return Err(error_handling::message_error(INCOMPLETE_ERROR).into());
         };

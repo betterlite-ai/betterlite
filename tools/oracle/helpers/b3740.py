@@ -1,6 +1,6 @@
 import asyncio
 import threading
-from collections.abc import AsyncIterable, AsyncIterator
+from collections.abc import AsyncIterator
 from typing import Literal, Protocol, TypedDict
 
 import httpx
@@ -24,8 +24,6 @@ from pydantic.alias_generators import to_camel
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 RESPONSE: TypeAdapter[ModelResponse] = TypeAdapter(ModelResponse)
-HTTP_OK = 200
-HTTP_SERVER_ERROR = 500
 
 
 class GuardrailConfig(TypedDict):
@@ -119,22 +117,6 @@ class PurviewHooks(Protocol):
         response: LLMResponseTypes,
     ) -> LLMResponseTypes: ...
 
-    # ast-grep-ignore: no-long-names
-    def async_post_call_streaming_iterator_hook(
-        self,
-        user_api_key_dict: UserAPIKeyAuth,
-        response: AsyncIterable[ModelResponseStream],
-        request_data: dict[str, JsonValue],
-    ) -> AsyncIterator[ModelResponseStream]: ...
-
-    def logging_hook(
-        self, kwargs: dict[str, JsonValue], result: ModelResponse, call_type: str
-    ) -> object: ...  # ast-grep-ignore: no-loose-types
-
-    async def async_logging_hook(
-        self, kwargs: dict[str, JsonValue], result: ModelResponse, call_type: str
-    ) -> object: ...  # ast-grep-ignore: no-loose-types
-
 
 class ScriptedReplies:
     def __init__(self, replies: list[Reply]) -> None:
@@ -145,43 +127,21 @@ class ScriptedReplies:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if path.endswith("/processContent"):
-            self.record(request)
-            return self.reply()
+            process = PROCESS.validate_json(request.content).content_to_process
+            self.scans.append(
+                {
+                    "activity": process.activity_metadata.activity,
+                    "data": process.content_entries[0].content.data,
+                }
+            )
+            if self.used >= len(self.replies):
+                return httpx.Response(500, content=b"{}")
+            reply = self.replies[self.used]
+            self.used += 1
+            return httpx.Response(reply["status"], json=reply["body"])
         if path.endswith("/protectionScopes/compute"):
-            return httpx.Response(HTTP_OK, content=b'{"value":[]}')
-        return httpx.Response(
-            HTTP_OK,
-            content=b'{"access_token":"tok","expires_in":3600}',
-        )
-
-    def record(self, request: httpx.Request) -> None:
-        process = PROCESS.validate_json(request.content).content_to_process
-        self.scans.append(
-            {
-                "activity": process.activity_metadata.activity,
-                "data": process.content_entries[0].content.data,
-            }
-        )
-
-    def reply(self) -> httpx.Response:
-        if self.used >= len(self.replies):
-            return httpx.Response(HTTP_SERVER_ERROR, content=b"{}")
-        reply = self.replies[self.used]
-        self.used += 1
-        return httpx.Response(reply["status"], json=reply["body"])
-
-
-def guardrail(config: GuardrailConfig, handler: ScriptedReplies) -> PurviewHooks:
-    instance = MicrosoftPurviewDLPGuardrail(
-        guardrail_name=config["guardrail_name"],
-        tenant_id=config["tenant_id"],
-        client_id=config["client_id"],
-        client_secret=config["client_secret"],
-        purview_app_name=config["purview_app_name"],
-        user_id_field=config["user_id_field"],
-    )
-    instance.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    return instance
+            return httpx.Response(200, content=b'{"value":[]}')
+        return httpx.Response(200, content=b'{"access_token":"tok","expires_in":3600}')
 
 
 def outcome(handler: ScriptedReplies, status: int | None) -> JsonValue:
@@ -191,24 +151,9 @@ def outcome(handler: ScriptedReplies, status: int | None) -> JsonValue:
     return answer
 
 
-async def chunk_stream(
-    chunks: list[ModelResponseStream],
-) -> AsyncIterator[ModelResponseStream]:
+async def chunk_stream(chunks: list[ModelResponseStream]) -> AsyncIterator[ModelResponseStream]:
     for chunk in chunks:
         yield chunk
-
-
-async def release(
-    hooks: PurviewHooks,
-    credentials: UserAPIKeyAuth,
-    chunks: list[ModelResponseStream],
-    data: dict[str, JsonValue],
-) -> None:
-    stream = hooks.async_post_call_streaming_iterator_hook(
-        credentials, chunk_stream(chunks), data
-    )
-    async for _chunk in stream:
-        pass
 
 
 def pre_call(hooks: PurviewHooks, case: Input, handler: ScriptedReplies) -> JsonValue:
@@ -232,13 +177,17 @@ def post_success(hooks: PurviewHooks, case: Input, handler: ScriptedReplies) -> 
     return outcome(handler, None)
 
 
-def streaming(hooks: PurviewHooks, case: Input, handler: ScriptedReplies) -> JsonValue:
-    chunks: list[ModelResponseStream] = [
-        EVENT.validate_python(value) for value in case["chunks"]
-    ]
+async def streaming(
+    hooks: MicrosoftPurviewDLPGuardrail, case: Input, handler: ScriptedReplies
+) -> JsonValue:
+    chunks: list[ModelResponseStream] = [EVENT.validate_python(value) for value in case["chunks"]]
     credentials = UserAPIKeyAuth(user_id=case["identity"]["user_id"])
     try:
-        asyncio.run(release(hooks, credentials, chunks, case["data"]))
+        stream = hooks.async_post_call_streaming_iterator_hook(
+            credentials, chunk_stream(chunks), case["data"]
+        )
+        async for _chunk in stream:
+            pass
     except HTTPException as error:
         return outcome(handler, error.status_code)
     except APIError as error:
@@ -246,54 +195,55 @@ def streaming(hooks: PurviewHooks, case: Input, handler: ScriptedReplies) -> Jso
     return outcome(handler, None)
 
 
-def logging_sync(hooks: PurviewHooks, case: Input, handler: ScriptedReplies) -> JsonValue:
+def logging_sync(
+    hooks: MicrosoftPurviewDLPGuardrail, case: Input, handler: ScriptedReplies
+) -> JsonValue:
     before = set(threading.enumerate())
-    hooks.logging_hook(
-        case["data"], RESPONSE.validate_python(case["result"]), case["call_type"]
-    )
+    hooks.logging_hook(case["data"], RESPONSE.validate_python(case["result"]), case["call_type"])
     for thread in set(threading.enumerate()) - before:
         thread.join()
     return outcome(handler, None)
 
 
-async def deferred_call(hooks: PurviewHooks, case: Input) -> None:
-    hooks.logging_hook(
-        case["data"], RESPONSE.validate_python(case["result"]), case["call_type"]
-    )
-
-
-def logging_deferred(
-    hooks: PurviewHooks, case: Input, handler: ScriptedReplies
+async def logging_deferred(
+    hooks: MicrosoftPurviewDLPGuardrail, case: Input, handler: ScriptedReplies
 ) -> JsonValue:
-    asyncio.run(deferred_call(hooks, case))
+    hooks.logging_hook(case["data"], RESPONSE.validate_python(case["result"]), case["call_type"])
     return outcome(handler, None)
 
 
-async def audit(hooks: PurviewHooks, case: Input) -> None:
+async def logging_async(
+    hooks: MicrosoftPurviewDLPGuardrail, case: Input, handler: ScriptedReplies
+) -> JsonValue:
     await hooks.async_logging_hook(
         case["data"], RESPONSE.validate_python(case["result"]), case["call_type"]
     )
-
-
-def logging_async(hooks: PurviewHooks, case: Input, handler: ScriptedReplies) -> JsonValue:
-    asyncio.run(audit(hooks, case))
     return outcome(handler, None)
 
 
 def run(input_value: Input) -> JsonValue:
     handler = ScriptedReplies(input_value["replies"])
-    hooks = guardrail(input_value["guardrail"], handler)
+    config = input_value["guardrail"]
+    hooks = MicrosoftPurviewDLPGuardrail(
+        guardrail_name=config["guardrail_name"],
+        tenant_id=config["tenant_id"],
+        client_id=config["client_id"],
+        client_secret=config["client_secret"],
+        purview_app_name=config["purview_app_name"],
+        user_id_field=config["user_id_field"],
+    )
+    hooks.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     function = input_value["function"]
     if function == "pre_call":
         return pre_call(hooks, input_value, handler)
     if function == "post_success":
         return post_success(hooks, input_value, handler)
     if function == "streaming":
-        return streaming(hooks, input_value, handler)
+        return asyncio.run(streaming(hooks, input_value, handler))
     if function == "logging_sync":
         return logging_sync(hooks, input_value, handler)
     if function == "logging_deferred":
-        return logging_deferred(hooks, input_value, handler)
+        return asyncio.run(logging_deferred(hooks, input_value, handler))
     if function == "logging_async":
-        return logging_async(hooks, input_value, handler)
+        return asyncio.run(logging_async(hooks, input_value, handler))
     raise ValueError(f"unsupported function {function}")

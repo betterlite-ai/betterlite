@@ -10,16 +10,13 @@ use axum::http::StatusCode;
 use axum::http::header::{ETAG, HeaderValue};
 use axum::response::{IntoResponse as _, Response};
 use betterlite_oracle_helper_api::error::HelperError;
-use serde::Deserialize;
+use serde_json::Value;
 use tokio::net::TcpListener as AsyncListener;
 use tokio::runtime::Builder as RuntimeBuilder;
 
 use super::super::wire::Reply;
 
 const MAX_BODY_BYTES: usize = 1_048_576;
-const EXHAUSTED_BODY: &str = "{}";
-const TOKEN_BODY: &str = r#"{"access_token":"tok","expires_in":3600}"#;
-const SCOPES_BODY: &str = r#"{"value":[]}"#;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub(super) struct Scan {
@@ -27,13 +24,8 @@ pub(super) struct Scan {
     pub(super) data: String,
 }
 
-struct QueuedReply {
-    status: StatusCode,
-    body: String,
-}
-
 struct MockState {
-    replies: Mutex<VecDeque<QueuedReply>>,
+    replies: Mutex<VecDeque<(StatusCode, String)>>,
     scans: Arc<Mutex<Vec<Scan>>>,
 }
 
@@ -52,61 +44,23 @@ impl GraphMock {
     }
 }
 
-#[derive(Deserialize)]
-struct ProcessBody {
-    #[serde(rename = "contentToProcess")]
-    content_to_process: ContentToProcess,
+// The oracle compares the activity and the scanned text, which are the only fields the process body carries here.
+fn scan_of(bytes: &[u8]) -> Option<Scan> {
+    let process: Value = serde_json::from_slice(bytes).ok()?;
+    let text = process.pointer("/contentToProcess/contentEntries/0/content/data")?;
+    let activity = process.pointer("/contentToProcess/activityMetadata/activity")?;
+    Some(Scan {
+        activity: activity.as_str()?.to_owned(),
+        data: text.as_str()?.to_owned(),
+    })
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ContentToProcess {
-    content_entries: Vec<ContentEntry>,
-    activity_metadata: ActivityMetadata,
-}
-
-#[derive(Deserialize)]
-struct ContentEntry {
-    content: TextContent,
-}
-
-#[derive(Deserialize)]
-struct TextContent {
-    data: String,
-}
-
-#[derive(Deserialize)]
-struct ActivityMetadata {
-    activity: String,
-}
-
-fn respond(reply: &QueuedReply) -> Response {
-    let mut response = (reply.status, reply.body.clone()).into_response();
-    response
+fn respond(status: StatusCode, body: String) -> Response {
+    let mut response = (status, body).into_response();
+    let _previous = response
         .headers_mut()
         .insert(ETAG, HeaderValue::from_static("\"etag-1\""));
     response
-}
-
-fn record_scan(state: &MockState, bytes: &[u8]) {
-    let Ok(process) = serde_json::from_slice::<ProcessBody>(bytes) else {
-        return;
-    };
-    let Some(entry) = process.content_to_process.content_entries.first() else {
-        return;
-    };
-    state
-        .scans
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push(Scan {
-            activity: process
-                .content_to_process
-                .activity_metadata
-                .activity
-                .clone(),
-            data: entry.content.data.clone(),
-        });
 }
 
 async fn serve(State(state): State<Arc<MockState>>, request: Request) -> Response {
@@ -114,37 +68,36 @@ async fn serve(State(state): State<Arc<MockState>>, request: Request) -> Respons
     let bytes = to_bytes(body, MAX_BODY_BYTES).await.unwrap_or_default();
     let path = parts.uri.path().to_owned();
     if path.ends_with("/processContent") {
-        record_scan(&state, &bytes);
+        if let Some(scan) = scan_of(&bytes) {
+            state
+                .scans
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(scan);
+        }
         let reply = state
             .replies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
-            .unwrap_or_else(|| QueuedReply {
-                status: StatusCode::INTERNAL_SERVER_ERROR,
-                body: EXHAUSTED_BODY.to_owned(),
-            });
-        return respond(&reply);
+            .unwrap_or((StatusCode::INTERNAL_SERVER_ERROR, "{}".to_owned()));
+        return respond(reply.0, reply.1);
     }
     if path.ends_with("/protectionScopes/compute") {
-        return respond(&QueuedReply {
-            status: StatusCode::OK,
-            body: SCOPES_BODY.to_owned(),
-        });
+        return respond(StatusCode::OK, r#"{"value":[]}"#.to_owned());
     }
-    respond(&QueuedReply {
-        status: StatusCode::OK,
-        body: TOKEN_BODY.to_owned(),
-    })
+    respond(
+        StatusCode::OK,
+        r#"{"access_token":"tok","expires_in":3600}"#.to_owned(),
+    )
 }
 
-fn queue(replies: &[Reply]) -> Result<VecDeque<QueuedReply>, Box<HelperError>> {
+fn queue(replies: &[Reply]) -> Result<VecDeque<(StatusCode, String)>, Box<HelperError>> {
     let mut queued = VecDeque::new();
     for reply in replies {
         let status =
             StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-        let body = serde_json::to_string(&reply.body)?;
-        queued.push_back(QueuedReply { status, body });
+        queued.push_back((status, serde_json::to_string(&reply.body)?));
     }
     Ok(queued)
 }
@@ -156,20 +109,12 @@ fn serve_in_thread(
     let server = Builder::new()
         .name("purview-oracle-mock".to_owned())
         .spawn(move || {
-            let runtime = match RuntimeBuilder::new_current_thread().enable_all().build() {
-                Ok(runtime) => runtime,
-                Err(error) => {
-                    tracing::error!("purview mock runtime: {error}");
-                    return;
-                }
+            let Ok(runtime) = RuntimeBuilder::new_current_thread().enable_all().build() else {
+                return;
             };
             runtime.block_on(async move {
-                let listener = match AsyncListener::from_std(listener) {
-                    Ok(listener) => listener,
-                    Err(error) => {
-                        tracing::error!("purview mock listener: {error}");
-                        return;
-                    }
+                let Ok(listener) = AsyncListener::from_std(listener) else {
+                    return;
                 };
                 if let Err(error) = axum::serve(listener, router).await {
                     tracing::error!("purview mock server: {error}");

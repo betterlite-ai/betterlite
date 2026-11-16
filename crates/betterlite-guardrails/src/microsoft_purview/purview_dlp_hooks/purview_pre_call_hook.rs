@@ -18,7 +18,7 @@ pub async fn async_pre_call_hook(
     let request_data = conversion::object(data);
     let user_id = resolve_user_id_for_blocking(&guardrail.base, &request_data, &context.identity)?;
     let Some(text) =
-        request_text::blocking_prompt_text(data, &request_data, call_type, &context.cache)?
+        request_text::prompt_text(data, &request_data, call_type, &context.cache, true)?
     else {
         return Ok(());
     };
