@@ -17,10 +17,14 @@ pub const UNKNOWN_DETAIL: &str = "unknown error";
 pub const FAILED_STATUS: i64 = 500;
 pub const TIMEOUT_STATUS: i64 = 504;
 
-pub async fn poll_until_completed<T: RemoteTransport, S: Sleeper>(
+pub async fn poll_until_completed<T, S>(
     remote: &SonioxRemote<'_, T, S>,
     transcription_id: &str,
-) -> Result<TranscriptionMeta, RemoteError> {
+) -> Result<TranscriptionMeta, RemoteError>
+where
+    T: RemoteTransport,
+    S: Sleeper,
+{
     let wait = interval(remote.prepared.options.poll_interval)?;
     let attempts = remote.prepared.options.max_attempts;
     for _ in 0..attempts {

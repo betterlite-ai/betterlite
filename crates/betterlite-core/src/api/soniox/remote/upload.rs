@@ -14,10 +14,14 @@ pub const FILE_FIELD: &str = "file";
 pub const FILES_PATH: &str = "/v1/files";
 pub const UPLOAD_ACTION: &str = "upload file";
 
-pub async fn upload_file<T: RemoteTransport, S: Sleeper>(
+pub async fn upload_file<T, S>(
     remote: &SonioxRemote<'_, T, S>,
     audio: &ProcessedAudioFile,
-) -> Result<String, RemoteError> {
+) -> Result<String, RemoteError>
+where
+    T: RemoteTransport,
+    S: Sleeper,
+{
     let file_name = remote
         .prepared
         .options

@@ -11,11 +11,14 @@ pub const TRANSCRIPTIONS_PATH: &str = "/v1/transcriptions";
 pub const FILES_PATH: &str = "/v1/files";
 
 // Best-effort: a failed delete leaves stale data on Soniox but never replaces the transcription result.
-pub async fn clean_up<T: RemoteTransport, S: Sleeper>(
+pub async fn clean_up<T, S>(
     remote: &SonioxRemote<'_, T, S>,
     transcription_id: Option<&str>,
     file_id: Option<&str>,
-) {
+) where
+    T: RemoteTransport,
+    S: Sleeper,
+{
     let selected = &remote.prepared.options.cleanup;
     if selected.is_empty() {
         return;
@@ -32,7 +35,11 @@ pub async fn clean_up<T: RemoteTransport, S: Sleeper>(
     }
 }
 
-async fn delete<T: RemoteTransport, S: Sleeper>(remote: &SonioxRemote<'_, T, S>, path: &str) {
+async fn delete<T, S>(remote: &SonioxRemote<'_, T, S>, path: &str)
+where
+    T: RemoteTransport,
+    S: Sleeper,
+{
     let Ok(url) = endpoint_url(&format!("{}{path}", remote.prepared.api_base)) else {
         return;
     };
