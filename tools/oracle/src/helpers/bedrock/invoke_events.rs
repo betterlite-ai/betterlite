@@ -11,7 +11,11 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 use views::{chunk_view, generic_view};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use futures_util::stream;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::runtime::{Builder, Runtime};
 
 mod tests;
 mod views;
@@ -68,11 +72,11 @@ enum Step {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| failure(error.to_string()))?;
@@ -100,8 +104,8 @@ fn failure(message: String) -> Box<HelperError> {
     })
 }
 fn current_seconds() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| {
             i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX)
         })
@@ -127,10 +131,7 @@ fn decoder(scenario: &FramedScenario) -> InvokeStreamDecoder {
         Construction::Base => stream_decoder(None, &options),
     }
 }
-fn run_framed(
-    scenario: &FramedScenario,
-    runtime: &tokio::runtime::Runtime,
-) -> Result<Value, Box<HelperError>> {
+fn run_framed(scenario: &FramedScenario, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
     let chunks = scenario
         .chunks
         .iter()
@@ -146,11 +147,7 @@ fn run_framed(
             .collect::<Vec<_>>()
     } else {
         runtime.block_on(async {
-            let stream = decoder.framed(
-                futures_util::stream::iter(chunks),
-                scenario.headers.clone(),
-                &redactor,
-            );
+            let stream = decoder.framed(stream::iter(chunks), scenario.headers.clone(), &redactor);
             futures_util::StreamExt::collect(stream).await
         })
     };
@@ -168,7 +165,7 @@ fn run_framed(
     Ok(json!({ "chunks": views, "failure": failure_view }))
 }
 
-fn run_fake(scenario: &FakeScenario, runtime: &tokio::runtime::Runtime) -> Value {
+fn run_fake(scenario: &FakeScenario, runtime: &Runtime) -> Value {
     let mut stream = FakeStream {
         response: scenario.response.clone(),
         json_mode: scenario.json_mode,

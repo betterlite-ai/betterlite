@@ -12,10 +12,11 @@ use betterlite_models::token_rates::ModelInfo;
 use jiff::tz::TimeZoneDatabase;
 use serde_json::json;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 mod input;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::GenericInput;
 pub(crate) use input::Input;
 
@@ -45,10 +46,10 @@ impl PriceLookup for NullLookup {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         match input {
             Input::Generic(fields) => run_generic(fields),
             Input::ProviderGeo {
@@ -65,7 +66,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn run_generic(fields: &GenericInput) -> crate::helpers::HelperResult {
+fn run_generic(fields: &GenericInput) -> HelperResult {
     let database = TimeZoneDatabase::from_env();
     let usage = CostUsage::from(fields.usage.clone());
     let prompt_extras = fields
@@ -103,7 +104,7 @@ fn run_generic(fields: &GenericInput) -> crate::helpers::HelperResult {
 fn run_provider_geo(
     provider_specific_entry: Option<&PriceRecord>,
     inference_geo: Option<&str>,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let multiplier = provider_geo_multiplier(provider_specific_entry, inference_geo)
         .map_err(|error| token_cost_error(&error))?;
     Ok(json!({ "multiplier": multiplier.normalize().to_string() }))
@@ -114,7 +115,7 @@ fn run_fireworks_cache_default(
     custom_llm_provider: Option<&str>,
     off_peak_pricing: Option<&OffPeakBlock>,
     off_peak_cache_read_present: bool,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let (updated_model_info, updated_off_peak) = provider_cache_read_default(
         model_info,
         custom_llm_provider,

@@ -7,7 +7,8 @@ use betterlite_vertex::vertex_schema::build::{SchemaFormat, shape_parameters};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 

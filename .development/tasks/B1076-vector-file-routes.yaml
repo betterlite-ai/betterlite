@@ -88,7 +88,7 @@ oracle_cases:
 - tools/oracle/cases/api/vector-file-routes/file-read-auth-and-permission-errors.yaml
 - tools/oracle/cases/api/vector-file-routes/attached-read-managed-requirement.yaml
 deviations:
-- what: Until Max decides managed files/batches, raw ids remain usable by default; enabling require_managed_files produces the MIT 400/500 errors specified above.
+- what: Raw ids remain usable by default; enabling require_managed_files produces the MIT 400/500 errors specified above.
   why: The enterprise ownership hook is absent and is not recreated by this route task.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L710-L718
 out_of_scope:

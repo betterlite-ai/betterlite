@@ -5,12 +5,13 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/gdc-request-policy")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -19,7 +20,7 @@ fn run_case(file: &str) -> Value {
 
 #[test]
 fn helper_seeds_select_gdc_request_policy() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -40,7 +41,7 @@ fn helper_seeds_select_gdc_request_policy() {
 
 #[test]
 fn project_location_precedence_reaches_the_url() {
-    let output = run_case("project-location-precedence.yaml");
+    let output = run_case_file("project-location-precedence.yaml");
     let urls = &output["scenarios"][0]["urls"];
     assert_eq!(
         urls[0]["value"],
@@ -67,7 +68,7 @@ fn project_location_precedence_reaches_the_url() {
 
 #[test]
 fn a_full_project_url_is_returned_after_trimming() {
-    let output = run_case("full-project-url-bypass.yaml");
+    let output = run_case_file("full-project-url-bypass.yaml");
     assert_eq!(
         output["scenarios"][0]["urls"][0]["value"],
         "https://gateway.example/v1/projects/prebuilt/locations/eu"
@@ -86,7 +87,7 @@ fn a_full_project_url_is_returned_after_trimming() {
 
 #[test]
 fn identifiers_are_checked_and_keep_one_terminal_newline() {
-    let output = run_case("identifier-slash-and-terminal-newline.yaml");
+    let output = run_case_file("identifier-slash-and-terminal-newline.yaml");
     let urls = &output["scenarios"][0]["urls"];
     assert_eq!(urls[0], json!({"ok": false, "status": 401_i32}));
     assert_eq!(urls[1], json!({"ok": false, "status": 401_i32}));
@@ -101,7 +102,7 @@ fn identifiers_are_checked_and_keep_one_terminal_newline() {
 
 #[test]
 fn an_audience_keeps_only_the_scheme_and_netloc() {
-    let output = run_case("audience-removes-path-and-query.yaml");
+    let output = run_case_file("audience-removes-path-and-query.yaml");
     assert_eq!(
         output["scenarios"][0]["audiences"],
         json!([
@@ -122,7 +123,7 @@ fn an_audience_keeps_only_the_scheme_and_netloc() {
 
 #[test]
 fn bool_settings_keep_their_original_string_form() {
-    let output = run_case("bool-aliases-and-original-ca-path.yaml");
+    let output = run_case_file("bool-aliases-and-original-ca-path.yaml");
     let settings = &output["scenarios"][0]["settings"];
     assert_eq!(
         settings[0],
@@ -152,7 +153,7 @@ fn bool_settings_keep_their_original_string_form() {
 
 #[test]
 fn the_option_list_leads_with_the_vertex_names_and_the_body_drops_routing_fields() {
-    let output = run_case("prefix-and-routing-field-removal.yaml");
+    let output = run_case_file("prefix-and-routing-field-removal.yaml");
     let supported = &output["scenarios"][0]["supported"];
     assert_eq!(supported[0][0], "vertex_project");
     assert_eq!(supported[0][1], "vertex_location");
