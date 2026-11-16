@@ -16,7 +16,7 @@ use betterlite_provider::openai_resource_dispatch::containers::{
     Call as ContainerCall, Dispatch as ContainerDispatch, Outcome as ContainerOutcome,
 };
 use betterlite_provider::openai_resource_dispatch::evals::{
-    Call as EvalsCall, Dispatch as EvalsDispatch, EvalCall, Outcome as EvalsOutcome,
+    Call as EvalsCall, Dispatch as EvalsDispatch, IdCall, Outcome as EvalsOutcome,
 };
 use betterlite_provider::openai_resource_dispatch::vector_stores::{
     Call as VectorCall, Dispatch as VectorDispatch, Outcome as VectorOutcome,
@@ -87,7 +87,7 @@ pub(super) async fn evals_get(case: &EvalsGet) -> HelperResult {
         litellm_params: &litellm_params,
         headers: &request_headers,
     };
-    let call = EvalsCall::Eval(EvalCall::Get {
+    let call = EvalsCall::ById(IdCall::GetEval {
         eval_id: &case.eval_id,
         api_base: &case.api_base,
     });

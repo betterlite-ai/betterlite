@@ -10,7 +10,7 @@ use betterlite_openai::evals::types::{
 use betterlite_openai::openai_base_config::{Headers, Object};
 
 use super::fixture::{evals_config, object};
-use crate::openai_resource_dispatch::evals::{Call, Dispatch, EvalCall, Outcome, RunCall, RunId};
+use crate::openai_resource_dispatch::evals::{Call, Dispatch, IdCall, Outcome, PayloadCall, RunId};
 use crate::openai_resource_dispatch::{
     OpenAiResourceError, OpenAiResourceOperation, OpenAiResourceResult, dispatch,
 };
@@ -97,8 +97,8 @@ fn create_data() -> CreateEvalRequest {
     }
 }
 
-fn get(eval_id: &'static str) -> EvalCall<'static> {
-    EvalCall::Get {
+fn get(eval_id: &'static str) -> IdCall<'static> {
+    IdCall::GetEval {
         eval_id,
         api_base: API_BASE,
     }
@@ -112,10 +112,10 @@ fn run_id() -> RunId<'static> {
     }
 }
 
-async fn eval_rows() {
+async fn payload_rows() {
     let data = create_data();
     let created = r#"{"name":"smoke","data_source_config":{"type":"custom","item_schema":{"type":"object"},"include_sample_schema":true},"testing_criteria":[{"type":"llm_as_judge","model":"gpt-test"}]}"#;
-    let create = Call::Eval(EvalCall::Create(&data));
+    let create = Call::Payload(PayloadCall::CreateEval(&data));
     row(create, Expected::new(None, false, Some(created))).await;
     let listing = ListEvalsParams {
         limit: Some(3),
@@ -126,30 +126,55 @@ async fn eval_rows() {
     };
     let listed = r#"{"limit":3,"after":"eval_0","order":"desc","order_by":"updated_at"}"#;
     let list_url = Some("https://api.evals.test/v1/evals");
-    let list = Call::Eval(EvalCall::List(&listing));
+    let list = Call::Payload(PayloadCall::ListEvals(&listing));
     row(list, Expected::new(list_url, false, Some(listed))).await;
-    let fetch = Call::Eval(get("eval_1"));
+    let run_data = CreateRunRequest {
+        data_source: object(r#"{"type":"completions"}"#),
+        name: Some(String::from("nightly")),
+        metadata: None,
+    };
+    let run_body = r#"{"data_source":{"type":"completions"},"name":"nightly"}"#;
+    let create_run = Call::Payload(PayloadCall::CreateRun {
+        eval_id: "eval_1",
+        request: &run_data,
+    });
+    let expected = Expected::new(Some(RUNS_URL), false, Some(run_body));
+    row(create_run, expected).await;
+    let run_listing = ListRunsParams {
+        limit: Some(2),
+        after: None,
+        before: Some(String::from("run_0")),
+        order: Some(EvalOrder::Asc),
+    };
+    let run_listed = r#"{"limit":2,"before":"run_0","order":"asc"}"#;
+    let list_runs = Call::Payload(PayloadCall::ListRuns {
+        eval_id: "eval_1",
+        params: &run_listing,
+    });
+    let expected = Expected::new(Some(RUNS_URL), false, Some(run_listed));
+    row(list_runs, expected).await;
+}
+
+async fn eval_id_rows() {
+    let fetch = Call::ById(get("eval_1"));
     row(fetch, Expected::new(Some(EVAL_URL), true, None)).await;
-    let delete = Call::Eval(EvalCall::Delete {
+    let delete = Call::ById(IdCall::DeleteEval {
         eval_id: "eval_1",
         api_base: API_BASE,
     });
     row(delete, Expected::new(Some(EVAL_URL), true, None)).await;
-}
-
-async fn eval_body_rows() {
     let update = UpdateEvalRequest {
         name: Some(String::from("renamed")),
         metadata: Some(object(r#"{"team":"core"}"#)),
     };
     let renamed = r#"{"name":"renamed","metadata":{"team":"core"}}"#;
-    let change = Call::Eval(EvalCall::Update {
+    let change = Call::ById(IdCall::UpdateEval {
         eval_id: "eval_1",
         request: &update,
         api_base: API_BASE,
     });
     row(change, Expected::new(Some(EVAL_URL), true, Some(renamed))).await;
-    let cancel = Call::Eval(EvalCall::Cancel {
+    let cancel = Call::ById(IdCall::CancelEval {
         eval_id: "eval_1",
         api_base: API_BASE,
     });
@@ -157,44 +182,18 @@ async fn eval_body_rows() {
     row(cancel, Expected::new(cancel_url, true, Some("{}"))).await;
 }
 
-async fn run_rows() {
-    let data = CreateRunRequest {
-        data_source: object(r#"{"type":"completions"}"#),
-        name: Some(String::from("nightly")),
-        metadata: None,
-    };
-    let created = r#"{"data_source":{"type":"completions"},"name":"nightly"}"#;
-    let create = Call::Run(RunCall::Create {
-        eval_id: "eval_1",
-        request: &data,
-    });
-    row(create, Expected::new(Some(RUNS_URL), false, Some(created))).await;
-    let listing = ListRunsParams {
-        limit: Some(2),
-        after: None,
-        before: Some(String::from("run_0")),
-        order: Some(EvalOrder::Asc),
-    };
-    let listed = r#"{"limit":2,"before":"run_0","order":"asc"}"#;
-    let list = Call::Run(RunCall::List {
-        eval_id: "eval_1",
-        params: &listing,
-    });
-    row(list, Expected::new(Some(RUNS_URL), false, Some(listed))).await;
-}
-
-async fn run_path_rows() {
-    let fetch = Call::Run(RunCall::Get(run_id()));
+async fn run_id_rows() {
+    let fetch = Call::ById(IdCall::GetRun(run_id()));
     row(fetch, Expected::new(Some(RUN_URL), true, None)).await;
-    let delete = Call::Run(RunCall::Delete(run_id()));
+    let delete = Call::ById(IdCall::DeleteRun(run_id()));
     row(delete, Expected::new(Some(RUN_URL), true, Some("{}"))).await;
-    let cancel = Call::Run(RunCall::Cancel(run_id()));
+    let cancel = Call::ById(IdCall::CancelRun(run_id()));
     let cancel_url = Some("https://api.evals.test/v1/evals/eval_1/runs/run_1/cancel");
     row(cancel, Expected::new(cancel_url, true, Some("{}"))).await;
 }
 
 async fn error_row() {
-    let result = run(Call::Eval(get(".."))).await;
+    let result = run(Call::ById(get(".."))).await;
     let Err(error) = result else {
         panic!("a dot eval id is a leaf error");
     };
@@ -205,9 +204,8 @@ async fn error_row() {
 }
 
 pub(crate) async fn check() {
-    eval_rows().await;
-    eval_body_rows().await;
-    run_rows().await;
-    run_path_rows().await;
+    payload_rows().await;
+    eval_id_rows().await;
+    run_id_rows().await;
     error_row().await;
 }

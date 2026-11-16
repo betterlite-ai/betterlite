@@ -73,7 +73,7 @@ impl Dispatch<'_> {
             Call::Delete { id, api_base } => {
                 Outcome::Request(config.transform_container_delete_request(id, api_base, context)?)
             }
-            Call::File(file) => file_call(config, context, file)?,
+            Call::File(file) => file_call(config, context, &file)?,
         })
     }
 }
@@ -81,7 +81,7 @@ impl Dispatch<'_> {
 fn file_call(
     config: &dyn BaseContainerConfig,
     context: ContainerRequestContext<'_>,
-    call: FileCall<'_>,
+    call: &FileCall<'_>,
 ) -> Result<Outcome, ContainerError> {
     Ok(match call {
         FileCall::List {
@@ -92,7 +92,7 @@ fn file_call(
             container_id,
             api_base,
             context,
-            &query,
+            query,
         )?),
         FileCall::Content {
             container_id,

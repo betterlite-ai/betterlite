@@ -55,15 +55,19 @@ fn files_client(case: &FilesCreate) -> Result<FilesClient, Box<HelperError>> {
     })
 }
 
-pub(super) async fn files_create(case: &FilesCreate) -> HelperResult {
-    let client = files_client(case)?;
-    let api = FilesApi {
+fn files_api(case: &FilesCreate) -> FilesApi<Fixture> {
+    FilesApi {
         transport: Fixture {
             status: case.status,
             body: case.reply.to_string().into_bytes(),
         },
         boundaries: || Uuid::from_u128(1),
-    };
+    }
+}
+
+pub(super) async fn files_create(case: &FilesCreate) -> HelperResult {
+    let client = files_client(case)?;
+    let api = files_api(case);
     let data = file_create(case);
     let call = FilesDispatch {
         api: &api,

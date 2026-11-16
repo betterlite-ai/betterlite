@@ -333,11 +333,17 @@ pub(crate) fn object(json: &str) -> Object {
     serde_json::from_str(json).unwrap()
 }
 
-pub(crate) fn parse<T: DeserializeOwned>(json: &str) -> T {
+pub(crate) fn parse<T>(json: &str) -> T
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(json).unwrap()
 }
 
-pub(crate) fn assert_json<T: DeserializeOwned + PartialEq + Debug>(actual: &T, json: &str) {
+pub(crate) fn assert_json<T>(actual: &T, json: &str)
+where
+    T: DeserializeOwned + PartialEq + Debug,
+{
     assert_eq!(*actual, parse::<T>(json));
 }
 

@@ -37,19 +37,6 @@ impl Fixture {
             message: String::from(FAILURE),
         })
     }
-
-    fn job_answer(&self) -> Result<Vec<u8>, JobSdkError> {
-        match self.status {
-            200..=299 => Ok(self.body.clone()),
-            status => Err(JobSdkError {
-                status,
-                error_type: None,
-                param: None,
-                code: None,
-                message: String::from(FAILURE),
-            }),
-        }
-    }
 }
 
 impl FileTransport for Fixture {
@@ -123,7 +110,13 @@ impl JobsApi for Fixture {
     }
 
     fn create(&self, _data: &FineTuneCreate) -> Result<Vec<u8>, JobSdkError> {
-        self.job_answer()
+        self.answer().map_err(|_failure| JobSdkError {
+            status: self.status,
+            error_type: None,
+            param: None,
+            code: None,
+            message: String::from(FAILURE),
+        })
     }
 
     fn list(&self, _after: Option<&str>, _limit: Option<i64>) -> Result<Vec<u8>, JobSdkError> {

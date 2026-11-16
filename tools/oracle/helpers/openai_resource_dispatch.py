@@ -126,18 +126,15 @@ def files_create(case: FilesCase) -> JsonValue:
     return {"result": JSON.validate_json(reply.model_dump_json(exclude_none=True))}
 
 
-def batches_create(case: BatchesCase) -> JsonValue:
+def sdk_create(case: BatchesCase | FineTuningCase) -> JsonValue:
     client = async_client(case["api_base"], Answer(case["status"], case["reply"]))
-    batch = asyncio.run(
-        OpenAIBatchesAPI().acreate_batch(
-            create_batch_data=case["create"], openai_client=client
+    if case["case"] == "batches_create":
+        batch = asyncio.run(
+            OpenAIBatchesAPI().acreate_batch(
+                create_batch_data=case["create"], openai_client=client
+            )
         )
-    )
-    return {"result": JSON.validate_json(batch.model_dump_json(include=BATCH_FIELDS))}
-
-
-def fine_tuning_create(case: FineTuningCase) -> JsonValue:
-    client = async_client(case["api_base"], Answer(case["status"], case["reply"]))
+        return {"result": JSON.validate_json(batch.model_dump_json(include=BATCH_FIELDS))}
     job = asyncio.run(
         OpenAIFineTuningAPI().acreate_fine_tuning_job(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L95
             create_fine_tuning_job_data=case["create"], openai_client=client
@@ -187,10 +184,8 @@ def run(input_value: Input) -> JsonValue:
     match input_value["case"]:
         case "files_create":
             return files_create(input_value)
-        case "batches_create":
-            return batches_create(input_value)
-        case "fine_tuning_create":
-            return fine_tuning_create(input_value)
+        case "batches_create" | "fine_tuning_create":
+            return sdk_create(input_value)
         case "containers_list":
             return containers_list(input_value)
         case "evals_get":
