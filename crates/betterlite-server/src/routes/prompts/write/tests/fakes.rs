@@ -1,8 +1,7 @@
 #![cfg(test)]
 
 use std::future::{Future, ready};
-use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -33,6 +32,7 @@ use super::super::state::PromptWriteState;
 use crate::auth::auth_identity::AuthContext;
 
 pub(super) type SharedRows = Arc<StdMutex<Vec<PromptRow>>>;
+pub(super) type SharedCalls = Arc<StdMutex<Vec<&'static str>>>;
 
 #[derive(Debug, Error)]
 #[error("the fake table failed")]
@@ -43,6 +43,16 @@ pub(super) struct FakeTable {
     fail_deletes: bool,
 }
 
+impl FakeTable {
+    fn with_rows<Value, Apply>(&self, apply: Apply) -> Value
+    where
+        Apply: FnOnce(&mut Vec<PromptRow>) -> Value,
+    {
+        let mut rows = self.rows.lock().expect("rows");
+        apply(&mut rows)
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum TableMode {
     Absent,
@@ -50,18 +60,17 @@ pub(super) enum TableMode {
     FailingDeletes,
 }
 
-#[derive(Default)]
 pub(super) struct RecordingCallbacks {
-    pub(super) calls: Vec<&'static str>,
+    pub(super) calls: SharedCalls,
 }
 
 impl PromptCallbackManager for RecordingCallbacks {
     fn add_litellm_callback(&mut self, _callback: &PromptManagementClient) {
-        self.calls.push("added");
+        self.calls.lock().expect("calls").push("added");
     }
 
     fn remove_callback_from_all_lists(&mut self, _callback: &PromptManagementClient) {
-        self.calls.push("removed");
+        self.calls.lock().expect("calls").push("removed");
     }
 }
 
@@ -110,8 +119,7 @@ impl PromptTableActions for FakeTable {
         &self,
         data: PromptRowData,
     ) -> impl Future<Output = Result<PromptRow, FakeFailure>> + Send {
-        let row = {
-            let mut rows = self.rows.lock().expect("rows");
+        let row = self.with_rows(|rows| {
             let row = PromptRow {
                 id: format!("row-{}", rows.len().saturating_add(1)),
                 prompt_id: data.prompt_id,
@@ -125,7 +133,7 @@ impl PromptTableActions for FakeTable {
             };
             rows.push(row.clone());
             row
-        };
+        });
         ready(Ok(row))
     }
 
@@ -134,19 +142,16 @@ impl PromptTableActions for FakeTable {
         filter: PromptRowFilter,
         data: PromptRowUpdate,
     ) -> impl Future<Output = Result<Option<PromptRow>, FakeFailure>> + Send {
-        let updated = {
-            let mut rows = self.rows.lock().expect("rows");
+        let updated = self.with_rows(|rows| {
             rows.iter_mut()
                 .find(|row| row_matches(row, &filter))
                 .map(|row| {
                     row.litellm_params = data.litellm_params;
                     row.prompt_info = Some(data.prompt_info);
-                    if data.created_by.is_some() {
-                        row.created_by = data.created_by;
-                    }
+                    row.created_by = data.created_by.or(row.created_by.take());
                     row.clone()
                 })
-        };
+        });
         ready(Ok(updated))
     }
 
@@ -157,13 +162,12 @@ impl PromptTableActions for FakeTable {
         if self.fail_deletes {
             return ready(Err(FakeFailure));
         }
-        let removed = {
-            let mut rows = self.rows.lock().expect("rows");
+        let removed = self.with_rows(|rows| {
             let (removed, kept): (Vec<PromptRow>, Vec<PromptRow>) =
                 rows.drain(..).partition(|row| row_matches(row, &filter));
             *rows = kept;
             removed
-        };
+        });
         ready(Ok(u64::try_from(removed.len()).expect("count")))
     }
 }
@@ -211,7 +215,8 @@ pub(super) fn proxy_admin() -> AuthContext {
 pub(super) struct Harness {
     pub(super) rows: SharedRows,
     pub(super) registry: Arc<Mutex<InMemoryPromptRegistry>>,
-    pub(super) callbacks: Arc<Mutex<RecordingCallbacks>>,
+    calls: SharedCalls,
+    callbacks: Arc<Mutex<dyn PromptCallbackManager + Send>>,
     router: Router,
 }
 
@@ -219,7 +224,11 @@ impl Harness {
     pub(super) fn new(context: AuthContext, mode: TableMode) -> Self {
         let rows = SharedRows::default();
         let registry = Arc::new(Mutex::new(InMemoryPromptRegistry::default()));
-        let callbacks = Arc::new(Mutex::new(RecordingCallbacks::default()));
+        let calls = SharedCalls::default();
+        let callbacks: Arc<Mutex<dyn PromptCallbackManager + Send>> =
+            Arc::new(Mutex::new(RecordingCallbacks {
+                calls: Arc::clone(&calls),
+            }));
         let table = match mode {
             TableMode::Absent => None,
             TableMode::Working => Some(FakeTable {
@@ -231,18 +240,22 @@ impl Harness {
                 fail_deletes: true,
             }),
         };
-        let dyn_callbacks: Arc<Mutex<dyn PromptCallbackManager + Send>> = Arc::clone(&callbacks);
         let state = PromptWriteState {
             table,
             registry: Arc::clone(&registry),
-            callbacks: dyn_callbacks,
+            callbacks: Arc::clone(&callbacks),
         };
         Self {
             rows,
             registry,
+            calls,
             callbacks,
             router: routes(Arc::new(state)).layer(Extension(context)),
         }
+    }
+
+    pub(super) fn recorded_calls(&self) -> Vec<&'static str> {
+        self.calls.lock().expect("calls").clone()
     }
 
     pub(super) async fn send(&self, method: Method, uri: &str, body: &str) -> (StatusCode, String) {
@@ -259,14 +272,14 @@ impl Harness {
             .await
             .expect("response");
         let status = response.status();
-        let bytes = to_bytes(response.into_body(), 1_048_576)
+        let bytes = to_bytes(response.into_body(), 0x0010_0000)
             .await
             .expect("body");
         (status, String::from_utf8(bytes.to_vec()).expect("utf8"))
     }
 
     pub(super) fn seed_row(&self, prompt_id: &str, version: i64, environment: &str) {
-        self.seed_row_with(prompt_id, version, environment, "old", "db");
+        self.seed_row_with(prompt_id, version, environment, "old");
     }
 
     pub(super) fn seed_row_with(
@@ -275,12 +288,7 @@ impl Harness {
         version: i64,
         environment: &str,
         content: &str,
-        prompt_type: &str,
     ) {
-        let params = format!(
-            r#"{{"prompt_id":"{prompt_id}","prompt_integration":"dotprompt","dotprompt_content":"{content}"}}"#
-        );
-        let info = format!(r#"{{"prompt_type":"{prompt_type}","environment":"{environment}"}}"#);
         let mut rows = self.rows.lock().expect("rows");
         let id = format!("seed-{}", rows.len().saturating_add(1));
         rows.push(PromptRow {
@@ -291,8 +299,8 @@ impl Harness {
             created_by: Some("seeder".to_owned()),
             created_at: fixed_time(),
             updated_at: fixed_time(),
-            litellm_params: PromptRowJson::Text(params),
-            prompt_info: Some(PromptRowJson::Text(info)),
+            litellm_params: PromptRowJson::Text(params_json(prompt_id, content)),
+            prompt_info: Some(PromptRowJson::Text(info_json("db", environment))),
         });
     }
 
@@ -303,15 +311,29 @@ impl Harness {
         environment: &str,
         prompt_type: &str,
     ) {
-        let spec: PromptSpec = serde_json::from_str(&format!(
-            r#"{{"prompt_id":"{prompt_id}.v{version}","litellm_params":{{"prompt_id":"{prompt_id}","prompt_integration":"dotprompt","dotprompt_content":"old"}},"prompt_info":{{"prompt_type":"{prompt_type}","environment":"{environment}"}},"environment":"{environment}","version":{version}}}"#
-        ))
-        .expect("spec");
+        let spec_json = format!(
+            r#"{{"prompt_id":"{prompt_id}.v{version}","litellm_params":{},"prompt_info":{},"environment":"{environment}","version":{version}}}"#,
+            params_json(prompt_id, "old"),
+            info_json(prompt_type, environment)
+        );
+        let spec: PromptSpec = serde_json::from_str(&spec_json).expect("spec");
         let mut registry = self.registry.lock().await;
         let mut callbacks = self.callbacks.lock().await;
         registry
             .initialize_prompt(&spec, None, &mut *callbacks)
             .expect("registered");
-        callbacks.calls.clear();
+        drop(callbacks);
+        drop(registry);
+        self.calls.lock().expect("calls").clear();
     }
+}
+
+fn params_json(prompt_id: &str, content: &str) -> String {
+    format!(
+        r#"{{"prompt_id":"{prompt_id}","prompt_integration":"dotprompt","dotprompt_content":"{content}"}}"#
+    )
+}
+
+fn info_json(prompt_type: &str, environment: &str) -> String {
+    format!(r#"{{"prompt_type":"{prompt_type}","environment":"{environment}"}}"#)
 }

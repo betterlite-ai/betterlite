@@ -206,13 +206,13 @@ async fn oneshot_create_allocates_version_one_and_initializes_the_registry() {
     assert_eq!(created.created_by.as_deref(), Some("default_user_id"));
     assert_eq!(created.litellm_params.prompt_integration, "dotprompt");
     assert_eq!(created.prompt_info.prompt_type, "db");
+    assert_eq!(harness.recorded_calls(), vec!["added"]);
     let registry = harness.registry.lock().await;
     assert!(
         registry
             .in_memory_prompts
             .contains_key("greeting.v1::development")
     );
-    assert_eq!(harness.callbacks.lock().await.calls, vec!["added"]);
 }
 
 #[tokio::test]
@@ -414,9 +414,9 @@ async fn oneshot_patch_targets_one_row_by_version_and_changes_no_other(
     #[case] patched_id: &str,
 ) {
     let harness = Harness::new(master_key(), TableMode::Working);
-    for version in 1..=3 {
-        harness.seed_row("greeting", version, "development");
-    }
+    harness.seed_row("greeting", 1, "development");
+    harness.seed_row("greeting", 2, "development");
+    harness.seed_row("greeting", 3, "development");
     let uri = format!("/prompts/{path_id}");
     let body = r#"{"litellm_params":{"prompt_integration":"dotprompt","dotprompt_content":"new"}}"#;
     let (status, response) = harness.send(Method::PATCH, &uri, body).await;
@@ -435,7 +435,7 @@ async fn oneshot_patch_targets_one_row_by_version_and_changes_no_other(
 #[tokio::test]
 async fn oneshot_patch_keeps_the_stored_value_of_a_field_the_request_leaves_out() {
     let harness = Harness::new(proxy_admin(), TableMode::Working);
-    harness.seed_row_with("greeting", 1, "development", "stored", "db");
+    harness.seed_row_with("greeting", 1, "development", "stored");
     let info = r#"{"prompt_info":{"prompt_type":"db","environment":"development","owner":"team"}}"#;
     let (_, response) = harness.send(Method::PATCH, "/prompts/greeting", info).await;
     let patched = spec(&response);
@@ -491,6 +491,7 @@ async fn oneshot_patch_reloads_the_prompt_in_the_registry() {
         r#"{"litellm_params":{"prompt_integration":"dotprompt","dotprompt_content":"reloaded"}}"#;
     let (status, _) = harness.send(Method::PATCH, "/prompts/greeting", body).await;
     assert_eq!(status, StatusCode::OK);
+    assert_eq!(harness.recorded_calls(), vec!["removed", "added"]);
     let registry = harness.registry.lock().await;
     let reloaded = registry
         .in_memory_prompts
@@ -499,10 +500,6 @@ async fn oneshot_patch_reloads_the_prompt_in_the_registry() {
     assert_eq!(
         reloaded.litellm_params.dotprompt_content.as_deref(),
         Some("reloaded")
-    );
-    assert_eq!(
-        harness.callbacks.lock().await.calls,
-        vec!["removed", "added"]
     );
 }
 
@@ -569,10 +566,7 @@ async fn oneshot_delete_removes_every_row_of_the_base_id_and_syncs_the_registry(
     assert_eq!(rows[0].prompt_id, "other");
     drop(rows);
     assert!(harness.registry.lock().await.in_memory_prompts.is_empty());
-    assert_eq!(
-        harness.callbacks.lock().await.calls,
-        vec!["removed", "removed"]
-    );
+    assert_eq!(harness.recorded_calls(), vec!["removed", "removed"]);
 }
 
 #[tokio::test]
