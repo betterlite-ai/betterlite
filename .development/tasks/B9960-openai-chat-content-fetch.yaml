@@ -1,0 +1,290 @@
+id: B9960
+title: OpenAI chat content fetches request media
+description: >-
+  Fix the no-fetch deviation B503 recorded. ChatContent::transform in
+  crates/betterlite-openai/src/chat_content.rs reaches messages::transform_user_content, which asks
+  UrlDownloader::download for a user-message file part whose file_id starts with http://, https:// or www.;
+  the six modules that build a ChatContent on main pass RefuseDownloads, which answers
+  ImageFetchError::Disabled, so a request LiteLLM serves by downloading the PDF gets a 400 instead. LiteLLM
+  downloads there: _handle_pdf_url (gpt_transformation.py L240-L248) calls convert_url_to_base64,
+  _async_handle_pdf_url (L250-L257) calls async_convert_url_to_base64, and both _transform_messages variants
+  reach them for user messages only (L350-L382). convert_url_to_base64 answers a data: URL unchanged,
+  honors MAX_IMAGE_URL_DOWNLOAD_SIZE_MB (0 disables), serves a cached result, retries three times and
+  returns a data:<type>;base64,... string (image_handling.py L84-L139). Max decided on 2026-10-31 that
+  request media URLs are fetched the way LiteLLM fetches them through B5082's checked fetch, so this path
+  uses B5083's Fetcher through B183's betterlite_prompts::media::inline::RemoteMediaFetcher seam. No
+  second downloader.
+
+
+  Rust changes. The skeleton creates crates/betterlite-openai/src/chat_content/media.rs empty and adds
+  `pub mod media;` to crates/betterlite-openai/src/chat_content.rs; write the module there. It holds
+  `pub struct FetchedMedia { data: BTreeMap<String, String> }` with `impl UrlDownloader for FetchedMedia`:
+  download answers the stored data URL for a URL it holds and `ImageFetchError::Disabled { url }` for one it
+  does not, so a caller that falls back to the plain transform fails a URL it never prefetched instead of
+  sending a bare file_id. A private `RecordDownloads { urls: RefCell<Vec<String>> }` implements
+  UrlDownloader: it pushes the URL and answers `Ok(String::new())`. `impl RemoteMediaFetcher for
+  RefuseDownloads` answers `ImageFetchError::Disabled { url }` from convert_url and from convert_urls for the
+  first URL, and `Ok(Vec::new())` from convert_urls for an empty list; use `std::future::ready` so neither
+  method needs a runtime. Then `impl ChatContent<'_>` in the same file, with two methods.
+
+
+  `pub async fn fetch_media<Source>(&self, fetcher: &Source) -> Result<FetchedMedia, ChatContentError>
+  where Source: RemoteMediaFetcher + Sync` builds a ChatContent from the same fields with
+  `downloads: &RecordDownloads`, calls the private transformed_messages() on it, takes the recorded URLs in
+  first-use order, and for each URL calls `fetcher.convert_url(&url).await?` and inserts the answer into a
+  `BTreeMap<String, String>`. If the recording pass returned an error, fetch the recorded URLs first and
+  return that error after they all succeed: LiteLLM's loop downloads a URL in an earlier content item before
+  a later item raises its missing-file error, and it fails on the download error when the download itself
+  fails first. Return `FetchedMedia { data }`. The receiver's downloads field is not used, so a caller keeps
+  passing RefuseDownloads in the struct while it awaits the fetcher.
+
+
+  `pub async fn transform_with_media<Source>(&self, mode: Mode, fetcher: &Source) ->
+  Result<TransformedRequest, ChatContentError> where Source: RemoteMediaFetcher + Sync` calls
+  `let media = self.fetch_media(fetcher).await?;`, builds a ChatContent from the same fields with
+  `downloads: &media`, calls `transform(mode)` on it and returns the result. The recording pass and the
+  replay are both pure message transforms, so the body is the one the plain transform builds with every URL
+  already in hand. Keep media.rs within the 300-line source limit. No Cargo.toml change is needed:
+  betterlite-openai already depends on betterlite-prompts, and its tests already run under tokio.
+
+
+  No other production file changes. UrlDownloader, RefuseDownloads, transform and every adapter signature
+  stay as they are; RefuseDownloads stays because six provider modules still construct it
+  (crates/betterlite-azure/src/chat_params/o_series.rs,
+  crates/betterlite-openai/src/agent_and_diffusion_hosts/heroku.rs,
+  crates/betterlite-openai/src/deepseek_chat/request.rs,
+  crates/betterlite-openai/src/huggingface_chat/request.rs,
+  crates/betterlite-openai/src/sagemaker_chat/request.rs,
+  crates/betterlite-vertex/src/gemma_call/execute.rs).
+
+
+  Tests. Add crates/betterlite-openai/src/chat_content/media/tests.rs, declared by `#[cfg(test)] mod
+  tests;` in media.rs. A test MapFetcher implements RemoteMediaFetcher over a `BTreeMap<String, String>`,
+  answers `ImageFetchError::Attempts` for a URL it lacks, and records every URL in a `Mutex<Vec<String>>`; a
+  fixture builds a ChatContent from a JSON message list (the model gpt-4o, provider openai, empty
+  environment, downloads: &RefuseDownloads) and has fetch_media and transform_with_media helpers. Tests:
+  fetches_pdf_url_for_user_file_part (the file part becomes file_data with filename my_file.pdf and no
+  file_id, one recorded call, the source messages unchanged); fetches_for_http_and_www_prefixes (file_ids
+  under https://, http:// and www. each fetch); fetches_for_every_mode (an rstest over Mode::Sync,
+  Mode::AsyncBaseClass and Mode::AsyncSubclass fetches the same body and keeps max_retries only in
+  AsyncBaseClass); refusing_fetcher_returns_the_disabled_error (RefuseDownloads through
+  transform_with_media answers 400 with the MAX_IMAGE_URL_DOWNLOAD_SIZE_MB=0 text);
+  missing_url_returns_the_fetch_error (a map without the URL answers 400 with the after 3 attempts text);
+  non_pdf_parts_never_fetch (image_url string and object descriptors, a data: file_id, an inline file_data
+  part and an empty file object record no call); other_roles_never_fetch (a system message and an assistant
+  message with a file URL record no call); missing_file_after_url_fetches_first (user content with a URL
+  file part then a type: file part without file records one call and answers the 400 missing-file error);
+  fetched_media_serves_the_plain_transform (fetch_media then a plain transform with downloads: &media
+  builds the same body as transform_with_media).
+
+
+  Oracle helper. The skeleton registers this task's helper operation b9960 in the openai group and adds
+  tools/oracle/src/helpers/openai/b9960.rs and tools/oracle/helpers/b9960.py to the scope; replace the stub
+  Op in the Rust file with the typed input and impl Helper, and write run in the Python file. Its
+  transform_requests input holds requests: {model, messages, optional_params, provider, api_base,
+  global_api_base, system_messages_first, environment, mode, urls, refuse}; urls maps a URL to the data URL
+  the fetcher answers and refuse (default false) selects RefuseDownloads. The Rust adapter builds the
+  ChatContent from the request's fields with downloads: &RefuseDownloads (the new methods use the fetcher
+  argument), runs transform_with_media on a current-thread tokio runtime with a map fetcher
+  (ImageFetchError::Attempts for a URL the map lacks) or RefuseDownloads, and answers {ok: true, value:
+  body} or {ok: false, status} per request. The Python adapter sets
+  litellm.openai_system_messages_first, litellm.api_base and OPENAI_BASE_URL/OPENAI_API_BASE the way
+  openai_chat_content.py does, assigns a typed callable object holding urls to both
+  litellm.llms.openai.chat.gpt_transformation.convert_url_to_base64 and .async_convert_url_to_base64,
+  answers the mapped data URL, raises litellm.BadRequestError with status 400 for a missing URL or a
+  refused one, and calls OpenAIGPTConfig().transform_request for sync, the `_is_base_class = True`
+  subclass for async_base_class, and OpenAIGPTConfig().async_transform_request for async_subclass under
+  asyncio.run, catching BadRequestError for {ok: false, status}. Patch the names in gpt_transformation's
+  namespace, not in image_handling: gpt_transformation imported both names at module load and resolves
+  them at call time. The two namespace assignments are the only lines expected to carry a suppression,
+  each with the pinned image_handling link; type the config through a local Protocol so the transform
+  calls need none. Cases: request-media-sync, request-media-async, request-media-failure and
+  request-media-untouched under tools/oracle/cases/helpers/openai-chat-content-fetch. Add the seed
+  tools/oracle/fuzz/corpus/helper_case/b9960-request-media-sync.yaml.
+
+
+  Deviations. Delete the first row, the no-fetch row, from docs/deviations/B503.yaml and leave the other
+  two as they are. Write docs/deviations/B9960.yaml with the row in deviations below. Size: about 130
+  changed production lines in betterlite-openai, about 220 lines across the two Rust and Python adapters,
+  and 10 lines in the deviation files; the tests and oracle cases sit outside the changed-line budget.
+scope:
+  paths:
+  - crates/betterlite-openai/src/chat_content/media.rs
+  - crates/betterlite-openai/src/chat_content/media/**
+  - docs/deviations/B503.yaml
+  - tools/oracle/cases/helpers/openai-chat-content-fetch/**
+  - tools/oracle/src/helpers/openai/b9960.rs
+  - tools/oracle/src/helpers/openai/b9960/**
+  - tools/oracle/helpers/b9960.py
+  - tools/oracle/helpers/b9960/**
+  - "tools/oracle/fuzz/corpus/helper_case/b9960-*"
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L233-L329
+  why: >-
+    contains_pdf_url, _handle_pdf_url and _async_handle_pdf_url, the two convert calls and the file
+    transform that puts file_data and filename in place.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L350-L382
+  why: _transform_messages, the user role and list content test, and the sync and async loops over content items.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L476-L548
+  why: transform_request and async_transform_request, the two entry points the oracle helper compares against.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L84-L139
+  why: >-
+    async_convert_url_to_base64 and convert_url_to_base64, the data: passthrough, MAX_IMAGE_URL_DOWNLOAD_SIZE_MB,
+    the cache, the three attempts and the data URL they return.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L138-L139
+  why: MAX_IMAGE_URL_DOWNLOAD_SIZE_MB, 50 MB by default and 0 disabling URL downloads.
+dod:
+- text: >-
+    A user-message file part whose file_id starts with https://, http:// or www. fetches through the
+    supplied fetcher and becomes file_data with filename my_file.pdf and no file_id, while image_url
+    descriptors, inline file_data, a data: file_id and non-user roles never fetch.
+  proof:
+  - media-fetch-tests
+  - oracle
+  - helper-python
+- text: >-
+    A refusing fetcher and a fetcher that lacks the URL end the transform with the ImageFetchError 400,
+    and a missing-file block after a URL fetches the URL before it reports the missing-file 400.
+  proof:
+  - media-fetch-tests
+  - oracle
+- text: >-
+    fetch_media plus a plain transform with the returned FetchedMedia builds the same body as
+    transform_with_media, so an adapter that already takes a UrlDownloader can adopt the downloader
+    without a signature change.
+  proof:
+  - media-fetch-tests
+- text: >-
+    The oracle compares a fetched sync request, both async modes, a refused fetch, a missing fetch and the
+    untouched parts against LiteLLM's own transform_request and async_transform_request under the same URL
+    answers.
+  proof:
+  - oracle
+  - helper-python
+  - helper-cases
+- text: >-
+    docs/deviations/B503.yaml no longer says request file/PDF URLs are never fetched, and
+    docs/deviations/B9960.yaml records the callers that still do not pass a fetcher.
+  proof:
+  - deviation-row
+- text: >-
+    The b9960 seed parses through the shared HelperCase parser and replays in the corpus.
+  proof:
+  - helper-case-corpus
+checks:
+  optional: []
+  commands:
+  - id: media-fetch-tests
+    why: The new seam tests are missing, or a URL fetches where LiteLLM never fetches.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/src/chat_content/media/tests.rs)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^chat_content::media::tests::/)'
+  - id: helper-cases
+    why: No new helper case exists on this branch.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/openai-chat-content-fetch)"
+  - id: helper-python
+    why: The oracle adapters fail strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: The b9960 seed is missing or the shared helper corpus does not replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b9960-*")"
+      && grep -lq 'b9960' tools/oracle/fuzz/corpus/helper_case/b9960-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: deviation-row
+    why: The new deviation is missing or the old no-fetch row remains.
+    run: >-
+      grep -q -F 'gpt_transformation.py#L240-L248' docs/deviations/B9960.yaml && ! grep -q -F 'Request
+      file/PDF URLs are never fetched' docs/deviations/B503.yaml && grep -q -F 'A file content part whose
+      "file" field' docs/deviations/B503.yaml
+oracle_cases:
+- tools/oracle/cases/helpers/openai-chat-content-fetch/request-media-sync.yaml
+- tools/oracle/cases/helpers/openai-chat-content-fetch/request-media-async.yaml
+- tools/oracle/cases/helpers/openai-chat-content-fetch/request-media-failure.yaml
+- tools/oracle/cases/helpers/openai-chat-content-fetch/request-media-untouched.yaml
+deviations:
+- what: >-
+    The media-aware entry point exists, but ChatContent::transform is still synchronous and the six
+    provider modules that build a ChatContent on main pass RefuseDownloads, while the OpenAI chat route
+    builds its body from chat_fields without ChatContent. A request that reaches one of those paths with a
+    user-message file_id starting http://, https:// or www. still ends with the ImageFetchError 400 that says
+    downloads are disabled, where LiteLLM downloads the URL and sends file_data. A caller that awaits
+    ChatContent::transform_with_media, or prefetches with ChatContent::fetch_media and passes the returned
+    FetchedMedia to a plain transform, sends the fetched file_data.
+  why: >-
+    B9960 adds the downloader to the seam without changing UrlDownloader, transform or any adapter
+    signature, so the adapter tasks keep compiling. The OpenAI umbrella B024 and the provider umbrellas that
+    own the routes pass a B5083 Fetcher through transform_with_media or fetch_media in their own tasks.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L240-L248
+out_of_scope:
+- >-
+  B5083's Fetcher itself; the cache, the three attempts, the size cap, the total deadline, the SSRF
+  rejection and the data: passthrough are unchanged.
+- B5082's URL validation and redirect policy.
+- >-
+  Adapter adoption. The six modules listed in the description keep RefuseDownloads and their UrlDownloader
+  parameters; the adapter tasks that own them (B532, B1337, B1429, B1434, B5960, B5990) or the provider
+  umbrellas that compose them pass a Fetcher through transform_with_media or fetch_media in their own
+  tasks. The notes give the sentence B024 needs.
+- >-
+  The OpenAI chat route. B024 owns the OpenAI provider composition and
+  crates/betterlite-provider/src/openai_dispatch.rs; the body construction it calls sits in
+  crates/betterlite-provider/src/prepared/body.rs. This task changes no route and adds no HTTP oracle case.
+- >-
+  B503's remaining deviations: the typed missing-file 400 for a malformed file field and the non-object
+  tools entry.
+- >-
+  The gpt_transformation functions in the references stay B503's, and image_handling's
+  _process_image_response and the two convert functions stay B5083's; this task adds a seam, not a
+  transform rule.
+- The oracle registry files (tools/oracle/src/helpers/openai/lib.rs and tools/oracle/helpers/dispatch.py); the skeleton writes them.
+pitfalls:
+- The oracle helper for this task is pre-registered as b9960 in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/b9960.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b9960.py. The registry files (tools/oracle/src/helpers/openai/lib.rs and tools/oracle/helpers/dispatch.py) are not this task's to edit.
+- >-
+  Patch litellm.llms.openai.chat.gpt_transformation.convert_url_to_base64 and
+  .async_convert_url_to_base64, not the names in image_handling: gpt_transformation imported both names at
+  module load, so a patch on the source module never reaches _handle_pdf_url or _async_handle_pdf_url.
+- >-
+  The recording pass answers Ok(String::new()); passing the real fetcher there fetches every URL twice.
+- >-
+  contains_pdf_url checks only https://, http:// and www. prefixes, not a .pdf suffix; a data: file_id and a
+  bare file id never fetch.
+- >-
+  Only user messages with truthy list content transform (_transform_messages L362-L382); a system or
+  assistant message that carries a file URL must not reach the fetcher.
+- >-
+  A file object {} is falsy in _transform_content_item, so the whole file branch skips; an empty file
+  object must stay as it is and must not fetch.
+- >-
+  Keep the fetches sequential and in first-use order through convert_url; LiteLLM awaits each
+  _handle_pdf_url or _async_handle_pdf_url, so convert_urls and fetch_all are the wrong shape here.
+- >-
+  LiteLLM's async subclass path runs the async pass and then transform_request on the originals, so the
+  same URL can be converted twice before the body is built; the oracle compares the body, never the fetch
+  count.
+- >-
+  Delete the first row of docs/deviations/B503.yaml only; the typed missing-file 400 and the non-object
+  tools entry rows stay.
+- >-
+  RefuseDownloads must stay: six provider modules still construct it, and the plain transform keeps its
+  signature. The new methods take the fetcher as an argument and ignore the receiver's downloads field.
+- >-
+  The oracle Python probe must leave MAX_IMAGE_URL_DOWNLOAD_SIZE_MB alone for the mapped cases; the patched
+  callables answer the map, and the refusal case raises the 400 itself.
+- >-
+  The helper operation name b9960 is the skeleton's, not a name to choose; the seed names it as the variant
+  tag under call.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

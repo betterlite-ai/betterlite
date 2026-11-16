@@ -187,7 +187,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_resource_urls*")"
       && grep -lq 'azure_resource_urls' tools/oracle/fuzz/corpus/helper_case/azure_resource_urls* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_resource_urls$/)'
+      run --locked -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_resource_urls$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: credential-identity-isolation
     why: Distinct configured identities cannot share credentials, headers or cache entries.
