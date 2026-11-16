@@ -11,6 +11,8 @@ use super::support::{
     value,
 };
 use crate::noma_lifecycle::NomaGuardrail;
+use crate::noma_lifecycle::background::{check_background, create_background_noma_check};
+use crate::noma_lifecycle::hooks::ScanSubject;
 
 fn monitoring(api_base: &str) -> NomaGuardrail {
     let mut configured = params(api_base);
@@ -113,9 +115,13 @@ async fn the_user_message_background_check_logs_a_block_without_raising() {
     let log = CapturedLog::default();
     let _guard = set_default(log.subscriber(Level::ERROR));
     let mut request_data = data(USER_MESSAGES);
-    guardrail
-        .check_user_message_background(&mut request_data, &BTreeMap::new())
-        .await;
+    check_background(
+        &guardrail,
+        &mut request_data,
+        &BTreeMap::new(),
+        ScanSubject::UserMessage,
+    )
+    .await;
     assert_eq!(request_count(&mock), 1);
     assert!(
         log.text()
@@ -131,9 +137,13 @@ async fn the_response_background_check_scans_the_response_and_logs_a_failure() {
     let _guard = set_default(log.subscriber(Level::ERROR));
     let mut request_data = data(USER_MESSAGES);
     let mut response = value(MODEL_RESPONSE);
-    guardrail
-        .check_llm_response_background(&mut request_data, &mut response, &BTreeMap::new())
-        .await;
+    check_background(
+        &guardrail,
+        &mut request_data,
+        &BTreeMap::new(),
+        ScanSubject::LlmResponse(&mut response),
+    )
+    .await;
     assert_eq!(request_count(&mock), 1);
     assert_eq!(scanned_text(&mock, 0), "hello");
     assert!(log.text().contains("Noma background response check failed"));
@@ -146,9 +156,13 @@ async fn a_background_check_that_succeeds_logs_no_error() {
     let log = CapturedLog::default();
     let _guard = set_default(log.subscriber(Level::ERROR));
     let mut request_data = data(USER_MESSAGES);
-    guardrail
-        .check_user_message_background(&mut request_data, &BTreeMap::new())
-        .await;
+    check_background(
+        &guardrail,
+        &mut request_data,
+        &BTreeMap::new(),
+        ScanSubject::UserMessage,
+    )
+    .await;
     assert_eq!(request_count(&mock), 1);
     assert!(log.text().is_empty());
     assert_eq!(records(&request_data).len(), 1);
@@ -159,7 +173,7 @@ fn a_missing_runtime_is_logged_when_the_background_task_is_created() {
     let guardrail = build(&params("http://noma"));
     let log = CapturedLog::default();
     with_default(log.subscriber(Level::ERROR), || {
-        guardrail.create_background_noma_check(async {});
+        create_background_noma_check(&guardrail.tasks, async {});
     });
     assert!(log.text().contains("Failed to create background Noma task"));
 }

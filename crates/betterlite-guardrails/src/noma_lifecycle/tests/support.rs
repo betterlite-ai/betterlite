@@ -21,7 +21,10 @@ use tracing_subscriber::fmt;
 
 use crate::noma_lifecycle::config::{NomaDependencies, NomaParams};
 use crate::noma_lifecycle::error::NomaLifecycleError;
-use crate::noma_lifecycle::hooks::{PostCallHookInput, RequestHookInput};
+use crate::noma_lifecycle::hooks::{
+    PostCallHookInput, RequestHookInput, async_moderation_hook, async_post_call_success_hook,
+    async_pre_call_hook,
+};
 use crate::noma_lifecycle::{NomaGuardrail, RequestData};
 
 pub(crate) const SAFE_REPLY: &str =
@@ -64,8 +67,10 @@ pub(crate) async fn mock_noma(status: StatusCode, reply: &str) -> MockNoma {
 
 // The text of the one input item a scan sent
 pub(crate) fn scanned_text(mock: &MockNoma, index: usize) -> String {
-    let seen = mock.seen.lock().unwrap();
-    let body: GuardrailValue = serde_json::from_slice(&seen[index]).unwrap();
+    let body: GuardrailValue = {
+        let seen = mock.seen.lock().unwrap();
+        serde_json::from_slice(&seen[index]).unwrap()
+    };
     let GuardrailValue::Object(fields) = body else {
         panic!("the scan body is not an object");
     };
@@ -142,7 +147,9 @@ pub(crate) fn build_with(
     env: &BTreeMap<String, String>,
 ) -> Result<NomaGuardrail, NomaLifecycleError> {
     let dependencies = NomaDependencies {
-        client: base_builder().build().unwrap(),
+        client: base_builder()
+            .build()
+            .map_err(|source| NomaLifecycleError::Client { source })?,
         now: fixed_now,
         env,
         tasks: TaskTracker::new(),
@@ -155,33 +162,27 @@ pub(crate) fn build(configured: &NomaParams) -> NomaGuardrail {
     build_with(configured, &BTreeMap::new()).unwrap()
 }
 
-pub(crate) async fn pre_call(
-    guardrail: &NomaGuardrail,
-    request_data: &mut RequestData,
-    call_type: &str,
-) -> Result<(), NomaLifecycleError> {
-    let input = RequestHookInput {
-        user_auth: &BTreeMap::new(),
-        data: request_data,
-        call_type,
-        suppressed: &BTreeSet::new(),
+// the two request hooks differ only in the hook they call
+macro_rules! request_hook {
+    ($name:ident, $hook:path) => {
+        pub(crate) async fn $name(
+            guardrail: &NomaGuardrail,
+            request_data: &mut RequestData,
+            call_type: &str,
+        ) -> Result<(), NomaLifecycleError> {
+            let input = RequestHookInput {
+                user_auth: &BTreeMap::new(),
+                data: request_data,
+                call_type,
+                suppressed: &BTreeSet::new(),
+            };
+            $hook(guardrail, input).await
+        }
     };
-    guardrail.async_pre_call_hook(input).await
 }
 
-pub(crate) async fn moderation(
-    guardrail: &NomaGuardrail,
-    request_data: &mut RequestData,
-    call_type: &str,
-) -> Result<(), NomaLifecycleError> {
-    let input = RequestHookInput {
-        user_auth: &BTreeMap::new(),
-        data: request_data,
-        call_type,
-        suppressed: &BTreeSet::new(),
-    };
-    guardrail.async_moderation_hook(input).await
-}
+request_hook!(pre_call, async_pre_call_hook);
+request_hook!(moderation, async_moderation_hook);
 
 pub(crate) async fn post_call(
     guardrail: &NomaGuardrail,
@@ -194,7 +195,7 @@ pub(crate) async fn post_call(
         response,
         suppressed: &BTreeSet::new(),
     };
-    guardrail.async_post_call_success_hook(input).await
+    async_post_call_success_hook(guardrail, input).await
 }
 
 pub(crate) fn litellm_params(json: &str) -> LitellmParams {

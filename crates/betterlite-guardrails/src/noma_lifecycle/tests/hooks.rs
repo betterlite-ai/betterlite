@@ -13,8 +13,8 @@ use crate::guardrail_selection::error::GuardrailSelectionError;
 use crate::noma_lifecycle::error::NomaLifecycleError;
 use crate::noma_scan_policy::error::{NomaBlockedMessage, NomaError};
 
-fn text(found: &str) -> Option<GuardrailValue> {
-    Some(GuardrailValue::Text(found.to_owned()))
+fn text(found: &str) -> GuardrailValue {
+    GuardrailValue::Text(found.to_owned())
 }
 
 #[tokio::test]
@@ -33,15 +33,15 @@ async fn pre_call_scans_the_user_message_and_lets_a_safe_one_through() {
     assert_eq!(written.len(), 1);
     assert_eq!(
         field(&written[0], "guardrail_provider").cloned(),
-        text("noma")
+        Some(text("noma"))
     );
     assert_eq!(
         field(&written[0], "guardrail_mode").cloned(),
-        text("pre_call")
+        Some(text("pre_call"))
     );
     assert_eq!(
         field(&written[0], "guardrail_status").cloned(),
-        text("success")
+        Some(text("success"))
     );
 }
 
@@ -73,7 +73,7 @@ async fn pre_call_re_raises_a_block_as_a_400() {
     assert_eq!(written.len(), 1);
     assert_eq!(
         field(&written[0], "guardrail_status").cloned(),
-        text("guardrail_intervened")
+        Some(text("guardrail_intervened"))
     );
 }
 
@@ -164,11 +164,11 @@ async fn a_scan_event_stays_the_hooks_own_even_for_an_mcp_call() {
         .unwrap();
     assert_eq!(
         field(&records(&pre_data)[0], "guardrail_mode").cloned(),
-        text("pre_call")
+        Some(text("pre_call"))
     );
     assert_eq!(
         field(&records(&during_data)[0], "guardrail_mode").cloned(),
-        text("during_call")
+        Some(text("during_call"))
     );
 }
 
@@ -186,7 +186,7 @@ async fn moderation_blocks_and_scans_in_the_during_call_event() {
     ));
     assert_eq!(
         field(&records(&request_data)[0], "guardrail_mode").cloned(),
-        text("during_call")
+        Some(text("during_call"))
     );
 }
 
@@ -210,18 +210,21 @@ async fn a_failed_scan_is_recorded_and_raised_when_failures_block(
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     let written = records(&request_data);
     assert_eq!(written.len(), 1);
-    assert_eq!(field(&written[0], "guardrail_mode").cloned(), text(mode));
+    assert_eq!(
+        field(&written[0], "guardrail_mode").cloned(),
+        Some(text(mode))
+    );
     assert_eq!(
         field(&written[0], "guardrail_status").cloned(),
-        text("guardrail_failed_to_respond")
+        Some(text("guardrail_failed_to_respond"))
     );
     assert_eq!(
         field(&written[0], "guardrail_provider").cloned(),
-        text("noma")
+        Some(text("noma"))
     );
     assert_eq!(
         field(&written[0], "guardrail_response").cloned(),
-        text(&error.to_string())
+        Some(text(&error.to_string()))
     );
     let stamp = Some(GuardrailValue::Decimal(1_700_000_000.0));
     assert_eq!(field(&written[0], "start_time").cloned(), stamp);
@@ -255,7 +258,7 @@ async fn a_failed_scan_is_recorded_and_allowed_when_failures_do_not_block(#[case
     assert_eq!(written.len(), 1);
     assert_eq!(
         field(&written[0], "guardrail_status").cloned(),
-        text("guardrail_failed_to_respond")
+        Some(text("guardrail_failed_to_respond"))
     );
 }
 
@@ -274,7 +277,7 @@ async fn post_call_scans_the_response_content_and_keeps_a_safe_response() {
     let written = records(&request_data);
     assert_eq!(
         field(&written[0], "guardrail_mode").cloned(),
-        text("post_call")
+        Some(text("post_call"))
     );
 }
 
@@ -333,11 +336,11 @@ async fn post_call_failures_follow_block_failures(#[case] block_failures: bool) 
     assert_eq!(written.len(), 1);
     assert_eq!(
         field(&written[0], "guardrail_mode").cloned(),
-        text("post_call")
+        Some(text("post_call"))
     );
     assert_eq!(
         field(&written[0], "guardrail_status").cloned(),
-        text("guardrail_failed_to_respond")
+        Some(text("guardrail_failed_to_respond"))
     );
 }
 

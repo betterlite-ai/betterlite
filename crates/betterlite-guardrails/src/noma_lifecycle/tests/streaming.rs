@@ -1,20 +1,24 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_core::api::api_boundaries::ApiLimits;
 use reqwest::StatusCode;
 use rstest::rstest;
-use serde_json::json;
 use thiserror::Error;
 use tokio::sync::mpsc::channel;
+use tracing::Level;
+use tracing::subscriber::set_default;
 
 use super::support::{
-    ANONYMIZING_ASSISTANT_REPLY, BLOCKING_REPLY, SAFE_REPLY, USER_MESSAGES, build, data, field,
-    hooked, mock_noma, params, records, request_count, scanned_text,
+    ANONYMIZING_ASSISTANT_REPLY, BLOCKING_REPLY, CapturedLog, SAFE_REPLY, USER_MESSAGES, build,
+    data, field, hooked, mock_noma, params, records, request_count, scanned_text, value,
 };
 use crate::cato::error::ModelStreamError;
 use crate::noma_lifecycle::error::NomaLifecycleError;
 use crate::noma_lifecycle::stream_error::NomaStreamError;
-use crate::noma_lifecycle::streaming::{AssembledStream, StreamAssembly, StreamHookRequest};
+use crate::noma_lifecycle::streaming::{
+    AssembledStream, StreamAssembly, StreamHookRequest, async_post_call_streaming_iterator_hook,
+};
 use crate::noma_lifecycle::{NomaGuardrail, RequestData};
 use crate::noma_scan_policy::error::NomaError;
 
@@ -31,11 +35,20 @@ enum Assembly {
 }
 
 fn model_response(content: &str) -> GuardrailValue {
-    let response = json!({
-        "id": "chatcmpl-1",
-        "choices": [{"message": {"role": "assistant", "content": content}}],
-    });
-    serde_json::from_value(response).unwrap()
+    value(&format!(
+        r#"{{"id": "chatcmpl-1", "choices": [{{"message": {{"role": "assistant", "content": "{content}"}}}}]}}"#
+    ))
+}
+
+fn joined(chunks: &[GuardrailValue]) -> String {
+    let mut content = String::new();
+    for chunk in chunks {
+        let GuardrailValue::Text(piece) = chunk else {
+            continue;
+        };
+        content.push_str(piece);
+    }
+    content
 }
 
 // the chunks are plain text pieces that join into the content, and the replay wraps the response in a list
@@ -44,19 +57,7 @@ impl StreamAssembly for Assembly {
 
     fn assemble(&self, chunks: &[GuardrailValue]) -> Result<AssembledStream, FakeFailure> {
         match self {
-            Self::Model => {
-                let content: String = chunks
-                    .iter()
-                    .filter_map(|chunk| {
-                        if let GuardrailValue::Text(piece) = chunk {
-                            Some(piece.as_str())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                Ok(AssembledStream::Model(model_response(&content)))
-            }
+            Self::Model => Ok(AssembledStream::Model(model_response(&joined(chunks)))),
             Self::Other => Ok(AssembledStream::Other),
             Self::FailToAssemble => Err(FakeFailure),
             Self::FailToReplay => Ok(AssembledStream::Model(model_response("hello"))),
@@ -102,9 +103,7 @@ async fn stream(
         user_auth: &BTreeMap::new(),
         data: request_data,
     };
-    guardrail
-        .async_post_call_streaming_iterator_hook(request, receiver, &assembly)
-        .await
+    async_post_call_streaming_iterator_hook(guardrail, request, receiver, &assembly).await
 }
 
 #[tokio::test]
@@ -115,7 +114,7 @@ async fn the_stream_is_buffered_assembled_scanned_and_replayed() {
     let yielded = stream(
         &guardrail,
         &mut request_data,
-        pieces(&["hel", "lo"]),
+        pieces(&["he", "llo"]),
         Assembly::Model,
     )
     .await
@@ -172,7 +171,7 @@ async fn an_anonymized_response_is_what_gets_replayed() {
     let yielded = stream(
         &guardrail,
         &mut request_data,
-        pieces(&["hel", "lo"]),
+        pieces(&["he", "llo"]),
         Assembly::Model,
     )
     .await
@@ -196,7 +195,7 @@ async fn a_block_is_raised_whatever_block_failures_says(#[case] block_failures: 
     let error = stream(
         &guardrail,
         &mut request_data,
-        pieces(&["hel", "lo"]),
+        pieces(&["he", "llo"]),
         Assembly::Model,
     )
     .await
@@ -215,7 +214,7 @@ async fn a_failed_scan_raises_when_failures_block() {
     let error = stream(
         &guardrail,
         &mut request_data,
-        pieces(&["hel", "lo"]),
+        pieces(&["he", "llo"]),
         Assembly::Model,
     )
     .await
@@ -236,13 +235,33 @@ async fn a_failed_scan_passes_the_original_chunks_when_failures_are_allowed() {
     let yielded = stream(
         &guardrail,
         &mut request_data,
-        pieces(&["hel", "lo"]),
+        pieces(&["he", "llo"]),
         Assembly::Model,
     )
     .await
     .unwrap();
-    assert_eq!(yielded, original(&["hel", "lo"]));
+    assert_eq!(yielded, original(&["he", "llo"]));
     assert_eq!(request_count(&mock), 1);
+}
+
+#[tokio::test]
+async fn a_failed_scan_logs_the_streaming_hook() {
+    let mock = mock_noma(StatusCode::INTERNAL_SERVER_ERROR, "{}").await;
+    let mut configured = params(&mock.base);
+    configured.block_failures = Some(false);
+    let guardrail = build(&configured);
+    let log = CapturedLog::default();
+    let _guard = set_default(log.subscriber(Level::ERROR));
+    let mut request_data = data(USER_MESSAGES);
+    stream(
+        &guardrail,
+        &mut request_data,
+        pieces(&["he", "llo"]),
+        Assembly::Model,
+    )
+    .await
+    .unwrap();
+    assert!(log.text().contains("Noma streaming post-call hook failed"));
 }
 
 #[tokio::test]
@@ -253,7 +272,7 @@ async fn the_stream_scan_ignores_the_configured_event_hook() {
     stream(
         &guardrail,
         &mut request_data,
-        pieces(&["hel", "lo"]),
+        pieces(&["he", "llo"]),
         Assembly::Model,
     )
     .await
@@ -266,7 +285,7 @@ async fn a_failed_model_stream_is_raised_before_any_scan() {
     let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
     let guardrail = build(&params(&mock.base));
     let mut request_data = data(USER_MESSAGES);
-    let mut items = pieces(&["hel"]);
+    let mut items = pieces(&["he"]);
     items.push(Err(ModelStreamError::Provider {
         message: Box::from("overloaded"),
     }));
@@ -287,9 +306,91 @@ async fn an_assembly_failure_is_raised(#[case] assembly: Assembly, #[case] scans
     configured.block_failures = Some(false);
     let guardrail = build(&configured);
     let mut request_data = data(USER_MESSAGES);
-    let error = stream(&guardrail, &mut request_data, pieces(&["hel"]), assembly)
+    let error = stream(&guardrail, &mut request_data, pieces(&["he"]), assembly)
         .await
         .unwrap_err();
     assert!(matches!(error, NomaStreamError::Assembly { .. }));
     assert_eq!(request_count(&mock), scans);
+}
+
+fn padded(chunks: usize, bytes: usize) -> Vec<Result<GuardrailValue, ModelStreamError>> {
+    (0..chunks)
+        .map(|_index| Ok(GuardrailValue::Text("x".repeat(bytes))))
+        .collect()
+}
+
+fn ceilings() -> ApiLimits {
+    ApiLimits::default()
+}
+
+#[tokio::test]
+async fn a_stream_at_the_chunk_limit_is_buffered_and_scanned() {
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let guardrail = build(&params(&mock.base));
+    let mut request_data = data(USER_MESSAGES);
+    let yielded = stream(
+        &guardrail,
+        &mut request_data,
+        padded(ceilings().max_items, 1),
+        Assembly::Model,
+    )
+    .await
+    .unwrap();
+    assert_eq!(yielded.len(), 1);
+    assert_eq!(request_count(&mock), 1);
+}
+
+#[tokio::test]
+async fn a_stream_past_the_chunk_limit_fails_before_any_scan() {
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let guardrail = build(&params(&mock.base));
+    let mut request_data = data(USER_MESSAGES);
+    let error = stream(
+        &guardrail,
+        &mut request_data,
+        padded(ceilings().max_items.saturating_add(1), 1),
+        Assembly::Model,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        NomaStreamError::OverBudget { chunks, .. } if chunks == ceilings().max_items
+    ));
+    assert_eq!(request_count(&mock), 0);
+}
+
+#[tokio::test]
+async fn a_stream_at_the_byte_limit_is_buffered() {
+    let guardrail = build(&params("http://noma"));
+    let mut request_data = data(USER_MESSAGES);
+    let yielded = stream(
+        &guardrail,
+        &mut request_data,
+        padded(1, ceilings().max_json_bytes),
+        Assembly::Other,
+    )
+    .await
+    .unwrap();
+    assert_eq!(yielded.len(), 1);
+}
+
+#[tokio::test]
+async fn a_stream_past_the_byte_limit_fails_before_any_scan() {
+    let mock = mock_noma(StatusCode::OK, SAFE_REPLY).await;
+    let guardrail = build(&params(&mock.base));
+    let mut request_data = data(USER_MESSAGES);
+    let error = stream(
+        &guardrail,
+        &mut request_data,
+        padded(1, ceilings().max_json_bytes.saturating_add(1)),
+        Assembly::Model,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        NomaStreamError::OverBudget { bytes, .. } if bytes == ceilings().max_json_bytes
+    ));
+    assert_eq!(request_count(&mock), 0);
 }

@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::enums::SupportedGuardrailIntegrations;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
+use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_http::proxy::base_builder;
 use rstest::rstest;
 use secrecy::ExposeSecret;
@@ -12,8 +13,8 @@ use tokio_util::task::TaskTracker;
 use super::support::{environment, litellm_params};
 use crate::noma_lifecycle::error::NomaLifecycleError;
 use crate::noma_lifecycle::initializer::{
-    BuildContext, GUARDRAIL_CLASS_REGISTRY, GUARDRAIL_INITIALIZER_REGISTRY, InitContext,
-    NomaRegistry, build_v2_guardrail, initialize_guardrail, initialize_guardrail_v2,
+    BuildContext, GUARDRAIL_CLASS_REGISTRY, GUARDRAIL_INITIALIZER_REGISTRY, GuardrailRequest,
+    InitContext, NomaRegistry, build_v2_guardrail, initialize_guardrail, initialize_guardrail_v2,
 };
 use crate::noma_lifecycle::{NomaCallback, NomaGuardrail};
 use crate::noma_v2::guardrail::NomaV2Guardrail;
@@ -43,6 +44,16 @@ fn v2(callback: &NomaCallback) -> &NomaV2Guardrail {
     match callback {
         NomaCallback::V2(guardrail) => guardrail,
         NomaCallback::Legacy(_) => panic!("expected the v2 guardrail"),
+    }
+}
+
+fn request<'request>(
+    params: &'request LitellmParams,
+    guardrail_name: &'request str,
+) -> GuardrailRequest<'request> {
+    GuardrailRequest {
+        params,
+        guardrail_name,
     }
 }
 
@@ -78,15 +89,17 @@ fn the_initializer_registry_maps_noma_and_noma_v2_to_their_initializers() {
         build: build_context(&env),
         registry: &mut recorder,
     };
-    let built = noma_initializer(&litellm_params(LEGACY_PARAMS), "legacy", context).unwrap();
+    let built =
+        noma_initializer(request(&litellm_params(LEGACY_PARAMS), "legacy"), context).unwrap();
     assert!(matches!(built, NomaCallback::Legacy(_)));
-    let context = InitContext {
+    let v2_context = InitContext {
         build: build_context(&env),
         registry: &mut recorder,
     };
     // the v2 entry builds v2 even though the parameters do not ask for it
-    let built = v2_initializer(&litellm_params(V2_PARAMS), "second", context).unwrap();
-    assert!(matches!(built, NomaCallback::V2(_)));
+    let v2_built =
+        v2_initializer(request(&litellm_params(V2_PARAMS), "second"), v2_context).unwrap();
+    assert!(matches!(v2_built, NomaCallback::V2(_)));
     assert_eq!(recorder.callbacks.len(), 2);
 }
 
@@ -94,15 +107,18 @@ fn the_initializer_registry_maps_noma_and_noma_v2_to_their_initializers() {
 fn the_class_registry_maps_noma_and_noma_v2_to_their_classes() {
     let env = environment(&[]);
     let [(_, noma_class), (_, v2_class)] = GUARDRAIL_CLASS_REGISTRY;
-    let built = noma_class(
-        &litellm_params(LEGACY_PARAMS),
-        "legacy",
+    let legacy_built = noma_class(
+        request(&litellm_params(LEGACY_PARAMS), "legacy"),
         build_context(&env),
     )
     .unwrap();
-    assert!(matches!(built, NomaCallback::Legacy(_)));
-    let built = v2_class(&litellm_params(V2_PARAMS), "second", build_context(&env)).unwrap();
-    assert!(matches!(built, NomaCallback::V2(_)));
+    assert!(matches!(legacy_built, NomaCallback::Legacy(_)));
+    let v2_built = v2_class(
+        request(&litellm_params(V2_PARAMS), "second"),
+        build_context(&env),
+    )
+    .unwrap();
+    assert!(matches!(v2_built, NomaCallback::V2(_)));
 }
 
 #[test]
@@ -114,7 +130,7 @@ fn initialize_guardrail_builds_registers_and_returns_the_legacy_guardrail() {
         registry: &mut recorder,
     };
     let returned =
-        initialize_guardrail(&litellm_params(LEGACY_PARAMS), "my-noma", context).unwrap();
+        initialize_guardrail(request(&litellm_params(LEGACY_PARAMS), "my-noma"), context).unwrap();
     assert_eq!(recorder.callbacks.len(), 1);
     let guardrail = legacy(&recorder.callbacks[0]);
     assert!(ptr::eq(guardrail, legacy(&returned)));
@@ -150,7 +166,7 @@ fn unset_parameters_fall_back_to_the_environment_and_the_defaults() {
         registry: &mut recorder,
     };
     let configured = litellm_params(r#"{"guardrail": "noma", "mode": "pre_call"}"#);
-    initialize_guardrail(&configured, "plain", context).unwrap();
+    initialize_guardrail(request(&configured, "plain"), context).unwrap();
     let guardrail = legacy(&recorder.callbacks[0]);
     assert_eq!(
         guardrail.policy.settings.application_id.as_deref(),
@@ -181,7 +197,8 @@ fn use_v2_routes_the_initializer(#[case] entry: &str, #[case] routed_to_v2: bool
     let body = format!(
         r#"{{"guardrail": "noma", "mode": "pre_call", "api_base": "http://noma.test", {entry}}}"#
     );
-    let returned = initialize_guardrail(&litellm_params(&body), "routed", context).unwrap();
+    let returned =
+        initialize_guardrail(request(&litellm_params(&body), "routed"), context).unwrap();
     assert_eq!(matches!(returned, NomaCallback::V2(_)), routed_to_v2);
     assert_eq!(recorder.callbacks.len(), 1);
     assert_eq!(
@@ -190,10 +207,8 @@ fn use_v2_routes_the_initializer(#[case] entry: &str, #[case] routed_to_v2: bool
     );
 }
 
-#[rstest]
-#[case::number(r#""use_v2": 1"#)]
-#[case::text_that_is_no_boolean(r#""use_v2": "maybe""#)]
-fn a_use_v2_that_is_no_boolean_is_an_error(#[case] entry: &str) {
+// the entries are configured through the initializer, which must reject them without registering anything
+fn initialize_entry(entry: &str) -> Result<NomaCallback, NomaLifecycleError> {
     let env = environment(&[]);
     let mut recorder = Recorder::default();
     let context = InitContext {
@@ -201,12 +216,20 @@ fn a_use_v2_that_is_no_boolean_is_an_error(#[case] entry: &str) {
         registry: &mut recorder,
     };
     let body = format!(r#"{{"guardrail": "noma", "mode": "pre_call", {entry}}}"#);
-    let error = initialize_guardrail(&litellm_params(&body), "bad", context).unwrap_err();
+    let built = initialize_guardrail(request(&litellm_params(&body), "bad"), context);
+    assert!(recorder.callbacks.is_empty());
+    built
+}
+
+#[rstest]
+#[case::number(r#""use_v2": 1"#)]
+#[case::text_that_is_no_boolean(r#""use_v2": "maybe""#)]
+fn a_use_v2_that_is_no_boolean_is_an_error(#[case] entry: &str) {
+    let error = initialize_entry(entry).unwrap_err();
     assert!(matches!(
         error,
         NomaLifecycleError::Params(_) | NomaLifecycleError::Environment(_)
     ));
-    assert!(recorder.callbacks.is_empty());
 }
 
 #[test]
@@ -217,7 +240,8 @@ fn initialize_guardrail_v2_builds_registers_and_returns_the_v2_guardrail() {
         build: build_context(&env),
         registry: &mut recorder,
     };
-    let returned = initialize_guardrail_v2(&litellm_params(V2_PARAMS), "my-v2", context).unwrap();
+    let returned =
+        initialize_guardrail_v2(request(&litellm_params(V2_PARAMS), "my-v2"), context).unwrap();
     assert_eq!(recorder.callbacks.len(), 1);
     let guardrail = v2(&recorder.callbacks[0]);
     assert!(ptr::eq(guardrail, v2(&returned)));
@@ -235,7 +259,7 @@ fn the_v2_guardrail_reads_the_environment_it_is_given() {
     let configured = litellm_params(
         r#"{"guardrail": "noma_v2", "mode": "post_call", "api_base": "http://noma.test"}"#,
     );
-    let built = build_v2_guardrail(&configured, "from-env", build_context(&env)).unwrap();
+    let built = build_v2_guardrail(request(&configured, "from-env"), build_context(&env)).unwrap();
     assert_eq!(
         v2(&built).settings.gateway_name.as_deref(),
         Some("env-gateway")
@@ -248,14 +272,6 @@ fn the_v2_guardrail_reads_the_environment_it_is_given() {
 #[case::anonymize_input(r#""anonymize_input": "no""#)]
 #[case::application_id(r#""application_id": 7"#)]
 fn a_parameter_of_the_wrong_type_is_an_error(#[case] entry: &str) {
-    let env = environment(&[]);
-    let mut recorder = Recorder::default();
-    let context = InitContext {
-        build: build_context(&env),
-        registry: &mut recorder,
-    };
-    let body = format!(r#"{{"guardrail": "noma", "mode": "pre_call", {entry}}}"#);
-    let error = initialize_guardrail(&litellm_params(&body), "bad", context).unwrap_err();
+    let error = initialize_entry(entry).unwrap_err();
     assert!(matches!(error, NomaLifecycleError::Params(_)));
-    assert!(recorder.callbacks.is_empty());
 }

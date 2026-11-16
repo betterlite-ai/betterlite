@@ -153,9 +153,9 @@ fn the_deprecation_warning_is_emitted_once_per_process() {
 }
 
 #[rstest]
-#[case::seconds(2.5, Some(Duration::from_millis(2500)))]
-#[case::zero(0.0, Some(Duration::ZERO))]
-#[case::negative(-1.0, None)]
+#[case::seconds(2.5_f64, Some(Duration::from_millis(2500)))]
+#[case::zero(0.0_f64, Some(Duration::ZERO))]
+#[case::negative(-1.0_f64, None)]
 #[case::not_a_number(f64::NAN, None)]
 fn the_timeout_becomes_a_duration(#[case] seconds: f64, #[case] expected: Option<Duration>) {
     let mut configured = params("http://noma");
