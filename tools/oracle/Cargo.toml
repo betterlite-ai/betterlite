@@ -117,6 +117,9 @@ path = "src/helpers/logging/otlp_normalization/tests.rs"
 [[test]]
 name = "dashboard_governance_case"
 path = "src/dashboard_governance_fixture/decoder.rs"
+[[test]]
+name = "foundry_image_generation_seeds"
+path = "src/helpers/foundry/image_generation/target.rs"
 [lints]
 workspace = true
 [package.metadata.cargo-shear]
