@@ -426,7 +426,7 @@ fn edit_parse_failures_keep_the_raw_status_and_headers() {
 
 #[test]
 fn edit_shape_failures_are_a_500_with_no_headers() {
-    let raw = raw(200, Headers::new(), r#"{"choices": {}}"#);
+    let raw = raw(200, headers(&[]), r#"{"choices": {}}"#);
     let error = edit_response(&raw, CREATED, "m").expect_err("choices must be a list");
     assert_eq!(error.status_code, 500);
     assert!(error.headers.is_empty());

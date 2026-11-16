@@ -404,6 +404,24 @@ fn generation_responses_store_a_zero_cost() {
     assert_eq!(cost.as_f64(), Some(0.0_f64));
 }
 
+#[test]
+fn generation_responses_skip_an_empty_cost_details() {
+    let raw = ok(r#"{"usage": {"prompt_tokens": 1, "cost_details": {}}}"#);
+    let (response, hidden) = generation_response(
+        &raw,
+        ImageResponse::default(),
+        ImageHiddenParams::default(),
+        "m",
+    )
+    .expect("the reply transforms");
+    assert!(hidden.response_cost_details.is_none());
+    assert!(hidden.additional_headers.is_empty());
+    let Some(usage) = response.usage else {
+        panic!("the usage is set");
+    };
+    assert_eq!(usage.input_tokens, 1);
+}
+
 #[rstest]
 #[case::prompt_text(
     r#"{"prompt_tokens": "7"}"#,
