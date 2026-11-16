@@ -53,8 +53,9 @@ deviations:
       LiteLLM declares both as classes with lowercase or underscore names. The TypedDict's __name__ is
       _GuardrailConfig.
     why: >-
-      Ruff N801 rejects both class names and the task's max_new_expects is 0, so neither can carry a noqa.
-      Ruff UP013 rewrites a functional TypedDict back to class syntax, so the alias is the form that
-      passes. Keys, required keys, members and values are identical.
+      Ruff N801 rejects both class names, and the task's two budgeted expects are spent on the two
+      LiteLLM-linked pyright ignores, so neither can carry a noqa. Ruff UP013 rewrites a functional
+      TypedDict back to class syntax, so the alias is the form that passes. Keys, required keys,
+      members and values are identical.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1301
 kept_bugs: []
