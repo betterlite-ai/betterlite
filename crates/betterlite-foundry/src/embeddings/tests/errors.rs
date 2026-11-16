@@ -14,6 +14,7 @@ pub(super) fn embedding_error() {
     transport_failure();
     answered_status();
     meaningful_error_in_reply();
+    meaningful_error_fields();
     malformed_replies();
     conversion_failure();
     short_result_lists();
@@ -126,6 +127,27 @@ fn meaningful_error_in_reply() {
     let factory = Factory::new(Answer::json(&quiet));
     let response = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap();
     assert_eq!(response.data.len(), 1);
+}
+
+fn meaningful_error_fields() {
+    let input = strings(&[IMAGE_URI]);
+    let secret = key("case-key");
+    let call = keyed(&input, &secret);
+    let entry = r#"[{"object":"embedding","index":0,"embedding":[0.1]}]"#;
+    let message = format!(r#"{{"error":{{"message":"quota"}},"data":{entry}}}"#);
+    let factory = Factory::new(Answer::json(&message));
+    let error = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap_err();
+    assert!(matches!(
+        error,
+        FoundryEmbeddingError::ReplyError { status: 422 }
+    ));
+    let code = format!(r#"{{"error":{{"code":429}},"data":{entry}}}"#);
+    let factory = Factory::new(Answer::json(&code));
+    let error = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap_err();
+    assert!(matches!(
+        error,
+        FoundryEmbeddingError::ReplyError { status: 429 }
+    ));
 }
 
 fn malformed_replies() {
