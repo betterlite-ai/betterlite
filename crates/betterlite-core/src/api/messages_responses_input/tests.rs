@@ -315,7 +315,7 @@ fn midturn_system_responses(#[case] messages: &str, #[case] expected: &str) {
 #[case::untyped_block_with_wrong_text(r#"[{"role": "system", "content": [{"text": 5}]}]"#)]
 fn rejects_blocks_outside_the_declared_types(#[case] messages: &str) {
     let source = format!(r#"{{"messages": {messages}}}"#);
-    assert!(serde_json::from_str::<MessagesResponsesInputInput>(&source).is_err());
+    serde_json::from_str::<MessagesResponsesInputInput>(&source).unwrap_err();
 }
 
 #[rstest]

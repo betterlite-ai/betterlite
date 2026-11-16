@@ -29,13 +29,15 @@ fn tool_text(blocks: &[Block], has_images: bool) -> String {
         .iter()
         .filter_map(|block| match block {
             Block::Known(KnownBlock::Text(text)) => Some(text.text.as_str()),
-            Block::Known(KnownBlock::Image(_))
-            | Block::Known(KnownBlock::Document(_))
-            | Block::Known(KnownBlock::ToolResult(_))
-            | Block::Known(KnownBlock::ToolUse(_))
-            | Block::Known(KnownBlock::Thinking(_))
-            | Block::Known(KnownBlock::RedactedThinking(_))
-            | Block::Known(KnownBlock::Other)
+            Block::Known(
+                KnownBlock::Image(_)
+                | KnownBlock::Document(_)
+                | KnownBlock::ToolResult(_)
+                | KnownBlock::ToolUse(_)
+                | KnownBlock::Thinking(_)
+                | KnownBlock::RedactedThinking(_)
+                | KnownBlock::Other,
+            )
             | Block::Untyped(_) => None,
         })
         .collect();
@@ -87,12 +89,14 @@ fn block_value(blocks: &[Block]) -> ToolResultValue {
                     });
                 }
             }
-            Block::Known(KnownBlock::Text(_))
-            | Block::Known(KnownBlock::ToolResult(_))
-            | Block::Known(KnownBlock::ToolUse(_))
-            | Block::Known(KnownBlock::Thinking(_))
-            | Block::Known(KnownBlock::RedactedThinking(_))
-            | Block::Known(KnownBlock::Other)
+            Block::Known(
+                KnownBlock::Text(_)
+                | KnownBlock::ToolResult(_)
+                | KnownBlock::ToolUse(_)
+                | KnownBlock::Thinking(_)
+                | KnownBlock::RedactedThinking(_)
+                | KnownBlock::Other,
+            )
             | Block::Untyped(_) => {}
         }
     }
