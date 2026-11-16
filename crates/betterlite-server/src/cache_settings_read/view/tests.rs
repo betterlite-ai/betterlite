@@ -60,6 +60,8 @@ fn cluster_mode_keeps_the_discrete_fields_a_url_would_drop() {
     "sentinel"
 )]
 #[case::node(r#"{"type": "redis", "host": "host"}"#, "node")]
+#[case::empty_sentinel_nodes(r#"{"type": "redis", "sentinel_nodes": []}"#, "node")]
+#[case::false_sentinel_nodes(r#"{"type": "redis", "sentinel_nodes": false}"#, "node")]
 #[case::empty_startup_nodes(r#"{"type": "redis", "redis_startup_nodes": []}"#, "node")]
 #[case::zero_startup_nodes(r#"{"type": "redis", "redis_startup_nodes": 0}"#, "node")]
 #[case::blank_startup_nodes(r#"{"type": "redis", "redis_startup_nodes": ""}"#, "node")]
