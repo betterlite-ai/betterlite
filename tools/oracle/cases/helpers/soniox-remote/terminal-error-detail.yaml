@@ -1,0 +1,35 @@
+kind: helper
+name: soniox-remote-terminal-error-detail
+call:
+  soniox_remote:
+    calls:
+    - function: poll
+      auth_headers: {Authorization: "Bearer sk-local"}
+      api_base: "https://api.soniox.test"
+      transcription_id: job-7
+      poll_interval: 0.25
+      max_attempts: 2
+      timeout_ms: 2500
+      answers:
+      - {status: 200, headers: {}, body: '{"status": "processing"}'}
+      - {status: 200, headers: {X-Request-Id: req-7}, body: '{"status": "error", "error_message": "quota", "error_type": "quota_exceeded"}'}
+    - function: poll
+      auth_headers: {Authorization: "Bearer sk-local"}
+      api_base: "https://api.soniox.test"
+      transcription_id: job-8
+      poll_interval: 0.25
+      max_attempts: 2
+      timeout_ms: 2500
+      answers:
+      - {status: 200, headers: {}, body: '{"status": "error", "error_message": "", "error_type": "bad_audio"}'}
+    - function: poll
+      auth_headers: {Authorization: "Bearer sk-local"}
+      api_base: "https://api.soniox.test"
+      transcription_id: job-9
+      poll_interval: 0.25
+      max_attempts: 2
+      timeout_ms: 2500
+      answers:
+      - {status: 200, headers: {}, body: '{"status": "error"}'}
+compare: {ignore: []}
+env: {}
