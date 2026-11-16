@@ -85,6 +85,7 @@ pub(super) struct RawLiteLlm {
     pub(super) num_retries: Option<RawNumber>,
     pub(super) request_timeout: Option<RawNumber>,
     pub(super) drop_params: Option<bool>,
+    pub(super) gemini_live_defer_setup: Option<bool>,
     #[serde(default)]
     pub(super) aiohttp_trust_env: bool,
     #[serde(default)]

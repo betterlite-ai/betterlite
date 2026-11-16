@@ -216,6 +216,10 @@ fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSetting
         num_retries,
         request_timeout,
         drop_params: raw.drop_params,
+        gemini_live_defer_setup: LiteLlmSettings::gemini_live_defer_setup(
+            raw.gemini_live_defer_setup,
+            lookup,
+        ),
         proxy_trust: ProxyTrust {
             aiohttp_trust_env: raw.aiohttp_trust_env,
             disable_aiohttp_trust_env: raw.disable_aiohttp_trust_env,

@@ -1,35 +1,18 @@
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
-
-use crate::loader::parse_view;
-use crate::types::LiteLlmSettings;
+use crate::loader::ConfigLoader;
 
 const DEFER_SETUP_VARIABLE: &str = "LITELLM_GEMINI_LIVE_DEFER_SETUP";
-
-#[derive(Debug, Default, Deserialize)]
-struct Raw {
-    #[serde(default)]
-    litellm_settings: RawLiteLlm,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct RawLiteLlm {
-    gemini_live_defer_setup: Option<bool>,
-}
-
-// the loader's own view parses the key until the section registry carries an entry for it
-fn configured(source: &str) -> Option<bool> {
-    let (raw, _unknown) = parse_view::<Raw>(source).expect("the loader's view parses the key");
-    raw.litellm_settings.gemini_live_defer_setup
-}
 
 fn resolved(source: &str, environment: &[(&str, &str)]) -> bool {
     let lookup: BTreeMap<String, String> = environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
-    LiteLlmSettings::gemini_live_defer_setup(configured(source), &lookup)
+    let config = ConfigLoader { lookup }
+        .load(source)
+        .expect("the loader accepts the gemini live defer setting");
+    config.litellm_settings.gemini_live_defer_setup
 }
 
 #[test]
