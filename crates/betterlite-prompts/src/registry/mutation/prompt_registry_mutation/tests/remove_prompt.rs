@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::support::{RecordingCallbacks, client, prompt_spec, registry_with};
+use super::support::{CallbackCall, RecordingCallbacks, client, prompt_spec, registry_with};
 use crate::registry::mutation::prompt_registry_mutation::methods::PromptRegistryMutation as _;
 use crate::registry::prompt_registry::InMemoryPromptRegistry;
 use crate::registry::prompt_registry_helpers::registry_key_for_prompt;
@@ -23,7 +23,10 @@ fn removes_the_registered_callback() {
     let mut callbacks = RecordingCallbacks::default();
     let mut registry = registry_with(&prompt, &mut callbacks);
     registry.remove_prompt(&registry_key, &mut callbacks);
-    assert_eq!(callbacks.removed(), [client(Some("greeting"))]);
+    assert_eq!(
+        callbacks.calls,
+        [CallbackCall::Removed(client(Some("greeting")))]
+    );
 }
 
 #[test]
@@ -50,7 +53,10 @@ fn removes_only_the_named_key() {
         .expect("the second prompt registers");
     callbacks.calls.clear();
     registry.remove_prompt(&registry_key_for_prompt(&greeting), &mut callbacks);
-    assert_eq!(callbacks.removed(), [client(Some("greeting"))]);
+    assert_eq!(
+        callbacks.calls,
+        [CallbackCall::Removed(client(Some("greeting")))]
+    );
     assert_eq!(
         registry
             .in_memory_prompts

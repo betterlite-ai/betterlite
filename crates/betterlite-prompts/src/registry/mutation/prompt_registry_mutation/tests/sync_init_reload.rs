@@ -82,8 +82,10 @@ fn a_row_that_differs_only_in_prompt_info_reloads() {
     registry
         .sync_prompt_from_db(&row, &mut callbacks)
         .expect("the differing row reloads");
-    assert_eq!(callbacks.removed().len(), 1);
-    assert_eq!(callbacks.added().len(), 1);
+    assert!(matches!(
+        callbacks.calls.as_slice(),
+        [CallbackCall::Removed(_), CallbackCall::Added(_)]
+    ));
     assert_eq!(
         registry
             .in_memory_prompts

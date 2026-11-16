@@ -68,5 +68,5 @@ fn a_failed_build_removes_no_callback_from_the_logging_manager() {
     registry
         .reload_prompt(&changed, &mut callbacks)
         .expect_err("langfuse has no initializer");
-    assert_eq!(callbacks.removed(), Vec::new());
+    assert!(callbacks.calls.is_empty());
 }

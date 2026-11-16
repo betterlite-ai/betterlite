@@ -20,28 +20,6 @@ pub(crate) struct RecordingCallbacks {
     pub(crate) calls: Vec<CallbackCall>,
 }
 
-impl RecordingCallbacks {
-    pub(crate) fn added(&self) -> Vec<PromptManagementClient> {
-        self.calls
-            .iter()
-            .filter_map(|call| match call {
-                CallbackCall::Added(callback) => Some(callback.clone()),
-                CallbackCall::Removed(_) => None,
-            })
-            .collect()
-    }
-
-    pub(crate) fn removed(&self) -> Vec<PromptManagementClient> {
-        let mut removed = Vec::new();
-        for call in &self.calls {
-            if let CallbackCall::Removed(callback) = call {
-                removed.push(callback.clone());
-            }
-        }
-        removed
-    }
-}
-
 impl PromptCallbackManager for RecordingCallbacks {
     fn add_litellm_callback(&mut self, callback: &PromptManagementClient) {
         self.calls.push(CallbackCall::Added(callback.clone()));

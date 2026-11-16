@@ -4,7 +4,9 @@ use betterlite_models::prompt_spec::{PromptInfo, PromptLiteLLMParams, PromptSpec
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::support::{RecordingCallbacks, api_key, params, prompt_spec, registry_with};
+use super::support::{
+    CallbackCall, RecordingCallbacks, api_key, params, prompt_spec, registry_with,
+};
 use crate::registry::mutation::prompt_registry_mutation::methods::PromptRegistryMutation as _;
 use crate::registry::mutation::prompt_registry_mutation::methods::same_litellm_params;
 use crate::tests::json_value;
@@ -60,7 +62,10 @@ fn change_info_extra(info: &mut PromptInfo) {
     info.extra.insert("custom".to_owned(), json_value("1"));
 }
 
-fn assert_reload_of_changed_row(change: impl FnOnce(&mut PromptSpec)) {
+fn assert_reload_of_changed_row<F>(change: F)
+where
+    F: FnOnce(&mut PromptSpec),
+{
     let prompt = prompt_spec("greeting.v1", "development", "dotprompt");
     let mut callbacks = RecordingCallbacks::default();
     let mut registry = registry_with(&prompt, &mut callbacks);
@@ -69,8 +74,10 @@ fn assert_reload_of_changed_row(change: impl FnOnce(&mut PromptSpec)) {
     registry
         .sync_prompt_from_db(&row, &mut callbacks)
         .expect("the differing row reloads");
-    assert_eq!(callbacks.removed().len(), 1);
-    assert_eq!(callbacks.added().len(), 1);
+    assert!(matches!(
+        callbacks.calls.as_slice(),
+        [CallbackCall::Removed(_), CallbackCall::Added(_)]
+    ));
 }
 
 #[rstest]
@@ -153,7 +160,10 @@ fn a_different_api_key_value_reloads_the_prompt() {
     registry
         .sync_prompt_from_db(&row, &mut callbacks)
         .expect("the differing row reloads");
-    assert_eq!(callbacks.removed().len(), 1);
+    assert!(matches!(
+        callbacks.calls.as_slice(),
+        [CallbackCall::Removed(_), CallbackCall::Added(_)]
+    ));
 }
 
 #[test]
@@ -167,7 +177,10 @@ fn a_disappearing_api_key_reloads_the_prompt() {
     registry
         .sync_prompt_from_db(&row, &mut callbacks)
         .expect("the differing row reloads");
-    assert_eq!(callbacks.removed().len(), 1);
+    assert!(matches!(
+        callbacks.calls.as_slice(),
+        [CallbackCall::Removed(_), CallbackCall::Added(_)]
+    ));
 }
 
 #[test]
