@@ -17,7 +17,8 @@ use betterlite_rate_limit::usage_resolution::ResponseObject;
 use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
 use serde_json::json;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::cases::{
     IoTokenCase, ModelCase, ResponseCase, ResponseKind, ScopeTargetsCase, StashCase, SuccessCase,
@@ -128,7 +129,7 @@ fn target_values(targets: &[(String, String)]) -> Vec<serde_json::Value> {
         .collect()
 }
 
-pub(crate) fn io_token_answer(case: &IoTokenCase) -> crate::helpers::HelperResult {
+pub(crate) fn io_token_answer(case: &IoTokenCase) -> HelperResult {
     let slot = stash_slot(case.stash.as_ref());
     let object = response_object(&case.response);
     let response = if matches!(case.response.kind, ResponseKind::Rerank) {
@@ -164,7 +165,7 @@ pub(crate) fn scope_targets_answer(case: &ScopeTargetsCase) -> serde_json::Value
     json!({"targets": target_values(&targets)})
 }
 
-pub(crate) fn success_answer(case: &SuccessCase) -> crate::helpers::HelperResult {
+pub(crate) fn success_answer(case: &SuccessCase) -> HelperResult {
     let slot = stash_slot(case.stash.as_ref());
     let models = ModelDescriptorBuilder {
         window_size: case.window_size,
