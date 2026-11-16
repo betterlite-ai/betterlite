@@ -1,0 +1,28 @@
+kind: helper
+name: b5841 map-params-other-models
+call:
+  b5841:
+    function: params
+    cases:
+    - model: databricks-meta-llama-3-1-70b
+      non_default_params:
+        tools:
+        - type: function
+          function:
+            name: f
+            parameters:
+              type: object
+        response_format:
+          type: json_object
+        max_completion_tokens: 50
+        temperature: 0.2
+      optional_params: {}
+    - model: databricks-Claude-3
+      non_default_params:
+        response_format:
+          type: json_object
+        reasoning_effort: low
+      optional_params: {}
+env: {}
+compare:
+  ignore: []

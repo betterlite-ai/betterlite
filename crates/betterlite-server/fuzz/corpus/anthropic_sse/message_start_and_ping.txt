@@ -1,0 +1,6 @@
+event: message_start
+data: {"type": "message_start", "message": {"id": "msg_1", "model": "claude-x"}}
+
+event: ping
+data: {"type": "ping"}
+
