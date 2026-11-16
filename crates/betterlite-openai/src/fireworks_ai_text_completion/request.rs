@@ -8,7 +8,6 @@ use crate::openai_base_config::Object;
 use crate::text_completion_policy::prompt;
 
 // LiteLLM's transform_text_completion_request: translate the options, project the prompt, then spread both into the body.
-#[must_use]
 pub async fn transform_completion_request<P>(
     capabilities: &mut P,
     model: &str,

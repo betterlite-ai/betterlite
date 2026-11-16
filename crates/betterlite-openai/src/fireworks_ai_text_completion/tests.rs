@@ -48,7 +48,13 @@ fn params(text: &str) -> Map<String, Value> {
 }
 
 fn message(content: &str) -> Value {
-    json!({"role": "user", "content": serde_json::from_str::<Value>(content).unwrap()})
+    let mut fields = Map::new();
+    fields.insert(String::from("role"), Value::String(String::from("user")));
+    fields.insert(
+        String::from("content"),
+        serde_json::from_str(content).unwrap(),
+    );
+    Value::Object(fields)
 }
 
 #[test]
@@ -76,11 +82,11 @@ fn the_supported_list_is_litellms_order() {
 #[test]
 fn mapping_copies_supported_keys_and_keeps_null_values() {
     let non_default = [
-        (String::from("temperature"), json!(0.5)),
+        (String::from("temperature"), Value::from(0.5_f64)),
         (String::from("stop"), Value::Null),
         (String::from("tools"), json!([])),
         (String::from("user"), json!("caller")),
-        (String::from("n"), json!(2)),
+        (String::from("n"), Value::from(2_i32)),
     ];
     let mut optional = params(r#"{"temperature": 1, "presence_penalty": 1}"#);
     map_openai_params(&non_default, &mut optional);
@@ -137,7 +143,7 @@ async fn a_non_map_extra_body_is_dropped() {
 async fn every_stripped_key_leaves_the_body() {
     let mut body: Map<String, Value> = STRIP_PARAMS
         .iter()
-        .map(|key| (String::from(*key), json!(1)))
+        .map(|key| (String::from(*key), Value::from(1_i32)))
         .collect();
     body.insert(String::from("custom"), json!("kept"));
     let mut optional = Map::new();
@@ -444,7 +450,10 @@ async fn a_single_token_message_keeps_its_tokens() {
         transform_completion_request(&mut plain(), "model", &[message("[1, 2]")], &Map::new())
             .await
             .unwrap();
-    assert_eq!(request.get("prompt"), Some(&json!([1, 2])));
+    assert_eq!(
+        request.get("prompt"),
+        Some(&Value::from(vec![1_i32, 2_i32]))
+    );
 }
 
 #[tokio::test]
@@ -485,7 +494,12 @@ async fn the_request_carries_the_translated_extra_body() {
 
 #[tokio::test]
 async fn a_malformed_message_fails_the_prompt_projection() {
-    let malformed = json!({"content": "no role"});
+    let mut malformed_fields = Map::new();
+    malformed_fields.insert(
+        String::from("content"),
+        Value::String(String::from("no role")),
+    );
+    let malformed = Value::Object(malformed_fields);
     let error = transform_completion_request(&mut plain(), "model", &[malformed], &Map::new())
         .await
         .unwrap_err();

@@ -94,8 +94,10 @@ fn metadata(session_id: Option<&str>, generated: Option<bool>) -> SessionMetadat
 #[test]
 fn the_config_flags_name_fireworks_without_native_transports() {
     assert_eq!(PROVIDER, ProviderId::FireworksAi);
-    assert!(!SUPPORTS_NATIVE_WEBSOCKET);
-    assert!(!SUPPORTS_NATIVE_FILE_SEARCH);
+    const {
+        assert!(!SUPPORTS_NATIVE_WEBSOCKET);
+        assert!(!SUPPORTS_NATIVE_FILE_SEARCH);
+    }
 }
 
 #[test]
@@ -162,9 +164,10 @@ fn the_env_key_chain_applies_when_the_argument_is_absent_or_empty() {
         Some("fourth"),
         None,
     );
-    let resolved = validate_environment(&Headers::new(), None, &session(None, None), &all).unwrap();
+    let every_key =
+        validate_environment(&Headers::new(), None, &session(None, None), &all).unwrap();
     assert_eq!(
-        resolved.get("Authorization").map(String::as_str),
+        every_key.get("Authorization").map(String::as_str),
         Some("Bearer first")
     );
     let empty =
@@ -174,24 +177,24 @@ fn the_env_key_chain_applies_when_the_argument_is_absent_or_empty() {
         Some("Bearer first")
     );
     let second = env_with(None, Some("second"), None, None, None);
-    let resolved =
+    let from_second =
         validate_environment(&Headers::new(), None, &session(None, None), &second).unwrap();
     assert_eq!(
-        resolved.get("Authorization").map(String::as_str),
+        from_second.get("Authorization").map(String::as_str),
         Some("Bearer second")
     );
     let third = env_with(None, None, Some("third"), None, None);
-    let resolved =
+    let from_third =
         validate_environment(&Headers::new(), None, &session(None, None), &third).unwrap();
     assert_eq!(
-        resolved.get("Authorization").map(String::as_str),
+        from_third.get("Authorization").map(String::as_str),
         Some("Bearer third")
     );
     let fourth = env_with(None, None, None, Some("fourth"), None);
-    let resolved =
+    let from_fourth =
         validate_environment(&Headers::new(), None, &session(None, None), &fourth).unwrap();
     assert_eq!(
-        resolved.get("Authorization").map(String::as_str),
+        from_fourth.get("Authorization").map(String::as_str),
         Some("Bearer fourth")
     );
 }
@@ -564,7 +567,7 @@ fn an_empty_instruction_survives_when_nothing_is_folded() {
 #[test]
 fn the_transform_folds_instructions_and_resolves_the_model() {
     assert_eq!(
-        transformed("hello", "{}"),
+        transformed(r#""hello""#, "{}"),
         params(r#"{"model": "accounts/fireworks/models/model", "input": "hello"}"#)
     );
     assert_eq!(
@@ -578,7 +581,7 @@ fn the_transform_folds_instructions_and_resolves_the_model() {
     );
     let already = transform_responses_request(
         "accounts/fireworks/models/x",
-        &responses_input("hello"),
+        &responses_input(r#""hello""#),
         &params("{}"),
         None,
     )
@@ -601,7 +604,7 @@ fn a_null_instruction_disappears_and_the_input_still_folds() {
             r#"{"temperature": 1, "instructions": "a", "model": "accounts/fireworks/models/model", "input": [{"role": "user", "content": "u"}]}"#,
         )
     );
-    let string = transformed("hello", r#"{"instructions": null}"#);
+    let string = transformed(r#""hello""#, r#"{"instructions": null}"#);
     assert_eq!(
         string,
         params(r#"{"model": "accounts/fireworks/models/model", "input": "hello"}"#)
@@ -620,7 +623,7 @@ fn a_non_string_instruction_is_kept_and_only_developers_are_renamed() {
             r#"{"instructions": {"a": 1}, "model": "accounts/fireworks/models/model", "input": [{"role": "system", "content": "d", "type": "message"}, {"role": "user", "content": "u"}]}"#,
         )
     );
-    let string = transformed("hello", r#"{"instructions": 5}"#);
+    let string = transformed(r#""hello""#, r#"{"instructions": 5}"#);
     assert_eq!(
         string,
         params(
@@ -645,7 +648,7 @@ fn the_instructions_entry_moves_to_the_end_of_the_params() {
             "input"
         ]
     );
-    let removed = transformed("hello", r#"{"temperature": 1, "instructions": null}"#);
+    let removed = transformed(r#""hello""#, r#"{"temperature": 1, "instructions": null}"#);
     assert_eq!(
         removed.keys().map(String::as_str).collect::<Vec<&str>>(),
         ["temperature", "model", "input"]
@@ -656,7 +659,7 @@ fn the_instructions_entry_moves_to_the_end_of_the_params() {
 fn a_bad_tools_value_keeps_the_base_transform_error() {
     let error = transform_responses_request(
         "model",
-        &responses_input("hello"),
+        &responses_input(r#""hello""#),
         &params(r#"{"tools": "x"}"#),
         None,
     )
@@ -669,7 +672,7 @@ fn a_bad_tools_value_keeps_the_base_transform_error() {
 fn a_param_that_fixes_the_body_key_keeps_the_base_error() {
     let error = transform_responses_request(
         "model",
-        &responses_input("hello"),
+        &responses_input(r#""hello""#),
         &params(r#"{"model": "other"}"#),
         None,
     )

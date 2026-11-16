@@ -1,8 +1,7 @@
 use serde_json::Value;
 
 use crate::fireworks_ai_chat_params::{
-    EFFORT_KWARG_KEYS, FireworksCapabilities, NIM_VLLM_STRIP_PARAMS, effort_from_template_kwargs,
-    translate_guided_params,
+    EFFORT_KWARG_KEYS, FireworksCapabilities, effort_from_template_kwargs, translate_guided_params,
 };
 use crate::openai_base_config::Object;
 
@@ -51,7 +50,15 @@ where
     let stripped = stripped_body(optional_params, model);
     let moved = moved_body(&stripped, optional_params);
     let effort = translated_kwargs(capabilities, &moved, optional_params, model).await;
-    let final_body = guided_body(&effort, optional_params);
+    let guided = translate_guided_params(&effort, optional_params);
+    let mut final_body: Object = effort
+        .iter()
+        .filter(|(key, _)| !GUIDED_KEYS.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    if let Some(format) = guided {
+        final_body.insert(String::from("response_format"), format);
+    }
     let mut base: Object = optional_params
         .iter()
         .filter(|(key, _)| !DROPPED_KEYS.contains(&key.as_str()))
@@ -174,17 +181,4 @@ fn log_unknown_kwargs(kwargs: &Object, model: &str) {
             "fireworks_ai does not support chat_template_kwargs keys; dropping them"
         );
     }
-}
-
-fn guided_body(body: &Object, optional_params: &Object) -> Object {
-    let guided = translate_guided_params(body, optional_params);
-    let mut remaining: Object = body
-        .iter()
-        .filter(|(key, _)| !GUIDED_KEYS.contains(&key.as_str()))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    if let Some(format) = guided {
-        remaining.insert(String::from("response_format"), format);
-    }
-    remaining
 }

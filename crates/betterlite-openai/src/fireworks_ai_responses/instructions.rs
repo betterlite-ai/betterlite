@@ -60,10 +60,10 @@ pub fn developer_as_system(item: &Json) -> Json {
 fn folded_texts(items: &[ResponsesItem], roles: &[Option<&str>]) -> Vec<(usize, String)> {
     let mut folded = Vec::new();
     for index in hoisted_indices(roles) {
-        let text = items.get(index).and_then(|item| text_only_content(&item.0));
-        if let Some(text) = text {
-            folded.push((index, text));
-        }
+        let Some(text) = items.get(index).and_then(|item| text_only_content(&item.0)) else {
+            continue;
+        };
+        folded.push((index, text));
     }
     folded
 }
