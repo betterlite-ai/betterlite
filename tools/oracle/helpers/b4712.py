@@ -1,6 +1,7 @@
 import asyncio
 import sys
 from collections import UserDict
+from collections.abc import Callable, Coroutine, Mapping
 from copy import deepcopy
 from datetime import UTC, datetime
 from types import ModuleType, TracebackType
@@ -17,17 +18,13 @@ from typing_extensions import override
 
 Where = dict[str, JsonValue | datetime]
 PROXY_SERVER: Final = "litellm.proxy.proxy_server"
-JSON_COLUMNS: Final = (
-    "credentials",
-    "env_vars",
-    "mcp_info",
-    "tool_name_to_display_name",
-    "tool_name_to_description",
-)
+JSON_COLUMNS: Final = ("credentials", "env_vars", "mcp_info")
+JSON_MAP_COLUMNS: Final = ("tool_name_to_display_name", "tool_name_to_description")
 STRING: Final[TypeAdapter[str]] = TypeAdapter(str)
 JSON_VALUE: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 WINDOW: Final[TypeAdapter[Where]] = TypeAdapter(Where)
 STAMP: Final[TypeAdapter[datetime]] = TypeAdapter(datetime)
+BRANCHES: Final[TypeAdapter[list[Where]]] = TypeAdapter(list[Where])
 
 
 class ProxyServerStub(ModuleType):
@@ -50,9 +47,6 @@ class EnvVarView(TypedDict):
     description: str | None
 
 
-ENV_VAR_VIEW: Final[TypeAdapter[EnvVarView]] = TypeAdapter(EnvVarView)
-
-
 class ServerView(TypedDict):
     server_id: str
     server_name: str | None
@@ -72,6 +66,9 @@ class ServerView(TypedDict):
     audience: str | None
 
 
+SERVER_VIEW: Final[TypeAdapter[ServerView]] = TypeAdapter(ServerView)
+
+
 class Answer(TypedDict):
     server_id: str | None
     conflict: ConflictView | None
@@ -81,10 +78,11 @@ class Answer(TypedDict):
 
 
 Outcome = tuple[str | None, ConflictView | None]
+Function = Literal["create", "create_if_free", "create_draft", "get_draft", "update", "delete"]
 
 
 class Call(TypedDict):
-    function: Literal["create", "create_if_free", "create_draft", "get_draft", "update", "delete"]
+    function: Function
     salt_key: str
     touched_by: str
     payload: Where
@@ -95,21 +93,11 @@ class Call(TypedDict):
 
 
 class FakeRow(UserDict[str, JsonValue | datetime]):
-    @property
-    def server_id(self) -> str:
-        return STRING.validate_python(self["server_id"], strict=True)
-
     def __getattr__(self, name: str) -> JsonValue | datetime:
         try:
             return self[name]
         except KeyError as error:
             raise AttributeError(name) from error
-
-    def __setattr__(self, name: str, value: JsonValue | datetime) -> None:
-        if name == "data":
-            super().__setattr__(name, value)
-        else:
-            self[name] = value
 
     def model_dump(self) -> Where:
         return dict(self.data)
@@ -130,10 +118,7 @@ class FakeTable(PrismaWrapper):
         return self
 
     async def __aexit__(
-        self,
-        kind: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
+        self, kind: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
     ) -> None:
         pass
 
@@ -149,14 +134,12 @@ class FakeTable(PrismaWrapper):
     async def update(self, where: Where, data: Where) -> FakeRow | None:
         found = await self.find_first(where)
         if found is not None:
-            for column, value in parsed_columns(data).items():
-                found[column] = value
+            found.update(parsed_columns(data))
         return None if found is None else FakeRow(deepcopy(found.data))
 
     async def delete(self, where: Where) -> FakeRow | None:
         found = await self.find_first(where)
-        if found is not None:
-            self.rows.remove(found)
+        self.rows = [row for row in self.rows if row is not found]
         return None if found is None else FakeRow(deepcopy(found.data))
 
     async def delete_many(self, where: Where) -> int:
@@ -165,21 +148,14 @@ class FakeTable(PrismaWrapper):
         self.rows = [row for row in self.rows if not where_matches(row, where)]
         return len(removed)
 
-    async def find_many(
-        self,
-        where: Where | None = None,
-        take: int | None = None,
-    ) -> list[FakeRow]:
-        matches = self.rows if where is None else [
-            row for row in self.rows if where_matches(row, where)
-        ]
+    async def find_many(self, where: Where | None = None, take: int | None = None) -> list[FakeRow]:
+        matches = [row for row in self.rows if where is None or where_matches(row, where)]
         return matches if take is None else matches[:take]
 
     async def find_first(self, where: Where) -> FakeRow | None:
         return next(iter(await self.find_many(where=where, take=1)), None)
 
-    async def find_unique(self, where: Where) -> FakeRow | None:
-        return await self.find_first(where)
+    find_unique = find_first
 
 
 class FakeDb(PrismaWrapper):
@@ -198,7 +174,12 @@ class FakeClient(PrismaClient):
     def __init__(self, rows: list[Where], users: list[str], server_id: str) -> None:
         self.db = self.fake_db = FakeDb()
         self.invalidated: list[tuple[str, str]] = []
-        self.fake_db.litellm_mcpservertable.rows = [seed_row(row) for row in rows]
+        seeded = [FakeRow(row) for row in rows]
+        for stored in seeded:
+            stamp = stored.get("updated_at")
+            if stamp is not None:
+                stored["updated_at"] = STAMP.validate_python(stamp)
+        self.fake_db.litellm_mcpservertable.rows = seeded
         self.fake_db.litellm_mcpusercredentials.rows = [
             FakeRow({"user_id": user, "server_id": server_id}) for user in users
         ]
@@ -209,52 +190,34 @@ class FakeClient(PrismaClient):
 
 def parsed_columns(data: Where) -> Where:
     parsed = dict(data)
-    for column in JSON_COLUMNS:
+    for column in (*JSON_COLUMNS, *JSON_MAP_COLUMNS):
         value = parsed.get(column)
         if value is not None:
             parsed[column] = JSON_VALUE.validate_json(STRING.validate_python(value))
     return parsed
 
 
-def seed_row(row: Where) -> FakeRow:
-    stored = FakeRow(row)
-    stamp = stored.get("updated_at")
-    if stamp is not None:
-        stored["updated_at"] = STAMP.validate_python(stamp)
-    return stored
-
-
-def field_matches(value: JsonValue | datetime, condition: JsonValue | datetime) -> bool:
+# The where shapes LiteLLM's MCP server writes send: AND/OR/NOT, equality, gte, not, insensitive.
+def field_matches(values: FakeRow, key: str, condition: JsonValue | datetime) -> bool:
+    if key in {"AND", "OR", "NOT"}:
+        nested = [where_matches(values, part) for part in BRANCHES.validate_python(condition)]
+        return {"AND": all(nested), "OR": any(nested), "NOT": not any(nested)}[key]
+    value = values.get(key)
     try:
         operators = WINDOW.validate_python(condition)
     except ValidationError:
         return value == condition
     if "gte" in operators:
         return STAMP.validate_python(value) >= STAMP.validate_python(operators["gte"])
-    if "in" in operators:
-        return value in TypeAdapter(list[JsonValue]).validate_python(operators["in"])
     if "not" in operators:
         return value is not None and value != operators["not"]
-    if operators.get("mode") == "insensitive":
-        wanted = STRING.validate_python(operators["equals"]).lower()
-        return value is not None and STRING.validate_python(value).lower() == wanted
-    return value == operators.get("equals")
+    wanted = STRING.validate_python(operators["equals"]).lower()
+    return value is not None and STRING.validate_python(value).lower() == wanted
 
 
 def where_matches(values: FakeRow, where: Where) -> bool:
     for key, condition in where.items():
-        if key in {"AND", "OR", "NOT"}:
-            branches = TypeAdapter(list[Where]).validate_python(condition)
-            nested = [where_matches(values, branch) for branch in branches]
-            if key == "AND":
-                matched = all(nested)
-            elif key == "OR":
-                matched = any(nested)
-            else:
-                matched = not any(nested)
-        else:
-            matched = field_matches(values.get(key), condition)
-        if not matched:
+        if not field_matches(values, key, condition):
             return False
     return True
 
@@ -269,47 +232,21 @@ def written(outcome: LiteLLM_MCPServerTable | mcp_db.McpIdentifierConflict | Non
             return server_id, None
 
 
-def server_view(server: LiteLLM_MCPServerTable) -> ServerView:
-    credentials = deepcopy(server.credentials)
-    env_vars = server.env_vars
-    views: list[EnvVarView] | None = (
-        None
-        if env_vars is None
-        else [ENV_VAR_VIEW.validate_json(entry.model_dump_json()) for entry in env_vars]
-    )
-    return {
-        "server_id": server.server_id,
-        "server_name": server.server_name,
-        "alias": server.alias,
-        "description": server.description,
-        "auth_type": server.auth_type,
-        "approval_status": server.approval_status,
-        "created_by": server.created_by,
-        "updated_by": server.updated_by,
-        "is_byok": server.is_byok,
-        "credentials": None if credentials is None else mcp_db.decrypt_credentials(credentials),
-        "env_vars": views,
-        "issuer": server.issuer,
-        "token_url": server.token_url,
-        "oauth2_flow": server.oauth2_flow,
-        "token_exchange_endpoint": server.token_exchange_endpoint,
-        "audience": server.audience,
-    }
-
-
 def row_views(client: FakeClient) -> list[ServerView]:
     views: list[ServerView] = []
     for row in client.fake_db.litellm_mcpservertable.rows:
         server = LiteLLM_MCPServerTable.model_validate(row.model_dump())
         mcp_db.decrypt_global_env_var_values(server.env_vars)
-        views.append(server_view(server))
+        view = SERVER_VIEW.validate_json(server.model_dump_json())
+        if server.credentials is not None:
+            view["credentials"] = mcp_db.decrypt_credentials(deepcopy(server.credentials))
+        views.append(view)
     return views
 
 
 async def create(client: FakeClient, call: Call) -> Outcome:
     request = NewMCPServerRequest.model_validate(call["payload"])
-    created = await mcp_db.create_mcp_server(client, request, call["touched_by"])
-    return created.server_id, None
+    return (await mcp_db.create_mcp_server(client, request, call["touched_by"])).server_id, None
 
 
 async def create_if_free(client: FakeClient, call: Call) -> Outcome:
@@ -320,21 +257,19 @@ async def create_if_free(client: FakeClient, call: Call) -> Outcome:
 
 async def create_draft(client: FakeClient, call: Call) -> Outcome:
     request = NewMCPServerRequest.model_validate(call["payload"])
-    draft = await mcp_db.create_draft_mcp_server(
-        client, request, call["touched_by"], call["ttl_seconds"], call["server_id"]
-    )
+    ttl, draft_id = call["ttl_seconds"], call["server_id"]
+    draft = await mcp_db.create_draft_mcp_server(client, request, call["touched_by"], ttl, draft_id)
     return draft.server_id, None
 
 
 async def get_draft(client: FakeClient, call: Call) -> Outcome:
-    found = await mcp_db.get_draft_mcp_server(client, call["server_id"], call["ttl_seconds"])
-    return written(found)
+    ttl = call["ttl_seconds"]
+    return written(await mcp_db.get_draft_mcp_server(client, call["server_id"], ttl))
 
 
 async def update(client: FakeClient, call: Call) -> Outcome:
     changes = UpdateMCPServerRequest.model_validate(call["payload"])
-    updated = await mcp_db.update_mcp_server(client, changes, call["touched_by"])
-    return written(updated)
+    return written(await mcp_db.update_mcp_server(client, changes, call["touched_by"]))
 
 
 async def delete(client: FakeClient, call: Call) -> Outcome:
@@ -342,23 +277,17 @@ async def delete(client: FakeClient, call: Call) -> Outcome:
     return (None if deleted is None else deleted.server_id), None
 
 
+# One handler per LiteLLM operation a case can name.
+HANDLERS: Final[Mapping[Function, Callable[[FakeClient, Call], Coroutine[None, None, Outcome]]]] = {
+    "create": create, "create_if_free": create_if_free, "create_draft": create_draft,
+    "get_draft": get_draft, "update": update, "delete": delete,
+}
+
+
 def run(call: Call) -> Answer:
     sys.modules[PROXY_SERVER] = ProxyServerStub()
     client = FakeClient(call["rows"], call["users"], call["server_id"])
-    match call["function"]:
-        case "create":
-            handler = create
-        case "create_if_free":
-            handler = create_if_free
-        case "create_draft":
-            handler = create_draft
-        case "get_draft":
-            handler = get_draft
-        case "update":
-            handler = update
-        case "delete":
-            handler = delete
-    server_id, conflict = asyncio.run(handler(client, call))
+    server_id, conflict = asyncio.run(HANDLERS[call["function"]](client, call))
     return {
         "server_id": server_id,
         "conflict": conflict,
