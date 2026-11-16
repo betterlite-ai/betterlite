@@ -1,0 +1,13 @@
+kind: helper
+name: assertion-compact-jws-format
+call:
+  b3741:
+    function: agent_365_assertion
+    values:
+      - eyJhbGciOiJub25lIn0.eyJzdWIiOiIxIn0.c2lnbmF0dXJl
+      - a.b
+      - a.b.c.d
+      - ""
+      - eyJhbGciOiJub25lIn0
+env: {}
+compare: {ignore: []}
