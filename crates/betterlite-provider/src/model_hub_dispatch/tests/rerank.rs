@@ -1,7 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
-use betterlite_openai::huggingface_embedding::response::OrdinaryEncoder;
-use betterlite_openai::huggingface_rerank::TextTokenCounter;
+use betterlite_openai::huggingface_embedding::response::OrdinaryEncoder as _;
+use betterlite_openai::huggingface_rerank::TextTokenCounter as _;
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::{ExposeSecret, SecretString};
 
@@ -9,7 +9,7 @@ use super::super::rerank::huggingface_rerank_config;
 use super::super::tokens::Cl100k;
 use super::support::{empty_globals, environment};
 use crate::api::rerank_contracts::{
-    BaseRerankConfig, EnvironmentRequest, MapCohereRerankParams, Params, RerankLogging,
+    BaseRerankConfig as _, EnvironmentRequest, MapCohereRerankParams, Params, RerankLogging,
     RerankProviderResponse, ResponseTransform,
 };
 

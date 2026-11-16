@@ -7,7 +7,7 @@ use crate::replicate::poll::{OutputPolicy, ReplicatePolling};
 use crate::replicate::request::ReplicateDefaults;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
-use betterlite_prompts::arguments::json::Json as PromptJson;
+use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use betterlite_prompts::builtin::Message;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret;
@@ -63,7 +63,7 @@ pub async fn complete(
         globals: deps.globals,
         env: deps.environment,
     };
-    let key = resolve(REPLICATE_KEY, &sources, None)?;
+    let key = resolve(REPLICATE_KEY, &sources, &mut Object::new())?;
     let empty = BTreeMap::new();
     let prompts = call
         .custom_prompt_dict

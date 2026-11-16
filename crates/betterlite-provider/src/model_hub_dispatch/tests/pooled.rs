@@ -17,7 +17,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::time::timeout;
 
-use super::super::transport::{HubGetAsync, Pooled, WireRequest};
+use super::super::transport::{HubGetAsync as _, Pooled, WireRequest};
 use super::super::{
     CallLogging, DispatchDeps, HubCompletion, HubDispatchError, dispatch, predibase,
 };

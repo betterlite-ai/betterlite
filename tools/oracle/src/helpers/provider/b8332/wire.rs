@@ -41,8 +41,13 @@ fn wire_value(wire: &Wire) -> Value {
 }
 
 pub(super) fn answer(recorder: &Recorder, error: Value) -> Value {
-    let sent = recorder.sent.lock().unwrap_or_else(PoisonError::into_inner);
-    let requests: Vec<Value> = sent.iter().map(wire_value).collect();
+    let requests: Vec<Value> = recorder
+        .sent
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .map(wire_value)
+        .collect();
     json!({"requests": requests, "error": error})
 }
 
@@ -54,10 +59,10 @@ fn classified(error: &HubDispatchError) -> (Option<u16>, &'static str, String) {
             "HuggingFaceError",
             failure.message.clone(),
         ),
-        HubDispatchError::Replicate(failure) => match failure.api() {
-            Some(api) => (Some(api.status_code), "ReplicateError", api.message.clone()),
-            None => (None, "ReplicateError", failure.to_string()),
-        },
+        HubDispatchError::Replicate(failure) => failure.api().map_or_else(
+            || (None, "ReplicateError", failure.to_string()),
+            |api| (Some(api.status_code), "ReplicateError", api.message.clone()),
+        ),
         HubDispatchError::Predibase(failure) => (
             Some(failure.status_code),
             "PredibaseError",

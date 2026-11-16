@@ -11,7 +11,7 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use betterlite_prompts::builtin::Message;
 use betterlite_provider::api::rerank_contracts::{
-    BaseRerankConfig, EnvironmentRequest, MapCohereRerankParams, Params,
+    BaseRerankConfig as _, EnvironmentRequest, MapCohereRerankParams, Params,
 };
 use betterlite_provider::model_hub_dispatch::credentials::Globals;
 use betterlite_provider::model_hub_dispatch::embedding::{EmbeddingCall, embed};
@@ -249,10 +249,12 @@ impl Helper for Op {
             state: &mut state,
             env: &env,
         };
-        let error = match runtime.block_on(call(input, &fixture, &mut log)) {
-            Ok(()) => Value::Null,
-            Err(failure) => error_status(&failure, provider(input.op), &redactor),
-        };
+        let error = runtime
+            .block_on(call(input, &fixture, &mut log))
+            .map_or_else(
+                |failure| error_status(&failure, provider(input.op), &redactor),
+                |()| Value::Null,
+            );
         Ok(answer(&fixture.recorder, error))
     }
 }

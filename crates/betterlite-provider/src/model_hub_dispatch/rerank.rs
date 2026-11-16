@@ -13,6 +13,7 @@ use betterlite_openai::huggingface_rerank::error::HuggingfaceRerankError;
 use betterlite_openai::huggingface_rerank::response::ResponseRequest;
 use betterlite_openai::huggingface_rerank::{Uuid4, headers, params, response, url};
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_prompts::arguments::json::Object;
 use secrecy::{ExposeSecret, SecretString};
 pub struct HuggingFaceRerankConfig {
     pub key: Option<SecretString>,
@@ -94,9 +95,9 @@ pub fn huggingface_rerank_config(
         globals,
         env,
     };
-    let base = resolve(HUGGINGFACE_RERANK_BASE, &bases, None)?;
+    let base = resolve(HUGGINGFACE_RERANK_BASE, &bases, &mut Object::new())?;
     Ok(HuggingFaceRerankConfig {
-        key: resolve(HUGGINGFACE_RERANK_KEY, &keys, None)?,
+        key: resolve(HUGGINGFACE_RERANK_KEY, &keys, &mut Object::new())?,
         api_base: base.map(|value| value.expose_secret().to_owned()),
         env: huggingface_env(env),
         counter: Cl100k::new()?,

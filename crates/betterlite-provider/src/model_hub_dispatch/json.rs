@@ -17,13 +17,9 @@ where
 }
 #[must_use]
 pub fn logged_reply(bytes: &[u8]) -> Json {
-    match serde_json::from_slice::<Json>(bytes) {
-        Ok(value) => value,
-        Err(_error) => match from_utf8(bytes) {
-            Ok(text) => Json::Text(text.to_owned()),
-            Err(_error) => Json::Null,
-        },
-    }
+    serde_json::from_slice::<Json>(bytes).unwrap_or_else(|_error| {
+        from_utf8(bytes).map_or(Json::Null, |text| Json::Text(text.to_owned()))
+    })
 }
 #[must_use]
 pub fn header_values(headers: &Headers) -> IndexMap<String, Json> {

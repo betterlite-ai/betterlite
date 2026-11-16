@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::huggingface_embedding::error::HuggingfaceEmbeddingError;
-use betterlite_openai::huggingface_embedding::task::PipelineTagSource;
+use betterlite_openai::huggingface_embedding::task::PipelineTagSource as _;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 

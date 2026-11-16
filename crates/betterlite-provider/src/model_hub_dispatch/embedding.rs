@@ -57,15 +57,15 @@ fn body_object(body: &str) -> Result<BodyObject, HubDispatchError> {
 async fn pipeline_tag(
     call: &EmbeddingCall<'_>,
     deps: &DispatchDeps<'_>,
-) -> Result<Option<PrefetchedTag>, HubDispatchError> {
+) -> Result<Box<dyn PipelineTagSource>, HubDispatchError> {
     if !matches!(
         call.optional_params.get("input_type"),
         None | Some(PromptJson::Null)
     ) {
-        return Ok(None);
+        return Ok(Box::new(NoTag));
     }
     let info = model_info(deps, call.model, &Headers::new(), &[]).await?;
-    Ok(Some(PrefetchedTag(info)))
+    Ok(Box::new(PrefetchedTag(info)))
 }
 
 async fn prepare_call(
@@ -77,13 +77,13 @@ async fn prepare_call(
         globals: deps.globals,
         env: deps.environment,
     };
-    let key = resolve(HUGGINGFACE_EMBEDDING_KEY, &sources, None)?;
+    let key = resolve(
+        HUGGINGFACE_EMBEDDING_KEY,
+        &sources,
+        &mut PromptObject::new(),
+    )?;
     let params: Params = json::convert(call.optional_params)?;
-    let prefetched = pipeline_tag(call, deps).await?;
-    let tag: &dyn PipelineTagSource = match prefetched.as_ref() {
-        Some(found) => found,
-        None => &NoTag,
-    };
+    let tag = pipeline_tag(call, deps).await?;
     let request = prepare(
         &PrepareRequest {
             model: call.model,
@@ -94,7 +94,7 @@ async fn prepare_call(
             api_base: call.api_base,
             env: &huggingface_env(deps.environment),
         },
-        tag,
+        &*tag,
     )?;
     let data = body_object(&request.body)?;
     let input = Json::List(call.input.iter().cloned().map(Json::Text).collect());

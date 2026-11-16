@@ -1,6 +1,6 @@
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_openai::huggingface_chat::error::HuggingfaceChatError;
-use betterlite_openai::huggingface_chat::mapping::ProviderMappingSource;
+use betterlite_openai::huggingface_chat::mapping::ProviderMappingSource as _;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 
@@ -35,10 +35,10 @@ async fn prepared(
 }
 
 fn chat(request: PreparedRequest) -> Box<PreparedChat> {
-    match request {
-        PreparedRequest::Chat(plain) => plain,
-        _ => panic!("a plain call prepares a chat request"),
-    }
+    let PreparedRequest::Chat(plain) = request else {
+        panic!("a plain call prepares a chat request");
+    };
+    plain
 }
 
 #[tokio::test]

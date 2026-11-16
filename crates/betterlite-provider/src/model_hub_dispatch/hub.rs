@@ -1,3 +1,4 @@
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::huggingface_chat::error::HuggingfaceError;
 use betterlite_openai::huggingface_chat::mapping::{HubGet, HubResponse};
 use betterlite_openai::huggingface_embedding::task::PipelineTagSource;
@@ -57,7 +58,7 @@ impl HubGet for PrefetchedHub {
         _url: &str,
         _headers: &Headers,
         _query: &[(&str, &str)],
-    ) -> Result<HubResponse, betterlite_http::proxy::transport_error::TransportError> {
+    ) -> Result<HubResponse, TransportError> {
         Ok(self.0.clone())
     }
 }

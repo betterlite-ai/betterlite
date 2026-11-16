@@ -14,6 +14,7 @@ use crate::oci_common::Clock;
 use crate::operation::OperationError;
 use crate::predibase::error::{PredibaseError, PredibaseSetupError};
 use crate::predibase::reply::TokenCounter as PredibaseTokenCounter;
+use crate::prepared::PreparedRequest;
 use crate::replicate::error::ReplicateFailure;
 use crate::replicate::poll::transport::ReplicateTransport;
 use crate::replicate::poll::{ReplicatePolling, ReplicateSleeper};
@@ -33,6 +34,7 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::builtin::Message;
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::custom::CustomPromptTemplate;
+use betterlite_tokenizer::engine::error::EngineError;
 use chrono::{DateTime, Utc};
 use secrecy::SecretString;
 use std::collections::BTreeMap;
@@ -96,7 +98,7 @@ pub enum HubDispatchError {
     #[error("the cl100k_base tokenizer cannot be built")]
     Encoding {
         #[source]
-        source: betterlite_tokenizer::engine::error::EngineError,
+        source: EngineError,
     },
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,12 +109,16 @@ pub enum HubProvider {
 }
 #[must_use]
 pub const fn select(tag: ChatConfigTag) -> Option<HubProvider> {
-    match tag {
-        ChatConfigTag::HuggingFaceChat => Some(HubProvider::HuggingFace),
-        ChatConfigTag::Replicate => Some(HubProvider::Replicate),
-        ChatConfigTag::Predibase => Some(HubProvider::Predibase),
-        _ => None,
+    if matches!(tag, ChatConfigTag::HuggingFaceChat) {
+        return Some(HubProvider::HuggingFace);
     }
+    if matches!(tag, ChatConfigTag::Replicate) {
+        return Some(HubProvider::Replicate);
+    }
+    if matches!(tag, ChatConfigTag::Predibase) {
+        return Some(HubProvider::Predibase);
+    }
+    None
 }
 pub struct ChatContext<'source> {
     pub model: &'source str,
@@ -149,7 +155,7 @@ pub struct CallLogging<'state, 'env> {
     pub env: &'state PrePostEnv<'env>,
 }
 pub enum HubCompletion {
-    HuggingFace(Box<crate::prepared::PreparedRequest>),
+    HuggingFace(Box<PreparedRequest>),
     Replicate(Box<replicate::Completion>),
     Predibase(Box<predibase::Completion>),
 }

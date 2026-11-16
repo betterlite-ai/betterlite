@@ -76,7 +76,7 @@ async fn the_predibase_arm_sends_the_generate_request() {
     assert!(!body.contains_key("stream"));
     let parameters = PromptJson::Object(object(&[
         ("details", PromptJson::Bool(true)),
-        ("max_new_tokens", PromptJson::Number(Number::from(4096))),
+        ("max_new_tokens", PromptJson::Number(Number::from(4096_i64))),
         ("return_full_text", PromptJson::Bool(false)),
     ]));
     assert_eq!(body.get("parameters"), Some(&parameters));

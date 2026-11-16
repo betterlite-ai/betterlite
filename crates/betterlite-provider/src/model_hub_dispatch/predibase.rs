@@ -72,22 +72,17 @@ fn endpoint(
         env: deps.environment,
     };
     let missing = HubDispatchError::PredibaseSetup(PredibaseSetupError::MissingTenantId);
-    let tenant = resolve(
-        PREDIBASE_TENANT_ID,
-        &lookups,
-        Some(&mut *call.optional_params),
-    )?
-    .ok_or(missing)?;
+    let tenant = resolve(PREDIBASE_TENANT_ID, &lookups, call.optional_params)?.ok_or(missing)?;
     let bases = Sources {
         call: call.api_base,
         ..lookups
     };
-    let base = resolve(PREDIBASE_BASE, &bases, Some(&mut *call.optional_params))?;
+    let base = resolve(PREDIBASE_BASE, &bases, call.optional_params)?;
     let keys = Sources {
         call: call.api_key.map(ExposeSecret::expose_secret),
         ..bases
     };
-    let key = resolve(PREDIBASE_KEY, &keys, None)?;
+    let key = resolve(PREDIBASE_KEY, &keys, &mut Object::new())?;
     let options: Object = call.optional_params.clone();
     let stream = matches!(options.get("stream"), Some(PromptJson::Bool(true)));
     let url = get_complete_url(
@@ -132,15 +127,14 @@ async fn request_body(
 
 async fn stream_error(response: StreamResponse) -> HubDispatchError {
     let status = response.response.status().as_u16();
-    match response.buffered(ERROR_BODY_LIMIT).await {
-        Ok(buffered) => match from_utf8(&buffered.body) {
-            Ok(text) => {
-                HubDispatchError::Predibase(get_error_class(text, status, &BTreeMap::new()))
-            }
-            Err(source) => HubDispatchError::BodyNotUtf8 { source },
-        },
-        Err(source) => HubDispatchError::Operation(OperationError::from(source)),
-    }
+    let buffered = match response.buffered(ERROR_BODY_LIMIT).await {
+        Ok(buffered) => buffered,
+        Err(source) => return HubDispatchError::Operation(OperationError::from(source)),
+    };
+    from_utf8(&buffered.body).map_or_else(
+        |source| HubDispatchError::BodyNotUtf8 { source },
+        |text| HubDispatchError::Predibase(get_error_class(text, status, &BTreeMap::new())),
+    )
 }
 
 fn log_pre_call(
@@ -192,7 +186,7 @@ pub async fn complete(
     if call.acompletion {
         let opened = PostCall {
             original_response: Json::Null,
-            input: json::convert(call.messages)?,
+            input: json::convert(call.messages.as_slice())?,
             additional_args: additional_args(
                 None,
                 None,
@@ -228,7 +222,7 @@ async fn replied(
         log.state,
         &PostCall {
             original_response: json::logged_reply(&response.body),
-            input: json::convert(call.messages)?,
+            input: json::convert(call.messages.as_slice())?,
             additional_args: additional_args(None, None, Some(logged), IndexMap::new()),
         },
         log.env,

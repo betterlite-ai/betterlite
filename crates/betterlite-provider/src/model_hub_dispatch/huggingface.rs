@@ -8,7 +8,7 @@ use betterlite_openai::huggingface_chat::mapping::{
 use betterlite_openai::huggingface_chat::request::transform_request;
 use betterlite_openai::huggingface_chat::url::get_complete_url;
 use betterlite_openai::openai_base_config::Object as ChatObject;
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 use http::Method;
 use secrecy::{ExposeSecret, SecretString};
 use url::Url;
@@ -44,18 +44,18 @@ async fn request_body(
     call: &ChatContext<'_>,
     deps: &DispatchDeps<'_>,
 ) -> Result<ChatObject, HubDispatchError> {
-    let params: ChatObject = json::convert(call.optional_params)?;
+    let params = json::convert::<Object, ChatObject>(call.optional_params)?;
     let messages: Vec<ChatMessage> = call
         .messages
         .iter()
-        .map(|message| json::convert(message))
+        .map(json::convert)
         .collect::<Result<_, _>>()?;
     let sources = Sources {
         call: None,
         globals: deps.globals,
         env: deps.environment,
     };
-    let token = resolve(HUGGINGFACE_HUB_TOKEN, &sources, None)?;
+    let token = resolve(HUGGINGFACE_HUB_TOKEN, &sources, &mut Object::new())?;
     let body = match mapping_source(call, deps, token.as_ref()).await? {
         Some(prefetched) => {
             let source = ProviderMappingCache::new(token, prefetched);
@@ -111,7 +111,7 @@ pub async fn chat_request(
         globals: deps.globals,
         env: deps.environment,
     };
-    let key = resolve(HUGGINGFACE_CHAT_KEY, &sources, None)?;
+    let key = resolve(HUGGINGFACE_CHAT_KEY, &sources, &mut Object::new())?;
     let body = request_body(call, deps).await?;
     prepared(call, deps, key.as_ref(), &body)
 }

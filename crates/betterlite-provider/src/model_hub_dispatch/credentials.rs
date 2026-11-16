@@ -114,19 +114,15 @@ fn pop_text(
         }
     }
 }
-// a Pop step without optional_params gives nothing, as the chains that pop always pass them
 pub fn resolve(
     chain: &[Step],
     sources: &Sources<'_>,
-    mut options: Option<&mut Object>,
+    options: &mut Object,
 ) -> Result<Option<SecretString>, HubDispatchError> {
     for step in chain {
         let found = match *step {
             Step::Call => sources.call.map(SecretString::from),
-            Step::Pop(name) => match options.as_deref_mut() {
-                Some(object) => pop_text(object, name)?,
-                None => None,
-            },
+            Step::Pop(name) => pop_text(options, name)?,
             Step::ApiKey => sources.globals.api_key.cloned(),
             Step::HuggingfaceKey => sources.globals.huggingface_key.cloned(),
             Step::ReplicateKey => sources.globals.replicate_key.cloned(),
