@@ -10,7 +10,6 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -333,10 +332,7 @@ impl StubHandler {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        match failure {
-            Some(error) => Err(error),
-            None => self.reply.build(),
-        }
+        failure.map_or_else(|| self.reply.build(), Err)
     }
 
     fn record(&self, call: &ContainerFileHandlerCall<'_>, form: HandlerForm) {
