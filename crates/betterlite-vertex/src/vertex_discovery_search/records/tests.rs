@@ -17,6 +17,7 @@ use super::payload::{PayloadError, decode_vertex_search_payload, transform_searc
 use super::search::{SearchQuery, SearchRequest, transform_search_request};
 use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 use crate::vertex_discovery_search::error::VertexDiscoverySearchError;
+use crate::vertex_discovery_search::options::VertexSearchOptions;
 use crate::vertex_rag_store::records::payload::Reply;
 
 fn object(text: &str) -> BTreeMap<String, Json> {
@@ -104,6 +105,21 @@ fn a_query_sequence_is_joined_with_spaces() {
         logging.get("query"),
         Some(&Json::Text("what is".to_owned()))
     );
+}
+
+#[rstest]
+#[case("{}", Some("default_collection"))]
+#[case(r#"{"vertex_collection_id":null}"#, Some("default_collection"))]
+#[case(
+    r#"{"vertex_collection_id":"team_collection"}"#,
+    Some("team_collection")
+)]
+fn the_search_options_default_the_collection_when_absent_or_null(
+    #[case] params: &str,
+    #[case] collection: Option<&str>,
+) {
+    let options = VertexSearchOptions::from_params(&object(params)).unwrap();
+    assert_eq!(options.vertex_collection_id.as_deref(), collection);
 }
 
 #[rstest]
