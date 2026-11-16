@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::fs;
+use std::iter::once;
 use std::path::{Path, PathBuf};
 
 use betterlite_oracle_helper_api::helper::Helper as _;
@@ -39,7 +40,7 @@ fn replays_the_gemini_live_setup_seeds(
     let source = fs::read_to_string(&path).expect("the seed is readable text");
     let seed: HelperCase = serde_saphyr::from_str(&source).expect("the seed parses");
     validate_helper(Path::new("<helper>"), &seed).expect("the seed is a valid helper case");
-    std::iter::once(&seed.call)
+    once(&seed.call)
         .chain(&seed.calls)
         .map(|call| {
             assert_eq!(call.operation, OPERATION);

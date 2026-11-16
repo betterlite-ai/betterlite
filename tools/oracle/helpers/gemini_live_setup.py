@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from logging.handlers import MemoryHandler
-from typing import Literal, NotRequired, TypeAlias, TypedDict
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 import litellm
 from fastuuid import UUID
@@ -32,6 +32,24 @@ class Call(TypedDict):
 
 class Input(TypedDict):
     calls: list[Call]
+
+
+class RealtimeConfig(Protocol):
+    def transform_realtime_request(
+        self, message: str, model: str, session_configuration_request: str | None = None
+    ) -> list[str]: ...
+
+    def requires_session_configuration(self) -> bool: ...
+
+    def session_configuration_request(self, model: str) -> str: ...
+
+    def transform_session_created_event(
+        self, model: str, logging_session_id: str, session_configuration_request: str | None = None
+    ) -> JsonObject: ...
+
+    def get_complete_url(
+        self, api_base: str | None, model: str, api_key: str | None = None
+    ) -> str: ...
 
 
 INPUT = TypeAdapter(Input)
@@ -68,7 +86,7 @@ def logging_session_id(call: Call) -> str:
 
 
 def dispatch(call: Call) -> JsonValue:
-    config = GeminiRealtimeConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L143-L148
+    config: RealtimeConfig = GeminiRealtimeConfig()  # type: ignore[no-untyped-call,assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L143-L148
     request = call.get("session_configuration_request")
     if call["op"] == "session_update":
         update: JsonObject = {"type": "session.update", "session": session_payload(call)}
@@ -85,8 +103,7 @@ def dispatch(call: Call) -> JsonValue:
         return {"required": required, "setup": setup}
     if call["op"] == "created":
         litellm_uuid.uuid4 = FixedUuid(event_id(call))
-        # an annotated assignment is the one place mypy allows the Any inside LiteLLM's event TypedDict
-        event: object = config.transform_session_created_event(
+        event = config.transform_session_created_event(
             call["model"],
             logging_session_id(call),
             request,
