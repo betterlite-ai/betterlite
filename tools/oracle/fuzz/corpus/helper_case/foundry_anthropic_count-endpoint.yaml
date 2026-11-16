@@ -1,0 +1,11 @@
+kind: helper
+name: foundry-anthropic-count-endpoint
+call:
+  foundry_anthropic_count:
+    function: endpoint
+    api_bases:
+      - https://r.services.ai.azure.com
+      - https://r.services.ai.azure.com/anthropic/
+      - https://r.services.ai.azure.com?x=1
+env: {}
+compare: {ignore: []}
