@@ -310,7 +310,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_provider*")"
       && grep -lq 'openai_provider' tools/oracle/fuzz/corpus/helper_case/openai_provider* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_provider$/)' && cargo nextest
+      -p betterlite-oracle-provider --no-tests=fail -E 'test(/::helper_seeds_select_openai_provider$/)' && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-experimental-openai-base-llm-http-handler
     why: The EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER setting is not loaded with its required defaults and precedence.
@@ -689,6 +689,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/utils.py: _handle_new_key_with_scan L5621-L5637 have no caller at the pin;
   do not implement or add cases.'
 pitfalls:
+- Request media is fetched as LiteLLM fetches it (decision 2026-10-31), so build B5083's Fetcher once from the route's UserUrlFetcher, B173's shared client and MAX_IMAGE_URL_DOWNLOAD_SIZE_MB and pass it to B9960's chat content conversion (transform_with_media or fetch_media) instead of RefuseDownloads.
 - 'The oracle helper for this task is pre-registered as openai_provider in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/openai_provider.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_provider.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty cleaned requester_metadata map falls back to cleaning the entire metadata map.
 - Chat logs async calls here only when stream is truthy; text also logs acompletion=True.

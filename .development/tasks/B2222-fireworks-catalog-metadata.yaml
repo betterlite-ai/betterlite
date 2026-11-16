@@ -144,7 +144,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/fireworks_catalog_metadata*")"
       && grep -lq 'fireworks_catalog_metadata' tools/oracle/fuzz/corpus/helper_case/fireworks_catalog_metadata*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_fireworks_catalog_metadata$/)'
+      && cargo nextest run --locked -p betterlite-oracle-models --no-tests=fail -E 'test(/::helper_seeds_select_fireworks_catalog_metadata$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-resource-names
     why: 'Remove one fireworks_ai/ prefix. Preserve accounts/... names, FW- names and any name containing #. Prefix

@@ -1,0 +1,188 @@
+id: B9962
+title: Bedrock invoke prompts reach the Hugging Face template fetch
+description: >-
+  B2205's convert_messages_to_prompt in crates/betterlite-bedrock/src/invoke_primitives/prompt.rs refuses the
+  llama3 and llama4 instruct prompt before the factory runs. bedrock_template maps the model to
+  meta-llama/Meta-Llama-3-8B-Instruct, has_local_template looks that key up in PromptFactory.cache, and a miss
+  returns FactoryError::NoChatTemplate. LiteLLM has no such check: its prompt_factory branch at factory.py
+  L5305-L5309 calls hf_chat_template with the same model, and hf_chat_template downloads tokenizer_config.json
+  and then chat_template.jinja or chat_template.jinja2 from huggingface.co when known_tokenizer_config has no
+  entry. B5084 already built that fetch in crates/betterlite-prompts/src/factory/hub.rs, and prompt_factory's
+  bedrock dispatch in factory/bedrock.rs already calls it. B2205 recorded the local-only failure as row 1 of
+  docs/deviations/B2205.yaml because the download decision was still open. The 2026-10-31 decision settles it,
+  so this task deletes the check and that row.
+
+
+  Delete bedrock_template, has_local_template, the local LLAMA3_INSTRUCT_MODEL constant and the local_template
+  block in factory_prompt, with the imports that turn unused: PoisonError, ChatTemplate and TokenizerConfig.
+  factory_prompt keeps its prompt_factory call for the anthropic, amazon, mistral, meta and llama families and
+  keeps the Output::None error. The factory then answers from the cache when the entry is there, as LiteLLM
+  answers from known_tokenizer_config, and downloads the template when it is not.
+
+
+  The deepseek_r1 arm needs one more change. It calls factory_prompt with custom_llm_provider None, and
+  prompt_factory sends that to generic::fallback, which turns every template error into default_pt. LiteLLM's
+  deepseek_r1_pt at factory.py L614-L615 calls hf_chat_template directly and lets the error escape, so with the
+  check gone a failed fetch would answer default_pt where LiteLLM answers No chat template found. Make
+  PromptFactory::hf_chat_template public in crates/betterlite-prompts/src/factory.rs (pub(crate) becomes pub)
+  and call it from the deepseek_r1 arm with DEEPSEEK_MODEL, conversion.messages and conversion.now. The error
+  goes through ? as ConversionError::Factory and the result returns chat_history None, so the arm no longer
+  needs factory_prompt's operation name.
+
+
+  Add Hub::Map(HubMap) to crates/betterlite-prompts/src/factory/hub.rs next to Unreachable, with
+  HubMap { configs: BTreeMap<String, TokenizerConfig>, templates: BTreeMap<String, ChatTemplateFile> }. A missing
+  key answers TokenizerConfig::Failure and ChatTemplateFile::Failure, the same answer a non-200 response gives,
+  and both match arms sit beside the Http and Unreachable arms. This is the map-backed fetch the unit tests and
+  the oracle helper drive in process; Unreachable stays the refusing one. Hub is matched only inside hub.rs, so
+  no other match needs a new arm.
+
+
+  In crates/betterlite-bedrock/src/invoke_primitives/tests/llama.rs add five #[test] functions that use the
+  existing runtime() helper and convert_messages_to_prompt with a PromptFactory whose cache is empty.
+  fetch_renders_map_template: the map answers a tokenizer config with a chat_template, bos_token and eos_token,
+  and the prompt renders. fetch_falls_back_to_file: the config has no chat_template, the map answers a template
+  file, and the config's tokens reach the render. fetch_refusal_is_no_template: an empty map answers failure and
+  the error is FactoryError::NoChatTemplate. fetch_cache_hit_skips_hub: the cache holds builtin_entries and the
+  map answers a different template, so the built-in output proves the cache answered. fetch_deepseek_error_surfaces:
+  provider DeepseekR1, an empty cache and Hub::Unreachable answer No chat template found, not default_pt. Delete
+  invoke_primitives_never_downloads_templates from crates/betterlite-bedrock/src/invoke_primitives/tests.rs with
+  the TcpListener, ProxiedClient and TransportLimits imports only it used. Change the local_assets comment in
+  llama.rs: the empty factory now fails because both fetches answer failure, not because the lookup refuses to
+  download.
+
+
+  The skeleton pre-registers a b9962 helper operation in the bedrock group. Fill its Rust input and its Python
+  run with one field, cases, answering {"results": [...]}: {"prompt": text, "chat_history": null} for a rendered
+  prompt and {"message": text} for a failure, as B2205's prompts answers. A case has model, messages, provider
+  (optional), hf_model, tokenizer_config (optional object) and template_file (optional string). The Rust side
+  fills HubMap.configs with hf_model mapped to TokenizerConfig::Success(Some(document)) when tokenizer_config is
+  present and Failure otherwise, and templates with hf_model mapped to ChatTemplateFile::Success when
+  template_file is present and Failure otherwise, then calls convert_messages_to_prompt with the empty cache.
+  The Python side calls AmazonInvokeConfig().convert_messages_to_prompt the way
+  tools/oracle/helpers/bedrock_invoke_primitives does, after clearing litellm.known_tokenizer_config and
+  replacing huggingface_template_handler._get_tokenizer_config and _get_chat_template_file with callables that
+  answer from the same case only when hf_model_name equals hf_model, and restore both in a finally. Without the
+  clear, LiteLLM answers the hardcoded model from known_tokenizer_config and the patched handlers never run.
+  The adapter needs six suppression lines: a cast for the InvokeApi view, the untyped AmazonInvokeConfig
+  constructor, the save, install and restore lines for the two private handlers, and the except Exception catch.
+  Give each one the pinned LiteLLM link as the other helpers do.
+
+
+  Cases, all under tools/oracle/cases/helpers/providers/bedrock-invoke-templates/. llama-config-template.yaml
+  has a tokenizer_config whose chat_template prints bos_token, one line per message and eos_token; on main
+  betterlite answers No chat template found where LiteLLM renders. llama-file-fallback.yaml has a tokenizer_config
+  without chat_template plus a template_file, also red on main. llama-missing-template.yaml has neither and both
+  answer No chat template found. deepseek-fetched-template.yaml uses provider deepseek_r1 with hf_model
+  deepseek-r1/deepseek-r1-7b-instruct and a tokenizer_config template, red on main. deepseek-missing-template.yaml
+  uses provider deepseek_r1 with neither, green on main and the guard for the error escaping instead of
+  default_pt. Use a template that needs no strftime_now or other clock value, so compare has an empty ignore list.
+
+
+  Deviations. Remove row 1 from docs/deviations/B2205.yaml and leave row 2, the falcon and mpt null prompt. Add
+  docs/deviations/B9962.yaml with one row: what = the llama3 or llama4 instruct and deepseek_r1 prompt arms read
+  the factory cache and download from huggingface.co on a miss, where LiteLLM's built-in known_tokenizer_config
+  holds both models and never downloads for them; why = betterlite's cache is seeded by its builder, a factory
+  built from builtin_entries answers with no request like LiteLLM, and one built without them renders instead of
+  failing; link = factory.py#L5305-L5309.
+scope:
+  paths:
+    - crates/betterlite-bedrock/src/invoke_primitives/prompt.rs
+    - crates/betterlite-bedrock/src/invoke_primitives/tests.rs
+    - crates/betterlite-bedrock/src/invoke_primitives/tests/llama.rs
+    - crates/betterlite-prompts/src/factory.rs
+    - crates/betterlite-prompts/src/factory/hub.rs
+    - docs/deviations/B2205.yaml
+    - tools/oracle/cases/helpers/providers/bedrock-invoke-templates/**
+    - tools/oracle/src/helpers/bedrock/b9962.rs
+    - tools/oracle/src/helpers/bedrock/b9962/**
+    - tools/oracle/helpers/b9962.py
+    - tools/oracle/helpers/b9962/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5305-L5309
+    why: The Bedrock llama3 and llama4 instruct branch that calls hf_chat_template, the branch B2205 pre-empted.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L506-L557
+    why: _fetch_and_extract_template, the known_tokenizer_config lookup, the config fetch, the file fallback and the No chat template found raise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L587-L611
+    why: hf_chat_template, which renders the template the fetch returns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L614-L615
+    why: deepseek_r1_pt, which calls hf_chat_template directly and lets its error escape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1484-L1530
+    why: The built-in Meta-Llama-3 and DeepSeek entries known_tokenizer_config starts with.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py#L41-L161
+    why: _get_tokenizer_config and _get_chat_template_file, the two handlers the oracle adapter replaces with its case map.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L592-L630
+    why: convert_messages_to_prompt, whose family order and deepseek_r1 arm decide which branch reaches the fetch.
+dod:
+  - text: A llama3 or llama4 instruct prompt with an empty cache renders the template the map-backed hub answers from its tokenizer config, with that config's bos and eos tokens.
+    proof: [fetch-map-template]
+  - text: A config without chat_template falls through to the hub's template file and renders it with the config's tokens.
+    proof: [fetch-map-template]
+  - text: A factory holding the built-in entries renders from its cache and never asks the hub.
+    proof: [fetch-cache-hit]
+  - text: A cache miss whose hub answers failure returns No chat template found, and the deepseek_r1 arm returns the same error instead of default_pt.
+    proof: [fetch-refusing]
+  - text: The Bedrock prompt suite and the prompts factory suite still pass after the check is gone and hf_chat_template is public.
+    proof: [prompt-suite, factory-suite]
+  - text: The five oracle cases answer like the pinned LiteLLM once known_tokenizer_config is cleared and both handlers answer from the case map.
+    proof: [oracle, helper-python]
+  - text: docs/deviations/B2205.yaml drops the local-only template failure and keeps the falcon and mpt row, and docs/deviations/B9962.yaml lists the cache-miss download with the pinned branch link.
+    proof: [deviation-removed, deviation-row]
+checks:
+  optional: []
+  commands:
+    - id: fetch-map-template
+      why: The map-backed config or file template is not reached, or the tokens differ from the fetched config.
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^invoke_primitives::tests::llama::fetch_(renders_map_template|falls_back_to_file)$/)'
+    - id: fetch-cache-hit
+      why: The seeded cache no longer answers before the hub.
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^invoke_primitives::tests::llama::fetch_cache_hit_skips_hub$/)'
+    - id: fetch-refusing
+      why: A failing hub answers default_pt or another error instead of No chat template found.
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^invoke_primitives::tests::llama::fetch_(refusal_is_no_template|deepseek_error_surfaces)$/)'
+    - id: prompt-suite
+      why: The Bedrock invoke prompt cases regressed after the local check was removed.
+      run: grep -q -F 'fetch_renders_map_template' crates/betterlite-bedrock/src/invoke_primitives/tests/llama.rs && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^invoke_primitives::tests::/)'
+    - id: factory-suite
+      why: The prompts factory tests regressed after the Hub variant and the visibility change.
+      run: grep -q -F 'HubMap' crates/betterlite-prompts/src/factory/hub.rs && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^factory::/)'
+    - id: helper-python
+      why: The oracle adapter is absent, unchanged or fails strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: deviation-removed
+      why: B2205's local-only template row is still listed, or its falcon and mpt row was deleted with it.
+      run: '! grep -q -F ''local chat-template assets only'' docs/deviations/B2205.yaml && grep -q -F ''factory.py#L5335-L5343'' docs/deviations/B2205.yaml'
+    - id: deviation-row
+      why: The fix's own deviation row is missing or lacks the pinned LiteLLM branch link.
+      run: grep -q -F 'factory.py#L5305-L5309' docs/deviations/B9962.yaml
+oracle_cases:
+  - tools/oracle/cases/helpers/providers/bedrock-invoke-templates/llama-config-template.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-invoke-templates/llama-file-fallback.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-invoke-templates/llama-missing-template.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-invoke-templates/deepseek-fetched-template.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-invoke-templates/deepseek-missing-template.yaml
+deviations:
+  - what: The Bedrock llama3 or llama4 instruct and deepseek_r1 prompt arms read the factory cache and download tokenizer_config.json and then chat_template.jinja or chat_template.jinja2 from huggingface.co on a miss, where LiteLLM's built-in known_tokenizer_config already holds both models and never downloads for them.
+    why: betterlite's cache is seeded by whoever builds the PromptFactory; a factory built from builtin_entries answers with no request like LiteLLM, and one built without them renders instead of failing as B2205's row described.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5305-L5309
+out_of_scope:
+  - AmazonInvokeConfig.transform_request L175-L279 and the family dispatches belong to B611 and B613 to B619; this task changes only the prompt conversion they call.
+  - The document URL download in anthropic_claude3_transformation.py L303-L340 and the async media path belong to B618, which is todo; the invoke prompt path here is text only.
+  - The Hugging Face fetch itself, its URLs, redirects, statuses and the 1024-entry cache cap are B5084's factory/hub.rs and stay as they are.
+  - B2205's second deviation row, the falcon and mpt null prompt typed error, stays.
+  - Constructing the PromptFactory and the media Fetcher for the provider route is B028's; no route reaches this code on main yet.
+pitfalls:
+  - The oracle helper for this task is pre-registered as b9962 in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/b9962.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b9962.py. The registry files (tools/oracle/src/helpers/bedrock/lib.rs and tools/oracle/helpers/dispatch.py) are not this task's to edit.
+  - The local check sits before prompt_factory and reads the cache directly, so deleting only the return leaves both helpers and the const unused and clippy fails on them and on the three unused imports.
+  - prompt_factory with custom_llm_provider None runs generic::fallback, whose if let Ok discards every template error and answers default_pt; the deepseek_r1 arm must not keep going through it.
+  - The two hardcoded models are built-in known_tokenizer_config entries, so the download only runs in a factory whose cache lacks them, which is the state the oracle clears known_tokenizer_config for.
+  - The Python fake must answer only when hf_model_name equals the case's hf_model, or a wrong fetch target on either side still compares equal.
+  - A map key the dispatch does not use answers Failure, so a wrong model constant shows up as No chat template found rather than a mismatch in the rendered text.
+  - The case template must avoid strftime_now and every clock value, or the two renderers need an ignore list entry.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 8
