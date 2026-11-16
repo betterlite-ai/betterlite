@@ -36,7 +36,7 @@ impl RouterSettingsTarget for Recorder {
     }
 
     fn init_routing_strategy(&mut self, strategy: &JsonValue, args: &JsonValue) -> Step {
-        let call = json!({"strategy": strategy, "args": args});
+        let call = object(vec![("strategy", strategy.clone()), ("args", args.clone())]);
         self.calls.push(("init_routing_strategy", call));
         if self.fail_strategy {
             return failure("init_routing_strategy", "unknown strategy");
@@ -51,7 +51,10 @@ impl RouterSettingsTarget for Recorder {
     }
 
     fn apply_lar1(&mut self, args: Option<&JsonValue>) -> Step {
-        let call = json!({"absent": args.is_none(), "args": args});
+        let call = object(vec![
+            ("absent", JsonValue::Bool(args.is_none())),
+            ("args", args.cloned().unwrap_or(JsonValue::Null)),
+        ]);
         self.calls.push(("apply_lar1", call));
         Ok(())
     }
@@ -85,6 +88,16 @@ fn pairs(entries: Vec<(&str, JsonValue)>) -> Vec<(String, JsonValue)> {
         .collect()
 }
 
+// json!({"a": 1}) expands to serde_json's Map and Into::into, which this crate denies
+fn object(entries: Vec<(&str, JsonValue)>) -> JsonValue {
+    JsonValue::Object(
+        entries
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value))
+            .collect(),
+    )
+}
+
 fn update(router: &mut RouterRuntimeSettings, entries: Vec<(&str, JsonValue)>) -> Recorder {
     let mut recorder = Recorder::default();
     router
@@ -98,23 +111,26 @@ fn shown(router: &RouterRuntimeSettings) -> BTreeMap<String, JsonValue> {
 }
 
 fn full_values() -> JsonValue {
-    json!({
-        "routing_strategy_args": {},
-        "routing_strategy": "simple-shuffle",
-        "allowed_fails": 3_i64,
-        "cooldown_time": 5_i64,
-        "num_retries": 2_i64,
-        "timeout": 600_i64,
-        "retry_after": 0_i64,
-        "fallbacks": [{"gpt": ["claude"]}],
-        "context_window_fallbacks": [],
-        "model_group_retry_policy": null,
-        "retry_policy": null,
-        "model_group_alias": {},
-        "enable_weighted_failover": false,
-        "enable_tag_filtering": false,
-        "tag_routing_prefix": "",
-    })
+    object(vec![
+        ("routing_strategy_args", object(vec![])),
+        ("routing_strategy", json!("simple-shuffle")),
+        ("allowed_fails", json!(3_i64)),
+        ("cooldown_time", json!(5_i64)),
+        ("num_retries", json!(2_i64)),
+        ("timeout", json!(600_i64)),
+        ("retry_after", json!(0_i64)),
+        (
+            "fallbacks",
+            json!([object(vec![("gpt", json!(["claude"]))])]),
+        ),
+        ("context_window_fallbacks", json!([])),
+        ("model_group_retry_policy", JsonValue::Null),
+        ("retry_policy", JsonValue::Null),
+        ("model_group_alias", object(vec![])),
+        ("enable_weighted_failover", json!(false)),
+        ("enable_tag_filtering", json!(false)),
+        ("tag_routing_prefix", json!("")),
+    ])
 }
 
 #[test]
@@ -150,7 +166,8 @@ fn get_settings_lists_the_stored_names_and_the_routing_groups_but_no_max_retries
 
 #[test]
 fn get_settings_skips_a_name_the_router_never_stored() {
-    let settings = router(json!({"timeout": 5_i64})).get_settings(&SettingsView::default());
+    let settings =
+        router(object(vec![("timeout", json!(5_i64))])).get_settings(&SettingsView::default());
 
     let mut names: Vec<&str> = settings.keys().map(String::as_str).collect();
     names.sort_unstable();
@@ -161,7 +178,7 @@ fn get_settings_skips_a_name_the_router_never_stored() {
 fn get_settings_hides_values_outside_the_list() {
     let mut values = full_values();
     values["optional_pre_call_checks"] = json!(["prompt_caching"]);
-    values["routing_groups"] = json!([{"name": "stored"}]);
+    values["routing_groups"] = json!([object(vec![("name", json!("stored"))])]);
 
     let settings = router(values).get_settings(&SettingsView::default());
 
@@ -172,7 +189,10 @@ fn get_settings_hides_values_outside_the_list() {
 #[test]
 fn get_settings_adds_the_dumped_routing_groups() {
     let view = SettingsView {
-        routing_groups: vec![json!({"name": "fast"}), json!({"name": "cheap"})],
+        routing_groups: vec![
+            object(vec![("name", json!("fast"))]),
+            object(vec![("name", json!("cheap"))]),
+        ],
         latency_routing_args: None,
     };
 
@@ -180,14 +200,25 @@ fn get_settings_adds_the_dumped_routing_groups() {
 
     assert_eq!(
         settings["routing_groups"],
-        json!([{"name": "fast"}, {"name": "cheap"}])
+        json!([
+            object(vec![("name", json!("fast"))]),
+            object(vec![("name", json!("cheap"))]),
+        ])
     );
 }
 
 #[rstest]
 #[case::latency_with_args("latency-based-routing", Some("{\"ttl\":3600}"), json!("{\"ttl\":3600}"))]
-#[case::latency_without_args("latency-based-routing", None, json!({"ttl": 1_i64}))]
-#[case::other_strategy_keeps_the_object("usage-based-routing", Some("{\"ttl\":3600}"), json!({"ttl": 1_i64}))]
+#[case::latency_without_args(
+    "latency-based-routing",
+    None,
+    object(vec![("ttl", json!(1_i64))])
+)]
+#[case::other_strategy_keeps_the_object(
+    "usage-based-routing",
+    Some("{\"ttl\":3600}"),
+    object(vec![("ttl", json!(1_i64))])
+)]
 fn get_settings_shows_latency_args_as_text_only_for_the_latency_strategy(
     #[case] strategy: &str,
     #[case] latency_args: Option<&str>,
@@ -195,7 +226,7 @@ fn get_settings_shows_latency_args_as_text_only_for_the_latency_strategy(
 ) {
     let mut values = full_values();
     values["routing_strategy"] = json!(strategy);
-    values["routing_strategy_args"] = json!({"ttl": 1_i64});
+    values["routing_strategy_args"] = object(vec![("ttl", json!(1_i64))]);
     let view = SettingsView {
         routing_groups: vec![],
         latency_routing_args: latency_args.map(str::to_owned),
@@ -247,13 +278,19 @@ fn get_settings_stores_the_other_names_as_given() {
     update(
         &mut settings,
         vec![
-            ("fallbacks", json!([{"a": ["b"]}])),
-            ("context_window_fallbacks", json!([{"c": ["d"]}])),
+            ("fallbacks", json!([object(vec![("a", json!(["b"]))])])),
+            (
+                "context_window_fallbacks",
+                json!([object(vec![("c", json!(["d"]))])]),
+            ),
             (
                 "model_group_retry_policy",
-                json!({"gpt": {"DefaultRetries": 2_i64}}),
+                object(vec![(
+                    "gpt",
+                    object(vec![("DefaultRetries", json!(2_i64))]),
+                )]),
             ),
-            ("model_group_alias", json!({"x": ["y"]})),
+            ("model_group_alias", object(vec![("x", json!(["y"]))])),
             ("enable_weighted_failover", json!(true)),
             ("enable_tag_filtering", json!(true)),
             ("tag_routing_prefix", json!("tag:")),
@@ -262,13 +299,22 @@ fn get_settings_stores_the_other_names_as_given() {
     );
 
     let view = shown(&settings);
-    assert_eq!(view["fallbacks"], json!([{"a": ["b"]}]));
-    assert_eq!(view["context_window_fallbacks"], json!([{"c": ["d"]}]));
+    assert_eq!(
+        view["fallbacks"],
+        json!([object(vec![("a", json!(["b"]))])])
+    );
+    assert_eq!(
+        view["context_window_fallbacks"],
+        json!([object(vec![("c", json!(["d"]))])])
+    );
     assert_eq!(
         view["model_group_retry_policy"],
-        json!({"gpt": {"DefaultRetries": 2_i64}})
+        object(vec![(
+            "gpt",
+            object(vec![("DefaultRetries", json!(2_i64))])
+        )])
     );
-    assert_eq!(view["model_group_alias"], json!({"x": ["y"]}));
+    assert_eq!(view["model_group_alias"], object(vec![("x", json!(["y"]))]));
     assert_eq!(view["enable_weighted_failover"], json!(true));
     assert_eq!(view["enable_tag_filtering"], json!(true));
     assert_eq!(view["tag_routing_prefix"], json!("tag:"));
@@ -315,7 +361,7 @@ fn update_int_casts_each_of_the_five_settings(#[case] name: &str) {
 #[case::null(JsonValue::Null)]
 #[case::boolean(json!(true))]
 #[case::list(json!([1_i64]))]
-#[case::object(json!({"a": 1_i64}))]
+#[case::object(object(vec![("a", json!(1_i64))]))]
 #[case::text(json!("abc"))]
 #[case::empty_text(json!(""))]
 #[case::decimal_text(json!("4.5"))]
@@ -366,23 +412,27 @@ fn update_policy_object_is_stored_with_every_field() {
         &mut settings,
         vec![(
             "retry_policy",
-            json!({"RateLimitErrorRetries": 3_i64, "DefaultRetries": null, "Other": "x"}),
+            object(vec![
+                ("RateLimitErrorRetries", json!(3_i64)),
+                ("DefaultRetries", JsonValue::Null),
+                ("Other", json!("x")),
+            ]),
         )],
     );
 
     assert_eq!(
         shown(&settings)["retry_policy"],
-        json!({
-            "BadRequestErrorRetries": null,
-            "AuthenticationErrorRetries": null,
-            "TimeoutErrorRetries": null,
-            "RateLimitErrorRetries": 3_i64,
-            "ContentPolicyViolationErrorRetries": null,
-            "InternalServerErrorRetries": null,
-            "ServiceUnavailableErrorRetries": null,
-            "NotFoundErrorRetries": null,
-            "DefaultRetries": null,
-        })
+        object(vec![
+            ("BadRequestErrorRetries", JsonValue::Null),
+            ("AuthenticationErrorRetries", JsonValue::Null),
+            ("TimeoutErrorRetries", JsonValue::Null),
+            ("RateLimitErrorRetries", json!(3_i64)),
+            ("ContentPolicyViolationErrorRetries", JsonValue::Null),
+            ("InternalServerErrorRetries", JsonValue::Null),
+            ("ServiceUnavailableErrorRetries", JsonValue::Null),
+            ("NotFoundErrorRetries", JsonValue::Null),
+            ("DefaultRetries", JsonValue::Null),
+        ])
     );
 }
 
@@ -391,12 +441,18 @@ fn update_policy_object_replaces_the_policy_instead_of_merging() {
     let mut settings = router(full_values());
     update(
         &mut settings,
-        vec![("retry_policy", json!({"RateLimitErrorRetries": 3_i64}))],
+        vec![(
+            "retry_policy",
+            object(vec![("RateLimitErrorRetries", json!(3_i64))]),
+        )],
     );
 
     update(
         &mut settings,
-        vec![("retry_policy", json!({"TimeoutErrorRetries": 1_i64}))],
+        vec![(
+            "retry_policy",
+            object(vec![("TimeoutErrorRetries", json!(1_i64))]),
+        )],
     );
 
     let policy = &shown(&settings)["retry_policy"];
@@ -409,7 +465,10 @@ fn update_policy_null_clears_the_policy() {
     let mut settings = router(full_values());
     update(
         &mut settings,
-        vec![("retry_policy", json!({"RateLimitErrorRetries": 3_i64}))],
+        vec![(
+            "retry_policy",
+            object(vec![("RateLimitErrorRetries", json!(3_i64))]),
+        )],
     );
 
     update(&mut settings, vec![("retry_policy", JsonValue::Null)]);
@@ -426,7 +485,10 @@ fn update_policy_other_values_keep_the_old_policy(#[case] given: JsonValue) {
     let mut settings = router(full_values());
     update(
         &mut settings,
-        vec![("retry_policy", json!({"RateLimitErrorRetries": 3_i64}))],
+        vec![(
+            "retry_policy",
+            object(vec![("RateLimitErrorRetries", json!(3_i64))]),
+        )],
     );
     let before = shown(&settings)["retry_policy"].clone();
 
@@ -440,7 +502,10 @@ fn update_policy_wrong_field_type_names_the_field_and_keeps_the_old_policy() {
     let mut settings = router(full_values());
     update(
         &mut settings,
-        vec![("retry_policy", json!({"RateLimitErrorRetries": 3_i64}))],
+        vec![(
+            "retry_policy",
+            object(vec![("RateLimitErrorRetries", json!(3_i64))]),
+        )],
     );
     let before = shown(&settings)["retry_policy"].clone();
     let mut recorder = Recorder::default();
@@ -450,7 +515,7 @@ fn update_policy_wrong_field_type_names_the_field_and_keeps_the_old_policy() {
             &mut recorder,
             &pairs(vec![(
                 "retry_policy",
-                json!({"NotFoundErrorRetries": "many"}),
+                object(vec![("NotFoundErrorRetries", json!("many"))]),
             )]),
         )
         .unwrap_err();
@@ -470,7 +535,10 @@ fn update_strategy_change_runs_the_init_with_its_args_and_rebuilds_the_groups() 
         &mut settings,
         vec![
             ("routing_strategy", json!("usage-based-routing-v2")),
-            ("routing_strategy_args", json!({"ttl": 10_i64})),
+            (
+                "routing_strategy_args",
+                object(vec![("ttl", json!(10_i64))]),
+            ),
         ],
     );
 
@@ -479,7 +547,10 @@ fn update_strategy_change_runs_the_init_with_its_args_and_rebuilds_the_groups() 
         [
             (
                 "init_routing_strategy",
-                json!({"strategy": "usage-based-routing-v2", "args": {"ttl": 10_i64}})
+                object(vec![
+                    ("strategy", json!("usage-based-routing-v2")),
+                    ("args", object(vec![("ttl", json!(10_i64))])),
+                ])
             ),
             ("apply_updated_strategy_args", JsonValue::Null),
             ("init_routing_groups", JsonValue::Null),
@@ -504,7 +575,10 @@ fn update_strategy_init_gets_an_empty_object_when_no_args_come_with_it() {
         recorder.calls[0],
         (
             "init_routing_strategy",
-            json!({"strategy": "least-busy", "args": {}})
+            object(vec![
+                ("strategy", json!("least-busy")),
+                ("args", object(vec![])),
+            ])
         )
     );
 }
@@ -520,7 +594,7 @@ fn update_strategy_init_reads_args_that_come_after_it() {
         ),
         (
             "routing_strategy_args".to_owned(),
-            json!({"lowest_latency_buffer": 0.5_f64}),
+            object(vec![("lowest_latency_buffer", json!(0.5_f64))]),
         ),
     ];
 
@@ -530,23 +604,38 @@ fn update_strategy_init_reads_args_that_come_after_it() {
         recorder.calls[0],
         (
             "init_routing_strategy",
-            json!({"strategy": "latency-based-routing", "args": {"lowest_latency_buffer": 0.5_f64}})
+            object(vec![
+                ("strategy", json!("latency-based-routing")),
+                (
+                    "args",
+                    object(vec![("lowest_latency_buffer", json!(0.5_f64))]),
+                ),
+            ])
         )
     );
 }
 
 #[rstest]
 #[case::with_args(
-    vec![("routing_strategy", json!("lar1")), ("routing_strategy_args", json!({"a": 1_i64}))],
-    json!({"absent": false, "args": {"a": 1_i64}})
+    vec![
+        ("routing_strategy", json!("lar1")),
+        ("routing_strategy_args", object(vec![("a", json!(1_i64))])),
+    ],
+    object(vec![
+        ("absent", json!(false)),
+        ("args", object(vec![("a", json!(1_i64))])),
+    ])
 )]
 #[case::without_args(
     vec![("routing_strategy", json!("lar1"))],
-    json!({"absent": true, "args": null})
+    object(vec![("absent", json!(true)), ("args", JsonValue::Null)])
 )]
 #[case::null_args(
-    vec![("routing_strategy", json!("lar1")), ("routing_strategy_args", JsonValue::Null)],
-    json!({"absent": true, "args": null})
+    vec![
+        ("routing_strategy", json!("lar1")),
+        ("routing_strategy_args", JsonValue::Null),
+    ],
+    object(vec![("absent", json!(true)), ("args", JsonValue::Null)])
 )]
 fn update_strategy_lar1_gets_the_args_pair_or_none(
     #[case] kwargs: Vec<(&str, JsonValue)>,
@@ -625,8 +714,8 @@ fn update_strategy_failed_init_does_not_store_the_strategy() {
 }
 
 #[rstest]
-#[case::changed(json!({"a": 2_i64}), true)]
-#[case::equal(json!({}), false)]
+#[case::changed(object(vec![("a", json!(2_i64))]), true)]
+#[case::equal(object(vec![]), false)]
 fn update_strategy_args_step_runs_once_after_the_loop_when_the_args_changed(
     #[case] args: JsonValue,
     #[case] runs: bool,
@@ -671,7 +760,10 @@ fn update_strategy_pre_call_checks_run_in_place_and_are_not_stored() {
 #[test]
 fn update_groups_pair_rebuilds_with_the_new_input_and_stores_it() {
     let mut settings = router(full_values());
-    let groups = json!([{"name": "fast", "routing_strategy": "least-busy"}]);
+    let groups = json!([object(vec![
+        ("name", json!("fast")),
+        ("routing_strategy", json!("least-busy")),
+    ])]);
 
     let recorder = update(&mut settings, vec![("routing_groups", groups.clone())]);
 
@@ -682,7 +774,7 @@ fn update_groups_pair_rebuilds_with_the_new_input_and_stores_it() {
 
 #[test]
 fn update_groups_rebuild_after_a_strategy_change_uses_the_stored_input() {
-    let stored = json!([{"name": "kept"}]);
+    let stored = json!([object(vec![("name", json!("kept"))])]);
     let mut settings = router(full_values());
     settings.routing_groups_input = Some(stored.clone());
 
@@ -701,30 +793,36 @@ fn update_groups_rebuild_after_a_strategy_change_uses_the_stored_input() {
 #[test]
 fn update_groups_pair_wins_over_the_stored_input_on_a_strategy_change() {
     let mut settings = router(full_values());
-    settings.routing_groups_input = Some(json!([{"name": "old"}]));
+    settings.routing_groups_input = Some(json!([object(vec![("name", json!("old"))])]));
 
     let recorder = update(
         &mut settings,
         vec![
             ("routing_strategy", json!("least-busy")),
-            ("routing_groups", json!([{"name": "new"}])),
+            (
+                "routing_groups",
+                json!([object(vec![("name", json!("new"))])]),
+            ),
         ],
     );
 
     assert_eq!(
         recorder.calls.last().unwrap(),
-        &("init_routing_groups", json!([{"name": "new"}]))
+        &(
+            "init_routing_groups",
+            json!([object(vec![("name", json!("new"))])])
+        )
     );
     assert_eq!(
         settings.routing_groups_input,
-        Some(json!([{"name": "new"}]))
+        Some(json!([object(vec![("name", json!("new"))])]))
     );
 }
 
 #[test]
 fn update_groups_null_pair_rebuilds_with_no_groups() {
     let mut settings = router(full_values());
-    settings.routing_groups_input = Some(json!([{"name": "old"}]));
+    settings.routing_groups_input = Some(json!([object(vec![("name", json!("old"))])]));
 
     let recorder = update(&mut settings, vec![("routing_groups", JsonValue::Null)]);
 
@@ -735,20 +833,20 @@ fn update_groups_null_pair_rebuilds_with_no_groups() {
 #[test]
 fn update_groups_are_left_alone_when_nothing_asks_for_a_rebuild() {
     let mut settings = router(full_values());
-    settings.routing_groups_input = Some(json!([{"name": "old"}]));
+    settings.routing_groups_input = Some(json!([object(vec![("name", json!("old"))])]));
 
     let recorder = update(&mut settings, vec![("timeout", json!(3_i64))]);
 
     assert!(recorder.calls.is_empty());
     assert_eq!(
         settings.routing_groups_input,
-        Some(json!([{"name": "old"}]))
+        Some(json!([object(vec![("name", json!("old"))])]))
     );
 }
 
 #[test]
 fn update_groups_failed_rebuild_keeps_the_old_input_and_every_earlier_pair() {
-    let old = json!([{"name": "old"}]);
+    let old = json!([object(vec![("name", json!("old"))])]);
     let mut settings = router(full_values());
     settings.routing_groups_input = Some(old.clone());
     let mut recorder = Recorder {
