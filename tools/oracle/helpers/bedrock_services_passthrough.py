@@ -1,12 +1,13 @@
 import logging
 from datetime import UTC, datetime
-from typing import Final, Literal, NotRequired, Protocol, TypedDict, override
+from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.passthrough.transformation import BedrockPassthroughConfig
 from pydantic import BaseModel, JsonValue, TypeAdapter
+from typing_extensions import override
 
 API_BASE: Final = "https://bedrock-runtime.us-east-1.amazonaws.com"
 SPEND_WARNING: Final = "Bedrock passthrough spend tracking skipped:"
