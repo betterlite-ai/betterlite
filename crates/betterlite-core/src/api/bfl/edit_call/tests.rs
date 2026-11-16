@@ -458,13 +458,14 @@ async fn the_caller_extra_headers_overlay_the_validated_ones_in_the_post_and_the
 }
 
 #[rstest]
-#[case("bad name", "value")]
-#[case("x-trace", "bad\nvalue")]
-#[case("x-trace", "trace-\u{e9}")]
+#[case("bad name", "value", "name")]
+#[case("x-trace", "bad\nvalue", "value")]
+#[case("x-trace", "trace-\u{e9}", "ascii")]
 #[tokio::test]
 async fn a_caller_header_the_wire_cannot_carry_is_a_500_after_the_record(
     #[case] name: &str,
     #[case] value: &str,
+    #[case] refused: &str,
 ) {
     let wire = Wire::ready();
     let optional_params = ImageParams::new();
@@ -477,12 +478,13 @@ async fn a_caller_header_the_wire_cannot_carry_is_a_500_after_the_record(
     let error = outcome
         .result
         .expect_err("the header cannot reach the wire");
-    assert!(matches!(
-        error,
-        EditCallError::HeaderName { .. }
-            | EditCallError::HeaderValue { .. }
-            | EditCallError::HeaderNotAscii { .. }
-    ));
+    let found = match &error {
+        EditCallError::HeaderName { .. } => "name",
+        EditCallError::HeaderValue { .. } => "value",
+        EditCallError::HeaderNotAscii { .. } => "ascii",
+        _ => panic!("the header is refused by its own check"),
+    };
+    assert_eq!(found, refused);
     assert_eq!(error.status(), Some(500));
     let headers = object(object(outcome.details.get("additional_args")).get("headers"));
     assert_eq!(text(headers.get(&name.to_ascii_lowercase())), value);
