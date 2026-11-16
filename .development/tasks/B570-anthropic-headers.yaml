@@ -270,7 +270,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_headers*")"
       && grep -lq 'anthropic_headers' tools/oracle/fuzz/corpus/helper_case/anthropic_headers* && cargo nextest run
-      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_headers$/)' && cargo
+      --locked -p betterlite-oracle-anthropic --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_headers$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-auth-missing-401
     why: Neither ANTHROPIC_API_KEY nor ANTHROPIC_AUTH_TOKEN resolving raises AuthenticationError 401 for provider

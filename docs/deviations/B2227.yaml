@@ -1,0 +1,21 @@
+task: B2227
+deviations:
+  - what: The text-completion builder reads the first chunk's id, object, created and model and the last choice's finish_reason and logprobs as optional, so an absent key becomes the default (a generated chatcmpl- id, "text_completion", the caller's clock, an empty model, no finish reason and no logprobs) instead of a KeyError that the outer 500 swallows.
+    why: The assembler takes already-parsed records, and docs/compatibility.md makes an absent value take the field's default where LiteLLM's runtime indexes a dict.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8857-L8864
+  - what: A text-stream chunk without a choices key contributes no text, and a logprobs mapping is copied as sent instead of being validated as a Logprobs model that rejects a partial mapping.
+    why: Absent keys and wrong-typed values follow docs/compatibility.md at the wire boundary; the builder never sees a pydantic model to validate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8868-L8875
+  - what: The audio expires_at default is the caller's request clock plus 3600 seconds instead of time.time() read inside the content join.
+    why: The assembler reads no wall clock, so the oracle and tests pass a stable now; B2234's audio join takes the same clock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L771
+  - what: A reported usage.cost becomes the hidden response_cost as an exact Decimal JSON number, where LiteLLM stores the float it read.
+    why: Money is exact in betterlite, and the JSON number carries the same value, so the difference shows only below float precision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8953-L8958
+kept_bugs:
+  - what: Every failure inside the builder, the token estimation and metadata or cost application included, becomes APIError 500 with the message "Error building chunks for logging/streaming usage calculation", llm_provider and model empty, and the original error type and status are lost.
+    why: Callers of a finished stream surface or retry this exact 500, so betterlite keeps the wrap and only classifies it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L9265-L9271
+  - what: A text stream whose last chunk has no first choice fails the whole build instead of falling back to an earlier choice.
+    why: LiteLLM indexes chunks[-1]["choices"][0]; the task's text_completion_assembly contract keeps the last first choice as the only source, and betterlite reports MissingLastChoice inside the same 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8863

@@ -1,0 +1,21 @@
+task: B1529
+deviations:
+  - what: A Bria size part that Python's int() reads but betterlite's shared i64 parser does not (a dimension past i64, exactly -9223372036854775808, or non-ASCII decimal digits) maps to 1:1 instead of the ratio LiteLLM computes from it.
+    why: betterlite decodes dimensions as i64 with ASCII digits, while Python integers are unbounded and int() reads any Unicode decimal digit; the shared parser sits in betterlite-models outside this task's scope, and no working image request sends such a size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/bria_transformation.py#L114-L122
+  - what: A Recraft size part that Python's int() reads but betterlite's shared i64 parser does not (a dimension past i64, exactly -9223372036854775808, or non-ASCII decimal digits) maps to square_hd instead of a custom width and height object.
+    why: betterlite decodes dimensions as i64 with ASCII digits, while Python integers are unbounded and int() reads any Unicode decimal digit; the shared parser sits in betterlite-models outside this task's scope, and no working image request sends such a size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/recraft_v3_transformation.py#L120-L130
+  - what: A Bria size whose exact width/height quotient sits within half a double step of a ratio bound can pick a different aspect ratio than LiteLLM, because betterlite compares the exact integers while Python rounds the quotient to f64 first (1699999999999999900x1000000000000000000 is 16:9 in LiteLLM and 1:1 in betterlite).
+    why: betterlite compares width and height through an exact cross product, since float arithmetic is denied; the difference needs dimensions near 10^18, and no working image request sends them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/bria_transformation.py#L116-L122
+  - what: A Bria or Recraft reply larger than 16 MiB is refused with a typed error that keeps the upstream status and headers.
+    why: LiteLLM reads the reply without a size limit; bounded-inputs requires one on a body that comes from outside, and a reply that large is not an image result any setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/bria_transformation.py#L208-L215
+  - what: A Bria reply whose JSON root is not an object fails with a typed error that keeps the upstream status and headers, where LiteLLM raises an AttributeError from the .get call after json() and loses both.
+    why: LiteLLM type-checks neither the parsed root nor the error it raises; no working Bria setup returns a non-object image reply, so the fix breaks nobody.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/bria_transformation.py#L221
+  - what: A Recraft reply whose JSON root is not an object fails with a typed error that keeps the upstream status and headers, where LiteLLM raises an AttributeError from the .get call after json() and loses both.
+    why: LiteLLM type-checks neither the parsed root nor the error it raises; no working Recraft setup returns a non-object image reply, so the fix breaks nobody.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/recraft_v3_transformation.py#L206
+kept_bugs: []

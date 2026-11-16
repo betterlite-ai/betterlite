@@ -58,9 +58,12 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::auth::auth_identity::{
-    AuthBackend, AuthContext, INSTALLED_STAGES, StageInput, dispatch,
+    AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
-use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput};
+use crate::auth::auth_model_patterns::{
+    ModelPatternStageInput, max_recurse_depth_for_request, rejection_response, rule_for_request,
+};
+use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::error_body::{AuthenticationFailure, authentication_error};
 use axum::body::Body;
 use axum::extract::State;
@@ -83,32 +86,66 @@ pub(crate) async fn authenticate(
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
-    let presented_key = extract_key(request.headers());
     let resolver = request
         .extensions()
         .get::<Arc<RequestModelResolver>>()
         .map_or_else(default_resolver, Arc::clone);
     let mut authenticated: Option<AuthContext> = None;
     for backend in INSTALLED_STAGES {
-        let input = match backend {
-            AuthBackend::MasterKey => StageInput::MasterKey(presented_key.clone()),
-            AuthBackend::AuthRequestModels => {
-                let Some(context) = authenticated.as_ref() else {
-                    return authentication_error(&AuthenticationFailure::Missing);
-                };
-                let stage = model_stage_input(&request, context.clone(), &resolver);
-                StageInput::AuthRequestModels(Box::new(stage))
-            }
+        let Ok(input) = stage_input(*backend, &request, authenticated.as_ref(), &resolver) else {
+            return authentication_error(&AuthenticationFailure::Missing);
         };
         match dispatch(*backend, &input, master_key) {
             Ok(context) => authenticated = Some(context),
-            Err(failure) => return authentication_error(&failure),
+            Err(StageFailure::Authentication(failure)) => {
+                return authentication_error(&failure);
+            }
+            Err(StageFailure::ModelAccess(rejection)) => {
+                return rejection_response(&rejection);
+            }
         }
     }
     if let Some(context) = authenticated {
         request.extensions_mut().insert(context);
     }
     next.run(request).await
+}
+
+fn stage_input(
+    backend: AuthBackend,
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+    resolver: &Arc<RequestModelResolver>,
+) -> Result<StageInput, AuthenticationFailure> {
+    match backend {
+        AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
+        AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
+            let context = authenticated
+                .cloned()
+                .ok_or(AuthenticationFailure::Missing)?;
+            let stage = model_stage_input(request, context.clone(), resolver);
+            if backend == AuthBackend::AuthRequestModels {
+                return Ok(StageInput::AuthRequestModels(Box::new(stage)));
+            }
+            let requested = match resolve(&stage) {
+                Ok(requested) => requested,
+                Err(error) => {
+                    tracing::debug!(error = %error, "the request model stage failed");
+                    return Err(AuthenticationFailure::Missing);
+                }
+            };
+            let rule = rule_for_request(request);
+            let depth = max_recurse_depth_for_request(request);
+            Ok(StageInput::AuthModelPatterns(Box::new(
+                ModelPatternStageInput {
+                    context,
+                    requested,
+                    rule,
+                    max_recurse_depth: depth,
+                },
+            )))
+        }
+    }
 }
 fn default_resolver() -> Arc<RequestModelResolver> {
     Arc::new(RequestModelResolver {
@@ -121,12 +158,16 @@ fn model_stage_input(
     context: AuthContext,
     resolver: &Arc<RequestModelResolver>,
 ) -> RequestModelStageInput {
+    let route = request.uri().path().to_owned();
+    let headers = headers_json(request.headers());
+    let query = query_json(request.uri().query());
+    let body = JsonObject::new();
     RequestModelStageInput {
         context,
-        route: request.uri().path().to_owned(),
-        body: JsonObject::new(),
-        headers: Some(headers_json(request.headers())),
-        query: Some(query_json(request.uri().query())),
+        route,
+        body,
+        headers: Some(headers),
+        query: Some(query),
         endpoint_marker: None,
         path_params: BTreeSet::new(),
         team_id: None,
