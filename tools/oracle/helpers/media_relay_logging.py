@@ -10,6 +10,8 @@ from litellm.llms.deepgram.common_utils import (
 )
 from litellm.proxy.pass_through_endpoints.llm_provider_handlers import (
     deepgram_listen_passthrough_logging_handler as deepgram_listen,
+)
+from litellm.proxy.pass_through_endpoints.llm_provider_handlers import (
     fal_ai_passthrough_logging_handler as fal_passthrough,
 )
 from litellm.types.utils import ImageObject
@@ -126,7 +128,7 @@ def deepgram_answer(call: DeepgramCall) -> JsonValue:
     handler = deepgram_listen.DeepgramListenPassthroughLoggingHandler()
     try:
         returned = LoggedAnswer.model_validate(
-            handler.deepgram_listen_passthrough_handler(
+            handler.deepgram_listen_passthrough_handler(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5064
                 websocket_messages=call["messages"],
                 logging_obj=logging_obj,
                 upstream_url=call["upstream_url"],
@@ -155,7 +157,7 @@ def fal_answer(call: FalCall) -> JsonValue:
     logging_obj = make_logging()
     handler = fal_passthrough.FalAIPassthroughLoggingHandler()
     returned = LoggedAnswer.model_validate(
-        handler.fal_ai_passthrough_handler(
+        handler.fal_ai_passthrough_handler(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5064
             response_body=call["response_body"],
             request_body=call["request_body"],
             logging_obj=logging_obj,
