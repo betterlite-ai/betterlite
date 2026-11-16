@@ -219,6 +219,15 @@ fn seed_old_guardrail(harness: &Harness) {
         .insert(review_row("g1", "old-name", None, "active"));
 }
 
+fn assert_replaced_body(body: &str) {
+    let parsed = parse(body);
+    assert_eq!(keys(&parsed).len(), 10);
+    assert_eq!(text(field(&parsed, "guardrail_id")), "g1");
+    assert_eq!(text(field(&parsed, "guardrail_name")), "new-name");
+    assert_eq!(text(field(&parsed, "status")), "active");
+    assert_eq!(text(field(&parsed, "submitted_at")), "2026-01-02T03:04:05Z");
+}
+
 #[tokio::test]
 async fn replace_stores_the_row_and_syncs_memory() {
     let (captured, _guard) = capture();
@@ -239,12 +248,7 @@ async fn replace_stores_the_row_and_syncs_memory() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let parsed = parse(&body);
-    assert_eq!(keys(&parsed).len(), 10);
-    assert_eq!(text(field(&parsed, "guardrail_id")), "g1");
-    assert_eq!(text(field(&parsed, "guardrail_name")), "new-name");
-    assert_eq!(text(field(&parsed, "status")), "active");
-    assert_eq!(text(field(&parsed, "submitted_at")), "2026-01-02T03:04:05Z");
+    assert_replaced_body(&body);
     assert_eq!(
         harness.guardrails.row("g1").unwrap().guardrail_name,
         "new-name"
