@@ -1,0 +1,1 @@
+{"file_content":"blocked_words:\n  - keyword: 5\n    action: block\n  - []\n  - keyword: ok\n"}

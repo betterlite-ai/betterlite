@@ -1,0 +1,9 @@
+kind: helper
+name: cache-settings-update-params-equal-skips-redis-type
+call:
+  b8502:
+    function: cache_params_equal
+    params1: {host: "h", port: null, redis_type: "node"}
+    params2: {host: "h", redis_type: "cluster"}
+env: {}
+compare: {ignore: []}
