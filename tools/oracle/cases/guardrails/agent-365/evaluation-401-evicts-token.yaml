@@ -1,0 +1,30 @@
+kind: helper
+name: evaluation-401-evicts-token
+call:
+  b3742:
+    unreachable_fallback: fail_closed
+    key_alias: alias-1
+    replies:
+      - {kind: reply, status: 200, body: {access_token: obo-token-1, expires_in: 3599}, raw: null}
+      - {kind: reply, status: 401, body: null, raw: "the evaluation token expired"}
+      - {kind: reply, status: 200, body: {access_token: obo-token-2, expires_in: 3599}, raw: null}
+      - kind: reply
+        status: 200
+        body: {allowed: true, defender: {status: Evaluated}, correlationId: corr-allow-2}
+        raw: null
+    repeat_last_reply: false
+    invocations:
+      - call_type: call_mcp_tool
+        data:
+          incoming_bearer_token: header.payload.signature
+          litellm_call_id: call-1
+          mcp_server_name: weather
+          mcp_tool_name: get_weather
+      - call_type: call_mcp_tool
+        data:
+          incoming_bearer_token: header.payload.signature
+          litellm_call_id: call-1
+          mcp_server_name: weather
+          mcp_tool_name: get_weather
+env: {}
+compare: {ignore: []}
