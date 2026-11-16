@@ -1,0 +1,16 @@
+kind: helper
+name: openrouter-image-generation-params
+call:
+  b5830:
+    op: generation_params
+    cases:
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {size: 1536x1024, n: 2, seed: 1}
+        optional_params: {image_config: {aspect_ratio: "16:9"}}
+        drop_params: false
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {quality: hd, user: a-user}
+        optional_params: {}
+        drop_params: true
+env: {}
+compare: {ignore: []}

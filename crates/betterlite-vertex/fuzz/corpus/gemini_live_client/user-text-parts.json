@@ -1,0 +1,1 @@
+{"type": "conversation.item.create", "item": {"type": "message", "content": [{"type": "input_text", "text": "hello"}, {"type": "input_text", "text": null}, {"type": "input_audio", "text": "ignored"}]}}

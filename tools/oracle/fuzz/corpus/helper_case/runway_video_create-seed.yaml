@@ -1,0 +1,17 @@
+kind: helper
+name: runway-video-create-seed
+call:
+  runway_video_create:
+    operation: create
+    params:
+      model: gen4_turbo
+      prompt: a cat surfing
+      calls:
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {input_reference: 'https://img.test/a.png'}
+env: {}
+compare: {ignore: []}

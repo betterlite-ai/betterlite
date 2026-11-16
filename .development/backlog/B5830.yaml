@@ -1,7 +1,7 @@
 id: B5830
 milestone: M3 providers
 title: OpenRouter provider
-status: todo
+status: done
 depends_on: [B6080, B997, B1120, B2214, B2202]
 file: tasks/B5830-openrouter-images.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/openrouter/image_generation/**"
 parent: B041
 split_from: B041
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2096

@@ -1,0 +1,7 @@
+kind: helper
+name: writeback-last-user-only
+call:
+  b3765: {"function": "apply", "config": {"api_key": "test-key", "api_base": "http://compresr.test", "min_chars_to_compress": 5, "enable_retrieval": false, "compress_last_user": true}, "reply": {"status": 200, "body": "{\"data\": {\"compressed_context\": \"short\", \"original_tokens\": 10, \"compressed_tokens\": 4}}"}, "inputs": {"structured_messages": [{"role": "user", "content": "the first long question"}, {"role": "user", "content": "the second long question"}]}, "headers": null, "caller": null}
+env: {}
+compare:
+  ignore: []
