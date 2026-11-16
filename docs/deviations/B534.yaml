@@ -15,6 +15,9 @@ deviations:
   - what: A 2xx answer whose body is not JSON under a non-JSON content type fails as AzureOpenAIError with the raw status (500 when there is none) and the "Unexpected string response from Azure" prefix plus the first 500 characters, on both paths.
     why: At the pin the OpenAI SDK's embeddings post-parser reads obj.data from the string that parse() returned and raises AttributeError "'str' object has no attribute 'data'" before LiteLLM's own isinstance check runs, so a sync caller sees a 500 with that message and the async path raises an AttributeError no caller handles instead of the error LiteLLM wrote for this answer. The azure-embedding-raw-parse oracle case omits the four steps that reach it, and the azure_embedding_raw_parse test proves betterlite's error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L707
+  - what: An "error" field in a 2xx answer whose code is not an integer between 0 and 65535 (a string such as "content_filter", or an out-of-range number) raises with status 500, and its message is the JSON text of a non-string message.
+    why: LiteLLM copies error.code into status_code as it is, so a string status travels on the exception; a status here is a u16, and a string code is not a status a caller can act on. A dict message is JSON-encoded by Python's json.dumps spacing in LiteLLM and in standard JSON here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L597-L617
 kept_bugs:
   - what: The async path logs str(error) and raises the original SDK error, so a caller sees an SDK status error where the sync path raises AzureOpenAIError.
     why: A router that already handles both classes relies on the status attribute of either, and wrapping the async path would change what its callers catch.

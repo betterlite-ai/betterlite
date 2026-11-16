@@ -16,6 +16,7 @@ from pydantic import TypeAdapter
 from azure_embeddings.report import (
     ClientName,
     EmbeddingInput,
+    ErrorFields,
     Input,
     Recorder,
     Step,
@@ -195,6 +196,12 @@ def step_value(step: Step) -> dict[str, Json]:
         raised = raised_value("sdk_other", None, None)
     except AzureOpenAIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L46
         raised = azure_value(error)
+    except Exception as error:
+        # convert_to_model_response_object raises a bare Exception that carries status_code and message
+        if type(error) is not Exception:
+            raise
+        fields = ErrorFields.model_validate(error, from_attributes=True)
+        raised = raised_value("response", fields.status_code, fields.message)
     return {
         "result": result,
         "raised": raised,

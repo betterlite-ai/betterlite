@@ -19,7 +19,7 @@ use super::client::{
 };
 use super::error::{AzureOpenAiError, EmbeddingError};
 use super::logging::{EmbeddingLogger, PostCallRecord, PreCallRecord, ResponseKind};
-use super::reply::{EmbeddingReply, ModelResponse, convert_embedding};
+use super::reply::{EmbeddingReply, ModelResponse, convert_embedding, response_error};
 
 const DEFAULT_STATUS: u16 = 500;
 const TEXT_PREVIEW_CHARACTERS: usize = 500;
@@ -206,6 +206,10 @@ fn parse_response(
     match raw.parse() {
         Ok(Parsed::Embedding(response)) => Ok(response),
         Ok(Parsed::Text(text)) => Err(EmbeddingError::Azure(unexpected_text(raw.status, &text))),
+        Err(ParseError::Shape(shape)) => {
+            Err(response_error(&raw.body)
+                .unwrap_or(EmbeddingError::Parse(ParseError::Shape(shape))))
+        }
         Err(ParseError::Json(error)) if is_async => Err(EmbeddingError::Azure(AzureOpenAiError {
             status_code: raw.status,
             message: format!("Failed to parse raw Azure embedding response: {error}"),
@@ -229,6 +233,9 @@ fn convert<Client>(
         ResponseKind::SdkObject
     };
     logger.post_call(post_record(begun, to_json(&*response)?, kind));
+    if let Some(error) = response_error(&raw.body) {
+        return Err(error);
+    }
     if begun.call.model_response == ModelResponse::Other {
         return if is_async {
             Err(EmbeddingError::Azure(AzureOpenAiError {

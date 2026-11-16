@@ -4,6 +4,7 @@ mod cases;
 mod error_cases;
 mod fakes;
 mod logging_cases;
+mod raised_cases;
 mod support;
 
 use rstest::rstest;

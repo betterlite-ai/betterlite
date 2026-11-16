@@ -23,6 +23,9 @@ pub enum EmbeddingError {
     Azure(#[from] AzureOpenAiError),
     #[error("{message}")]
     Value { message: String },
+    // the bare Exception that convert_to_model_response_object raises for an "error" in the answer: str() of it is empty
+    #[error("")]
+    Response { status_code: u16, message: String },
     #[error(transparent)]
     Sdk(#[from] SdkError),
     #[error(transparent)]
@@ -60,6 +63,12 @@ impl AzureOpenAiError {
         let message = error.to_string();
         match error {
             EmbeddingError::Azure(raised) => raised,
+            EmbeddingError::Response { status_code, .. } => Self {
+                status_code,
+                message,
+                headers: None,
+                cause: None,
+            },
             EmbeddingError::Sdk(raised) => Self::from_sdk(raised, message),
             EmbeddingError::Parse(raised) => Self {
                 status_code: DEFAULT_STATUS,

@@ -22,29 +22,35 @@ impl ClientCache for Cache {
     }
 }
 
-fn no_source() -> SourceFailure {
-    SourceFailure {
-        class: "RuntimeError".to_owned(),
-        status: None,
-        message: "no credential source in this fixture".to_owned(),
-    }
+// every source fails; the status is what the SDK attached to its exception
+#[derive(Default)]
+pub(super) struct NoSources {
+    pub(super) status: Option<u16>,
 }
 
-pub(super) struct NoSources;
+impl NoSources {
+    fn failure(&self) -> SourceFailure {
+        SourceFailure {
+            class: "RuntimeError".to_owned(),
+            status: self.status,
+            message: "no credential source in this fixture".to_owned(),
+        }
+    }
+}
 
 type Provider<'source> = Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure>;
 
 impl CredentialSources for NoSources {
     fn client_secret(&self, _record: &ClientSecretRecord) -> Provider<'_> {
-        Err(no_source())
+        Err(self.failure())
     }
 
     fn username_password(&self, _record: &UsernamePasswordRecord) -> Provider<'_> {
-        Err(no_source())
+        Err(self.failure())
     }
 
     fn sdk_refresh(&self, _scope: &str) -> Provider<'_> {
-        Err(no_source())
+        Err(self.failure())
     }
 
     fn default_credential(&self, _scope: &str) -> Option<Arc<dyn CallableTokenProvider + '_>> {
@@ -52,6 +58,6 @@ impl CredentialSources for NoSources {
     }
 
     fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        Err(no_source())
+        Err(self.failure())
     }
 }

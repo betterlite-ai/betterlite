@@ -24,10 +24,11 @@ fn sent(aembedding: bool, answer: &Answer) -> Run {
     )
 }
 
-fn azure(outcome: Run) -> AzureOpenAiError {
+pub(super) fn azure(outcome: Run) -> AzureOpenAiError {
     match outcome.result.unwrap_err() {
         EmbeddingError::Azure(error) => error,
         other @ (EmbeddingError::Value { .. }
+        | EmbeddingError::Response { .. }
         | EmbeddingError::Sdk(_)
         | EmbeddingError::Parse(_)
         | EmbeddingError::Endpoint(_)
@@ -72,6 +73,7 @@ pub(super) fn embedding_usage() {
         Some("o")
     );
     non_embedding_projection(&answer);
+    super::raised_cases::answer_errors();
 }
 
 fn non_embedding_projection(answer: &Answer) {
@@ -120,6 +122,7 @@ pub(super) fn embedding_error() {
         EmbeddingError::Sdk(raised) => assert_eq!(raised.status_code, Some(429)),
         other @ (EmbeddingError::Azure(_)
         | EmbeddingError::Value { .. }
+        | EmbeddingError::Response { .. }
         | EmbeddingError::Parse(_)
         | EmbeddingError::Endpoint(_)
         | EmbeddingError::Logging(_)
@@ -127,6 +130,7 @@ pub(super) fn embedding_error() {
     }
     connection_and_attribute_errors();
     pre_call_failure_is_wrapped_for_async();
+    super::raised_cases::unresolved_client();
 }
 
 fn connection_and_attribute_errors() {
@@ -193,6 +197,7 @@ fn assert_async_rejects(kind: ClientKind) {
             "Azure client is not an instance of AsyncAzureOpenAI or AsyncOpenAI"
         ),
         other @ (EmbeddingError::Azure(_)
+        | EmbeddingError::Response { .. }
         | EmbeddingError::Sdk(_)
         | EmbeddingError::Parse(_)
         | EmbeddingError::Endpoint(_)
@@ -268,6 +273,7 @@ fn json_content_type_decoding() {
         EmbeddingError::Parse(ParseError::Shape(_)) => {}
         other @ (EmbeddingError::Azure(_)
         | EmbeddingError::Value { .. }
+        | EmbeddingError::Response { .. }
         | EmbeddingError::Sdk(_)
         | EmbeddingError::Parse(ParseError::Json(_))
         | EmbeddingError::Endpoint(_)

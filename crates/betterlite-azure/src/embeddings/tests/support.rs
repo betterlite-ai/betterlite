@@ -234,19 +234,46 @@ pub(super) fn run(
     calls: &Calls,
     recorder: Recorder,
 ) -> Run {
+    let sources = NoSources::default();
+    drive(request, answer, calls, recorder, &sources, false)
+}
+
+// no api key and the token refresh on: the client resolution asks the failing source for a provider
+pub(super) fn unresolved_client_run(aembedding: bool, status: Option<u16>) -> Run {
+    let input = EmbeddingInput::Text("a".to_owned());
+    let mut request = call(&input, aembedding);
+    request.api_key = None;
+    let sources = NoSources { status };
+    drive(
+        request,
+        &json_reply(&[]),
+        &Calls::default(),
+        Recorder::default(),
+        &sources,
+        true,
+    )
+}
+
+fn drive(
+    request: EmbeddingCall<'_, Sdk>,
+    answer: &Answer,
+    calls: &Calls,
+    recorder: Recorder,
+    sources: &NoSources,
+    refresh_enabled: bool,
+) -> Run {
     let factory = build_factory(answer, calls);
     let settings = Settings::default();
     let environment: BTreeMap<String, String> = BTreeMap::new();
-    let sources = NoSources;
     let mut cache = Cache::default();
-    let mut refresh_cache = RefreshProviderCache::new(&sources);
+    let mut refresh_cache = RefreshProviderCache::new(sources);
     let setup = ClientSetup {
         provider: None,
         settings: &settings,
         environment: &environment,
-        refresh_enabled: false,
+        refresh_enabled,
         session: SessionKind::Dedicated,
-        sources: &sources,
+        sources,
         cache: &mut cache,
         refresh_cache: &mut refresh_cache,
     };

@@ -44,6 +44,12 @@ pub(super) fn raised(error: &EmbeddingError) -> Value {
         EmbeddingError::Value { message } => {
             json!({"kind": "value", "status": null, "message": message, "headers": null})
         }
+        EmbeddingError::Response {
+            status_code,
+            message,
+        } => {
+            json!({"kind": "response", "status": status_code, "message": message, "headers": null})
+        }
         EmbeddingError::Sdk(failure) => json!({
             "kind": if failure.status_code.is_some() { "sdk_status" } else { "sdk_other" },
             "status": failure.status_code,
