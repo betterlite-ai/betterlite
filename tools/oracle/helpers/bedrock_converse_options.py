@@ -66,10 +66,6 @@ class Grounding(TypedDict, total=False):
     systemTool: GroundingTool | None
 
 
-class AutoChoice(TypedDict, total=False):
-    auto: dict[str, JsonValue]
-
-
 # Both class methods have untyped bodies upstream, so the protocol carries their signatures.
 class Declared(Protocol):
     @classmethod
@@ -81,21 +77,11 @@ class Declared(Protocol):
     ) -> dict[str, type[GuardrailConfigBlock | PerformanceConfigBlock | ServiceTierBlock]]: ...
 
 
-# The two helpers whose upstream return types carry a bare dict; the view restates them.
-class ConverseSurface(Protocol):
-    def _map_web_search_options(
-        self, web_search_options: dict[str, JsonValue], model: str
-    ) -> Grounding | None: ...
-
-    @staticmethod
-    def _auto_tool_choice() -> AutoChoice: ...
-
-
 DECLARED: type[Declared] = AmazonConverseConfig
 
 
 # The typed helpers are reachable through a subclass, which is the only seam ruff and pyright allow.
-class ConverseConfig(AmazonConverseConfig, ConverseSurface):
+class ConverseConfig(AmazonConverseConfig):
     def is_nova_2(self, model: str) -> bool:
         return self._is_nova_2_model(model)
 
@@ -112,18 +98,16 @@ class ConverseConfig(AmazonConverseConfig, ConverseSurface):
         return self.get_supported_openai_params(model)
 
     def apply_effort(self, model: str, effort: str, optional_params: dict[str, JsonValue]) -> None:
-        self._handle_reasoning_effort_parameter(model, effort, optional_params)
+        self._handle_reasoning_effort_parameter(model, effort, optional_params)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L520-L569
 
     def clamp_budget(self, optional_params: dict[str, JsonValue]) -> None:
-        self._clamp_thinking_budget_tokens(optional_params)
+        self._clamp_thinking_budget_tokens(optional_params)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L594-L609
 
     def grounding(self, model: str) -> Grounding | None:
-        surface: ConverseSurface = self
-        return surface._map_web_search_options({}, model)
+        return self._map_web_search_options({}, model)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L446-L473
 
     def auto_tool_choice(self) -> JsonValue:
-        surface: ConverseSurface = self
-        return JSON.validate_python(surface._auto_tool_choice())
+        return JSON.validate_python(self._auto_tool_choice())
 
 
 def flags(call: Flags) -> JsonValue:
