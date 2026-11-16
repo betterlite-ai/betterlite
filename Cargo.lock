@@ -3083,6 +3083,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
+ "betterlite-prompts",
  "betterlite-redact",
  "betterlite-server",
  "chrono",

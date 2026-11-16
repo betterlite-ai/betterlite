@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 use super::Op;
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
 
 fn build_input(kwargs: &Value, response: &Value) -> Value {
     json!({

@@ -9,6 +9,8 @@ use betterlite_logging::spend_event::input::{
 use betterlite_logging::spend_event::restore::callback_args;
 use betterlite_logging::spend_event::time::EventTime;
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::response_tool_calls::projections::ToolCallResponse;
 use betterlite_prompts::tool_spend::response_tool_call_names;
 use serde::{Deserialize, Serialize};
@@ -70,10 +72,10 @@ pub(crate) struct BuildSpec {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Build(spec) => build(spec),
             Input::Offloadable { kind } => Ok(json!({ "offloadable": offloadable(*kind) })),
@@ -83,8 +85,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
@@ -106,7 +108,7 @@ fn offloadable(kind: Kind) -> bool {
 }
 
 // The collector names tools with the B1706 extractor, which this crate runs on the response fields
-fn response_body(fields: &Mapping) -> Result<ResponseBody, Box<crate::helpers::HelperError>> {
+fn response_body(fields: &Mapping) -> Result<ResponseBody, Box<HelperError>> {
     let text = serde_json::to_string(fields).map_err(|error| invalid(&error.to_string()))?;
     let projection = serde_json::from_str::<ToolCallResponse>(&text)
         .map_err(|error| invalid(&error.to_string()))?;
@@ -116,9 +118,7 @@ fn response_body(fields: &Mapping) -> Result<ResponseBody, Box<crate::helpers::H
     })
 }
 
-fn response_object(
-    spec: &ResponseSpec,
-) -> Result<ResponseObject, Box<crate::helpers::HelperError>> {
+fn response_object(spec: &ResponseSpec) -> Result<ResponseObject, Box<HelperError>> {
     match spec {
         ResponseSpec::Model { fields } => Ok(ResponseObject::Model(response_body(fields)?)),
         ResponseSpec::Mapping { fields } => Ok(ResponseObject::Mapping(response_body(fields)?)),
@@ -144,7 +144,7 @@ fn raw_kwargs(spec: &BuildSpec) -> Mapping {
     kwargs
 }
 
-fn build(spec: &BuildSpec) -> crate::helpers::HelperResult {
+fn build(spec: &BuildSpec) -> HelperResult {
     let kwargs = raw_kwargs(spec);
     let response = response_object(&spec.response)?;
     let typed_auth = |auth: &AuthSpec| TypedAuth {
@@ -177,7 +177,7 @@ fn build(spec: &BuildSpec) -> crate::helpers::HelperResult {
     }
 }
 
-fn tagged<T>(key: &str, value: &T) -> crate::helpers::HelperResult
+fn tagged<T>(key: &str, value: &T) -> HelperResult
 where
     T: Serialize,
 {
@@ -189,7 +189,7 @@ where
     Ok(Value::Object(object))
 }
 
-fn replay(line: &str, restore: bool) -> crate::helpers::HelperResult {
+fn replay(line: &str, restore: bool) -> HelperResult {
     let Ok(event) = decode_spend_event(line.as_bytes()) else {
         return Ok(json!({ "decode_error": true }));
     };

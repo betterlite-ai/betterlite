@@ -19,6 +19,7 @@ betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }
+betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-server = { path = "../../../../../crates/betterlite-server" }
 chrono.workspace = true
