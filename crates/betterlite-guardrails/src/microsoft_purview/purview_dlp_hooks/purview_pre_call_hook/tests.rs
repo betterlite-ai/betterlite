@@ -98,6 +98,31 @@ async fn returns_the_request_unchanged_after_a_clean_scan() {
 }
 
 #[tokio::test]
+async fn sends_the_call_id_as_the_correlation_id() {
+    let mock = start(Script::passing());
+    let guardrail = guardrail_at(&mock.base);
+    let mut harness = Harness::new(data(
+        r#"{"model":"gpt","litellm_call_id":"call-1","messages":[{"role":"user","content":"hello"}]}"#,
+    ));
+    let mut context = hook_context(
+        trusted_identity(),
+        &harness.cache,
+        &harness.redactor,
+        &harness.base,
+        &harness.sink,
+    );
+    let result = async_pre_call_hook(
+        &guardrail,
+        &mut harness.data,
+        Some(CallType::Completion),
+        &mut context,
+    )
+    .await;
+    assert!(result.is_ok());
+    assert_eq!(mock.correlation_ids(), vec![Some("call-1".to_owned())]);
+}
+
+#[tokio::test]
 async fn rejects_token_id_completion_prompts_before_the_scan() {
     let mock = start(Script::passing());
     let guardrail = guardrail_at(&mock.base);

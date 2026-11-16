@@ -122,6 +122,18 @@ impl GraphMock {
             .count()
     }
 
+    pub(super) fn correlation_ids(&self) -> Vec<Option<String>> {
+        self.seen()
+            .iter()
+            .filter(|request| request.path.ends_with("/processContent"))
+            .map(|request| {
+                let body: ProcessBody = serde_json::from_str(&request.body).unwrap();
+                let entry = body.content_to_process.content_entries.first().unwrap();
+                entry.correlation_id.clone()
+            })
+            .collect()
+    }
+
     pub(super) fn scanned(&self) -> Vec<Scan> {
         self.seen()
             .iter()
@@ -158,8 +170,10 @@ struct ContentToProcess {
 }
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ContentEntry {
     content: TextContent,
+    correlation_id: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
