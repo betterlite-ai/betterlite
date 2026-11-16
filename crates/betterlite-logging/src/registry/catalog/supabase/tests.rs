@@ -9,15 +9,26 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use chrono::DateTime;
 use indexmap::IndexMap;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use super::build;
+use super::{build, build_callback};
 use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::event::LoggerEvent;
+use crate::logging_pre_post::env::{DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv};
+use crate::logging_pre_post::hooks::InputCallback;
+use crate::logging_pre_post::pre_call::{PreCall, pre_call};
+use crate::logging_privacy::request::Decision;
+use crate::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use crate::logging_state::updates::{CallUpdate, update_environment_variables};
+use crate::logging_state::{LoggingInit, LoggingState};
 use crate::registry::catalog::{CatalogError, CatalogInputs, LoggerCatalog};
 
 const SUCCESS_RESPONSE: &str = r#"{"id": "chatcmpl-1", "model": "gpt-4o-2024-08-06", "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi"}}]}"#;
@@ -43,10 +54,10 @@ const TEMPLATE: &str = r#"{
     "model": "gpt-4o",
     "api_base": "https://api.openai.com",
     "metadata": {"user_api_key_user_id": "user-1"},
-    "end_user": "end-user-1",
+    "end_user": "proxy-user-1",
     "saved_cache_cost": 0.0,
     "request_tags": [],
-    "model_parameters": {},
+    "model_parameters": {"user": "end-user-1"},
     "hidden_params": {},
     "messages": [{"role": "user", "content": "Hello"}],
     "response": RESPONSE,
@@ -356,4 +367,106 @@ async fn callback_logger_writes_the_overridden_table_name() {
         received.path,
         "/rest/v1/custom_logs?on_conflict=litellm_call_id"
     );
+}
+
+struct Silent;
+
+impl LogSink for Silent {
+    fn emit(&self, _record: LogRecord) {}
+}
+
+fn pre_call_state(user: Option<&str>) -> LoggingState {
+    let init: LoggingInit = serde_json::from_str(
+        r#"{
+            "model": "gpt-4o",
+            "call_type": "completion",
+            "start_time": "2026-01-01T00:00:00+00:00",
+            "litellm_call_id": "call-1",
+            "function_id": "fn-1",
+            "messages": [{"role": "user", "content": "Hello"}]
+        }"#,
+    )
+    .expect("the fixture init decodes");
+    let mut state = LoggingState::new(
+        init,
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles"),
+        || "generated".to_owned(),
+        std::time::Duration::default,
+    )
+    .expect("the fixture state builds");
+    update_environment_variables(
+        &mut state,
+        &IndexMap::new(),
+        CallUpdate {
+            model: None,
+            user: user.map(str::to_owned),
+            optional_params: IndexMap::new(),
+            additional_params: IndexMap::new(),
+        },
+    )
+    .expect("the fixture update succeeds");
+    state
+}
+
+async fn initiated_body(user: Option<&str>) -> Json {
+    let (base, served) = serve_once().await;
+    let callback = build_callback(&configured_inputs(&[
+        ("SUPABASE_URL", &base),
+        ("SUPABASE_KEY", "service-key"),
+    ]))
+    .expect("the callback builds");
+    let callbacks = [InputCallback::InputEvent(&*callback)];
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles");
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor: &redactor,
+        log: &Silent,
+        input_callbacks: &callbacks,
+        sentry: None,
+        logger_fn: None,
+        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
+            .expect("the fixture time parses"),
+    };
+    let call: PreCall =
+        serde_json::from_str(r#"{"input": [{"role": "user", "content": "Hello"}]}"#)
+            .expect("the fixture call decodes");
+    pre_call(&mut pre_call_state(user), &call, &env).expect("the pre-call hook runs");
+    let received = served.await;
+    assert_eq!(received.method, "POST");
+    assert_eq!(received.path, "/rest/v1/request_logs");
+    body_of(&received)
+}
+
+#[tokio::test]
+async fn callback_logger_pre_call_hook_writes_the_initiated_row() {
+    assert_eq!(
+        initiated_body(Some("alice")).await,
+        json(
+            r#"{
+                "model": "gpt-4o",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "end_user": "alice",
+                "status": "initiated",
+                "litellm_call_id": "call-1"
+            }"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn callback_logger_pre_call_hook_writes_a_null_end_user_without_a_user() {
+    let body = initiated_body(None).await;
+    let Json::Object(fields) = body else {
+        panic!("the initiated row is an object");
+    };
+    assert_eq!(fields.get("end_user"), Some(&Json::Null));
 }

@@ -12,9 +12,9 @@ use tokio_util::task::TaskTracker;
 use url::Url;
 use uuid::Uuid;
 
-use super::callback::SupabaseCallback;
+use super::callback::{Outcome, SupabaseCallback};
 use super::rows::{InitiatedRow, RequestRow};
-use super::settings::SupabaseSettings;
+use super::settings::{SupabaseSettings, SupabaseSettingsError};
 use super::{DEFAULT_TABLE_NAME, SupabaseLogError, SupabaseLogger};
 use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::event::LoggerEvent;
@@ -34,6 +34,7 @@ const TEMPLATE: &str = r#"{
     "call_type": "completion",
     "stream": false,
     "response_cost": 0.0000125,
+    "response_cost_failure_debug_info": null,
     "status": "success",
     "status_fields": {"llm_api_status": "success", "guardrail_status": "not_run"},
     "total_tokens": 5,
@@ -47,10 +48,10 @@ const TEMPLATE: &str = r#"{
     "model": "gpt-4o",
     "api_base": "https://api.openai.com",
     "metadata": {"user_api_key_user_id": "user-1"},
-    "end_user": "end-user-1",
+    "end_user": "proxy-user-1",
     "saved_cache_cost": 0.0,
     "request_tags": [],
-    "model_parameters": {},
+    "model_parameters": {"user": "end-user-1"},
     "hidden_params": {},
     "messages": [{"role": "user", "content": "Hello"}],
     "response": RESPONSE,
@@ -222,7 +223,7 @@ fn initiated_row() -> InitiatedRow {
     InitiatedRow {
         model: "gpt-4o".to_owned(),
         messages: json(MESSAGES),
-        end_user: "end-user-1".to_owned(),
+        end_user: Json::Text("end-user-1".to_owned()),
         status: "initiated",
         litellm_call_id: "call-1".to_owned(),
     }
@@ -250,7 +251,7 @@ impl RowFixture {
     fn row(&self) -> RequestRow<'_> {
         RequestRow {
             messages: Some(&self.messages),
-            end_user: "end-user-1",
+            end_user: Some("end-user-1"),
             response_obj: &self.response,
             start_time: self.start_time,
             end_time: self.end_time,
@@ -303,12 +304,18 @@ fn an_empty_credential_counts_as_unset() {
         ("SUPABASE_URL".to_owned(), String::new()),
         ("SUPABASE_KEY".to_owned(), "service-key".to_owned()),
     ]);
-    assert!(SupabaseSettings::from_environment(&empty_url).is_err());
+    assert!(matches!(
+        SupabaseSettings::from_environment(&empty_url),
+        Err(SupabaseSettingsError::MissingCredentials)
+    ));
     let empty_key = BTreeMap::from([
         ("SUPABASE_URL".to_owned(), BASE.to_owned()),
         ("SUPABASE_KEY".to_owned(), String::new()),
     ]);
-    assert!(SupabaseSettings::from_environment(&empty_key).is_err());
+    assert!(matches!(
+        SupabaseSettings::from_environment(&empty_key),
+        Err(SupabaseSettingsError::MissingCredentials)
+    ));
 }
 
 #[test]
@@ -709,19 +716,103 @@ async fn callback_logger_success_without_a_call_id_generates_one() {
     Uuid::parse_str(text(recorded.field("litellm_call_id"))).expect("a fresh uuid4 is written");
 }
 
-#[tokio::test]
-async fn callback_logger_success_defaults_the_end_user() {
+async fn end_user_written(outcome: Outcome, payload: &str) -> Json {
     let (callback, captured, tracker) = callback_fixture(201);
-    let payload = payload_text(RESPONSE, None, Some(r#""call-1""#))
-        .replace(r#""end_user": "end-user-1""#, r#""end_user": null"#);
+    let event = event_from(payload);
+    let accepted = match outcome {
+        Outcome::Success => callback.log_success_event(&event),
+        Outcome::Failure => callback.log_failure_event(&event),
+    };
+    accepted.expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    captured.only_request().field("end_user").clone()
+}
+
+fn success_payload() -> String {
+    payload_text(RESPONSE, None, Some(r#""call-1""#))
+}
+
+fn failure_payload() -> String {
+    payload_text("null", Some("upstream returned 500"), Some(r#""call-1""#))
+}
+
+const WITH_USER: &str = r#""model_parameters": {"user": "end-user-1"}"#;
+const WITHOUT_USER: &str = r#""model_parameters": {}"#;
+const COST_OK: &str = r#""response_cost_failure_debug_info": null"#;
+const COST_FAILED: &str = r#""response_cost_failure_debug_info": {"error_str": "no price entry"}"#;
+
+#[tokio::test]
+async fn callback_logger_success_takes_the_end_user_from_the_user_parameter() {
+    let payload = success_payload().replace(r#""end_user": "proxy-user-1""#, r#""end_user": null"#);
+    assert_eq!(
+        end_user_written(Outcome::Success, &payload).await,
+        Json::Text("end-user-1".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn callback_logger_success_ignores_the_proxy_end_user() {
+    assert_eq!(
+        end_user_written(Outcome::Success, &success_payload()).await,
+        Json::Text("end-user-1".to_owned())
+    );
+    let without_user = success_payload().replace(WITH_USER, WITHOUT_USER);
+    assert_eq!(
+        end_user_written(Outcome::Success, &without_user).await,
+        Json::Text("default".to_owned()),
+        "the proxy end-user id is not the request's user parameter"
+    );
+}
+
+#[tokio::test]
+async fn callback_logger_success_defaults_a_user_parameter_that_is_not_text() {
+    let payload = success_payload().replace(WITH_USER, r#""model_parameters": {"user": 7}"#);
+    assert_eq!(
+        end_user_written(Outcome::Success, &payload).await,
+        Json::Text("default".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn callback_logger_failure_takes_the_end_user_from_the_user_parameter() {
+    assert_eq!(
+        end_user_written(Outcome::Failure, &failure_payload()).await,
+        Json::Text("end-user-1".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn callback_logger_failure_without_a_user_parameter_writes_a_null_end_user() {
+    let payload = failure_payload().replace(WITH_USER, WITHOUT_USER);
+    assert_eq!(
+        end_user_written(Outcome::Failure, &payload).await,
+        Json::Null
+    );
+}
+
+#[tokio::test]
+async fn callback_logger_success_with_a_cost_failure_posts_nothing() {
+    let (callback, captured, tracker) = callback_fixture(201);
+    let payload = success_payload().replace(COST_OK, COST_FAILED);
     callback
         .log_success_event(&event_from(&payload))
         .expect("the event is accepted");
+    callback
+        .async_log_success_event(Arc::new(event_from(&payload)))
+        .await
+        .expect("the event is logged");
     tracker.close();
     tracker.wait().await;
+    assert!(captured.requests().is_empty());
+}
+
+#[tokio::test]
+async fn callback_logger_failure_with_a_cost_failure_still_writes_the_row() {
+    let payload = failure_payload().replace(COST_OK, COST_FAILED);
     assert_eq!(
-        captured.only_request().field("end_user"),
-        &Json::Text("default".to_owned())
+        end_user_written(Outcome::Failure, &payload).await,
+        Json::Text("end-user-1".to_owned())
     );
 }
 
@@ -839,11 +930,10 @@ async fn callback_logger_input_event_writes_the_initiated_row() {
     );
 }
 
-#[tokio::test]
-async fn callback_logger_input_event_defaults_the_end_user() {
+async fn initiated_end_user(details: &str) -> Json {
     let (callback, captured, tracker) = callback_fixture(201);
     let messages = json(MESSAGES);
-    let details = json(r#"{"user": null, "litellm_call_id": "call-1"}"#);
+    let details = json(details);
     callback
         .log_input_event(&PreCallEvent {
             model: "gpt-4o",
@@ -853,9 +943,22 @@ async fn callback_logger_input_event_defaults_the_end_user() {
         .expect("the pre-call event is accepted");
     tracker.close();
     tracker.wait().await;
+    captured.only_request().field("end_user").clone()
+}
+
+#[tokio::test]
+async fn callback_logger_input_event_writes_a_null_user_as_null() {
     assert_eq!(
-        captured.only_request().field("end_user"),
-        &Json::Text("default".to_owned())
+        initiated_end_user(r#"{"user": null, "litellm_call_id": "call-1"}"#).await,
+        Json::Null
+    );
+}
+
+#[tokio::test]
+async fn callback_logger_input_event_defaults_a_missing_user() {
+    assert_eq!(
+        initiated_end_user(r#"{"litellm_call_id": "call-1"}"#).await,
+        Json::Text("default".to_owned())
     );
 }
 

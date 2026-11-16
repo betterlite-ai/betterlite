@@ -14,6 +14,14 @@ use crate::supabase::supabase_logging::callback::SupabaseCallback;
 use crate::supabase::supabase_logging::settings::SupabaseSettings;
 
 pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+    Ok(build_callback(inputs)?)
+}
+
+// The callback is both the terminal logger and the pre-call input event sink, so a caller that
+// puts "supabase" in input_callback hands this same value to the pre-call hook as InputCallback::InputEvent
+pub fn build_callback(
+    inputs: &CatalogInputs,
+) -> Result<Arc<SupabaseCallback<PooledDelivery>>, CatalogError> {
     let environment: &dyn EnvironmentLookup = inputs.env.as_ref();
     let mut settings =
         SupabaseSettings::from_environment(environment).map_err(|error| CatalogError::Init {

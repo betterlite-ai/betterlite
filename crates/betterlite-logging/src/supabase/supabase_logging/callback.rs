@@ -93,6 +93,13 @@ async fn deliver_row<D: Delivery>(
     let failure_response;
     let response_obj = match outcome {
         Outcome::Success => {
+            // litellm.completion_cost raises for a model with no price entry, and log_event's catch writes no row
+            if payload.cost_failure_info.is_some() {
+                tracing::warn!(
+                    "the supabase success row is skipped, its cost could not be calculated"
+                );
+                return;
+            }
             let Some(response) = payload.response.as_ref() else {
                 return;
             };
@@ -109,7 +116,7 @@ async fn deliver_row<D: Delivery>(
             &failure_response
         }
     };
-    post_row(logger, payload, &call_id, response_obj).await;
+    post_row(logger, payload, &call_id, response_obj, outcome).await;
 }
 
 async fn post_row<D: Delivery>(
@@ -117,10 +124,11 @@ async fn post_row<D: Delivery>(
     payload: &StandardLoggingPayload,
     call_id: &str,
     response_obj: &Json,
+    outcome: Outcome,
 ) {
     let row = RequestRow {
         messages: payload.messages.as_ref(),
-        end_user: payload.end_user.as_deref().unwrap_or(DEFAULT_END_USER),
+        end_user: request_user(payload, outcome),
         response_obj,
         start_time: payload.start_time,
         end_time: payload.end_time,
@@ -141,24 +149,41 @@ fn call_id(payload: &StandardLoggingPayload, outcome: Outcome) -> Option<String>
     }
 }
 
+// The success site reads optional_params.get("user", "default"), the failure site model_call_details["user"], None without one
+fn request_user(payload: &StandardLoggingPayload, outcome: Outcome) -> Option<&str> {
+    let user = match payload.model_parameters.get("user") {
+        Some(Json::Text(user)) => Some(user.as_str()),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        | None => None,
+    };
+    match outcome {
+        Outcome::Success => Some(user.unwrap_or(DEFAULT_END_USER)),
+        Outcome::Failure => user,
+    }
+}
+
 fn initiated_row(event: &PreCallEvent<'_>) -> Option<InitiatedRow> {
     let litellm_call_id = detail_text(event.details, "litellm_call_id")?.to_owned();
     Some(InitiatedRow {
         model: event.model.to_owned(),
         messages: event.messages.clone(),
-        end_user: detail_text(event.details, "user")
-            .unwrap_or(DEFAULT_END_USER)
-            .to_owned(),
+        end_user: detail(event.details, "user")
+            .cloned()
+            .unwrap_or_else(|| Json::Text(DEFAULT_END_USER.to_owned())),
         status: INITIATED_STATUS,
         litellm_call_id,
     })
 }
 
-fn detail_text<'details>(details: &'details Json, name: &str) -> Option<&'details str> {
+fn detail<'details>(details: &'details Json, name: &str) -> Option<&'details Json> {
     let Json::Object(fields) = details else {
         return None;
     };
-    match fields.get(name)? {
+    fields.get(name)
+}
+
+fn detail_text<'details>(details: &'details Json, name: &str) -> Option<&'details str> {
+    match detail(details, name)? {
         Json::Text(text) => Some(text),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
