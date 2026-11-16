@@ -84,6 +84,14 @@ fn usage_text(video: &VideoObject, key: &str) -> Option<String> {
 #[case::number_integer(number("12"), Some(DurationValue::Numeric("12".to_owned())))]
 #[case::number_float(number("2.9"), Some(DurationValue::Numeric("2".to_owned())))]
 #[case::too_many_digits(text("1e5000"), None)]
+#[case::zero_huge_exponent(text("0e5000"), Some(DurationValue::Numeric("0".to_owned())))]
+#[case::zero_huge_exponent_past_i64(text("0e99999999999999999999"), Some(DurationValue::Numeric("0".to_owned())))]
+#[case::tiny_past_i64_exponent(text("1e-99999999999999999999"), Some(DurationValue::Numeric("0".to_owned())))]
+#[case::tiny_exponent_at_the_i64_edge(text("1.55e-9223372036854775807"), Some(DurationValue::Numeric("0".to_owned())))]
+#[case::too_large_exponent(text("1e99999999999999999999"), None)]
+#[case::exponent_at_the_positive_edge(text("1e9223372036854775807"), None)]
+#[case::empty_zero_exponent(text("0e"), None)]
+#[case::non_digit_exponent(text("1e-abc"), None)]
 #[case::boolean(Json::Bool(true), None)]
 #[case::null(Json::Null, None)]
 #[case::word(text("abc"), None)]
@@ -119,6 +127,16 @@ fn the_digit_cap_keeps_4096_digits_and_drops_4097() {
         Some(DurationValue::Numeric(expected))
     );
     assert_eq!(duration_value(&text("1e4096")), None);
+}
+
+#[test]
+fn leading_zeros_do_not_count_toward_the_digit_cap() {
+    let zeros = "0".repeat(4096);
+    let raw = format!("{zeros}5");
+    assert_eq!(
+        duration_value(&text(&raw)),
+        Some(DurationValue::Numeric("5".to_owned()))
+    );
 }
 
 #[rstest]
@@ -636,6 +654,26 @@ fn an_auto_duration_leaves_duration_usage_out() {
 }
 
 #[test]
+fn an_infinite_duration_leaves_duration_usage_out() {
+    let reply = reply(r#"{"request_id": "req-6"}"#);
+    let request = params(&[("duration", text("inf"))]);
+    let video = create_response(&CreateResponseInput {
+        model: H3_MODEL,
+        reply: &reply,
+        custom_llm_provider: None,
+        request_data: &request,
+        created_at: NOW,
+    })
+    .expect("a queued video");
+    assert_eq!(video.seconds, None);
+    assert_eq!(usage_text(&video, "duration_seconds"), None);
+    assert_eq!(
+        usage_text(&video, "video_resolution").as_deref(),
+        Some("2K")
+    );
+}
+
+#[test]
 fn a_non_text_resolution_falls_back_to_the_default_resolution() {
     let reply = reply(r#"{"request_id": "req-5"}"#);
     let request = params(&[("duration", text("2")), ("resolution", number("7"))]);
@@ -854,33 +892,51 @@ fn a_text_detail_stays_whole() {
 
 #[test]
 fn a_non_object_root_is_refused() {
-    let result = decode_fal_video_reply(200, &VideoHeaders::new(), b"[]");
-    assert!(matches!(
-        result,
-        Err(FalVideoError::ReplyNotAnObject { status: 200, .. })
-    ));
+    let headers = VideoHeaders::from([("x-request-id".to_owned(), "r-1".to_owned())]);
+    let result = decode_fal_video_reply(413, &headers, b"[]");
+    let Err(FalVideoError::ReplyNotAnObject {
+        status,
+        headers: kept,
+    }) = result
+    else {
+        panic!("a non-object root is refused");
+    };
+    assert_eq!(status, 413);
+    assert_eq!(kept, headers);
 }
 
 #[test]
 fn a_body_that_is_not_json_is_refused() {
-    let result = decode_fal_video_reply(502, &VideoHeaders::new(), b"not json");
-    assert!(matches!(
-        result,
-        Err(FalVideoError::ReplyDecode { status: 502, .. })
-    ));
+    let headers = VideoHeaders::from([("x-request-id".to_owned(), "r-1".to_owned())]);
+    let result = decode_fal_video_reply(502, &headers, b"not json");
+    let Err(FalVideoError::ReplyDecode {
+        status,
+        headers: kept,
+        ..
+    }) = result
+    else {
+        panic!("a body that is not JSON is refused");
+    };
+    assert_eq!(status, 502);
+    assert_eq!(kept, headers);
 }
 
 #[test]
 fn a_body_over_the_limit_is_refused_before_parsing() {
     let body = vec![b' '; MAX_FAL_VIDEO_REPLY_BYTES.saturating_add(1)];
-    let result = decode_fal_video_reply(200, &VideoHeaders::new(), &body);
-    assert!(matches!(
-        result,
-        Err(FalVideoError::ReplyTooLarge {
-            limit: MAX_FAL_VIDEO_REPLY_BYTES,
-            ..
-        })
-    ));
+    let headers = VideoHeaders::from([("x-request-id".to_owned(), "r-1".to_owned())]);
+    let result = decode_fal_video_reply(413, &headers, &body);
+    let Err(FalVideoError::ReplyTooLarge {
+        status,
+        headers: kept,
+        limit,
+    }) = result
+    else {
+        panic!("a body over the limit is refused");
+    };
+    assert_eq!(status, 413);
+    assert_eq!(kept, headers);
+    assert_eq!(limit, MAX_FAL_VIDEO_REPLY_BYTES);
 }
 
 #[test]

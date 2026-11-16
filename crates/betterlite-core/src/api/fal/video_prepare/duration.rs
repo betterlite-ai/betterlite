@@ -10,6 +10,12 @@ pub enum DurationValue {
     Numeric(String),
 }
 
+enum Exponent {
+    Value(i64),
+    TooLarge,
+    TooSmall,
+}
+
 pub fn duration_value(value: &Json) -> Option<DurationValue> {
     match value {
         Json::Text(text) if text == "auto" => Some(DurationValue::Auto),
@@ -34,26 +40,43 @@ fn truncate_decimal(text: &str) -> Option<String> {
     };
     let (mantissa, exponent) = split_exponent(unsigned)?;
     let (digits, fraction_len) = mantissa_digits(mantissa)?;
-    let shift = exponent.checked_sub(fraction_len)?;
-    let truncated = truncated_digits(digits, shift)?;
+    let significant = digits.trim_start_matches('0');
+    if significant.is_empty() {
+        return Some("0".to_owned());
+    }
+    let shift = match exponent {
+        Exponent::Value(value) => value.saturating_sub(fraction_len),
+        Exponent::TooLarge => return None,
+        Exponent::TooSmall => return Some("0".to_owned()),
+    };
+    let truncated = truncated_digits(significant.to_owned(), shift)?;
     Some(signed_integer_text(negative, &truncated))
 }
 
-fn split_exponent(text: &str) -> Option<(&str, i64)> {
+fn split_exponent(text: &str) -> Option<(&str, Exponent)> {
     match text.split_once(['e', 'E']) {
-        None => Some((text, 0)),
+        None => Some((text, Exponent::Value(0))),
         Some((mantissa, exponent)) => {
             let (negative, digits) = exponent_parts(exponent);
-            if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
                 return None;
             }
-            let magnitude: i64 = digits.parse().ok()?;
+            let Ok(magnitude) = digits.parse::<i64>() else {
+                return Some((
+                    mantissa,
+                    if negative {
+                        Exponent::TooSmall
+                    } else {
+                        Exponent::TooLarge
+                    },
+                ));
+            };
             let value = if negative {
                 magnitude.checked_neg()?
             } else {
                 magnitude
             };
-            Some((mantissa, value))
+            Some((mantissa, Exponent::Value(value)))
         }
     }
 }
