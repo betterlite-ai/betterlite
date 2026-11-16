@@ -8,7 +8,9 @@ use betterlite_models::fireworks_catalog_metadata::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::mem;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -121,7 +123,7 @@ impl Session {
             }
             Step::ReplaceCatalog { catalog } => {
                 let next = Arc::new(catalog_of(catalog));
-                let previous = std::mem::replace(&mut self.catalog, next);
+                let previous = mem::replace(&mut self.catalog, next);
                 self.retired.push(previous);
                 Ok(Value::Null)
             }
@@ -136,10 +138,10 @@ impl Session {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut session = Session {
             catalog: Arc::new(catalog_of(&input.catalog)),
             retired: Vec::new(),

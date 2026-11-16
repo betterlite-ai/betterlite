@@ -7,7 +7,9 @@ use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fs;
 
 mod effects;
 
@@ -57,7 +59,7 @@ fn run_fixture(input: &Input) -> Result<serde_json::Value, effects::FixtureError
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("auth.json");
     if let Some(record) = &input.record {
-        std::fs::write(&path, record)?;
+        fs::write(&path, record)?;
     }
     let mut store = effects::store(input, directory.path())?;
     let mut results = Vec::new();
@@ -67,7 +69,7 @@ fn run_fixture(input: &Input) -> Result<serde_json::Value, effects::FixtureError
     if let Some(error) = store.clock.failure {
         return Err(effects::FixtureError::Io(error));
     }
-    let content = std::fs::read_to_string(path).ok();
+    let content = fs::read_to_string(path).ok();
     Ok(
         json!({ "results": results, "file": effects::content(content.as_deref()), "writes": store.files.writes, "reads": store.files.reads, "events": store.files.events, "sleeps": store.clock.sleeps }),
     )

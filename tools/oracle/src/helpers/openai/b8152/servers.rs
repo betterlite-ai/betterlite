@@ -1,5 +1,4 @@
 use super::invalid;
-use crate::helpers::HelperError;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::RefuseDownloads;
 use betterlite_openai::local_servers::{
@@ -8,6 +7,7 @@ use betterlite_openai::local_servers::{
 use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, Object, OpenAiConfig, OpenAiSettings,
 };
+use betterlite_oracle_helper_api::error::HelperError;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;

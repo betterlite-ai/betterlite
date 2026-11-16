@@ -3,6 +3,8 @@ use serde::Deserialize;
 
 use betterlite::job_scheduler::triggers::{CronTrigger, CronZone, IntervalTrigger};
 use betterlite::scheduled_job_stagger::Trigger;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -40,10 +42,10 @@ fn fire_times(trigger: &dyn Trigger, start: DateTime<Utc>) -> serde_json::Value 
     serde_json::json!({ "fires": times })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match (&input.cron, input.interval) {
             (Some(cron), None) => match CronTrigger::from_crontab(cron, CronZone::Utc) {
                 Ok(trigger) => Ok(fire_times(&trigger, input.start)),
@@ -53,7 +55,7 @@ impl crate::helpers::Helper for Op {
                 let trigger = IntervalTrigger { seconds };
                 Ok(fire_times(&trigger, input.start))
             }
-            _ => Err(Box::new(crate::helpers::HelperError {
+            _ => Err(Box::new(HelperError {
                 class: "InvalidInput".to_owned(),
                 status: None,
                 error_type: None,

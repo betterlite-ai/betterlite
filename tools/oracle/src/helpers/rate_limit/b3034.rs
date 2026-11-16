@@ -18,10 +18,12 @@ use betterlite_rate_limit::settlement_and_rollback::AtomicSettlement;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fakes::{FixedClock, PlannedBatch, PlannedBatchSource, PlannedScript, RecordingCache};
 use output::{response_json, settlement_error};
+use tokio::runtime::Builder;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
@@ -67,10 +69,10 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let cache = Arc::new(RecordingCache::new(&input.cache));
         let main_script = Arc::new(PlannedScript::new(input.replies.clone()));
         let refund_script = Arc::new(PlannedScript::new(input.refund_replies.clone()));
@@ -133,7 +135,7 @@ fn settle(
         },
         default_window_size: input.window_size,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     runtime
         .block_on(settlement.atomic_check_and_increment_by_n(&input.descriptors, &input.increments))
         .map_err(|error| settlement_error(&error))

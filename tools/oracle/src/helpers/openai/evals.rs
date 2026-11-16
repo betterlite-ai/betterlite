@@ -5,7 +5,8 @@ use betterlite_openai::evals::types::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod calls;
 mod requests;

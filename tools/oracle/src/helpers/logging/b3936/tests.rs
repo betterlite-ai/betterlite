@@ -6,6 +6,7 @@ use std::path::Path;
 use betterlite_logging::datadog_llm_privacy::datadog_budget_reset_decoder::{
     BudgetResetError, decode_budget_reset,
 };
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 use rstest::rstest;
 
 fn expected(name: &str) -> Option<Result<String, BudgetResetError>> {
@@ -29,8 +30,7 @@ fn expected(name: &str) -> Option<Result<String, BudgetResetError>> {
 
 #[rstest]
 fn replays_the_datadog_budget_reset_decoder_corpus() {
-    let corpus =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/datadog_budget_reset_decoder");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/datadog_budget_reset_decoder");
     let mut seen = 0_usize;
     for entry in fs::read_dir(corpus).unwrap() {
         let path = entry.unwrap().path();

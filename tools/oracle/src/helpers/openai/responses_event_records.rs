@@ -1,7 +1,8 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_openai::api::responses_event_records::event_types::Extra;
 use betterlite_openai::api::responses_event_records::wire::decode_responses_event_record;
 use betterlite_openai::api::responses_shapes::wire::WireDecodeLimits;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

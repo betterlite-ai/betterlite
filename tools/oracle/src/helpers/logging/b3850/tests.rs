@@ -1,6 +1,9 @@
 #![cfg(test)]
 
+use betterlite_oracle_runner::case::load_helper_cases;
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 use rstest::rstest;
+use std::path::Path;
 
 #[rstest]
 #[case::arize_config_default_grpc("arize-config-default-grpc.yaml")]
@@ -36,15 +39,15 @@ use rstest::rstest;
 #[case::weave_dynamic_headers("weave-dynamic-headers.yaml")]
 #[case::langtrace_preset_mapper_only("langtrace-preset-mapper-only.yaml")]
 fn helper_case_matches_litellm(#[case] name: &str) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/otel-presets")
         .join(name);
-    let cases = crate::case::load_cases(&[path]).unwrap();
-    let Some(crate::case::LoadedCase::Helper(case)) = cases.first() else {
+    let cases = load_helper_cases(&[path]).unwrap();
+    let Some(case) = cases.first() else {
         panic!("expected a helper case");
     };
     assert!(matches!(
-        crate::helpers::run_case(case, false).unwrap(),
-        crate::helpers::HelperRun::Match
+        run_case(&[crate::GROUP], case, false).unwrap(),
+        HelperRun::Match
     ));
 }
