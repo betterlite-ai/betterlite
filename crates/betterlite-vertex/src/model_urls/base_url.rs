@@ -1,29 +1,10 @@
-use super::error::VertexUrlError;
+use betterlite_core::api::vertex_location::validate_vertex_location;
 
-pub fn validate_vertex_location(location: Option<&str>) -> Result<&str, VertexUrlError> {
-    let Some(validated) = location else {
-        return Err(VertexUrlError::LocationRequired);
-    };
-    if validated == "global" {
-        return Ok(validated);
-    }
-    // LiteLLM's ^[a-z][a-z0-9-]*$ keeps a client-supplied location from choosing the host
-    let mut characters = validated.chars();
-    let starts_with_letter = characters
-        .next()
-        .is_some_and(|character| character.is_ascii_lowercase());
-    let rest_is_valid = characters.all(|character| {
-        character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
-    });
-    if starts_with_letter && rest_is_valid {
-        return Ok(validated);
-    }
-    Err(VertexUrlError::InvalidLocation)
-}
+use super::error::VertexUrlError;
 
 pub fn get_vertex_base_url(location: Option<&str>) -> Result<String, VertexUrlError> {
     // the host is chosen only after the location passes the injection check
-    validate_vertex_location(location).map(host_for)
+    Ok(host_for(validate_vertex_location(location)?))
 }
 
 #[must_use]

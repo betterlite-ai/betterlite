@@ -2,6 +2,14 @@ use betterlite_config::sections::guardrail_params::records::LakeraCategoryThresh
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
+use self::flagged::violation_of;
+use self::rejection::{LakeraRejection, LakeraViolation};
+use self::response::LakeraModerationResponse;
+
+mod flagged;
+pub mod rejection;
+pub mod response;
+
 pub const DEFAULT_API_BASE: &str = "https://api.lakera.ai";
 pub const DEFAULT_MODERATION_CHECK: ModerationCheck = ModerationCheck::InParallel;
 
@@ -63,6 +71,22 @@ impl LegacyLakeraModeration {
             api_key,
             async_handler: build_client(),
         }
+    }
+
+    // LiteLLM's _check_response_flagged: only results[0] decides, and a score blocks only when its own threshold is set
+    #[must_use]
+    pub fn check_response_flagged(
+        &self,
+        response: &LakeraModerationResponse,
+    ) -> Option<LakeraRejection> {
+        let result = response.results.as_ref()?.as_ref()?.first()?;
+        let Some(thresholds) = self.category_thresholds else {
+            return matches!(result.flagged, Some(Some(true)))
+                .then(|| LakeraRejection::new(LakeraViolation::ContentSafetyPolicy, response));
+        };
+        // with thresholds configured, a response that carries no scores passes even when it is flagged
+        let scores = result.category_scores.as_ref()?.as_ref()?;
+        violation_of(scores, thresholds).map(|violation| LakeraRejection::new(violation, response))
     }
 }
 

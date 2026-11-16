@@ -271,7 +271,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_search*")"
       && grep -lq 'bedrock_services_search' tools/oracle/fuzz/corpus/helper_case/bedrock_services_search* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_search$/)'
+      nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_search$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-agentcore-gateway-url
     why: The AGENTCORE_GATEWAY_URL setting is not loaded with its required defaults and precedence.

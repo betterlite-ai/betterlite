@@ -90,7 +90,7 @@ checks:
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/datadog_llm_argument_decoder)"
         && test -f tools/oracle/fuzz/fuzz_targets/datadog_llm_argument_decoder.rs
         && test -n "$(ls -A tools/oracle/fuzz/corpus/datadog_llm_argument_decoder)"
-        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_datadog_llm_argument_decoder_corpus)'
+        && cargo nextest run --locked -p betterlite-oracle-logging --no-tests=fail -E 'test(replays_the_datadog_llm_argument_decoder_corpus)'
     - id: argument-decoder-tests
       why: >-
         the argument decoder unit tests fail or do not exist
