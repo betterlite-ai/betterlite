@@ -1,0 +1,27 @@
+kind: helper
+name: foundry-embeddings-mixed-seed
+call:
+  foundry_embeddings:
+    flows:
+      - mode: sync
+        model: offer-cohere-embed-multili-paygo
+        input: [hello, 'data:image/png;base64,AAAA', world]
+        options: {input_type: search_document, truncate: END}
+        api_base: https://acct.services.ai.azure.com/v1/models
+        api_key: seed-key
+        timeout: 9
+        image_reply: {status: 200, headers: [{name: llm_provider-num_tokens, value: '9'}], body: '{"object":"list","data":[{"object":"embedding","index":5,"embedding":[0.5]}],"model":"image-model","usage":{"prompt_tokens":4,"completion_tokens":1,"total_tokens":5}}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":1,"embedding":[0.1]},{"object":"embedding","index":4,"embedding":[0.4]}],"model":"text-model","usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}'}
+        client: openai
+      - mode: async
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/jpeg;base64,AAAB']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: seed-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: handler
+env: {}
+compare: {ignore: []}
