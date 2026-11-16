@@ -89,13 +89,15 @@ pub(super) fn hit_result(
 
 // LiteLLM's relevanceScore override: a present chunk score wins over the hit's position
 fn chunk_score(chunk: &Chunk, positional: Score) -> Result<Score, PayloadError> {
-    match &chunk.relevance_score {
-        Some(number) => Score::try_from(number.clone()).map_err(|source| PayloadError::Score {
-            field: "relevanceScore",
-            source,
-        }),
-        None => Ok(positional),
-    }
+    chunk
+        .relevance_score
+        .as_ref()
+        .map_or(Ok(positional), |number| {
+            Score::try_from(number.clone()).map_err(|source| PayloadError::Score {
+                field: "relevanceScore",
+                source,
+            })
+        })
 }
 
 fn chunk_attributes(
