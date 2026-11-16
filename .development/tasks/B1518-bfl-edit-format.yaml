@@ -70,7 +70,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/bfl-edit/sample-required.yaml
 deviations:
   - what: BFL edit image or mask URLs fail with HTTP 400, type invalid_request_error, param image or mask and code unsupported_media_url; supplied bytes and local file handles remain usable and no URL is fetched.
-    why: Max has not decided whether request-media downloads are allowed; retain the current no-download boundary and build no fetch service.
+    why: B5083's downloader is not wired into this path yet. Request media URLs are fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/transformation.py#L183-L290
 out_of_scope:
   - B1520 submits edits and runs the polling lifecycle; B1517 owns authentication settings and all BFL response-byte decoding.
