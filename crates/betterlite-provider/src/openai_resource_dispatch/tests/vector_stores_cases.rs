@@ -240,9 +240,9 @@ async fn search_request_rows() {
     let settings = settings();
     let query = Query::Many(vec![String::from("a"), String::from("b")]);
     let params = SearchParams {
-        filters: Some(object(r#"{"type":"eq"}"#)),
+        filters: Some(json!({"type": "eq"})),
         max_num_results: Some(5),
-        ranking_options: Some(object(r#"{"ranker":"auto"}"#)),
+        ranking_options: Some(json!({"ranker": "auto"})),
         rewrite_query: Some(false),
     };
     let base = "https://h.example/v1/vector_stores?api-version=1";

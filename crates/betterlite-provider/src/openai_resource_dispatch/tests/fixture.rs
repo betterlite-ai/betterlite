@@ -323,7 +323,7 @@ pub(crate) fn object(json: &str) -> Object {
     serde_json::from_str(json).unwrap()
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub(crate) enum JobCall {
     Create(FineTuneCreate),
     List {

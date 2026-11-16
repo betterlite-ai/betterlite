@@ -23,7 +23,7 @@ pub(super) const OTHER_OUTCOME: &str = "the dispatch returned another outcome";
 // The oracle calls one operation per input; `case` names it the way the Python adapter does
 #[derive(Debug, Deserialize)]
 #[serde(tag = "case", rename_all = "snake_case")]
-enum Input {
+pub(crate) enum Input {
     FilesCreate(FilesCreate),
     BatchesCreate(BatchesCreate),
     FineTuningCreate(FineTuningCreate),
@@ -33,7 +33,7 @@ enum Input {
 }
 
 #[derive(Debug, Deserialize)]
-struct FilesCreate {
+pub(crate) struct FilesCreate {
     api_base: String,
     status: u16,
     filename: String,
@@ -42,21 +42,21 @@ struct FilesCreate {
 }
 
 #[derive(Debug, Deserialize)]
-struct BatchesCreate {
+pub(crate) struct BatchesCreate {
     status: u16,
     create: BatchCreate,
     reply: Value,
 }
 
 #[derive(Debug, Deserialize)]
-struct FineTuningCreate {
+pub(crate) struct FineTuningCreate {
     status: u16,
     create: FineTuneCreate,
     reply: Value,
 }
 
 #[derive(Debug, Deserialize)]
-struct ContainersList {
+pub(crate) struct ContainersList {
     api_base: String,
     after: Option<String>,
     limit: Option<i64>,
@@ -65,13 +65,13 @@ struct ContainersList {
 }
 
 #[derive(Debug, Deserialize)]
-struct EvalsGet {
+pub(crate) struct EvalsGet {
     api_base: String,
     eval_id: String,
 }
 
 #[derive(Debug, Deserialize)]
-struct VectorStoresCreate {
+pub(crate) struct VectorStoresCreate {
     api_base: String,
     params: CreateParams,
 }

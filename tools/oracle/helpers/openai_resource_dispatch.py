@@ -20,7 +20,10 @@ JSON: Final = TypeAdapter(JsonValue)
 class VectorConfig(Protocol):
     # ast-grep-ignore: no-long-names
     def transform_create_vector_store_request(
-        self, params: VectorStoreParams, api_base: str
+        self,
+        # ast-grep-ignore: no-long-names
+        vector_store_create_optional_params: VectorStoreParams,
+        api_base: str,
     ) -> tuple[str, dict[str, JsonValue]]: ...
 
 
