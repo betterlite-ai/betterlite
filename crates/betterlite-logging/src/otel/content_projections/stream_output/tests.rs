@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::mem::take;
 use std::sync::Mutex;
 
 use rstest::rstest;
@@ -31,7 +32,7 @@ impl FakeAssembler {
     }
 
     fn recorded(&self) -> Vec<Call> {
-        std::mem::take(&mut *self.calls.lock().expect("calls"))
+        take(&mut *self.calls.lock().expect("calls"))
     }
 }
 

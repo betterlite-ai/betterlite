@@ -11,6 +11,7 @@ use opentelemetry_sdk::metrics::data::{
 use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 use rstest::rstest;
 use rust_decimal::Decimal;
+use serde::de::DeserializeOwned;
 
 use super::{LegacyMetricRecorder, MetricCall};
 use crate::otel::legacy_metrics::filter::CallbackSettingsView;
@@ -56,7 +57,7 @@ impl CallbackSettingsView for NoSettings {
 
 fn typed<T>(text: &str) -> T
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
     serde_json::from_str(text).expect("typed value")
 }

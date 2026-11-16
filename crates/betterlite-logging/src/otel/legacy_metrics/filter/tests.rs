@@ -8,7 +8,7 @@ use rstest::rstest;
 
 use super::{
     CallbackSettingsView, METRIC_METADATA_KEYS, MetricAttributeFilter, MetricFilterState,
-    build_metric_attribute_filter, resolve_metric_attribute_filter,
+    build_metric_attribute_filter, resolve_metric_filter,
 };
 use crate::otel::legacy_metrics::error::LegacyMetricsError;
 use crate::otel::model::utils::coercion::OtelModelValue;
@@ -75,7 +75,7 @@ fn every_base_name_and_every_metadata_variant_is_valid() {
         include_list: Some(valid.clone()),
         exclude_list: None,
     };
-    let resolved = resolve_metric_attribute_filter(Some(&filter)).expect("all names are valid");
+    let resolved = resolve_metric_filter(Some(&filter)).expect("all names are valid");
     assert_eq!(resolved.include, Some(valid.into_iter().collect()));
 }
 
@@ -120,7 +120,7 @@ fn a_list_of_the_wrong_type_is_an_error_naming_the_shape(#[case] value: &str) {
 
 #[test]
 fn no_filter_resolves_to_nothing() {
-    let resolved = resolve_metric_attribute_filter(None).expect("resolved");
+    let resolved = resolve_metric_filter(None).expect("resolved");
     assert_eq!((resolved.include, resolved.exclude), (None, None));
 }
 
@@ -130,7 +130,7 @@ fn empty_lists_resolve_to_nothing() {
         include_list: Some(vec![]),
         exclude_list: Some(vec![]),
     };
-    let resolved = resolve_metric_attribute_filter(Some(&filter)).expect("resolved");
+    let resolved = resolve_metric_filter(Some(&filter)).expect("resolved");
     assert_eq!((resolved.include, resolved.exclude), (None, None));
 }
 
@@ -140,16 +140,16 @@ fn one_list_resolves_to_a_set_and_the_other_stays_empty() {
         include_list: Some(names(&["gen_ai.system", "gen_ai.system"])),
         exclude_list: Some(vec![]),
     };
-    let resolved = resolve_metric_attribute_filter(Some(&include)).expect("include");
-    assert_eq!(resolved.include, Some(set(&["gen_ai.system"])));
-    assert_eq!(resolved.exclude, None);
+    let from_include = resolve_metric_filter(Some(&include)).expect("include");
+    assert_eq!(from_include.include, Some(set(&["gen_ai.system"])));
+    assert_eq!(from_include.exclude, None);
     let exclude = MetricAttributeFilter {
         include_list: None,
         exclude_list: Some(names(&["hidden_params"])),
     };
-    let resolved = resolve_metric_attribute_filter(Some(&exclude)).expect("exclude");
-    assert_eq!(resolved.include, None);
-    assert_eq!(resolved.exclude, Some(set(&["hidden_params"])));
+    let from_exclude = resolve_metric_filter(Some(&exclude)).expect("exclude");
+    assert_eq!(from_exclude.include, None);
+    assert_eq!(from_exclude.exclude, Some(set(&["hidden_params"])));
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn both_lists_together_are_rejected() {
         include_list: Some(names(&["gen_ai.system"])),
         exclude_list: Some(names(&["hidden_params"])),
     };
-    let error = resolve_metric_attribute_filter(Some(&filter)).expect_err("both");
+    let error = resolve_metric_filter(Some(&filter)).expect_err("both");
     assert!(matches!(error, LegacyMetricsError::BothLists));
 }
 
@@ -173,7 +173,7 @@ fn the_token_type_attribute_can_never_be_filtered(
         include_list: include,
         exclude_list: exclude,
     };
-    let error = resolve_metric_attribute_filter(Some(&filter)).expect_err("token type");
+    let error = resolve_metric_filter(Some(&filter)).expect_err("token type");
     assert!(matches!(error, LegacyMetricsError::TokenTypeFiltered));
 }
 
@@ -183,7 +183,7 @@ fn unknown_names_are_listed_in_sorted_order() {
         include_list: Some(names(&["zeta", "gen_ai.system", "metadata.nope", "alpha"])),
         exclude_list: None,
     };
-    let error = resolve_metric_attribute_filter(Some(&filter)).expect_err("unknown");
+    let error = resolve_metric_filter(Some(&filter)).expect_err("unknown");
     assert!(matches!(
         &error,
         LegacyMetricsError::UnknownAttributeNames { names: listed } if listed ==&["alpha", "metadata.nope", "zeta"]
@@ -206,7 +206,7 @@ fn the_resolved_filter_allows_by_list(
         include_list: include.map(names),
         exclude_list: exclude.map(names),
     };
-    let resolved = resolve_metric_attribute_filter(Some(&filter)).expect("resolved");
+    let resolved = resolve_metric_filter(Some(&filter)).expect("resolved");
     assert_eq!(resolved.allows(key), allowed);
 }
 

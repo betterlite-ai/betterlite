@@ -17,6 +17,7 @@ use betterlite_streaming::streamed_response_assembly::{Request, stream_chunk_bui
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
 use rust_decimal::Decimal;
+use serde::de::DeserializeOwned;
 use tokio::runtime::Builder;
 
 // the cases give every chunk stream a usage record, so nothing is counted or priced
@@ -89,7 +90,7 @@ impl ConsoleSink for Silent {
 
 fn decoded<T>(value: &OtelModelValue) -> Option<T>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
     serde_json::to_value(value)
         .and_then(serde_json::from_value)

@@ -114,15 +114,28 @@ fn every_event_is_an_info_record_bound_to_the_inference_span() {
     let records =
         try_emit(Mode::Legacy, CaptureMode::SpanAndEvent, CALL, Some(REPLY)).expect("emit");
     let context = span_context();
-    for record in &records {
-        assert_eq!(record.severity_number(), Some(Severity::Info));
-        assert_eq!(record.severity_text(), Some("INFO"));
-        assert_eq!(record.timestamp(), Some(fixed_time()));
-        let trace = record.trace_context().expect("trace context");
-        assert_eq!(trace.trace_id, context.trace_id());
-        assert_eq!(trace.span_id, context.span_id());
-        assert_eq!(trace.trace_flags, Some(context.trace_flags()));
-    }
+    let expected = (
+        Some(Severity::Info),
+        Some("INFO"),
+        Some(fixed_time()),
+        Some((
+            context.trace_id(),
+            context.span_id(),
+            Some(context.trace_flags()),
+        )),
+    );
+    assert_eq!(records.len(), 2);
+    assert!(records.iter().all(|record| {
+        let trace = record
+            .trace_context()
+            .map(|found| (found.trace_id, found.span_id, found.trace_flags));
+        (
+            record.severity_number(),
+            record.severity_text(),
+            record.timestamp(),
+            trace,
+        ) == expected
+    }));
 }
 
 #[test]

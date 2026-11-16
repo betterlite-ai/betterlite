@@ -80,17 +80,17 @@ fn is_valid_name(name: &str) -> bool {
             .is_some_and(|key| METRIC_METADATA_KEYS.contains(&key))
 }
 
-pub fn resolve_metric_attribute_filter(
-    attributes: Option<&MetricAttributeFilter>,
+pub fn resolve_metric_filter(
+    configured: Option<&MetricAttributeFilter>,
 ) -> Result<ResolvedFilter, LegacyMetricsError> {
-    let Some(attributes) = attributes else {
+    let Some(lists) = configured else {
         return Ok(ResolvedFilter::default());
     };
-    let include = attributes
+    let include = lists
         .include_list
         .as_deref()
         .filter(|names| !names.is_empty());
-    let exclude = attributes
+    let exclude = lists
         .exclude_list
         .as_deref()
         .filter(|names| !names.is_empty());
@@ -165,7 +165,7 @@ impl MetricFilterState {
             .as_ref()
             .map(build_metric_attribute_filter)
             .transpose()?;
-        let resolved = Arc::new(resolve_metric_attribute_filter(filter.as_ref())?);
+        let resolved = Arc::new(resolve_metric_filter(filter.as_ref())?);
         *slot = Some(Arc::clone(&resolved));
         Ok(resolved)
     }
