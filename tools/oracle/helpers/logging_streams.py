@@ -59,22 +59,20 @@ class ProbesInput(TypedDict):
 _USAGE_INPUT: Final = TypeAdapter(UsageInput)
 
 
-def served_texts_value(texts: tuple[str | None, ...] | None) -> JsonValue:
-    return _JSON.validate_python(None if texts is None else list(texts))
-
-
 def chat_value(probe: ChatProbe) -> JsonValue:
-    return [
-        served_texts_value(served_output_texts(response))
-        for response in probe["responses"]
-    ]
+    values: list[JsonValue] = []
+    for response in probe["responses"]:
+        texts = served_output_texts(response)
+        values.append(None if texts is None else list(texts))
+    return values
 
 
 def stream_value(probe: StreamProbe) -> JsonValue:
-    return [
-        served_texts_value(served_stream_output_texts(_CHUNKS.validate_python(chunks)))
-        for chunks in probe["chunk_lists"]
-    ]
+    values: list[JsonValue] = []
+    for chunks in probe["chunk_lists"]:
+        texts = served_stream_output_texts(_CHUNKS.validate_python(chunks))
+        values.append(None if texts is None else list(texts))
+    return values
 
 
 def overlay_value(probe: OverlayProbe) -> JsonValue:
@@ -92,19 +90,15 @@ def usage_value(usage: JsonValue) -> JsonValue:
     return _JSON.validate_json(filled.model_dump_json())
 
 
-def partial_usage_value(probe: PartialUsageProbe) -> JsonValue:
-    return [usage_value(usage) for usage in probe["usages"]]
-
-
-def probe_value(probe: Input) -> JsonValue:
-    if probe["operation"] == "chat":
-        return chat_value(probe)
-    if probe["operation"] == "stream":
-        return stream_value(probe)
-    if probe["operation"] == "partial_usage":
-        return partial_usage_value(probe)
-    return overlay_value(probe)
-
-
 def run(input_value: ProbesInput) -> JsonValue:
-    return [probe_value(probe) for probe in input_value["probes"]]
+    results: list[JsonValue] = []
+    for probe in input_value["probes"]:
+        if probe["operation"] == "chat":
+            results.append(chat_value(probe))
+        elif probe["operation"] == "stream":
+            results.append(stream_value(probe))
+        elif probe["operation"] == "partial_usage":
+            results.append([usage_value(usage) for usage in probe["usages"]])
+        else:
+            results.append(overlay_value(probe))
+    return results

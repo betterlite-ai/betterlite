@@ -56,24 +56,24 @@ fn write_windows(
     start_time: DateTime<FixedOffset>,
     end_time: DateTime<FixedOffset>,
 ) -> Result<(), CallDurationError> {
-    let [metadata, litellm_metadata] = params.get_disjoint_mut(["metadata", "litellm_metadata"]);
-    let metadata = object_slot(metadata, "metadata")?;
-    let litellm_metadata = object_slot(litellm_metadata, "litellm_metadata")?;
-    if let Some(litellm_metadata) = litellm_metadata.filter(|slots| !slots.is_empty()) {
-        copy_spend_keys(metadata, litellm_metadata);
-        return append_window(litellm_metadata, start_time, end_time);
+    let [raw_metadata, raw_litellm] = params.get_disjoint_mut(["metadata", "litellm_metadata"]);
+    let metadata = object_slot(raw_metadata, "metadata")?;
+    let litellm_metadata = object_slot(raw_litellm, "litellm_metadata")?;
+    if let Some(target) = litellm_metadata.filter(|slots| !slots.is_empty()) {
+        copy_spend_keys(metadata, target);
+        return append_window(target, start_time, end_time);
     }
-    let Some(metadata) = metadata.filter(|slots| !slots.is_empty()) else {
+    let Some(target) = metadata.filter(|slots| !slots.is_empty()) else {
         return Ok(());
     };
-    append_window(metadata, start_time, end_time)
+    append_window(target, start_time, end_time)
 }
 
 fn copy_spend_keys(
-    metadata: Option<&mut IndexMap<String, Json>>,
+    source: Option<&mut IndexMap<String, Json>>,
     litellm_metadata: &mut IndexMap<String, Json>,
 ) {
-    let Some(metadata) = metadata else {
+    let Some(metadata) = source else {
         return;
     };
     for (name, value) in metadata {
@@ -83,14 +83,17 @@ fn copy_spend_keys(
     }
 }
 
-fn object_slot<'slot>(
+const fn object_slot<'slot>(
     slot: Option<&'slot mut Json>,
     field: &'static str,
 ) -> Result<Option<&'slot mut IndexMap<String, Json>>, CallDurationError> {
-    match slot {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(metadata)) => Ok(Some(metadata)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+    let Some(value) = slot else {
+        return Ok(None);
+    };
+    match value {
+        Json::Null => Ok(None),
+        Json::Object(metadata) => Ok(Some(metadata)),
+        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
             Err(CallDurationError::FieldShape { field })
         }
     }
@@ -116,11 +119,10 @@ fn earlier_windows(recorded: Option<&Json>) -> Result<Vec<Json>, CallDurationErr
         let Json::List(pair) = window else {
             continue;
         };
-        let [first, second] = pair.as_slice() else {
+        let [low, high] = pair.as_slice() else {
             continue;
         };
-        let (Some(first), Some(second)) =
-            (window_number(first, index)?, window_number(second, index)?)
+        let (Some(first), Some(second)) = (window_number(low, index)?, window_number(high, index)?)
         else {
             continue;
         };
@@ -150,11 +152,10 @@ fn window_pair(
 }
 
 fn scaled_number(units: i64, per: i64) -> Result<Json, CallDurationError> {
-    decimal_number(Decimal::from(units) / Decimal::from(per))
-}
-
-fn decimal_number(value: Decimal) -> Result<Json, CallDurationError> {
-    let text = value.normalize().to_string();
+    let scaled = Decimal::from(units)
+        .checked_div(Decimal::from(per))
+        .ok_or(CallDurationError::NumberShape)?;
+    let text = scaled.normalize().to_string();
     Number::from_str(&text)
         .map(Json::Number)
         .map_err(|_error| CallDurationError::NumberShape)

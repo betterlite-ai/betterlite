@@ -76,40 +76,40 @@ fn partial_response(details: &str) -> Json {
 }
 
 fn test_hands_over_a_complete_response() {
-    let assembly = FakeAssembly::complete(completed());
+    let assembly = FakeAssembly::new(Some(completed()), false);
     let build = successful_stream_handoff(&assembly, None);
     assert!(matches!(build, StreamBuild::Complete(response) if response == completed()));
 }
 
 fn test_hands_over_nothing_when_the_assembly_is_empty() {
-    let assembly = FakeAssembly::empty();
+    let assembly = FakeAssembly::new(None, false);
     let build = successful_stream_handoff(&assembly, None);
     assert!(matches!(build, StreamBuild::Empty));
 }
 
 fn test_hands_over_usage_when_the_builder_fails() {
-    let mut assembly = FakeAssembly::failing();
+    let mut assembly = FakeAssembly::new(None, true);
     assembly.usage = recovering_usage();
     let build = successful_stream_handoff(&assembly, None);
-    assert!(matches!(build, StreamBuild::UsageOnly(usage) if usage == recovering_usage()));
+    assert!(matches!(build, StreamBuild::UsageOnly(usage) if *usage == recovering_usage()));
 }
 
 fn test_passes_the_prompt_counter_through() {
-    let assembly = FakeAssembly::complete(completed());
+    let assembly = FakeAssembly::new(Some(completed()), false);
     let held: &PromptCounter<'_> = &counter;
     let _build = successful_stream_handoff(&assembly, Some(held));
-    assert_eq!(assembly.counter_value(), Some(Some(7)));
+    assert_eq!(assembly.counter_values(), vec![Some(7)]);
 }
 
 fn test_passes_a_missing_prompt_counter_through() {
-    let assembly = FakeAssembly::complete(completed());
+    let assembly = FakeAssembly::new(Some(completed()), false);
     let _build = successful_stream_handoff(&assembly, None);
-    assert_eq!(assembly.counter_value(), Some(None));
+    assert_eq!(assembly.counter_values(), vec![None]);
 }
 
 fn test_records_partial_usage_and_cost() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::complete(completed());
+    let assembly = FakeAssembly::new(Some(completed()), false);
     let seen = Mutex::new(None);
     let cost = partial_stream_handoff(&assembly, None, &mut state, |response| {
         if let Json::Object(fields) = response {
@@ -134,7 +134,7 @@ fn test_records_partial_usage_and_cost() {
 
 fn test_records_a_zero_cost_when_the_calculator_gives_none() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::complete(completed());
+    let assembly = FakeAssembly::new(Some(completed()), false);
     let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| None);
     assert_eq!(cost, Some(Decimal::ZERO));
     assert_eq!(
@@ -149,9 +149,12 @@ fn test_records_a_zero_cost_when_the_calculator_gives_none() {
 
 fn test_backfills_cache_usage_from_prompt_details() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::complete(partial_response(
-        r#"{"cached_tokens":12,"cache_write_tokens":4}"#,
-    ));
+    let assembly = FakeAssembly::new(
+        Some(partial_response(
+            r#"{"cached_tokens":12,"cache_write_tokens":4}"#,
+        )),
+        false,
+    );
     let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| Some(Decimal::ONE));
     assert_eq!(cost, Some(Decimal::ONE));
     let recorded = combined_usage(&state);
@@ -162,9 +165,12 @@ fn test_backfills_cache_usage_from_prompt_details() {
 
 fn test_defaults_missing_cache_usage_to_zero() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::complete(json(
-        r#"{"model":"gpt-4o","usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}"#,
-    ));
+    let assembly = FakeAssembly::new(
+        Some(json(
+            r#"{"model":"gpt-4o","usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}"#,
+        )),
+        false,
+    );
     let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| Some(Decimal::ONE));
     assert_eq!(cost, Some(Decimal::ONE));
     let recorded = combined_usage(&state);
@@ -175,9 +181,12 @@ fn test_defaults_missing_cache_usage_to_zero() {
 
 fn test_keeps_cache_usage_the_provider_already_set() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::complete(json(
-        r#"{"model":"gpt-4o","usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"cache_read_input_tokens":9,"prompt_tokens_details":{"cached_tokens":12}}}"#,
-    ));
+    let assembly = FakeAssembly::new(
+        Some(json(
+            r#"{"model":"gpt-4o","usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"cache_read_input_tokens":9,"prompt_tokens_details":{"cached_tokens":12}}}"#,
+        )),
+        false,
+    );
     let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| Some(Decimal::ONE));
     assert_eq!(cost, Some(Decimal::ONE));
     let recorded = combined_usage(&state);
@@ -187,7 +196,10 @@ fn test_keeps_cache_usage_the_provider_already_set() {
 
 fn test_backfills_cache_creation_from_creation_details() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::complete(partial_response(r#"{"cache_creation_tokens":6}"#));
+    let assembly = FakeAssembly::new(
+        Some(partial_response(r#"{"cache_creation_tokens":6}"#)),
+        false,
+    );
     let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| Some(Decimal::ONE));
     assert_eq!(cost, Some(Decimal::ONE));
     let recorded = combined_usage(&state);
@@ -197,7 +209,10 @@ fn test_backfills_cache_creation_from_creation_details() {
 
 fn test_backfills_cache_creation_from_nested_details() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::complete(partial_response(r#"{"cache_creation_input_tokens":5}"#));
+    let assembly = FakeAssembly::new(
+        Some(partial_response(r#"{"cache_creation_input_tokens":5}"#)),
+        false,
+    );
     let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| Some(Decimal::ONE));
     assert_eq!(cost, Some(Decimal::ONE));
     let recorded = combined_usage(&state);
@@ -206,9 +221,12 @@ fn test_backfills_cache_creation_from_nested_details() {
 
 fn test_backfills_cache_creation_from_the_write_count_first() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::complete(partial_response(
-        r#"{"cache_write_tokens":0,"cache_creation_tokens":3}"#,
-    ));
+    let assembly = FakeAssembly::new(
+        Some(partial_response(
+            r#"{"cache_write_tokens":0,"cache_creation_tokens":3}"#,
+        )),
+        false,
+    );
     let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| Some(Decimal::ONE));
     assert_eq!(cost, Some(Decimal::ONE));
     let recorded = combined_usage(&state);
@@ -217,9 +235,12 @@ fn test_backfills_cache_creation_from_the_write_count_first() {
 
 fn test_prices_the_response_with_the_backfilled_cache_usage() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::complete(partial_response(
-        r#"{"cached_tokens":12,"cache_write_tokens":4}"#,
-    ));
+    let assembly = FakeAssembly::new(
+        Some(partial_response(
+            r#"{"cached_tokens":12,"cache_write_tokens":4}"#,
+        )),
+        false,
+    );
     let seen = Mutex::new(None);
     let _cost = partial_stream_handoff(&assembly, None, &mut state, |response| {
         if let Json::Object(fields) = response {
@@ -241,10 +262,10 @@ fn test_keeps_the_assembled_model_when_the_call_has_no_model() {
     let response = json(
         r#"{"model":"routed/model","usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}"#,
     );
-    let assembly = FakeAssembly::complete(response);
+    let assembly = FakeAssembly::new(Some(response), false);
     let seen = Mutex::new(None);
-    let _cost = partial_stream_handoff(&assembly, None, &mut state, |response| {
-        if let Json::Object(fields) = response {
+    let _cost = partial_stream_handoff(&assembly, None, &mut state, |priced| {
+        if let Json::Object(fields) = priced {
             *seen.lock().unwrap() = fields.get("model").cloned();
         }
         None
@@ -257,7 +278,7 @@ fn test_keeps_the_assembled_model_when_the_call_has_no_model() {
 
 fn test_skips_partial_usage_without_a_usage_object() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::complete(json(r#"{"id":"chatcmpl-1"}"#));
+    let assembly = FakeAssembly::new(Some(json(r#"{"id":"chatcmpl-1"}"#)), false);
     let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| None);
     assert_eq!(cost, None);
     assert!(
@@ -269,7 +290,7 @@ fn test_skips_partial_usage_without_a_usage_object() {
 
 fn test_skips_partial_usage_that_is_not_an_object() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::complete(json(r#"{"usage":true}"#));
+    let assembly = FakeAssembly::new(Some(json(r#"{"usage":true}"#)), false);
     let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| None);
     assert_eq!(cost, None);
     assert!(
@@ -281,7 +302,7 @@ fn test_skips_partial_usage_that_is_not_an_object() {
 
 fn test_skips_partial_usage_when_the_builder_fails() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::failing();
+    let assembly = FakeAssembly::new(None, true);
     let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| None);
     assert_eq!(cost, None);
     assert!(
@@ -293,7 +314,7 @@ fn test_skips_partial_usage_when_the_builder_fails() {
 
 fn test_skips_partial_usage_when_the_assembly_is_empty() {
     let mut state = state(Some(true));
-    let assembly = FakeAssembly::empty();
+    let assembly = FakeAssembly::new(None, false);
     let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| None);
     assert_eq!(cost, None);
     assert!(

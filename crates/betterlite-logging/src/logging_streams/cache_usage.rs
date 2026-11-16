@@ -30,24 +30,24 @@ pub fn backfill_cache_usage(usage: &mut Usage) {
         );
     }
     if usage.prompt_tokens_details.is_none() {
-        let mut details = IndexMap::new();
-        details.insert(
+        let mut defaults = IndexMap::new();
+        defaults.insert(
             "cached_tokens".to_owned(),
             Json::Number(Number::from(0_i64)),
         );
-        usage.prompt_tokens_details = Some(details);
+        usage.prompt_tokens_details = Some(defaults);
     }
 }
 
-fn cached_tokens(details: Option<&IndexMap<String, Json>>) -> i64 {
-    details
-        .and_then(|details| nonzero(details.get("cached_tokens")))
+fn cached_tokens(recorded: Option<&IndexMap<String, Json>>) -> i64 {
+    recorded
+        .and_then(|counts| nonzero(counts.get("cached_tokens")))
         .unwrap_or(0)
 }
 
 // The wrapper mirrors cache_write_tokens and cache_creation_tokens, first present wins.
-fn creation_tokens(details: Option<&IndexMap<String, Json>>) -> i64 {
-    let Some(details) = details else {
+fn creation_tokens(recorded: Option<&IndexMap<String, Json>>) -> i64 {
+    let Some(details) = recorded else {
         return 0;
     };
     for key in [

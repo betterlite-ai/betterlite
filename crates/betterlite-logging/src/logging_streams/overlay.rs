@@ -38,8 +38,8 @@ fn choice_with_text(choice: &Json, text: &str) -> Json {
         return choice.clone();
     }
     let mut replaced = fields.clone();
-    let mut message = message.clone();
-    message.insert("content".to_owned(), Json::Text(text.to_owned()));
-    replaced.insert("message".to_owned(), Json::Object(message));
+    let mut edited = message.clone();
+    edited.insert("content".to_owned(), Json::Text(text.to_owned()));
+    replaced.insert("message".to_owned(), Json::Object(edited));
     Json::Object(replaced)
 }

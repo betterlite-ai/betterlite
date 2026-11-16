@@ -40,7 +40,7 @@ pub trait StreamAssembly {
 // LiteLLM's end-of-stream assembly: the complete response, the usage-only fallback, or nothing.
 pub enum StreamBuild {
     Complete(Json),
-    UsageOnly(Usage),
+    UsageOnly(Box<Usage>),
     Empty,
 }
 
@@ -57,7 +57,7 @@ pub fn successful_stream_handoff(
                 %error,
                 "stream_chunk_builder raised at end-of-stream; logging best-effort usage from chunks"
             );
-            StreamBuild::UsageOnly(assembly.total_usage())
+            StreamBuild::UsageOnly(Box::new(assembly.total_usage()))
         }
     }
 }
@@ -83,11 +83,8 @@ where
     };
     let mut usage = response_usage(&response)?;
     backfill_cache_usage(&mut usage);
-    let mut response = with_call_model(response, &state.model);
-    if let Json::Object(fields) = &mut response {
-        fields.insert("usage".to_owned(), usage_json(&usage));
-    }
-    let cost = response_cost(&response).unwrap_or(Decimal::ZERO);
+    let priced = priced_response(response, &state.model, &usage);
+    let cost = response_cost(&priced).unwrap_or(Decimal::ZERO);
     // ast-grep-ignore: no-long-names
     record_partial_usage_for_failure(state, &usage, cost);
     Some(cost)
@@ -103,11 +100,13 @@ fn response_usage(response: &Json) -> Option<Usage> {
     usage_from_mapping(usage).ok()
 }
 
-fn with_call_model(mut response: Json, model: &str) -> Json {
-    if !model.is_empty()
-        && let Json::Object(fields) = &mut response
-    {
-        fields.insert("model".to_owned(), Json::Text(model.to_owned()));
+// LiteLLM prices the partial response after the call's model and the backfilled usage are on it.
+fn priced_response(mut response: Json, model: &str, usage: &Usage) -> Json {
+    if let Json::Object(fields) = &mut response {
+        if !model.is_empty() {
+            fields.insert("model".to_owned(), Json::Text(model.to_owned()));
+        }
+        fields.insert("usage".to_owned(), usage_json(usage));
     }
     response
 }

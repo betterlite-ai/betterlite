@@ -12,6 +12,13 @@ pub const MAX_SERVED_TEXT_BYTES: usize = 16 * 1024 * 1024;
 
 const MESSAGE_ROLES: [&str; 5] = ["assistant", "user", "system", "tool", "function"];
 
+// What one chat choice contributes: its text, a null slot kept for its index, or a failed extraction.
+enum ChoiceText {
+    Text(String),
+    Hole,
+    Invalid,
+}
+
 enum ChoiceIndex {
     Slot(usize),
     BeyondBound,
@@ -29,7 +36,11 @@ pub fn served_output_texts(response: &Json) -> Option<ServedTexts> {
     };
     let mut texts = Vec::with_capacity(choices.len());
     for choice in choices {
-        texts.push(choice_text(choice)?);
+        match choice_text(choice) {
+            ChoiceText::Text(text) => texts.push(Some(text)),
+            ChoiceText::Hole => texts.push(None),
+            ChoiceText::Invalid => return None,
+        }
     }
     texts.iter().any(Option::is_some).then_some(texts)
 }
@@ -72,8 +83,8 @@ impl StreamTexts {
         texts.iter().any(Option::is_some).then_some(texts)
     }
 
-    fn push_choice(&mut self, choice: &Json) {
-        let Json::Object(choice) = choice else {
+    fn push_choice(&mut self, entry: &Json) {
+        let Json::Object(choice) = entry else {
             return;
         };
         let index = match choice_index(choice.get("index")) {
@@ -101,8 +112,8 @@ impl StreamTexts {
     }
 }
 
-fn delta_text(delta: Option<&Json>) -> Option<&str> {
-    let Some(Json::Object(delta)) = delta else {
+fn delta_text(slot: Option<&Json>) -> Option<&str> {
+    let Some(Json::Object(delta)) = slot else {
         return None;
     };
     match delta.get("content") {
@@ -114,19 +125,21 @@ fn delta_text(delta: Option<&Json>) -> Option<&str> {
     }
 }
 
-fn choice_text(choice: &Json) -> Option<Option<String>> {
+fn choice_text(choice: &Json) -> ChoiceText {
     let Json::Object(fields) = choice else {
-        return None;
+        return ChoiceText::Invalid;
     };
     match fields.get("message") {
         None | Some(Json::Null) => content_text(None),
         Some(Json::Object(message)) => {
             if !role_allowed(message.get("role")) {
-                return None;
+                return ChoiceText::Invalid;
             }
             content_text(message.get("content"))
         }
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => None,
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            ChoiceText::Invalid
+        }
     }
 }
 
@@ -138,11 +151,13 @@ fn role_allowed(role: Option<&Json>) -> bool {
     }
 }
 
-fn content_text(content: Option<&Json>) -> Option<Option<String>> {
+fn content_text(content: Option<&Json>) -> ChoiceText {
     match content {
-        None | Some(Json::Null) => Some(None),
-        Some(Json::Text(text)) => Some(Some(text.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => None,
+        None | Some(Json::Null) => ChoiceText::Hole,
+        Some(Json::Text(text)) => ChoiceText::Text(text.clone()),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            ChoiceText::Invalid
+        }
     }
 }
 

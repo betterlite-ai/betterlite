@@ -238,39 +238,21 @@ pub(super) struct FakeAssembly {
     pub(super) response: Option<Json>,
     pub(super) failure: bool,
     pub(super) usage: Usage,
-    pub(super) seen_counter: Mutex<Option<Option<i64>>>,
+    seen_counters: Mutex<Vec<Option<i64>>>,
 }
 
 impl FakeAssembly {
-    pub(super) fn complete(response: Json) -> Self {
+    pub(super) fn new(response: Option<Json>, failure: bool) -> Self {
         Self {
-            response: Some(response),
-            failure: false,
+            response,
+            failure,
             usage: Usage::default(),
-            seen_counter: Mutex::new(None),
+            seen_counters: Mutex::new(Vec::new()),
         }
     }
 
-    pub(super) fn empty() -> Self {
-        Self {
-            response: None,
-            failure: false,
-            usage: Usage::default(),
-            seen_counter: Mutex::new(None),
-        }
-    }
-
-    pub(super) fn failing() -> Self {
-        Self {
-            response: None,
-            failure: true,
-            usage: Usage::default(),
-            seen_counter: Mutex::new(None),
-        }
-    }
-
-    pub(super) fn counter_value(&self) -> Option<Option<i64>> {
-        *self.seen_counter.lock().unwrap()
+    pub(super) fn counter_values(&self) -> Vec<Option<i64>> {
+        self.seen_counters.lock().unwrap().clone()
     }
 }
 
@@ -279,8 +261,10 @@ impl StreamAssembly for FakeAssembly {
         &self,
         count_prompt_tokens: Option<&PromptCounter<'_>>,
     ) -> Result<Option<Json>, StreamAssemblyError> {
-        *self.seen_counter.lock().unwrap() =
-            Some(count_prompt_tokens.and_then(|counter| counter().ok()));
+        self.seen_counters
+            .lock()
+            .unwrap()
+            .push(count_prompt_tokens.and_then(|counter| counter().ok()));
         if self.failure {
             return Err(StreamAssemblyError::Builder(Box::new(BuilderFailure)));
         }
@@ -292,48 +276,45 @@ impl StreamAssembly for FakeAssembly {
     }
 }
 
+#[derive(Default)]
+struct ChunkLog {
+    pushes: Vec<Json>,
+    builds: usize,
+}
+
 pub(super) struct FakeChunks {
-    pub(super) pushes: Mutex<Vec<Json>>,
-    pub(super) built: Option<Json>,
-    pub(super) failure: bool,
-    build_calls: Mutex<usize>,
+    log: Mutex<ChunkLog>,
+    built: Option<Json>,
+    failure: bool,
 }
 
 impl FakeChunks {
-    pub(super) fn new(built: Option<Json>) -> Self {
+    pub(super) fn new(built: Option<Json>, failure: bool) -> Self {
         Self {
-            pushes: Mutex::new(Vec::new()),
+            log: Mutex::new(ChunkLog::default()),
             built,
-            failure: false,
-            build_calls: Mutex::new(0),
-        }
-    }
-
-    pub(super) fn failing() -> Self {
-        Self {
-            pushes: Mutex::new(Vec::new()),
-            built: None,
-            failure: true,
-            build_calls: Mutex::new(0),
+            failure,
         }
     }
 
     pub(super) fn pushes(&self) -> Vec<Json> {
-        self.pushes.lock().unwrap().clone()
+        self.log.lock().unwrap().pushes.clone()
     }
 
     pub(super) fn build_calls(&self) -> usize {
-        *self.build_calls.lock().unwrap()
+        self.log.lock().unwrap().builds
     }
 }
 
 impl StreamChunks<Json> for FakeChunks {
     fn push(&mut self, chunk: &Json) {
-        self.pushes.lock().unwrap().push(chunk.clone());
+        self.log.lock().unwrap().pushes.push(chunk.clone());
     }
 
     fn build(&self) -> Result<Option<Json>, StreamAssemblyError> {
-        *self.build_calls.lock().unwrap() += 1;
+        let mut log = self.log.lock().unwrap();
+        log.builds = log.builds.saturating_add(1);
+        drop(log);
         if self.failure {
             return Err(StreamAssemblyError::Builder(Box::new(BuilderFailure)));
         }
