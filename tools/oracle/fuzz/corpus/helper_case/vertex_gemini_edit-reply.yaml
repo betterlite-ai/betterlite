@@ -1,0 +1,16 @@
+kind: helper
+name: vertex-gemini-edit-reply-seed
+call:
+  vertex_gemini_edit:
+    model: gemini-2.5-flash-image
+    prompt: null
+    image: [{kind: bytes, data_base64: R0lGODlh}]
+    optional_params: {}
+    target: null
+    response:
+      candidates:
+        - content: {parts: [{inlineData: {data: ""}}]}
+        - content: {parts: [{inlineData: {data: BBB}}]}
+      usageMetadata: {totalTokenCount: 4}
+env: {}
+compare: {ignore: []}

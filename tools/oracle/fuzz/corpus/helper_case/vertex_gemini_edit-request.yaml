@@ -1,0 +1,18 @@
+kind: helper
+name: vertex-gemini-edit-request-seed
+call:
+  vertex_gemini_edit:
+    model: gemini-2.5-flash-image
+    prompt: paint the sky teal
+    image:
+      - {kind: bytes, data_base64: iVBORw0KGgo=}
+      - null
+      - {kind: seekable, data_base64: MDEyMzQ1Njc4OWFiY2RlZg==, position: 7}
+    optional_params: {size: 896x1280}
+    target:
+      api_base: https://proxy.example
+      params_api_base: null
+      headers: {x-goog-user-project: billing}
+    response: null
+env: {}
+compare: {ignore: []}

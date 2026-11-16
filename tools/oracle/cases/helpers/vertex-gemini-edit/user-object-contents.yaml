@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-gemini-edit-user-object-contents
+call:
+  vertex_gemini_edit:
+    model: gemini-2.5-flash-image
+    prompt: paint the sky teal
+    image:
+      - {kind: bytes, data_base64: iVBORw0KGgo=}
+    optional_params: {}
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}

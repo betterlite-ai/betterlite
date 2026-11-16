@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-gemini-edit-restored-cursor
+call:
+  vertex_gemini_edit:
+    model: gemini-2.5-flash-image
+    prompt: null
+    image:
+      - {kind: bytes, data_base64: R0lGODlh}
+      - {kind: seekable, data_base64: MDEyMzQ1Njc4OWFiY2RlZg==, position: 7}
+    optional_params: {}
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}

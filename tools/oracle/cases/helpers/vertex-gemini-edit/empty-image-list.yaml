@@ -1,0 +1,27 @@
+kind: helper
+name: vertex-gemini-edit-empty-image-list
+call:
+  vertex_gemini_edit:
+    model: gemini-2.5-flash-image
+    prompt: paint the sky teal
+    image: []
+    optional_params: {}
+    target: null
+    response: null
+calls:
+  - vertex_gemini_edit:
+      model: gemini-2.5-flash-image
+      prompt: paint the sky teal
+      image: [null]
+      optional_params: {}
+      target: null
+      response: null
+  - vertex_gemini_edit:
+      model: gemini-2.5-flash-image
+      prompt: paint the sky teal
+      image: null
+      optional_params: {}
+      target: null
+      response: null
+env: {}
+compare: {ignore: []}

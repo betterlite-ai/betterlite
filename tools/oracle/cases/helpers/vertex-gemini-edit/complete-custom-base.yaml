@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-gemini-edit-complete-custom-base
+call:
+  vertex_gemini_edit:
+    model: gemini-2.5-flash-image
+    prompt: paint the sky teal
+    image: [{kind: bytes, data_base64: iVBORw0KGgo=}]
+    optional_params: {size: 1024x1792}
+    target:
+      api_base: https://proxy.example/v1beta///
+      params_api_base: null
+      headers: {x-goog-user-project: billing, x-request-id: req-1}
+    response: null
+env: {}
+compare: {ignore: []}
