@@ -18,19 +18,19 @@ pub struct VertexLiveInput<'input> {
     pub policy: &'input VertexLivePolicy,
     pub catalog: &'input ModelCatalog,
     pub schema: &'input SchemaSettings,
+    pub model: &'input str,
+    pub session_configuration_request: Option<&'input str>,
 }
 
 pub fn transform_session_update(
     session: &SessionUpdate,
-    model: &str,
-    session_configuration_request: Option<&str>,
     input: &VertexLiveInput<'_>,
 ) -> Result<Vec<String>, VertexLiveError> {
-    if session_configuration_request.is_some() {
+    if input.session_configuration_request.is_some() {
         log_dropped_update(session);
         return Ok(Vec::new());
     }
-    let setup = vertex_setup(session, model, input)?;
+    let setup = vertex_setup(session, input)?;
     Ok(vec![
         serde_json::to_string(&Envelope { setup: &setup }).map_err(LiveSetupError::Encode)?,
     ])
@@ -38,11 +38,10 @@ pub fn transform_session_update(
 
 fn vertex_setup(
     session: &SessionUpdate,
-    model: &str,
     input: &VertexLiveInput<'_>,
 ) -> Result<LiveSetup, VertexLiveError> {
     let mut setup = map_session(session, input.schema)?;
-    setup.model = Some(input.policy.model_path(model));
+    setup.model = Some(input.policy.model_path(input.model));
     setup
         .generation_config
         .response_modalities
@@ -68,7 +67,7 @@ fn vertex_setup(
         .output_audio_transcription
         .get_or_insert_with(Object::new);
     if let Some(modalities) = setup.generation_config.response_modalities.as_deref() {
-        let coerced = coerce_response_modalities(input.catalog, model, modalities);
+        let coerced = coerce_response_modalities(input.catalog, input.model, modalities);
         setup.generation_config.response_modalities = Some(coerced);
     }
     Ok(setup)

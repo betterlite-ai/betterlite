@@ -30,32 +30,24 @@ impl VertexLiveClient {
         &mut self,
         message: &[u8],
         limit: usize,
-        model: &str,
-        session_configuration_request: Option<&str>,
         input: &VertexLiveInput<'_>,
     ) -> Result<Vec<String>, VertexLiveError> {
-        match decode_client_event(message, limit)? {
-            ClientEvent::SessionUpdate(session) => transform_session_update(
-                session.as_ref(),
-                model,
-                session_configuration_request,
-                input,
-            ),
-            event => {
-                let settings = LiveSetupSettings {
-                    catalog: input.catalog,
-                    schema: input.schema,
-                    defer_setup: false,
-                };
-                self.client
-                    .transform_realtime_request(
-                        &event,
-                        model,
-                        session_configuration_request,
-                        &settings,
-                    )
-                    .map_err(VertexLiveError::from)
-            }
+        let event = decode_client_event(message, limit)?;
+        if let ClientEvent::SessionUpdate(session) = &event {
+            return transform_session_update(session.as_ref(), input);
         }
+        let settings = LiveSetupSettings {
+            catalog: input.catalog,
+            schema: input.schema,
+            defer_setup: false,
+        };
+        self.client
+            .transform_realtime_request(
+                &event,
+                input.model,
+                input.session_configuration_request,
+                &settings,
+            )
+            .map_err(VertexLiveError::from)
     }
 }

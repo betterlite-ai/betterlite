@@ -60,10 +60,12 @@ fn client_messages(
         policy,
         catalog,
         schema: &schema,
+        model,
+        session_configuration_request: request,
     };
     let mut client = VertexLiveClient::default();
     client
-        .transform_realtime_request(message.as_bytes(), usize::MAX, model, request, &input)
+        .transform_realtime_request(message.as_bytes(), usize::MAX, &input)
         .expect("the client message transforms")
 }
 
@@ -483,10 +485,12 @@ fn invalid_json_is_rejected() {
         policy: &policy("my-project", "us-central1"),
         catalog: &catalog,
         schema: &schema,
+        model: "gemini-2.5-flash",
+        session_configuration_request: None,
     };
     let mut client = VertexLiveClient::default();
     let error = client
-        .transform_realtime_request(b"not json", usize::MAX, "gemini-2.5-flash", None, &input)
+        .transform_realtime_request(b"not json", usize::MAX, &input)
         .expect_err("invalid JSON is rejected");
     assert!(matches!(error, VertexLiveError::Client(_)));
 }
@@ -501,10 +505,10 @@ fn function_response(message: &str) -> Json {
         .as_object()
         .and_then(|object| object.get("functionResponses"))
         .expect("functionResponses is present");
-    let Json::List(responses) = responses.clone() else {
+    let Json::List(list) = responses.clone() else {
         panic!("functionResponses is a list");
     };
-    let Some(response) = responses.first() else {
+    let Some(response) = list.first() else {
         panic!("functionResponses carries one response");
     };
     response.clone()
