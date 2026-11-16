@@ -7,7 +7,7 @@ use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::passthrough::transformation::types::PassthroughError;
 use std::fmt;
 use thiserror::Error;
-pub struct ProviderFailure(pub ProviderError);
+pub struct ProviderFailure(pub Box<ProviderError>);
 impl fmt::Debug for ProviderFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("ProviderFailure([REDACTED])")
@@ -43,9 +43,10 @@ pub enum PassthroughFailure {
 }
 impl From<ProviderError> for PassthroughFailure {
     fn from(error: ProviderError) -> Self {
-        Self::Provider(ProviderFailure(error))
+        Self::Provider(ProviderFailure(Box::new(error)))
     }
 }
+#[must_use]
 pub fn bedrock_provider_error(message: &str, status_code: u16, headers: &Headers) -> ProviderError {
     let input = ErrorInput {
         status_code,

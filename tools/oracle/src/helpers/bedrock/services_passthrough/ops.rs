@@ -78,7 +78,7 @@ impl ChatConfigSelection for Selector {
 }
 struct EchoTransform;
 impl NativeReplyTransform for EchoTransform {
-    fn transform(&self, _request: &NativeReplyRequest<'_>) -> Result<Json, ProviderError> {
+    fn transform(&self, _request: &NativeReplyRequest<'_>) -> Result<Json, Box<ProviderError>> {
         Ok(Json::Null)
     }
 }
@@ -179,8 +179,8 @@ fn sign_run(plan: &BedrockPassthroughPlan<'_>, run: &SignRun) -> HelperResult {
     let (signed, body) = plan
         .sign_request(run.headers.clone(), &context)
         .map_err(failure)?;
-    let body = body.ok_or_else(|| failure("the signer returned no body"))?;
-    let text = String::from_utf8(body).map_err(failure)?;
+    let bytes = body.ok_or_else(|| failure("the signer returned no body"))?;
+    let text = String::from_utf8(bytes).map_err(failure)?;
     let pairs: Vec<Value> = signed
         .iter()
         .map(|(name, value)| json!({ "name": name, "value": value }))
@@ -215,7 +215,7 @@ fn collect_run(plan: &BedrockPassthroughPlan<'_>, run: &CollectRun, stream: &[u8
         endpoint: run.endpoint.as_str(),
     };
     let mut collector = plan.create_stream_collector(&target);
-    let (head, tail) = stream.split_at(stream.len() / 2);
+    let (head, tail) = stream.split_at(stream.len().div_euclid(2));
     collector.add(head);
     collector.add(tail);
     let mut logging = NullLogging;
@@ -235,13 +235,13 @@ fn each<T>(runs: &[T], one: impl Fn(&T) -> HelperResult) -> HelperResult {
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::Url { environment, runs } => {
-            let environment = PassthroughEnvironment {
+            let settings = PassthroughEnvironment {
                 region_name: environment.region_name.clone(),
                 region: None,
                 session_region: None,
                 runtime_endpoint: environment.runtime_endpoint.clone(),
             };
-            let plan = plan(environment, identity(None));
+            let plan = plan(settings, identity(None));
             each(runs, |run| url_run(&plan, run))
         }
         Input::Sign { bearer, runs } => {

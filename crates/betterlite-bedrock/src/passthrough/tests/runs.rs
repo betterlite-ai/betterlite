@@ -5,6 +5,76 @@ use betterlite_streaming::stream_chunk_shaping::records::{
 use super::super::chunks::{CoalescedChunks, plain_text_delta};
 use super::{fixture_now, json};
 
+const TEXT_RULES: [(&str, Option<&str>); 17] = [
+    (
+        r#"{"choices":[{"delta":{"role":"assistant","content":"a"}}]}"#,
+        Some("a"),
+    ),
+    (r#"{"choices":[{"delta":{"content":""}}]}"#, Some("")),
+    (r#"{"choices":[{"delta":{}}]}"#, None),
+    (r#"{"choices":[{"delta":{"role":"assistant"}}]}"#, None),
+    (r#"{"choices":[]}"#, None),
+    (
+        r#"{"usage":{"total_tokens":1},"choices":[{"delta":{"content":"a"}}]}"#,
+        None,
+    ),
+    (
+        r#"{"usage":{},"choices":[{"delta":{"content":"a"}}]}"#,
+        None,
+    ),
+    (
+        r#"{"provider_specific_fields":{"x":1},"choices":[{"delta":{"content":"a"}}]}"#,
+        None,
+    ),
+    (
+        r#"{"provider_specific_fields":{},"choices":[{"delta":{"content":"a"}}]}"#,
+        Some("a"),
+    ),
+    (
+        r#"{"choices":[{"delta":{"content":"a"}},{"delta":{"content":"b"}}]}"#,
+        None,
+    ),
+    (
+        r#"{"choices":[{"delta":{"content":"a"},"finish_reason":"stop"}]}"#,
+        None,
+    ),
+    (
+        r#"{"choices":[{"delta":{"content":"a"},"finish_reason":""}]}"#,
+        Some("a"),
+    ),
+    (
+        r#"{"choices":[{"delta":{"content":"a"},"finish_reason":null}]}"#,
+        Some("a"),
+    ),
+    (
+        r#"{"choices":[{"delta":{"content":"a"},"logprobs":{}}]}"#,
+        None,
+    ),
+    (
+        r#"{"choices":[{"delta":{"content":"a"},"logprobs":null}]}"#,
+        Some("a"),
+    ),
+    (
+        r#"{"choices":[{"delta":{"content":"a","refusal":null}}]}"#,
+        Some("a"),
+    ),
+    (
+        r#"{"choices":[{"delta":{"content":"a","refusal":"no"}}]}"#,
+        None,
+    ),
+];
+
+const BLOCKED_DELTA_FIELDS: [&str; 8] = [
+    r#""tool_calls":[]"#,
+    r#""function_call":{"name":"f"}"#,
+    r#""audio":{"id":"x"}"#,
+    r#""images":[]"#,
+    r#""annotations":[]"#,
+    r#""reasoning_content":"r""#,
+    r#""thinking_blocks":[]"#,
+    r#""provider_specific_fields":{}"#,
+];
+
 fn empty_delta(content: Option<&str>, role: Option<&str>) -> StreamDelta {
     StreamDelta {
         content: content.map(str::to_owned),
@@ -49,7 +119,15 @@ fn contents(chunks: &[StreamChunk]) -> Vec<Option<String>> {
         .collect()
 }
 
-pub(super) fn text_run_sealing() {
+fn texts(parts: &[&str]) -> Vec<Option<String>> {
+    parts.iter().map(|part| Some((*part).to_owned())).collect()
+}
+
+fn parsed_chunk(source: &str) -> StreamChunk {
+    serde_json::from_str(source).unwrap()
+}
+
+fn first_chunk_keeps_its_fields() {
     let mut chunks = CoalescedChunks::default();
     chunks.add(text_chunk("c1", "m1", "a", Some("assistant")));
     chunks.add(text_chunk("c2", "m2", "", None));
@@ -64,17 +142,20 @@ pub(super) fn text_run_sealing() {
     );
     assert_eq!(sealed[0].choices[0].delta.content.as_deref(), Some("ab"));
     chunks.add(text_chunk("c4", "m", "c", None));
-    assert_eq!(
-        contents(chunks.chunks()),
-        vec![Some("ab".to_owned()), Some("c".to_owned())]
-    );
+    assert_eq!(contents(chunks.chunks()), texts(&["ab", "c"]));
+}
+
+fn single_and_empty_runs() {
     let mut single = CoalescedChunks::default();
     single.add(text_chunk("only", "m", "x", None));
-    assert_eq!(contents(single.chunks()), vec![Some("x".to_owned())]);
+    assert_eq!(contents(single.chunks()), texts(&["x"]));
     let mut empty = CoalescedChunks::default();
     empty.add(text_chunk("e", "m", "", None));
     empty.add(text_chunk("e2", "m", "", None));
-    assert_eq!(contents(empty.chunks()), vec![Some(String::new())]);
+    assert_eq!(contents(empty.chunks()), texts(&[""]));
+}
+
+fn nontext_events_seal_in_order() {
     let mut mixed = CoalescedChunks::default();
     mixed.add(text_chunk("t", "m", "a", None));
     mixed.add(text_chunk("t2", "m", "b", None));
@@ -86,133 +167,28 @@ pub(super) fn text_run_sealing() {
     finished.choices[0].finish_reason = Some("stop".to_owned());
     mixed.add(finished);
     mixed.add(text_chunk("after", "m", "z", None));
-    let sealed = mixed.chunks();
-    assert_eq!(
-        contents(sealed),
-        vec![
-            Some("ab".to_owned()),
-            Some("x".to_owned()),
-            Some(String::new()),
-            Some(String::new()),
-            Some("z".to_owned()),
-        ]
-    );
-    assert_eq!(sealed[0].id, "t");
-    assert_eq!(sealed[1].id, "tool");
-    assert_eq!(sealed[2].id, "f");
-    assert_eq!(sealed[3].id, "finish");
-    assert_eq!(sealed[4].id, "after");
+    let all = mixed.chunks();
+    assert_eq!(contents(all), texts(&["ab", "x", "", "", "z"]));
+    let ids: Vec<&str> = all.iter().map(|chunk| chunk.id.as_str()).collect();
+    assert_eq!(ids, ["t", "tool", "f", "finish", "after"]);
 }
 
-fn parsed_chunk(source: &str) -> StreamChunk {
-    serde_json::from_str(source).unwrap()
+pub(super) fn text_run_sealing() {
+    first_chunk_keeps_its_fields();
+    single_and_empty_runs();
+    nontext_events_seal_in_order();
 }
 
 pub(super) fn plain_text_delta_rules() {
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"choices":[{"delta":{"role":"assistant","content":"a"}}]}"#
-        )),
-        Some("a")
-    );
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(r#"{"choices":[{"delta":{"content":""}}]}"#)),
-        Some("")
-    );
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(r#"{"choices":[{"delta":{}}]}"#)),
-        None
-    );
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"choices":[{"delta":{"role":"assistant"}}]}"#
-        )),
-        None
-    );
-    assert_eq!(plain_text_delta(&parsed_chunk(r#"{"choices":[]}"#)), None);
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"usage":{"total_tokens":1},"choices":[{"delta":{"content":"a"}}]}"#
-        )),
-        None
-    );
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"usage":{},"choices":[{"delta":{"content":"a"}}]}"#
-        )),
-        None
-    );
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"provider_specific_fields":{"x":1},"choices":[{"delta":{"content":"a"}}]}"#
-        )),
-        None
-    );
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"provider_specific_fields":{},"choices":[{"delta":{"content":"a"}}]}"#
-        )),
-        Some("a")
-    );
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"choices":[{"delta":{"content":"a"}},{"delta":{"content":"b"}}]}"#
-        )),
-        None
-    );
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"choices":[{"delta":{"content":"a"},"finish_reason":"stop"}]}"#
-        )),
-        None
-    );
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"choices":[{"delta":{"content":"a"},"finish_reason":""}]}"#
-        )),
-        Some("a")
-    );
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"choices":[{"delta":{"content":"a"},"finish_reason":null}]}"#
-        )),
-        Some("a")
-    );
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"choices":[{"delta":{"content":"a"},"logprobs":{}}]}"#
-        )),
-        None
-    );
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"choices":[{"delta":{"content":"a"},"logprobs":null}]}"#
-        )),
-        Some("a")
-    );
-    let blocked = [
-        r#"{"content":"a","tool_calls":[]}"#,
-        r#"{"content":"a","function_call":{"name":"f"}}"#,
-        r#"{"content":"a","audio":{"id":"x"}}"#,
-        r#"{"content":"a","images":[]}"#,
-        r#"{"content":"a","annotations":[]}"#,
-        r#"{"content":"a","reasoning_content":"r"}"#,
-        r#"{"content":"a","thinking_blocks":[]}"#,
-        r#"{"content":"a","provider_specific_fields":{}}"#,
-        r#"{"content":"a","refusal":"no"}"#,
-    ];
-    blocked
-        .iter()
-        .try_for_each(|delta| {
-            let source = format!(r#"{{"choices":[{{"delta":{delta}}}]}}"#);
-            assert_eq!(plain_text_delta(&parsed_chunk(&source)), None, "{delta}");
-            Ok::<(), ()>(())
-        })
-        .unwrap();
-    assert_eq!(
-        plain_text_delta(&parsed_chunk(
-            r#"{"choices":[{"delta":{"content":"a","refusal":null}}]}"#
-        )),
-        Some("a")
-    );
+    for (source, expected) in TEXT_RULES {
+        assert_eq!(
+            plain_text_delta(&parsed_chunk(source)),
+            expected,
+            "{source}"
+        );
+    }
+    for field in BLOCKED_DELTA_FIELDS {
+        let source = format!(r#"{{"choices":[{{"delta":{{"content":"a",{field}}}}}]}}"#);
+        assert_eq!(plain_text_delta(&parsed_chunk(&source)), None, "{field}");
+    }
 }

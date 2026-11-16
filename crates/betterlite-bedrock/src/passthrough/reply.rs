@@ -29,7 +29,7 @@ pub struct NativeReplyRequest<'request> {
     pub api_key: &'request str,
 }
 pub trait NativeReplyTransform: Sync {
-    fn transform(&self, request: &NativeReplyRequest<'_>) -> Result<Json, ProviderError>;
+    fn transform(&self, request: &NativeReplyRequest<'_>) -> Result<Json, Box<ProviderError>>;
 }
 fn resolved_tag(
     plan: &BedrockPassthroughPlan<'_>,
@@ -48,15 +48,13 @@ fn resolved_tag(
         .map_err(|_error| PassthroughFailure::UnknownProvider {
             provider: target.custom_llm_provider.to_owned(),
         })?;
-    match plan
+    let tag = plan
         .selector
-        .select_chat_config(&chat_config_model, provider)?
-    {
-        Some(tag) => Ok(Some(tag)),
-        None => Err(PassthroughFailure::NoProviderConfig {
+        .select_chat_config(&chat_config_model, provider)?;
+    tag.map(Some)
+        .ok_or_else(|| PassthroughFailure::NoProviderConfig {
             model: target.model.to_owned(),
-        }),
-    }
+        })
 }
 pub fn logged_reply(
     plan: &BedrockPassthroughPlan<'_>,

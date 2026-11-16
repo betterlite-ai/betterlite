@@ -66,7 +66,7 @@ impl fmt::Debug for BedrockPassthroughPlan<'_> {
     }
 }
 #[must_use]
-pub fn get_bedrock_bearer_token(_litellm_params: &Object) -> Option<SecretString> {
+pub const fn get_bedrock_bearer_token(_litellm_params: &Object) -> Option<SecretString> {
     None
 }
 fn request_body(context: &PassthroughSigning<'_>) -> Result<Vec<u8>, PassthroughFailure> {

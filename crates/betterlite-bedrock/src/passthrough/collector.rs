@@ -71,11 +71,12 @@ pub fn decoder_selection(model: &str, endpoint: &str, clock: CollectorClock) -> 
     }
     DecoderChoice::Disabled { warning: None }
 }
+#[must_use]
 pub fn decoder_box(choice: DecoderChoice) -> Option<Box<dyn EventChunkDecoder>> {
     match choice {
         DecoderChoice::Disabled { warning } => {
-            if let Some(warning) = warning {
-                tracing::warn!("{warning}");
+            if let Some(message) = warning {
+                tracing::warn!("{message}");
             }
             None
         }
@@ -123,7 +124,7 @@ impl<'plan> BedrockEventStreamCollector<'plan> {
             };
             let value = decode_passthrough_log_event(message.as_bytes())?;
             let translated = match decoder.decode(&value, self.clock)? {
-                DecodedChunk::Chunk(chunk) => Some(chunk),
+                DecodedChunk::Chunk(chunk) => Some(*chunk),
                 DecodedChunk::Generic(value) => generic_chunk(&value, self.clock)?,
                 DecodedChunk::Ignored => None,
             };

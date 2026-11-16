@@ -4,7 +4,7 @@ use super::model_id::{encoded_model_id, with_model_id};
 use crate::aws_endpoints::region::{LlmRegion, llm_region_name};
 use crate::aws_endpoints::runtime::{BedrockEndpointType, RuntimeEndpointInput, runtime_endpoint};
 use betterlite_openai::openai_base_config::Object;
-use betterlite_openai::passthrough::transformation::BasePassthroughConfig;
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::PassthroughUrlRequest;
 use url::Url;
 pub(super) fn optional_text(

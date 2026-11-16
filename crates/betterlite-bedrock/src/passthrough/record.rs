@@ -31,7 +31,7 @@ pub enum StreamLogError {
     Decoder { message: String },
 }
 pub enum DecodedChunk {
-    Chunk(StreamChunk),
+    Chunk(Box<StreamChunk>),
     Generic(Json),
     Ignored,
 }
@@ -60,9 +60,9 @@ impl EventChunkDecoder for InvokeStreamDecoder {
     ) -> Result<DecodedChunk, StreamLogError> {
         match self.chunk_parser(chunk)? {
             InvokeChunk::Base(projection) => match *projection {
-                ChunkProjection::Converse(converse) => {
-                    Ok(DecodedChunk::Chunk(converse_stream_chunk(converse, clock)?))
-                }
+                ChunkProjection::Converse(converse) => Ok(DecodedChunk::Chunk(Box::new(
+                    converse_stream_chunk(converse, clock)?,
+                ))),
                 ChunkProjection::Generic(generic) => Ok(DecodedChunk::Generic(convert(&generic)?)),
             },
             InvokeChunk::Anthropic(event) => Ok(DecodedChunk::Chunk(convert(&event)?)),
