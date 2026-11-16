@@ -1,0 +1,128 @@
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "betterlite.fullname" . }}-test-servicemonitor"
+  labels:
+    {{- include "betterlite.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: test
+      image: {{ .Values.test.kubectlImage }}
+      command: ['sh', '-c']
+      args:
+        - |
+          set -e
+          echo "Checking the ServiceMonitor configuration"
+
+          if ! kubectl get servicemonitor {{ include "betterlite.fullname" . }} -n {{ .Release.Namespace }} >/dev/null 2>&1; then
+            echo "ServiceMonitor not found"
+            exit 1
+          fi
+          echo "ServiceMonitor exists"
+
+          SM=$(kubectl get servicemonitor {{ include "betterlite.fullname" . }} -n {{ .Release.Namespace }} -o yaml)
+
+          ENDPOINT_PORT=$(echo "$SM" | grep -A 5 "endpoints:" | grep "port:" | awk '{print $2}')
+          if [ "$ENDPOINT_PORT" != "{{ ternary "metrics" "http" .Values.metricsServer.enabled }}" ]; then
+            echo "Endpoint port mismatch. Expected: {{ ternary "metrics" "http" .Values.metricsServer.enabled }}, Got: $ENDPOINT_PORT"
+            exit 1
+          fi
+          echo "Endpoint port is $ENDPOINT_PORT"
+
+          ENDPOINT_PATH=$(echo "$SM" | grep -A 5 "endpoints:" | grep "path:" | awk '{print $2}')
+          if [ "$ENDPOINT_PATH" != "/metrics/" ]; then
+            echo "Endpoint path mismatch. Expected: /metrics/, Got: $ENDPOINT_PATH"
+            exit 1
+          fi
+          echo "Endpoint path is $ENDPOINT_PATH"
+
+          INTERVAL=$(echo "$SM" | grep "interval:" | awk '{print $2}')
+          if [ "$INTERVAL" != "{{ .Values.serviceMonitor.interval }}" ]; then
+            echo "Interval mismatch. Expected: {{ .Values.serviceMonitor.interval }}, Got: $INTERVAL"
+            exit 1
+          fi
+          echo "Interval is $INTERVAL"
+
+          TIMEOUT=$(echo "$SM" | grep "scrapeTimeout:" | awk '{print $2}')
+          if [ "$TIMEOUT" != "{{ .Values.serviceMonitor.scrapeTimeout }}" ]; then
+            echo "ScrapeTimeout mismatch. Expected: {{ .Values.serviceMonitor.scrapeTimeout }}, Got: $TIMEOUT"
+            exit 1
+          fi
+          echo "ScrapeTimeout is $TIMEOUT"
+
+          SCHEME=$(echo "$SM" | grep "scheme:" | awk '{print $2}')
+          if [ "$SCHEME" != "http" ]; then
+            echo "Scheme mismatch. Expected: http, Got: $SCHEME"
+            exit 1
+          fi
+          echo "Scheme is $SCHEME"
+
+          {{- if .Values.serviceMonitor.labels }}
+          {{- range $key, $value := .Values.serviceMonitor.labels }}
+          LABEL_VALUE=$(echo "$SM" | grep -A 20 "metadata:" | grep "{{ $key }}:" | awk '{print $2}')
+          if [ "$LABEL_VALUE" != "{{ $value }}" ]; then
+            echo "Label {{ $key }} mismatch. Expected: {{ $value }}, Got: $LABEL_VALUE"
+            exit 1
+          fi
+          echo "Label {{ $key }} is {{ $value }}"
+          {{- end }}
+          {{- end }}
+
+          {{- if .Values.serviceMonitor.annotations }}
+          {{- range $key, $value := .Values.serviceMonitor.annotations }}
+          ANNOTATION_VALUE=$(echo "$SM" | grep -A 10 "annotations:" | grep "{{ $key }}:" | awk '{print $2}')
+          if [ "$ANNOTATION_VALUE" != "{{ $value }}" ]; then
+            echo "Annotation {{ $key }} mismatch. Expected: {{ $value }}, Got: $ANNOTATION_VALUE"
+            exit 1
+          fi
+          echo "Annotation {{ $key }} is {{ $value }}"
+          {{- end }}
+          {{- end }}
+
+          {{- if .Values.serviceMonitor.namespaceSelector.matchNames }}
+          {{- range .Values.serviceMonitor.namespaceSelector.matchNames }}
+          if ! echo "$SM" | grep -A 5 "namespaceSelector:" | grep -q "{{ . }}"; then
+            echo "Namespace {{ . }} not found in namespaceSelector"
+            exit 1
+          fi
+          echo "Namespace {{ . }} is in namespaceSelector"
+          {{- end }}
+          {{- else }}
+          if ! echo "$SM" | grep -A 5 "namespaceSelector:" | grep -q "{{ .Release.Namespace }}"; then
+            echo "Release namespace {{ .Release.Namespace }} not found in namespaceSelector"
+            exit 1
+          fi
+          echo "Default namespace selector is the release namespace"
+          {{- end }}
+
+          {{- if .Values.serviceMonitor.relabelings }}
+          if ! echo "$SM" | grep -q "relabelings:"; then
+            echo "Relabelings section not found"
+            exit 1
+          fi
+          echo "Relabelings section exists"
+          {{- range .Values.serviceMonitor.relabelings }}
+          {{- if .targetLabel }}
+          if ! echo "$SM" | grep -A 50 "relabelings:" | grep -q "targetLabel: {{ .targetLabel }}"; then
+            echo "Relabeling targetLabel {{ .targetLabel }} not found"
+            exit 1
+          fi
+          echo "Relabeling targetLabel {{ .targetLabel }} found"
+          {{- end }}
+          {{- if .action }}
+          if ! echo "$SM" | grep -A 50 "relabelings:" | grep -q "action: {{ .action }}"; then
+            echo "Relabeling action {{ .action }} not found"
+            exit 1
+          fi
+          echo "Relabeling action {{ .action }} found"
+          {{- end }}
+          {{- end }}
+          {{- end }}
+
+          echo "All ServiceMonitor checks passed"
+  serviceAccountName: {{ include "betterlite.serviceAccountName" . }}
+  restartPolicy: Never
+{{- end }}

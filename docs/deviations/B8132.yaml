@@ -1,0 +1,24 @@
+task: B8132
+deviations:
+  - what: The HPA and KEDA queries still use the metric names litellm_requests_per_second, litellm_tokens_per_second, litellm_proxy_total_requests_metric_total and litellm_total_tokens_metric_total.
+    why: betterlite keeps LiteLLM's Prometheus metric names so existing dashboards and adapters work (B3886 owns them).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/keda.yaml#L36-L48
+  - what: The env test pod checks EXAMPLE_ENV instead of DD_ENV, DD_SERVICE and USE_DDTRACE.
+    why: The native server has no ddtrace.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/tests/test-env-vars.yaml#L16-L42
+  - what: The ingress template adds the legacy kubernetes.io/ingress.class annotation to a deep copy of ingress.annotations, while LiteLLM sets it on .Values.ingress.annotations and mutates the values seen by every later template.
+    why: A render must not change the inputs other templates and subcharts read; the rendered Ingress is identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/ingress.yaml#L4-L8
+  - what: The ServiceMonitor test pod expects the metrics Service port when metricsServer.enabled, while LiteLLM's pod always compares the endpoint port with http.
+    why: LiteLLM's own ServiceMonitor switches the endpoint to the metrics port when the metrics Service exists, so its test pod fails on that configuration; betterlite's test verifies what the chart rendered.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/tests/test-servicemonitor.yaml#L30-L36
+  - what: The kubectl test pod image comes from test.kubectlImage instead of LiteLLM's hardcoded docker.io/bitnamilegacy/kubectl:1.29.2-debian-12-r3.
+    why: B8130 defines the value so a cluster can point the test pod at a mirror it already has; the default image is the same one LiteLLM uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/tests/test-servicemonitor.yaml#L13
+kept_bugs:
+  - what: PDB bounds, the HPA CPU and memory targets and the KEDA thresholds go through Go template truthiness, so an explicit 0 in values renders as if the key were absent and the default applies.
+    why: LiteLLM renders them the same way, and every value a working chart uses (percentages, replica targets, utilization above zero) is unaffected; changing it would alter the rendered chart for configurations LiteLLM already accepted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/poddisruptionbudget.yaml#L25-L32
+  - what: An ingress path entry without pathType renders without the field on networking.k8s.io/v1, which the API server rejects.
+    why: LiteLLM omits pathType whenever the entry leaves it empty, and every working v1 Ingress already sets it (the chart's default host sets ImplementationSpecific); betterlite keeps the rendered shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/ingress.yaml#L49-L51
