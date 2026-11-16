@@ -22,7 +22,6 @@ from b5832.records import (
     MapParamsStep,
     Step,
     TransformStep,
-    UrlStep,
     optional_params_of,
 )
 
@@ -86,10 +85,6 @@ def headers_step(step: HeadersStep) -> JsonValue:
     return authorized
 
 
-def url_step(step: UrlStep) -> JsonValue:
-    return CONFIG.get_complete_url(step.get("api_base"), {})
-
-
 def transform_step(step: TransformStep) -> JsonValue:
     typed_input = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/responses/transformation.py#L152
         "str | ResponseInputParam", step["input"]
@@ -139,7 +134,7 @@ def step_value(step: Step) -> JsonValue:
     elif step["op"] == "headers":
         answer = headers_step(step)
     elif step["op"] == "url":
-        answer = url_step(step)
+        answer = CONFIG.get_complete_url(step.get("api_base"), {})
     elif step["op"] == "transform":
         answer = transform_step(step)
     else:
