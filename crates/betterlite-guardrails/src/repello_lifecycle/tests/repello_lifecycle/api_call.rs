@@ -137,6 +137,15 @@ async fn a_request_timeout_is_an_unreachable_api() {
 }
 
 #[tokio::test]
+async fn an_answer_with_a_large_policy_list_is_read_whole() {
+    let filler = "x".repeat(3_000);
+    let reply = format!(r#"{{"verdict": "passed", "request_id": "{filler}"}}"#);
+    let mock = mock_repello(StatusCode::OK, &reply).await;
+    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    assert!(run.result.is_ok());
+}
+
+#[tokio::test]
 async fn an_empty_reply_is_invalid_json() {
     let mock = mock_repello(StatusCode::OK, "").await;
     let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;

@@ -54,10 +54,12 @@ impl ConsoleSink for SilentConsole {
     }
 }
 
-// The guardrail only needs the assembled text, so costs and token counts are never read.
+// The guardrail only needs the assembled text, so no value these services answer reaches its output,
+// and a mutant of their bodies reads back into nothing.
 struct NoStreamCosts;
 
 impl StreamCostCalculator for NoStreamCosts {
+    #[cfg_attr(test, mutants::skip)]
     fn completion_cost(
         &self,
         _input: &CostInput<'_>,
@@ -66,6 +68,7 @@ impl StreamCostCalculator for NoStreamCosts {
         Ok(None)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn prompt_completion_cost(
         &self,
         _model: &str,
@@ -79,14 +82,17 @@ struct NoTokenCounter;
 
 #[async_trait]
 impl UsageTokenCounter for NoTokenCounter {
+    #[cfg_attr(test, mutants::skip)]
     async fn count_response_text(&self, _model: &str, _text: &str) -> Result<i64, CountError> {
         Ok(0)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn count_text(&self, _text: &str) -> Result<i64, CountError> {
         Ok(0)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn count_messages(
         &self,
         _model: &str,

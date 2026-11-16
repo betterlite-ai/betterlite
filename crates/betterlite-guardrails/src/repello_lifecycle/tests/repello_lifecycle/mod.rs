@@ -11,6 +11,7 @@ mod init_secrets;
 mod initialize;
 mod post_call_hook;
 mod pre_call_hook;
+mod silent_sinks;
 mod streaming_hook;
 mod transient_error;
 mod verdict_classification;
