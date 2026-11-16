@@ -186,7 +186,13 @@ fn an_empty_variable_becomes_null() {
 #[rstest]
 #[case::true_value("true", Json::Bool(true))]
 #[case::false_value("false", Json::Bool(false))]
-#[case::empty_value("", Json::Null)]
+#[case::empty_value("", Json::Bool(false))]
+#[case::short_true("y", Json::Bool(true))]
+#[case::upper_short_true(" T ", Json::Bool(true))]
+#[case::short_false("n", Json::Bool(false))]
+#[case::upper_short_false("F", Json::Bool(false))]
+#[case::on_value("on", Json::Bool(true))]
+#[case::zero_value("0", Json::Bool(false))]
 fn a_flag_reference_in_litellm_params_reads_as_a_bool(#[case] value: &str, #[case] expected: Json) {
     let source = "prompts:\n  - prompt_id: greeting\n    litellm_params:\n      prompt_integration: dotprompt\n      ignore_prompt_manager_model: os.environ/IGNORE_MODEL\n      ignore_prompt_manager_optional_params: os.environ/IGNORE_PARAMS\n";
     let settings = settings_with(
@@ -204,13 +210,16 @@ fn a_flag_reference_in_litellm_params_reads_as_a_bool(#[case] value: &str, #[cas
 }
 
 #[test]
-fn a_missing_flag_variable_becomes_null() {
+fn a_missing_flag_variable_reads_as_false() {
     let source = "prompts:\n  - prompt_id: greeting\n    litellm_params:\n      ignore_prompt_manager_model: os.environ/ABSENT\n";
     let settings = settings_with(source, &[]);
     let Some(Json::Object(params)) = settings.prompts[0].get("litellm_params") else {
         panic!("litellm_params is a mapping");
     };
-    assert_eq!(params.get("ignore_prompt_manager_model"), Some(&Json::Null));
+    assert_eq!(
+        params.get("ignore_prompt_manager_model"),
+        Some(&Json::Bool(false))
+    );
 }
 
 #[test]

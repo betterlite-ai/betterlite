@@ -61,7 +61,9 @@ where
 }
 
 // get_secret turns true and false into a bool and pydantic reads a number string into the int field, so a
-// reference on a typed key goes through the shared env parser, and a bad value names its variable
+// reference on a typed key goes through the shared env parser, and a bad value names its variable.
+// The flag fields are `bool | None = False` and PromptLiteLLMParams refuses a null, so an unset or empty
+// variable reads as false, which is how LiteLLM's None behaves. Pydantic's lax bool also takes t, f, y and n.
 fn resolve_typed<L>(key: &str, value: Json, depth: usize, lookup: &L) -> Result<Json, ConfigError>
 where
     L: EnvironmentLookup,
@@ -78,7 +80,14 @@ where
         let version = betterlite_env::number::<i64>(name, &variable)?;
         return Ok(version.map_or(Json::Null, |number| Json::Number(number.into())));
     }
-    Ok(betterlite_env::flag(name, &variable)?.map_or(Json::Null, Json::Bool))
+    match variable.trim().to_ascii_lowercase().as_str() {
+        "t" | "y" => return Ok(Json::Bool(true)),
+        "f" | "n" => return Ok(Json::Bool(false)),
+        _ => {}
+    }
+    Ok(Json::Bool(
+        betterlite_env::flag(name, &variable)?.unwrap_or(false),
+    ))
 }
 
 fn resolve_mapping<L>(

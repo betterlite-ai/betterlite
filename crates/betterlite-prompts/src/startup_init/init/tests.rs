@@ -183,6 +183,27 @@ fn an_entry_with_typed_environment_references_registers() {
 }
 
 #[test]
+fn an_entry_with_unset_flag_references_registers_with_the_flags_off() {
+    let source = "prompts:\n  - prompt_id: greeting\n    litellm_params:\n      prompt_integration: dotprompt\n      ignore_prompt_manager_model: os.environ/IGNORE_MODEL\n      ignore_prompt_manager_optional_params: os.environ/IGNORE_PARAMS\n";
+    let lookup = BTreeMap::from([("IGNORE_PARAMS".to_owned(), "y".to_owned())]);
+    let config = ConfigLoader { lookup }
+        .load(source)
+        .expect("the config loads");
+    let mut registry = InMemoryPromptRegistry::default();
+    let mut callbacks = RecordingCallbacks::default();
+    let registered = init_prompts(
+        &mut registry,
+        &config.sections.prompts.prompts,
+        None,
+        &mut callbacks,
+    )
+    .expect("the prompt registers");
+    assert_eq!(registered.len(), 1);
+    assert!(!registered[0].litellm_params.ignore_model);
+    assert!(registered[0].litellm_params.ignore_optional_params);
+}
+
+#[test]
 fn a_prompt_already_registered_comes_back_as_the_stored_spec() {
     let mut stored = prompt_spec("greeting", Some(1), "development");
     stored.litellm_params.dotprompt_content = Some("Original".to_owned());
