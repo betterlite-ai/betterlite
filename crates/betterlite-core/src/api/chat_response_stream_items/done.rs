@@ -55,7 +55,7 @@ pub fn message_done_event<Context>(
 
 // LiteLLM's builder ignores its completion argument here and reads the stored response instead.
 fn message_item_done<Context>(
-    state: &mut ChatStreamState<Context>,
+    state: &ChatStreamState<Context>,
     item_id: &str,
 ) -> Result<KnownResponseEvent, StreamItemsError> {
     let Some(stored) = &state.progress.litellm_model_response else {
