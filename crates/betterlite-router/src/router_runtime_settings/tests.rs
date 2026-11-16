@@ -48,8 +48,10 @@ impl RouterSettingsTarget for Recorder {
     }
 
     fn apply_lar1(&mut self, args: Option<&Value>) -> Result<(), RouterSettingsError> {
-        self.calls
-            .push(("apply_lar1", args.cloned().unwrap_or(Value::Null)));
+        self.calls.push((
+            "apply_lar1",
+            json!({"absent": args.is_none(), "args": args}),
+        ));
         Ok(())
     }
 
@@ -201,6 +203,7 @@ fn get_settings_shows_latency_args_as_text_only_for_the_latency_strategy(
     let settings = router(values).get_settings(&view);
 
     assert_eq!(settings["routing_strategy_args"], expected);
+    assert_eq!(settings["timeout"], json!(600));
 }
 
 #[test]
@@ -274,6 +277,8 @@ fn get_settings_stores_the_other_names_as_given() {
 #[case::string(json!("42"), json!(42))]
 #[case::string_with_spaces(json!("  7\n"), json!(7))]
 #[case::string_with_sign(json!("+8"), json!(8))]
+#[case::integer_past_f64_precision(json!(9_007_199_254_740_993_i64), json!(9_007_199_254_740_993_i64))]
+#[case::integer_past_i64(json!(18_446_744_073_709_551_615_u64), json!(18_446_744_073_709_551_615_u64))]
 fn update_int_follows_python_int(#[case] given: Value, #[case] stored: Value) {
     let mut settings = router(full_values());
 
@@ -502,9 +507,9 @@ fn update_strategy_init_reads_args_that_come_after_it() {
 }
 
 #[rstest]
-#[case::with_args(json!({"routing_strategy": "lar1", "routing_strategy_args": {"a": 1}}), json!({"a": 1}))]
-#[case::without_args(json!({"routing_strategy": "lar1"}), Value::Null)]
-#[case::null_args(json!({"routing_strategy": "lar1", "routing_strategy_args": null}), Value::Null)]
+#[case::with_args(json!({"routing_strategy": "lar1", "routing_strategy_args": {"a": 1}}), json!({"absent": false, "args": {"a": 1}}))]
+#[case::without_args(json!({"routing_strategy": "lar1"}), json!({"absent": true, "args": null}))]
+#[case::null_args(json!({"routing_strategy": "lar1", "routing_strategy_args": null}), json!({"absent": true, "args": null}))]
 fn update_strategy_lar1_gets_the_args_pair_or_none(
     #[case] kwargs: Value,
     #[case] expected_args: Value,
