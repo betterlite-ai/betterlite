@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt::Display;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -35,15 +34,15 @@ pub(crate) struct LoadTables {
 }
 
 impl LoadTables {
-    pub(crate) fn new(rows: &[JobInput], stats: &[StatInput]) -> Self {
-        let rows = rows
+    pub(crate) fn new(jobs: &[JobInput], job_stats: &[StatInput]) -> Self {
+        let rows = jobs
             .iter()
             .map(|job| StoredJob {
                 stopped_at: job.stopped_at,
                 row: job.to_row(),
             })
             .collect();
-        let stats = stats
+        let stats = job_stats
             .iter()
             .map(|stat| JobAttemptStats {
                 job_id: stat.job_id.clone(),
@@ -118,7 +117,7 @@ pub(crate) struct AttemptTables {
 }
 
 impl AttemptTables {
-    fn record(&self, attempt: &ShadowAttemptRow) -> Result<(), Scripted> {
+    fn record(&self, attempt: &ShadowAttemptRow) {
         self.events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -127,7 +126,6 @@ impl AttemptTables {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(ShadowAttemptRow::clone(attempt));
-        Ok(())
     }
 }
 
@@ -152,7 +150,10 @@ impl ShadowTables for AttemptTables {
         &'database self,
         attempt: &'database ShadowAttemptRow,
     ) -> ShadowFuture<'database, (), Self::Error> {
-        Box::pin(async move { self.record(attempt) })
+        Box::pin(async move {
+            self.record(attempt);
+            Ok(())
+        })
     }
 
     fn upsert_funnel<'database>(
@@ -187,24 +188,21 @@ impl SpendCounter for FakeCounter {
     }
 }
 
-pub(crate) fn failure<Message>(class: &str, message: Message) -> Box<HelperError>
-where
-    Message: Display,
-{
+pub(crate) fn failure(class: &str, message: &str) -> Box<HelperError> {
     Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: message.to_string(),
+        message: message.to_owned(),
     })
 }
 
 pub(crate) fn build_runtime() -> Result<Runtime, Box<HelperError>> {
     Builder::new_current_thread()
         .build()
-        .map_err(|error| failure("RuntimeError", error))
+        .map_err(|error| failure("RuntimeError", &error.to_string()))
 }
 
 fn targets(metadata: &BTreeMap<String, Value>) -> Vec<(String, String)> {
@@ -214,10 +212,10 @@ fn targets(metadata: &BTreeMap<String, Value>) -> Vec<(String, String)> {
         ("team", "user_api_key_team_id"),
         ("user", "user_api_key_user_id"),
     ] {
-        if let Some(value) = metadata.get(key).and_then(Value::as_str) {
-            if !value.is_empty() {
-                resolved.push((target_type.to_owned(), value.to_owned()));
-            }
+        if let Some(value) = metadata.get(key).and_then(Value::as_str)
+            && !value.is_empty()
+        {
+            resolved.push((target_type.to_owned(), value.to_owned()));
         }
     }
     resolved
@@ -242,6 +240,6 @@ pub(crate) fn outcome(raw: &str) -> Result<AttemptOutcome, Box<HelperError>> {
         "shadow" => Ok(AttemptOutcome::Shadow),
         "tie" => Ok(AttemptOutcome::Tie),
         "error" => Ok(AttemptOutcome::Error),
-        other => Err(failure("InvalidInput", format!("unknown outcome {other}"))),
+        other => Err(failure("InvalidInput", &format!("unknown outcome {other}"))),
     }
 }

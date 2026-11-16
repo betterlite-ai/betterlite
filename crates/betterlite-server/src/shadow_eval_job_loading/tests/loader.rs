@@ -7,7 +7,7 @@ use chrono::{DateTime, TimeZone as _, Utc};
 use rust_decimal::Decimal;
 
 use super::super::loader::ShadowJobLoader;
-use super::support::{FakeCounter, FakeTables, fake_tables, frozen_clock, job_row};
+use super::support::{FailingCall, FakeCounter, FakeTables, fake_tables, frozen_clock, job_row};
 
 type TestLoader = ShadowJobLoader<FakeTables, FakeCounter>;
 
@@ -50,18 +50,15 @@ async fn shadow_eval_job_loading_groups_rows_by_target_with_attempt_stats() {
         spend: Decimal::new(15, 1),
     }];
     let loader = make_loader(tables);
-    let loaded = loader.active_jobs(now()).await;
-    assert!(loaded.refilled);
+    let read = loader.active_jobs(now()).await;
+    assert!(read.refilled);
     let database = loader.database.as_ref().unwrap();
     let state = database.state.lock().unwrap();
     assert_eq!(state.find_calls, 1);
     let expected = ["job-forward", "job-reverse", "job-invalid"].map(str::to_owned);
     assert_eq!(state.stats_requests.first().unwrap(), &expected);
     drop(state);
-    let paired = loaded
-        .jobs
-        .get(&("key".to_owned(), "key-1".to_owned()))
-        .unwrap();
+    let paired = &read.jobs[&("key".to_owned(), "key-1".to_owned())];
     assert_eq!(paired.len(), 2);
     assert_eq!(paired[0].id, "job-forward");
     assert_eq!(paired[0].attempts, 3);
@@ -70,7 +67,7 @@ async fn shadow_eval_job_loading_groups_rows_by_target_with_attempt_stats() {
     assert_eq!(paired[1].attempts, 0);
     assert_eq!(paired[1].spend, Decimal::ZERO);
     assert!(
-        !loaded
+        !read
             .jobs
             .contains_key(&("key".to_owned(), "key-2".to_owned()))
     );
@@ -93,9 +90,11 @@ async fn shadow_eval_job_loading_serves_the_second_read_from_the_cache() {
     assert!(!second.refilled);
     assert_eq!(calls, 1);
     assert_eq!(first.jobs.len(), 1);
+    let first_groups: Vec<_> = first.jobs.iter().collect();
+    let cached_groups: Vec<_> = second.jobs.iter().collect();
     assert_eq!(
-        serde_json::to_string(&first.jobs).unwrap(),
-        serde_json::to_string(&second.jobs).unwrap()
+        serde_json::to_string(&first_groups).unwrap(),
+        serde_json::to_string(&cached_groups).unwrap()
     );
     assert!(loader.cache.get().unwrap().is_some());
 }
@@ -116,9 +115,9 @@ async fn shadow_eval_job_loading_keeps_cached_costs_exact() {
     let first = loader.active_jobs(now()).await;
     let second = loader.active_jobs(now()).await;
     let group = ("key".to_owned(), "key-1".to_owned());
-    let cached = second.jobs.get(&group).unwrap();
+    let cached = &second.jobs[&group];
     assert!(!second.refilled);
-    assert_eq!(first.jobs.get(&group).unwrap()[0].spend, spend);
+    assert_eq!(first.jobs[&group][0].spend, spend);
     assert_eq!(cached[0].spend, spend);
     assert_eq!(cached[0].max_budget, Some(max_budget));
 }
@@ -145,20 +144,20 @@ async fn shadow_eval_job_loading_refills_after_the_ten_second_ttl() {
         "an expired entry reads the database again"
     );
     let group = ("key".to_owned(), "key-1".to_owned());
-    assert_eq!(first.jobs.get(&group).unwrap().len(), 1);
-    assert_eq!(refilled.jobs.get(&group).unwrap().len(), 2);
+    assert_eq!(first.jobs[&group].len(), 1);
+    assert_eq!(refilled.jobs[&group].len(), 2);
 }
 
 #[tokio::test]
 async fn shadow_eval_job_loading_returns_empty_on_a_database_error_without_caching() {
     let tables = Arc::new(fake_tables(vec![job_row("forward", None)]));
-    tables.state.lock().unwrap().fail_find = true;
+    tables.state.lock().unwrap().failing = Some(FailingCall::Find);
     let loader = loader_over(&tables, &Arc::new(Mutex::new(0.0_f64)));
     let failed = loader.active_jobs(now()).await;
     assert!(failed.jobs.is_empty());
     assert!(!failed.refilled);
     assert!(loader.cache.get().unwrap().is_none());
-    tables.state.lock().unwrap().fail_find = false;
+    tables.state.lock().unwrap().failing = None;
     let retried = loader.active_jobs(now()).await;
     assert!(retried.refilled);
     assert_eq!(retried.jobs.len(), 1);
@@ -168,13 +167,13 @@ async fn shadow_eval_job_loading_returns_empty_on_a_database_error_without_cachi
 #[tokio::test]
 async fn shadow_eval_job_loading_returns_empty_when_attempt_stats_fail() {
     let tables = Arc::new(fake_tables(vec![job_row("forward", None)]));
-    tables.state.lock().unwrap().fail_stats = true;
+    tables.state.lock().unwrap().failing = Some(FailingCall::Stats);
     let loader = loader_over(&tables, &Arc::new(Mutex::new(0.0_f64)));
     let failed = loader.active_jobs(now()).await;
     assert!(failed.jobs.is_empty());
     assert!(!failed.refilled);
     assert!(loader.cache.get().unwrap().is_none());
-    tables.state.lock().unwrap().fail_stats = false;
+    tables.state.lock().unwrap().failing = None;
     let retried = loader.active_jobs(now()).await;
     assert!(retried.refilled);
     assert_eq!(retried.jobs.len(), 1);
@@ -188,9 +187,9 @@ async fn shadow_eval_job_loading_without_a_database_returns_empty() {
         frozen_clock(Arc::new(Mutex::new(0.0_f64))),
     )
     .unwrap();
-    let loaded = loader.active_jobs(now()).await;
-    assert!(loaded.jobs.is_empty());
-    assert!(!loaded.refilled);
+    let read = loader.active_jobs(now()).await;
+    assert!(read.jobs.is_empty());
+    assert!(!read.refilled);
     assert!(loader.cache.get().unwrap().is_none());
 }
 
@@ -198,9 +197,9 @@ async fn shadow_eval_job_loading_without_a_database_returns_empty() {
 async fn shadow_eval_job_loading_with_an_invalid_clock_returns_empty_without_a_read() {
     let tables = Arc::new(fake_tables(vec![job_row("forward", None)]));
     let loader = loader_over(&tables, &Arc::new(Mutex::new(f64::NAN)));
-    let loaded = loader.active_jobs(now()).await;
-    assert!(loaded.jobs.is_empty());
-    assert!(!loaded.refilled);
+    let read = loader.active_jobs(now()).await;
+    assert!(read.jobs.is_empty());
+    assert!(!read.refilled);
     assert_eq!(tables.state.lock().unwrap().find_calls, 0);
 }
 
@@ -214,6 +213,9 @@ async fn shadow_eval_job_loading_caches_an_empty_read() {
     assert!(first.jobs.is_empty());
     let database = loader.database.as_ref().unwrap();
     let state = database.state.lock().unwrap();
-    assert_eq!(state.find_calls, 1);
-    assert!(state.stats_requests.is_empty());
+    let find_calls = state.find_calls;
+    let stats_requested = !state.stats_requests.is_empty();
+    drop(state);
+    assert_eq!(find_calls, 1);
+    assert!(!stats_requested);
 }

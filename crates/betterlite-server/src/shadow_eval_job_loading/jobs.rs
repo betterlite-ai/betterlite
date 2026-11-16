@@ -95,10 +95,7 @@ impl ActiveShadowEvalJob {
 
     #[must_use]
     pub fn arm_target<'job>(&'job self, arm_router: &'job str) -> &'job str {
-        match &self.baseline_model {
-            Some(baseline) => baseline.as_str(),
-            None => arm_router,
-        }
+        self.baseline_model.as_deref().unwrap_or(arm_router)
     }
 }
 

@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 
 use super::super::attempt::{attempt_tier, record_attempt};
 use super::super::jobs::ShadowEvalDirection;
-use super::support::{FakeCounter, FakeTables, log_entries, tables_and_counter};
+use super::support::{FailingCall, FakeCounter, FakeTables, log_entries, tables_and_counter};
 
 fn attempt() -> ShadowAttemptRow {
     ShadowAttemptRow {
@@ -103,7 +103,7 @@ async fn shadow_eval_attempt_without_a_database_still_writes_the_counter() {
 #[tokio::test]
 async fn shadow_eval_attempt_insert_failure_is_swallowed() {
     let (tables, counter) = tables_and_counter();
-    tables.state.lock().unwrap().fail_insert = true;
+    tables.state.lock().unwrap().failing = Some(FailingCall::Insert);
     record_attempt(Some(&tables), &counter, attempt()).await;
     assert_eq!(spent(&counter), Decimal::new(875, 3));
     assert_eq!(inserted(&tables).len(), 1);
@@ -120,7 +120,7 @@ async fn shadow_eval_attempt_error_is_truncated_to_five_hundred_chars() {
     cut.error = Some("x".repeat(501));
     let mut wide = attempt();
     wide.request_id = "req-wide".to_owned();
-    wide.error = Some("é".repeat(600));
+    wide.error = Some("\u{e9}".repeat(600));
     record_attempt(Some(&tables), &counter, kept).await;
     record_attempt(Some(&tables), &counter, cut).await;
     record_attempt(Some(&tables), &counter, wide).await;

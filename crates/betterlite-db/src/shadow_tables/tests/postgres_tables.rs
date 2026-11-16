@@ -7,7 +7,9 @@ use tokio_postgres::Row;
 
 use super::support::database;
 use crate::shadow_tables::postgres::PostgresShadowTables;
-use crate::shadow_tables::rows::{AttemptOutcome, FunnelCounters, ShadowAttemptRow, ShadowTables};
+use crate::shadow_tables::rows::{
+    AttemptOutcome, FunnelCounters, ShadowAttemptRow, ShadowTables as _,
+};
 
 // one row per gate: live, stopped, expired, and one whose ends_at lands exactly on the read's now
 const JOB_ROWS: &str = r#"INSERT INTO "LiteLLM_ShadowEvalJob"
@@ -268,8 +270,8 @@ async fn shadow_eval_funnel_upsert_accumulates_each_stage() {
         .await
         .unwrap();
     fixture.close_async().await.unwrap();
-    assert_eq!(row.get::<_, i32>("not_sampled"), 1);
-    assert_eq!(row.get::<_, i32>("unjudgeable"), 3);
-    assert_eq!(row.get::<_, i32>("shed"), 3);
-    assert_eq!(row.get::<_, i32>("withheld"), 1);
+    assert_eq!(row.get::<_, i32>("not_sampled"), 1_i32);
+    assert_eq!(row.get::<_, i32>("unjudgeable"), 3_i32);
+    assert_eq!(row.get::<_, i32>("shed"), 3_i32);
+    assert_eq!(row.get::<_, i32>("withheld"), 1_i32);
 }

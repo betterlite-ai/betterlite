@@ -56,7 +56,7 @@ pub fn sample_hits(request_id: &str, job_id: &str, percentage: f64) -> bool {
     }
     let fraction = u64::from_be_bytes(head)
         .to_f64()
-        .unwrap_or(0.0)
+        .unwrap_or(0.0_f64)
         .mul_add(2.0_f64.powi(-64), 0.0);
     fraction.mul_add(100.0, 0.0) < percentage
 }

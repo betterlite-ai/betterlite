@@ -185,11 +185,11 @@ fn shadow_eval_scope_alias_rewrites_the_request_group() {
     aliases.insert("fast".to_owned(), "gpt-4o".to_owned());
     let jobs = [&job];
     let starts = BTreeMap::new();
-    let aliased = RequestAdmission {
+    let request = RequestAdmission {
         routed_by: None,
         model_group: "fast",
         request_id: "req-1",
     };
-    let sampled = sampled_jobs(&jobs, &aliased, &starts, &aliases, instant());
+    let sampled = sampled_jobs(&jobs, &request, &starts, &aliases, instant());
     assert_eq!(sampled.eligible.len(), 1);
 }

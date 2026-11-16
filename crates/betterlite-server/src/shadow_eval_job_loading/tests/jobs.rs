@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeSet;
+
 use rust_decimal::Decimal;
 
 use super::super::jobs::{ActiveShadowEvalJob, ShadowEvalDirection, ShadowJobError};
@@ -14,7 +16,7 @@ fn shadow_eval_job_validation_accepts_a_forward_job_without_a_baseline() {
     assert_eq!(job.direction, ShadowEvalDirection::Forward);
     assert_eq!(job.baseline_model, None);
     assert_eq!(job.arm_router_names, vec!["router-a"]);
-    assert_eq!(job.models, ["gpt-4o".to_owned()].into());
+    assert_eq!(job.models, BTreeSet::from(["gpt-4o".to_owned()]));
     assert_eq!(job.attempts, 2);
     assert_eq!(job.spend, Decimal::new(5, 1));
     assert_eq!(job.arm_target("router-a"), "router-a");
@@ -46,7 +48,10 @@ fn shadow_eval_job_validation_rejects_an_unknown_direction() {
         ActiveShadowEvalJob::from_row(&job_row("sideways", None), 0, Decimal::ZERO).unwrap_err();
     match error {
         ShadowJobError::UnknownDirection { direction } => assert_eq!(direction, "sideways"),
-        other => panic!("unexpected validation error: {other}"),
+        other @ (ShadowJobError::BaselineModelMismatch
+        | ShadowJobError::ReverseEvaluatesOneRouter) => {
+            panic!("unexpected validation error: {other}")
+        }
     }
 }
 

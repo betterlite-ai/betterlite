@@ -6,7 +6,7 @@ from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.db.shadow_eval_funnel import ShadowEvalFunnelStage
 from litellm.proxy.utils import PrismaClient
 from litellm.router import Router
-from litellm.types.router import DeploymentTypedDict, RouterModelGroupAliasItem
+from litellm.types.router import RouterModelGroupAliasItem
 from litellm.types.utils import Choices, Message, ModelResponse
 from pydantic import JsonValue
 from typing_extensions import override
@@ -21,6 +21,9 @@ JUDGE_MODEL = "judge-model"
 USER_MESSAGE = "what is 2+2?"
 PROMPT_TOKENS = 1
 COMPLETION_TOKENS = 1
+
+MockParams = dict[str, str | ModelResponse | Exception]
+Deployment = dict[str, str | MockParams | dict[str, float]]
 
 
 def money(value: float) -> str:
@@ -122,7 +125,7 @@ class Counter(SpendCounter):
         self.events = events
 
     @override
-    async def read(self, _key: str, fallback: float, _max_budget: float) -> float:
+    async def read(self, key: str, fallback: float, max_budget: float) -> float:
         return fallback
 
     @override
@@ -157,9 +160,7 @@ class PrismaProvider:
 def aliased_router(aliases: dict[str, str]) -> Router:
     if not aliases:
         return Router(model_list=[])
-    model_group_alias: dict[str, str | RouterModelGroupAliasItem] = {
-        name: target for name, target in aliases.items()
-    }
+    model_group_alias: dict[str, str | RouterModelGroupAliasItem] = dict(aliases)
     return Router(model_list=[], model_group_alias=model_group_alias)
 
 
@@ -183,12 +184,13 @@ def deployment(
     model_name: str,
     reply: ModelResponse | Exception,
     price: Price,
-) -> DeploymentTypedDict:
-    return {
-        "model_name": model_name,
-        "litellm_params": {"model": f"openai/{SHADOW_MODEL}", "mock_response": reply},
-        "model_info": dict(price),
+) -> Deployment:
+    params: MockParams = {"model": f"openai/{SHADOW_MODEL}", "mock_response": reply}
+    model_info: dict[str, float] = {
+        "input_cost_per_token": price["input_cost_per_token"],
+        "output_cost_per_token": price["output_cost_per_token"],
     }
+    return {"model_name": model_name, "litellm_params": params, "model_info": model_info}
 
 
 def attempt_router(call: Input, arm_target: str) -> Router:
@@ -197,12 +199,11 @@ def attempt_router(call: Input, arm_target: str) -> Router:
         shadow = deployment(arm_target, mock_reply(call["shadow_reply"]), call["shadow_price"])
     else:
         shadow = deployment(arm_target, Exception(call["shadow_error"]), call["shadow_price"])
-    aliases: dict[str, str | RouterModelGroupAliasItem] = {
-        name: target for name, target in call["aliases"].items()
-    }
+    deployments: list[Deployment] = [judge, shadow]
+    aliases: dict[str, str | RouterModelGroupAliasItem] = dict(call["aliases"])
     if not aliases:
-        return Router(model_list=[judge, shadow])
-    return Router(model_list=[judge, shadow], model_group_alias=aliases)
+        return Router(model_list=deployments)
+    return Router(model_list=deployments, model_group_alias=aliases)
 
 
 def hook_payload(

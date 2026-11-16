@@ -58,12 +58,12 @@ pub async fn record_attempt<Database, Counter>(
             );
         }
     }
-    let Some(database) = database else {
+    let Some(tables) = database else {
         return;
     };
     attempt.real_model = attempt.real_model.filter(|model| !model.is_empty());
     attempt.error = stored_error(attempt.error.take());
-    if let Err(error) = database.insert_attempt(&attempt).await {
+    if let Err(error) = tables.insert_attempt(&attempt).await {
         tracing::debug!(
             "shadow_eval: attempt write failed for {}: {error}",
             attempt.request_id

@@ -21,13 +21,13 @@ pub(crate) fn record(call: &AttemptCall) -> HelperResult {
     };
     let attempt = attempt_row(&call.job.id, &call.row)?;
     runtime.block_on(record_attempt(Some(&tables), &counter, attempt));
-    let stored = tables
+    let first_insert = tables
         .inserts
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .first()
         .cloned();
-    let Some(stored) = stored else {
+    let Some(stored) = first_insert else {
         return Err(failure("RuntimeError", "no attempt row was inserted"));
     };
     Ok(json!({
@@ -71,6 +71,6 @@ fn row_json(stored: &ShadowAttemptRow) -> Value {
         "real_cost": stored.real_cost.map(|value| value.normalize().to_string()),
         "real_classifier_cost": stored.real_classifier_cost.normalize().to_string(),
         "real_cache_hit": stored.real_cache_hit,
-        "error_chars": stored.error.as_ref().map_or(0, |error| error.chars().count()),
+        "error_chars": stored.error.as_ref().map_or(0_usize, |error| error.chars().count()),
     })
 }

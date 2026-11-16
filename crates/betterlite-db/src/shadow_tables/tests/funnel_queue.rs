@@ -201,6 +201,6 @@ async fn shadow_eval_funnel_flush_drops_a_failed_job_and_continues() {
     assert_eq!(upserts.len(), 3);
     let last = upserts.last().unwrap();
     assert_eq!(last.0, "job-b");
-    assert_eq!(last.1.withheld, 1);
-    assert_eq!(last.1.shed, 0);
+    assert_eq!(last.1.withheld, 1_i32);
+    assert_eq!(last.1.shed, 0_i32);
 }

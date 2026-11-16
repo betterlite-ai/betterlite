@@ -21,10 +21,10 @@ pub(crate) fn load(call: &LoadCall) -> HelperResult {
     };
     let clock: Clock = Arc::new(|| 0.0_f64);
     let loader = ShadowJobLoader::new(Some(Arc::clone(&tables)), counter, clock)
-        .map_err(|error| failure("RuntimeError", error))?;
+        .map_err(|error| failure("RuntimeError", &error.to_string()))?;
     let now = "2030-01-01T00:00:00Z"
         .parse::<DateTime<Utc>>()
-        .map_err(|error| failure("InvalidInput", error))?;
+        .map_err(|error| failure("InvalidInput", &error.to_string()))?;
     let funnel = runtime.block_on(run_hooks(call, &loader, now));
     let stats_ids = tables
         .stats_requests
@@ -40,7 +40,7 @@ pub(crate) fn load(call: &LoadCall) -> HelperResult {
         "group_by_sum": ["judge_cost", "shadow_classifier_cost", "shadow_cost"],
         "stats_ids": stats_ids,
         "funnel": funnel,
-        "attempts": 0,
+        "attempts": 0_usize,
         "spend_writes": spend_writes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -56,11 +56,11 @@ async fn run_hooks(
     let mut starts: BTreeMap<String, i64> = BTreeMap::new();
     let mut funnel: Vec<Value> = Vec::new();
     for _hook in 0..call.hook_calls {
-        let loaded = loader.active_jobs(now).await;
-        if loaded.refilled {
+        let read = loader.active_jobs(now).await;
+        if read.refilled {
             starts.clear();
         }
-        let candidates = candidates(&loaded, &call.metadata);
+        let targeted = candidates(&read, &call.metadata);
         let routed_by = call
             .metadata
             .get("routing_decision")
@@ -72,7 +72,7 @@ async fn run_hooks(
             model_group: &call.model_group,
             request_id: "req-1",
         };
-        let sampled = sampled_jobs(&candidates, &request, &starts, &call.aliases, now);
+        let sampled = sampled_jobs(&targeted, &request, &starts, &call.aliases, now);
         for job_id in &sampled.not_sampled {
             funnel.push(json!([job_id, "not_sampled"]));
         }

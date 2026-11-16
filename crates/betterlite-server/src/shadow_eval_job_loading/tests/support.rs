@@ -27,6 +27,13 @@ pub(crate) fn frozen_clock(seconds: Arc<Mutex<f64>>) -> Clock {
     Arc::new(move || *seconds.lock().unwrap_or_else(PoisonError::into_inner))
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FailingCall {
+    Find,
+    Stats,
+    Insert,
+}
+
 #[derive(Default)]
 pub(crate) struct TablesState {
     pub(crate) rows: Vec<ShadowJobRow>,
@@ -34,9 +41,7 @@ pub(crate) struct TablesState {
     pub(crate) find_calls: usize,
     pub(crate) stats_requests: Vec<Vec<String>>,
     pub(crate) inserts: Vec<ShadowAttemptRow>,
-    pub(crate) fail_find: bool,
-    pub(crate) fail_stats: bool,
-    pub(crate) fail_insert: bool,
+    pub(crate) failing: Option<FailingCall>,
 }
 
 #[derive(Default)]
@@ -79,9 +84,7 @@ pub(crate) fn fake_tables(rows: Vec<ShadowJobRow>) -> FakeTables {
             find_calls: 0,
             stats_requests: Vec::new(),
             inserts: Vec::new(),
-            fail_find: false,
-            fail_stats: false,
-            fail_insert: false,
+            failing: None,
         }),
         events: event_log(),
     }
@@ -140,7 +143,7 @@ impl FakeTables {
         let failed = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             state.inserts.push(attempt.clone());
-            state.fail_insert
+            state.failing == Some(FailingCall::Insert)
         };
         if failed {
             return Err(Scripted);
@@ -159,7 +162,7 @@ impl ShadowTables for FakeTables {
         Box::pin(async move {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             state.find_calls = state.find_calls.saturating_add(1);
-            if state.fail_find {
+            if state.failing == Some(FailingCall::Find) {
                 return Err(Scripted);
             }
             Ok(state.rows.clone())
@@ -173,7 +176,7 @@ impl ShadowTables for FakeTables {
         Box::pin(async move {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             state.stats_requests.push(job_ids.to_vec());
-            if state.fail_stats {
+            if state.failing == Some(FailingCall::Stats) {
                 return Err(Scripted);
             }
             Ok(state.stats.clone())
