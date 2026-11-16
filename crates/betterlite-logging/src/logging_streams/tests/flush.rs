@@ -20,7 +20,7 @@ fn response() -> Json {
     json(r#"{"id":"chatcmpl-1","object":"chat.completion","choices":[]}"#)
 }
 
-fn sync_logs_the_collected_response() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_sync_logs_the_collected_response() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let fixture = HandlerFixture::new(None);
         let collector = FakeCollector::returning(SuccessResult::Chat(response()));
@@ -50,7 +50,8 @@ fn sync_logs_the_collected_response() -> Pin<Box<dyn Future<Output = ()> + Send>
     })
 }
 
-fn sync_skips_logging_without_a_collected_response() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_sync_skips_logging_without_a_collected_response() -> Pin<Box<dyn Future<Output = ()> + Send>>
+{
     Box::pin(async {
         let fixture = HandlerFixture::new(None);
         let collector = FakeCollector::empty();
@@ -63,7 +64,7 @@ fn sync_skips_logging_without_a_collected_response() -> Pin<Box<dyn Future<Outpu
     })
 }
 
-fn sync_returns_the_collector_error() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_sync_returns_the_collector_error() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let fixture = HandlerFixture::new(None);
         let collector = FakeCollector::failing("boom");
@@ -76,7 +77,7 @@ fn sync_returns_the_collector_error() -> Pin<Box<dyn Future<Output = ()> + Send>
     })
 }
 
-fn sync_keeps_a_pass_through_chunk_out_of_the_stream_keys()
+fn test_sync_keeps_a_pass_through_chunk_out_of_the_stream_keys()
 -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let fixture = HandlerFixture::new(None);
@@ -98,7 +99,7 @@ fn sync_keeps_a_pass_through_chunk_out_of_the_stream_keys()
     })
 }
 
-fn async_logs_the_assembled_response() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_async_logs_the_assembled_response() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let complete = json(
             r#"{"id":"chatcmpl-1","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]}"#,
@@ -123,7 +124,7 @@ fn async_logs_the_assembled_response() -> Pin<Box<dyn Future<Output = ()> + Send
     })
 }
 
-fn async_keeps_a_pass_through_result_as_the_logged_response()
+fn test_async_keeps_a_pass_through_result_as_the_logged_response()
 -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let fixture = HandlerFixture::new(None);
@@ -145,7 +146,8 @@ fn async_keeps_a_pass_through_result_as_the_logged_response()
     })
 }
 
-fn async_skips_logging_without_a_collected_response() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_async_skips_logging_without_a_collected_response()
+-> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let fixture = HandlerFixture::new(None);
         let collector = FakeCollector::empty();
@@ -163,7 +165,7 @@ fn async_skips_logging_without_a_collected_response() -> Pin<Box<dyn Future<Outp
     })
 }
 
-fn async_returns_the_collector_error() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn test_async_returns_the_collector_error() -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async {
         let fixture = HandlerFixture::new(None);
         let collector = FakeCollector::failing("boom");
@@ -178,18 +180,18 @@ fn async_returns_the_collector_error() -> Pin<Box<dyn Future<Output = ()> + Send
 }
 
 #[rstest]
-#[case::flush_sync_logs_the_collected_response(sync_logs_the_collected_response)]
-#[case::flush_sync_skips_without_a_response(sync_skips_logging_without_a_collected_response)]
-#[case::flush_sync_returns_the_collector_error(sync_returns_the_collector_error)]
+#[case::flush_sync_logs_the_collected_response(test_sync_logs_the_collected_response)]
+#[case::flush_sync_skips_without_a_response(test_sync_skips_logging_without_a_collected_response)]
+#[case::flush_sync_returns_the_collector_error(test_sync_returns_the_collector_error)]
 #[case::flush_sync_keeps_a_chunk_out_of_the_stream_keys(
-    sync_keeps_a_pass_through_chunk_out_of_the_stream_keys
+    test_sync_keeps_a_pass_through_chunk_out_of_the_stream_keys
 )]
-#[case::flush_async_logs_the_assembled_response(async_logs_the_assembled_response)]
+#[case::flush_async_logs_the_assembled_response(test_async_logs_the_assembled_response)]
 #[case::flush_async_keeps_a_pass_through_result(
-    async_keeps_a_pass_through_result_as_the_logged_response
+    test_async_keeps_a_pass_through_result_as_the_logged_response
 )]
-#[case::flush_async_skips_without_a_response(async_skips_logging_without_a_collected_response)]
-#[case::flush_async_returns_the_collector_error(async_returns_the_collector_error)]
+#[case::flush_async_skips_without_a_response(test_async_skips_logging_without_a_collected_response)]
+#[case::flush_async_returns_the_collector_error(test_async_returns_the_collector_error)]
 #[tokio::test]
 async fn logging_streams_behavior_tests_behavior(#[case] behavior: Behavior) {
     behavior().await;

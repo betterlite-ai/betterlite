@@ -24,7 +24,7 @@ fn windows(state: &crate::logging_state::LoggingState) -> Option<Json> {
     metadata.get(TIMING_WINDOWS_KEY).cloned()
 }
 
-fn records_the_duration_in_milliseconds() {
+fn test_records_the_duration_in_milliseconds() {
     let mut state = state(Some(true));
     record(
         &mut state,
@@ -38,7 +38,7 @@ fn records_the_duration_in_milliseconds() {
     );
 }
 
-fn records_a_fractional_duration() {
+fn test_records_a_fractional_duration() {
     let mut state = state(Some(true));
     record(
         &mut state,
@@ -52,7 +52,7 @@ fn records_a_fractional_duration() {
     );
 }
 
-fn records_a_negative_duration() {
+fn test_records_a_negative_duration() {
     let mut state = state(Some(true));
     record(
         &mut state,
@@ -66,7 +66,7 @@ fn records_a_negative_duration() {
     );
 }
 
-fn writes_a_timing_window_into_metadata() {
+fn test_writes_a_timing_window_into_metadata() {
     let mut state = state(Some(true));
     state.model_call_details.insert(
         "litellm_params".to_owned(),
@@ -81,7 +81,7 @@ fn writes_a_timing_window_into_metadata() {
     assert_eq!(windows(&state), Some(json("[[1704067200,1704067202]]")));
 }
 
-fn ignores_an_empty_metadata_object() {
+fn test_ignores_an_empty_metadata_object() {
     let mut state = state(Some(true));
     state
         .model_call_details
@@ -99,7 +99,7 @@ fn ignores_an_empty_metadata_object() {
     );
 }
 
-fn ignores_two_empty_metadata_objects() {
+fn test_ignores_two_empty_metadata_objects() {
     let mut state = state(Some(true));
     state.model_call_details.insert(
         "litellm_params".to_owned(),
@@ -117,7 +117,7 @@ fn ignores_two_empty_metadata_objects() {
     );
 }
 
-fn writes_into_metadata_beside_an_empty_litellm_metadata() {
+fn test_writes_into_metadata_beside_an_empty_litellm_metadata() {
     let mut state = state(Some(true));
     state.model_call_details.insert(
         "litellm_params".to_owned(),
@@ -136,7 +136,7 @@ fn writes_into_metadata_beside_an_empty_litellm_metadata() {
     assert_eq!(details.get("litellm_metadata"), Some(&json("{}")));
 }
 
-fn writes_into_a_lone_litellm_metadata() {
+fn test_writes_into_a_lone_litellm_metadata() {
     let mut state = state(Some(true));
     state.model_call_details.insert(
         "litellm_params".to_owned(),
@@ -161,7 +161,7 @@ fn writes_into_a_lone_litellm_metadata() {
     assert_eq!(metadata.get("route"), Some(&Json::Text("r".to_owned())));
 }
 
-fn appends_to_earlier_windows() {
+fn test_appends_to_earlier_windows() {
     let mut state = state(Some(true));
     state.model_call_details.insert(
         "litellm_params".to_owned(),
@@ -179,7 +179,7 @@ fn appends_to_earlier_windows() {
     );
 }
 
-fn skips_earlier_windows_that_are_not_number_pairs() {
+fn test_skips_earlier_windows_that_are_not_number_pairs() {
     let mut state = state(Some(true));
     state.model_call_details.insert(
         "litellm_params".to_owned(),
@@ -197,7 +197,7 @@ fn skips_earlier_windows_that_are_not_number_pairs() {
     );
 }
 
-fn ignores_recorded_windows_that_are_not_a_list() {
+fn test_ignores_recorded_windows_that_are_not_a_list() {
     let mut state = state(Some(true));
     state.model_call_details.insert(
         "litellm_params".to_owned(),
@@ -212,7 +212,7 @@ fn ignores_recorded_windows_that_are_not_a_list() {
     assert_eq!(windows(&state), Some(json("[[1704067200,1704067202]]")));
 }
 
-fn rejects_a_non_finite_earlier_window() {
+fn test_rejects_a_non_finite_earlier_window() {
     let mut state = state(Some(true));
     state.model_call_details.insert(
         "litellm_params".to_owned(),
@@ -229,7 +229,7 @@ fn rejects_a_non_finite_earlier_window() {
     ));
 }
 
-fn writes_into_litellm_metadata_and_copies_spend_keys() {
+fn test_writes_into_litellm_metadata_and_copies_spend_keys() {
     let mut state = state(Some(true));
     state.model_call_details.insert(
         "litellm_params".to_owned(),
@@ -263,7 +263,7 @@ fn writes_into_litellm_metadata_and_copies_spend_keys() {
     );
 }
 
-fn leaves_missing_metadata_alone() {
+fn test_leaves_missing_metadata_alone() {
     let mut state = state(Some(true));
     record(
         &mut state,
@@ -281,7 +281,7 @@ fn leaves_missing_metadata_alone() {
     );
 }
 
-fn treats_null_litellm_params_as_missing() {
+fn test_treats_null_litellm_params_as_missing() {
     let mut state = state(Some(true));
     state
         .model_call_details
@@ -298,7 +298,7 @@ fn treats_null_litellm_params_as_missing() {
     );
 }
 
-fn rejects_a_non_object_litellm_params() {
+fn test_rejects_a_non_object_litellm_params() {
     let mut state = state(Some(true));
     state
         .model_call_details
@@ -320,7 +320,7 @@ fn rejects_a_non_object_litellm_params() {
     );
 }
 
-fn rejects_a_non_object_metadata() {
+fn test_rejects_a_non_object_metadata() {
     let mut state = state(Some(true));
     state
         .model_call_details
@@ -336,7 +336,7 @@ fn rejects_a_non_object_metadata() {
     ));
 }
 
-fn rejects_a_non_object_litellm_metadata() {
+fn test_rejects_a_non_object_litellm_metadata() {
     let mut state = state(Some(true));
     state.model_call_details.insert(
         "litellm_params".to_owned(),
@@ -356,26 +356,30 @@ fn rejects_a_non_object_litellm_metadata() {
 }
 
 #[rstest]
-#[case::duration_records_milliseconds(records_the_duration_in_milliseconds)]
-#[case::duration_records_a_fractional_duration(records_a_fractional_duration)]
-#[case::duration_records_a_negative_duration(records_a_negative_duration)]
-#[case::duration_writes_a_timing_window(writes_a_timing_window_into_metadata)]
-#[case::duration_ignores_an_empty_metadata(ignores_an_empty_metadata_object)]
-#[case::duration_ignores_two_empty_metadata_objects(ignores_two_empty_metadata_objects)]
+#[case::duration_records_milliseconds(test_records_the_duration_in_milliseconds)]
+#[case::duration_records_a_fractional_duration(test_records_a_fractional_duration)]
+#[case::duration_records_a_negative_duration(test_records_a_negative_duration)]
+#[case::duration_writes_a_timing_window(test_writes_a_timing_window_into_metadata)]
+#[case::duration_ignores_an_empty_metadata(test_ignores_an_empty_metadata_object)]
+#[case::duration_ignores_two_empty_metadata_objects(test_ignores_two_empty_metadata_objects)]
 #[case::duration_writes_into_metadata_beside_an_empty_litellm_metadata(
-    writes_into_metadata_beside_an_empty_litellm_metadata
+    test_writes_into_metadata_beside_an_empty_litellm_metadata
 )]
-#[case::duration_writes_into_a_lone_litellm_metadata(writes_into_a_lone_litellm_metadata)]
-#[case::duration_appends_to_earlier_windows(appends_to_earlier_windows)]
-#[case::duration_skips_invalid_earlier_windows(skips_earlier_windows_that_are_not_number_pairs)]
-#[case::duration_ignores_a_non_list_window_field(ignores_recorded_windows_that_are_not_a_list)]
-#[case::duration_rejects_a_non_finite_window(rejects_a_non_finite_earlier_window)]
-#[case::duration_writes_into_litellm_metadata(writes_into_litellm_metadata_and_copies_spend_keys)]
-#[case::duration_leaves_missing_metadata_alone(leaves_missing_metadata_alone)]
-#[case::duration_treats_null_params_as_missing(treats_null_litellm_params_as_missing)]
-#[case::duration_rejects_a_non_object_litellm_params(rejects_a_non_object_litellm_params)]
-#[case::duration_rejects_a_non_object_metadata(rejects_a_non_object_metadata)]
-#[case::duration_rejects_a_non_object_litellm_metadata(rejects_a_non_object_litellm_metadata)]
+#[case::duration_writes_into_a_lone_litellm_metadata(test_writes_into_a_lone_litellm_metadata)]
+#[case::duration_appends_to_earlier_windows(test_appends_to_earlier_windows)]
+#[case::duration_skips_invalid_earlier_windows(
+    test_skips_earlier_windows_that_are_not_number_pairs
+)]
+#[case::duration_ignores_a_non_list_window_field(test_ignores_recorded_windows_that_are_not_a_list)]
+#[case::duration_rejects_a_non_finite_window(test_rejects_a_non_finite_earlier_window)]
+#[case::duration_writes_into_litellm_metadata(
+    test_writes_into_litellm_metadata_and_copies_spend_keys
+)]
+#[case::duration_leaves_missing_metadata_alone(test_leaves_missing_metadata_alone)]
+#[case::duration_treats_null_params_as_missing(test_treats_null_litellm_params_as_missing)]
+#[case::duration_rejects_a_non_object_litellm_params(test_rejects_a_non_object_litellm_params)]
+#[case::duration_rejects_a_non_object_metadata(test_rejects_a_non_object_metadata)]
+#[case::duration_rejects_a_non_object_litellm_metadata(test_rejects_a_non_object_litellm_metadata)]
 fn logging_streams_behavior_tests_behavior(#[case] behavior: fn()) {
     behavior();
 }

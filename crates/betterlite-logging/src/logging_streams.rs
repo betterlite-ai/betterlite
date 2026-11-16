@@ -7,5 +7,4 @@ pub mod flush;
 pub mod overlay;
 pub mod served_texts;
 
-#[cfg(test)]
 mod tests;

@@ -16,7 +16,7 @@ fn overlay(response: &Json, served: &ServedTexts) -> Json {
     overlay_served_output_texts(response, Some(served))
 }
 
-fn overlays_texts_into_their_choices() {
+fn test_overlays_texts_into_their_choices() {
     let response = json(
         r#"{"id":"chatcmpl-1","choices":[{"index":0,"message":{"role":"assistant","content":"old"}},{"index":1,"message":{"role":"assistant","content":"old"}}]}"#,
     );
@@ -29,24 +29,24 @@ fn overlays_texts_into_their_choices() {
     );
 }
 
-fn keeps_a_response_without_texts() {
+fn test_keeps_a_response_without_texts() {
     let response = json(r#"{"choices":[{"message":{"content":"old"}}]}"#);
     assert_eq!(overlay_served_output_texts(&response, None), response);
 }
 
-fn keeps_a_response_that_is_not_an_object() {
+fn test_keeps_a_response_that_is_not_an_object() {
     let response = json(r#"[{"message":{"content":"old"}}]"#);
     assert_eq!(overlay(&response, &texts(&[Some("new")])), response);
 }
 
-fn keeps_a_response_without_choices() {
+fn test_keeps_a_response_without_choices() {
     let response = json(r#"{"id":"chatcmpl-1"}"#);
     assert_eq!(overlay(&response, &texts(&[Some("new")])), response);
     let not_a_list = json(r#"{"choices":{}}"#);
     assert_eq!(overlay(&not_a_list, &texts(&[Some("new")])), not_a_list);
 }
 
-fn keeps_a_choice_that_is_not_an_object() {
+fn test_keeps_a_choice_that_is_not_an_object() {
     let response = json(r#"{"choices":["raw",{"message":{"role":"assistant","content":"old"}}]}"#);
     let overlaid = overlay(&response, &texts(&[Some("new"), Some("new")]));
     assert_eq!(
@@ -55,22 +55,22 @@ fn keeps_a_choice_that_is_not_an_object() {
     );
 }
 
-fn keeps_a_message_that_is_not_an_object() {
+fn test_keeps_a_message_that_is_not_an_object() {
     let response = json(r#"{"choices":[{"message":"text"}]}"#);
     assert_eq!(overlay(&response, &texts(&[Some("new")])), response);
 }
 
-fn keeps_a_choice_without_a_message() {
+fn test_keeps_a_choice_without_a_message() {
     let response = json(r#"{"choices":[{"index":0}]}"#);
     assert_eq!(overlay(&response, &texts(&[Some("new")])), response);
 }
 
-fn keeps_content_that_already_matches() {
+fn test_keeps_content_that_already_matches() {
     let response = json(r#"{"choices":[{"message":{"role":"assistant","content":"same"}}]}"#);
     assert_eq!(overlay(&response, &texts(&[Some("same")])), response);
 }
 
-fn replaces_missing_content_with_the_served_text() {
+fn test_replaces_missing_content_with_the_served_text() {
     let response = json(r#"{"choices":[{"message":{"role":"assistant"}}]}"#);
     assert_eq!(
         overlay(&response, &texts(&[Some("new")])),
@@ -78,7 +78,7 @@ fn replaces_missing_content_with_the_served_text() {
     );
 }
 
-fn keeps_an_empty_served_text_as_a_replacement() {
+fn test_keeps_an_empty_served_text_as_a_replacement() {
     let response = json(r#"{"choices":[{"message":{"content":"old"}}]}"#);
     assert_eq!(
         overlay(&response, &texts(&[Some("")])),
@@ -86,7 +86,7 @@ fn keeps_an_empty_served_text_as_a_replacement() {
     );
 }
 
-fn ignores_texts_past_the_choices() {
+fn test_ignores_texts_past_the_choices() {
     let response = json(r#"{"choices":[{"message":{"content":"old"}}]}"#);
     assert_eq!(
         overlay(&response, &texts(&[Some("new"), Some("extra")])),
@@ -94,7 +94,7 @@ fn ignores_texts_past_the_choices() {
     );
 }
 
-fn leaves_choices_past_the_texts() {
+fn test_leaves_choices_past_the_texts() {
     let response =
         json(r#"{"choices":[{"message":{"content":"old"}},{"message":{"content":"later"}}]}"#);
     assert_eq!(
@@ -104,18 +104,18 @@ fn leaves_choices_past_the_texts() {
 }
 
 #[rstest]
-#[case::overlay_replaces_texts_in_their_choices(overlays_texts_into_their_choices)]
-#[case::overlay_keeps_a_response_without_texts(keeps_a_response_without_texts)]
-#[case::overlay_keeps_a_response_that_is_not_an_object(keeps_a_response_that_is_not_an_object)]
-#[case::overlay_keeps_a_response_without_choices(keeps_a_response_without_choices)]
-#[case::overlay_keeps_a_choice_that_is_not_an_object(keeps_a_choice_that_is_not_an_object)]
-#[case::overlay_keeps_a_message_that_is_not_an_object(keeps_a_message_that_is_not_an_object)]
-#[case::overlay_keeps_a_choice_without_a_message(keeps_a_choice_without_a_message)]
-#[case::overlay_keeps_content_that_already_matches(keeps_content_that_already_matches)]
-#[case::overlay_replaces_missing_content(replaces_missing_content_with_the_served_text)]
-#[case::overlay_keeps_an_empty_served_text(keeps_an_empty_served_text_as_a_replacement)]
-#[case::overlay_ignores_texts_past_the_choices(ignores_texts_past_the_choices)]
-#[case::overlay_leaves_choices_past_the_texts(leaves_choices_past_the_texts)]
+#[case::overlay_replaces_texts_in_their_choices(test_overlays_texts_into_their_choices)]
+#[case::overlay_keeps_a_response_without_texts(test_keeps_a_response_without_texts)]
+#[case::overlay_keeps_a_response_that_is_not_an_object(test_keeps_a_response_that_is_not_an_object)]
+#[case::overlay_keeps_a_response_without_choices(test_keeps_a_response_without_choices)]
+#[case::overlay_keeps_a_choice_that_is_not_an_object(test_keeps_a_choice_that_is_not_an_object)]
+#[case::overlay_keeps_a_message_that_is_not_an_object(test_keeps_a_message_that_is_not_an_object)]
+#[case::overlay_keeps_a_choice_without_a_message(test_keeps_a_choice_without_a_message)]
+#[case::overlay_keeps_content_that_already_matches(test_keeps_content_that_already_matches)]
+#[case::overlay_replaces_missing_content(test_replaces_missing_content_with_the_served_text)]
+#[case::overlay_keeps_an_empty_served_text(test_keeps_an_empty_served_text_as_a_replacement)]
+#[case::overlay_ignores_texts_past_the_choices(test_ignores_texts_past_the_choices)]
+#[case::overlay_leaves_choices_past_the_texts(test_leaves_choices_past_the_texts)]
 fn logging_streams_behavior_tests_behavior(#[case] behavior: fn()) {
     behavior();
 }
