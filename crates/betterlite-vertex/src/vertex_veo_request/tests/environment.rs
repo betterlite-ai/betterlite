@@ -94,7 +94,7 @@ async fn headers_start_with_the_minted_bearer_and_json_defaults() {
     );
     assert_eq!(
         mint.calls(),
-        [(Some("a-secret".to_owned()), Some("project-1".to_owned()))]
+        vec![(Some("a-secret".to_owned()), Some("project-1".to_owned()))]
     );
 }
 
