@@ -1,0 +1,26 @@
+kind: helper
+name: preview-image-path
+call:
+  azure_images:
+    targets:
+      - azure_endpoint: https://example.openai.azure.com
+        api_version: "2023-06-01-preview"
+        model: dall-e-2
+      - azure_endpoint: https://example.openai.azure.com
+        api_version: ""
+        model: dall-e-3
+      - azure_endpoint: https://example.openai.azure.com?foo=1
+        api_version: "2025-02-01-preview"
+        model: dall-e-3
+      - azure_endpoint: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+    generations:
+      - prompt: a cat
+        model: dall-e-3
+        api_key: fixture-api-key
+        api_base: https://example.openai.azure.com
+        api_version: "2023-12-01-preview"
+        reply:
+          body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+env: {}
+compare: {ignore: []}
