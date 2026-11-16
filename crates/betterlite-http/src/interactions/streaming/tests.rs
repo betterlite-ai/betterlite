@@ -1,141 +1,58 @@
 #![cfg(test)]
 
-use std::str::from_utf8;
-
-use betterlite_models::controls::json_value::JsonValue;
+use reqwest::blocking::Client as BlockingClient;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
+use reqwest::blocking::Response as BlockingResponse;
+use reqwest::{Client, Response};
 use rstest::rstest;
 
+use crate::interactions::base::Logging;
 use crate::interactions::base::tests::support as base;
-use crate::interactions::base::{
-    ErrorClasses, Logging, RequestFailure, ResponseHeaders, UpstreamResponse,
-};
-use crate::interactions::streaming::{
-    StreamError, StreamingConfig, create_async_iterator, create_sync_iterator,
-};
-use crate::proxy::StreamResponse;
+use crate::interactions::create::tests::support::{Fixture, FixtureError, provider_error};
+use crate::interactions::streaming::{create_async_iterator, create_sync_iterator};
 use crate::proxy::base_builder;
 
-#[derive(Debug, thiserror::Error)]
-enum FakeError {
-    #[error("refused with status {status_code}")]
-    Refused { status_code: u16 },
-    #[error("the stream is refused")]
-    Stream,
+type Sent = (base::Serving, BlockingClient, BlockingResponse);
+
+type SentAsync = (base::Serving, Client, Response);
+
+fn answering(status: &str, headers: &[(&str, &str)], body: &str) -> (base::Serving, String) {
+    let serving = base::serve_once(base::reply(status, headers, body), None);
+    let url = format!("http://{}", serving.address);
+    (serving, url)
 }
 
-struct FakeConfig {
-    refuse: bool,
-}
-
-#[derive(Debug)]
-struct SyncSeen {
-    model: Option<String>,
-    body: String,
-    test_header: Option<String>,
-}
-
-struct AsyncSeen {
-    model: Option<String>,
-    source: StreamResponse,
-}
-
-impl ErrorClasses for FakeConfig {
-    type Error = FakeError;
-
-    fn get_error_class(
-        &self,
-        _message: &str,
-        status_code: u16,
-        _headers: &ResponseHeaders,
-    ) -> FakeError {
-        FakeError::Refused { status_code }
-    }
-}
-
-impl StreamingConfig for FakeConfig {
-    type SyncStream = SyncSeen;
-
-    type AsyncStream = AsyncSeen;
-
-    fn create_sync_stream_iterator(
-        &self,
-        response: UpstreamResponse,
-        model: Option<&str>,
-        logging: &mut Logging,
-    ) -> Result<SyncSeen, FakeError> {
-        logging
-            .model_call_details
-            .insert("sync".to_owned(), JsonValue::Bool(true));
-        if self.refuse {
-            return Err(FakeError::Stream);
-        }
-        Ok(SyncSeen {
-            model: model.map(str::to_owned),
-            body: from_utf8(&response.body).unwrap_or_default().to_owned(),
-            test_header: response.headers.get("x-test").cloned(),
-        })
-    }
-
-    fn create_async_stream_iterator(
-        &self,
-        response: StreamResponse,
-        model: Option<&str>,
-        logging: &mut Logging,
-    ) -> Result<AsyncSeen, FakeError> {
-        logging
-            .model_call_details
-            .insert("async".to_owned(), JsonValue::Bool(true));
-        if self.refuse {
-            return Err(FakeError::Stream);
-        }
-        Ok(AsyncSeen {
-            model: model.map(str::to_owned),
-            source: response,
-        })
-    }
-}
-
-#[test]
-fn create_sync_iterator_hands_the_buffered_response_model_and_headers_to_the_config() {
-    let serving = base::serve_once(base::reply("200 OK", &[("x-test", "yes")], "hello"), None);
+fn sent(status: &str, headers: &[(&str, &str)], body: &str) -> Sent {
+    let (serving, url) = answering(status, headers, body);
     let client = BlockingClientBuilder::new().build().unwrap();
-    let response = client
-        .get(format!("http://{}", serving.address))
-        .send()
-        .unwrap();
-    let config = FakeConfig { refuse: false };
-    let mut logging = Logging::default();
+    let response = client.get(url).send().unwrap();
+    (serving, client, response)
+}
 
-    let seen = create_sync_iterator(response, Some("m"), &mut logging, &config).unwrap();
-
-    assert_eq!(seen.model.as_deref(), Some("m"));
-    assert_eq!(seen.body, "hello");
-    assert_eq!(seen.test_header.as_deref(), Some("yes"));
-    assert_eq!(
-        logging.model_call_details.get("sync"),
-        Some(&JsonValue::Bool(true))
-    );
-    serving.request.join().unwrap();
+async fn sent_async(status: &str, headers: &[(&str, &str)], body: &str) -> SentAsync {
+    let (serving, url) = answering(status, headers, body);
+    let client = base_builder().build().unwrap();
+    let response = client.get(url).send().await.unwrap();
+    (serving, client, response)
 }
 
 #[rstest]
-#[case::ok("200 OK", "hello")]
-#[case::no_content("204 No Content", "")]
-#[case::last_ok("299 Custom", "hello")]
-fn create_sync_iterator_accepts_a_2xx_status(#[case] status: &str, #[case] body: &str) {
-    let serving = base::serve_once(base::reply(status, &[], body), None);
-    let client = BlockingClientBuilder::new().build().unwrap();
-    let response = client
-        .get(format!("http://{}", serving.address))
-        .send()
-        .unwrap();
-    let config = FakeConfig { refuse: false };
-    let mut logging = Logging::default();
+#[case::ok("200 OK", 200, "hello")]
+#[case::no_content("204 No Content", 204, "")]
+#[case::last_ok("299 Custom", 299, "hello")]
+fn create_sync_iterator_accepts_a_2xx_status(
+    #[case] status: &str,
+    #[case] code: u16,
+    #[case] body: &str,
+) {
+    let (serving, _client, response) = sent(status, &[], body);
+    let fixture = Fixture::new();
 
-    let seen = create_sync_iterator(response, None, &mut logging, &config).unwrap();
+    let seen =
+        create_sync_iterator(response, Some("m"), &mut Logging::default(), &fixture).unwrap();
 
-    assert_eq!(seen.body, body);
+    assert_eq!(seen, body);
+    assert!(fixture.calls().contains(&format!("sync_stream|{code}|m")));
     serving.request.join().unwrap();
 }
 
@@ -143,103 +60,58 @@ fn create_sync_iterator_accepts_a_2xx_status(#[case] status: &str, #[case] body:
 #[case::redirect("300 Multiple Choices", 300)]
 #[case::missing("404 Not Found", 404)]
 fn create_sync_iterator_refuses_a_status_outside_2xx(#[case] status: &str, #[case] code: u16) {
-    let serving = base::serve_once(
-        base::reply(status, &[("retry-after", "5")], "missing"),
-        None,
+    let (serving, _client, response) = sent(status, &[("retry-after", "5")], "missing");
+    let fixture = Fixture::new();
+
+    let error = create_sync_iterator(response, None, &mut Logging::default(), &fixture);
+
+    assert_eq!(provider_error(error), FixtureError::Refused(code));
+    let calls = fixture.calls();
+    assert!(
+        calls.contains(&format!("error|{code}|missing|5")),
+        "{calls:?}"
     );
-    let client = BlockingClientBuilder::new().build().unwrap();
-    let response = client
-        .get(format!("http://{}", serving.address))
-        .send()
-        .unwrap();
-    let config = FakeConfig { refuse: false };
-    let mut logging = Logging::default();
-
-    let error = create_sync_iterator(response, None, &mut logging, &config)
-        .err()
-        .unwrap();
-
-    match error {
-        StreamError::Read(RequestFailure::Status {
-            status_code,
-            headers,
-            body,
-        }) => {
-            assert_eq!(status_code, code);
-            assert_eq!(body, "missing");
-            assert_eq!(headers.get("retry-after").map(String::as_str), Some("5"));
-        }
-        other => panic!("expected a status failure, got {other:?}"),
-    }
-    assert!(logging.model_call_details.get("sync").is_none());
+    assert!(calls.iter().all(|call| !call.starts_with("sync_stream|")));
     serving.request.join().unwrap();
 }
 
 #[test]
 fn create_sync_iterator_leaves_a_config_error_as_a_provider_error() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
-    let client = BlockingClientBuilder::new().build().unwrap();
-    let response = client
-        .get(format!("http://{}", serving.address))
-        .send()
-        .unwrap();
-    let config = FakeConfig { refuse: true };
+    let (serving, _client, response) = sent("200 OK", &[], "{}");
+    let fixture = Fixture {
+        refuse_stream: true,
+        ..Fixture::new()
+    };
     let mut logging = Logging::default();
 
-    let error = create_sync_iterator(response, None, &mut logging, &config)
-        .err()
-        .unwrap();
+    let error = create_sync_iterator(response, None, &mut logging, &fixture);
 
-    assert!(matches!(error, StreamError::Provider(FakeError::Stream)));
-    serving.request.join().unwrap();
-}
-
-#[tokio::test]
-async fn create_async_iterator_hands_the_open_response_and_model_to_the_config() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "hello"), None);
-    let client = base_builder().build().unwrap();
-    let response = client
-        .get(format!("http://{}", serving.address))
-        .send()
-        .await
-        .unwrap();
-    let config = FakeConfig { refuse: false };
-    let mut logging = Logging::default();
-
-    let seen = create_async_iterator(&client, response, Some("m"), &mut logging, &config)
-        .await
-        .unwrap();
-
-    assert_eq!(seen.model.as_deref(), Some("m"));
-    // the factory leaves the body unread, so the iterator can still read it here
-    assert_eq!(seen.source.response.text().await.unwrap(), "hello");
-    assert_eq!(
-        logging.model_call_details.get("async"),
-        Some(&JsonValue::Bool(true))
-    );
+    assert_eq!(provider_error(error), FixtureError::Stream);
+    assert!(logging.model_call_details.contains_key("streamed"));
     serving.request.join().unwrap();
 }
 
 #[rstest]
-#[case::ok("200 OK")]
-#[case::last_ok("299 Custom")]
+#[case::ok("200 OK", 200)]
+#[case::last_ok("299 Custom", 299)]
 #[tokio::test]
-async fn create_async_iterator_accepts_a_2xx_status(#[case] status: &str) {
-    let serving = base::serve_once(base::reply(status, &[], "hello"), None);
-    let client = base_builder().build().unwrap();
-    let response = client
-        .get(format!("http://{}", serving.address))
-        .send()
-        .await
-        .unwrap();
-    let config = FakeConfig { refuse: false };
-    let mut logging = Logging::default();
+async fn create_async_iterator_accepts_a_2xx_status(#[case] status: &str, #[case] code: u16) {
+    let (serving, client, response) = sent_async(status, &[], "hello").await;
+    let fixture = Fixture::new();
 
-    let seen = create_async_iterator(&client, response, None, &mut logging, &config)
-        .await
-        .unwrap();
+    let seen = create_async_iterator(
+        &client,
+        response,
+        Some("m"),
+        &mut Logging::default(),
+        &fixture,
+    )
+    .await
+    .unwrap();
 
-    assert_eq!(seen.source.response.text().await.unwrap(), "hello");
+    // the factory leaves the body unread, so the iterator can still read it here
+    assert_eq!(seen.response.text().await.unwrap(), "hello");
+    assert!(fixture.calls().contains(&format!("async_stream|{code}|m")));
     serving.request.join().unwrap();
 }
 
@@ -251,57 +123,34 @@ async fn create_async_iterator_refuses_a_status_outside_2xx(
     #[case] status: &str,
     #[case] code: u16,
 ) {
-    let serving = base::serve_once(
-        base::reply(status, &[("retry-after", "5")], "missing"),
-        None,
-    );
-    let client = base_builder().build().unwrap();
-    let response = client
-        .get(format!("http://{}", serving.address))
-        .send()
-        .await
-        .unwrap();
-    let config = FakeConfig { refuse: false };
+    let (serving, client, response) = sent_async(status, &[("retry-after", "5")], "missing").await;
+    let fixture = Fixture::new();
     let mut logging = Logging::default();
 
-    let error = create_async_iterator(&client, response, None, &mut logging, &config)
-        .await
-        .err()
-        .unwrap();
+    let error = create_async_iterator(&client, response, None, &mut logging, &fixture);
 
-    match error {
-        StreamError::Read(RequestFailure::Status {
-            status_code,
-            headers,
-            body,
-        }) => {
-            assert_eq!(status_code, code);
-            assert_eq!(body, "missing");
-            assert_eq!(headers.get("retry-after").map(String::as_str), Some("5"));
-        }
-        other => panic!("expected a status failure, got {other:?}"),
-    }
-    assert!(logging.model_call_details.get("async").is_none());
+    assert_eq!(provider_error(error.await), FixtureError::Refused(code));
+    let calls = fixture.calls();
+    assert!(
+        calls.contains(&format!("error|{code}|missing|5")),
+        "{calls:?}"
+    );
+    assert!(calls.iter().all(|call| !call.starts_with("async_stream|")));
     serving.request.join().unwrap();
 }
 
 #[tokio::test]
 async fn create_async_iterator_leaves_a_config_error_as_a_provider_error() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
-    let client = base_builder().build().unwrap();
-    let response = client
-        .get(format!("http://{}", serving.address))
-        .send()
-        .await
-        .unwrap();
-    let config = FakeConfig { refuse: true };
+    let (serving, client, response) = sent_async("200 OK", &[], "{}").await;
+    let fixture = Fixture {
+        refuse_stream: true,
+        ..Fixture::new()
+    };
     let mut logging = Logging::default();
 
-    let error = create_async_iterator(&client, response, None, &mut logging, &config)
-        .await
-        .err()
-        .unwrap();
+    let error = create_async_iterator(&client, response, None, &mut logging, &fixture);
 
-    assert!(matches!(error, StreamError::Provider(FakeError::Stream)));
+    assert_eq!(provider_error(error.await), FixtureError::Stream);
+    assert!(logging.model_call_details.contains_key("streamed"));
     serving.request.join().unwrap();
 }
