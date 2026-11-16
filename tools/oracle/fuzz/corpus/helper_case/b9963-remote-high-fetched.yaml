@@ -1,0 +1,16 @@
+kind: helper
+name: remote-high-fetched
+call:
+  b9963:
+    urls:
+      # 1024x1024: four tiles and 765 tokens, where the 300x300 default dimensions count 255
+      "https://example.com/image.png": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQA"
+    calls:
+      - function: count_content
+        content:
+          - type: image_url
+            image_url:
+              url: https://example.com/image.png
+              detail: high
+env: {}
+compare: {ignore: []}

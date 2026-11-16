@@ -1,0 +1,39 @@
+kind: helper
+name: dashscope-image-url-and-key
+call:
+  b8172:
+    function: image_url_and_key
+    api_key: sk-arg
+    env_key: sk-env
+    env_image_base: https://env.test/image
+calls:
+  - b8172:
+      function: image_url_and_key
+      api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: sk-arg
+      env_key: sk-env
+      env_image_base: https://env.test/image
+  - b8172:
+      function: image_url_and_key
+      api_base: https://proxy.test/custom/
+      api_key: null
+      env_key: sk-env
+      env_image_base: https://env.test/image
+  - b8172:
+      function: image_url_and_key
+      api_key: ''
+      env_key: sk-env
+      env_image_base: https://env.test/image
+  - b8172:
+      function: image_url_and_key
+      api_key: sk-arg
+      env_key: sk-env
+      env_image_base: https://env.test/image
+      caller_headers:
+        x-trace: abc
+        Authorization: Bearer caller
+        Content-Type: text/plain
+env:
+  DASHSCOPE_API_BASE_IMAGE: https://env.test/image
+  DASHSCOPE_API_KEY: sk-env
+compare: {ignore: []}

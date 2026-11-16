@@ -1,0 +1,91 @@
+kind: helper
+name: dimensions-encoding
+call:
+  azure_embeddings:
+    steps:
+      - input: ["a"]
+        client: azure
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        optional_params: {"dimensions": 256, "encoding_format": "float", "user": "u"}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        headers: {}
+        litellm_params: {}
+      - input: ["a"]
+        client: azure
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\": \"list\", \"data\": [{\"object\": \"embedding\", \"embedding\": \"AAAAAA==\", \"index\": 0}], \"model\": \"m\", \"usage\": {\"prompt_tokens\": 1, \"total_tokens\": 1}}"}}
+        optional_params: {"encoding_format": "base64"}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        headers: {}
+        litellm_params: {}
+      - input: ["a"]
+        client: azure
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        optional_params: {"model": "other-model", "input": ["override"]}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        headers: {}
+        litellm_params: {}
+      - input: ["a"]
+        client: azure
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        optional_params: {"extra_headers": {"x-old": "o"}}
+        headers: {"x-h": "v"}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        litellm_params: {}
+      - input: ["a"]
+        client: azure
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        optional_params: {"extra_headers": {"x-old": "o"}}
+        headers: {}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        litellm_params: {}
+      - input: ["a"]
+        client: async_azure
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        aembedding: true
+        azure_ad_token: "ad-token"
+        max_retries: 9
+        litellm_params: {"max_retries": 7, "timeout": 2.5}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        optional_params: {}
+        headers: {}
+env: {}
+compare: {ignore: []}
