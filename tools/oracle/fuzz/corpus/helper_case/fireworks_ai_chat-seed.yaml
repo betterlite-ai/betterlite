@@ -1,0 +1,32 @@
+kind: helper
+name: fireworks-ai-chat-seed
+call:
+  b6072:
+    catalog: []
+    headers:
+      - headers: {}
+        api_key: key
+        litellm_params: {}
+        environment: {}
+    keys:
+      - {api_key: null, environment: {}}
+    requests:
+      - model: llama-v3
+        messages:
+          - {role: user, content: hi}
+        optional_params: {stream: true}
+    replies:
+      - status: 200
+        headers: {}
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"llama-v3","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"choices":[]}'
+        optional_params: {}
+    chunks:
+      - chunk: {id: chatcmpl-1, created: 1700000000, choices: []}
+    models:
+      - api_base: null
+        api_key: key
+        environment: {FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[{"name":"llama-v3"}]}'
+env: {}
+compare: {ignore: []}

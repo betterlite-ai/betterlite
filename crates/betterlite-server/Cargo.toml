@@ -49,6 +49,7 @@ betterlite-roi = { path = "../betterlite-roi" }
 betterlite-router = { path = "../betterlite-router" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-semantic = { path = "../betterlite-semantic" }
+betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 betterlite-tracing = { path = "../betterlite-tracing" }
 betterlite-vertex = { path = "../betterlite-vertex" }
@@ -97,7 +98,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 subtle.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
-tokio-postgres.workspace = true
+tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tower = { workspace = true, features = ["timeout"] }
 tracing.workspace = true
@@ -120,7 +121,6 @@ rustls = { workspace = true, features = ["std", "tls12"] }
 signal-hook = { version = "0.4.6", default-features = false }
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["test-util"] }
-tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tower = { workspace = true, features = ["util"] }
 

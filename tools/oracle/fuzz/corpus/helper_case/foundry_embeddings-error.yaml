@@ -1,0 +1,17 @@
+kind: helper
+name: foundry-embeddings-error-seed
+call:
+  foundry_embeddings:
+    flows:
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: null
+        api_key: null
+        timeout: 5
+        image_reply: {status: 404, headers: [], body: missing}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":null,"model":"text-model"}'}
+        client: none
+env: {}
+compare: {ignore: []}
