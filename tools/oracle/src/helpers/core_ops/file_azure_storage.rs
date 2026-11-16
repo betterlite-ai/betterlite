@@ -2,11 +2,10 @@ use std::time::Duration;
 
 use betterlite_core::api::file_azure_storage::naming::{generated_file_name, naming_strategy};
 use betterlite_logging::azure_storage_logging::filename::IdSource;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
-
-use crate::helpers::OrHelperError as _;
-use crate::helpers::{Helper, HelperError, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
