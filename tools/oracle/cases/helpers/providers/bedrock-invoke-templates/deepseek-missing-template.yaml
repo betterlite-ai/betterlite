@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-invoke-templates-deepseek-missing-template
+call:
+  b9962:
+    cases:
+      - model: deepseek_r1/deepseek.r1-v1:0
+        messages: [{role: user, content: hi}]
+        provider: deepseek_r1
+        hf_model: deepseek-r1/deepseek-r1-7b-instruct
+env: {}
+compare: {ignore: []}
