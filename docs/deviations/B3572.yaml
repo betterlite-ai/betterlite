@@ -19,30 +19,6 @@ deviations:
       LiteLLM preserves this order: read the body, close the resource, then rethrow.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L114-L126
   - what: >-
-      The provider stream collector is built at flush time by an owning adapter over a
-      bounded copy of the relayed chunks, instead of once in the stream constructor.
-    why: >-
-      B3570's create_stream_collector borrows the provider config and returns a boxed
-      collector tied to &self, and the flush runs in a background task that outlives the
-      request borrow, so a collector built from that borrow cannot move into the task.
-      Sharing one collector through Arc with a Mutex was rejected because the collector still
-      borrows the config and the relay would take a lock per chunk. Leaking the request-scoped
-      config was rejected because it leaks one config per stream. The clean fix is an owning
-      collector in betterlite-openai (create_stream_collector taking the config by value, or a
-      bounded chunk buffer both collectors use and move chunks between), which is a change to
-      B3570's collector contract and outside this task's scope. A self-referential container
-      (self_cell or ouroboros) would let the adapter own the config and the collector borrowing
-      it, but neither crate is in Cargo.lock and the workspace forbids unsafe, so the option
-      needs a new dependency that a dispatched run cannot compile-verify. Creating the collector
-      inside a task fed by a channel was rejected because the blocking relay would then hold an
-      injected executor thread for the whole stream, and an inline executor would deadlock at
-      construction. Calling handle_collected_chunks directly at flush was rejected because it
-      bypasses create_stream_collector, which B3570 owns. Until then the adapter keeps
-      the same 16 MiB bound as B3570 and feeds the provider collector the identical bytes in
-      the same order before build_logged_response, so what gets logged does not change; a
-      stream that never reaches a flush never constructs a collector.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L42-L47
-  - what: >-
       The status_code and headers property guard is a typed PassthroughStreamError::NotInitialized
       carrying the field name, not a RuntimeError; the message names AsyncPassthroughStream
       instead of AsyncPassthroughStreamingResponse. Awaiting a send that is already consumed
