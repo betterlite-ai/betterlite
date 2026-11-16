@@ -1,0 +1,10 @@
+kind: helper
+name: foundry-responses-missing-base-seed
+call:
+  foundry_responses:
+    steps:
+      - kind: missing_base
+        global_api_base: https://seed-global.services.ai.azure.com
+      - kind: missing_base
+env: {}
+compare: {ignore: []}

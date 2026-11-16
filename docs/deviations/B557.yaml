@@ -1,0 +1,21 @@
+task: B557
+deviations:
+  - what: >-
+      The Foundry Decisions route cannot fail: a base httpx cannot parse (a bad port, a non-printable character, or a
+      decoded path holding '?' or '#') comes back as the configured api_base unchanged, where LiteLLM's get_complete_url
+      raises httpx.InvalidURL before any request is built.
+    why: >-
+      get_complete_url is declared on the shared DecisionsProviderConfig trait as a plain String return, so the Foundry
+      implementation has no error channel there and leaves a base it cannot rewrite for the transport to reject. The
+      route, query and fragment rules on every base a working setup can configure are the ones LiteLLM proves.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/decisions/transformation.py#L21-L24
+  - what: >-
+      The Foundry Responses route reports a base it cannot parse or rewrite as betterlite's typed URL error, whose
+      message names the invalid URL or the '?' or '#' path, where LiteLLM surfaces httpx.InvalidURL from the same
+      _responses_url call; both failures carry no HTTP status of their own.
+    why: >-
+      betterlite's shared httpx URL parser returns its own InvalidUrl for a base httpx rejects, and the Responses task
+      reuses the path a base cannot carry from the Azure Responses task, so the failure is an error either way and only
+      the error class and message differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/responses/transformation.py#L18-L22
+kept_bugs: []

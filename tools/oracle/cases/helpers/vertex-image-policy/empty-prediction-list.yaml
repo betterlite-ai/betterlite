@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-image-policy-empty-prediction-list
+call:
+  vertex_image_policy:
+    models: []
+    billing: []
+    replies:
+      - {kind: detect, body: {predictions: []}, existing: []}
+env: {}
+compare: {ignore: []}
