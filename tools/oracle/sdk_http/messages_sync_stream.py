@@ -1,5 +1,5 @@
 import logging
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Mapping
 from typing import Final, Literal, Protocol, TypedDict
 
 import httpx
@@ -203,7 +203,7 @@ def next_event(stream: Iterator[dict[str, Json]]) -> dict[str, Json] | None:
 
 class HeldState(Protocol):
     @property
-    def holding_chunk(self) -> object | None: ...
+    def holding_chunk(self) -> Mapping[str, Json] | None: ...
 
 
 def observe(wrapper: Wrapper, source: ProviderChunks) -> State:
