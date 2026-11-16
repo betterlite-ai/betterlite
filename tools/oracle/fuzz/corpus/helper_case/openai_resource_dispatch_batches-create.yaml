@@ -1,0 +1,11 @@
+kind: helper
+name: openai-resource-dispatch-batches-create-seed
+call:
+  openai_resource_dispatch:
+    case: batches_create
+    api_base: https://fixture.test/v1
+    status: 200
+    create: {completion_window: 24h, endpoint: /v1/chat/completions, input_file_id: file-1, metadata: {team: ml}}
+    reply: {id: batch_1, object: batch, endpoint: /v1/chat/completions, input_file_id: file-1, completion_window: 24h, status: validating, created_at: 1700000000, metadata: {team: ml}}
+env: {}
+compare: {ignore: []}

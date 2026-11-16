@@ -1,0 +1,1 @@
+{"id": "chat-2", "created": 1701, "model": "m", "choices": [{"index": 0, "finish_reason": "tool_calls", "message": {"role": "assistant", "content": null, "tool_calls": [{"id": "call-1", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\": \"Paris\"}"}}]}}], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}

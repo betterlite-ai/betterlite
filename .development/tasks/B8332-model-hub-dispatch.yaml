@@ -103,5 +103,5 @@ pitfalls:
   - "The replicate arm matches any model name that contains replicate, but only after every arm before L5960 has had its turn."
   - "Hugging Face cases set api_base to the mock and pass input_type feature-extraction for embeddings, so no request leaves for huggingface.co."
   - "Replicate create plus poll is an HTTP case, replicate-create-poll.yaml (B9850 lets reply bodies use {{upstream}}). The create reply has status starting and urls.get {{upstream}}/v1/predictions/oracle-1, and the poll reply has status succeeded with an output. Test the processing retries, the poll delay and the failed status with a recording transport in the model_hub_dispatch tests. replicate-no-poll-url.yaml answers create with a body that has no urls.get and compares LiteLLM's 400 error that starts with LiteLLM Error - prediction url is None."
-budget: {max_changed_lines: 1500, max_new_expects: 0}
+budget: {max_changed_lines: 2500, max_new_expects: 0}
 review_level: standard

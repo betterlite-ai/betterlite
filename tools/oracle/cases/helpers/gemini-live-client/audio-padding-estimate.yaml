@@ -1,0 +1,39 @@
+kind: helper
+name: audio-padding-estimate
+call:
+  gemini_live_client:
+    op: client
+    steps:
+      - kind: message
+        message: '{"type": "input_audio_buffer.append", "audio": "QUJD"}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.append", "audio": "QQ=="}'
+      - {kind: audio_pending}
+      - kind: message
+        message: '{"type": "input_audio_buffer.append", "audio": "QUI="}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.append", "audio": "QQ"}'
+      - {kind: audio_pending}
+      - kind: message
+        message: '{"type": "input_audio_buffer.append", "audio": "Q"}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.append", "audio": "="}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.append", "audio": "=="}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.append", "audio": ""}'
+      - {kind: audio_pending}
+      - kind: message
+        message: '{"type": "input_audio_buffer.append", "audio": "!!!!"}'
+      - {kind: audio_pending}
+calls:
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '{"type": "input_audio_buffer.append", "audio": "AAAA"}'
+        - kind: message
+          message: '{"type": "input_audio_buffer.append", "audio": "AAA="}'
+        - {kind: audio_pending}
+env: {}
+compare: {ignore: []}

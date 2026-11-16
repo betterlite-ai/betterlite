@@ -1,0 +1,1 @@
+{"detail": [{"loc": ["body", "prompt"], "msg": "field required", "type": "value_error.missing"}, {"loc": "seconds", "msg": "bad seconds"}, {"loc": []}, 5]}

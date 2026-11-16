@@ -1,0 +1,18 @@
+kind: helper
+name: vertex-imagen-edit-base64-key-fallback
+call:
+  vertex_imagen_edit:
+    model: imagen-3.0-capability-001
+    prompt: paint the sky teal
+    image:
+      - kind: mapping
+        data: "not base64!"
+        bytes: iVBORw0KGgo=
+        content: null
+        path: null
+    mask: null
+    optional_params: {}
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}
