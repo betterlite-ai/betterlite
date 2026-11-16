@@ -4656,6 +4656,7 @@ name = "betterlite-vertex-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
+ "betterlite-config",
  "betterlite-http",
  "betterlite-models",
  "betterlite-tokenizer",
