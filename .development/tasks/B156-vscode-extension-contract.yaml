@@ -78,7 +78,7 @@ deviations:
   - what: The extension talks to betterlite under the vendor id betterlite and the user agent betterlite-vscode/0.1.0, not LiteLLM's names.
     why: B7770 rebrands the package; the gateway treats the user agent as opaque, so the cases pin it only to match the extension.
 out_of_scope:
-  - "Anything that only a real release can prove: installing the .vsix in a running VS Code, the marketplace listing and the publisher account. B7770 proves the package builds; Max decides when to publish."
+  - "Anything that only a real release can prove: installing the .vsix in a running VS Code, the marketplace listing and the publisher account. B7770 proves the package builds; the architect publishes at the first release."
   - "Virtual key scoping of the model list (a key limited to some models). B060 and B124 own it and need a database; the cases use the master key."
   - "The extension's build, packaging and unit tests (B7770)."
   - "Adding node and npm to the gate toolchain and CI image, and excluding package-lock.json from the line budget (architect)."

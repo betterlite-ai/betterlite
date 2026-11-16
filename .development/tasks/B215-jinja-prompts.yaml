@@ -7,7 +7,7 @@ description: >-
   strftime_now; bound template bytes, fuel and output. raise_exception returns a displayable Exception value, rendering
   Error message - <msg>; it does not raise, so system probing returns true in that case. Only real rendering errors
   trigger alternation fallback, which omits add_generation_prompt. Public input is typed LocalTemplate {chat_template,
-  bos_token, eos_token}; no new config key or remote acquisition is introduced while Max decides. Budget 240 renderer/local
+  bos_token, eos_token}; no new config key or remote acquisition is introduced here. Budget 240 renderer/local
   extraction, 110 adapters, 330 tests/fuzz and 70 wiring (750 total). Add the prompt_template cargo-fuzz target,
   call the production parser, and commit/replay malformed and boundary seeds. Write the behavior rstest functions
   jinja_prompts_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure in the
@@ -93,7 +93,7 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B177 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 - >-
-  Remote template/tokenizer-config HTTP fetch functions remain blocked by B177 open decision; do not create an acquisition
+  Remote template/tokenizer-config HTTP fetch functions come in an R2 fix task; do not create an acquisition
   API or new config key.
 pitfalls:
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/jinja_prompts-<case>.yaml. The rest of that folder belongs to other tasks.'
