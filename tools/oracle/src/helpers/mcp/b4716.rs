@@ -1,4 +1,4 @@
-use betterlite_config::sections::mcp_env_values::StdioPolicy;
+use betterlite_config::sections::mcp_env_values::{PayloadRules, StdioPolicy};
 use betterlite_db::mcp::table_access::McpIdentifierConflict;
 use betterlite_db::mcp::table_access::types::IdentifierField;
 use betterlite_db::mcp_stored_contracts::MCPAuth;
@@ -11,7 +11,7 @@ use betterlite_mcp::server_payload::request::{NewMCPServerRequest, UpdateMCPServ
 // ast-grep-ignore: no-long-names
 use betterlite_mcp::server_payload::request::is_per_server_oauth_discovery_eligible;
 use betterlite_mcp::server_payload::rules::{
-    PayloadRules, identifier_conflict_message, stamp_omitted_oauth2_flow,
+    identifier_conflict_message, stamp_omitted_oauth2_flow,
 };
 use betterlite_mcp::server_payload::{PayloadError, RequestError};
 use betterlite_mcp::server_record::OAuth2Flow;

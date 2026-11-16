@@ -61,16 +61,19 @@ fn the_separator_is_read_with_an_empty_value_meaning_unset() {
 #[case::lowercase_true("true", true)]
 #[case::trimmed_uppercase_true(" TRUE ", true)]
 #[case::capitalized_true("True", true)]
-#[case::yes("yes", false)]
-#[case::one("1", false)]
-#[case::prefixed_true("truex", false)]
+#[case::yes("yes", true)]
+#[case::one("1", true)]
+#[case::false_text("false", false)]
+#[case::zero("0", false)]
 #[case::empty("", false)]
-fn stdio_is_enabled_only_for_true_after_trim_and_lowercase(
-    #[case] value: &str,
-    #[case] expected: bool,
-) {
+fn stdio_flag_follows_the_shared_parser(#[case] value: &str, #[case] expected: bool) {
     let rules = load(&[("LITELLM_ENABLE_MCP_STDIO", value)]).unwrap();
     assert_eq!(rules.stdio.enabled, expected, "{value:?}");
+}
+
+#[test]
+fn a_stdio_flag_that_is_not_a_bool_is_a_config_error() {
+    assert!(load(&[("LITELLM_ENABLE_MCP_STDIO", "truex")]).is_err());
 }
 
 #[test]

@@ -162,30 +162,25 @@ fn the_display_name_pattern_follows_python_dollar() {
 }
 
 #[rstest]
-#[case::two_trailing_newlines("abc\n\n")]
-#[case::dot("a.b")]
-#[case::space("a b")]
-#[case::non_ascii("café")]
-fn an_invalid_display_name_pattern_is_rejected(#[case] display_name: &str) {
+#[case::two_trailing_newlines("abc\n\n", false)]
+#[case::dot("a.b", false)]
+#[case::space("a b", false)]
+#[case::non_ascii("café", false)]
+#[case::only_a_newline("\n", false)]
+#[case::plain("abc", true)]
+#[case::underscore("a_b", true)]
+#[case::hyphen("a-b", true)]
+#[case::mixed("A1", true)]
+fn the_display_name_pattern_accepts_only_its_alphabet(
+    #[case] display_name: &str,
+    #[case] accepted: bool,
+) {
     let mut names = OrderedMap::new();
     names.insert("tool".to_owned(), display_name.to_owned());
-    assert!(
-        validate_tool_display_names(&names).is_err(),
-        "{display_name} should be rejected"
-    );
-}
-
-#[rstest]
-#[case::plain("abc")]
-#[case::underscore("a_b")]
-#[case::hyphen("a-b")]
-#[case::mixed("A1")]
-fn a_valid_display_name_pattern_is_accepted(#[case] display_name: &str) {
-    let mut names = OrderedMap::new();
-    names.insert("tool".to_owned(), display_name.to_owned());
-    assert!(
+    assert_eq!(
         validate_tool_display_names(&names).is_ok(),
-        "{display_name} should be accepted"
+        accepted,
+        "{display_name}"
     );
 }
 

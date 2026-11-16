@@ -1,7 +1,8 @@
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 use serde::Deserialize;
-use std::collections::BTreeSet;
+use serde::de::IgnoredAny;
+use std::collections::{BTreeMap, BTreeSet};
 mod tests;
 const PREFIX_SEPARATOR_VAR: &str = "MCP_TOOL_PREFIX_SEPARATOR";
 const STDIO_ENABLED_VAR: &str = "LITELLM_ENABLE_MCP_STDIO";
@@ -10,8 +11,10 @@ const DEFAULT_PREFIX_SEPARATOR: &str = "-";
 // litellm/constants.py's MCP_STDIO_ALLOWED_COMMANDS base set
 const BASE_ALLOWED_COMMANDS: [&str; 7] =
     ["npx", "uvx", "python", "python3", "node", "docker", "deno"];
-#[derive(Debug, Default, Deserialize)]
-pub struct Raw {}
+// env-only section: no YAML key is read here
+#[derive(Default, Deserialize)]
+#[serde(transparent)]
+pub struct Raw(pub BTreeMap<String, Box<IgnoredAny>>);
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct StdioPolicy {
     pub enabled: bool,
@@ -44,23 +47,18 @@ impl Section for Raw {
             .lookup(PREFIX_SEPARATOR_VAR)
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| DEFAULT_PREFIX_SEPARATOR.to_owned());
+        let flag_text = lookup.lookup(STDIO_ENABLED_VAR).unwrap_or_default();
+        let enabled = betterlite_env::flag(STDIO_ENABLED_VAR, &flag_text)?.unwrap_or(false);
         Ok(PayloadRules {
             prefix_separator,
             stdio: StdioPolicy {
-                enabled: stdio_enabled(lookup.lookup(STDIO_ENABLED_VAR).as_deref()),
+                enabled,
                 allowed_commands: allowed_commands(
                     lookup.lookup(STDIO_EXTRA_COMMANDS_VAR).as_deref(),
                 ),
             },
         })
     }
-}
-// stdio_gate.py's is_mcp_stdio_enabled: strip, lowercase, then compare with "true"
-fn stdio_enabled(value: Option<&str>) -> bool {
-    let Some(text) = value else {
-        return false;
-    };
-    text.trim().eq_ignore_ascii_case("true")
 }
 // constants.py: the base set plus the comma parts of the extra list, empty parts dropped
 fn allowed_commands(extra: Option<&str>) -> BTreeSet<String> {

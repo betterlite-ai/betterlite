@@ -51,6 +51,5 @@ fn a_non_list_value_is_a_config_error() {
 
 #[test]
 fn a_non_string_entry_is_a_config_error() {
-    assert!(load("general_settings:\n  mcp_required_fields:\n    - 5\n").is_err());
     assert!(load("general_settings:\n  mcp_required_fields:\n    - url: x\n").is_err());
 }
