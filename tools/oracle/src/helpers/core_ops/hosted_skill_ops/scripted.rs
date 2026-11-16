@@ -8,6 +8,7 @@ use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::skills::SkillTable;
 use betterlite_db::managed_resource_rows::wire::RowTimestamp;
+use betterlite_oracle_helper_api::error::HelperError;
 use serde_json::{Value, json};
 
 use super::{Input, invalid_input};
@@ -25,7 +26,7 @@ pub(super) struct Scripted {
 }
 
 impl Scripted {
-    pub(super) fn new(input: &Input) -> Result<Self, Box<crate::helpers::HelperError>> {
+    pub(super) fn new(input: &Input) -> Result<Self, Box<HelperError>> {
         let now: RowTimestamp = serde_json::from_value(Value::String(input.now.clone()))
             .map_err(|error| invalid_input(error.to_string()))?;
         let rows = input

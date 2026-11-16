@@ -18,6 +18,8 @@ use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
 };
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -45,7 +47,7 @@ impl Call<'_> {
         step: &Step,
         caller: Option<&Principal>,
         logging: &mut LoggingState,
-    ) -> crate::helpers::HelperResult {
+    ) -> HelperResult {
         let call_id = step.litellm_call_id.as_deref();
         match self {
             Self::Create => {
@@ -112,7 +114,7 @@ const fn token(error: &HostedSkillOpsError) -> &'static str {
     }
 }
 
-fn principal_of(fields: &PrincipalFields) -> Result<Principal, Box<crate::helpers::HelperError>> {
+fn principal_of(fields: &PrincipalFields) -> Result<Principal, Box<HelperError>> {
     let mut teams = Vec::new();
     if let Some(id) = &fields.team_id {
         teams.push(json!({"id": id}));
@@ -135,7 +137,7 @@ fn principal_of(fields: &PrincipalFields) -> Result<Principal, Box<crate::helper
     serde_json::from_value(value).map_err(|error| invalid_input(error.to_string()))
 }
 
-fn logging_state(action: &str) -> Result<LoggingState, Box<crate::helpers::HelperError>> {
+fn logging_state(action: &str) -> Result<LoggingState, Box<HelperError>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
         .map_err(|error| invalid_input(error.to_string()))?;
     let mut correlation = CorrelationContext::default();
@@ -188,10 +190,7 @@ fn logging_view(logging: &LoggingState) -> Value {
     })
 }
 
-fn with_logging(
-    mut answer: Value,
-    logging: &LoggingState,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn with_logging(mut answer: Value, logging: &LoggingState) -> Result<Value, Box<HelperError>> {
     let Value::Object(fields) = &mut answer else {
         return Err(invalid_input("a step answer must be an object".to_owned()));
     };
@@ -202,7 +201,7 @@ fn with_logging(
 pub(super) async fn run_steps<R>(
     ops: &HostedSkillOps<R>,
     steps: &[Step],
-) -> Result<Vec<Value>, Box<crate::helpers::HelperError>>
+) -> Result<Vec<Value>, Box<HelperError>>
 where
     R: SkillRepository,
 {
@@ -213,10 +212,7 @@ where
     Ok(answers)
 }
 
-async fn run_step<R>(
-    ops: &HostedSkillOps<R>,
-    step: &Step,
-) -> Result<Value, Box<crate::helpers::HelperError>>
+async fn run_step<R>(ops: &HostedSkillOps<R>, step: &Step) -> Result<Value, Box<HelperError>>
 where
     R: SkillRepository,
 {

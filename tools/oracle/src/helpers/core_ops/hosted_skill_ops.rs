@@ -13,10 +13,10 @@ use betterlite_core::skills::operations::{
 use betterlite_core::skills::store::{HostedSkillStore, SkillIdSource};
 use betterlite_db::managed_resource_rows::skills::SkillTable;
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
-
-use crate::helpers::{Helper, HelperError, HelperResult};
 
 use scripted::Scripted;
 use steps::run_steps;
