@@ -11,6 +11,8 @@
     )
 )]
 
+mod warn;
+
 use betterlite_core::api::realtime_contracts::events::AllDeltaType;
 use betterlite_prompts::arguments::json::Json;
 use serde_json::json;

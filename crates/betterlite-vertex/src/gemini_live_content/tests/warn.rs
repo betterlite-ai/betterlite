@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tempfile::NamedTempFile;
 use tracing::subscriber::with_default;
 
-use super::map::{MappedEvent, map_model_turn_event};
+use crate::gemini_live_content::map::{MappedEvent, map_model_turn_event};
 
 fn warnings_of<Run>(run: Run) -> String
 where
