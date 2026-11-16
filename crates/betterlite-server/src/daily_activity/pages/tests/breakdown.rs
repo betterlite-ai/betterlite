@@ -174,6 +174,18 @@ fn unknown_api_keys_are_marked_missing() {
 }
 
 #[test]
+fn archived_key_rows_keep_their_missing_flag() {
+    let mut archived = key_row("sk-gone", "alias-gone");
+    archived.key_exists = false;
+    let fixture = BreakdownFixture::default().with_key_row(archived);
+    let record = spend_record("2025-03-10", "sk-gone");
+    let breakdown = breakdown_of(&[record], &fixture).unwrap();
+    let metadata = &breakdown.api_keys["sk-gone"].metadata;
+    assert_eq!(metadata.key_alias.as_deref(), Some("alias-gone"));
+    assert_eq!(metadata.key_exists, Some(false));
+}
+
+#[test]
 fn missing_values_leave_the_dimensions_empty() {
     let fixture = BreakdownFixture::default();
     let record = spend_record("2025-03-10", "sk-real");
