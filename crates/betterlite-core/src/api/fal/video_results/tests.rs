@@ -229,7 +229,9 @@ fn a_completed_job_probe_error_fails_the_video() {
 #[case::server_error(Step::Answer(500, b"boom".to_vec()))]
 #[case::rate_limited(Step::Answer(429, b"rate limited".to_vec()))]
 #[case::unavailable(Step::Answer(503, b"".to_vec()))]
-#[case::unsupported_scheme(Step::Fail(TransportError::RedirectScheme { scheme: "ftp".into() }))]
+#[case::unsupported_scheme(Step::Fail(TransportError::RedirectScheme {
+    scheme: Box::from("ftp")
+}))]
 fn a_transient_probe_failure_keeps_the_completed_status(#[case] step: Step) {
     let transport = FakeTransport::new(vec![step]);
     let reply = status_reply(r#"{"status": "COMPLETED", "request_id": "req-1"}"#);
@@ -577,7 +579,7 @@ fn an_unsuccessful_artifact_status_is_an_error() {
 #[test]
 fn an_artifact_transport_failure_is_an_error() {
     let transport = FakeTransport::new(vec![Step::Fail(TransportError::RedirectScheme {
-        scheme: "ftp".into(),
+        scheme: Box::from("ftp"),
     })]);
     let reply = content_reply(
         200,

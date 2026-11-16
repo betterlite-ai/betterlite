@@ -56,7 +56,7 @@ impl VideoTransport for ScriptedTransport {
             }),
             // the scripted failure is the transient class LiteLLM's probe swallows: an unsupported redirect scheme
             None => Err(TransportError::RedirectScheme {
-                scheme: "ftp".into(),
+                scheme: Box::from("ftp"),
             }),
         }
     }
