@@ -120,6 +120,8 @@ description: >-
   the vendor got with its path, headers and body (the adapter waits for Akto's background sends).
 scope:
   paths:
+    - "crates/betterlite-guardrails/src/lasso/wire.rs"
+    - "crates/betterlite-guardrails/src/lasso.rs"
     - crates/betterlite-guardrails/src/third_party_hooks_a.rs
     - crates/betterlite-guardrails/src/third_party_hooks_a/**
     - tools/oracle/cases/guardrails/third-party-hooks-a/**
