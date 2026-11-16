@@ -10,7 +10,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use transport::{FixtureOutcome, FixtureTransport, reply_outcome};
 
@@ -284,7 +285,7 @@ fn model_fields(input: &ModelFields) -> HelperResult {
     Ok(json!(observations))
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

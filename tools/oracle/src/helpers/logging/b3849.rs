@@ -10,7 +10,8 @@ use opentelemetry::trace::{
 use opentelemetry_sdk::trace::{SpanData, SpanEvents, SpanLinks};
 use serde_json::{Value as Json, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use input::{Input, SpanInput};
 use values::{attributes_of, view_json};

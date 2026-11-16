@@ -174,7 +174,7 @@ out_of_scope:
     dependency, not in this task.
 
 pitfalls:
-  - "Register helper operation `store_authorization` in the `store_authorization` group before this task runs by adding it to tools/oracle/src/helpers/mod.rs GROUPS and tools/oracle/helpers/b3463.py OPERATIONS."
+  - "Register helper operation `store_authorization` in the `store_authorization` group before this task runs by adding it to tools/oracle/src/helpers.rs GROUPS and tools/oracle/helpers/b3463.py OPERATIONS."
   - "The over-depth list case is subtle: when a list is encountered at over-depth,
     the code does not recurse into the list items, but it checks whether any item
     is a dict or list and raises depth-exceeded if so. This is a flat-list return

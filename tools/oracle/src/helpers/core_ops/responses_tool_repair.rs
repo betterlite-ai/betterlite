@@ -6,6 +6,7 @@ use betterlite_core::api::responses_tool_repair::value::Value;
 use betterlite_core::api::responses_tool_repair::{
     call_exists, recover_call_id, repair_tool_results, tool_calls_of,
 };
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
@@ -90,10 +91,10 @@ fn operate(input: &Input) -> Result<serde_json::Value, RepairError> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         // LiteLLM's helper reports a failing getter or a missing get method as a name, not a Python exception
         let outcome = operate(input).unwrap_or_else(|error| match error {
             RepairError::NoGetMethod => json!({"error": "no_get_method"}),

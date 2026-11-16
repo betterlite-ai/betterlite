@@ -11,7 +11,7 @@ description: >-
   _list_mcp_prompts, _list_mcp_resources, _list_mcp_resource_templates and
   _list_tools_before_first_call (the warm-up listing before a first tool call).
 
-  The plan registers helper operation b8197 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8197.rs, write tools/oracle/helpers/b8197.py, and leave both registries as they are.
+  The plan registers helper operation b8197 as a not_built stub in tools/oracle/src/helpers/mcp/lib.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8197.rs, write tools/oracle/helpers/b8197.py, and leave both registries as they are.
 
 scope:
   paths:

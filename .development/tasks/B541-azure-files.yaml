@@ -155,7 +155,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_batches*")"
       && grep -lq 'azure_batches' tools/oracle/fuzz/corpus/helper_case/azure_batches* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_batches$/)' && cargo nextest run
+      -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_batches$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-list-after-limit
     why: List always passes after=None and limit=None by default, forwards explicit values and returns the SDK page

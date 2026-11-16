@@ -1,10 +1,10 @@
-use crate::compare::helper::HelperError;
-use crate::helpers::{Helper, HelperResult};
 use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_logging::logging_privacy::request::{Decision, Flag, PrivacyRequest};
 use betterlite_logging::logging_privacy::snapshot::{callback_snapshot, redact_user_api_key_info};
 use betterlite_logging::logging_privacy::{CallbackMetadataError, PrivacyContext};
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use serde::Deserialize;

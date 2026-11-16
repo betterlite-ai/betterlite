@@ -263,7 +263,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_chat_content*")"
       && grep -lq 'openai_chat_content' tools/oracle/fuzz/corpus/helper_case/openai_chat_content* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_chat_content$/)'
+      run --locked -p betterlite-oracle-openai --no-tests=fail -E 'test(/::helper_seeds_select_openai_chat_content$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-openai-system-messages-first
     why: The openai_system_messages_first setting is not loaded with its required defaults and precedence.
@@ -297,8 +297,7 @@ deviations:
 - what: Request file/PDF URLs are never fetched. A file_id requiring downloaded bytes returns ImageFetchError status
     400 before provider transport; inline data and provider-forwardable URL descriptors continue unchanged. Authorized
     local files only remain available.
-  why: The URL-download product decision is open. Build no downloader, request-path filesystem access or follow-on
-    feature that depends on fetching.
+  why: B5083's downloader is not wired into this path yet. Request media URLs are fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L233-L548
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers

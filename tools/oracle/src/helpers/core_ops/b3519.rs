@@ -14,12 +14,16 @@ use betterlite_provider::sandbox_dispatch::request::{
 };
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret, SecretString};
-use serde_json::Value;
+use serde_json::{Value, value};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use input::{CreateInput, DeleteInput, Input, RegistryInput, RunInput};
+use serde_json::value::RawValue;
+use std::fmt::Display;
 use support::{Environment, FakeHttp, StepClock, container_value, secrets};
+use tokio::runtime::Builder;
 
 type Dispatch = SandboxDispatch<
     E2bSandbox<FakeHttp, Environment>,
@@ -146,7 +150,7 @@ fn create_request<'call>(
     input: &'call CreateInput,
     api_key: Option<&'call SecretString>,
     kwargs: &'call IndexMap<String, Json>,
-    network_policy: Option<&'call serde_json::value::RawValue>,
+    network_policy: Option<&'call RawValue>,
 ) -> Result<CreateSandbox<'call>, Box<HelperError>> {
     Ok(CreateSandbox {
         call: SandboxCall {
@@ -172,15 +176,12 @@ fn create_request<'call>(
     })
 }
 
-fn raw_policy(
-    input: &CreateInput,
-) -> Result<Option<Box<serde_json::value::RawValue>>, Box<HelperError>> {
+fn raw_policy(input: &CreateInput) -> Result<Option<Box<RawValue>>, Box<HelperError>> {
     input
         .network_policy
         .as_ref()
         .map(|policy| {
-            serde_json::value::to_raw_value(policy)
-                .map_err(|error| helper_error("ValueError", error))
+            value::to_raw_value(policy).map_err(|error| helper_error("ValueError", error))
         })
         .transpose()
 }
@@ -196,9 +197,9 @@ fn duration(seconds: Option<f64>) -> Result<Option<Duration>, Box<HelperError>> 
 fn block_on<Output, Failure, Work>(work: Work) -> Result<Output, Box<HelperError>>
 where
     Work: Future<Output = Result<Output, Failure>>,
-    Failure: std::fmt::Display,
+    Failure: Display,
 {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| helper_error("RuntimeError", error))?;
     runtime
@@ -208,7 +209,7 @@ where
 
 fn helper_error<Message>(class: &str, message: Message) -> Box<HelperError>
 where
-    Message: std::fmt::Display,
+    Message: Display,
 {
     Box::new(HelperError {
         class: class.to_owned(),

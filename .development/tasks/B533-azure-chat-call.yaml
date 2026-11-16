@@ -237,7 +237,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_chat_call*")"
       && grep -lq 'azure_chat_call' tools/oracle/fuzz/corpus/helper_case/azure_chat_call* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_chat_call$/)' && cargo nextest
+      -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_chat_call$/)' && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-missing-model-messages-422
     why: A None model or messages raises AzureOpenAIError 422 (Missing model or messages); empty values do not trigger
