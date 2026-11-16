@@ -93,6 +93,8 @@ pub struct ContainerFileUpload {
     pub file_data: FileData,
 }
 
+pub type ReplyResult = Result<ContainerFileReply, ContainerFileHttpError>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerFileReply {
     List(ContainerFileListResponse),
@@ -139,10 +141,7 @@ fn find_endpoint(name: &str) -> Result<ContainerEndpoint, ContainerFileHttpError
 }
 
 impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Hook> {
-    pub fn handle(
-        &self,
-        call: &ContainerFileHttpCall<'_, Source>,
-    ) -> Result<ContainerFileReply, ContainerFileHttpError> {
+    pub fn handle(&self, call: &ContainerFileHttpCall<'_, Source>) -> ReplyResult {
         let waker = Waker::noop();
         let mut context = Context::from_waker(waker);
         let mut running = pin!(self.lookup_and_run::<BlockingKind>(call));
@@ -152,19 +151,15 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
         }
     }
 
-    pub async fn ahandle(
-        &self,
-        call: &ContainerFileHttpCall<'_, Source>,
-    ) -> Result<ContainerFileReply, ContainerFileHttpError> {
-        let endpoint = find_endpoint(call.endpoint_name)?;
-        let params = read_params(call.litellm_params)?;
+    pub async fn ahandle(&self, call: &ContainerFileHttpCall<'_, Source>) -> ReplyResult {
+        let (endpoint, params) = (
+            find_endpoint(call.endpoint_name)?,
+            read_params(call.litellm_params)?,
+        );
         self.run::<AsyncKind>(call, &endpoint, &params).await
     }
 
-    async fn lookup_and_run<Mode>(
-        &self,
-        call: &ContainerFileHttpCall<'_, Source>,
-    ) -> Result<ContainerFileReply, ContainerFileHttpError>
+    async fn lookup_and_run<Mode>(&self, call: &ContainerFileHttpCall<'_, Source>) -> ReplyResult
     where
         Mode: Channel<Source>,
     {
@@ -179,7 +174,7 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
         call: &ContainerFileHttpCall<'_, Source>,
         endpoint: &ContainerEndpoint,
         params: &CallParams<'_>,
-    ) -> Result<ContainerFileReply, ContainerFileHttpError>
+    ) -> ReplyResult
     where
         Mode: Channel<Source>,
     {
