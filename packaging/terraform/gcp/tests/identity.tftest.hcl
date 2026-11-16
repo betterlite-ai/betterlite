@@ -96,8 +96,12 @@ run "runtime_account_gets_accessor_on_every_secret" {
       google_secret_manager_secret_iam_member.db_password.member == "serviceAccount:${google_service_account.runtime.email}",
       length(google_secret_manager_secret_iam_member.license) == 1,
       google_secret_manager_secret_iam_member.license[0].secret_id == google_secret_manager_secret.license[0].id,
+      google_secret_manager_secret_iam_member.license[0].role == "roles/secretmanager.secretAccessor",
+      google_secret_manager_secret_iam_member.license[0].member == "serviceAccount:${google_service_account.runtime.email}",
       length(google_secret_manager_secret_iam_member.ui_password) == 1,
       google_secret_manager_secret_iam_member.ui_password[0].secret_id == google_secret_manager_secret.ui_password[0].id,
+      google_secret_manager_secret_iam_member.ui_password[0].role == "roles/secretmanager.secretAccessor",
+      google_secret_manager_secret_iam_member.ui_password[0].member == "serviceAccount:${google_service_account.runtime.email}",
       length(google_secret_manager_secret_iam_member.extra_secrets) == 1,
       alltrue([
         for id, binding in google_secret_manager_secret_iam_member.extra_secrets :
@@ -151,8 +155,12 @@ run "runtime_account_id_fits_the_thirty_character_limit" {
   command = plan
 
   assert {
-    condition     = google_service_account.runtime.account_id == "tenant-test-betterlite-runtime" && length(google_service_account.runtime.account_id) <= 30
-    error_message = "The runtime account id must be the module name plus -runtime and must stay within 30 characters."
+    condition = alltrue([
+      google_service_account.runtime.account_id == "tenant-test-betterlite-runtime",
+      length(google_service_account.runtime.account_id) <= 30,
+      google_service_account.runtime.display_name == "betterlite runtime",
+    ])
+    error_message = "The runtime account id must be the module name plus -runtime and must stay within 30 characters, and its display name must say what it is for."
   }
 }
 
