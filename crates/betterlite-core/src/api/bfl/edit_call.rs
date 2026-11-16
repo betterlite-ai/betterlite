@@ -154,7 +154,7 @@ fn log_pre_call(
     prepared: &PreparedEdit,
     log: &mut LogContext<'_, '_>,
 ) -> Result<(), EditCallError> {
-    let mut headers: IndexMap<String, Json> = IndexMap::new();
+    let mut headers = IndexMap::new();
     for (name, value) in &prepared.headers {
         let text = str::from_utf8(value.as_bytes()).map_or_else(
             |_| format!("{} bytes that are not UTF-8", value.as_bytes().len()),
