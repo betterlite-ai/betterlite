@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::merge::convert_stringified_numbers;
 use betterlite_openai::image_generation::family::{
     ImageFamily, map_openai_params as map_gpt_params,
 };
@@ -127,24 +128,32 @@ fn size_dimensions(size: &str) -> Option<(Number, Number)> {
     Some((whole_number(width)?, whole_number(height)?))
 }
 
-// Python's int() takes surrounding whitespace, one sign and digit-grouping underscores, and keeps every digit
+// betterlite-models builds the number from the int() text cleaned below and keeps every digit
 fn whole_number(text: &str) -> Option<Number> {
+    let cleaned = integer_text(text)?;
+    match convert_stringified_numbers(&cleaned) {
+        Json::Number(number) => Some(number),
+        Json::Text(_) | Json::Bool(_) | Json::Null | Json::List(_) | Json::Object(_) => None,
+    }
+}
+
+// Python's int() takes surrounding whitespace, one sign and digit-grouping underscores
+fn integer_text(text: &str) -> Option<String> {
     let trimmed = text.trim();
     let negative = trimmed.starts_with('-');
     let unsigned = trimmed
         .strip_prefix('-')
         .or_else(|| trimmed.strip_prefix('+'))
         .unwrap_or(trimmed);
-    let cleaned = without_underscores(unsigned)?;
-    if cleaned.is_empty() || !cleaned.bytes().all(|byte| byte.is_ascii_digit()) {
+    let digits = without_underscores(unsigned)?;
+    if digits.is_empty() {
         return None;
     }
-    let significant = cleaned.trim_start_matches('0');
-    if significant.is_empty() {
-        return Some(Number::from(0_u8));
+    if digits.bytes().any(|byte| !byte.is_ascii_digit()) {
+        return None;
     }
     let sign = if negative { "-" } else { "" };
-    format!("{sign}{significant}").parse::<Number>().ok()
+    Some(format!("{sign}{digits}"))
 }
 
 // Python's float() also takes surrounding whitespace and grouping underscores

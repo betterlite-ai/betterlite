@@ -72,6 +72,23 @@ fn expect_mapped(non_default: &str, optional: &str, expected: &str) {
     );
 }
 
+fn expect_whole_number(value: &str) {
+    let text = format!(r#"{{"num_images":{value:?}}}"#);
+    assert_eq!(
+        mapped(&text, "{}", FLUX2, false).expect_err("a whole number"),
+        FoundryImageError::WholeNumber {
+            field: String::from("num_images"),
+            value: String::from(value),
+        }
+    );
+}
+
+fn malformed_numbers() {
+    for value in ["", "  ", "+", "-", "_1", "1_", "1__2", "1e3"] {
+        expect_whole_number(value);
+    }
+}
+
 fn count_fields() {
     expect_mapped(r#"{"n":"2"}"#, "{}", NUM_TWO);
     expect_mapped(r#"{"n":2}"#, "{}", NUM_TWO);
@@ -134,5 +151,13 @@ fn conversion_errors() {
     assert_eq!(
         guidance.to_string(),
         "parameter guidance must be a number, got fast"
+    );
+    malformed_numbers();
+    assert_eq!(
+        mapped(r#"{"guidance":""}"#, "{}", FLUX2, false).expect_err("a number"),
+        FoundryImageError::Decimal {
+            field: String::from("guidance"),
+            value: String::new(),
+        }
     );
 }

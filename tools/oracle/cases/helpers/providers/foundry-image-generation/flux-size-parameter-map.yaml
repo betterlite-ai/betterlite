@@ -20,5 +20,9 @@ call:
       - {model: FLUX.2-pro, non_default_params: {safety_tolerance: "6.5"}, optional_params: {}, drop_params: false}
       - {model: FLUX.2-pro, non_default_params: {guidance: fast}, optional_params: {}, drop_params: false}
       - {model: FLUX.2-pro, non_default_params: {n: "2", style: vivid}, optional_params: {}, drop_params: true}
+      - {model: FLUX.2-pro, non_default_params: {n: ""}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {steps: "1e3"}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {seed: "1_"}, optional_params: {}, drop_params: false}
+      - {model: FLUX.2-pro, non_default_params: {guidance: ""}, optional_params: {}, drop_params: false}
 env: {}
 compare: {ignore: []}
