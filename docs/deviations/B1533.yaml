@@ -18,8 +18,11 @@ deviations:
   - what: The error raised for a failed content reply carries the upstream status, message and headers but not LiteLLM's request and response objects.
     why: betterlite's FalVideoException has no request or response field, so a reader of the exception cannot reach the original httpx response; the proxy's error answer uses only the status and message.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L565-L581
-  - what: A header forwarded from the status request that has an invalid name or value fails the result probe with a typed error before any request is sent, where LiteLLM raises httpx's LocalProtocolError, which is not a TransportError and so leaves _fetch_result_error uncaught.
-    why: betterlite builds typed header names and values with the http crate; both sides refuse to send the header and neither carries the probe out, and a working fal.ai queue request only carries valid headers.
+  - what: A header forwarded from the status request that has an invalid name or value fails the result probe with a typed error before any request is sent, where httpx raises its LocalProtocolError inside LiteLLM's probe call.
+    why: LocalProtocolError is a TransportError subclass, so LiteLLM's probe swallows it and keeps the completed status while betterlite fails the retrieval; both sides refuse to send the header, and a working fal.ai queue request only carries valid headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L468-L486
+  - what: The result probe surfaces betterlite's own transport refusals as a typed error, where LiteLLM follows the redirect or reads the answer and turns it into the job's error; a redirect loop fails the retrieval on both sides.
+    why: An HTTPS-to-HTTP redirect, an answer over the transport's 16 MiB body or its header limit, a target the proxy policy rejected and a shutting-down client all end the probe in betterlite, and httpx has none of those refusals; a redirect loop raises TooManyRedirects in LiteLLM, which is not a TransportError, so both sides fail, though LiteLLM's uncaught exception becomes a 500 where betterlite returns a typed error. A working fal.ai result URL redirects only between HTTPS hosts and answers a small body.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L468-L486
 kept_bugs:
   - what: An empty detail string wins over a non-empty error field, so a reply with detail "" and error "boom" reports no error and keeps its queued or in_progress status.
