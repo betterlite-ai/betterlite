@@ -16,7 +16,7 @@ use betterlite_provider::openai_resource_dispatch::containers::{
     Call as ContainerCall, Dispatch as ContainerDispatch, Outcome as ContainerOutcome,
 };
 use betterlite_provider::openai_resource_dispatch::evals::{
-    Call as EvalsCall, Dispatch as EvalsDispatch, IdCall, Outcome as EvalsOutcome,
+    Call as EvalsCall, Dispatch as EvalsDispatch, EvalRef, Outcome as EvalsOutcome,
 };
 use betterlite_provider::openai_resource_dispatch::vector_stores::{
     Call as VectorCall, Dispatch as VectorDispatch, Outcome as VectorOutcome,
@@ -68,7 +68,9 @@ pub(super) async fn containers_list(case: &ContainersList) -> HelperResult {
         context,
         call,
     }));
-    let outcome = dispatch(operation).await.map_err(leaf_failure)?;
+    let outcome = dispatch(operation)
+        .await
+        .map_err(|error| leaf_failure(&error))?;
     let OpenAiResourceResult::Containers(ContainerOutcome::Request((url, query))) = outcome else {
         return Err(failure("Variant", OTHER_OUTCOME));
     };
@@ -87,7 +89,7 @@ pub(super) async fn evals_get(case: &EvalsGet) -> HelperResult {
         litellm_params: &litellm_params,
         headers: &request_headers,
     };
-    let call = EvalsCall::ById(IdCall::GetEval {
+    let call = EvalsCall::GetEval(EvalRef {
         eval_id: &case.eval_id,
         api_base: &case.api_base,
     });
@@ -96,7 +98,9 @@ pub(super) async fn evals_get(case: &EvalsGet) -> HelperResult {
         context,
         call,
     }));
-    let outcome = dispatch(operation).await.map_err(leaf_failure)?;
+    let outcome = dispatch(operation)
+        .await
+        .map_err(|error| leaf_failure(&error))?;
     let OpenAiResourceResult::Evals(EvalsOutcome::Headers((url, headers))) = outcome else {
         return Err(failure("Variant", OTHER_OUTCOME));
     };
@@ -118,7 +122,9 @@ pub(super) async fn vector_stores_create(case: &VectorStoresCreate) -> HelperRes
         env_api_key: None,
         call,
     }));
-    let outcome = dispatch(operation).await.map_err(leaf_failure)?;
+    let outcome = dispatch(operation)
+        .await
+        .map_err(|error| leaf_failure(&error))?;
     let OpenAiResourceResult::VectorStores(VectorOutcome::Request(request)) = outcome else {
         return Err(failure("Variant", OTHER_OUTCOME));
     };

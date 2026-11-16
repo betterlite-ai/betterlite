@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use betterlite_openai::batches::BatchesApi;
 use betterlite_openai::batches::sdk::{ClientSettings, Connection as BatchConnection};
 use betterlite_openai::files::records::{CreatePurpose, FileCreate, FileUpload};
 use betterlite_openai::files::{FilesApi, FilesClient};
@@ -75,7 +76,9 @@ pub(super) async fn files_create(case: &FilesCreate) -> HelperResult {
         call: FilesCall::Create(&data),
     };
     let operation = OpenAiResourceOperation::Files(Box::pin(call.run()));
-    let outcome = dispatch(operation).await.map_err(leaf_failure)?;
+    let outcome = dispatch(operation)
+        .await
+        .map_err(|error| leaf_failure(&error))?;
     let OpenAiResourceResult::Files(FilesOutcome::Object(file)) = outcome else {
         return Err(failure("Variant", OTHER_OUTCOME));
     };
@@ -83,7 +86,7 @@ pub(super) async fn files_create(case: &FilesCreate) -> HelperResult {
 }
 
 pub(super) async fn batches_create(case: &BatchesCreate) -> HelperResult {
-    let api = betterlite_openai::batches::BatchesApi {
+    let api = BatchesApi {
         constructor: NoClient,
     };
     let connection = BatchConnection {
@@ -100,19 +103,19 @@ pub(super) async fn batches_create(case: &BatchesCreate) -> HelperResult {
         call: BatchCall::Create(&case.create),
     };
     let operation = OpenAiResourceOperation::Batches(Box::pin(call.run()));
-    let outcome = dispatch(operation).await.map_err(leaf_failure)?;
-    let OpenAiResourceResult::Batches(BatchOutcome::Batch(batch)) = outcome else {
-        return Err(failure("Variant", OTHER_OUTCOME));
-    };
-    Ok(json!({ "result": {
-        "id": batch.id,
-        "object": batch.object,
-        "endpoint": batch.endpoint,
-        "completion_window": batch.completion_window,
-        "status": batch.status,
-        "input_file_id": batch.input_file_id,
-        "metadata": batch.metadata,
-    }}))
+    match dispatch(operation).await {
+        Ok(OpenAiResourceResult::Batches(BatchOutcome::Batch(batch))) => Ok(json!({ "result": {
+            "id": batch.id,
+            "object": batch.object,
+            "endpoint": batch.endpoint,
+            "completion_window": batch.completion_window,
+            "status": batch.status,
+            "input_file_id": batch.input_file_id,
+            "metadata": batch.metadata,
+        }})),
+        Ok(_) => Err(failure("Variant", OTHER_OUTCOME)),
+        Err(error) => Err(leaf_failure(&error)),
+    }
 }
 
 pub(super) async fn fine_tuning_create(case: &FineTuningCreate) -> HelperResult {
@@ -130,7 +133,9 @@ pub(super) async fn fine_tuning_create(case: &FineTuningCreate) -> HelperResult 
         connection,
         call: JobCall::Create(&case.create),
     }));
-    let outcome = dispatch(operation).await.map_err(leaf_failure)?;
+    let outcome = dispatch(operation)
+        .await
+        .map_err(|error| leaf_failure(&error))?;
     let OpenAiResourceResult::FineTuning(JobOutcome::Job(job)) = outcome else {
         return Err(failure("Variant", OTHER_OUTCOME));
     };

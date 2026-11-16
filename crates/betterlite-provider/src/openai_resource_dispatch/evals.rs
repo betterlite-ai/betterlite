@@ -11,23 +11,9 @@ pub struct Dispatch<'call> {
     pub call: Call<'call>,
 }
 
-// B523's eleven request operations: the ones that send a payload, and the ones addressed by id
-pub enum Call<'call> {
-    Payload(PayloadCall<'call>),
-    ById(IdCall<'call>),
-}
-
-pub enum PayloadCall<'call> {
-    CreateEval(&'call CreateEvalRequest),
-    ListEvals(&'call ListEvalsParams),
-    CreateRun {
-        eval_id: &'call str,
-        request: &'call CreateRunRequest,
-    },
-    ListRuns {
-        eval_id: &'call str,
-        params: &'call ListRunsParams,
-    },
+pub struct EvalRef<'call> {
+    pub eval_id: &'call str,
+    pub api_base: &'call str,
 }
 
 pub struct RunId<'call> {
@@ -36,23 +22,21 @@ pub struct RunId<'call> {
     pub api_base: &'call str,
 }
 
-pub enum IdCall<'call> {
-    GetEval {
+// B523's eleven request operations; each calls its leaf transform with the caller's IDs and base
+pub enum Call<'call> {
+    CreateEval(&'call CreateEvalRequest),
+    ListEvals(&'call ListEvalsParams),
+    GetEval(EvalRef<'call>),
+    UpdateEval(EvalRef<'call>, &'call UpdateEvalRequest),
+    DeleteEval(EvalRef<'call>),
+    CancelEval(EvalRef<'call>),
+    CreateRun {
         eval_id: &'call str,
-        api_base: &'call str,
+        request: &'call CreateRunRequest,
     },
-    UpdateEval {
+    ListRuns {
         eval_id: &'call str,
-        request: &'call UpdateEvalRequest,
-        api_base: &'call str,
-    },
-    DeleteEval {
-        eval_id: &'call str,
-        api_base: &'call str,
-    },
-    CancelEval {
-        eval_id: &'call str,
-        api_base: &'call str,
+        params: &'call ListRunsParams,
     },
     GetRun(RunId<'call>),
     CancelRun(RunId<'call>),
@@ -69,64 +53,42 @@ pub enum Outcome {
 
 impl Dispatch<'_> {
     pub fn run(self) -> Result<Outcome, EvalsError> {
+        let config = self.config;
+        let context = &self.context;
         match self.call {
-            Call::Payload(payload) => payload_call(self.config, &self.context, &payload),
-            Call::ById(by_id) => id_call(self.config, &self.context, &by_id),
+            Call::CreateEval(request) => config
+                .transform_create_eval_request(request, context)
+                .map(Outcome::Body),
+            Call::ListEvals(params) => config
+                .transform_list_evals_request(params, context)
+                .map(Outcome::Url),
+            Call::GetEval(eval) => config
+                .transform_get_eval_request(eval.eval_id, eval.api_base, context)
+                .map(Outcome::Headers),
+            Call::UpdateEval(eval, request) => config
+                .transform_update_eval_request(eval.eval_id, request, eval.api_base, context)
+                .map(Outcome::HeadersAndBody),
+            Call::DeleteEval(eval) => config
+                .transform_delete_eval_request(eval.eval_id, eval.api_base, context)
+                .map(Outcome::Headers),
+            Call::CancelEval(eval) => config
+                .transform_cancel_eval_request(eval.eval_id, eval.api_base, context)
+                .map(Outcome::HeadersAndBody),
+            Call::CreateRun { eval_id, request } => config
+                .transform_create_run_request(eval_id, request, context)
+                .map(Outcome::Url),
+            Call::ListRuns { eval_id, params } => config
+                .transform_list_runs_request(eval_id, params, context)
+                .map(Outcome::Url),
+            Call::GetRun(id) => config
+                .transform_get_run_request(id.eval_id, id.run_id, id.api_base, context)
+                .map(Outcome::Headers),
+            Call::CancelRun(id) => config
+                .transform_cancel_run_request(id.eval_id, id.run_id, id.api_base, context)
+                .map(Outcome::HeadersAndBody),
+            Call::DeleteRun(id) => config
+                .transform_delete_run_request(id.eval_id, id.run_id, id.api_base, context)
+                .map(Outcome::HeadersAndBody),
         }
-    }
-}
-
-fn payload_call(
-    config: &dyn BaseEvalsAPIConfig<Error = EvalsError>,
-    context: &EvalsRequestContext<'_>,
-    call: &PayloadCall<'_>,
-) -> Result<Outcome, EvalsError> {
-    Ok(match call {
-        PayloadCall::CreateEval(request) => {
-            Outcome::Body(config.transform_create_eval_request(request, context)?)
-        }
-        PayloadCall::ListEvals(params) => {
-            Outcome::Url(config.transform_list_evals_request(params, context)?)
-        }
-        PayloadCall::CreateRun { eval_id, request } => {
-            Outcome::Url(config.transform_create_run_request(eval_id, request, context)?)
-        }
-        PayloadCall::ListRuns { eval_id, params } => {
-            Outcome::Url(config.transform_list_runs_request(eval_id, params, context)?)
-        }
-    })
-}
-
-fn id_call(
-    config: &dyn BaseEvalsAPIConfig<Error = EvalsError>,
-    context: &EvalsRequestContext<'_>,
-    call: &IdCall<'_>,
-) -> Result<Outcome, EvalsError> {
-    match call {
-        IdCall::GetEval { eval_id, api_base } => config
-            .transform_get_eval_request(eval_id, api_base, context)
-            .map(Outcome::Headers),
-        IdCall::UpdateEval {
-            eval_id,
-            request,
-            api_base,
-        } => config
-            .transform_update_eval_request(eval_id, request, api_base, context)
-            .map(Outcome::HeadersAndBody),
-        IdCall::DeleteEval { eval_id, api_base } => config
-            .transform_delete_eval_request(eval_id, api_base, context)
-            .map(Outcome::Headers),
-        IdCall::CancelEval { eval_id, api_base } => config
-            .transform_cancel_eval_request(eval_id, api_base, context)
-            .map(Outcome::HeadersAndBody),
-        IdCall::GetRun(id) => config
-            .transform_get_run_request(id.eval_id, id.run_id, id.api_base, context)
-            .map(Outcome::Headers),
-        IdCall::CancelRun(id) => config
-            .transform_cancel_run_request(id.eval_id, id.run_id, id.api_base, context)
-            .map(Outcome::HeadersAndBody),
-        IdCall::DeleteRun(id) => config
-            .transform_delete_run_request(id.eval_id, id.run_id, id.api_base, context)
-            .map(Outcome::HeadersAndBody),
     }
 }

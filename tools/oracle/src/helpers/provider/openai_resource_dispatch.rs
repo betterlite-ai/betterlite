@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use betterlite_openai::batches::error::{BatchesError, SdkError as BatchSdkError};
 use betterlite_openai::batches::records::BatchCreate;
 use betterlite_openai::files::error::FilesError;
@@ -77,7 +79,10 @@ pub(crate) struct VectorStoresCreate {
     params: CreateParams,
 }
 
-fn failure<M: std::fmt::Display>(class: &str, message: M) -> Box<HelperError> {
+fn failure<M>(class: &str, message: M) -> Box<HelperError>
+where
+    M: Display,
+{
     Box::new(HelperError {
         class: class.to_owned(),
         status: None,
@@ -89,15 +94,15 @@ fn failure<M: std::fmt::Display>(class: &str, message: M) -> Box<HelperError> {
 }
 
 // LiteLLM's SDK raises the upstream status; every other leaf failure carries no status
-fn leaf_failure(error: OpenAiResourceError) -> Box<HelperError> {
-    let status = if let OpenAiResourceError::Files(FilesError::Status(raised)) = &error {
+fn leaf_failure(error: &OpenAiResourceError) -> Box<HelperError> {
+    let status = if let OpenAiResourceError::Files(FilesError::Status(raised)) = error {
         Some(raised.status)
     } else if let OpenAiResourceError::Batches(BatchesError::Sdk {
         source: BatchSdkError::Status { status, .. },
-    }) = &error
+    }) = error
     {
         Some(*status)
-    } else if let OpenAiResourceError::FineTuning(FineTuneError::Sdk { source }) = &error {
+    } else if let OpenAiResourceError::FineTuning(FineTuneError::Sdk { source }) = error {
         Some(source.status)
     } else {
         None
