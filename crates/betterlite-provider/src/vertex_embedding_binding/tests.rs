@@ -23,10 +23,10 @@ use betterlite_vertex::vertex_embedding_call::error::VertexEmbeddingCallError;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 
+use super::arguments::{EmbedContentArguments, MultimodalArguments, TextArguments};
 use super::{
-    EmbedContentArguments, MultimodalArguments, TextArguments, VertexEmbeddingError,
-    VertexEmbeddingHandlers, VertexEmbeddingPrepareError, VertexEmbeddingPrepared,
-    VertexEmbeddingRequest, VertexEmbeddingResult, execute, prepare,
+    VertexEmbeddingError, VertexEmbeddingHandlers, VertexEmbeddingPrepareError,
+    VertexEmbeddingPrepared, VertexEmbeddingRequest, VertexEmbeddingResult, execute, prepare,
 };
 
 const TEXT_MODEL: &str = "text-embedding-005";

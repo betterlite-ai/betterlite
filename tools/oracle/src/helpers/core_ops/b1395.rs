@@ -8,9 +8,12 @@ use betterlite_core::vertex_embedding_dispatch::Defaults;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::embedding::{EmbeddingInput, EmbeddingResponse};
+use betterlite_provider::vertex_embedding_binding::arguments::{
+    EmbedContentArguments, MultimodalArguments, TextArguments,
+};
 use betterlite_provider::vertex_embedding_binding::{
-    EmbedContentArguments, MultimodalArguments, TextArguments, VertexEmbeddingError,
-    VertexEmbeddingHandlers, VertexEmbeddingPrepared, VertexEmbeddingRequest, execute, prepare,
+    VertexEmbeddingError, VertexEmbeddingHandlers, VertexEmbeddingPrepared, VertexEmbeddingRequest,
+    execute, prepare,
 };
 use betterlite_vertex::gemini_embedding_call::error::GeminiEmbeddingCallError;
 use betterlite_vertex::gemini_embedding_records::response::EmbeddingReply;
