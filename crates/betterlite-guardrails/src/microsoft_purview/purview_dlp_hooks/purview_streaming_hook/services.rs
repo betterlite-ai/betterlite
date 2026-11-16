@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
 use betterlite_redact::structured::Payload;
 use betterlite_streaming::{
@@ -40,6 +41,7 @@ impl ConsoleSink for SilentConsole {
     }
 }
 
+#[async_trait]
 impl UsageTokenCounter for SilentCounter {
     async fn count_response_text(&self, _model: &str, _text: &str) -> Result<i64, CountError> {
         Ok(0)
