@@ -124,30 +124,24 @@ impl RemoteMediaFetcher for MappingFetcher {
         )
     }
 
-    fn convert_urls(
-        &self,
-        urls: &[String],
-    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        self.calls.fetch_add(urls.len(), Ordering::SeqCst);
-        let mapped: Result<Vec<String>, ImageFetchError> = urls
-            .iter()
-            .map(|url| {
-                self.urls
-                    .get(url)
-                    .cloned()
-                    .ok_or_else(|| ImageFetchError::Attempts { url: url.clone() })
-            })
-            .collect();
-        ready(mapped)
+    async fn convert_urls(&self, urls: &[String]) -> Result<Vec<String>, ImageFetchError> {
+        let mut converted = Vec::with_capacity(urls.len());
+        for url in urls {
+            converted.push(self.convert_url(url).await?);
+        }
+        Ok(converted)
     }
 }
 
-pub(crate) async fn count<Fetcher: RemoteMediaFetcher + Sync>(
+pub(crate) async fn count<Fetcher>(
     fixture: &Fixture,
     input: &str,
     settings: &Settings,
     fetcher: &Fetcher,
-) -> Result<MediaCounted, MediaError> {
+) -> Result<MediaCounted, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
     let media = TokenMedia::try_from(input.as_bytes())?;
     count::count_token_media(&fixture.texter(), &media, settings, fetcher).await
 }

@@ -17,6 +17,8 @@ use tokio::runtime::Builder;
 
 use super::media_tokens::{self, Fixture};
 
+pub(crate) mod refusing;
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -55,20 +57,12 @@ impl RemoteMediaFetcher for MappingFetcher<'_> {
         )
     }
 
-    fn convert_urls(
-        &self,
-        urls: &[String],
-    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        let mapped: Result<Vec<String>, ImageFetchError> = urls
-            .iter()
-            .map(|url| {
-                self.urls
-                    .get(url)
-                    .cloned()
-                    .ok_or_else(|| ImageFetchError::Attempts { url: url.clone() })
-            })
-            .collect();
-        ready(mapped)
+    async fn convert_urls(&self, urls: &[String]) -> Result<Vec<String>, ImageFetchError> {
+        let mut converted = Vec::with_capacity(urls.len());
+        for url in urls {
+            converted.push(self.convert_url(url).await?);
+        }
+        Ok(converted)
     }
 }
 

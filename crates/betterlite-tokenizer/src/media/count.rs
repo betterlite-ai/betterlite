@@ -32,12 +32,15 @@ pub enum Warning {
     FallbackTokenCount { tokens: u64 },
 }
 
-pub async fn count_token_media<Fetcher: RemoteMediaFetcher + Sync>(
+pub async fn count_token_media<Fetcher>(
     texter: &Texter<'_>,
     media: &TokenMedia,
     settings: &Settings,
     fetcher: &Fetcher,
-) -> Result<Counted, MediaError> {
+) -> Result<Counted, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
     let mut warnings = Vec::new();
     let counter = MediaCounter {
         texter,
@@ -67,18 +70,21 @@ fn parse_root_item(raw: &RawValue) -> Result<ContentItem, MediaError> {
     Ok(parsed)
 }
 
-pub(crate) async fn count_items<Fetcher: RemoteMediaFetcher + Sync>(
+pub(crate) async fn count_items<Fetcher>(
     counter: &MediaCounter<'_, Fetcher>,
     items: &[ContentItem],
     depth: usize,
     warnings: &mut Vec<Warning>,
-) -> Result<u64, MediaError> {
+) -> Result<u64, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
     if depth > MAX_CONTENT_DEPTH {
         return Err(MediaError::TooDeep {
             limit: MAX_CONTENT_DEPTH,
         });
     }
-    let counted: Result<u64, MediaError> = async {
+    let outcome: Result<u64, MediaError> = async {
         let mut total = 0_u64;
         for item in items {
             let tokens = match item {
@@ -92,7 +98,7 @@ pub(crate) async fn count_items<Fetcher: RemoteMediaFetcher + Sync>(
         Ok(total)
     }
     .await;
-    match counted {
+    match outcome {
         Ok(tokens) => Ok(tokens),
         Err(error) => apply_fallback(error, counter.settings, warnings),
     }

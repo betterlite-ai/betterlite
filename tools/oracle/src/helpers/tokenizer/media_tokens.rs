@@ -1,11 +1,8 @@
-use std::future::{Future, ready};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
-use betterlite_prompts::media::inline::RemoteMediaFetcher;
-use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_tokenizer::count::messages;
 use betterlite_tokenizer::count::request::Message;
 use betterlite_tokenizer::count::settings::Settings as CountSettings;
@@ -30,6 +27,8 @@ use serde_json::{Value, json};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use tokio::runtime::Builder;
+
+use super::b9963::refusing::RefusingFetcher;
 
 const DEFAULT_MODEL: &str = "gpt-3.5-turbo";
 
@@ -97,25 +96,6 @@ impl Fixture {
             counted: &self.counted,
             max_exact_chars: self.max_exact_chars,
         }
-    }
-}
-
-// no oracle run may touch the network, so a remote image URL has to refuse
-pub(crate) struct RefusingFetcher;
-
-impl RemoteMediaFetcher for RefusingFetcher {
-    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
-        ready(Err(ImageFetchError::Disabled {
-            url: url.to_owned(),
-        }))
-    }
-
-    fn convert_urls(
-        &self,
-        urls: &[String],
-    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        let url = urls.first().cloned().unwrap_or_default();
-        ready(Err(ImageFetchError::Disabled { url }))
     }
 }
 

@@ -5,18 +5,24 @@ use crate::image::tokens::Mode;
 
 use super::count::{MediaCounter, Warning, apply_fallback, count_items, count_text};
 use super::error::MediaError;
-use super::image_count::{image_source_tokens, image_tokens};
-use super::wire::{Block, Document, FileObject, ImageUrlValue, NestedContent, Object, Source};
+use super::image_count::{image_source_tokens, image_tokens, image_url_parts};
+use super::wire::{Block, Document, NestedContent, Object, Source};
 
-pub(crate) async fn count_block<Fetcher: RemoteMediaFetcher + Sync>(
+pub(crate) async fn count_block<Fetcher>(
     counter: &MediaCounter<'_, Fetcher>,
     block: Block,
     depth: usize,
     warnings: &mut Vec<Warning>,
-) -> Result<u64, MediaError> {
+) -> Result<u64, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
     match block {
         Block::Text { text } => count_text(counter.texter, &text).await,
-        Block::ImageUrl { image_url } => image_url_tokens(counter, &image_url, warnings).await,
+        Block::ImageUrl { image_url } => {
+            let (url, detail) = image_url_parts(&image_url)?;
+            image_tokens(counter, url, detail, warnings).await
+        }
         Block::Image { source } => image_source_tokens(counter, &source, warnings).await,
         Block::Document {
             source,
@@ -30,7 +36,17 @@ pub(crate) async fn count_block<Fetcher: RemoteMediaFetcher + Sync>(
             };
             count_document(counter, document, depth, warnings).await
         }
-        Block::File { file } => count_file(counter, file, warnings).await,
+        Block::File { file } => {
+            let name_tokens = count_text(counter.texter, &file.filename).await?;
+            let data_tokens = if file.file_data.is_empty() {
+                0
+            } else {
+                image_tokens(counter, &file.file_data, Mode::Auto, warnings).await?
+            };
+            name_tokens
+                .checked_add(data_tokens)
+                .ok_or(MediaError::Overflow)
+        }
         Block::ToolUse {
             name,
             input,
@@ -47,29 +63,15 @@ pub(crate) async fn count_block<Fetcher: RemoteMediaFetcher + Sync>(
     }
 }
 
-async fn image_url_tokens<Fetcher: RemoteMediaFetcher + Sync>(
-    counter: &MediaCounter<'_, Fetcher>,
-    value: &ImageUrlValue,
-    warnings: &mut Vec<Warning>,
-) -> Result<u64, MediaError> {
-    match value {
-        ImageUrlValue::Text(text) if text.trim().is_empty() => Err(MediaError::BlankImageUrl),
-        ImageUrlValue::Text(text) => image_tokens(counter, text, Mode::Auto, warnings).await,
-        ImageUrlValue::Object(object) => {
-            if object.url.is_empty() {
-                return Err(MediaError::EmptyImageUrl);
-            }
-            image_tokens(counter, &object.url, object.detail, warnings).await
-        }
-    }
-}
-
-async fn count_document<Fetcher: RemoteMediaFetcher + Sync>(
+async fn count_document<Fetcher>(
     counter: &MediaCounter<'_, Fetcher>,
     document: Document,
     depth: usize,
     warnings: &mut Vec<Warning>,
-) -> Result<u64, MediaError> {
+) -> Result<u64, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
     let Document {
         source,
         title,
@@ -91,21 +93,6 @@ async fn count_document<Fetcher: RemoteMediaFetcher + Sync>(
     total.checked_add(nested).ok_or(MediaError::Overflow)
 }
 
-async fn count_file<Fetcher: RemoteMediaFetcher + Sync>(
-    counter: &MediaCounter<'_, Fetcher>,
-    file: FileObject,
-    warnings: &mut Vec<Warning>,
-) -> Result<u64, MediaError> {
-    let name_tokens = count_text(counter.texter, &file.filename).await?;
-    if file.file_data.is_empty() {
-        return Ok(name_tokens);
-    }
-    let data_tokens = image_tokens(counter, &file.file_data, Mode::Auto, warnings).await?;
-    name_tokens
-        .checked_add(data_tokens)
-        .ok_or(MediaError::Overflow)
-}
-
 async fn count_tool_use(
     texter: &Texter<'_>,
     name: String,
@@ -122,12 +109,15 @@ async fn count_tool_use(
     Ok(total)
 }
 
-async fn count_nested<Fetcher: RemoteMediaFetcher + Sync>(
+async fn count_nested<Fetcher>(
     counter: &MediaCounter<'_, Fetcher>,
     content: NestedContent,
     depth: usize,
     warnings: &mut Vec<Warning>,
-) -> Result<u64, MediaError> {
+) -> Result<u64, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
     match content {
         NestedContent::Text(text) => count_text(counter.texter, &text).await,
         NestedContent::Items(items) => {
