@@ -36,7 +36,8 @@ type Step = Result<(), RouterSettingsError>;
 
 impl Recorder {
     fn record(&mut self, step: &str, argument: Value) {
-        self.calls.push(json!([step, argument]));
+        self.calls
+            .push(Value::Array(vec![Value::String(step.to_owned()), argument]));
     }
 }
 
