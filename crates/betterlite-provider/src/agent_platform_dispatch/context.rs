@@ -44,8 +44,7 @@ pub fn headers_or_global(
     headers: Option<BTreeMap<String, String>>,
     global: Option<&BTreeMap<String, String>>,
 ) -> Option<BTreeMap<String, String>> {
-    match headers.filter(|headers| !headers.is_empty()) {
-        Some(headers) => Some(headers),
-        None => global.cloned(),
-    }
+    headers
+        .filter(|given| !given.is_empty())
+        .or_else(|| global.cloned())
 }

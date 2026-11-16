@@ -54,8 +54,7 @@ fn api_base(
     if let Some(base) = context.globals.api_base.filter(|base| !base.is_empty()) {
         return Ok(String::from(base));
     }
-    match environment_secret(context.secrets, context.environment, API_BASE_ENV)? {
-        Some(base) => Ok(base.expose_secret().to_owned()),
-        None => Err(DispatchError::MissingA2aApiBase),
-    }
+    let base = environment_secret(context.secrets, context.environment, API_BASE_ENV)?
+        .ok_or(DispatchError::MissingA2aApiBase)?;
+    Ok(base.expose_secret().to_owned())
 }

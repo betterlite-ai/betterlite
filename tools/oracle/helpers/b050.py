@@ -76,20 +76,15 @@ def register(agent: AgentCase) -> None:
     global_agent_registry.register_agent(TypeAdapter(AgentResponse).validate_python(fields))
 
 
-def kept_headers(headers: dict[str, str]) -> dict[str, JsonValue]:
-    kept: dict[str, JsonValue] = {}
-    for name, value in headers.items():
-        if name in KEPT_HEADERS:
-            kept[name] = value
-    return kept
-
-
 def request_view(responder: Responder) -> JsonValue | None:
     if not responder.seen:
         return None
+    kept: dict[str, JsonValue] = {
+        name: value for name, value in responder.headers.items() if name in KEPT_HEADERS
+    }
     return {
         "url": responder.url,
-        "headers": kept_headers(responder.headers),
+        "headers": kept,
         "body": TypeAdapter(JsonValue).validate_json(responder.body_text),
     }
 
@@ -137,7 +132,7 @@ def dispatch_case(case: DispatchCase) -> JsonValue:
         return error_view(responder, error.status_code)
     except openai.APIConnectionError:
         return error_view(responder, None)
-    # a streaming call returns a stream rather than a reply, and the stream's chunks are not part of this case
+    # a streaming call returns a stream, whose chunks this case does not compare
     if case["stream"] is True:
         return {"request": request_view(responder), "reply": None, "error": None}
     reply = TypeAdapter(ModelResponse).validate_python(response)

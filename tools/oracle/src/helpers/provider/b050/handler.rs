@@ -199,12 +199,11 @@ fn langflow_request_value(call: &CompletionCall) -> Result<Value, HandlerError> 
         api_key: call.api_key.as_ref(),
         stream: call.stream,
     })?;
-    let request = json!({
+    Ok(json!({
         "url": prepared.url,
         "headers": header_view(&prepared.headers),
         "body": prepared.body,
-    });
-    Ok(request)
+    }))
 }
 
 fn header_view(headers: &BTreeMap<String, String>) -> BTreeMap<String, String> {

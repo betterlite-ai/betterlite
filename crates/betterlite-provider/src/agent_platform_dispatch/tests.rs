@@ -375,15 +375,15 @@ fn a2a_treats_an_empty_environment_base_as_unset() {
 
 #[rstest]
 #[case::absent(None, "x-global")]
-#[case::empty(Some(&[]), "x-global")]
-#[case::given(Some(&[("x-given", "1")]), "x-given")]
+#[case::empty(Some(vec![]), "x-global")]
+#[case::given(Some(vec![("x-given", "1")]), "x-given")]
 fn a2a_headers_take_the_global_only_when_absent_or_empty(
-    #[case] given: Option<&[(&str, &str)]>,
+    #[case] given: Option<Vec<(&str, &str)>>,
     #[case] expected_name: &str,
 ) {
     let mut harness = Harness::new("a2a", "my-agent");
     harness.api_base = Some(String::from("http://explicit.test"));
-    harness.headers = given.map(headers);
+    harness.headers = given.map(|pairs| headers(&pairs));
     harness.globals_headers = Some(headers(&[("x-global", "1")]));
     let recorder = Recorder::answer("hi");
     complete_a2a(&harness.context(), &recorder).expect("the call resolves");
