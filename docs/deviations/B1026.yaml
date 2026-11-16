@@ -15,7 +15,7 @@ deviations:
     why: >-
       B4000's storage transport returns a whole response body and has no range reader; adding one would duplicate
       the download loop the SDK provides.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L282-L293
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L282-L286
   - what: >-
       On the token path the create and flush requests carry no content-type; LiteLLM's httpx client adds
       content-type application/octet-stream to those empty bodies. The append carries application/octet-stream as
@@ -23,21 +23,21 @@ deviations:
     why: >-
       The octet-stream header on an empty body is an httpx client default rather than a header LiteLLM sets, and
       the Azure service does not read a content type on a body-less request.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L224-L250
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L216-L266
   - what: >-
       A storage failure surfaces as AzureFileStorageError naming the operation and carrying the HTTP status;
       LiteLLM raises the SDK's ResourceNotFoundError or httpx's HTTPStatusError for the same response.
     why: >-
       FileStorageBackend::Error is B1025's typed Rust error, so the exception class cannot cross, but the status
       code and the failed operation are kept for callers that branch on them.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L153-L158
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L153-L159
   - what: >-
       An account-key upload whose prefix leaves an empty directory part, such as "/" or "///", fails with
-      AzureFileStorageError::EmptyDirectory before any request is sent. LiteLLM hands the empty string to the SDK's
-      directory client, which sends its own requests and fails there.
+      AzureFileStorageError::EmptyDirectory after the filesystem check and before any directory or file request.
+      LiteLLM hands the empty string to the SDK's directory client, which sends its own requests and fails there.
     why: >-
-      An empty directory name is never a valid Data Lake path, and rejecting it before the filesystem and file
-      creates avoids leaving a partially created tree behind.
+      An empty directory name is never a valid Data Lake path, and rejecting it before the directory and file
+      requests avoids leaving a partially created file behind.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L170-L182
 kept_bugs:
   - what: >-
@@ -52,7 +52,7 @@ kept_bugs:
     why: >-
       LiteLLM catches the safe_filename error and stores the file, so a working setup relies on the upload
       succeeding for these names.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L22-L31
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L22-L26
   - what: >-
       A timestamp name is int(time.time() * 1000), so a clock at 1.001 seconds yields 1000 because the float
       product rounds down.

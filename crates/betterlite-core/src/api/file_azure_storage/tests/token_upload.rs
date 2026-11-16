@@ -57,6 +57,7 @@ async fn token_upload_sequence() {
     let flush = calls.get(2).expect("the flush request");
     assert_eq!(flush.body, b"");
     assert_eq!(flush.header("content-length"), Some("0"));
+    assert_eq!(flush.header("content-type"), None);
 }
 
 // LiteLLM strips slashes off a prefix and then joins the empty result with a slash, so a
