@@ -1,0 +1,77 @@
+kind: helper
+name: runway-video-create-duration-truncation
+call:
+  runway_video_create:
+    operation: create
+    params:
+      model: gen4_turbo
+      prompt: a cat surfing
+      calls:
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {seconds: '2.9'}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {seconds: '-2.9'}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {seconds: ' 3.7 '}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {seconds: '5'}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {seconds: '0.0'}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {seconds: '1e3'}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {seconds: '2.999999999999999999999'}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {seconds: soon}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {seconds: 'NaN'}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {seconds: ''}
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params: {seconds: null}
+env: {}
+compare: {ignore: []}
