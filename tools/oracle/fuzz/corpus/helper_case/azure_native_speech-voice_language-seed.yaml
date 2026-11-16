@@ -1,0 +1,5 @@
+kind: helper
+name: azure_native_speech-voice_language-seed
+call: {azure_native_speech: {voice_language: {cases: [{voice: alloy, lang: es-ES}, {}]}}}
+env: {}
+compare: {ignore: []}

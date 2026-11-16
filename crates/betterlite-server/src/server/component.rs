@@ -1,6 +1,6 @@
 use super::chat_setup::chat_executor;
 use super::filter::ComponentRoutes;
-use super::{application, serve};
+use super::{application, bind, serve};
 use axum::Extension;
 use betterlite_config::loader::startup::{load_config, process_environment};
 use betterlite_config::types::Config;
@@ -74,10 +74,11 @@ pub fn serve_component(
         return ExitCode::FAILURE;
     };
     let result = runtime.block_on(async {
+        let listener = bind(host, port).await?;
         let shutting_down = Arc::new(AtomicBool::new(false));
         let outbound = chat.client.clone();
         let app = application(&config, chat, Arc::clone(&shutting_down))?.layer(Extension(routes));
-        Box::pin(serve(app, shutting_down, outbound, host, port)).await
+        Box::pin(serve(app, shutting_down, outbound, host, listener)).await
     });
     match result {
         Ok(()) => ExitCode::SUCCESS,

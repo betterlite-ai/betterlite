@@ -1,3 +1,4 @@
+use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use serde_json::value::RawValue;
 
 use crate::count::text::Texter;
@@ -9,6 +10,13 @@ use super::wire::{Block, BlockKind, ContentItem, TokenMedia};
 
 const ROOT_DEPTH: usize = 1;
 pub const MAX_CONTENT_DEPTH: usize = 32;
+
+// clippy's five-argument limit means the values every content node shares travel as one reference
+pub(crate) struct MediaCounter<'call, Fetcher> {
+    pub(crate) texter: &'call Texter<'call>,
+    pub(crate) settings: &'call Settings,
+    pub(crate) fetcher: &'call Fetcher,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Counted {
@@ -24,19 +32,28 @@ pub enum Warning {
     FallbackTokenCount { tokens: u64 },
 }
 
-pub async fn count_token_media(
+pub async fn count_token_media<Fetcher>(
     texter: &Texter<'_>,
     media: &TokenMedia,
     settings: &Settings,
-) -> Result<Counted, MediaError> {
+    fetcher: &Fetcher,
+) -> Result<Counted, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
     let mut warnings = Vec::new();
+    let counter = MediaCounter {
+        texter,
+        settings,
+        fetcher,
+    };
     let parsed: Result<Vec<ContentItem>, MediaError> = media
         .content
         .iter()
         .map(|raw| parse_root_item(raw))
         .collect();
     let tokens = match parsed {
-        Ok(items) => count_items(texter, &items, settings, ROOT_DEPTH, &mut warnings).await?,
+        Ok(items) => count_items(&counter, &items, ROOT_DEPTH, &mut warnings).await?,
         Err(error) => apply_fallback(error, settings, &mut warnings)?,
     };
     Ok(Counted { tokens, warnings })
@@ -53,25 +70,27 @@ fn parse_root_item(raw: &RawValue) -> Result<ContentItem, MediaError> {
     Ok(parsed)
 }
 
-pub(crate) async fn count_items(
-    texter: &Texter<'_>,
+pub(crate) async fn count_items<Fetcher>(
+    counter: &MediaCounter<'_, Fetcher>,
     items: &[ContentItem],
-    settings: &Settings,
     depth: usize,
     warnings: &mut Vec<Warning>,
-) -> Result<u64, MediaError> {
+) -> Result<u64, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
     if depth > MAX_CONTENT_DEPTH {
         return Err(MediaError::TooDeep {
             limit: MAX_CONTENT_DEPTH,
         });
     }
-    let counted: Result<u64, MediaError> = async {
+    let outcome: Result<u64, MediaError> = async {
         let mut total = 0_u64;
         for item in items {
             let tokens = match item {
-                ContentItem::Text(text) => count_text(texter, text).await?,
+                ContentItem::Text(text) => count_text(counter.texter, text).await?,
                 ContentItem::Block(block) => {
-                    count_block(texter, block.clone(), settings, depth, warnings).await?
+                    count_block(counter, block.clone(), depth, warnings).await?
                 }
             };
             total = total.checked_add(tokens).ok_or(MediaError::Overflow)?;
@@ -79,9 +98,9 @@ pub(crate) async fn count_items(
         Ok(total)
     }
     .await;
-    match counted {
+    match outcome {
         Ok(tokens) => Ok(tokens),
-        Err(error) => apply_fallback(error, settings, warnings),
+        Err(error) => apply_fallback(error, counter.settings, warnings),
     }
 }
 
