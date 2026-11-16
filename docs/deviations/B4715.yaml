@@ -1,0 +1,33 @@
+task: B4715
+deviations:
+  - what: On purge, a row inserted while the purge runs for a user not yet enumerated survives. A re-auth completing for an already-enumerated user is deleted along with the stale row.
+    why: The purge enumerates rows once, then deletes by (user_id, server_id) pair, creating a race window. Treating this as acceptable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1809-L1832
+  - what: The purge issues one delete_many per (user_id, server_id) pair instead of a single delete_many with user_id IN (...).
+    why: betterlite's generic table action layer carries equality filters in KeyValues and has no IN operator, so each enumerated pair is deleted with its own statement and the counts are summed. The same rows go, and comparing the count with the enumerated rows still reports a concurrent delete.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1813-L1815
+  - what: mcp_oauth_token_identity reads client_id, client_secret, scopes and upstream_resource from the typed MCPCredentials decoded from the server row, so a credential field of the wrong JSON type (client_id as a number, scopes as a string) fails the server row's decode, where LiteLLM puts whatever the dict holds into the tuple.
+    why: betterlite decodes stored credential JSON into its declared type at the boundary, and docs/compatibility.md makes a wrong-typed value an error rather than duck-typed data. A server row written by either implementation holds the declared types.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1763-L1785
+  - what: A token response whose access_token is not a non-empty JSON string reads as a response without a token (warning, then None), a non-string refresh_token leaves the presented token stored, and a non-string scope falls back to the stored scopes. LiteLLM tests truthiness, so a non-string access_token would be stored and handed back to the caller unchanged.
+    why: The refresh response TypedDict declares access_token, refresh_token and scope as strings, docs/compatibility.md stops parity at declared types, and returning a non-string token would break resolve_user_oauth_access_token's declared string return. No working provider sends one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1919-L1941
+  - what: expires_in is read from a JSON number (a float truncates toward zero, as int() does) or a numeric string, while a JSON boolean, a non-finite number or a number outside the i64 range reads as no expiry. Python's int() takes true as 1, and an infinite or enormous number raises OverflowError from timedelta later in the store, outside the catch at line 1932.
+    why: The response TypedDict declares expires_in as an int, so a boolean is not a value of the declared type, and a lifetime with no bounded i64 equivalent cannot be stored. An OverflowError is a 500 for a value no working setup sends; storing no expiry keeps the token usable and the refresh path total.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1928-L1933
+  - what: A denial from the identity binding port reads as no token for every grant, where refresh_user_oauth_token returns None only for a 403 HTTPException and re-raises any other status.
+    why: The port's Denied associated type carries no HTTP status, because in betterlite the binding is B4659's validation rather than an HTTP endpoint. Every denial means the presented refresh token does not prove ownership, which is the re-auth outcome; through resolve_user_oauth_access_token LiteLLM's re-raise also ended as None, so only a direct caller of refresh_user_oauth_token observes the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1906-L1917
+  - what: The credential store is passed in, so resolve_valid_user_oauth_token and resolve_user_oauth_access_token never fetch a prisma client themselves and cannot report LiteLLM's "Database not connected" errors; a failing store read or write is a named error from resolve_valid.
+    why: betterlite reaches the database through the injected store (Q6) rather than a process-global client, so there is no not-connected state to check. resolve_user_oauth_access_token's outer catch turned LiteLLM's not-connected error into None anyway, and the betterlite path does the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1991-L1994
+  - what: The expiry buffer handed to oauth_grant_state is the constant 60 seconds, where LiteLLM reads MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS from the environment.
+    why: betterlite reads no environment outside its config layer. 60 is LiteLLM's default; passing a configured value belongs to the caller-side wiring that owns the setting (B8622).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1969-L1974
+  - what: refresh_user_oauth_token, resolve_valid_user_oauth_token and resolve_user_oauth_access_token take the current instant as an argument, where LiteLLM calls datetime.now(timezone.utc) inside is_oauth_credential_expired, store_user_oauth_credential and _remaining_token_seconds.
+    why: betterlite takes its clock from the caller so one instant serves the whole resolution and tests can pin it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2087-L2098
+  - what: A credential row without user_id or credential_b64 is a CredentialError::MissingField naming the field, where LiteLLM's row.user_id or row.credential_b64 raises AttributeError.
+    why: betterlite names the malformed field in a typed error. Both stop the purge before deleting anything.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1809-L1810
+kept_bugs: []
