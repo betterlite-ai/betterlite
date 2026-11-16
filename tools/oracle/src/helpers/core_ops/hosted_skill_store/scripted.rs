@@ -9,6 +9,7 @@ use betterlite_db::managed_resource_rows::skills::SkillTable;
 use serde_json::{Map, Value, json};
 
 use super::RowFields;
+use betterlite_oracle_helper_api::error::HelperError;
 
 const CUSTOM_SOURCE: &str = "custom";
 
@@ -46,7 +47,7 @@ pub(super) struct Scripted {
 }
 
 impl Scripted {
-    pub(super) fn new(input: &super::Input) -> Result<Self, Box<crate::helpers::HelperError>> {
+    pub(super) fn new(input: &super::Input) -> Result<Self, Box<HelperError>> {
         let mut rows = BTreeMap::new();
         for fields in &input.rows {
             let row = wire_row(fields, &input.now)

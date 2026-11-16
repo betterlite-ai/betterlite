@@ -4,7 +4,7 @@ use betterlite_mcp::request_headers::raw_headers::RawHeaders;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 type FieldResult<T> = Result<T, Box<HelperError>>;
 

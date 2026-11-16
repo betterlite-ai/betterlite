@@ -4,6 +4,8 @@ use betterlite_anthropic::api::messages_errors::decode::{
 };
 use betterlite_anthropic::api::messages_errors::frame::anthropic_error_sse_frame;
 use betterlite_anthropic::api::messages_errors::wire::AnthropicMetadata;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::to_value;
 
@@ -42,10 +44,10 @@ const LIMITS: WireDecodeLimits = WireDecodeLimits {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::One(action) => run_action(action),
             Input::Many { actions } => {
@@ -59,7 +61,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn run_action(action: &Action) -> crate::helpers::HelperResult {
+fn run_action(action: &Action) -> HelperResult {
     let result = match action {
         Action::Transform {
             status,
@@ -100,11 +102,7 @@ fn run_action(action: &Action) -> crate::helpers::HelperResult {
     result.map_err(|error| helper_error(&WireDecodeError::Json(error)))
 }
 
-fn frame_output(
-    status: u16,
-    raw_message: &str,
-    call_id: Option<&str>,
-) -> crate::helpers::HelperResult {
+fn frame_output(status: u16, raw_message: &str, call_id: Option<&str>) -> HelperResult {
     let frame = anthropic_error_sse_frame(status, raw_message, LIMITS)
         .map_err(|error| helper_error(&error))?;
     let json_body = frame
@@ -114,9 +112,9 @@ fn frame_output(
         .map_err(|error| helper_error(&WireDecodeError::Json(error)))
 }
 
-fn helper_error(error: &WireDecodeError) -> Box<crate::helpers::HelperError> {
+fn helper_error(error: &WireDecodeError) -> Box<HelperError> {
     let message = error.to_string();
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "WireDecodeError".to_owned(),
         status: None,
         error_type: None,

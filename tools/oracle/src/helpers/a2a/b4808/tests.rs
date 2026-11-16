@@ -1,22 +1,23 @@
 #![cfg(test)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rstest::rstest;
 
-use crate::case::{LoadedCase, load_cases};
-use crate::helpers::{HelperRun, run_case};
+use betterlite_oracle_runner::case::load_helper_cases;
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 
-fn case_path(name: &str) -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("cases/watsonx-orchestrate/{name}.yaml"))
+fn case_path(name: &str) -> PathBuf {
+    Path::new(ORACLE_DIR).join(format!("cases/watsonx-orchestrate/{name}.yaml"))
 }
 
 fn run(name: &str) {
-    let cases = load_cases(&[case_path(name)]).unwrap();
-    let LoadedCase::Helper(case) = &cases[0] else {
-        panic!("expected a helper case");
-    };
-    assert!(matches!(run_case(case, false).unwrap(), HelperRun::Match));
+    let cases = load_helper_cases(&[case_path(name)]).unwrap();
+    let case = &cases[0];
+    assert!(matches!(
+        run_case(&[crate::GROUP], case, false).unwrap(),
+        HelperRun::Match
+    ));
 }
 
 #[rstest]

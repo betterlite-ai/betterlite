@@ -11,8 +11,8 @@ use super::{
     Arguments, DriverError, Frame, ServiceInput, ServiceTag, Services, TranscriptObservation,
 };
 use super::{compare_transcript, decode_ws_case, fixtures, limits, run_adapter, valid};
-use crate::compare::helper::HelperOutput;
 use crate::websocket_oracle::{Action, Direction, output_matches};
+use betterlite_oracle_runner::compare::helper::HelperOutput;
 
 struct Preparation {
     url: String,

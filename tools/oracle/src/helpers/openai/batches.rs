@@ -8,9 +8,11 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::fixture::{Constructor, Log, Sdk};
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -189,11 +191,11 @@ async fn drive(call: &Call) -> HelperResult {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Call;
 
     fn run(input: &Self::Input) -> HelperResult {
-        tokio::runtime::Builder::new_current_thread()
+        Builder::new_current_thread()
             .build()
             .map_err(|error| helper_error("RuntimeError", error.to_string()))?
             .block_on(drive(input))

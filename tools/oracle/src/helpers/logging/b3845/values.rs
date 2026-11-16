@@ -1,4 +1,5 @@
 use betterlite_logging::otel::mappers::base::AttributeMap;
+use betterlite_oracle_helper_api::error::HelperError;
 use opentelemetry::{Array, StringValue, Value as OtelValue};
 use serde_json::{Value, json};
 
@@ -11,8 +12,8 @@ pub(super) fn attributes_record(attributes: &AttributeMap) -> Value {
     )
 }
 
-pub(super) fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+pub(super) fn helper_error(class: &str, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,

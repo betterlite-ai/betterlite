@@ -6,6 +6,7 @@ use betterlite_guardrails::lasso_masking::wire::{
     LassoMessage, Message as OpenAiMessage, ModelResponseShape, ResponseChoice, ToolCall,
 };
 use betterlite_guardrails::lasso_masking::{apply_response, expand, lifecycle, map_back};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::{Value, json};
 
 // Bridges the oracle's b3779 operation to the LassoMasking and LakeraProcessing primitives.
@@ -55,10 +56,10 @@ pub(crate) enum Input {
     },
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let result = match input {
             Input::Expand { messages } => json!(expand::expand_for_classification(messages)),
             Input::PreCall {

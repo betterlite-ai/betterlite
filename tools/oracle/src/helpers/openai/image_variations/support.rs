@@ -9,7 +9,9 @@ use serde_json::{Map, Value, json};
 
 use super::input::Probe;
 use super::{FakeTransport, Recorder, call_for, failure_view};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 pub(crate) const NOW: i64 = 1_700_000_000;
 
@@ -71,7 +73,7 @@ pub(crate) fn mapped_value(probe: &Probe) -> Value {
 
 pub(crate) fn request_value(probe: &Probe) -> HelperResult {
     let transport = FakeTransport::new(probe)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| invalid(error.to_string()))?;

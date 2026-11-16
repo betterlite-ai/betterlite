@@ -1,12 +1,15 @@
 mod fixture;
 
 use std::cell::Cell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::assets::images::{self, AssetLogger};
 use betterlite_server::assets::paths::{self, PathError};
 use fixture::Entry;
 use soft_canonicalize::soft_canonicalize;
+use std::fs;
 use tempfile::TempDir;
 
 pub(crate) struct Op;
@@ -46,10 +49,10 @@ pub(crate) enum Input {
     },
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::SafeJoin { fixture, parts } => run_safe_join(fixture, parts, true),
             Input::TrySafeJoin { fixture, parts } => run_safe_join(fixture, parts, false),
@@ -65,21 +68,15 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn prepare_base(
-    entries: &[Entry],
-) -> Result<(TempDir, std::path::PathBuf), Box<crate::helpers::HelperError>> {
+fn prepare_base(entries: &[Entry]) -> Result<(TempDir, PathBuf), Box<HelperError>> {
     let root = TempDir::new()?;
     let base = root.path().join("base");
-    std::fs::create_dir_all(&base)?;
+    fs::create_dir_all(&base)?;
     fixture::materialize(&base, entries)?;
     Ok((root, base))
 }
 
-fn run_safe_join(
-    entries: &[Entry],
-    parts: &[String],
-    strict: bool,
-) -> crate::helpers::HelperResult {
+fn run_safe_join(entries: &[Entry], parts: &[String], strict: bool) -> HelperResult {
     let (_root, base) = prepare_base(entries)?;
     let canonical_base = soft_canonicalize(&base)?;
     let parts_ref: Vec<&str> = parts.iter().map(String::as_str).collect();
@@ -88,7 +85,7 @@ fn run_safe_join(
             Ok(path) => Some(path),
             Err(PathError::Escaped { .. }) => None,
             Err(PathError::NullByte) => {
-                return Err(Box::<crate::helpers::HelperError>::from(Invalid(
+                return Err(Box::<HelperError>::from(Invalid(
                     "Path contains null byte".to_owned(),
                 )));
             }
@@ -103,14 +100,14 @@ fn run_safe_join(
     Ok(serde_json::json!({ "relative_path": relative, "outside_root": false }))
 }
 
-fn run_is_within(entries: &[Entry], path: &str) -> crate::helpers::HelperResult {
+fn run_is_within(entries: &[Entry], path: &str) -> HelperResult {
     let (_root, base) = prepare_base(entries)?;
     let joined = base.join(path);
     let within = paths::is_within(&joined, &base);
     Ok(serde_json::Value::Bool(within))
 }
 
-fn run_join_within(base_dir: &str, parts: &[String]) -> crate::helpers::HelperResult {
+fn run_join_within(base_dir: &str, parts: &[String]) -> HelperResult {
     let parts_ref: Vec<&str> = parts.iter().map(String::as_str).collect();
     let joined = match paths::join_within(Path::new(base_dir), &parts_ref) {
         Some(path) => Some(
@@ -123,13 +120,13 @@ fn run_join_within(base_dir: &str, parts: &[String]) -> crate::helpers::HelperRe
     Ok(serde_json::json!({ "joined": joined }))
 }
 
-fn run_detect(header_hex: &str) -> crate::helpers::HelperResult {
+fn run_detect(header_hex: &str) -> HelperResult {
     let bytes = hex::decode(header_hex).map_err(|error| Invalid(error.to_string()))?;
     let media_type = images::detect_local_image_media_type(&bytes);
     Ok(serde_json::json!({ "media_type": media_type }))
 }
 
-fn run_resolve(entries: &[Entry], candidate: &str) -> crate::helpers::HelperResult {
+fn run_resolve(entries: &[Entry], candidate: &str) -> HelperResult {
     let root = TempDir::new()?;
     fixture::materialize(root.path(), entries)?;
     let root_text = root
@@ -171,8 +168,8 @@ impl AssetLogger for CapturingLogger {
 
 struct Invalid(String);
 
-fn classified_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn classified_error(class: &str, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
@@ -182,7 +179,7 @@ fn classified_error(class: &str, message: String) -> Box<crate::helpers::HelperE
     })
 }
 
-impl From<Invalid> for Box<crate::helpers::HelperError> {
+impl From<Invalid> for Box<HelperError> {
     fn from(Invalid(message): Invalid) -> Self {
         classified_error("ValueError", message)
     }

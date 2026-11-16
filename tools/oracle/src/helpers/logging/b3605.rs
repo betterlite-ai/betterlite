@@ -5,6 +5,8 @@ use betterlite_logging::passthrough_logging_state::usage::{
     has_upstream_reported_usage, parse_response_cost, parse_total_tokens,
     parse_upstream_reported_usage,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -12,10 +14,10 @@ use serde_json::{Value, json};
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let result = match input {
             Input::ParseUsage { headers } => parse_usage(headers)?,
             Input::ParseCost { raw } => json!(parse_response_cost(raw.as_deref())),
@@ -108,16 +110,13 @@ pub(crate) struct RouteInput {
     custom_llm_provider: Option<String>,
 }
 
-fn parse_usage(pairs: &[(String, String)]) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn parse_usage(pairs: &[(String, String)]) -> Result<Value, Box<HelperError>> {
     let headers = build_headers(pairs)?;
     let reported = parse_upstream_reported_usage(&headers);
     Ok(reported.map_or(Value::Null, reported_json))
 }
 
-fn apply_usage(
-    pairs: &[(String, String)],
-    state: &StateInput,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn apply_usage(pairs: &[(String, String)], state: &StateInput) -> Result<Value, Box<HelperError>> {
     let headers = build_headers(pairs)?;
     let mut call_state = state.to_call_state();
     let applied = apply_upstream_reported_usage(&mut call_state, &headers);
@@ -134,7 +133,7 @@ fn set_cost(
     state: &StateInput,
     kwargs_response_cost: Option<f64>,
     cost_per_request: Option<f64>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<HelperError>> {
     let mut call_state = state.to_call_state();
     let mut kwargs_cost = kwargs_response_cost;
     let amount = cost_per_request
@@ -173,9 +172,7 @@ fn reported_json(usage: UpstreamReportedUsage) -> Value {
     })
 }
 
-fn build_headers(
-    pairs: &[(String, String)],
-) -> Result<HeaderMap, Box<crate::helpers::HelperError>> {
+fn build_headers(pairs: &[(String, String)]) -> Result<HeaderMap, Box<HelperError>> {
     let mut headers = HeaderMap::new();
     for (raw_name, raw_value) in pairs {
         let name = HeaderName::from_bytes(raw_name.as_bytes())
@@ -187,8 +184,8 @@ fn build_headers(
     Ok(headers)
 }
 
-fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,

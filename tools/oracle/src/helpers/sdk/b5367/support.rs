@@ -20,7 +20,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

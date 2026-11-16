@@ -12,7 +12,9 @@ use betterlite_guardrails::guardrail_deployment::markers::{PreCallMarkers as _, 
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 type Data = BTreeMap<String, GuardrailValue>;
 
@@ -136,9 +138,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .or_value_error()?;
+        let runtime = Builder::new_current_thread().build().or_value_error()?;
         let result = runtime.block_on(dispatch(input))?;
         Ok(json!({ "result": result }))
     }

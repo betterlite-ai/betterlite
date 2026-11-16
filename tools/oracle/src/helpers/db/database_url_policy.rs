@@ -9,12 +9,14 @@ use betterlite_db::database_url_policy::query::{
     append_query_params, connection_params_from_url, reader_shareable_params,
     token_refresh_params_from_url, url_query_value, with_query_value,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::IdleLifetimeParams { configured } => Ok(params_value(&[(
                 "max_idle_connection_lifetime".to_owned(),
@@ -56,22 +58,19 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn run_add_missing_query_params(
-    url: &str,
-    params: &[(String, QueryValue)],
-) -> crate::helpers::HelperResult {
+fn run_add_missing_query_params(url: &str, params: &[(String, QueryValue)]) -> HelperResult {
     let updated = add_missing_query_params(url, params)
         .map_err(|error| helper_error("ValueError", error.to_string()))?;
     Ok(serde_json::Value::String(updated))
 }
 
-fn run_url_query_value(url: Option<&str>, key: &str) -> crate::helpers::HelperResult {
+fn run_url_query_value(url: Option<&str>, key: &str) -> HelperResult {
     let value =
         url_query_value(url, key).map_err(|error| helper_error("ValueError", error.to_string()))?;
     Ok(serde_json::Value::String(value))
 }
 
-fn run_with_query_value(url: &str, key: &str, value: &str) -> crate::helpers::HelperResult {
+fn run_with_query_value(url: &str, key: &str, value: &str) -> HelperResult {
     let updated = with_query_value(url, key, value)
         .map_err(|error| helper_error("ValueError", error.to_string()))?;
     Ok(serde_json::Value::String(updated))
@@ -80,35 +79,35 @@ fn run_with_query_value(url: &str, key: &str, value: &str) -> crate::helpers::He
 fn run_append_query_params(
     url: Option<&str>,
     params: &[(String, AppendQueryParam)],
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let outcome = append_query_params(url, params)
         .map_err(|error| helper_error("ValueError", error.to_string()))?;
     Ok(serde_json::json!({ "url": outcome.url, "warning": outcome.warning }))
 }
 
-fn run_connection_params_from_url(url: &str) -> crate::helpers::HelperResult {
+fn run_connection_params_from_url(url: &str) -> HelperResult {
     match connection_params_from_url(url) {
         Ok(params) => Ok(params_value(&params)),
         Err(error) => Err(helper_error("ValueError", error.to_string())),
     }
 }
 
-fn run_token_refresh_from_url(url: &str) -> crate::helpers::HelperResult {
+fn run_token_refresh_from_url(url: &str) -> HelperResult {
     match token_refresh_params_from_url(url) {
         Ok(params) => Ok(params_value(&params)),
         Err(error) => Err(helper_error("ValueError", error.to_string())),
     }
 }
 
-fn run_unsupported_db_scheme(database_url: &str) -> crate::helpers::HelperResult {
+fn run_unsupported_db_scheme(database_url: &str) -> HelperResult {
     match unsupported_db_scheme(database_url) {
         Ok(scheme) => Ok(scheme.map_or(serde_json::Value::Null, serde_json::Value::String)),
         Err(error) => Err(helper_error("ValueError", error.to_string())),
     }
 }
 
-fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    let error = crate::helpers::HelperError {
+fn helper_error(class: &str, message: String) -> Box<HelperError> {
+    let error = HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
@@ -177,7 +176,7 @@ fn query_value_json(value: &QueryValue) -> serde_json::Value {
     }
 }
 
-fn run_pg_options_with_timeouts(input: &Input) -> crate::helpers::HelperResult {
+fn run_pg_options_with_timeouts(input: &Input) -> HelperResult {
     let Input::PgOptionsWithTimeouts {
         existing_options,
         statement_timeout,
@@ -198,7 +197,7 @@ fn run_pg_options_with_timeouts(input: &Input) -> crate::helpers::HelperResult {
     Ok(serde_json::Value::String(options))
 }
 
-fn timeout_error(error: &TimeoutError) -> Box<crate::helpers::HelperError> {
+fn timeout_error(error: &TimeoutError) -> Box<HelperError> {
     let class = match error {
         TimeoutError::NotNumeric { .. } => "ValidationError",
         TimeoutError::NotANumber => "ValueError",

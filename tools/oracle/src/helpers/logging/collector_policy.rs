@@ -3,6 +3,7 @@ use betterlite_config::collector::{
     parse_collector_address,
 };
 use betterlite_logging::spend_error::should_suppress_tracebacks;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::watch;
@@ -22,9 +23,9 @@ struct Policy {
     debug: bool,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let addresses: Vec<_> = input
             .addresses
             .iter()

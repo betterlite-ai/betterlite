@@ -27,11 +27,10 @@ use support::{
 use super::compare::compare_transcripts;
 use super::decode_http_scenario;
 use super::model::{Limits, Step, StepCompare};
-use crate::case::{
-    Case, Ignore, LoadedCase, Request, decode_case, load_http_scenario_cases, parse_case,
-};
+use crate::case::{Case, LoadedCase, Request, decode_case, load_http_scenario_cases, parse_case};
 use crate::http_scenarios::run::StepCapture;
-use crate::mock::ProviderRequest;
+use betterlite_oracle_runner::case::Ignore;
+use betterlite_oracle_runner::mock::ProviderRequest;
 
 const FIXTURE_LIMIT_BYTES: usize = 0x0100_0000;
 const OVERSIZE_BYTES: usize = 0x0100_0001;

@@ -3,7 +3,8 @@ use betterlite_prompts::bedrock_content::error::ContentError;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod calls;
 
@@ -49,7 +50,7 @@ impl Execute for Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

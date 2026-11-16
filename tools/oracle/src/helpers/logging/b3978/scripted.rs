@@ -11,6 +11,7 @@ use betterlite_logging::rubrik_delivery::transport::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::fmt::Debug;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
@@ -165,7 +166,7 @@ impl Visit for EventFields {
         self.record(field, value);
     }
 
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         self.record(field, &format!("{value:?}"));
     }
 }

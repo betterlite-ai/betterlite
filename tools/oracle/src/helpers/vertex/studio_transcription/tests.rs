@@ -5,11 +5,12 @@ use std::path::Path;
 
 use rstest::rstest;
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 #[test]
 fn helper_seeds_select_studio_transcription() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -63,9 +64,9 @@ fn helper_seeds_select_studio_transcription() {
     r#"[{"model":"gemini-3.5-transcribe","input":[{"type":"audio","data":"aMOpbGxvIHfDtnJsZA==","mime_type":"audio/wav"}]},{"text":"","task":"transcribe","usage":{"type":"tokens","input_tokens":2,"output_tokens":8,"total_tokens":10,"input_token_details":{"audio_tokens":5,"text_tokens":-3}}},{"text":"w","task":"transcribe","words":[{"word":"w","start":1.0,"speaker":""}]}]"#
 )]
 fn the_native_helper_answers_like_litellm(#[case] file: &str, #[case] litellm: &str) {
-    use crate::helpers::Helper as _;
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/studio-transcription")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();

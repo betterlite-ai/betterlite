@@ -26,6 +26,7 @@ use super::calls::{
     EagerUsed, FileIds, OneShot, Pdf, Skills, Tools,
 };
 use super::fixture::Fixture;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
@@ -206,7 +207,7 @@ fn conversation_answer(case: &Conversation) -> Value {
     })
 }
 
-pub(super) async fn run(calls: &[Call], fixture: &Fixture) -> crate::helpers::HelperResult {
+pub(super) async fn run(calls: &[Call], fixture: &Fixture) -> HelperResult {
     let mut session = fixture.session();
     let mut answers = Vec::with_capacity(calls.len());
     for call in calls {

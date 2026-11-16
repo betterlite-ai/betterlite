@@ -1,7 +1,6 @@
 use super::{
     ClassifierInput, DurationSpec, SessionCase, SnapshotSpec, VectorInput, invalid, request_text,
 };
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_logging::spend_bodies::SpendStoragePolicy;
 use betterlite_logging::spend_bodies::classifier::{
     SnapshotValue, classifier_audit_fields, classifier_input_snapshot, without_classifier_audit,
@@ -15,6 +14,8 @@ use betterlite_logging::spend_bodies::vector_store::redact_vector_store;
 use betterlite_logging::spend_sanitize::SpendSanitizePolicy;
 use betterlite_logging::spend_sanitize::value::SpendValue;
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use indexmap::IndexMap;
 use serde_json::{Value, json};

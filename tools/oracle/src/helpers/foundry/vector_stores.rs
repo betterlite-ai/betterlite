@@ -5,6 +5,7 @@ mod tests;
 
 use serde::Deserialize;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use scenarios::{
     AuthCredentialsInput, AzureSearchEndpointInput, DocumentScoreCitationInput,
     SearchQueryFieldsInput, StoreTypeEndpointsInput, UnsupportedStoreCreateInput,
@@ -25,10 +26,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         reports::run(input)
     }
 }

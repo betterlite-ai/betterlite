@@ -1,10 +1,11 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_guardrails::bedrock_masking::{
     apply_to_messages, apply_to_response, extract_masked_texts,
 };
 use betterlite_guardrails::bedrock_message_selection::{
     content, prepare_for_role, reconcile, select,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Serialize;
 use serde_json::to_value;
 use wire::{Grounding, Input, Prepared, Selection, Step};

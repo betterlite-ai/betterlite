@@ -15,7 +15,7 @@ use serde::Serialize;
 use serde_json::Value;
 use serde_json::json;
 
-use crate::compare::helper::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Deserialize)]
 #[serde(untagged)]

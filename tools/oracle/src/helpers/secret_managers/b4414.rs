@@ -12,8 +12,11 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use script::{CredentialFailure, Refused, Requests, Resolver, Route, Script};
+use std::mem;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -58,18 +61,16 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .map_err(|error| {
-                Box::new(HelperError {
-                    class: "RuntimeError".to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })
-            })?;
+        let runtime = Builder::new_current_thread().build().map_err(|error| {
+            Box::new(HelperError {
+                class: "RuntimeError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
         Ok(runtime.block_on(execute(input)))
     }
 }
@@ -100,7 +101,7 @@ async fn execute(input: &Input) -> Value {
     let mut steps = Vec::new();
     for step in &input.steps {
         let result = run_step(&manager, step).await;
-        let sent = std::mem::take(&mut *requests.lock().unwrap_or_else(PoisonError::into_inner));
+        let sent = mem::take(&mut *requests.lock().unwrap_or_else(PoisonError::into_inner));
         steps.push(json!({"result": result, "requests": sent}));
     }
     json!({"steps": steps})

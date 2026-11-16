@@ -2,14 +2,15 @@ mod fakes;
 mod input;
 mod scenario;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::Input;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         scenario::run(input)
     }
 }

@@ -13,7 +13,8 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "operation")]
@@ -78,10 +79,10 @@ pub(crate) struct PromptInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         match input {
             Input::Prompt(fields) => run_prompt(fields),
             Input::Completion {
@@ -105,7 +106,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn run_prompt(fields: &PromptInput) -> crate::helpers::HelperResult {
+fn run_prompt(fields: &PromptInput) -> HelperResult {
     let usage = PromptModalityUsage {
         base: PromptDetails {
             text_tokens: fields.text_tokens,
@@ -175,10 +176,7 @@ fn prompt_result(
     })
 }
 
-fn run_completion(
-    completion_tokens: i64,
-    usage: &CompletionDetails,
-) -> crate::helpers::HelperResult {
+fn run_completion(completion_tokens: i64, usage: &CompletionDetails) -> HelperResult {
     let details = parse_completion_details(completion_tokens, usage)
         .map_err(|error| modality_cost_error(&error))?;
     Ok(json!({

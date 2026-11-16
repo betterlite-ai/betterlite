@@ -22,7 +22,7 @@ use betterlite_secret_managers::secret_lookup::ports::{
 };
 use secrecy::SecretString;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Default)]
 pub(super) struct ResolutionFixture {

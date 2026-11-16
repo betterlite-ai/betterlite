@@ -10,7 +10,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::future::Future;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -75,7 +78,7 @@ fn block_on<F>(future: F) -> Result<F::Output, Box<HelperError>>
 where
     F: Future,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .build()
         .map(|runtime| runtime.block_on(future))
         .map_err(|error| helper_error("RuntimeError", error))
@@ -83,7 +86,7 @@ where
 
 fn helper_error<M>(class: &str, message: M) -> Box<HelperError>
 where
-    M: std::fmt::Display,
+    M: Display,
 {
     Box::new(HelperError {
         class: class.to_owned(),

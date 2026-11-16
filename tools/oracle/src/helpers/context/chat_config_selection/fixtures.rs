@@ -17,7 +17,7 @@ use indexmap::IndexSet;
 use serde::Deserialize;
 
 use super::{Call, Catalog, JsonProviderEntry, invalid};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields, default)]

@@ -8,7 +8,8 @@ use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use serde_json::json;
 
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::{CostCase, RateCase};
 

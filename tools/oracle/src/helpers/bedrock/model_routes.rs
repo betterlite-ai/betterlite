@@ -7,7 +7,7 @@ use betterlite_bedrock::model_routes::request::{
 };
 use betterlite_bedrock::model_routes::{
     BedrockModelInfo, CHAT_COMPLETIONS_PREFIX, CLAUDE_PLATFORM_PREFIX, CONVERSE_PREFIX,
-    MANTLE_PREFIX, ModelRouteSelector, ParamMap, ParamValue, bedrock_model_info,
+    MANTLE_PREFIX, ModelRouteSelector, ParamMap, ParamValue, RouteError, bedrock_model_info,
     get_bedrock_tool_name, get_claude_platform_model, has_route_prefix, map_claude_platform_auth,
     without_bedrock_route_prefix,
 };
@@ -17,7 +17,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 
@@ -114,7 +115,7 @@ struct ModelInfoProbe {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -134,7 +135,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn route_error(error: &betterlite_bedrock::model_routes::RouteError) -> Box<HelperError> {
+fn route_error(error: &RouteError) -> Box<HelperError> {
     Box::new(HelperError {
         class: "RouteError".to_owned(),
         status: None,

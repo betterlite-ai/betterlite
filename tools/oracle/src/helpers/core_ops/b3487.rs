@@ -10,12 +10,15 @@ use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_logging::passthrough_stream_logging::types::EndpointType;
 use betterlite_models::decisions::HiddenParams;
 use chrono::{DateTime, FixedOffset, Utc};
-use futures_util::stream::{BoxStream, iter};
+use futures_util::stream::{self, BoxStream};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::iter;
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 const LINE_LIMIT: usize = 0x0010_0000;
 
@@ -48,7 +51,7 @@ impl Helper for Op {
         let (yielded, collected) = match input.mode {
             // LiteLLM's sync iterator hands out one event per next() call and never logs at the end
             Mode::Sync => {
-                let mut stream = GoogleGenAiStream::new(std::iter::once(Ok(body)), LINE_LIMIT);
+                let mut stream = GoogleGenAiStream::new(iter::once(Ok(body)), LINE_LIMIT);
                 let yielded = stream
                     .by_ref()
                     .collect::<Result<Vec<_>, _>>()
@@ -63,13 +66,13 @@ impl Helper for Op {
 
 // LiteLLM's async iterator hands out one event per __anext__ call and logs at the end
 fn async_events(input: &Input, body: Vec<u8>) -> Result<Events, Box<HelperError>> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .or_value_error()?;
     runtime.block_on(async {
         let source: BoxStream<'static, Result<Vec<u8>, HttpError>> =
-            Box::pin(iter(std::iter::once(Ok::<Vec<u8>, HttpError>(body))));
+            Box::pin(stream::iter(iter::once(Ok::<Vec<u8>, HttpError>(body))));
         let mut stream = AsyncGoogleGenAiStream::new(
             source,
             stream_metadata(input),
@@ -135,7 +138,7 @@ fn stream_metadata(input: &Input) -> GenAiStreamMetadata {
 fn line_bytes(lines: &[String]) -> Vec<u8> {
     lines
         .iter()
-        .flat_map(|line| line.bytes().chain(std::iter::once(b'\n')))
+        .flat_map(|line| line.bytes().chain(iter::once(b'\n')))
         .collect()
 }
 

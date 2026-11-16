@@ -41,7 +41,7 @@ description: >-
   is out of scope, so add no decoder or fuzz target here.
 
 
-  Register HelperCall::BatchManagedRecords in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  Register HelperCall::BatchManagedRecords in tools/oracle/src/helpers.rs (and helpers.rs if it owns the re-export)
   and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {batch_managed_records: <typed input>}; operation
   is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
   Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered

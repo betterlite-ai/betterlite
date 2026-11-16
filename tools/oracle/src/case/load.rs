@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
@@ -10,6 +9,7 @@ use crate::routing_component_oracle::{ProbeCase, validate_probe_case};
 use crate::sdk_http::{OracleLimits as SdkHttpLimits, SdkHttpCase, decode_sdk_http_case};
 
 use super::{CaseKind, LoadedCase, parse_case};
+use betterlite_oracle_runner::case::read_case_files;
 
 fn load_selected<T, F>(
     paths: &[PathBuf],
@@ -117,50 +117,4 @@ where
         }
     }
     Ok(selected)
-}
-
-fn read_case_files(paths: &[PathBuf]) -> Result<Vec<(PathBuf, String)>, OracleError> {
-    let mut files = Vec::new();
-    for path in paths {
-        collect_yaml(path, &mut files)?;
-    }
-    if files.is_empty() {
-        return Err(OracleError::CaseInvalid {
-            path: PathBuf::from("<arguments>"),
-            message: "no YAML cases found".to_owned(),
-        });
-    }
-    files.sort();
-    let mut texts = Vec::with_capacity(files.len());
-    for path in files {
-        let text = fs::read_to_string(&path).map_err(|source| OracleError::CaseRead {
-            path: path.clone(),
-            source,
-        })?;
-        texts.push((path, text));
-    }
-    Ok(texts)
-}
-
-fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), OracleError> {
-    let read_error = |source| OracleError::CaseRead {
-        path: path.to_owned(),
-        source,
-    };
-    let metadata = fs::metadata(path).map_err(&read_error)?;
-    if metadata.is_file() {
-        if path
-            .extension()
-            .is_some_and(|extension| extension == "yaml" || extension == "yml")
-        {
-            files.push(path.to_owned());
-        }
-        return Ok(());
-    }
-    let entries = fs::read_dir(path).map_err(&read_error)?;
-    for result in entries {
-        let entry = result.map_err(&read_error)?;
-        collect_yaml(&entry.path(), files)?;
-    }
-    Ok(())
 }

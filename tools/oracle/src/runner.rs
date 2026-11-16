@@ -11,12 +11,14 @@ use crate::OracleError;
 use crate::case::{Case, LoadedCase};
 use crate::cli::Options;
 use crate::helpers;
+use crate::http;
+use crate::http::Response;
 use crate::http::browser_flow;
-use crate::http::{self, Response};
-use crate::mock::{MockProvider, ProviderRequest};
 use crate::paths::artifact_root;
 use crate::process::Gateway;
-use crate::routing_mock_scripts::MockScript;
+use betterlite_oracle_runner::helpers::{HelperRun, run_case};
+use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
+use betterlite_oracle_runner::routing_mock_scripts::MockScript;
 
 pub(crate) mod browser_flow_group;
 pub(crate) mod compare_cases;
@@ -44,7 +46,7 @@ pub(crate) fn run_cases(
     let mut groups = BTreeMap::<String, Vec<Case>>::new();
     let mut scenarios = Vec::new();
     let mut websocket_cases = Vec::new();
-    let mut helper_outcome = helpers::HelperRun::Match;
+    let mut helper_outcome = HelperRun::Match;
     for loaded_case in cases {
         match loaded_case {
             LoadedCase::Http(http_case) => {
@@ -53,9 +55,9 @@ pub(crate) fn run_cases(
             }
             LoadedCase::Scenario(scenario_case) => scenarios.push(scenario_case),
             LoadedCase::Helper(helper_case) => {
-                let result = helpers::run_case(&helper_case, options.self_check)?;
-                if matches!(result, helpers::HelperRun::Difference) {
-                    helper_outcome = helpers::HelperRun::Difference;
+                let result = run_case(&helpers::GROUPS, &helper_case, options.self_check)?;
+                if matches!(result, HelperRun::Difference) {
+                    helper_outcome = HelperRun::Difference;
                 }
             }
             LoadedCase::WebSocket(websocket_case) => websocket_cases.push(*websocket_case),
@@ -71,7 +73,7 @@ pub(crate) fn run_cases(
         outcomes.push(scenario::run_scenario_case(options, &root, scenario_case)?);
     }
     outcomes.extend(websocket::run_cases(options, &root, &websocket_cases)?);
-    if matches!(helper_outcome, helpers::HelperRun::Difference) {
+    if matches!(helper_outcome, HelperRun::Difference) {
         return Ok(exit_status(true));
     }
     Ok(exit_status(outcomes.contains(&true)))

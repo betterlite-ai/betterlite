@@ -4,7 +4,8 @@ use betterlite_vertex::gemini_response_parts::projection::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 

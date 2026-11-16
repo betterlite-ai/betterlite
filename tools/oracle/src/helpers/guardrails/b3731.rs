@@ -12,10 +12,15 @@ use betterlite_http::proxy::base_builder;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::{MockProvider, ProviderRequest};
-use crate::routing_mock_scripts::{MockScript, ProviderCall, redact};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
+use betterlite_oracle_runner::routing_mock_scripts::{
+    MockScript, ProviderCall, redact_credentials,
+};
+use std::slice;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -69,7 +74,7 @@ pub(crate) enum Input {
     Apply(Box<Apply>),
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -130,9 +135,7 @@ fn start_mock(
     silent: &TcpListener,
 ) -> Result<(Option<MockProvider>, String), Box<HelperError>> {
     let mock = answer
-        .map(|reply| {
-            MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start)
-        })
+        .map(|reply| MockScript::try_from(slice::from_ref(reply)).and_then(MockProvider::start))
         .transpose()
         .map_err(|error| {
             Box::new(HelperError {
@@ -175,7 +178,7 @@ fn apply_guardrail(apply: &Apply) -> HelperResult {
             message: error.to_string(),
         })
     })?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| {
@@ -243,7 +246,7 @@ fn sent_request(request: &ProviderRequest, moderation: &OpenAiModerationGuardrai
         "authorization".to_owned(),
         format!("Bearer {}", moderation.api_key.expose_secret()),
     )]);
-    redact(&mut expected);
+    redact_credentials(&mut expected);
     json!({
         "path": request.path.rsplit('/').next(),
         "body": request.body,

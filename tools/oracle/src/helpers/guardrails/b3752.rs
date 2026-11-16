@@ -14,9 +14,11 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use endpoint::{Endpoint, build_client, start_endpoint};
+use tokio::runtime::Builder;
 
 mod endpoint;
 
@@ -77,7 +79,7 @@ impl Helper for Op {
 }
 
 fn alice_apply(args: &AliceApplyArgs) -> HelperResult {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .or_value_error()?

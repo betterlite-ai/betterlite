@@ -5,7 +5,7 @@ use betterlite_logging::langfuse_observations::identity::{
 use opentelemetry_sdk::trace::RandomIdGenerator;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use identities::{parent_step, sampler_step};
 use inputs::{Input, Step};

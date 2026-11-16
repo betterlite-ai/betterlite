@@ -4,7 +4,7 @@ mod tests;
 
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

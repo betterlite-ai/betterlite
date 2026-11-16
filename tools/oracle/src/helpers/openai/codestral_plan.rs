@@ -1,9 +1,10 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_openai::codestral_call::log::{CallLogger, PreCall, StreamPostCall};
 use betterlite_openai::codestral_call::plan::{CodestralRequest, Mode, prepare};
 use betterlite_openai::codestral_records::options::CodestralSettings;
 use betterlite_openai::codestral_records::reply::{PostCall, PostCallLogger};
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::builtin::Message;
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::custom::CustomPromptTemplate;
@@ -15,6 +16,7 @@ use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::Duration;
+use tokio::runtime::{Builder, Runtime};
 mod tests;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -67,7 +69,7 @@ impl Helper for Op {
             hub: Hub::Unreachable,
         };
         let now = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| {
@@ -93,7 +95,7 @@ fn run_call(
     settings: &CodestralSettings,
     prompts: &PromptFactory,
     now: DateTime<Utc>,
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
 ) -> Value {
     let secret = call.api_key.clone().map(SecretString::from);
     let Ok(timeout) = Duration::try_from_secs_f64(call.timeout) else {

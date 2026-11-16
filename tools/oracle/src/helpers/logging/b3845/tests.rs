@@ -1,10 +1,15 @@
 #![cfg(test)]
 
+use betterlite_oracle_helper_api::helper::Helper;
+use betterlite_oracle_runner::case::load_helper_cases;
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
+use std::path::Path;
+
 #[test]
 fn helper_functions_dispatch() {
     let input = serde_json::json!({"function": "messages", "messages": []});
     let decoded = serde_json::from_value(input).unwrap();
-    let result = <super::Op as crate::helpers::Helper>::run(&decoded).unwrap();
+    let result = <super::Op as Helper>::run(&decoded).unwrap();
     assert_eq!(
         result,
         serde_json::json!({"result": {"serialized": null, "parts": []}})
@@ -26,15 +31,15 @@ fn helper_functions_dispatch() {
 #[case::service_db_attributes("service-db-attributes.yaml")]
 #[case::tool_definition_budget("tool-definition-budget.yaml")]
 fn helper_case_matches_litellm(#[case] name: &str) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/genai-mapping")
         .join(name);
-    let cases = crate::case::load_cases(&[path]).unwrap();
-    let Some(crate::case::LoadedCase::Helper(case)) = cases.first() else {
+    let cases = load_helper_cases(&[path]).unwrap();
+    let Some(case) = cases.first() else {
         panic!("expected a helper case");
     };
     assert!(matches!(
-        crate::helpers::run_case(case, false).unwrap(),
-        crate::helpers::HelperRun::Match
+        run_case(&[crate::GROUP], case, false).unwrap(),
+        HelperRun::Match
     ));
 }

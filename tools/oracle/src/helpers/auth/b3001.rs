@@ -10,7 +10,10 @@ use rust_decimal::prelude::ToPrimitive as _;
 
 use self::fakes::{FakeModelInfo, FakeRouter, FakeTokens, NoDecoders};
 use self::input::{Function, Input};
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 // The estimate reads tokens from one of these body fields; B1695's tokenizer is not part of this helper.
 const COUNTED_INPUT_FIELDS: [&str; 5] = ["messages", "prompt", "input", "query", "documents"];
@@ -22,7 +25,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         reject_uncountable_estimate(input)?;
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| helper_error("RuntimeError", error))?;
@@ -104,7 +107,7 @@ async fn dispatch(
 
 fn helper_error<M>(class: &str, message: M) -> Box<HelperError>
 where
-    M: std::fmt::Display,
+    M: Display,
 {
     Box::new(HelperError {
         class: class.to_owned(),

@@ -13,7 +13,9 @@ use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 use tower::ServiceExt as _;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 const MAX_BODY: usize = 4 * 1024 * 1024;
 
@@ -204,11 +206,11 @@ async fn answer(input: &Input) -> Result<serde_json::Value, Box<HelperError>> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| failure("RuntimeError", error))?;
         runtime.block_on(answer(input))

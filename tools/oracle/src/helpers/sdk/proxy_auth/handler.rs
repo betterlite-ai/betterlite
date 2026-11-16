@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use thiserror::Error;
 
 use super::Moment;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]

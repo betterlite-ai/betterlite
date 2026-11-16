@@ -16,7 +16,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::probe::{
     RecordedCall, RecordingLogger, RecordingSocket, beta_realtime, closed_json, helper_error,

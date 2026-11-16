@@ -14,7 +14,9 @@ use serde::Deserialize;
 use serde_json::{Number, Value, json};
 
 use super::project::project;
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 const COST_FIELDS: [&str; 2] = ["input_cost_per_token", "output_cost_per_token"];
 
@@ -168,7 +170,7 @@ fn shown_entries(registry: &ModelRegistry, show: &[String]) -> Json {
 }
 
 pub(super) fn register(scenario: &Scenario) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .or_value_error()?;

@@ -26,6 +26,7 @@ use betterlite_tokenizer::engine::selection::Selector;
 use tokio::time::Instant;
 
 use super::errors;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) struct Session {
     pub(super) counter: Counter,
@@ -50,7 +51,7 @@ impl BlockingCounter for InlineCounter {
 }
 
 impl Session {
-    pub(super) fn build() -> Result<Self, Box<crate::helpers::HelperError>> {
+    pub(super) fn build() -> Result<Self, Box<HelperError>> {
         let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
             .map_err(|error| errors::value_error(error.to_string()))?;
         let client = Arc::new(

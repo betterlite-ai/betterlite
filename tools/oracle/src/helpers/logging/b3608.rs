@@ -25,6 +25,8 @@ use betterlite_logging::passthrough_stream_logging::types::{
     ProviderChunkHandlers,
 };
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
@@ -33,10 +35,10 @@ use serde_json::{Value, json};
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Lines { chunks } => Ok(json!({
                 "lines": convert_raw_bytes_to_str_lines(chunks),
@@ -144,7 +146,7 @@ fn build_result(
     request_body: Option<Json>,
     model: Option<String>,
     chunks: &[Vec<u8>],
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let logging = logging_state()?;
     let object = Arc::new(StreamLoggingObject {
         slot: Mutex::new(Some(StreamLoggingState {
@@ -180,7 +182,7 @@ fn build_result(
     }))
 }
 
-fn logging_state() -> Result<LoggingState, Box<crate::helpers::HelperError>> {
+fn logging_state() -> Result<LoggingState, Box<HelperError>> {
     let init = LoggingInit {
         model: "gpt-4o".to_owned(),
         call_type: "pass_through_endpoint".to_owned(),
@@ -216,14 +218,12 @@ fn logging_state() -> Result<LoggingState, Box<crate::helpers::HelperError>> {
     .map_err(|error| invalid(&error.to_string()))
 }
 
-fn fixed_time() -> Result<DateTime<FixedOffset>, Box<crate::helpers::HelperError>> {
+fn fixed_time() -> Result<DateTime<FixedOffset>, Box<HelperError>> {
     DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00")
         .map_err(|error| invalid(&error.to_string()))
 }
 
-fn body_json(
-    request_body: Option<&Value>,
-) -> Result<Option<Json>, Box<crate::helpers::HelperError>> {
+fn body_json(request_body: Option<&Value>) -> Result<Option<Json>, Box<HelperError>> {
     request_body
         .map(|value| {
             serde_json::from_value(value.clone()).map_err(|error| invalid(&error.to_string()))
@@ -231,8 +231,8 @@ fn body_json(
         .transpose()
 }
 
-fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,

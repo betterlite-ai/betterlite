@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::{Value, json};
+use std::mem;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::Layer;
@@ -32,7 +33,7 @@ pub(super) struct Logs(Arc<Mutex<Vec<Value>>>);
 
 impl Logs {
     pub(super) fn take(&self) -> Vec<Value> {
-        let mut taken = std::mem::take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner));
+        let mut taken = mem::take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner));
         // LiteLLM's base rotation logs an AWS-worded error that betterlite does not
         taken.retain(|entry| entry["event"] != "unrecognized");
         taken

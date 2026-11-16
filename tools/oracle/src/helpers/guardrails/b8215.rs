@@ -5,19 +5,22 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
-use betterlite_guardrails::singulr::SingulrGuardrail;
 use betterlite_guardrails::singulr::error::STATUS_CODE;
 use betterlite_guardrails::singulr::error::SingulrError;
 use betterlite_guardrails::singulr::init::SingulrArgs;
+use betterlite_guardrails::singulr::{SUPPORTED_EVENT_HOOKS, SingulrGuardrail};
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, ProviderCall};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{MockScript, ProviderCall};
+use std::slice;
+use tokio::runtime::Builder;
 
 const REPORTED_HEADERS: [&str; 4] = [
     "content-type",
@@ -59,7 +62,7 @@ struct Settings {
     timeout: Option<f64>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = SingulrCall;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -68,7 +71,7 @@ impl crate::helpers::Helper for Op {
             scenarios.push(scenario_value(scenario)?);
         }
         Ok(json!({
-            "supported_event_hooks": betterlite_guardrails::singulr::SUPPORTED_EVENT_HOOKS,
+            "supported_event_hooks": SUPPORTED_EVENT_HOOKS,
             "scenarios": scenarios,
         }))
     }
@@ -77,7 +80,7 @@ impl crate::helpers::Helper for Op {
 fn scenario_value(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
     let (mock, base) = start_mock(scenario.answer.as_ref())?;
     let guardrail = build_guardrail(&scenario.settings, &base)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("OSError", error.to_string()))?;
@@ -118,7 +121,7 @@ fn start_mock(
         drop(listener);
         return Ok((None, format!("http://{address}")));
     };
-    let script = MockScript::try_from(std::slice::from_ref(answer))
+    let script = MockScript::try_from(slice::from_ref(answer))
         .map_err(|error| failure("MockError", error.to_string()))?;
     let provider =
         MockProvider::start(script).map_err(|error| failure("MockError", error.to_string()))?;

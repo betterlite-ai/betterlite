@@ -9,8 +9,10 @@ use betterlite_server::list_api::sql::{order_by_sql, where_sql};
 use serde_json::{Value, json};
 
 use super::parse::{Case, Input, PredicateInput, cell};
+use betterlite_oracle_helper_api::error::HelperError;
+use tokio::runtime::Builder;
 
-pub(super) fn run(input: &Input) -> Result<Value, Box<crate::helpers::HelperError>> {
+pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
     let mut output = serde_json::Map::new();
     for (name, case) in &input.cases {
         output.insert(name.clone(), evaluate(case)?);
@@ -18,7 +20,7 @@ pub(super) fn run(input: &Input) -> Result<Value, Box<crate::helpers::HelperErro
     Ok(Value::Object(output))
 }
 
-fn evaluate(case: &Case) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn evaluate(case: &Case) -> Result<Value, Box<HelperError>> {
     match case {
         Case::Sql {
             predicates: inputs,
@@ -38,7 +40,7 @@ fn evaluate_sql(
     inputs: Vec<PredicateInput>,
     first_index: usize,
     order: &[SortKey],
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<HelperError>> {
     let where_ = inputs
         .into_iter()
         .map(super::parse::predicate)
@@ -54,7 +56,7 @@ fn evaluate_memory(
     rows: &[BTreeMap<String, super::parse::CellInput>],
     order: &[SortKey],
     distinct_field: Option<&str>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<HelperError>> {
     let where_ = inputs
         .into_iter()
         .map(super::parse::predicate)
@@ -97,11 +99,11 @@ fn filter_json(value: &FilterValue) -> Value {
     }
 }
 
-fn block_on<F>(future: F) -> Result<F::Output, Box<crate::helpers::HelperError>>
+fn block_on<F>(future: F) -> Result<F::Output, Box<HelperError>>
 where
     F: Future,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .build()
         .map(|runtime| runtime.block_on(future))
         .map_err(|error| helper_error!("RuntimeError", error.to_string()))

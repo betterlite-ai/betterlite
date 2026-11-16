@@ -11,7 +11,7 @@ use betterlite_bedrock::count_call::reply::CountResponse;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 use super::input::{Call, Handler};
 use super::logs::Captured;

@@ -4,6 +4,7 @@ mod coordination;
 mod disk;
 
 use betterlite_context::local_ttl_cache::CacheValue;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -47,10 +48,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::DiskSetAndGet { key, value } => disk::set_and_get(key, value),
             Input::DiskTtl { entries } => disk::ttl_expiry(entries),

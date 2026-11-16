@@ -1,4 +1,3 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::RefuseDownloads;
@@ -7,6 +6,8 @@ use betterlite_openai::cometapi_wire::chat::{
 };
 use betterlite_openai::cometapi_wire::chunk::chunk_parser;
 use betterlite_openai::cometapi_wire::embed::{decode_comet_embedding_reply, validate_environment};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Object as JsonObject;
 use secrecy::SecretString;
 use serde::Deserialize;

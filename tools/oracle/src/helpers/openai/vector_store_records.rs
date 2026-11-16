@@ -52,6 +52,8 @@ pub(crate) enum Input {
 pub(crate) struct Op;
 
 use EntryKind::Record;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 enum EntryKind {
     Record(VectorStoreRecordKind),
@@ -118,7 +120,7 @@ const VECTOR_RECORDS: &[(&str, EntryKind)] = &[
     ("index_types", EntryKind::IndexTypes),
 ];
 
-fn decode_model(kind: VectorStoreRecordKind, record: &Value) -> crate::helpers::HelperResult {
+fn decode_model(kind: VectorStoreRecordKind, record: &Value) -> HelperResult {
     let bytes = serde_json::to_vec(record).map_err(|error| helper_error(error.to_string()))?;
     let limits = WireDecodeLimits {
         max_json_bytes: 0x0010_0000,
@@ -130,10 +132,7 @@ fn decode_model(kind: VectorStoreRecordKind, record: &Value) -> crate::helpers::
     serde_json::to_value(decoded).map_err(|error| helper_error(error.to_string()))
 }
 
-fn decode_group(
-    source: &BTreeMap<String, Value>,
-    fields: &[(&str, EntryKind)],
-) -> crate::helpers::HelperResult {
+fn decode_group(source: &BTreeMap<String, Value>, fields: &[(&str, EntryKind)]) -> HelperResult {
     let mut output = BTreeMap::new();
     for (name, value) in source {
         let (_, kind) = fields
@@ -145,7 +144,7 @@ fn decode_group(
     serde_json::to_value(output).map_err(|error| helper_error(error.to_string()))
 }
 
-fn decode_entry(kind: &EntryKind, value: &Value) -> crate::helpers::HelperResult {
+fn decode_entry(kind: &EntryKind, value: &Value) -> HelperResult {
     match kind {
         Record(record_kind) => decode_model(*record_kind, value),
         EntryKind::Config => round_trip::<LiteLlmVectorStoreConfig>(value),
@@ -159,7 +158,7 @@ fn decode_entry(kind: &EntryKind, value: &Value) -> crate::helpers::HelperResult
     }
 }
 
-fn round_trip<T>(value: &Value) -> crate::helpers::HelperResult
+fn round_trip<T>(value: &Value) -> HelperResult
 where
     T: DeserializeOwned + Serialize,
 {
@@ -168,10 +167,10 @@ where
     serde_json::to_value(typed).map_err(|error| helper_error(error.to_string()))
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::ToolParamsOmitOnlyNull { params } => serde_json::to_value(params.to_dict())
                 .map_err(|error| helper_error(error.to_string())),
@@ -200,8 +199,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn helper_error(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn helper_error(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: String::from("ValidationError"),
         status: None,
         error_type: None,

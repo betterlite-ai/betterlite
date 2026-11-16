@@ -3,6 +3,7 @@ use betterlite_error::native_errors_b::nlp_cloud::{self, NlpCloudExceptionInput}
 use betterlite_error::native_errors_b::ollama::{self, OllamaExceptionInput};
 use betterlite_error::native_errors_b::together_ai::{self, TogetherAiExceptionInput};
 use betterlite_error::native_errors_b::vllm::{self, VllmExceptionInput};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 
 pub(crate) struct Op;
@@ -17,10 +18,10 @@ pub(crate) enum Input {
     Vllm(VllmExceptionInput),
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mapped = match input {
             Input::NlpCloud(nlp_cloud_input) => nlp_cloud::map_nlp_cloud_exception(nlp_cloud_input),
             Input::TogetherAi(together_ai_input) => {

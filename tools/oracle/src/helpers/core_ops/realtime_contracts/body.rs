@@ -1,9 +1,9 @@
 use super::failure;
-use crate::helpers::HelperResult;
 use betterlite_core::api::realtime_contracts::cache::RealtimeRequestBodyCache;
 use betterlite_core::api::realtime_contracts::decode::{
     RealtimeDecodeLimits, decode_realtime_frame,
 };
+use betterlite_oracle_helper_api::helper::HelperResult;
 use serde::Deserialize;
 use serde_json::json;
 const LIMITS: RealtimeDecodeLimits = RealtimeDecodeLimits { max_bytes: 1 << 20 };

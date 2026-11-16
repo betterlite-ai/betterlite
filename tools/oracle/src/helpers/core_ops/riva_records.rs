@@ -5,10 +5,13 @@ use betterlite_core::api::riva::records::options::map_openai_params;
 use betterlite_core::api::riva::records::recognition::transform_request;
 use betterlite_core::api::riva::records::response::{FinalResult, build_transcription_response};
 use betterlite_openai::openai_base_config::Object;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::fmt::Display;
 
-type Failure = Box<crate::helpers::HelperError>;
+type Failure = Box<HelperError>;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -56,10 +59,10 @@ enum Function {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let outcomes = input
             .calls
             .iter()
@@ -109,9 +112,9 @@ fn request_payload(call: &Call) -> Result<Value, Failure> {
 
 fn failure<Error>(error: Error) -> Failure
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

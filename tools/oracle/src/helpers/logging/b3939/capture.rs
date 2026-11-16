@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use std::fmt::Debug;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::Subscriber;
 use tracing::{Event, Level};
@@ -15,7 +16,7 @@ pub(super) struct WarningCounter(pub(super) Arc<AtomicUsize>);
 struct Message(String);
 
 impl Visit for Message {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = format!("{value:?}");
         }
