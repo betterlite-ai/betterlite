@@ -1,0 +1,37 @@
+kind: helper
+name: anthropic-http-stream-response-headers
+call:
+  anthropic_http_stream:
+    scenario: response_headers
+    api_base: https://api.anthropic.com/v1/messages
+    messages:
+      - role: user
+        content: hi
+    model: claude-3-5-sonnet
+    json_mode: false
+    headers:
+      content-type: application/json
+      x-api-key: sk-ant-secret
+      anthropic-version: "2023-06-01"
+    request_header_names: [content-type]
+    response_header_names: [x-request-id, content-type, anthropic-ratelimit-tokens-limit]
+    data: '{"model":"claude-3-5-sonnet","stream":true}'
+    request_data: {}
+    speed: null
+    reverse_map: {}
+    optional_params: {}
+    litellm_params: {}
+    upstream_status: null
+    upstream_headers:
+      content-type: text/event-stream
+      x-request-id: req-1
+      anthropic-ratelimit-requests-limit: "100"
+      anthropic-ratelimit-requests-remaining: "99"
+      anthropic-ratelimit-tokens-limit: "200000"
+      anthropic-ratelimit-tokens-remaining: "199000"
+    upstream_lines:
+      - 'data: {"type":"ping"}'
+    upstream_body: null
+    failure_message: null
+env: {}
+compare: {ignore: []}

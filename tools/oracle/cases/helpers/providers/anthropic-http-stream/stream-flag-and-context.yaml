@@ -1,0 +1,41 @@
+kind: helper
+name: anthropic-http-stream-stream-flag-and-context
+call:
+  anthropic_http_stream:
+    scenario: stream_flag_and_context
+    api_base: https://api.anthropic.com/v1/messages
+    messages:
+      - role: user
+        content: hi
+    model: claude-3-5-sonnet
+    json_mode: false
+    headers:
+      content-type: application/json
+      x-api-key: sk-ant-secret
+      anthropic-version: "2023-06-01"
+    request_header_names: [content-type, x-api-key]
+    response_header_names: [x-request-id]
+    data: ''
+    request_data:
+      model: claude-3-5-sonnet
+      stream: false
+      messages:
+        - role: user
+          content: hi
+    speed: null
+    reverse_map: {}
+    optional_params:
+      speed: fast
+    litellm_params:
+      _anthropic_tool_name_map:
+        t_sanitized: Original Name
+    upstream_status: null
+    upstream_headers:
+      content-type: text/event-stream
+      x-request-id: req-1
+    upstream_lines:
+      - 'data: {"type":"ping"}'
+    upstream_body: null
+    failure_message: null
+env: {}
+compare: {ignore: []}

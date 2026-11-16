@@ -1,0 +1,48 @@
+task: B1361
+deviations:
+  - what: >-
+      URL construction validates the configured project and location before it builds the model resource, so a
+      value that cannot be one path component fails with a typed error instead of being interpolated into the URL.
+    why: >-
+      A project or location carrying path separators would build a URL that names another resource, which no
+      working setup can rely on; the valid path is unchanged (same host, default us-central1 location and model
+      resource). B1321's Vertex speech request validates the same two values for the same reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L300-L337
+  - what: >-
+      An image option that is neither a dictionary nor a string is refused with an error naming the option; a
+      bare string that is not a gs:// URI is refused with LiteLLM's own message.
+    why: >-
+      LiteLLM treats every value that is not a dictionary or a string as a file-like object, so a number or a
+      list reaches get_image_content_type and raises AttributeError there. A working setup cannot rely on that
+      crash, and the refusal names the option the caller has to fix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L377-L396
+  - what: >-
+      A file-like image that reaches the flat parameters, because a full instances dictionary suppressed the
+      image branch, is refused with an error instead of being embedded in the request body.
+    why: >-
+      LiteLLM copies the file object into the parameters block, where JSON serialization fails in the HTTP
+      client with an error that names no option. Refusing it before the request is sent keeps the failure on
+      the parameter the caller passed, and a working setup sends a Vertex image dictionary on that path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L398-L413
+kept_bugs:
+  - what: >-
+      A seconds value whose conversion fails maps no durationSeconds at all; the four-second default that
+      LiteLLM's map_openai_params docstring describes is never inserted.
+    why: >-
+      The code catches the conversion error and passes, so a working setup sees an omitted duration rather
+      than a defaulted one, and betterlite keeps that request body byte for byte.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L231-L241
+  - what: >-
+      An instances option or a nested parameters option that is not a dictionary is silently dropped, and the
+      request continues with the rest of the body.
+    why: >-
+      LiteLLM guards both with isinstance and skips the block, so a working setup that sends dictionaries is
+      unaffected and one sending a wrong shape gets a request without it rather than an error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L403-L407
+  - what: >-
+      An operation name with fewer than eight path components gives an edit URL whose model segment is empty
+      (the resource path ends in a slash before :predictLongRunning) instead of an error.
+    why: >-
+      extract_model_from_operation_name returns None and the edit transform falls back to an empty string; a
+      working setup edits a decoded operation name of the full shape, so the fallback is kept as it is.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L157-L172

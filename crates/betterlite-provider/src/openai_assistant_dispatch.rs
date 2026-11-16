@@ -1,5 +1,38 @@
+use betterlite_openai::openai_base_config::Headers;
+use betterlite_openai::realtime::failure::ClientAction;
+use betterlite_openai::realtime::ssl::RealtimeSsl;
+use betterlite_openai::threads::operations::ThreadReply;
+
+use self::reply::{AssistantsReply, DecisionsReply, RunOutcome};
+
+pub mod call;
+pub mod error;
+pub mod execute;
+pub mod reply;
+
+// The provider operation payload is a unit marker: the typed call travels beside it, since operation.rs builds and matches the marker alone.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OpenAiAssistantRequest;
-pub struct OpenAiAssistantResult;
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct OpenAiAssistantPrepared;
+
+// every payload is boxed so the enum stays pointer-sized inside OperationResult, where the next largest variant is 16 bytes
+pub enum OpenAiAssistantResult {
+    Assistants(Box<AssistantsReply>),
+    Threads(Box<ThreadReply>),
+    Runs(Box<RunOutcome>),
+    Decisions(Box<DecisionsReply>),
+    Session(Box<OpenAiAssistantPrepared>),
+    SessionFailure(Box<ClientAction>),
+}
+
+// The prepared realtime session the composition installs; OpenAI installs no event normalizer at the pin, so only its presence is recorded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenAiAssistantPrepared {
+    pub url: String,
+    pub headers: Headers,
+    pub ssl: RealtimeSsl,
+    pub max_message_size_bytes: usize,
+    pub force_transcription_model: Option<String>,
+    pub event_normalizer_installed: bool,
+}
+
+mod tests;

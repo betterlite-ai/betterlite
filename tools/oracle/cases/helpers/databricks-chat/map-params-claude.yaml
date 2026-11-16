@@ -1,0 +1,101 @@
+kind: helper
+name: b5841 map-params-claude
+call:
+  b5841:
+    function: params
+    cases:
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        tools:
+        - type: function
+          function:
+            name: f
+            description: d
+            parameters:
+              type: object
+        tool_choice: auto
+        temperature: 0.2
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        response_format:
+          type: json_schema
+          json_schema:
+            name: out
+            schema:
+              type: object
+              properties:
+                a:
+                  type: string
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        response_format:
+          type: json_object
+        temperature: 0.3
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        response_format:
+          type: json_schema
+          json_schema:
+            name: out
+            schema:
+              type: object
+              properties:
+                a:
+                  type: string
+        thinking:
+          type: enabled
+          budget_tokens: 2048
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        reasoning_effort: low
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        reasoning_effort: high
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        reasoning_effort: medium
+        max_tokens: 100
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        reasoning_effort: none
+        thinking:
+          type: enabled
+          budget_tokens: 2048
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        reasoning_effort: banana
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        max_tokens: 10
+        max_completion_tokens: 20
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        thinking:
+          type: enabled
+          budget_tokens: 2048
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        reasoning_effort: minimal
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        reasoning_effort: xhigh
+      optional_params: {}
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        reasoning_effort: max
+      optional_params: {}
+env: {}
+compare:
+  ignore: []
