@@ -111,15 +111,17 @@ impl Agent365Guardrail {
     pub async fn get_obo_token(&self, assertion: &str) -> Result<SecretString, Agent365TokenError> {
         let cache_key = hex::encode(Sha256::digest(assertion.as_bytes()));
         let threshold = (self.clock)().checked_add(TOKEN_EXPIRY_MARGIN);
-        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        let fresh = cache
-            .peek(&cache_key)
-            .filter(|entry| threshold.is_some_and(|limit| entry.expires_at > limit))
-            .map(|entry| entry.access_token.clone());
-        if fresh.is_some() {
-            let _promoted = cache.promote(&cache_key);
-        }
-        drop(cache);
+        let fresh = {
+            let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+            let cached = cache
+                .peek(&cache_key)
+                .filter(|entry| threshold.is_some_and(|limit| entry.expires_at > limit))
+                .map(|entry| entry.access_token.clone());
+            if cached.is_some() {
+                let _promoted = cache.promote(&cache_key);
+            }
+            cached
+        };
         if let Some(token) = fresh {
             return Ok(token);
         }
@@ -138,11 +140,8 @@ impl Agent365Guardrail {
             access_token: grant.access_token.clone(),
             expires_at,
         };
-        let _evicted = self
-            .cache
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(cache_key, entry);
+        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        let _evicted = cache.push(cache_key, entry);
         Ok(grant.access_token)
     }
 
