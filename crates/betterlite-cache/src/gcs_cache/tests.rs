@@ -104,17 +104,16 @@ struct LogCapture(Arc<Mutex<Vec<u8>>>);
 
 impl Write for LogCapture {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0
+        let mut bytes = self
+            .0
             .lock()
-            .map_err(|error| io::Error::other(error.to_string()))?
-            .write(buf)
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        bytes.extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.0
-            .lock()
-            .map_err(|error| io::Error::other(error.to_string()))?
-            .flush()
+        Ok(())
     }
 }
 
@@ -304,18 +303,18 @@ async fn object_name_percent_encoding(
     let cache = cache_on(&listener, path);
     let value = decode_body(br#"{"value":true}"#).unwrap();
     let operation = async {
-        let (read, read_request) = tokio::join!(
-            cache.async_get_cache(key),
-            serve(&listener, &response("404 Not Found", b""))
-        );
+        let miss = response("404 Not Found", b"");
+        let (read, read_request) =
+            tokio::join!(cache.async_get_cache(key), serve(&listener, &miss));
         assert!(read.is_none());
         let read_text = String::from_utf8(read_request).unwrap();
         let read_target =
             format!("GET /storage/v1/b/responses/o/{expected}?alt=media HTTP/1.1\r\n");
         assert!(read_text.starts_with(&read_target), "{read_text}");
+        let stored = response("200 OK", b"");
         let ((), write_request) = tokio::join!(
             cache.async_set_cache(key, &value),
-            serve(&listener, &response("200 OK", b""))
+            serve(&listener, &stored)
         );
         let write_text = String::from_utf8(write_request).unwrap();
         let write_target = format!(
@@ -339,9 +338,10 @@ async fn write_url_and_body(#[case] bucket: &str) {
     );
     let value = decode_body(br#"{"value":true}"#).unwrap();
     let operation = async {
+        let stored = response("200 OK", b"");
         let ((), request) = tokio::join!(
             cache.async_set_cache("response:key", &value),
-            serve(&listener, &response("200 OK", b""))
+            serve(&listener, &stored)
         );
         let text = String::from_utf8(request).unwrap();
         let target = format!(
@@ -367,10 +367,11 @@ async fn write_ignores_failure_status(#[case] status: &str) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let cache = cache_on(&listener, "");
     let value = decode_body(br#"{"value":true}"#).unwrap();
+    let reply = response(status, b"<Error/>");
     let ((_, log), request) = timeout(Duration::from_secs(5), async {
         tokio::join!(
             capture_log(cache.async_set_cache("key", &value)),
-            serve(&listener, &response(status, b"<Error/>"))
+            serve(&listener, &reply)
         )
     })
     .await
@@ -421,9 +422,10 @@ async fn read_hit_on_200() {
     let cache = cache_on(&listener, "cache");
     let body = br#"{"value":true}"#;
     let operation = async {
+        let reply = response("200 OK", body);
         let (value, request) = tokio::join!(
             cache.async_get_cache("response:key"),
-            serve(&listener, &response("200 OK", body))
+            serve(&listener, &reply)
         );
         let text = String::from_utf8(request).unwrap();
         assert!(
@@ -445,9 +447,10 @@ async fn read_miss_on_404_without_log(#[case] status: &str) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let cache = cache_on(&listener, "");
     let operation = async {
+        let reply = response(status, b"<Error/>");
         let (value, request) = tokio::join!(
             capture_log(cache.async_get_cache("key")),
-            serve(&listener, &response(status, b"<Error/>"))
+            serve(&listener, &reply)
         );
         assert!(!request.is_empty());
         value
@@ -465,9 +468,10 @@ async fn read_miss_on_bad_json_logs_error(#[case] body: &[u8]) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let cache = cache_on(&listener, "");
     let operation = async {
+        let reply = response("200 OK", body);
         let (value, _) = tokio::join!(
             capture_log(cache.async_get_cache("key")),
-            serve(&listener, &response("200 OK", body))
+            serve(&listener, &reply)
         );
         value
     };
@@ -520,14 +524,14 @@ async fn headers_sent_on_read_and_write() {
     let cache = cache_on(&listener, "");
     let value = decode_body(br#"{"value":true}"#).unwrap();
     let operation = async {
+        let write_reply = response("200 OK", b"");
         let ((), write_bytes) = tokio::join!(
             cache.async_set_cache("key", &value),
-            serve(&listener, &response("200 OK", b""))
+            serve(&listener, &write_reply)
         );
-        let (read, get_bytes) = tokio::join!(
-            cache.async_get_cache("key"),
-            serve(&listener, &response("200 OK", br#"{"value":true}"#))
-        );
+        let read_reply = response("200 OK", br#"{"value":true}"#);
+        let (read, get_bytes) =
+            tokio::join!(cache.async_get_cache("key"), serve(&listener, &read_reply));
         assert!(read.is_some());
         let write = String::from_utf8(write_bytes).unwrap().to_lowercase();
         let get = String::from_utf8(get_bytes).unwrap().to_lowercase();
@@ -619,13 +623,14 @@ async fn pipeline_writes_every_pair() {
             .into_iter()
             .map(|bytes| String::from_utf8(bytes).unwrap())
             .collect();
-        assert!((0_u32..20).all(|index| {
-            recorded.iter().any(|text| {
-                text.starts_with(&format!(
+        let matched = (0_u32..20)
+            .map(|index| {
+                format!(
                     "POST /upload/storage/v1/b/responses/o?uploadType=media&name=key{index} HTTP/1.1\r\n"
-                ))
+                )
             })
-        }));
+            .all(|target| recorded.iter().any(|text| text.starts_with(target.as_str())));
+        assert!(matched, "every pipeline write must appear");
     };
     timeout(Duration::from_secs(5), operation).await.unwrap();
 }
@@ -669,9 +674,10 @@ async fn async_hit_is_silent() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let cache = cache_on(&listener, "");
     let operation = async {
+        let reply = response("200 OK", br#"{"value":true}"#);
         let (captured, _) = tokio::join!(
             capture_log(cache.async_get_cache("key")),
-            serve(&listener, &response("200 OK", br#"{"value":true}"#))
+            serve(&listener, &reply)
         );
         captured
     };
@@ -714,9 +720,10 @@ async fn base_url_trailing_slash_is_trimmed() {
     let cache = cache_at(&base_url, &settings(""), FixedAuth::new(false));
     let value = decode_body(br#"{"value":true}"#).unwrap();
     let operation = async {
+        let stored = response("200 OK", b"");
         let ((), request) = tokio::join!(
             cache.async_set_cache("key", &value),
-            serve(&listener, &response("200 OK", b""))
+            serve(&listener, &stored)
         );
         assert!(
             String::from_utf8(request)
@@ -738,10 +745,8 @@ async fn credentials_absent_from_debug_output() {
     let (value, log) = timeout(
         Duration::from_secs(5),
         capture_log(async {
-            let (value, _) = tokio::join!(
-                cache.async_get_cache("key"),
-                serve(&listener, &response("200 OK", b"not json"))
-            );
+            let reply = response("200 OK", b"not json");
+            let (value, _) = tokio::join!(cache.async_get_cache("key"), serve(&listener, &reply));
             value
         }),
     )
@@ -765,10 +770,8 @@ async fn project_id_comes_from_the_injected_environment() {
         environment(&[("GOOGLE_SECRET_MANAGER_PROJECT_ID", "injected-project")]),
     );
     let operation = async {
-        let (value, _) = tokio::join!(
-            cache.async_get_cache("key"),
-            serve(&listener, &response("404 Not Found", b""))
-        );
+        let miss = response("404 Not Found", b"");
+        let (value, _) = tokio::join!(cache.async_get_cache("key"), serve(&listener, &miss));
         assert!(value.is_none());
     };
     timeout(Duration::from_secs(5), operation).await.unwrap();
@@ -790,10 +793,8 @@ async fn project_id_is_absent_without_the_environment_variable() {
         environment(&[]),
     );
     let operation = async {
-        let (value, _) = tokio::join!(
-            cache.async_get_cache("key"),
-            serve(&listener, &response("404 Not Found", b""))
-        );
+        let miss = response("404 Not Found", b"");
+        let (value, _) = tokio::join!(cache.async_get_cache("key"), serve(&listener, &miss));
         assert!(value.is_none());
     };
     timeout(Duration::from_secs(5), operation).await.unwrap();

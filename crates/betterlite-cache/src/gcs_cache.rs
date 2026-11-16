@@ -26,7 +26,6 @@ mod headers;
 mod tests;
 
 use self::body::decode_body;
-use self::error::GcsCacheError;
 use self::headers::{HeaderError, build_headers};
 
 pub const DEFAULT_BASE_URL: &str = "https://storage.googleapis.com";
@@ -213,9 +212,8 @@ impl<Auth> fmt::Debug for GcsCache<Auth>
 where
     Auth: VertexAuth + Clone + Send + Sync + 'static,
 {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("GcsCache")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GcsCache")
             .field("bucket_name", &self.bucket_name)
             .field("key_prefix", &self.key_prefix)
             .field("base_url", &self.base_url)
