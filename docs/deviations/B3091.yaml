@@ -1,0 +1,67 @@
+task: B3091
+deviations:
+  - what: >-
+      The metadata_metrics_func override is a typed injected callback that takes the page's DailySpendRecords and
+      returns SpendMetrics, where LiteLLM takes an untyped callable.
+    why: >-
+      An entity query still needs tallies that include the rows its scope filters out, and a Rust closure states
+      its input and output type. LiteLLM's compute_tag_metadata_totals sits unused beside the paginated path, so
+      no caller loses a behavior when the port leaves it out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L899
+  - what: >-
+      resolve_entity_metadata is a typed injected resolver returning a boxed future of the entity metadata map,
+      where LiteLLM takes an async callable.
+    why: >-
+      The merged map overrides the supplied entity metadata key by key on both sides; only the awaitable's type is
+      named in Rust, since there is no untyped async callable to accept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L902-L903
+  - what: >-
+      total_pages and has_more are computed from the repository's full matching-row total_count while per-record
+      totals cover only the returned page, as LiteLLM computes them from page_data.total_count, which is a
+      separate COUNT(*) over the whole filtered range rather than the page's row count.
+    why: >-
+      Pagination navigation needs the full query cardinality, and the repository returns it beside the rows. The
+      page's rows alone cannot tell whether another page exists.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L962-L963
+  - what: >-
+      A page_size of zero or below is refused with DailyActivityRepositoryError::Pagination before any query.
+      LiteLLM divides total_count by page_size for total_pages, so zero raises ZeroDivisionError after the two
+      queries have run, and a negative page_size yields negative total_pages and Prisma's negative-take meaning of
+      the last N rows.
+    why: >-
+      A 500 from integer division on input a caller can send is not something a working setup relies on, and
+      returning the last N rows is not what a paginated daily activity response documents.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L962
+  - what: >-
+      A page of zero or below is refused with DailyActivityRepositoryError::Pagination before any query, where
+      LiteLLM passes a negative skip to Prisma and surfaces the driver refusal as HTTP 500.
+    why: >-
+      The repository's checked skip arithmetic rejects a page that cannot name a row offset. B729 owns that check;
+      this service only passes the typed error on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L306
+  - what: >-
+      A stored date that is not YYYY-MM-DD fails aggregation with the typed PagesError::Date naming the value,
+      where Python's datetime.strptime raises ValueError that get_daily_activity's broad except turns into an
+      HTTP 500.
+    why: >-
+      The date text comes from the spend tables, so one malformed row fails the read; a typed error says which
+      value broke it and stays matchable by the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L644
+  - what: >-
+      The paginated adapter reports no entity id for any row, so every record keys under Unassigned on the
+      entities dimension, where LiteLLM reads getattr(record, entity_id_field, None) from a Prisma row that
+      carries the entity column of the table being read.
+    why: >-
+      betterlite's DailyActivityRow (B727) declares the paginated query's columns and none of them is the
+      per-table entity column, so the conversion has no value to report. B727 owns the row type and B729 the
+      query that would select the column.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L428-L436
+  - what: >-
+      Every converted page row carries a flat cost of zero, so total_flat_cost is zero on this path, where
+      LiteLLM reads ptu_flat_cost off each row through _reported_flat_cost and gates it on PTU cost attribution.
+    why: >-
+      DailyActivityRow (B727) declares no ptu_flat_cost column and the attribution flag belongs to B1664. The
+      record keeps a typed flat cost of zero until the row type selects the column and the gate decides it, so
+      the accumulation path needs no second variant.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L188-L207
+kept_bugs: []
