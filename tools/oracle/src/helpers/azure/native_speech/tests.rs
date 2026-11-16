@@ -37,8 +37,13 @@ fn helper_seeds_select_azure_native_speech() {
         .filter(|(name, _source)| name.starts_with("azure_native_speech"))
         .collect();
     assert!(!seeds.is_empty(), "no azure_native_speech seeds");
+    let expected: BTreeSet<String> = VARIANTS.iter().copied().map(str::to_owned).collect();
+    assert_eq!(seed_variants(&seeds), expected);
+}
+
+fn seed_variants(seeds: &[(String, String)]) -> BTreeSet<String> {
     let mut seen = BTreeSet::new();
-    for (name, source) in &seeds {
+    for (name, source) in seeds {
         let case: HelperCase = serde_saphyr::from_str(source).unwrap();
         assert_eq!(case.call.operation, "azure_native_speech");
         validate_helper(Path::new("<helper>"), &case).unwrap();
@@ -57,5 +62,5 @@ fn helper_seeds_select_azure_native_speech() {
         );
         seen.insert(variant);
     }
-    assert_eq!(seen.len(), VARIANTS.len());
+    seen
 }

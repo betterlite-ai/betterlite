@@ -133,30 +133,35 @@ fn ssml_row(text: &str) -> HelperResult {
 }
 
 fn text_views(texts: &Texts) -> HelperResult {
-    let bodies = rows(&texts.inputs, text_row)?;
-    Ok(json!({ "bodies": bodies }))
+    Ok(json!({
+        "bodies": rows(&texts.inputs, |text| text_row(text.as_str()))?,
+    }))
 }
 
 fn speed_views(speeds: &Speeds) -> HelperResult {
-    let views = rows(&speeds.speeds, |speed| speed_row(*speed))?;
-    Ok(json!({ "speeds": views }))
+    Ok(json!({
+        "speeds": rows(&speeds.speeds, |speed| speed_row(*speed))?,
+    }))
 }
 
 fn voice_views(cases: &VoiceCases) -> HelperResult {
-    let voices = rows(&cases.cases, |case| {
-        voice_row(case.voice.as_ref(), case.lang.clone())
-    })?;
-    Ok(json!({ "voices": voices }))
+    Ok(json!({
+        "voices": rows(&cases.cases, |case| {
+            voice_row(case.voice.as_ref(), case.lang.clone())
+        })?,
+    }))
 }
 
 fn style_views(cases: &StyleCases) -> HelperResult {
-    let views = rows(&cases.cases, style_row)?;
-    Ok(json!({ "cases": views }))
+    Ok(json!({
+        "cases": rows(&cases.cases, style_row)?,
+    }))
 }
 
 fn ssml_views(texts: &Texts) -> HelperResult {
-    let views = rows(&texts.inputs, ssml_row)?;
-    Ok(json!({ "inputs": views }))
+    Ok(json!({
+        "inputs": rows(&texts.inputs, |text| ssml_row(text.as_str()))?,
+    }))
 }
 
 fn endpoint_views(bases: &Bases) -> HelperResult {
@@ -187,8 +192,9 @@ fn format_row(format: Option<&str>) -> HelperResult {
 }
 
 fn format_views(formats: &Formats) -> HelperResult {
-    let views = rows(&formats.formats, |format| format_row(format.as_deref()))?;
-    Ok(json!({ "formats": views }))
+    Ok(json!({
+        "formats": rows(&formats.formats, |format| format_row(format.as_deref()))?,
+    }))
 }
 
 fn binary_views(cases: &BinaryCases) -> HelperResult {
@@ -214,8 +220,9 @@ fn binary_views(cases: &BinaryCases) -> HelperResult {
 }
 
 fn voice_map_views(voices: &Voices) -> HelperResult {
-    let views = rows(&voices.voices, |voice| voice_row(Some(voice), None))?;
-    Ok(json!({ "voices": views }))
+    Ok(json!({
+        "voices": rows(&voices.voices, |voice| voice_row(Some(voice), None))?,
+    }))
 }
 
 fn header_views(cases: &HeaderCases) -> HelperResult {

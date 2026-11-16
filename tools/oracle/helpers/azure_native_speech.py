@@ -42,9 +42,7 @@ class Config(Protocol):
     ) -> Reply: ...
 
 
-CONFIG = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L145-L495
-    Config, AzureAVATextToSpeechConfig()
-)
+CONFIG = cast(Config, AzureAVATextToSpeechConfig())  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L145-L495
 
 
 class Texts(TypedDict):
@@ -151,13 +149,14 @@ def speed_views(payload: Speeds) -> JsonValue:
     return {"speeds": speeds}
 
 
+def voice_entry(text: str, voice: Voice, lang: str | None) -> JsonValue:
+    kwargs: Params = {} if lang is None else {"lang": lang}
+    name, _, data = request_view(text, voice, {}, kwargs)
+    return {"voice": name, "ssml": data["ssml_body"]}
+
+
 def voice_language_views(payload: VoiceCases) -> JsonValue:
-    voices: list[JsonValue] = []
-    for case in payload["cases"]:
-        lang = case.get("lang")
-        kwargs: Params = {} if lang is None else {"lang": lang}
-        name, _, data = request_view("hi", case.get("voice"), {}, kwargs)
-        voices.append({"voice": name, "ssml": data["ssml_body"]})
+    voices = [voice_entry("hi", case.get("voice"), case.get("lang")) for case in payload["cases"]]
     return {"voices": voices}
 
 
@@ -244,10 +243,7 @@ def binary_views(payload: BinaryCases) -> JsonValue:
 
 
 def voice_map_views(payload: Voices) -> JsonValue:
-    voices: list[JsonValue] = []
-    for voice in payload["voices"]:
-        name, _, data = request_view("hi", voice, {}, {})
-        voices.append({"voice": name, "ssml": data["ssml_body"]})
+    voices = [voice_entry("hi", voice, None) for voice in payload["voices"]]
     return {"voices": voices}
 
 
@@ -261,16 +257,17 @@ def header_views(payload: HeaderCases) -> JsonValue:
 
 
 def transport_views(input_value: Input) -> JsonValue:
-    if "cognitive_to_tts_endpoint" in input_value:
-        return endpoint_views(input_value["cognitive_to_tts_endpoint"])
-    if "response_format_header" in input_value:
-        return format_views(input_value["response_format_header"])
-    if "binary_native_speech" in input_value:
-        return binary_views(input_value["binary_native_speech"])
-    if "native_voice_map" in input_value:
-        return voice_map_views(input_value["native_voice_map"])
-    if "native_speech_headers" in input_value:
-        return header_views(input_value["native_speech_headers"])
+    match next(iter(input_value), None):
+        case "cognitive_to_tts_endpoint":
+            return endpoint_views(input_value["cognitive_to_tts_endpoint"])
+        case "response_format_header":
+            return format_views(input_value["response_format_header"])
+        case "binary_native_speech":
+            return binary_views(input_value["binary_native_speech"])
+        case "native_voice_map":
+            return voice_map_views(input_value["native_voice_map"])
+        case "native_speech_headers":
+            return header_views(input_value["native_speech_headers"])
     raise ValueError("expected a transport variant")
 
 
