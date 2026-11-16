@@ -193,6 +193,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_batch_page"
+path = "fuzz_targets/vertex_batch_page.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_batch_payload"
 path = "fuzz_targets/vertex_batch_payload.rs"
 test = false
