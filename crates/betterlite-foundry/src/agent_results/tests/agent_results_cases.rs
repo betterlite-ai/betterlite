@@ -117,13 +117,14 @@ fn thread_id_metadata() {
     block_on(async {
         let counter = FakeCounter::counting(11, 5);
         let existing = AgentReply {
+            model: None,
+            choices: Vec::new(),
             hidden_params: Some(object(r#"{"request-id": "r1", "thread_id": "old"}"#)),
             usage: Some(Usage {
                 prompt_tokens: 1,
                 completion_tokens: 2,
                 total_tokens: 3,
             }),
-            ..AgentReply::default()
         };
         let input = ReplyInput {
             model: "azure_ai/agents/a",
@@ -232,8 +233,10 @@ fn token_count_warning() {
         let failing = FakeCounter::failing();
         let (failed, failed_warnings) = with_warnings(build_model_response(
             AgentReply {
+                model: None,
+                choices: Vec::new(),
+                hidden_params: None,
                 usage: Some(existing),
-                ..AgentReply::default()
             },
             &input,
             &failing,
@@ -259,8 +262,10 @@ fn token_count_warning() {
         let completion_failing = FakeCounter::failing_completion();
         let (kept, kept_warnings) = with_warnings(build_model_response(
             AgentReply {
+                model: None,
+                choices: Vec::new(),
+                hidden_params: None,
                 usage: Some(existing),
-                ..AgentReply::default()
             },
             &input,
             &completion_failing,
@@ -269,6 +274,21 @@ fn token_count_warning() {
         assert_eq!(kept.usage, Some(existing));
         assert_eq!(kept_warnings.len(), 1);
         assert_eq!(completion_failing.records().len(), 2);
+
+        let overflowing = FakeCounter::counting(u64::MAX, 1);
+        let (wrapped, overflow_warnings) = with_warnings(build_model_response(
+            AgentReply {
+                model: None,
+                choices: Vec::new(),
+                hidden_params: None,
+                usage: Some(existing),
+            },
+            &input,
+            &overflowing,
+        ))
+        .await;
+        assert_eq!(wrapped.usage, Some(existing));
+        assert_eq!(overflow_warnings.len(), 1);
     });
 }
 
