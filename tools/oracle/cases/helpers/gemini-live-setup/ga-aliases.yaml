@@ -1,0 +1,21 @@
+kind: helper
+name: ga-aliases
+call:
+  gemini_live_setup:
+    calls:
+      - op: session_update
+        model: gemini-2.5-flash
+        session:
+          output_modalities: [text, audio]
+          audio:
+            input:
+              transcription: {model: whisper-1}
+              turn_detection: {type: server_vad, prefix_padding_ms: 100}
+            output:
+              voice: Charon
+      - op: session_update
+        model: gemini-2.5-flash
+        session:
+          output_modalities: []
+env: {}
+compare: {ignore: []}

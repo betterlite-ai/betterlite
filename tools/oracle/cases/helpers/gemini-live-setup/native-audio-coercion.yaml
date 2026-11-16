@@ -1,0 +1,22 @@
+kind: helper
+name: native-audio-coercion
+call:
+  gemini_live_setup:
+    calls:
+      - op: session_update
+        model: gemini-2.5-flash-native-audio-preview-09-2025
+        session:
+          modalities: [text, audio]
+      - op: session_update
+        model: gemini-2.5-flash-native-audio-preview-09-2025
+        session:
+          modalities: [text]
+      - op: session_update
+        model: gemini-2.5-flash-native-audio-preview-09-2025
+        session: {}
+      - op: session_update
+        model: gemini/gemini-2.5-flash-native-audio-preview-09-2025
+        session:
+          modalities: [text, audio]
+env: {}
+compare: {ignore: []}
