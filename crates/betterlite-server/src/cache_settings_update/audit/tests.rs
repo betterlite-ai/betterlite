@@ -121,6 +121,22 @@ async fn disabled_audit_logging_spawns_no_task() {
 }
 
 #[tokio::test]
+async fn enabled_audit_logging_spawns_the_task() {
+    let (sink, repository) = support::sink(true);
+    let audit = SinkCacheSettingsAudit { sink };
+    assert!(audit.enabled());
+    let spawner = support::CollectingSpawner::default();
+    spawn_cache_settings_audit(
+        Arc::new(audit),
+        &spawner,
+        entry(AuditAction::Created, None, None),
+    );
+    assert_eq!(spawner.len(), 1);
+    support::run_tasks(&spawner).await;
+    assert_eq!(repository.records().len(), 1);
+}
+
+#[tokio::test]
 async fn the_spawned_task_writes_the_entry_without_being_awaited() {
     let audit = support::audit(true);
     let spawner = support::CollectingSpawner::default();

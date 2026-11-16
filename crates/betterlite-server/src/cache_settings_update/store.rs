@@ -60,3 +60,5 @@ fn database_fault(error: TableError) -> DbError {
         cause: None,
     }
 }
+
+mod tests;
