@@ -196,6 +196,38 @@ fn alias_pop_short_circuit() {
     assert!(nested.optional_params.is_empty());
 }
 
+#[test]
+fn location_and_credential_alias_order_matches_the_source() {
+    let catalog = ModelCatalog::default();
+    let vertex = VertexSettings::default();
+    let embedding = EmbeddingSettings::default();
+    let both = params(
+        r#"{"vertex_location": "first-location", "vertex_ai_location": "second-location", "vertex_credentials": "first-creds", "vertex_ai_credentials": "second-creds"}"#,
+    );
+    let resolved = resolution(MODEL, &both, &vertex, &embedding, &catalog);
+    assert_eq!(resolved.location.as_deref(), Some("first-location"));
+    assert_eq!(
+        resolved
+            .credentials
+            .as_ref()
+            .and_then(ConfiguredCredentials::as_text),
+        Some("first-creds")
+    );
+    // each chain stops at its first alias, so the second one stays for the handler
+    assert_eq!(
+        resolved.optional_params.get("vertex_ai_location"),
+        Some(&Json::Text("second-location".to_owned()))
+    );
+    assert_eq!(
+        resolved.optional_params.get("vertex_ai_credentials"),
+        Some(&Json::Text("second-creds".to_owned()))
+    );
+
+    let first_null = params(r#"{"vertex_location": null, "vertex_ai_location": "second"}"#);
+    let nested = resolution(MODEL, &first_null, &vertex, &embedding, &catalog);
+    assert_eq!(nested.location.as_deref(), Some("second"));
+}
+
 #[rstest]
 #[case::multimodal("multimodalembedding", Native::Multimodal)]
 #[case::multimodal_001("multimodalembedding@001", Native::Multimodal)]
