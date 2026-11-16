@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use camino::Utf8PathBuf;
 use clap::Args;
 use determinator::Determinator;
-use determinator::rules::DeterminatorRules;
+use determinator::rules::{DeterminatorRules, PathMatch};
 use guppy::CargoMetadata;
 use guppy::graph::{DependencyDirection, PackageGraph, PackageMetadata};
 
@@ -90,12 +90,17 @@ fn packages(
     new: &PackageGraph,
     only_edited: bool,
 ) -> Result<Vec<String>, GateError> {
-    let changed = changed_paths(root, base)?;
+    let mut changed = changed_paths(root, base)?;
     let snapshot = tempfile::tempdir().map_err(|source| GateError::Write {
         path: env::temp_dir(),
         source,
     })?;
-    let old = package_graph(&unpack_base(root, base, snapshot.path())?)?;
+    let unpacked = unpack_base(root, base, snapshot.path())?;
+    // determinator marks every package for any root Cargo.toml edit, but a [workspace.dependencies] edit changes a package only through the dependencies it resolves, and the graph diff below compares those (B4711 tested the whole workspace on 11-16)
+    if manifest_without_dependencies(&unpacked)? == manifest_without_dependencies(root)? {
+        changed.retain(|path| path != "Cargo.toml");
+    }
+    let old = package_graph(&unpacked)?;
     let rules = DeterminatorRules::parse(RULES).map_err(|source| GateError::Affected {
         what: "the affected-package rules".to_owned(),
         source: Box::new(source),
@@ -107,12 +112,15 @@ fn packages(
             what: "the affected-package rules".to_owned(),
             source: Box::new(source),
         })?;
+    // determinator marks every package for a file no package owns and no rule names, so B7770's ui/vscode-extension change tested the whole workspace on one runner (11-16); the full set keeps that, edited drops the file
+    if only_edited {
+        changed.retain(|path| determinator.match_path(path, |_| {}) != PathMatch::NoMatches);
+    }
     determinator.add_changed_paths(&changed);
     let computed = determinator.compute();
+    // the summary diff also marks every package whose dependencies gained a feature, 130 packages for B4711 adding blake2 on 11-16, so edited means the files it changed
     let selected = if only_edited {
-        computed
-            .path_changed_set
-            .union(&computed.summary_changed_set)
+        computed.path_changed_set
     } else {
         computed.affected_set
     };
@@ -242,4 +250,20 @@ pub(crate) fn finish(program: &str, args: &[&str], directory: &Path) -> Result<(
             .trim()
             .to_owned(),
     })
+}
+
+fn manifest_without_dependencies(folder: &Path) -> Result<toml::Table, GateError> {
+    let path = folder.join("Cargo.toml");
+    let text = fs::read_to_string(&path).map_err(|source| GateError::Read {
+        path: path.clone(),
+        source,
+    })?;
+    let mut manifest: toml::Table = toml::from_str(&text).map_err(|source| GateError::Toml {
+        path,
+        source: Box::new(source),
+    })?;
+    if let Some(toml::Value::Table(workspace)) = manifest.get_mut("workspace") {
+        workspace.remove("dependencies");
+    }
+    Ok(manifest)
 }

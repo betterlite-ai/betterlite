@@ -1,0 +1,13 @@
+fullnameOverride: ""
+# Disable database deployment and configuration
+db:
+  deployStandalone: false
+  useExisting: false
+
+# Test environment variables
+envVars:
+  EXAMPLE_ENV: "dev_helm"
+
+# Disable migration job since we're not using a database
+migrationJob:
+  enabled: false

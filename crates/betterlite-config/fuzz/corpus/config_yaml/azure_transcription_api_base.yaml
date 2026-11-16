@@ -1,0 +1,9 @@
+model_list:
+  - model_name: azure-speech-transcription
+    litellm_params:
+      model: azure/whisper
+      api_base: https://example.openai.azure.com
+litellm_settings:
+  num_retries: 2
+environment_variables:
+  AZURE_SPEECH_API_BASE: https://eastus.stt.speech.microsoft.com

@@ -40,10 +40,7 @@ fn commit(root: &Path) -> String {
     git(root, &["rev-parse", "HEAD"]).unwrap().trim().to_owned()
 }
 
-#[test]
-fn only_edited_leaves_out_the_packages_that_depend_on_the_edit() {
-    let folder = tempfile::tempdir().unwrap();
-    let root = folder.path();
+fn workspace(root: &Path) -> String {
     git(root, &["init", "--quiet", "-b", "main"]).unwrap();
     fs::write(
         root.join("Cargo.toml"),
@@ -56,7 +53,14 @@ fn only_edited_leaves_out_the_packages_that_depend_on_the_edit() {
     // rules.toml marks this package by name, and determinator fails on a name the workspace lacks
     member(root, "betterlite-dashboard-browser", "");
     member(root, "gamma", "");
-    let base = commit(root);
+    commit(root)
+}
+
+#[test]
+fn only_edited_leaves_out_the_packages_that_depend_on_the_edit() {
+    let folder = tempfile::tempdir().unwrap();
+    let root = folder.path();
+    let base = workspace(root);
     fs::write(root.join("alpha/src/lib.rs"), "pub const A: u8 = 1;\n").unwrap();
     commit(root);
     let graph = package_graph(root).unwrap();
@@ -67,6 +71,29 @@ fn only_edited_leaves_out_the_packages_that_depend_on_the_edit() {
         packages(root, &base, &graph, true).unwrap(),
         vec!["alpha".to_owned()]
     );
+}
+
+#[test]
+fn a_packaging_change_selects_no_package() {
+    let folder = tempfile::tempdir().unwrap();
+    let root = folder.path();
+    let base = workspace(root);
+    fs::create_dir_all(root.join("packaging/helm/betterlite-helm")).unwrap();
+    fs::write(
+        root.join("packaging/helm/betterlite-helm/Chart.yaml"),
+        "name: betterlite-helm\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("packaging/terraform-provider")).unwrap();
+    fs::write(
+        root.join("packaging/terraform-provider/main.go"),
+        "package main\n",
+    )
+    .unwrap();
+    commit(root);
+    let graph = package_graph(root).unwrap();
+    assert!(packages(root, &base, &graph, false).unwrap().is_empty());
+    assert!(packages(root, &base, &graph, true).unwrap().is_empty());
 }
 
 #[test]
@@ -142,5 +169,56 @@ fn a_shard_is_one_of_n() {
             ),
             "{index} of {count}"
         );
+    }
+}
+
+#[test]
+fn a_root_manifest_edit_marks_every_package_unless_it_only_touches_workspace_dependencies() {
+    let everything = ["alpha", "beta", "betterlite-dashboard-browser", "gamma"].map(str::to_owned);
+    for (edit, expected) in [
+        (
+            "[workspace.dependencies]\nalpha = { path = \"alpha\" }\n",
+            Vec::new(),
+        ),
+        ("[profile.dev]\ndebug = 0\n", everything.to_vec()),
+    ] {
+        let folder = tempfile::tempdir().unwrap();
+        let root = folder.path();
+        let base = workspace(root);
+        let manifest = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+        fs::write(root.join("Cargo.toml"), format!("{manifest}\n{edit}")).unwrap();
+        commit(root);
+        let graph = package_graph(root).unwrap();
+        let mut edited = packages(root, &base, &graph, true).unwrap();
+        edited.sort_unstable();
+        assert_eq!(edited, expected, "{edit}");
+    }
+}
+
+#[test]
+fn a_file_no_package_owns_marks_every_package_only_in_the_full_set() {
+    let everything = ["alpha", "beta", "betterlite-dashboard-browser", "gamma"].map(str::to_owned);
+    for (file, text, edited_expected) in [
+        ("ui/vscode-extension/package.json", "{}\n", Vec::new()),
+        (
+            ".cargo/config.toml",
+            "[net]\nretry = 3\n",
+            everything.to_vec(),
+        ),
+    ] {
+        let folder = tempfile::tempdir().unwrap();
+        let root = folder.path();
+        let base = workspace(root);
+        let path = root.join(file);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+        commit(root);
+        let graph = package_graph(root).unwrap();
+        let mut full = packages(root, &base, &graph, false).unwrap();
+        full.sort_unstable();
+        let mut edited = packages(root, &base, &graph, true).unwrap();
+        edited.sort_unstable();
+        assert_eq!(full, everything.to_vec(), "{file}");
+        assert_eq!(edited, edited_expected, "{file}");
     }
 }

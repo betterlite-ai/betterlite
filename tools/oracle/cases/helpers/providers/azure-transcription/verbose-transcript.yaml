@@ -1,0 +1,51 @@
+kind: helper
+name: azure-transcription-verbose-transcript
+call:
+  azure_transcription:
+    function: exchange
+    probes:
+      - model: whisper
+        optional_params: {response_format: verbose_json}
+        api_key: sk-fixture
+        api_base: 'https://example.openai.azure.com'
+        api_version: '2024-06-01'
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"text":"hi","language":"en","duration":1.5,"segments":[],"words":[],"usage":{"type":"duration","seconds":2.0}}'
+      - model: whisper
+        optional_params: {response_format: text}
+        api_key: sk-fixture
+        api_base: 'https://example.openai.azure.com'
+        api_version: '2024-06-01'
+        atranscription: true
+        reply:
+          status: 200
+          headers: {content-type: text/plain}
+          body: |
+            WEBVTT
+
+            00:00:00.000 --> 00:00:01.500
+            hi
+      - model: whisper
+        api_key: sk-fixture
+        api_base: 'https://example.openai.azure.com'
+        api_version: '2024-06-01'
+        atranscription: true
+        reply:
+          status: 500
+          headers: {content-type: application/json}
+          body: '{"error":{"message":"boom","type":"server_error","param":null,"code":"bad"}}'
+      - model: whisper
+        api_key: sk-fixture
+        api_base: 'https://example.openai.azure.com'
+        api_version: '2024-06-01'
+        reply:
+          status: 500
+          headers: {content-type: application/json}
+          body: '{"error":{"message":"boom","type":"server_error","param":null,"code":"bad"}}'
+env: {}
+compare:
+  ignore:
+    - pointer: /value/2/post_call/input_names_file
+      why: LiteLLM logs the builtin input object on an async failure while betterlite logs the audio file name.

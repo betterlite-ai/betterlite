@@ -1,0 +1,13 @@
+kind: helper
+name: azure-transcription-seed-native-response
+call:
+  azure_transcription:
+    function: native_response
+    probes:
+      - model: azure/speech/azure-stt
+        headers: {x-request-id: req-1}
+        bodies:
+          - {status: 200, body: '{"RecognitionStatus":"Success","DisplayText":"seed"}'}
+          - {status: 200, body: '{"RecognitionStatus":"Error"}'}
+env: {}
+compare: {ignore: []}

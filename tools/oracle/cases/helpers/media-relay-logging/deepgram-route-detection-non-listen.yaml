@@ -1,0 +1,16 @@
+kind: helper
+name: media-relay-logging-deepgram-route-detection-non-listen
+call:
+  media_relay_logging:
+    deepgram_routes:
+      - "https://api.deepgram.com/v1/listen"
+      - "https://gateway.example/deepgram/v1/speak"
+      - "https://gateway.example/deepgram/v1/listen/extra"
+      - "https://gateway.example/deepgram/v1/Listen"
+      - "https://gateway.example/deepgram-listen"
+      - "https://api.deepgram.com/v1/listen?next=/deepgram/listen"
+    fal_routes: []
+    deepgram_listens: []
+    fal_passthroughs: []
+env: {}
+compare: {ignore: []}
