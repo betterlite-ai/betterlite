@@ -24,6 +24,9 @@ deviations:
   - what: 'A meaningful error object inside a reply raises ReplyError with a u16 status taken from a numeric code, and 422 when the code is absent, null or not a whole number in u16 range; LiteLLM sets status_code to the raw code value, so a runner sees "quota" or None there instead.'
     why: "docs/compatibility.md reads a value into the type its field declares, and a status code in betterlite is a u16, so the reply cannot carry Python's untyped status_code."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L603-L607
+  - what: 'The exception LiteLLM raises for a meaningful reply error carries a message, json.dumps of a dict message or str of anything else and "Error in response object" when absent; betterlite''s ReplyError carries the status and its text names only that status.'
+    why: "docs/compatibility.md does not port Python's json.dumps or str rendering of a value, and the message is free text rather than a field betterlite can type."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L608-L614
 kept_bugs:
   - what: 'The filtered text input is built and then only tested for emptiness; the inherited OpenAI embedding call receives the original input, image data URIs included.'
     why: 'A working setup embeds the image strings as text today, so the answer would change if betterlite sent only the filtered list.'
