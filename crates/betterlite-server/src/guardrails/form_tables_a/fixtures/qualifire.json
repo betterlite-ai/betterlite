@@ -1,0 +1,63 @@
+{
+  "api_base": {
+    "description": "The API base URL for Qualifire. If not provided, the `QUALIFIRE_BASE_URL` environment variable is checked.",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "description": "The API key for Qualifire. If not provided, the `QUALIFIRE_API_KEY` environment variable is checked.",
+    "required": false,
+    "type": "string"
+  },
+  "assertions": {
+    "description": "Custom assertions to validate against the output. Each assertion is a string describing a condition.",
+    "required": false,
+    "type": "array"
+  },
+  "content_moderation_check": {
+    "description": "Enable content moderation to check for harmful content (harassment, hate speech, etc.).",
+    "required": false,
+    "type": "boolean"
+  },
+  "evaluation_id": {
+    "description": "Pre-configured evaluation ID from Qualifire dashboard. When provided, uses invoke_evaluation() instead of evaluate().",
+    "required": false,
+    "type": "string"
+  },
+  "grounding_check": {
+    "description": "Enable grounding verification to ensure output is grounded in provided context.",
+    "required": false,
+    "type": "boolean"
+  },
+  "hallucinations_check": {
+    "description": "Enable hallucination detection to detect factual inaccuracies.",
+    "required": false,
+    "type": "boolean"
+  },
+  "on_flagged": {
+    "default_value": "block",
+    "description": "Action to take when content is flagged. 'block' raises an exception, 'monitor' logs but allows the request.",
+    "options": [
+      "block",
+      "monitor"
+    ],
+    "required": false,
+    "type": "select"
+  },
+  "pii_check": {
+    "description": "Enable PII (Personally Identifiable Information) detection.",
+    "required": false,
+    "type": "boolean"
+  },
+  "prompt_injections": {
+    "description": "Enable prompt injection detection. Default check if no evaluation_id and no other checks are specified.",
+    "required": false,
+    "type": "boolean"
+  },
+  "tool_selection_quality_check": {
+    "description": "Enable tool selection quality check to evaluate quality of tool/function calls.",
+    "required": false,
+    "type": "boolean"
+  },
+  "ui_friendly_name": "Qualifire"
+}

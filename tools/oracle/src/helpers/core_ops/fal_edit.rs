@@ -1,11 +1,19 @@
+mod input;
+mod outcome;
+mod slots;
+
+mod tests;
+
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
+use input::Input;
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("fal_edit")
+    fn run(input: &Self::Input) -> HelperResult {
+        outcome::run(input)
     }
 }
