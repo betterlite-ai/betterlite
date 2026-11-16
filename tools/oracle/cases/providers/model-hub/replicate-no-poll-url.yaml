@@ -1,0 +1,16 @@
+kind: helper
+name: replicate-no-poll-url
+call:
+  b8332:
+    input: []
+    query: ""
+    op: replicate
+    model: meta/meta-llama-3-8b-instruct
+    messages: [{role: user, content: hi}]
+    api_key: rep-key
+    replies:
+      - status: 201
+        body: '{"id":"oracle-1","status":"starting"}'
+    env: {HF_HUB_OFFLINE: "1"}
+env: {HF_HUB_OFFLINE: "1"}
+compare: {ignore: []}
