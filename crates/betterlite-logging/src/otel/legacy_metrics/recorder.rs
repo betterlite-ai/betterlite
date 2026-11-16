@@ -95,10 +95,20 @@ impl LegacyMetricRecorder {
             let amount = decimal_field(cost, "response_cost")?;
             record_seconds(&self.instruments.usage_in_usd, amount, &attributes);
         }
+        self.record_latency(call, unbilled, &attributes, duration)
+    }
+
+    fn record_latency(
+        &self,
+        call: &MetricCall<'_>,
+        unbilled: bool,
+        attributes: &[KeyValue],
+        duration: Decimal,
+    ) -> Result<(), LegacyMetricsError> {
         let context = LatencyContext {
             kwargs: call.kwargs,
             resolver: &self.resolver,
-            attributes: &attributes,
+            attributes,
             end_time: call.end_time,
             duration,
         };
