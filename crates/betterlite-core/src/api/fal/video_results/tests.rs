@@ -611,6 +611,16 @@ fn the_probe_url_only_loses_a_trailing_status_suffix() {
         "https://queue.fal.run/fal-ai/kling-video/requests/req-1"
     );
     assert!(headers.is_empty());
+
+    let queried = StatusRequest {
+        url: Url::parse(
+            "https://queue.fal.run/fal-ai/kling-video/requests/req-1/status?x=1&x=2&y=",
+        )
+        .expect("the queried status url parses"),
+        headers: VideoHeaders::new(),
+    };
+    let (url, _) = result_request(&reply, &queried).expect("a completed job probes");
+    assert_eq!(url, queried.url.as_str());
 }
 
 #[rstest]
