@@ -285,7 +285,7 @@ checks:
     run: >-
       test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b9966-*")"
       && grep -lq 'b9966' tools/oracle/fuzz/corpus/helper_case/b9966-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
-      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops
       --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: deviation-row
     why: The new deviation is missing or the old no-download row remains.

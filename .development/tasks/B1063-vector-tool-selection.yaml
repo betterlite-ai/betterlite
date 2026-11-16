@@ -83,7 +83,7 @@ checks:
     run: test -f tools/oracle/helpers/vector_tool_selection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
     why: new selection operations lack helper-case decoder coverage
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_tool_selection-*)" && grep -qE '^[[:space:]]+vector_tool_selection:' tools/oracle/fuzz/corpus/helper_case/vector_tool_selection-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_tool_selection-*)" && grep -qE '^[[:space:]]+vector_tool_selection:' tools/oracle/fuzz/corpus/helper_case/vector_tool_selection-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/vector-tool-selection/recognized-tools-are-consumed.yaml
 - tools/oracle/cases/helpers/vector-tool-selection/selection-order-and-overrides.yaml

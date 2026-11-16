@@ -214,7 +214,7 @@ checks:
     run: test -f tools/oracle/helpers/responses_file_search_tools.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
     why: No newly added tagged helper seed exists, or shared helper replay rejects responses_file_search_tools.
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_file_search_tools-*)" && grep -qE "^[[:space:]]+responses_file_search_tools:" tools/oracle/fuzz/corpus/helper_case/responses_file_search_tools-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_file_search_tools-*)" && grep -qE "^[[:space:]]+responses_file_search_tools:" tools/oracle/fuzz/corpus/helper_case/responses_file_search_tools-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-oracle-cases
     why: No newly added file-search-tools parity fixture directory exists on this branch.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-file-search-tools)"

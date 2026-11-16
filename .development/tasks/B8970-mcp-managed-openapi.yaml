@@ -88,7 +88,7 @@ checks:
       run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-corpus
       why: No new separator-probe operation seed reaches the helper-case parser.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-separator-probe-*')" && grep -rlq 'b8970' tools/oracle/fuzz/corpus/helper_case/mcp-separator-probe-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-separator-probe-*')" && grep -rlq 'b8970' tools/oracle/fuzz/corpus/helper_case/mcp-separator-probe-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/mcp-separator-probe/separators.yaml
 deviations: []
