@@ -132,6 +132,10 @@ async fn route_stores_the_encrypted_settings_and_redacts_the_reply() {
         support::json(&upserted[0]).get("password"),
         Some(&string("new-secret"))
     );
+    assert_eq!(
+        support::json(&upserted[0]).get("ttl"),
+        Some(&support::json("60"))
+    );
 }
 
 #[tokio::test]
