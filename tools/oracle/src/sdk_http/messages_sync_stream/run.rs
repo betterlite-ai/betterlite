@@ -138,6 +138,7 @@ fn observed(state: &StreamState<Prefetched>) -> SyncState {
         sent_content_block_finish: Flag(state.block_progress.sent_content_block_finish),
         sent_last_message: Flag(state.message_progress.sent_last_message),
         queued_usage_chunk: Flag(state.queued_usage_chunk),
+        holding_chunk: Flag(state.holding_chunk.is_some()),
         holding_stop_reason: Flag(state.holding_stop_reason_chunk.is_some()),
         sent_compaction_block: Flag(state.sent_compaction_block),
         sent_compaction_block_start: Flag(state.compaction_progress.sent_compaction_block_start),

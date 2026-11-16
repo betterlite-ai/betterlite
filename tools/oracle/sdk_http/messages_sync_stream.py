@@ -86,6 +86,7 @@ class State(TypedDict):
     sent_content_block_finish: bool
     sent_last_message: bool
     queued_usage_chunk: bool
+    holding_chunk: bool
     holding_stop_reason: bool
     sent_compaction_block: bool
     sent_compaction_block_start: bool
@@ -118,10 +119,6 @@ class SyncOutcome(TypedDict):
 
 class Outcome(TypedDict):
     messages_sync_stream: SyncOutcome
-
-
-class EventStream(Protocol):
-    def __next__(self) -> dict[str, Json]: ...
 
 
 class ProviderChunks(Iterator[ModelResponseStream]):
@@ -196,7 +193,7 @@ class AdapterErrors(logging.Handler):
             self.entries.append(Diagnostic(level=record.levelname.lower(), prefix=ADAPTER_PREFIX))
 
 
-def next_event(stream: EventStream) -> dict[str, Json] | None:
+def next_event(stream: Iterator[dict[str, Json]]) -> dict[str, Json] | None:
     try:
         event = next(stream)
     except StopIteration:
@@ -204,7 +201,13 @@ def next_event(stream: EventStream) -> dict[str, Json] | None:
     return event
 
 
+class HeldState(Protocol):
+    @property
+    def holding_chunk(self) -> object | None: ...
+
+
 def observe(wrapper: Wrapper, source: ProviderChunks) -> State:
+    held: HeldState = wrapper
     return State(
         pulls=source.pulls,
         index=wrapper.current_content_block_index,
@@ -214,6 +217,7 @@ def observe(wrapper: Wrapper, source: ProviderChunks) -> State:
         sent_content_block_finish=wrapper.sent_content_block_finish,
         sent_last_message=wrapper.sent_last_message,
         queued_usage_chunk=wrapper.queued_usage_chunk,
+        holding_chunk=held.holding_chunk is not None,
         holding_stop_reason=wrapper.holding_stop_reason_chunk is not None,
         sent_compaction_block=wrapper.sent_compaction_block,
         sent_compaction_block_start=wrapper.sent_compaction_block_start,
@@ -250,18 +254,6 @@ def run_steps(
     return steps
 
 
-def body(call: MessagesSyncStreamCall) -> dict[str, Json]:
-    messages: list[Json] = [
-        {"role": message["role"], "content": message["content"]} for message in call.messages
-    ]
-    return {
-        "model": call.model,
-        "messages": messages,
-        "stream": True,
-        "stream_options": {"include_usage": True},
-    }
-
-
 def frames(content: bytes) -> list[bytes]:
     payloads: list[bytes] = []
     for part in content.split(b"\n\n"):
@@ -277,8 +269,17 @@ def frames(content: bytes) -> list[bytes]:
 
 
 def run_one(call: MessagesSyncStreamCall, spec: RunSpec, api_base: str) -> RunOutcome:
+    messages: list[Json] = [
+        {"role": message["role"], "content": message["content"]} for message in call.messages
+    ]
+    request: dict[str, Json] = {
+        "model": call.model,
+        "messages": messages,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
     with httpx.Client(trust_env=False, timeout=float(call.timeout_seconds)) as client:
-        response = client.post(f"{api_base}/chat/completions", json=body(call))
+        response = client.post(f"{api_base}/chat/completions", json=request)
     source = ProviderChunks(frames(response.content))
     wrapper = Wrapper(call, source, spec.initial)
     errors = AdapterErrors()

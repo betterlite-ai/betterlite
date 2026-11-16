@@ -94,6 +94,7 @@ pub struct SyncState {
     pub sent_content_block_finish: Flag,
     pub sent_last_message: Flag,
     pub queued_usage_chunk: Flag,
+    pub holding_chunk: Flag,
     pub holding_stop_reason: Flag,
     pub sent_compaction_block: Flag,
     pub sent_compaction_block_start: Flag,
