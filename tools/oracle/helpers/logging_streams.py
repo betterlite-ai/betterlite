@@ -59,20 +59,22 @@ class ProbesInput(TypedDict):
 _USAGE_INPUT: Final = TypeAdapter(UsageInput)
 
 
+def served_texts_value(texts: tuple[str | None, ...] | None) -> JsonValue:
+    return _JSON.validate_python(None if texts is None else list(texts))
+
+
 def chat_value(probe: ChatProbe) -> JsonValue:
-    values: list[JsonValue] = []
-    for response in probe["responses"]:
-        texts = served_output_texts(response)
-        values.append(_JSON.validate_python(None if texts is None else list(texts)))
-    return values
+    return [
+        served_texts_value(served_output_texts(response))
+        for response in probe["responses"]
+    ]
 
 
 def stream_value(probe: StreamProbe) -> JsonValue:
-    values: list[JsonValue] = []
-    for chunks in probe["chunk_lists"]:
-        texts = served_stream_output_texts(_CHUNKS.validate_python(chunks))
-        values.append(_JSON.validate_python(None if texts is None else list(texts)))
-    return values
+    return [
+        served_texts_value(served_stream_output_texts(_CHUNKS.validate_python(chunks)))
+        for chunks in probe["chunk_lists"]
+    ]
 
 
 def overlay_value(probe: OverlayProbe) -> JsonValue:
@@ -83,14 +85,15 @@ def overlay_value(probe: OverlayProbe) -> JsonValue:
     return _JSON.validate_python(overlaid)
 
 
+def usage_value(usage: JsonValue) -> JsonValue:
+    parsed = _USAGE_INPUT.validate_python(usage)
+    filled = Usage(**parsed)
+    backfill_missing_cache_usage_fields(filled)
+    return _JSON.validate_json(filled.model_dump_json())
+
+
 def partial_usage_value(probe: PartialUsageProbe) -> JsonValue:
-    values: list[JsonValue] = []
-    for usage in probe["usages"]:
-        parsed = _USAGE_INPUT.validate_python(usage)
-        filled = Usage(**parsed)
-        backfill_missing_cache_usage_fields(filled)
-        values.append(_JSON.validate_json(filled.model_dump_json()))
-    return values
+    return [usage_value(usage) for usage in probe["usages"]]
 
 
 def probe_value(probe: Input) -> JsonValue:
@@ -104,7 +107,4 @@ def probe_value(probe: Input) -> JsonValue:
 
 
 def run(input_value: ProbesInput) -> JsonValue:
-    values: list[JsonValue] = []
-    for probe in input_value["probes"]:
-        values.append(probe_value(probe))
-    return values
+    return [probe_value(probe) for probe in input_value["probes"]]
