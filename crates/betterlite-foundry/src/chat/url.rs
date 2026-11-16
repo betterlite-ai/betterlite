@@ -1,6 +1,6 @@
+use betterlite_azure::azure_urls::url_parts::{encoded_query, first_query_values};
 use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_openai::openai_base_config::overlapping_api_base_path;
-use url::form_urlencoded;
 
 use super::url_error::UrlError;
 
@@ -18,7 +18,7 @@ pub fn get_complete_url(
         return Err(UrlError::MissingApiBase);
     };
     let original = HttpxUrl::parse(base).map_err(UrlError::InvalidUrl)?;
-    let mut query = collapsed_query_params(original.query.as_deref());
+    let mut query = first_query_values(original.query.as_deref());
     if !query.iter().any(|(name, _)| name == API_VERSION_PARAM)
         && let Some(version) = api_version.filter(|text| !text.is_empty())
     {
@@ -33,33 +33,4 @@ pub fn get_complete_url(
     let mut url = HttpxUrl::parse(&merged).map_err(UrlError::InvalidUrl)?;
     url.query = encoded_query(&query);
     Ok(url.href())
-}
-
-fn query_pairs(query: Option<&str>) -> Vec<(String, String)> {
-    form_urlencoded::parse(query.unwrap_or_default().as_bytes())
-        .map(|(name, value)| (name.into_owned(), value.into_owned()))
-        .collect()
-}
-
-// dict() reads httpx's QueryParams through its mapping protocol, so a repeated name keeps its first value
-fn collapsed_query_params(query: Option<&str>) -> Vec<(String, String)> {
-    let mut kept: Vec<(String, String)> = Vec::new();
-    for (name, value) in query_pairs(query) {
-        if !kept.iter().any(|(kept_name, _)| *kept_name == name) {
-            kept.push((name, value));
-        }
-    }
-    kept
-}
-
-fn encoded_query(pairs: &[(String, String)]) -> Option<String> {
-    if pairs.is_empty() {
-        return None;
-    }
-    let mut serializer = form_urlencoded::Serializer::new(String::new());
-    for (name, value) in pairs {
-        serializer.append_pair(name, value);
-    }
-    // Python's urlencode encodes * and keeps ~, the reverse of form_urlencoded
-    Some(serializer.finish().replace('*', "%2A").replace("%7E", "~"))
 }
