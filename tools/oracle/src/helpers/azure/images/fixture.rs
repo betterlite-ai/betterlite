@@ -7,7 +7,6 @@ use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernameP
 use betterlite_azure::credentials::source::{
     CallableTokenProvider, CredentialSources, SourceFailure,
 };
-use betterlite_azure::endpoints::projection::LiteLlmParams;
 use betterlite_azure::image_transport::request::{ImageClientConstructor, TimeoutPhases};
 use betterlite_azure::image_transport::{ImageReply, ImageRequest, ImageTransport, SystemClock};
 use betterlite_azure::images::error::ImageError;
@@ -26,13 +25,33 @@ use tokio::runtime::Builder;
 
 use super::input::Step;
 
-pub(super) fn run_generation(
-    step: &Step,
-) -> Option<(
+type GenerationRun = (
     Result<GeneratedImage, ImageError>,
     Vec<RecordedCall>,
     RecordingLogger,
-)> {
+);
+
+fn generation<'a>(
+    step: &'a Step,
+    api_key: Option<&'a SecretString>,
+    token: Option<&'a SecretString>,
+) -> Generation<'a> {
+    Generation {
+        model: step.model.as_deref(),
+        prompt: &step.prompt,
+        optional_params: step.optional.clone(),
+        headers: step.headers.clone().into_iter().collect(),
+        api_key,
+        api_base: step.api_base.as_deref(),
+        api_version: step.api_version.as_deref(),
+        azure_ad_token: token,
+        base_model: step.base_model.as_deref(),
+        now_seconds: 1_700_000_000,
+        ..Generation::default()
+    }
+}
+
+pub(super) fn run_generation(step: &Step) -> Option<GenerationRun> {
     let state = Arc::new(FixtureState {
         calls: Mutex::default(),
         reply: Mutex::new(step.reply_body.clone()),
@@ -45,26 +64,7 @@ pub(super) fn run_generation(
     let polling_timeout = TransportSettings::default().operation_polling_timeout;
     let api_key = step.api_key.as_deref().map(SecretString::from);
     let token = step.azure_ad_token.as_deref().map(SecretString::from);
-    let call = Generation {
-        model: step.model.as_deref(),
-        prompt: &step.prompt,
-        timeout: None,
-        optional_params: step.optional.clone(),
-        headers: step
-            .headers
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect(),
-        api_key: api_key.as_ref(),
-        api_base: step.api_base.as_deref(),
-        api_version: step.api_version.as_deref(),
-        azure_ad_token: token.as_ref(),
-        azure_ad_token_provider: None,
-        base_model: step.base_model.as_deref(),
-        params: LiteLlmParams::default(),
-        delegate_async: false,
-        now_seconds: 1_700_000_000,
-    };
+    let call = generation(step, api_key.as_ref(), token.as_ref());
     let clock = SystemClock {
         origin: Instant::now(),
     };

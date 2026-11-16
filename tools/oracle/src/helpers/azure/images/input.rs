@@ -21,6 +21,7 @@ pub(crate) struct Input {
 pub(crate) struct Step {
     pub(crate) azure_endpoint: Option<String>,
     pub(crate) base_url: Option<String>,
+    pub(crate) api_base: Option<String>,
     pub(crate) api_version: Option<String>,
     pub(crate) model: Option<String>,
     pub(crate) base_model: Option<String>,

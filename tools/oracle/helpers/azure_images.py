@@ -21,6 +21,7 @@ JSON_VALUE = TypeAdapter(Json)
 class Step(TypedDict, total=False):
     azure_endpoint: str | None
     base_url: str | None
+    api_base: str | None
     api_version: str | None
     model: str | None
     base_model: str | None
@@ -94,16 +95,11 @@ def clear_ambient() -> None:
 
 def transport_handler(request: httpx.Request) -> httpx.Response:
     body: Json = JSON_VALUE.validate_json(request.content) if request.content else None
-    CALLS.append(
-        {
-            "sent_url": str(request.url),
-            "sent_body": body,
-            "sent_headers": {
-                "api-key": request.headers.get("api-key"),
-                "authorization": request.headers.get("authorization"),
-            },
-        }
-    )
+    headers: Json = {
+        "api-key": request.headers.get("api-key"),
+        "authorization": request.headers.get("authorization"),
+    }
+    CALLS.append({"sent_url": str(request.url), "sent_body": body, "sent_headers": headers})
     return httpx.Response(status_code=200, content=REPLY.get("body", "").encode(), request=request)
 
 
@@ -147,10 +143,7 @@ def auth_step(step: Step) -> SendParams:
     clear_ambient()
     if "env_token" in step:
         os.environ["AZURE_AD_TOKEN"] = str(step.get("env_token"))
-    params: SendParams = {}
-    if "params" in step:
-        params["api_key"] = step["params"].get("api_key")
-        params["azure_ad_token"] = step["params"].get("azure_ad_token")
+    params: SendParams = dict(step["params"]) if "params" in step else {}
     headers: dict[str, str] = dict(step["headers"]) if "headers" in step else {}
     try:
         validated = EDIT_CONFIG.validate_environment(

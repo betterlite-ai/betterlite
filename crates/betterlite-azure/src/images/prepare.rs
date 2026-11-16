@@ -95,10 +95,8 @@ fn request_data(
     };
     let model = call.base_model.filter(|name| !name.is_empty()).or(model);
     let mut data = IndexMap::new();
-    data.insert(
-        "model".to_owned(),
-        model.map_or(Json::Null, |name| Json::Text(name.to_owned())),
-    );
+    let model_value = model.map_or(Json::Null, |name| Json::Text(name.to_owned()));
+    data.insert("model".to_owned(), model_value);
     data.insert("prompt".to_owned(), Json::Text(call.prompt.to_owned()));
     data.extend(optional_params.clone());
     data.extend(extra);

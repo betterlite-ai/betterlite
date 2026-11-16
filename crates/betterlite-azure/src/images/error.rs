@@ -55,33 +55,38 @@ pub enum ImageError {
 }
 
 impl ImageError {
-    // the Python class LiteLLM's caller sees for this failure
+    // the Python class and HTTP status LiteLLM's caller sees for this failure
     #[must_use]
-    pub fn class(&self) -> &str {
+    fn classification(&self) -> (&str, Option<u16>) {
         match self {
-            Self::MaxRetries | Self::Azure { .. } => "AzureOpenAIError",
-            Self::ExtraBody | Self::Field { .. } | Self::Header { .. } => "TypeError",
-            Self::Url(_) => "ValueError",
-            Self::Client(error) => error.class(),
-            Self::Classified(error) => &error.class,
+            Self::MaxRetries => ("AzureOpenAIError", Some(422)),
+            Self::ExtraBody | Self::Field { .. } | Self::Header { .. } => ("TypeError", None),
+            Self::Url(_) => ("ValueError", None),
+            Self::Client(error) => (error.class(), error.status()),
+            Self::Classified(error) => (&error.class, error.status),
             // the transport errors that carry an HTTP status are the ones LiteLLM's request helper raises itself
-            Self::Transport(error) if error.status_code().is_some() => "AzureOpenAIError",
-            Self::Transport(_) | Self::Reply(_) | Self::Json(_) | Self::Logging(_) => "Exception",
+            Self::Transport(error) => (
+                error
+                    .status_code()
+                    .map_or("Exception", |_| "AzureOpenAIError"),
+                error.status_code(),
+            ),
+            Self::Reply(ImageReplyError::ResponseObject { status, .. }) => {
+                ("Exception", Some(*status))
+            }
+            Self::Reply(_) | Self::Json(_) | Self::Logging(_) => ("Exception", None),
+            Self::Azure { status, .. } => ("AzureOpenAIError", Some(*status)),
         }
     }
 
     #[must_use]
+    pub fn class(&self) -> &str {
+        self.classification().0
+    }
+
+    #[must_use]
     pub fn status(&self) -> Option<u16> {
-        match self {
-            Self::MaxRetries => Some(422),
-            Self::Url(_) | Self::ExtraBody | Self::Field { .. } | Self::Header { .. } => None,
-            Self::Json(_) | Self::Logging(_) | Self::Reply(_) => None,
-            Self::Client(error) => error.status(),
-            Self::Classified(error) => error.status,
-            Self::Transport(error) => error.status_code(),
-            Self::Reply(ImageReplyError::ResponseObject { status, .. }) => Some(*status),
-            Self::Azure { status, .. } => Some(*status),
-        }
+        self.classification().1
     }
 
     // LiteLLM re-raises its own image errors and wraps every other one with str(error) and status or 500

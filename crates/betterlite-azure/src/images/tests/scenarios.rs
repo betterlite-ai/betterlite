@@ -260,6 +260,11 @@ fn edit_header_and_environment() {
 }
 
 fn edit_url_table() {
+    edit_url_requires_base();
+    edit_url_versions();
+}
+
+fn edit_url_requires_base() {
     let credentials = AzureCredentials::default();
     let missing = get_complete_url(&EditUrl {
         model: "dall-e-3",
@@ -273,7 +278,9 @@ fn edit_url_table() {
         missing.to_string(),
         "api_base is required for Azure AI Studio. Please set the api_base parameter. Passed `api_base=None`"
     );
+}
 
+fn edit_url_versions() {
     let global = AzureCredentials {
         api_base: Some("https://global.openai.azure.com".to_owned()),
         api_version: Some("2024-06-01".to_owned()),
@@ -306,6 +313,11 @@ fn edit_url_table() {
 }
 
 pub(super) fn preview_image_path() {
+    preview_targets();
+    preview_request();
+}
+
+fn preview_targets() {
     let deployment = format!("{AZURE}/openai/deployments/my-deployment");
     assert_eq!(
         target(
@@ -342,7 +354,10 @@ pub(super) fn preview_image_path() {
         target(Some(AZURE), Some(""), Some("my-deployment"), None),
         format!("{AZURE}/openai/deployments/my-deployment/images/generations?api-version=")
     );
+}
 
+fn preview_request() {
+    let deployment = format!("{AZURE}/openai/deployments/my-deployment");
     let mut harness = Harness::new(&[]).with_reply(ok_reply());
     let outcome = harness.run(&Scenario {
         api_base: Some(deployment.clone()),
@@ -484,6 +499,11 @@ pub(super) fn azure_image_body_and_retry() {
 }
 
 fn body_table() {
+    body_model_table();
+    body_options_table();
+}
+
+fn body_model_table() {
     let mut harness = Harness::new(&[]).with_reply(ok_reply());
     let outcome = harness.run(&Scenario {
         model: Some(String::new()),
@@ -511,7 +531,9 @@ fn body_table() {
             "{AZURE}/openai/deployments/my-deployment/images/generations?api-version={VERSION}"
         )
     );
+}
 
+fn body_options_table() {
     let mut harness = Harness::new(&[]).with_reply(ok_reply());
     let outcome = harness.run(&Scenario {
         optional: r#"{"size":"1024x1024","extra_body":{"size":"512x512","foo":"bar"}}"#.to_owned(),

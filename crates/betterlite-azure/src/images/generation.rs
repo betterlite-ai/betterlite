@@ -28,6 +28,7 @@ use super::selection::{AzureImageConfig, get_azure_image_generation_config};
 use super::wire::{header_map, text_value, wire_map};
 
 // AzureChatCompletion.image_generation's inputs, with litellm_params split into the keys the client reads
+#[derive(Default)]
 pub struct Generation<'data> {
     pub model: Option<&'data str>,
     pub prompt: &'data str,

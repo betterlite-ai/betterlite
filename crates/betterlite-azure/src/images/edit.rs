@@ -88,18 +88,15 @@ pub fn validate_environment(
 
 // LiteLLM reads litellm_params.azure_ad_token or AZURE_AD_TOKEN, so an empty value falls through
 fn azure_ad_token(request: &EditAuth<'_>) -> Option<SecretString> {
-    request
-        .params
-        .azure_ad_token
-        .clone()
+    let stored = request.params.azure_ad_token.clone();
+    let environment = request
+        .environment
+        .lookup("AZURE_AD_TOKEN")
+        .filter(|token| !token.is_empty())
+        .map(SecretString::from);
+    stored
         .filter(|token| !token.expose_secret().is_empty())
-        .or_else(|| {
-            request
-                .environment
-                .lookup("AZURE_AD_TOKEN")
-                .filter(|token| !token.is_empty())
-                .map(SecretString::from)
-        })
+        .or(environment)
 }
 
 pub struct EditUrl<'data> {

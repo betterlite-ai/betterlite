@@ -8,8 +8,9 @@ use betterlite_azure::images::edit::{
 use betterlite_azure::images::selection::get_azure_image_generation_config;
 use betterlite_azure::images::target::{AzureClientParams, create_azure_base_url};
 use betterlite_config::sections::azure_url_policy::AzureCredentials;
+use betterlite_openai::image_generation::reply::ImageGenerationReply;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use betterlite_oracle_helper_api::helper::HelperResult;
 
@@ -38,14 +39,25 @@ fn failure(error: &dyn Display) -> Value {
     })
 }
 
-fn target_value(step: &Step) -> Value {
-    let params = AzureClientParams {
+fn client_params(step: &Step) -> AzureClientParams<'_> {
+    AzureClientParams {
         azure_endpoint: step.azure_endpoint.as_deref(),
         base_url: step.base_url.as_deref(),
         api_version: step.api_version.as_deref(),
-    };
-    let url = create_azure_base_url(&params, step.model.as_deref(), step.base_model.as_deref());
-    url.map_or_else(|error| failure(&error), |url| json!({"url": url}))
+    }
+}
+
+fn target_value(step: &Step) -> Value {
+    let params = client_params(step);
+    reported(create_azure_base_url(
+        &params,
+        step.model.as_deref(),
+        step.base_model.as_deref(),
+    ))
+}
+
+fn reported(result: Result<String, impl Display>) -> Value {
+    result.map_or_else(|error| failure(&error), |url| json!({"url": url}))
 }
 
 fn model_value(model: &str) -> Value {
@@ -62,29 +74,25 @@ fn url_value(step: &Step) -> Value {
         api_version: step.global_version.clone(),
         api_key: None,
     };
-    let url = get_complete_url(&EditUrl {
+    let request = EditUrl {
         model: step.model.as_deref().unwrap_or_default(),
         api_base: step.api_base.as_deref(),
         api_version: step.api_version.as_deref(),
         credentials: &credentials,
         default_api_version: "2025-02-01-preview",
-    });
-    url.map_or_else(|error| failure(&error), |url| json!({"url": url}))
+    };
+    reported(get_complete_url(&request))
 }
 
 fn auth_value(step: &Step) -> Value {
-    let environment: BTreeMap<String, String> = step
-        .env_token
-        .iter()
-        .map(|token| ("AZURE_AD_TOKEN".to_owned(), token.clone()))
-        .collect();
+    let mut environment = BTreeMap::new();
+    if let Some(token) = &step.env_token {
+        environment.insert("AZURE_AD_TOKEN".to_owned(), token.clone());
+    }
+    let token = step.params.azure_ad_token.as_deref();
     let params = EditParams {
         api_key: step.params.api_key.as_deref().map(SecretString::from),
-        azure_ad_token: step
-            .params
-            .azure_ad_token
-            .as_deref()
-            .map(SecretString::from),
+        azure_ad_token: token.map(SecretString::from),
         ..EditParams::default()
     };
     let credentials = AzureCredentials::default();
@@ -99,10 +107,10 @@ fn auth_value(step: &Step) -> Value {
         refresh_enabled: false,
         provider: None,
     };
-    validate_environment(&request).map_or_else(
-        |error| failure(&error),
-        |headers| json!({"headers": headers}),
-    )
+    match validate_environment(&request) {
+        Ok(headers) => json!({"headers": headers}),
+        Err(error) => failure(&error),
+    }
 }
 
 fn generation_value(step: &Step) -> Value {
@@ -110,36 +118,42 @@ fn generation_value(step: &Step) -> Value {
         return failure(&"the oracle runtime does not build");
     };
     let sent = calls.first();
-    let mut report = json!({
-        "sent_url": sent.map(|call| call.url.clone()),
-        "sent_body": sent.and_then(|call| call.body.clone()),
-        "input": logger.pre.first().map(|record| record.input.clone()),
-        "pre_calls": logger.pre.len(),
-        "post_calls": logger.post.len(),
-    });
+    let sent_url = sent.map(|call| call.url.clone());
+    let sent_body = sent.and_then(|call| call.body.clone());
+    let input = logger.pre.first().map(|record| record.input.clone());
+    let mut report = Map::new();
+    report.insert("sent_url".to_owned(), json!(sent_url));
+    report.insert("sent_body".to_owned(), json!(sent_body));
+    report.insert("input".to_owned(), json!(input));
+    report.insert("pre_calls".to_owned(), json!(logger.pre.len()));
+    report.insert("post_calls".to_owned(), json!(logger.post.len()));
     match result {
         Ok(image) => {
-            let first = image.reply.data.first();
-            report["kind"] = json!("response");
-            report["sent_headers"] = sent.map_or(Value::Null, |call| json!(call.headers));
-            report["reply"] = json!({
-                "created": image.reply.created,
-                "size": image.reply.size,
-                "quality": image.reply.quality,
-                "output_format": image.reply.output_format,
-                "b64_json": first.and_then(|item| item.b64_json.clone()),
-                "image_url": first.and_then(|item| item.url.clone()),
-                "images": image.reply.data.len(),
-            });
+            let sent_headers = sent.map_or(Value::Null, |call| json!(call.headers));
+            report.insert("kind".to_owned(), json!("response"));
+            report.insert("sent_headers".to_owned(), sent_headers);
+            report.insert("reply".to_owned(), reply_report(&image.reply));
         }
         Err(error) => {
-            report["kind"] = json!("error");
-            report["status"] = json!(error.status());
-            report["type"] = Value::Null;
-            report["param"] = Value::Null;
-            report["code"] = Value::Null;
-            report["message"] = json!(error.to_string());
+            report.insert("kind".to_owned(), json!("error"));
+            report.insert("status".to_owned(), json!(error.status()));
+            report.insert("type".to_owned(), Value::Null);
+            report.insert("param".to_owned(), Value::Null);
+            report.insert("code".to_owned(), Value::Null);
+            report.insert("message".to_owned(), json!(error.to_string()));
         }
     }
-    report
+    Value::Object(report)
+}
+
+fn reply_report(reply: &ImageGenerationReply) -> Value {
+    json!({
+        "created": reply.created,
+        "size": reply.size,
+        "quality": reply.quality,
+        "output_format": reply.output_format,
+        "b64_json": reply.data.first().and_then(|item| item.b64_json.clone()),
+        "image_url": reply.data.first().and_then(|item| item.url.clone()),
+        "images": reply.data.len(),
+    })
 }

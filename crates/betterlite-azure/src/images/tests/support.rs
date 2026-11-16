@@ -354,15 +354,7 @@ impl Harness {
     }
 
     pub(super) fn run(&mut self, scenario: &Scenario) -> Outcome {
-        let constructor = FixtureConstructor {
-            transport: FixtureTransport {
-                state: Arc::new(FixtureState {
-                    replies: Mutex::new(std::mem::take(&mut self.replies)),
-                    calls: Mutex::default(),
-                }),
-            },
-            constructed: Arc::default(),
-        };
+        let constructor = self.constructor();
         let clock = FixtureClock;
         let sources = NoSources;
         let mut logger = RecordingLogger::default();
@@ -389,6 +381,35 @@ impl Harness {
             delegate_async: scenario.delegate_async,
             now_seconds: 1_700_000_000,
         };
+        let mut state = self.runtime(&constructor, &sources, &clock, &mut logger);
+        let result = driver().block_on(image_generation(call, &mut state));
+        Outcome {
+            result,
+            calls: lock(&constructor.transport.state.calls).clone(),
+            constructed: lock(&constructor.constructed).len(),
+            logger,
+        }
+    }
+
+    fn constructor(&mut self) -> FixtureConstructor {
+        FixtureConstructor {
+            transport: FixtureTransport {
+                state: Arc::new(FixtureState {
+                    replies: Mutex::new(std::mem::take(&mut self.replies)),
+                    calls: Mutex::default(),
+                }),
+            },
+            constructed: Arc::default(),
+        }
+    }
+
+    fn runtime<'a>(
+        &'a self,
+        constructor: &'a FixtureConstructor,
+        sources: &'a NoSources,
+        clock: &'a FixtureClock,
+        logger: &'a mut RecordingLogger,
+    ) -> Runtime<'a, FixtureConstructor, FixtureClock> {
         let endpoints = &self.config.sections.azure_endpoints;
         let polling_timeout = self
             .config
@@ -400,21 +421,14 @@ impl Harness {
             .sections
             .azure_credentials
             .enable_azure_ad_token_refresh;
-        let mut state = Runtime {
+        Runtime {
             endpoints,
             environment: &self.environment,
-            sources: &sources,
+            sources,
             refresh_enabled,
             polling_timeout,
-            constructor: &constructor,
-            clock: &clock,
-            logger: &mut logger,
-        };
-        let result = driver().block_on(image_generation(call, &mut state));
-        Outcome {
-            result,
-            calls: lock(&constructor.transport.state.calls).clone(),
-            constructed: lock(&constructor.constructed).len(),
+            constructor,
+            clock,
             logger,
         }
     }
