@@ -13,7 +13,6 @@ from litellm.llms.fal_ai.image_generation.flux_pro_v11_ultra_transformation impo
 )
 from litellm.llms.fal_ai.image_generation.flux_schnell_transformation import FalAIFluxSchnellConfig
 from litellm.types.utils import ImageObject, ImageResponse
-from openai.types.image import Image
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
