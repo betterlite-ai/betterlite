@@ -1,8 +1,6 @@
 use async_trait::async_trait;
 use betterlite_prompts::arguments::json::{Json, Object};
-use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::error::CountError;
-use betterlite_tokenizer::count::request::{Message, TextInput, TokenRequest};
 use serde::{Deserialize, Serialize};
 
 use super::messages::ASSISTANT_ROLE;
@@ -139,33 +137,4 @@ fn stamped(current: Option<Object>, thread_id: &str) -> Object {
         Json::Text(thread_id.to_owned()),
     );
     params
-}
-
-#[async_trait]
-impl TokenCounter for Counter {
-    async fn count_request(&self, request: &TokenCountRequest<'_>) -> Result<u64, CountError> {
-        let parsed: Vec<Message> = match request.messages {
-            Some(messages) => {
-                let encoded =
-                    serde_json::to_vec(messages).map_err(|source| CountError::Json { source })?;
-                serde_json::from_slice(&encoded).map_err(|source| CountError::Json { source })?
-            }
-            None => Vec::new(),
-        };
-        let text = request.text.map(|text| TextInput::One(text.to_owned()));
-        let token_request = TokenRequest {
-            model: request.model,
-            custom_tokenizer: None,
-            text: text.as_ref(),
-            messages: request.messages.map(|_| parsed.as_slice()),
-            count_response_tokens: Some(request.count_response_tokens),
-            tools: None,
-            tool_choice: None,
-        };
-        let counted = self.count(&token_request).await?;
-        let Ok(tokens) = u64::try_from(counted) else {
-            return Err(CountError::Overflow);
-        };
-        Ok(tokens)
-    }
 }
