@@ -121,35 +121,35 @@ pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
 
 fn dispatch(call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
-        Call::MapEvent(call) => Ok(json!({
-            "event": map_openai_event(&call.key, &call.value, call.delta_type).or_value_error()?,
+        Call::MapEvent(given) => Ok(json!({
+            "event": map_openai_event(&given.key, &given.value, given.delta_type).or_value_error()?,
         })),
-        Call::Start(call) => Ok(json!({
+        Call::Start(given) => Ok(json!({
             "events": start_content_events(
                 &StartContent {
-                    setup_request: call.session_configuration_request.as_deref(),
-                    response_id: call.response_id.as_str(),
-                    output_item_id: call.output_item_id.as_str(),
-                    conversation_id: call.conversation_id.as_str(),
-                    delta_type: call.delta_type,
+                    setup_request: given.session_configuration_request.as_deref(),
+                    response_id: given.response_id.as_str(),
+                    output_item_id: given.output_item_id.as_str(),
+                    conversation_id: given.conversation_id.as_str(),
+                    delta_type: given.delta_type,
                 },
                 &mut CounterIds::default(),
             )
             .or_value_error()?,
         })),
-        Call::Delta(call) => Ok(json!({
+        Call::Delta(given) => Ok(json!({
             "event": content_delta_event(
-                &call.server_content,
-                call.output_item_id.as_str(),
-                call.response_id.as_str(),
-                call.delta_type,
+                &given.server_content,
+                given.output_item_id.as_str(),
+                given.response_id.as_str(),
+                given.delta_type,
                 &mut CounterIds::default(),
             )
             .or_value_error()?,
         })),
-        Call::Modality(call) => modality(call),
-        Call::Update(call) => Ok(json!({
-            "steps": step_states(call),
+        Call::Modality(given) => modality(given),
+        Call::Update(given) => Ok(json!({
+            "steps": step_states(given),
         })),
     }
 }

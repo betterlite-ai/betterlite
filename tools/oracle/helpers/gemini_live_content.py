@@ -130,7 +130,13 @@ class CountingUuid:
 
 def map_event(call: MapEventCall, config: ContentConfig) -> JsonValue:
     event = config.map_openai_event(call["key"], call["value"], call.get("delta_type"))
-    return {"event": event.value}
+    name: str
+    match event:
+        case OpenAIRealtimeEventTypes():
+            name = event.value
+        case ResponsesAPIStreamEvents():
+            name = event.value
+    return {"event": name}
 
 
 def start(call: StartCall, config: ContentConfig) -> JsonValue:
