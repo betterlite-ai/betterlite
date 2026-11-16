@@ -179,7 +179,7 @@ fn reread_step(rereads: &AtomicUsize) -> RefreshStep<'_, String, String> {
     })
 }
 
-async fn run_pair(
+async fn race_two_refreshes(
     coordinator: &Coordinator,
     refreshes: &AtomicUsize,
     rereads: &AtomicUsize,
@@ -228,5 +228,5 @@ pub(super) fn coordinator() -> HelperResult {
         wait_timeout: DEFAULT_WAIT_TIMEOUT,
         poll_interval: POLL_INTERVAL,
     };
-    Ok(runtime()?.block_on(run_pair(&coordinator, &refreshes, &rereads)))
+    Ok(runtime()?.block_on(race_two_refreshes(&coordinator, &refreshes, &rereads)))
 }
