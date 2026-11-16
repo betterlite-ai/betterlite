@@ -1,7 +1,8 @@
 #![cfg(test)]
 use crate::auth::parse_key_header;
 use crate::server::chat_setup::chat_executor;
-use crate::server::run;
+use crate::server::test_support::port_in_line;
+use crate::server::{run, run_with_listener};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use futures_util::future::join_all;
@@ -11,21 +12,18 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use std::collections::BTreeMap;
 use std::io::ErrorKind;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use std::{fs, path::Path};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
+use tracing::subscriber::set_default;
 #[tokio::test]
 async fn run_serves_requests_with_the_chat_executor_it_was_given() {
-    let port = TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let (listener, port) = bind_listener().await;
     let environment = BTreeMap::new();
     let loader = ConfigLoader {
         lookup: environment.clone(),
@@ -35,7 +33,10 @@ async fn run_serves_requests_with_the_chat_executor_it_was_given() {
         .unwrap();
     let chat = chat_executor(&config, &environment, StdRng::seed_from_u64(1)).unwrap();
     let (served, response) = tokio::join!(
-        timeout(Duration::from_secs(3), run(config, chat, "127.0.0.1", port)),
+        timeout(
+            Duration::from_secs(3),
+            run_with_listener(config, chat, listener, "127.0.0.1")
+        ),
         timeout(Duration::from_secs(3), post_chat_once_listening(port))
     );
     assert!(
@@ -45,6 +46,42 @@ async fn run_serves_requests_with_the_chat_executor_it_was_given() {
     let answer = response.unwrap();
     assert!(answer.starts_with("HTTP/1.1 501"), "{answer}");
 }
+
+#[tokio::test]
+async fn run_on_port_zero_logs_the_port_it_listens_on() {
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .json()
+        .flatten_event(true)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let _installed = set_default(subscriber);
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("model_list: []\n")
+    .unwrap();
+    let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
+    let mut server = JoinSet::new();
+    server.spawn(run(config, chat, "127.0.0.1", 0));
+    let started = Instant::now();
+    let port = loop {
+        let lines = fs::read_to_string(log.path()).unwrap();
+        if let Some(port) = lines.lines().find_map(port_in_line) {
+            break port;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "no listening line: {lines}"
+        );
+        sleep(Duration::from_millis(10)).await;
+    };
+    assert_ne!(port, 0_u16);
+    let answer = post(port, "/v1/chat/completions", CHAT_BODY).await;
+    assert!(answer.starts_with("HTTP/1.1 "), "{answer}");
+    server.abort_all();
+}
+
 async fn post_chat_once_listening(port: u16) -> String {
     let mut connected = TcpStream::connect(("127.0.0.1", port)).await;
     while connected.is_err() {
@@ -135,19 +172,16 @@ fn pipeline_config(base: &str) -> Config {
     .unwrap()
 }
 
-async fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+async fn bind_listener() -> (TcpListener, u16) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    (listener, port)
 }
 
-fn boot(config: Config, port: u16, tasks: &mut JoinSet<()>) {
+fn boot(config: Config, listener: TcpListener, tasks: &mut JoinSet<()>) {
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(7)).unwrap();
     tasks.spawn(async move {
-        let serving = Box::pin(run(config, chat, "127.0.0.1", port));
+        let serving = Box::pin(run_with_listener(config, chat, listener, "127.0.0.1"));
         let _served = timeout(Duration::from_secs(10), serving).await;
     });
 }
@@ -278,9 +312,9 @@ async fn call_dispatch_tests_behavior(
 ) {
     let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", upstream.local_addr().unwrap());
-    let port = free_port().await;
+    let (listener, port) = bind_listener().await;
     let mut tasks = JoinSet::new();
-    boot(pipeline_config(&base), port, &mut tasks);
+    boot(pipeline_config(&base), listener, &mut tasks);
     tasks.spawn(serve_json(upstream, 1));
     let answer = post(port, path, body).await;
     assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
@@ -292,9 +326,9 @@ async fn call_dispatch_tests_behavior(
 async fn real_server_stream_cancellation_tests_behavior() {
     let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", upstream.local_addr().unwrap());
-    let port = free_port().await;
+    let (listener, port) = bind_listener().await;
     let mut tasks = JoinSet::new();
-    boot(pipeline_config(&base), port, &mut tasks);
+    boot(pipeline_config(&base), listener, &mut tasks);
     let (advance, resumed) = oneshot::channel();
     let (closed, disconnected) = oneshot::channel();
     tasks.spawn(paused_upstream(upstream, resumed, closed));
@@ -320,9 +354,9 @@ async fn real_server_stream_cancellation_tests_behavior() {
 async fn real_server_streamed_failure_tests_behavior() {
     let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", upstream.local_addr().unwrap());
-    let port = free_port().await;
+    let (listener, port) = bind_listener().await;
     let mut tasks = JoinSet::new();
-    boot(pipeline_config(&base), port, &mut tasks);
+    boot(pipeline_config(&base), listener, &mut tasks);
     tasks.spawn(failing_upstream(upstream));
     let answer = post(port, "/v1/chat/completions", STREAM_BODY).await;
     assert!(answer.starts_with("HTTP/1.1 500"), "{answer}");
@@ -334,9 +368,9 @@ async fn real_server_streamed_failure_tests_behavior() {
 async fn real_server_batch_tests_behavior() {
     let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", upstream.local_addr().unwrap());
-    let port = free_port().await;
+    let (listener, port) = bind_listener().await;
     let mut tasks = JoinSet::new();
-    boot(pipeline_config(&base), port, &mut tasks);
+    boot(pipeline_config(&base), listener, &mut tasks);
     tasks.spawn(serve_json(upstream, 4));
     let posts = [
         post(port, "/v1/chat/completions", CHAT_BODY),
