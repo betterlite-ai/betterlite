@@ -22,6 +22,7 @@ use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::provider_model_sets::ProviderModelSets;
+use betterlite_models::resolution::ResolutionContext;
 use betterlite_models::tool_fees::prices::ToolPrices;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_provider::pricing::ProviderPricing;
@@ -84,6 +85,77 @@ pub(super) struct Adjustments {
     pub(super) margin: BTreeMap<String, AdjustmentEntry>,
 }
 
+// The values the cost calculator borrows for the whole session: the size pattern, the time zone database and the provider sets.
+struct Holders {
+    pattern: SizePattern,
+    database: TimeZoneDatabase,
+    models: ProviderModelSets,
+    tools: GroundingPricing,
+}
+
+fn holders() -> Result<Holders, Box<HelperError>> {
+    Ok(Holders {
+        pattern: SizePattern::new().map_err(super::failure)?,
+        database: TimeZoneDatabase::from_env(),
+        models: ProviderModelSets::default(),
+        tools: GroundingPricing {
+            formulas: ProviderFormulas,
+            model_key: None,
+        },
+    })
+}
+
+// The outside values the catalog lookup reads, the way a served process passes them in.
+fn lookup_settings() -> LookupSettings {
+    LookupSettings {
+        known_model_names: BTreeSet::new(),
+        custom_providers: BTreeSet::new(),
+        environment: BTreeMap::new(),
+        registry: JSONProviderRegistry::default(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+        normalizers: NameNormalizers {
+            bedrock_base_model: get_bedrock_base_model,
+            bedrock_routing_prefix: strip_bedrock_routing_prefix,
+            mantle_region_split: split_region_prefix,
+        },
+    }
+}
+
+// The one calculator a served listen session prices with, borrowing the case's lookup and adjustments.
+fn calculator<'services, Image>(
+    lookup: &'services CatalogLookup,
+    holders: &'services Holders,
+    image: &'services Image,
+    adjustments: &'services Adjustments,
+    resolution: &'services ResolutionContext<'services>,
+) -> CostCalculator<'services, CatalogLookup, Image, CatalogLookup> {
+    CostCalculator {
+        special: SpecialBorrows {
+            lookup,
+            resolver: lookup,
+            image_policy: image,
+            special_policy: &ProviderPricing,
+            size_pattern: &holders.pattern,
+            database: &holders.database,
+            replicate_models: &holders.models,
+            replicate_price: Decimal::new(14, 4),
+            discount: &adjustments.discount,
+            margin: &adjustments.margin,
+        },
+        catalog: lookup,
+        inference: lookup,
+        counter: &Counter,
+        price_policy: &ProviderPricing,
+        resolution,
+        tools: ToolBorrows {
+            source: lookup,
+            policy: &holders.tools,
+            prices: &ToolPrices::PINNED,
+        },
+    }
+}
+
 // The Deepgram relay handler's pricing over the case's catalog, discount and margin, resolved the way a served request resolves them.
 pub(super) async fn listen_outcome(
     entries: &IndexMap<String, Json>,
@@ -93,27 +165,9 @@ pub(super) async fn listen_outcome(
     kwargs: &PassThroughLoggingKwargs,
 ) -> Result<DeepgramListenOutcome, Box<HelperError>> {
     let bytes = serde_json::to_vec(entries).map_err(super::failure)?;
-    let lookup = CatalogLookup::new(
-        &bytes,
-        LookupSettings {
-            known_model_names: BTreeSet::new(),
-            custom_providers: BTreeSet::new(),
-            environment: BTreeMap::new(),
-            registry: JSONProviderRegistry::default(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-            normalizers: NameNormalizers {
-                bedrock_base_model: get_bedrock_base_model,
-                bedrock_routing_prefix: strip_bedrock_routing_prefix,
-                mantle_region_split: split_region_prefix,
-            },
-        },
-    )
-    .map_err(super::failure)?;
+    let lookup = CatalogLookup::new(&bytes, lookup_settings()).map_err(super::failure)?;
     let resolution = lookup.resolution();
-    let pattern = SizePattern::new().map_err(super::failure)?;
-    let database = TimeZoneDatabase::from_env();
-    let models = ProviderModelSets::default();
+    let holders = holders()?;
     let image = SyncImage {
         build: |lookup, database, moment| ProviderImagePricing {
             lookup,
@@ -121,37 +175,10 @@ pub(super) async fn listen_outcome(
             moment,
         },
         lookup: &lookup,
-        database: &database,
+        database: &holders.database,
         moment: DateTime::<Utc>::UNIX_EPOCH,
     };
-    let tools = GroundingPricing {
-        formulas: ProviderFormulas,
-        model_key: None,
-    };
-    let services = CostCalculator {
-        special: SpecialBorrows {
-            lookup: &lookup,
-            resolver: &lookup,
-            image_policy: &image,
-            special_policy: &ProviderPricing,
-            size_pattern: &pattern,
-            database: &database,
-            replicate_models: &models,
-            replicate_price: Decimal::new(14, 4),
-            discount: &adjustments.discount,
-            margin: &adjustments.margin,
-        },
-        catalog: &lookup,
-        inference: &lookup,
-        counter: &Counter,
-        price_policy: &ProviderPricing,
-        resolution: &resolution,
-        tools: ToolBorrows {
-            source: &lookup,
-            policy: &tools,
-            prices: &ToolPrices::PINNED,
-        },
-    };
+    let services = calculator(&lookup, &holders, &image, adjustments, &resolution);
     let request = DeepgramListenRequest {
         upstream_url,
         messages,

@@ -21,6 +21,7 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::provider_model_sets::ProviderModelSets;
+use betterlite_models::resolution::ResolutionContext;
 use betterlite_models::tool_fees::prices::ToolPrices;
 use betterlite_provider::pricing::ProviderPricing;
 use betterlite_provider::pricing::grounding::{GroundingPricing, ProviderFormulas};
@@ -51,6 +52,10 @@ pub(super) struct Listener {
     lookup: CatalogLookup,
     discount: BTreeMap<String, AdjustmentEntry>,
     margin: BTreeMap<String, AdjustmentEntry>,
+    pattern: SizePattern,
+    database: TimeZoneDatabase,
+    models: ProviderModelSets,
+    tools: GroundingPricing,
 }
 
 impl Listener {
@@ -75,6 +80,13 @@ impl Listener {
             lookup: CatalogLookup::new(&bytes, settings).expect("the catalog loads"),
             discount: BTreeMap::new(),
             margin: BTreeMap::new(),
+            pattern: SizePattern::new().expect("the size pattern compiles"),
+            database: TimeZoneDatabase::from_env(),
+            models: ProviderModelSets::default(),
+            tools: GroundingPricing {
+                formulas: ProviderFormulas,
+                model_key: None,
+            },
         }
     }
 
@@ -103,15 +115,6 @@ impl Listener {
         caller: &PassThroughLoggingKwargs,
     ) -> Result<HandlerOutcome, MediaRelayLoggingError> {
         let resolution = self.lookup.resolution();
-        let request = DeepgramListenRequest {
-            upstream_url,
-            messages,
-            kwargs: caller,
-            catalog: resolution.catalog,
-        };
-        let pattern = SizePattern::new().expect("the size pattern compiles");
-        let database = TimeZoneDatabase::from_env();
-        let models = ProviderModelSets::default();
         let image = SyncImage {
             build: |lookup, database, moment| ProviderImagePricing {
                 lookup,
@@ -119,22 +122,35 @@ impl Listener {
                 moment,
             },
             lookup: &self.lookup,
-            database: &database,
+            database: &self.database,
             moment: DateTime::<Utc>::UNIX_EPOCH,
         };
-        let tools = GroundingPricing {
-            formulas: ProviderFormulas,
-            model_key: None,
+        let services = self.calculator(&image, &resolution);
+        let request = DeepgramListenRequest {
+            upstream_url,
+            messages,
+            kwargs: caller,
+            catalog: resolution.catalog,
         };
-        let services = CostCalculator {
+        let mut clock = || UNIX_EPOCH;
+        deepgram_listen_passthrough_handler(logging_obj, &request, &services, &mut clock).await
+    }
+
+    // The calculator a served request prices a listen session with, borrowing this listener's catalog and rates.
+    fn calculator<'services, Image>(
+        &'services self,
+        image: &'services Image,
+        resolution: &'services ResolutionContext<'services>,
+    ) -> CostCalculator<'services, CatalogLookup, Image, CatalogLookup> {
+        CostCalculator {
             special: SpecialBorrows {
                 lookup: &self.lookup,
                 resolver: &self.lookup,
-                image_policy: &image,
+                image_policy: image,
                 special_policy: &ProviderPricing,
-                size_pattern: &pattern,
-                database: &database,
-                replicate_models: &models,
+                size_pattern: &self.pattern,
+                database: &self.database,
+                replicate_models: &self.models,
                 replicate_price: Decimal::new(14, 4),
                 discount: &self.discount,
                 margin: &self.margin,
@@ -143,14 +159,12 @@ impl Listener {
             inference: &self.lookup,
             counter: &Counter,
             price_policy: &ProviderPricing,
-            resolution: &resolution,
+            resolution,
             tools: ToolBorrows {
                 source: &self.lookup,
-                policy: &tools,
+                policy: &self.tools,
                 prices: &ToolPrices::PINNED,
             },
-        };
-        let mut clock = || UNIX_EPOCH;
-        deepgram_listen_passthrough_handler(logging_obj, &request, &services, &mut clock).await
+        }
     }
 }
