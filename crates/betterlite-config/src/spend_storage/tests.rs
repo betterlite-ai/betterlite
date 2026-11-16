@@ -5,6 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use rstest::rstest;
+use rust_decimal::Decimal;
 
 use super::{
     DEFAULT_MAX_PROMPT_LENGTH, MissingSessionId, Settings, SpendUpdates,
@@ -54,6 +55,25 @@ fn loads_spend_storage_policy() {
     );
     assert_eq!(defaults.missing_session_id, None);
     assert_eq!(defaults.spend_updates, SpendUpdates::Allowed);
+}
+
+#[test]
+fn loads_spend_summary_budget() {
+    let configured = load("litellm_settings:\n  max_budget: 100.5\n", &[]);
+    assert_eq!(configured.max_budget, Decimal::new(1005, 1));
+    let from_environment = load(
+        "litellm_settings:\n  max_budget: os.environ/PROXY_MAX_BUDGET\n",
+        &[("PROXY_MAX_BUDGET", "12.25")],
+    );
+    assert_eq!(from_environment.max_budget, Decimal::new(1225, 2));
+    let defaults = load("general_settings: {}\n", &[]);
+    assert_eq!(defaults.max_budget, Decimal::ZERO);
+    let error = load_spend_storage_policy(
+        "litellm_settings:\n  max_budget: not-a-number\n",
+        &environment(&[]),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("litellm_settings.max_budget"));
 }
 
 #[rstest]
