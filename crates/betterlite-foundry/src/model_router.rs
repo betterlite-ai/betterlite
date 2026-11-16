@@ -66,7 +66,7 @@ pub fn transform_response(
     let response = crate::chat::response::transform_response(base_model, body)?;
     // get_hidden_params_dict reads the response's hidden map, which the typed response hands in here
     let mut hidden = existing_hidden.clone();
-    insert_selected_model(&mut hidden, &response.model)?;
+    insert_selected_model(&mut hidden, &response.model);
     Ok(RoutedChatResponse {
         response,
         hidden_params: hidden,
@@ -151,13 +151,12 @@ pub fn validate_environment() -> Result<Infallible, ModelRouterError> {
     Err(ModelRouterError::ValidationUnsupported)
 }
 
-fn insert_selected_model(hidden: &mut Object, selected_model: &str) -> Result<(), ResponseError> {
+fn insert_selected_model(hidden: &mut Object, selected_model: &str) {
     if selected_model.is_empty() {
-        return Ok(());
+        return;
     }
     hidden.insert(
         SELECTED_MODEL_KEY.to_owned(),
-        serde_json::to_value(selected_model)?,
+        serde_json::json!(selected_model),
     );
-    Ok(())
 }

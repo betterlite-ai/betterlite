@@ -126,7 +126,7 @@ fn response_selected_model() {
     assert_eq!(assigned.response.model, "azure_ai/deployment");
     assert_eq!(assigned.hidden_params, object(ASSIGNED_SELECTED_HIDDEN));
     let mut empty_model = object(AZURE_HIDDEN);
-    router::insert_selected_model(&mut empty_model, "").expect("an empty model is skipped");
+    router::insert_selected_model(&mut empty_model, "");
     assert_eq!(empty_model, object(AZURE_HIDDEN));
 }
 
