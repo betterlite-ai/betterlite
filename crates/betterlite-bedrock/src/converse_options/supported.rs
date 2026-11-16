@@ -80,21 +80,7 @@ where
     {
         return true;
     }
-    for name in [model, base_model] {
-        if environment
-            .supports_factory(
-                &CapabilityRequest {
-                    model: name,
-                    custom_llm_provider: Some(CONVERSE_PROVIDER),
-                },
-                NamedCapability::Reasoning.key(),
-            )
-            .await
-        {
-            return true;
-        }
-    }
-    false
+    supports_on(environment, model, base_model, NamedCapability::Reasoning).await
 }
 
 #[must_use]
@@ -123,8 +109,7 @@ where
         return params;
     }
     let base_model = get_bedrock_base_model(model);
-    push_tool_params(&mut params, model, &base_model, environment).await;
-    push_reasoning_param(&mut params, model, &base_model, environment).await;
+    push_capability_params(&mut params, model, &base_model, environment).await;
     if base_model.starts_with("anthropic") {
         params.push("context_management".to_owned());
     }
@@ -157,7 +142,7 @@ fn base_params(model: &str, catalogs: &CatalogSources<'_>) -> Vec<String> {
     params
 }
 
-async fn push_tool_params<Source, Transport>(
+async fn push_capability_params<Source, Transport>(
     params: &mut Vec<String>,
     model: &str,
     base_model: &str,
@@ -170,18 +155,6 @@ async fn push_tool_params<Source, Transport>(
         model,
         custom_llm_provider: Some(CONVERSE_PROVIDER),
     };
-    let mut tool_choice = false;
-    for name in [model, base_model] {
-        tool_choice |= environment
-            .supports_factory(
-                &CapabilityRequest {
-                    model: name,
-                    custom_llm_provider: Some(CONVERSE_PROVIDER),
-                },
-                NamedCapability::ToolChoice.key(),
-            )
-            .await;
-    }
     if TOOL_BASE_PREFIXES
         .into_iter()
         .any(|prefix| base_model.starts_with(prefix))
@@ -194,21 +167,9 @@ async fn push_tool_params<Source, Transport>(
     if base_model.starts_with("amazon.nova") {
         params.push("web_search_options".to_owned());
     }
-    if tool_choice {
+    if supports_on(environment, model, base_model, NamedCapability::ToolChoice).await {
         params.push("tool_choice".to_owned());
     }
-}
-
-// LiteLLM checks gpt-oss and GPT first, then DeepSeek (R1 silent), then Nova 2, then Anthropic.
-async fn push_reasoning_param<Source, Transport>(
-    params: &mut Vec<String>,
-    model: &str,
-    base_model: &str,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-{
     let deepseek = is_deepseek_model(model, base_model);
     let raw_effort = model.contains("gpt-oss")
         || is_openai_gpt_reasoning_model(model)
@@ -220,4 +181,30 @@ async fn push_reasoning_param<Source, Transport>(
     } else if accepts_thinking_param(model, base_model, environment).await {
         params.extend(["thinking", "reasoning_effort", "output_config"].map(str::to_owned));
     }
+}
+
+// LiteLLM asks the original model and then the regionless base, and either flag can answer.
+async fn supports_on<Source, Transport>(
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+    model: &str,
+    base_model: &str,
+    capability: NamedCapability,
+) -> bool
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
+    let mut supported = false;
+    for name in [model, base_model] {
+        supported |= environment
+            .supports_factory(
+                &CapabilityRequest {
+                    model: name,
+                    custom_llm_provider: Some(CONVERSE_PROVIDER),
+                },
+                capability.key(),
+            )
+            .await;
+    }
+    supported
 }
