@@ -23,7 +23,10 @@ pub struct VertexVeoOperation {
     #[serde(default)]
     #[serde_as(as = "DefaultOnNull")]
     pub response: VeoOperationResponse,
-    // the provider's error dict, which LiteLLM copies unchanged into VideoObject.error (a Dict[str, Any])
+    #[expect(
+        clippy::disallowed_types,
+        reason = "LiteLLM copies the provider error dict unchanged into VideoObject.error (Dict[str, Any])"
+    )]
     #[serde(default)]
     pub error: Option<Map<String, Value>>,
 }
