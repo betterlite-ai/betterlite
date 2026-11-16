@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-user-env-vars-merge-lock-key-signed
+call:
+  b4714:
+    function: merge
+    salt_key: b4714-salt
+    user_id: user-1
+    server_id: server-1
+    updates: {TOKEN: t1}
+    allowed_names: [TOKEN]
+    rows: []
+env:
+  LITELLM_SALT_KEY: b4714-salt
+compare: {ignore: []}

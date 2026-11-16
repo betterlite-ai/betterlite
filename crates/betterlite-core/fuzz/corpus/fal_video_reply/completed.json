@@ -1,0 +1,1 @@
+{"status": "COMPLETED", "request_id": "req-2", "video": {"url": "https://a.test/v.mp4", "content_type": "video/mp4"}, "metrics": {"inference_time": 1.5}}

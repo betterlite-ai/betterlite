@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-user-credentials-grant-state-valid
+call:
+  b4713:
+    function: grant_state
+    credential: {type: oauth2, access_token: tok-live, refresh_token: ref-live, expires_at: "2035-01-01T00:00:00+00:00"}
+env:
+  LITELLM_SALT_KEY: b4713-salt
+  MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS: "60"
+compare: {ignore: []}
