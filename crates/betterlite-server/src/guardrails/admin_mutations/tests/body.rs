@@ -9,14 +9,22 @@ fn issue_type(issue: &JsonData) -> String {
 fn issue_loc(issue: &JsonData) -> Vec<JsonData> {
     match field(issue, "loc") {
         JsonData::Array(items) => items.clone(),
-        other => panic!("the loc is not a list: {other:?}"),
+        other @ (JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::String(_)
+        | JsonData::Object(_)) => panic!("the loc is not a list: {other:?}"),
     }
 }
 
 fn loc_field(issue: &JsonData, position: usize) -> String {
     match &issue_loc(issue)[position] {
         JsonData::String(name) => name.clone(),
-        other => panic!("the loc part is not text: {other:?}"),
+        other @ (JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::Array(_)
+        | JsonData::Object(_)) => panic!("the loc part is not text: {other:?}"),
     }
 }
 

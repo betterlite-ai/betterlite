@@ -29,7 +29,7 @@ fn publisher(journal: &Arc<Mutex<Vec<String>>>) -> PublishChange<TableError> {
     Arc::new(move |object_type: &str| {
         entries
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .push(object_type.to_owned());
         let future: PublishFuture<TableError> = Box::pin(async { Ok(()) });
         future

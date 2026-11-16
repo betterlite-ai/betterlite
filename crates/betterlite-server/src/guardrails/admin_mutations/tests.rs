@@ -1,10 +1,10 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -74,14 +74,19 @@ pub(super) struct Harness {
     pub(super) runtime: Arc<GuardrailRuntime<FakeGuardrails>>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Failure {
+    Create,
+    Delete,
+    Update,
+    Find,
+}
+
 #[derive(Default)]
 struct GuardrailStore {
     rows: BTreeMap<String, GuardrailRow>,
     created: usize,
-    fail_create: bool,
-    fail_delete: bool,
-    fail_update: bool,
-    fail_find: bool,
+    failures: BTreeSet<Failure>,
 }
 
 #[derive(Clone, Default)]
@@ -243,21 +248,33 @@ pub(super) fn field<'value>(value: &'value JsonData, name: &str) -> &'value Json
         JsonData::Object(fields) => fields
             .get(name)
             .unwrap_or_else(|| panic!("the body has no {name}: {value:?}")),
-        other => panic!("not an object: {other:?}"),
+        other @ (JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::String(_)
+        | JsonData::Array(_)) => panic!("not an object: {other:?}"),
     }
 }
 
 pub(super) fn keys(value: &JsonData) -> Vec<String> {
     match value {
         JsonData::Object(fields) => fields.keys().cloned().collect(),
-        other => panic!("not an object: {other:?}"),
+        other @ (JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::String(_)
+        | JsonData::Array(_)) => panic!("not an object: {other:?}"),
     }
 }
 
 pub(super) fn text(value: &JsonData) -> &str {
     match value {
         JsonData::String(text) => text,
-        other => panic!("not a string: {other:?}"),
+        other @ (JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::Array(_)
+        | JsonData::Object(_)) => panic!("not a string: {other:?}"),
     }
 }
 
@@ -268,7 +285,11 @@ pub(super) fn detail(body: &str) -> String {
 pub(super) fn first_issue(body: &str) -> JsonData {
     match field(&parse(body), "detail") {
         JsonData::Array(items) => items.first().cloned().expect("one issue"),
-        other => panic!("the detail is not a list: {other:?}"),
+        other @ (JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::String(_)
+        | JsonData::Object(_)) => panic!("the detail is not a list: {other:?}"),
     }
 }
 
@@ -332,46 +353,52 @@ pub(super) fn review_row(id: &str, name: &str, params: Option<&str>, status: &st
 
 impl FakeGuardrails {
     pub(super) fn insert(&self, row: GuardrailRow) {
-        let mut store = self.0.lock().unwrap();
+        let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         store.rows.insert(row.guardrail_id.clone(), row);
     }
 
     pub(super) fn row(&self, id: &str) -> Option<GuardrailRow> {
-        self.0.lock().unwrap().rows.get(id).cloned()
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .rows
+            .get(id)
+            .cloned()
     }
 
     pub(super) fn rows(&self) -> Vec<GuardrailRow> {
-        self.0.lock().unwrap().rows.values().cloned().collect()
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .rows
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub(super) fn created(&self) -> usize {
-        self.0.lock().unwrap().created
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .created
     }
 
-    fn fail_create(&self) {
-        self.0.lock().unwrap().fail_create = true;
-    }
-
-    fn fail_delete(&self) {
-        self.0.lock().unwrap().fail_delete = true;
-    }
-
-    fn fail_update(&self) {
-        self.0.lock().unwrap().fail_update = true;
-    }
-
-    fn fail_find(&self) {
-        self.0.lock().unwrap().fail_find = true;
+    fn fail(&self, failure: Failure) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .failures
+            .insert(failure);
     }
 }
 
 impl GuardrailRows for FakeGuardrails {
     async fn create(&self, row: NewGuardrailRow) -> Result<GuardrailRow, RowsError> {
-        let mut store = self.0.lock().unwrap();
-        if store.fail_create {
+        let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if store.failures.contains(&Failure::Create) {
             return Err(RowsError::MissingRow);
         }
-        store.created += 1;
+        store.created = store.created.saturating_add(1);
         let created = GuardrailRow {
             guardrail_id: row.guardrail_id,
             guardrail_name: row.fields.guardrail_name,
@@ -389,8 +416,8 @@ impl GuardrailRows for FakeGuardrails {
     }
 
     async fn delete(&self, guardrail_id: &str) -> Result<(), RowsError> {
-        let mut store = self.0.lock().unwrap();
-        if store.fail_delete || store.rows.remove(guardrail_id).is_none() {
+        let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if store.failures.contains(&Failure::Delete) || store.rows.remove(guardrail_id).is_none() {
             return Err(RowsError::MissingRow);
         }
         Ok(())
@@ -401,8 +428,8 @@ impl GuardrailRows for FakeGuardrails {
         guardrail_id: &str,
         row: GuardrailUpdate,
     ) -> Result<Option<GuardrailRow>, RowsError> {
-        let mut store = self.0.lock().unwrap();
-        if store.fail_update {
+        let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if store.failures.contains(&Failure::Update) {
             return Err(RowsError::MissingRow);
         }
         let Some(existing) = store.rows.get_mut(guardrail_id) else {
@@ -424,7 +451,13 @@ impl GuardrailRows for FakeGuardrails {
     }
 
     async fn find_by_id(&self, guardrail_id: &str) -> Result<Option<GuardrailRow>, RowsError> {
-        if self.0.lock().unwrap().fail_find {
+        if self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .failures
+            .contains(&Failure::Find)
+        {
             return Err(RowsError::MissingRow);
         }
         Ok(self.row(guardrail_id))
@@ -440,30 +473,45 @@ impl GuardrailRows for FakeGuardrails {
 
 impl FakeReviews {
     pub(super) fn insert(&self, row: ReviewRow) {
-        let mut store = self.0.lock().unwrap();
+        let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         store.rows.insert(row.guardrail_id.clone(), row);
     }
 
     pub(super) fn row(&self, id: &str) -> Option<ReviewRow> {
-        self.0.lock().unwrap().rows.get(id).cloned()
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .rows
+            .get(id)
+            .cloned()
     }
 
     pub(super) fn statuses(&self) -> Vec<String> {
-        self.0.lock().unwrap().statuses.clone()
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .statuses
+            .clone()
     }
 
     fn fail_set(&self) {
-        self.0.lock().unwrap().fail_set = true;
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .fail_set = true;
     }
 
     fn fail_find(&self) {
-        self.0.lock().unwrap().fail_find = true;
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .fail_find = true;
     }
 }
 
 impl ReviewRows for FakeReviews {
     async fn find_unique(&self, guardrail_id: &str) -> Result<Option<ReviewRow>, ReviewRowsError> {
-        let store = self.0.lock().unwrap();
+        let store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         if store.fail_find {
             return Err(ReviewRowsError::MissingRow {
                 guardrail_id: guardrail_id.to_owned(),
@@ -478,7 +526,7 @@ impl ReviewRows for FakeReviews {
         status: &str,
         now: DateTime<Utc>,
     ) -> Result<(), ReviewRowsError> {
-        let mut store = self.0.lock().unwrap();
+        let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         if store.fail_set {
             return Err(ReviewRowsError::MissingRow {
                 guardrail_id: guardrail_id.to_owned(),
@@ -559,6 +607,10 @@ pub(super) fn capture() -> (Captured, DefaultGuard) {
 }
 
 pub(super) fn logged(captured: &Captured) -> String {
-    let bytes = captured.0.lock().unwrap().clone();
+    let bytes = captured
+        .0
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     String::from_utf8(bytes).unwrap()
 }

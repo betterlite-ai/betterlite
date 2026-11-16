@@ -152,7 +152,7 @@ async fn create_keeps_the_row_when_the_enterprise_package_is_missing() {
 async fn create_rollback_failure_is_logged() {
     let (captured, _guard) = capture();
     let harness = harness();
-    harness.guardrails.fail_delete();
+    harness.guardrails.fail(Failure::Delete);
     let (status, _body) = send(
         harness.router,
         request(
@@ -171,7 +171,7 @@ async fn create_rollback_failure_is_logged() {
 async fn create_db_error_is_a_500() {
     let (captured, _guard) = capture();
     let harness = harness();
-    harness.guardrails.fail_create();
+    harness.guardrails.fail(Failure::Create);
     let (status, body) = send(
         harness.router,
         request("POST", "/guardrails", Some(admin()), Some(CREATE_JSON)),
@@ -340,7 +340,7 @@ async fn replace_missing_after_update_is_a_500() {
 #[tokio::test]
 async fn replace_find_error_is_a_500() {
     let harness = harness();
-    harness.guardrails.fail_find();
+    harness.guardrails.fail(Failure::Find);
     let payload = replace_body("new-name", BEDROCK_PARAMS);
     let (status, body) = send(
         harness.router,
@@ -365,7 +365,7 @@ async fn replace_update_error_is_a_500() {
     harness
         .guardrails
         .insert(stored_row("g1", "old-name", BEDROCK_PARAMS, "active"));
-    harness.guardrails.fail_update();
+    harness.guardrails.fail(Failure::Update);
     let payload = replace_body("new-name", BEDROCK_PARAMS);
     let (status, body) = send(
         harness.router,
@@ -571,7 +571,7 @@ async fn patch_bad_params_decode_is_a_422() {
 async fn patch_find_error_is_a_500() {
     let (captured, _guard) = capture();
     let harness = harness();
-    harness.guardrails.fail_find();
+    harness.guardrails.fail(Failure::Find);
     let (status, body) = send(
         harness.router,
         request("PATCH", "/guardrails/g1", Some(admin()), Some("{}")),
@@ -591,7 +591,7 @@ async fn patch_update_error_is_a_500() {
     harness
         .guardrails
         .insert(stored_row("g1", "old-name", BEDROCK_PARAMS, "active"));
-    harness.guardrails.fail_update();
+    harness.guardrails.fail(Failure::Update);
     let (status, body) = send(
         harness.router,
         request(
@@ -698,7 +698,7 @@ async fn delete_db_error_is_a_500() {
     harness
         .guardrails
         .insert(stored_row("g1", "old-name", BEDROCK_PARAMS, "active"));
-    harness.guardrails.fail_delete();
+    harness.guardrails.fail(Failure::Delete);
     let (status, body) = send(
         harness.router,
         request("DELETE", "/guardrails/g1", Some(admin()), None),
@@ -714,7 +714,7 @@ async fn delete_db_error_is_a_500() {
 #[tokio::test]
 async fn delete_find_error_is_a_500() {
     let harness = harness();
-    harness.guardrails.fail_find();
+    harness.guardrails.fail(Failure::Find);
     let (status, body) = send(
         harness.router,
         request("DELETE", "/guardrails/g1", Some(admin()), None),
