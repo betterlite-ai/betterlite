@@ -23,7 +23,7 @@ use super::support::{as_json, parse};
     Some(r#"{"disabled": true, "prefixPaddingMs": 20, "silenceDurationMs": 500}"#)
 )]
 #[case::unknown_kind(r#"{"type": "custom_vad"}"#, Some(r#"{"disabled": true}"#))]
-#[case::no_kind(r#"{}"#, Some(r#"{"disabled": true}"#))]
+#[case::no_kind("{}", Some(r#"{"disabled": true}"#))]
 #[case::guardrail_without_kind(r#"{"create_response": false}"#, Some(r#"{"disabled": true}"#))]
 #[case::fractional_durations(
     r#"{"type": "server_vad", "prefix_padding_ms": 20.5, "silence_duration_ms": 500.0}"#,
@@ -50,9 +50,6 @@ fn automatic_detection_follows_the_override_rules(
     #[case] expected: Option<&str>,
 ) {
     let detection = map_automatic_turn_detection(&parse::<TurnDetection>(source));
-    let expected = match expected {
-        Some(text) => parse::<Json>(text),
-        None => Json::Null,
-    };
-    assert_eq!(as_json(&detection), expected);
+    let wanted = expected.map_or(Json::Null, parse::<Json>);
+    assert_eq!(as_json(&detection), wanted);
 }

@@ -18,10 +18,10 @@ pub fn map_automatic_turn_detection(value: &TurnDetection) -> Option<AutomaticAc
     if value.kind.as_deref() == Some("semantic_vad") && value.create_response.is_none() {
         return None;
     }
-    let disabled = match value.create_response {
-        Some(create_response) => !create_response,
-        None => value.kind.as_deref() != Some("server_vad"),
-    };
+    let disabled = value.create_response.map_or_else(
+        || value.kind.as_deref() != Some("server_vad"),
+        |create_response| !create_response,
+    );
     Some(AutomaticActivityDetection {
         disabled: Some(disabled),
         prefix_padding_ms: integer_only(value.prefix_padding_ms.as_ref()),

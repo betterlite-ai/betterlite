@@ -67,55 +67,33 @@ def logging_session_id(call: Call) -> str:
     return "" if value is None else value
 
 
-def session_update(call: Call, config: GeminiRealtimeConfig) -> JsonValue:
-    message = json.dumps({"type": "session.update", "session": session_payload(call)})
-    messages = config.transform_realtime_request(
-        message,
-        call["model"],
-        call.get("session_configuration_request"),
-    )
-    return {"messages": [DOCUMENT.validate_json(answer) for answer in messages]}
-
-
-def automatic(call: Call, config: GeminiRealtimeConfig) -> JsonValue:
-    deferred = call.get("defer_setup")
-    litellm.gemini_live_defer_setup = False if deferred is None else deferred
-    required = config.requires_session_configuration()
-    setup: JsonValue = None
-    if required:
-        envelope = OBJECT.validate_json(config.session_configuration_request(call["model"]))
-        setup = envelope.get("setup")
-    return {"required": required, "setup": setup}
-
-
-def created(call: Call, config: GeminiRealtimeConfig) -> JsonValue:
-    litellm_uuid.uuid4 = FixedUuid(event_id(call))
-    event = config.transform_session_created_event(
-        call["model"],
-        logging_session_id(call),
-        call.get("session_configuration_request"),
-    )
-    return OBJECT.validate_python(event)
-
-
-def endpoint(call: Call, config: GeminiRealtimeConfig) -> JsonValue:
-    url = config.get_complete_url(
-        call.get("api_base"),
-        call["model"],
-        call.get("api_key"),
-    )
-    return {"url": url}
-
-
 def dispatch(call: Call) -> JsonValue:
     config = GeminiRealtimeConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L143-L148
+    request = call.get("session_configuration_request")
     if call["op"] == "session_update":
-        return session_update(call, config)
+        update: JsonObject = {"type": "session.update", "session": session_payload(call)}
+        messages = config.transform_realtime_request(json.dumps(update), call["model"], request)
+        return {"messages": [DOCUMENT.validate_json(answer) for answer in messages]}
     if call["op"] == "automatic":
-        return automatic(call, config)
+        deferred = call.get("defer_setup")
+        litellm.gemini_live_defer_setup = False if deferred is None else deferred
+        required = config.requires_session_configuration()
+        setup: JsonValue = None
+        if required:
+            envelope = OBJECT.validate_json(config.session_configuration_request(call["model"]))
+            setup = envelope.get("setup")
+        return {"required": required, "setup": setup}
     if call["op"] == "created":
-        return created(call, config)
-    return endpoint(call, config)
+        litellm_uuid.uuid4 = FixedUuid(event_id(call))
+        # an annotated assignment is the one place mypy allows the Any inside LiteLLM's event TypedDict
+        event: object = config.transform_session_created_event(
+            call["model"],
+            logging_session_id(call),
+            request,
+        )
+        return OBJECT.validate_python(event)
+    url = config.get_complete_url(call.get("api_base"), call["model"], call.get("api_key"))
+    return {"url": url}
 
 
 def label(message: str) -> str:
