@@ -4,7 +4,7 @@ use betterlite_openai::passthrough::transformation::BasePassthroughConfig;
 use betterlite_openai::passthrough::transformation::types::{RelayCallType, RelayedResponse};
 
 use crate::passthrough::config::AzurePassthroughConfig;
-use crate::passthrough::logging::AzureRelayedLog;
+use crate::passthrough::logging::{AzureRelayedLog, NoChatStreamAssembly};
 
 use super::passthrough_cases::{CHAT_ENDPOINT, EMBEDDINGS_ENDPOINT, RESPONSES_ENDPOINT};
 use super::support::{RealChatProjection, RecordingLogging, chat_chunks, headers, object, target};
@@ -84,8 +84,11 @@ fn chat_request_data() -> Object {
 
 fn chat_completion_logs_a_chat_reply() {
     let config = AzurePassthroughConfig {
+        api_base_env: None,
+        api_key_env: None,
+        model_call_details: None,
         chat_reply: RealChatProjection::default(),
-        ..AzurePassthroughConfig::default()
+        chat_stream: NoChatStreamAssembly,
     };
     let reply_headers = headers(&[("content-type", "application/json")]);
     let mut logging = RecordingLogging::default();
@@ -115,8 +118,11 @@ fn chat_completion_logs_a_chat_reply() {
 
 fn chat_log_keeps_the_relayed_request_body() {
     let config = AzurePassthroughConfig {
+        api_base_env: None,
+        api_key_env: None,
+        model_call_details: None,
         chat_reply: RealChatProjection::default(),
-        ..AzurePassthroughConfig::default()
+        chat_stream: NoChatStreamAssembly,
     };
     let request_data = chat_request_data();
     let reply_headers = headers(&[("content-type", "application/json")]);

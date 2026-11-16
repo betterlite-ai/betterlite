@@ -28,7 +28,7 @@ use crate::passthrough::logging::{
     relayed_messages,
 };
 use crate::passthrough::url::{
-    field_json, params_api_version, request_api_version, truthy, without_api_version,
+    is_filled, params_api_version, request_api_version, without_api_version,
 };
 
 const CHAT_COMPLETIONS: &str = "chat/completions";
@@ -165,9 +165,11 @@ where
     type Logged = AzureRelayedLog;
 
     fn is_streaming_request(&self, _endpoint: &str, request_data: &Object) -> bool {
-        field_json(request_data, STREAM)
+        request_data
+            .get(STREAM)
+            .and_then(|value| serde_json::from_value::<Json>(value.clone()).ok())
             .as_ref()
-            .is_some_and(truthy)
+            .is_some_and(is_filled)
     }
 
     fn get_complete_url(

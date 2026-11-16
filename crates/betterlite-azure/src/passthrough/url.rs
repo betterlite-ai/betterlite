@@ -8,14 +8,8 @@ use crate::azure_urls::url_parts::{encoded_query, query_pairs};
 
 const API_VERSION: &str = "api-version";
 
-// a request body field as the typed JSON enum, which untagged Json reads from every serde_json value
-pub(crate) fn field_json(fields: &Object, name: &str) -> Option<Json> {
-    let value = fields.get(name)?;
-    serde_json::from_value::<Json>(value.clone()).ok()
-}
-
-// Python truthiness of a JSON value, which bool(request_data.get("stream")) and the api-version checks use
-pub(crate) fn truthy(value: &Json) -> bool {
+// Python truthiness of a JSON value: bool(request_data.get("stream")) and the api-version checks read 0, "", false, [] and {} as empty
+pub(crate) fn is_filled(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,
@@ -62,23 +56,28 @@ fn version_text(value: &Json) -> Result<String, PassthroughError> {
     }
 }
 
-// request_query_params.get("api-version"): an absent or falsy value leaves the base untouched
+// request_query_params.get("api-version"): an absent or empty value leaves the base untouched
 pub(crate) fn request_api_version(
     params: Option<&Object>,
 ) -> Result<Option<String>, PassthroughError> {
     let Some(value) = params
         .filter(|params| !params.is_empty())
-        .and_then(|params| field_json(params, API_VERSION))
-        .filter(truthy)
+        .and_then(|params| params.get(API_VERSION))
+        .and_then(|value| serde_json::from_value::<Json>(value.clone()).ok())
+        .filter(is_filled)
     else {
         return Ok(None);
     };
     version_text(&value).map(Some)
 }
 
-// litellm_params["api_version"] after the caller's value overrides it, read with the same truthiness
+// litellm_params["api_version"] after the caller's value overrides it, read with the same emptiness rule
 pub(crate) fn params_api_version(params: &Object) -> Result<Option<String>, PassthroughError> {
-    let Some(value) = field_json(params, API_VERSION).filter(truthy) else {
+    let Some(value) = params
+        .get(API_VERSION)
+        .and_then(|value| serde_json::from_value::<Json>(value.clone()).ok())
+        .filter(is_filled)
+    else {
         return Ok(None);
     };
     version_text(&value).map(Some)

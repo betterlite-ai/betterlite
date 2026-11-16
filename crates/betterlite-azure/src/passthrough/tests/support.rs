@@ -32,7 +32,9 @@ use crate::credentials::source::{
 use crate::oidc_exchange::OidcExchangeInput;
 use crate::passthrough::config::AzurePassthroughConfig;
 use crate::passthrough::error::AzurePassthroughError;
-use crate::passthrough::logging::{ChatReplyProjection, ChatStreamAssembly};
+use crate::passthrough::logging::{
+    ChatReplyProjection, ChatStreamAssembly, NoChatReplyProjection, NoChatStreamAssembly,
+};
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const NOW: &str = "2026-01-01T00:05:00+00:00";
@@ -95,7 +97,10 @@ pub fn deployment() -> DeploymentSettings {
 pub fn base_config(api_base_env: Option<&str>) -> AzurePassthroughConfig {
     AzurePassthroughConfig {
         api_base_env: api_base_env.map(str::to_owned),
-        ..AzurePassthroughConfig::default()
+        api_key_env: None,
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
+        chat_stream: NoChatStreamAssembly,
     }
 }
 

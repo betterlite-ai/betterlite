@@ -61,11 +61,14 @@ pub fn router_model_in_endpoint<'endpoint>(
 }
 
 #[must_use]
-pub fn foreign_azure_deployment(
+pub fn foreign_azure_deployment<Served>(
     endpoint: &str,
     model_group: &str,
-    served_models: impl FnOnce() -> Vec<String>,
-) -> Option<String> {
+    served_models: Served,
+) -> Option<String>
+where
+    Served: FnOnce() -> Vec<String>,
+{
     let deployment = deployment_segment(endpoint)?;
     if deployment == model_group {
         return None;

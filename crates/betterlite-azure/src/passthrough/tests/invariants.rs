@@ -4,6 +4,7 @@ use crate::credentials::cache::RefreshProviderCache;
 use crate::passthrough::config::{
     AzurePassthroughConfig, AzurePassthroughEnvironment, validate_environment,
 };
+use crate::passthrough::logging::{NoChatReplyProjection, NoChatStreamAssembly};
 
 use super::support::{
     NoSources, RecordingSources, base_config, complete, deployment, headers, object,
@@ -28,7 +29,9 @@ fn instance(api_base: &str, api_key: &str) -> AzurePassthroughConfig {
     AzurePassthroughConfig {
         api_base_env: Some(api_base.to_owned()),
         api_key_env: Some(secret(api_key)),
-        ..AzurePassthroughConfig::default()
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
+        chat_stream: NoChatStreamAssembly,
     }
 }
 
@@ -142,8 +145,11 @@ fn configured_secrets_do_not_render_in_debug() {
 
 fn failed_lookups_name_no_secret() {
     let config = AzurePassthroughConfig {
+        api_base_env: None,
         api_key_env: Some(secret("hunter2-azure-key")),
-        ..AzurePassthroughConfig::default()
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
+        chat_stream: NoChatStreamAssembly,
     };
     let error = complete(
         &config,

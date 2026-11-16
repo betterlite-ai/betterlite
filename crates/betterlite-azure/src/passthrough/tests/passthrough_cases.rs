@@ -8,7 +8,9 @@ use crate::passthrough::config::{
     AzurePassthroughConfig, AzurePassthroughEnvironment, validate_environment,
 };
 use crate::passthrough::endpoint;
-use crate::passthrough::logging::{AzureRelayedLog, relayed_messages};
+use crate::passthrough::logging::{
+    AzureRelayedLog, NoChatReplyProjection, NoChatStreamAssembly, relayed_messages,
+};
 use crate::passthrough::url::without_api_version;
 
 use super::nonstream_cases::nonstream_usage_case;
@@ -560,8 +562,11 @@ fn streams_without_a_terminal_event_log_nothing() {
 fn responses_path_check_precedes_chat() {
     let chunks = terminal_chunks("resp_2");
     let config = AzurePassthroughConfig {
+        api_base_env: None,
+        api_key_env: None,
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
         chat_stream: RecordingStream::default(),
-        ..AzurePassthroughConfig::default()
     };
     let mut logging = RecordingLogging::default();
     let endpoint_path = "openai/deployments/x/chat/completions/responses";
@@ -580,8 +585,11 @@ fn responses_path_check_precedes_chat() {
 
 fn unknown_stream_endpoints_log_nothing() {
     let config = AzurePassthroughConfig {
+        api_base_env: None,
+        api_key_env: None,
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
         chat_stream: RecordingStream::default(),
-        ..AzurePassthroughConfig::default()
     };
     let mut logging = RecordingLogging::default();
     let logged = config.handle_collected_chunks(
@@ -636,9 +644,11 @@ fn chat_chunks_reach_the_assembler() {
         r#"{"request_data": {"messages": [{"role": "user", "content": "hi"}], "stream": true}}"#,
     );
     let config = AzurePassthroughConfig {
+        api_base_env: None,
+        api_key_env: None,
         model_call_details: Some(details),
+        chat_reply: NoChatReplyProjection,
         chat_stream: RecordingStream::default(),
-        ..AzurePassthroughConfig::default()
     };
     let chunks = chat_chunks();
     let mut logging = RecordingLogging::default();
@@ -661,9 +671,11 @@ fn chat_chunks_reach_the_assembler() {
 fn chat_chunks_reach_it_without_valid_messages() {
     let details = object(r#"{"request_data": {"messages": "hi"}}"#);
     let config = AzurePassthroughConfig {
+        api_base_env: None,
+        api_key_env: None,
         model_call_details: Some(details),
+        chat_reply: NoChatReplyProjection,
         chat_stream: RecordingStream::default(),
-        ..AzurePassthroughConfig::default()
     };
     let mut logging = RecordingLogging::default();
     let logged = config.handle_collected_chunks(
@@ -674,8 +686,11 @@ fn chat_chunks_reach_it_without_valid_messages() {
     assert!(logged.is_none());
     assert_eq!(config.chat_stream.taken().unwrap().messages, None);
     let no_details = AzurePassthroughConfig {
+        api_base_env: None,
+        api_key_env: None,
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
         chat_stream: RecordingStream::default(),
-        ..AzurePassthroughConfig::default()
     };
     let mut logging = RecordingLogging::default();
     no_details.handle_collected_chunks(
@@ -688,8 +703,11 @@ fn chat_chunks_reach_it_without_valid_messages() {
 
 fn non_chat_streams_never_reach_the_assembler() {
     let config = AzurePassthroughConfig {
+        api_base_env: None,
+        api_key_env: None,
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
         chat_stream: RecordingStream::default(),
-        ..AzurePassthroughConfig::default()
     };
     let mut logging = RecordingLogging::default();
     let logged = config.handle_collected_chunks(
@@ -734,12 +752,16 @@ fn configured_keys_stay_per_instance() {
     let left = AzurePassthroughConfig {
         api_base_env: Some(String::from("https://left.test")),
         api_key_env: Some(secret("left-key")),
-        ..AzurePassthroughConfig::default()
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
+        chat_stream: NoChatStreamAssembly,
     };
     let right = AzurePassthroughConfig {
         api_base_env: Some(String::from("https://right.test")),
         api_key_env: Some(secret("right-key")),
-        ..AzurePassthroughConfig::default()
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
+        chat_stream: NoChatStreamAssembly,
     };
     assert_eq!(left.get_api_base(None), Some("https://left.test"));
     assert_eq!(right.get_api_base(None), Some("https://right.test"));

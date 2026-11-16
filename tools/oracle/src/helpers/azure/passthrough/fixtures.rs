@@ -7,7 +7,7 @@ use betterlite_azure::credentials::source::{
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_azure::passthrough::config::AzurePassthroughConfig;
 use betterlite_azure::passthrough::logging::{
-    ChatReplyProjection, ChatStreamAssembly, NoChatReplyProjection,
+    ChatReplyProjection, ChatStreamAssembly, NoChatReplyProjection, NoChatStreamAssembly,
 };
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat_choices::reply::ResponseReply;
@@ -21,14 +21,20 @@ use secrecy::SecretString;
 pub(crate) fn base_config(api_base_env: Option<&str>) -> AzurePassthroughConfig {
     AzurePassthroughConfig {
         api_base_env: api_base_env.map(str::to_owned),
-        ..AzurePassthroughConfig::default()
+        api_key_env: None,
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
+        chat_stream: NoChatStreamAssembly,
     }
 }
 
 pub(crate) fn config_with_reply<Reply: Default>(reply: Reply) -> AzurePassthroughConfig<Reply> {
     AzurePassthroughConfig {
+        api_base_env: None,
+        api_key_env: None,
+        model_call_details: None,
         chat_reply: reply,
-        ..AzurePassthroughConfig::default()
+        chat_stream: NoChatStreamAssembly,
     }
 }
 
@@ -36,8 +42,11 @@ pub(crate) fn config_with_stream<Stream: Default>(
     stream: Stream,
 ) -> AzurePassthroughConfig<NoChatReplyProjection, Stream> {
     AzurePassthroughConfig {
+        api_base_env: None,
+        api_key_env: None,
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
         chat_stream: stream,
-        ..AzurePassthroughConfig::default()
     }
 }
 
@@ -47,10 +56,6 @@ pub(crate) fn target<'call>(model: &'call str, endpoint: &'call str) -> Passthro
         custom_llm_provider: "azure",
         endpoint,
     }
-}
-
-pub(crate) fn secret(text: &str) -> SecretString {
-    SecretString::from(text.to_owned())
 }
 
 // keeps the B668 log input beside the reply and hands back the decoded body its projection reads

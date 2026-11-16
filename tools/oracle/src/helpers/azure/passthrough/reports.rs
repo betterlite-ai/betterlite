@@ -11,14 +11,14 @@ use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughUrlRequest, RelayedResponse,
 };
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::fixtures::{
     NoSources, OracleChatProjection, RecordingLogging, RecordingStream, base_config,
-    config_with_reply, config_with_stream, deployment, secret, target,
+    config_with_reply, config_with_stream, deployment, target,
 };
 use super::{
     DeploymentStep, InferenceStep, Input, KeyStep, NonstreamStep, RelayStep, RouterStep,
@@ -29,14 +29,22 @@ pub(super) fn run(input: &Input) -> HelperResult {
     Ok(match input {
         Input::BodyModelInferenceEndpoint { inference_steps } => inference_report(inference_steps),
         Input::RouterModelInPath { router_steps } => router_report(router_steps),
-        Input::ForeignDeployment { deployment_steps } => deployment_report(deployment_steps),
+        Input::ForeignDeployment { deployment_steps } => json!({
+            "steps": deployment_steps.iter().map(deployment_step).collect::<Vec<Value>>()
+        }),
         Input::ApiVersionRemoval {
             removals,
             url_steps,
         } => removal_report(removals, url_steps),
-        Input::ResponsesStreamLog { stream_steps } => stream_report(stream_steps),
-        Input::MessagesRelayLog { relay_steps } => relay_report(relay_steps),
-        Input::NonstreamUsage { nonstream_steps } => nonstream_report(nonstream_steps),
+        Input::ResponsesStreamLog { stream_steps } => json!({
+            "steps": stream_steps.iter().map(stream_step).collect::<Vec<Value>>()
+        }),
+        Input::MessagesRelayLog { relay_steps } => json!({
+            "steps": relay_steps.iter().map(relay_step).collect::<Vec<Value>>()
+        }),
+        Input::NonstreamUsage { nonstream_steps } => json!({
+            "steps": nonstream_steps.iter().map(nonstream_step).collect::<Vec<Value>>()
+        }),
         Input::PassthroughAuthInputs {
             key_steps,
             validation_steps,
@@ -63,11 +71,6 @@ fn router_report(steps: &[RouterStep]) -> Value {
         .iter()
         .map(|step| json!({ "model": router_model_in_endpoint(&step.endpoint, &step.router_models) }))
         .collect();
-    json!({ "steps": steps })
-}
-
-fn deployment_report(steps: &[DeploymentStep]) -> Value {
-    let steps: Vec<Value> = steps.iter().map(deployment_step).collect();
     json!({ "steps": steps })
 }
 
@@ -105,11 +108,6 @@ fn url_step(step: &UrlStep) -> Value {
     }
 }
 
-fn stream_report(steps: &[StreamStep]) -> Value {
-    let steps: Vec<Value> = steps.iter().map(stream_step).collect();
-    json!({ "steps": steps })
-}
-
 fn stream_step(step: &StreamStep) -> Value {
     let config = base_config(None);
     let mut logging_obj = RecordingLogging::default();
@@ -138,11 +136,6 @@ fn terminal_view(event: &ResponsesTerminalEvent) -> Value {
     })
 }
 
-fn relay_report(steps: &[RelayStep]) -> Value {
-    let steps: Vec<Value> = steps.iter().map(relay_step).collect();
-    json!({ "steps": steps })
-}
-
 fn relay_step(step: &RelayStep) -> Value {
     let mut config = config_with_stream(RecordingStream::default());
     config.model_call_details = step.model_call_details.clone();
@@ -163,11 +156,6 @@ fn relay_step(step: &RelayStep) -> Value {
         "messages": messages,
         "call_type": call_type(&logging_obj),
     })
-}
-
-fn nonstream_report(steps: &[NonstreamStep]) -> Value {
-    let steps: Vec<Value> = steps.iter().map(nonstream_step).collect();
-    json!({ "steps": steps })
 }
 
 fn nonstream_step(step: &NonstreamStep) -> Value {
@@ -201,12 +189,20 @@ fn auth_report(key_steps: &[KeyStep], validation_steps: &[ValidationStep]) -> Va
 }
 
 fn key_step(step: &KeyStep) -> Value {
-    let env_key = step.env_key.as_deref().map(secret);
+    let env_key = step
+        .env_key
+        .as_deref()
+        .map(str::to_owned)
+        .map(SecretString::from);
     let config = AzurePassthroughConfig {
         api_key_env: env_key,
         ..base_config(None)
     };
-    let api_key = step.api_key.as_deref().map(secret);
+    let api_key = step
+        .api_key
+        .as_deref()
+        .map(str::to_owned)
+        .map(SecretString::from);
     match config.get_api_key(api_key.as_ref()) {
         Some(key) => Value::String(key.expose_secret().to_owned()),
         None => Value::Null,
@@ -216,9 +212,21 @@ fn key_step(step: &KeyStep) -> Value {
 fn validation_step(step: &ValidationStep) -> Value {
     let credentials = deployment();
     let sources = NoSources;
-    let api_key = step.api_key.as_deref().map(secret);
-    let params_key = step.params_key.as_deref().map(secret);
-    let configured_key = step.configured_key.as_deref().map(secret);
+    let api_key = step
+        .api_key
+        .as_deref()
+        .map(str::to_owned)
+        .map(SecretString::from);
+    let params_key = step
+        .params_key
+        .as_deref()
+        .map(str::to_owned)
+        .map(SecretString::from);
+    let configured_key = step
+        .configured_key
+        .as_deref()
+        .map(str::to_owned)
+        .map(SecretString::from);
     let request = AzurePassthroughEnvironment {
         headers: step.headers.clone(),
         api_key: api_key.as_ref(),
