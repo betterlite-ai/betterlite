@@ -9,8 +9,8 @@ deviations:
   - what: "A valid non-admin key answers 403 with a {\"detail\": \"...\"} body, while LiteLLM's admin-only route check raises a plain Exception that auth_exception_handler turns into a 401 auth_error envelope."
     why: "betterlite's management routes carry the admin-only check in the route (as guardrails/custom_code_test does), so a forbidden caller gets the route's own 403 and detail body instead of an authentication failure."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L249-L257
-  - what: "An explicit socket_timeout null cannot disable the 5.0 second default, because the bridge drops null keyword arguments and B4299 then applies RedisCache.__init__'s default."
-    why: "redis-py treats a null kwarg as unset too, so a null socket_timeout in LiteLLM also ends at the 5.0 default; no behavior differs, but the mechanism does."
+  - what: "An explicit socket_timeout null tests with B4321's 5.0 second default, while LiteLLM only assigns socket_timeout to the redis client when it is not None, so the null leaves the client without that timeout."
+    why: "The bridge drops null keyword arguments, so the null reaches B4321 as absent and RedisCache.__init__'s 5.0 default applies; a caller who sends null to silence the timeout gets a 5.0 second one instead."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L604-L650
   - what: "An absent or null host and url with no REDIS_ environment fallback answers B4321's missing-target failure where LiteLLM's redis-py falls back to localhost, and a null value for a name no redis client knows is dropped so the test runs where LiteLLM's redis-py raise fails it."
     why: "B4321 rejects a settings map with no host or url and its typed option map has no null member, so the bridge drops nulls instead of forwarding them; the route must not pick or default connection fields itself."
