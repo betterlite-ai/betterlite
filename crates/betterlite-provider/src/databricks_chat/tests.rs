@@ -121,7 +121,7 @@ pub(crate) fn text_of(doc: &Json) -> String {
 }
 
 // Any serializable value as the Json the wire would carry
-pub(crate) fn dump<Source: Serialize>(value: &Source) -> Json {
+pub(crate) fn dump<Source: Serialize + ?Sized>(value: &Source) -> Json {
     convert(value)
 }
 
