@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -13,13 +14,13 @@ use chrono::NaiveDateTime;
 use rstest::rstest;
 
 use crate::registry_read_through::RegistryReadThrough;
-use crate::registry_read_through::Resync;
+use crate::registry_read_through::Resync as _;
 use crate::registry_read_through::ResyncError;
 use crate::registry_read_through::resyncs::{
     AgentResync, AgentSync, DbObjects, GuardrailResync, GuardrailSync, ModelKey, ModelResync,
     ModelRow, ModelSync, ObjectType, RegistryReadThroughs,
 };
-use crate::registry_read_through::tests::support::CountingResync;
+use crate::registry_read_through::tests::support::{CountingResync, record};
 
 // (a client is configured, store_model_in_db is true, should_load answers true)
 struct FakeDb {
@@ -37,7 +38,7 @@ impl DbObjects for FakeDb {
     }
 
     fn should_load(&self, object_type: ObjectType) -> bool {
-        self.asks.lock().unwrap().push(object_type);
+        record(&self.asks, object_type);
         self.flags.2
     }
 }
@@ -99,51 +100,47 @@ struct FakeModelSync {
 
 impl FakeModelSync {
     fn rows(&self, rows: &[ModelRow]) -> Result<Vec<ModelRow>, ResyncError> {
-        if let Some(message) = self.failure {
-            return Err(ResyncError::Failed {
-                message: message.to_owned(),
-            });
-        }
-        Ok(rows.to_vec())
+        let Some(message) = self.failure else {
+            return Ok(rows.to_vec());
+        };
+        Err(ResyncError::Failed {
+            message: message.to_owned(),
+        })
     }
 }
 
 impl ModelSync for FakeModelSync {
-    async fn find_rows(&self, by: ModelKey<'_>) -> Result<Vec<ModelRow>, ResyncError> {
-        match by {
-            ModelKey::Name(name) => {
-                self.calls
-                    .lock()
-                    .unwrap()
-                    .push(ModelCall::FindByName(name.to_owned()));
-                self.rows(&self.name_rows)
-            }
-            ModelKey::Id(id) => {
-                self.calls
-                    .lock()
-                    .unwrap()
-                    .push(ModelCall::FindById(id.to_owned()));
-                self.rows(&self.id_rows)
-            }
-        }
+    fn find_rows(
+        &self,
+        by: ModelKey<'_>,
+    ) -> impl Future<Output = Result<Vec<ModelRow>, ResyncError>> + Send {
+        let (call, rows) = match by {
+            ModelKey::Name(name) => (
+                ModelCall::FindByName(name.to_owned()),
+                self.rows(&self.name_rows),
+            ),
+            ModelKey::Id(id) => (ModelCall::FindById(id.to_owned()), self.rows(&self.id_rows)),
+        };
+        record(&self.calls, call);
+        ready(rows)
     }
 
-    async fn router_exists(&self) -> bool {
-        self.calls.lock().unwrap().push(ModelCall::RouterExists);
-        self.router
+    fn router_exists(&self) -> impl Future<Output = bool> + Send {
+        record(&self.calls, ModelCall::RouterExists);
+        ready(self.router)
     }
 
-    async fn add_deployments_from_db(&self) -> Result<bool, ResyncError> {
-        self.calls.lock().unwrap().push(ModelCall::AddDeployments);
-        Ok(self.deployments)
+    fn add_deployments_from_db(&self) -> impl Future<Output = Result<bool, ResyncError>> + Send {
+        record(&self.calls, ModelCall::AddDeployments);
+        ready(Ok(self.deployments))
     }
 
-    async fn add_rows_to_router(&self, rows: Vec<ModelRow>) -> Result<(), ResyncError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(ModelCall::AddRows(rows.len()));
-        Ok(())
+    fn add_rows_to_router(
+        &self,
+        rows: Vec<ModelRow>,
+    ) -> impl Future<Output = Result<(), ResyncError>> + Send {
+        record(&self.calls, ModelCall::AddRows(rows.len()));
+        ready(Ok(()))
     }
 }
 
@@ -346,20 +343,17 @@ struct FakeGuardrailSync {
 }
 
 impl GuardrailSync for FakeGuardrailSync {
-    async fn find_active(&self, name: &str) -> Result<Option<GuardrailRow>, ResyncError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(GuardrailCall::FindActive(name.to_owned()));
-        Ok(self.row.clone())
+    fn find_active(
+        &self,
+        name: &str,
+    ) -> impl Future<Output = Result<Option<GuardrailRow>, ResyncError>> + Send {
+        record(&self.calls, GuardrailCall::FindActive(name.to_owned()));
+        ready(Ok(self.row.clone()))
     }
 
-    async fn load_row(&self, row: GuardrailRow) -> bool {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(GuardrailCall::LoadRow(row.guardrail_name));
-        self.loads_row
+    fn load_row(&self, row: GuardrailRow) -> impl Future<Output = bool> + Send {
+        record(&self.calls, GuardrailCall::LoadRow(row.guardrail_name));
+        ready(self.loads_row)
     }
 }
 
@@ -441,20 +435,14 @@ struct FakeAgentSync {
 }
 
 impl AgentSync for FakeAgentSync {
-    async fn cached(&self, key: &str) -> bool {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(AgentCall::Cached(key.to_owned()));
-        self.cached
+    fn cached(&self, key: &str) -> impl Future<Output = bool> + Send {
+        record(&self.calls, AgentCall::Cached(key.to_owned()));
+        ready(self.cached)
     }
 
-    async fn load_locked(&self, key: &str) -> Result<bool, ResyncError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(AgentCall::LoadLocked(key.to_owned()));
-        Ok(self.load_result)
+    fn load_locked(&self, key: &str) -> impl Future<Output = Result<bool, ResyncError>> + Send {
+        record(&self.calls, AgentCall::LoadLocked(key.to_owned()));
+        ready(Ok(self.load_result))
     }
 }
 

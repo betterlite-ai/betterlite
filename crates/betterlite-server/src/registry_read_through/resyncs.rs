@@ -100,11 +100,11 @@ impl<S: ModelSync, D: DbObjects> Resync for ModelResync<S, D> {
         if rows.is_empty() {
             return Ok(false);
         }
-        if !self.sync.router_exists().await {
-            return self.sync.add_deployments_from_db().await;
+        if self.sync.router_exists().await {
+            self.sync.add_rows_to_router(rows).await?;
+            return Ok(true);
         }
-        self.sync.add_rows_to_router(rows).await?;
-        Ok(true)
+        self.sync.add_deployments_from_db().await
     }
 }
 
@@ -126,8 +126,9 @@ impl<S: AgentSync, D: DbObjects> Resync for AgentResync<S, D> {
             return Ok(false);
         }
         if self.sync.cached(key).await {
-            return Ok(true);
+            Ok(true)
+        } else {
+            self.sync.load_locked(key).await
         }
-        self.sync.load_locked(key).await
     }
 }

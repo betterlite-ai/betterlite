@@ -1,4 +1,6 @@
+use std::future::{Future, ready};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -11,9 +13,9 @@ pub(crate) struct CountingResync {
 }
 
 impl Resync for CountingResync {
-    async fn resync(&self, _key: &str) -> Result<bool, ResyncError> {
+    fn resync(&self, _key: &str) -> impl Future<Output = Result<bool, ResyncError>> + Send {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(self.found)
+        ready(Ok(self.found))
     }
 }
 
@@ -23,12 +25,16 @@ pub(crate) struct FailingResync {
 }
 
 impl Resync for FailingResync {
-    async fn resync(&self, _key: &str) -> Result<bool, ResyncError> {
+    fn resync(&self, _key: &str) -> impl Future<Output = Result<bool, ResyncError>> + Send {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Err(ResyncError::Failed {
+        ready(Err(ResyncError::Failed {
             message: self.message.to_owned(),
-        })
+        }))
     }
+}
+
+pub(crate) fn record<T>(calls: &Mutex<Vec<T>>, call: T) {
+    calls.lock().unwrap().push(call);
 }
 
 pub(crate) fn capture_logs() -> (tempfile::NamedTempFile, DefaultGuard) {
