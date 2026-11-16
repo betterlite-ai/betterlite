@@ -1,5 +1,5 @@
 use betterlite_analytics::daily_metrics::DailySpendPage;
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::usage_ai_chat::fetch_args::{parse_csv_ids, resolve_fetch_kwargs};
 use betterlite_server::usage_ai_chat::prompt::build_system_prompt;
