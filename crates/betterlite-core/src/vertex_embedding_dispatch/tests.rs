@@ -363,7 +363,7 @@ fn an_explicit_api_base_and_option_credentials_win() {
         deployments: Vec::new(),
     };
     let optional_params = params(
-        r#"{"vertex_credentials": "{\"type\": \"service_account\"}", "vertex_location": "option-location"}"#,
+        r#"{"vertex_credentials": "{\"type\": \"service_account\", \"client_email\": \"sa@example.iam\", \"private_key\": \"key\"}", "vertex_location": "option-location"}"#,
     );
     let resolved = select(
         SelectionRequest {
@@ -410,8 +410,7 @@ fn a_wrong_typed_alias_names_its_field() {
         },
         &catalog,
     )
-    .err()
-    .expect("a rejected option");
+    .expect_err("a rejected option");
     assert_eq!(
         error.to_string(),
         "the vertex_project option must be a string"
@@ -434,8 +433,7 @@ fn rejected_credentials(optional_params: &Extra) -> String {
         },
         &ModelCatalog::default(),
     )
-    .err()
-    .expect("a rejected credential")
+    .expect_err("a rejected credential")
     .to_string()
 }
 
