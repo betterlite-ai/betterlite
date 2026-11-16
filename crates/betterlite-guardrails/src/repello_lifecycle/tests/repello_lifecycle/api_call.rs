@@ -83,6 +83,23 @@ async fn a_passed_scan_allows_the_request_and_records_it() {
     assert_eq!(text_field(response, "verdict").as_deref(), Some("passed"));
 }
 
+#[tokio::test]
+async fn the_record_carries_the_scan_timestamps() {
+    let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
+    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let recorded = records(&run.data);
+    let scan = &recorded[0];
+    assert_eq!(
+        field(scan, "start_time"),
+        Some(&GuardrailValue::Decimal(1_700_000_000.0))
+    );
+    assert_eq!(
+        field(scan, "end_time"),
+        Some(&GuardrailValue::Decimal(1_700_000_000.0))
+    );
+    assert_eq!(field(scan, "duration"), Some(&GuardrailValue::Decimal(0.0)));
+}
+
 #[rstest]
 #[case::a_json_string("\"nope\"")]
 #[case::not_json("<html>")]
