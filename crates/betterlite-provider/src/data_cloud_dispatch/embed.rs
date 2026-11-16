@@ -1,41 +1,34 @@
-use std::collections::BTreeMap;
+use std::time::Duration;
 
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::compatible_embedding::request_body;
 use betterlite_openai::compatible_wire::header_map;
 use betterlite_openai::embedding::{EmbeddingInput, EmbeddingResponse};
 use betterlite_openai::openai_base_config::Headers;
-use betterlite_prompts::arguments::json::Object;
-use betterlite_secret_managers::secret_lookup::SecretLookup;
-use http::{HeaderMap, Method};
-use secrecy::ExposeSecret as _;
+use betterlite_prompts::gitlab_client::payload::decode_text;
+use http::Method;
+use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::databricks_auth::environment::DatabricksEnv;
 use crate::databricks_auth::oauth::OauthTokenSource;
 use crate::databricks_embedding::{EmbeddingPreparation, prepare_embedding};
 use crate::oci_common::Clock;
-use crate::oci_common::credentials::{OciCredentials, resolve_oci_credentials};
-use crate::oci_common::environment::OciEnvironment;
+use crate::oci_common::credentials::resolve_oci_credentials;
+use crate::oci_common::environment::{DEFAULT_LITELLM_VERSION, OciEnvironment};
 use crate::oci_common::signing::sign_oci_request;
-use crate::snowflake::config::{
-    Endpoint as SnowflakeEndpoint, get_complete_url, validate_environment,
-};
-use crate::snowflake::embedding::{
-    get_error_class, transform_embedding_request, transform_embedding_response,
-};
 
 use super::call::{EmbeddingCall, EmbeddingReply};
-use super::context::{
-    DispatchGlobals, databricks_environment, environment_secret, environment_text, oci_environment,
-    oci_explicit_params,
-};
+use super::context::{DispatchGlobals, EnvironmentSource, oci_explicit_params};
 use super::error::DispatchError;
 use super::logging::convert;
 use super::select::EmbeddingConfig;
 use super::transport::{PostTransport, WireRequest};
 
+mod snowflake;
+
 pub struct EmbeddingContext<'request> {
     pub globals: DispatchGlobals<'request>,
-    pub secrets: &'request SecretLookup,
-    pub environment: &'request BTreeMap<String, String>,
+    pub env: EnvironmentSource<'request>,
     pub transport: &'request dyn PostTransport,
     pub tokens: &'request dyn OauthTokenSource,
     pub clock: &'request dyn Clock,
@@ -48,9 +41,74 @@ pub async fn dispatch(
 ) -> Result<EmbeddingReply, DispatchError> {
     match config {
         EmbeddingConfig::Databricks => databricks(call, context).await,
-        EmbeddingConfig::Snowflake => snowflake(call, context).await,
+        EmbeddingConfig::Snowflake => snowflake::complete(call, context).await,
         EmbeddingConfig::Oci => oci(call, context).await,
     }
+}
+
+// LiteLLM's DatabricksBase reads the client id, the secret and the user agent from the environment at call time
+pub fn databricks_environment(
+    environment: &EnvironmentSource<'_>,
+) -> Result<DatabricksEnv, DispatchError> {
+    let user_agent_override = match environment.text("LITELLM_USER_AGENT")? {
+        Some(agent) => Some(agent),
+        None => environment.text("DATABRICKS_USER_AGENT")?,
+    };
+    Ok(DatabricksEnv {
+        client_id: environment.text("DATABRICKS_CLIENT_ID")?,
+        client_secret: environment.secret("DATABRICKS_CLIENT_SECRET")?,
+        api_base: environment.text("DATABRICKS_API_BASE")?,
+        user_agent_override,
+        version: DEFAULT_LITELLM_VERSION.to_owned(),
+    })
+}
+
+// the databricks and snowflake arms encode a JSON body next to their provider headers
+pub(super) async fn send_json<T: serde::Serialize>(
+    context: &EmbeddingContext<'_>,
+    url: &str,
+    headers: &Headers,
+    body: &T,
+    deadline: Duration,
+) -> Result<UpstreamResponse, DispatchError> {
+    let body = serde_json::to_vec(body).map_err(|source| DispatchError::Encode { source })?;
+    let headers = header_map(headers).map_err(|source| DispatchError::Headers { source })?;
+    let request = WireRequest {
+        method: Method::POST,
+        url,
+        headers: &headers,
+        body: &body,
+        deadline,
+    };
+    context.transport.post(&request).await
+}
+
+// LiteLLM walks base and key through the call, litellm's globals and the environment
+fn databricks_endpoint(
+    call: &EmbeddingCall,
+    context: &EmbeddingContext<'_>,
+) -> Result<(Option<String>, Option<SecretString>), DispatchError> {
+    let api_base = match call.api_base.clone().filter(|value| !value.is_empty()) {
+        Some(base) => Some(base),
+        None => match context.globals.api_base {
+            Some(base) => Some(base.to_owned()),
+            None => context.env.text("DATABRICKS_API_BASE")?,
+        },
+    };
+    let candidates = [
+        call.api_key.as_ref(),
+        context.globals.api_key,
+        context.globals.databricks_key,
+    ];
+    let usable = candidates
+        .into_iter()
+        .flatten()
+        .find(|value| !value.expose_secret().is_empty());
+    let api_key = match usable {
+        Some(key) => Some(key.clone()),
+        None => context.env.secret("DATABRICKS_API_KEY")?,
+    };
+    Ok((api_base, api_key))
 }
 
 // The databricks arm resolves base and key like _complete_databricks, then B5980's prepare_embedding
@@ -58,36 +116,8 @@ async fn databricks(
     call: &EmbeddingCall,
     context: &EmbeddingContext<'_>,
 ) -> Result<EmbeddingReply, DispatchError> {
-    let mut api_base = call.api_base.clone().filter(|value| !value.is_empty());
-    if api_base.is_none() {
-        api_base = context.globals.api_base.map(str::to_owned);
-    }
-    if api_base.is_none() {
-        api_base = environment_text(context.secrets, context.environment, "DATABRICKS_API_BASE")?;
-    }
-    let mut api_key = call
-        .api_key
-        .as_ref()
-        .filter(|value| !value.expose_secret().is_empty())
-        .cloned();
-    if api_key.is_none() {
-        api_key = context
-            .globals
-            .api_key
-            .filter(|value| !value.expose_secret().is_empty())
-            .cloned();
-    }
-    if api_key.is_none() {
-        api_key = context
-            .globals
-            .databricks_key
-            .filter(|value| !value.expose_secret().is_empty())
-            .cloned();
-    }
-    if api_key.is_none() {
-        api_key = environment_secret(context.secrets, context.environment, "DATABRICKS_API_KEY")?;
-    }
-    let environment = databricks_environment(context.secrets, context.environment)?;
+    let (api_base, api_key) = databricks_endpoint(call, context)?;
+    let environment = databricks_environment(&context.env)?;
     let prepared = prepare_embedding(
         EmbeddingPreparation {
             optional_params: call.optional_params.clone(),
@@ -106,23 +136,18 @@ async fn databricks(
         &convert(&call.input)?,
         convert(&prepared.optional_params)?,
     );
-    let body = serde_json::to_vec(&data).map_err(|source| DispatchError::Encode { source })?;
-    let headers =
-        header_map(&prepared.headers).map_err(|source| DispatchError::Headers { source })?;
-    let response = context
-        .transport
-        .post(&WireRequest {
-            method: Method::POST,
-            url: &prepared.url,
-            headers: &headers,
-            body: &body,
-            deadline: call.timeout,
-        })
-        .await?;
+    let response = send_json(
+        context,
+        &prepared.url,
+        &prepared.headers,
+        &data,
+        call.timeout,
+    )
+    .await?;
     if !(200..300).contains(&response.status) {
         return Err(DispatchError::Upstream {
             status: response.status,
-            body: String::from_utf8_lossy(&response.body).into_owned(),
+            body: decode_text(&response.body),
         });
     }
     let reply: EmbeddingResponse = serde_json::from_slice(&response.body)
@@ -130,68 +155,14 @@ async fn databricks(
     Ok(EmbeddingReply::Databricks(Box::new(reply)))
 }
 
-// The snowflake arm takes the key from the caller or SNOWFLAKE_JWT and calls B5844's embedding config
-async fn snowflake(
-    call: &EmbeddingCall,
-    context: &EmbeddingContext<'_>,
-) -> Result<EmbeddingReply, DispatchError> {
-    let mut api_key = call
-        .api_key
-        .as_ref()
-        .filter(|value| !value.expose_secret().is_empty())
-        .cloned();
-    if api_key.is_none() {
-        api_key = environment_secret(context.secrets, context.environment, "SNOWFLAKE_JWT")?;
-    }
-    let account_id =
-        environment_text(context.secrets, context.environment, "SNOWFLAKE_ACCOUNT_ID")?;
-    let mut optional_params: Object = call.optional_params.clone();
-    let url = get_complete_url(
-        call.api_base.as_deref(),
-        &SnowflakeEndpoint::Embedding,
-        &mut optional_params,
-        account_id.as_deref(),
-    )?;
-    // the snowflake embedding arm starts from an empty map: the caller's extra headers never reach this provider
-    let mut headers = Headers::new();
-    validate_environment(
-        &mut headers,
-        &call.model,
-        api_key.as_ref().map(|value| value.expose_secret()),
-    )?;
-    let body = transform_embedding_request(&call.input, &call.model, &optional_params);
-    let bytes = serde_json::to_vec(&body).map_err(|source| DispatchError::Encode { source })?;
-    let header_map = header_map(&headers).map_err(|source| DispatchError::Headers { source })?;
-    let response = context
-        .transport
-        .post(&WireRequest {
-            method: Method::POST,
-            url: &url,
-            headers: &header_map,
-            body: &bytes,
-            deadline: call.timeout,
-        })
-        .await?;
-    if !(200..300).contains(&response.status) {
-        return Err(DispatchError::SnowflakeException(get_error_class(
-            &String::from_utf8_lossy(&response.body),
-            response.status,
-            response_headers(&response.headers),
-        )));
-    }
-    let reply =
-        transform_embedding_response(&call.model, &String::from_utf8_lossy(&response.body))?;
-    Ok(EmbeddingReply::Snowflake(Box::new(reply)))
-}
-
 // The oci arm turns absent headers into an empty map, resolves the credentials at call time, then signs
 async fn oci(
     call: &EmbeddingCall,
     context: &EmbeddingContext<'_>,
 ) -> Result<EmbeddingReply, DispatchError> {
-    let credentials: OciCredentials = resolve_oci_credentials(
+    let credentials = resolve_oci_credentials(
         &oci_explicit_params(&call.optional_params)?,
-        &oci_environment(context.secrets, context.environment)?,
+        &context.env.oci()?,
     );
     let given = call.headers.clone().unwrap_or_default();
     let mut headers = header_map(&given).map_err(|source| DispatchError::Headers { source })?;
@@ -206,28 +177,14 @@ async fn oci(
     let request =
         crate::oci_embed::transform_embedding_request(&call.model, &input, &params, &credentials)?;
     let signed = sign_oci_request(&mut headers, &credentials, &request, &url, context.clock)?;
-    let response = context
-        .transport
-        .post(&WireRequest {
-            method: Method::POST,
-            url: &url,
-            headers: &headers,
-            body: &signed,
-            deadline: call.timeout,
-        })
-        .await?;
+    let wire = WireRequest {
+        method: Method::POST,
+        url: &url,
+        headers: &headers,
+        body: &signed,
+        deadline: call.timeout,
+    };
+    let response = context.transport.post(&wire).await?;
     let reply = crate::oci_embed::response::decode_embed_response(response.status, &response.body)?;
     Ok(EmbeddingReply::Oci(Box::new(reply)))
-}
-
-// the provider headers LiteLLM's base handler hands to the exception, such as retry-after on a 429
-fn response_headers(headers: &HeaderMap) -> Headers {
-    let mut converted = Headers::new();
-    for (name, value) in headers {
-        converted.insert(
-            name.as_str().to_owned(),
-            String::from_utf8_lossy(value.as_bytes()).into_owned(),
-        );
-    }
-    converted
 }

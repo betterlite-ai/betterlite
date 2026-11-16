@@ -7,12 +7,9 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
-use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::databricks_auth::environment::DatabricksEnv;
 use crate::oci_common::credentials::{OciEnvValues, OciExplicitParams};
-use crate::oci_common::environment::DEFAULT_LITELLM_VERSION;
 
 use super::error::DispatchError;
 
@@ -23,6 +20,43 @@ pub struct DispatchGlobals<'settings> {
     pub api_key: Option<&'settings SecretString>,
     pub databricks_key: Option<&'settings SecretString>,
     pub headers: Option<&'settings BTreeMap<String, String>>,
+}
+
+// LiteLLM's get_secret and os.getenv, where an empty value counts as unset
+#[derive(Clone, Copy)]
+pub struct EnvironmentSource<'request> {
+    pub secrets: &'request SecretLookup,
+    pub environment: &'request BTreeMap<String, String>,
+}
+
+impl EnvironmentSource<'_> {
+    pub fn secret(&self, name: &'static str) -> Result<Option<SecretString>, DispatchError> {
+        let value = self
+            .secrets
+            .get_secret_str(self.environment, name, None)
+            .map_err(|source| DispatchError::Environment { name, source })?;
+        Ok(value.filter(|text| !text.expose_secret().is_empty()))
+    }
+
+    pub fn text(&self, name: &'static str) -> Result<Option<String>, DispatchError> {
+        match self.secret(name)? {
+            Some(secret) => Ok(Some(secret.expose_secret().to_owned())),
+            None => Ok(None),
+        }
+    }
+
+    // LiteLLM's resolve_oci_credentials reads the OCI_* variables when the caller passes none
+    pub fn oci(&self) -> Result<OciEnvValues, DispatchError> {
+        Ok(OciEnvValues {
+            oci_region: self.text("OCI_REGION")?,
+            oci_user: self.text("OCI_USER")?,
+            oci_fingerprint: self.text("OCI_FINGERPRINT")?,
+            oci_tenancy: self.text("OCI_TENANCY")?,
+            oci_key: self.secret("OCI_KEY")?,
+            oci_key_file: self.text("OCI_KEY_FILE")?,
+            oci_compartment_id: self.text("OCI_COMPARTMENT_ID")?,
+        })
+    }
 }
 
 pub struct CallLogging<'state, 'env> {
@@ -44,63 +78,7 @@ pub struct DispatchContext<'request> {
     pub stream: Option<bool>,
     pub timeout: Option<Duration>,
     pub globals: DispatchGlobals<'request>,
-    pub secrets: &'request SecretLookup,
-    pub environment: &'request BTreeMap<String, String>,
-}
-
-// an environment string is read into the setting's type, and an empty one counts as unset
-pub fn environment_secret(
-    secrets: &SecretLookup,
-    environment: &BTreeMap<String, String>,
-    name: &'static str,
-) -> Result<Option<SecretString>, DispatchError> {
-    let value = secrets
-        .get_secret_str(environment, name, None)
-        .map_err(|source| DispatchError::Environment { name, source })?;
-    Ok(value.filter(|text| !text.expose_secret().is_empty()))
-}
-
-pub fn environment_text(
-    secrets: &SecretLookup,
-    environment: &BTreeMap<String, String>,
-    name: &'static str,
-) -> Result<Option<String>, DispatchError> {
-    match environment_secret(secrets, environment, name)? {
-        Some(text) => Ok(Some(text.expose_secret().to_owned())),
-        None => Ok(None),
-    }
-}
-
-pub fn databricks_environment(
-    secrets: &SecretLookup,
-    environment: &BTreeMap<String, String>,
-) -> Result<DatabricksEnv, DispatchError> {
-    let user_agent_override = match environment_text(secrets, environment, "LITELLM_USER_AGENT")? {
-        Some(agent) => Some(agent),
-        None => environment_text(secrets, environment, "DATABRICKS_USER_AGENT")?,
-    };
-    Ok(DatabricksEnv {
-        client_id: environment_text(secrets, environment, "DATABRICKS_CLIENT_ID")?,
-        client_secret: environment_secret(secrets, environment, "DATABRICKS_CLIENT_SECRET")?,
-        api_base: environment_text(secrets, environment, "DATABRICKS_API_BASE")?,
-        user_agent_override,
-        version: DEFAULT_LITELLM_VERSION.to_owned(),
-    })
-}
-
-pub fn oci_environment(
-    secrets: &SecretLookup,
-    environment: &BTreeMap<String, String>,
-) -> Result<OciEnvValues, DispatchError> {
-    Ok(OciEnvValues {
-        oci_region: environment_text(secrets, environment, "OCI_REGION")?,
-        oci_user: environment_text(secrets, environment, "OCI_USER")?,
-        oci_fingerprint: environment_text(secrets, environment, "OCI_FINGERPRINT")?,
-        oci_tenancy: environment_text(secrets, environment, "OCI_TENANCY")?,
-        oci_key: environment_secret(secrets, environment, "OCI_KEY")?,
-        oci_key_file: environment_text(secrets, environment, "OCI_KEY_FILE")?,
-        oci_compartment_id: environment_text(secrets, environment, "OCI_COMPARTMENT_ID")?,
-    })
+    pub env: EnvironmentSource<'request>,
 }
 
 fn text_parameter(

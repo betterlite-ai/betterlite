@@ -31,30 +31,15 @@ fn args(headers: Option<&Headers>) -> AdditionalArgs {
     )
 }
 
-// LiteLLM logs the handler error's text as the original response and keeps the headers as given
-pub fn post_failure(
+// LiteLLM logs the handler error's text, or the opened stream, as the original response and keeps the headers as given
+pub fn post(
     log: &mut CallLogging<'_, '_>,
     messages: &[Message],
-    error: &str,
+    original_response: Json,
     headers: Option<&Headers>,
 ) -> Result<(), DispatchError> {
     let call = PostCall {
-        original_response: Json::Text(error.to_owned()),
-        input: convert(messages)?,
-        additional_args: args(headers),
-    };
-    post_call(log.state, &call, log.env);
-    Ok(())
-}
-
-// LiteLLM logs the opened stream object itself; a Rust stream has no JSON form, so the record carries null
-pub fn post_opened_stream(
-    log: &mut CallLogging<'_, '_>,
-    messages: &[Message],
-    headers: Option<&Headers>,
-) -> Result<(), DispatchError> {
-    let call = PostCall {
-        original_response: Json::Null,
+        original_response,
         input: convert(messages)?,
         additional_args: args(headers),
     };

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use betterlite_prompts::gitlab_client::payload::decode_text;
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue, Method};
 use secrecy::SecretString;
@@ -38,7 +39,7 @@ impl OauthTokenSource for OauthM2m<'_> {
         match self.transport.post(&wire).await {
             Ok(response) => OauthReply::Reply {
                 status: response.status,
-                body: SecretString::from(String::from_utf8_lossy(&response.body).into_owned()),
+                body: SecretString::from(decode_text(&response.body)),
             },
             Err(error) => OauthReply::Transport(error.to_string()),
         }

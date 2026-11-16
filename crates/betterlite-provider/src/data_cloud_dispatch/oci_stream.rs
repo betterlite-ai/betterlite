@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use betterlite_http::error::HttpError;
 use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::gitlab_client::payload::decode_text;
 use futures_util::stream::{BoxStream, StreamExt as _};
 use http::{HeaderMap, Method};
 
@@ -39,7 +40,7 @@ pub async fn open_stream(
             deadline: STREAMING_TIMEOUT,
         })
         .await?;
-    check_stream_status(head.status, &String::from_utf8_lossy(&head.body))?;
+    check_stream_status(head.status, &decode_text(&head.body))?;
     Ok(OciStream::new(head.chunks.unwrap_or_else(|| {
         futures_util::stream::empty::<Result<Vec<u8>, HttpError>>().boxed()
     })))
@@ -67,25 +68,31 @@ impl OciStream {
     pub async fn next(&mut self) -> Result<Option<StreamItem>, DispatchError> {
         loop {
             if let Some(item) = self.pending.pop_front() {
-                if matches!(item, StreamItem::Done) {
-                    self.done = true;
-                }
+                self.done |= matches!(item, StreamItem::Done);
                 return Ok(Some(item));
             }
             if self.done {
                 return Ok(None);
             }
-            match self.chunks.next().await {
-                Some(Ok(bytes)) => self.feed(&bytes).map_err(DispatchError::Oci)?,
-                Some(Err(source)) => return Err(DispatchError::Stream { source }),
-                None => {
-                    self.finish().map_err(DispatchError::Oci)?;
-                    if self.pending.is_empty() {
-                        return Ok(None);
-                    }
-                }
+            let Some(chunk) = self.chunks.next().await else {
+                return self.finish_tail();
+            };
+            match chunk {
+                Ok(bytes) => self.feed(&bytes).map_err(DispatchError::Oci)?,
+                Err(source) => return Err(DispatchError::Stream { source }),
             }
         }
+    }
+
+    // the decoder tail can still hold items, so the stream ends only when none is left
+    fn finish_tail(&mut self) -> Result<Option<StreamItem>, DispatchError> {
+        self.finish().map_err(DispatchError::Oci)?;
+        if self.pending.is_empty() {
+            return Ok(None);
+        }
+        let item = self.pending.pop_front();
+        self.done |= matches!(item, Some(StreamItem::Done));
+        Ok(item)
     }
 
     fn feed(&mut self, bytes: &[u8]) -> Result<(), OciError> {
@@ -103,7 +110,7 @@ impl OciStream {
 
     fn finish(&mut self) -> Result<(), OciError> {
         // the lossy text goes in even when no bytes are carried, since an empty push leaves the decoder as it was
-        let tail = String::from_utf8_lossy(&self.carry).into_owned();
+        let tail = decode_text(&self.carry);
         self.carry.clear();
         let items = self.decoder.push(&tail)?;
         self.pending.extend(items);
@@ -122,7 +129,7 @@ fn split_text(bytes: &[u8]) -> (String, usize) {
     };
     let valid = error.valid_up_to();
     match error.error_len() {
-        None => (String::from_utf8_lossy(&bytes[..valid]).into_owned(), valid),
-        Some(_) => (String::from_utf8_lossy(bytes).into_owned(), bytes.len()),
+        None => (decode_text(bytes.get(..valid).unwrap_or_default()), valid),
+        Some(_) => (decode_text(bytes), bytes.len()),
     }
 }
