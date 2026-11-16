@@ -102,7 +102,7 @@ checks:
       run: test -f tools/oracle/helpers/login_return.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-corpus
       why: The login_return operation has no added seed or fails production helper decoding.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/login-return-*')" && grep -rlq login_return tools/oracle/fuzz/corpus/helper_case/login-return-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/login-return-*')" && grep -rlq login_return tools/oracle/fuzz/corpus/helper_case/login-return-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: parser-corpus
       why: The actual URL/path decoder lacks its registered fuzz target or replay coverage.
       run: test -f crates/betterlite-server/fuzz/fuzz_targets/login_return.rs && grep -q login_return crates/betterlite-server/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/login_return)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_login_return_corpus)'

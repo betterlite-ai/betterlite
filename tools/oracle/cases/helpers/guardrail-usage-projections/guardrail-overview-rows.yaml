@@ -1,0 +1,66 @@
+kind: helper
+name: guardrail-usage-overview-rows
+call:
+  b3689:
+    function: guardrail_overview
+    cases:
+      - records:
+          - {guardrail_id: uuid-1, guardrail_name: lakera, litellm_params: {guardrail: lakera}, guardrail_info: {type: pii}}
+          - {guardrail_id: g2, guardrail_name: "", litellm_params: {}, guardrail_info: null}
+          - {guardrail_id: g9, guardrail_name: nines, litellm_params: {guardrail: ""}, guardrail_info: {type: ""}}
+        aggregates:
+          metrics:
+            config-guard: {requests: 4, passed: 3, blocked: 1, flagged: 0}
+            idle: {requests: 0, passed: 0, blocked: 0, flagged: 0}
+            lakera: {requests: 10, passed: 8, blocked: 2, flagged: 1}
+            nines: {requests: 0, passed: 0, blocked: 0, flagged: 0}
+            uuid-1: {requests: 4, passed: 0, blocked: 4, flagged: 0}
+          previous_rates: {config-guard: 50.0, lakera: 10.0, uuid-1: 99.5}
+          units:
+            config-guard: {requests: 4}
+            lakera: {requests: 10}
+            nines: {requests: 5}
+            uuid-1: {requests: 4}
+          costs: {config-guard: 0.0, lakera: 0.5, nines: 2.0, uuid-1: 1.0}
+          untracked:
+            config-guard: {requests: 1}
+            lakera: {requests: 2}
+            nines: {requests: 5}
+            uuid-1: {requests: 1}
+calls:
+  - b3689:
+      function: guardrail_overview
+      cases:
+        - records: []
+          aggregates:
+            metrics: {}
+            previous_rates: {}
+            units: {}
+            costs: {}
+            untracked: {}
+  - b3689:
+      function: guardrail_overview
+      cases:
+        - records:
+            - {guardrail_id: "", guardrail_name: null}
+          aggregates:
+            metrics:
+              "": {requests: 2, passed: 1, blocked: 1, flagged: 0}
+            previous_rates: {}
+            units: {}
+            costs: {}
+            untracked: {}
+  - b3689:
+      function: guardrail_overview
+      cases:
+        - records:
+            - {guardrail_id: same, guardrail_name: same}
+          aggregates:
+            metrics:
+              same: {requests: 6, passed: 3, blocked: 3, flagged: 0}
+            previous_rates: {same: 40.0}
+            units: {same: {requests: 6}}
+            costs: {same: 0.75}
+            untracked: {same: {requests: 3}}
+env: {}
+compare: {ignore: []}

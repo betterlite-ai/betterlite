@@ -143,7 +143,7 @@ checks:
       why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/resource-delegation-*")"
         && grep -rlq "resource_delegation" tools/oracle/fuzz/corpus/helper_case/resource-delegation-*
-        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/resource-delegation/extractor-falsey-shapes.yaml
   - tools/oracle/cases/helpers/resource-delegation/toolset-empty-ceiling-vs-subset.yaml

@@ -1,0 +1,112 @@
+use std::cmp::Reverse;
+use std::error::Error as StdError;
+
+use axum::http::StatusCode;
+use betterlite_models::prompt_spec::PromptSpec;
+use betterlite_prompts::dotprompt_templates::content::dotprompt_content_to_json;
+use betterlite_prompts::registry::prompt_endpoint_contracts::spec_conversion::get_latest_prompt_versions;
+use betterlite_prompts::registry::prompt_registry_helpers::{
+    get_base_prompt_id, get_version_number,
+};
+
+use super::PromptReadState;
+use super::access::names_prompt;
+use super::error::PromptReadError;
+use super::wire::{ListPromptsResponse, PromptTemplateBase, display_wire};
+
+// LiteLLM answers 404 when a prompt has no stored versions
+pub(super) fn history_or_missing<TableError>(
+    versions: Vec<PromptSpec>,
+    base_prompt_id: &str,
+) -> Result<Vec<PromptSpec>, PromptReadError<TableError>>
+where
+    TableError: StdError + 'static,
+{
+    if versions.is_empty() {
+        return Err(PromptReadError::Denied {
+            status: StatusCode::NOT_FOUND,
+            detail: format!("No versions found for prompt ID {base_prompt_id}"),
+        });
+    }
+    Ok(versions)
+}
+
+// Every history record repeats its base prompt id with the row's own version number
+pub(super) fn history_response(versions: &[PromptSpec]) -> ListPromptsResponse {
+    ListPromptsResponse {
+        prompts: versions
+            .iter()
+            .map(|spec| display_wire(spec, Some(get_version_number(&spec.prompt_id))))
+            .collect(),
+    }
+}
+
+pub(super) fn not_found_detail(prompt_id: &str, environment: Option<&str>) -> String {
+    let Some(wanted) = environment else {
+        return format!("Prompt {prompt_id} not found");
+    };
+    format!("Prompt {prompt_id} not found in environment {wanted}")
+}
+
+pub(super) fn filter_environment(
+    prompts: Vec<PromptSpec>,
+    environment: Option<&str>,
+) -> Vec<PromptSpec> {
+    let Some(wanted) = environment else {
+        return prompts;
+    };
+    prompts
+        .into_iter()
+        .filter(|spec| spec.environment == wanted)
+        .collect()
+}
+
+// LiteLLM picks the latest version before the environment filter on the allowlist path, and after it on the admin path
+pub(super) fn listable_prompts(
+    mut visible: Vec<PromptSpec>,
+    allowlist: Option<&[String]>,
+    environment: Option<&str>,
+) -> Vec<PromptSpec> {
+    let Some(allowed) = allowlist else {
+        return get_latest_prompt_versions(filter_environment(visible, environment));
+    };
+    visible.retain(|spec| names_prompt(allowed, &spec.prompt_id));
+    filter_environment(get_latest_prompt_versions(visible), environment)
+}
+
+// LiteLLM serves history from the registry, newest first, when the proxy has no database
+pub(super) async fn in_memory_versions<Table>(
+    state: &PromptReadState<Table>,
+    base_prompt_id: &str,
+    environment: Option<&str>,
+) -> Vec<PromptSpec>
+where
+    Table: Send + Sync,
+{
+    let mut versions: Vec<PromptSpec> = {
+        let registry = state.prompts.read().await;
+        registry
+            .in_memory_prompts
+            .values()
+            .filter(|spec| get_base_prompt_id(&spec.prompt_id) == base_prompt_id)
+            .filter(|spec| environment.is_none_or(|wanted| spec.environment == wanted))
+            .cloned()
+            .collect()
+    };
+    versions.sort_by_key(|spec| Reverse(get_version_number(&spec.prompt_id)));
+    versions
+}
+
+// A dotprompt parse failure yields no template, and DotpromptManager.prompt_manager's templates need a public accessor (B4052)
+pub(super) fn prompt_template(
+    spec: &PromptSpec,
+    base_prompt_id: &str,
+) -> Option<PromptTemplateBase> {
+    let parsed =
+        dotprompt_content_to_json(spec.litellm_params.dotprompt_content.as_deref()?).ok()?;
+    Some(PromptTemplateBase {
+        litellm_prompt_id: base_prompt_id.to_owned(),
+        content: parsed.get("content")?.as_str()?.to_owned(),
+        metadata: parsed.get("metadata")?.as_object().cloned(),
+    })
+}

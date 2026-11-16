@@ -1,0 +1,11 @@
+kind: helper
+name: cache-settings-read-view-redis-type-cluster
+call:
+  b4307:
+    stored:
+      type: "redis"
+      host: "cluster-host"
+      redis_startup_nodes: [{host: "127.0.0.1", port: 7001}]
+    environment: {}
+env: {}
+compare: {ignore: []}
