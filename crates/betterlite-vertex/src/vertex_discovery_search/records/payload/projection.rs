@@ -7,7 +7,7 @@ use betterlite_openai::api::vector_store_records::records::vector::{
 };
 use indexmap::IndexMap;
 
-use super::{Chunk, DerivedStructData, ExtractiveContent, Hit, PayloadError, Snippet};
+use super::{Chunk, DerivedStructData, Document, ExtractiveContent, Hit, PayloadError, Snippet};
 
 const UNKNOWN_DOCUMENT: &str = "Unknown Document";
 const EXTRACTIVE_SEPARATOR: &str = "\n\n";
@@ -45,10 +45,10 @@ pub(super) fn chunk_result(
 ) -> Result<VectorStoreSearchResult, PayloadError> {
     let metadata = chunk.document_metadata.as_ref();
     let uri = metadata
-        .and_then(|metadata| metadata.uri.as_deref())
+        .and_then(|details| details.uri.as_deref())
         .unwrap_or("");
     let title = metadata
-        .and_then(|metadata| metadata.title.as_deref())
+        .and_then(|details| details.title.as_deref())
         .unwrap_or("");
     let document_id = document_id_from_chunk_name(chunk.name.as_deref().unwrap_or(""));
     let score = match &chunk.relevance_score {
@@ -95,12 +95,12 @@ fn chunk_attributes(
         .as_ref()
         .and_then(|metadata| metadata.struct_data.as_ref())
         .filter(|fields| !fields.is_empty());
-    if let Some(struct_data) = struct_data {
-        attributes.insert("structData".to_owned(), Json::Object(struct_data.clone()));
+    if let Some(fields) = struct_data {
+        attributes.insert("structData".to_owned(), Json::Object(fields.clone()));
     }
     let page_span = chunk.page_span.as_ref().filter(|fields| !fields.is_empty());
-    if let Some(page_span) = page_span {
-        attributes.insert("pageSpan".to_owned(), Json::Object(page_span.clone()));
+    if let Some(span) = page_span {
+        attributes.insert("pageSpan".to_owned(), Json::Object(span.clone()));
     }
     attributes
 }
@@ -120,69 +120,75 @@ pub(super) fn document_result(
     positional: Score,
 ) -> Result<VectorStoreSearchResult, PayloadError> {
     let document = hit.document.as_ref();
-    let derived = document.and_then(|document| document.derived.as_ref());
+    let derived = document.and_then(|entry| entry.derived.as_ref());
     let link = derived
-        .and_then(|derived| derived.link.as_deref())
+        .and_then(|fields| fields.link.as_deref())
         .unwrap_or("");
     let title = derived
-        .and_then(|derived| derived.title.as_deref())
+        .and_then(|fields| fields.title.as_deref())
         .unwrap_or("");
     let document_id = hit.id.as_deref().unwrap_or("");
     let file_id = if link.is_empty() { document_id } else { link };
+    result_with(
+        positional,
+        document_text(derived),
+        file_id.to_owned(),
+        title,
+        document_attributes(document, derived, link, title, document_id),
+    )
+}
+
+fn document_attributes(
+    document: Option<&Document>,
+    derived: Option<&DerivedStructData>,
+    link: &str,
+    title: &str,
+    document_id: &str,
+) -> IndexMap<String, Json> {
     let mut attributes =
         IndexMap::from([("document_id".to_owned(), Json::Text(document_id.to_owned()))]);
+    let display_link = derived
+        .and_then(|fields| fields.display_link.as_deref())
+        .unwrap_or("");
+    let formatted_url = derived
+        .and_then(|fields| fields.formatted_url.as_deref())
+        .unwrap_or("");
     for (name, value) in [
         ("link", link),
         ("title", title),
-        (
-            "displayLink",
-            derived
-                .and_then(|derived| derived.display_link.as_deref())
-                .unwrap_or(""),
-        ),
-        (
-            "formattedUrl",
-            derived
-                .and_then(|derived| derived.formatted_url.as_deref())
-                .unwrap_or(""),
-        ),
+        ("displayLink", display_link),
+        ("formattedUrl", formatted_url),
     ] {
         if !value.is_empty() {
             attributes.insert(name.to_owned(), Json::Text(value.to_owned()));
         }
     }
     let struct_data = document
-        .and_then(|document| document.struct_data.as_ref())
+        .and_then(|entry| entry.struct_data.as_ref())
         .filter(|fields| !fields.is_empty());
-    if let Some(struct_data) = struct_data {
-        attributes.insert("structData".to_owned(), Json::Object(struct_data.clone()));
+    if let Some(fields) = struct_data {
+        attributes.insert("structData".to_owned(), Json::Object(fields.clone()));
     }
-    result_with(
-        positional,
-        document_text(derived),
-        file_id.to_owned(),
-        title,
-        attributes,
-    )
+    attributes
 }
 
 fn document_text(derived: Option<&DerivedStructData>) -> String {
-    let Some(derived) = derived else {
+    let Some(fields) = derived else {
         return String::new();
     };
-    let segments = joined_content(derived.extractive_segments.as_deref().unwrap_or_default());
+    let segments = joined_content(fields.extractive_segments.as_deref().unwrap_or_default());
     if !segments.is_empty() {
         return segments;
     }
-    let answers = joined_content(derived.extractive_answers.as_deref().unwrap_or_default());
+    let answers = joined_content(fields.extractive_answers.as_deref().unwrap_or_default());
     if !answers.is_empty() {
         return answers;
     }
-    let snippets = snippet_text(derived.snippets.as_deref().unwrap_or_default());
+    let snippets = snippet_text(fields.snippets.as_deref().unwrap_or_default());
     if !snippets.is_empty() {
         return snippets;
     }
-    derived.title.clone().unwrap_or_default()
+    fields.title.clone().unwrap_or_default()
 }
 
 fn joined_content(entries: &[ExtractiveContent]) -> String {

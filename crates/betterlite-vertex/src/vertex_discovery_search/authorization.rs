@@ -7,7 +7,7 @@ use betterlite_http::url_path::encode_segment;
 use betterlite_openai::api::vector_store_records::records::vector::{
     BaseVectorStoreAuthCredentials, VectorStoreIndexEndpoints,
 };
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
 use super::error::VertexDiscoverySearchError;
 use super::options::VertexSearchOptions;
@@ -62,23 +62,15 @@ where
     )
     .await
     .map_err(VertexDiscoverySearchError::Credentials)?;
+    let mut headers = BTreeMap::new();
+    for (name, value) in set_headers(Some(&access.token), &BTreeMap::new()) {
+        headers.insert(name, serde_json::json!(value.expose_secret()));
+    }
     Ok(BaseVectorStoreAuthCredentials {
-        headers: Some(bearer_headers(&access.token)),
+        headers: Some(headers),
         query_params: None,
         extra: BTreeMap::new(),
     })
-}
-
-fn bearer_headers(token: &SecretString) -> BTreeMap<String, serde_json::Value> {
-    set_headers(Some(token), &BTreeMap::new())
-        .into_iter()
-        .map(|(name, value)| {
-            (
-                name,
-                serde_json::Value::String(value.expose_secret().to_owned()),
-            )
-        })
-        .collect()
 }
 
 // LiteLLM's validate_environment: the auth headers overwrite the caller's Authorization and Content-Type
@@ -127,15 +119,15 @@ pub fn get_complete_url(
             .vector_store_id
             .as_deref()
             .ok_or(VertexDiscoverySearchError::StoreRequired)?;
-        let store = encode_segment(store, STORE_FIELD)
+        let encoded_store = encode_segment(store, STORE_FIELD)
             .map_err(|source| VertexDiscoverySearchError::Segment(STORE_FIELD, source))?;
         return Ok(format!(
-            "{base}/dataStores/{store}/servingConfigs/default_config"
+            "{base}/dataStores/{encoded_store}/servingConfigs/default_config"
         ));
     };
-    let engine = encode_segment(engine, ENGINE_FIELD)
+    let encoded_engine = encode_segment(engine, ENGINE_FIELD)
         .map_err(|source| VertexDiscoverySearchError::Segment(ENGINE_FIELD, source))?;
     Ok(format!(
-        "{base}/engines/{engine}/servingConfigs/default_serving_config"
+        "{base}/engines/{encoded_engine}/servingConfigs/default_serving_config"
     ))
 }

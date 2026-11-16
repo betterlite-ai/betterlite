@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 #[must_use]
 pub fn calculate_vector_store_cost(prices: Option<&PriceFields>) -> (Decimal, Decimal) {
     let input = prices
-        .and_then(|prices| prices.values.input.input_query)
+        .and_then(|fields| fields.values.input.input_query)
         .unwrap_or(Decimal::ZERO);
     (input, Decimal::ZERO)
 }

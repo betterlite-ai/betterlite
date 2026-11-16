@@ -11,9 +11,12 @@ pub const DEFAULT_COLLECTION_ID: &str = "default_collection";
 // the per-deployment litellm_params keys that pick the Discovery Engine serving config
 #[derive(Debug, Default, Deserialize)]
 pub struct RawSearchOptions {
-    vertex_collection_id: Option<String>,
-    vertex_engine_id: Option<String>,
-    vector_store_id: Option<String>,
+    #[serde(rename = "vertex_collection_id")]
+    collection: Option<String>,
+    #[serde(rename = "vertex_engine_id")]
+    engine: Option<String>,
+    #[serde(rename = "vector_store_id")]
+    store: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,10 +31,10 @@ impl From<RawSearchOptions> for VertexSearchOptions {
     fn from(raw: RawSearchOptions) -> Self {
         Self {
             vertex_collection_id: raw
-                .vertex_collection_id
+                .collection
                 .unwrap_or_else(|| DEFAULT_COLLECTION_ID.to_owned()),
-            vertex_engine_id: raw.vertex_engine_id,
-            vector_store_id: raw.vector_store_id,
+            vertex_engine_id: raw.engine,
+            vector_store_id: raw.store,
         }
     }
 }

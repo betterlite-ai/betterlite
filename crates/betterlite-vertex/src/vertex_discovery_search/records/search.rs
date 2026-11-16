@@ -97,13 +97,15 @@ pub fn transform_search_request(
 fn page_size(params: &BTreeMap<String, Json>) -> Result<Option<Json>, VertexDiscoverySearchError> {
     match params.get("max_num_results") {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => match number.as_i64() {
-            Some(value) => Ok(Some(Json::Number(Number::from(value)))),
-            None => Err(VertexDiscoverySearchError::ParamType(
-                "max_num_results",
-                "an integer",
-            )),
-        },
+        Some(Json::Number(number)) => number.as_i64().map_or_else(
+            || {
+                Err(VertexDiscoverySearchError::ParamType(
+                    "max_num_results",
+                    "an integer",
+                ))
+            },
+            |value| Ok(Some(Json::Number(Number::from(value)))),
+        ),
         Some(_) => Err(VertexDiscoverySearchError::ParamType(
             "max_num_results",
             "an integer",

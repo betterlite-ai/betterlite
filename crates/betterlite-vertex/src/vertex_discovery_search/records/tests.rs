@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error as _;
 use std::fs;
 use std::path::PathBuf;
 
@@ -127,8 +128,8 @@ fn the_search_options_default_the_collection_when_absent_or_null(
 #[case(r#"{"max_num_results":25}"#, 25)]
 fn a_max_num_results_replaces_the_page_size(#[case] optional: &str, #[case] page_size: i64) {
     let (body, _logged) = request_body(optional, None, "{}");
-    let body = serde_json::to_value(body).unwrap();
-    assert_eq!(body["pageSize"], json!(page_size));
+    let value = serde_json::to_value(body).unwrap();
+    assert_eq!(value["pageSize"], json!(page_size));
 }
 
 // LiteLLM reads only max_num_results from the optional params, so filters and ranking stay behind
@@ -143,10 +144,8 @@ fn a_max_num_results_replaces_the_page_size(#[case] optional: &str, #[case] page
 )]
 fn generic_search_options_never_reach_the_body(#[case] optional: &str, #[case] page_size: i64) {
     let (body, _logged) = request_body(optional, None, "{}");
-    assert_eq!(
-        serde_json::to_value(body).unwrap(),
-        json!({"query": "hello", "pageSize": page_size})
-    );
+    let expected = format!(r#"{{"query": "hello", "pageSize": {page_size}}}"#);
+    assert_eq!(body, expected_json(&expected));
 }
 
 #[rstest]
@@ -154,11 +153,11 @@ fn generic_search_options_never_reach_the_body(#[case] optional: &str, #[case] p
 #[case(r#"{"max_num_results":"ten"}"#)]
 #[case(r#"{"max_num_results":true}"#)]
 fn a_non_integer_max_num_results_names_the_field(#[case] optional: &str) {
-    let optional = object(optional);
+    let params = object(optional);
     let litellm = object("{}");
     let query = SearchQuery::Text("hello".to_owned());
     let mut logging = BTreeMap::new();
-    let error = transform_search_request(&request(&query, &optional, None, &litellm), &mut logging)
+    let error = transform_search_request(&request(&query, &params, None, &litellm), &mut logging)
         .unwrap_err();
     assert!(matches!(
         error,
@@ -309,9 +308,9 @@ fn engine_mode_sends_the_multi_store_fields() {
         Some(r#"{"dataStoreSpecs":[{"dataStore":"projects/p"}],"numResultsPerDataStore":2}"#),
         r#"{"vertex_engine_id":"app"}"#,
     );
-    let body = serde_json::to_value(body).unwrap();
-    assert_eq!(body["dataStoreSpecs"][0]["dataStore"], json!("projects/p"));
-    assert_eq!(body["numResultsPerDataStore"], json!(2));
+    let value = serde_json::to_value(body).unwrap();
+    assert_eq!(value["dataStoreSpecs"][0]["dataStore"], json!("projects/p"));
+    assert_eq!(value["numResultsPerDataStore"], json!(2_i32));
 }
 
 #[test]
@@ -333,22 +332,15 @@ fn a_chunk_hit_reports_its_content_and_resource_name() {
     ))
     .unwrap();
     let hit = &value["data"][0];
-    assert_eq!(hit["score"], json!(1));
+    assert_eq!(hit["score"], json!(1_i32));
     assert_eq!(hit["content"][0]["text"], json!("chunk text"));
     assert_eq!(hit["content"][0]["type"], json!("text"));
     assert_eq!(hit["file_id"], json!("gs://b/p.pdf"));
     assert_eq!(hit["filename"], json!("Guide"));
-    assert_eq!(
-        hit["attributes"],
-        json!({
-            "document_id": "d1",
-            "chunk_id": "c1",
-            "link": "gs://b/p.pdf",
-            "title": "Guide",
-            "structData": {"author": "a"},
-            "pageSpan": {"pageStart": 1, "pageEnd": 2},
-        })
+    let expected = expected_json(
+        r#"{"document_id": "d1", "chunk_id": "c1", "link": "gs://b/p.pdf", "title": "Guide", "structData": {"author": "a"}, "pageSpan": {"pageStart": 1, "pageEnd": 2}}"#,
     );
+    assert_eq!(hit["attributes"], serde_json::to_value(expected).unwrap());
 }
 
 #[test]
@@ -361,7 +353,10 @@ fn an_empty_chunk_hit_wins_over_the_document() {
     assert_eq!(hit["content"][0]["text"], json!(""));
     assert_eq!(hit["file_id"], json!(""));
     assert_eq!(hit["filename"], json!("Unknown Document"));
-    assert_eq!(hit["attributes"], json!({"document_id": ""}));
+    assert_eq!(
+        hit["attributes"],
+        serde_json::to_value(expected_json(r#"{"document_id": ""}"#)).unwrap()
+    );
 }
 
 #[rstest]
@@ -459,22 +454,21 @@ fn a_document_keeps_its_id_and_drops_the_empty_attributes() {
         r#"{"results":[{"id":"doc1","document":{"structData":{"k":"v"},"derivedStructData":{"link":"https://x/doc","title":"Doc","displayLink":"x.com","formattedUrl":"https://x/fmt"}}}]}"#,
     ))
     .unwrap();
+    let expected = expected_json(
+        r#"{"document_id": "doc1", "link": "https://x/doc", "title": "Doc", "displayLink": "x.com", "formattedUrl": "https://x/fmt", "structData": {"k": "v"}}"#,
+    );
     assert_eq!(
         value["data"][0]["attributes"],
-        json!({
-            "document_id": "doc1",
-            "link": "https://x/doc",
-            "title": "Doc",
-            "displayLink": "x.com",
-            "formattedUrl": "https://x/fmt",
-            "structData": {"k": "v"},
-        })
+        serde_json::to_value(expected).unwrap()
     );
     let empty = serde_json::to_value(page(
         r#"{"results":[{"document":{"derivedStructData":{"link":"","title":""}}}]}"#,
     ))
     .unwrap();
-    assert_eq!(empty["data"][0]["attributes"], json!({"document_id": ""}));
+    assert_eq!(
+        empty["data"][0]["attributes"],
+        serde_json::to_value(expected_json(r#"{"document_id": ""}"#)).unwrap()
+    );
 }
 
 #[test]
@@ -538,7 +532,7 @@ fn a_chunk_relevance_score_out_of_range_keeps_its_cause() {
         ),
         "{error:?}"
     );
-    assert!(std::error::Error::source(&error).is_some());
+    assert!(error.source().is_some());
 }
 
 #[rstest]
