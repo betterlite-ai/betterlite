@@ -8,7 +8,7 @@ use betterlite_secrets::secret_codec::{
     Algorithm, CipherSettings, OsNonces, StoredCipher, StoredValue,
 };
 use chrono::{DateTime, TimeDelta, Utc};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use tokio::runtime::Builder;
 use tracing::dispatcher::with_default;
 use tracing::field::{Field, Visit};

@@ -30,4 +30,7 @@ deviations:
   - what: A credential row without user_id or credential_b64 is a CredentialError::MissingField naming the field, where LiteLLM's row.user_id or row.credential_b64 raises AttributeError.
     why: betterlite names the malformed field in a typed error. Both stop the purge before deleting anything.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1809-L1810
+  - what: OauthBindingPort::enforce takes one EnforceRequest holding the server, the token response, the user id, the grant type and the ownership proof, where LiteLLM's enforce_oauth_identity_binding takes them as separate arguments.
+    why: The workspace lint table denies functions with more than five arguments (self counted), and the task allows no lint expectations. The same five values reach the port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1906-L1917
 kept_bugs: []

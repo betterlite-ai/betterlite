@@ -4,13 +4,13 @@ use std::sync::Mutex;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
-use crate::oauth_token_resolution::OauthBindingPort;
 use crate::oauth_token_resolution::TOKEN_EXPIRY_BUFFER_SECONDS;
 use crate::oauth_token_resolution::UserTokenCaches;
 use crate::oauth_token_resolution::ports::{
     CachedUserToken, PerUserTokenCache, PerUserTokenTtl, TokenEndpointPost, TokenRequest,
     TokenRequestBuilder, TokenResponse, TokenServer, TokenServices,
 };
+use crate::oauth_token_resolution::{EnforceRequest, OauthBindingPort};
 use crate::stored_cipher::DbCipher;
 
 use super::support::{FakeTable, cipher, text_response};
@@ -166,21 +166,19 @@ impl OauthBindingPort for FakeBinding {
 
     async fn enforce(
         &self,
-        server: &FakeServer,
-        token_response: &TokenResponse,
-        user_id: Option<&str>,
-        grant_type: &str,
-        ownership: Option<&FakeOwnership>,
+        request: &EnforceRequest<'_, FakeServer, FakeOwnership>,
     ) -> Result<Option<String>, FakeDenied> {
         self.recorded
             .lock()
             .expect("the fake binding calls are not poisoned")
             .push(BindingCall::Enforce {
-                server_id: server.server_id.clone(),
-                user_id: user_id.map(str::to_owned),
-                grant_type: grant_type.to_owned(),
-                presented: ownership.map(|held| held.token.expose_secret().to_owned()),
-                body_fields: token_response.keys().cloned().collect(),
+                server_id: request.server.server_id.clone(),
+                user_id: request.user_id.map(str::to_owned),
+                grant_type: request.grant_type.to_owned(),
+                presented: request
+                    .ownership
+                    .map(|held| held.token.expose_secret().to_owned()),
+                body_fields: request.token_response.keys().cloned().collect(),
             });
         if self.deny_exchange {
             return Err(FakeDenied);

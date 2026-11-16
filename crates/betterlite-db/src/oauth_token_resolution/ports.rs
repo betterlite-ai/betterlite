@@ -85,19 +85,19 @@ pub trait PerUserTokenTtl<S>: Send + Sync {
 pub type PrefetchedCredentials = BTreeMap<String, OAuthCredentialPayload>;
 
 // The dependencies refresh and resolution share; the store is B4713's credential table.
-pub struct TokenServices<'a, A, P, B, H> {
-    pub store: &'a A,
-    pub cipher: &'a DbCipher,
-    pub binding: &'a P,
-    pub builder: &'a B,
-    pub post: &'a H,
+pub struct TokenServices<'deps, A, P, B, H> {
+    pub store: &'deps A,
+    pub cipher: &'deps DbCipher,
+    pub binding: &'deps P,
+    pub builder: &'deps B,
+    pub post: &'deps H,
     // LiteLLM's MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS, resolved from config by the caller.
     pub buffer_seconds: i64,
 }
 
-pub struct AccessTokenRequest<'a, S> {
-    pub server: &'a S,
-    pub user_id: Option<&'a str>,
-    pub prefetched: Option<&'a PrefetchedCredentials>,
+pub struct AccessTokenRequest<'request, S> {
+    pub server: &'request S,
+    pub user_id: Option<&'request str>,
+    pub prefetched: Option<&'request PrefetchedCredentials>,
     pub now: DateTime<Utc>,
 }

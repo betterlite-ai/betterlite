@@ -24,8 +24,11 @@ pub(super) async fn cached<A, P, B, H, C>(
     server_id: &str,
 ) -> Option<SecretString>
 where
+    A: CredentialRows,
     P: OauthBindingPort,
     P::Server: TokenServer,
+    B: TokenRequestBuilder<P::Server>,
+    H: TokenEndpointPost,
     C: PerUserTokenCache,
 {
     if !server.binding_enforced() {
@@ -53,6 +56,8 @@ pub(super) async fn credential<A, P, B, H>(
 where
     A: CredentialRows,
     P: OauthBindingPort,
+    B: TokenRequestBuilder<P::Server>,
+    H: TokenEndpointPost,
 {
     let loaded = match request.prefetched {
         Some(prefetched) => prefetched.get(server_id).cloned(),
@@ -105,7 +110,7 @@ where
 {
     let server_id = request.server.server_id();
     let cred = credential(services, request, user_id, server_id).await?;
-    let resolved = match resolve_valid_user_oauth_token(
+    let outcome = match resolve_valid_user_oauth_token(
         services,
         request.server,
         user_id,
@@ -114,13 +119,13 @@ where
     )
     .await
     {
-        Ok(resolved) => resolved,
+        Ok(outcome) => outcome,
         Err(error) => {
             warn_resolution_failed(user_id, server_id, &error);
             return None;
         }
     };
-    let Some(resolved) = resolved else {
+    let Some(resolved) = outcome else {
         cache.delete(user_id, server_id).await;
         return None;
     };

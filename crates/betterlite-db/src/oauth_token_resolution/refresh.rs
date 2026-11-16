@@ -13,7 +13,7 @@ use crate::mcp_user_credentials::types::{OAuthCredentialPayload, StoreOAuthCrede
 use super::ports::{
     TokenEndpointPost, TokenRequestBuilder, TokenResponse, TokenServer, TokenServices,
 };
-use super::{OauthBindingPort, TokenResolutionError};
+use super::{EnforceRequest, OauthBindingPort, TokenResolutionError};
 
 const REFRESH_GRANT: &str = "refresh_token";
 
@@ -74,6 +74,7 @@ pub(super) async fn token_response<A, P, B, H>(
     user_id: &str,
 ) -> Option<TokenExchange>
 where
+    A: CredentialRows,
     P: OauthBindingPort,
     P::Server: TokenServer,
     B: TokenRequestBuilder<P::Server>,
@@ -108,19 +109,20 @@ async fn enforce_exchange<A, P, B, H>(
     body: TokenResponse,
 ) -> Option<TokenExchange>
 where
+    A: CredentialRows,
     P: OauthBindingPort,
+    B: TokenRequestBuilder<P::Server>,
+    H: TokenEndpointPost,
 {
     let ownership = P::Ownership::from(refresh_token.clone());
-    let enforced = services
-        .binding
-        .enforce(
-            server,
-            &body,
-            Some(user_id),
-            REFRESH_GRANT,
-            Some(&ownership),
-        )
-        .await;
+    let request = EnforceRequest {
+        server,
+        token_response: &body,
+        user_id: Some(user_id),
+        grant_type: REFRESH_GRANT,
+        ownership: Some(&ownership),
+    };
+    let enforced = services.binding.enforce(&request).await;
     match enforced {
         Ok(identity_binding_proof) => Some(TokenExchange {
             body,
@@ -253,6 +255,9 @@ pub(super) async fn store<A, P, B, H>(
 ) -> Result<Option<OAuthCredentialPayload>, TokenResolutionError>
 where
     A: CredentialRows,
+    P: OauthBindingPort,
+    B: TokenRequestBuilder<P::Server>,
+    H: TokenEndpointPost,
 {
     let request = StoreOAuthCredential {
         user_id,

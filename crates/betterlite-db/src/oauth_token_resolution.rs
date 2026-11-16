@@ -38,6 +38,15 @@ pub enum TokenResolutionError {
     Table(#[from] McpTableError),
 }
 
+// The arguments of LiteLLM's enforce_oauth_identity_binding, as one value so the trait method stays under the argument limit.
+pub struct EnforceRequest<'request, S, O> {
+    pub server: &'request S,
+    pub token_response: &'request ports::TokenResponse,
+    pub user_id: Option<&'request str>,
+    pub grant_type: &'request str,
+    pub ownership: Option<&'request O>,
+}
+
 // LiteLLM's enforce_oauth_identity_binding and credential_binding_matches, which B4659 implements in betterlite-mcp.
 pub trait OauthBindingPort: Send + Sync {
     type Server: Send + Sync;
@@ -46,11 +55,7 @@ pub trait OauthBindingPort: Send + Sync {
 
     fn enforce(
         &self,
-        server: &Self::Server,
-        token_response: &ports::TokenResponse,
-        user_id: Option<&str>,
-        grant_type: &str,
-        ownership: Option<&Self::Ownership>,
+        request: &EnforceRequest<'_, Self::Server, Self::Ownership>,
     ) -> impl Future<Output = Result<Option<String>, Self::Denied>> + Send;
 
     fn proof_matches(
@@ -213,7 +218,7 @@ pub async fn resolve_valid_user_oauth_token<A, P, B, H>(
     services: &TokenServices<'_, A, P, B, H>,
     server: &P::Server,
     user_id: &str,
-    cred: Option<&OAuthCredentialPayload>,
+    stored: Option<&OAuthCredentialPayload>,
     now: DateTime<Utc>,
 ) -> Result<Option<OAuthCredentialPayload>, TokenResolutionError>
 where
@@ -223,7 +228,7 @@ where
     B: TokenRequestBuilder<P::Server>,
     H: TokenEndpointPost,
 {
-    let Some(cred) = cred else {
+    let Some(cred) = stored else {
         return Ok(None);
     };
     let grant = oauth_grant_state(Some(cred), now, services.buffer_seconds);

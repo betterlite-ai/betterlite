@@ -230,7 +230,7 @@ fn refresh_returns_none_when_the_token_endpoint_fails() {
 #[test]
 fn refresh_returns_none_when_binding_denies_the_exchange() {
     let mut fixture = Fixture::new();
-    fixture.binding = FakeBinding::denying();
+    fixture.binding = FakeBinding::default().denying();
     let server = FakeServer::new("s1").with_token_url(REFRESH_URL);
     assert!(refresh_with(&fixture, &server, &stale_credential()).is_none());
     assert!(fixture.table.stored().is_empty());

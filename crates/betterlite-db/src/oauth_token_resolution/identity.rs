@@ -69,15 +69,15 @@ impl PartialEq for McpOauthTokenIdentity {
             && self.token_url == other.token_url
             && self.registration_url == other.registration_url
             && self.client_id == other.client_id
-            && same_secret(&self.client_secret, &other.client_secret)
+            && same_secret(self.client_secret.as_ref(), other.client_secret.as_ref())
             && self.scopes == other.scopes
             && self.upstream_resource == other.upstream_resource
     }
 }
 
 // A fresh nonce makes the stored ciphertext differ on every write, so the decrypted secret is the compared value.
-fn same_secret(left: &Option<SecretString>, right: &Option<SecretString>) -> bool {
-    match (left, right) {
+fn same_secret(first: Option<&SecretString>, second: Option<&SecretString>) -> bool {
+    match (first, second) {
         (Some(left), Some(right)) => bool::from(
             left.expose_secret()
                 .as_bytes()

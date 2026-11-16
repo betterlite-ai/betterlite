@@ -24,13 +24,13 @@ use super::support::{
 const REFRESH_URL: &str = "https://auth.example/token";
 
 fn credential_text(access: &str, refresh: Option<&str>, expires: Option<&str>) -> String {
-    let refresh = refresh.map_or_else(String::new, |token| {
+    let refresh_field = refresh.map_or_else(String::new, |token| {
         format!(r#","refresh_token":"{token}""#)
     });
-    let expires = expires.map_or_else(String::new, |deadline| {
+    let expires_field = expires.map_or_else(String::new, |deadline| {
         format!(r#","expires_at":"{deadline}""#)
     });
-    format!(r#"{{"type":"oauth2","access_token":"{access}"{refresh}{expires}}}"#)
+    format!(r#"{{"type":"oauth2","access_token":"{access}"{refresh_field}{expires_field}}}"#)
 }
 
 fn credential(
@@ -54,11 +54,11 @@ fn row_for(cipher: &DbCipher, cred: &OAuthCredentialPayload) -> JsonData {
     )
 }
 
-fn access_request<'a>(
-    server: &'a FakeServer,
-    user_id: Option<&'a str>,
-    prefetched: Option<&'a PrefetchedCredentials>,
-) -> AccessTokenRequest<'a, FakeServer> {
+fn access_request<'req>(
+    server: &'req FakeServer,
+    user_id: Option<&'req str>,
+    prefetched: Option<&'req PrefetchedCredentials>,
+) -> AccessTokenRequest<'req, FakeServer> {
     AccessTokenRequest {
         server,
         user_id,
@@ -360,7 +360,7 @@ fn resolve_access_uses_a_bound_token_whose_proof_matches() {
 #[test]
 fn resolve_access_deletes_a_bound_token_whose_proof_disagrees() {
     let mut fixture = Fixture::new();
-    fixture.binding = FakeBinding::answering_proofs(vec![false, true]);
+    fixture.binding = FakeBinding::default().answering_proofs(vec![false, true]);
     fixture.table = FakeTable::new(vec![row_for(&fixture.cipher, &live_credential())]);
     let cache = FakeCache::holding_bound(CachedUserToken {
         access_token: secret("stale-bound"),
@@ -504,7 +504,7 @@ fn resolve_access_clears_the_cache_even_when_the_credentials_were_prefetched() {
 
 #[test]
 fn resolve_access_warns_and_returns_none_when_the_table_read_fails() {
-    let fixture = Fixture::new();
+    let mut fixture = Fixture::new();
     fixture.table = FakeTable::in_mode(TableMode::FailReads);
     let cache = FakeCache::empty();
     let ttl = FakeTtl::returning(60);
