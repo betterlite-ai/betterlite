@@ -47,3 +47,11 @@ path = "fuzz_targets/oauth_metadata.rs"
 test = false
 doc = false
 bench = false
+
+
+[[bin]]
+name = "connector_import_request"
+path = "fuzz_targets/connector_import_request.rs"
+test = false
+doc = false
+bench = false
