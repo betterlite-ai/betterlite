@@ -1,7 +1,7 @@
 id: B8140
 milestone: M11 distribution
 title: "AWS Terraform module: network, database and cache"
-status: done
+status: todo
 depends_on: []
 file: tasks/B8140-aws-network-data-stores.yaml
 covers:
@@ -15,7 +15,7 @@ covers:
   - "terraform/litellm/aws/tests/byo_infrastructure.tftest.hcl"
 parent: B154
 split_from: B154
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2066
+pr: null
