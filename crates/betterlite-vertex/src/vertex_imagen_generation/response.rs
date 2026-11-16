@@ -19,7 +19,7 @@ pub fn transform_image_generation_response(
     response: &mut ImagenGenerationResponse,
 ) -> Result<(), ImagenGenerationError> {
     let decoded = decode_imagen_generation(reply)?;
-    for prediction in decoded.predictions.unwrap_or_default() {
+    for prediction in decoded.predictions {
         // the key's presence alone appends an image, so an empty or null encoded value still counts
         let Some(b64_json) = prediction.bytes_base64_encoded else {
             continue;

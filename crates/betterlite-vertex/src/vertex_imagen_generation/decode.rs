@@ -1,11 +1,13 @@
+use std::fmt::{Formatter, Result as FmtResult};
+
 use betterlite_http::proxy::UpstreamResponse;
 use serde::Deserialize;
 use serde::de::Error as _;
+use serde::de::value::MapAccessDeserializer;
+use serde::de::{MapAccess, Visitor};
 use serde_json::Deserializer;
 use serde_json::Error as JsonError;
-use serde_json::error::Category;
 use serde_json::value::RawValue;
-use serde_path_to_error::Error as PathError;
 
 use super::error::ImagenGenerationError;
 use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
@@ -14,18 +16,48 @@ use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImagenReply {
-    pub predictions: Option<Vec<ImagenPrediction>>,
+    #[serde(default)]
+    pub predictions: Vec<ImagenPrediction>,
 }
 
 // the key's presence decides whether an image is appended, so null is Some(None) and an absent key is None
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
 pub struct ImagenPrediction {
+    pub bytes_base64_encoded: Option<Option<String>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PredictionFields {
     #[serde(
         default,
         deserialize_with = "serde_with::rust::double_option::deserialize"
     )]
-    pub bytes_base64_encoded: Option<Option<String>>,
+    bytes_base64_encoded: Option<Option<String>>,
+}
+
+// serde's derive also reads a struct from a JSON array by position, and LiteLLM's `in` test on a list finds no key
+struct MapOnly;
+
+impl<'de> Visitor<'de> for MapOnly {
+    type Value = ImagenPrediction;
+
+    fn expecting(&self, formatter: &mut Formatter<'_>) -> FmtResult {
+        formatter.write_str("a JSON object")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<ImagenPrediction, A::Error> {
+        let fields = PredictionFields::deserialize(MapAccessDeserializer::new(map))?;
+        Ok(ImagenPrediction {
+            bytes_base64_encoded: fields.bytes_base64_encoded,
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for ImagenPrediction {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_map(MapOnly)
+    }
 }
 
 pub fn decode_imagen_generation(
@@ -36,48 +68,25 @@ pub fn decode_imagen_generation(
             size: reply.body.len(),
         });
     }
+    // a body json() rejects keeps the reply's status and headers, so the whole syntax is checked before any shape
+    if let Err(source) = serde_json::from_slice::<&RawValue>(&reply.body) {
+        return Err(ImagenGenerationError::NotJson {
+            status: reply.status,
+            headers: Box::new(reply.headers.clone()),
+            source,
+        });
+    }
     // serde's derive also reads a struct from a JSON array by position, and LiteLLM calls .get on the reply
     if reply.body.iter().find(|byte| !byte.is_ascii_whitespace()) != Some(&b'{') {
-        return Err(non_object_error(reply));
+        return Err(ImagenGenerationError::Shape {
+            path: "the document root".to_owned(),
+            source: JsonError::custom("the value is not a JSON object"),
+        });
     }
-    let mut deserializer = Deserializer::from_slice(&reply.body);
-    let decoded = serde_path_to_error::deserialize(&mut deserializer)
-        .map_err(|error| reply_error(reply, error))?;
-    deserializer
-        .end()
-        .map_err(|source| ImagenGenerationError::NotJson {
-            status: reply.status,
-            headers: Box::new(reply.headers.clone()),
-            source,
-        })?;
-    Ok(decoded)
-}
-
-// a body json() rejects keeps the reply's status and headers; a valid document that is not an object names its root
-fn non_object_error(reply: &UpstreamResponse) -> ImagenGenerationError {
-    if let Err(source) = serde_json::from_slice::<&RawValue>(&reply.body) {
-        return ImagenGenerationError::NotJson {
-            status: reply.status,
-            headers: Box::new(reply.headers.clone()),
-            source,
-        };
-    }
-    ImagenGenerationError::Shape {
-        path: "the document root".to_owned(),
-        source: JsonError::custom("the value is not a JSON object"),
-    }
-}
-
-// only a body that does not parse keeps the reply's status and headers; a shape error carries neither
-fn reply_error(reply: &UpstreamResponse, error: PathError<JsonError>) -> ImagenGenerationError {
-    let path = error.path().to_string();
-    let source = error.into_inner();
-    match source.classify() {
-        Category::Syntax | Category::Eof => ImagenGenerationError::NotJson {
-            status: reply.status,
-            headers: Box::new(reply.headers.clone()),
-            source,
-        },
-        Category::Data | Category::Io => ImagenGenerationError::Shape { path, source },
-    }
+    serde_path_to_error::deserialize(&mut Deserializer::from_slice(&reply.body)).map_err(|error| {
+        ImagenGenerationError::Shape {
+            path: error.path().to_string(),
+            source: error.into_inner(),
+        }
+    })
 }

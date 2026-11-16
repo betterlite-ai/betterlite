@@ -294,9 +294,8 @@ fn images_append_to_existing_data_and_keep_the_usage() {
 
 #[rstest]
 #[case("{}")]
-#[case(r#"{"predictions":null}"#)]
 #[case(r#"{"predictions":[]}"#)]
-fn absent_or_null_predictions_append_nothing(#[case] body: &str) {
+fn absent_or_empty_predictions_append_nothing(#[case] body: &str) {
     assert_eq!(
         transformed(body),
         ImagenGenerationResponse::default(),
@@ -362,6 +361,67 @@ fn a_valid_document_that_is_not_an_object_names_the_root(#[case] body: &str) {
 }
 
 #[test]
+fn a_null_predictions_value_names_its_path() {
+    let error =
+        decode_imagen_generation(&reply(r#"{"predictions":null}"#)).expect_err("null is no list");
+    assert!(
+        matches!(&error, ImagenGenerationError::Shape { path, .. } if path == "predictions"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_truncated_body_with_a_wrong_typed_value_keeps_the_upstream_answer() {
+    let mut reply = reply(r#"{"predictions":"x""#);
+    reply.status = 503;
+    reply
+        .headers
+        .insert("x-request-id", HeaderValue::from_static("req-2"));
+    let error = decode_imagen_generation(&reply).expect_err("a truncated body is not JSON");
+    assert!(
+        matches!(&error, ImagenGenerationError::NotJson { status: 503, .. }),
+        "{error}"
+    );
+    let (_, headers) = error.upstream_answer().expect("the reply's answer is kept");
+    assert_eq!(
+        headers
+            .get("x-request-id")
+            .and_then(|value| value.to_str().ok()),
+        Some("req-2")
+    );
+}
+
+#[test]
+fn trailing_bytes_after_a_wrong_typed_value_keep_the_upstream_answer() {
+    let mut reply = reply(r#"{"predictions":[{"bytesBase64Encoded":5}],"#);
+    reply.status = 502;
+    let error = decode_imagen_generation(&reply).expect_err("the document is cut short");
+    assert!(
+        matches!(&error, ImagenGenerationError::NotJson { status: 502, .. }),
+        "{error}"
+    );
+}
+
+#[rstest]
+#[case(r#"{"predictions":[["AAA"]]}"#)]
+#[case(r#"{"predictions":[[null]]}"#)]
+#[case(r#"{"predictions":[[]]}"#)]
+#[case(r#"{"predictions":[null]}"#)]
+fn a_prediction_that_is_a_list_or_null_names_its_index(#[case] body: &str) {
+    let error = decode_imagen_generation(&reply(body)).expect_err("only an object is a prediction");
+    assert!(
+        matches!(&error, ImagenGenerationError::Shape { path, .. } if path == "predictions[0]"),
+        "{body}: {error}"
+    );
+    assert!(error.upstream_answer().is_none(), "{body}");
+    assert!(error.to_string().contains("predictions[0]"), "{body}");
+    let ImagenGenerationError::Shape { source, .. } = &error else {
+        panic!("{body}: {error}");
+    };
+    assert!(source.to_string().contains("a JSON object"), "{body}");
+}
+
+#[test]
 fn a_predictions_value_that_is_not_a_list_names_its_path() {
     let error = decode_imagen_generation(&reply(r#"{"predictions":"x"}"#))
         .expect_err("a string is no list");
@@ -395,11 +455,7 @@ fn a_non_string_encoded_image_names_its_path() {
 fn leading_whitespace_before_the_object_still_parses() {
     let decoded = decode_imagen_generation(&reply("  {\"predictions\":[]}"))
         .expect("leading whitespace is not part of the document");
-    assert!(
-        decoded
-            .predictions
-            .is_some_and(|predictions| predictions.is_empty())
-    );
+    assert!(decoded.predictions.is_empty());
 }
 
 #[test]
@@ -407,11 +463,7 @@ fn a_reply_at_the_limit_still_parses() {
     let mut reply = reply(r#"{"predictions":[]}"#);
     reply.body.resize(MAX_RESPONSE_BYTES, b' ');
     let decoded = decode_imagen_generation(&reply).expect("a body at the limit parses");
-    assert!(
-        decoded
-            .predictions
-            .is_some_and(|predictions| predictions.is_empty())
-    );
+    assert!(decoded.predictions.is_empty());
 }
 
 #[test]
