@@ -1651,6 +1651,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-postgres",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
