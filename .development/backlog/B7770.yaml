@@ -1,7 +1,7 @@
 id: B7770
 milestone: M11 distribution
 title: VS Code extension sources, rebranded, with a local build and package check
-status: todo
+status: done
 depends_on: []
 file: tasks/B7770-vscode-extension-sources.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "vscode-extension/{package.json,package-lock.json,tsconfig.json,vitest.config.mts,.gitignore,.vscodeignore,LICENSE}"
 parent: B156
 split_from: B156
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2089

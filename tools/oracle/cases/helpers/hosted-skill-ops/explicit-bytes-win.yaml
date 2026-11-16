@@ -1,0 +1,32 @@
+kind: helper
+name: hosted-skill-ops-explicit-bytes-win
+call:
+  hosted_skill_ops:
+    now: "2026-02-03T04:05:06.250000"
+    uuid: "00000000-0000-4000-8000-000000000002"
+    steps:
+      - action: create
+        display_title: Explicit
+        principal: {user_id: alice}
+        files:
+          - [first.zip, "Zmlyc3Q=", application/zip]
+        file_content: "ZXhwbGljaXQ="
+        file_name: explicit.zip
+        file_type: application/x-explicit
+        litellm_call_id: call-9
+      - action: create
+        display_title: EmptyBytes
+        principal: {user_id: alice}
+        files:
+          - [first.zip, "Zmlyc3Q=", text/plain]
+        file_content: ""
+        file_name: explicit.zip
+        file_type: application/x-explicit
+      - action: create
+        display_title: NoFiles
+        principal: {user_id: bob}
+        file_content: "bm9maWxlcw=="
+        file_name: solo.zip
+        file_type: application/zip
+env: {}
+compare: {ignore: []}

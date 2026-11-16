@@ -1,0 +1,7 @@
+kind: helper
+name: vertex-batch-page-malformed-page
+call:
+  vertex_batch_page:
+    body: '{"batchPredictionJobs": ['
+env: {}
+compare: {ignore: []}

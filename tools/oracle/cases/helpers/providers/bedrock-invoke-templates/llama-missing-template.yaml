@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-invoke-templates-llama-missing-template
+call:
+  b9962:
+    cases:
+      - model: meta.llama3-8b-instruct-v1:0
+        messages: [{role: user, content: hi}]
+        provider: meta
+        hf_model: meta-llama/Meta-Llama-3-8B-Instruct
+env: {}
+compare: {ignore: []}

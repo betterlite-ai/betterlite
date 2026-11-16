@@ -1,0 +1,13 @@
+kind: helper
+name: fal-vision-chat-header-overlay-no-key
+call:
+  fal_vision_chat:
+    operation: header_overlay
+    environment: {FAL_AI_API_KEY: "", FAL_AI_API_BASE: ""}
+    cases:
+      - {headers: {}, api_key: null, api_base: null, model: "fal_ai/model"}
+      - {headers: {}, api_key: "", api_base: null, model: "fal_ai/model"}
+      - {headers: {}, api_key: explicit-key, api_base: null, model: "fal_ai/model"}
+env: {}
+compare:
+  ignore: []

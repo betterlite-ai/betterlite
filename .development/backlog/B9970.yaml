@@ -1,0 +1,13 @@
+id: B9970
+milestone: R2 bug fixes
+title: Spend models route answers 422 for a negative limit
+status: todo
+depends_on: [B1724]
+file: tasks/B9970-spend-models-negative-limit.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

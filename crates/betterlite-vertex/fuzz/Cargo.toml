@@ -116,6 +116,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "imagen_generation"
+path = "fuzz_targets/imagen_generation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "lyria_audio"
 path = "fuzz_targets/lyria_audio.rs"
 test = false
@@ -181,6 +188,13 @@ bench = false
 [[bin]]
 name = "thinking_part"
 path = "fuzz_targets/thinking_part.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_batch_page"
+path = "fuzz_targets/vertex_batch_page.rs"
 test = false
 doc = false
 bench = false
