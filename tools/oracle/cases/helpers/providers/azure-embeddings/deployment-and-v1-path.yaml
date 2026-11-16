@@ -4,7 +4,7 @@ call:
   azure_embeddings:
     steps:
       - input: ["a"]
-        client: azure_open_ai
+        client: azure
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         api_version: "2024-02-01"
         model: my-deployment
@@ -18,7 +18,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: azure_open_ai
+        client: azure
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         api_version: "v1"
         model: my-deployment
@@ -32,7 +32,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: open_ai
+        client: v1
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         api_version: "preview"
         model: my-deployment
@@ -46,7 +46,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: open_ai
+        client: v1
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         api_version: "latest"
         model: "gpt-embed"
@@ -60,7 +60,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: async_azure_open_ai
+        client: async_azure
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         aembedding: true
         api_base: "https://x.openai.azure.com/openai/deployments/gpt-embed"
@@ -74,7 +74,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: async_open_ai
+        client: async_v1
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         aembedding: true
         api_version: "v1"

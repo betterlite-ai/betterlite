@@ -4,7 +4,7 @@ call:
   azure_embeddings:
     steps:
       - input: ["a"]
-        client: azure_open_ai
+        client: azure
         answer: {reply: {status: 429, headers: {content-type: "text/plain", retry-after: "3"}, body: "slow down"}}
         model: my-deployment
         api_base: "https://example.openai.azure.com"
@@ -18,7 +18,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: async_azure_open_ai
+        client: async_azure
         answer: {reply: {status: 429, headers: {content-type: "text/plain", retry-after: "3"}, body: "slow down"}}
         aembedding: true
         model: my-deployment
@@ -32,7 +32,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: azure_open_ai
+        client: azure
         answer: {reply: {status: 400, headers: {content-type: "application/json"}, body: "{\"error\":{\"message\":\"bad input\",\"code\":\"BadRequest\"}}"}}
         model: my-deployment
         api_base: "https://example.openai.azure.com"
@@ -46,7 +46,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: async_azure_open_ai
+        client: async_azure
         answer: {reply: {status: 400, headers: {content-type: "application/json"}, body: "{\"error\":{\"message\":\"bad input\",\"code\":\"BadRequest\"}}"}}
         aembedding: true
         model: my-deployment
@@ -60,7 +60,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: azure_open_ai
+        client: azure
         answer: {connection: {}}
         model: my-deployment
         api_base: "https://example.openai.azure.com"
@@ -74,7 +74,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: async_azure_open_ai
+        client: async_azure
         answer: {connection: {}}
         aembedding: true
         model: my-deployment
@@ -88,7 +88,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: open_ai
+        client: v1
         answer: {reply: {status: 503, headers: {content-type: "text/plain"}, body: "unavailable"}}
         model: my-deployment
         api_base: "https://example.openai.azure.com"

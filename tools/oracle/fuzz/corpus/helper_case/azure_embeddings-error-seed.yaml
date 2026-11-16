@@ -4,7 +4,7 @@ call:
   azure_embeddings:
     steps:
       - input: ["a"]
-        client: azure_open_ai
+        client: azure
         answer: {reply: {status: 429, headers: {content-type: "text/plain"}, body: "slow down"}}
         model: my-deployment
         api_base: "https://example.openai.azure.com"
@@ -18,7 +18,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: async_azure_open_ai
+        client: async_azure
         answer: {connection: {}}
         aembedding: true
         model: my-deployment

@@ -65,7 +65,7 @@ class Session:
 def make_client(name: ClientName, session: Session) -> SdkClient:
     transport = httpx.MockTransport(session.handle)
     match name:
-        case "azure_open_ai":
+        case "azure":
             return AzureOpenAI(
                 api_key=CLIENT_KEY,
                 azure_endpoint=ENDPOINT,
@@ -73,7 +73,7 @@ def make_client(name: ClientName, session: Session) -> SdkClient:
                 max_retries=0,
                 http_client=httpx.Client(transport=transport),
             )
-        case "async_azure_open_ai":
+        case "async_azure":
             return AsyncAzureOpenAI(
                 api_key=CLIENT_KEY,
                 azure_endpoint=ENDPOINT,
@@ -81,14 +81,14 @@ def make_client(name: ClientName, session: Session) -> SdkClient:
                 max_retries=0,
                 http_client=httpx.AsyncClient(transport=transport),
             )
-        case "open_ai":
+        case "v1":
             return OpenAI(
                 api_key=CLIENT_KEY,
                 base_url=V1_URL,
                 max_retries=0,
                 http_client=httpx.Client(transport=transport),
             )
-        case "async_open_ai":
+        case "async_v1":
             return AsyncOpenAI(
                 api_key=CLIENT_KEY,
                 base_url=V1_URL,

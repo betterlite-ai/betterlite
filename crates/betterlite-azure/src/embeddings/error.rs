@@ -39,21 +39,24 @@ pub enum EmbeddingError {
 }
 
 impl AzureOpenAiError {
+    #[must_use]
+    pub fn new(status_code: u16, message: impl Into<String>) -> Self {
+        Self {
+            status_code,
+            message: message.into(),
+            headers: None,
+            cause: None,
+        }
+    }
+
     fn from_sdk(raised: SdkError, message: String) -> Self {
-        let status_code = raised.status_code.unwrap_or(DEFAULT_STATUS);
-        match (raised.headers, raised.response) {
-            (None, Some(response)) => Self {
-                status_code,
-                message: response.text,
-                headers: Some(response.headers),
-                cause: None,
-            },
-            (headers, _response) => Self {
-                status_code,
-                message,
-                headers,
-                cause: None,
-            },
+        let (message, headers) = match (raised.headers, raised.response) {
+            (None, Some(response)) => (response.text, Some(response.headers)),
+            (headers, _response) => (message, headers),
+        };
+        Self {
+            headers,
+            ..Self::new(raised.status_code.unwrap_or(DEFAULT_STATUS), message)
         }
     }
 
@@ -63,33 +66,18 @@ impl AzureOpenAiError {
         let message = error.to_string();
         match error {
             EmbeddingError::Azure(raised) => raised,
-            EmbeddingError::Response { status_code, .. } => Self {
-                status_code,
-                message,
-                headers: None,
-                cause: None,
-            },
             EmbeddingError::Sdk(raised) => Self::from_sdk(raised, message),
             EmbeddingError::Parse(raised) => Self {
-                status_code: DEFAULT_STATUS,
-                message,
-                headers: None,
                 cause: Some(raised),
+                ..Self::new(DEFAULT_STATUS, message)
             },
-            EmbeddingError::Endpoint(raised) => Self {
-                status_code: raised.status().unwrap_or(DEFAULT_STATUS),
-                message,
-                headers: None,
-                cause: None,
-            },
+            EmbeddingError::Endpoint(raised) => {
+                Self::new(raised.status().unwrap_or(DEFAULT_STATUS), message)
+            }
+            EmbeddingError::Response { status_code, .. } => Self::new(status_code, message),
             EmbeddingError::Value { .. }
             | EmbeddingError::Logging(_)
-            | EmbeddingError::Encode(_) => Self {
-                status_code: DEFAULT_STATUS,
-                message,
-                headers: None,
-                cause: None,
-            },
+            | EmbeddingError::Encode(_) => Self::new(DEFAULT_STATUS, message),
         }
     }
 }

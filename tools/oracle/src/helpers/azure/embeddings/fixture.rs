@@ -38,15 +38,12 @@ pub(super) enum Answer {
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(super) enum ClientName {
-    #[serde(rename = "azure_open_ai")]
     Azure,
-    #[serde(rename = "async_azure_open_ai")]
     AsyncAzure,
-    #[serde(rename = "open_ai")]
-    Plain,
-    #[serde(rename = "async_open_ai")]
-    AsyncPlain,
+    V1,
+    AsyncV1,
 }
 
 impl ClientName {
@@ -54,8 +51,8 @@ impl ClientName {
         match self {
             Self::Azure => ClientKind::AzureOpenAi,
             Self::AsyncAzure => ClientKind::AsyncAzureOpenAi,
-            Self::Plain => ClientKind::OpenAi,
-            Self::AsyncPlain => ClientKind::AsyncOpenAi,
+            Self::V1 => ClientKind::OpenAi,
+            Self::AsyncV1 => ClientKind::AsyncOpenAi,
         }
     }
 }

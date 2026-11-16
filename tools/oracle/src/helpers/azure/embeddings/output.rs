@@ -25,6 +25,7 @@ pub(super) fn reply(outcome: &EmbeddingReply) -> Value {
 
 // a JSON decode failure keeps only its stable prefix, since Python and serde word the position differently
 pub(super) fn raised(error: &EmbeddingError) -> Value {
+    let plain = |kind: &str, status: Option<u16>, message: Option<&str>| json!({"kind": kind, "status": status, "message": message, "headers": null});
     match error {
         EmbeddingError::Azure(failure) => {
             let message = if !matches!(failure.cause, Some(ParseError::Json(_))) {
@@ -41,26 +42,22 @@ pub(super) fn raised(error: &EmbeddingError) -> Value {
                 "headers": failure.headers,
             })
         }
-        EmbeddingError::Value { message } => {
-            json!({"kind": "value", "status": null, "message": message, "headers": null})
-        }
+        EmbeddingError::Value { message } => plain("value", None, Some(message)),
         EmbeddingError::Response {
             status_code,
             message,
-        } => {
-            json!({"kind": "response", "status": status_code, "message": message, "headers": null})
+        } => plain("response", Some(*status_code), Some(message)),
+        EmbeddingError::Sdk(failure) => {
+            let kind = if failure.status_code.is_some() {
+                "sdk_status"
+            } else {
+                "sdk_other"
+            };
+            plain(kind, failure.status_code, None)
         }
-        EmbeddingError::Sdk(failure) => json!({
-            "kind": if failure.status_code.is_some() { "sdk_status" } else { "sdk_other" },
-            "status": failure.status_code,
-            "message": null,
-            "headers": null,
-        }),
         EmbeddingError::Parse(_)
         | EmbeddingError::Endpoint(_)
         | EmbeddingError::Logging(_)
-        | EmbeddingError::Encode(_) => {
-            json!({"kind": "other", "status": null, "message": error.to_string(), "headers": null})
-        }
+        | EmbeddingError::Encode(_) => plain("other", None, Some(&error.to_string())),
     }
 }

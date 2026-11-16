@@ -142,12 +142,10 @@ fn require_client_family(kind: ClientKind, is_async: bool) -> Result<(), Embeddi
             })
         }
         (false, ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi | ClientKind::Other) => {
-            Err(EmbeddingError::Azure(AzureOpenAiError {
-                status_code: DEFAULT_STATUS,
-                message: "azure_client is not an instance of AzureOpenAI or OpenAI".to_owned(),
-                headers: None,
-                cause: None,
-            }))
+            Err(EmbeddingError::Azure(AzureOpenAiError::new(
+                DEFAULT_STATUS,
+                "azure_client is not an instance of AzureOpenAI or OpenAI",
+            )))
         }
     }
 }
@@ -175,12 +173,10 @@ where
 
 fn unexpected_text(status: u16, text: &str) -> AzureOpenAiError {
     let preview: String = text.chars().take(TEXT_PREVIEW_CHARACTERS).collect();
-    AzureOpenAiError {
-        status_code: status,
-        message: format!("Unexpected string response from Azure: {preview}"),
-        headers: None,
-        cause: None,
-    }
+    AzureOpenAiError::new(
+        status,
+        format!("Unexpected string response from Azure: {preview}"),
+    )
 }
 
 fn post_record<Client>(
@@ -206,12 +202,13 @@ fn parse_response(
     match raw.parse() {
         Ok(Parsed::Embedding(response)) => Ok(response),
         Ok(Parsed::Text(text)) => Err(EmbeddingError::Azure(unexpected_text(raw.status, &text))),
-        Err(ParseError::Json(error)) if is_async => Err(EmbeddingError::Azure(AzureOpenAiError {
-            status_code: raw.status,
-            message: format!("Failed to parse raw Azure embedding response: {error}"),
-            headers: None,
-            cause: Some(ParseError::Json(error)),
-        })),
+        Err(ParseError::Json(error)) if is_async => {
+            let message = format!("Failed to parse raw Azure embedding response: {error}");
+            Err(EmbeddingError::Azure(AzureOpenAiError {
+                cause: Some(ParseError::Json(error)),
+                ..AzureOpenAiError::new(raw.status, message)
+            }))
+        }
         Err(error) => Err(EmbeddingError::Parse(error)),
     }
 }
@@ -234,12 +231,10 @@ fn convert<Client>(
     }
     if begun.call.model_response == ModelResponse::Other {
         return if is_async {
-            Err(EmbeddingError::Azure(AzureOpenAiError {
-                status_code: DEFAULT_STATUS,
-                message: "embedding_response is not an instance of EmbeddingResponse".to_owned(),
-                headers: None,
-                cause: None,
-            }))
+            Err(EmbeddingError::Azure(AzureOpenAiError::new(
+                DEFAULT_STATUS,
+                "embedding_response is not an instance of EmbeddingResponse",
+            )))
         } else {
             Ok(None)
         };

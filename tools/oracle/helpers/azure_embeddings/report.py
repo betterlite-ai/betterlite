@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic import JsonValue as Json
 
 EmbeddingInput: TypeAlias = list[str] | list[int] | list[list[int]]
-ClientName: TypeAlias = Literal["azure_open_ai", "async_azure_open_ai", "open_ai", "async_open_ai"]
+ClientName: TypeAlias = Literal["azure", "async_azure", "v1", "async_v1"]
 DECODE_PREFIX = "Failed to parse raw Azure embedding response:"
 DECODE_MARKER = "<json decode failure>"
 

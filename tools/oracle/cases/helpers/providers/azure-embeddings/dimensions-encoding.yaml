@@ -4,7 +4,7 @@ call:
   azure_embeddings:
     steps:
       - input: ["a"]
-        client: azure_open_ai
+        client: azure
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         optional_params: {"dimensions": 256, "encoding_format": "float", "user": "u"}
         model: my-deployment
@@ -18,7 +18,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: azure_open_ai
+        client: azure
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\": \"list\", \"data\": [{\"object\": \"embedding\", \"embedding\": \"AAAAAA==\", \"index\": 0}], \"model\": \"m\", \"usage\": {\"prompt_tokens\": 1, \"total_tokens\": 1}}"}}
         optional_params: {"encoding_format": "base64"}
         model: my-deployment
@@ -32,7 +32,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: azure_open_ai
+        client: azure
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         optional_params: {"model": "other-model", "input": ["override"]}
         model: my-deployment
@@ -46,7 +46,7 @@ call:
         headers: {}
         litellm_params: {}
       - input: ["a"]
-        client: azure_open_ai
+        client: azure
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         optional_params: {"extra_headers": {"x-old": "o"}}
         headers: {"x-h": "v"}
@@ -60,7 +60,7 @@ call:
         max_retries: null
         litellm_params: {}
       - input: ["a"]
-        client: azure_open_ai
+        client: azure
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         optional_params: {"extra_headers": {"x-old": "o"}}
         headers: {}
@@ -74,7 +74,7 @@ call:
         max_retries: null
         litellm_params: {}
       - input: ["a"]
-        client: async_azure_open_ai
+        client: async_azure
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         aembedding: true
         azure_ad_token: "ad-token"
