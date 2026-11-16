@@ -169,10 +169,9 @@ impl BlockedDetail {
 
 // LiteLLM's _BlockedDetail writes correlation_id even when the verdict carried none
 fn correlation_value(correlation_id: Option<&str>) -> GuardrailValue {
-    match correlation_id {
-        Some(id) => GuardrailValue::Text(id.to_owned()),
-        None => GuardrailValue::Null,
-    }
+    correlation_id.map_or(GuardrailValue::Null, |id| {
+        GuardrailValue::Text(id.to_owned())
+    })
 }
 
 mod tests;
