@@ -127,7 +127,6 @@ fn outcome_view(
             Some(exception) => json!({
                 "kind": "provider",
                 "status": exception.status_code,
-                "message": exception.message,
                 "value": value,
                 "hidden": hidden,
             }),

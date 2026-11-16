@@ -65,7 +65,6 @@ class HiddenRecord(BaseModel):
 
 class ErrorRecord(BaseModel):
     status_code: int
-    message: str
 
 
 class ScriptedResponse(httpx.Response):
@@ -218,7 +217,6 @@ def failure(
     view = OBJECT.validate_python(outcome(kind, response))
     if error is not None:
         view["status"] = error.status_code
-        view["message"] = error.message
     return JSON.validate_python(view)
 
 
