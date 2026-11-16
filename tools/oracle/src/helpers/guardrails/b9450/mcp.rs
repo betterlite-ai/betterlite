@@ -36,6 +36,7 @@ pub(super) fn run(args: &McpArgs) -> HelperResult {
     let timestamp = DateTime::parse_from_rfc3339(TIMESTAMP)
         .map_err(|error| fail("InvalidInput", error.to_string()))?;
     let returned = harness
+        .runtime
         .block_on(hook.async_post_mcp_tool_call_hook(McpToolHookCall {
             kwargs: &args.kwargs,
             response: &mut response,

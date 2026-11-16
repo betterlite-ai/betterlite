@@ -18,6 +18,7 @@ pub(super) fn run(args: &StreamArgs) -> HelperResult {
         serde_json::from_value(args.request_data.clone()).unwrap_or_default();
     let chunks = args.chunks.iter().cloned().map(Ok::<_, Infallible>);
     let items = harness
+        .runtime
         .block_on(scan_stream(
             &guardrail,
             &mut request_data,

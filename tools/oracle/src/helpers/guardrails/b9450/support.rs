@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::slice;
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
@@ -29,7 +28,7 @@ pub(super) fn fail(class: &str, message: String) -> Box<HelperError> {
 
 pub(super) struct Harness {
     provider: MockProvider,
-    runtime: Runtime,
+    pub(super) runtime: Runtime,
 }
 
 impl Harness {
@@ -51,13 +50,6 @@ impl Harness {
     ) -> Result<CiscoInspectionGuardrail, Box<HelperError>> {
         CiscoInspectionGuardrail::new(configured(settings, &self.provider.base_url)?)
             .map_err(|error| fail("OSError", error.to_string()))
-    }
-
-    pub(super) fn block_on<Call>(&self, call: Call) -> Call::Output
-    where
-        Call: Future,
-    {
-        self.runtime.block_on(call)
     }
 
     // The inspect request the guardrail sent, or two nulls when it never called the endpoint.
