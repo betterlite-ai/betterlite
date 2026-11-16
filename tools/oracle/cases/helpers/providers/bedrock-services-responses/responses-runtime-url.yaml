@@ -1,0 +1,26 @@
+kind: helper
+name: responses-runtime-url
+call:
+  bedrock_services_responses:
+    responses_runtime_url:
+      - {}
+      - {litellm_params: {aws_region_name: eu-west-1}}
+      - {litellm_params: {aws_region_name: cn-north-1}}
+      - {environment: {AWS_REGION_NAME: ap-south-1, AWS_REGION: ca-central-1}}
+      - {environment: {AWS_REGION: ca-central-1}}
+      - {litellm_params: {aws_region_name: US-EAST-1}}
+      - {api_base: "https://a.example", litellm_params: {aws_bedrock_runtime_endpoint: "https://b.example"}, environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: "https://c.example"}}
+      - {api_base: "", litellm_params: {aws_bedrock_runtime_endpoint: "https://b.example"}, environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: "https://c.example"}}
+      - {litellm_params: {aws_bedrock_runtime_endpoint: ""}, environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: "https://c.example"}}
+      - {environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: ""}}
+      - {api_base: "https://p.example/v1/"}
+      - {api_base: "https://p.example/openai/v1/responses"}
+      - {api_base: "https://p.example/v1/responses//"}
+      - {api_base: "https://p.example/responses"}
+      - {api_base: "https://p.example/openai/v1"}
+      - {api_base: "https://p.example/openai/v1/v1"}
+      - {api_base: "https://p.example/custom?x=1"}
+      - {api_base: "https://p.example/v1/responses/v1"}
+      - {api_base: "https://p.example"}
+env: {}
+compare: {ignore: []}

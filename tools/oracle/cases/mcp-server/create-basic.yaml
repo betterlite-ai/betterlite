@@ -1,0 +1,24 @@
+kind: helper
+name: mcp-server-create-basic
+call:
+  b4712:
+    function: create
+    salt_key: b4712-salt
+    touched_by: admin
+    payload:
+      server_id: srv-create-1
+      server_name: Weather
+      alias: wx
+      description: Weather tools
+      url: https://weather.test/mcp
+      auth_type: api_key
+      credentials: {auth_value: token-1}
+      env_vars:
+        - {name: API_KEY, value: secret-1, scope: global}
+    rows: []
+    server_id: ''
+    ttl_seconds: 0
+    users: []
+env:
+  LITELLM_SALT_KEY: b4712-salt
+compare: {ignore: []}

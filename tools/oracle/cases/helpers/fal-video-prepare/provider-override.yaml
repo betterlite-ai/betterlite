@@ -1,0 +1,40 @@
+kind: helper
+name: fal-video-prepare-provider-override
+call:
+  fal_video_prepare:
+    operation: provider_override
+    model: "workflows/fal-ai/name"
+    now: 1767225600
+    providers:
+      - null
+      - ""
+      - "fal_ai_custom"
+    cases:
+      - body: '{"request_id": "req-1"}'
+        request_data: {}
+      - body: '{"request_id": "req-2", "status": "IN_QUEUE"}'
+        request_data: {duration: "2", resolution: "1080p"}
+      - body: '{"request_id": "req-3"}'
+        request_data: {duration: 2}
+      - body: '{"request_id": "req-4"}'
+        request_data: {duration: "2", resolution: 5}
+      - body: '{"request_id": "req 1/.."}'
+        request_data: {duration: "auto"}
+      - body: '{"request_id": 7}'
+        request_data: {}
+      - body: '{}'
+        request_data: {}
+      - body: 'not json'
+        request_data: {}
+      - body: '[]'
+        request_data: {}
+    errors:
+      - message: "bad request"
+        status: 400
+        headers: {x-request-id: "r-1"}
+      - message: ""
+        status: 500
+        headers: {}
+env: {}
+compare:
+  ignore: []

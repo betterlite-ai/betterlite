@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::thread;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -146,6 +147,28 @@ fn loads_settings(
 fn resolves_references_through_the_deepest_mapping_yaml_allows() {
     let environment = [("GATEWAY_URL", "https://gateway.example")];
     let settings = load(&nested_settings_yaml(60), &environment).unwrap();
+    assert_eq!(
+        settings.managed_settings,
+        Some(nested_expected(
+            60,
+            Json::Text("https://gateway.example".to_owned())
+        ))
+    );
+}
+
+#[test]
+fn deep_yaml_loads_on_small_stack() {
+    let worker = thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(|| {
+            let environment = [("GATEWAY_URL", "https://gateway.example")];
+            load(&nested_settings_yaml(60), &environment)
+        })
+        .expect("the one MiB thread starts");
+    let settings = worker
+        .join()
+        .expect("the one MiB thread finishes")
+        .expect("the deep config loads");
     assert_eq!(
         settings.managed_settings,
         Some(nested_expected(

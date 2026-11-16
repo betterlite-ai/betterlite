@@ -1,0 +1,15 @@
+kind: helper
+name: server-writes-create-seed
+call:
+  b4712:
+    function: create
+    salt_key: b4712-salt
+    touched_by: admin
+    payload: {server_id: srv-1, server_name: weather, transport: sse, url: https://weather.test/mcp}
+    rows: []
+    server_id: ''
+    ttl_seconds: 0
+    users: []
+env:
+  LITELLM_SALT_KEY: b4712-salt
+compare: {ignore: []}
