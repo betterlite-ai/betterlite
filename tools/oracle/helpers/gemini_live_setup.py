@@ -43,7 +43,7 @@ class RealtimeConfig(Protocol):
 
     def session_configuration_request(self, model: str) -> str: ...
 
-    def transform_session_created_event(
+    def transform_session_created_event(  # ast-grep-ignore: no-long-names
         self, model: str, logging_session_id: str, session_configuration_request: str | None = None
     ) -> JsonObject: ...
 
