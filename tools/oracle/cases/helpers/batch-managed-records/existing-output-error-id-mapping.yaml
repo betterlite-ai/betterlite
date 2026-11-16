@@ -1,0 +1,18 @@
+kind: helper
+name: batch-managed-records-existing-output-error-id-mapping
+call:
+  batch_managed_records:
+    plan:
+      op: resolve_output
+      files:
+        input_file_id: file-raw-in
+        output_file_id: file-raw-out
+        error_file_id: file-raw-err
+    database:
+      present: true
+      found:
+        file-raw-out: "litellm_proxy:file:unified-out"
+        file-raw-err: "litellm_proxy:file:unified-err"
+      failures: []
+env: {}
+compare: {ignore: []}
