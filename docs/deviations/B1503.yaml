@@ -9,6 +9,6 @@ deviations:
       reach that branch: LiteLLM's skills table declares created_at and updated_at as PostgreSQL timestamp(3)
       without time zone, so rows hold naive timestamps, and a naive timestamp renders exactly like isoformat (no
       fractional digits when the microseconds are zero, six digits otherwise). The oracle row fixtures use the naive
-      form, and projects_skill_records_iso_dates_padded_to_microseconds covers the subsecond case in Rust.
+      form, and projects_skill_records_with_iso_dates_padded_to_microseconds covers the subsecond case in Rust.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/transformation.py#L367
 kept_bugs: []
