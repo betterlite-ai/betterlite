@@ -19,14 +19,21 @@ fn a_valid_mode_comes_back_unchanged(#[case] mode: &str) {
     assert_eq!(validated, mode);
 }
 
+// LiteLLM returns a tagged Mode untouched, so a name it would reject in a string or a list stays
+#[rstest]
+#[case::bad_tagged(r#"{"tags": {"chat": "nope"}}"#)]
+#[case::bad_tagged_list(r#"{"tags": {"chat": ["pre_call", "nope"]}}"#)]
+#[case::bad_tagged_default(r#"{"tags": {"chat": "pre_call"}, "default": "nope"}"#)]
+fn a_tagged_mode_with_an_unknown_hook_comes_back_unchanged(#[case] mode: &str) {
+    let mode = decoded(mode);
+    assert_eq!(event_hook_from_mode(&mode).unwrap(), mode);
+}
+
 #[rstest]
 #[case::unknown(r#""nope""#)]
 #[case::wrong_case(r#""PreCall""#)]
 #[case::empty(r#""""#)]
 #[case::one_bad_in_a_list(r#"["pre_call", "nope"]"#)]
-#[case::bad_tagged(r#"{"tags": {"chat": "nope"}}"#)]
-#[case::bad_tagged_list(r#"{"tags": {"chat": ["pre_call", "nope"]}}"#)]
-#[case::bad_tagged_default(r#"{"tags": {"chat": "pre_call"}, "default": "nope"}"#)]
 fn an_unknown_event_hook_is_rejected(#[case] mode: &str) {
     let error = event_hook_from_mode(&decoded(mode)).unwrap_err();
     assert!(matches!(

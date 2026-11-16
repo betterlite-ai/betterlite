@@ -56,9 +56,9 @@ impl ConsoleSink for SilentConsole {
 
 // The guardrail only needs the assembled text, so no value these services answer reaches its output,
 // and a mutant of their bodies reads back into nothing.
-struct NoStreamCosts;
+struct NoServices;
 
-impl StreamCostCalculator for NoStreamCosts {
+impl StreamCostCalculator for NoServices {
     #[cfg_attr(test, mutants::skip)]
     fn completion_cost(
         &self,
@@ -78,10 +78,8 @@ impl StreamCostCalculator for NoStreamCosts {
     }
 }
 
-struct NoTokenCounter;
-
 #[async_trait]
-impl UsageTokenCounter for NoTokenCounter {
+impl UsageTokenCounter for NoServices {
     #[cfg_attr(test, mutants::skip)]
     async fn count_response_text(&self, _model: &str, _text: &str) -> Result<i64, CountError> {
         Ok(0)
@@ -102,8 +100,7 @@ impl UsageTokenCounter for NoTokenCounter {
     }
 }
 
-static NO_COSTS: NoStreamCosts = NoStreamCosts;
-static NO_COUNTER: NoTokenCounter = NoTokenCounter;
+static NO_SERVICES: NoServices = NoServices;
 
 // What LiteLLM's stream_chunk_builder gives back for the buffered chunks; kind is its type name.
 pub(super) struct Assembled {
@@ -121,8 +118,7 @@ pub(super) enum StreamScanError {
 
 impl From<StreamScanError> for GuardrailFailure {
     fn from(error: StreamScanError) -> Self {
-        let detail = format!("RepelloAI Argus stream scan failed: {error}");
-        Self::Other(detail)
+        Self::Other(format!("RepelloAI Argus stream scan failed: {error}"))
     }
 }
 
@@ -154,12 +150,13 @@ pub(super) async fn relay(
 }
 
 pub(super) fn parse_chunks(chunks: &[GuardrailValue]) -> Result<Vec<Chunk>, StreamScanError> {
-    let mut parsed = Vec::with_capacity(chunks.len());
-    for chunk in chunks {
-        let encoded = serde_json::to_value(chunk).map_err(StreamScanError::Chunk)?;
-        parsed.push(serde_json::from_value(encoded).map_err(StreamScanError::Chunk)?);
-    }
-    Ok(parsed)
+    chunks
+        .iter()
+        .map(|chunk| {
+            let encoded = serde_json::to_value(chunk).map_err(StreamScanError::Chunk)?;
+            serde_json::from_value(encoded).map_err(StreamScanError::Chunk)
+        })
+        .collect()
 }
 
 pub(super) async fn assemble(
@@ -169,26 +166,23 @@ pub(super) async fn assemble(
     let elapsed = (guardrail.clock)()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
-    let now = i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX);
     let request = Request {
         chunks: Some(chunks),
         messages: None,
         count_prompt_tokens: None,
         logging: None,
-        costs: &NO_COSTS,
-        counter: &NO_COUNTER,
+        costs: &NO_SERVICES,
+        counter: &NO_SERVICES,
         metadata: None,
-        now,
+        now: i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX),
     };
-    let assembled = stream_chunk_builder(&request, &guardrail.hooks).await?;
-    match assembled {
+    match stream_chunk_builder(&request, &guardrail.hooks).await? {
         Some(Response::Chat(chat)) => {
             let encoded = serde_json::to_value(&chat).map_err(StreamScanError::Chunk)?;
             let body: BTreeMap<String, GuardrailValue> =
                 serde_json::from_value(encoded).map_err(StreamScanError::Chunk)?;
-            let text = extract_response_text(&ResponseSource::Body(&body));
             Ok(Assembled {
-                text,
+                text: extract_response_text(&ResponseSource::Body(&body)),
                 kind: "ModelResponse",
             })
         }

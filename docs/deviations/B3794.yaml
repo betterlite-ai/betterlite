@@ -12,9 +12,6 @@ deviations:
   - what: The scan request body and the parsed verdict are not written to the debug log, where LiteLLM logs both.
     why: Both carry the user's prompt and response text unredacted, and a debug log that keeps them leaks the content the guardrail was asked to inspect; the guardrail name and stage still identify the call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L201
-  - what: A mode whose tag map names an unknown event hook is rejected at initialization, where LiteLLM's _event_hook_from_mode returns a Mode unchanged and the rejection comes from pydantic while LitellmParams is parsed.
-    why: betterlite's LitellmParams keeps mode names as text until an initializer validates them, so validating the tag values here keeps the startup failure a working setup sees, and the configured value still comes back unchanged.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/__init__.py#L15-L24
 kept_bugs:
   - what: A response whose verdict is absent, null or unrecognized registers as a block, with a warning that prints the value as None for the first two.
     why: LiteLLM fails safe on an answer it cannot read, and a setup that watches for the warning depends on the block; the warning keeps its wording.

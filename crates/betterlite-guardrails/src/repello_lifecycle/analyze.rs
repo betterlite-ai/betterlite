@@ -4,7 +4,6 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_http::proxy::limits::{ReadError, read_bounded};
-use indexmap::IndexMap;
 use reqwest::header::HeaderValue;
 use secrecy::ExposeSecret as _;
 
@@ -20,30 +19,18 @@ use super::verdict::verdict_blocks;
 use super::{
     API_KEY_HEADER, CONFIG_ERROR_STATUS_CODES, Data, ERROR_STATUS, FAILED_MESSAGE,
     INVALID_JSON_ERROR_TYPE, INVALID_JSON_MESSAGE, MAX_RESPONSE_BYTES, MISCONFIGURED_ERROR_TYPE,
-    MISCONFIGURED_MESSAGE, RepelloAILifecycle, UNREACHABLE_ERROR_TYPE, UNREACHABLE_MESSAGE,
+    MISCONFIGURED_MESSAGE, PROMPT_STAGE, RESPONSE_STAGE, RepelloAILifecycle,
+    UNREACHABLE_ERROR_TYPE, UNREACHABLE_MESSAGE,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RepelloStage {
-    Prompt,
-    Response,
-}
+type Detail = BTreeMap<String, GuardrailValue>;
 
-impl RepelloStage {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Prompt => "prompt",
-            Self::Response => "response",
-        }
-    }
-}
-
-// The text LiteLLM passes to _call_analyze; the event type is the hook that asked for the scan
+// The text LiteLLM passes to _call_analyze; the stage is its path segment and the event type is the
+// hook that asked for the scan
 #[derive(Debug, Clone, Copy)]
 pub struct Scan<'scan> {
     pub text: &'scan str,
-    pub stage: RepelloStage,
+    pub stage: &'static str,
     pub event_type: GuardrailEventHooks,
 }
 
@@ -82,6 +69,11 @@ impl ScanOutcome {
         }
     }
 
+    // A failed scan records the detail object, which is what LiteLLM keeps as guardrail_json_response
+    fn error(detail: Detail) -> Self {
+        Self::failed(http_object(&detail), GuardrailValue::Object(detail))
+    }
+
     fn failed(failure: GuardrailFailure, record: GuardrailValue) -> Self {
         Self {
             result: Err(failure),
@@ -101,23 +93,36 @@ impl RepelloAILifecycle {
     ) -> Result<Option<RepelloAIAnalyzeResponse>, GuardrailFailure> {
         let started = (self.clock)();
         let outcome = self.analyze(&scan).await;
-        let finished = (self.clock)();
         let run = ScanRun {
             event_type: scan.event_type,
             response: outcome.record,
             status: outcome.status,
             started,
-            finished,
+            finished: (self.clock)(),
         };
         record_scan(self, request_data, context, run);
         outcome.result
     }
 
+    // A permanent configuration answer never falls through to the fallback mode.
     async fn analyze(&self, scan: &Scan<'_>) -> ScanOutcome {
         match self.post(scan).await {
             Ok(response) => ScanOutcome::scanned(response),
             Err(PostError::Transient { reason }) => self.unreachable(reason),
-            Err(error) => failure_outcome(error),
+            Err(PostError::Config { status }) => ScanOutcome::error(detail(
+                MISCONFIGURED_MESSAGE,
+                Some(status),
+                Some(MISCONFIGURED_ERROR_TYPE),
+            )),
+            Err(PostError::InvalidJson { status }) => ScanOutcome::error(detail(
+                INVALID_JSON_MESSAGE,
+                Some(status),
+                Some(INVALID_JSON_ERROR_TYPE),
+            )),
+            Err(PostError::Unexpected { reason }) => ScanOutcome::failed(
+                http_object(&detail(FAILED_MESSAGE, None, None)),
+                GuardrailValue::Text(reason),
+            ),
         }
     }
 
@@ -126,20 +131,19 @@ impl RepelloAILifecycle {
         if self.settings.unreachable_fallback == UnreachableFallback::FailOpen {
             return ScanOutcome::allowed(reason);
         }
-        http_object_outcome(unreachable_detail(), GuardrailValue::Text(reason))
+        let failure = http_object(&detail(
+            UNREACHABLE_MESSAGE,
+            None,
+            Some(UNREACHABLE_ERROR_TYPE),
+        ));
+        ScanOutcome::failed(failure, GuardrailValue::Text(reason))
     }
 
     async fn post(&self, scan: &Scan<'_>) -> Result<RepelloAIAnalyzeResponse, PostError> {
-        let endpoint = format!("{}/analyze/{}", self.settings.api_base, scan.stage.as_str());
-        let scan_data = match scan.stage {
-            RepelloStage::Prompt => RepelloAIScanData {
-                prompt: Some(scan.text.to_owned()),
-                response: None,
-            },
-            RepelloStage::Response => RepelloAIScanData {
-                prompt: None,
-                response: Some(scan.text.to_owned()),
-            },
+        let endpoint = format!("{}/analyze/{}", self.settings.api_base, scan.stage);
+        let scan_data = RepelloAIScanData {
+            prompt: (scan.stage == PROMPT_STAGE).then(|| scan.text.to_owned()),
+            response: (scan.stage == RESPONSE_STAGE).then(|| scan.text.to_owned()),
         };
         let request = RepelloAIAnalyzeRequest {
             asset_id: self.settings.asset_id.clone(),
@@ -147,7 +151,7 @@ impl RepelloAILifecycle {
         };
         let mut key =
             HeaderValue::from_str(self.settings.api_key.expose_secret()).map_err(|source| {
-                PostError::Unexpected {
+                PostError::Transient {
                     reason: source.to_string(),
                 }
             })?;
@@ -178,33 +182,32 @@ impl RepelloAILifecycle {
     }
 }
 
-// A permanent configuration answer never falls through to the fallback mode.
-fn failure_outcome(error: PostError) -> ScanOutcome {
-    let detail = match &error {
-        PostError::Config { status } => misconfigured_detail(*status),
-        PostError::InvalidJson { status } => invalid_json_detail(*status),
-        PostError::Transient { .. } | PostError::Unexpected { .. } => error_detail(FAILED_MESSAGE),
-    };
-    let record = match error {
-        PostError::Unexpected { reason } => GuardrailValue::Text(reason),
-        PostError::Config { .. } | PostError::InvalidJson { .. } | PostError::Transient { .. } => {
-            detail_record(&detail)
-        }
-    };
-    http_object_outcome(detail, record)
+fn http_object(detail: &Detail) -> GuardrailFailure {
+    GuardrailFailure::HttpObject {
+        status: ERROR_STATUS,
+        detail: detail
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    }
 }
 
-fn http_object_outcome(
-    detail: IndexMap<String, GuardrailValue>,
-    record: GuardrailValue,
-) -> ScanOutcome {
-    ScanOutcome::failed(
-        GuardrailFailure::HttpObject {
-            status: ERROR_STATUS,
-            detail,
-        },
-        record,
-    )
+fn detail(message: &str, status: Option<u16>, error_type: Option<&str>) -> Detail {
+    let mut detail = Detail::new();
+    detail.insert("error".to_owned(), GuardrailValue::Text(message.to_owned()));
+    if let Some(code) = status {
+        detail.insert(
+            "status_code".to_owned(),
+            GuardrailValue::UnsignedInteger(u64::from(code)),
+        );
+    }
+    if let Some(kind) = error_type {
+        detail.insert(
+            "error_type".to_owned(),
+            GuardrailValue::Text(kind.to_owned()),
+        );
+    }
+    detail
 }
 
 // A transport error, a timeout included, is httpx's HTTPError, which LiteLLM sends to _handle_unreachable.
@@ -221,55 +224,6 @@ fn read_error(error: ReadError) -> PostError {
             reason: format!("the RepelloAI Argus response body is larger than {limit} bytes"),
         },
     }
-}
-
-fn error_detail(message: &str) -> IndexMap<String, GuardrailValue> {
-    let mut detail = IndexMap::new();
-    detail.insert("error".to_owned(), GuardrailValue::Text(message.to_owned()));
-    detail
-}
-
-fn misconfigured_detail(status: u16) -> IndexMap<String, GuardrailValue> {
-    let mut detail = error_detail(MISCONFIGURED_MESSAGE);
-    detail.insert(
-        "status_code".to_owned(),
-        GuardrailValue::UnsignedInteger(u64::from(status)),
-    );
-    detail.insert(
-        "error_type".to_owned(),
-        GuardrailValue::Text(MISCONFIGURED_ERROR_TYPE.to_owned()),
-    );
-    detail
-}
-
-fn invalid_json_detail(status: u16) -> IndexMap<String, GuardrailValue> {
-    let mut detail = error_detail(INVALID_JSON_MESSAGE);
-    detail.insert(
-        "status_code".to_owned(),
-        GuardrailValue::UnsignedInteger(u64::from(status)),
-    );
-    detail.insert(
-        "error_type".to_owned(),
-        GuardrailValue::Text(INVALID_JSON_ERROR_TYPE.to_owned()),
-    );
-    detail
-}
-
-fn unreachable_detail() -> IndexMap<String, GuardrailValue> {
-    let mut detail = error_detail(UNREACHABLE_MESSAGE);
-    detail.insert(
-        "error_type".to_owned(),
-        GuardrailValue::Text(UNREACHABLE_ERROR_TYPE.to_owned()),
-    );
-    detail
-}
-
-fn detail_record(detail: &IndexMap<String, GuardrailValue>) -> GuardrailValue {
-    let mut object = BTreeMap::new();
-    for (key, value) in detail {
-        object.insert(key.clone(), value.clone());
-    }
-    GuardrailValue::Object(object)
 }
 
 fn recorded_response(response: &RepelloAIAnalyzeResponse) -> GuardrailValue {

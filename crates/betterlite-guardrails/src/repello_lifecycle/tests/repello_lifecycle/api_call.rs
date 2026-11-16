@@ -3,10 +3,9 @@ use std::time::Duration;
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
-use betterlite_guardrails::repello_lifecycle::analyze::RepelloStage;
 use betterlite_guardrails::repello_lifecycle::{
-    API_KEY_HEADER, INVALID_JSON_ERROR_TYPE, INVALID_JSON_MESSAGE, UNREACHABLE_ERROR_TYPE,
-    UNREACHABLE_MESSAGE,
+    API_KEY_HEADER, INVALID_JSON_ERROR_TYPE, INVALID_JSON_MESSAGE, PROMPT_STAGE, RESPONSE_STAGE,
+    UNREACHABLE_ERROR_TYPE, UNREACHABLE_MESSAGE,
 };
 use rstest::rstest;
 
@@ -158,6 +157,6 @@ async fn an_empty_reply_is_invalid_json() {
 
 #[test]
 fn the_scan_stage_names_are_the_litellm_path_segments() {
-    assert_eq!(RepelloStage::Prompt.as_str(), "prompt");
-    assert_eq!(RepelloStage::Response.as_str(), "response");
+    assert_eq!(PROMPT_STAGE, "prompt");
+    assert_eq!(RESPONSE_STAGE, "response");
 }

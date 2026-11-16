@@ -47,8 +47,10 @@ fn format_policy(policy: &RepelloAIViolatedPolicy) -> String {
     if let Some(action) = policy.action_taken.as_deref() {
         parts.push(format!("action: {action}"));
     }
-    if let Some(details) = policy.details.as_ref()
-        && let Some(score) = details.get("score")
+    if let Some(score) = policy
+        .details
+        .as_ref()
+        .and_then(|details| details.get("score"))
     {
         parts.push(format!("score: {}", rendered_score(score)));
     }
@@ -59,13 +61,13 @@ fn format_policy(policy: &RepelloAIViolatedPolicy) -> String {
 }
 
 fn rendered_score(score: &GuardrailValue) -> String {
-    match score {
-        GuardrailValue::Text(text) => text.clone(),
-        other => serde_json::to_string(other).unwrap_or_else(|error| {
-            tracing::warn!("RepelloAI Argus policy score could not be rendered: {error}");
-            String::new()
-        }),
+    if let GuardrailValue::Text(text) = score {
+        return text.clone();
     }
+    serde_json::to_string(score).unwrap_or_else(|error| {
+        tracing::warn!("RepelloAI Argus policy score could not be rendered: {error}");
+        String::new()
+    })
 }
 
 // LiteLLM's _raise_if_blocked: a block raises the 400 with the formatted detail, a flag is only logged.
@@ -96,11 +98,11 @@ pub fn log_flagged_verdict(response: &RepelloAIAnalyzeResponse) {
 }
 
 fn policies_text(response: &RepelloAIAnalyzeResponse) -> String {
-    match response.policies_violated.as_ref() {
-        Some(policies) => serde_json::to_string(policies).unwrap_or_else(|error| {
-            tracing::warn!("RepelloAI Argus flagged policies could not be logged: {error}");
-            String::new()
-        }),
-        None => "None".to_owned(),
-    }
+    let Some(policies) = response.policies_violated.as_ref() else {
+        return "None".to_owned();
+    };
+    serde_json::to_string(policies).unwrap_or_else(|error| {
+        tracing::warn!("RepelloAI Argus flagged policies could not be logged: {error}");
+        String::new()
+    })
 }

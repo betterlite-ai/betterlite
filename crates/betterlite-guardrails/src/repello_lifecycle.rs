@@ -33,6 +33,9 @@ pub const API_KEY_HEADER: &str = "X-API-Key";
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
+pub const PROMPT_STAGE: &str = "prompt";
+pub const RESPONSE_STAGE: &str = "response";
+
 pub const BLOCKED_VERDICT: &str = "blocked";
 pub const FLAGGED_VERDICT: &str = "flagged";
 pub const PASSED_VERDICT: &str = "passed";

@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
+use std::slice;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
@@ -33,10 +34,6 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_oracle_runner::case::UpstreamAnswer;
 use betterlite_oracle_runner::mock::MockProvider;
 use betterlite_oracle_runner::routing_mock_scripts::MockScript;
-
-use std::slice;
-
-type Hooks = VerboseHooks<SilentLogger, SilentConsole>;
 
 pub(crate) struct Op;
 
@@ -81,7 +78,7 @@ struct Caught {
     detail: Value,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 struct Output {
     created: bool,
     api_base: Option<String>,
@@ -118,7 +115,10 @@ fn build_params(call: &Call) -> RepelloAIParams {
         api_key: call.api_key.clone().map(SecretString::from),
         api_base: call.api_base.clone(),
         asset_id: call.asset_id.clone(),
-        unreachable_fallback: fallback(&call.unreachable_fallback),
+        unreachable_fallback: match call.unreachable_fallback.as_deref() {
+            Some("fail_open") => UnreachableFallback::FailOpen,
+            _ => UnreachableFallback::FailClosed,
+        },
         timeout: None,
         mode: LitellmParamsMode::One("pre_call".to_owned()),
         default_on: true,
@@ -126,80 +126,61 @@ fn build_params(call: &Call) -> RepelloAIParams {
     }
 }
 
-fn fallback(name: &Option<String>) -> UnreachableFallback {
-    match name.as_deref() {
-        Some("fail_open") => UnreachableFallback::FailOpen,
-        _ => UnreachableFallback::FailClosed,
-    }
-}
-
 fn init_output(call: &Call, params: &RepelloAIParams) -> Output {
-    let resolved = RepelloAISettings::resolve(params, &call.env);
-    match resolved {
-        Ok(settings) => Output {
-            created: true,
-            api_base: Some(settings.api_base.clone()),
-            asset_id: Some(settings.asset_id.clone()),
-            key_source: Some(key_source(&settings, call)),
-            event_hooks: event_hooks(),
-            requests: Vec::new(),
-            applied: Vec::new(),
-            status: None,
-            caught: None,
-            warned: false,
-        },
-        Err(_error) => Output {
-            created: false,
-            api_base: None,
-            asset_id: None,
-            key_source: None,
-            event_hooks: event_hooks(),
-            requests: Vec::new(),
-            applied: Vec::new(),
-            status: None,
-            caught: None,
-            warned: false,
-        },
+    let event_hooks = event_hooks();
+    let Ok(settings) = RepelloAISettings::resolve(params, &call.env) else {
+        return Output {
+            event_hooks,
+            ..Output::default()
+        };
+    };
+    let key_source = key_source(&settings, call);
+    Output {
+        created: true,
+        api_base: Some(settings.api_base),
+        asset_id: Some(settings.asset_id),
+        key_source: Some(key_source),
+        event_hooks,
+        ..Output::default()
     }
 }
 
 fn key_source(settings: &RepelloAISettings, call: &Call) -> &'static str {
     let key = settings.api_key.expose_secret();
-    let explicit = call
+    if call
         .api_key
         .as_deref()
-        .is_some_and(|given| !given.is_empty() && given == key);
-    if explicit {
+        .is_some_and(|given| !given.is_empty() && given == key)
+    {
         return "explicit";
     }
-    let from_argus = call
+    if call
         .env
         .get("ARGUS_API_KEY")
-        .is_some_and(|value| !value.is_empty() && value == key);
-    if from_argus {
+        .is_some_and(|value| !value.is_empty() && value == key)
+    {
         return "argus";
     }
     "repelloai"
 }
 
 fn hook_output(call: &Call, params: &RepelloAIParams) -> Result<Output, Box<HelperError>> {
-    let resolved_base = RepelloAISettings::resolve(params, &call.env)
-        .map_err(|error| failure("RepelloAIGuardrailMissingSecrets", error.to_string()))?
-        .api_base;
+    let resolved = RepelloAISettings::resolve(params, &call.env)
+        .map_err(|error| failure("RepelloAIGuardrailMissingSecrets", error.to_string()))?;
     let mock = MockProvider::start(script(call)?)
         .map_err(|error| failure("MockError", error.to_string()))?;
     let guardrail = build_guardrail(params, &mock.base_url, &call.env)?;
     let captured = CapturedLog::default();
     let _log_guard = tracing::subscriber::set_default(captured.subscriber());
     let ran = build_runtime()?.block_on(run_pre_call(&guardrail, call.data.clone()))?;
-    let requests = request_records(mock)?;
+    let key_source = key_source(&guardrail.settings, call);
     Ok(Output {
         created: true,
-        api_base: Some(resolved_base),
+        api_base: Some(resolved.api_base),
         asset_id: Some(guardrail.settings.asset_id.clone()),
-        key_source: Some(key_source(&guardrail.settings, call)),
+        key_source: Some(key_source),
         event_hooks: event_hooks(),
-        requests,
+        requests: request_records(mock)?,
         applied: applied(&ran.data),
         status: recorded_status(&ran.data),
         caught: caught(&ran.result),
@@ -295,10 +276,10 @@ fn event_hooks() -> Vec<&'static str> {
 }
 
 fn bucket(data: &BTreeMap<String, GuardrailValue>) -> Option<&BTreeMap<String, GuardrailValue>> {
-    let value = match data.get("litellm_metadata") {
-        Some(GuardrailValue::Null) | None => data.get("metadata")?,
-        Some(other) => other,
-    };
+    let value = data
+        .get("litellm_metadata")
+        .filter(|value| !matches!(value, GuardrailValue::Null))
+        .or_else(|| data.get("metadata"))?;
     match value {
         GuardrailValue::Object(fields) => Some(fields),
         _ => None,
@@ -306,10 +287,9 @@ fn bucket(data: &BTreeMap<String, GuardrailValue>) -> Option<&BTreeMap<String, G
 }
 
 fn applied(data: &BTreeMap<String, GuardrailValue>) -> Vec<String> {
-    let Some(fields) = bucket(data) else {
-        return Vec::new();
-    };
-    let Some(GuardrailValue::Array(names)) = fields.get("applied_guardrails") else {
+    let Some(GuardrailValue::Array(names)) =
+        bucket(data).and_then(|fields| fields.get("applied_guardrails"))
+    else {
         return Vec::new();
     };
     names
@@ -322,13 +302,12 @@ fn applied(data: &BTreeMap<String, GuardrailValue>) -> Vec<String> {
 }
 
 fn recorded_status(data: &BTreeMap<String, GuardrailValue>) -> Option<String> {
-    let fields = bucket(data)?;
-    let Some(GuardrailValue::Array(records)) = fields.get("standard_logging_guardrail_information")
+    let GuardrailValue::Array(records) =
+        bucket(data)?.get("standard_logging_guardrail_information")?
     else {
         return None;
     };
-    let last = records.last()?;
-    let GuardrailValue::Object(record) = last else {
+    let GuardrailValue::Object(record) = records.last()? else {
         return None;
     };
     match record.get("guardrail_status") {

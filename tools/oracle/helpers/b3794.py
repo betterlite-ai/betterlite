@@ -132,24 +132,21 @@ class WarningCounter(logging.Handler):
             self.warned = True
 
 
-def fallback(value: str | None) -> Literal["fail_closed", "fail_open"]:
-    if value == "fail_open":
-        return "fail_open"
-    return "fail_closed"
-
-
 def build_guardrail(call: Input) -> Guardrail:
     for name in CLEARED_ENVIRONMENT:
         if name in os.environ:
             del os.environ[name]
     os.environ.update(call["env"])
+    fallback: Literal["fail_closed", "fail_open"] = (
+        "fail_open" if call["unreachable_fallback"] == "fail_open" else "fail_closed"
+    )
     return cast(Guardrail, RepelloAIGuardrail(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L142-L182
 
         guardrail_name="repello",
         api_key=call["api_key"],
         api_base=call["api_base"],
         asset_id=call["asset_id"],
-        unreachable_fallback=fallback(call["unreachable_fallback"]),
+        unreachable_fallback=fallback,
         event_hook=GuardrailEventHooks.pre_call,
         default_on=True,
     ))
@@ -170,10 +167,7 @@ def event_hooks() -> list[str]:
 
 
 def metadata_bucket(data: HookData) -> HookMetadata | None:
-    litellm_metadata = data.get("litellm_metadata")
-    if litellm_metadata is not None:
-        return litellm_metadata
-    return data.get("metadata")
+    return data.get("litellm_metadata") or data.get("metadata")
 
 
 def recorded_status(data: HookData) -> str | None:
@@ -181,45 +175,24 @@ def recorded_status(data: HookData) -> str | None:
     if bucket is None:
         return None
     recorded = bucket.get("standard_logging_guardrail_information")
-    if recorded is None:
+    if not recorded:
         return None
-    status: str | None = None
-    for info in recorded:
-        status = info["guardrail_status"]
-    return status
+    return recorded[-1]["guardrail_status"]
 
 
 def applied(data: HookData) -> list[str]:
     bucket = metadata_bucket(data)
     if bucket is None:
         return []
-    names = bucket.get("applied_guardrails")
-    if names is None:
-        return []
-    return list(names)
+    return list(bucket.get("applied_guardrails") or [])
 
 
-def init_output(call: Input) -> Output:
-    try:
-        guardrail = build_guardrail(call)
-    except (repelloai.RepelloAIGuardrailMissingSecrets, ValueError):
-        return {
-            "created": False,
-            "api_base": None,
-            "asset_id": None,
-            "key_source": None,
-            "event_hooks": event_hooks(),
-            "requests": [],
-            "applied": [],
-            "status": None,
-            "caught": None,
-            "warned": False,
-        }
+def empty_output() -> Output:
     return {
-        "created": True,
-        "api_base": guardrail.api_base,
-        "asset_id": guardrail.asset_id,
-        "key_source": key_source(call, guardrail.repelloai_api_key),
+        "created": False,
+        "api_base": None,
+        "asset_id": None,
+        "key_source": None,
         "event_hooks": event_hooks(),
         "requests": [],
         "applied": [],
@@ -227,6 +200,19 @@ def init_output(call: Input) -> Output:
         "caught": None,
         "warned": False,
     }
+
+
+def init_output(call: Input) -> Output:
+    output = empty_output()
+    try:
+        guardrail = build_guardrail(call)
+    except (repelloai.RepelloAIGuardrailMissingSecrets, ValueError):
+        return output
+    output["created"] = True
+    output["api_base"] = guardrail.api_base
+    output["asset_id"] = guardrail.asset_id
+    output["key_source"] = key_source(call, guardrail.repelloai_api_key)
+    return output
 
 
 def hook_output(call: Input) -> Output:
@@ -258,18 +244,17 @@ def hook_output(call: Input) -> Output:
     finally:
         logger.handlers = handlers
         logger.setLevel(level)
-    return {
-        "created": True,
-        "api_base": guardrail.api_base,
-        "asset_id": guardrail.asset_id,
-        "key_source": key_source(call, guardrail.repelloai_api_key),
-        "event_hooks": event_hooks(),
-        "requests": script.calls,
-        "applied": applied(data),
-        "status": recorded_status(data),
-        "caught": caught,
-        "warned": counter.warned,
-    }
+    output = empty_output()
+    output["created"] = True
+    output["api_base"] = guardrail.api_base
+    output["asset_id"] = guardrail.asset_id
+    output["key_source"] = key_source(call, guardrail.repelloai_api_key)
+    output["requests"] = script.calls
+    output["applied"] = applied(data)
+    output["status"] = recorded_status(data)
+    output["caught"] = caught
+    output["warned"] = counter.warned
+    return output
 
 
 def run(input_value: Input) -> Output:
