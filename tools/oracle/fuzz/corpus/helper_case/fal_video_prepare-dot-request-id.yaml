@@ -1,0 +1,12 @@
+kind: helper
+name: fal-video-prepare-dot-request-id
+call:
+  fal_video_prepare:
+    operation: workflow_job_path
+    api_bases: [null]
+    jobs:
+      - model: "fal-ai/kling-video"
+        request_id: ".."
+env: {}
+compare:
+  ignore: []
