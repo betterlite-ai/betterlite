@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 use std::convert::Infallible;
+use std::iter::repeat_with;
 
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use rand::SeedableRng as _;
@@ -92,12 +93,12 @@ fn select_can_pick_every_entry_of_a_shared_name_and_no_other() {
     ];
     let mut rng = StdRng::seed_from_u64(7);
 
-    let picked: BTreeSet<&str> = (0..200)
-        .map(|_| {
-            let chosen = select_router_guardrail(&guardrails, "pii", &mut rng).unwrap();
-            chosen.id.as_deref().unwrap()
-        })
-        .collect();
+    let picked: BTreeSet<&str> = repeat_with(|| {
+        let chosen = select_router_guardrail(&guardrails, "pii", &mut rng).unwrap();
+        chosen.id.as_deref().unwrap()
+    })
+    .take(200)
+    .collect();
 
     assert_eq!(picked, BTreeSet::from(["first", "second", "third"]));
 }

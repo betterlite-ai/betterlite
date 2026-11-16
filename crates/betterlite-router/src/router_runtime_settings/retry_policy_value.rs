@@ -1,33 +1,44 @@
-use serde_json::{Map, Value};
+use betterlite_config::sections::settings::JsonValue;
 
-use super::error::RouterSettingsError;
-use crate::retry_policy::policy::RetryPolicy;
+use crate::router_runtime_settings::error::RouterSettingsError;
+
+// LiteLLM's RetryPolicy fields, the names pydantic writes them with
+const POLICY_FIELDS: [&str; 9] = [
+    "BadRequestErrorRetries",
+    "AuthenticationErrorRetries",
+    "TimeoutErrorRetries",
+    "RateLimitErrorRetries",
+    "ContentPolicyViolationErrorRetries",
+    "InternalServerErrorRetries",
+    "ServiceUnavailableErrorRetries",
+    "NotFoundErrorRetries",
+    "DefaultRetries",
+];
 
 // None keeps the stored policy: LiteLLM drops a value that is neither an object nor null
-pub fn retry_policy_value(value: &Value) -> Result<Option<Value>, RouterSettingsError> {
+pub fn retry_policy_value(value: &JsonValue) -> Result<Option<JsonValue>, RouterSettingsError> {
     let fields = match value {
-        Value::Null => return Ok(Some(Value::Null)),
-        Value::Object(fields) => fields,
-        Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => return Ok(None),
+        JsonValue::Null => return Ok(Some(JsonValue::Null)),
+        JsonValue::Object(fields) => fields,
+        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Array(_) => {
+            return Ok(None);
+        }
     };
-    let unset = serde_json::to_value(RetryPolicy::default()).map_err(|source| {
-        RouterSettingsError::RetryPolicy {
-            field: "retry_policy".to_owned(),
-            source,
-        }
-    })?;
-    let mut policy: Map<String, Value> = unset.as_object().cloned().unwrap_or_default();
-    for (field, retries) in fields {
-        if !policy.contains_key(field) {
-            continue;
-        }
-        serde_json::from_value::<Option<i64>>(retries.clone()).map_err(|source| {
-            RouterSettingsError::RetryPolicy {
-                field: field.clone(),
-                source,
+    let mut entries: Vec<(String, JsonValue)> = Vec::with_capacity(POLICY_FIELDS.len());
+    for field in POLICY_FIELDS {
+        let stored = match fields.get(field) {
+            Some(retries) => {
+                serde_json::from_value::<Option<i64>>(retries.clone()).map_err(|source| {
+                    RouterSettingsError::RetryPolicy {
+                        field: field.to_owned(),
+                        source,
+                    }
+                })?;
+                retries.clone()
             }
-        })?;
-        policy.insert(field.clone(), retries.clone());
+            None => JsonValue::Null,
+        };
+        entries.push((field.to_owned(), stored));
     }
-    Ok(Some(Value::Object(policy)))
+    Ok(Some(JsonValue::Object(entries.into_iter().collect())))
 }
