@@ -509,7 +509,12 @@ fn a_broken_tool_call_is_a_decode_error(#[case] tool_call: Json) {
         "$0",
         &tool_call,
     );
-    let error = failure(&body(value), false);
+    assert_decode_error(&body(value), false);
+}
+
+// The body is refused as a 500 whose cause is a value outside its declared types
+fn assert_decode_error(value: &Json, json_mode: bool) {
+    let error = failure(value, json_mode);
     assert_eq!(error.status_code(), 500);
     assert!(matches!(error, DatabricksChatError::Decode(_)), "{error}");
 }
@@ -554,15 +559,17 @@ fn a_null_custom_key_passes_through_as_an_extra() {
 #[case(json!(null))]
 #[case(json!([]))]
 fn an_empty_tool_calls_value_becomes_null(#[case] tool_calls: Json) {
-    let message = fill(
-        json!({"role": "assistant", "content": "x", "tool_calls": "$0"}),
-        "$0",
-        &tool_calls,
-    );
-    assert_eq!(
-        *at(&message_of(&success(&body(message), false)), "tool_calls"),
-        json!(null)
-    );
+    let output = message_of(&success(&body(text_message(tool_calls)), false));
+    assert_eq!(*at(&output, "tool_calls"), Json::Null);
+}
+
+// An assistant message with some text and the given tool_calls value
+fn text_message(tool_calls: Json) -> Json {
+    object([
+        ("role", json!("assistant")),
+        ("content", json!("x")),
+        ("tool_calls", tool_calls),
+    ])
 }
 
 #[rstest]
@@ -573,12 +580,10 @@ fn an_empty_tool_calls_value_becomes_null(#[case] tool_calls: Json) {
 #[case(json!({}))]
 #[case(json!({"a": 1}))]
 fn a_non_list_tool_calls_value_is_a_shape_error(#[case] tool_calls: Json) {
-    let message = fill(
-        json!({"role": "assistant", "content": "x", "tool_calls": "$0"}),
-        "$0",
-        &tool_calls,
+    assert_eq!(
+        failure(&body(text_message(tool_calls)), false).status_code(),
+        500
     );
-    assert_eq!(failure(&body(message), false).status_code(), 500);
 }
 
 fn json_mode_body(tool_calls: Json) -> Json {
@@ -680,14 +685,12 @@ fn a_parallel_call_with_invalid_json_is_left_alone() {
 #[case("{\"tool_uses\": [{\"recipient_name\": 5, \"parameters\": {}}]}")]
 #[case("{\"tool_uses\": [{\"recipient_name\": \"f\"}]}")]
 fn a_broken_parallel_call_is_a_decode_error(#[case] arguments: &str) {
-    let tool_call = fill(
-        json!({"id": "t1", "function": {"name": "multi_tool_use.parallel", "arguments": "$0"}}),
-        "$0",
-        &arguments,
-    );
-    let error = failure(&json_mode_body(fill(json!(["$0"]), "$0", &tool_call)), true);
-    assert_eq!(error.status_code(), 500);
-    assert!(matches!(error, DatabricksChatError::Decode(_)), "{error}");
+    let function = object([
+        ("name", json!("multi_tool_use.parallel")),
+        ("arguments", Json::Text(arguments.to_owned())),
+    ]);
+    let tool_call = object([("id", json!("t1")), ("function", function)]);
+    assert_decode_error(&json_mode_body(Json::List(vec![tool_call])), true);
 }
 
 fn reply_call(id: &str, name: &str, arguments: &str) -> ReplyToolCall {

@@ -11,10 +11,9 @@ pub(crate) struct UrlCase {
     pub(super) api_base: Option<String>,
 }
 
+// The case file also carries a model for the LiteLLM side, which validate_environment does not read
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct HeadersCase {
-    pub(super) model: String,
     pub(super) api_key: Option<String>,
     pub(super) api_base: Option<String>,
     pub(super) headers: Option<BTreeMap<String, String>>,

@@ -40,17 +40,19 @@ pub(crate) fn at<'doc>(doc: &'doc Json, path: &str) -> &'doc Json {
 
 // The value at a dotted path for a test that edits the document, which must exist
 pub(crate) fn at_mut<'doc>(doc: &'doc mut Json, path: &str) -> &'doc mut Json {
-    let mut current = doc;
-    for step in path.split('.') {
-        current = match current {
-            Json::Object(fields) => fields.get_mut(step).unwrap(),
-            Json::List(items) => items.get_mut(step.parse::<usize>().unwrap()).unwrap(),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
-                panic!("the path {path} leaves the document at {step}")
-            }
-        };
+    let (step, rest) = path.split_once('.').unwrap_or((path, ""));
+    let child = match doc {
+        Json::Object(fields) => fields.get_mut(step).unwrap(),
+        Json::List(items) => &mut items[step.parse::<usize>().unwrap()],
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
+            panic!("the path {path} leaves the document at {step}")
+        }
+    };
+    if rest.is_empty() {
+        child
+    } else {
+        at_mut(child, rest)
     }
-    current
 }
 
 // Sets one key of an object document
@@ -92,11 +94,10 @@ pub(crate) fn object<const FIELDS: usize>(fields: [(&str, Json); FIELDS]) -> Jso
 }
 
 // The document with every text equal to the placeholder replaced by the serialized value
-pub(crate) fn fill<Source: Serialize + ?Sized>(
-    doc: Json,
-    placeholder: &str,
-    with: &Source,
-) -> Json {
+pub(crate) fn fill<Source>(doc: Json, placeholder: &str, with: &Source) -> Json
+where
+    Source: Serialize + ?Sized,
+{
     match doc {
         Json::Text(text) if text == placeholder => dump(with),
         Json::List(items) => Json::List(
@@ -121,14 +122,19 @@ pub(crate) fn text_of(doc: &Json) -> String {
 }
 
 // Any serializable value as the Json the wire would carry
-pub(crate) fn dump<Source: Serialize + ?Sized>(value: &Source) -> Json {
+pub(crate) fn dump<Source>(value: &Source) -> Json
+where
+    Source: Serialize + ?Sized,
+{
     convert(value)
 }
 
 // One typed shape read from another through JSON
-pub(crate) fn convert<Source: Serialize + ?Sized, Target: DeserializeOwned>(
-    value: &Source,
-) -> Target {
+pub(crate) fn convert<Source, Target>(value: &Source) -> Target
+where
+    Source: Serialize + ?Sized,
+    Target: DeserializeOwned,
+{
     serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
 }
 

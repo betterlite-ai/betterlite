@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::future::{Future, ready};
 
 use betterlite_anthropic::anthropic_capability_catalog::OptionalParams;
 use betterlite_anthropic::anthropic_capability_catalog::thinking::ThinkingError;
@@ -19,7 +19,7 @@ impl ThinkingCapabilities for FakeCapabilities {
         _key: &str,
         _provider: &str,
     ) -> impl Future<Output = bool> + Send {
-        async { false }
+        ready(false)
     }
 
     fn map_effort<'seam>(
@@ -28,7 +28,7 @@ impl ThinkingCapabilities for FakeCapabilities {
         effort: &'seam str,
         provider: &'seam str,
     ) -> impl Future<Output = Result<Option<Thinking>, ReasoningEffortError>> + Send + 'seam {
-        async move { effort_budget(model, effort, provider) }
+        ready(effort_budget(model, effort, provider))
     }
 
     fn validate_effort(
@@ -37,7 +37,7 @@ impl ThinkingCapabilities for FakeCapabilities {
         _effort: Option<&str>,
         _provider: &str,
     ) -> impl Future<Output = Option<String>> + Send {
-        async { None }
+        ready(None)
     }
 
     fn supports_effort_param(
@@ -45,7 +45,7 @@ impl ThinkingCapabilities for FakeCapabilities {
         _model: &str,
         _provider: &str,
     ) -> impl Future<Output = bool> + Send {
-        async { false }
+        ready(false)
     }
 
     fn drop_disabled_thinking(
@@ -54,14 +54,14 @@ impl ThinkingCapabilities for FakeCapabilities {
         _params: &mut OptionalParams,
         _provider: &str,
     ) -> impl Future<Output = bool> + Send {
-        async { false }
+        ready(false)
     }
 
     fn translate_legacy_thinking<'seam>(
         &'seam mut self,
         _request: &'seam mut LegacyShapes<'seam>,
     ) -> impl Future<Output = Result<(), ThinkingError>> + Send + 'seam {
-        async { Ok(()) }
+        ready(Ok(()))
     }
 }
 
@@ -77,7 +77,7 @@ fn effort_budget(
         "medium" => 2048,
         "high" => 4096,
         "xhigh" => 8192,
-        "max" => 16384,
+        "max" => 0x4000,
         _ => {
             return Err(ReasoningEffortError::Unmapped {
                 value: effort.to_owned(),

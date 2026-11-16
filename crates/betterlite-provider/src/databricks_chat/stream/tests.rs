@@ -271,9 +271,9 @@ fn a_created_that_is_not_an_integer_is_an_error(#[case] raw: Json) {
 
 #[test]
 fn usage_is_normalized_when_it_is_an_object() {
-    let chunk = body(json!({"content": "x"}));
+    let first = body(json!({"content": "x"}));
     let chunk = chunk_with(
-        at(&chunk, "choices.0").clone(),
+        at(&first, "choices.0").clone(),
         json!({
             "usage": {"prompt_tokens": 1, "completion_tokens": 4, "total_tokens": 5, "reasoning_tokens": 3, "zz": 1}
         }),
@@ -320,10 +320,10 @@ fn service_tier_appears_only_when_it_is_a_non_empty_string(
         json!({"index": 0, "delta": {"content": "x"}}),
         fill(json!({"service_tier": "$raw"}), "$raw", &raw),
     );
-    let chunk = success(&chunk);
+    let reply = success(&chunk);
     match expected {
-        Some(value) => assert_eq!(*at(&chunk, "service_tier"), value),
-        None => assert!(!has(&chunk, "service_tier")),
+        Some(value) => assert_eq!(*at(&reply, "service_tier"), value),
+        None => assert!(!has(&reply, "service_tier")),
     }
 }
 
