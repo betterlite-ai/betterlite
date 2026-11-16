@@ -23,6 +23,8 @@ use crate::straiker::v3::fixtures::{as_json, object, parsed};
     r#"{"action":"BLOCKED","blocked_reason":"no pii","blocked_by":[],"turnId":null}"#
 )]
 #[case::blocked_by_blocks_without_decision(r#"{"blocked_by":["pii","exfil"]}"#, r#"{"action":"BLOCKED","blocked_reason":"Straiker blocked this turn: exfil, pii","blocked_by":["exfil","pii"],"turnId":null}"#)]
+#[case::non_string_blocked_by_still_blocks(r#"{"blocked_by":[42]}"#, r#"{"action":"BLOCKED","blocked_reason":"Straiker blocked this turn: 42","blocked_by":["42"],"turnId":null}"#)]
+#[case::object_blocked_by_still_blocks(r#"{"blocked_by":[{"id":"pii"}]}"#, r#"{"action":"BLOCKED","blocked_reason":"Straiker blocked this turn: {\"id\":\"pii\"}","blocked_by":["{\"id\":\"pii\"}"],"turnId":null}"#)]
 #[case::blocked_by_blocks_an_ask(r#"{"action":"ask","blocked_by":["pii"]}"#, r#"{"action":"BLOCKED","blocked_reason":"Straiker blocked this turn: pii","blocked_by":["pii"],"turnId":null}"#)]
 #[case::blocked_by_beats_an_allow(r#"{"action":"allow","blocked_by":["pii"]}"#, r#"{"action":"BLOCKED","blocked_reason":"Straiker blocked this turn: pii","blocked_by":["pii"],"turnId":null}"#)]
 #[case::block_message_comes_first(

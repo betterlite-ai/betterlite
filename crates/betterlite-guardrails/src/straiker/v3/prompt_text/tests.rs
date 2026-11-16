@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use super::prompt_texts;
+use super::{DavinciDecoder, PromptTokenDecoder, prompt_texts};
 use crate::straiker::v3::fixtures::{NoTokenizer, Tokens, as_json, parsed};
 
 #[rstest]
@@ -43,4 +43,27 @@ fn relays_token_prompts_untouched_without_a_tokenizer(#[case] prompt: &str) {
 #[case::list_of_strings(r#"["a","b"]"#)]
 fn needs_no_tokenizer_for_text(#[case] prompt: &str) {
     assert!(prompt_texts(&parsed(prompt), &NoTokenizer).is_some());
+}
+
+#[rstest]
+#[case::token_list(r"[31373,995]", r#"["hello world"]"#)]
+#[case::list_of_token_lists(r"[[31373],[995]]", r#"["hello"," world"]"#)]
+#[case::out_of_vocabulary_id(r"[31373,999999999]", "null")]
+#[case::one_out_of_vocabulary_list_fails_all(r"[[31373],[999999999]]", "null")]
+fn decodes_prompts_with_text_davinci_003(#[case] prompt: &str, #[case] expected: &str) {
+    assert_eq!(
+        as_json(&prompt_texts(&parsed(prompt), &DavinciDecoder::new())),
+        parsed(expected)
+    );
+}
+
+#[test]
+fn davinci_decoder_reads_p50k_base() {
+    let decoder = DavinciDecoder::default();
+    assert_eq!(
+        decoder.decode(&[31373, 995]).as_deref(),
+        Some("hello world")
+    );
+    assert_eq!(decoder.decode(&[999_999_999]), None);
+    assert_eq!(decoder.decode(&[]).as_deref(), Some(""));
 }

@@ -1,6 +1,7 @@
 use betterlite_core::routes::CallType;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::response_tool_calls::structured::RouteCallTypes;
+use serde::Serialize;
 
 use crate::straiker::v3::RESPONSE_PHASE;
 use crate::straiker::v3::answer_shape::{AnswerContext, AnthropicTranslator, Response, answer};
@@ -97,15 +98,41 @@ pub fn answer_json(
     if streamed.is_empty() {
         return Ok(None);
     }
-    let completion = serde_json::json!({
-        "object": "chat.completion",
-        "choices": [{
-            "index": 0,
-            "finish_reason": "stop",
-            "message": {"role": "assistant", "content": streamed.join("\n")},
+    let content = streamed.join("\n");
+    let completion = StreamedCompletion {
+        object: "chat.completion",
+        choices: [StreamedChoice {
+            index: 0,
+            finish_reason: "stop",
+            message: StreamedMessage {
+                role: "assistant",
+                content: &content,
+            },
         }],
-    });
-    Ok(Some(completion.to_string()))
+    };
+    serde_json::to_string(&completion)
+        .map(Some)
+        .map_err(V3Error::Serialize)
+}
+
+// The minimal chat completion a streamed answer is relayed as.
+#[derive(Serialize)]
+struct StreamedCompletion<'text> {
+    object: &'static str,
+    choices: [StreamedChoice<'text>; 1],
+}
+
+#[derive(Serialize)]
+struct StreamedChoice<'text> {
+    index: u32,
+    finish_reason: &'static str,
+    message: StreamedMessage<'text>,
+}
+
+#[derive(Serialize)]
+struct StreamedMessage<'text> {
+    role: &'static str,
+    content: &'text str,
 }
 
 mod tests;
