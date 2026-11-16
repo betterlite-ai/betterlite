@@ -1,0 +1,9 @@
+kind: helper
+name: b3330-video-reference-malformed-json
+call:
+  b3330: {function: video_reference, value: '{"id": '}
+calls:
+  - b3330: {function: video_reference, value: "{oops"}
+  - b3330: {function: video_reference, value: '{"id": 1,}'}
+env: {}
+compare: {ignore: []}

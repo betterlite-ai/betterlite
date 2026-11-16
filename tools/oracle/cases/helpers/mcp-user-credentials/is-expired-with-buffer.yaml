@@ -1,0 +1,19 @@
+kind: helper
+name: mcp-user-credentials-is-expired-with-buffer
+call:
+  b4713:
+    function: is_expired
+    credential: {type: oauth2, access_token: tok-old, expires_at: "2020-01-01T00:00:00+00:00"}
+    buffer_seconds: 0
+calls:
+  - b4713:
+      function: is_expired
+      credential: {type: oauth2, access_token: tok-old, expires_at: "2020-01-01T00:00:00+00:00"}
+      buffer_seconds: 86400
+  - b4713:
+      function: is_expired
+      credential: {type: oauth2, access_token: tok-old, expires_at: "2020-01-01T00:00:00+00:00"}
+      buffer_seconds: -1000000000
+env:
+  LITELLM_SALT_KEY: b4713-salt
+compare: {ignore: []}

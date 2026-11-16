@@ -111,7 +111,8 @@ fn config_failure(error: &ConfigError) -> Box<HelperError> {
         | ConfigError::InvalidFloat { .. }
         | ConfigError::InvalidInteger { .. }
         | ConfigError::InvalidScalar { .. }
-        | ConfigError::Environment { .. } => "ConfigError",
+        | ConfigError::Environment { .. }
+        | ConfigError::LoadThread { .. } => "ConfigError",
     };
     helper_error(class, error.to_string())
 }

@@ -199,3 +199,10 @@ path = "fuzz_targets/agent_365_evaluate_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "anthropic_sse"
+path = "fuzz_targets/anthropic_sse.rs"
+test = false
+doc = false
+bench = false

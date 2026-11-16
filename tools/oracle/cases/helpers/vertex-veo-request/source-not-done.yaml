@@ -1,0 +1,13 @@
+kind: helper
+name: source-not-done
+call:
+  vertex_veo_request:
+    creates: []
+    edits:
+      - prompt: an edit
+        api_base: 'https://mock/'
+        video_id: 'video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnZlcnRleF9haTttb2RlbF9pZDp2ZW8tMy4wLWdlbmVyYXRlLTAwMTt2aWRlb19pZDpwcm9qZWN0cy9wL2xvY2F0aW9ucy9sL3B1Ymxpc2hlcnMvZ29vZ2xlL21vZGVscy92ZW8tMy4wLWdlbmVyYXRlLTAwMS9vcGVyYXRpb25zL29wLTE='
+        extra_body: null
+        prefetched: {done: false, response: {videos: [{gcsUri: 'gs://v'}]}}
+env: {}
+compare: {ignore: []}

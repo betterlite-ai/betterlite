@@ -1,0 +1,10 @@
+kind: helper
+name: explicit-nested-resolution
+call:
+  vertex_veo_request:
+    creates:
+      - {model: veo-3.0-fast-generate-001, prompt: a prompt, api_base: 'https://mock', params: {size: 1280x720, parameters: {resolution: 1080p}}, extra_body: null}
+      - {model: veo-3.0-fast-generate-001, prompt: a prompt, api_base: 'https://mock', params: {size: 1280x720, resolution: 720p}, extra_body: null}
+    edits: []
+env: {}
+compare: {ignore: []}

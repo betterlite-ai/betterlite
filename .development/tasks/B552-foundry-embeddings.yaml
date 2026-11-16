@@ -75,6 +75,9 @@ description: >-
   wiring lines; 680 planned, 700 maximum changed lines.
 scope:
   paths:
+  - crates/betterlite-openai/src/embedding.rs
+  - crates/betterlite-openai/src/embedding/**
+  - crates/betterlite-openai/src/hosted_vllm/embedding.rs
   - crates/betterlite-foundry/Cargo.toml
   - crates/betterlite-foundry/src/embeddings.rs
   - crates/betterlite-foundry/src/embeddings/**
@@ -217,10 +220,11 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
+- "hosted_vllm already has LiteLLM's error-in-reply check (reply_error and object_error in crates/betterlite-openai/src/hosted_vllm/embedding.rs). Move it once into a new crates/betterlite-openai/src/embedding/reply_error.rs, declared in embedding.rs, returning the status and an optional message; hosted_vllm wraps it as its provider error and foundry as ReplyError, and the foundry copy in embeddings/reply.rs goes. betterlite-foundry already depends on betterlite-openai, so there is no new dependency."
 - 'The oracle helper for this task is pre-registered as foundry_embeddings in the foundry group. Replace the stub Op in tools/oracle/src/helpers/foundry/embeddings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/foundry_embeddings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The source computes filtered text input but passes the full original input to the text embedding call.
 - The error says /image/embeddings while the actual image URL uses /images/embeddings.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1700
   max_new_expects: 0
 review_level: standard

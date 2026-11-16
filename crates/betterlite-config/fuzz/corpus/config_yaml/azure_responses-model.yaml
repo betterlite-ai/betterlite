@@ -1,0 +1,6 @@
+model_list:
+  - model_name: azure-responses
+    litellm_params:
+      model: azure/gpt-5
+      api_base: https://res.openai.azure.com
+      api_key: os.environ/AZURE_API_KEY

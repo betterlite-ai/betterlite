@@ -1,0 +1,55 @@
+kind: helper
+name: manual-commit
+call:
+  gemini_live_client:
+    op: client
+    steps:
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.end"}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"disabled": false}}}}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"disabled": true}}}}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.end"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"disabled": true}}}}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"disabled": true, "silenceDurationMs": 500}}}}'
+calls:
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '{"type": "input_audio_buffer.commit"}'
+          session_configuration_request: ''
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '{"type": "input_audio_buffer.commit"}'
+          session_configuration_request: '{"setup": {}}'
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '{"type": "input_audio_buffer.commit"}'
+          session_configuration_request: '{"setup": {"realtimeInputConfig": {}}}'
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '{"type": "input_audio_buffer.commit"}'
+          session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {}}}}'
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '{"type": "input_audio_buffer.end"}'
+          session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"disabled": true, "prefixPaddingMs": 100}}}}'
+env: {}
+compare: {ignore: []}

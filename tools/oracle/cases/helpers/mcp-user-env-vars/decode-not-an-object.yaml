@@ -1,0 +1,28 @@
+kind: helper
+name: mcp-user-env-vars-decode-not-an-object
+call:
+  b4714:
+    function: get
+    salt_key: b4714-salt
+    user_id: user-1
+    server_id: srv-array
+    rows:
+      - {user_id: user-1, server_id: srv-array, values_b64: 'q6dJQ-EWphjwhSG5ZDOxJH7CN4kOr0jx9Ukn0fdWrj6FhegOMBrObeC7khs66g=='}
+calls:
+  - b4714:
+      function: get
+      salt_key: b4714-salt
+      user_id: user-1
+      server_id: srv-text
+      rows:
+        - {user_id: user-1, server_id: srv-text, values_b64: 'gHD0blrMpmJhbjqlfRVsgXDwYUeVCCAd1i3pVl8UaOlTWmmbTp8WdnjIoliUbM0H'}
+  - b4714:
+      function: get
+      salt_key: b4714-salt
+      user_id: user-1
+      server_id: srv-empty-object
+      rows:
+        - {user_id: user-1, server_id: srv-empty-object, values_b64: 'oOOquZgt7YJqaTwony7tkHAIXSVNSlesHxT-X3XZdfky2Pd78t2Ll6_p'}
+env:
+  LITELLM_SALT_KEY: b4714-salt
+compare: {ignore: []}

@@ -1,0 +1,43 @@
+kind: helper
+name: fireworks-ai-chat-models-request
+call:
+  b6072:
+    catalog: []
+    headers: []
+    keys: []
+    requests: []
+    replies: []
+    chunks: []
+    models:
+      - api_base: null
+        api_key: key
+        environment: {FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: null
+        api_key: null
+        environment: {FIREWORKS_AI_API_KEY: fallback-key, FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: null
+        api_key: null
+        environment: {FIREWORKS_API_BASE: "https://env.example/v1", FIREWORKS_API_KEY: env-key, FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: "https://arg.example/v1"
+        api_key: arg-key
+        environment: {FIREWORKS_API_BASE: "https://env.example/v1", FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: "https://slashes.example/v1///"
+        api_key: key
+        environment: {FIREWORKS_ACCOUNT_ID: acct}
+        status: 200
+        body: '{"models":[]}'
+      - api_base: "http://host.example:8080/v1"
+        api_key: key
+        environment: {FIREWORKS_ACCOUNT_ID: acct-2}
+        status: 200
+        body: '{"models":[]}'
+env: {}
+compare: {ignore: []}
