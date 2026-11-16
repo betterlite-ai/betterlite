@@ -95,10 +95,8 @@ fn decoded_row<N, D>(
 where
     D: SecretDiagnostics,
 {
-    match text_field(row, "values_b64") {
-        Some(stored) => Ok(decode_user_env_vars(stored, cipher)),
-        None => Err(UserEnvVarsError::MissingValues),
-    }
+    let stored = text_field(row, "values_b64").ok_or(UserEnvVarsError::MissingValues)?;
+    Ok(decode_user_env_vars(stored, cipher))
 }
 
 struct Merge<'tx, N, D> {
@@ -122,13 +120,13 @@ where
             // the advisory lock is taken before the read so two merges cannot lose one update
             let key = user_env_vars_lock_key(self.user_id, self.server_id);
             transaction.execute_raw(ADVISORY_LOCK_SQL, key).await?;
-            let row = transaction
+            let existing = transaction
                 .find_unique(self.user_id, self.server_id)
                 .await?;
-            let mut merged = UserEnvVars::new();
-            if let Some(row) = row {
-                merged = decoded_row(&row, self.cipher)?;
-            }
+            let mut merged = existing
+                .map(|row| decoded_row(&row, self.cipher))
+                .transpose()?
+                .unwrap_or_default();
             for (name, value) in self.updates {
                 merged.insert(name.clone(), value.clone());
             }

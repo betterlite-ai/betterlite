@@ -173,11 +173,11 @@ impl UserEnvVarsTransactions for McpTableStore<'_> {
 pub type PostgresUserEnvVarsStore<'db> =
     UserEnvVarsStore<McpTableStore<'db>, McpTableStore<'db>, OsNonces, TracingDiagnostics>;
 
-pub fn postgres_user_env_vars_store<'db>(
-    client: Option<PrismaClient<'db>>,
+pub fn postgres_user_env_vars_store(
+    client: Option<PrismaClient<'_>>,
     publish: PublishChange<TableError>,
     cipher: DbCipher,
-) -> Result<PostgresUserEnvVarsStore<'db>, McpTableError> {
+) -> Result<PostgresUserEnvVarsStore<'_>, McpTableError> {
     Ok(UserEnvVarsStore {
         table: McpTableStore::new(client, Arc::clone(&publish))?,
         transactions: McpTableStore::new(client, publish)?,
