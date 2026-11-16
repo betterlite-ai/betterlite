@@ -69,7 +69,7 @@ impl Default for Body {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct Probe {
     model: String,
@@ -90,31 +90,6 @@ struct Probe {
     reply: Reply,
     bodies: Vec<Body>,
     audio: String,
-}
-
-impl Default for Probe {
-    fn default() -> Self {
-        Self {
-            model: String::new(),
-            optional_params: IndexMap::new(),
-            non_default_params: IndexMap::new(),
-            existing_params: IndexMap::new(),
-            headers: BTreeMap::new(),
-            api_key: None,
-            environment_api_key: None,
-            api_base: None,
-            environment_api_base: None,
-            bases: Vec::new(),
-            atranscription: false,
-            api_version: None,
-            azure_ad_token: None,
-            max_retries: None,
-            client_kind: None,
-            reply: Reply::default(),
-            bodies: Vec::new(),
-            audio: String::new(),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]

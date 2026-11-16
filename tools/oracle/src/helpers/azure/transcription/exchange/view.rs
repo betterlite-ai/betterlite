@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_azure::transcription::call::AzureTranscriptionError;
@@ -9,12 +11,10 @@ use serde_json::{Value, json};
 use crate::helpers::{HelperError, OrHelperError as _};
 
 pub(super) fn request_view(request: &OutboundRequest) -> Value {
-    let header = |name: &str| {
-        request
-            .headers
-            .get(name)
-            .and_then(|value| value.to_str().ok())
-    };
+    let present: BTreeMap<&str, &str> = ["api-key", "authorization", "accept"]
+        .into_iter()
+        .filter_map(|name| Some((name, request.headers.get(name)?.to_str().ok()?)))
+        .collect();
     let mut parts = Vec::new();
     if let RequestBody::Multipart { parts: sent, .. } = &request.body {
         for part in sent {
@@ -28,9 +28,9 @@ pub(super) fn request_view(request: &OutboundRequest) -> Value {
     }
     json!({
         "url": request.url.as_str(),
-        "api_key": header("api-key"),
-        "authorization": header("authorization"),
-        "accept": header("accept"),
+        "api_key": present.get("api-key"),
+        "authorization": present.get("authorization"),
+        "accept": present.get("accept"),
         "parts": parts,
     })
 }

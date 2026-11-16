@@ -247,17 +247,17 @@ fn assert_supported_mapping() {
         ("prompt", text("ignored")),
         ("language", text("fr")),
         ("response_format", text("verbose_json")),
-        ("temperature", Json::Number(Number::from(2))),
+        ("temperature", Json::Number(Number::from(2_i32))),
     ]);
     let existing = params(&[
         ("language", text("en")),
-        ("temperature", Json::Number(Number::from(1))),
+        ("temperature", Json::Number(Number::from(1_i32))),
     ]);
     assert_eq!(
         map_openai_params(&non_default, existing),
         params(&[
             ("language", text("fr")),
-            ("temperature", Json::Number(Number::from(1))),
+            ("temperature", Json::Number(Number::from(1_i32))),
             ("response_format", text("verbose_json")),
         ])
     );
@@ -297,7 +297,7 @@ fn assert_display_text_extraction() {
         ),
         (r#"{"NBest":[{"Lexical":"lexical"}]}"#, "lexical"),
         (r#"{"NBest":[]}"#, ""),
-        (r#"{}"#, ""),
+        ("{}", ""),
     ] {
         let reply = decode_native_transcription(200, &native_headers(&[]), body.as_bytes())
             .expect("the body decodes");
@@ -416,9 +416,11 @@ fn async_failure_phase(inputs: &Inputs, cache: &mut Cache, logger: &mut Recorder
     .expect_err("the failed reply is an error");
     assert_eq!(error.status(), Some(500));
     let post = logger.posts.last().expect("the failure is logged");
-    assert_eq!(logger.posts.len(), before + 1);
+    assert_eq!(Some(logger.posts.len()), before.checked_add(1));
     assert_eq!(post.input, INPUT);
-    assert_eq!(post.original_response, text("boom"));
+    // LiteLLM logs str(e) of the SDK's status error, which is the error's own message
+    assert_eq!(post.original_response, text(&error.to_string()));
+    assert!(error.to_string().starts_with("Error code: 500 - "));
     assert_eq!(post.data, None);
     assert_eq!(post.authorization, None);
 }

@@ -57,7 +57,7 @@ pub(crate) fn params(pairs: &[(&str, Json)]) -> IndexMap<String, Json> {
         .collect()
 }
 
-pub(crate) fn azure_call<'file>(file: &'file ProcessedAudioFile) -> AzureTranscriptionCall<'file> {
+pub(crate) fn azure_call(file: &ProcessedAudioFile) -> AzureTranscriptionCall<'_> {
     AzureTranscriptionCall {
         input: String::from(INPUT),
         file,
@@ -270,8 +270,6 @@ pub(crate) fn header<'request>(
     request: &'request OutboundRequest,
     name: &str,
 ) -> Option<&'request str> {
-    request
-        .headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
+    let value = request.headers.get(name)?;
+    value.to_str().ok()
 }

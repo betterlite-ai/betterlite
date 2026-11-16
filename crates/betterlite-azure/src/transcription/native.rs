@@ -89,16 +89,10 @@ impl NativeError {
     // the raw response headers LiteLLM attaches to a failed RecognitionStatus
     #[must_use]
     pub const fn headers(&self) -> Option<&Headers> {
-        match self {
-            Self::RecognitionStatus { headers, .. } | Self::Failed { headers, .. } => Some(headers),
-            Self::MissingApiKey
-            | Self::MissingApiBase
-            | Self::AzureOpenAiEndpoint
-            | Self::Json { .. }
-            | Self::NotObject
-            | Self::Field { .. }
-            | Self::Url { .. }
-            | Self::AudioFile(_) => None,
+        if let Self::RecognitionStatus { headers, .. } | Self::Failed { headers, .. } = self {
+            Some(headers)
+        } else {
+            None
         }
     }
 }

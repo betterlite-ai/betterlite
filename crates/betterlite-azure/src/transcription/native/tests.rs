@@ -295,7 +295,7 @@ fn native_reply_accepts_missing_and_success_status(#[case] body: &str) {
 #[case::nbest_empty_list(r#"{"NBest":[]}"#, "")]
 #[case::nbest_text_item(r#"{"NBest":["best"]}"#, "")]
 #[case::nbest_object(r#"{"NBest":{"Display":"best"}}"#, "")]
-#[case::empty_object(r#"{}"#, "")]
+#[case::empty_object("{}", "")]
 fn native_reply_falls_back_to_nbest(#[case] body: &str, #[case] expected: &str) {
     assert_eq!(
         decode(body).unwrap().response.text.as_deref(),
@@ -304,28 +304,17 @@ fn native_reply_falls_back_to_nbest(#[case] body: &str, #[case] expected: &str) 
     );
 }
 
-#[test]
-fn native_reply_refuses_wrongly_typed_nbest_fields() {
-    for body in [
-        r#"{"NBest":[{"Display":{"nested":1}}]}"#,
-        r#"{"NBest":[{"Display":7}]}"#,
-    ] {
-        let error = decode(body).unwrap_err();
-        assert_eq!(
-            native_status(&error),
-            (
-                None,
-                "the transcription field `NBest[0].Display` is not a string".to_owned()
-            ),
-            "{body}"
-        );
-    }
-    let lexical = decode(r#"{"NBest":[{"Lexical":5}]}"#).unwrap_err();
+#[rstest]
+#[case::nested_display(r#"{"NBest":[{"Display":{"nested":1}}]}"#, "NBest[0].Display")]
+#[case::number_display(r#"{"NBest":[{"Display":7}]}"#, "NBest[0].Display")]
+#[case::number_lexical(r#"{"NBest":[{"Lexical":5}]}"#, "NBest[0].Lexical")]
+fn native_reply_refuses_wrongly_typed_nbest_fields(#[case] body: &str, #[case] field: &str) {
+    let error = decode(body).unwrap_err();
     assert_eq!(
-        native_status(&lexical),
+        native_status(&error),
         (
             None,
-            "the transcription field `NBest[0].Lexical` is not a string".to_owned()
+            format!("the transcription field `{field}` is not a string")
         )
     );
 }
@@ -352,20 +341,26 @@ fn recognition_failure_keeps_raw_status_and_headers() {
     );
     assert_eq!(error.headers(), Some(&failure_headers));
     // LiteLLM accepts only the exact text; every other string is a failure
-    assert!(decode(r#"{"RecognitionStatus":"success"}"#).is_err());
-    assert!(decode(r#"{"RecognitionStatus":false}"#).is_err());
+    assert!(matches!(
+        decode(r#"{"RecognitionStatus":"success"}"#),
+        Err(NativeError::RecognitionStatus { .. })
+    ));
+    assert!(matches!(
+        decode(r#"{"RecognitionStatus":false}"#),
+        Err(NativeError::RecognitionStatus { .. })
+    ));
 }
 
 #[rstest]
 #[case::text(Json::Text(String::from("Error")), "Error")]
-#[case::number(Json::Number(Number::from(1)), "1")]
+#[case::number(Json::Number(Number::from(1_i32)), "1")]
 #[case::true_status(Json::Bool(true), "true")]
 #[case::false_status(Json::Bool(false), "false")]
 #[case::empty_list(Json::List(Vec::new()), "[]")]
 #[case::object(
     Json::Object(IndexMap::from([(
         String::from("a"),
-        Json::Number(Number::from(1)),
+        Json::Number(Number::from(1_i32)),
     )])),
     r#"{"a":1}"#
 )]

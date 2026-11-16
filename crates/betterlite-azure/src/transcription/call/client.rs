@@ -146,13 +146,13 @@ fn client_material<'data>(
     custom_query: Option<&BTreeMap<String, String>>,
     wiring: &ClientWiring<'_, 'data>,
 ) -> ClientMaterial<'data> {
-    if let Some(ClientInputs::Azure(inputs)) = inputs {
+    if let Some(ClientInputs::Azure(azure)) = inputs {
         return ClientMaterial {
-            selection: inputs.endpoint,
-            api_version: Some(inputs.api_version),
-            api_key: inputs.api_key,
-            ad_token: inputs.azure_ad_token,
-            provider: inputs.token_provider,
+            selection: azure.endpoint,
+            api_version: Some(azure.api_version),
+            api_key: azure.api_key,
+            ad_token: azure.azure_ad_token,
+            provider: azure.token_provider,
         };
     }
     // the supplied client keeps its own api-version, and a cached client falls back to the version a construction resolves
@@ -189,9 +189,9 @@ pub fn request_auth(
     if let Some(token) = ad_token {
         return Ok(RequestAuth::Bearer(token));
     }
-    if let Some(provider) = provider {
+    if let Some(callable) = provider {
         let token =
-            provider
+            callable
                 .0
                 .token()
                 .map_err(|failure| AzureTranscriptionError::TokenProvider {
