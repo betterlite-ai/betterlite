@@ -7,7 +7,8 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::prompts::Settings;
+use crate::sections::Section;
+use crate::sections::prompts::{Raw, Settings};
 
 fn loaded_with(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
     let lookup = environment
@@ -29,6 +30,44 @@ fn settings(source: &str) -> Settings {
 
 fn settings_with(source: &str, environment: &[(&str, &str)]) -> Settings {
     loaded_with(source, environment).expect("the prompts settings load")
+}
+
+fn nested_entry(levels: usize, leaf: Json) -> IndexMap<String, Json> {
+    let mut inner = leaf;
+    for _ in 0..levels {
+        let mut wrapper = IndexMap::new();
+        wrapper.insert("nested".to_owned(), inner);
+        inner = Json::Object(wrapper);
+    }
+    let mut params = IndexMap::new();
+    params.insert("extra".to_owned(), inner);
+    let mut entry = IndexMap::new();
+    entry.insert("prompt_id".to_owned(), Json::Text("deep".to_owned()));
+    entry.insert("litellm_params".to_owned(), Json::Object(params));
+    entry
+}
+
+fn converted(entry: IndexMap<String, Json>, environment: &[(&str, &str)]) -> Settings {
+    let lookup = environment
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    Raw {
+        prompts: Some(Json::List(vec![Json::Object(entry)])),
+    }
+    .convert(&lookup)
+    .expect("the entry converts")
+}
+
+fn entry_leaf(settings: &Settings) -> &Json {
+    let mut current = &settings.prompts[0]["litellm_params"]["extra"];
+    while let Json::Object(mapping) = current {
+        let Some((_key, inner)) = mapping.first() else {
+            panic!("the fixture holds a leaf");
+        };
+        current = inner;
+    }
+    current
 }
 
 #[test]
@@ -171,4 +210,16 @@ fn mapping_items_inside_a_list_are_resolved_and_plain_items_are_left() {
         item.get("api_key"),
         Some(&Json::Text("list-key".to_owned()))
     );
+}
+
+#[rstest]
+#[case::last_resolved_level(98, Json::Text("deep-value".to_owned()))]
+#[case::first_skipped_level(99, Json::Text("os.environ/DEEP".to_owned()))]
+fn the_depth_limit_counts_the_prompts_entry_and_its_litellm_params(
+    #[case] levels: usize,
+    #[case] expected: Json,
+) {
+    let entry = nested_entry(levels, Json::Text("os.environ/DEEP".to_owned()));
+    let settings = converted(entry, &[("DEEP", "deep-value")]);
+    assert_eq!(entry_leaf(&settings), &expected);
 }
