@@ -15,6 +15,7 @@ use betterlite_provider::langgraph_chat::records::LangGraphRole;
 use betterlite_provider::langgraph_chat::reply as langgraph_reply;
 use betterlite_provider::langgraph_chat::request as langgraph_request;
 use betterlite_provider::ollama_chat::ids::RandomIds;
+use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
@@ -186,7 +187,7 @@ fn a2a_request_value(call: &CompletionCall) -> Result<Value, HandlerError> {
     let headers = call.headers.clone().unwrap_or_default();
     let validated = a2a_request::validate_environment(&headers, call.api_key.as_ref());
     let body = a2a_request::transform_request(&call.messages, &call.optional_params, &RandomIds)?;
-    Ok(json!({"url": url, "headers": header_view(&validated), "body": body}))
+    Ok(request_view(&url, &validated, &body))
 }
 
 fn langgraph_request_value(call: &CompletionCall) -> Result<Value, HandlerError> {
@@ -202,7 +203,7 @@ fn langgraph_request_value(call: &CompletionCall) -> Result<Value, HandlerError>
         &call.optional_params,
         body_stream,
     )?;
-    Ok(json!({"url": url, "headers": header_view(&headers), "body": body}))
+    Ok(request_view(&url, &headers, &body))
 }
 
 fn langflow_request_value(call: &CompletionCall) -> Result<Value, HandlerError> {
@@ -214,11 +215,23 @@ fn langflow_request_value(call: &CompletionCall) -> Result<Value, HandlerError> 
         api_key: call.api_key.as_ref(),
         stream: call.stream,
     })?;
-    Ok(json!({
-        "url": prepared.url,
-        "headers": header_view(&prepared.headers),
-        "body": prepared.body,
-    }))
+    Ok(request_view(
+        &prepared.url,
+        &prepared.headers,
+        &prepared.body,
+    ))
+}
+
+// the compared projection of an outgoing request: its url, the headers worth comparing and the body
+fn request_view<B>(url: &str, headers: &BTreeMap<String, String>, body: &B) -> Value
+where
+    B: Serialize,
+{
+    json!({
+        "url": url,
+        "headers": header_view(headers),
+        "body": body,
+    })
 }
 
 fn header_view(headers: &BTreeMap<String, String>) -> BTreeMap<String, String> {
