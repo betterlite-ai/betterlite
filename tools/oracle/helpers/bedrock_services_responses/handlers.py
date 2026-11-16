@@ -112,17 +112,19 @@ def replacement_cases(_calls: Calls, payload: JsonValue) -> JsonValue:
     return {"results": results}
 
 
+def run_transform(calls: Calls, case: FetchCase, *, asynchronous: bool) -> JsonValue:
+    params = GenericLiteLLMParams()
+    if asynchronous:
+        pending = calls.async_transform_responses_api_request(MODEL, case["input"], {}, params, {})
+        return asyncio.run(pending)
+    return calls.transform_responses_api_request(MODEL, case["input"], {}, params, {})
+
+
 def fetch_outcome(
     calls: Calls, fixture: Fixture, case: FetchCase, *, asynchronous: bool
 ) -> JsonValue:
-    params = GenericLiteLLMParams()
     try:
-        if asynchronous:
-            body = asyncio.run(
-                calls.async_transform_responses_api_request(MODEL, case["input"], {}, params, {})
-            )
-        else:
-            body = calls.transform_responses_api_request(MODEL, case["input"], {}, params, {})
+        body = run_transform(calls, case, asynchronous=asynchronous)
     except KeyError:
         return {"error": "fetch", "fetched": [*fixture.fetched]}
     return {"body": body, "fetched": [*fixture.fetched]}

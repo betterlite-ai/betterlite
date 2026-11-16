@@ -36,7 +36,7 @@ fn static_credentials(
     )
 }
 
-pub(super) fn auth_case(case: &AuthCase) -> Case {
+pub(super) fn auth_case(case: &AuthCase) -> Value {
     let api_key = case.api_key.clone().map(SecretString::from);
     let environment_token = case
         .environment
@@ -45,7 +45,7 @@ pub(super) fn auth_case(case: &AuthCase) -> Case {
         .map(SecretString::from);
     let mut validated = case.headers.clone();
     validate_environment(&mut validated, api_key.as_ref(), environment_token.as_ref());
-    Ok(json!({"headers": validated}))
+    json!({"headers": validated})
 }
 
 fn error_value(probe: Option<&ErrorProbe>) -> Case {

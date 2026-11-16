@@ -26,52 +26,52 @@ fn remote_urls_within_limit(input: &ResponsesInput) -> Result<Vec<String>, Respo
     Ok(urls)
 }
 
-fn inlined_request(
-    model: &str,
-    input: &ResponsesInput,
-    inlined: &BTreeMap<String, String>,
-    params: &Object,
-    model_info: Option<&Object>,
-) -> Result<Object, ResponsesError> {
-    let inlined_input = inline_remote_image_urls(input, inlined)?;
-    transform_inlined_request(model, &inlined_input, params, model_info)
+#[derive(Debug, Clone, Copy)]
+pub enum FetchMode {
+    Each,
+    Batch,
 }
 
-pub async fn transform_responses_request<Source>(
+#[derive(Debug, Clone, Copy)]
+pub struct TransformRequest<'request> {
+    pub model: &'request str,
+    pub input: &'request ResponsesInput,
+    pub params: &'request Object,
+    pub model_info: Option<&'request Object>,
+}
+
+// Each is LiteLLM's sync path, one convert_url per distinct URL in first-seen order; Batch is its async path, one convert_urls call
+pub async fn transform_responses<Source>(
     fetcher: &Source,
-    model: &str,
-    input: &ResponsesInput,
-    params: &Object,
-    model_info: Option<&Object>,
+    mode: FetchMode,
+    request: &TransformRequest<'_>,
 ) -> Result<Object, ResponsesError>
 where
     Source: RemoteMediaFetcher + Sync,
 {
+    let urls = remote_urls_within_limit(request.input)?;
     let mut inlined = BTreeMap::new();
-    for url in remote_urls_within_limit(input)? {
-        let data_url = fetcher.convert_url(&url).await?;
-        inlined.insert(url, data_url);
+    match mode {
+        FetchMode::Each => {
+            for url in urls {
+                let data_url = fetcher.convert_url(&url).await?;
+                inlined.insert(url, data_url);
+            }
+        }
+        FetchMode::Batch => {
+            if !urls.is_empty() {
+                let data_urls = fetcher.convert_urls(&urls).await?;
+                inlined.extend(urls.into_iter().zip(data_urls));
+            }
+        }
     }
-    inlined_request(model, input, &inlined, params, model_info)
-}
-
-pub async fn async_transform_responses<Source>(
-    fetcher: &Source,
-    model: &str,
-    input: &ResponsesInput,
-    params: &Object,
-    model_info: Option<&Object>,
-) -> Result<Object, ResponsesError>
-where
-    Source: RemoteMediaFetcher + Sync,
-{
-    let urls = remote_urls_within_limit(input)?;
-    let mut inlined = BTreeMap::new();
-    if !urls.is_empty() {
-        let data_urls = fetcher.convert_urls(&urls).await?;
-        inlined.extend(urls.into_iter().zip(data_urls));
-    }
-    inlined_request(model, input, &inlined, params, model_info)
+    let inlined_input = inline_remote_image_urls(request.input, &inlined)?;
+    transform_inlined_request(
+        request.model,
+        &inlined_input,
+        request.params,
+        request.model_info,
+    )
 }
 
 pub fn transform_inlined_request(

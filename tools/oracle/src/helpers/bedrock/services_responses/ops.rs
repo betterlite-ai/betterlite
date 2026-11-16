@@ -7,7 +7,7 @@ use betterlite_bedrock::responses::error::ResponsesError;
 use betterlite_bedrock::responses::images::{collect_remote_image_urls, inline_remote_image_urls};
 use betterlite_bedrock::responses::options::map_openai_params;
 use betterlite_bedrock::responses::request::{
-    async_transform_responses, transform_inlined_request, transform_responses_request,
+    FetchMode, TransformRequest, transform_inlined_request, transform_responses,
 };
 use betterlite_bedrock::responses::url::{CompleteUrlParams, complete_url};
 use betterlite_bedrock::signing::target::RegionInputs;
@@ -38,9 +38,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::BedrockResponsesModelRoute(cases) => {
             cases.iter().map(route_case).collect::<Result<_, _>>()?
         }
-        Input::ResponsesBearerAuth(cases) => {
-            cases.iter().map(auth_case).collect::<Result<_, _>>()?
-        }
+        Input::ResponsesBearerAuth(cases) => cases.iter().map(auth_case).collect(),
         Input::ResponsesSigv4(cases) => cases.iter().map(sigv4_case).collect::<Result<_, _>>()?,
         Input::ResponseOptionGates(cases) | Input::NativeFileSearchFlag(cases) => cases
             .iter()
@@ -128,24 +126,18 @@ fn fetch_outcome(case: &FetchCase, asynchronous: bool) -> Case {
         fetcher: MapFetcher::new(&case.data_urls),
     };
     let params = Object::new();
-    let running = runtime()?;
-    let outcome = if asynchronous {
-        running.block_on(async_transform_responses(
-            &config.fetcher,
-            MODEL,
-            &case.input,
-            &params,
-            None,
-        ))
-    } else {
-        running.block_on(transform_responses_request(
-            &config.fetcher,
-            MODEL,
-            &case.input,
-            &params,
-            None,
-        ))
+    let request = TransformRequest {
+        model: MODEL,
+        input: &case.input,
+        params: &params,
+        model_info: None,
     };
+    let mode = if asynchronous {
+        FetchMode::Batch
+    } else {
+        FetchMode::Each
+    };
+    let outcome = runtime()?.block_on(transform_responses(&config.fetcher, mode, &request));
     let fetched = config.fetcher.fetched();
     match outcome {
         Ok(body) => Ok(json!({

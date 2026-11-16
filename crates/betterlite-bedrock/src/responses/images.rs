@@ -85,13 +85,18 @@ fn inline_item(item: &Json, inlined: &BTreeMap<String, String>) -> Result<Json, 
     let Json::Object(fields) = item else {
         return Ok(item.clone());
     };
-    let mut replaced = fields.clone();
-    for key in IMAGE_BLOCK_KEYS {
-        if let Some(value) = fields.get(key) {
-            replaced.insert(key.to_owned(), inline_value(value, inlined)?);
-        }
-    }
-    Ok(Json::Object(replaced))
+    fields
+        .iter()
+        .map(|(key, value)| {
+            let inlined_value = if IMAGE_BLOCK_KEYS.contains(&key.as_str()) {
+                inline_value(value, inlined)?
+            } else {
+                value.clone()
+            };
+            Ok((key.clone(), inlined_value))
+        })
+        .collect::<Result<_, _>>()
+        .map(Json::Object)
 }
 
 // A missing mapping entry is an error, never a fresh download

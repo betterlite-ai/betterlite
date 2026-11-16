@@ -10,7 +10,7 @@ use betterlite_prompts::media_fetch::error::ImageFetchError;
 use crate::responses::config::BedrockResponsesConfig;
 use crate::responses::error::ResponsesError;
 use crate::responses::images::{collect_remote_image_urls, inline_remote_image_urls};
-use crate::responses::request::{async_transform_responses, transform_responses_request};
+use crate::responses::request::{FetchMode, TransformRequest, transform_responses};
 
 use super::support::{MODEL, MapFetcher, block_on, input, object};
 
@@ -143,6 +143,20 @@ pub(super) fn inline_image_replacement() {
     ));
 }
 
+fn transform(
+    fetcher: &MapFetcher,
+    mode: FetchMode,
+    input: &ResponsesInput,
+) -> Result<Object, ResponsesError> {
+    let request = TransformRequest {
+        model: MODEL,
+        input,
+        params: &object("{}"),
+        model_info: None,
+    };
+    block_on(transform_responses(fetcher, mode, &request))
+}
+
 fn fetch_log(calls: &Mutex<Vec<String>>) -> Vec<String> {
     calls.lock().unwrap_or_else(PoisonError::into_inner).clone()
 }
@@ -168,27 +182,15 @@ pub(super) fn remote_url_inlined() {
     let sync = BedrockResponsesConfig {
         fetcher: MapFetcher::with(&DATA_URLS),
     };
-    let sync_body = block_on(transform_responses_request(
-        &sync.fetcher,
-        MODEL,
-        &source,
-        &object("{}"),
-        None,
-    ))
-    .expect("the sync transform fetches");
+    let sync_body =
+        transform(&sync.fetcher, FetchMode::Each, &source).expect("the sync transform fetches");
     assert_eq!(fetch_log(&sync.fetcher.singles), strings(&FETCHED_ORDER));
     assert!(batch_log(&sync.fetcher.batches).is_empty());
     let parallel = BedrockResponsesConfig {
         fetcher: MapFetcher::with(&DATA_URLS),
     };
-    let async_body = block_on(async_transform_responses(
-        &parallel.fetcher,
-        MODEL,
-        &source,
-        &object("{}"),
-        None,
-    ))
-    .expect("the async transform fetches");
+    let async_body = transform(&parallel.fetcher, FetchMode::Batch, &source)
+        .expect("the async transform fetches");
     assert_eq!(
         batch_log(&parallel.fetcher.batches),
         vec![strings(&FETCHED_ORDER)]
@@ -212,24 +214,12 @@ fn assert_inlined(body: &Object) {
 
 fn refusals(source: &ResponsesInput) {
     let refusing = MapFetcher::with(&[]);
-    let refused = block_on(transform_responses_request(
-        &refusing,
-        MODEL,
-        source,
-        &object("{}"),
-        None,
-    ));
+    let refused = transform(&refusing, FetchMode::Each, source);
     assert!(matches!(
         refused,
         Err(ResponsesError::Fetch(ImageFetchError::Rejected { .. }))
     ));
-    let refused_async = block_on(async_transform_responses(
-        &refusing,
-        MODEL,
-        source,
-        &object("{}"),
-        None,
-    ));
+    let refused_async = transform(&refusing, FetchMode::Batch, source);
     assert!(matches!(
         refused_async,
         Err(ResponsesError::Fetch(ImageFetchError::Rejected { .. }))
@@ -241,34 +231,14 @@ pub(super) fn responses_media_fetch() {
         r#"[{"type": "message", "role": "user", "content": [{"type": "input_image", "image_url": "http://a.example/1.png"}]}]"#,
     );
     let fetcher = MapFetcher::with(&DATA_URLS);
-    let sync = block_on(transform_responses_request(
-        &fetcher,
-        MODEL,
-        &source,
-        &object("{}"),
-        None,
-    ))
-    .expect("sync fetch");
-    let parallel = block_on(async_transform_responses(
-        &fetcher,
-        MODEL,
-        &source,
-        &object("{}"),
-        None,
-    ))
-    .expect("async fetch");
+    let sync = transform(&fetcher, FetchMode::Each, &source).expect("sync fetch");
+    let parallel = transform(&fetcher, FetchMode::Batch, &source).expect("async fetch");
     assert_eq!(
         image_at(&sync, "/input/0/content/0/image_url"),
         Some("data:image/png;base64,QQ==".to_owned())
     );
     assert_eq!(sync, parallel);
-    let refused = block_on(transform_responses_request(
-        &MapFetcher::with(&[]),
-        MODEL,
-        &source,
-        &object("{}"),
-        None,
-    ));
+    let refused = transform(&MapFetcher::with(&[]), FetchMode::Each, &source);
     assert!(matches!(refused, Err(ResponsesError::Fetch(_))));
 }
 
@@ -302,32 +272,18 @@ fn limit_fetcher() -> MapFetcher {
 
 pub(super) fn remote_url_limit() {
     let fetcher = limit_fetcher();
-    let within = block_on(transform_responses_request(
-        &fetcher,
-        MODEL,
-        &many_images(MAX_REMOTE_URLS),
-        &object("{}"),
-        None,
-    ));
+    let within = transform(&fetcher, FetchMode::Each, &many_images(MAX_REMOTE_URLS));
     within.expect("the limit itself is allowed");
-    let over = block_on(async_transform_responses(
+    let over = transform(
         &fetcher,
-        MODEL,
+        FetchMode::Batch,
         &many_images(MAX_REMOTE_URLS + 1),
-        &object("{}"),
-        None,
-    ));
+    );
     assert!(matches!(
         over,
         Err(ResponsesError::Media(MediaError::TooManyRemoteUrls { limit })) if limit == MAX_REMOTE_URLS
     ));
-    let over_sync = block_on(transform_responses_request(
-        &fetcher,
-        MODEL,
-        &many_images(MAX_REMOTE_URLS + 1),
-        &object("{}"),
-        None,
-    ));
+    let over_sync = transform(&fetcher, FetchMode::Each, &many_images(MAX_REMOTE_URLS + 1));
     assert!(matches!(over_sync, Err(ResponsesError::Media(_))));
     assert_eq!(fetch_log(&fetcher.singles).len(), MAX_REMOTE_URLS);
     assert!(batch_log(&fetcher.batches).is_empty());

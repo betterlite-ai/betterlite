@@ -86,7 +86,6 @@ class Calls(Protocol):
 
     def get_complete_url(self, api_base: str | None, litellm_params: Object, /) -> str: ...
 
-    # ast-grep-ignore: no-long-names
     def transform_responses_api_request(
         self,
         model: str,
@@ -97,7 +96,6 @@ class Calls(Protocol):
         /,
     ) -> Object: ...
 
-    # ast-grep-ignore: no-long-names
     async def async_transform_responses_api_request(
         self,
         model: str,
