@@ -1,0 +1,236 @@
+kind: helper
+name: messages-stream-usage-nonempty-delta-predicates
+call:
+  messages_stream_usage:
+    logging: false
+    model: claude-sonnet-4-5
+    tool_name_mapping: {}
+    applied_edits: []
+    compaction_block: null
+    iterations_usage: null
+    chunks_attr: null
+    messages_attr: null
+    steps:
+    - step: delta_has_content
+      event:
+        type: content_block_delta
+        delta:
+          type: text_delta
+          text: x
+    - step: delta_has_content
+      event:
+        type: content_block_delta
+        delta:
+          type: text_delta
+          text: ""
+    - step: delta_has_content
+      event:
+        type: content_block_delta
+        delta:
+          type: text_delta
+    - step: delta_has_content
+      event:
+        type: content_block_delta
+        delta:
+          type: input_json_delta
+          partial_json: "{}"
+    - step: delta_has_content
+      event:
+        type: content_block_delta
+        delta:
+          type: thinking_delta
+          thinking: t
+    - step: delta_has_content
+      event:
+        type: content_block_delta
+        delta:
+          type: signature_delta
+          signature: s
+    - step: delta_has_content
+      event:
+        type: content_block_delta
+        delta:
+          type: text_delta
+          partial_json: x
+    - step: delta_has_content
+      event:
+        type: content_block_delta
+        delta:
+          type: compaction_delta
+          content: x
+    - step: delta_has_content
+      event:
+        type: content_block_delta
+        delta:
+          type: unknown_delta
+          text: x
+    - step: delta_has_content
+      event:
+        type: content_block_delta
+        delta: null
+    - step: delta_has_content
+      event:
+        type: message_delta
+        delta:
+          type: text_delta
+          text: x
+    - step: delta_has_content
+      event:
+        delta:
+          type: text_delta
+          text: x
+    - step: is_blank
+      choices:
+      - finish_reason: stop
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+    - step: is_blank
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls:
+          - id: tool_1
+            index: 0
+            function:
+              name: short
+              arguments: "{}"
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+    - step: is_blank
+      choices:
+      - finish_reason: null
+        delta:
+          content: x
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+    - step: is_blank
+      choices:
+      - finish_reason: null
+        delta:
+          content: ""
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+    - step: is_blank
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: "no"
+          provider_specific_fields: null
+    - step: is_blank
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: ""
+          provider_specific_fields: null
+    - step: is_blank
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: r
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+    - step: is_blank
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks:
+          - type: thinking
+            thinking: ""
+            signature: ""
+          refusal: null
+          provider_specific_fields: null
+    - step: is_blank
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks:
+          - type: thinking
+            thinking: ""
+            signature: sig
+          refusal: null
+          provider_specific_fields: null
+    - step: is_blank
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks:
+          - type: thinking
+            thinking: t
+            signature: ""
+          refusal: null
+          provider_specific_fields: null
+    - step: is_blank
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: []
+          refusal: null
+          provider_specific_fields: null
+    - step: is_blank
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields:
+            refusal: "No"
+    - step: start_block
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields:
+            refusal: "No"
+    - step: refusal_stop
+      event:
+        type: message_delta
+        delta:
+          stop_reason: end_turn
+    - step: snapshot
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,130 @@
+kind: helper
+name: messages-stream-usage-content-boundary-and-tool-restore
+call:
+  messages_stream_usage:
+    logging: false
+    model: claude-sonnet-4-5
+    tool_name_mapping:
+      short: long_tool_name
+    applied_edits: []
+    compaction_block: null
+    iterations_usage: null
+    chunks_attr: null
+    messages_attr: null
+    steps:
+    - step: start_block
+      choices:
+      - finish_reason: null
+        delta:
+          content: hi
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+    - step: snapshot
+    - step: start_block
+      choices:
+      - finish_reason: null
+        delta:
+          content: more
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+    - step: snapshot
+    - step: start_block
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: r
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+    - step: snapshot
+    - step: start_block
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls:
+          - id: tool_1
+            index: 0
+            function:
+              name: short
+              arguments: "{}"
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+    - step: snapshot
+    - step: start_block
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls:
+          - id: tool_2
+            index: 0
+            function:
+              name: later
+              arguments: "{}"
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+    - step: snapshot
+    - step: start_block
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls:
+          - id: tool_2
+            index: 0
+            function:
+              name: null
+              arguments: '{"a": 1}'
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+    - step: snapshot
+    - step: start_block
+      choices:
+      - finish_reason: stop
+        delta:
+          content: bye
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: ignored
+          provider_specific_fields: null
+    - step: snapshot
+    - step: start_block
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: "No"
+          provider_specific_fields: null
+    - step: start_block
+      choices:
+      - finish_reason: null
+        delta:
+          content: null
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: " thanks"
+          provider_specific_fields: null
+    - step: snapshot
+env: {}
+compare:
+  ignore: []

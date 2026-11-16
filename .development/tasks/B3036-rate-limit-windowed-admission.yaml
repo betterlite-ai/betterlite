@@ -195,7 +195,7 @@ checks:
       why: the oracle cases for key collection and the over-limit decision are missing or differ from LiteLLM
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/windowed-admission)" &&
-        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/windowed-admission
+        cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-rate-limit -- tools/oracle/cases/helpers/windowed-admission
     - id: helper-python
       why: strict oracle adapter lint or type checks fail
       run: >-
@@ -208,7 +208,7 @@ checks:
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/windowed_admission-*")" &&
         grep -lE '^[[:space:]]+b3036:' tools/oracle/fuzz/corpus/helper_case/windowed_admission-* &&
         test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
-        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-rate-limit --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 
 oracle_cases:
   - tools/oracle/cases/helpers/windowed-admission/collect-requests-and-tokens.yaml

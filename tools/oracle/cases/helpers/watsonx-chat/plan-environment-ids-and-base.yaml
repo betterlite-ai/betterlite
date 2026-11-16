@@ -1,0 +1,29 @@
+kind: helper
+name: watsonx-chat-plan-environment-ids-and-base
+env: {}
+compare: {ignore: []}
+call:
+  b5971:
+    env:
+      WATSONX_API_BASE: https://env-host/
+      WX_PROJECT_ID: env-project
+      WATSONX_TOKEN: env-token
+    maps: []
+    infos: []
+    urls: []
+    plans:
+      - model: granite-13b
+        api_base: null
+        api_key: null
+        headers: {}
+        options: {}
+      - model: granite-13b
+        api_base: https://host
+        api_key: null
+        headers: {Content-Type: text/plain}
+        options: {space_id: space-1, stream: true}
+      - model: deployment/abc
+        api_base: null
+        api_key: null
+        headers: {}
+        options: {stream: true}

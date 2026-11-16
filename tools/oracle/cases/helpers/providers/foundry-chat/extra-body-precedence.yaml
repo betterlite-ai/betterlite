@@ -1,0 +1,87 @@
+kind: helper
+name: foundry-chat-extra-body-precedence
+call:
+  foundry_chat:
+    model_cost: {}
+    chat_models: []
+    text_models: []
+    requests:
+      - model: fixture-model
+        messages:
+          - role: assistant
+            content:
+              - {type: text, text: a}
+            reasoning_content: r
+        optional:
+          temperature: 1
+          extra_body: {temperature: 0.2, top_p: 0.9, max_retries: 3}
+      - model: fixture-model
+        messages:
+          - role: assistant
+            content:
+              - {type: text, text: a}
+            reasoning_content: r
+        optional:
+          temperature: 9
+          extra_body: {temperature: 1}
+      - model: fixture-model
+        messages:
+          - role: assistant
+            content:
+              - {type: text, text: a}
+            reasoning_content: r
+        optional: {max_retries: 5, n: 2}
+      - model: fixture-model
+        messages:
+          - role: assistant
+            content:
+              - {type: text, text: a}
+            reasoning_content: r
+        optional: {}
+      - model: fixture-model
+        messages:
+          - role: assistant
+            content:
+              - {type: text, text: a}
+            reasoning_content: r
+        optional: {extra_body: {}}
+      - model: fixture-model
+        messages:
+          - role: assistant
+            content:
+              - {type: text, text: a}
+            reasoning_content: r
+        optional: {extra_body: x, seed: 1}
+      - model: fixture-model
+        messages:
+          - role: assistant
+            content:
+              - {type: text, text: a}
+            reasoning_content: r
+        optional: {extra_body: [], seed: 1}
+      - model: fixture-model
+        messages:
+          - role: assistant
+            content:
+              - {type: text, text: a}
+            reasoning_content: r
+        optional: {extra_body: null, seed: 1}
+      - model: fixture-model
+        messages:
+          - role: assistant
+            content:
+              - {type: text, text: a}
+            reasoning_content: r
+        optional:
+          messages:
+            - {role: user, content: shadow}
+      - model: fixture-model
+        messages:
+          - role: assistant
+            content:
+              - {type: text, text: a}
+            reasoning_content: r
+        optional:
+          extra_body: {temperature: 0.2}
+env: {}
+compare: {ignore: []}

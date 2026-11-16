@@ -16,6 +16,13 @@ betterlite-streaming = { path = ".." }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
+name = "anthropic_relay_reconstruction"
+path = "fuzz_targets/anthropic_relay_reconstruction.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "provider_stream_chunk"
 path = "fuzz_targets/provider_stream_chunk.rs"
 test = false
