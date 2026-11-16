@@ -11,13 +11,13 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.runwayml.cost_calculator import cost_calculator
 from litellm.llms.runwayml.image_generation import get_runwayml_image_generation_config
-from litellm.types.utils import ImageObject, ImageResponse, ModelInfo
+from litellm.types.utils import ImageObject, ImageResponse
 from openai.types.image import Image
 from pydantic import ConfigDict, JsonValue, TypeAdapter
+from typing_extensions import override
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 EMPTY: dict[str, JsonValue] = {}
-CLIENT_KEY = "httpx_client"
 SUBMISSION_URL = "https://submission.example.test/v1/text_to_image"
 PROVIDER = "runwayml"
 
@@ -30,25 +30,6 @@ class ClientCache(Protocol):
 CLIENT_CACHE: TypeAdapter[ClientCache] = TypeAdapter(
     ClientCache, config=ConfigDict(arbitrary_types_allowed=True)
 )
-
-
-RequestTransform = Callable[
-    [str, str, dict[str, JsonValue], dict[str, JsonValue], dict[str, JsonValue]],
-    dict[str, JsonValue],
-]
-ResponseTransform = Callable[
-    [
-        str,
-        httpx.Response,
-        ImageResponse,
-        Logging,
-        dict[str, JsonValue],
-        dict[str, JsonValue],
-        dict[str, JsonValue],
-        None,
-    ],
-    ImageResponse,
-]
 
 
 class ImageConfig(Protocol):
@@ -66,12 +47,12 @@ class ImageConfig(Protocol):
     @property
     def transform_image_generation_request(  # ast-grep-ignore: no-long-names
         self,
-    ) -> RequestTransform: ...
+    ) -> Callable[..., dict[str, JsonValue]]: ...
 
     @property
     def transform_image_generation_response(  # ast-grep-ignore: no-long-names
         self,
-    ) -> ResponseTransform: ...
+    ) -> Callable[..., ImageResponse]: ...
 
 
 class ImageSeed(TypedDict):
@@ -130,11 +111,11 @@ class Prices(TypedDict, total=False):
 
 class CostCall(TypedDict):
     data: list[ImageSeed]
-    prices: Prices
 
 
 class CostParams(TypedDict):
     model: str
+    prices: Prices
     calls: list[CostCall]
 
 
@@ -146,17 +127,24 @@ class CostInput(TypedDict):
 Input = MappingInput | ResponseInput | CostInput
 
 
-class Clock:
+class TimeSource(Protocol):
+    def time(self) -> float: ...
+    def sleep(self, seconds: float) -> None: ...
+
+
+class Clock(TimeSource):
     def __init__(self, step_millis: int) -> None:
         self.millis = 0
         self.step_millis = step_millis
         self.sleeps: list[JsonValue] = []
 
+    @override
     def time(self) -> float:
         current = self.millis
         self.millis += self.step_millis
         return current / 1000.0
 
+    @override
     def sleep(self, seconds: float) -> None:
         self.sleeps.append(int(seconds))
 
@@ -174,20 +162,8 @@ class Scripted:
         return httpx.Response(reply["status"], content=reply["body"].encode())
 
 
-def config_for(model: str) -> ImageConfig:
-    config: ImageConfig = get_runwayml_image_generation_config(model)
-    return config
-
-
 def seeded_images(seeds: list[ImageSeed]) -> list[Image]:
-    images: list[Image] = [
-        ImageObject(
-            b64_json=seed["b64_json"],
-            url=seed["url"],
-            revised_prompt=seed["revised_prompt"],
-        )
-        for seed in seeds
-    ]
+    images: list[Image] = [ImageObject(**seed) for seed in seeds]
     return images
 
 
@@ -205,7 +181,8 @@ def image_value(image: Image) -> JsonValue:
 def response_value(finished: ImageResponse) -> JsonValue:
     data = finished.data
     if data is None:
-        return JSON.validate_python({"created": finished.created, "data": []})
+        empty: dict[str, JsonValue] = {"created": finished.created, "data": []}
+        return JSON.validate_python(empty)
     images: list[JsonValue] = [image_value(image) for image in data]
     answer: dict[str, JsonValue] = {"created": finished.created, "data": images}
     return JSON.validate_python(answer)
@@ -232,23 +209,9 @@ def logging_object(model: str) -> Logging:
     )
 
 
-def install_client(scripted: Scripted) -> None:
-    holder = LLMClientCache()
-    litellm.in_memory_llm_clients_cache = holder
-    cache = CLIENT_CACHE.validate_python(holder)
-    client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(scripted)))
-    cache.set_cache(key=CLIENT_KEY, value=client, ttl=600)
-
-
-def install_clock(step_millis: int) -> Clock:
-    clock = Clock(step_millis)
-    object.__setattr__(runway_transformation, "time", clock)
-    return clock
-
-
 def mapping_value(input_value: MappingInput) -> JsonValue:
     params = input_value["params"]
-    config = config_for(params["model"])
+    config: ImageConfig = get_runwayml_image_generation_config(params["model"])
     results: list[JsonValue] = []
     for call in params["calls"]:
         try:
@@ -265,19 +228,22 @@ def mapping_value(input_value: MappingInput) -> JsonValue:
             params["model"], params["prompt"], mapped, EMPTY, EMPTY
         )
         results.append({"params": mapped, "body": body})
-    supported = JSON.validate_python(
-        list(config.get_supported_openai_params(params["model"]))
-    )
+    supported_params: Sequence[str] = config.get_supported_openai_params(params["model"])
+    supported: JsonValue = JSON.validate_python(supported_params)
     answer: dict[str, JsonValue] = {"supported": supported, "results": results}
     return JSON.validate_python(answer)
 
 
 def transform_value(input_value: ResponseInput) -> JsonValue:
     params = input_value["params"]
-    config = config_for(params["model"])
+    config: ImageConfig = get_runwayml_image_generation_config(params["model"])
     scripted = Scripted(params["replies"])
-    install_client(scripted)
-    clock = install_clock(params["step_millis"])
+    holder = LLMClientCache()
+    litellm.in_memory_llm_clients_cache = holder
+    client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(scripted)))
+    CLIENT_CACHE.validate_python(holder).set_cache(key="httpx_client", value=client, ttl=600)
+    clock = Clock(params["step_millis"])
+    object.__setattr__(runway_transformation, "time", clock)
     model_response = ImageResponse(created=params["created"])
     if params["data"]:
         model_response.data = seeded_images(params["data"])
@@ -308,34 +274,18 @@ def transform_value(input_value: ResponseInput) -> JsonValue:
     return JSON.validate_python(answer)
 
 
-def model_info_for(model: str, prices: Prices) -> ModelInfo:
-    info = ModelInfo(
-        key=model,
-        max_tokens=0,
-        max_input_tokens=0,
-        max_output_tokens=0,
-        input_cost_per_token=0.0,
-        output_cost_per_token=0.0,
-        litellm_provider=PROVIDER,
-        mode="image_generation",
-        supported_openai_params=["size"],
-    )
-    if "output_cost_per_image" in prices:
-        info["output_cost_per_image"] = prices["output_cost_per_image"]
-    return info
-
-
 def cost_value(input_value: CostInput) -> JsonValue:
     params = input_value["params"]
+    entry: dict[str, JsonValue] = {"litellm_provider": PROVIDER, "mode": "image_generation"}
+    if "output_cost_per_image" in params["prices"]:
+        entry["output_cost_per_image"] = params["prices"]["output_cost_per_image"]
+    costs: dict[str, JsonValue] = {f"{PROVIDER}/{params['model']}": entry}
+    litellm.model_cost = costs
     results: list[JsonValue] = []
     for call in params["calls"]:
         model_response = ImageResponse(created=1)
         model_response.data = seeded_images(call["data"])
-        cost = cost_calculator(
-            model=params["model"],
-            image_response=model_response,
-            model_info=model_info_for(params["model"], call["prices"]),
-        )
+        cost = cost_calculator(model=params["model"], image_response=model_response)
         results.append({"cost": format(Decimal(repr(cost)).normalize(), "f")})
     answer: dict[str, JsonValue] = {"costs": results}
     return JSON.validate_python(answer)
