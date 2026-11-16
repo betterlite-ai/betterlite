@@ -108,18 +108,7 @@ fn answer(request: &Request) -> Result<Value, Box<HelperError>> {
         _ => Reference::Absent,
     };
     let image_input = image.as_mut().map(PreparedImage::input);
-    let mut params = request.params.clone();
-    let size = text_option(&mut params, "size")?;
-    let seconds = text_option(&mut params, "seconds")?;
-    let resolution = params.shift_remove("resolution");
-    let mapped = map_openai_params(MapInput {
-        input_reference: reference_input,
-        image: image_input,
-        size,
-        seconds,
-        resolution,
-        options: params,
-    });
+    let mapped = mapped_params(reference_input, image_input, request.params.clone())?;
     let url = complete_url(&request.model, request.api_base.as_deref(), &settings);
     let headers = outgoing_headers(request, &settings).or_value_error()?;
     let form = create_request(
@@ -133,22 +122,39 @@ fn answer(request: &Request) -> Result<Value, Box<HelperError>> {
     .or_value_error()?;
     let revealed: BTreeMap<String, String> = headers
         .iter()
-        .map(|(name, value)| (name.clone(), value.expose_secret().clone()))
+        .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
         .collect();
     let position = chosen_position(request, reference.as_ref(), image.as_ref());
-    match position {
-        Some(offset) => Ok(json!({
-            "url": form.url,
-            "headers": revealed,
-            "body": form.body,
-            "image_position": offset,
-        })),
-        None => Ok(json!({
-            "url": form.url,
-            "headers": revealed,
-            "body": form.body,
-        })),
+    let mut built = json!({
+        "url": form.url,
+        "headers": revealed,
+        "body": form.body,
+    });
+    if let Some(offset) = position
+        && let Some(fields) = built.as_object_mut()
+    {
+        fields.insert("image_position".to_owned(), json!(offset));
     }
+    Ok(built)
+}
+
+// the mapped sizes, seconds and resolution leave the provider params before map_openai_params sees them
+fn mapped_params<'media>(
+    input_reference: Reference<'media>,
+    image: Option<ImageInput<'media>>,
+    mut params: Object,
+) -> Result<MappedParams<'media>, Box<HelperError>> {
+    let size = text_option(&mut params, "size")?;
+    let seconds = text_option(&mut params, "seconds")?;
+    let resolution = params.shift_remove("resolution");
+    Ok(map_openai_params(MapInput {
+        input_reference,
+        image,
+        size,
+        seconds,
+        resolution,
+        options: params,
+    }))
 }
 
 fn settings(request: &Request) -> Settings {
