@@ -1,6 +1,6 @@
 mod tests;
 
-use betterlite_auth::route_match::templates::route_matches_wildcard_pattern;
+use betterlite_routes::wildcard::route_matches_wildcard_pattern;
 
 use crate::context::PolicyMatchContext;
 use crate::values::PolicyScope;

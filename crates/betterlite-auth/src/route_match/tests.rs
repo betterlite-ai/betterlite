@@ -12,7 +12,6 @@ use super::groups::get_actual_routes;
 use super::method::{MethodAccess, MethodAccessError, get_request_method};
 use super::templates::{
     RouteValue, check_route_access, route_matches_allowed_route, route_matches_pattern,
-    route_matches_wildcard_pattern,
 };
 use crate::auxiliary_routes;
 use crate::inference_routes::ANTHROPIC_ROUTES;
@@ -46,22 +45,6 @@ fn path_template() {
     assert!(!route_matches_pattern(
         &RouteValue::Text("/v1/batches/123/456/cancel"),
         pattern
-    ));
-}
-
-#[test]
-fn wildcard_boundary() {
-    assert!(route_matches_wildcard_pattern(
-        "/containers/",
-        "/containers/*"
-    ));
-    assert!(route_matches_wildcard_pattern(
-        "/containers/abc",
-        "/containers/*"
-    ));
-    assert!(!route_matches_wildcard_pattern(
-        "/containers",
-        "/containers/*"
     ));
 }
 
@@ -227,8 +210,8 @@ fn regex_metacharacters_and_final_newline() {
 #[test]
 fn final_star_empty_suffix() {
     assert!(matches!("/foo*".chars().last(), Some('*')));
-    assert!(route_matches_wildcard_pattern("/foo", "/foo*"));
-    assert!(route_matches_wildcard_pattern("/foobar", "/foo*"));
+    assert!(check_route_access("/foo", &["/foo*"]));
+    assert!(check_route_access("/foobar", &["/foo*"]));
 }
 
 #[test]
