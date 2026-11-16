@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-gemini-edit-unsupported-file-record
+call:
+  vertex_gemini_edit:
+    model: gemini-2.5-flash-image
+    prompt: paint the sky teal
+    image: [{kind: unsupported}]
+    optional_params: {}
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}

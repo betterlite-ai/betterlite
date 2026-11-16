@@ -1,0 +1,15 @@
+kind: helper
+name: foundry-chat-capability-seed
+call:
+  foundry_chat:
+    model_cost:
+      azure_ai/gpt-5: {litellm_provider: azure_ai, mode: chat, supports_tool_choice: true, supports_none_reasoning_effort: true}
+      gpt-5: {litellm_provider: openai, mode: chat, supports_tool_choice: true}
+    chat_models: [gpt-5]
+    text_models: []
+    supported: [gpt-5]
+    maps:
+      - {model: gpt-5, non_default: {max_tokens: 8, reasoning_effort: {effort: none}}, optional: {}, drop_params: false, global_drop_params: false}
+      - {model: gpt-5, non_default: {temperature: 0.5}, optional: {}, drop_params: true, global_drop_params: false}
+env: {}
+compare: {ignore: []}
