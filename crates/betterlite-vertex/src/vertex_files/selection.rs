@@ -49,12 +49,12 @@ fn file_content(body: &FileBody) -> FileContent {
 }
 
 fn named(filename: Option<&str>, content: &FileBody) -> FileTypes {
-    match filename.filter(|name| !name.is_empty()) {
-        Some(name) => FileTypes::Tuple {
-            filename: name.to_owned(),
-            content: file_content(content),
-        },
-        None => FileTypes::Content(file_content(content)),
+    let Some(name) = filename.filter(|name| !name.is_empty()) else {
+        return FileTypes::Content(file_content(content));
+    };
+    FileTypes::Tuple {
+        filename: name.to_owned(),
+        content: file_content(content),
     }
 }
 

@@ -18,21 +18,6 @@ use super::error::VertexFilesError;
 const PASSTHROUGH_PREFIX: &str = "litellm-vertex-files/passthrough/";
 const PUBLISHERS_MODELS: &str = "publishers/google/models";
 
-// VertexAIError(status_code=400): a passthrough upload carries no model row to name the object from
-fn passthrough_object_name(
-    deployment_model: Option<&str>,
-    id: Uuid,
-) -> Result<String, VertexFilesError> {
-    let model = deployment_model
-        .filter(|model| !model.is_empty())
-        .ok_or(VertexFilesError::PassthroughModel)?;
-    Ok(managed_object_name(
-        model.strip_prefix("vertex_ai/").unwrap_or(model),
-        true,
-        id,
-    ))
-}
-
 // a numeric endpoint id names a fine-tuned Gemini deployment, which lives under endpoints/<id>
 fn managed_object_name(model: &str, passthrough: bool, id: Uuid) -> String {
     let model_path = match get_fine_tuned_endpoint_id(model) {
@@ -49,28 +34,15 @@ fn managed_object_name(model: &str, passthrough: bool, id: Uuid) -> String {
     format!("{prefix}{safe_path}/{}", id.hyphenated())
 }
 
-// the deployment's own model wins, so a JSONL body.model can only name a direct SDK upload
-fn batch_object_name(
-    first: &BatchLine,
-    deployment_model: Option<&str>,
-    id: Uuid,
-) -> Result<String, VertexFilesError> {
-    let model = match deployment_model.filter(|model| !model.is_empty()) {
-        Some(model) => model.strip_prefix("vertex_ai/").unwrap_or(model).to_owned(),
-        None => batch_line_model(first)?,
-    };
-    Ok(managed_object_name(&model, false, id))
-}
-
 fn batch_line_model(first: &BatchLine) -> Result<String, VertexFilesError> {
     let body = match first.body.as_ref() {
         None | Some(Json::Null) => return Ok(String::new()),
         Some(body) => body,
     };
-    let Some(body) = body.as_object() else {
+    let Some(object) = body.as_object() else {
         return Err(VertexFilesError::BatchBody);
     };
-    match body.get("model") {
+    match object.get("model") {
         None | Some(Json::Null) => Ok(String::new()),
         Some(Json::Text(model)) => Ok(model.clone()),
         Some(_) => Err(VertexFilesError::BatchModel),
@@ -104,13 +76,22 @@ fn first_entry(file: &FileData) -> Result<Option<BatchLine>, VertexFilesError> {
 }
 
 pub fn get_object_name(request: &FileRequest<'_>, id: Uuid) -> Result<String, VertexFilesError> {
+    let deployment_model = request
+        .deployment_model
+        .filter(|model| !model.is_empty())
+        .map(|model| model.strip_prefix("vertex_ai/").unwrap_or(model));
+    // VertexAIError(status_code=400): a passthrough upload carries no model row to name the object from
     if request.purpose == CreatePurpose::Batch && request.passthrough {
-        return passthrough_object_name(request.deployment_model, id);
+        let model = deployment_model.ok_or(VertexFilesError::PassthroughModel)?;
+        return Ok(managed_object_name(model, true, id));
     }
+    // the deployment's own model wins, so a JSONL body.model can only name a direct SDK upload
     if request.purpose == CreatePurpose::Batch
         && let Some(first) = first_entry(request.file)?
     {
-        return batch_object_name(&first, request.deployment_model, id);
+        let model = deployment_model
+            .map_or_else(|| batch_line_model(&first), |model| Ok(model.to_owned()))?;
+        return Ok(managed_object_name(&model, false, id));
     }
     let (filename, _content_type) = extract_file_metadata(request.file);
     Ok(build_object_name(

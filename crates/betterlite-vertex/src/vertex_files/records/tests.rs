@@ -225,7 +225,7 @@ fn bytes_after_the_record_are_refused() {
 
 #[test]
 fn the_metadata_body_limit_is_one_mebibyte() {
-    assert_eq!(METADATA_BODY_LIMIT, 1_048_576);
+    assert_eq!(METADATA_BODY_LIMIT, 0x0010_0000);
 }
 
 #[test]

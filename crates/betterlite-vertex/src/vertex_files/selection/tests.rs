@@ -275,7 +275,7 @@ fn a_string_body_is_not_an_upload_stream() {
         filename: Some("rows.jsonl".to_owned()),
         content: FileBody::BareString("{\"a\":1}\n".to_owned()),
     };
-    let failure = select_upload(
+    let result = select_upload(
         &FileRequest {
             file: &file,
             purpose: CreatePurpose::Assistants,
@@ -284,9 +284,8 @@ fn a_string_body_is_not_an_upload_stream() {
             custom_endpoint: false,
         },
         &BatchJsonlFiles,
-    )
-    .expect_err("the source only uploads bytes");
-    assert!(matches!(failure, VertexFilesError::Media(_)));
+    );
+    assert!(matches!(result, Err(VertexFilesError::Media(_))));
 }
 
 #[test]

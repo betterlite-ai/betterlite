@@ -16,14 +16,21 @@ use super::{EnvironmentRequest, validate_environment};
 use crate::vertex_files::error::VertexFilesError;
 
 struct FixedMint {
-    token: &'static str,
+    token: Option<&'static str>,
     calls: Mutex<u32>,
 }
 
 impl FixedMint {
     fn new(token: &'static str) -> Self {
         Self {
-            token,
+            token: Some(token),
+            calls: Mutex::new(0),
+        }
+    }
+
+    fn failing() -> Self {
+        Self {
+            token: None,
             calls: Mutex::new(0),
         }
     }
@@ -41,27 +48,13 @@ impl MintAccessToken for FixedMint {
     ) -> MintFuture<'mint> {
         let mut calls = self.calls.lock().unwrap();
         *calls = calls.saturating_add(1);
-        let token = SecretString::from(self.token);
+        let Some(token) = self.token else {
+            return Box::pin(ready(Err(CredentialCacheError::MissingCredentials)));
+        };
         Box::pin(ready(Ok(AccessToken {
-            token,
+            token: SecretString::from(token),
             project: "project-1".to_owned(),
         })))
-    }
-}
-
-struct FailingMint {
-    calls: Mutex<u32>,
-}
-
-impl MintAccessToken for FailingMint {
-    fn mint<'mint>(
-        &'mint self,
-        _credentials: Option<&'mint ConfiguredCredentials>,
-        _project: Option<&'mint str>,
-    ) -> MintFuture<'mint> {
-        let mut calls = self.calls.lock().unwrap();
-        *calls = calls.saturating_add(1);
-        Box::pin(ready(Err(CredentialCacheError::MissingCredentials)))
     }
 }
 
@@ -201,9 +194,7 @@ fn an_empty_minted_token_is_refused() {
 
 #[test]
 fn a_failing_mint_is_reported() {
-    let mint = FailingMint {
-        calls: Mutex::new(0),
-    };
+    let mint = FixedMint::failing();
     let failure = block_on(validate_environment(
         EnvironmentRequest {
             headers: caller_headers(),

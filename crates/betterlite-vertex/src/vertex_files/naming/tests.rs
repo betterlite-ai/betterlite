@@ -327,27 +327,34 @@ fn a_file_without_a_name_falls_back_to_file() {
     assert_eq!(name, format!("litellm-vertex-files/uploads/{SIMPLE}-file"));
 }
 
-#[rstest]
-#[case::no_body_key(r#"{"custom_id":"a"}"#)]
-#[case::empty_body(r#"{"body":{}}"#)]
-#[case::null_body(r#"{"body":null}"#)]
-#[case::null_model(r#"{"body":{"model":null}}"#)]
-fn a_batch_entry_without_a_model_uses_the_empty_model(#[case] line: &str) {
-    let file = jsonl(&[line]);
-    let name = get_object_name(
-        &FileRequest {
-            file: &file,
-            purpose: CreatePurpose::Batch,
-            deployment_model: None,
-            passthrough: false,
-            custom_endpoint: false,
-        },
-        Uuid::from_u128(ID),
-    )
-    .unwrap();
+#[test]
+fn a_batch_entry_without_a_model_uses_the_empty_model() {
+    let lines = [
+        r#"{"custom_id":"a"}"#,
+        r#"{"body":{}}"#,
+        r#"{"body":null}"#,
+        r#"{"body":{"model":null}}"#,
+    ];
+    let names: Vec<String> = lines
+        .iter()
+        .map(|line| {
+            let file = jsonl(&[*line]);
+            get_object_name(
+                &FileRequest {
+                    file: &file,
+                    purpose: CreatePurpose::Batch,
+                    deployment_model: None,
+                    passthrough: false,
+                    custom_endpoint: false,
+                },
+                Uuid::from_u128(ID),
+            )
+            .unwrap()
+        })
+        .collect();
     assert_eq!(
-        name,
-        format!("litellm-vertex-files/publishers/google/models/{HYPHENATED}")
+        names,
+        vec![format!("litellm-vertex-files/publishers/google/models/{HYPHENATED}"); lines.len()]
     );
 }
 

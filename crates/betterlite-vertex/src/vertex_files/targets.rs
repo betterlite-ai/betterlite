@@ -31,11 +31,11 @@ pub fn upload_url(
     }
     let configured = configured_bucket_name(candidates)?;
     let (bucket, object_prefix) = split_bucket_name(&configured).map_err(GcsAccessError::from)?;
-    let object_name = naming::get_object_name(request, id)?;
+    let base_name = naming::get_object_name(request, id)?;
     let object_name = if object_prefix.is_empty() {
-        object_name
+        base_name
     } else {
-        format!("{object_prefix}/{object_name}")
+        format!("{object_prefix}/{base_name}")
     };
     let encoded = encode_object_name(&object_name, Encoding::Gcs);
     let endpoint = format!("upload/storage/v1/b/{bucket}/o?uploadType=media&name={encoded}");
