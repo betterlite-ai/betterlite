@@ -1,0 +1,6 @@
+kind: helper
+name: responses-tool-rewrite-function-and-custom-call
+call:
+  b3671: {"function": "output", "scenarios": [{"response": {"output": [{"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "f", "arguments": "{}"}, {"type": "custom_tool_call", "id": "ctc_1", "call_id": "call_2", "name": "g", "input": "x"}]}, "request_data": null, "reply": {"tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "f", "arguments": "{\"a\":1}"}, "index": 0}, {"id": "call_2", "type": "function", "function": {"name": "h", "arguments": "y"}, "index": 1}]}}, {"response": {"output": [{"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "f", "arguments": "{}"}, {"type": "custom_tool_call", "id": "ctc_1", "call_id": "call_2", "name": "g", "input": "x"}]}, "request_data": null, "reply": {"tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "f", "arguments": "{}"}, "index": 0}, {"id": "call_2", "type": "function", "function": {"name": "h", "arguments": "y"}, "index": 1}]}}]}
+env: {}
+compare: {ignore: []}

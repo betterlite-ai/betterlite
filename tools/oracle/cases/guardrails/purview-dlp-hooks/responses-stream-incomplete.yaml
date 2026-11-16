@@ -1,0 +1,17 @@
+kind: helper
+name: responses-stream-incomplete
+call:
+  b3740:
+    function: streaming
+    guardrail: {guardrail_name: purview, tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, purview_app_name: LiteLLM, user_id_field: user_id, timeout_seconds: 5}
+    replies: []
+    identity: {user_id: user-1, end_user_id: null}
+    call_type: responses
+    data:
+      model: gpt-4o
+      input: Sensitive prompt
+    result: null
+    chunks:
+    - {type: response.created, choices: []}
+env: {}
+compare: {ignore: []}

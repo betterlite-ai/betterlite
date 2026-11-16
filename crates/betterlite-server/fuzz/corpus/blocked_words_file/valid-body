@@ -1,0 +1,1 @@
+{"file_content":"blocked_words:\n  - keyword: badword\n    action: BLOCK\n    description: a blocked word\n  - keyword: secret\n    action: MASK\n"}
