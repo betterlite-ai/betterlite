@@ -27,6 +27,7 @@ use tokio::runtime::{Builder, Handle, Runtime};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tracing::instrument::WithSubscriber as _;
+use tracing::subscriber::with_default;
 
 use super::body::decode_body;
 use super::headers::build_headers;
@@ -58,10 +59,12 @@ impl FixedAuth {
     }
 
     fn access_token(&self, request: &EnsureAccessToken) -> Result<AccessToken, FixedAuthError> {
-        self.projects
-            .lock()
-            .unwrap()
-            .push(request.project_id.clone());
+        let mut projects = match self.projects.lock() {
+            Ok(projects) => projects,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        projects.push(request.project_id.clone());
+        drop(projects);
         if self.fail {
             return Err(FixedAuthError);
         }
@@ -104,11 +107,10 @@ struct LogCapture(Arc<Mutex<Vec<u8>>>);
 
 impl Write for LogCapture {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut bytes = self
-            .0
+        self.0
             .lock()
-            .map_err(|error| io::Error::other(error.to_string()))?;
-        bytes.extend_from_slice(buf);
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -279,10 +281,12 @@ fn spawn_serve(
 }
 
 fn await_server(runtime: &Runtime, server: JoinHandle<Vec<u8>>) -> Vec<u8> {
-    runtime
-        .block_on(timeout(Duration::from_secs(5), server))
-        .expect("the server answered before the timeout")
-        .expect("the server task finished")
+    runtime.block_on(async {
+        timeout(Duration::from_secs(5), server)
+            .await
+            .expect("the server answered before the timeout")
+            .expect("the server task finished")
+    })
 }
 
 #[rstest]
@@ -301,7 +305,7 @@ fn prefix_from_gcs_path(#[case] path: &str, #[case] expected: &str) {
 #[case::percent("", "a%b", "a%25b")]
 #[case::pre_encoded("", "%2F", "%252F")]
 #[case::plus("", "a+b", "a%2Bb")]
-#[case::unicode("", "héllo", "h%C3%A9llo")]
+#[case::unicode("", "h\u{e9}llo", "h%C3%A9llo")]
 #[case::safe_marks("", "a_b.c-d~e", "a_b.c-d~e")]
 #[case::prefix("cache", "response:key", "cache%2Fresponse%3Akey")]
 #[tokio::test]
@@ -380,7 +384,7 @@ async fn write_ignores_failure_status(#[case] status: &str) {
     let cache = cache_on(&listener, "");
     let value = decode_body(br#"{"value":true}"#).unwrap();
     let reply = response(status, b"<Error/>");
-    let ((_, log), request) = timeout(Duration::from_secs(5), async {
+    let (((), log), request) = timeout(Duration::from_secs(5), async {
         tokio::join!(
             capture_log(cache.async_set_cache("key", &value)),
             serve(&listener, &reply)
@@ -604,7 +608,7 @@ async fn sync_wrappers_refuse_inside_runtime() {
     let cache = cache_on(&listener, "");
     let value = decode_body(br#"{"value":true}"#).unwrap();
     let handle = Handle::current();
-    let (_, log) = capture_log(async {
+    let ((), log) = capture_log(async {
         cache.set_cache(&handle, "key", &value);
         assert!(cache.get_cache(&handle, "key").is_none());
     })
@@ -679,7 +683,7 @@ fn sync_hit_logs_key_at_debug() {
         .with_target(false)
         .with_writer(move || writer.clone())
         .finish();
-    let value = tracing::subscriber::with_default(subscriber, || cache.get_cache(&handle, "key"));
+    let value = with_default(subscriber, || cache.get_cache(&handle, "key"));
     let request = await_server(&runtime, server);
     assert!(!request.is_empty());
     assert!(value.is_some());
