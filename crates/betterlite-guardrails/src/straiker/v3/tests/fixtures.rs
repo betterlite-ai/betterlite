@@ -30,16 +30,32 @@ where
 }
 
 pub(super) fn context(session_id: Option<&str>) -> StraikerWebhookContext {
-    serde_json::from_value(serde_json::json!({
-        "call_surface": "completion",
-        "model": "gpt-4o",
-        "session_id": session_id,
-    }))
-    .unwrap()
+    StraikerWebhookContext {
+        call_surface: "completion".to_owned(),
+        mode: None,
+        model: Some("gpt-4o".to_owned()),
+        model_provider: None,
+        destination: None,
+        session_id: session_id.map(str::to_owned),
+        litellm_call_id: None,
+        litellm_trace_id: None,
+        litellm_version: None,
+    }
 }
 
+const NOBODY: StraikerWebhookIdentity = StraikerWebhookIdentity {
+    litellm_key: None,
+    litellm_team: None,
+    litellm_user_id: None,
+    litellm_user_email: None,
+    litellm_org_id: None,
+    end_user_id: None,
+};
+
 pub(super) fn identity(user_id: Option<&str>) -> StraikerWebhookIdentity {
-    serde_json::from_value(serde_json::json!({ "litellm_user_id": user_id })).unwrap()
+    let mut identity = NOBODY;
+    identity.litellm_user_id = user_id.map(str::to_owned);
+    identity
 }
 
 pub(super) struct Routes;

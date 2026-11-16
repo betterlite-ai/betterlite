@@ -35,7 +35,7 @@ use crate::straiker::v3::fixtures::object;
 )]
 #[case::system_message_without_text(r#"{"messages":[{"role":"system"}]}"#, Some(""))]
 #[case::no_preamble(r#"{"messages":[{"role":"user","content":"hi"}]}"#, None)]
-#[case::empty(r"{}", None)]
+#[case::empty("{}", None)]
 fn finds_preamble(#[case] source: &str, #[case] expected: Option<&str>) {
     let found = system_text(&object(source)).unwrap();
     assert_eq!(found.as_deref(), expected);

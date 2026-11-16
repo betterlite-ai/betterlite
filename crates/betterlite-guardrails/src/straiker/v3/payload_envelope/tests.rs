@@ -6,8 +6,7 @@ use serde::Deserialize;
 
 use super::{PayloadInput, Phase, payload};
 use crate::straiker::v3::answer_shape::Response;
-use crate::straiker::v3::fixtures::{Routes, Translator, identity, parsed};
-use crate::straiker_webhook::types::StraikerWebhookContext;
+use crate::straiker::v3::fixtures::{Routes, Translator, context, identity, parsed};
 
 #[derive(Deserialize)]
 struct Setup {
@@ -30,12 +29,8 @@ const BODY: &str = r#"{"model":"gpt-4o","messages":[{"role":"system","content":"
 
 fn built(phase: Phase, source: &str) -> Json {
     let setup: Setup = serde_json::from_str(source).unwrap();
-    let context: StraikerWebhookContext = serde_json::from_value(serde_json::json!({
-        "call_surface": "completion",
-        "model": setup.model,
-        "session_id": setup.session,
-    }))
-    .unwrap();
+    let mut context = context(setup.session.as_deref());
+    context.model = setup.model;
     let principal = identity(setup.user.as_deref());
     let response = setup
         .chat
@@ -50,10 +45,13 @@ fn built(phase: Phase, source: &str) -> Json {
         translator: &Translator,
     };
     let mut fields = payload(&input, phase, &setup.request_body).unwrap();
-    // The answer travels as JSON text, so it is compared as the JSON it holds.
-    let answer = fields.get("sse").and_then(Json::as_str).map(parsed);
-    if let Some(parsed_answer) = answer {
-        fields.insert("sse".to_owned(), parsed_answer);
+    // Straiker receives the answer as the raw JSON text a response body carries, never as a nested object, so the wire type is checked before the text is compared as the JSON it holds.
+    if let Some(value) = fields.get("sse") {
+        let Json::Text(answer) = value else {
+            panic!("the sse field must be the answer's JSON text");
+        };
+        let decoded = parsed(answer);
+        fields.insert("sse".to_owned(), decoded);
     }
     Json::Object(fields)
 }

@@ -9,7 +9,7 @@ const CLAUDE_AGENT: &str =
     r#"{"proxy_server_request":{"headers":{"user-agent":"claude-cli/2.1.0"}}}"#;
 
 #[rstest]
-#[case::nothing(r"{}", None, None, None, r"{}")]
+#[case::nothing("{}", None, None, None, "{}")]
 #[case::session_header_forwarded(
     r#"{"proxy_server_request":{"headers":{"X-Claude-Code-Session-Id":" s-1 "}}}"#,
     None,
@@ -18,7 +18,7 @@ const CLAUDE_AGENT: &str =
     r#"{"x-claude-code-session-id":"s-1"}"#
 )]
 #[case::route_values_only(
-    r"{}",
+    "{}",
     Some("app"),
     Some("sdk"),
     Some("openai.chat"),

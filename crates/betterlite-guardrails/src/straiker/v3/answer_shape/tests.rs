@@ -21,7 +21,7 @@ const CHAT_ANSWER: &str = r#"{"id":"chatcmpl-1","model":"gpt-4o","choices":[{"me
 #[rstest]
 #[case::text_completion_becomes_chat(Kind::TextCompletion, TEXT_COMPLETION, CHAT_ROUTE, None, r#"{"id":"cmpl-1","object":"chat.completion","created":5,"model":"davinci","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"hi"}}]}"#)]
 #[case::chat_stays_chat_on_chat_route(Kind::Chat, CHAT_ANSWER, CHAT_ROUTE, None, CHAT_ANSWER)]
-#[case::chat_stays_chat_without_a_route(Kind::Chat, CHAT_ANSWER, r"{}", None, CHAT_ANSWER)]
+#[case::chat_stays_chat_without_a_route(Kind::Chat, CHAT_ANSWER, "{}", None, CHAT_ANSWER)]
 #[case::chat_becomes_messages_answer(
     Kind::Chat,
     CHAT_ANSWER,
@@ -66,17 +66,17 @@ fn shapes_answer(
     #[case] model: Option<&str>,
     #[case] expected: &str,
 ) {
-    let request_data = object(request_data);
+    let data = object(request_data);
     let context = AnswerContext {
-        request_data: &request_data,
+        request_data: &data,
         routes: &Routes,
         translator: &Translator,
         model,
     };
-    let response = match kind {
+    let answered = match kind {
         Kind::TextCompletion => Response::TextCompletion(serde_json::from_str(response).unwrap()),
         Kind::Chat => Response::Chat(object(response)),
         Kind::Other => Response::Other(parsed(response)),
     };
-    assert_eq!(as_json(&answer(&response, &context)), parsed(expected));
+    assert_eq!(as_json(&answer(&answered, &context)), parsed(expected));
 }

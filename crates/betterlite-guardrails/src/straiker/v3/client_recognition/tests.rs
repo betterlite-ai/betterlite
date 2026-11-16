@@ -17,11 +17,11 @@ use crate::straiker::v3::fixtures::object;
     None
 )]
 #[case::blank_agent(r#"{"proxy_server_request":{"headers":{"user-agent":"  "}}}"#, None)]
-#[case::no_headers(r"{}", None)]
+#[case::no_headers("{}", None)]
 fn recognises_client(#[case] source: &str, #[case] expected: Option<(&str, &str)>) {
     let found = client_from_user_agent(&object(source));
-    let found = found
+    let picked = found
         .as_ref()
         .map(|(client, agent)| (client.as_str(), agent.as_str()));
-    assert_eq!(found, expected);
+    assert_eq!(picked, expected);
 }

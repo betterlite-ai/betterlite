@@ -5,7 +5,10 @@ use crate::straiker_webhook::types::StraikerWebhookIdentity;
 #[must_use]
 pub fn real_identity(value: Option<&str>) -> Option<&str> {
     let identity = value?;
-    (!identity.is_empty() && !PLACEHOLDER_IDENTITIES.contains(&identity)).then_some(identity)
+    if identity.is_empty() || PLACEHOLDER_IDENTITIES.contains(&identity) {
+        return None;
+    }
+    Some(identity)
 }
 
 // The key is the authenticated principal, so its own user comes before the end user the request named.

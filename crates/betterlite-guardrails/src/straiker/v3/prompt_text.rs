@@ -56,7 +56,10 @@ pub fn prompt_texts(prompt: &Json, decoder: &dyn PromptTokenDecoder) -> Option<V
     }
     items
         .iter()
-        .map(|item| token_ids(item).and_then(|ids| decoder.decode(&ids)))
+        .map(|item| {
+            let ids = token_ids(item)?;
+            decoder.decode(&ids)
+        })
         .collect()
 }
 
@@ -71,7 +74,10 @@ fn token_ids(value: &Json) -> Option<Vec<u32>> {
     items
         .iter()
         .map(|item| match item {
-            Json::Number(number) => number.as_u64().and_then(|id| u32::try_from(id).ok()),
+            Json::Number(number) => {
+                let id = number.as_u64()?;
+                u32::try_from(id).ok()
+            }
             Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
         })
         .collect()

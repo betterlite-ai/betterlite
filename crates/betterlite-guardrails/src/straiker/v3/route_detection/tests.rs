@@ -39,7 +39,7 @@ use crate::straiker::v3::fixtures::{Routes, object};
     false
 )]
 #[case::no_route(r#"{"metadata":{}}"#, CallType::TextCompletion, false)]
-#[case::no_metadata(r"{}", CallType::TextCompletion, false)]
+#[case::no_metadata("{}", CallType::TextCompletion, false)]
 fn detects_route(#[case] source: &str, #[case] call_type: CallType, #[case] expected: bool) {
     assert_eq!(route_is(&object(source), call_type, &Routes), expected);
 }

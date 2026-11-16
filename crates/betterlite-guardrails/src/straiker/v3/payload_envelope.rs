@@ -32,10 +32,19 @@ pub fn payload(
     phase: Phase,
     request_body: &Object,
 ) -> Result<Object, V3Error> {
-    let mut body = match phase {
+    let body = match phase {
         Phase::Request => request_body.clone(),
         Phase::Response => response_phase(input, request_body)?,
     };
+    stamped(input, request_body, body)
+}
+
+// The conversation's session and the principal ride on both phases, so Straiker groups a request and its answer under one turn.
+fn stamped(
+    input: &PayloadInput<'_>,
+    request_body: &Object,
+    mut body: Object,
+) -> Result<Object, V3Error> {
     let derived = session_id(
         input.context,
         input.identity,
@@ -98,7 +107,7 @@ pub fn answer_json(
     if streamed.is_empty() {
         return Ok(None);
     }
-    let content = streamed.join("\n");
+    let joined = streamed.join("\n");
     let completion = StreamedCompletion {
         object: "chat.completion",
         choices: [StreamedChoice {
@@ -106,7 +115,7 @@ pub fn answer_json(
             finish_reason: "stop",
             message: StreamedMessage {
                 role: "assistant",
-                content: &content,
+                content: &joined,
             },
         }],
     };

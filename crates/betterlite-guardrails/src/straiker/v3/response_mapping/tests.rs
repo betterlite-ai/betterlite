@@ -6,7 +6,7 @@ use super::response;
 use crate::straiker::v3::fixtures::{as_json, object, parsed};
 
 #[rstest]
-#[case::no_verdict(r"{}", "null")]
+#[case::no_verdict("{}", "null")]
 #[case::ask_is_undecided(r#"{"action":"ask"}"#, "null")]
 #[case::hook_ask_is_undecided(r#"{"hookSpecificOutput":{"permissionDecision":"ask"}}"#, "null")]
 #[case::allow_reads_as_no_action(
@@ -17,7 +17,7 @@ use crate::straiker::v3::fixtures::{as_json, object, parsed};
     r#"{"action":"NONE","controls":["pii"]}"#,
     r#"{"action":"NONE","blocked_reason":null,"blocked_by":[],"turnId":null}"#
 )]
-#[case::block_without_reason_names_policy(r#"{"action":"BLOCKED"}"#, r#"{"action":"BLOCKED","blocked_reason":"Straiker blocked this turn: policy","blocked_by":[],"turnId":null}"#)]
+#[case::block_without_reason_names_policy(r#"{"action":"block"}"#, r#"{"action":"BLOCKED","blocked_reason":"Straiker blocked this turn: policy","blocked_by":[],"turnId":null}"#)]
 #[case::deny_decision_blocks(
     r#"{"hookSpecificOutput":{"permissionDecision":"deny"},"straiker":{"deny_reason":" no pii "}}"#,
     r#"{"action":"BLOCKED","blocked_reason":"no pii","blocked_by":[],"turnId":null}"#

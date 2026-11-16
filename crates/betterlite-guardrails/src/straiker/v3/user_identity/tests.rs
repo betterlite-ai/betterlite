@@ -25,7 +25,7 @@ use crate::straiker_webhook::types::StraikerWebhookIdentity;
     None
 )]
 #[case::empty_strings_skipped(r#"{"litellm_user_email":"","litellm_user_id":"u1"}"#, Some("u1"))]
-#[case::nobody(r"{}", None)]
+#[case::nobody("{}", None)]
 fn picks_user(#[case] source: &str, #[case] expected: Option<&str>) {
     let identity: StraikerWebhookIdentity = serde_json::from_str(source).unwrap();
     assert_eq!(user(&identity).as_deref(), expected);

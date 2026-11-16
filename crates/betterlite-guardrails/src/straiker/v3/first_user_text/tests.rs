@@ -19,7 +19,7 @@ use crate::straiker::v3::fixtures::object;
 #[case::prompt_string(r#"{"prompt":"complete me"}"#, "complete me")]
 #[case::prompt_list_has_no_text(r#"{"prompt":["a","b"]}"#, "")]
 #[case::system_only(r#"{"messages":[{"role":"system","content":"rules"}]}"#, "")]
-#[case::empty(r"{}", "")]
+#[case::empty("{}", "")]
 fn finds_first_user_text(#[case] source: &str, #[case] expected: &str) {
     assert_eq!(first_message_text(&object(source)), expected);
 }

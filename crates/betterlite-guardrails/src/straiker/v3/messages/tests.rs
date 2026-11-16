@@ -33,7 +33,7 @@ fn reads_message_text(#[case] source: &str, #[case] expected: &str) {
 #[case::non_object_items_dropped(r#"{"messages":["x",{"role":"user"},3]}"#, r#"[{"role":"user"}]"#)]
 #[case::text_messages_do_not_fall_to_input(r#"{"messages":"abc","input":[{"role":"user"}]}"#, "[]")]
 #[case::text_input_has_no_messages(r#"{"input":"plain"}"#, "[]")]
-#[case::neither(r"{}", "[]")]
+#[case::neither("{}", "[]")]
 fn lists_conversation_messages(#[case] source: &str, #[case] expected: &str) {
     let body = object(source);
     let found = Json::List(

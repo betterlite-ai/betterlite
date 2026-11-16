@@ -11,13 +11,13 @@ use crate::straiker::v3::fixtures::{NoTokenizer, Tokens, as_json, parsed};
     r#"["a","b"]"#,
     r#"[{"role":"user","content":"a"},{"role":"user","content":"b"}]"#
 )]
-#[case::token_list_is_decoded(r"[1,2]", r#"[{"role":"user","content":"t1 t2"}]"#)]
+#[case::token_list_is_decoded("[1,2]", r#"[{"role":"user","content":"t1 t2"}]"#)]
 #[case::token_lists_are_decoded(
-    r"[[1],[2]]",
+    "[[1],[2]]",
     r#"[{"role":"user","content":"t1"},{"role":"user","content":"t2"}]"#
 )]
-#[case::unrenderable_prompt(r"[]", "null")]
-#[case::undecodable_tokens(r"[1,500]", "null")]
+#[case::unrenderable_prompt("[]", "null")]
+#[case::undecodable_tokens("[1,500]", "null")]
 fn wraps_prompt_as_user_turns(#[case] prompt: &str, #[case] expected: &str) {
     assert_eq!(
         as_json(&prompt_as_messages(&parsed(prompt), &Tokens)),

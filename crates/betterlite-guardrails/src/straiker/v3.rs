@@ -7,7 +7,6 @@ pub mod credential_redaction;
 pub mod decision_mapping;
 pub mod error;
 pub mod first_user_text;
-#[cfg(test)]
 #[path = "v3/tests/fixtures.rs"]
 mod fixtures;
 pub mod header_composition;
@@ -109,5 +108,4 @@ pub const PROVIDER_BODY_KEYS: &[&str] = &[
     "session_id",
 ];
 
-#[cfg(test)]
 mod tests;

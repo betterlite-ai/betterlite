@@ -35,7 +35,7 @@ use crate::straiker::v3::fixtures::{as_json, object, parsed};
     Some("deny"),
     r#"{"straiker":"x","action":"deny"}"#
 )]
-#[case::no_verdict(r"{}", None, r"{}")]
+#[case::no_verdict("{}", None, "{}")]
 fn reads_decision(#[case] source: &str, #[case] expected: Option<&str>, #[case] verdict: &str) {
     let body = object(source);
     let (stated, found) = decision(&body);

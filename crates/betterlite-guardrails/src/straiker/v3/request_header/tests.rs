@@ -24,7 +24,7 @@ use crate::straiker::v3::fixtures::object;
 #[case::ignores_non_text_value(r#"{"proxy_server_request":{"headers":{"x-a":1}}}"#, "x-a", None)]
 #[case::other_header_only(r#"{"proxy_server_request":{"headers":{"x-b":"v"}}}"#, "x-a", None)]
 #[case::headers_not_an_object(r#"{"proxy_server_request":{"headers":["x-a"]}}"#, "x-a", None)]
-#[case::no_proxy_request(r"{}", "x-a", None)]
+#[case::no_proxy_request("{}", "x-a", None)]
 fn reads_header(#[case] source: &str, #[case] name: &str, #[case] expected: Option<&str>) {
     assert_eq!(inbound_header(&object(source), name).as_deref(), expected);
 }
