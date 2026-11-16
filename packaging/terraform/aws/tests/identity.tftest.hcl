@@ -47,6 +47,7 @@ run "empty_master_key_falls_back_to_a_generated_sk_key" {
       random_password.master_key.min_lower == 4,
       random_password.master_key.min_upper == 4,
       random_password.master_key.min_numeric == 4,
+      aws_secretsmanager_secret.master_key.tags == local.tags,
     ])
     error_message = "The master key secret must always exist and hold a 48-character alphanumeric generated key."
   }
@@ -230,6 +231,7 @@ run "task_role_gets_rds_connect_and_the_assume_document" {
       aws_iam_role.task.assume_role_policy == data.aws_iam_policy_document.task_assume.json,
       aws_iam_role_policy_attachment.task_execution.policy_arn == "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
       aws_iam_role_policy_attachment.task_execution.role == aws_iam_role.task_execution.name,
+      aws_iam_role.task.tags == local.tags,
     ])
     error_message = "Both roles must take the ecs-tasks assume document and the execution role the managed ECS task policy."
   }
@@ -282,6 +284,7 @@ run "bucket_is_hardened_and_the_task_role_reads_it" {
       aws_s3_bucket.this.bucket == "${local.name}-${random_id.s3_suffix.hex}",
       random_id.s3_suffix.byte_length == 4,
       aws_s3_bucket.this.force_destroy == false,
+      aws_s3_bucket.this.tags == local.tags,
       aws_s3_bucket_versioning.this.versioning_configuration[0].status == "Enabled",
       one(aws_s3_bucket_server_side_encryption_configuration.this.rule).apply_server_side_encryption_by_default[0].sse_algorithm == "AES256",
       aws_s3_bucket_public_access_block.this.block_public_acls == true,
@@ -358,6 +361,7 @@ run "cluster_and_log_groups_exist_with_the_retention" {
   assert {
     condition = alltrue([
       aws_ecs_cluster.this.name == local.name,
+      aws_ecs_cluster.this.tags == local.tags,
       contains([for setting in aws_ecs_cluster.this.setting : "${setting.name}=${setting.value}"], "containerInsights=enabled"),
       aws_cloudwatch_log_group.betterlite.name == "/ecs/${local.name}/betterlite",
       aws_cloudwatch_log_group.betterlite.retention_in_days == var.log_retention_days,
