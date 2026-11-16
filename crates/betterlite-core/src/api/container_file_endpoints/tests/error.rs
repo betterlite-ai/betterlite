@@ -4,7 +4,7 @@ use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    StubDecode, StubReply, TIMEOUT_SECONDS, fixture, list_call, logging, retrieve_call,
+    StubDecode, StubReply, TIMEOUT_SECONDS, decoding_to, fixture, list_call, logging, retrieve_call,
 };
 
 #[test]
@@ -85,6 +85,31 @@ fn error_handler_status_maps_to_the_status_class() {
         panic!("a 404 maps to not found");
     };
     assert_eq!(details.provider.as_deref(), Some("openai"));
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert!(details.message.contains("no such file"));
+}
+
+#[test]
+fn error_handler_status_uses_the_decoded_provider() {
+    let mut fixture = fixture();
+    fixture.decoder.answer = decoding_to("azure", None);
+    fixture.handler.reply = StubReply::Status {
+        status_code: 404,
+        message: "no such file".to_owned(),
+    };
+    let endpoints = fixture.endpoints();
+    let failure = endpoints
+        .container_file_call(
+            "retrieve_container_file",
+            &retrieve_call(),
+            &logging(),
+            TIMEOUT_SECONDS,
+        )
+        .expect_err("the provider fails");
+    let ErrorClass::NotFound(details) = &failure.class else {
+        panic!("a 404 maps to not found");
+    };
+    assert_eq!(details.provider.as_deref(), Some("azure"));
     assert_eq!(details.model.as_deref(), Some(""));
     assert!(details.message.contains("no such file"));
 }

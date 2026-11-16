@@ -33,7 +33,8 @@ pub(super) struct ReadyCall<'deps> {
     config: &'deps dyn BaseContainerConfig,
     params: Object,
     values: BTreeMap<String, ParamValue>,
-    timeout: Option<Duration>,
+    timeout: Duration,
+    pub(super) provider: String,
 }
 
 impl ReadyCall<'_> {
@@ -85,6 +86,7 @@ pub(super) fn prepare<'deps>(
         params,
         values,
         timeout,
+        provider: site.provider.clone(),
     }))
 }
 
@@ -239,16 +241,16 @@ fn logged_optional_params(
 fn resolved_timeout(
     call: &ContainerFileCall,
     default_timeout_seconds: f64,
-) -> Result<Option<Duration>, ContainerFileOpError> {
+) -> Result<Duration, ContainerFileOpError> {
     if let Some(requested) = call.timeout.filter(|given| !given.is_zero()) {
-        return Ok(Some(requested));
+        return Ok(requested);
     }
-    Duration::try_from_secs_f64(default_timeout_seconds)
-        .map(Some)
-        .map_err(|source| ContainerFileOpError::Timeout {
+    Duration::try_from_secs_f64(default_timeout_seconds).map_err(|source| {
+        ContainerFileOpError::Timeout {
             seconds: default_timeout_seconds,
             source,
-        })
+        }
+    })
 }
 
 // the mock short circuit: a string is parsed, a known response type decodes, and "raw" comes back as it parsed

@@ -49,23 +49,6 @@ pub(super) struct CallSite<'call> {
     pub(super) provider: String,
 }
 
-impl<'call> CallSite<'call> {
-    pub(super) fn new(
-        endpoint_name: &'call str,
-        call: &'call ContainerFileCall,
-        logging: &'call Mutex<LoggingState>,
-        default_timeout_seconds: f64,
-    ) -> Self {
-        Self {
-            endpoint_name,
-            call,
-            logging,
-            default_timeout_seconds,
-            provider: call.custom_llm_provider.clone(),
-        }
-    }
-}
-
 impl Default for ContainerFileCall {
     fn default() -> Self {
         Self {

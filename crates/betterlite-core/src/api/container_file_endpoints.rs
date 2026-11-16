@@ -1,4 +1,3 @@
-mod asynchronous;
 pub mod call;
 pub mod error;
 pub mod handler;
@@ -49,6 +48,25 @@ where
         })
     }
 
+    // endpoint_factory.py's steps to the handler call, with preparation errors mapped under the provider resolved so far
+    fn prepared_call(
+        &self,
+        endpoint_name: &str,
+        call: &ContainerFileCall,
+        logging: &Mutex<LoggingState>,
+        default_timeout_seconds: f64,
+    ) -> Result<Prepared<'_>, ContainerFileFailureError> {
+        let mut site = CallSite {
+            endpoint_name,
+            call,
+            logging,
+            default_timeout_seconds,
+            provider: call.custom_llm_provider.clone(),
+        };
+        prepare_call(&self.endpoints, &mut site, self.decoder, self.configs)
+            .map_err(|error| failure(error, &site.provider, self.redactor))
+    }
+
     pub fn container_file_call(
         &self,
         endpoint_name: &str,
@@ -56,23 +74,22 @@ where
         logging: &Mutex<LoggingState>,
         default_timeout_seconds: f64,
     ) -> Result<ContainerFileReply, ContainerFileFailureError> {
-        let mut site = CallSite::new(endpoint_name, call, logging, default_timeout_seconds);
-        match prepare_call(&self.endpoints, &mut site, self.decoder, self.configs) {
-            Ok(Prepared::Answered(reply)) => Ok(reply),
-            Ok(Prepared::Ready(prepared)) => {
+        match self.prepared_call(endpoint_name, call, logging, default_timeout_seconds)? {
+            Prepared::Answered(reply) => Ok(reply),
+            Prepared::Ready(prepared) => {
                 let reply = self.handler.handle(&prepared.handler_call(call, logging));
                 reply.map_err(|error| {
                     failure(
                         ContainerFileOpError::Handler(error),
-                        &site.provider,
+                        &prepared.provider,
                         self.redactor,
                     )
                 })
             }
-            Err(error) => Err(failure(error, &site.provider, self.redactor)),
         }
     }
 
+    // the async twin: LiteLLM maps a handler error on this path with the provider the caller gave
     pub async fn acontainer_file_call(
         &self,
         endpoint_name: &str,
@@ -80,14 +97,22 @@ where
         logging: &Mutex<LoggingState>,
         default_timeout_seconds: f64,
     ) -> Result<ContainerFileReply, ContainerFileFailureError> {
-        asynchronous::acontainer_file_call(
-            self,
-            endpoint_name,
-            call,
-            logging,
-            default_timeout_seconds,
-        )
-        .await
+        match self.prepared_call(endpoint_name, call, logging, default_timeout_seconds)? {
+            Prepared::Answered(reply) => Ok(reply),
+            Prepared::Ready(prepared) => {
+                let reply = self
+                    .handler
+                    .ahandle(&prepared.handler_call(call, logging))
+                    .await;
+                reply.map_err(|error| {
+                    failure(
+                        ContainerFileOpError::Handler(error),
+                        &call.custom_llm_provider,
+                        self.redactor,
+                    )
+                })
+            }
+        }
     }
 }
 

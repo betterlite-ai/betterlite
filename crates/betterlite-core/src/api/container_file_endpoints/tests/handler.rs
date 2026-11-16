@@ -75,7 +75,7 @@ fn handler_receives_the_caller_headers_query_and_timeout() {
     let recorded = fixture.handler.seen();
     assert_eq!(recorded[0].headers, call.extra_headers);
     assert_eq!(recorded[0].query, call.extra_query);
-    assert_eq!(recorded[0].timeout, Some(Duration::from_secs(600)));
+    assert_eq!(recorded[0].timeout, Duration::from_secs(600));
     assert_eq!(recorded[0].form, HandlerForm::Blocking);
 }
 
@@ -225,7 +225,7 @@ fn handler_timeout_falls_back_to_the_default_request_timeout(
         )
         .expect("the handler answers");
     let recorded = fixture.handler.seen();
-    assert_eq!(recorded[0].timeout, Some(expected));
+    assert_eq!(recorded[0].timeout, expected);
 }
 
 #[test]
@@ -240,10 +240,7 @@ fn handler_default_timeout_is_six_hundred_seconds() {
             TIMEOUT_SECONDS,
         )
         .expect("the handler answers");
-    assert_eq!(
-        fixture.handler.seen()[0].timeout,
-        Some(Duration::from_secs(600))
-    );
+    assert_eq!(fixture.handler.seen()[0].timeout, Duration::from_secs(600));
 }
 
 #[test]

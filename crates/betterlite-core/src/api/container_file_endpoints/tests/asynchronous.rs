@@ -5,7 +5,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::containers::container_file_http::ContainerFileReply;
 
 use super::support::{
-    HandlerForm, LIST_JSON, StubDecode, StubReply, TIMEOUT_SECONDS, file_list, file_object,
+    HandlerForm, LIST_JSON, StubReply, TIMEOUT_SECONDS, decoding_to, file_list, file_object,
     fixture, list_call, logging, retrieve_call,
 };
 
@@ -75,14 +75,9 @@ async fn async_handler_matches_the_blocking_result() {
 }
 
 #[tokio::test]
-async fn async_error_uses_the_resolved_provider() {
+async fn async_handler_error_uses_the_callers_provider() {
     let mut fixture = fixture();
-    let answer = StubDecode::Decoded {
-        container_id: "cntr_original".to_owned(),
-        provider: "azure".to_owned(),
-        model_id: None,
-    };
-    fixture.decoder.answer = answer;
+    fixture.decoder.answer = decoding_to("azure", None);
     fixture.handler.reply = StubReply::Status {
         status_code: 404,
         message: "no such file".to_owned(),
@@ -100,7 +95,7 @@ async fn async_error_uses_the_resolved_provider() {
     let ErrorClass::NotFound(details) = &failure.class else {
         panic!("a 404 maps to not found");
     };
-    assert_eq!(details.provider.as_deref(), Some("azure"));
+    assert_eq!(details.provider.as_deref(), Some("openai"));
     assert_eq!(details.model.as_deref(), Some(""));
     assert!(details.message.contains("no such file"));
     assert_eq!(failure.error.to_string(), "no such file");

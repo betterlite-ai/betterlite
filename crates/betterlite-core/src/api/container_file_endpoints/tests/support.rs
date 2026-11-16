@@ -160,7 +160,7 @@ pub(super) struct Recorded {
     pub(super) values: BTreeMap<String, ParamValue>,
     pub(super) headers: Option<BTreeMap<String, String>>,
     pub(super) query: Option<IndexMap<String, ParamValue>>,
-    pub(super) timeout: Option<Duration>,
+    pub(super) timeout: Duration,
     pub(super) file: Option<ContainerFileUpload>,
     pub(super) form: HandlerForm,
     pub(super) call_id: String,

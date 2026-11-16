@@ -24,7 +24,7 @@ pub struct ContainerFileHandlerCall<'call> {
     pub logging: &'call Mutex<LoggingState>,
     pub extra_headers: Option<&'call BTreeMap<String, String>>,
     pub extra_query: Option<&'call IndexMap<String, ParamValue>>,
-    pub timeout: Option<Duration>,
+    pub timeout: Duration,
     pub values: &'call BTreeMap<String, ParamValue>,
     pub file: Option<&'call ContainerFileUpload>,
 }
@@ -89,7 +89,7 @@ where
         logging: call.logging,
         extra_headers: call.extra_headers,
         extra_query: call.extra_query,
-        timeout: call.timeout,
+        timeout: Some(call.timeout),
         values: call.values,
         file: call.file,
         blocking_client: None,
