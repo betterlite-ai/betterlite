@@ -15,14 +15,6 @@ use crate::straiker_webhook::modes::{ModeError, configured_modes};
 use crate::third_party_init_b::straiker::StraikerArgs;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 5;
-const FALLBACKS: [(&str, UnreachableFallback); 2] = [
-    ("fail_closed", UnreachableFallback::FailClosed),
-    ("fail_open", UnreachableFallback::FailOpen),
-];
-const FORMAT_HINTS: [(&str, FormatHint); 2] = [
-    ("anthropic.messages", FormatHint::AnthropicMessages),
-    ("openai.chat", FormatHint::OpenAiChat),
-];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApiVersion {
@@ -143,32 +135,25 @@ impl StraikerSettings {
     }
 }
 
-fn choice<Choice>(value: &str, table: &[(&str, Choice)]) -> Option<Choice>
-where
-    Choice: Copy,
-{
-    table
-        .iter()
-        .find(|(name, _)| *name == value)
-        .map(|(_, found)| *found)
-}
-
 fn fallback_of(raw: &StraikerArgs) -> Result<UnreachableFallback, SettingsError> {
-    choice(&raw.unreachable_fallback, &FALLBACKS).ok_or_else(|| {
-        SettingsError::UnreachableFallback {
+    match raw.unreachable_fallback.as_str() {
+        "fail_closed" => Ok(UnreachableFallback::FailClosed),
+        "fail_open" => Ok(UnreachableFallback::FailOpen),
+        _ => Err(SettingsError::UnreachableFallback {
             value: raw.unreachable_fallback.clone(),
-        }
-    })
+        }),
+    }
 }
 
 fn format_hint_of(raw: &StraikerArgs) -> Result<Option<FormatHint>, SettingsError> {
-    let Some(value) = raw.format_hint.as_deref() else {
-        return Ok(None);
-    };
-    let hint = choice(value, &FORMAT_HINTS);
-    hint.map(Some).ok_or_else(|| SettingsError::FormatHint {
-        value: value.to_owned(),
-    })
+    match raw.format_hint.as_deref() {
+        None => Ok(None),
+        Some("anthropic.messages") => Ok(Some(FormatHint::AnthropicMessages)),
+        Some("openai.chat") => Ok(Some(FormatHint::OpenAiChat)),
+        Some(other) => Err(SettingsError::FormatHint {
+            value: other.to_owned(),
+        }),
+    }
 }
 
 // An sk_agt_ key cannot drive the v1 webhook, so it routes to v3 whatever api_version says.

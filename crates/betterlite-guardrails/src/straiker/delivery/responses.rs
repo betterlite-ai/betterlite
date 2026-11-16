@@ -57,20 +57,16 @@ pub fn parse(api_version: ApiVersion, body: &str) -> Result<Verdict, WebhookFail
 
 fn v3_verdict(parsed: StraikerWebhookResponse) -> Verdict {
     Verdict {
-        action: action_v3(parsed.action),
+        action: match parsed.action {
+            StraikerWebhookAction::Blocked => VerdictAction::Blocked,
+            StraikerWebhookAction::NoAction => VerdictAction::None,
+            StraikerWebhookAction::GuardrailIntervened => VerdictAction::Intervened,
+        },
         blocked_reason: parsed.blocked_reason,
         blocked_by: parsed.blocked_by,
         texts: None,
         schema_version: None,
         turn_id: parsed.turn_id,
-    }
-}
-
-const fn action_v3(action: StraikerWebhookAction) -> VerdictAction {
-    match action {
-        StraikerWebhookAction::Blocked => VerdictAction::Blocked,
-        StraikerWebhookAction::NoAction => VerdictAction::None,
-        StraikerWebhookAction::GuardrailIntervened => VerdictAction::Intervened,
     }
 }
 
