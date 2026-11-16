@@ -14,10 +14,14 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::files::{Failures, ScriptedFiles};
 use self::vault::{Events, FakeVault, VaultInput};
+use std::fmt::Display;
+use std::fs;
+use tokio::runtime::Builder;
 
 mod files;
 mod vault;
@@ -75,7 +79,7 @@ enum Named<'save> {
 
 fn helper_error<M>(message: M) -> Box<HelperError>
 where
-    M: std::fmt::Display,
+    M: Display,
 {
     Box::new(HelperError {
         class: "CredentialLifecycle".to_owned(),
@@ -91,7 +95,7 @@ fn block_on<F, T>(future: F) -> Result<T, Box<HelperError>>
 where
     F: Future<Output = T>,
 {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(helper_error)?;
     Ok(runtime.block_on(future))
@@ -104,7 +108,7 @@ impl Helper for Op {
         let directory = tempfile::tempdir().map_err(helper_error)?;
         let path = directory.path().join("token.json");
         if let Some(file) = &input.file {
-            std::fs::write(&path, file).map_err(helper_error)?;
+            fs::write(&path, file).map_err(helper_error)?;
         }
         let events = Arc::new(Events::default());
         let files = ScriptedFiles::new(&path, &input.failures, Arc::clone(&events));

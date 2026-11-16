@@ -7,7 +7,7 @@ use crate::builtins::Context;
 use crate::error::GateError;
 
 const CASES: &str = "tools/oracle/cases/";
-// the fields of HelperOutput in tools/oracle/src/compare/helper.rs
+// the fields of HelperOutput in tools/oracle/runner/src/compare/helper.rs
 const ANSWER_FIELDS: [&str; 5] = ["ok", "value", "error", "warnings", "effects"];
 
 #[derive(Debug, Deserialize)]

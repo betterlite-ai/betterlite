@@ -1,0 +1,30 @@
+task: B4060
+deviations:
+  - what: betterlite uses a compile-time known set of supported integrations instead of scanning the integrations directory at runtime; the available backends are static and adding a new integration requires code changes and recompilation.
+    why: Runtime module discovery through importlib and a registry updated by import side effects are not idiomatic in Rust; a constant table keeps startup independent of the filesystem and makes the supported set visible to the compiler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L99-L163
+  - what: There is no module-level IN_MEMORY_PROMPT_REGISTRY. The server makes one InMemoryPromptRegistry at startup and holds it in Shared.prompts.
+    why: Module-level state is banned; one instance passed through the server's shared state keeps config load, database sync, chat and the prompt routes on the same registry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L338
+  - what: The compile-time table holds the four backends this task owns and leaves out arize_phoenix, which LiteLLM discovers at this commit through the arize integration's registry. Betterlite's Phoenix initializer is B3864's work and reaches the table through B117's registration adapter.
+    why: The task splits the Phoenix initializer, like the Langfuse client B3908 builds, away from this registration machinery; until B117 registers it, prompt_initializer answers None for arize_phoenix and the callback build reports the unsupported prompt.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/__init__.py#L42-L44
+  - what: get_prompt_initializer_from_integrations is named discover_prompt_initializers, because the LiteLLM name is 40 characters and the repository's identifier rule refuses a name past 30.
+    why: The shorter name says the same thing; the constant PROMPT_INITIALIZER_REGISTRY keeps LiteLLM's name for the table itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L99-L163
+  - what: initialize_prompt, reload_prompt, sync_prompt_from_db, remove_prompt and delete_prompts_by_base_id are methods of a PromptRegistryMutation trait implemented for InMemoryPromptRegistry, not inherent methods on the type, so a caller imports the trait next to the registry type.
+    why: The InMemoryPromptRegistry struct and its one inherent impl block belong to B4059's file, outside this task's scope, and clippy's multiple_inherent_impl denies a second inherent impl block for the same type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L185-L335
+  - what: The logging callback manager arrives as the caller-supplied PromptCallbackManager parameter of initialize_prompt, reload_prompt, sync_prompt_from_db, remove_prompt and delete_prompts_by_base_id, where LiteLLM reaches the module-global litellm.logging_callback_manager.
+    why: betterlite passes outside dependencies in through the call that uses them instead of a global, so the same registry instance can be driven by the manager the server owns; the two operations it runs keep LiteLLM's names, add_litellm_callback and remove_callback_from_all_lists.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L203
+  - what: An initializer returns a PromptManagementClient registration record holding the prompt id the backend would fetch, not a live prompt manager. Backend construction and its configuration errors (a missing api_base for generic_prompt_management, a missing gitlab_config or bitbucket_config, a dotprompt prompt_directory) happen when a callback compiles the prompt, not when the prompt registers.
+    why: The registry stores PromptManagementClient values, and the backends need transports the server owns, which registration does not have; LiteLLM's managers are looked up only when the completion hook compiles a prompt, so a working setup sees the same fetch for the same prompt id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L223-L231
+  - what: The two runtime ValueErrors _build_prompt_callback raises cannot happen the same way. A missing prompt_integration is refused where the PromptSpec is deserialized, with an error naming the field, and an initializer result of the wrong type cannot exist because the initializer table's type fixes each backend's return to PromptManagementClient.
+    why: "prompt_integration is a non-optional field and the initializer type fixes the result type, so the checks LiteLLM performs at runtime are made by the compiler; the unsupported-integration error keeps LiteLLM's text, \"Unsupported prompt: {integration}\"."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L219-L231
+kept_bugs:
+  - what: initialize_prompt and reload_prompt update IN_MEMORY_PROMPTS and prompt_id_to_custom_prompt in two separate steps, so an interrupt between them would leave the two maps disagreeing; LiteLLM has the same window between its two assignments.
+    why: The two maps are plain fields the selection methods read, so each insert stays explicit; nothing fallible runs between them, so no working setup reaches the intermediate state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L202-L206

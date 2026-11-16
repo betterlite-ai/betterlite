@@ -10,7 +10,8 @@ use betterlite_auth::auth_identity::roles::{
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use serde::Deserialize;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -52,10 +53,10 @@ pub(crate) enum ErrorInput {
     UserNotFound { user_id: String },
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Role(fields) => run_role(fields),
             Input::Records(fields) => Ok(run_records(fields)),
@@ -99,7 +100,7 @@ fn role_fields(value: Option<&str>, user: Option<&LiteLLMUserTable>) -> serde_js
     })
 }
 
-fn run_role(fields: &RoleInput) -> crate::helpers::HelperResult {
+fn run_role(fields: &RoleInput) -> HelperResult {
     let user = user_row(fields)?;
     let value = fields.user_role.as_deref();
     Ok(role_fields(value, user.as_ref()))
@@ -140,7 +141,7 @@ fn run_records(fields: &RecordsInput) -> serde_json::Value {
     })
 }
 
-fn run_principal(fields: &PrincipalInput) -> crate::helpers::HelperResult {
+fn run_principal(fields: &PrincipalInput) -> HelperResult {
     let principal = Principal {
         principal_type: PrincipalType::Human,
         subject: fields.subject.clone(),

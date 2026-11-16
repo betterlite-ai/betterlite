@@ -10,8 +10,7 @@ use serde::Deserialize;
 
 use self::embedding::embedding_cases;
 use self::ops::{param_cases, reply_cases, request_cases, stream_cases};
-use crate::helpers::Helper;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod embedding;
 mod ops;

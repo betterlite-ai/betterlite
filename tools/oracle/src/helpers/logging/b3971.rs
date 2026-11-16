@@ -16,11 +16,15 @@ use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tokio_util::task::TaskTracker;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod scripted;
 
+use betterlite_logging::posthog_logging::settings;
 use scripted::{AllowAllUrlCheck, ScriptedTransport};
+use std::fmt::Display;
+use std::sync::atomic::Ordering;
 
 #[derive(Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
@@ -94,7 +98,7 @@ impl Helper for Op {
 }
 pub(super) fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "PostHogError".to_owned(),
@@ -130,12 +134,6 @@ fn logger_event(input: &Input, event: &EventInput) -> LoggerEvent {
         stream: false,
         guardrail_snapshot: None,
     }
-}
-fn async_state(logger: &PostHogLogger) -> Value {
-    let initialized = logger
-        .async_initialized
-        .load(std::sync::atomic::Ordering::SeqCst);
-    json!({"initialized": initialized, "flush_lock": initialized})
 }
 fn queue_value(logger: &PostHogLogger) -> Value {
     let entries: Vec<Value> = logger
@@ -228,6 +226,7 @@ fn report(
     outcome: &Outcome,
     before: &Value,
 ) -> Value {
+    let initialized = logger.async_initialized.load(Ordering::SeqCst);
     json!({
         "settings": {
             "host": logger.settings.api_url,
@@ -241,14 +240,12 @@ fn report(
         "credentials": outcome.credentials,
         "queue": queue_value(logger),
         "requests": transport.requests(),
-        "async": async_state(logger),
+        "async": {"initialized": initialized, "flush_lock": initialized},
         "async_before": before,
     })
 }
 async fn run_scenario(input: &Input) -> HelperResult {
-    let settings =
-        betterlite_logging::posthog_logging::settings::resolve(&environment(&input.settings))
-            .map_err(failure)?;
+    let settings = settings::resolve(&environment(&input.settings)).map_err(failure)?;
     let transport = Arc::new(ScriptedTransport::new(&input.replies));
     let tasks = TaskTracker::new();
     let concrete = Arc::clone(&transport);
@@ -263,7 +260,8 @@ async fn run_scenario(input: &Input) -> HelperResult {
             shutdown: None,
         },
     );
-    let before = async_state(&logger);
+    let initialized = logger.async_initialized.load(Ordering::SeqCst);
+    let before = json!({"initialized": initialized, "flush_lock": initialized});
     let events: Vec<LoggerEvent> = input
         .events
         .iter()

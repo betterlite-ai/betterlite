@@ -22,17 +22,18 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 
-use crate::compare::helper::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::failure;
 use super::input::Input;
 use super::logs::ErrorLines;
 use super::scripted::ScriptedLogger;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const START_TIME: &str = "2026-01-01T00:00:00+00:00";
 const END_TIME: &str = "2026-01-01T00:00:01+00:00";
 
-pub(super) async fn execute(input: &Input, logs: &ErrorLines) -> crate::helpers::HelperResult {
+pub(super) async fn execute(input: &Input, logs: &ErrorLines) -> HelperResult {
     let registry = registry_for(input)?;
     let start_time =
         DateTime::parse_from_rfc3339(START_TIME).map_err(|error| failure(error.to_string()))?;
@@ -142,11 +143,7 @@ fn original_response(result: &McpToolResult) -> Json {
     ]))
 }
 
-fn output(
-    result: &McpToolResult,
-    state: &LoggingState,
-    logs: &ErrorLines,
-) -> crate::helpers::HelperResult {
+fn output(result: &McpToolResult, state: &LoggingState, logs: &ErrorLines) -> HelperResult {
     let mut fields = serde_json::Map::new();
     let content =
         serde_json::to_value(&result.content).map_err(|error| failure(error.to_string()))?;

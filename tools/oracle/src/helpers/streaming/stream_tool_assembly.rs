@@ -1,3 +1,5 @@
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_streaming::stream_tool_assembly::records::AssemblyInput;
 use betterlite_streaming::stream_tool_assembly::{AssemblyError, assemble};
 
@@ -5,12 +7,12 @@ mod tests;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = AssemblyInput;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = assemble(input).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: error_class(&error).to_owned(),
                 status: None,
                 error_type: None,
@@ -20,7 +22,7 @@ impl crate::helpers::Helper for Op {
             })
         })?;
         serde_json::to_value(output).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "SerializationError".to_owned(),
                 status: None,
                 error_type: None,

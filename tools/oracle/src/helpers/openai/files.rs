@@ -8,11 +8,15 @@ use betterlite_openai::files::stream::StreamExit;
 use betterlite_openai::files::{
     ClientArgs, ClientKind, FilesApi, FilesClient, get_openai_client, select_client,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fixture::Fixture;
 use futures_util::StreamExt as _;
 use input::{Action, ClientSpec, Input, Request, Supplied};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 use uuid::Uuid;
 
 mod fixture;
@@ -142,7 +146,7 @@ async fn read_stream(
     }))
 }
 
-async fn invoke(
+async fn invoke_files_call(
     client: &FilesClient,
     input: &Input,
     fixture: &Fixture,
@@ -190,11 +194,11 @@ fn failure_view(error: &FilesError) -> Value {
     json!({"raised": {"kind": "ValueError", "message": error.to_string()}})
 }
 
-fn failure<M>(message: M) -> Box<crate::helpers::HelperError>
+fn failure<M>(message: M) -> Box<HelperError>
 where
-    M: std::fmt::Display,
+    M: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "OpenAiFilesError".to_owned(),
         status: None,
         error_type: None,
@@ -204,20 +208,18 @@ where
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         if matches!(input.action, Action::Client) {
             return Ok(client_view(&input.client).unwrap_or_else(|error| failure_view(&error)));
         }
         let fixture = Fixture::new(input.reply.as_ref()).map_err(failure)?;
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .map_err(failure)?;
+        let runtime = Builder::new_current_thread().build().map_err(failure)?;
         let outcome = runtime.block_on(async {
             let client = action_client(&input.client)?;
-            invoke(&client, input, &fixture).await
+            invoke_files_call(&client, input, &fixture).await
         });
         Ok(json!({
             "request": fixture.request_view(&input.request.extra_headers),

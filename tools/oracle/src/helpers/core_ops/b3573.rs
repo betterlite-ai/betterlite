@@ -1,22 +1,19 @@
-use std::convert::Infallible;
+mod doubles;
+
 use std::fmt::Display;
-use std::future::{Future, ready};
-use std::sync::{Mutex, PoisonError};
+use std::sync::Mutex;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::passthrough_guardrail::PassThroughEndpointHandler;
-use betterlite_core::passthrough_guardrail::settings::{
-    PassThroughGuardrailSettings, PassthroughGuardrailInputs, PassthroughInputType, RequestData,
-    ResponseCall,
-};
-use betterlite_core::passthrough_guardrail::traits::{
-    PassthroughGuardrail, PassthroughLogging, PassthroughPolicy,
-};
+use betterlite_core::passthrough_guardrail::settings::{RequestData, ResponseCall};
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::runtime::Builder;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use doubles::{Policy, RecordingGuardrail, ScenarioLogging};
 
 #[derive(Debug, Deserialize)]
 struct LoggingSpec {
@@ -59,7 +56,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(failure)?;
@@ -208,92 +205,4 @@ where
         code: None,
         message: error.to_string(),
     })
-}
-
-struct ScenarioLogging {
-    config: Option<Json>,
-}
-
-impl PassthroughLogging for ScenarioLogging {
-    fn passthrough_guardrails_config(&self) -> Option<&Json> {
-        self.config.as_ref()
-    }
-}
-
-// the no-op reply keeps the check-only contract visible; the calls are what the cases compare
-struct RecordingGuardrail {
-    name: Option<String>,
-    calls: Mutex<Vec<Value>>,
-}
-
-impl RecordingGuardrail {
-    fn recorded(&self) -> Vec<Value> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-impl PassthroughGuardrail for RecordingGuardrail {
-    type Failure = Infallible;
-    type LogTarget = ScenarioLogging;
-
-    fn guardrail_name(&self) -> Option<&str> {
-        self.name.as_deref()
-    }
-
-    fn apply_guardrail(
-        &self,
-        inputs: PassthroughGuardrailInputs,
-        request_data: &mut RequestData,
-        input_type: PassthroughInputType,
-        _logging_obj: Option<&mut ScenarioLogging>,
-    ) -> impl Future<Output = Result<PassthroughGuardrailInputs, Infallible>> + Send {
-        let kind = match input_type {
-            PassthroughInputType::Request => "request",
-            PassthroughInputType::Response => "response",
-        };
-        let texts: Vec<Value> = inputs
-            .texts
-            .iter()
-            .map(|text| normalised_text(text))
-            .collect();
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(json!({
-                "texts": texts,
-                "model": inputs.model,
-                "input_type": kind,
-                "request_data": request_data,
-            }));
-        ready(Ok(inputs))
-    }
-}
-
-// B3601's passthrough policy lives in betterlite-guardrails, which depends on betterlite-core
-struct Policy;
-
-impl PassthroughPolicy for Policy {
-    fn get_settings(
-        &self,
-        config: &Json,
-        guardrail_name: &str,
-    ) -> Option<PassThroughGuardrailSettings> {
-        betterlite_guardrails::passthrough_policy::get_settings(Some(config), guardrail_name).map(
-            |settings| PassThroughGuardrailSettings {
-                request_fields: settings.request_fields,
-                response_fields: settings.response_fields,
-            },
-        )
-    }
-
-    fn extract_fields(&self, data: &Json, expressions: &[String]) -> String {
-        betterlite_guardrails::passthrough_policy::extract_fields(data, expressions)
-    }
-
-    fn user_key_metadata(&self, user_api_key_dict: Option<&RequestData>) -> RequestData {
-        betterlite_guardrails::guardrail_translation::transform_user_key_metadata(user_api_key_dict)
-    }
 }

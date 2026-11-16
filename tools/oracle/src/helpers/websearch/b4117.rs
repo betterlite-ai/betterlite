@@ -1,7 +1,10 @@
-use betterlite_websearch::loop_eligibility::WebSearchInterceptionState;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_websearch::loop_eligibility::{ToolsDict, WebSearchInterceptionState};
 use betterlite_websearch::tools::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use std::fmt::Display;
 
 pub(crate) struct Op;
 
@@ -22,13 +25,13 @@ pub(crate) struct Input {
 struct Output {
     should_run: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    tools_dict: Option<betterlite_websearch::loop_eligibility::ToolsDict>,
+    tools_dict: Option<ToolsDict>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let state = WebSearchInterceptionState {
             enabled_providers: Some(input.enabled_providers.clone()),
         };
@@ -52,12 +55,12 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     let message = error.to_string();
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "LoopEligibilityError".to_owned(),
         message,
         status: None,

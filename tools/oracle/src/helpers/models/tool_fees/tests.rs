@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use super::{Input, Op};
-use crate::helpers::Helper as _;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::Helper as _;
 use rstest::rstest;
 use serde_json::{Value, json};
 

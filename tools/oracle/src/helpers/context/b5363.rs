@@ -4,6 +4,7 @@ use betterlite_context::non_default_params::Params;
 use betterlite_context::non_default_params::error::MapperError;
 use betterlite_context::non_default_params::mapper::{DropPolicy, OptionalParamsMapper};
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -87,10 +88,10 @@ impl Call {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = BatchInput;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut results = Vec::with_capacity(input.calls.len());
         for call in &input.calls {
             let params = call.params();

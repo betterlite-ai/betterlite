@@ -4,7 +4,7 @@ use serde_json::{Map, Value, json};
 use betterlite_openai::perplexity_chat::with_perplexity_fields;
 
 use super::failure;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
