@@ -14,8 +14,8 @@ fn decodes_every_reply_field() {
     assert_eq!(data.len(), 1);
     assert_eq!(data[0].index, 2);
     assert!(matches!(
-        data[0].embedding,
-        EmbeddingVector::Floats(ref values) if values.len() == 2
+        &data[0].embedding,
+        EmbeddingVector::Floats(values) if values.len() == 2
     ));
     let usage = reply.usage.unwrap();
     assert_eq!(usage.prompt_tokens, 4);
@@ -32,8 +32,8 @@ fn decodes_base64_embeddings() {
     let reply = decode_foundry_embedding(body.as_bytes()).unwrap();
     let data = reply.data.unwrap().unwrap();
     assert!(matches!(
-        data[0].embedding,
-        EmbeddingVector::Base64(ref encoded) if encoded == "AAAA"
+        &data[0].embedding,
+        EmbeddingVector::Base64(encoded) if encoded.as_str() == "AAAA"
     ));
 }
 

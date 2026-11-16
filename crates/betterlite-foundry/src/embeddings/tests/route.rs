@@ -164,6 +164,8 @@ fn text_call_gets_the_route_base() {
         assert_eq!(seen.api_base, Some(format!("{BASE}/v1/models")));
         assert_eq!(seen.api_key.as_deref(), Some("text-key"));
         assert_eq!(seen.mode, mode);
+        assert_eq!(seen.model.as_str(), MODEL);
+        assert_eq!(seen.timeout, Duration::from_secs(5));
     }
 }
 
