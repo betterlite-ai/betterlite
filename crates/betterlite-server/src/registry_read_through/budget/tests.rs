@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use tokio::time::advance;
 
-use crate::registry_read_through::tests::support::{CountingResync, capture_logs};
+use crate::registry_read_through::tests::support::{CountingResync, FailingResync, capture_logs};
 use crate::registry_read_through::{
-    READ_THROUGH_MAX_RESYNCS, READ_THROUGH_RESYNC_WINDOW, RegistryReadThrough, State,
+    READ_THROUGH_MAX_RESYNCS, READ_THROUGH_RESYNC_WINDOW, RegistryReadThrough, Resync, State,
 };
 
 #[tokio::test(start_paused = true)]
@@ -73,6 +73,19 @@ async fn a_budget_refusal_logs_a_warning_and_does_not_remember_the_miss() {
     assert_eq!(calls.load(Ordering::SeqCst), 21);
 }
 
+#[tokio::test(start_paused = true)]
+async fn a_resync_error_still_spends_a_budget_slot() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let read_through = RegistryReadThrough::new(FailingResync {
+        calls: Arc::clone(&calls),
+        message: "the database is down",
+    });
+    exhaust_budget(&read_through).await;
+    assert_eq!(calls.load(Ordering::SeqCst), READ_THROUGH_MAX_RESYNCS);
+    assert!(!read_through.attempt("late-model").await);
+    assert_eq!(calls.load(Ordering::SeqCst), READ_THROUGH_MAX_RESYNCS);
+}
+
 fn spend_resync_budget(state: &mut State, attempts: usize) -> Vec<bool> {
     let mut granted = Vec::with_capacity(attempts);
     for _ in 0..attempts {
@@ -83,7 +96,7 @@ fn spend_resync_budget(state: &mut State, attempts: usize) -> Vec<bool> {
     granted
 }
 
-async fn exhaust_budget(read_through: &RegistryReadThrough<CountingResync>) {
+async fn exhaust_budget<R: Resync>(read_through: &RegistryReadThrough<R>) {
     for index in 0..READ_THROUGH_MAX_RESYNCS {
         let key = format!("missing-model-{index}");
         assert!(!read_through.attempt(&key).await);
