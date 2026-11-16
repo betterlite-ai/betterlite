@@ -1,0 +1,21 @@
+task: B3788
+deviations:
+  - what: "The catch-all 500 error detail always carries category \"api_error\" (or the failing category for a data-shape error), where LiteLLM's catch-all dict has message, type, code and guardrail only."
+    why: "betterlite's error body has a required category field that LiteLLM's own scan-failure detail fills in, so the client sees a body of one shape; LiteLLM's catch-all leaves it out."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L1162-L1176
+  - what: "Raw SSE text extraction skips a content_block_delta whose delta is not an object or whose text is not a string. In LiteLLM the delta.get call or the join raises on those, and the streaming hook turns that into the generic scan-failure frame."
+    why: "A malformed event line should not turn an otherwise allowed stream into a 500 frame; the declared text_delta carries a string text."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L886-L904
+  - what: "The /v1/responses event extractor skips a chat.completion.chunk choice whose delta is not an object. In LiteLLM delta.get on that value raises AttributeError, and the streaming hook turns it into the generic scan-failure frame."
+    why: "A malformed event should not turn an otherwise allowed stream into a 500 frame; a chat.completion.chunk delta is an object in the declared shape, and the fallback branch exists only for defense in depth."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L923-L929
+  - what: "When a prompt scan returns masked text but the request's messages hold no message the shared masker selects (B3787's last user or developer message with content), the pre-call hook answers 500 instead of allowing the request unchanged."
+    why: "B3787 makes the scan and the rewrite pick the same message; when no message qualifies, sending the unmasked content would defeat the mask the scan asked for, so the hook fails closed."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L670-L688
+  - what: "The standard logging record keeps the AIRS scan response exactly as the API sent it. LiteLLM's shared helper strips a secret_fields key, replaces every nested match or regex value with \"[REDACTED]\" and masks credential-looking values before writing guardrail_response."
+    why: "AIRS's declared scan response has none of those keys or values, so the scrubbing changes no working setup's record; the fields the record does carry (including response_masked_data) are the masked ones."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1247-L1270
+kept_bugs:
+  - what: "A returned mask cannot be applied to a raw stream (/v1/messages SSE bytes or /v1/responses events), so the raw streaming path blocks when mask_response_content is configured, after logging its warning, instead of masking the response."
+    why: "LiteLLM documents raw streams as unreconstructable for masking; a working setup with the flag set relies on the block, so betterlite copies it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L973-L981

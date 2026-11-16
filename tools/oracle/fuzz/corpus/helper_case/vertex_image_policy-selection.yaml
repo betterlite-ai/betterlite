@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-image-policy-non-gemini-uses-imagen-seed
+call:
+  vertex_image_policy:
+    models:
+      - gemini-2.5-flash-image
+      - vertex_ai/gemini-3-pro-image
+      - imagen-3.0-generate-002
+      - imagegeneration@006
+      - claude-3-5-sonnet
+      - openai/gpt-oss
+    billing: []
+    replies: []
+env: {}
+compare: {ignore: []}

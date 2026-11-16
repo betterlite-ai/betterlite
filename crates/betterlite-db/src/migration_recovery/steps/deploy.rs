@@ -4,7 +4,6 @@ use tokio::time::{Instant, timeout, timeout_at};
 
 use crate::migration_deploy::DeployError;
 use crate::migration_ledger::connection::connect;
-use crate::migration_ledger::lock::PRISMA_LOCK_KEY;
 
 use super::super::RecoveryError;
 use super::super::outcome::{DeployFailure, DeployOutcome, FailedIdentity, FailedStep, StepSource};
@@ -126,43 +125,11 @@ impl PgSteps<'_> {
                 source,
                 ledger,
             }),
-            Err(DeployError::Deadline(_)) => self.deadline_outcome().await?,
+            Err(DeployError::LockWait(_)) => DeployOutcome::Contention {
+                detail: CONTENTION_DETAIL.to_owned(),
+            },
+            Err(DeployError::Deadline(_)) => DeployOutcome::TimedOut,
         };
         Ok(outcome)
-    }
-
-    async fn deadline_outcome(&self) -> Result<DeployOutcome, RecoveryError> {
-        if self.deploy_lock_held().await? {
-            return Ok(DeployOutcome::Contention {
-                detail: CONTENTION_DETAIL.to_owned(),
-            });
-        }
-        Ok(DeployOutcome::TimedOut)
-    }
-
-    // A deadline with a released lock means this deploy held it and ran out of time; a held one means it waited
-    pub(in crate::migration_recovery) async fn deploy_lock_held(
-        &self,
-    ) -> Result<bool, RecoveryError> {
-        match timeout(self.command_timeout, self.lock_state()).await {
-            Ok(held) => held,
-            Err(_elapsed) => Err(RecoveryError::QueryTimeout {
-                seconds: self.command_timeout.as_secs(),
-            }),
-        }
-    }
-
-    async fn lock_state(&self) -> Result<bool, RecoveryError> {
-        let client = connect(&self.deploy_url).await?;
-        let held: bool = client
-            .query_one(
-                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted \
-                 AND objsubid = 1 AND classid::bigint = 0 AND objid::bigint = $1 \
-                 AND database = (SELECT oid FROM pg_database WHERE datname = current_database()))",
-                &[&PRISMA_LOCK_KEY],
-            )
-            .await?
-            .try_get(0)?;
-        Ok(held)
     }
 }
