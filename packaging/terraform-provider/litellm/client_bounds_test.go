@@ -17,6 +17,35 @@ func TestNewClientSetsDefaultRequestTimeout(t *testing.T) {
 	}
 }
 
+func TestNewClientBoundsTheTransport(t *testing.T) {
+	client := NewClient("http://localhost:4000", "sk-test", true)
+
+	capped, ok := client.httpClient.Transport.(*cappedTransport)
+	if !ok {
+		t.Fatalf("http.Client.Transport = %T, want *cappedTransport", client.httpClient.Transport)
+	}
+	if capped.limit != 64<<20 {
+		t.Errorf("response body cap = %d, want %d", capped.limit, 64<<20)
+	}
+
+	transport, ok := capped.transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("wrapped transport = %T, want *http.Transport", capped.transport)
+	}
+	if transport.Proxy != nil {
+		t.Error("transport.Proxy is set, want nil so HTTP_PROXY and HTTPS_PROXY stay ignored")
+	}
+	if transport.DialContext == nil {
+		t.Error("transport.DialContext is nil, want the dialer timeout")
+	}
+	if transport.TLSHandshakeTimeout != 10*time.Second {
+		t.Errorf("TLSHandshakeTimeout = %s, want 10s", transport.TLSHandshakeTimeout)
+	}
+	if transport.TLSClientConfig == nil || !transport.TLSClientConfig.InsecureSkipVerify {
+		t.Error("TLSClientConfig does not carry insecureSkipVerify")
+	}
+}
+
 func TestRequestFailsWhenServerNeverAnswers(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
