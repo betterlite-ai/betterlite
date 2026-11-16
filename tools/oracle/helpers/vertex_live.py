@@ -126,7 +126,11 @@ def endpoint(call: EndpointCall) -> JsonValue:
         realtime.validate_environment(headers(call), "", call.get("api_key"))
     )
     used = key_used(call.get("api_key"), validated_environment)
-    return {"url": url, "environment": validated_environment, "api_key_used": used}
+    return {
+        "url": url,
+        "environment": dict[str, JsonValue](validated_environment.items()),
+        "api_key_used": used,
+    }
 
 
 def mime(call: MimeCall) -> JsonValue:
