@@ -1,0 +1,85 @@
+kind: helper
+name: chat-response-stream-items-default-done-progression
+call:
+  chat_response_stream_items:
+    model: m
+    request_value: hi
+    responses_api_request: {}
+    custom_llm_provider: null
+    litellm_metadata: null
+    now: 10
+    uuid_ids: [u1]
+    steps:
+      - kind: default_done
+        completion: {choices: [{message: {content: ""}}]}
+      - kind: finished
+      - kind: pending
+calls:
+  - chat_response_stream_items:
+      model: m
+      request_value: hi
+      responses_api_request: {}
+      custom_llm_provider: null
+      litellm_metadata: null
+      now: 10
+      uuid_ids: [u1]
+      steps:
+        - kind: message_items
+        - kind: set
+          litellm_model_response: {choices: [{message: {content: stored}}]}
+        - kind: default_done
+          completion: {choices: [{message: {content: ""}}]}
+        - kind: default_done
+          completion: {choices: [{message: {content: ""}}]}
+        - kind: default_done
+          completion: {choices: [{message: {content: ""}}]}
+        - kind: default_done
+          completion: {choices: [{message: {content: ""}}]}
+        - kind: finished
+  - chat_response_stream_items:
+      model: m
+      request_value: hi
+      responses_api_request: {}
+      custom_llm_provider: null
+      litellm_metadata: null
+      now: 10
+      uuid_ids: [u1, u2]
+      steps:
+        - kind: set
+          litellm_model_response: {choices: [{message: {content: final text}}]}
+        - kind: default_done
+          completion: {choices: [{message: {content: final text}}]}
+        - kind: pending
+        - kind: default_done
+          completion: {choices: [{message: {content: final text}}]}
+        - kind: default_done
+          completion: {choices: [{message: {content: final text}}]}
+        - kind: default_done
+          completion: {choices: [{message: {content: final text}}]}
+        - kind: default_done
+          completion: {choices: [{message: {content: final text}}]}
+        - kind: finished
+  - chat_response_stream_items:
+      model: m
+      request_value: hi
+      responses_api_request: {}
+      custom_llm_provider: null
+      litellm_metadata: null
+      now: 10
+      uuid_ids: [u1]
+      steps:
+        - kind: set
+          litellm_model_response: {choices: [{message: {content: unused}}]}
+        - kind: message_items
+        - kind: default_done
+          completion: {choices: [{message: {content: later}}]}
+        - kind: default_done
+          completion: {choices: [{message: {content: later}}]}
+        - kind: default_done
+          completion: {choices: [{message: {content: later}}]}
+        - kind: set
+          sequence_number: 40
+        - kind: message_items
+        - kind: finished
+env: {}
+compare: {ignore: []}

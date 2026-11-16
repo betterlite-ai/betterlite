@@ -1,0 +1,6 @@
+task: B9968
+deviations:
+  - what: The provider bounds every request with a 300 second total timeout, a 30 second dial timeout and a 10 second TLS-handshake timeout, and caps a response body at 64 MiB.
+    why: LiteLLM's client sets none of these and reads every body with an uncapped io.ReadAll, so a proxy that accepts the connection and never answers hangs terraform apply forever and a large response is unbounded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/client.go#L37-L48
+kept_bugs: []

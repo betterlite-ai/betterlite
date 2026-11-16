@@ -1,0 +1,12 @@
+kind: helper
+name: foundry-model-router-version-seed
+call:
+  foundry_model_router:
+    versions:
+      - {api_version: "2024-01-01", global_api_version: null, environment: {}}
+      - {api_version: null, global_api_version: "", environment: {AZURE_API_VERSION: "2024-03-03"}}
+    properties:
+      - {global_api_version: null, environment: {AZURE_API_VERSION: "2024-03-03"}}
+    validate: true
+env: {}
+compare: {ignore: []}
