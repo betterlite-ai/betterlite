@@ -97,24 +97,19 @@ class Input(TypedDict, total=False):
 
 
 def agent_id_answer(config: AzureAIAgentsConfig, call: AgentIdCall) -> JsonValue:
-    selected = config._get_agent_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L174-L185
-        call["model"], call["optional_params"]
-    )
+    selected = config._get_agent_id(call["model"], call["optional_params"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L174-L185
     return {"ok": True, "value": selected}
 
 
 def params_answer(config: AzureAIAgentsConfig, call: ParamsCall) -> JsonValue:
-    mapped = config.map_openai_params(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L128-L138
-        call["non_default_params"],
-        dict(call["optional_params"]),
-        model=call["model"],
-        drop_params=False,
-    )
+    mapped = cast("JsonObject", config.map_openai_params(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L128-L138
+        call["non_default_params"], call["optional_params"], model=call["model"], drop_params=False
+    ))
     supported = list[JsonValue](config.get_supported_openai_params(call["model"]))
-    return {"supported": supported, "mapped": cast("JsonObject", mapped)}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L128-L138
+    return {"supported": supported, "mapped": mapped}
 
 
-def provider_info_answer(config: AzureAIAgentsConfig, call: ProviderInfoCall) -> JsonValue:
+def provider_answer(config: AzureAIAgentsConfig, call: ProviderInfoCall) -> JsonValue:
     os.environ.clear()
     os.environ.update(call["environment"])
     base, key = config._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L104-L120
@@ -132,26 +127,20 @@ def complete_url_answer(config: AzureAIAgentsConfig, call: UrlCall) -> JsonValue
 
 
 def request_answer(config: AzureAIAgentsConfig, call: RequestCall) -> JsonValue:
-    body = config.transform_request(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L187-L234
-        model=call["model"],
-        messages=cast("list[AllMessageValues]", call["messages"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
-        optional_params=call["optional_params"],
-        litellm_params=EMPTY,
-        headers=EMPTY,
-    )
-    return {"ok": True, "value": cast("JsonObject", body)}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L187-L234
+    body = cast("JsonObject", config.transform_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L187-L234
+        model=call["model"], messages=cast("list[AllMessageValues]", call["messages"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
+        optional_params=call["optional_params"], litellm_params=EMPTY, headers=EMPTY,
+    ))
+    return {"ok": True, "value": body}
 
 
 def validation_answer(config: AzureAIAgentsConfig, call: ValidationCall) -> JsonValue:
-    validated = config.validate_environment(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L236-L261
-        headers=dict(call["headers"]),
-        model="model",
+    validated = cast("JsonObject", config.validate_environment(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L236-L261
+        headers=call["headers"], model="model", optional_params=EMPTY,
+        litellm_params=EMPTY, api_key=call["api_key"],
         messages=cast("list[AllMessageValues]", NO_MESSAGES),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
-        optional_params=EMPTY,
-        litellm_params=EMPTY,
-        api_key=call["api_key"],
-    )
-    return {"ok": True, "value": {"headers": cast("JsonObject", validated)}}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L236-L261
+    ))
+    return {"ok": True, "value": {"headers": validated}}
 
 
 def preparation_answer(handler: AgentHandler, call: PreparationCall) -> JsonValue:
@@ -160,7 +149,7 @@ def preparation_answer(handler: AgentHandler, call: PreparationCall) -> JsonValu
         call["api_base"],
         call["api_key"],
         call["optional_params"],
-        dict(call["headers"]),
+        call["headers"],
     )
     return {
         "ok": True,
@@ -181,13 +170,13 @@ def check_answer(handler: AgentHandler, call: CheckCall) -> JsonValue:
     check = cast(Callable[[httpx.Response, list[int], str], None], handler._check_response)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L291-L297
     try:
         check(response, call["expected"], call["error_msg"])
-    except AzureAIAgentsError as error:
+    except AzureAIAgentsError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L48-L49
         return {"ok": False, "error": {"status": error.status_code}}
     return {"ok": True}
 
 
 def error_answer(config: AzureAIAgentsConfig, call: ErrorCall) -> JsonValue:
-    error = config.get_error_class(call["message"], call["status"], dict(call["headers"]))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L263-L264
+    error = config.get_error_class(call["message"], call["status"], call["headers"])  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L263-L264
     return {
         "status": error.status_code,
         "headers_dropped": cast("object | None", error.headers) is None,  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L263-L264
@@ -195,19 +184,22 @@ def error_answer(config: AzureAIAgentsConfig, call: ErrorCall) -> JsonValue:
 
 
 def path_url(handler: AgentHandler, call: PathCall) -> str:
+    base = call["api_base"]
+    version = call["api_version"]
+    thread = call["thread_id"]
     match call["function"]:
         case "threads":
-            return handler._build_thread_url(call["api_base"], call["api_version"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L131-L132
+            return handler._build_thread_url(base, version)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L131-L132
         case "thread_and_run":
-            return handler._build_create_thread_and_run_url(call["api_base"], call["api_version"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L151-L153
+            return handler._build_create_thread_and_run_url(base, version)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L151-L153
         case "run_status":
-            return handler._build_run_status_url(call["api_base"], call["thread_id"], call["run_id"], call["api_version"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L142-L145
+            return handler._build_run_status_url(base, thread, call["run_id"], version)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L142-L145
         case "runs":
-            return handler._build_runs_url(call["api_base"], call["thread_id"], call["api_version"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L138-L140
+            return handler._build_runs_url(base, thread, version)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L138-L140
         case "list_messages":
-            return handler._build_list_messages_url(call["api_base"], call["thread_id"], call["api_version"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L147-L149
+            return handler._build_list_messages_url(base, thread, version)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L147-L149
         case "messages":
-            return handler._build_messages_url(call["api_base"], call["thread_id"], call["api_version"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L134-L136
+            return handler._build_messages_url(base, thread, version)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L134-L136
 
 
 def path_answer(handler: AgentHandler, call: PathCall) -> JsonValue:
@@ -262,27 +254,28 @@ def config_reports(argument: Input) -> JsonValue:
 def provider_reports(argument: Input) -> JsonValue:
     config = AzureAIAgentsConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L77-L78
     if "provider_infos" in argument:
-        infos = argument["provider_infos"]
-        return {"calls": [provider_info_answer(config, call) for call in infos]}
+        return {"calls": [provider_answer(config, call) for call in argument["provider_infos"]]}
     if "complete_urls" in argument:
         return {"calls": [complete_url_answer(config, call) for call in argument["complete_urls"]]}
     raise ValueError("expected a foundry agent provider variant")
 
 
-def handler_reports(argument: Input) -> JsonValue:
-    handler = AgentHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L122-L123
+def handler_reports(handler: AgentHandler, argument: Input) -> JsonValue:
     if "preparations" in argument:
-        return {"calls": [preparation_answer(handler, call) for call in argument["preparations"]]}
-    if "checks" in argument:
-        return {"calls": [check_answer(handler, call) for call in argument["checks"]]}
-    if "paths" in argument:
-        return {"calls": [path_answer(handler, call) for call in argument["paths"]]}
-    raise ValueError("expected a foundry agent handler variant")
+        answers = [preparation_answer(handler, call) for call in argument["preparations"]]
+    elif "checks" in argument:
+        answers = [check_answer(handler, call) for call in argument["checks"]]
+    elif "paths" in argument:
+        answers = [path_answer(handler, call) for call in argument["paths"]]
+    else:
+        raise ValueError("expected a foundry agent handler variant")
+    return {"calls": answers}
 
 
 def run(argument: Input) -> JsonValue:
     if "preparations" in argument or "checks" in argument or "paths" in argument:
-        return handler_reports(argument)
+        handler = AgentHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L122-L123
+        return handler_reports(handler, argument)
     if "provider_infos" in argument or "complete_urls" in argument:
         return provider_reports(argument)
     return config_reports(argument)
