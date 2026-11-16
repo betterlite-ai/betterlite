@@ -258,7 +258,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_provider*")"
       && grep -lq 'azure_provider' tools/oracle/fuzz/corpus/helper_case/azure_provider* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_provider$/)' && cargo nextest run
+      -p betterlite-oracle-provider --no-tests=fail -E 'test(/::helper_seeds_select_azure_provider$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-azure-header-retry-merge
     why: headers uses a truthy supplied map or litellm.headers. Non-None extra_headers, including {}, overwrites

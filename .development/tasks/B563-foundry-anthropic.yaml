@@ -224,7 +224,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_anthropic*")"
       && grep -lq 'foundry_anthropic' tools/oracle/fuzz/corpus/helper_case/foundry_anthropic* && cargo nextest run
-      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_anthropic$/)' && cargo
+      --locked -p betterlite-oracle-foundry --no-tests=fail -E 'test(/::helper_seeds_select_foundry_anthropic$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-chat-failure-projection
     why: Sync nonstream passes timeout to client construction and POST; exception status defaults 500, message prefers
