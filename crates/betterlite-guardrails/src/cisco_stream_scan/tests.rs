@@ -272,6 +272,29 @@ async fn an_unsupported_first_chunk_yields_the_unsupported_event() {
     assert_eq!(items, vec![StreamItem::Sse(unsupported_event())]);
 }
 
+// A text chunk whose stream cannot assemble still fails on the shape, not on the assembly.
+#[tokio::test]
+async fn a_text_first_chunk_with_no_final_choice_yields_the_unsupported_event() {
+    let guardrail = guardrail(
+        InspectionType::Chat,
+        FallbackAction::Block,
+        "http://127.0.0.1:1".to_owned(),
+    );
+    let mut request_data = obj("{}");
+    let text_chunk = chunk(
+        r#"{"id":"cmpl-1","object":"text_completion","created":1,"model":"m","choices":[{"index":0,"text":"hi","finish_reason":null}]}"#,
+    );
+    let tail =
+        chunk(r#"{"id":"cmpl-1","object":"text_completion","created":2,"model":"m","choices":[]}"#);
+    let chunks: [Result<Chunk, io::Error>; 2] = [Ok(text_chunk), Ok(tail)];
+
+    let items = scan_stream(&guardrail, &mut request_data, stream::iter(chunks), args())
+        .await
+        .expect("stream");
+
+    assert_eq!(items, vec![StreamItem::Sse(unsupported_event())]);
+}
+
 #[tokio::test]
 async fn a_text_assembly_yields_the_unsupported_event() {
     let guardrail = guardrail(
