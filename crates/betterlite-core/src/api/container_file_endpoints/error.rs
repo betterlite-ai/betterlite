@@ -92,10 +92,10 @@ fn exception(
 
 // a timeout is caught on POST in both forms and on DELETE only in the blocking handler, so elsewhere it reaches the catchall
 fn timed_out(error: &ContainerFileOpError, route: Option<CallRoute<'_>>) -> bool {
-    let Some(route) = route else {
+    let Some(sent) = route else {
         return false;
     };
-    let caught = route.method == "POST" || (route.method == "DELETE" && !route.asynchronous);
+    let caught = sent.method == "POST" || (sent.method == "DELETE" && !sent.asynchronous);
     if !caught {
         return false;
     }
