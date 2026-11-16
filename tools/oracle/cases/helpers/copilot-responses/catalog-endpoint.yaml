@@ -1,0 +1,21 @@
+kind: helper
+name: catalog_endpoint
+call:
+  copilot_responses:
+    settings: {}
+    steps:
+      - step: supports
+        model: listed
+        models: {github_copilot/listed: {litellm_provider: github_copilot, supported_endpoints: [/v1/responses]}}
+      - step: supports
+        model: unlisted
+        models: {github_copilot/unlisted: {litellm_provider: github_copilot, supported_endpoints: [/v1/chat/completions]}}
+      - step: supports
+        model: completion-mode
+        models: {github_copilot/completion-mode: {litellm_provider: github_copilot, mode: completion, supported_endpoints: [/v1/responses]}}
+      - step: supports
+        model: unmapped-model
+        models: {}
+env: {}
+compare:
+  ignore: []
