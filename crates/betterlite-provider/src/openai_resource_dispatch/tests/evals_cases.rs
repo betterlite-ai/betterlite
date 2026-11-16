@@ -10,7 +10,7 @@ use betterlite_openai::evals::types::{
 use betterlite_openai::openai_base_config::{Headers, Object};
 
 use super::fixture::{evals_config, object};
-use crate::openai_resource_dispatch::evals::{Call, Dispatch, IdCall, Outcome, PayloadCall, RunId};
+use crate::openai_resource_dispatch::evals::{Call, Dispatch, EvalRef, Outcome, RunId};
 use crate::openai_resource_dispatch::{
     OpenAiResourceError, OpenAiResourceOperation, OpenAiResourceResult, dispatch,
 };
