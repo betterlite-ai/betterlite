@@ -182,8 +182,12 @@ async fn into_response_is_a_429_with_detail_and_headers() {
 
 fn init_with_header(name: &str, value: Payload) -> ProxyRateLimitErrorInit {
     ProxyRateLimitErrorInit {
+        detail: Payload::Null,
         headers: Some(BTreeMap::from([(String::from(name), value)])),
-        ..ProxyRateLimitErrorInit::default()
+        category: None,
+        rate_limit_type: None,
+        model: None,
+        llm_provider: None,
     }
 }
 
@@ -217,11 +221,15 @@ fn new_rejects_a_header_value_http_cannot_carry_without_echoing_it() {
 #[tokio::test]
 async fn into_response_keeps_headers_that_differ_only_by_case() {
     let init = ProxyRateLimitErrorInit {
+        detail: Payload::Null,
         headers: Some(BTreeMap::from([
             (String::from("Retry-After"), json!(5)),
             (String::from("retry-after"), json!(9)),
         ])),
-        ..ProxyRateLimitErrorInit::default()
+        category: None,
+        rate_limit_type: None,
+        model: None,
+        llm_provider: None,
     };
     let response = ProxyRateLimitError::new(init)
         .expect("the headers are valid")
