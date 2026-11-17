@@ -85,7 +85,7 @@ enum ChunkKindCase {
 }
 
 impl ChunkKindCase {
-    fn chunk_kind(self) -> ChunkKind {
+    const fn chunk_kind(self) -> ChunkKind {
         match self {
             Self::Stream => ChunkKind::ModelStream,
             Self::Full => ChunkKind::ModelFull,
