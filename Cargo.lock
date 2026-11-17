@@ -3695,6 +3695,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-core",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-oracle-helper-api",
