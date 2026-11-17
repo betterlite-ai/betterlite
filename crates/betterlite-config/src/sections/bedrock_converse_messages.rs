@@ -8,8 +8,14 @@ use crate::sections::Section;
 
 const KEY: &str = "bedrock_neutralize_orphaned_tool_blocks";
 
+// the flags live behind a box so Sections stays small, since betterlite-server holds a Config across an await
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
+    pub flags: Box<FlagSettings>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FlagSettings {
     pub deployments: Vec<Option<bool>>,
     pub litellm_settings: Option<bool>,
 }
@@ -17,11 +23,12 @@ pub struct Settings {
 impl Settings {
     #[must_use]
     pub fn resolve(&self, index: usize) -> bool {
-        self.deployments
+        self.flags
+            .deployments
             .get(index)
             .copied()
             .flatten()
-            .or(self.litellm_settings)
+            .or(self.flags.litellm_settings)
             .unwrap_or(true)
     }
 }
@@ -70,12 +77,14 @@ impl Section for Raw {
             )?);
         }
         Ok(Settings {
-            deployments,
-            litellm_settings: configured_flag(
-                self.litellm_settings.neutralize_orphaned_blocks,
-                &format!("litellm_settings.{KEY}"),
-                lookup,
-            )?,
+            flags: Box::new(FlagSettings {
+                deployments,
+                litellm_settings: configured_flag(
+                    self.litellm_settings.neutralize_orphaned_blocks,
+                    &format!("litellm_settings.{KEY}"),
+                    lookup,
+                )?,
+            }),
         })
     }
 }

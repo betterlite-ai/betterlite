@@ -47,10 +47,10 @@ fn both(flags: Flags) -> String {
 fn assert_flag(flags: Flags) {
     let default = load("").unwrap();
     assert!(
-        default.litellm_settings.is_none(),
+        default.flags.litellm_settings.is_none(),
         "the setting defaults to unset"
     );
-    assert!(default.deployments.is_empty());
+    assert!(default.flags.deployments.is_empty());
     assert!(default.resolve(0), "the setting defaults to true");
     assert_each_source_alone(flags);
     assert_deployment_precedence(flags);
@@ -62,8 +62,8 @@ fn assert_each_source_alone(flags: Flags) {
         "bedrock_neutralize_orphaned_tool_blocks: {deployment_value}"
     )))
     .unwrap();
-    assert_eq!(only_deployment.deployments, [Some(deployment_value)]);
-    assert!(only_deployment.litellm_settings.is_none());
+    assert_eq!(only_deployment.flags.deployments, [Some(deployment_value)]);
+    assert!(only_deployment.flags.litellm_settings.is_none());
     assert_eq!(only_deployment.resolve(0), deployment_value);
     assert!(only_deployment.resolve(1));
 
@@ -72,14 +72,14 @@ fn assert_each_source_alone(flags: Flags) {
         "bedrock_neutralize_orphaned_tool_blocks: {global_value}"
     )))
     .unwrap();
-    assert!(only_global.deployments.is_empty());
-    assert_eq!(only_global.litellm_settings, Some(global_value));
+    assert!(only_global.flags.deployments.is_empty());
+    assert_eq!(only_global.flags.litellm_settings, Some(global_value));
     assert_eq!(only_global.resolve(0), global_value);
 }
 
 fn assert_deployment_precedence(flags: Flags) {
     let configured = load(&both(flags)).unwrap();
-    assert_eq!(configured.litellm_settings, Some(flags.global));
+    assert_eq!(configured.flags.litellm_settings, Some(flags.global));
     assert_eq!(
         configured.resolve(0),
         flags.deployment,
@@ -105,13 +105,13 @@ fn environment_values() {
         )
     };
     assert_eq!(
-        read("false").unwrap().deployments,
+        read("false").unwrap().flags.deployments,
         [Some(false)],
         "an os.environ reference reads into the field"
     );
-    assert_eq!(read(" Yes ").unwrap().deployments, [Some(true)]);
+    assert_eq!(read(" Yes ").unwrap().flags.deployments, [Some(true)]);
     assert_eq!(
-        read("").unwrap().deployments,
+        read("").unwrap().flags.deployments,
         [None],
         "an empty environment value counts as unset"
     );
@@ -120,7 +120,7 @@ fn environment_values() {
         &[("NEUTRALIZE_ORPHANS", "")],
     )
     .unwrap();
-    assert!(empty_global.litellm_settings.is_none());
+    assert!(empty_global.flags.litellm_settings.is_none());
     assert!(empty_global.resolve(0));
 }
 
@@ -186,4 +186,9 @@ fn bedrock_converse_messages_config_cases(#[case] field: Field) {
         }
         Field::RejectsUnrelatedKey => rejects_unrelated_keys(),
     }
+}
+
+#[test]
+fn the_flags_stay_behind_one_pointer() {
+    assert_eq!(size_of::<Settings>(), size_of::<usize>());
 }
