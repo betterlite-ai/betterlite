@@ -152,7 +152,7 @@ def _caller(input_value: Input) -> ModelResponse:
 def _transform(input_value: Input) -> ModelResponse:
     raw = RESPONSE.validate_json(json.dumps(input_value["response"]))
     hidden = input_value["raw_hidden_params"]
-    raw._hidden_params = hidden  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1424
+    raw._hidden_params = hidden  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1424
     return LiteLLMResponsesTransformationHandler().transform_response(
         model=input_value["model"],
         raw_response=raw,

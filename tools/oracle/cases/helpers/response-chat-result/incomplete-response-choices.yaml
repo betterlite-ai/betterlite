@@ -127,6 +127,7 @@ calls:
           - type: reasoning
             summary:
               - {text: known}
+            encrypted_content: enc-raw
           - type: reasoning
             id: rs_2
             summary:

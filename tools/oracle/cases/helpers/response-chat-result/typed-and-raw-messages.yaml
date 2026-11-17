@@ -149,6 +149,25 @@ calls:
       caller_hidden_params: {}
       raw_hidden_params: {}
       recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output:
+          - type: message
+            role: assistant
+            content:
+              - {type: output_text, text: a, annotations: []}
+          - type: message
+            role: assistant
+            content:
+              - {type: output_text, text: b, annotations: []}
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
 env: {}
 compare:
   ignore: []
