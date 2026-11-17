@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::ready;
 use std::io;
 use std::sync::Arc;
 
@@ -20,22 +21,25 @@ struct FakeEmbedder;
 impl RouteEmbedder for FakeEmbedder {
     type Error = io::Error;
 
-    async fn embed_documents(
+    fn embed_documents(
         &self,
         _model: &str,
         texts: Vec<String>,
-    ) -> Result<Vec<Vec<f64>>, Self::Error> {
-        Ok(texts.iter().map(|_text| vec![1.0_f64, 0.0_f64]).collect())
+    ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
+        ready(Ok(texts
+            .iter()
+            .map(|_text| vec![1.0_f64, 0.0_f64])
+            .collect()))
     }
 
-    async fn embed_query(
+    fn embed_query(
         &self,
         _model: &str,
         _text: String,
         _raw_text: &str,
         _caller: &CallerContext,
-    ) -> Result<Vec<Vec<f64>>, Self::Error> {
-        Ok(vec![vec![1.0_f64, 0.0_f64]])
+    ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
+        ready(Ok(vec![vec![1.0_f64, 0.0_f64]]))
     }
 }
 
