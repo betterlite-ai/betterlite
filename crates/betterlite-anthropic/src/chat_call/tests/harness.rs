@@ -22,7 +22,6 @@ use super::fixture::{
 #[derive(Clone)]
 pub(super) struct Setup {
     pub(super) acompletion: bool,
-    pub(super) stream: bool,
     pub(super) supplied_kind: ClientKind,
     pub(super) supplied: bool,
     pub(super) body: IndexMap<String, Json>,
@@ -31,6 +30,7 @@ pub(super) struct Setup {
     pub(super) caller_headers: IndexMap<String, String>,
     pub(super) caller_key: Option<&'static str>,
     pub(super) settings_key: Option<&'static str>,
+    pub(super) api_base: &'static str,
     pub(super) reply: FixtureReply,
     pub(super) trip: Trip,
     pub(super) transform_failure: Option<&'static str>,
@@ -41,7 +41,6 @@ impl Default for Setup {
     fn default() -> Self {
         Self {
             acompletion: false,
-            stream: false,
             supplied_kind: ClientKind::Async,
             supplied: true,
             body: body(),
@@ -50,6 +49,7 @@ impl Default for Setup {
             caller_headers: caller_headers(),
             caller_key: Some(CALLER_KEY),
             settings_key: None,
+            api_base: API_BASE,
             reply: FixtureReply::text("hello"),
             trip: Trip::Reply,
             transform_failure: None,
@@ -191,7 +191,7 @@ pub(super) fn execute(setup: Setup) -> Run {
         optional_params: setup.optional_params,
         litellm_params: setup.litellm_params,
         caller_headers: setup.caller_headers,
-        api_base: API_BASE,
+        api_base: setup.api_base,
         api_key: caller_key.as_ref(),
         settings: &settings,
         timeout: TIMEOUT,

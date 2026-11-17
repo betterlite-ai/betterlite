@@ -59,6 +59,12 @@ fn speed_options() -> IndexMap<String, Json> {
     IndexMap::from([("speed".to_owned(), Json::Text("fast".to_owned()))])
 }
 
+fn stream_options() -> IndexMap<String, Json> {
+    let mut options = speed_options();
+    options.insert("stream".to_owned(), Json::Bool(true));
+    options
+}
+
 fn kept() -> Json {
     let betas = vec![Json::Text("kept".to_owned())];
     Json::List(betas)
@@ -141,12 +147,15 @@ fn assert_prepared(run: &Run, mode: &str) {
 }
 
 fn assert_buffered_logged(run: &Run) {
-    // pre_call stores the filtered body, not the transform's answer, and no stream key for a buffered call
-    assert_eq!(run.detail(&["log_event_type"]), Some(&text("pre_api_call")));
+    // the response mapper's post_call replaces the pre_call record and keeps the filtered body it sent
+    assert_eq!(
+        run.detail(&["log_event_type"]),
+        Some(&text("post_api_call"))
+    );
     assert_eq!(run.detail(&["input"]), Some(&Json::List(messages())));
     assert_eq!(
-        run.detail(&["additional_args", "api_base"]),
-        Some(&text(API_BASE))
+        run.detail(&["original_response"]),
+        Some(&text(&text_body("hello")))
     );
     let body = object_of(
         run.detail(&["additional_args", "complete_input_dict"])
@@ -164,20 +173,13 @@ fn buffered_success() {
     assert_eq!(asynchronous.posts_supplied, 1);
     assert_reply(&asynchronous);
     assert_buffered_logged(&asynchronous);
-    assert_eq!(
-        asynchronous.detail(&["log_event_type"]),
-        Some(&text("post_api_call"))
-    );
-    assert_eq!(
-        asynchronous.detail(&["original_response"]),
-        Some(&text(&text_body("hello")))
-    );
 
     let mut synchronous_setup = Setup::default();
     synchronous_setup.optional_params = speed_options();
     let synchronous = execute(synchronous_setup);
     assert_eq!(synchronous.posts_pooled, 1);
     assert_reply(&synchronous);
+    assert_buffered_logged(&synchronous);
 
     // a supplied sync client is the one a sync buffered call keeps
     let mut kept_setup = Setup::default();
@@ -209,9 +211,8 @@ fn stream_setup() -> Setup {
     let mut headers = HeaderMap::new();
     headers.insert("request-id", HeaderValue::from_static("stream-1"));
     let mut setup = Setup::default();
-    setup.stream = true;
     setup.supplied_kind = ClientKind::Sync;
-    setup.optional_params = speed_options();
+    setup.optional_params = stream_options();
     setup.litellm_params = tool_name_map();
     setup.reply = FixtureReply {
         headers,
@@ -390,7 +391,7 @@ fn chat_failure_projection() {
     );
     assert_eq!(asynchronous.posts_supplied, 1);
 
-    // the sync path raises the same status but never logs the failure
+    // the sync path raises the same status but never logs the failure, so its details stay the pre_call record
     let synchronous = failed_call(false);
     assert_eq!(synchronous.status(), Some(500));
     assert_eq!(
@@ -398,6 +399,14 @@ fn chat_failure_projection() {
         Some(&text("pre_api_call"))
     );
     assert_eq!(synchronous.posts_pooled, 1);
+    assert_eq!(
+        synchronous.detail(&["additional_args", "api_base"]),
+        Some(&text(API_BASE))
+    );
+    let masked = synchronous
+        .detail(&["additional_args", "headers", "x-api-key"])
+        .unwrap();
+    assert_ne!(masked, &text(CALLER_KEY));
 
     // a deadline with no response is a bare transport error here, so it takes the 500 path
     let mut timed_setup = Setup::default();

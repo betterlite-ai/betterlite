@@ -123,8 +123,19 @@ fn chat_call_secret_safe_failure() {
     let rejected = execute(rejected_setup);
     assert_eq!(rejected.status(), Some(401));
     assert_secret_safe(&rejected);
-    // the recorded request masks the credential rather than dropping the header
-    let masked = rejected
+
+    // a sync failure keeps the pre_call record, which masks the credential rather than dropping the header
+    let mut refused_setup = Setup::default();
+    refused_setup.trip = Trip::Status {
+        status_code: 401,
+        headers: failure_headers(),
+        body: b"{\"error\":{\"message\":\"invalid api key\"}}".to_vec(),
+        exception_headers: false,
+    };
+    let refused = execute(refused_setup);
+    assert_eq!(refused.status(), Some(401));
+    assert_secret_safe(&refused);
+    let masked = refused
         .detail(&["additional_args", "headers", "x-api-key"])
         .unwrap();
     assert_ne!(masked, &Json::Text(CALLER_KEY.to_owned()));
