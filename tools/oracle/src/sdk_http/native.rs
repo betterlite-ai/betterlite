@@ -52,11 +52,11 @@ struct Params<'config> {
     timeout: u64,
 }
 
-fn load_config(
+fn deployments(
     chat: &OpenaiChat,
     api_base: &str,
     env: &BTreeMap<String, String>,
-) -> Result<LoadedConfig, SdkHttpError> {
+) -> Result<Vec<ChatDeployment>, SdkHttpError> {
     let config = Config {
         model_list: [Entry {
             model_name: &chat.model,
@@ -72,17 +72,9 @@ fn load_config(
         lookup: env.clone(),
     };
     let text = serde_json::to_string(&config).map_err(SdkHttpError::Serialize)?;
-    loader
+    let parsed = loader
         .load(&text)
-        .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))
-}
-
-pub(crate) fn deployments(
-    chat: &OpenaiChat,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-) -> Result<Vec<ChatDeployment>, SdkHttpError> {
-    let parsed = load_config(chat, api_base, env)?;
+        .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     let defaults = openai_defaults(&parsed);
     let mut resolved = Vec::new();
     for entry in &parsed.model_list {

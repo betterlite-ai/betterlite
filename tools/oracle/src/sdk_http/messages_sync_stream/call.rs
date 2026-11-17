@@ -38,12 +38,12 @@ pub struct SyncRunSpec {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SyncInitial {
-    #[serde(default)]
-    pub(crate) holding_chunk: Option<Json>,
-    #[serde(default)]
-    pub(crate) holding_stop_reason_chunk: Option<Json>,
-    #[serde(default)]
-    pub(crate) queued_usage_chunk: bool,
+    #[serde(default, rename = "holding_chunk")]
+    pub(crate) held: Option<Json>,
+    #[serde(default, rename = "holding_stop_reason_chunk")]
+    pub(crate) held_stop_reason: Option<Json>,
+    #[serde(default, rename = "queued_usage_chunk")]
+    pub(crate) queued_usage: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,12 +63,9 @@ pub(crate) fn validate(
         ));
     }
     for run in &call.runs {
-        for seed in [
-            &run.initial.holding_chunk,
-            &run.initial.holding_stop_reason_chunk,
-        ]
-        .into_iter()
-        .flatten()
+        for seed in [&run.initial.held, &run.initial.held_stop_reason]
+            .into_iter()
+            .flatten()
         {
             if !matches!(seed, Json::Object(_)) {
                 return Err(SdkHttpError::Invalid(

@@ -91,17 +91,17 @@ fn run_step(
 
 // The dormant held buffers only exist through a seed, applied before the first call on either side
 fn seeded<S>(state: &mut StreamState<S>, initial: &SyncInitial) -> Result<(), SdkHttpError> {
-    state.holding_chunk = seed_object(initial.holding_chunk.as_ref())?;
-    state.holding_stop_reason_chunk = seed_object(initial.holding_stop_reason_chunk.as_ref())?;
-    state.queued_usage_chunk = initial.queued_usage_chunk;
+    state.holding_chunk = seed_object(initial.held.as_ref())?;
+    state.holding_stop_reason_chunk = seed_object(initial.held_stop_reason.as_ref())?;
+    state.queued_usage_chunk = initial.queued_usage;
     Ok(())
 }
 
-fn seed_object<T>(seed: Option<&Json>) -> Result<Option<T>, SdkHttpError>
+fn seed_object<T>(held: Option<&Json>) -> Result<Option<T>, SdkHttpError>
 where
     T: DeserializeOwned,
 {
-    let Some(seed) = seed else {
+    let Some(seed) = held else {
         return Ok(None);
     };
     let text = serde_json::to_string(seed).map_err(SdkHttpError::Serialize)?;
@@ -112,7 +112,10 @@ where
 }
 
 // The uuid is fresh per stream, so both sides replace it with one value before comparing
-fn normalized<E: Serialize>(event: &E, message_id: &str) -> Result<Value, SdkHttpError> {
+fn normalized<E>(event: &E, message_id: &str) -> Result<Value, SdkHttpError>
+where
+    E: Serialize,
+{
     let mut value = serde_json::to_value(event).map_err(SdkHttpError::Serialize)?;
     if let Value::Object(fields) = &mut value
         && fields.get("type").and_then(Value::as_str) == Some("message_start")

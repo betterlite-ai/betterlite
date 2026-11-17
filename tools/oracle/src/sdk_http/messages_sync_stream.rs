@@ -80,8 +80,8 @@ async fn prefetch(
     let mut stream = response.body_stream();
     let mut parser = SseParser::default();
     let mut payloads = VecDeque::new();
-    while let Some(bytes) = stream.next().await {
-        let bytes = bytes.map_err(|source| SdkHttpError::Stream(Box::new(source)))?;
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|source| SdkHttpError::Stream(Box::new(source)))?;
         for event in parser
             .push(&bytes)
             .map_err(|error| SdkHttpError::Invalid(error.to_string()))?

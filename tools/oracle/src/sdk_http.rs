@@ -25,7 +25,7 @@ pub mod error;
 pub mod file_azure_storage;
 pub(crate) mod messages_header_stream;
 pub mod messages_stream_logging;
-pub(crate) mod messages_sync_stream;
+pub mod messages_sync_stream;
 pub(crate) mod native;
 pub(crate) mod python;
 pub mod responses_agentic_continuation;

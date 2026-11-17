@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
+use std::iter::repeat_with;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -154,9 +155,7 @@ fn next(driver: &mut Driver) -> Object {
 }
 
 fn take(driver: &mut Driver, count: usize) -> Vec<Object> {
-    std::iter::repeat_with(|| next(driver))
-        .take(count)
-        .collect()
+    repeat_with(|| next(driver)).take(count).collect()
 }
 
 fn kind(event: &Object) -> &str {
