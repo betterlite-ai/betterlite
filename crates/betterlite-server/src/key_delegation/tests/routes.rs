@@ -94,6 +94,32 @@ fn routes_custom_or_mixed_denied(#[case] routes: Vec<JsonData>) {
     assert!(matches!(error.detail(), DelegationDetail::Error(_)));
 }
 
+#[test]
+fn nested_route_entries_rejected() {
+    let nested = [json("[1]"), json(r#"{"bucket": "info_routes"}"#)];
+    assert_eq!(
+        check_routes_permission(&sent(false, Some(nested.to_vec())), true, user()),
+        Err(DelegationError::AllowedRoutes)
+    );
+    assert_eq!(
+        check_routes_permission(&sent(true, Some(nested.to_vec())), true, user()),
+        Err(DelegationError::AllowedRoutes)
+    );
+}
+
+#[test]
+fn nested_route_entries_unsafe_transition() {
+    let nested = [json("[1]")];
+    let read_only = presets(&["info_routes"]);
+    assert!(!is_safe_route_transition(Some(&nested), Some(&read_only)));
+    assert!(!is_safe_route_transition(Some(&read_only), Some(&nested)));
+    // the fallback runs the raw check, which refuses a supplied nested list
+    assert_eq!(
+        enforce_routes_update(&sent(true, Some(nested.to_vec())), Some(&read_only), user()),
+        Err(DelegationError::AllowedRoutes)
+    );
+}
+
 #[rstest]
 #[case::empty_to_empty(&[], &[], true)]
 #[case::full_to_info(&["info_routes"], &[], true)]
