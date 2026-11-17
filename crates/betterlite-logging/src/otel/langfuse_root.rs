@@ -12,7 +12,6 @@ use crate::logging_pre_post::error::PrePostError;
 use crate::logging_pre_post::hooks::{ApiCallLogger, PostCallEvent, PreCallEvent};
 use crate::otel::content_projections::{
     OutputResponse, RelayedChunk, StreamOutputAssembler, request_input, response_output,
-    stream_output,
 };
 use crate::otel::langfuse_root::relay::StampingStream;
 use crate::otel::logger::v2::OpenTelemetryV2;
@@ -123,12 +122,12 @@ impl LangfuseContentOtel {
     // litellm.integrations.otel.langfuse_logger.LangfuseContentOpenTelemetryV2.async_post_call_streaming_iterator_hook
     #[must_use]
     // ast-grep-ignore: no-long-names - B8910 calls this hook by the LiteLLM name
-    pub fn async_post_call_streaming_iterator_hook<S>(
-        &self,
+    pub fn async_post_call_streaming_iterator_hook<'stream, S>(
+        &'stream self,
         _user_api_key_dict: &MetadataMap,
         response: S,
-        request_data: &MetadataMap,
-    ) -> StampingStream<'_, S>
+        request_data: &'stream MetadataMap,
+    ) -> StampingStream<'stream, S>
     where
         S: futures_util::Stream<Item = RelayedChunk> + Send,
     {

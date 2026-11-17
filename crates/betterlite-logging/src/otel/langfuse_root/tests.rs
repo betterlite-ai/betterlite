@@ -151,7 +151,7 @@ fn inner_logger_exporting(log: &Log, spans: InMemorySpanExporter) -> OpenTelemet
     };
     let tenants = TenantTracerCache::new(
         config.clone(),
-        Some("langfuse_otel".to_owned()),
+        Some("langfuse_custom".to_owned()),
         "litellm",
         TenantSources {
             factories: Arc::new(ExporterFactories::new(
@@ -167,7 +167,7 @@ fn inner_logger_exporting(log: &Log, spans: InMemorySpanExporter) -> OpenTelemet
         },
     );
     OpenTelemetryV2::with_parts(OpenTelemetryV2Parts {
-        name: "langfuse_otel".to_owned(),
+        name: "langfuse_custom".to_owned(),
         config,
         tracer,
         emitter,
@@ -218,7 +218,7 @@ fn entries(log: &Log) -> Vec<String> {
 
 fn render(chunk: &RelayedChunk) -> String {
     match chunk {
-        RelayedChunk::Raw(frame) => String::from_utf8_lossy(frame).into_owned(),
+        RelayedChunk::Raw(frame) => str::from_utf8(frame).expect("raw chunk").to_owned(),
         RelayedChunk::Chat(item) | RelayedChunk::Completed(item) | RelayedChunk::Other(item) => {
             serde_json::to_string(item).expect("json")
         }
@@ -402,12 +402,12 @@ fn both_wrappers_report_the_wrapped_callback_name() {
             sink: Some(root(&log, true)),
         }),
     };
-    assert_eq!(otel.callback_name(), "langfuse_otel");
+    assert_eq!(otel.callback_name(), "langfuse_custom");
     let content = LangfuseContentOtel {
         inner: otel,
         stream_assembler: Arc::new(FakeAssembler { assembled: None }),
     };
-    assert_eq!(content.callback_name(), "langfuse_otel");
+    assert_eq!(content.callback_name(), "langfuse_custom");
 }
 
 #[tokio::test]
