@@ -19,6 +19,7 @@ use tracing_subscriber::layer::{Context, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use crate::client::cleanup::http_client::CleanupScope;
+use crate::client::sdk_runtime::handler::ServerRequestHandlers;
 use crate::client::sessions::client::{SessionClient, SessionSettings};
 use crate::client::sessions::error::{ExitFailure, McpFailure, SessionError};
 use crate::client::sessions::factory::{HttpClientConfig, SseRequest};
@@ -476,6 +477,7 @@ where
             protocol_version: ProtocolVersion::Auto,
             client_version: "1.105.1".to_owned(),
             callbacks: Callbacks::default(),
+            handlers: ServerRequestHandlers::default(),
         },
         tracker: TaskTracker::new(),
         caller_cancelled: cancelled,
