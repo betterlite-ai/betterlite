@@ -26,7 +26,7 @@ pub struct ResponseCreatedEvent {
     pub response: ResponseCreatedObject,
 }
 
-// Both limits are present here even when the setup left them unset, which the done object does not do
+// Both limits serialize here even when the setup left them unset; the done object omits them instead
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ResponseCreatedObject {
     pub object: &'static str,
