@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass
+from itertools import count
 from typing import NotRequired, Protocol, TypedDict
 
 from fastuuid import UUID
@@ -9,6 +10,7 @@ from pydantic import JsonValue, TypeAdapter
 
 MODEL = "gemini-2.5-flash"
 TRACE_ID = "trace"
+UUID_GROUP_STEP = 0x00000001000000010000000100000001
 
 
 class Ids(TypedDict):
@@ -54,11 +56,10 @@ INPUT = TypeAdapter(Input)
 
 class CountedUuid:
     def __init__(self) -> None:
-        self.drawn = 0
+        self.counts = count(1)
 
     def __call__(self) -> UUID:
-        self.drawn += 1
-        return UUID(f"{self.drawn:08x}" * 4)
+        return UUID(int=next(self.counts) * UUID_GROUP_STEP)
 
 
 def transform_input(ids: Ids, session_configuration_request: str | None) -> dict[str, JsonValue]:
