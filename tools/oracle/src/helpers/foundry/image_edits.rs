@@ -24,17 +24,14 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let mut answer = Map::new();
-        insert(
-            &mut answer,
-            "models",
-            input.models.as_deref(),
-            |model: &String| Ok(model_step(model.as_str())),
-        )?;
+        insert(&mut answer, "models", input.models.as_deref(), |model| {
+            Ok(model_step(model.as_str()))
+        })?;
         insert(
             &mut answer,
             "supported",
             input.supported.as_deref(),
-            |model: &String| Ok(supported_step(model.as_str())),
+            |model| Ok(supported_step(model.as_str())),
         )?;
         insert(&mut answer, "auths", input.auths.as_deref(), auth_step)?;
         insert(&mut answer, "urls", input.urls.as_deref(), url_step)?;
