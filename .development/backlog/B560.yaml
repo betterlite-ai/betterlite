@@ -1,7 +1,7 @@
 id: B560
 milestone: M3 providers
 title: Foundry agent thread and run execution
-status: todo
+status: done
 depends_on: [B559, B173, B171, B561, B529, B2202]
 file: tasks/B560-foundry-agent-runs.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/azure_ai/agents/transformation.py"
 parent: B026
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2245
