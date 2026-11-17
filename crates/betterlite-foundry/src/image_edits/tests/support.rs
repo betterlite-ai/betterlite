@@ -8,7 +8,6 @@ use betterlite_azure::credentials::source::{
 };
 use betterlite_config::sections::foundry_credentials::Settings as FoundrySettings;
 use betterlite_config::sections::foundry_image_edits::Settings as VersionSettings;
-use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::Object;
