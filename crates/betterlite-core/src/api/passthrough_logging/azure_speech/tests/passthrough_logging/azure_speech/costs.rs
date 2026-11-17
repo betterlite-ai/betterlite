@@ -6,6 +6,7 @@ use tracing::Level;
 use super::super::super::support;
 
 const SHORT_AUDIO: &str = "https://eastus.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US";
+const FAST: &str = "https://eastus.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe?api-version=2024-11-15";
 const BATCH: &str = "https://eastus.api.cognitive.microsoft.com/speechtotext/v3.2/transcriptions";
 const RECOGNIZED: &[u8] = br#"{"Offset": 5000000, "Duration": 25000000}"#;
 
@@ -73,6 +74,21 @@ fn a_malformed_price_logs_a_warning_and_bills_zero() {
     let outcome = support::run(&logging_obj, &lookup, SHORT_AUDIO, None, RECOGNIZED);
     assert_eq!(support::cost_of(&outcome), Decimal::ZERO);
     assert!(logs.text().contains("zero cost"));
+}
+
+#[test]
+fn a_negative_duration_is_billed_without_asking_the_registry() {
+    let logging_obj = support::logging_object();
+    let lookup = support::RecordingLookup::unpriced();
+    let outcome = support::run(
+        &logging_obj,
+        &lookup,
+        FAST,
+        None,
+        br#"{"durationMilliseconds": -5000}"#,
+    );
+    assert_eq!(support::cost_of(&outcome), Decimal::ZERO);
+    assert!(lookup.calls().is_empty());
 }
 
 #[test]

@@ -60,6 +60,7 @@ fn short_audio_bills_the_upload_when_nothing_was_recognized() {
 #[case::a_missing_offset(br#"{"Duration": 25000000}"#)]
 #[case::a_missing_duration(br#"{"Offset": 5000000}"#)]
 #[case::null_ticks(br#"{"Offset": null, "Duration": null}"#)]
+#[case::structured_ticks(br#"{"Offset": {"start": 5000000}, "Duration": [25000000]}"#)]
 fn short_audio_without_usable_ticks_bills_no_recognition(#[case] response_body: &[u8]) {
     assert_eq!(
         billed_audio_seconds(SpeechRoute::ShortAudio, None, response_body)
@@ -188,6 +189,24 @@ fn a_tick_value_beyond_the_decimal_range_is_an_error() {
         error,
         AzureSpeechLoggingError::FieldValue {
             field: "Offset",
+            ..
+        }
+    ));
+}
+
+// The fast route reads its own field, so the error has to name that field rather than a tick.
+#[test]
+fn a_millisecond_value_beyond_the_decimal_range_names_its_field() {
+    let error = billed_audio_seconds(
+        SpeechRoute::FastTranscription,
+        None,
+        br#"{"durationMilliseconds": 10000000000000000000000000000000000000000}"#,
+    )
+    .expect_err("the milliseconds leave the decimal range");
+    assert!(matches!(
+        error,
+        AzureSpeechLoggingError::FieldValue {
+            field: "durationMilliseconds",
             ..
         }
     ));
