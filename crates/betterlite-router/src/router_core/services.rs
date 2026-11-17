@@ -26,7 +26,7 @@ pub trait RouteServices: Send + Sync {
     // _async_filter_health_check_unhealthy_deployments: whether health routing is on, its group allowlist, and the deployments the snapshot marks unhealthy
     #[must_use]
     fn health_inputs(&self) -> HealthInputs {
-        HealthInputs::default()
+        HealthInputs::NONE
     }
 
     // async_callback_filter_deployments: each callback replaces the pool, and its failure stops the route

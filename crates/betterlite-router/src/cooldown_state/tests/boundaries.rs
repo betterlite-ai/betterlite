@@ -118,6 +118,12 @@ fn the_staleness_edge() {
         extract_unhealthy(Some(&stored), 9.75, 10.0),
         unhealthy_ids(&["a"])
     );
+    // a verdict taken five seconds ago is still fresh at the same instant, since the threshold counts back from the moment the probe ran
+    let recent = snapshot(&[("b", unhealthy(5.0))]);
+    assert_eq!(
+        extract_unhealthy(Some(&recent), 10.0, 10.0),
+        unhealthy_ids(&["b"])
+    );
 }
 
 async fn the_merge_expiry() {

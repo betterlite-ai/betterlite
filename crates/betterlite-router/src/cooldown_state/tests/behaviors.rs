@@ -12,6 +12,7 @@ use crate::cooldown_state::filter::{
     HealthRouting, all_blocked, fully_blocked_model_names, fully_unhealthy_model_names,
     without_cooling_down, without_unhealthy,
 };
+use crate::cooldown_state::health::HealthSnapshot;
 use crate::cooldown_state::record::CooldownRecord;
 use crate::routing_read_batch::store::ReadWarning;
 
@@ -362,6 +363,10 @@ async fn a_healthy_state_is_not_unhealthy() {
     assert_eq!(cache.unhealthy().await, unhealthy_ids(&["b"]));
     assert_eq!(cache.unhealthy_now(), unhealthy_ids(&["b"]));
     assert_eq!(shared.read_count(), 1);
+    // a state written without a verdict is healthy, which is how DeploymentHealthStateValue defaults it
+    let decoded: HealthSnapshot =
+        serde_json::from_str(r#"{"a": {"timestamp": 1.0}}"#).expect("the state decodes");
+    assert_eq!(decoded.get("a").map(|state| state.is_healthy), Some(true));
 }
 
 fn the_sync_facade_answers() {
@@ -461,6 +466,8 @@ fn a_paused_model_is_listed() {
         paused("gpt-4o", "a"),
         paused("gpt-4o", "b"),
         deployment("claude", "c"),
+        paused("mixed", "d"),
+        deployment("mixed", "e"),
     ];
     assert_eq!(
         fully_blocked_model_names(&deployments),
@@ -481,8 +488,10 @@ fn a_fully_unhealthy_model_is_listed() {
         aliased,
         deployment("gpt-4o", "b"),
         deployment("claude", "c"),
+        deployment("mixed", "d"),
+        deployment("mixed", "e"),
     ];
-    let unhealthy = unhealthy_ids(&["a", "b"]);
+    let unhealthy = unhealthy_ids(&["a", "b", "d"]);
     assert_eq!(
         fully_unhealthy_model_names(&deployments, &unhealthy, false),
         unhealthy_ids(&["gpt-4o", "team-gpt"])

@@ -13,12 +13,22 @@ pub struct HealthRouting<'settings> {
 }
 
 // the health routing settings and the snapshot's verdicts, as one route service answers them
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HealthInputs {
     pub enabled: bool,
     pub has_allowed_fails_policy: bool,
     pub scoped_groups: Option<BTreeSet<String>>,
     pub unhealthy: BTreeSet<String>,
+}
+
+// a router without health caches answers nothing: routing off, no allowlist and no verdicts; the type has no Default, so a body-replacement mutation of the trait's default cannot compile
+impl HealthInputs {
+    pub const NONE: Self = Self {
+        enabled: false,
+        has_allowed_fails_policy: false,
+        scoped_groups: None,
+        unhealthy: BTreeSet::new(),
+    };
 }
 
 // _filter_cooldown_deployments: a deployment that is cooling down right now is not a candidate
