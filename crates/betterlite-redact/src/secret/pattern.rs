@@ -39,17 +39,22 @@ const DB_CONN: (&str, usize) = ("db_conn", 14);
 const AZURE_SAS: (&str, usize) = ("azure_sas", 20);
 // The byte before db_conn's credential is always "/" from "://", so url_query_cred's and url_key's "[?&]" guard can never win there.
 const DB_CONN_SKIPS: [usize; 2] = [URL_QUERY_CRED.1, URL_KEY.1];
+// db_conn opens with "://" and can never win where an azure_sas or ya29 credential starts, and its two 4096-byte classes cost about 130 ms per regex that includes it
+const STARTS_WITH_A_LETTER_SKIPS: [usize; 1] = [DB_CONN.1];
 const GUARDS: [(&str, usize, &[usize]); 4] = [
     (URL_QUERY_CRED.0, URL_QUERY_CRED.1, &[]),
     (URL_KEY.0, URL_KEY.1, &[]),
     (DB_CONN.0, DB_CONN.1, &DB_CONN_SKIPS),
-    (AZURE_SAS.0, AZURE_SAS.1, &[]),
+    (AZURE_SAS.0, AZURE_SAS.1, &STARTS_WITH_A_LETTER_SKIPS),
 ];
 
 // Groups whose Python pattern leads with `\b`, not a consuming lookaround Rust's regex crate can't express; the boundary is checked against the original text in code instead, paired with the branch's rank in branches() for replaying the branches LiteLLM ranks after it.
 const YA29_TOKEN: (&str, usize) = ("ya29_token", 1);
 const JWT_TOKEN: (&str, usize) = ("jwt_token", 19);
-const BOUNDARY_GUARDED: [(&str, usize); 2] = [YA29_TOKEN, JWT_TOKEN];
+const BOUNDARY_GUARDED: [(&str, usize, &[usize]); 2] = [
+    (YA29_TOKEN.0, YA29_TOKEN.1, &STARTS_WITH_A_LETTER_SKIPS),
+    (JWT_TOKEN.0, JWT_TOKEN.1, &[]),
+];
 
 // Folds U+0130/U+0131 onto i/I and onto every bare A-Z/a-z range, since Rust's (?i) folding leaves out Python's re.IGNORECASE mapping for the dotted and dotless I; none of these patterns negates a class spanning i or I, so a plain substring swap is safe.
 pub(super) fn dotted_i(pattern: &str) -> String {
@@ -149,12 +154,12 @@ pub(super) fn build(minimum_custom_key_length: usize) -> Result<SecretPatterns, 
             .collect();
         (*name, selected)
     }))?;
-    let boundary_guarded = anchored_regexes(BOUNDARY_GUARDED.iter().map(|(name, rank)| {
+    let boundary_guarded = anchored_regexes(BOUNDARY_GUARDED.iter().map(|(name, rank, skips)| {
         let selected = branches
-            .get(rank.saturating_add(1)..)
-            .into_iter()
-            .flatten()
-            .map(String::as_str)
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| index > rank && !skips.contains(index))
+            .map(|(_, branch)| branch.as_str())
             .collect();
         (*name, selected)
     }))?;

@@ -80,7 +80,7 @@ pub(super) fn fixture(settings: Settings, directory: &Path) -> Result<Fixture, B
     let concrete: Arc<Selector> = Arc::clone(&selector);
     let default_loader: Arc<dyn DefaultEngine> = concrete;
     Ok(Fixture {
-        counter: Counter::new(selector, fetcher, service, catalog, settings),
+        counter: Counter::new(selector, service, catalog, settings),
         default: DefaultEncoding::new(default_loader),
     })
 }

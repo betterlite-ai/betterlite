@@ -3,30 +3,11 @@ use std::future::Future;
 use tokio::task::JoinSet;
 use tokio::time;
 
-use super::{ConnectionOptions, OPERATION_TIMEOUT, operations::connect, resource::Resource};
+use super::{OPERATION_TIMEOUT, PostgresFixture};
 use crate::error::FixtureError;
 
-pub(super) async fn cleanup_resource(
-    options: &ConnectionOptions,
-    resource: &Resource,
-) -> Result<(), FixtureError> {
-    let mut drivers = JoinSet::new();
-    let client = connect(options, &mut drivers).await?;
-    let statement = resource.drop_statement();
-    let query = timed("drop resource", client.batch_execute(&statement))
-        .await
-        .and_then(|result| result.map_err(FixtureError::Database));
-    drop(client);
-    combine_errors(query, drain_drivers(&mut drivers).await)
-}
-
-pub(super) async fn cleanup_setup_driver(
-    setup: FixtureError,
-    admin: &ConnectionOptions,
-    resource: &Resource,
-) -> FixtureError {
-    let cleanup_result = cleanup_resource(admin, resource).await;
-    match cleanup_result {
+pub(super) async fn close_after(setup: FixtureError, fixture: PostgresFixture) -> FixtureError {
+    match fixture.close_async().await {
         Ok(()) => setup,
         Err(cleanup_error) => FixtureError::SetupCleanup {
             setup: Box::new(setup),

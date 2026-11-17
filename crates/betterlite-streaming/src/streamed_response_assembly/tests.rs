@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+
+use betterlite_redact::secret::Redactor;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
 use rstest::rstest;
@@ -20,7 +23,7 @@ mod stamping;
 mod support;
 mod text_completion;
 
-use support::{FixtureCosts, FixtureCounter, chunks, hooks};
+use support::{FixtureCosts, FixtureCounter, chunks, hooks, redactor};
 
 const FIXED_NOW: i64 = 1_700_000_000;
 
@@ -33,10 +36,11 @@ struct Harness<'fixture> {
     counter: FixtureCounter,
     costs: FixtureCosts,
     now: i64,
+    redactor: &'fixture Arc<Redactor>,
 }
 
-impl Harness<'_> {
-    fn new(chunks: Option<Vec<Chunk>>) -> Self {
+impl<'fixture> Harness<'fixture> {
+    fn new(chunks: Option<Vec<Chunk>>, redactor: &'fixture Arc<Redactor>) -> Self {
         Self {
             chunks,
             messages: false,
@@ -46,11 +50,12 @@ impl Harness<'_> {
             counter: FixtureCounter::default(),
             costs: FixtureCosts::default(),
             now: FIXED_NOW,
+            redactor,
         }
     }
 
     async fn run(&self) -> (Result<Option<Response>, AssemblyError>, Vec<String>) {
-        let hooks = hooks();
+        let hooks = hooks(self.redactor);
         let messages: Option<&[Message]> = self.messages.then_some(&[]);
         let request = Request {
             chunks: self.chunks.as_deref(),
@@ -101,8 +106,8 @@ async fn chat_of(harness: &Harness<'_>) -> ChatResponse {
     chat(ok(result))
 }
 
-async fn response_of(source: &str, response_text: i64) -> ChatResponse {
-    let mut harness = Harness::new(Some(chunks(source)));
+async fn response_of(source: &str, response_text: i64, redactor: &Arc<Redactor>) -> ChatResponse {
+    let mut harness = Harness::new(Some(chunks(source)), redactor);
     harness.messages = true;
     harness.counter.response_text = response_text;
     chat_of(&harness).await
@@ -169,14 +174,15 @@ enum Proof {
 #[case::usage_cost_stamping(Proof::UsageCostStamping)]
 #[tokio::test]
 async fn streamed_response_assembly_cases(#[case] proof: Proof) {
+    let redactor = &redactor();
     match proof {
-        Proof::EmptyAndErrorBoundary => boundary::empty_and_error_boundary().await,
-        Proof::TextCompletionAssembly => text_completion::text_completion_assembly().await,
-        Proof::SimpleTextPath => simple::simple_text_path().await,
-        Proof::ComplexContentOrder => complex::complex_content_order().await,
-        Proof::ProviderFieldsCitations => citations::provider_fields_citations().await,
-        Proof::UsageHiddenMetadata => hidden::usage_hidden_metadata().await,
-        Proof::ReportedCostPrecedence => reported_cost::reported_cost_precedence().await,
-        Proof::UsageCostStamping => stamping::usage_cost_stamping().await,
+        Proof::EmptyAndErrorBoundary => boundary::empty_and_error_boundary(redactor).await,
+        Proof::TextCompletionAssembly => text_completion::text_completion_assembly(redactor).await,
+        Proof::SimpleTextPath => simple::simple_text_path(redactor).await,
+        Proof::ComplexContentOrder => complex::complex_content_order(redactor).await,
+        Proof::ProviderFieldsCitations => citations::provider_fields_citations(redactor).await,
+        Proof::UsageHiddenMetadata => hidden::usage_hidden_metadata(redactor).await,
+        Proof::ReportedCostPrecedence => reported_cost::reported_cost_precedence(redactor).await,
+        Proof::UsageCostStamping => stamping::usage_cost_stamping(redactor).await,
     }
 }

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::UNIX_EPOCH;
 
@@ -15,6 +17,7 @@ use betterlite_core::cost::completion::lookup::{CatalogLookup, LookupSettings};
 use betterlite_core::cost::image_dispatch::options::SizePattern;
 use betterlite_core::cost::prepare::BillingTokenCounter;
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
+use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::model_metadata_resolution::names::NameNormalizers;
@@ -114,8 +117,10 @@ struct Stage {
 
 fn build_stage(entries: &IndexMap<String, Json>) -> Result<Stage, Box<HelperError>> {
     let bytes = serde_json::to_vec(entries).map_err(super::failure)?;
+    let catalog = ModelCatalog::parse(&bytes, UnknownFields::Warn).map_err(super::failure)?;
     let lookup = CatalogLookup::new(
         &bytes,
+        Arc::new(catalog),
         LookupSettings {
             known_model_names: BTreeSet::new(),
             custom_providers: BTreeSet::new(),

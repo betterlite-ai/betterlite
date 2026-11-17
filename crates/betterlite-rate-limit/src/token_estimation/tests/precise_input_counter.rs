@@ -100,13 +100,7 @@ fn token_counter() -> Counter {
         Arc::clone(&service),
         false,
     ));
-    Counter::new(
-        selector,
-        fetcher,
-        service,
-        catalog,
-        TokenizerSettings::default(),
-    )
+    Counter::new(selector, service, catalog, TokenizerSettings::default())
 }
 
 async fn counted(call_type: &str, body: &str) -> i64 {
