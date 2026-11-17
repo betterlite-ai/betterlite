@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_openai::api::container_contracts::error::BaseLlmException;
 use betterlite_openai::containers::container_file_http::ContainerFileHttpError;
 
-use super::execution::UploadFailure;
+use super::execution::UploadFailure as _;
 use super::test_support::timeout_failure;
 
 #[test]

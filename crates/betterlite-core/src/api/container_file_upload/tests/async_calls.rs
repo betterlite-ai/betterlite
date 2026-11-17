@@ -22,6 +22,7 @@ async fn async_upload_returns_the_uploaded_object() {
     assert_eq!(seen.endpoint_name, ENDPOINT_NAME);
     assert_eq!(seen.call_type, "upload_container_file");
     assert_eq!(seen.container_id, CONTAINER_ID);
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[tokio::test]
@@ -40,6 +41,7 @@ async fn async_upload_maps_a_provider_failure_with_its_status() {
     assert_eq!(details.status.0, 404);
     assert_eq!(details.model.as_deref(), Some(""));
     assert_eq!(details.provider.as_deref(), Some("openai"));
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[tokio::test]
@@ -58,4 +60,5 @@ async fn async_upload_uses_the_decoded_provider_for_failures() {
     };
     assert_eq!(context.provider.as_deref(), Some("azure"));
     assert_eq!(context.model.as_deref(), Some(""));
+    assert_eq!(executor.call_count(), 1);
 }

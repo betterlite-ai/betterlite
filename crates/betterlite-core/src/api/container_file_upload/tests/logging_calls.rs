@@ -22,6 +22,7 @@ fn upload_logs_the_input_container_id_and_the_call_id() {
     let executor = StubExecutor::replying(object("file_1"));
 
     upload_container_file(&executor, fixture.deps(), &request).expect("the upload succeeds");
+    assert_eq!(executor.call_count(), 1);
 
     let state = fixture
         .logging
@@ -56,6 +57,7 @@ fn upload_logs_before_the_executor_runs() {
     let executor = StubExecutor::replying(object("file_1"));
 
     upload_container_file(&executor, fixture.deps(), &request).expect("the upload succeeds");
+    assert_eq!(executor.call_count(), 1);
 
     let seen = executor.seen().expect("the executor ran");
     assert_eq!(seen.call_type, "upload_container_file");
@@ -83,6 +85,7 @@ fn upload_logs_the_provider_the_managed_id_resolves_to() {
     let executor = StubExecutor::replying(object("file_1"));
 
     upload_container_file(&executor, fixture.deps(), &request).expect("the upload succeeds");
+    assert_eq!(executor.call_count(), 1);
 
     let seen = executor.seen().expect("the executor ran");
     assert_eq!(seen.provider.as_deref(), Some("azure"));
@@ -102,6 +105,7 @@ fn upload_does_not_log_the_named_credentials() {
     let executor = StubExecutor::replying(object("file_1"));
 
     upload_container_file(&executor, fixture.deps(), &request).expect("the upload succeeds");
+    assert_eq!(executor.call_count(), 1);
 
     let state = fixture
         .logging
@@ -114,6 +118,7 @@ fn upload_does_not_log_the_named_credentials() {
     };
     assert!(!details.contains_key("api_key"));
     assert!(!details.contains_key("api_base"));
+    drop(state);
 }
 
 #[test]
@@ -130,6 +135,7 @@ fn upload_merges_kwargs_metadata_into_the_logging_state() {
     let executor = StubExecutor::replying(object("file_1"));
 
     upload_container_file(&executor, fixture.deps(), &request).expect("the upload succeeds");
+    assert_eq!(executor.call_count(), 1);
 
     let state = fixture
         .logging
@@ -139,4 +145,5 @@ fn upload_merges_kwargs_metadata_into_the_logging_state() {
         panic!("the metadata is merged into the logging params");
     };
     assert_eq!(metadata.get("team"), Some(&Json::Text("core".to_owned())));
+    drop(state);
 }

@@ -34,8 +34,9 @@ fn upload_uses_the_openai_provider_and_the_six_hundred_second_default() {
     assert_eq!(seen.endpoint_name, ENDPOINT_NAME);
     assert_eq!(seen.endpoint_name, "upload_container_file");
     assert_eq!(seen.provider_config, ContainerProviderConfig::OpenAi);
-    assert_eq!(seen.timeout_seconds, 600.0);
+    assert_eq!(seen.timeout_seconds.to_bits(), 600.0_f64.to_bits());
     assert_eq!(seen.file, file());
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[test]
@@ -66,6 +67,7 @@ fn upload_passes_named_credentials_in_litellm_params() {
         seen.litellm_params.get("litellm_call_id"),
         Some(&JsonValue::Text(CALL_ID.to_owned()))
     );
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[test]
@@ -85,6 +87,7 @@ fn a_named_credential_replaces_the_same_kwarg() {
         seen.litellm_params.get("api_key"),
         Some(&JsonValue::Text(API_KEY.to_owned()))
     );
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[test]
@@ -122,6 +125,7 @@ fn upload_passes_scalar_kwargs_in_litellm_params() {
         ))
     );
     assert_eq!(seen.litellm_params.get("stop"), Some(&JsonValue::Null));
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[test]
@@ -158,6 +162,7 @@ fn upload_passes_container_kwargs_in_litellm_params() {
             JsonValue::Number(Number::from(7_i64)),
         )])))
     );
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[test]
@@ -176,6 +181,7 @@ fn upload_forwards_extra_headers_and_extra_query() {
     let seen = executor.seen().expect("the executor ran");
     assert_eq!(seen.extra_headers, fixture.extra_headers);
     assert_eq!(seen.extra_query, fixture.extra_query);
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[test]
@@ -195,6 +201,7 @@ fn upload_sends_the_decoded_container_id_and_the_original_file() {
         seen.optional_params.get("container_id"),
         Some(&Json::Text(managed))
     );
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[test]
@@ -213,6 +220,7 @@ fn upload_takes_the_provider_from_the_managed_id() {
         seen.litellm_params.get("model_id"),
         Some(&JsonValue::Text("gpt-4o".to_owned()))
     );
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[test]
@@ -228,6 +236,7 @@ fn upload_keeps_an_explicit_non_openai_provider() {
     let seen = executor.seen().expect("the executor ran");
     assert_eq!(seen.provider_config, ContainerProviderConfig::Azure);
     assert_eq!(seen.container_id, CONTAINER_ID);
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[rstest]
@@ -245,9 +254,14 @@ fn upload_resolves_the_timeout(#[case] timeout: Option<f64>, #[case] expected: f
     upload_container_file(&executor, fixture.deps(), &request).expect("the upload succeeds");
 
     assert_eq!(
-        executor.seen().expect("the executor ran").timeout_seconds,
-        expected
+        executor
+            .seen()
+            .expect("the executor ran")
+            .timeout_seconds
+            .to_bits(),
+        expected.to_bits()
     );
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[test]
@@ -265,7 +279,7 @@ fn upload_without_a_container_config_is_an_api_connection_failure() {
     };
     assert_eq!(context.provider.as_deref(), Some("bogus"));
     assert_eq!(context.model.as_deref(), Some(""));
-    assert!(!executor.was_called());
+    assert_eq!(executor.call_count(), 0);
 }
 
 #[test]
@@ -282,7 +296,7 @@ fn upload_for_a_known_provider_without_a_container_config_fails_the_same_way() {
         panic!("expected an api connection, got {:?}", error.class);
     };
     assert_eq!(context.provider.as_deref(), Some("anthropic"));
-    assert!(!executor.was_called());
+    assert_eq!(executor.call_count(), 0);
 }
 
 #[test]
@@ -308,7 +322,7 @@ fn upload_rejects_a_wrong_typed_model_id_from_the_managed_id() {
     assert_eq!(details.status.0, 400);
     assert_eq!(details.model.as_deref(), Some(""));
     assert_eq!(details.provider.as_deref(), Some("openai"));
-    assert!(!executor.was_called());
+    assert_eq!(executor.call_count(), 0);
 }
 
 #[test]
@@ -327,6 +341,7 @@ fn upload_never_forwards_extra_body() {
     assert_eq!(seen.litellm_params.len(), 1);
     assert!(!seen.litellm_params.contains_key("extra_body"));
     assert!(!seen.litellm_params.contains_key("metadata"));
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[test]
@@ -347,4 +362,5 @@ fn upload_drops_the_async_call_flag_from_the_handler_params() {
         seen.litellm_params.get("litellm_call_id"),
         Some(&JsonValue::Text(CALL_ID.to_owned()))
     );
+    assert_eq!(executor.call_count(), 1);
 }

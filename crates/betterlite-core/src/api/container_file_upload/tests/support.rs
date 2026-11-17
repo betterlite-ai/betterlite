@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -248,6 +249,7 @@ enum Reply {
 pub(crate) struct StubExecutor {
     reply: Mutex<Reply>,
     seen: Mutex<Option<Seen>>,
+    calls: AtomicUsize,
 }
 
 impl StubExecutor {
@@ -255,6 +257,7 @@ impl StubExecutor {
         Self {
             reply: Mutex::new(Reply::Object(object)),
             seen: Mutex::new(None),
+            calls: AtomicUsize::new(0),
         }
     }
 
@@ -262,6 +265,7 @@ impl StubExecutor {
         Self {
             reply: Mutex::new(Reply::Failure(failure)),
             seen: Mutex::new(None),
+            calls: AtomicUsize::new(0),
         }
     }
 
@@ -272,14 +276,16 @@ impl StubExecutor {
             .clone()
     }
 
-    pub(crate) fn was_called(&self) -> bool {
-        self.seen().is_some()
+    // how many uploads reached the stub: a second delegation shows up here, not only in the last Seen
+    pub(crate) fn call_count(&self) -> usize {
+        self.calls.load(Ordering::Relaxed)
     }
 
     fn answer(
         &self,
         call: &ContainerFileUploadCall<'_>,
     ) -> Result<ContainerFileObject, FixtureFailure> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
         *self.seen.lock().unwrap_or_else(PoisonError::into_inner) = Some(observe(call));
         let reply = self.reply.lock().unwrap_or_else(PoisonError::into_inner);
         match &*reply {

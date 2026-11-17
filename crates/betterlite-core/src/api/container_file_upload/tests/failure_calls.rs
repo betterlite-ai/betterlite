@@ -24,6 +24,7 @@ fn provider_failure_keeps_its_status() {
     assert_eq!(details.status.0, 404);
     assert_eq!(details.model.as_deref(), Some(""));
     assert_eq!(details.provider.as_deref(), Some("openai"));
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[test]
@@ -40,6 +41,7 @@ fn failure_without_a_status_is_an_api_connection() {
     };
     assert_eq!(context.provider.as_deref(), Some("openai"));
     assert_eq!(context.model.as_deref(), Some(""));
+    assert_eq!(executor.call_count(), 1);
 }
 
 #[tokio::test]
@@ -74,4 +76,5 @@ fn failure_carries_the_provider_the_managed_id_resolved_to() {
         panic!("expected an api connection, got {:?}", error.class);
     };
     assert_eq!(context.provider.as_deref(), Some("azure"));
+    assert_eq!(executor.call_count(), 1);
 }
