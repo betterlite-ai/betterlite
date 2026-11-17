@@ -63,12 +63,9 @@ pub fn context_management_value(
 ) -> Result<Option<ParamValue>, ConverseParamsError> {
     match value {
         ParamValue::Mapping(_) => Ok(Some(value.clone())),
-        ParamValue::List(_) => {
-            let encoded: Json = transcode(value)?;
-            map_context_management(&encoded)?
-                .map(|mapped| transcode::<ParamValue, Json>(&mapped))
-                .transpose()
-        }
+        ParamValue::List(_) => map_context_management(&transcode(value)?)?
+            .map(|mapped| transcode::<ParamValue, Json>(&mapped))
+            .transpose(),
         ParamValue::Null | ParamValue::Bool(_) | ParamValue::Number(_) | ParamValue::Text(_) => {
             Ok(None)
         }
