@@ -1,6 +1,7 @@
 use std::task::{Context, Waker};
 
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_openai::api::audio_file_input::AudioFile;
 use http::Method;
 use serde_json::json;
@@ -10,6 +11,7 @@ use super::support::{
     response, target,
 };
 use crate::api::soniox::pipeline::error::PipelineError;
+use crate::api::soniox::prepare::logging::{SonioxEvent, SonioxLogger};
 
 fn audio_answers() -> Vec<support::Reply> {
     vec![
@@ -565,4 +567,42 @@ async fn an_unsendable_header_fails_the_create_without_a_request() {
     ));
     assert_eq!(effects.kinds(), ["pre_call"]);
     assert!(recorder.calls().is_empty());
+}
+
+struct RefusingLogger;
+
+impl SonioxLogger for RefusingLogger {
+    fn record(&mut self, _event: SonioxEvent) -> Result<(), PrePostError> {
+        Err(PrePostError::CallbackFailed {
+            message: String::from("the callback is down"),
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_failing_logging_callback_leaves_the_transcription_result_intact() {
+    let effects = support::Effects::default();
+    let answers = vec![
+        answer(200, r#"{"id":"tr_1"}"#),
+        answer(200, r#"{"status":"completed","audio_duration_ms":1500}"#),
+        answer(200, r#"{"text":"hello"}"#),
+        answer(200, "{}"),
+    ];
+    let recorder = support::Recorder::new(answers, &effects);
+    let pipeline = pipeline_with(&recorder, &recorder);
+    let case_params = support::params(&[
+        ("soniox_max_polling_attempts", json!(1)),
+        ("file_id", json!("caller-file")),
+    ]);
+    let call = call(&case_params, false);
+    let mut response = response();
+    let mut logger = RefusingLogger;
+    let outcome = pipeline
+        .transcribe::<support::Recorder<'_>>(&call, target(None, &mut response, &mut logger), None)
+        .await;
+
+    assert!(outcome.is_ok(), "{outcome:?}");
+    assert_eq!(response.text.as_deref(), Some("hello"));
+    assert_eq!(response.hidden_params.get("model"), Some(&json!(MODEL)));
+    assert_eq!(recorder.calls().len(), 4);
 }
