@@ -9,10 +9,10 @@ deviations:
       based on an environment flag loses the record shape the rest of the pipeline parses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L632-L655
   - what: >-
-      Every request to a chat or embeddings path records one terminal service event, including a
-      request the gateway itself rejects (an unknown model, a body the request limits refuse), and
-      the event's error text comes from the response status as "the upstream call failed with HTTP
-      {status}".
+      Every request to a chat, text-completion or embeddings path records one terminal service
+      event, including a request the gateway itself rejects (an unknown model, a body the request
+      limits refuse), and the event's error text comes from the response status as "the upstream
+      call failed with HTTP {status}".
     why: >-
       The service event track wraps the HTTP request, so the response status is the only failure
       signal it has; LiteLLM's failure hook runs only where the completion call raised and carries
@@ -26,8 +26,9 @@ deviations:
       CancelledError unwinds the request without calling the service failure hook.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L312-L425
   - what: >-
-      The proxy_pre_call service event is recorded for every chat and embeddings request with
-      duration 0, while LiteLLM emits PROXY_PRE_CALL around guardrail pre-call callbacks.
+      The proxy_pre_call service event is recorded for every chat, text-completion and embeddings
+      request with duration 0, while LiteLLM emits PROXY_PRE_CALL around guardrail pre-call
+      callbacks.
     why: >-
       B012 owns the request lifecycle events; the guardrail callback timing arrives with the
       guardrail lifecycle tasks.

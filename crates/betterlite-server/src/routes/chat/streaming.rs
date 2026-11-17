@@ -44,7 +44,7 @@ use crate::server::chat_setup::provider_call::{
     CallError, answer_chat, chat_error, control_options,
 };
 
-// Every chat and embeddings call enters the service event track here, one pre-call and one terminal event.
+// Every chat, text-completion and embeddings call enters the service event track here, one pre-call and one terminal event.
 pub(crate) async fn service_events(
     State(pipeline): State<Arc<ServicePipeline>>,
     mut request: Request,

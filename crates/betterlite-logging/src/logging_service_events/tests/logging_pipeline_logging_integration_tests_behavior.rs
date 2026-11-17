@@ -122,11 +122,13 @@ fn harness_with(
     settings: WorkerSettings,
 ) -> Harness {
     let clock = SteppingClock::new();
+    let clock_source: Arc<dyn SuccessClock> = Arc::clone(&clock);
+    let sink_source: Arc<dyn ServiceEventSink> = Arc::clone(&sink);
     let pipeline = Arc::new(
         ServicePipeline::start(PipelineConfig {
             settings,
-            clock: Arc::clone(&clock),
-            sink: Arc::clone(&sink),
+            clock: clock_source,
+            sink: sink_source,
             registry: Arc::new(registry),
         })
         .unwrap(),
@@ -202,11 +204,12 @@ async fn terminal_success_records_one_event() {
 #[tokio::test]
 async fn terminal_duration_comes_from_the_clock() {
     let sink = Arc::new(RecordingSink::default());
+    let sink_source: Arc<dyn ServiceEventSink> = Arc::clone(&sink);
     let pipeline = Arc::new(
         ServicePipeline::start(PipelineConfig {
             settings: WorkerSettings::default(),
             clock: SteppingClock::with_step(3),
-            sink: Arc::clone(&sink),
+            sink: sink_source,
             registry: Arc::new(CallbackRegistry::new(16)),
         })
         .unwrap(),
@@ -322,9 +325,18 @@ async fn dropping_a_stream_records_cancellation() {
 #[rstest]
 #[case("/v1/chat/completions", Some(ServiceKind::Chat))]
 #[case("/chat/completions", Some(ServiceKind::Chat))]
+#[case("/v1/completions", Some(ServiceKind::TextCompletion))]
+#[case("/completions", Some(ServiceKind::TextCompletion))]
+#[case(
+    "/engines/gpt-3.5-turbo-instruct/completions",
+    Some(ServiceKind::TextCompletion)
+)]
+#[case(
+    "/openai/deployments/instruct/completions",
+    Some(ServiceKind::TextCompletion)
+)]
 #[case("/v1/embeddings", Some(ServiceKind::Embedding))]
 #[case("/embeddings", Some(ServiceKind::Embedding))]
-#[case("/v1/completions", None)]
 #[case("/v1/chat/completions/extra", None)]
 #[case("/", None)]
 fn service_kinds_come_from_the_request_path(
@@ -571,12 +583,12 @@ impl Captured {
 }
 
 impl Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -603,10 +615,11 @@ async fn wiring_applies_the_resolved_queue_limit() {
         event_timeout: SETTINGS_EVENT_TIMEOUT,
     };
     let sink = Arc::new(RecordingSink::default());
+    let sink_source: Arc<dyn ServiceEventSink> = Arc::clone(&sink);
     let wiring = LoggingWiring::start(
         &settings,
         SteppingClock::new(),
-        Arc::clone(&sink),
+        sink_source,
         CallbackRegistry::new(16),
         Arc::new(ChatStreamAssembler),
     )
@@ -664,10 +677,11 @@ async fn wiring_starts_the_worker_from_the_resolved_settings() {
         event_timeout: Duration::from_secs(5),
     };
     let sink = Arc::new(RecordingSink::default());
+    let sink_source: Arc<dyn ServiceEventSink> = Arc::clone(&sink);
     let wiring = LoggingWiring::start(
         &settings,
         SteppingClock::new(),
-        Arc::clone(&sink),
+        sink_source,
         CallbackRegistry::new(16),
         Arc::new(ChatStreamAssembler),
     )

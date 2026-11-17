@@ -123,10 +123,11 @@ pub struct ServiceEvent {
     pub end_time: DateTime<FixedOffset>,
 }
 
-// The two model paths a proxy request can take, and the LiteLLM call_type each one reports
+// The model paths a proxy request can take, and the LiteLLM call_type each one reports
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ServiceKind {
     Chat,
+    TextCompletion,
     Embedding,
 }
 
@@ -135,6 +136,8 @@ impl ServiceKind {
     pub fn from_path(path: &str) -> Option<Self> {
         if path.ends_with("/chat/completions") {
             Some(Self::Chat)
+        } else if path.ends_with("/completions") {
+            Some(Self::TextCompletion)
         } else if path.ends_with("/embeddings") {
             Some(Self::Embedding)
         } else {
@@ -146,6 +149,7 @@ impl ServiceKind {
     pub const fn call_type(self) -> &'static str {
         match self {
             Self::Chat => "acompletion",
+            Self::TextCompletion => "atext_completion",
             Self::Embedding => "aembedding",
         }
     }

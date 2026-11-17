@@ -26,6 +26,7 @@ static SERIAL: AsyncMutex<()> = AsyncMutex::const_new(());
 
 const SENTINEL: &str = "sk-SENTINEL0123456789abcdefghijklmnop";
 const CALL_ID: &str = "call-abc";
+const COMPLETION: &str = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"text":"hello","index":0,"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#;
 const STREAM_CHUNK: &str = concat!(
     r#"data: {"id":"c1","object":"chat.completion.chunk","created":7,"model":"upstream-model","#,
     r#""choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}"#,
@@ -47,12 +48,12 @@ impl Captured {
 }
 
 impl Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -418,6 +419,33 @@ async fn an_embeddings_call_records_the_embedding_call_type() {
 }
 
 #[tokio::test]
+async fn a_text_completion_call_records_the_text_completion_call_type() {
+    let _serial = SERIAL.lock().await;
+    let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream_address = upstream.local_addr().unwrap();
+    let mut origin = JoinSet::new();
+    origin.spawn(answer_completion(upstream));
+    let source = format!(
+        "model_list:\n  - {{model_name: instruct, litellm_params: {{model: openai/gpt-3.5-turbo-instruct, api_base: 'http://{upstream_address}/v1', api_key: key-1}}}}\n"
+    );
+    let running = start(&source).await;
+    running.wait_for_listening().await;
+    let (status, body) = exchange(
+        running.address,
+        "/v1/completions",
+        r#"{"model":"instruct","prompt":"hi"}"#,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(body.contains("\"text\":\"hello\""), "{body}");
+    let records = running.shut_down().await;
+    let events = service_events(&records);
+    assert_one_call(&events, "atext_completion", false);
+    assert_drained(&records);
+    origin.abort_all();
+}
+
+#[tokio::test]
 async fn an_upstream_error_logs_one_failed_terminal_event() {
     let _serial = SERIAL.lock().await;
     let source = "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: sk-SENTINEL0123456789abcdefghijklmnop}}\n";
@@ -506,6 +534,34 @@ async fn a_cancelled_stream_logs_one_terminal_event() {
 fn holds_first_chunk(bytes: &[u8]) -> bool {
     let needle = b"chat.completion.chunk";
     bytes.windows(needle.len()).any(|window| window == needle)
+}
+
+// one completion answer for the text-completion route, then the connection closes
+async fn answer_completion(listener: TcpListener) {
+    let Ok((mut stream, _)) = listener.accept().await else {
+        return;
+    };
+    let mut head = Vec::new();
+    while !head.ends_with(b"\r\n\r\n") {
+        match stream.read_u8().await {
+            Ok(byte) => head.push(byte),
+            Err(_) => return,
+        }
+    }
+    let length: usize = String::from_utf8_lossy(&head)
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length: "))
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or_default();
+    let mut body = vec![0_u8; length];
+    if stream.read_exact(&mut body).await.is_err() {
+        return;
+    }
+    let reply = format!(
+        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\ncontent-type: application/json\r\n\r\n{COMPLETION}",
+        COMPLETION.len()
+    );
+    let _written = stream.write_all(reply.as_bytes()).await;
 }
 
 async fn hold_open(listener: TcpListener) {
