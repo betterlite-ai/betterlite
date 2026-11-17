@@ -107,7 +107,7 @@ async fn edit_by_id() {
     };
     let decoded = decode_video_id_with_provider(&video.id);
     assert_eq!(decoded.video_id, "video_edit");
-    assert_eq!(decoded.model_id, None);
+    assert_eq!(decoded.model_id.as_deref(), Some(""));
 }
 
 async fn edit_with_file() {
@@ -221,6 +221,11 @@ async fn get_character() {
 }
 
 async fn failures() {
+    missing_character_id().await;
+    bad_reply().await;
+}
+
+async fn missing_character_id() {
     let fixture = Fixture::new(200, b"");
     let call = VideoEditCall::GetCharacter(Box::new(CharacterGetInput {
         character_id: String::new(),
@@ -231,7 +236,9 @@ async fn failures() {
         panic!("the leaf failure is never turned into an unsupported operation");
     };
     assert!(matches!(video_edit, VideoEditError::CharacterId(_)));
+}
 
+async fn bad_reply() {
     let fixture = Fixture::new(200, b"");
     let error = media_error(run(operation(edit(None, b"[]")), &fixture).await);
     let OpenAiMediaError::VideoEdit(video_edit) = error else {

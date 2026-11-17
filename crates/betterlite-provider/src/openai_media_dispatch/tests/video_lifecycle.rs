@@ -122,7 +122,7 @@ async fn status() {
     let video = single_video(&outcome);
     let decoded = decode_video_id_with_provider(&video.id);
     assert_eq!(decoded.video_id, "vid-2");
-    assert_eq!(decoded.model_id, None);
+    assert_eq!(decoded.model_id.as_deref(), Some(""));
 }
 
 async fn delete() {
@@ -186,7 +186,7 @@ async fn remix() {
     let video = single_video(&outcome);
     let decoded = decode_video_id_with_provider(&video.id);
     assert_eq!(decoded.video_id, "vid-6");
-    assert_eq!(decoded.model_id, None);
+    assert_eq!(decoded.model_id.as_deref(), Some(""));
 }
 
 async fn path_failure() {
