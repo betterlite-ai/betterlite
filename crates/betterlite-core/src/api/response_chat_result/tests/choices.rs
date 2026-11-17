@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use rstest::rstest;
 use serde_json::{Value, json};
 
 use crate::api::response_chat_history::metadata::IncompleteFinish;
@@ -157,15 +158,18 @@ fn raw_message_missing_text_is_empty() {
     assert_eq!(choices, json!([text_choice("", "assistant", 0)]));
 }
 
-#[test]
-fn raw_message_falsy_text_is_empty() {
-    for falsy in [json!(""), json!(0), json!([]), json!(false), json!(null)] {
-        let choices = choices_of(json!([{
-            "type": "message", "role": "assistant",
-            "content": [{"type": "output_text", "text": falsy}],
-        }]));
-        assert_eq!(choices, json!([text_choice("", "assistant", 0)]));
-    }
+#[rstest]
+#[case::empty_string(json!(""))]
+#[case::zero(json!(0))]
+#[case::empty_list(json!([]))]
+#[case::false_value(json!(false))]
+#[case::null(json!(null))]
+fn raw_message_falsy_text_is_empty(#[case] falsy: Value) {
+    let choices = choices_of(json!([{
+        "type": "message", "role": "assistant",
+        "content": [{"type": "output_text", "text": falsy}],
+    }]));
+    assert_eq!(choices, json!([text_choice("", "assistant", 0)]));
 }
 
 #[test]
@@ -225,22 +229,19 @@ fn raw_message_unknown_role_is_refused() {
     ));
 }
 
-#[test]
-fn raw_message_roles_map_to_chat_roles() {
-    for (role, expected) in [
-        ("", "assistant"),
-        ("assistant", "assistant"),
-        ("user", "user"),
-        ("system", "system"),
-        ("tool", "tool"),
-        ("function", "function"),
-    ] {
-        let choices = choices_of(json!([{
-            "type": "message", "role": role,
-            "content": [{"type": "output_text", "text": "a"}],
-        }]));
-        assert_eq!(choices, json!([text_choice("a", expected, 0)]));
-    }
+#[rstest]
+#[case::empty_string("", "assistant")]
+#[case::assistant("assistant", "assistant")]
+#[case::user("user", "user")]
+#[case::system("system", "system")]
+#[case::tool("tool", "tool")]
+#[case::function("function", "function")]
+fn raw_message_roles_map_to_chat_roles(#[case] role: &str, #[case] expected: &str) {
+    let choices = choices_of(json!([{
+        "type": "message", "role": role,
+        "content": [{"type": "output_text", "text": "a"}],
+    }]));
+    assert_eq!(choices, json!([text_choice("a", expected, 0)]));
 }
 
 #[test]
