@@ -107,10 +107,7 @@ pub async fn run(
     candidates: CandidateSet,
     route: &RouteContext<'_>,
 ) -> Result<CandidateSet, RoutingError> {
-    let configured = STAGE_FLAGS
-        .iter()
-        .any(|(flagged, configured)| *flagged == stage && *configured);
-    if !configured {
+    if !STAGE_FLAGS.contains(&(stage, true)) {
         return Ok(candidates);
     }
     apply(stage, candidates, route).await
