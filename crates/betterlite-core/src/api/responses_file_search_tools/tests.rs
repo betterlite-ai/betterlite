@@ -207,7 +207,7 @@ fn field_lookup() {
 
 fn joined_text() {
     assert_eq!(joined_content_text(&report()), "hello world");
-    assert_eq!(joined_content_text(&result(r#"{}"#)), "");
+    assert_eq!(joined_content_text(&result("{}")), "");
     assert_eq!(joined_content_text(&result(r#"{"content":[]}"#)), "");
     assert_eq!(
         joined_content_text(&result(r#"{"content":[{"text":""},{"text":"a"},{}]}"#)),
@@ -507,17 +507,14 @@ fn output_text_skips() {
 }
 
 fn output_text_refusal() {
-    let refusal: Vec<ResponseOutputItem> = serde_json::from_str(
-        r#"[{"type":"message","id":"msg_refusal","status":"completed","role":"assistant","content":[{"type":"refusal","refusal":"no"},{"type":"output_text","text":"later","annotations":[]}]}]"#,
+    let refusal_first: SdkOutput = serde_json::from_str(
+        r#"{"type":"message","id":"msg_refusal","status":"completed","role":"assistant","content":[{"type":"refusal","refusal":"no"},{"type":"output_text","text":"later","annotations":[]}]}"#,
     )
-    .expect("the refusal and answer message decodes");
-    assert!(matches!(
-        refusal.as_slice(),
-        [ResponseOutputItem::Sdk(output)]
-            if matches!(output.as_ref(), SdkOutput::OutputMessage(_))
-    ));
+    .expect("the refusal-first message decodes as an sdk output");
+    assert!(matches!(&refusal_first, SdkOutput::OutputMessage(_)));
+    let items = vec![ResponseOutputItem::Sdk(Box::new(refusal_first))];
     assert_eq!(
-        response_output_text(&refusal).expect("the refusal part is skipped"),
+        response_output_text(&items).expect("the refusal part is skipped"),
         "later"
     );
     let skip_then_text = vec![
@@ -703,7 +700,7 @@ const HIDDEN_MERGES: [(Option<&str>, Option<&str>, &str); 7] = [
     ),
     (
         Some(r#"{"response_cost":2.5}"#),
-        Some(r#"{}"#),
+        Some("{}"),
         r#"{"response_cost":2.5}"#,
     ),
     (
@@ -821,22 +818,32 @@ fn include_flag() {
 
 fn stream_switched_off() {
     let streaming = fields(r#"{"stream":1,"include":["file_search_call.results"]}"#);
-    let (call, logs) = capture(|| prepare_file_search_call(&streaming));
-    let call = call.expect("the streaming call prepares");
-    assert_eq!(call.updated_kwargs.get("stream"), Some(&Json::Bool(false)));
-    assert!(call.include_search_results);
-    assert_eq!(streaming.get("stream"), Some(&json("1")));
-    assert_eq!(logs, vec![STREAM_DISABLED.to_owned()]);
-    let quiet = fields(r#"{"stream":0}"#);
-    let (call, logs) = capture(|| prepare_file_search_call(&quiet));
-    assert_eq!(call.expect("the quiet call prepares").updated_kwargs, quiet);
-    assert!(logs.is_empty());
-    let (call, logs) = capture(|| prepare_file_search_call(&fields("{}")));
+    let (prepared, messages) = capture(|| prepare_file_search_call(&streaming));
+    let streaming_call = prepared.expect("the streaming call prepares");
     assert_eq!(
-        call.expect("a call without stream prepares").updated_kwargs,
+        streaming_call.updated_kwargs.get("stream"),
+        Some(&Json::Bool(false))
+    );
+    assert!(streaming_call.include_search_results);
+    assert_eq!(streaming.get("stream"), Some(&json("1")));
+    assert_eq!(messages, vec![STREAM_DISABLED.to_owned()]);
+    let quiet = fields(r#"{"stream":0}"#);
+    let (quiet_prepared, quiet_messages) = capture(|| prepare_file_search_call(&quiet));
+    assert_eq!(
+        quiet_prepared
+            .expect("the quiet call prepares")
+            .updated_kwargs,
+        quiet
+    );
+    assert!(quiet_messages.is_empty());
+    let (plain_prepared, plain_messages) = capture(|| prepare_file_search_call(&fields("{}")));
+    assert_eq!(
+        plain_prepared
+            .expect("a call without stream prepares")
+            .updated_kwargs,
         fields("{}")
     );
-    assert!(logs.is_empty());
+    assert!(plain_messages.is_empty());
 }
 
 fn call_id_precedence() {
