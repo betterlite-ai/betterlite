@@ -1,9 +1,14 @@
+from collections.abc import AsyncIterator, Awaitable
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
+from litellm.types.utils import ModelResponse, ModelResponseStream
 from pydantic import JsonValue, TypeAdapter
 
 JsonObject: TypeAlias = dict[str, JsonValue]
 JSON: Final = TypeAdapter(JsonValue)
+ConfigProduct: TypeAlias = (
+    ModelResponse | Awaitable[ModelResponse] | AsyncIterator[ModelResponseStream]
+)
 
 
 class Step(TypedDict):

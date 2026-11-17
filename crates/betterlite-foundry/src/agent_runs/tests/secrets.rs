@@ -1,18 +1,16 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-
 use betterlite_prompts::arguments::json::Object;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::agent_requests::prepare::Headers;
-use crate::agent_results::reply::AgentReply;
-use crate::agent_runs::dispatch::{DispatchCall, Route, dispatch};
+use crate::agent_runs::dispatch::{Route, dispatch};
+use crate::agent_runs::flow::CompletionCall;
 use crate::agent_runs::transport::{AgentRunMethod, AgentRunRequest};
 
 use super::support::{
-    MODEL, RecordingResolver, Run, SECRET, Step, execute, finish, messages, prepared, status_step,
-    step,
+    Outcome, RecordingResolver, Run, SECRET, Step, dispatch_call, execute, finish, messages,
+    prepared, secret_headers, status_step, step,
 };
 
 const FIRST_KEY: &str = "fixture-first-key-4c1d";
@@ -42,102 +40,93 @@ fn four_steps() -> Vec<Step> {
 #[test]
 fn agent_runs_credential_identity_isolation() {
     let empty = Object::new();
-    let caller_headers: Headers =
-        BTreeMap::from([(String::from("X-Trace"), SecretString::from("trace-1"))]);
-    let environment = BTreeMap::new();
+    let caller_headers = secret_headers(&[("X-Trace", "trace-1")]);
     let resolver = RecordingResolver::new(Some("resolver-token"));
     let first_key = SecretString::from(FIRST_KEY);
     let second_key = SecretString::from(SECOND_KEY);
-
-    let first = DispatchCall {
-        model: MODEL,
-        messages: &[],
-        optional_params: &empty,
-        litellm_params: &empty,
-        headers: &caller_headers,
-        environment: &environment,
-        api_base: Some(FIRST_BASE),
-        api_key: Some(&first_key),
-        reply: AgentReply::default(),
-        acompletion: false,
-        stream: false,
-    };
+    let first = dispatch_call(
+        FIRST_BASE,
+        &empty,
+        &empty,
+        &caller_headers,
+        Some(&first_key),
+        false,
+        false,
+    );
+    let second = dispatch_call(
+        SECOND_BASE,
+        &empty,
+        &empty,
+        &caller_headers,
+        Some(&second_key),
+        true,
+        false,
+    );
     let Route::Completion(first_call) = dispatch(first, &resolver).expect("a route") else {
         panic!("a sync call is not a stream");
-    };
-    let second = DispatchCall {
-        model: MODEL,
-        messages: &[],
-        optional_params: &empty,
-        litellm_params: &empty,
-        headers: &caller_headers,
-        environment: &environment,
-        api_base: Some(SECOND_BASE),
-        api_key: Some(&second_key),
-        reply: AgentReply::default(),
-        acompletion: true,
-        stream: false,
     };
     let Route::Completion(second_call) = dispatch(second, &resolver).expect("a route") else {
         panic!("a non-streaming async call is not a stream");
     };
+    assert_isolation(&first_call, &second_call, &caller_headers, &resolver);
+    let first_outcome = finish(&first_call, four_steps());
+    let second_outcome = finish(&second_call, four_steps());
+    assert_isolated_requests(&first_outcome, &second_outcome);
+}
+
+fn assert_isolation(
+    first: &CompletionCall<'_>,
+    second: &CompletionCall<'_>,
+    caller_headers: &Headers,
+    resolver: &RecordingResolver,
+) {
     assert!(
         resolver.params().is_empty(),
         "an explicit key skips resolution"
     );
-
     assert_eq!(
-        authorization(&first_call.prepared.headers),
+        authorization(&first.prepared.headers),
         format!("Bearer {FIRST_KEY}")
     );
     assert_eq!(
-        authorization(&second_call.prepared.headers),
+        authorization(&second.prepared.headers),
         format!("Bearer {SECOND_KEY}")
     );
-    assert_eq!(first_call.prepared.headers.len(), 3);
+    assert_eq!(first.prepared.headers.len(), 3);
     assert_eq!(
         caller_headers.len(),
         1,
         "preparation leaves the caller's headers alone"
     );
-    assert_eq!(first_call.prepared.agent_id, second_call.prepared.agent_id);
-    assert_ne!(first_call.prepared.api_base, second_call.prepared.api_base);
+    assert_eq!(first.prepared.agent_id, second.prepared.agent_id);
+    assert_ne!(first.prepared.api_base, second.prepared.api_base);
+}
 
-    let first_outcome = finish(&first_call, four_steps());
-    let second_outcome = finish(&second_call, four_steps());
-    assert_eq!(first_outcome.transport.state().requests().len(), 4);
-    assert_eq!(second_outcome.transport.state().requests().len(), 4);
-    let first_headers = first_outcome.transport.state().requests()[0]
-        .headers
-        .clone();
-    let second_headers = second_outcome.transport.state().requests()[0]
-        .headers
-        .clone();
+fn assert_isolated_requests(first: &Outcome, second: &Outcome) {
+    let first_state = first.transport.state();
+    let second_state = second.transport.state();
+    assert_eq!(first_state.requests().len(), 4);
+    assert_eq!(second_state.requests().len(), 4);
+    let first_request = &first_state.requests()[0];
+    let second_request = &second_state.requests()[0];
     assert_eq!(
-        first_headers.get("Authorization").map(String::as_str),
+        first_request
+            .headers
+            .get("Authorization")
+            .map(String::as_str),
         Some(format!("Bearer {FIRST_KEY}").as_str())
     );
     assert_eq!(
-        second_headers.get("Authorization").map(String::as_str),
+        second_request
+            .headers
+            .get("Authorization")
+            .map(String::as_str),
         Some(format!("Bearer {SECOND_KEY}").as_str())
     );
-    let first_url = first_outcome.transport.state().requests()[0].url.clone();
-    let second_url = second_outcome.transport.state().requests()[0].url.clone();
-    assert!(first_url.starts_with(FIRST_BASE));
-    assert!(second_url.starts_with(SECOND_BASE));
-    assert!(!first_url.contains("second.example"));
-    assert!(!second_url.contains("first.example"));
-
-    let mut widened = first_call.prepared.headers.clone();
-    widened.insert(
-        String::from("X-Session"),
-        SecretString::from("first-session"),
-    );
-    assert!(!second_call.prepared.headers.contains_key("X-Session"));
-    assert_eq!(
-        authorization(&second_call.prepared.headers),
-        format!("Bearer {SECOND_KEY}")
-    );
+    assert!(first_request.url.starts_with(FIRST_BASE));
+    assert!(second_request.url.starts_with(SECOND_BASE));
+    assert!(!first_request.url.contains("second.example"));
+    assert!(!second_request.url.contains("first.example"));
 }
 
 #[test]
@@ -145,11 +134,10 @@ fn agent_runs_secret_safe_failure() {
     let held = prepared(&Object::new(), Some(&SecretString::from(SECRET)));
     assert!(!format!("{held:?}").contains(SECRET));
     assert_eq!(authorization(&held.headers), format!("Bearer {SECRET}"));
-
     let request = AgentRunRequest {
         method: AgentRunMethod::Post,
         url: String::from("https://base.example/api/threads?api-version=2025-05-01"),
-        headers: held.headers.clone(),
+        headers: held.headers,
         body: Some(b"{}".to_vec()),
     };
     let shown = format!("{request:?}");
@@ -158,11 +146,14 @@ fn agent_runs_secret_safe_failure() {
     assert!(shown.contains("Authorization"));
     assert!(shown.contains("Content-Type"));
     assert!(shown.contains("body_length: Some(2)"));
+    secret_safe_failure_message();
+}
 
+fn secret_safe_failure_message() {
     let mut case = Run::sync(vec![step(500, "denied")]);
     case.messages = messages(r#"[{"role": "user", "content": "hi"}]"#);
     let outcome = execute(&case);
-    let error = outcome.result.err().expect("a failure");
+    let error = outcome.result.expect_err("a failure");
     assert_eq!(error.to_string(), "Failed to create thread: denied");
     assert!(!error.to_string().contains(SECRET));
     assert!(!format!("{error:?}").contains(SECRET));

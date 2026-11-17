@@ -29,10 +29,9 @@ pub struct AgentRunRequest {
 }
 
 impl fmt::Debug for AgentRunRequest {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let names: Vec<&str> = self.headers.keys().map(String::as_str).collect();
-        formatter
-            .debug_struct("AgentRunRequest")
+        f.debug_struct("AgentRunRequest")
             .field("method", &self.method)
             .field("url", &self.url)
             .field("header_names", &names)
@@ -47,7 +46,7 @@ pub trait AgentRunTransport: Send + Sync {
 }
 
 // The handler builds its client with get_httpx_client or get_async_httpx_client, whose B173 clients stand behind this
-pub trait AgentRunClientFactory {
+pub trait AgentRunClientFactory: Send + Sync {
     fn sync_client(&self, ssl_verify: &Json) -> Box<dyn AgentRunTransport>;
     fn async_client(&self, ssl_verify: &Json) -> Box<dyn AgentRunTransport>;
 }

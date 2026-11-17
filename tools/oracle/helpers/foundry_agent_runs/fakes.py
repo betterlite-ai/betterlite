@@ -167,8 +167,8 @@ def count_tokens(
 
 
 def install_fixtures(clock: Clock, factory: Factory) -> None:
-    time.sleep = clock.sleep
+    time.sleep = clock.sleep  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L411
     asyncio.sleep = clock.asleep  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L539
-    litellm.llms.custom_httpx.http_handler._get_httpx_client = factory.sync_client  # noqa: SLF001  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L317-L320
+    litellm.llms.custom_httpx.http_handler._get_httpx_client = factory.sync_client  # type: ignore[assignment]  # noqa: SLF001  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L317-L320
     litellm.llms.custom_httpx.http_handler.get_async_httpx_client = factory.async_client  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L444-L448
     litellm.utils.token_counter = count_tokens  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L240-L243

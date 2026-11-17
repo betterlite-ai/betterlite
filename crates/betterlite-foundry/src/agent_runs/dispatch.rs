@@ -44,23 +44,28 @@ pub enum Route<'data> {
     Stream(StreamRequest),
 }
 
+fn resolve_key(
+    call: &DispatchCall<'_>,
+    resolver: &dyn EntraResolver,
+) -> Result<SecretString, AgentRunError> {
+    if let Some(key) = call.api_key {
+        return Ok(key.clone());
+    }
+    let mut params = call.litellm_params.clone();
+    params.insert(
+        String::from(AZURE_SCOPE_KEY),
+        Json::Text(String::from(AZURE_AI_AGENTS_SCOPE)),
+    );
+    resolver
+        .resolve(&params, call.environment)?
+        .ok_or(AgentRunError::MissingToken)
+}
+
 pub fn dispatch<'data>(
     call: DispatchCall<'data>,
     resolver: &dyn EntraResolver,
 ) -> Result<Route<'data>, AgentRunError> {
-    let api_key = match call.api_key {
-        Some(key) => key.clone(),
-        None => {
-            let mut params = call.litellm_params.clone();
-            params.insert(
-                String::from(AZURE_SCOPE_KEY),
-                Json::Text(String::from(AZURE_AI_AGENTS_SCOPE)),
-            );
-            resolver
-                .resolve(&params, call.environment)?
-                .ok_or(AgentRunError::MissingToken)?
-        }
-    };
+    let api_key = resolve_key(&call, resolver)?;
     let request = AgentCallRequest {
         model: call.model,
         messages: call.messages,

@@ -65,10 +65,9 @@ pub fn decode_agent_messages(bytes: &[u8]) -> Result<MessagesData, AgentRunDecod
 // a typed decode failure on a JSON scalar is not the same as malformed bytes, and the two read differently
 fn classify(bytes: &[u8], source: serde_json::Error) -> AgentRunDecodeError {
     match serde_json::from_slice::<Json>(bytes) {
-        Ok(Json::Object(_)) => AgentRunDecodeError::Invalid { source },
         Ok(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             AgentRunDecodeError::NotObject
         }
-        Err(_) => AgentRunDecodeError::Invalid { source },
+        Ok(Json::Object(_)) | Err(_) => AgentRunDecodeError::Invalid { source },
     }
 }

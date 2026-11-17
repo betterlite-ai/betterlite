@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::future::Future;
-use std::sync::{Arc, Mutex};
+use std::iter::repeat_n;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -14,11 +15,12 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_tokenizer::count::error::CountError;
 use http::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::Builder;
 
 use crate::agent_requests::prepare::{Headers, PreparedAgentCall, prepare};
 use crate::agent_requests::request::AgentCallRequest;
 use crate::agent_results::reply::{AgentReply, TokenCountRequest, TokenCounter};
-use crate::agent_runs::dispatch::EntraResolver;
+use crate::agent_runs::dispatch::{DispatchCall, EntraResolver};
 use crate::agent_runs::error::AgentRunError;
 use crate::agent_runs::flow::{CompletionCall, completion};
 use crate::agent_runs::transport::{
@@ -69,10 +71,37 @@ pub(super) fn prepared(
     prepare(&request).expect("a prepared call")
 }
 
-pub(super) fn block_on<Fut: Future>(future: Fut) -> Fut::Output {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("a runtime");
+pub(super) const NO_ENVIRONMENT: BTreeMap<String, String> = BTreeMap::new();
+
+pub(super) fn dispatch_call<'data>(
+    api_base: &'data str,
+    optional_params: &'data Object,
+    litellm_params: &'data Object,
+    headers: &'data Headers,
+    api_key: Option<&'data SecretString>,
+    acompletion: bool,
+    stream: bool,
+) -> DispatchCall<'data> {
+    DispatchCall {
+        model: MODEL,
+        messages: &[],
+        optional_params,
+        litellm_params,
+        headers,
+        environment: &NO_ENVIRONMENT,
+        api_base: Some(api_base),
+        api_key,
+        reply: AgentReply::default(),
+        acompletion,
+        stream,
+    }
+}
+
+pub(super) fn block_on<Fut>(future: Fut) -> Fut::Output
+where
+    Fut: Future,
+{
+    let runtime = Builder::new_current_thread().build().expect("a runtime");
     runtime.block_on(future)
 }
 
@@ -92,7 +121,7 @@ pub(super) fn step(status: u16, body: &str) -> Step {
 
 #[must_use]
 pub(super) fn repeated(count: usize, step: &Step) -> Vec<Step> {
-    std::iter::repeat_n(step.clone(), count).collect()
+    repeat_n(step.clone(), count).collect()
 }
 
 #[must_use]
@@ -114,13 +143,6 @@ pub(super) struct RecordedRequest {
     pub url: String,
     pub headers: BTreeMap<String, String>,
     pub body: Option<Vec<u8>>,
-}
-
-impl RecordedRequest {
-    pub(super) fn payload(&self) -> Object {
-        let body = self.body.as_deref().expect("a request body");
-        serde_json::from_slice(body).expect("a JSON body")
-    }
 }
 
 #[derive(Default)]
@@ -156,7 +178,7 @@ pub(super) fn transport(steps: Vec<Step>) -> Arc<ScriptedTransport> {
 }
 
 impl ScriptedTransport {
-    pub(super) fn state(&self) -> std::sync::MutexGuard<'_, TransportState> {
+    pub(super) fn state(&self) -> MutexGuard<'_, TransportState> {
         self.state.lock().expect("the scripted transport")
     }
 }
@@ -171,9 +193,9 @@ impl AgentRunTransport for Arc<ScriptedTransport> {
             headers: shown(&request.headers),
             body: request.body,
         });
-        let step = state.steps.pop_front();
+        let next = state.steps.pop_front();
         drop(state);
-        let Some(step) = step else {
+        let Some(step) = next else {
             return Err(TransportError::Rejected(HttpError::Required {
                 field_name: String::from("script step"),
             }));
@@ -193,7 +215,7 @@ pub(super) struct FactoryCall {
 }
 
 pub(super) struct RecordingFactory {
-    pub transport: Arc<ScriptedTransport>,
+    transport: Arc<ScriptedTransport>,
     calls: Mutex<Vec<FactoryCall>>,
 }
 
@@ -203,6 +225,17 @@ impl RecordingFactory {
             transport: Arc::clone(transport),
             calls: Mutex::new(Vec::new()),
         }
+    }
+
+    fn client(&self, kind: &'static str, ssl_verify: &Json) -> Box<dyn AgentRunTransport> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(FactoryCall {
+                kind,
+                ssl_verify: ssl_verify.clone(),
+            });
+        Box::new(Arc::clone(&self.transport))
     }
 
     pub(super) fn calls(&self) -> Vec<FactoryCall> {
@@ -215,25 +248,11 @@ impl RecordingFactory {
 
 impl AgentRunClientFactory for RecordingFactory {
     fn sync_client(&self, ssl_verify: &Json) -> Box<dyn AgentRunTransport> {
-        self.calls
-            .lock()
-            .expect("the recorded client kinds")
-            .push(FactoryCall {
-                kind: "sync",
-                ssl_verify: ssl_verify.clone(),
-            });
-        Box::new(Arc::clone(&self.transport))
+        self.client("sync", ssl_verify)
     }
 
     fn async_client(&self, ssl_verify: &Json) -> Box<dyn AgentRunTransport> {
-        self.calls
-            .lock()
-            .expect("the recorded client kinds")
-            .push(FactoryCall {
-                kind: "async",
-                ssl_verify: ssl_verify.clone(),
-            });
-        Box::new(Arc::clone(&self.transport))
+        self.client("async", ssl_verify)
     }
 }
 
@@ -308,7 +327,7 @@ impl EntraResolver for RecordingResolver {
     ) -> Result<Option<SecretString>, CredentialsError> {
         self.params
             .lock()
-            .expect("the recorded parameters")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(params.clone());
         Ok(self.token.clone().map(SecretString::from))
     }

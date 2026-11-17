@@ -1,8 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Awaitable
-from typing import Final, TypeAlias, cast
+from typing import Final, cast
 
-import litellm.llms.azure.common_utils
 from litellm.llms.azure_ai.agents.handler import AzureAIAgentsHandler
 from litellm.llms.azure_ai.agents.transformation import (
     AzureAIAgentsConfig,
@@ -15,16 +14,19 @@ from .fakes import (
     AsyncClient,
     Clock,
     Factory,
-    Resolver,
     SyncClient,
     install_fixtures,
 )
-from .types import JSON, REPLY_DUMP, DispatchCall, JsonObject, RunCall
+from .types import (
+    JSON,
+    REPLY_DUMP,
+    ConfigProduct,
+    DispatchCall,
+    JsonObject,
+    RunCall,
+)
 
 TIMEOUT: Final = 60.0
-ConfigProduct: TypeAlias = (
-    ModelResponse | Awaitable[ModelResponse] | AsyncIterator[ModelResponseStream]
-)
 
 
 def reply_view(response: ModelResponse) -> JsonObject:
@@ -75,7 +77,7 @@ def sync_run(call: RunCall, factory: Factory) -> JsonValue:
     handler = AzureAIAgentsHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L122-L123
     client = SyncClient(factory.recorder) if call["supplied"] else None
     try:
-        response = handler.completion(
+        response = handler.completion(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L302-L350
             model=call["model"],
             messages=cast(list[dict[str, object]], call["messages"]),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L305
             api_base=call["api_base"],
@@ -97,7 +99,7 @@ async def async_run(call: RunCall, factory: Factory) -> JsonValue:
     handler = AzureAIAgentsHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L122-L123
     client = AsyncClient(factory.recorder) if call["supplied"] else None
     try:
-        response = await handler.acompletion(
+        response = await handler.acompletion(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L426-L478
             model=call["model"],
             messages=cast(list[dict[str, object]], call["messages"]),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L429
             api_base=call["api_base"],
@@ -150,7 +152,7 @@ def completion_answer(
 def config_call(call: DispatchCall) -> ConfigProduct:
     return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L310-L397
         ConfigProduct,
-        AzureAIAgentsConfig.completion(  # pyright: ignore[reportAny]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L310-L397
+        AzureAIAgentsConfig.completion(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L310-L397
             model=call["model"],
             messages=call["messages"],
             api_base=call["api_base"],
@@ -193,14 +195,3 @@ async def config_answer(
     except ValueError as error:
         return {"ok": False, "status": None, "message": str(error)}
     return completion_answer(factory, clock, response)
-
-
-def dispatch_answer(call: DispatchCall) -> JsonValue:
-    clock = Clock()
-    factory = Factory(call["steps"])
-    resolver = Resolver(call["token"])
-    install_fixtures(clock, factory)
-    azure = litellm.llms.azure.common_utils
-    azure.get_azure_ad_token = resolver
-    outcome = asyncio.run(config_answer(call, factory, clock))
-    return {"resolver": JSON.validate_python(resolver.seen), **outcome}

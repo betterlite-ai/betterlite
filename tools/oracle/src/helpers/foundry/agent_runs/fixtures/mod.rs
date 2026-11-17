@@ -17,7 +17,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_tokenizer::count::error::CountError;
 use http::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use super::input::Step;
 
@@ -44,16 +44,17 @@ pub(super) fn shown_headers(headers: &Headers) -> BTreeMap<String, String> {
         .collect()
 }
 
+#[derive(Clone)]
 pub(super) struct ScriptedTransport {
-    steps: Mutex<VecDeque<Step>>,
-    requests: Mutex<Vec<Value>>,
+    steps: Arc<Mutex<VecDeque<Step>>>,
+    requests: Arc<Mutex<Vec<Value>>>,
 }
 
 impl ScriptedTransport {
     pub(super) fn new(steps: &[Step]) -> Self {
         Self {
-            steps: Mutex::new(steps.iter().cloned().collect()),
-            requests: Mutex::new(Vec::new()),
+            steps: Arc::new(Mutex::new(steps.iter().cloned().collect())),
+            requests: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -68,7 +69,7 @@ impl ScriptedTransport {
 }
 
 #[async_trait]
-impl AgentRunTransport for Arc<ScriptedTransport> {
+impl AgentRunTransport for ScriptedTransport {
     async fn send(&self, request: AgentRunRequest) -> Result<UpstreamResponse, TransportError> {
         let body = request
             .body
@@ -108,28 +109,31 @@ impl AgentRunTransport for Arc<ScriptedTransport> {
 }
 
 pub(super) struct RecordingFactory {
-    transport: Arc<ScriptedTransport>,
+    pub(super) transport: ScriptedTransport,
     pub(super) kind: Mutex<&'static str>,
 }
 
 impl RecordingFactory {
-    pub(super) fn new(transport: &Arc<ScriptedTransport>) -> Self {
+    pub(super) fn new(transport: &ScriptedTransport) -> Self {
         Self {
-            transport: Arc::clone(transport),
+            transport: transport.clone(),
             kind: Mutex::new(""),
         }
+    }
+
+    fn client(&self, kind: &'static str) -> Box<dyn AgentRunTransport> {
+        *self.kind.lock().unwrap_or_else(PoisonError::into_inner) = kind;
+        Box::new(self.transport.clone())
     }
 }
 
 impl AgentRunClientFactory for RecordingFactory {
     fn sync_client(&self, _ssl_verify: &Json) -> Box<dyn AgentRunTransport> {
-        *self.kind.lock().unwrap_or_else(PoisonError::into_inner) = "sync";
-        Box::new(Arc::clone(&self.transport))
+        self.client("sync")
     }
 
     fn async_client(&self, _ssl_verify: &Json) -> Box<dyn AgentRunTransport> {
-        *self.kind.lock().unwrap_or_else(PoisonError::into_inner) = "async";
-        Box::new(Arc::clone(&self.transport))
+        self.client("async")
     }
 }
 
@@ -193,7 +197,7 @@ impl RecordingResolver {
 }
 
 fn watched(params: &Object) -> Value {
-    let mut watched = serde_json::Map::new();
+    let mut watched = Map::new();
     for name in WATCHED {
         let value = params.get(name).map_or(Value::Null, |value| {
             serde_json::to_value(value).unwrap_or(Value::Null)

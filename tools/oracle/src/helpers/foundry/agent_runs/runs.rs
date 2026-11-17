@@ -1,4 +1,4 @@
-use std::sync::{Arc, PoisonError};
+use std::sync::PoisonError;
 
 use betterlite_foundry::agent_requests::prepare::prepare;
 use betterlite_foundry::agent_requests::request::AgentCallRequest;
@@ -40,11 +40,11 @@ async fn run_answer(call: &RunCall) -> Calls {
     };
     let prepared = prepare(&request).or_value_error()?;
     let ssl = ssl_verify(&call.litellm_params);
-    let scripted = Arc::new(ScriptedTransport::new(&call.steps));
-    let supplied: Option<&dyn AgentRunTransport> =
-        call.supplied.then_some(&scripted as &dyn AgentRunTransport);
+    let scripted = ScriptedTransport::new(&call.steps);
     let factory = RecordingFactory::new(&scripted);
     let sleeper = RecordingSleeper::default();
+    let transport: &dyn AgentRunTransport = &scripted;
+    let supplied = call.supplied.then_some(transport);
     let completion_call = CompletionCall {
         model: &call.model,
         messages: &call.messages,
@@ -58,20 +58,39 @@ async fn run_answer(call: &RunCall) -> Calls {
         },
         supplied,
     };
-    let outcome = match completion(&completion_call, &factory, &sleeper, &CountingCounter).await {
+    let outcome = finished(&completion_call, &factory, &sleeper).await;
+    answered(&factory, &scripted, &sleeper, call.supplied, ssl, outcome)
+}
+
+async fn finished(
+    completion_call: &CompletionCall<'_>,
+    factory: &RecordingFactory,
+    sleeper: &RecordingSleeper,
+) -> Value {
+    match completion(completion_call, factory, sleeper, &CountingCounter).await {
         Ok(reply) => json!({"ok": true, "reply": reply_view(&reply)}),
         Err(error) => json!({
             "ok": false,
             "status": error.status(),
             "message": error.to_string(),
         }),
-    };
-    let client = if call.supplied {
+    }
+}
+
+fn answered(
+    factory: &RecordingFactory,
+    scripted: &ScriptedTransport,
+    sleeper: &RecordingSleeper,
+    supplied: bool,
+    ssl: Json,
+    outcome: Value,
+) -> Calls {
+    let client = if supplied {
         "supplied"
     } else {
         *factory.kind.lock().unwrap_or_else(PoisonError::into_inner)
     };
-    let answered_ssl = if call.supplied { Json::Null } else { ssl };
+    let answered_ssl = if supplied { Json::Null } else { ssl };
     Ok(json!({
         "client": client,
         "ssl_verify": answered_ssl,

@@ -1,3 +1,4 @@
+use std::str;
 use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
@@ -109,7 +110,7 @@ impl Call<'_> {
         if expectation.codes.contains(&response.status) {
             return Ok(response);
         }
-        let text = std::str::from_utf8(&response.body).unwrap_or(NOT_TEXT_BODY);
+        let text = str::from_utf8(&response.body).unwrap_or(NOT_TEXT_BODY);
         check_response(response.status, text, expectation.codes, expectation.prefix)?;
         Ok(response)
     }
@@ -196,11 +197,10 @@ impl Call<'_> {
                 .send(AgentRunMethod::Get, url.clone(), None, RUN_STATUS)
                 .await?;
             let decoded = decode_agent_run_status(&response.body)?;
-            let status = decoded.status;
             let last_error = decoded.last_error;
-            match status.as_deref() {
-                Some(status) if status == RUN_COMPLETED => return Ok(()),
-                Some(status) if [RUN_FAILED, RUN_CANCELLED, RUN_EXPIRED].contains(&status) => {
+            match decoded.status.as_deref() {
+                Some(RUN_COMPLETED) => return Ok(()),
+                Some(status @ (RUN_FAILED | RUN_CANCELLED | RUN_EXPIRED)) => {
                     let message = last_error
                         .and_then(|error| error.message)
                         .unwrap_or_else(|| String::from(UNKNOWN_ERROR));
@@ -235,13 +235,15 @@ pub async fn completion(
     sleeper: &dyn Sleeper,
     counter: &dyn TokenCounter,
 ) -> Result<AgentReply, AgentRunError> {
-    let held = match call.supplied {
-        Some(supplied) => ClientRef::Supplied(supplied),
-        None => ClientRef::Created(match call.mode {
-            AgentRunMode::Sync => factory.sync_client(&call.ssl_verify),
-            AgentRunMode::Async => factory.async_client(&call.ssl_verify),
-        }),
-    };
+    let held = call.supplied.map_or_else(
+        || {
+            ClientRef::Created(match call.mode {
+                AgentRunMode::Sync => factory.sync_client(&call.ssl_verify),
+                AgentRunMode::Async => factory.async_client(&call.ssl_verify),
+            })
+        },
+        ClientRef::Supplied,
+    );
     let client: &dyn AgentRunTransport = match &held {
         ClientRef::Supplied(supplied) => *supplied,
         ClientRef::Created(created) => created.as_ref(),
