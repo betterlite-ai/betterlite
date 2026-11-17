@@ -46,6 +46,17 @@ fn text_bytes() -> Vec<u8> {
 fn a_frame_over_the_limit_is_refused_before_parsing() {
     let error = decode_gemini_live_frame_bytes(b"{}", 1).expect_err("the frame is too large");
     assert!(matches!(error, LiveFrameError::TooLarge { limit: 1 }));
+    assert!(decode_gemini_live_frame_bytes(b"{}", 2).is_ok());
+}
+
+#[test]
+fn a_wrong_typed_field_is_refused_as_a_field() {
+    let error = decode_gemini_live_frame_bytes(br#"{"usageMetadata": 5}"#, usize::MAX)
+        .expect_err("a number is not usage metadata");
+    assert!(matches!(
+        error,
+        LiveFrameError::InvalidField { ref path, .. } if path == "usageMetadata"
+    ));
 }
 
 #[test]

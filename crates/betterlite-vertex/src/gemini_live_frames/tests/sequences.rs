@@ -319,6 +319,45 @@ fn setup_complete_reports_the_session() {
     assert_eq!(live.caller, CallerState::default());
 }
 
+#[test]
+fn an_empty_server_content_frame_is_already_handled() {
+    let mut live = Live::new(LIVE_MODEL);
+    let events = live
+        .frame(r#"{"serverContent": {}}"#)
+        .expect("the empty content frame is known");
+    assert!(events.is_empty());
+    assert_eq!(live.caller, CallerState::default());
+}
+
+#[test]
+fn an_empty_tool_call_is_handled_without_events() {
+    let mut live = Live::new(LIVE_MODEL);
+    let events = live
+        .frame(r#"{"toolCall": {}}"#)
+        .expect("the empty tool call frame is known");
+    assert!(events.is_empty());
+    assert_eq!(live.caller, CallerState::default());
+}
+
+#[test]
+fn an_existing_conversation_id_survives_an_output_transcript() {
+    let mut live = Live::new(LIVE_MODEL);
+    live.caller.conversation_id = Some("conv_given".to_owned());
+    let events = live
+        .frame(r#"{"serverContent": {"outputTranscription": {"text": "hi"}}}"#)
+        .expect("the frame is known");
+    assert_eq!(
+        lookup(field(&events, 0, "response"), &["conversation_id"]),
+        &text("conv_given".to_owned())
+    );
+    assert_eq!(live.caller.conversation_id, Some("conv_given".to_owned()));
+    assert_eq!(live.caller.response_id, Some(format!("resp_{}", draw(1))));
+    assert_eq!(
+        live.caller.output_item_id,
+        Some(format!("item_{}", draw(2)))
+    );
+}
+
 #[rstest]
 #[case::empty("{}", 0)]
 #[case::setup(r#"{"setupComplete": {}}"#, 1)]
