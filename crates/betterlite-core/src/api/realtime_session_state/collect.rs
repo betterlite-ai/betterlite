@@ -105,6 +105,7 @@ impl RealtimeStreaming {
         if let Some(Json::List(tools)) = session.get("tools") {
             self.replace_session_tools(tools);
         }
+        tracing::debug!("Realtime session.type: {:?}", session.get("type"));
         if matches!(session.get("type"), Some(Json::Text(kind)) if kind == "transcription") {
             self.is_transcription_session.0 = true;
         }

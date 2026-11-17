@@ -507,6 +507,22 @@ fn realtime_input_collection_reads_session_updates() {
 }
 
 #[test]
+fn realtime_input_collection_logs_the_session_type() {
+    let (logs, _guard) = capture();
+    let mut state = state();
+    state.store_input(SessionInput::Text(
+        r#"{"type":"session.update","session":{"type":"transcription"}}"#,
+    ));
+    let lines: Vec<String> = logs
+        .messages()
+        .into_iter()
+        .filter(|message| message.contains("Realtime session.type:"))
+        .collect();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(lines[0].contains("transcription"), "{lines:?}");
+}
+
+#[test]
 fn realtime_input_collection_ignores_malformed_client_events() {
     let mut state = state();
     state.store_input(SessionInput::Text("{"));
