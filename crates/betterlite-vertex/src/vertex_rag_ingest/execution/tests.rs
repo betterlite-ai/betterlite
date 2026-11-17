@@ -204,6 +204,14 @@ async fn upload_then_import() {
 }
 
 #[tokio::test]
+async fn embed_returns_none() {
+    let (ingest, recorder) = provider(corpus_record(), None, ImportBehavior::Imported(1));
+    let chunks = [String::from("first chunk"), String::from("second chunk")];
+    assert!(ingest.embed(&chunks).await.is_none());
+    assert_eq!(recorder.steps(), Vec::new());
+}
+
+#[tokio::test]
 async fn supplied_chunks_and_embeddings_are_ignored() {
     let (ingest, recorder) = provider(corpus_record(), None, ImportBehavior::Imported(1));
     let chunks = vec!["chunk".to_owned()];
