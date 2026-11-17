@@ -95,9 +95,7 @@ where
             body: String::from_utf8_lossy(&response.body).into_owned(),
         });
     }
-    let reply: DecisionsJson =
-        serde_json::from_slice(&response.body).map_err(|source| LemonadeError::Reply { source })?;
-    model_names(&reply)
+    decode_model_names(&response.body)
 }
 
 // LemonadeChatConfig.transform_response: the shared openai_like reply, then the model named lemonade/ plus the request's
@@ -112,8 +110,12 @@ pub fn transform_response(
     Ok(reply)
 }
 
-fn model_names(reply: &DecisionsJson) -> Result<Vec<String>, LemonadeError> {
-    let DecisionsJson::Object(fields) = reply else {
+// LemonadeChatConfig.get_models's reply: the data list's string ids, each prefixed with lemonade/
+#[must_use]
+pub fn decode_model_names(body: &[u8]) -> Result<Vec<String>, LemonadeError> {
+    let reply: DecisionsJson =
+        serde_json::from_slice(body).map_err(|source| LemonadeError::Reply { source })?;
+    let DecisionsJson::Object(fields) = &reply else {
         return Err(LemonadeError::Shape);
     };
     let entries = match fields.get(DATA) {
