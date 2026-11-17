@@ -31,13 +31,20 @@ pub(super) struct Case {
     #[serde(default)]
     pub(super) failure: Option<Failure>,
     pub(super) consume: Consume,
-    // only the fields both languages can reproduce are compared
     #[serde(default)]
-    pub(super) compare_message: bool,
-    #[serde(default)]
-    pub(super) compare_headers: bool,
+    pub(super) compare: Compare,
     #[serde(default)]
     pub(super) provider: Option<String>,
+}
+
+// Only the fields both languages can reproduce are compared, and only when the case asks.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Compare {
+    #[serde(default)]
+    pub(super) message: bool,
+    #[serde(default)]
+    pub(super) headers: bool,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

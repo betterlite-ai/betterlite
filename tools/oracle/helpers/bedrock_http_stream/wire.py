@@ -12,6 +12,10 @@ Consume = Literal["none", "first", "all"]
 Consumed = tuple[list[JsonValue], list[JsonValue]]
 Chunk = ModelResponseStream | JsonValue
 
+class Compare(TypedDict):
+    message: bool
+    headers: bool
+
 class Case(TypedDict):
     path: Literal["invoke_sync", "invoke_async", "converse_sync"]
     api_base: str
@@ -27,8 +31,7 @@ class Case(TypedDict):
     body: str
     failure: FakeFailure | None
     consume: Consume
-    compare_message: bool
-    compare_headers: bool
+    compare: Compare
     provider: str | None
 
 class Input(TypedDict):

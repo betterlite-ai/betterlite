@@ -71,7 +71,7 @@ impl StreamHandler for Fixture {
     }
 }
 
-fn transport_error(failure: Failure) -> TransportError {
+const fn transport_error(failure: Failure) -> TransportError {
     match failure {
         Failure::Timeout => TransportError::Rejected(HttpError::Timeout),
         Failure::Other => TransportError::Closed,

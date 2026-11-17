@@ -17,14 +17,14 @@ pub(super) fn error_view(error: &HttpStreamError, case: &Case) -> Value {
     json!({
         "kind": "provider",
         "status": status,
-        "message": if case.compare_message { json!(error.error.message) } else { Value::Null },
-        "headers": if case.compare_headers { json!(headers) } else { Value::Null },
+        "message": if case.compare.message { json!(error.error.message) } else { Value::Null },
+        "headers": if case.compare.headers { json!(headers) } else { Value::Null },
         "category": Value::Null,
     })
 }
 
 // Converse passes a transport failure through untouched, so only its timeout category is comparable.
-fn raised_category(error: &HttpStreamError) -> &'static str {
+const fn raised_category(error: &HttpStreamError) -> &'static str {
     match error {
         HttpStreamError::Transport(
             TransportError::ConnectTimeout(_)

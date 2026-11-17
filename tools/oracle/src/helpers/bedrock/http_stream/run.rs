@@ -59,10 +59,7 @@ async fn one(case: &Case) -> Result<Value, Box<HelperError>> {
         env: &env,
     };
     let result = collected(case, &deps, &mut log).await?;
-    drop(log);
-    drop(env);
-    drop(logger);
-    let logs = logged.into_inner().unwrap_or_else(PoisonError::into_inner);
+    let logs = std::mem::take(&mut *logged.lock().unwrap_or_else(PoisonError::into_inner));
     Ok(json!({
         "post": handler.first_post(),
         "error": result.error.as_ref().map_or(Value::Null, |failure| error_view(failure, case)),

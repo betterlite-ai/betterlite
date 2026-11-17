@@ -21,8 +21,9 @@ call:
       body: 7b226f7574707574223a7b226d657373616765223a7b22726f6c65223a22617373697374616e74222c22636f6e74656e74223a5b7b2274657874223a2268656c6c6f227d5d7d7d2c2273746f70526561736f6e223a22656e645f7475726e222c227573616765223a7b22696e707574546f6b656e73223a31302c226f7574707574546f6b656e73223a352c22746f74616c546f6b656e73223a31357d7d
       failure: null
       consume: all
-      compare_message: false
-      compare_headers: false
+      compare:
+        message: false
+        headers: false
       provider: null
     - path: invoke_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
@@ -42,8 +43,9 @@ call:
       body: 7b226f7574707574223a7b226d657373616765223a7b22726f6c65223a22617373697374616e74222c22636f6e74656e74223a5b7b22746f6f6c557365223a7b22746f6f6c5573654964223a22746f6f6c2d31222c226e616d65223a22746f705f736f6e67222c22696e707574223a7b227369676e223a22575a505a227d7d7d5d7d7d2c2273746f70526561736f6e223a22746f6f6c5f757365222c227573616765223a7b22696e707574546f6b656e73223a322c226f7574707574546f6b656e73223a332c22746f74616c546f6b656e73223a357d7d
       failure: null
       consume: all
-      compare_message: false
-      compare_headers: false
+      compare:
+        message: false
+        headers: false
       provider: null
     - path: invoke_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
@@ -63,8 +65,9 @@ call:
       body: 7b226f7574707574223a7b226d657373616765223a7b22726f6c65223a22617373697374616e74222c22636f6e74656e74223a5b7b22746f6f6c557365223a7b22746f6f6c5573654964223a22746f6f6c2d31222c226e616d65223a22746f705f736f6e67222c22696e707574223a7b227369676e223a22575a505a227d7d7d5d7d7d2c2273746f70526561736f6e223a22746f6f6c5f757365222c227573616765223a7b22696e707574546f6b656e73223a322c226f7574707574546f6b656e73223a332c22746f74616c546f6b656e73223a357d7d
       failure: null
       consume: all
-      compare_message: false
-      compare_headers: false
+      compare:
+        message: false
+        headers: false
       provider: null
     - path: invoke_async
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
@@ -84,8 +87,9 @@ call:
       body: 7b226f7574707574223a7b226d657373616765223a7b22726f6c65223a22617373697374616e74222c22636f6e74656e74223a5b7b2274657874223a2268656c6c6f227d5d7d7d2c2273746f70526561736f6e223a22656e645f7475726e222c227573616765223a7b22696e707574546f6b656e73223a31302c226f7574707574546f6b656e73223a352c22746f74616c546f6b656e73223a31357d7d
       failure: null
       consume: all
-      compare_message: false
-      compare_headers: false
+      compare:
+        message: false
+        headers: false
       provider: null
     - path: converse_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3/converse-stream
@@ -105,8 +109,9 @@ call:
       body: 7b226f7574707574223a7b226d657373616765223a7b22726f6c65223a22617373697374616e74222c22636f6e74656e74223a5b7b2274657874223a2268656c6c6f227d5d7d7d2c2273746f70526561736f6e223a22656e645f7475726e222c227573616765223a7b22696e707574546f6b656e73223a31302c226f7574707574546f6b656e73223a352c22746f74616c546f6b656e73223a31357d7d
       failure: null
       consume: all
-      compare_message: false
-      compare_headers: false
+      compare:
+        message: false
+        headers: false
       provider: null
     - path: invoke_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
@@ -126,8 +131,9 @@ call:
       body: 5b5d
       failure: null
       consume: none
-      compare_message: false
-      compare_headers: true
+      compare:
+        message: false
+        headers: true
       provider: null
     - path: invoke_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
@@ -147,8 +153,9 @@ call:
       body: 7b7d
       failure: null
       consume: none
-      compare_message: false
-      compare_headers: false
+      compare:
+        message: false
+        headers: false
       provider: null
 env: {}
 compare:

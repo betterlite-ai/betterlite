@@ -4,7 +4,6 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 
 from .wire import JSON, Case, Chunk, FakeFailure
 
-
 class DeltaView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -90,7 +89,7 @@ def chunk_payload(value: Chunk) -> JsonValue:
 def provider_error(error: BedrockError, case: Case) -> JsonValue:
     view = ErrorView.model_validate(error)
     headers: JsonValue = None
-    if case["compare_headers"]:
+    if case["compare"]["headers"]:
         pairs: list[list[str]] = []
         if view.response is not None:
             pairs = sorted([name, value] for name, value in view.response.headers.items())
@@ -98,7 +97,7 @@ def provider_error(error: BedrockError, case: Case) -> JsonValue:
     payload: dict[str, JsonValue] = {
         "kind": "provider",
         "status": view.status_code,
-        "message": view.message if case["compare_message"] else None,
+        "message": view.message if case["compare"]["message"] else None,
         "headers": headers,
         "category": None,
     }

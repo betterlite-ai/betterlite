@@ -21,8 +21,9 @@ call:
       body: 69676e6f726564
       failure: null
       consume: none
-      compare_message: true
-      compare_headers: false
+      compare:
+        message: true
+        headers: false
       provider: null
     - path: invoke_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
@@ -42,8 +43,9 @@ call:
       body: ''
       failure: null
       consume: none
-      compare_message: true
-      compare_headers: false
+      compare:
+        message: true
+        headers: false
       provider: null
     - path: invoke_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
@@ -63,8 +65,9 @@ call:
       body: ''
       failure: null
       consume: none
-      compare_message: true
-      compare_headers: false
+      compare:
+        message: true
+        headers: false
       provider: null
     - path: invoke_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
@@ -84,8 +87,9 @@ call:
       body: 626f6f6d
       failure: null
       consume: none
-      compare_message: true
-      compare_headers: true
+      compare:
+        message: true
+        headers: true
       provider: null
     - path: converse_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3/converse-stream
@@ -105,8 +109,9 @@ call:
       body: 7b226d657373616765223a22626f6f6d227d0a
       failure: null
       consume: none
-      compare_message: true
-      compare_headers: true
+      compare:
+        message: true
+        headers: true
       provider: null
     - path: invoke_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
@@ -126,8 +131,9 @@ call:
       body: ''
       failure: timeout
       consume: none
-      compare_message: true
-      compare_headers: false
+      compare:
+        message: true
+        headers: false
       provider: null
     - path: invoke_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
@@ -147,8 +153,9 @@ call:
       body: ''
       failure: other
       consume: none
-      compare_message: false
-      compare_headers: false
+      compare:
+        message: false
+        headers: false
       provider: null
     - path: converse_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3/converse-stream
@@ -168,8 +175,9 @@ call:
       body: ''
       failure: timeout
       consume: none
-      compare_message: false
-      compare_headers: false
+      compare:
+        message: false
+        headers: false
       provider: null
     - path: converse_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3/converse-stream
@@ -189,8 +197,9 @@ call:
       body: ''
       failure: other
       consume: none
-      compare_message: false
-      compare_headers: false
+      compare:
+        message: false
+        headers: false
       provider: null
     - path: invoke_async
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
@@ -210,8 +219,9 @@ call:
       body: 69676e6f726564
       failure: null
       consume: none
-      compare_message: true
-      compare_headers: false
+      compare:
+        message: true
+        headers: false
       provider: null
 env: {}
 compare:

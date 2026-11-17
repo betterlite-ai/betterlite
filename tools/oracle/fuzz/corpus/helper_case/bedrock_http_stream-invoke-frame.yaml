@@ -21,8 +21,9 @@ call:
       body: 000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082
       failure: null
       consume: none
-      compare_message: false
-      compare_headers: false
+      compare:
+        message: false
+        headers: false
       provider: null
 env: {}
 compare:
