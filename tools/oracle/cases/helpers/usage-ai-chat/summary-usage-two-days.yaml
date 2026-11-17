@@ -1,0 +1,36 @@
+kind: helper
+name: usage-ai-chat-summary-usage-two-days
+call:
+  b3103:
+    function: summary_usage
+    page:
+      results:
+        - date: "2026-01-01"
+          metrics: {}
+          breakdown:
+            models:
+              gpt-4o:
+                metrics: {spend: 3, api_requests: 2, total_tokens: 20}
+              claude:
+                metrics: {spend: 5, api_requests: 1, total_tokens: 10}
+            providers:
+              openai:
+                metrics: {spend: 8, api_requests: 3, total_tokens: 30}
+        - date: "2026-01-02"
+          metrics: {}
+          breakdown:
+            models:
+              gpt-4o:
+                metrics: {spend: 4, api_requests: 1, total_tokens: 5}
+            providers:
+              anthropic:
+                metrics: {spend: 1, api_requests: 1, total_tokens: 10}
+      metadata:
+        total_spend: 13
+        total_api_requests: 3
+        total_successful_requests: 3
+        total_failed_requests: 0
+        total_tokens: 65
+env: {}
+compare:
+  ignore: []
