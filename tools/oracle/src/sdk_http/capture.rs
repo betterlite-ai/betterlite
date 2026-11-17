@@ -8,14 +8,16 @@ use serde_json::Value;
 use tokio::runtime::Builder;
 use tokio::time::timeout;
 
+use super::chat_response_stream;
 use super::error::SdkHttpError;
 use super::python::PythonSdk;
+use super::responses_agentic_continuation as agentic;
 use super::result::SdkResult;
 use super::{OracleLimits, SdkHttpCall, Side};
 use super::{
     anthropic_beta_config, embedding_executor, file_azure_storage, messages_chat_stream,
     messages_header_stream, messages_stream_logging, messages_sync_stream, native,
-    responses_agentic_continuation, vector_query_embedding,
+    vector_query_embedding,
 };
 use crate::OracleError;
 use crate::compare::multipart::masked_boundary;
@@ -76,11 +78,11 @@ impl<'sdk> Sdk<'sdk> {
             (Self::Native, SdkHttpCall::MessagesChatStream(stream)) => {
                 run_until_stopped(messages_chat_stream::send(stream, api_base, env), stop)
             }
+            (Self::Native, SdkHttpCall::ChatResponseStream(stream)) => {
+                run_until_stopped(chat_response_stream::send(stream, api_base, env), stop)
+            }
             (Self::Native, SdkHttpCall::ResponsesAgenticContinuation(continuation)) => {
-                run_until_stopped(
-                    responses_agentic_continuation::send(continuation, api_base, env),
-                    stop,
-                )
+                run_until_stopped(agentic::send(continuation, api_base, env), stop)
             }
             (Self::Native, SdkHttpCall::FileAzureStorage(storage)) => {
                 run_until_stopped(file_azure_storage::send(storage, api_base, env), stop)
