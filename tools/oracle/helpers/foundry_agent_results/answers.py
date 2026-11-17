@@ -102,7 +102,8 @@ def stream_plan(call: StreamCall) -> StreamPlan:
 async def collect_chunks(
     handler: AgentHandler, call: StreamCall
 ) -> list[ModelResponseStream]:
-    return [chunk async for chunk in opened_stream(handler, stream_plan(call))]
+    stream = opened_stream(handler, stream_plan(call))
+    return [chunk async for chunk in stream]
 
 
 def stream_answer(handler: AgentHandler, call: StreamCall) -> JsonValue:
