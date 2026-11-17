@@ -19,6 +19,7 @@ const CAPABILITIES: &str =
     r#"[{"pattern":"^mystery-","model_info":{"supports_web_search":false,"max_tokens":100}}]"#;
 const FILL_MISSING: &str = r#"[{"pattern":"^gemini-","model_info":{"supports_pdf":true},"fill_missing_for_providers":["vertex_ai"]}]"#;
 const OPENAI_FILL: &str = r#"[{"pattern":"^gemini-","model_info":{"supports_pdf":true},"fill_missing_for_providers":["openai"]}]"#;
+const ROUTE_THEN_FILL: &str = r#"[{"pattern":"^gemini-","model_info":{"litellm_provider":"azure"}},{"pattern":"^gemini-","model_info":{"supports_pdf":true},"fill_missing_for_providers":["vertex_ai"]}]"#;
 const SLOW_RULE: &str =
     r#"[{"pattern":"(?i)(a|b|ab)*(?>c)","model_info":{"litellm_provider":"steps"}}]"#;
 const SLOW_MODEL: &str = "abababababababababababab";
@@ -66,6 +67,7 @@ async fn filled_by(services: &dyn RouteServices, spec: DeploymentSpec) -> Deploy
 
 #[tokio::test]
 async fn a_router_without_generalizations_keeps_the_pool() {
+    assert!(NoServices.model_generalizations().is_none());
     let original = spec("acme-1", None, JsonObject::new());
     let filled = filled_by(&NoServices, original.clone()).await;
     assert_eq!(filled, original);
@@ -144,6 +146,22 @@ async fn the_deployment_keeps_the_values_it_declares() {
         Some(&Json::Bool(true))
     );
     assert_eq!(filled.model_info.get("max_tokens"), Some(&Json::Null));
+}
+
+#[tokio::test]
+async fn an_empty_model_info_provider_falls_to_the_params_provider() {
+    let service = installed(ROUTE_THEN_FILL);
+    let mut model_info = JsonObject::new();
+    model_info.insert(String::from("litellm_provider"), Json::Text(String::new()));
+    let filled = filled_by(&service, spec("gemini-2", Some("vertex_ai"), model_info)).await;
+    assert_eq!(
+        filled.model_info.get("supports_pdf"),
+        Some(&Json::Bool(true))
+    );
+    assert_eq!(
+        filled.model_info.get("litellm_provider"),
+        Some(&Json::Text(String::new()))
+    );
 }
 
 #[tokio::test]
