@@ -27,6 +27,15 @@ deviations:
       aiohttp.ClientTimeout on every request, where a negative or NaN value raises then.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L463-L465
   - what: >-
+      A timeout of zero falls back to the default 300 second limit instead of switching the timeout off.
+    why: >-
+      LiteLLM hands the raw number to aiohttp.ClientTimeout, where total=0 means no timeout, so a Presidio
+      deployment that stops answering can hold the request open forever. betterlite keeps every Presidio call
+      bounded: reqwest reads a zero total timeout as already elapsed, so copying the number would fail each call
+      before it was sent. The fallback equals aiohttp's own DEFAULT_TIMEOUT, which LiteLLM uses when the timeout
+      is not a number.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L463-L465
+  - what: >-
       The constructor has no mock_testing path: it always reads the recognizer file and validates the environment.
     why: >-
       B3681's PresidioArgs carries no mock_testing field, and nothing at the pin passes it, so only a literal test could

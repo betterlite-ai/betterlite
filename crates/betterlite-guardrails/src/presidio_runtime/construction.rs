@@ -178,11 +178,17 @@ fn read_error(path: &str, source: IoError) -> PresidioRuntimeError {
 }
 
 fn timeout(configured: Option<f64>) -> Result<Duration, PresidioRuntimeError> {
-    match configured {
-        None => Ok(DEFAULT_ANALYZE_TIMEOUT),
-        Some(seconds) => Duration::try_from_secs_f64(seconds)
-            .map_err(|source| PresidioRuntimeError::Timeout { seconds, source }),
-    }
+    let Some(seconds) = configured else {
+        return Ok(DEFAULT_ANALYZE_TIMEOUT);
+    };
+    let timeout = Duration::try_from_secs_f64(seconds)
+        .map_err(|source| PresidioRuntimeError::Timeout { seconds, source })?;
+    // LiteLLM sends total=0 to aiohttp, which turns the timeout off; betterlite stays bounded
+    Ok(if timeout.is_zero() {
+        DEFAULT_ANALYZE_TIMEOUT
+    } else {
+        timeout
+    })
 }
 
 fn mock_redacted_text(

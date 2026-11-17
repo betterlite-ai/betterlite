@@ -61,6 +61,7 @@ enum Case {
     LoggingHookMasksRequest,
     AsyncLoggingHookMasksRequest,
     StreamingIteratorRelaysEvents,
+    ZeroTimeoutUsesTheDefault,
 }
 
 #[rstest]
@@ -118,6 +119,7 @@ enum Case {
 #[case::logging_hook_masks_the_request(Case::LoggingHookMasksRequest)]
 #[case::async_logging_hook_masks_the_request(Case::AsyncLoggingHookMasksRequest)]
 #[case::streaming_iterator_relays_events(Case::StreamingIteratorRelaysEvents)]
+#[case::zero_timeout_uses_the_default(Case::ZeroTimeoutUsesTheDefault)]
 #[tokio::test]
 async fn presidio_runtime_cases(#[case] case: Case) {
     match case {
@@ -201,5 +203,6 @@ async fn presidio_runtime_cases(#[case] case: Case) {
             response::async_logging_hook_masks_the_request().await
         }
         Case::StreamingIteratorRelaysEvents => streaming::streaming_iterator_relays_events().await,
+        Case::ZeroTimeoutUsesTheDefault => construction::zero_timeout_uses_the_default(),
     }
 }

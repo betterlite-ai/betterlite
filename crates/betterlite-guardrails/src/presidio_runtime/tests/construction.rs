@@ -398,3 +398,12 @@ pub(super) fn unrepresentable_timeout() {
         PresidioRuntimeError::Timeout { seconds, .. } if seconds == -1.0
     ));
 }
+
+pub(super) fn zero_timeout_uses_the_default() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.timeout = Some(0.0);
+    let guard = guard(&args);
+    assert_eq!(guard.analyzer.settings.timeout, DEFAULT_ANALYZE_TIMEOUT);
+    assert_eq!(guard.anonymizer.settings.timeout, DEFAULT_ANALYZE_TIMEOUT);
+}
