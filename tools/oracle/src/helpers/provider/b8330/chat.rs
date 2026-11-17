@@ -33,7 +33,7 @@ use betterlite_provider::snowflake::config::{
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::HeaderMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
 use tokio::runtime::Runtime;
 
@@ -252,7 +252,7 @@ fn snowflake_request(
     let endpoint = SnowflakeEndpoint::Chat(&call.model);
     let url = snowflake_url(call.api_base.as_deref(), &endpoint, &mut params, account_id)
         .or_value_error()?;
-    let key = call.api_key.as_ref().map(|value| value.expose_secret());
+    let key = call.api_key.as_ref().map(ExposeSecret::expose_secret);
     let mut headers = call.headers.clone().unwrap_or_default();
     snowflake_headers(&mut headers, &call.model, key).or_value_error()?;
     Ok((url, header_map(&headers).or_value_error()?))

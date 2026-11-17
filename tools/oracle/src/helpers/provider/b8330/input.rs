@@ -73,7 +73,7 @@ pub(super) struct Answer {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Case {
+pub(crate) struct Case {
     pub(super) op: Operation,
     pub(super) provider: Provider,
     pub(super) model: String,

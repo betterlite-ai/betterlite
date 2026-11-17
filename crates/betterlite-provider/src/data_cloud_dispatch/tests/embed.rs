@@ -500,7 +500,8 @@ async fn send(
 }
 
 fn header<'sent>(sent: &'sent Sent, name: &str) -> Option<&'sent str> {
-    sent.headers.get(name).and_then(|value| value.to_str().ok())
+    let value = sent.headers.get(name)?;
+    value.to_str().ok()
 }
 
 fn body_fields(sent: &Sent) -> Object {

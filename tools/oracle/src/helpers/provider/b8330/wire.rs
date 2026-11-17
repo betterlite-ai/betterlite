@@ -23,14 +23,14 @@ pub(super) fn request_view(
     let mut view = Map::new();
     view.insert(String::from("url"), Value::String(url.to_owned()));
     view.insert(String::from("headers"), kept_headers(headers, names));
-    if let Some(body) = body {
-        view.insert(String::from("body"), body);
+    if let Some(payload) = body {
+        view.insert(String::from("body"), payload);
     }
     Value::Object(view)
 }
 
 // the status LiteLLM's provider exception carries for this failure
-fn status_of(error: &DispatchError) -> Option<u16> {
+const fn status_of(error: &DispatchError) -> Option<u16> {
     match error {
         DispatchError::Handler(handler) => handler.status_code(),
         DispatchError::Upstream { status, .. } => Some(*status),
