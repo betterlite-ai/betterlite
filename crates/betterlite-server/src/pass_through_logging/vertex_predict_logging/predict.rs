@@ -27,7 +27,7 @@ use rust_decimal::Decimal;
 use super::cost;
 use super::detect::{audio_prediction_count, is_multimodal_embedding};
 use super::spend;
-use super::wire::{decode_body, json_of, object_fields};
+use super::wire::{json_of, object_fields};
 use super::{VertexPredictError, VertexPredictInput};
 
 const IMAGE_CALL_TYPE: &str = "passthrough-image-generation";
@@ -42,7 +42,8 @@ pub(super) fn predict(
     cost_service: &dyn CompletionCost,
     catalog: &ModelCatalog,
 ) -> Result<HandlerOutcome, VertexPredictError> {
-    let body = decode_body(input.response_body)?;
+    let body: Json = serde_json::from_slice(input.response_body)
+        .map_err(|source| VertexPredictError::Decode { source })?;
     let fields = object_fields(&body)?;
     let model = extract_model_from_url(input.url_route);
     if let Some(response_cost) = audio_cost(fields, &model, catalog)? {
@@ -101,15 +102,14 @@ fn audio_cost(
     let Some(price) = overlay.generation_cost(model) else {
         return Ok(None);
     };
-    let count = i64::try_from(count).map_err(|_error| VertexPredictError::Cost {
+    let prediction_count = i64::try_from(count).map_err(|_error| VertexPredictError::Cost {
         model: model.to_owned(),
     })?;
-    let total =
-        price
-            .checked_mul(Decimal::from(count))
-            .ok_or_else(|| VertexPredictError::Cost {
-                model: model.to_owned(),
-            })?;
+    let total = price
+        .checked_mul(Decimal::from(prediction_count))
+        .ok_or_else(|| VertexPredictError::Cost {
+            model: model.to_owned(),
+        })?;
     Ok(Some(total))
 }
 

@@ -24,7 +24,7 @@ pub(super) fn embedding_response(
     }
 }
 
-// An ImageResponse carries no model and its default ImageUsage is all zeros.
+// An ImageResponse carries no model, no image count and a default ImageUsage of zeros, so the trait prices it without the images.
 pub(super) fn image_response() -> CompletionResponse {
     CompletionResponse {
         id: None,

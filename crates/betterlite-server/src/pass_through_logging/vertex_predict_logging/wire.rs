@@ -3,11 +3,6 @@ use serde::Serialize;
 
 use super::VertexPredictError;
 
-// serde_json's own decode names the offending byte, while the JSON tree keeps numbers exact.
-pub(super) fn decode_body(body: &[u8]) -> Result<Json, VertexPredictError> {
-    serde_json::from_slice(body).map_err(|source| VertexPredictError::Decode { source })
-}
-
 pub(super) const fn object_fields(value: &Json) -> Result<&Extra, VertexPredictError> {
     match value {
         Json::Object(fields) => Ok(fields),
