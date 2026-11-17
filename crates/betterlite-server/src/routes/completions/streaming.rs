@@ -114,7 +114,9 @@ pub(super) fn render(
         HeaderName::from_static("x-accel-buffering"),
         HeaderValue::from_static("no"),
     );
-    let body = Body::from_stream(frames(answer.body));
+    let chunks = ChunkFrames { body: answer.body };
+    let pump = stream::unfold(Pump::new(chunks), next_frame::<_, io::Error>);
+    let body = Body::from_stream(pump);
     (headers, body).into_response()
 }
 
@@ -135,12 +137,6 @@ impl FrameSource<io::Error> for ChunkFrames {
         pending.push_back(Bytes::from(format!("data: {text}\n\n")));
         Ok(false)
     }
-}
-
-fn frames(
-    body: BoxStream<'static, Result<Json, StreamError>>,
-) -> impl futures_util::Stream<Item = Result<Bytes, io::Error>> + use<> {
-    stream::unfold(Pump::new(ChunkFrames { body }), next_frame)
 }
 
 pub(crate) mod pump;

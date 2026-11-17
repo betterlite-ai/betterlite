@@ -36,7 +36,7 @@ pub(super) async fn text_answer(
 ) -> Result<TextCompletionResult, TextCompletionFailure> {
     match text_send(calls, call, false).await? {
         CompletionCallAnswer::Buffered(answer) => Ok(text_result(answer)),
-        CompletionCallAnswer::Streamed(_) => Err(internal_failure(MISMATCHED)),
+        CompletionCallAnswer::Streamed(_) => Err(TextCompletionFailure::internal(MISMATCHED)),
     }
 }
 
@@ -46,7 +46,7 @@ pub(super) fn converted(
     upstream_time: Duration,
 ) -> Result<CompletionAnswer, TextCompletionFailure> {
     let ChatCompletion::OpenAi(response) = completion else {
-        return Err(internal_failure(MISMATCHED));
+        return Err(TextCompletionFailure::internal(MISMATCHED));
     };
     Ok(CompletionAnswer {
         response: Box::new(text_completion_response(*response)),
@@ -60,7 +60,7 @@ pub(super) async fn text_stream(
     call: &TextCompletionCallInput<'_>,
 ) -> Result<TextStreamAnswer, TextCompletionFailure> {
     let CompletionCallAnswer::Streamed(answer) = text_send(calls, call, true).await? else {
-        return Err(internal_failure(MISMATCHED));
+        return Err(TextCompletionFailure::internal(MISMATCHED));
     };
     let model = call.request.model.as_deref();
     Ok(stream_answer(answer, model))
@@ -104,9 +104,10 @@ fn stream_answer(answer: CompletionStreamAnswer, model: Option<&str>) -> TextStr
         .stream
         .map(move |item| match item {
             Ok(chunk) => {
-                let value =
-                    shaped_chunk(chunk, &named).map_err(|source| stream_failure(&source))?;
-                serde_json::from_value::<Json>(value).map_err(|source| stream_failure(&source))
+                let value = shaped_chunk(chunk, &named)
+                    .map_err(|source| TextCompletionFailure::new(500, None, source.to_string()))?;
+                serde_json::from_value::<Json>(value)
+                    .map_err(|source| TextCompletionFailure::new(500, None, source.to_string()))
             }
             Err(error) => Err(TextCompletionFailure::new(500, None, error.to_string())),
         })
@@ -164,10 +165,10 @@ async fn next_chat_chunk(
                 let parsed = state
                     .parser
                     .push(&bytes)
-                    .map_err(|source| internal_failure(&source.to_string()))
+                    .map_err(|source| TextCompletionFailure::internal(&source.to_string()))
                     .and_then(|events| {
                         decode_chat_events(&events, &state.model, state.include_usage)
-                            .map_err(|error| internal_failure(&error.to_string()))
+                            .map_err(|error| TextCompletionFailure::internal(&error.to_string()))
                     });
                 if let Err(error) = enqueue(&mut state, parsed) {
                     state.finished = true;
@@ -176,13 +177,16 @@ async fn next_chat_chunk(
             }
             Some(Err(error)) => {
                 state.finished = true;
-                return Some((Err(internal_failure(&error.to_string())), state));
+                return Some((
+                    Err(TextCompletionFailure::internal(&error.to_string())),
+                    state,
+                ));
             }
             None => {
                 state.finished = true;
                 let decoded =
                     decode_chat_events(&state.parser.finish(), &state.model, state.include_usage)
-                        .map_err(|error| internal_failure(&error.to_string()));
+                        .map_err(|error| TextCompletionFailure::internal(&error.to_string()));
                 if let Err(error) = enqueue(&mut state, decoded) {
                     return Some((Err(error), state));
                 }
@@ -216,14 +220,6 @@ pub(super) fn bridge_failure(failure: CompletionFailure) -> TextCompletionFailur
     }
 }
 
-fn stream_failure(source: &serde_json::Error) -> TextCompletionFailure {
-    TextCompletionFailure::new(500, None, source.to_string())
-}
-
-fn internal_failure(message: &str) -> TextCompletionFailure {
-    TextCompletionFailure::new(500, Some("internal_server_error"), message.to_owned())
-}
-
 pub(super) fn chat_call_failure(
     error: CallError<ChatError>,
     calls: &CompletionCalls,
@@ -238,7 +234,7 @@ pub(super) fn chat_call_failure(
                 message: route.to_string(),
             }
         }
-        CallError::Operation { source } => internal_failure(&source.to_string()),
-        CallError::Mismatched => internal_failure(MISMATCHED),
+        CallError::Operation { source } => TextCompletionFailure::internal(&source.to_string()),
+        CallError::Mismatched => TextCompletionFailure::internal(MISMATCHED),
     }
 }

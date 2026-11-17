@@ -42,7 +42,7 @@ pub trait TextCompletionCall: Send + Sync {
         &self,
         _call: TextCompletionCallInput<'_>,
     ) -> Result<TextStreamAnswer, TextCompletionFailure> {
-        Err(internal_failure("no chat bridge on this port"))
+        Err(TextCompletionFailure::internal("no chat bridge here"))
     }
 
     async fn chat(
@@ -50,7 +50,7 @@ pub trait TextCompletionCall: Send + Sync {
         _call: TextCompletionCallInput<'_>,
         _mode: ChatCallMode,
     ) -> Result<ChatCallAnswer, TextCompletionFailure> {
-        Err(internal_failure("no chat bridge on this port"))
+        Err(TextCompletionFailure::internal("no chat bridge here"))
     }
 }
 
@@ -70,20 +70,16 @@ impl ChatCallAnswer {
     pub fn buffered(self) -> Result<TextCompletionResult, TextCompletionFailure> {
         match self {
             Self::Buffered(answer) => Ok(answer),
-            Self::Streamed(_) => Err(internal_failure(MISMATCHED)),
+            Self::Streamed(_) => Err(TextCompletionFailure::internal(MISMATCHED)),
         }
     }
 
     pub fn streamed(self) -> Result<TextStreamAnswer, TextCompletionFailure> {
         match self {
             Self::Streamed(answer) => Ok(answer),
-            Self::Buffered(_) => Err(internal_failure(MISMATCHED)),
+            Self::Buffered(_) => Err(TextCompletionFailure::internal(MISMATCHED)),
         }
     }
-}
-
-fn internal_failure(message: &str) -> TextCompletionFailure {
-    TextCompletionFailure::new(500, Some("internal_server_error"), message.to_owned())
 }
 
 pub struct TextCompletionResult {
@@ -109,6 +105,16 @@ impl TextCompletionFailure {
             error_type: error_type.map(str::to_owned),
             param: None,
             message,
+        }
+    }
+
+    // a 500 the route writes itself, which names no parameter
+    pub fn internal(message: &str) -> Self {
+        Self {
+            status: 500,
+            error_type: Some(String::from("internal_server_error")),
+            param: None,
+            message: message.to_owned(),
         }
     }
 }

@@ -22,7 +22,9 @@ use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
+use tokio::sync::oneshot;
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 use super::{StreamUsage, provider_stream, render};
 use crate::server::chat_setup::chat_executor;
@@ -119,6 +121,40 @@ async fn error_truncates() {
     to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap_err();
+}
+
+// a chunk's frame leaves the route as soon as the provider produces it, not when the stream ends
+#[tokio::test]
+async fn the_first_frame_arrives_before_the_next_provider_chunk() {
+    let (release, released) = oneshot::channel::<Result<Json, StreamError>>();
+    let first = r#"{"choices":[{"index":0,"text":" Hello"}],"created":1,"id":"cmpl-1","model":"text-model","object":"text_completion"}"#;
+    let second = r#"{"choices":[{"index":0,"text":" there"}],"created":2,"id":"cmpl-2","model":"text-model","object":"text_completion"}"#;
+    let body = stream::once(async { Ok(chunk(first)) })
+        .chain(stream::once(async move {
+            released.await.expect("the provider's second chunk")
+        }))
+        .boxed();
+    let answer = TextStreamResult {
+        body,
+        upstream_headers: HeaderMap::new(),
+        upstream_time: Duration::from_millis(2),
+    };
+    let response = render(answer, &deployment(), "call", Instant::now());
+    let mut frames = response.into_body().into_data_stream();
+    let first_bytes = timeout(Duration::from_secs(1), frames.next())
+        .await
+        .expect("the first frame waits for the provider's second chunk")
+        .expect("frame")
+        .expect("frame bytes");
+    let first_text = String::from_utf8(first_bytes.to_vec()).expect("utf8");
+    assert!(first_text.contains(r#""text":" Hello""#), "{first_text}");
+    release.send(Ok(chunk(second))).expect("second chunk");
+    let second_bytes = frames.next().await.expect("second frame").expect("bytes");
+    let second_text = String::from_utf8(second_bytes.to_vec()).expect("utf8");
+    assert!(second_text.contains(r#""text":" there""#), "{second_text}");
+    let done = frames.next().await.expect("done frame").expect("bytes");
+    assert_eq!(&done[..], DONE_FRAME.as_bytes());
+    assert!(frames.next().await.is_none());
 }
 
 fn stream_headers() {
