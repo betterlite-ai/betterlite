@@ -1,0 +1,150 @@
+kind: helper
+name: realtime-usage-and-logging
+call:
+  realtime_session_state:
+    model: ""
+    logged_event_types: null
+    client_wants_beta: false
+    backend_uses_beta_protocol: null
+    force_transcription_model: null
+    request_data: null
+    user_api_key_dict: null
+    provider: null
+    store:
+      - kind: record
+        values:
+          type: conversation.item.input_audio_transcription.completed
+          transcript: hello
+          usage: {type: duration, seconds: 2}
+    inputs: []
+    backend_events:
+      - {type: conversation.item.input_audio_transcription.completed, transcript: hello, usage: {type: duration, seconds: 2}}
+    usage_events:
+      - {type: conversation.item.input_audio_transcription.completed, transcript: hello, usage: {type: duration, seconds: 2}}
+    flush: false
+calls:
+  - realtime_session_state:
+      model: ""
+      logged_event_types: "*"
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: null
+      store:
+        - kind: record
+          values:
+            type: conversation.item.input_audio_transcription.completed
+            transcript: hello
+            usage: {type: duration, seconds: 2}
+      inputs: []
+      backend_events:
+        - {type: conversation.item.input_audio_transcription.completed, transcript: hello, usage: {type: duration, seconds: 2}}
+      usage_events:
+        - {type: conversation.item.input_audio_transcription.completed, transcript: hello, usage: {type: duration, seconds: 2}}
+      flush: false
+  - realtime_session_state:
+      model: ""
+      logged_event_types: [conversation.item.input_audio_transcription.completed]
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: null
+      store:
+        - kind: record
+          values:
+            type: conversation.item.input_audio_transcription.completed
+            transcript: hello
+            usage: {type: duration, seconds: 2}
+      inputs: []
+      backend_events: []
+      usage_events:
+        - {type: conversation.item.input_audio_transcription.completed, transcript: hello, usage: {type: duration, seconds: 2}}
+      flush: false
+  - realtime_session_state:
+      model: ""
+      logged_event_types: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: null
+      store: []
+      inputs: []
+      backend_events: []
+      usage_events:
+        - {type: conversation.item.input_audio_transcription.completed, transcript: hello}
+        - {type: conversation.item.input_audio_transcription.completed, usage: null}
+        - {type: conversation.item.input_audio_transcription.completed, usage: {}}
+      flush: false
+  - realtime_session_state:
+      model: gemini-3.5-transcribe-live
+      logged_event_types: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider:
+        requires_session_configuration: true
+        unbilled_usage: {type: duration, seconds: 2}
+      store: []
+      inputs: []
+      backend_events: []
+      usage_events: []
+      flush: true
+  - realtime_session_state:
+      model: gemini-3.5-transcribe-live
+      logged_event_types: "*"
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: gemini-3.5-transcribe-live
+      request_data: null
+      user_api_key_dict: null
+      provider:
+        requires_session_configuration: true
+        unbilled_usage:
+          type: tokens
+          input_tokens: 153
+          output_tokens: 18
+          total_tokens: 171
+          input_token_details: {text_tokens: 0, audio_tokens: 153}
+      store: []
+      inputs: []
+      backend_events: []
+      usage_events: []
+      flush: true
+  - realtime_session_state:
+      model: ""
+      logged_event_types: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: {requires_session_configuration: false, unbilled_usage: null}
+      store: []
+      inputs: []
+      backend_events: []
+      usage_events: []
+      flush: true
+  - realtime_session_state:
+      model: ""
+      logged_event_types: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: null
+      store: []
+      inputs: []
+      backend_events: []
+      usage_events: []
+      flush: true
+env: {}
+compare: {ignore: []}
