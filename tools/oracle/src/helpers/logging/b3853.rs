@@ -1,17 +1,18 @@
 use std::collections::BTreeMap;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_logging::logging_metadata::exception::ExceptionFacts;
 use betterlite_logging::otel::model::payloads::service::{ServiceLoggerPayload, ServiceType};
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::plumbing::context::context_slots::RequestTraceContext;
 use betterlite_logging::otel::plumbing::context::post_response::ServiceSpanTiming;
-use betterlite_logging::otel::v2_callback::registered;
-use betterlite_logging::otel::v2_callback::registry::{CallbackList, V2Registry};
-use betterlite_logging::otel::v2_callback::service::ServiceHook;
+use betterlite_logging::otel::v2_callback::registry::V2Registry;
+use betterlite_logging::otel::v2_callback::service::{self, ServiceHook};
+use betterlite_logging::otel::v2_callback::{proxy, registered};
+use betterlite_logging::registry::phases::CallbackList;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use opentelemetry::trace::{SpanId, Status};
+use opentelemetry::trace::{Span as _, SpanId, Status};
 use opentelemetry_sdk::trace::SpanData as SdkSpanData;
 use serde_json::{Value, json};
 
@@ -67,13 +68,13 @@ fn construction(times: usize) -> HelperResult {
     for _ in 0..times {
         build(&registry)?;
     }
-    Ok(answer(&registry, false, false, &[]))
+    Ok(answer(&registry, false, false, &[], SpanId::INVALID))
 }
 
 fn service(input: &Input) -> HelperResult {
     let registry = V2Registry::default();
     let built = build(&registry)?;
-    let root = built.span("root");
+    let root_id = built.root.context.span_id();
     let payload = ServiceLoggerPayload {
         service: if input.metrics_only {
             ServiceType::SelfService
@@ -86,30 +87,30 @@ fn service(input: &Input) -> HelperResult {
     };
     let hook = ServiceHook {
         payload: &payload,
-        parent_otel_span: Some(&root.context),
+        parent_otel_span: Some(&built.root.context),
         start_time: Some(UNIX_EPOCH + Duration::from_secs_f64(START)),
         timing: ServiceSpanTiming {
             end_time: Some(UNIX_EPOCH + Duration::from_secs_f64(END)),
-            ..ServiceSpanTiming::default()
+            parent_end_time: None,
+            post_response: false,
         },
         event_metadata: None,
     };
-    match input.error.as_deref() {
-        Some(text) => built.callback.async_service_failure_hook(&hook, Some(text)),
-        None => built.callback.async_service_success_hook(&hook),
-    }
-    let spans = records(&built.finished()?, root.context.span_id());
-    Ok(answer(&registry, false, false, &spans))
+    let _emitted = match input.error.as_deref() {
+        Some(text) => service::async_service_failure_hook(&built.callback, &hook, Some(text)),
+        None => service::emit_service(&built.callback, &hook, None),
+    };
+    let spans = built.spans.get_finished_spans().or_config_error()?;
+    Ok(answer(&registry, false, false, &spans, root_id))
 }
 
 fn guardrail() -> HelperResult {
     let registry = V2Registry::default();
     let first = build(&registry)?;
     let _second = build(&registry)?;
-    let root = first.span("root");
+    let root_id = first.root.context.span_id();
     let mut trace = RequestTraceContext::default();
-    let callback = &first.callback;
-    callback.mark_request_root_span(&root, None, &mut trace);
+    proxy::mark_request_root_span(&first.callback, &first.root, None, &mut trace);
     let entry: BTreeMap<String, OtelModelValue> = serde_json::from_value(json!({
         "guardrail_name": "pii",
         "guardrail_status": "success",
@@ -118,52 +119,60 @@ fn guardrail() -> HelperResult {
     }))
     .or_value_error()?;
     registered::emit_guardrail_span(&registry, &entry, &trace);
-    let spans = records(&first.finished()?, root.context.span_id());
-    Ok(answer(&registry, false, false, &spans))
+    let spans = first.spans.get_finished_spans().or_config_error()?;
+    Ok(answer(&registry, false, false, &spans, root_id))
 }
 
 fn precall(input: &Input) -> HelperResult {
     let registry = V2Registry::default();
     let built = build(&registry)?;
-    let root = built.span("root");
-    let facts = ExceptionFacts {
-        class_name: "AuthenticationError".to_owned(),
-        message: Some("litellm.AuthenticationError: bad credentials".to_owned()),
-        status_code: Some(401),
-        llm_provider: Some("openai".to_owned()),
-        ..ExceptionFacts::default()
-    };
+    let root_id = built.root.context.span_id();
+    let facts: ExceptionFacts = serde_json::from_value(json!({
+        "class_name": "AuthenticationError",
+        "message": "litellm.AuthenticationError: bad credentials",
+        "status_code": 401,
+        "llm_provider": "openai",
+    }))
+    .or_value_error()?;
     let callback = &built.callback;
-    callback.record_error_attributes_on_span(Some(&root), Some(&facts), input.status);
+    proxy::record_error_on_span(callback, Some(&built.root), Some(&facts), input.status);
     if input.second_status > 0 {
-        callback.record_error_attributes_on_span(Some(&root), Some(&facts), input.second_status);
+        proxy::record_error_on_span(
+            callback,
+            Some(&built.root),
+            Some(&facts),
+            input.second_status,
+        );
     }
-    root.end();
-    let spans = records(&built.finished()?, root.context.span_id());
-    Ok(answer(&registry, false, false, &spans))
+    built.root.lock().end();
+    let spans = built.spans.get_finished_spans().or_config_error()?;
+    Ok(answer(&registry, false, false, &spans, root_id))
 }
 
 fn phase() -> HelperResult {
     let registry = V2Registry::default();
-    let before = registered::phase_span(&registry, "auth").is_some();
+    let trace = RequestTraceContext::default();
+    let before = registered::phase_span(&registry, "auth", &trace).is_some();
     let built = build(&registry)?;
-    let routed = registered::phase_span(&registry, "auth").is_some();
-    let spans = records(&built.finished()?, SpanId::INVALID);
-    Ok(answer(&registry, before, routed, &spans))
+    let routed = registered::phase_span(&registry, "auth", &trace).is_some();
+    let spans = built.spans.get_finished_spans().or_config_error()?;
+    Ok(answer(&registry, before, routed, &spans, SpanId::INVALID))
 }
 
-fn answer(registry: &V2Registry, phase_before: bool, phase_routed: bool, spans: &[Value]) -> Value {
+fn answer(
+    registry: &V2Registry,
+    phase_before: bool,
+    phase_routed: bool,
+    spans: &[SdkSpanData],
+    root: SpanId,
+) -> Value {
     json!({
         "service_callbacks": registry.entries(CallbackList::Service).len(),
         "input_callbacks": registry.entries(CallbackList::Input).len(),
         "phase_before": phase_before,
         "phase_routed": phase_routed,
-        "spans": spans,
+        "spans": spans.iter().map(|span| record(span, root)).collect::<Vec<Value>>(),
     })
-}
-
-fn records(spans: &[SdkSpanData], root: SpanId) -> Vec<Value> {
-    spans.iter().map(|span| record(span, root)).collect()
 }
 
 fn record(span: &SdkSpanData, root: SpanId) -> Value {
@@ -181,15 +190,15 @@ fn record(span: &SdkSpanData, root: SpanId) -> Value {
             Status::Error { .. } => "error",
         },
         "events": span.events.len(),
-        "error_type": attribute(span, "error.type"),
-        "error_code": attribute(span, "litellm.provider.error.code"),
+        "kind": format!("{:?}", span.span_kind).to_ascii_lowercase(),
+        "start": nanos(span.start_time).filter(|_| parent == "root"),
+        "end": nanos(span.end_time).filter(|_| parent == "root"),
     })
 }
 
-fn attribute(span: &SdkSpanData, key: &str) -> Option<String> {
-    let pair = span
-        .attributes
-        .iter()
-        .find(|pair| pair.key.as_str() == key)?;
-    Some(pair.value.to_string())
+// the span's epoch nanoseconds, as LiteLLM's to_ns reads the exporter's integer timestamps
+fn nanos(time: SystemTime) -> Option<u64> {
+    let elapsed = time.duration_since(UNIX_EPOCH).ok()?;
+    let nanos = u64::try_from(elapsed.as_nanos()).ok()?;
+    Some(nanos)
 }

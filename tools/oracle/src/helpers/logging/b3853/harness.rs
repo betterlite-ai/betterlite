@@ -22,59 +22,37 @@ use betterlite_logging::otel::v2_callback::live_span::LiveSpan;
 use betterlite_logging::otel::v2_callback::registry::V2Registry;
 use betterlite_logging::otel::v2_callback::span_error::ErrorInformationConfig;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
-use chrono::{TimeZone as _, Utc};
+use chrono::{Offset as _, Utc};
 use opentelemetry::trace::{Tracer as _, TracerProvider as _};
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
-use opentelemetry_sdk::trace::{
-    InMemorySpanExporter, SdkTracer, SdkTracerProvider, SimpleSpanProcessor,
-    SpanData as SdkSpanData,
-};
+use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SimpleSpanProcessor};
 
 pub(super) struct Harness {
     pub(super) callback: Arc<V2Callback>,
     pub(super) spans: InMemorySpanExporter,
-    tracer: SdkTracer,
+    pub(super) root: LiveSpan,
 }
 
-// a callback whose tracer provider exports into the in-memory sink the case reads back
 pub(super) fn build(registry: &V2Registry) -> Result<Harness, Box<HelperError>> {
     let spans = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
         .with_span_processor(SimpleSpanProcessor::new(spans.clone()))
         .build();
     let tracer = provider.tracer("litellm");
+    let root = LiveSpan::from(tracer.start("root".to_owned()));
     let callback = V2Callback::new(parts(provider)?, registry).or_config_error()?;
     Ok(Harness {
         callback,
         spans,
-        tracer,
+        root,
     })
-}
-
-impl Harness {
-    pub(super) fn span(&self, name: &str) -> LiveSpan {
-        LiveSpan::from(self.tracer.start(name.to_owned()))
-    }
-
-    pub(super) fn finished(&self) -> Result<Vec<SdkSpanData>, Box<HelperError>> {
-        self.spans.get_finished_spans().or_config_error()
-    }
 }
 
 fn parts(provider: SdkTracerProvider) -> Result<CallbackParts, Box<HelperError>> {
     let config = settings();
     Ok(CallbackParts {
         callback_name: Some("b3853".to_owned()),
-        tenants: TenantTracerCache::new(
-            config.clone(),
-            Some("b3853".to_owned()),
-            "litellm",
-            TenantSources {
-                factories: Arc::new(ExporterFactories::new(clients(), BTreeMap::new())),
-                scope_source: Arc::new(Inert),
-                allowed_hosts: Arc::from(Vec::<AllowedDestination>::new()),
-            },
-        ),
+        tenants: tenants(&config),
         config,
         raw_config: otel_settings::Settings::default(),
         trace: Arc::new(Inert),
@@ -109,6 +87,19 @@ fn parts(provider: SdkTracerProvider) -> Result<CallbackParts, Box<HelperError>>
             log_client_error_tracebacks: false,
         },
     })
+}
+
+fn tenants(config: &Settings) -> TenantTracerCache {
+    TenantTracerCache::new(
+        config.clone(),
+        Some("b3853".to_owned()),
+        "litellm",
+        TenantSources {
+            factories: Arc::new(ExporterFactories::new(clients(), BTreeMap::new())),
+            scope_source: Arc::new(Inert),
+            allowed_hosts: Arc::from(Vec::<AllowedDestination>::new()),
+        },
+    )
 }
 
 fn settings() -> Settings {
