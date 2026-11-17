@@ -92,7 +92,12 @@ impl<C, Context> ChatResponseStream<C, Context> {
         let event =
             translate::transform(&mut self.state, &self.sources, chunk, &mut self.annotations)?;
         self.state.progress.pending_response_events.extend(event);
-        Ok(self.state.progress.pending_response_events.pop_front())
+        Ok(self
+            .state
+            .progress
+            .pending_response_events
+            .drain(..1)
+            .next())
     }
 
     fn process(&mut self, chunk: &Json) -> EventResult {
