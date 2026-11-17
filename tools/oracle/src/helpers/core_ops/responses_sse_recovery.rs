@@ -31,39 +31,31 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let limits = ApiLimits::default();
         match input.action {
-            Action::RecoveryLineFilter => Ok(json!(decoded_lines(&input.lines, &limits)?)),
+            Action::RecoveryLineFilter => {
+                let decoded = input
+                    .lines
+                    .iter()
+                    .map(|line| {
+                        decode_recovery_line(line.as_bytes(), &limits)
+                            .map(|parsed| parsed.map(Json::Object))
+                            .map_err(|error| helper_error("ValueError", error.to_string()))
+                    })
+                    .collect::<Result<Vec<Option<Json>>, Box<HelperError>>>()?;
+                Ok(json!(decoded))
+            }
             Action::RecoverRecordedOutput => {
-                Ok(json!(recovered_recordings(&input.recordings, &limits)?))
+                let recovered = input
+                    .recordings
+                    .iter()
+                    .map(|recording| {
+                        recover_recorded_output(recording.as_bytes(), &limits)
+                            .map_err(|error| helper_error("ValueError", error.to_string()))
+                    })
+                    .collect::<Result<Vec<Vec<Json>>, Box<HelperError>>>()?;
+                Ok(json!(recovered))
             }
         }
     }
-}
-
-fn decoded_lines(
-    lines: &[String],
-    limits: &ApiLimits,
-) -> Result<Vec<Option<Json>>, Box<HelperError>> {
-    lines
-        .iter()
-        .map(|line| {
-            decode_recovery_line(line.as_bytes(), limits)
-                .map(|parsed| parsed.map(Json::Object))
-                .map_err(|error| helper_error("ValueError", error.to_string()))
-        })
-        .collect()
-}
-
-fn recovered_recordings(
-    recordings: &[String],
-    limits: &ApiLimits,
-) -> Result<Vec<Vec<Json>>, Box<HelperError>> {
-    recordings
-        .iter()
-        .map(|recording| {
-            recover_recorded_output(recording.as_bytes(), limits)
-                .map_err(|error| helper_error("ValueError", error.to_string()))
-        })
-        .collect()
 }
 
 fn helper_error(class: &str, message: String) -> Box<HelperError> {

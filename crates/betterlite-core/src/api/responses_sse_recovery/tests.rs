@@ -93,6 +93,12 @@ fn message(index: i64, text: &str) -> Json {
     ))
 }
 
+fn message_with(id: &str, text: &str, annotations: &str) -> Json {
+    json(&format!(
+        r#"{{"type":"message","id":{id},"role":"assistant","status":"completed","content":[{{"type":"output_text","text":"{text}","annotations":{annotations}}}]}}"#
+    ))
+}
+
 fn state() -> LoggingState {
     let init = LoggingInit {
         model: "gpt-4o".to_owned(),
@@ -392,10 +398,8 @@ fn text_item_recovery_item_id(#[case] id_field: &str, #[case] expected: &str) {
     let event = format!(
         r#"{{"type":"response.output_text.done","output_index":0,{id_field}"text":"x","content_index":0}}"#
     );
-    let expected = format!(
-        r#"[{{"type":"message","id":{expected},"role":"assistant","status":"completed","content":[{{"type":"output_text","text":"x","annotations":[]}}]}}]"#
-    );
-    assert_eq!(recover(&recording(&[event.as_str()])), list(&expected));
+    let recovered = recover(&recording(&[event.as_str()]));
+    assert_eq!(recovered, vec![message_with(expected, "x", "[]")]);
 }
 
 #[rstest]
@@ -451,16 +455,13 @@ fn text_item_recovery_replaces_text_at_a_repeated_index() {
 #[case::null(r#","annotations":null"#, r#"[{"url":"u"}]"#)]
 #[case::replaced(r#","annotations":[{"url":"v"}]"#, r#"[{"url":"v"}]"#)]
 fn text_item_recovery_annotations(#[case] field: &str, #[case] expected: &str) {
-    let first = text_at(0, 0, "a");
     let second = format!(
         r#"{{"type":"response.output_text.done","output_index":0,"content_index":0,"text":"b"{field}}}"#
     );
-    let expected = format!(
-        r#"[{{"type":"message","id":"msg_0","role":"assistant","status":"completed","content":[{{"type":"output_text","text":"b","annotations":{expected}}}]}}]"#
-    );
+    let recorded = recording(&[text_at(0, 0, "a").as_str(), second.as_str()]);
     assert_eq!(
-        recover(&recording(&[first.as_str(), second.as_str()])),
-        list(&expected)
+        recover(&recorded),
+        vec![message_with(r#""msg_0""#, "b", expected)]
     );
 }
 
