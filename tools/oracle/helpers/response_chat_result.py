@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import json
 import logging
 from logging.handlers import MemoryHandler
@@ -81,14 +81,13 @@ def _message(message: MessageView) -> dict[str, JsonValue]:
 
 
 def _provider(response: ModelResponse) -> dict[str, JsonValue]:
-    extras = response.model_extra
+    extras = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088
+        dict[str, JsonValue] | None,
+        response.model_extra,
+    )
     if extras is None:
         return {}
-    fields = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088
-        dict[str, JsonValue],
-        extras,
-    )
-    return {key: value for key, value in fields.items() if key != USAGE_KEY}
+    return {key: value for key, value in extras.items() if key != USAGE_KEY}
 
 
 def _hidden(response: ModelResponse) -> dict[str, JsonValue]:
@@ -101,67 +100,67 @@ def _hidden(response: ModelResponse) -> dict[str, JsonValue]:
 
 def _record(response: ModelResponse) -> dict[str, JsonValue]:
     view = ENVELOPE.validate_json(response.model_dump_json())
-    record: dict[str, JsonValue] = {
-        "id": view["id"],
-        "created": view["created"],
-        "model": view["model"],
-        "object": view["object"],
-        "system_fingerprint": view["system_fingerprint"],
-        "choices": [
-            {
-                "finish_reason": choice["finish_reason"],
-                "index": choice["index"],
-                "message": _message(choice["message"]),
-            }
-            for choice in view["choices"]
-        ],
-        "usage": view["usage"],
-    }
+    record: dict[str, JsonValue] = {}
+    record["id"] = view["id"]
+    record["created"] = view["created"]
+    record["model"] = view["model"]
+    record["object"] = view["object"]
+    record["system_fingerprint"] = view["system_fingerprint"]
+    record["choices"] = [
+        {
+            "finish_reason": choice["finish_reason"],
+            "index": choice["index"],
+            "message": _message(choice["message"]),
+        }
+        for choice in view["choices"]
+    ]
+    record["usage"] = view["usage"]
     record.update(_provider(response))
     return record
 
 
 def _logging(recorded: str | None) -> Logging:
+    messages: list[JsonValue] = []
     logging_object = Logging(
         model="caller-model",
-        messages=[],
+        messages=messages,
         stream=False,
         call_type="completion",
-        start_time=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        start_time=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
         litellm_call_id="call-1",
         function_id="fn-1",
     )
     if recorded is not None:
-        logging_object.model_call_details[RECORDING_KEY] = recorded
+        logging_object.model_call_details[RECORDING_KEY] = recorded  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L707
     return logging_object
 
 
 def _caller(input_value: Input) -> ModelResponse:
-    seed: dict[str, JsonValue] = {
-        "created": CALLER_CREATED,
-        "object": CHAT_OBJECT,
-        "system_fingerprint": CALLER_FINGERPRINT,
-    }
+    seed: dict[str, JsonValue] = {}
+    seed["created"] = CALLER_CREATED
+    seed["object"] = CHAT_OBJECT
+    seed["system_fingerprint"] = CALLER_FINGERPRINT
     seed.update(input_value["caller_extra"])
-    result = ModelResponse.model_validate(seed)
-    hidden = input_value["caller_hidden_params"]
-    result._hidden_params = hidden  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088
+    result = ModelResponse.model_validate(seed)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181
+    result._hidden_params = input_value["caller_hidden_params"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088
     return result
 
 
 def _transform(input_value: Input) -> ModelResponse:
     raw = RESPONSE.validate_json(json.dumps(input_value["response"]))
-    hidden = input_value["raw_hidden_params"]
-    raw._hidden_params = hidden  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1424
-    return LiteLLMResponsesTransformationHandler().transform_response(
+    raw._hidden_params = input_value["raw_hidden_params"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1424
+    request_data: dict[str, JsonValue] = {}
+    optional_params: dict[str, JsonValue] = {}
+    litellm_params: dict[str, JsonValue] = {}
+    return LiteLLMResponsesTransformationHandler().transform_response(  # type: ignore[no-untyped-call]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L286
         model=input_value["model"],
         raw_response=raw,
         model_response=_caller(input_value),
         logging_obj=_logging(input_value["recorded"]),
-        request_data={},
-        messages=[],
-        optional_params={},
-        litellm_params={},
+        request_data=request_data,
+        messages=[],  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L897
+        optional_params=optional_params,
+        litellm_params=litellm_params,
         encoding=None,
     )
 
