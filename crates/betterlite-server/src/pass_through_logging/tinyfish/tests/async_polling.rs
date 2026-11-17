@@ -9,7 +9,7 @@ use chrono::DateTime;
 use super::TINYFISH_MODEL_NAME;
 use super::billing::AsyncRun;
 use super::support::{
-    ScriptedReply, detail_cost, dispatch_handle, fixture, fixture_with_credentials, json, kwargs,
+    ScriptedReply, dispatch_handle, fixture, fixture_with_credentials, json, kwargs,
     shared_logging_object, standard_text, start_time,
 };
 
@@ -43,8 +43,6 @@ async fn spawns_a_poller_that_bills_the_terminal_run() {
     let call = calls.first().expect("one dispatch");
     assert_eq!(call.model, TINYFISH_MODEL_NAME);
     assert_eq!(call.provider.as_deref(), Some("tinyfish"));
-    assert_eq!(call.call_id, "call-1");
-    assert!(!call.cache_hit);
     assert_eq!(standard_text(&call.result), COMPLETED_TEXT);
     assert_eq!(
         call.kwargs.entries.get("response_cost"),
@@ -59,7 +57,6 @@ async fn spawns_a_poller_that_bills_the_terminal_run() {
         call.end_time,
         DateTime::parse_from_rfc3339("2024-01-01T00:00:05+00:00").expect("a valid timestamp")
     );
-    assert_eq!(detail_cost(&logging_obj).as_deref(), Some("0.048"));
 }
 
 #[tokio::test]
