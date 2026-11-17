@@ -393,47 +393,52 @@ fn boundary_line(
 #[case::empty_document(
     Spec::EmptyRules,
     &[Boundary::Outcome, Boundary::Warnings],
-    &["install ok", "warnings []"],
+    &texts(&["install ok", "warnings []"]),
 )]
 #[case::non_list_document(
     Spec::NonListDocument,
     &[Boundary::Outcome, Boundary::Warnings],
-    &["install ok", "warnings []"],
+    &texts(&["install ok", "warnings []"]),
 )]
 #[case::rules_at_byte_limit(
     Spec::RulesAtLimit,
     &[Boundary::Outcome, Boundary::Warnings],
-    &["install ok", "warnings []"],
+    &texts(&["install ok", "warnings []"]),
 )]
 #[case::rules_over_byte_limit(
     Spec::RulesOverLimit,
     &[Boundary::Outcome],
-    &["install too-large 1048577"],
+    &texts(&["install too-large 1048577"]),
 )]
 #[case::invalid_document(
     Spec::InvalidDocument,
     &[Boundary::Outcome],
-    &["install rules-json"],
+    &texts(&["install rules-json"]),
 )]
 #[case::pattern_at_byte_limit(
     Spec::PatternAtLimit,
     &[Boundary::Outcome, Boundary::Warnings, Boundary::Routing("zzz")],
-    &["install ok", "warnings []", r#"route zzz "big" []"#],
+    &texts(&["install ok", "warnings []", r#"route zzz "big" []"#]),
 )]
 #[case::pattern_over_byte_limit(
     Spec::PatternOverLimit,
     &[Boundary::Outcome, Boundary::Warnings, Boundary::Routing("zzz"), Boundary::Routing("aaa")],
-    &["install ok", &large_pattern_warning(), "route zzz null []", "route aaa null []"],
+    &[
+        String::from("install ok"),
+        large_pattern_warning(),
+        String::from("route zzz null []"),
+        String::from("route aaa null []"),
+    ],
 )]
 #[case::match_steps_within_limit(
     Spec::SlowPattern,
     &[Boundary::Routing("abab")],
-    &["route abab null []"],
+    &texts(&["route abab null []"]),
 )]
 #[case::match_steps_over_limit(
     Spec::SlowPattern,
     &[Boundary::Routing(SLOW_MODEL)],
-    &[&format!("route {SLOW_MODEL} null {SLOW_WARNING}")],
+    &[format!("route {SLOW_MODEL} null {SLOW_WARNING}")],
 )]
 #[case::capability_match_steps_over_limit(
     Spec::SlowCapabilityRules,
@@ -443,14 +448,14 @@ fn boundary_line(
         Boundary::Warnings,
     ],
     &[
-        &format!(
+        format!(
             "capabilities {SLOW_MODEL} null [{},{},{}]",
             slow_warning(),
             slow_warning(),
             slow_warning()
         ),
-        "capabilities abab null []",
-        "warnings []",
+        String::from("capabilities abab null []"),
+        String::from("warnings []"),
     ],
 )]
 #[case::fill_missing_match_steps_over_limit(
@@ -460,26 +465,30 @@ fn boundary_line(
         Boundary::FillMissing(SLOW_MODEL, ""),
     ],
     &[
-        &format!("fill {SLOW_MODEL}/acme null [{}]", slow_warning()),
-        &format!("fill {SLOW_MODEL}/ null []"),
+        format!("fill {SLOW_MODEL}/acme null [{}]", slow_warning()),
+        format!("fill {SLOW_MODEL}/ null []"),
     ],
 )]
 #[case::large_and_slow_together(
     Spec::LargeAndSlowPattern,
     &[Boundary::Warnings, Boundary::Routing(SLOW_MODEL)],
-    &[&large_pattern_warning(), &format!("route {SLOW_MODEL} null {SLOW_WARNING}")],
+    &[large_pattern_warning(), format!("route {SLOW_MODEL} null {SLOW_WARNING}")],
 )]
 fn model_generalizations_boundaries(
     #[case] spec: Spec,
     #[case] probes: &[Boundary],
-    #[case] expected: &[&str],
+    #[case] expected: &[String],
 ) {
     let installed = ModelGeneralizations::install(&rules(spec));
     let mut lines = Vec::new();
     for probe in probes {
         lines.push(boundary_line(&installed, *probe));
     }
-    assert_eq!(lines, expected);
+    assert_eq!(lines.as_slice(), expected);
+}
+
+fn texts(items: &[&str]) -> Vec<String> {
+    items.iter().map(ToString::to_string).collect()
 }
 
 #[test]
