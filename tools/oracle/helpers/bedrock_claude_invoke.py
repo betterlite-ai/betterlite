@@ -5,6 +5,7 @@ from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
 import httpx
 import litellm
 import litellm.llms.bedrock.chat.invoke_transformations.anthropic_claude3_transformation as claude
+from litellm.exceptions import ImageFetchError
 from litellm.litellm_core_utils.prompt_templates import image_handling
 from litellm.llms.bedrock.chat.invoke_transformations.anthropic_claude3_transformation import (
     AmazonAnthropicClaudeConfig,
@@ -102,7 +103,7 @@ class Fetcher:
         self.calls.append(url)
         value = self.urls.get(url)
         if value is None:
-            raise litellm.ImageFetchError(FAILED.format(url=url))
+            raise ImageFetchError(FAILED.format(url=url))
         return value
 
 
@@ -165,7 +166,7 @@ class Logging(Protocol):
     def post_call(self, **kwargs: JsonValue) -> None: ...
 
 
-class Sink(Logging):
+class Sink:
     def __init__(self) -> None:
         self.kwargs: dict[str, JsonValue] = {}
 
