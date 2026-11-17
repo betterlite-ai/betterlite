@@ -26,18 +26,6 @@ fn revealed(value: Option<&SecretString>) -> Option<&str> {
     value.map(ExposeSecret::expose_secret)
 }
 
-fn resolved_key(
-    environment: Environment<'_>,
-    source: &str,
-    explicit: Option<&str>,
-) -> Option<String> {
-    let settings = settings(environment, source).expect("the config loads");
-    let key = explicit.map(|text| SecretString::from(text.to_owned()));
-    settings
-        .resolve_api_key(key.as_ref())
-        .map(|secret| secret.expose_secret().to_owned())
-}
-
 #[rstest]
 #[case::long_alias(&[("COHERE_API_KEY", "long")], None, Some("long"), None)]
 #[case::short_alias(&[("CO_API_KEY", "short")], None, None, Some("short"))]
@@ -59,55 +47,74 @@ fn the_cohere_environment_aliases_and_module_key_load(
     assert_eq!(revealed(settings.api_key.as_ref()), Some("global-key"));
 }
 
-#[rstest]
-#[case::explicit_wins(&[("COHERE_API_KEY", "long")], MODULE, Some("explicit"), Some("explicit"))]
-#[case::module_key_before_the_environment(&[("COHERE_API_KEY", "long")], MODULE, None, Some("module-key"))]
-#[case::long_alias_before_the_short_one(&[("COHERE_API_KEY", "long"), ("CO_API_KEY", "short")], "", None, Some("long"))]
-#[case::short_alias_before_the_api_key(&[("CO_API_KEY", "short")], "", None, Some("short"))]
-#[case::the_global_key_is_last(&[], "litellm_settings:\n  api_key: global-key\n", None, Some("global-key"))]
-#[case::empty_long_alias_falls_through(&[("COHERE_API_KEY", ""), ("CO_API_KEY", "short")], "", None, Some("short"))]
-#[case::explicit_empty_falls_through(&[("CO_API_KEY", "short")], "", Some(""), Some("short"))]
-#[case::the_global_empty_key_is_kept(&[], "litellm_settings:\n  api_key: ''\n", None, Some(""))]
-#[case::missing_everywhere(&[], "", None, None)]
-fn the_cohere_key_order_is_explicit_module_long_short_global(
-    #[case] environment: Environment<'_>,
-    #[case] source: &str,
-    #[case] explicit: Option<&str>,
-    #[case] expected: Option<&str>,
-) {
-    assert_eq!(
-        resolved_key(environment, source, explicit).as_deref(),
-        expected
-    );
+#[derive(Clone, Copy)]
+enum Chain {
+    Key,
+    Base,
 }
 
-fn resolved_base(
+fn resolved(
+    chain: Chain,
     environment: Environment<'_>,
     source: &str,
     explicit: Option<&str>,
 ) -> Option<String> {
-    settings(environment, source)
-        .expect("the config loads")
-        .resolve_api_base(explicit)
+    let settings = settings(environment, source).expect("the config loads");
+    match chain {
+        Chain::Key => {
+            let key = explicit.map(|text| SecretString::from(text.to_owned()));
+            settings
+                .resolve_api_key(key.as_ref())
+                .map(|secret| secret.expose_secret().to_owned())
+        }
+        Chain::Base => settings.resolve_api_base(explicit),
+    }
 }
 
 #[rstest]
-#[case::explicit_wins(&[("COHERE_API_BASE", "https://env.test")], MODULE, Some("https://explicit.test"), Some("https://explicit.test"))]
-#[case::the_module_base_before_the_environment(&[("COHERE_API_BASE", "https://env.test")], MODULE, None, Some("https://global.test"))]
-#[case::the_environment_base_is_last(&[("COHERE_API_BASE", "https://env.test")], "", None, Some("https://env.test"))]
-#[case::an_empty_environment_base_is_unset(&[("COHERE_API_BASE", "")], "", None, None)]
-#[case::an_explicit_empty_base_falls_through(&[], "litellm_settings:\n  api_base: https://global.test\n", Some(""), Some("https://global.test"))]
-#[case::no_default_applies_here(&[], "", None, None)]
-fn the_cohere_base_order_is_explicit_module_environment(
+#[case::key_explicit_wins(Chain::Key, &[("COHERE_API_KEY", "long")], MODULE, Some("explicit"), Some("explicit"))]
+#[case::key_module_key_before_the_environment(Chain::Key, &[("COHERE_API_KEY", "long")], MODULE, None, Some("module-key"))]
+#[case::key_long_alias_before_the_short_one(Chain::Key, &[("COHERE_API_KEY", "long"), ("CO_API_KEY", "short")], "", None, Some("long"))]
+#[case::key_short_alias_before_the_api_key(Chain::Key, &[("CO_API_KEY", "short")], "", None, Some("short"))]
+#[case::key_the_global_key_is_last(Chain::Key, &[], "litellm_settings:\n  api_key: global-key\n", None, Some("global-key"))]
+#[case::key_empty_long_alias_falls_through(Chain::Key, &[("COHERE_API_KEY", ""), ("CO_API_KEY", "short")], "", None, Some("short"))]
+#[case::key_explicit_empty_falls_through(Chain::Key, &[("CO_API_KEY", "short")], "", Some(""), Some("short"))]
+#[case::key_the_global_empty_key_is_kept(Chain::Key, &[], "litellm_settings:\n  api_key: ''\n", None, Some(""))]
+#[case::key_missing_everywhere(Chain::Key, &[], "", None, None)]
+#[case::base_explicit_wins(Chain::Base, &[("COHERE_API_BASE", "https://env.test")], MODULE, Some("https://explicit.test"), Some("https://explicit.test"))]
+#[case::base_the_module_base_before_the_environment(Chain::Base, &[("COHERE_API_BASE", "https://env.test")], MODULE, None, Some("https://global.test"))]
+#[case::base_the_environment_base_is_last(Chain::Base, &[("COHERE_API_BASE", "https://env.test")], "", None, Some("https://env.test"))]
+#[case::base_an_empty_environment_base_is_unset(Chain::Base, &[("COHERE_API_BASE", "")], "", None, None)]
+#[case::base_an_explicit_empty_base_falls_through(Chain::Base, &[], "litellm_settings:\n  api_base: https://global.test\n", Some(""), Some("https://global.test"))]
+#[case::base_an_empty_module_base_falls_through(Chain::Base, &[("COHERE_API_BASE", "https://env.test")], "litellm_settings:\n  api_base: ''\n", None, Some("https://env.test"))]
+#[case::base_no_default_applies_here(Chain::Base, &[], "", None, None)]
+fn the_cohere_key_and_base_chains_are_ordered(
+    #[case] chain: Chain,
     #[case] environment: Environment<'_>,
     #[case] source: &str,
     #[case] explicit: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
     assert_eq!(
-        resolved_base(environment, source, explicit).as_deref(),
+        resolved(chain, environment, source, explicit).as_deref(),
         expected
     );
+}
+
+#[test]
+fn an_empty_cohere_base_is_unset_before_and_after_the_settings() {
+    let loaded = settings(&[("COHERE_API_BASE", "")], "").expect("the config loads");
+    assert!(loaded.cohere_api_base.is_none());
+    let direct = Settings {
+        cohere_api_key: None,
+        co_api_key: None,
+        cohere_api_base: Some(String::new()),
+        cohere_key: None,
+        api_key: None,
+        api_base: None,
+        headers: BTreeMap::new(),
+    };
+    assert_eq!(direct.resolve_api_base(None), None);
 }
 
 fn source_headers(source: &str) -> BTreeMap<String, String> {
