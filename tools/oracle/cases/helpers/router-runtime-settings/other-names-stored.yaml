@@ -1,0 +1,14 @@
+kind: helper
+name: router-runtime-settings-other-names-stored
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["fallbacks", [{"gpt": ["claude"]}]]
+      - ["model_group_alias", {"a": ["b"]}]
+      - ["enable_weighted_failover", true]
+      - ["tag_routing_prefix", "x:"]
+      - ["max_retries", 3]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,30 @@
+kind: helper
+name: false-nested-presence
+call:
+  gemini_live_content:
+    calls:
+      - op: map_event
+        key: serverContent
+        value:
+          generationComplete: false
+        delta_type: audio
+      - op: map_event
+        key: serverContent
+        value:
+          turnComplete: false
+      - op: map_event
+        key: serverContent
+        value:
+          interrupted: false
+      - op: map_event
+        key: serverContent
+        value:
+          generationComplete: 0
+          turnComplete: false
+      - op: map_event
+        key: serverContent
+        value:
+          generationComplete: ""
+          turnComplete: true
+env: {}
+compare: {ignore: []}

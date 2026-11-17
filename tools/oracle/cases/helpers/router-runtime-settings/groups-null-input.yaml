@@ -1,0 +1,10 @@
+kind: helper
+name: router-runtime-settings-groups-null-input
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["routing_groups", null]
+env: {}
+compare: {ignore: []}

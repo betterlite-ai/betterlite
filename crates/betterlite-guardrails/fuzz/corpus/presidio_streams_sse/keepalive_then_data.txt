@@ -1,0 +1,7 @@
+: keepalive
+
+event: ping
+data: {"type":"ping"}
+
+data: {"type":"message_stop"}
+

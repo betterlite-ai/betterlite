@@ -1,0 +1,39 @@
+kind: helper
+name: foundry-responses-url
+call:
+  foundry_responses:
+    steps:
+      - kind: url
+        api_base: https://res.services.ai.azure.com
+      - kind: url
+        api_base: https://res.services.ai.azure.com/
+      - kind: url
+        api_base: https://res.services.ai.azure.com/api/projects/proj
+      - kind: url
+        api_base: https://res.services.ai.azure.com/api/projects/proj/
+      - kind: url
+        api_base: https://res.services.ai.azure.com/api/projects/proj/openai/v1
+      - kind: url
+        api_base: https://res.services.ai.azure.com/api/projects
+      - kind: url
+        api_base: https://res.services.ai.azure.com/api/other/proj
+      - kind: url
+        api_base: https://res.services.ai.azure.com/openai/v1
+      - kind: url
+        api_base: https://res.services.ai.azure.com/models?api-version=1
+      - kind: url
+        api_base: https://res.services.ai.azure.com/some/other/path?x=1#frag
+      - kind: url
+        api_base: https://res.services.ai.azure.com/api/projects/pro%2Fx
+      - kind: url
+        api_base: https://res.services.ai.azure.com//api//projects//proj//
+      - kind: url
+        global_api_base: https://global.services.ai.azure.com
+      - kind: url
+        environment: {AZURE_AI_API_BASE: https://env.services.ai.azure.com}
+      - kind: url
+        environment: {AZURE_AI_API_BASE: ""}
+      - kind: url
+        api_base: https://host:port
+env: {}
+compare: {ignore: []}

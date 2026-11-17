@@ -1,0 +1,24 @@
+task: B3742
+deviations:
+  - what: A reachability failure names betterlite's own poster error in the reason, for example that the poster has no reply for the URL, where LiteLLM names the Python exception class, such as Timeout or ConnectError. An OBO token no header value can carry, such as one with a newline, says the OBO token is not a valid header value where LiteLLM says LocalProtocolError. The wording reaches both the rejection detail and the verdict record; the could-not-be-reached prefix and the fallback branch are unchanged.
+    why: The class name of a Python exception cannot be ported, and the reason still says which endpoint failed and that the call did not reach it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L258-L269
+  - what: An OBO token with non-ASCII characters is sent in the Authorization header as its UTF-8 bytes, where LiteLLM's httpx fails to encode the header as ASCII and the UnicodeEncodeError escapes the hook as a 500.
+    why: The error is outside the hook's except clause, so LiteLLM answers a server error no working setup relies on; betterlite sends the bytes and lets the evaluation endpoint answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L258-L269
+  - what: An evaluation error body that is not valid UTF-8 contributes an empty text to the rejection message and its reason; LiteLLM decodes the body with replacement characters and keeps the rest of the text.
+    why: The error text is a Rust string that is decoded strictly, and an Agent 365 deployment answers with JSON or plain text, never with a body a UTF-8 strict read loses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L303-L310
+  - what: A defender.status or defender.message that is not a string is read as missing, so the unevaluated reason says defender.status=missing and a block uses the default message; LiteLLM passes the value through into the reason and into the verdict record.
+    why: The evaluation response is decoded into typed fields, and a status or message of another type carries no meaning the Defender contract gives it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L352-L360
+  - what: latency_ms is rounded half away from zero, where Python's round moves a half to the nearest even tenth.
+    why: Both stay within a tenth of a millisecond, and a latency that lands exactly on a half tenth depends on the float's binary representation in either language.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L621-L622
+kept_bugs:
+  - what: An evaluation response with status 401 evicts the cached OBO token before the call is rejected, while a token exchange that answers 401 leaves the cached token in place.
+    why: A working setup that retries after an evaluation 401 picks up a fresh token, and the eviction is observable through the token request that follows, so betterlite copies it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L291-L296
+  - what: A throttled token exchange raises the 503 throttled rejection regardless of unreachable_fallback, where the other token endpoint failures follow fail_open or fail_closed.
+    why: A working setup that sees the 503 on a throttled token endpoint treats it as a block, and betterlite copies the behavior even under fail_open.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L236-L242

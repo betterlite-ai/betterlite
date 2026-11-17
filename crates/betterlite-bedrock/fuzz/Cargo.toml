@@ -151,3 +151,10 @@ path = "fuzz_targets/bedrock_services_realtime_input.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_services_passthrough"
+path = "fuzz_targets/bedrock_services_passthrough.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,45 @@
+kind: helper
+name: fal-video-results-transient-probe-keeps-completed
+call:
+  fal_video_results:
+    operation: transient_probe_keeps_completed
+    cases:
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-1/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-1"}'
+        probe_status: 429
+        probe_body: '{"detail": "rate limited"}'
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-2/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-2"}'
+        probe_status: 500
+        probe_body: '{"detail": "server exploded"}'
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-3/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-3"}'
+        probe_status: 503
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-4/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "detail": "body says failed", "request_id": "req-4"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-5/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-5"}'
+        probe_status: 599
+        probe_body: "unavailable"
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-6/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-6"}'
+        probe_status: 429
+        probe_body: ""
+        provider: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,8 @@
+kind: helper
+name: unsupported-character-create
+call:
+  b3331:
+    function: unsupported_request
+    operation: create_character
+env: {}
+compare: {ignore: []}
