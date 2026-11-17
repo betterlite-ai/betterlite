@@ -789,11 +789,13 @@ fn media_download(#[case] asynchronous: bool) {
     assert_eq!(harness.transport.calls(), 0);
 }
 
-#[test]
-fn media_https_hint_passes_mime() {
+#[rstest]
+#[case::vertex(VertexCapabilityProvider::VertexAi)]
+#[case::vertex_beta(VertexCapabilityProvider::VertexAiBeta)]
+fn media_https_hint_passes_mime(#[case] provider: VertexCapabilityProvider) {
     let harness = Harness::new();
     let input = media_input(
-        VertexCapabilityProvider::VertexAi,
+        provider,
         r#"[{"role":"user","content":[{"type":"text","text":"what"},{"type":"image_url","image_url":{"url":"https://example.com/cat","format":"image/png"}}]}]"#,
     );
     let transformed = harness.run(&input).expect("the hinted reference stays");
