@@ -14,7 +14,7 @@ use crate::request_policy::{BedrockRequestPolicy, Params, RequestValue};
 
 use super::support::{convert, convert_bytes, fixture, json};
 
-type FakeStreamRow = (Option<&str>, Option<bool>, Option<bool>, bool);
+type FakeStreamRow = (Option<&'static str>, Option<bool>, Option<bool>, bool);
 
 pub(super) fn fake_stream_capability() {
     let cases: [FakeStreamRow; 11] = [

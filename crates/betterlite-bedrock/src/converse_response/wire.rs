@@ -8,7 +8,7 @@ use crate::converse_usage::Usage;
 use crate::converse_usage::reasoning::ThinkingBlock;
 
 // The buffered chat-completion envelope LiteLLM fills in: the supplied response keeps its id, object and fingerprint, and the transform replaces the rest.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ModelResponse {
     pub id: String,
     pub created: i64,
@@ -23,14 +23,14 @@ pub struct ModelResponse {
     pub trace: Option<Json>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Choice {
     pub finish_reason: String,
     pub index: i64,
     pub message: Message,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Message {
     pub content: Option<String>,
     pub role: String,
