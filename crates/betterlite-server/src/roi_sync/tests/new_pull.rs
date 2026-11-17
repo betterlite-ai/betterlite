@@ -92,6 +92,19 @@ async fn injected_capabilities_choose_none_reasoning_and_the_cache_key() {
 }
 
 #[tokio::test]
+async fn undeclared_capabilities_leave_reasoning_effort_unset() {
+    let manager = manager(None);
+    let mut inputs = inputs("o/r", &[12]);
+    let sent = Arc::new(Mutex::new(Vec::new()));
+    inputs.complete = recording_caller(Arc::clone(&sent));
+    assert!(manager.start(inputs.run()).await);
+    settled(&manager).await;
+    let requests = sent.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].reasoning_effort.is_none());
+}
+
+#[tokio::test]
 async fn new_pull_reads_the_detail_files_and_commits() {
     let manager = manager(None);
     let inputs = inputs("o/r", &[12]);
