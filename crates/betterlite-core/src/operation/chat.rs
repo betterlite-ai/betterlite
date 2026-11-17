@@ -43,7 +43,6 @@ pub trait ChatCall: Send + Sync {
         ChatEndpoint::Chat
     }
 
-    // the text endpoint's answer, converted back to chat unless the deployment is a fine-tuned model
     async fn text(
         &self,
         _call: ChatCallInput<'_>,
@@ -82,7 +81,6 @@ pub enum ChatResult {
     Stream(ChatStreamAnswer),
 }
 
-// what the caller asked the text endpoint for: a buffered answer with or without conversion, or a stream
 pub enum TextCallMode {
     Buffered { convert: bool },
     Streamed,

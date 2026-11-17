@@ -75,7 +75,6 @@ where
     }
 }
 
-// the client's own usage choice decides whether the wrapper reads it off the chunks
 fn stream_options(request: &CompletionRequest) -> Option<Json> {
     request.stream_options.as_ref().map(|options| {
         Json::Object(IndexMap::from([(
@@ -145,7 +144,6 @@ impl Stream for TerminalTextStream {
 
 impl Drop for TerminalTextStream {
     fn drop(&mut self) {
-        // a stream that already ended or failed has used its terminal
         if let Some(terminal) = self.terminal.take() {
             terminal.record(CallOutcome::Cancelled, None, None);
         }

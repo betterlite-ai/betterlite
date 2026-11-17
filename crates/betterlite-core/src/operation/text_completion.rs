@@ -45,7 +45,6 @@ pub trait TextCompletionCall: Send + Sync {
         Err(internal_failure("no chat bridge on this port"))
     }
 
-    // the text route's chat-deployment branch, in the shape the caller asked for
     async fn chat(
         &self,
         _call: TextCompletionCallInput<'_>,
@@ -55,45 +54,36 @@ pub trait TextCompletionCall: Send + Sync {
     }
 }
 
-// what the caller asked the chat endpoint for on the text route
 pub enum ChatCallMode {
     Buffered,
     Streamed,
 }
 
-// the chat endpoint's answer in the text route's own types
 pub enum ChatCallAnswer {
     Buffered(TextCompletionResult),
     Streamed(TextStreamAnswer),
 }
 
+const MISMATCHED: &str = "this completion port answered a different operation";
+
 impl ChatCallAnswer {
     pub fn buffered(self) -> Result<TextCompletionResult, TextCompletionFailure> {
         match self {
             Self::Buffered(answer) => Ok(answer),
-            Self::Streamed(_) => Err(internal_failure(
-                "this completion port answered a different operation",
-            )),
+            Self::Streamed(_) => Err(internal_failure(MISMATCHED)),
         }
     }
 
     pub fn streamed(self) -> Result<TextStreamAnswer, TextCompletionFailure> {
         match self {
             Self::Streamed(answer) => Ok(answer),
-            Self::Buffered(_) => Err(internal_failure(
-                "this completion port answered a different operation",
-            )),
+            Self::Buffered(_) => Err(internal_failure(MISMATCHED)),
         }
     }
 }
 
 fn internal_failure(message: &str) -> TextCompletionFailure {
-    TextCompletionFailure {
-        status: 500,
-        error_type: Some(String::from("internal_server_error")),
-        param: None,
-        message: message.to_owned(),
-    }
+    TextCompletionFailure::new(500, Some("internal_server_error"), message.to_owned())
 }
 
 pub struct TextCompletionResult {
@@ -109,4 +99,16 @@ pub struct TextCompletionFailure {
     pub error_type: Option<String>,
     pub param: Option<String>,
     pub message: String,
+}
+
+impl TextCompletionFailure {
+    // a failure the route writes itself, which names no parameter
+    pub fn new(status: u16, error_type: Option<&str>, message: String) -> Self {
+        Self {
+            status,
+            error_type: error_type.map(str::to_owned),
+            param: None,
+            message,
+        }
+    }
 }

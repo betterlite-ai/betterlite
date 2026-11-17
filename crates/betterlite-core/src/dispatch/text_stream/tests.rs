@@ -56,7 +56,7 @@ impl TextCompletionCall for Streams {
         &self,
         call: TextCompletionCallInput<'_>,
     ) -> Result<TextStreamAnswer, TextCompletionFailure> {
-        streamed_request(&call)
+        Ok(streamed_request(&call))
     }
 }
 
@@ -114,11 +114,9 @@ impl TextCompletionCall for Fails {
 }
 
 // only a string prompt reaches the text endpoint, so the port sees one message
-fn streamed_request(
-    call: &TextCompletionCallInput<'_>,
-) -> Result<TextStreamAnswer, TextCompletionFailure> {
+fn streamed_request(call: &TextCompletionCallInput<'_>) -> TextStreamAnswer {
     assert!(call.request.prompt.messages().is_some());
-    Ok(answer(vec![Ok(chunk(FIRST_CHUNK)), Ok(chunk(LAST_CHUNK))]))
+    answer(vec![Ok(chunk(FIRST_CHUNK)), Ok(chunk(LAST_CHUNK))])
 }
 
 fn answer(items: Vec<Result<Json, TextCompletionFailure>>) -> TextStreamAnswer {

@@ -53,7 +53,6 @@ where
     endpoint_call(request, deployment).await
 }
 
-// a chat-catalog deployment answers through the chat endpoint and converts back
 async fn endpoint_call(
     request: &TextCompletionRequest,
     deployment: ChatDeployment,

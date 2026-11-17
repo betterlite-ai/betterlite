@@ -7,7 +7,6 @@ use http::HeaderMap;
 use crate::message_utilities::response_streams::StreamError;
 use crate::operation::text_completion::TextCompletionFailure;
 
-// The provider's text stream as the route's port answers it: the transport's chunks as written JSON.
 pub struct TextStreamAnswer {
     pub body: BoxStream<'static, Result<Json, TextCompletionFailure>>,
     pub upstream_headers: HeaderMap,
