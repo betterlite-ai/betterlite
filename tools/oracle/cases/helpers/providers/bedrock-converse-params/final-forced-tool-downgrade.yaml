@@ -95,5 +95,35 @@ calls:
       optional_params: {}
       global_drop: false
       call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params: {tool_choice: none}
+      optional_params: {}
+      global_drop: true
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params: {tool_choice: none}
+      optional_params: {}
+      global_drop: false
+      call_drop: true
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params: {tool_choice: none}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
 env: {}
 compare: {ignore: []}

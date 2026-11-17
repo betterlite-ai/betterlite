@@ -95,5 +95,25 @@ calls:
       optional_params: {}
       global_drop: false
       call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true}
+      environment: {}
+      non_default_params: {thinking: {type: adaptive}}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true}
+      environment: {}
+      non_default_params: {thinking: {type: adaptive}, max_tokens: null}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
 env: {}
 compare: {ignore: []}
