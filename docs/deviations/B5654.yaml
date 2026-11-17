@@ -24,6 +24,9 @@ deviations:
   - what: set_logging_event_loop is not built, so there is no way to pick the loop stream logging runs on.
     why: Stream logging runs on the Rust runtime and no Python loop exists at this layer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1536-L1549
+  - what: A finished stream is assembled, cached and success-logged once, including when stream_options.include_usage is set. LiteLLM's __next__ runs cache_streaming_response and success_handler on the StopIteration that returns the usage chunk (L1925-L1929) and again on the StopIteration that ends iteration, and __anext__ assembles the stream again on the call after its usage chunk (L2157-L2159), so LiteLLM stores and logs twice.
+    why: The task's DoD asks that a finished stream log and store in the cache exactly once, so the duplicate finalize pass is not copied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1848-L1929
 kept_bugs:
   - what: A model whose call provider is openai and whose logging provider is unset is named "None/{model}", because the f-string renders None.
     why: A working setup reads that model name from the chunk, so betterlite keeps it.
