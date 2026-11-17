@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::lookup::cost_map_keys::cost_map_backend_model;
 
 use crate::deployment_identity::spec::DeploymentSpec;
-use crate::generalization_integration::model_generalizations::ModelGeneralizations;
+use crate::generalization_integration::model_generalizations::{ModelGeneralizations, fill_absent};
 use crate::router_core::candidates::CandidateSet;
 use crate::router_core::error::RoutingError;
 use crate::router_core::route::RouteContext;
@@ -49,14 +49,8 @@ fn filled(
         tracing::warn!(?warning, "a generalization rule search was skipped");
     }
     if let Some(info) = proposed.answer {
-        for (key, value) in info {
-            // the engine keeps a rule's model_info as JSON text, which always reads back into a value
-            let Ok(json) = serde_json::from_str::<Json>(value.get()) else {
-                continue;
-            };
-            // the deployment's own keys and explicit nulls win, as get_model_info merges the rule entry
-            deployment.model_info.entry(key).or_insert(json);
-        }
+        // the deployment's own keys and explicit nulls win, as get_model_info merges the rule entry
+        fill_absent(&mut deployment.model_info, info);
     }
     // a deployment without a provider takes the rule-resolved one, as get_llm_provider hands it the request
     if declared.is_none()

@@ -127,7 +127,21 @@ where
 {
     let Resolved { route, candidates } = resolved;
     match candidates {
-        Candidates::Single(deployment) => single_route(context, route, deployment),
+        Candidates::Single(deployment) => {
+            // get_model_info fills every registered deployment from the rules, a named one included
+            let filled = context::run(
+                RouteStage::GeneralizationIntegration,
+                CandidateSet {
+                    deployments: vec![*deployment],
+                },
+                context,
+            )
+            .await?;
+            let Some(deployment) = filled.deployments.into_iter().next() else {
+                return Err(no_deployment_error(context, &route));
+            };
+            single_route(context, route, deployment)
+        }
         Candidates::Pool(pool) => pool_route(context, dispatch, route, pool, random).await,
     }
 }
@@ -149,12 +163,12 @@ pub fn resolve_catalog(
 fn single_route(
     context: &RouteContext<'_>,
     resolved: ResolvedRoute,
-    deployment: Box<DeploymentSpec>,
+    deployment: DeploymentSpec,
 ) -> Result<AttemptResult, RoutingError> {
     let filtered = eligible(
         EligibilityInput {
             model: &resolved.group,
-            candidates: Candidates::Single(deployment),
+            candidates: Candidates::Single(Box::new(deployment)),
             facts: context.request.facts,
             environment: context.request.environment,
             enable_pre_call_checks: false,

@@ -5,6 +5,7 @@ use std::path::Path;
 
 use betterlite_models::catalog_generalizations::ModelInfo;
 use betterlite_models::error::ModelsError;
+use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
 use serde::Serialize;
 
@@ -95,7 +96,8 @@ fn rendered(service: &mut ModelGeneralizations, probe: Probe) -> String {
         Probe::Warnings => format!("warnings {}", json_text(&service.warnings)),
         Probe::EngineWarnings => format!("engine {}", json_text(&service.engine_warnings)),
         Probe::FillAbsent(exact, proposed) => {
-            let mut exact_info = info(exact);
+            // the exact side is a deployment's model_info, the proposed side the rule entry the engine keeps
+            let mut exact_info: JsonObject = serde_json::from_str(exact).unwrap();
             fill_absent(&mut exact_info, info(proposed));
             format!("fill-absent {}", json_text(&exact_info))
         }
@@ -157,7 +159,7 @@ fn rendered(service: &mut ModelGeneralizations, probe: Probe) -> String {
         Probe::FillAbsent("{}", r#"{"max_tokens":null,"mode":"chat"}"#),
     ],
     &[
-        r#"fill-absent {"max_tokens":null,"mode":"chat","supports_vision":false}"#,
+        r#"fill-absent {"max_tokens":null,"supports_vision":false,"mode":"chat"}"#,
         r#"fill-absent {"max_tokens":null,"mode":"chat"}"#,
     ],
 )]

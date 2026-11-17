@@ -24,6 +24,7 @@ fn settled(case: fn()) -> Ready<()> {
 #[case::specific_deployment_pool(behaviors::specific_deployment_pool())]
 #[case::pinned_short_circuit(behaviors::pinned_short_circuit())]
 #[case::deployment_id_single(behaviors::deployment_id_single())]
+#[case::deployment_id_generalized(behaviors::deployment_id_generalized())]
 #[case::excluded_drop(behaviors::excluded_drop())]
 #[case::retry_skip_narrow(behaviors::retry_skip_narrow())]
 #[case::retry_skip_keeps_pool(behaviors::retry_skip_keeps_pool())]

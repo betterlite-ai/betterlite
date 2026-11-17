@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use betterlite_models::catalog_generalizations::{
     CapabilityRule, CatalogGeneralizations, ModelInfo, decode_generalization_rules,
 };
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
 use serde_json::value::RawValue;
 
 use crate::generalization_integration::bounds::bounded;
@@ -143,8 +145,12 @@ impl ModelGeneralizations {
 }
 
 // the call-site merge: a value the exact entry already has wins, explicit null and false included
-pub fn fill_absent(exact: &mut ModelInfo, proposed: ModelInfo) {
+pub fn fill_absent(exact: &mut JsonObject, proposed: ModelInfo) {
     for (key, value) in proposed {
-        exact.entry(key).or_insert(value);
+        // the engine keeps a rule's model_info as JSON text, which always reads back into a value
+        let Ok(json) = serde_json::from_str::<Json>(value.get()) else {
+            continue;
+        };
+        exact.entry(key).or_insert(json);
     }
 }
