@@ -13,6 +13,7 @@ from litellm.exceptions import (
 )
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.secret_redaction import redact_string
+from litellm.router_utils import fallback_event_handlers
 from litellm.router_utils.add_retry_fallback_headers import (
     FallbackErrorInfo,
     add_fallback_headers_to_response,
@@ -25,7 +26,6 @@ from litellm.router_utils.common_utils import (
     format_no_fallback_group_message,
     truncate_fallback_error_detail,
 )
-from litellm.router_utils import fallback_event_handlers
 from pydantic import Field, InstanceOf, JsonValue, TypeAdapter
 from typing_extensions import override
 
