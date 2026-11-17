@@ -94,11 +94,10 @@ pub(crate) fn transform<Context>(
     let delta = chunk::delta(chunk);
     queue_first_annotations(state, &item_id, delta, annotations)?;
     if let Some(reasoning) = delta_text(delta, "reasoning_content")? {
-        let reasoning_id =
-            generated_id(&mut state.progress.cached_reasoning_item_id, "rs", sources);
+        let rs_id = generated_id(&mut state.progress.cached_reasoning_item_id, "rs", sources);
         return Ok(Some(KnownResponseEvent::ReasoningSummaryTextDelta(
             ReasoningSummaryTextDeltaEvent {
-                item_id: reasoning_id,
+                item_id: rs_id,
                 output_index: 0,
                 summary_index: 0,
                 delta: reasoning.to_owned(),

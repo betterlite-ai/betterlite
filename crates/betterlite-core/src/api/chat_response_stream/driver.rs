@@ -52,10 +52,8 @@ impl<C, Context> ChatResponseStream<C, Context> {
         if let Some(event) = progress.pending_response_events.pop_front() {
             return Ok(Some(event));
         }
-        Ok(progress
-            .pending_tool_events
-            .pop_front()
-            .map(|queued| queued.event))
+        let tool = progress.pending_tool_events.pop_front();
+        Ok(tool.map(|queued| queued.event))
     }
 
     fn begin_chunk(&mut self, chunk: &Json) -> Result<(), ChatResponseStreamError> {
