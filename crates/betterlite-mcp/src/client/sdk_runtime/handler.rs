@@ -115,7 +115,11 @@ impl SdkClientHandler {
         match request {
             ServerRequest::PingRequest(_) => Ok(ClientResult::empty(())),
             ServerRequest::CreateMessageRequest(request) => {
-                let responder = require(self.handlers.sampling.as_ref(), SAMPLING_UNSUPPORTED)?;
+                let responder = self
+                    .handlers
+                    .sampling
+                    .as_deref()
+                    .ok_or_else(|| ErrorData::invalid_request(SAMPLING_UNSUPPORTED, None))?;
                 sampling_result(
                     responder
                         .respond(decode(&request.params, "sampling")?)
@@ -123,8 +127,11 @@ impl SdkClientHandler {
                 )
             }
             ServerRequest::ElicitRequest(request) => {
-                let responder =
-                    require(self.handlers.elicitation.as_ref(), ELICITATION_UNSUPPORTED)?;
+                let responder = self
+                    .handlers
+                    .elicitation
+                    .as_deref()
+                    .ok_or_else(|| ErrorData::invalid_request(ELICITATION_UNSUPPORTED, None))?;
                 custom(
                     &responder
                         .respond(decode(&request.params, "elicitation")?)
@@ -137,18 +144,6 @@ impl SdkClientHandler {
             unknown => Err(method_not_found(&unknown)),
         }
     }
-}
-
-fn require<'responder, R>(
-    responder: Option<&'responder Arc<R>>,
-    unsupported: &str,
-) -> Result<&'responder R, ErrorData>
-where
-    R: ?Sized,
-{
-    responder
-        .as_deref()
-        .ok_or_else(|| ErrorData::invalid_request(unsupported, None))
 }
 
 fn decode<T, P>(params: &P, operation: &str) -> Result<T, ErrorData>
