@@ -51,7 +51,7 @@ where
     };
     let urls = image_urls(&prepared, &should_inline_image)?;
     let data_urls = fetch_images(urls, fetcher, mode).await?;
-    rewrite_images(&mut prepared, &data_urls);
+    rewrite_images(&mut prepared, &should_inline_image, &data_urls);
     Ok(prepared)
 }
 
@@ -125,22 +125,34 @@ where
     Ok(urls.into_iter().zip(values).collect())
 }
 
-fn rewrite_images(messages: &mut [Message], data_urls: &BTreeMap<String, String>) {
+fn rewrite_images(
+    messages: &mut [Message],
+    should_inline: &MediaPredicate<'_>,
+    data_urls: &BTreeMap<String, String>,
+) {
     for message in messages {
         let Some(Json::List(entries)) = message.provider_specific_fields.get_mut(IMAGES) else {
             continue;
         };
         for entry in entries {
-            let rewritten = rewritten_image(entry, data_urls);
+            let rewritten = rewritten_image(entry, should_inline, data_urls);
             *entry = rewritten;
         }
     }
 }
 
-fn rewritten_image(entry: &Json, data_urls: &BTreeMap<String, String>) -> Json {
+// Two entries can name one url; only the entries the predicate accepted were fetched, so a hinted sibling keeps its reference
+fn rewritten_image(
+    entry: &Json,
+    should_inline: &MediaPredicate<'_>,
+    data_urls: &BTreeMap<String, String>,
+) -> Json {
     let Some((fields, media)) = image_entry(entry) else {
         return entry.clone();
     };
+    if !should_inline(&media) {
+        return entry.clone();
+    }
     let Some(data_url) = data_urls.get(&media.url) else {
         return entry.clone();
     };
