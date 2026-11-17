@@ -102,19 +102,23 @@ fn base_stream_state_turns_null_request_data_into_an_empty_object() {
 #[test]
 fn base_stream_state_keeps_the_logging_start_time() {
     let headers = IndexMap::new();
+    let logged = moment() - TimeDelta::minutes(5);
     let state = base_stream_state(&BaseStreamStateInput {
         model: "gpt-4o",
         custom_llm_provider: None,
         litellm_metadata: None,
         request_data: None,
         call_type: None,
-        logging: snapshot(IndexMap::new()),
+        logging: LoggingSnapshot {
+            start_time: Some(logged),
+            litellm_params: IndexMap::new(),
+        },
         headers: &headers,
         api_base: &NoApiBase,
         times: times(),
         max_streaming_duration_seconds: None,
     });
-    assert_eq!(state.start_time, moment());
+    assert_eq!(state.start_time, logged);
     assert_eq!(state.created_timestamp, 0.0);
 }
 
