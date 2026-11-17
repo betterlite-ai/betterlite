@@ -1,0 +1,12 @@
+kind: helper
+name: passthrough-predict-logging-batch-empty
+call:
+  b3639:
+    operation: embed_content
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/demo/locations/us-central1/publishers/google/models/text-embedding-004:batchEmbedContents
+    status: 200
+    body:
+      embeddings: []
+    request_body: {requests: []}
+env: {}
+compare: {ignore: []}
