@@ -65,12 +65,10 @@ async fn injected_capabilities_choose_none_reasoning_and_the_cache_key() {
     inputs.complete = recording_caller(Arc::clone(&sent));
     assert!(manager.start(inputs.run()).await);
     settled(&manager).await;
-    {
-        let requests = sent.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].reasoning_effort, Some(ReasoningEffort::None));
-        assert_eq!(requests[0].model, "gpt-5.2");
-    };
+    let requests = sent.lock().unwrap().clone();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].reasoning_effort, Some(ReasoningEffort::None));
+    assert_eq!(requests[0].model, "gpt-5.2");
     let mut predicates = ModelSupport;
     let context = cache_context(&inputs.settings, None, &mut predicates)
         .await
@@ -99,7 +97,7 @@ async fn undeclared_capabilities_leave_reasoning_effort_unset() {
     inputs.complete = recording_caller(Arc::clone(&sent));
     assert!(manager.start(inputs.run()).await);
     settled(&manager).await;
-    let requests = sent.lock().unwrap();
+    let requests = sent.lock().unwrap().clone();
     assert_eq!(requests.len(), 1);
     assert!(requests[0].reasoning_effort.is_none());
 }
