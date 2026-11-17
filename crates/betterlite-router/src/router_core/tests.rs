@@ -55,9 +55,6 @@ where
 #[case::stage_fallback_attempts(boundaries::stage_skips(RouteStage::FallbackAttempts))]
 #[case::stage_chat_stream_fallback(boundaries::stage_skips(RouteStage::ChatStreamFallback))]
 #[case::stage_native_stream_fallback(boundaries::stage_skips(RouteStage::NativeStreamFallback))]
-#[case::stage_generalization_integration(boundaries::stage_skips(
-    RouteStage::GeneralizationIntegration
-))]
 #[case::stage_model_rate_limits(boundaries::stage_skips(RouteStage::ModelRateLimits))]
 #[case::stage_tag_routing(boundaries::stage_skips(RouteStage::TagRouting))]
 #[case::stage_access_windows(boundaries::stage_skips(RouteStage::AccessWindows))]

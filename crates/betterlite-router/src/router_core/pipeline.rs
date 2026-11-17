@@ -210,6 +210,8 @@ async fn narrowed_pool(
     pool: Vec<DeploymentSpec>,
 ) -> Result<CandidateSet, RoutingError> {
     let candidates = CandidateSet { deployments: pool };
+    let candidates =
+        context::run(RouteStage::GeneralizationIntegration, candidates, context).await?;
     let windowed = context::run(RouteStage::AccessWindows, candidates, context).await?;
     let mut set = CandidateSet {
         deployments: static_pool(context, windowed.deployments)?,
