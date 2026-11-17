@@ -26,6 +26,7 @@ call:
       - {}
       - {query: single}
       - {queries: null, query: null}
-    query_inputs: [null, x, null, 42, ignored, fallback]
+      - {}
+    query_inputs: [null, x, null, 42, ignored, fallback, [1, 2]]
 env: {}
 compare: {ignore: []}

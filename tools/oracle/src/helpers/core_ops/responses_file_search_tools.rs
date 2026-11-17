@@ -9,9 +9,7 @@ use betterlite_core::api::responses_file_search_tools::outputs::{
 use betterlite_core::api::responses_file_search_tools::preparation::{
     extract_tool_call_fields, prepare_file_search_call, resolve_queries_from_args,
 };
-use betterlite_core::api::responses_file_search_tools::results::{
-    format_results_as_tool_output, search_results_for_include,
-};
+use betterlite_core::api::responses_file_search_tools::results::format_results_as_tool_output;
 use betterlite_core::api::responses_file_search_tools::synthesis::{
     OriginalModel, OriginalResponse, OutputItems, synthesize_response,
 };
@@ -19,14 +17,11 @@ use betterlite_core::api::responses_file_search_tools::tools::{
     build_function_tool, replace_file_search_tools,
 };
 use betterlite_core::api::responses_tool_namespaces::values::Fields;
-use betterlite_models::decisions::{HiddenParams, Json};
-use betterlite_openai::api::responses_objects::ResponseApiUsage;
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResult;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use rust_decimal::Decimal;
-use serde::Deserialize;
-use serde::Serialize;
 use serde_json::{Value, json};
 use tracing::field::{Field, Visit};
 use tracing::subscriber::set_default;
@@ -35,90 +30,14 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
 use tracing_subscriber::registry;
 
+use self::cases::{
+    ArgumentPreparationCase, Input, OutputItemsCase, ResponseSynthesisCase, ResultRenderingCase,
+    ToolReplacementCase,
+};
+
+mod cases;
+
 type Failure = Box<HelperError>;
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ToolSchemaCase {
-    vector_store_ids: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ToolReplacementCase {
-    #[serde(default)]
-    tools: Option<Vec<Json>>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ResultRenderingCase {
-    results: Vec<VectorStoreSearchResult>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct OutputItemsCase {
-    call_id: String,
-    queries: Vec<String>,
-    #[serde(default)]
-    include_search_results: bool,
-    #[serde(default)]
-    results: Option<Vec<VectorStoreSearchResult>>,
-    text: String,
-}
-
-// the original response as LiteLLM's model holds it, with _hidden_params as a private attribute
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct OriginalView {
-    id: String,
-    created_at: i64,
-    model: Option<String>,
-    #[serde(default)]
-    usage: Option<ResponseApiUsage>,
-    #[serde(default, rename = "_hidden_params")]
-    hidden_params: Option<HiddenParams>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ResponseSynthesisCase {
-    call_id: String,
-    queries: Vec<String>,
-    #[serde(default)]
-    include_search_results: bool,
-    results: Vec<VectorStoreSearchResult>,
-    text: String,
-    #[serde(default)]
-    original: Option<OriginalView>,
-    #[serde(default, rename = "_hidden_params")]
-    first_hidden: Option<HiddenParams>,
-    uuid: String,
-    now: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ArgumentPreparationCase {
-    prepares: Vec<Fields>,
-    fallback_call_id: String,
-    tool_calls: Vec<Fields>,
-    query_args: Vec<Fields>,
-    query_inputs: Vec<Json>,
-}
-
-// boxed so every variant carries a pointer, well within the 3x variant_size_differences enforces
-#[derive(Debug, Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum Input {
-    ToolSchema(Box<ToolSchemaCase>),
-    ToolReplacement(Box<ToolReplacementCase>),
-    ResultRendering(Box<ResultRenderingCase>),
-    OutputItems(Box<OutputItemsCase>),
-    ResponseSynthesis(Box<ResponseSynthesisCase>),
-    ArgumentPreparation(Box<ArgumentPreparationCase>),
-}
 
 pub(crate) struct Op;
 
@@ -127,7 +46,9 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::ToolSchema(case) => schema_answer(case),
+            Input::ToolSchema(case) => Ok(serde_json::to_value(build_function_tool(
+                &case.vector_store_ids,
+            ))?),
             Input::ToolReplacement(case) => replacement_answer(case),
             Input::ResultRendering(case) => rendering_answer(case),
             Input::OutputItems(case) => items_answer(case),
@@ -148,17 +69,6 @@ fn failure(message: String) -> Failure {
     })
 }
 
-fn json_of<T>(value: &T) -> Result<Value, Failure>
-where
-    T: Serialize + ?Sized,
-{
-    serde_json::to_value(value).map_err(|error| failure(error.to_string()))
-}
-
-fn schema_answer(case: &ToolSchemaCase) -> Result<Value, Failure> {
-    json_of(&build_function_tool(&case.vector_store_ids))
-}
-
 fn replacement_answer(case: &ToolReplacementCase) -> Result<Value, Failure> {
     let (kept, ids) = replace_file_search_tools(case.tools.as_deref())
         .map_err(|error| failure(error.to_string()))?;
@@ -166,11 +76,11 @@ fn replacement_answer(case: &ToolReplacementCase) -> Result<Value, Failure> {
 }
 
 fn rendering_answer(case: &ResultRenderingCase) -> Result<Value, Failure> {
-    let include =
-        search_results_for_include(&case.results).map_err(|error| failure(error.to_string()))?;
+    let call = build_file_search_call_output("fs_rendered", &[], Some(&case.results), true)
+        .map_err(|error| failure(error.to_string()))?;
     Ok(json!({
         "output": format_results_as_tool_output(&case.results),
-        "include": json_of(&include)?,
+        "include": serde_json::to_value(call.search_results)?,
     }))
 }
 
@@ -196,8 +106,8 @@ fn items_answer(case: &OutputItemsCase) -> Result<Value, Failure> {
         &case.text,
     )?;
     Ok(json!({
-        "call": json_of(&outputs.call)?,
-        "message": json_of(&outputs.message)?,
+        "call": serde_json::to_value(&outputs.call)?,
+        "message": serde_json::to_value(&outputs.message)?,
     }))
 }
 
@@ -236,20 +146,13 @@ fn synthesis_answer(case: &ResponseSynthesisCase) -> Result<Value, Failure> {
     )
     .map_err(|error| failure(error.to_string()))?;
     Ok(json!({
-        "response": json_of(&synthesized.response)?,
+        "response": serde_json::to_value(&synthesized.response)?,
         "hidden_params": synthesized.hidden_params,
     }))
 }
 
 #[derive(Clone, Default)]
 struct Lines(Arc<Mutex<Vec<Value>>>);
-
-impl Lines {
-    fn take(&self) -> Vec<Value> {
-        let mut lines = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        mem::take(&mut lines)
-    }
-}
 
 #[derive(Default)]
 struct Message(String);
@@ -289,7 +192,7 @@ fn prepared_answer(kwargs: &Fields) -> Result<Value, Failure> {
     Ok(json!({
         "include_search_results": call.include_search_results,
         "updated_kwargs": call.updated_kwargs,
-        "logs": lines.take(),
+        "logs": mem::take(&mut *lines.0.lock().unwrap_or_else(PoisonError::into_inner)),
     }))
 }
 
@@ -311,22 +214,18 @@ fn preparation_answer(case: &ArgumentPreparationCase) -> Result<Value, Failure> 
             "query_args and query_inputs must have the same length".to_owned(),
         ));
     }
-    let prepared: Vec<Value> = case
-        .prepares
-        .iter()
-        .map(prepared_answer)
-        .collect::<Result<_, _>>()?;
-    let extracted: Vec<Value> = case
-        .tool_calls
-        .iter()
-        .map(|tool_call| extracted_answer(tool_call, &case.fallback_call_id))
-        .collect::<Result<_, _>>()?;
-    let queries: Vec<Value> = case
-        .query_args
-        .iter()
-        .zip(&case.query_inputs)
-        .map(|(args, input)| query_answer(args, input))
-        .collect::<Result<_, _>>()?;
+    let mut prepared = Vec::with_capacity(case.prepares.len());
+    for kwargs in &case.prepares {
+        prepared.push(prepared_answer(kwargs)?);
+    }
+    let mut extracted = Vec::with_capacity(case.tool_calls.len());
+    for tool_call in &case.tool_calls {
+        extracted.push(extracted_answer(tool_call, &case.fallback_call_id)?);
+    }
+    let mut queries = Vec::with_capacity(case.query_args.len());
+    for (args, input) in case.query_args.iter().zip(&case.query_inputs) {
+        queries.push(query_answer(args, input)?);
+    }
     Ok(json!({
         "prepared": prepared,
         "extracted": extracted,

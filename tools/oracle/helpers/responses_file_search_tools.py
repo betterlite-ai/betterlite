@@ -13,12 +13,25 @@ from typing_extensions import override
 
 LOG_NAME: Final = "LiteLLM"
 JSON: Final = TypeAdapter(JsonValue)
-ORIGINAL_ERROR: Final[dict[str, str]] = {
+
+Object: TypeAlias = dict[str, JsonValue]
+ORIGINAL_ERROR: Final[Object] = {
     "code": "server_error",
     "message": "the provider call failed",
 }
 
-Object: TypeAlias = dict[str, JsonValue]
+
+class ContentView(TypedDict, total=False):
+    text: str | None
+    type: str | None
+
+
+class ResultView(TypedDict, total=False):
+    score: float | None
+    content: list[ContentView] | None
+    file_id: str | None
+    filename: str | None
+    attributes: Object | None
 
 
 class ToolSchemaCall(TypedDict):
@@ -33,7 +46,7 @@ class ToolReplacementCall(TypedDict):
 
 class RenderingCall(TypedDict):
     function: Literal["result_rendering"]
-    results: list[VectorStoreSearchResult]
+    results: list[ResultView]
 
 
 class OutputItemsCall(TypedDict):
@@ -41,7 +54,7 @@ class OutputItemsCall(TypedDict):
     call_id: str
     queries: list[str]
     include_search_results: bool
-    results: list[VectorStoreSearchResult] | None
+    results: list[ResultView] | None
     text: str
 
 
@@ -58,7 +71,7 @@ class SynthesisCall(TypedDict):
     call_id: str
     queries: list[str]
     include_search_results: bool
-    results: list[VectorStoreSearchResult]
+    results: list[ResultView]
     text: str
     original: OriginalView | None
     _hidden_params: Object | None
@@ -111,52 +124,25 @@ class FixedUuid:
         return UUID(hex=self.value)
 
 
-def schema_answer(call: ToolSchemaCall) -> JsonValue:
-    tool = emulated_handler._build_function_tool(call["vector_store_ids"])  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L65-L105
-    return JSON.validate_python(tool)
+def search_results(views: list[ResultView]) -> list[VectorStoreSearchResult]:
+    return cast(list[VectorStoreSearchResult], views)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L83-L90
 
 
-def replacement_answer(call: ToolReplacementCall) -> JsonValue:
-    tools, ids = emulated_handler._replace_file_search_tools(call["tools"])  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L108-L132
-    return {"tools": JSON.validate_python(tools), "vector_store_ids": JSON.validate_python(ids)}
-
-
-def rendering_answer(call: RenderingCall) -> JsonValue:
-    results = call["results"]
-    output = emulated_handler._format_search_results_as_tool_output(results)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L200-L225
-    include = emulated_handler._build_search_results_for_include(results)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L228-L252
-    return {"output": output, "include": JSON.validate_python(include)}
-
-
-def items_answer(call: OutputItemsCall) -> JsonValue:
-    results = call["results"]
-    file_search = emulated_handler._build_file_search_call_output(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L255-L279
-        call["call_id"],
-        call["queries"],
-        results,
-        include_search_results=call["include_search_results"],
-    )
-    message = emulated_handler._build_message_output(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L312-L328
-        call["text"],
-        results if results is not None else [],
-    )
-    return {
-        "call": JSON.validate_python(file_search),
-        "message": JSON.validate_python(message),
-    }
+def base_response(payload: Object) -> ResponsesAPIResponse:
+    return ResponsesAPIResponse.model_validate(payload)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388-L1425
 
 
 def original_response(view: OriginalView | None) -> ResponsesAPIResponse:
     if view is None:
         return cast(ResponsesAPIResponse, None)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L345-L384
-    original = ResponsesAPIResponse.model_validate(
+    original = base_response(
         {
-            "id": view["id"],
             "created_at": view["created_at"],
+            "error": ORIGINAL_ERROR,
+            "id": view["id"],
             "model": view["model"],
             "output": [],
             "usage": view["usage"],
-            "error": ORIGINAL_ERROR,
         }
     )
     hidden = view["_hidden_params"]
@@ -168,11 +154,47 @@ def original_response(view: OriginalView | None) -> ResponsesAPIResponse:
 def first_response(hidden: Object | None) -> ResponsesAPIResponse | None:
     if hidden is None:
         return None
-    response = ResponsesAPIResponse.model_validate(
-        {"id": "resp_first", "created_at": 0, "model": "", "output": []}
-    )
+    response = base_response({"id": "resp_first", "created_at": 0, "model": "", "output": []})
     object.__setattr__(response, "_hidden_params", hidden.copy())
     return response
+
+
+def schema_answer(call: ToolSchemaCall) -> JsonValue:
+    tool = emulated_handler._build_function_tool(call["vector_store_ids"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L65-L105
+    return JSON.validate_python(tool)
+
+
+def replacement_answer(call: ToolReplacementCall) -> JsonValue:
+    tools, ids = emulated_handler._replace_file_search_tools(call["tools"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L108-L132
+    return {"tools": JSON.validate_python(tools), "vector_store_ids": JSON.validate_python(ids)}
+
+
+def rendering_answer(call: RenderingCall) -> JsonValue:
+    output = emulated_handler._format_search_results_as_tool_output(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L200-L225
+        search_results(call["results"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L83-L90
+    )
+    include = emulated_handler._build_search_results_for_include(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L228-L252
+        search_results(call["results"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L83-L90
+    )
+    return {"output": output, "include": JSON.validate_python(include)}
+
+
+def items_answer(call: OutputItemsCall) -> JsonValue:
+    results = call["results"]
+    file_search = emulated_handler._build_file_search_call_output(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L255-L279
+        call["call_id"],
+        call["queries"],
+        [] if results is None else search_results(results),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L83-L90
+        include_search_results=call["include_search_results"],
+    )
+    message = emulated_handler._build_message_output(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L312-L328
+        call["text"],
+        [] if results is None else search_results(results),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L83-L90
+    )
+    return {
+        "call": JSON.validate_python(file_search),
+        "message": JSON.validate_python(message),
+    }
 
 
 def synthesis_answer(call: SynthesisCall) -> JsonValue:
@@ -182,14 +204,17 @@ def synthesis_answer(call: SynthesisCall) -> JsonValue:
     object.__setattr__(time, "time", FixedClock(call["now"]))
     object.__setattr__(uuid, "uuid4", FixedUuid(call["uuid"]))
     try:
-        file_search = emulated_handler._build_file_search_call_output(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L255-L279
+        file_search = emulated_handler._build_file_search_call_output(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L255-L279
             call["call_id"],
             call["queries"],
-            call["results"],
+            search_results(call["results"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L83-L90
             include_search_results=call["include_search_results"],
         )
-        message = emulated_handler._build_message_output(call["text"], call["results"])  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L312-L328
-        synthesized = emulated_handler._synthesize_responses_api_response(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L345-L384
+        message = emulated_handler._build_message_output(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L312-L328
+            call["text"],
+            search_results(call["results"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L83-L90
+        )
+        synthesized = emulated_handler._synthesize_responses_api_response(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L345-L384
             original_response(call["original"]),
             file_search,
             message,
@@ -198,7 +223,7 @@ def synthesis_answer(call: SynthesisCall) -> JsonValue:
     finally:
         object.__setattr__(time, "time", previous_clock)
         object.__setattr__(uuid, "uuid4", previous_uuid)
-    hidden = cast("Object", synthesized._hidden_params)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L345-L384
+    hidden = cast("Object", synthesized._hidden_params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L345-L384
     return {
         "response": JSON.validate_json(synthesized.model_dump_json()),
         "hidden_params": JSON.validate_python(hidden),
@@ -216,7 +241,7 @@ def prepare_one(kwargs: Object) -> Object:
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
     try:
-        prepared = emulated_handler._prepare_emulated_file_search_call(arguments)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L398-L413
+        prepared = emulated_handler._prepare_emulated_file_search_call(arguments)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L398-L413
     finally:
         logger.removeHandler(handler)
         for existing in previous_handlers:
@@ -231,12 +256,12 @@ def prepare_one(kwargs: Object) -> Object:
 
 
 def extract_one(tool_call: Object, fallback: str) -> Object:
-    call_id, arguments = emulated_handler._extract_tool_call_fields(tool_call, fallback)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L416-L425
+    call_id, arguments = emulated_handler._extract_tool_call_fields(tool_call, fallback)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L416-L425
     return {"call_id": call_id, "arguments": arguments}
 
 
 def query_one(args: FileSearchToolCallArgs, input_value: JsonValue) -> JsonValue:
-    queries = emulated_handler._resolve_queries_from_args(args, input_value)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L428-L437
+    queries = emulated_handler._resolve_queries_from_args(args, input_value)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L428-L437
     return JSON.validate_python(queries)
 
 
