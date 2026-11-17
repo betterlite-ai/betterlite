@@ -22,6 +22,7 @@ description: >-
   Tests in client::sdk_runtime::tests run the whole stack (SessionClient, B4744's run_with_session, B4745's list_tools and call_tool) against a local MCP server built with rmcp's server side over streamable HTTP, legacy SSE and an in-process duplex standing in for stdio: initialize negotiation including the legacy fallback, a two-page tool listing, a tool call with progress, an isError result, a JSON-RPC error, a read timeout on paused time, a server sampling request with and without a responder, an elicitation request with and without one, and a stream failure that fails the pending call. api::mcp_sdk_resources::tests covers each ResourceSession method against the same server.
 scope:
   paths:
+    - "crates/betterlite-mcp/src/client/sessions/stdio_runtime.rs"
     - crates/betterlite-mcp/Cargo.toml
     - crates/betterlite-core/Cargo.toml
     - Cargo.lock
