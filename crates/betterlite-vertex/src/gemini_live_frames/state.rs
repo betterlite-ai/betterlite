@@ -3,6 +3,7 @@ use betterlite_prompts::arguments::json::Json;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
 pub struct CallerState {
     pub output_item_id: Option<String>,
     pub response_id: Option<String>,
