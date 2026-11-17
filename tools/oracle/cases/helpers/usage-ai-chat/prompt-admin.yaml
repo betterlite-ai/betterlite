@@ -1,0 +1,10 @@
+kind: helper
+name: usage-ai-chat-prompt-admin
+call:
+  b3103:
+    function: prompt
+    is_admin: true
+    today: "2026-11-16"
+env: {}
+compare:
+  ignore: []

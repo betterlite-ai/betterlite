@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-discovery-search-engine-target
+call:
+  vertex_discovery_search:
+    calls:
+      - function: target
+        litellm_params:
+          vertex_project: project-example
+          vertex_location: us-central1
+          vertex_engine_id: app-example
+env: {}
+compare: {ignore: []}

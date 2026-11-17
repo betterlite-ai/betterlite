@@ -1,0 +1,14 @@
+kind: helper
+name: studio-images-empty-usage-metadata
+call:
+  studio_images:
+    factories: []
+    requests: []
+    responses:
+      - model: gemini-2.5-flash-image
+        body:
+          candidates: []
+          usageMetadata: {}
+    costs: []
+env: {}
+compare: {ignore: []}

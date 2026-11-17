@@ -1,0 +1,22 @@
+kind: helper
+name: mcp-payload-validation-update-request
+call:
+  b4716:
+    function: update_request
+    payload:
+      server_id: test_id
+      per_server_oauth_discovery: true
+      auth_type: oauth2
+      oauth2_flow: authorization_code
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: update_request
+      payload: {server_id: test_id, dcr_bridge: true}
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: update_request
+      payload: {server_id: test_id, transport: http}
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,22 @@
+kind: helper
+name: usage-ai-chat-fetch-args-missing-date
+call:
+  b3103:
+    function: fetch_args
+    tool: usage
+    arguments:
+      start_date: "2026-01-01"
+    user_id: alice
+    is_admin: false
+calls:
+  - b3103:
+      function: fetch_args
+      tool: team
+      arguments:
+        start_date: "2026-01-01"
+        end_date: ""
+      user_id: null
+      is_admin: true
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,38 @@
+kind: helper
+name: mcp-payload-validation-validator-order
+call:
+  b4716:
+    function: new_request
+    payload:
+      transport: stdio
+      per_server_oauth_discovery: true
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: new_request
+      payload:
+        transport: stdio
+        dcr_bridge: true
+        auth_type: oauth2
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: new_request
+      payload:
+        per_server_oauth_discovery: true
+        dcr_bridge: true
+        auth_type: oauth2
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: new_request
+      payload:
+        transport: stdio
+        dcr_bridge: true
+        auth_type: true_passthrough
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: new_request
+      payload:
+        transport: stdio
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

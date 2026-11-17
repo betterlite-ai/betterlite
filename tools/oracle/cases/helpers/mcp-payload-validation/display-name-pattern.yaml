@@ -1,0 +1,36 @@
+kind: helper
+name: mcp-payload-validation-display-name-pattern
+call:
+  b4716:
+    function: validate_payload
+    payload:
+      server_name: test_srv
+      tool_name_to_display_name:
+        tool one: bad name
+        good_tool: fine-name
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: validate_payload
+      payload:
+        server_name: test_srv
+        tool_name_to_display_name:
+          tool: "ok\n"
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: validate_payload
+      payload:
+        server_name: test_srv
+        tool_name_to_display_name:
+          tool: ""
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: validate_payload
+      payload:
+        server_name: test_srv
+        tool_name_to_display_name:
+          zeta_bad: "bad two"
+          alpha_bad: "bad one"
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}
