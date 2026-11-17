@@ -39,10 +39,6 @@ impl Fixture {
             packaged: &self.unlisted,
         }
     }
-
-    fn supports(&self, model: &str, key: &str) -> bool {
-        model_capability(&self.patterns, &self.runtime, &self.unlisted, model, key) == Some(true)
-    }
 }
 
 // LiteLLM resolves these through litellm.model_cost, so the stub answers from the case catalog.
@@ -56,7 +52,14 @@ impl CapabilityPredicates for CaseCapabilities<'_> {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        ready(self.fixture.supports(request.model, key))
+        let found = model_capability(
+            &self.fixture.patterns,
+            &self.fixture.runtime,
+            &self.fixture.unlisted,
+            request.model,
+            key,
+        );
+        ready(found == Some(true))
     }
 
     fn declared_value_factory(

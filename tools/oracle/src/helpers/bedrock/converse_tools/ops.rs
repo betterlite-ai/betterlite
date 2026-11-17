@@ -24,8 +24,8 @@ use tokio::runtime::Builder;
 
 use super::fixture::{CaseCapabilities, Fixture};
 use super::input::{
-    AdditionalInput, ApplyToolsInput, DetectorInput, Input, JsonToolInput, OutputConfigInput,
-    SeparateInput, ToolChoiceInput, ToolSpecInput, TransformInput, TranslateInput,
+    ApplyToolsInput, DetectorInput, Input, OutputConfigInput, SeparateInput, ToolChoiceInput,
+    ToolSpecInput, TransformInput, TranslateInput,
 };
 
 fn failed<E>(error: E, status: Option<u16>) -> Box<HelperError>
@@ -79,11 +79,6 @@ fn transform(input: &TransformInput) -> HelperResult {
     Ok(json!({ "tools": tools }))
 }
 
-fn json_tool(input: &JsonToolInput) -> HelperResult {
-    let tool = create_json_tool_call(input.json_schema.as_ref(), input.description.as_deref());
-    Ok(json!({ "tool": tool }))
-}
-
 fn apply_tools(input: &ApplyToolsInput) -> HelperResult {
     let mut params = input.optional_params.clone();
     apply_tool_call_transformation(&input.tools, &input.model, &input.stream, &mut params)
@@ -115,10 +110,6 @@ fn translate(input: &TranslateInput) -> HelperResult {
     Ok(json!({ "params": params }))
 }
 
-fn additional(input: &AdditionalInput) -> HelperResult {
-    Ok(json!({ "schema": add_additional_properties(&input.schema) }))
-}
-
 fn output_config(input: &OutputConfigInput) -> HelperResult {
     let config = create_output_config(
         input.json_schema.as_ref(),
@@ -147,10 +138,12 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::Detector(call) => detector(call),
         Input::Separate(call) => separate(call),
         Input::Transform(call) => transform(call),
-        Input::JsonTool(call) => json_tool(call),
+        Input::JsonTool(call) => Ok(json!({
+            "tool": create_json_tool_call(call.json_schema.as_ref(), call.description.as_deref()),
+        })),
         Input::ApplyTools(call) => apply_tools(call),
         Input::Translate(call) => translate(call),
-        Input::Additional(call) => additional(call),
+        Input::Additional(call) => Ok(json!({ "schema": add_additional_properties(&call.schema) })),
         Input::OutputConfig(call) => output_config(call),
         Input::ToolSpec(call) => tool_spec(call),
         Input::MediaTypes(_) => Ok(json!({

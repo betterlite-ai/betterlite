@@ -1,7 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::base_helpers;
 use indexmap::IndexMap;
-use serde::de::DeserializeOwned;
 
 use crate::converse_content::json_mode::RESPONSE_FORMAT_TOOL_NAME;
 use crate::converse_tools::error::ConverseToolsError;
@@ -13,7 +12,8 @@ pub fn append_tools(
     optional_params: &mut IndexMap<String, Json>,
     tools: Vec<Json>,
 ) -> Result<(), ConverseToolsError> {
-    let mut base = to_wire(optional_params)?;
+    let wire = serde_json::to_value(optional_params).map_err(ConverseToolsError::wire)?;
+    let mut base = serde_json::from_value(wire).map_err(ConverseToolsError::wire)?;
     let encoded = tools
         .into_iter()
         .map(serde_json::to_value)
@@ -23,14 +23,6 @@ pub fn append_tools(
     let rewritten = serde_json::to_value(base).map_err(ConverseToolsError::wire)?;
     *optional_params = serde_json::from_value(rewritten).map_err(ConverseToolsError::wire)?;
     Ok(())
-}
-
-fn to_wire<T>(params: &IndexMap<String, Json>) -> Result<T, ConverseToolsError>
-where
-    T: DeserializeOwned,
-{
-    let encoded = serde_json::to_value(params).map_err(ConverseToolsError::wire)?;
-    serde_json::from_value(encoded).map_err(ConverseToolsError::wire)
 }
 
 #[must_use]

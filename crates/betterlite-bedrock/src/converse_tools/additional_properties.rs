@@ -36,7 +36,7 @@ pub fn add_additional_properties(schema: &Json) -> Json {
                 let Some(value) = finished.pop() else {
                     break;
                 };
-                frame.push(child, value);
+                frame.results.push((child, value));
                 advance(frame, &mut work, &mut finished);
             }
         }
@@ -78,10 +78,6 @@ impl Frame {
         let pair = (child.clone(), value.clone());
         self.next = self.next.saturating_add(1);
         Some(pair)
-    }
-
-    fn push(&mut self, child: Child, value: Json) {
-        self.results.push((child, value));
     }
 
     fn finish(self) -> Json {
