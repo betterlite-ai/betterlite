@@ -18,6 +18,9 @@ deviations:
   - what: A provider request that fails before an answer arrives answers 503 for discovery and 401 for the token and userinfo calls. LiteLLM lets the same httpx exception surface as an unhandled 500.
     why: The provider is unreachable or refused the connection, and the typed error names the step that failed instead of turning it into a server error.
     link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L568-L601
+  - what: A token, userinfo or authorization endpoint from the discovery document that is not a URL answers 503 auth_provider_unavailable. LiteLLM passes the string to oauthlib, whose HTTPS check raises InsecureTransportError, and the proxy answers 500.
+    why: The endpoint came from the provider's document, so a value that is not a URL is the provider being broken. The 503 names that, where a 500 hides it behind a server error.
+    link: https://github.com/oauthlib/oauthlib/blob/v4.0.0/oauthlib/oauth2/rfc6749/parameters.py#L73-L74
   - what: A Google userinfo claim of the wrong JSON type (email_verified that is not a boolean, or a profile claim that is not a string) answers 503 auth_provider_unavailable with the claim name as param. LiteLLM passes the value to pydantic, whose ValidationError is not caught and surfaces as a 500.
     why: The provider broke the documented userinfo shape, and naming the claim tells an operator what to look at where a 500 hides it.
     link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/google.py#L17-L29

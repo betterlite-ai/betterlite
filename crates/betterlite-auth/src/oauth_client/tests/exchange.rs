@@ -99,6 +99,22 @@ async fn a_callback_url_that_is_not_a_url_is_a_server_error() {
 }
 
 #[tokio::test]
+async fn a_token_endpoint_that_is_not_a_url_is_a_provider_failure() {
+    let error = exchanged("https://proxy.test/cb?code=abc", None)
+        .await
+        .err()
+        .unwrap();
+    assert!(matches!(
+        &error,
+        OAuthClientError::Endpoint {
+            endpoint: OAuthEndpoint::Token,
+            ..
+        }
+    ));
+    assert_eq!(error.response().status, 503);
+}
+
+#[tokio::test]
 async fn a_plain_http_callback_url_is_accepted() {
     let accepted = exchanged("http://proxy.test/cb?code=abc", None).await;
     assert!(matches!(
