@@ -19,7 +19,7 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Result<super::Settings, C
         .openai_provider)
 }
 
-// The handler flag reads only true and FALSE-like spellings, and a bad value is a field error.
+// Only a true spelling turns the handler on; any other value leaves it off.
 fn check_experimental_flag() {
     let name = EXPERIMENTAL_HANDLER_ENV;
     assert!(!load("", &[]).unwrap().experimental_handler);
