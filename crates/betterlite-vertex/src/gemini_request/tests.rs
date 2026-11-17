@@ -140,6 +140,14 @@ impl Harness {
                 tokens: &self.mint,
             },
         };
+        self.dispatch(request, asynchronous)
+    }
+
+    fn dispatch(
+        &self,
+        request: CallRequest<'_, MapFetch>,
+        asynchronous: bool,
+    ) -> Result<Transformed, RequestError> {
         self.runtime.block_on(async {
             if asynchronous {
                 transform_request_body_async(&self.transport, request, &self.hooks).await

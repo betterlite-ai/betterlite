@@ -390,7 +390,7 @@ impl CacheTransport for NoTransport {
 }
 
 impl GcsTransport for NoTransport {
-    fn get<'fetch>(&'fetch self, _request: OutboundRequest) -> MetadataFuture<'fetch> {
+    fn get(&self, _request: OutboundRequest) -> MetadataFuture<'_> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(ready(Err(TransportError::Closed)))
     }

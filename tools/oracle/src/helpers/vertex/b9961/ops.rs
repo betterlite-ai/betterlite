@@ -77,7 +77,7 @@ impl ScriptedGcs {
 }
 
 impl GcsTransport for ScriptedGcs {
-    fn get<'fetch>(&'fetch self, request: OutboundRequest) -> MetadataFuture<'fetch> {
+    fn get(&self, request: OutboundRequest) -> MetadataFuture<'_> {
         let authorization = request
             .headers
             .get(AUTHORIZATION)

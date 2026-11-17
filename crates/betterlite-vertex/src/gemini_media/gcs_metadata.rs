@@ -36,11 +36,11 @@ pub type MetadataFuture<'fetch> =
     Pin<Box<dyn Future<Output = Result<UpstreamResponse, TransportError>> + Send + 'fetch>>;
 
 pub trait GcsTransport: Send + Sync {
-    fn get<'fetch>(&'fetch self, request: OutboundRequest) -> MetadataFuture<'fetch>;
+    fn get(&self, request: OutboundRequest) -> MetadataFuture<'_>;
 }
 
 impl GcsTransport for ProxiedClient {
-    fn get<'fetch>(&'fetch self, request: OutboundRequest) -> MetadataFuture<'fetch> {
+    fn get(&self, request: OutboundRequest) -> MetadataFuture<'_> {
         Box::pin(async move {
             // LiteLLM's httpx handlers follow redirects, so every hop is re-checked by the shared client
             self.send_following(request)

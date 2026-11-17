@@ -91,7 +91,7 @@ impl ScriptedGcs {
 }
 
 impl GcsTransport for ScriptedGcs {
-    fn get<'fetch>(&'fetch self, request: OutboundRequest) -> MetadataFuture<'fetch> {
+    fn get(&self, request: OutboundRequest) -> MetadataFuture<'_> {
         let reply = self
             .replies
             .get(request.url.as_str())
@@ -193,11 +193,8 @@ fn describe(reply: &Result<Option<String>, GcsMetadataError>) -> String {
     }
 }
 
-fn header<'request>(request: &'request OutboundRequest, name: HeaderName) -> Option<&'request str> {
-    request
-        .headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
+fn header(request: &OutboundRequest, name: HeaderName) -> Option<&str> {
+    request.headers.get(name)?.to_str().ok()
 }
 
 #[rstest]
@@ -238,7 +235,7 @@ fn header<'request>(request: &'request OutboundRequest, name: HeaderName) -> Opt
     Some("https://storage.googleapis.com/storage/v1/b/my-bucket/o/-._~AZaz09?fields=contentType")
 )]
 #[case::unicode(
-    "gs://my-bucket/café",
+    "gs://my-bucket/caf\u{e9}",
     Some("https://storage.googleapis.com/storage/v1/b/my-bucket/o/caf%C3%A9?fields=contentType")
 )]
 #[case::short_bucket("gs://ab/thing", None)]
@@ -266,6 +263,11 @@ fn gcs_metadata_bucket_lengths() {
     assert!(!bucket_is_valid(&"a".repeat(64)));
     assert!(bucket_is_valid(&format!("{}.b", "a".repeat(62))));
     assert!(!bucket_is_valid(&format!("{}.b", "a".repeat(64))));
+    dotted_bucket_lengths();
+    bucket_label_rules();
+}
+
+fn dotted_bucket_lengths() {
     let longest_dotted = format!(
         "{}.{}.{}.{}",
         "a".repeat(63),
@@ -284,6 +286,9 @@ fn gcs_metadata_bucket_lengths() {
     );
     assert_eq!(too_long_dotted.len(), 223);
     assert!(!bucket_is_valid(&too_long_dotted));
+}
+
+fn bucket_label_rules() {
     assert!(bucket_is_valid("1.2.3.4.5"));
     assert!(bucket_is_valid("1.2.3.a"));
     assert!(!bucket_is_valid("1.2.3.4"));

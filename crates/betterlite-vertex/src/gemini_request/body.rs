@@ -93,11 +93,14 @@ fn prepare_body(
     })
 }
 
-pub async fn transform<Source: RemoteMediaFetcher + Sync>(
+pub async fn transform<Source>(
     input: &BodyInput<'_>,
     capabilities: &(dyn ModelCapabilityLookup + Sync),
     fetcher: &Source,
-) -> Result<Transformed, BodyError> {
+) -> Result<Transformed, BodyError>
+where
+    Source: RemoteMediaFetcher + Sync,
+{
     // the oracle adapters and any caller without a GCS client convert without the metadata pass
     convert_body(input, prepare_body(input, capabilities)?, fetcher).await
 }
