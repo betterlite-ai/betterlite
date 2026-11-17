@@ -19,4 +19,12 @@ deviations:
       score keeps the value the vector store sent. Python's result depends on the binary
       representation of the token, which is why a disagreement needs a token on a midpoint.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L219-L220
-kept_bugs: []
+kept_bugs:
+  - what: >-
+      The file_search_call output item carries the matched chunks under search_results, LiteLLM's
+      own key, while results, the field the item type declares, stays null. A client that asked for
+      include=["file_search_call.results"] and reads file_search_call.results finds nothing there.
+    why: >-
+      Setups that use LiteLLM's emulated file search read the chunks from search_results today, and
+      moving them to results would empty that key for them after the switch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L273-L279
