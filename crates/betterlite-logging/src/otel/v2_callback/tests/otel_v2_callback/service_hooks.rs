@@ -2,7 +2,7 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use opentelemetry::trace::{SpanId, StatusCode};
+use opentelemetry::trace::{SpanId, Status};
 
 use betterlite_logging::otel::model::payloads::service::ServiceType;
 use betterlite_logging::otel::plumbing::context::post_response::ServiceSpanTiming;
@@ -45,7 +45,7 @@ fn a_failure_without_a_payload_error_stamps_the_hook_text() {
         .async_service_failure_hook(&service_hook, Some("boom"));
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
-    assert_eq!(spans[0].status.code, StatusCode::Error);
+    assert!(matches!(spans[0].status, Status::Error { .. }));
     assert_eq!(
         attribute(&spans[0], "error.message").as_deref(),
         Some("boom")
@@ -109,7 +109,9 @@ fn a_carrierless_ping_emits_nothing() {
 fn background_timing_emits_a_root_span() {
     let harness = harness(settings());
     let start = SystemTime::now();
-    let end = start + Duration::from_millis(5);
+    let end = start
+        .checked_add(Duration::from_millis(5))
+        .expect("end after start");
     let payload = service_payload(ServiceType::Redis, "flush");
     let service_hook = hook(&payload, None, Some(start), timing(Some(end)));
     harness.callback.async_service_success_hook(&service_hook);
@@ -122,8 +124,12 @@ fn background_timing_emits_a_root_span() {
 fn a_parent_that_ended_before_the_call_becomes_a_link() {
     let harness = harness(settings());
     let root = harness.span("root");
-    let parent_end = UNIX_EPOCH + Duration::from_secs(10);
-    let end = parent_end + Duration::from_secs(5);
+    let parent_end = UNIX_EPOCH
+        .checked_add(Duration::from_secs(10))
+        .expect("parent end");
+    let end = parent_end
+        .checked_add(Duration::from_secs(5))
+        .expect("end after the parent");
     let payload = service_payload(ServiceType::Redis, "get");
     let service_hook = ServiceHook {
         payload: &payload,

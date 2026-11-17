@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use opentelemetry::trace::StatusCode;
+use opentelemetry::trace::Status;
 
 use betterlite_logging::otel::plumbing::context::context_slots::{
     AnchoredSpan, McpTransportSpan, RequestTraceContext,
@@ -29,8 +29,11 @@ fn the_response_status_pins_the_error_code() {
     span.end();
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
-    assert_eq!(spans[0].status.code, StatusCode::Error);
-    assert_eq!(attribute(&spans[0], "error.code").as_deref(), Some("400"));
+    assert!(matches!(spans[0].status, Status::Error { .. }));
+    assert_eq!(
+        attribute(&spans[0], "litellm.provider.error.code").as_deref(),
+        Some("400")
+    );
     assert_eq!(
         attribute(&spans[0], "error.type").as_deref(),
         Some("AuthenticationError")
@@ -60,7 +63,10 @@ fn a_second_stamp_keeps_one_event_and_repins_the_code() {
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
     assert_eq!(event_names(&spans[0]), vec!["exception".to_owned()]);
-    assert_eq!(attribute(&spans[0], "error.code").as_deref(), Some("422"));
+    assert_eq!(
+        attribute(&spans[0], "litellm.provider.error.code").as_deref(),
+        Some("422")
+    );
 }
 
 #[test]
@@ -74,7 +80,7 @@ fn an_ended_span_is_not_stamped() {
         .record_error_attributes_on_span(Some(&span), Some(&facts), 400);
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
-    assert!(attribute(&spans[0], "error.code").is_none());
+    assert!(attribute(&spans[0], "litellm.provider.error.code").is_none());
     assert!(spans[0].events.is_empty());
 }
 
@@ -115,7 +121,7 @@ fn the_msg_transport_span_beats_the_root() {
     root.end();
     let spans = harness.finished();
     let stamped = exported(&spans, "transport");
-    assert_eq!(stamped.status.code, StatusCode::Error);
+    assert!(matches!(stamped.status, Status::Error { .. }));
     assert_eq!(
         attribute(stamped, "error.type").as_deref(),
         Some("AuthenticationError")

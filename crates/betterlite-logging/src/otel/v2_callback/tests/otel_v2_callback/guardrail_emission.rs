@@ -74,26 +74,27 @@ fn the_instance_method_parents_under_the_anchored_root() {
         attribute(&spans[0], "litellm.guardrail.status").as_deref(),
         Some("success")
     );
+    assert_entry_times(&spans[0]);
+}
+
+fn assert_entry_times(span: &opentelemetry_sdk::trace::SpanData) {
     assert_eq!(
-        spans[0]
-            .start_time
+        span.start_time
             .duration_since(UNIX_EPOCH)
             .expect("start after the epoch")
             .as_secs(),
         1_704_067_200
     );
     assert_eq!(
-        spans[0]
-            .end_time
+        span.end_time
             .duration_since(UNIX_EPOCH)
             .expect("end after the epoch")
             .as_millis(),
         1_704_067_201_500
     );
     assert_eq!(
-        spans[0]
-            .end_time
-            .duration_since(spans[0].start_time)
+        span.end_time
+            .duration_since(span.start_time)
             .expect("end after start"),
         Duration::from_millis(1_500)
     );

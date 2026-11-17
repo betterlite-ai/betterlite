@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use opentelemetry::trace::StatusCode;
+use opentelemetry::trace::Status;
 
 use betterlite_logging::otel::v2_callback::registered;
 use betterlite_logging::otel::v2_callback::registry::V2Registry;
@@ -16,7 +16,7 @@ fn dropping_the_phase_span_ends_it() {
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].name.as_ref(), "auth");
-    assert_eq!(spans[0].status.code, StatusCode::Unset);
+    assert_eq!(spans[0].status, Status::Unset);
 }
 
 #[test]
@@ -27,7 +27,7 @@ fn recording_an_error_stamps_the_status_and_one_event() {
     drop(phase);
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
-    assert_eq!(spans[0].status.code, StatusCode::Error);
+    assert!(matches!(spans[0].status, Status::Error { .. }));
     assert_eq!(event_names(&spans[0]), vec!["exception".to_owned()]);
     assert_eq!(
         attribute(&spans[0], "error.message").as_deref(),
@@ -44,7 +44,7 @@ fn recording_an_error_on_an_ended_span_changes_nothing() {
     drop(phase);
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
-    assert_eq!(spans[0].status.code, StatusCode::Unset);
+    assert_eq!(spans[0].status, Status::Unset);
     assert!(spans[0].events.is_empty());
 }
 

@@ -1,0 +1,73 @@
+task: B3853
+deviations:
+  - what: >-
+      The module-level emit_guardrail_span has no exception to swallow. The Rust emitter returns no
+      error and baggage promotion, guardrail construction and span emission cannot raise, so the
+      best-effort contract holds while nothing is caught.
+    why: >-
+      LiteLLM wraps the emission in try/except because a Python guardrail record can raise anything.
+      Rust's type signature carries the same guarantee (the function returns unit and every failure is
+      already absorbed by the emitter's Option), so the try/except has no port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L954-L961
+  - what: >-
+      phase_span returns None when no logger is registered, as LiteLLM's generator yields None. The
+      same entry point with a logger returns Some(PhaseSpan) and callers check the Option.
+    why: >-
+      This is the documented contract: phase spans are optional instrumentation, and the Python
+      context manager yields None on the no-logger path instead of raising.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L993-L1000
+  - what: >-
+      Request identity seeding has no exception to swallow either. Promotion reads only typed
+      metadata, baggage attachment builds a Context, and the returned Context is handed back to the
+      caller; a malformed requester value promotes nothing and never aborts the seed.
+    why: >-
+      LiteLLM's try/except guards a best-effort labeling side effect. In Rust the same inputs either
+      produce a string or are skipped by the typed conversion, so no failure path exists to suppress.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L704-L734
+  - what: >-
+      PhaseSpan::record_error stamps attributes, the exception event and ERROR status in one
+      ErrorStamp::FULL call, where LiteLLM stamps attributes only and leaves the event and status to
+      use_span's exception handling on the way out. The event's type and message come from the
+      constructed SpanError rather than from Python's exception object.
+    why: >-
+      Rust has no context-manager exception hook, so the caller records the error explicitly; folding
+      use_span's record_exception and set_status_on_exception into the stamp keeps the exported span
+      carrying the same attributes, one exception event and an ERROR status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L736-L745
+  - what: >-
+      The emitter's mapper chain arrives in CallbackParts already built as MapperKind values, and
+      construction validates config.mapper_names through resolve_mappers without using its result.
+    why: >-
+      SpanEmitter holds only GenAI and Legacy mapper kinds while resolve_mappers returns the six
+      span-message vocabularies; the chain is therefore injected by the factory that owns the
+      vocabulary selection (B8910) and every configured name is still rejected once at construction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L201-L206
+  - what: >-
+      mark_request_root_span takes the live span and an optional http.route explicitly and records a
+      handle in the callback's RootSpans; request_root_span resolves the anchored SpanId back to that
+      handle. LiteLLM reads the ambient span from get_current_span and keeps the Span object in a
+      contextvar.
+    why: >-
+      Rust has no contextvars and B3847 owns the request trace anchor, so anchoring goes through
+      RequestTraceContext::anchor_request_root for parenting while the handle map answers the stamping
+      hooks that need the live Span. Span contexts stay valid after end, matching is_recordable_span.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L836-L843
+  - what: >-
+      The module-level entries take the V2Registry explicitly instead of importing the proxy module and
+      reading proxy_server.open_telemetry_logger, and the registration target is that registry's first
+      slot rather than the proxy module's global attribute.
+    why: >-
+      betterlite keeps no module globals; the registry is injected at construction and holds the same
+      single-slot semantics, so one recorded guardrail entry still yields exactly one span whichever
+      number of callbacks registered.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L935-L967
+  - what: >-
+      The anchored root handle answers only while its span still records, so a failure hook that
+      runs after the server span ended falls through to the threaded parent span. LiteLLM returns
+      the ended span because its context is still valid and stamps it into a silent no-op.
+    why: >-
+      A stamp on an ended span is lost data; falling through keeps the error on a live span when the
+      proxy threads one. Pruning on registration also keeps the handle map flat for a long-running
+      proxy, which a validity-only lookup cannot promise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L62-L73
+kept_bugs: []
