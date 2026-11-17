@@ -1,0 +1,18 @@
+task: B3648
+deviations:
+  - what: A TINYFISH_COST_PER_STEP text that Python's float() reads but a decimal number cannot, such as inf, infinity, nan, a value past the decimal range like 1e400, or digits outside ASCII, logs the warning and uses the default rate.
+    why: LiteLLM's float() accepts non-finite values, values that overflow to infinity and any Unicode decimal digit; betterlite reads the rate as an ASCII decimal, so those texts take the same warn-and-default path as any other non-number and the run is billed at 0.016 instead of an infinite or non-ASCII rate. Underscore digit grouping does follow float()'s grammar, so 1_0 reads as 10 and 1__0 or 1_ keep the default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L96-L104
+  - what: A URL that the parser rejects, such as a request target with an unterminated IPv6 bracket, counts as no match in is_tinyfish_agent_url and in the request-logging and async-route checks, where LiteLLM lets the urlparse ValueError out of the check.
+    why: Rust has no exceptions, and the predicates answer "this is not a TinyFish URL" for a target no URL parser can read, so the caller gets a rejection instead of a failed request. The same choice covers the path checks at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L134-L140.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L107-L109
+  - what: A run whose num_of_steps is an integer larger than i64 can hold is treated as a run the record cannot read, so the request is logged raw with no cost, where LiteLLM's unbounded int keeps the step count and bills it.
+    why: The run record stores num_of_steps as i64, and a number past that bound takes the same warn-and-no-cost path as any other shape the record cannot hold. The Agent API caps a run's duration, so a step count that large cannot come from a real run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/tinyfish.py#L33-L42
+  - what: A run's response cost is num_of_steps times the rate in decimal arithmetic, so three steps at 0.07 cost exactly 0.21, where LiteLLM's float product is 0.21000000000000002.
+    why: Money is a decimal in betterlite. The declared cost is a number and both values are the same rate; only the trailing float error differs, and the oracle cases avoid step counts where the two texts disagree. A rate text with more precision than the decimal can hold is rounded when it is read, where float keeps the nearest binary value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L120-L129
+kept_bugs:
+  - what: The resolved API base strips trailing slashes before it checks for a scheme, so TINYFISH_AGENT_API_BASE=https:// resolves to https://https:.
+    why: LiteLLM rstrips the value and then prepends https:// to anything without "://", so a base whose only trailing part was the separator loses it. betterlite keeps the same result so every base text, however odd, resolves to the same string and the URL checks agree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L86-L89

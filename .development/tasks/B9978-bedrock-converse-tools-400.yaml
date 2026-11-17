@@ -1,0 +1,80 @@
+id: B9978
+title: Malformed Bedrock Converse tools and response_format answer 400
+description: >-
+  B601's review found a LiteLLM bug that B601 copies in crates/betterlite-bedrock/src/converse_tools. The rule
+  fixes it without asking: a 500 from an unhandled exception on input LiteLLM already fails, where a 4xx belongs.
+
+
+  ConverseToolsError::status_code (converse_tools/error.rs) returns None for the variants a malformed client
+  request raises: FormatNotAnObject, MissingFormatType, JsonSchemaNotAnObject, MissingSchemaField, NotText,
+  ToolNotAnObject, ToolType, ToolFunction, ToolParameters, ParametersNotAnObject, MissingParameterType,
+  ToolChoiceFunction, ToolChoiceName and ToolsNotList. So response_format `{"type": "json_schema", "json_schema": {}}`
+  or a tool whose parameters have no type ends in a 500, as it does in LiteLLM, where
+  `value["json_schema"]["schema"]` (converse_transformation.py L1224), `value["type"]` (L1215) and
+  `parameters["type"]` (types/llms/bedrock.py L306) raise KeyError or TypeError. Each of these variants returns
+  Some(BAD_REQUEST_STATUS), the way UnsupportedNone and UnsupportedChoice already do. Variants that wrap an
+  internal failure rather than client input (Append, Wire, ForcedTool's own mapping) keep their current status.
+
+
+  The oracle helper cases that send such input (strict-tool-spec at least) compare against LiteLLM's exception,
+  so each of them ignores the status field with a why that names this deviation.
+scope:
+  paths:
+  - crates/betterlite-bedrock/src/converse_tools/error.rs
+  - crates/betterlite-bedrock/src/converse_tools/tests.rs
+  - crates/betterlite-bedrock/src/converse_tools/tests/**
+  - tools/oracle/cases/helpers/providers/bedrock-converse-tools/**
+  - docs/deviations/B9978.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1215-L1226
+  why: response_format reads value["type"] and value["json_schema"]["schema"] without a check.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L296-L322
+  why: BedrockToolSpec reads parameters["type"] without a check.
+dod:
+- text: >-
+    Every ConverseToolsError variant raised by malformed client input returns Some(400) from status_code, and a
+    test shows it for a response_format with an empty json_schema and for a tool whose parameters have no type.
+  proof: [converse-tools-tests, malformed-request-cases]
+- text: >-
+    docs/deviations/B9978.yaml lists the fix with both pinned LiteLLM links, and the B601 helper cases still pass,
+    with the status ignored where LiteLLM raises.
+  proof: [converse-tools-tests, deviation-rows]
+checks:
+  optional: []
+  commands:
+  - id: converse-tools-tests
+    why: A Converse tools test or one of B601's helper cases broke.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/converse_tools/)'
+  - id: malformed-request-cases
+    why: No test shows a malformed response_format or tool answering 400.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/converse_tools::.*malformed_request/)'
+  - id: deviation-rows
+    why: The fix is not listed as a deviation with its LiteLLM links.
+    run: grep -q -F 'converse_transformation.py#L1215-L1226' docs/deviations/B9978.yaml && grep -q -F 'bedrock.py#L296-L322' docs/deviations/B9978.yaml
+oracle_cases: []
+deviations:
+- what: >-
+    A malformed response_format (not an object, no type, a json_schema that is not an object or has no schema)
+    answers 400, where LiteLLM raises KeyError or TypeError and answers 500.
+  why: >-
+    No working setup relies on a 500 for input the provider path cannot read, and a 400 tells the caller the
+    request is at fault.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1215-L1226
+- what: >-
+    A malformed tool (not an object, no function, parameters not an object or without type) or tool_choice
+    answers 400, where LiteLLM raises KeyError or TypeError and answers 500.
+  why: >-
+    The same reason: the request is at fault, and no setup relies on the 500.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L296-L322
+out_of_scope:
+- Any other Converse tools behaviour; B601 owns the rest.
+pitfalls:
+- Reuse BAD_REQUEST_STATUS from error.rs; do not add a second constant.
+- "Name the new tests with malformed_request in them, so the malformed-request-cases check finds them."
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

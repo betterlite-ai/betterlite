@@ -119,7 +119,14 @@ where
         modify_params: context.modify_params,
         schema_template: None,
     };
-    let transformed = transform(&input, context.capabilities, context.fetcher).await?;
+    let transformed = match context.mappers.gcs_deps() {
+        Some(gcs) => {
+            input
+                .transform_with_gcs(&gcs, context.capabilities, context.fetcher)
+                .await?
+        }
+        None => transform(&input, context.capabilities, context.fetcher).await?,
+    };
     Ok((encode(&transformed.body)?, optional))
 }
 

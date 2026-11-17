@@ -59,6 +59,7 @@ use crate::gemini_http::call::{ClientKind, Clients, SuppliedClient, VertexLlm};
 use crate::gemini_http::post::{
     Chunks, GeminiPost, OpenFuture, OpenedReply, PostFuture, PostReply, PostRequest,
 };
+use crate::gemini_media::gcs_metadata::{GcsTransport, MetadataFuture};
 use crate::gemini_response_parts::projection::CallMode;
 use crate::model_policy::capabilities::{
     CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
@@ -388,6 +389,13 @@ impl CacheTransport for NoTransport {
     }
 }
 
+impl GcsTransport for NoTransport {
+    fn get(&self, _request: OutboundRequest) -> MetadataFuture<'_> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(ready(Err(TransportError::Closed)))
+    }
+}
+
 struct SilentLogger;
 
 impl LoggerSink for SilentLogger {
@@ -666,6 +674,7 @@ impl Fixture {
             capabilities: &self.lookup,
             cache: &self.transport,
             fetcher: &self.fetcher,
+            gcs: &self.transport,
             counter: &self.counter,
             hooks: &self.hooks,
             schema_template: None,

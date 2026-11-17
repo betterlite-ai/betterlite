@@ -1,0 +1,19 @@
+kind: helper
+name: assistant-images
+call:
+  b9961:
+    model: gemini-2.5-flash
+    messages:
+      - role: user
+        content: ask
+      - role: assistant
+        content: answer
+        images:
+          - {type: image_url, image_url: {url: "gs://my-bucket/plot"}}
+      - role: user
+        content: next
+    litellm_params: {}
+    metadata: {status: 200, json: {contentType: "image/gif"}, body: null, connect: false}
+    mint_error: false
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: tinyfish-cost-per-step-env-override
+call:
+  b3648:
+    function: cost_per_step
+    environment:
+      TINYFISH_COST_PER_STEP: "0.5"
+env:
+  TINYFISH_COST_PER_STEP: "0.5"
+compare: {ignore: []}

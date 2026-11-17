@@ -16,6 +16,7 @@ use uuid::Uuid;
 use crate::cache_lookup::transport::CacheTransport;
 use crate::gemini_http::call::{Clients, VertexLlm};
 use crate::gemini_http::stream::GeminiHttpStream;
+use crate::gemini_media::gcs_metadata::GcsTransport;
 use crate::gemini_response::complete::CompleteResponse;
 use crate::gemini_response_parts::projection::CallMode;
 use crate::model_policy::capabilities::{ModelCapabilityLookup, VertexCapabilityProvider};
@@ -59,6 +60,7 @@ pub struct CallDeps<'deps, Cache, Fetch, Log, Console> {
     pub capabilities: &'deps (dyn ModelCapabilityLookup + Sync),
     pub cache: &'deps Cache,
     pub fetcher: &'deps Fetch,
+    pub gcs: &'deps dyn GcsTransport,
     pub counter: &'deps Counter,
     pub hooks: &'deps VerboseHooks<Log, Console>,
     pub schema_template: Option<&'deps CustomPromptTemplate>,

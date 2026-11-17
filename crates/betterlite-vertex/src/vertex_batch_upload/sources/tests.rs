@@ -16,7 +16,7 @@ use tokio::io::{AsyncRead, AsyncSeek, BufReader, ReadBuf};
 
 use crate::vertex_batch_upload::sources::error::SourceError;
 use crate::vertex_batch_upload::sources::{FileContent, FileTypes, LineReader};
-use crate::vertex_batch_upload::tests::{MAX_LINE_BYTES, Settings, context, upload};
+use crate::vertex_batch_upload::tests::{MAX_LINE_BYTES, Mappers, Settings, context, upload};
 use crate::vertex_batch_upload::upload::error::UploadError;
 use crate::vertex_batch_upload::upload::{probe_first_entry, vertex_batch_upload};
 
@@ -168,7 +168,8 @@ async fn local_path_close() {
     let path = directory.path().join("batch.jsonl");
     fs::write(&path, format!("{}\n{}", row("a", 1), row("b", 1))).unwrap();
     let settings = Settings::default();
-    let context = context(&settings);
+    let mappers = Mappers;
+    let context = context(&settings, &mappers);
     let file = FileTypes::Content(FileContent::Path(path.clone()));
     let mut stream = Box::pin(vertex_batch_upload(
         file,

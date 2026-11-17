@@ -1,0 +1,7 @@
+kind: helper
+name: transcribe-logging-prefixed-target-seed
+call:
+  b3646:
+    target: Transcribe.StartTranscriptionJob
+env: {}
+compare: {ignore: []}

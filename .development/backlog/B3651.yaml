@@ -1,7 +1,7 @@
 id: B3651
 milestone: M5 api families
 title: Cursor TypeSafe and Comprehend Medical logging
-status: todo
+status: done
 depends_on: [B190, B193]
 file: tasks/B3651-service-relay-logging.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/comprehend_medical_passthrough_logging_handler.py"
 parent: B103
 split_from: B103
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2255

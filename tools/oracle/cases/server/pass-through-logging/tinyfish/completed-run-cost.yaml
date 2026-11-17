@@ -1,0 +1,13 @@
+kind: helper
+name: tinyfish-completed-run-cost
+call:
+  b3648:
+    function: run_billing
+    run:
+      run_id: run_completed
+      status: COMPLETED
+      num_of_steps: 3
+      result: {answer: 42}
+      type: automation
+env: {}
+compare: {ignore: []}

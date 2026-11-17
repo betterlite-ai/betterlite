@@ -1,0 +1,7 @@
+kind: helper
+name: operation-no-dot
+call:
+  b3646:
+    target: GetTranscriptionJob
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,58 @@
+kind: helper
+name: bedrock-converse-tools-json-mode-tool
+call:
+  bedrock_converse_tools:
+    function: json_tool
+    json_schema: null
+    description: null
+calls:
+  - bedrock_converse_tools:
+      function: json_tool
+      json_schema:
+        type: object
+        properties: {city: {type: string}}
+      description: null
+  - bedrock_converse_tools:
+      function: json_tool
+      json_schema:
+        type: object
+        properties: {city: {type: string}}
+      description: where the reply is set
+  - bedrock_converse_tools:
+      function: apply_tools
+      tools:
+        - type: function
+          function: {name: weather, parameters: {type: object}}
+      model: meta.llama3-3-70b-instruct-v1:0
+      stream: true
+      optional_params: {}
+  - bedrock_converse_tools:
+      function: apply_tools
+      tools:
+        - type: function
+          function: {name: weather, parameters: {type: object}}
+      model: us.meta.llama3-3-70b-instruct-v1:0
+      stream: true
+      optional_params: {}
+  - bedrock_converse_tools:
+      function: apply_tools
+      tools:
+        - type: function
+          function: {name: weather, parameters: {type: object}}
+      model: meta.llama3-3-70b-instruct-v1:0
+      stream: false
+      optional_params: {}
+  - bedrock_converse_tools:
+      function: apply_tools
+      tools:
+        - type: function
+          function: {name: weather, parameters: {type: object}}
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      stream: true
+      optional_params:
+        tools:
+          - type: function
+            function: {name: kept}
+        temperature: 1
+env: {}
+compare: {ignore: []}

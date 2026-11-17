@@ -1,0 +1,7 @@
+kind: helper
+name: priced-other-operation
+call:
+  b3646:
+    target: Transcribe.GetTranscriptionJob
+env: {}
+compare: {ignore: []}

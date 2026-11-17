@@ -1,0 +1,16 @@
+kind: helper
+name: invalid-bucket
+call:
+  b9961:
+    model: gemini-2.5-flash
+    messages:
+      - role: user
+        content:
+          - {type: text, text: look}
+          - {type: image_url, image_url: {url: "gs://My-Bucket/thing"}}
+          - {type: image_url, image_url: {url: "gs://ab/thing"}}
+    litellm_params: {}
+    metadata: {status: 200, json: {contentType: "image/png"}, body: null, connect: false}
+    mint_error: false
+env: {}
+compare: {ignore: []}

@@ -5,6 +5,7 @@ use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use crate::cache_create::orchestration::CacheCreateRequest;
 use crate::cache_lookup::target::CacheProvider;
 use crate::cache_lookup::transport::CacheTransport;
+use crate::gemini_media::gcs_metadata::GcsDeps;
 use crate::gemini_request::orchestration::CallRequest;
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::token_cache::probe::AccessToken;
@@ -53,6 +54,10 @@ where
         modify_params: call.modify_params,
         schema_template: deps.schema_template,
         capabilities: deps.capabilities,
+        gcs: GcsDeps {
+            transport: deps.gcs,
+            tokens: deps.llm.cache.as_ref(),
+        },
     }
 }
 

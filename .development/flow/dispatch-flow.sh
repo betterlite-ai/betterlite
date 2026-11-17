@@ -73,9 +73,22 @@ if [[ -z "${LAND_ONLY}" ]]; then
   waiting=
   # a grant moves the next start to another vendor, so a used-up ladder does not hold a granted run
   while [[ -z "${grant}" ]] && ! (cd "${main}" && cargo gate availability "${id}") > "${L}/availability-${id}.log" 2>&1; do
-    if [[ -z "${waiting}" ]] && grep -q 'worker ladder is unavailable' "${L}/availability-${id}.log"; then
-      say "waiting: every runner left on its worker ladder is unavailable; a grant moves its next start to another vendor"
-      waiting=1
+    if grep -q 'worker ladder is unavailable' "${L}/availability-${id}.log"; then
+      # with only deepseek left the other limits reset days later, so the run takes the grant instead of waiting (Max, 11-17)
+      others=$(awk '/^vendors:/ {v = 1; next} /^[^ ]/ {v = 0} v && $1 == "-" && $2 == "id:" && $3 != "deepseek" {print $3}' "${main}/.development/agents.yaml")
+      others_out=1
+      while read -r vendor; do
+        grep -q -E "(\(|; )${vendor} (is |can't)" "${L}/availability-${id}.log" || others_out=
+      done <<< "${others}"
+      if [[ -n "${others_out}" ]]; then
+        say "every vendor but deepseek is at its limit, so ${run} takes a grant and starts on deepseek"
+        grant=1
+        break
+      fi
+      if [[ -z "${waiting}" ]]; then
+        say "waiting: every runner left on its worker ladder is unavailable; a grant moves its next start to another vendor"
+        waiting=1
+      fi
     fi
     maintenance
     sleep 60

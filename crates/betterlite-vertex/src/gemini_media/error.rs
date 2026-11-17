@@ -24,6 +24,8 @@ pub enum MediaError {
     InvalidMedia(String),
     #[error("malformed inline media data: {0}")]
     InvalidInlineData(String),
+    #[error("Unable to determine mime type for gs URI: {0}")]
+    UnknownGcsContentType(String),
 }
 impl MediaError {
     #[must_use]
@@ -32,16 +34,19 @@ impl MediaError {
             Self::UnsupportedMediaType(..)
             | Self::RemoteMediaRequired(..)
             | Self::InvalidMedia(..)
-            | Self::InvalidInlineData(..) => 400,
+            | Self::InvalidInlineData(..)
+            | Self::UnknownGcsContentType(_) => 400,
         }
     }
     // a bodyless BadRequestError leaves type null, like betterlite-error's BadRequest shape
     #[must_use]
     pub const fn error_type(&self) -> Option<&'static str> {
-        if let Self::UnsupportedMediaType(..) = self {
-            return None;
+        match self {
+            Self::UnsupportedMediaType(..) | Self::UnknownGcsContentType(_) => None,
+            Self::RemoteMediaRequired(..)
+            | Self::InvalidMedia(..)
+            | Self::InvalidInlineData(..) => Some("invalid_request_error"),
         }
-        Some("invalid_request_error")
     }
     #[must_use]
     pub const fn param(&self) -> Option<&'static str> {
@@ -53,7 +58,7 @@ impl MediaError {
     #[must_use]
     pub const fn code(&self) -> Option<&'static str> {
         match self {
-            Self::UnsupportedMediaType(..) => Some("400"),
+            Self::UnsupportedMediaType(..) | Self::UnknownGcsContentType(_) => Some("400"),
             Self::RemoteMediaRequired(..) => Some("unsupported_remote_media"),
             Self::InvalidMedia(..) | Self::InvalidInlineData(..) => None,
         }
