@@ -13,21 +13,12 @@ use crate::api::vector_store_records::records::score::Score;
 
 mod tests;
 
-// LiteLLM reads usage, results and id in this order, so the first field with the wrong shape is the one reported
 #[derive(Debug, Deserialize)]
 struct RawReply {
     #[serde(default)]
     results: Option<Vec<Value>>,
     #[serde(default)]
-    usage: Option<RawUsage>,
-    #[serde(default)]
     id: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawUsage {
-    #[serde(default, with = "serde_with::rust::double_option")]
-    total_tokens: Option<Option<i64>>,
 }
 
 pub fn transform_rerank_response(
@@ -49,7 +40,7 @@ pub fn transform_response(
 ) -> Result<RerankResponse, HostedVllmRerankError> {
     let decoded: RawReply = serde_json::from_value(response.clone())
         .map_err(|source| HostedVllmRerankError::Shape { source })?;
-    let (billed_units, tokens) = usage_blocks(decoded.usage);
+    let (billed_units, tokens) = usage_blocks(response)?;
     let Some(results) = decoded.results else {
         return Err(HostedVllmRerankError::NoResults {
             response: response.clone(),
@@ -75,12 +66,21 @@ pub fn transform_response(
     })
 }
 
-// both blocks are filled from the reply's one usage count, and an absent count reads as zero
-fn usage_blocks(usage: Option<RawUsage>) -> (RerankBilledUnits, RerankTokens) {
-    let total_tokens = usage
-        .and_then(|given| given.total_tokens)
-        .unwrap_or(Some(0));
-    (
+// LiteLLM's usage.get("total_tokens", 0): an absent count reads as zero and an explicit null stays null
+fn usage_blocks(
+    response: &Value,
+) -> Result<(RerankBilledUnits, RerankTokens), HostedVllmRerankError> {
+    let total_tokens = match response
+        .get("usage")
+        .and_then(|usage| usage.get("total_tokens"))
+    {
+        None => Some(Some(0)),
+        Some(Value::Null) => Some(None),
+        Some(count) => serde_json::from_value::<i64>(count.clone())
+            .map(|total| Some(Some(total)))
+            .map_err(|source| HostedVllmRerankError::Shape { source })?,
+    };
+    Ok((
         RerankBilledUnits {
             search_units: None,
             total_tokens,
@@ -89,7 +89,7 @@ fn usage_blocks(usage: Option<RawUsage>) -> (RerankBilledUnits, RerankTokens) {
             input_tokens: total_tokens,
             output_tokens: None,
         },
-    )
+    ))
 }
 
 fn transform_result(result: &Value) -> Result<RerankResponseResult, HostedVllmRerankError> {

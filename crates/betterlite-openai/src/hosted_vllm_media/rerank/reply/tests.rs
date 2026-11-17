@@ -160,6 +160,16 @@ fn a_null_usage_count_stays_null() {
     );
 }
 
+#[rstest]
+#[case(json!({"results": [], "usage": {"total_tokens": "twelve"}}))]
+#[case(json!({"results": [], "usage": {"total_tokens": 1.5}}))]
+fn a_usage_count_that_is_not_an_exact_number_is_a_shape_error(#[case] reply: Value) {
+    assert!(matches!(
+        decode_error(&reply),
+        HostedVllmRerankError::Shape { .. }
+    ));
+}
+
 #[test]
 fn a_malformed_body_is_a_parse_error_with_its_status() {
     let error = transform_rerank_response(500, b"not json", &generated)

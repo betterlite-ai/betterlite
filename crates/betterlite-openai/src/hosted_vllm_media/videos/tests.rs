@@ -11,6 +11,7 @@ use super::{
     HostedVllmVideoError, VLLM_OMNI_VIDEO_PARAMS, get_complete_url, get_supported_openai_params,
     map_openai_params, transform_video_create_request, validate_environment,
 };
+use crate::hosted_vllm_media::{API_BASE_ENV, API_KEY_ENV};
 use crate::openai_video_identifiers::multipart::MediaBody;
 use crate::videos::VideoOptions;
 use crate::videos::config::SUPPORTED_PARAMS;
@@ -59,8 +60,12 @@ fn form(params: Value) -> Value {
 
 fn form_error(params: Value) -> HostedVllmVideoError {
     let params = options(params);
-    transform_video_create_request("model", "prompt", "http://host/v1/videos", &params, None)
-        .expect_err("the form must not build")
+    let built =
+        transform_video_create_request("model", "prompt", "http://host/v1/videos", &params, None);
+    match built {
+        Ok(_) => panic!("the form must not build"),
+        Err(error) => error,
+    }
 }
 
 #[test]
@@ -127,7 +132,7 @@ fn headers_fall_through_to_the_environment_and_then_the_placeholder() {
             headers(&[]),
             None,
             None,
-            &environment(&[(super::API_KEY_ENV, "env-key")]),
+            &environment(&[(API_KEY_ENV, "env-key")]),
         )
         .get("Authorization"),
         Some(&String::from("Bearer env-key"))
@@ -145,7 +150,7 @@ fn complete_url_appends_the_videos_path_under_v1() {
         "http://host/v1/videos"
     );
     assert_eq!(
-        get_complete_url(None, &environment(&[(super::API_BASE_ENV, "http://env")]))
+        get_complete_url(None, &environment(&[(API_BASE_ENV, "http://env")]))
             .expect("the environment names a base"),
         "http://env/v1/videos"
     );
@@ -272,6 +277,8 @@ fn a_media_reference_without_a_hostname_is_refused() {
 #[case(json!({"image_reference": {"image_url": "data:image/png;base64,AA"}}))]
 #[case(json!({"image_reference": {"image_url": ""}}))]
 #[case(json!({"image_reference": {"image_url": "http://8.8.8.8/x.png"}}))]
+#[case(json!({"image_reference": {"image_url": "https://8.8.8.8/x.png"}}))]
+#[case(json!({"image_reference": {"image_url": "http://media.example/x.png"}}))]
 #[case(json!({"image_reference": "data:image/png;base64,AA"}))]
 fn a_safe_media_reference_is_kept(#[case] params: Value) {
     let written = form(params);
@@ -309,6 +316,16 @@ fn a_broken_json_reference_is_refused() {
     assert!(matches!(
         form_error(json!({"image_reference": "{\"image_url\": "})),
         HostedVllmVideoError::MediaJson { .. }
+    ));
+}
+
+#[rstest]
+#[case("http://8.8.8.8:bad/x.png")]
+#[case("http://[::1/x")]
+fn a_media_reference_the_url_parser_refuses_is_an_error(#[case] url: &str) {
+    assert!(matches!(
+        form_error(json!({"image_reference": {"image_url": url}})),
+        HostedVllmVideoError::UrlParse { .. }
     ));
 }
 

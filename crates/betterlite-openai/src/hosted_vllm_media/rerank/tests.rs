@@ -252,6 +252,14 @@ fn headers_use_the_placeholder_without_any_key() {
 }
 
 #[test]
+fn headers_use_the_placeholder_for_an_empty_environment_key() {
+    assert_eq!(
+        validate_environment(&Headers::new(), None, &environment(Some(""))).get("Authorization"),
+        Some(&String::from("Bearer fake-api-key"))
+    );
+}
+
+#[test]
 fn headers_let_the_caller_override_authorization_and_add_their_own() {
     let supplied = Headers::from([
         (String::from("Authorization"), String::from("Bearer caller")),
@@ -330,6 +338,13 @@ fn request_body_accepts_a_mapped_dict_with_only_the_required_keys() {
             "return_documents": false,
         })
     );
+}
+
+#[rstest]
+#[case(json!({"documents": ["only"]}))]
+#[case(json!({"query": "query"}))]
+fn a_mapped_dict_without_query_or_documents_does_not_decode(#[case] mapped: Value) {
+    assert!(serde_json::from_value::<MappedRerankParams>(mapped).is_err());
 }
 
 #[test]

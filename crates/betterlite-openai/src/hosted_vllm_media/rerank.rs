@@ -19,17 +19,10 @@ const AUTHORIZATION: &str = "Authorization";
 const JSON_CONTENT_TYPE: &str = "application/json";
 
 // LiteLLM advertises exactly these ten Cohere-style parameters and drops every other request key
+#[rustfmt::skip]
 pub const COHERE_RERANK_PARAMS: [&str; 10] = [
-    "query",
-    "documents",
-    "top_n",
-    "rank_fields",
-    "return_documents",
-    "max_tokens_per_doc",
-    "instruction",
-    "truncate_prompt_tokens",
-    "truncation_side",
-    "max_tokens_per_query",
+    "query", "documents", "top_n", "rank_fields", "return_documents", "max_tokens_per_doc",
+    "instruction", "truncate_prompt_tokens", "truncation_side", "max_tokens_per_query",
 ];
 
 #[derive(Debug, Error)]
@@ -68,14 +61,11 @@ pub enum HostedVllmRerankError {
 
 // LiteLLM's HostedVLLMRerankTruncationParams: the four keys are validated, every other key is ignored
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
 pub struct TruncationParams {
-    #[serde(default)]
     pub truncate_prompt_tokens: Option<i64>,
-    #[serde(default)]
     pub truncation_side: Option<TruncationSide>,
-    #[serde(default)]
     pub max_tokens_per_query: Option<i64>,
-    #[serde(default)]
     pub max_tokens_per_doc: Option<i64>,
 }
 
@@ -147,8 +137,8 @@ pub fn map_cohere_rerank_params(
     })
 }
 
-// ast-grep-ignore: no-one-line-functions
 #[must_use]
+// ast-grep-ignore: no-long-names, no-one-line-functions
 pub fn get_supported_cohere_rerank_params() -> Vec<&'static str> {
     COHERE_RERANK_PARAMS.to_vec()
 }
@@ -183,14 +173,13 @@ pub fn validate_environment(
         },
         |key| key.expose_secret().to_owned(),
     );
-    let mut merged = Headers::from([
-        (String::from(AUTHORIZATION), format!("Bearer {key}")),
-        (String::from("accept"), String::from(JSON_CONTENT_TYPE)),
-        (
-            String::from("content-type"),
-            String::from(JSON_CONTENT_TYPE),
-        ),
-    ]);
+    let mut merged = Headers::new();
+    merged.insert(String::from(AUTHORIZATION), format!("Bearer {key}"));
+    merged.insert(String::from("accept"), String::from(JSON_CONTENT_TYPE));
+    merged.insert(
+        String::from("content-type"),
+        String::from(JSON_CONTENT_TYPE),
+    );
     // the caller's headers win on an exact key, and a differently cased one is a second entry
     merged.extend(headers.clone());
     merged

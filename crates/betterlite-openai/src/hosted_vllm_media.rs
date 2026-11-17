@@ -20,16 +20,13 @@ pub fn resolved_api_key(
     api_key: Option<&SecretString>,
     environment: &dyn EnvironmentLookup,
 ) -> String {
-    let explicit = api_key
-        .filter(|key| !key.expose_secret().is_empty())
-        .map(|key| key.expose_secret().to_owned());
-    explicit
-        .or_else(|| {
-            environment
-                .lookup(API_KEY_ENV)
-                .filter(|key| !key.is_empty())
-        })
-        .unwrap_or_else(|| PLACEHOLDER_KEY.to_owned())
+    if let Some(key) = api_key.filter(|key| !key.expose_secret().is_empty()) {
+        return key.expose_secret().to_owned();
+    }
+    environment
+        .lookup(API_KEY_ENV)
+        .filter(|key| !key.is_empty())
+        .unwrap_or_else(|| String::from(PLACEHOLDER_KEY))
 }
 
 // LiteLLM's `api_base or get_secret_str("HOSTED_VLLM_API_BASE")`, with an empty value counting as unset
@@ -52,9 +49,6 @@ pub fn resolved_api_base(
 #[must_use]
 pub fn versioned_url(base: &str, path: &str) -> String {
     let trimmed = base.trim_end_matches('/');
-    if trimmed.ends_with("/v1") {
-        format!("{trimmed}{path}")
-    } else {
-        format!("{trimmed}/v1{path}")
-    }
+    let version = if trimmed.ends_with("/v1") { "" } else { "/v1" };
+    format!("{trimmed}{version}{path}")
 }

@@ -10,50 +10,27 @@ use crate::videos::VideoOptions;
 use crate::videos::config::{SUPPORTED_PARAMS, map_params};
 use crate::videos::create::{CreateVideoForm, VideoCreate};
 
-use super::{API_KEY_ENV, PLACEHOLDER_KEY, resolved_api_base, versioned_url};
+use super::{resolved_api_base, resolved_api_key, versioned_url};
 
 mod form;
 mod tests;
 
 // _VLLM_OMNI_VIDEO_PARAMS: the extra form fields vLLM-Omni accepts on top of the OpenAI ones
+#[rustfmt::skip]
 pub const VLLM_OMNI_VIDEO_PARAMS: [&str; 24] = [
-    "image_reference",
-    "video_reference",
-    "audio_reference",
-    "width",
-    "height",
-    "num_frames",
-    "fps",
-    "num_inference_steps",
-    "guidance_scale",
-    "guidance_scale_2",
-    "boundary_ratio",
-    "flow_shift",
-    "true_cfg_scale",
-    "seed",
-    "generate_sound",
-    "sound_duration",
-    "negative_prompt",
-    "enable_frame_interpolation",
-    "frame_interpolation_exp",
-    "frame_interpolation_scale",
-    "frame_interpolation_model_path",
-    "lora",
-    "extra_params",
+    "image_reference", "video_reference", "audio_reference", "width", "height", "num_frames",
+    "fps", "num_inference_steps", "guidance_scale", "guidance_scale_2", "boundary_ratio",
+    "flow_shift", "true_cfg_scale", "seed", "generate_sound", "sound_duration",
+    "negative_prompt", "enable_frame_interpolation", "frame_interpolation_exp",
+    "frame_interpolation_scale", "frame_interpolation_model_path", "lora", "extra_params",
     "aspect_ratio",
 ];
 
 // _EXCLUDED_FORM_KEYS: the values that travel outside the form fields
+#[rustfmt::skip]
 const EXCLUDED_FORM_KEYS: [&str; 9] = [
-    "model",
-    "prompt",
-    "extra_headers",
-    "extra_query",
-    "extra_body",
-    "timeout",
-    "custom_llm_provider",
-    "input_reference",
-    "characters",
+    "model", "prompt", "extra_headers", "extra_query", "extra_body", "timeout",
+    "custom_llm_provider", "input_reference", "characters",
 ];
 
 #[derive(Debug, Error)]
@@ -108,13 +85,7 @@ pub fn validate_environment(
         .flatten()
         .map(|key| key.expose_secret())
         .find(|key| !key.is_empty())
-        .map(str::to_owned)
-        .or_else(|| {
-            environment
-                .lookup(API_KEY_ENV)
-                .filter(|key| !key.is_empty())
-        })
-        .unwrap_or_else(|| String::from(PLACEHOLDER_KEY));
+        .map_or_else(|| resolved_api_key(None, environment), str::to_owned);
     headers.insert(String::from("Authorization"), format!("Bearer {resolved}"));
     headers
 }

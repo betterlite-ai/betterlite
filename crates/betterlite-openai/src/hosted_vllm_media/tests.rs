@@ -217,7 +217,7 @@ fn transcription_url_keeps_or_appends_the_transcriptions_path(
 fn transcription_url_requires_a_base(#[case] api_base: Option<&str>) {
     assert!(matches!(
         transcription::get_complete_url(api_base),
-        Err(transcription::HostedVllmAudioTranscriptionError::MissingApiBase)
+        Err(transcription::TranscriptionConfigError::MissingApiBase)
     ));
 }
 

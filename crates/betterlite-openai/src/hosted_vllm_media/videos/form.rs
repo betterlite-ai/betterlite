@@ -77,27 +77,26 @@ fn reject_unsafe_media_url(url: &str) -> Result<(), HostedVllmVideoError> {
         return Ok(());
     }
     if parsed.scheme != "http" && parsed.scheme != "https" {
-        return Err(SsrfError::SchemeNotAllowed {
-            scheme: parsed.scheme,
-        }
-        .into());
+        return Err(HostedVllmVideoError::UnsafeUrl(
+            SsrfError::SchemeNotAllowed {
+                scheme: parsed.scheme,
+            },
+        ));
     }
     let Some(hostname) = parsed.hostname() else {
-        return Err(SsrfError::NoHostname.into());
+        return Err(HostedVllmVideoError::UnsafeUrl(SsrfError::NoHostname));
     };
     parsed
         .port()
         .map_err(|source| HostedVllmVideoError::UrlParse { source })?;
     // a transform resolves no DNS, so it refuses the destinations a name cannot hide: an address literal and localhost
-    if let Some(address) = literal_address(&hostname) {
-        if is_blocked_ip(address) {
-            return Err(SsrfError::BlockedAddress { address }.into());
-        }
-    } else if hostname == "localhost" || hostname.ends_with(".localhost") {
-        return Err(SsrfError::BlockedAddress {
-            address: IpAddr::V4(Ipv4Addr::LOCALHOST),
-        }
-        .into());
+    let literal = literal_address(&hostname);
+    let local = hostname == "localhost" || hostname.ends_with(".localhost");
+    if literal.is_some_and(is_blocked_ip) || (literal.is_none() && local) {
+        let address = literal.unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        return Err(HostedVllmVideoError::UnsafeUrl(SsrfError::BlockedAddress {
+            address,
+        }));
     }
     Ok(())
 }
