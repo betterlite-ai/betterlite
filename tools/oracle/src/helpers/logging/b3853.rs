@@ -46,6 +46,12 @@ pub(crate) struct Input {
     second_status: u16,
 }
 
+#[derive(Clone, Copy, Default)]
+struct PhaseSpans {
+    before: bool,
+    routed: bool,
+}
+
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -68,7 +74,8 @@ fn construction(times: usize) -> HelperResult {
     for _ in 0..times {
         build(&registry)?;
     }
-    Ok(answer(&registry, false, false, &[], SpanId::INVALID))
+    let answered = answer(&registry, PhaseSpans::default(), &[], SpanId::INVALID);
+    Ok(answered)
 }
 
 fn service(input: &Input) -> HelperResult {
@@ -88,9 +95,9 @@ fn service(input: &Input) -> HelperResult {
     let hook = ServiceHook {
         payload: &payload,
         parent_otel_span: Some(&built.root.context),
-        start_time: Some(UNIX_EPOCH + Duration::from_secs_f64(START)),
+        start_time: UNIX_EPOCH.checked_add(Duration::from_secs_f64(START)),
         timing: ServiceSpanTiming {
-            end_time: Some(UNIX_EPOCH + Duration::from_secs_f64(END)),
+            end_time: UNIX_EPOCH.checked_add(Duration::from_secs_f64(END)),
             parent_end_time: None,
             post_response: false,
         },
@@ -101,7 +108,7 @@ fn service(input: &Input) -> HelperResult {
         |text| service::async_service_failure_hook(&built.callback, &hook, Some(text)),
     );
     let spans = built.spans.get_finished_spans().or_config_error()?;
-    Ok(answer(&registry, false, false, &spans, root_id))
+    Ok(answer(&registry, PhaseSpans::default(), &spans, root_id))
 }
 
 fn guardrail() -> HelperResult {
@@ -112,15 +119,13 @@ fn guardrail() -> HelperResult {
     let mut trace = RequestTraceContext::default();
     proxy::mark_request_root_span(&first.callback, &first.root, None, &mut trace);
     let entry: BTreeMap<String, OtelModelValue> = serde_json::from_value(json!({
-        "guardrail_name": "pii",
-        "guardrail_status": "success",
-        "start_time": START,
-        "end_time": END,
+        "guardrail_name": "pii", "guardrail_status": "success",
+        "start_time": START, "end_time": END,
     }))
     .or_value_error()?;
     registered::emit_guardrail_span(&registry, &entry, &trace);
     let spans = first.spans.get_finished_spans().or_config_error()?;
-    Ok(answer(&registry, false, false, &spans, root_id))
+    Ok(answer(&registry, PhaseSpans::default(), &spans, root_id))
 }
 
 fn precall(input: &Input) -> HelperResult {
@@ -128,10 +133,8 @@ fn precall(input: &Input) -> HelperResult {
     let built = build(&registry)?;
     let root_id = built.root.context.span_id();
     let facts: ExceptionFacts = serde_json::from_value(json!({
-        "class_name": "AuthenticationError",
-        "message": "litellm.AuthenticationError: bad credentials",
-        "status_code": 401,
-        "llm_provider": "openai",
+        "class_name": "AuthenticationError", "llm_provider": "openai",
+        "message": "litellm.AuthenticationError: bad credentials", "status_code": 401_u16,
     }))
     .or_value_error()?;
     let callback = &built.callback;
@@ -146,7 +149,7 @@ fn precall(input: &Input) -> HelperResult {
     }
     built.root.lock().end();
     let spans = built.spans.get_finished_spans().or_config_error()?;
-    Ok(answer(&registry, false, false, &spans, root_id))
+    Ok(answer(&registry, PhaseSpans::default(), &spans, root_id))
 }
 
 fn phase() -> HelperResult {
@@ -156,23 +159,19 @@ fn phase() -> HelperResult {
     let built = build(&registry)?;
     let routed = registered::phase_span(&registry, "auth", &trace).is_some();
     let spans = built.spans.get_finished_spans().or_config_error()?;
-    Ok(answer(&registry, before, routed, &spans, SpanId::INVALID))
+    let phases = PhaseSpans { before, routed };
+    let answered = answer(&registry, phases, &spans, SpanId::INVALID);
+    Ok(answered)
 }
 
-fn answer(
-    registry: &V2Registry,
-    phase_before: bool,
-    phase_routed: bool,
-    spans: &[SdkSpanData],
-    root: SpanId,
-) -> Value {
+fn answer(registry: &V2Registry, phases: PhaseSpans, spans: &[SdkSpanData], root: SpanId) -> Value {
     json!({
         "service_callbacks": registry.entries(CallbackList::Service).len(),
         "input_callbacks": registry.entries(CallbackList::Input).len(),
         "success_callbacks": registry.entries(CallbackList::Success).len(),
         "failure_callbacks": registry.entries(CallbackList::Failure).len(),
-        "phase_before": phase_before,
-        "phase_routed": phase_routed,
+        "phase_before": phases.before,
+        "phase_routed": phases.routed,
         "spans": spans.iter().map(|span| record(span, root)).collect::<Vec<Value>>(),
     })
 }
