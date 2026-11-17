@@ -1,7 +1,4 @@
-use std::collections::BTreeMap;
-
 use fancy_regex::{Regex, RegexBuilder};
-use serde_json::value::RawValue;
 
 use crate::tag_matchers::patterns::MAX_MATCH_STEPS;
 
@@ -15,10 +12,4 @@ pub(crate) fn bounded(source: &str) -> Option<Regex> {
         .seek(false)
         .build()
         .ok()
-}
-
-// the pattern string a raw rule declares, read before the rule is compiled or classified
-pub(crate) fn declared_pattern(rule: &RawValue) -> Option<String> {
-    let fields: BTreeMap<String, Box<RawValue>> = serde_json::from_str(rule.get()).ok()?;
-    serde_json::from_str(fields.get("pattern")?.get()).ok()
 }

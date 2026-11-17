@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::catalog_generalizations::{
     CatalogGeneralizations, ModelInfo, decode_generalization_rules,
 };
+use serde_json::value::RawValue;
 
-use crate::generalization_integration::bounds::{bounded, declared_pattern};
+use crate::generalization_integration::bounds::bounded;
 use crate::generalization_integration::error::{GeneralizationError, GeneralizationWarning};
 use crate::tag_matchers::patterns::{MAX_PATTERN_BYTES, WarningKind};
 
@@ -35,7 +38,12 @@ impl ModelGeneralizations {
         let mut kept = Vec::new();
         let mut warnings = Vec::new();
         for rule in decode_generalization_rules(bytes)? {
-            match declared_pattern(&rule) {
+            let pattern: Option<String> =
+                serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(rule.get())
+                    .ok()
+                    .and_then(|mut fields| fields.remove("pattern"))
+                    .and_then(|value| serde_json::from_str(value.get()).ok());
+            match pattern {
                 Some(pattern) if pattern.len() > MAX_PATTERN_BYTES => {
                     warnings.push(GeneralizationWarning {
                         kind: WarningKind::PatternTooLarge,
