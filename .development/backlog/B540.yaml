@@ -1,7 +1,7 @@
 id: B540
 milestone: M3 providers
 title: Azure text completions
-status: todo
+status: done
 depends_on: [B531, B171, B177, B005, B673, B249, B2237]
 file: tasks/B540-azure-completion.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/azure/completion/transformation.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2129

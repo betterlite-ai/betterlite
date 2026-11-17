@@ -36,6 +36,7 @@ use super::chat::MAX_CALL_ID_LENGTH;
 use super::chat::headers::{failure_headers, success_headers};
 
 mod tests;
+mod vertex;
 
 #[derive(Serialize)]
 struct ErrorBody {
@@ -51,10 +52,11 @@ struct ErrorObject {
     code: String,
 }
 
-pub(crate) fn embedding_routes(executor: Arc<ChatExecutor>) -> Router {
-    let calls: Arc<dyn EmbeddingCall> = Arc::new(EmbeddingCalls {
-        executor: Arc::clone(&executor),
-    });
+pub(crate) fn embedding_routes(
+    executor: Arc<ChatExecutor>,
+    vertex: Option<Arc<dyn EmbeddingCall>>,
+) -> Router {
+    let calls = vertex::calls(Arc::clone(&executor), vertex);
     let log = Arc::new(TracingCallLog);
     let dispatch = Arc::new(Dispatch::new(
         executor.deployments.clone(),

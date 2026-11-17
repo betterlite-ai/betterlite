@@ -1,0 +1,24 @@
+kind: helper
+name: repello-lifecycle-blocked
+call:
+  b3794:
+    mode: pre_call
+    env:
+      ARGUS_API_KEY: argus-env-key
+    api_key: null
+    api_base: https://argus.example.test
+    asset_id: asset-1
+    unreachable_fallback: fail_closed
+    data:
+      messages:
+        - {role: user, content: hello}
+    answer:
+      status: 200
+      headers: {}
+      body:
+        verdict: blocked
+        policies_violated:
+          - {policy_name: pii, action_taken: block, details: {score: 0.9}}
+          - {policy_name: toxicity, details: {score: null}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,32 @@
+kind: helper
+name: empty-frame-usage-wins
+call:
+  gemini_live_accounting:
+    op: steps
+    steps:
+      - kind: standalone_usage
+        usage: {promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15, promptTokensDetails: [{modality: AUDIO, tokenCount: 10}]}
+      - kind: response_done
+        frame: {usageMetadata: {}}
+        response_id: resp_one
+        conversation_id: conv_one
+      - kind: response_done
+        frame: {}
+        response_id: resp_two
+        conversation_id: conv_one
+calls:
+  - gemini_live_accounting:
+      op: steps
+      steps:
+        - kind: standalone_usage
+          usage: {promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15, promptTokensDetails: [{modality: AUDIO, tokenCount: 10}]}
+        - kind: response_done
+          frame: {usageMetadata: null}
+          response_id: resp_one
+          conversation_id: conv_one
+        - kind: response_done
+          frame: {}
+          response_id: resp_two
+          conversation_id: conv_one
+env: {}
+compare: {ignore: []}

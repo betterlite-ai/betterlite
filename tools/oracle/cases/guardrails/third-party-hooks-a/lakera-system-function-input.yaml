@@ -1,0 +1,28 @@
+kind: helper
+name: lakera-system-function-input
+call:
+  b9451:
+    vendor: lakera
+    hook: moderation
+    gate: null
+    api_key: lakera-key
+    moderation_check: in_parallel
+    enabled_roles: null
+    add_function_to_prompt: false
+    data:
+      messages:
+        - {role: system, content: be brief}
+        - {role: user, content: weather in Paris}
+        - role: assistant
+          content: looking it up
+          tool_calls:
+            - id: call-1
+              function: {name: weather, arguments: "{\"city\": \"Paris\"}"}
+            - id: call-2
+              function: {name: units, arguments: "{\"unit\": \"c\"}"}
+    answers:
+      - status: 200
+        headers: {}
+        body: {results: [{flagged: false}]}
+env: {}
+compare: {ignore: []}

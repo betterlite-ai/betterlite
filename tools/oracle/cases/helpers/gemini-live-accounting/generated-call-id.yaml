@@ -1,0 +1,29 @@
+kind: helper
+name: generated-call-id
+call:
+  gemini_live_accounting:
+    op: steps
+    steps:
+      - kind: calls
+        tool_call:
+          functionCalls:
+            - {name: lookup}
+            - {id: "", name: empty_id, args: {city: Zürich, n: [1, 2], ok: true}}
+            - {id: null, name: null_id, args: null}
+            - {id: given, name: kept, args: {emoji: "😀", nested: {a: 1.5}}}
+            - {id: nameless}
+calls:
+  - gemini_live_accounting:
+      op: steps
+      steps:
+        - kind: calls
+          response_id: resp_given
+          output_item_id: item_given
+          tool_call:
+            functionCalls:
+              - {id: a, name: first, args: {x: 1}}
+              - {name: second}
+        - kind: calls
+          tool_call: {}
+env: {}
+compare: {ignore: []}

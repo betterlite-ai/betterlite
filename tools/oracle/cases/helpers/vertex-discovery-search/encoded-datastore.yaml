@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-discovery-search-encoded-datastore
+call:
+  vertex_discovery_search:
+    calls:
+      - function: target
+        litellm_params:
+          vertex_project: project-example
+          vertex_location: europe-west1
+          vertex_collection_id: team collection
+          vector_store_id: apps/123
+env: {}
+compare: {ignore: []}

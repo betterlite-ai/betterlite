@@ -1,0 +1,171 @@
+kind: helper
+name: fal-video-results-detail-locations
+call:
+  fal_video_results:
+    operation: detail_locations
+    cases:
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-1/status"
+        headers: {}
+        body: '{"status": "IN_PROGRESS", "detail": "bad"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-2/status"
+        headers: {}
+        body: '{"status": "IN_PROGRESS", "detail": "", "error": "other"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-3/status"
+        headers: {}
+        body: '{"detail": [], "error": "fallback"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-4/status"
+        headers: {}
+        body: '{"detail": [{"msg": "m1", "loc": ["a", "b"]}, {"msg": "m2", "loc": "c"}, {"msg": "m3"}]}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-5/status"
+        headers: {}
+        body: '{"detail": [{"loc": "a"}]}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-6/status"
+        headers: {}
+        body: '{"detail": [{"loc": "a"}], "error": "fallback"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-7/status"
+        headers: {}
+        body: '{"detail": [{"msg": 5}], "error": "fallback"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-8/status"
+        headers: {}
+        body: '{"detail": "bad", "error": "other"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-9/status"
+        headers: {}
+        body: '{"error": "boom"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-10/status"
+        headers: {}
+        body: '{"error": ""}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-11/status"
+        headers: {}
+        body: '{"detail": ["x", {"msg": "m"}]}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-12/status"
+        headers: {}
+        body: '{"detail": [{"msg": "m", "loc": []}]}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-13/status"
+        headers: {}
+        body: '{"detail": [{"msg": "m", "loc": ["a", 1, "b"]}]}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-14/status"
+        headers: {}
+        body: '{"detail": [{"msg": "m", "loc": 5}]}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-15/status"
+        headers: {}
+        body: '{"detail": [{"msg": "m", "loc": ""}]}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-16/status"
+        headers: {}
+        body: '{"detail": 5, "error": "boom"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-17/status"
+        headers: {}
+        body: '{"detail": null, "error": "boom"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-18/status"
+        headers: {}
+        body: '{"detail": [{"msg": "m", "loc": ["a"]}, {"msg": "n", "loc": []}]}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-19/status"
+        headers: {}
+        body: '{"detail": [1, "x", {"msg": "m"}]}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-20/status"
+        headers: {}
+        body: '{"detail": [{"msg": "", "loc": "a"}]}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-21/status"
+        headers: {}
+        body: '{"status": "IN_QUEUE"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-22/status"
+        headers: {}
+        body: '{"status": "COMPLETED"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-23/status"
+        headers: {}
+        body: '{"status": "COMPLETED"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-24/status"
+        headers: {}
+        body: '{"status": "FOO"}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-25/status"
+        headers: {}
+        body: '{}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-26/status"
+        headers: {}
+        body: '{"status": 5}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-27/status"
+        headers: {}
+        body: '{"status": ""}'
+        probe_status: null
+        probe_body: ""
+        provider: null
+env: {}
+compare:
+  ignore: []

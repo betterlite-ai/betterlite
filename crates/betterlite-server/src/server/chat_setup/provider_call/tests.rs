@@ -84,8 +84,10 @@ async fn call(
     let loader = ConfigLoader {
         lookup: environment.clone(),
     };
-    let config = loader.load(&source).unwrap();
-    let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
+    let executor = {
+        let config = loader.load(&source).unwrap();
+        chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap()
+    };
     let request = Request::post("/v1/chat/completions")
         .header("content-type", "application/json")
         .body(Body::from(sent_body))
@@ -123,7 +125,8 @@ async fn provider_framework_tests_behavior(
     #[case] status: u16,
     #[case] reached: Option<(u64, bool)>,
 ) {
-    let (answered, body, sent, forwarded) = call(model, sent_body, OWN_KEY, (200, ANSWER)).await;
+    let (answered, body, sent, forwarded) =
+        Box::pin(call(model, sent_body, OWN_KEY, (200, ANSWER))).await;
     assert_eq!(answered, status);
     let Some((total_tokens, sends_organization)) = reached else {
         assert_eq!(sent, "");

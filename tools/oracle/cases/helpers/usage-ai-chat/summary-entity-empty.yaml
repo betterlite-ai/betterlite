@@ -1,0 +1,19 @@
+kind: helper
+name: usage-ai-chat-summary-entity-empty
+call:
+  b3103:
+    function: summary_entity
+    label: team
+    page:
+      results: []
+      metadata: {}
+calls:
+  - b3103:
+      function: summary_entity
+      label: tag
+      page:
+        results: []
+        metadata: {}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,48 @@
+kind: helper
+name: grounding-counts
+call:
+  gemini_live_accounting:
+    op: steps
+    steps:
+      - kind: response_done
+        frame:
+          usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+          serverContent: {groundingMetadata: {webSearchQueries: [a, b, a]}}
+        response_id: resp
+        conversation_id: conv
+      - kind: response_done
+        frame:
+          usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+          serverContent: {groundingMetadata: {groundingChunks: [{maps: {}}], webSearchQueries: [m]}}
+        response_id: resp
+        conversation_id: conv
+      - kind: response_done
+        frame:
+          usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+          serverContent: {groundingMetadata: {groundingChunks: [{web: {}, maps: {}}], webSearchQueries: [w]}}
+        response_id: resp
+        conversation_id: conv
+      - kind: response_done
+        frame:
+          usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+          serverContent: {groundingMetadata: {googleMapsWidgetContextToken: token}}
+        response_id: resp
+        conversation_id: conv
+      - kind: response_done
+        frame:
+          usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+          serverContent: {groundingMetadata: {}}
+        response_id: resp
+        conversation_id: conv
+      - kind: response_done
+        frame:
+          serverContent: {groundingMetadata: {webSearchQueries: [a]}}
+        response_id: resp
+        conversation_id: conv
+      - kind: response_done
+        frame:
+          usageMetadata: {promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15, promptTokensDetails: [{modality: AUDIO, tokenCount: 10}]}
+        response_id: resp
+        conversation_id: conv
+env: {}
+compare: {ignore: []}

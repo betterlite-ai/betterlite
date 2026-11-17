@@ -1,0 +1,24 @@
+kind: helper
+name: aim-output-blocked
+call:
+  b9451:
+    vendor: aim
+    hook: post_call
+    api_key: aim-key
+    inspect_embeddings: false
+    call_type: completion
+    data:
+      litellm_call_id: call-1
+      model: gpt-4o
+      messages:
+        - {role: user, content: hello}
+    outputs: [the secret reply]
+    key_alias: alias-1
+    answers:
+      - status: 200
+        headers: {}
+        body:
+          required_action: {action_type: block_action, detection_message: Blocked by policy}
+          analysis_result: {analysis_time_ms: 1, policy_drill_down: {}}
+env: {}
+compare: {ignore: []}

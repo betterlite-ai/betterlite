@@ -1,0 +1,16 @@
+kind: helper
+name: genai-metrics-failure-seed
+call:
+  b3869:
+    function: record_failure
+    kwargs:
+      model: gpt-4o
+      call_type: acompletion
+      standard_logging_object:
+        error_information:
+          error_class: APIError
+    start_time: 10
+    end_time: 13
+env: {}
+compare:
+  ignore: []

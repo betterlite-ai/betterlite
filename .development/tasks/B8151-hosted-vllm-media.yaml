@@ -29,8 +29,6 @@ scope:
     - tools/oracle/cases/helpers/hosted-vllm-media/**
     - tools/oracle/helpers/b8151.py
     - tools/oracle/helpers/b8151/**
-    - tools/oracle/src/helpers/provider/b8151.rs
-    - tools/oracle/src/helpers/provider/b8151/**
     - tools/oracle/src/helpers/openai/b8151.rs
     - tools/oracle/src/helpers/openai/b8151/**
   lint_tables: false
