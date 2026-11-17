@@ -41,10 +41,10 @@ fn filled(
     let declared = declared_provider(&deployment).map(str::to_owned);
     let resolved = generalizations.provider(&model, declared.as_deref());
     // an exact entry takes fill rules only, while an unmapped model takes the capability union
-    let proposed = match declared.as_deref() {
-        Some(provider) => generalizations.fill_missing(&model, provider),
-        None => generalizations.capabilities(&model),
-    };
+    let proposed = declared.as_deref().map_or_else(
+        || generalizations.capabilities(&model),
+        |provider| generalizations.fill_missing(&model, provider),
+    );
     for warning in resolved.warnings.iter().chain(&proposed.warnings) {
         tracing::warn!(?warning, "a generalization rule search was skipped");
     }

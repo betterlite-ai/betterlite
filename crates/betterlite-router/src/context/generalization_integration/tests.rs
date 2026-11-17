@@ -40,10 +40,10 @@ fn installed(rules: &str) -> Generalized {
 fn spec(model: &str, provider: Option<&str>, model_info: JsonObject) -> DeploymentSpec {
     let mut litellm_params = JsonObject::new();
     litellm_params.insert(String::from("model"), Json::Text(model.to_owned()));
-    if let Some(provider) = provider {
+    if let Some(name) = provider {
         litellm_params.insert(
             String::from("custom_llm_provider"),
-            Json::Text(provider.to_owned()),
+            Json::Text(name.to_owned()),
         );
     }
     DeploymentSpec {

@@ -26,8 +26,6 @@ const DUPLICATE_PARENT: &str = r#"[{"name":"base","pattern":"^first-","model_inf
 const DESCRIPTION: &str = r#"[{"pattern":"^acme-","description":"ignored text","model_info":{"litellm_provider":"acme","mode":"chat"}}]"#;
 const MALFORMED: &str = r#"[{"name":"broken","pattern":"^broken"},{"pattern":"^ok-","model_info":{"litellm_provider":"openai"}}]"#;
 const MALFORMED_WARNING: &str = r#"["LiteLLM: skipping malformed fallback generalization rule broken (needs string 'pattern' and dict 'model_info')."]"#;
-const SLOW_PATTERN: &str =
-    r#"[{"pattern":"(?i)(a|b|ab)*(?>c)","model_info":{"litellm_provider":"steps"}}]"#;
 const SLOW_MODEL: &str = "abababababababababababab";
 const SLOW_WARNING: &str = r#"[{"kind":"match_limit_exceeded","pattern":"(?i)(a|b|ab)*(?>c)"}]"#;
 
@@ -509,8 +507,8 @@ fn replays_the_model_rules_corpus() {
         ModelGeneralizations::install(&invalid),
         Err(GeneralizationError::Rules(ModelsError::RulesJson { .. }))
     ));
-    fs::read_dir(corpus).unwrap().for_each(|entry| {
+    for entry in fs::read_dir(corpus).unwrap() {
         let bytes = fs::read(entry.unwrap().path()).unwrap();
         drop(ModelGeneralizations::install(&bytes));
-    });
+    }
 }

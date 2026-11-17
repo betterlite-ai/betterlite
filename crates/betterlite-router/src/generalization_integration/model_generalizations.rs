@@ -52,7 +52,6 @@ fn capability_warnings(
 }
 
 impl ModelGeneralizations {
-    #[must_use]
     pub fn install(bytes: &[u8]) -> Result<Self, GeneralizationError> {
         let mut kept = Vec::new();
         let mut warnings = Vec::new();
@@ -63,10 +62,10 @@ impl ModelGeneralizations {
                     .and_then(|mut fields| fields.remove("pattern"))
                     .and_then(|value| serde_json::from_str(value.get()).ok());
             match pattern {
-                Some(pattern) if pattern.len() > MAX_PATTERN_BYTES => {
+                Some(found) if found.len() > MAX_PATTERN_BYTES => {
                     warnings.push(GeneralizationWarning {
                         kind: WarningKind::PatternTooLarge,
-                        pattern,
+                        pattern: found,
                     });
                 }
                 _ => kept.push(rule),
@@ -110,13 +109,14 @@ impl ModelGeneralizations {
     #[must_use]
     pub fn routing(&self, model: &str) -> Found<String> {
         let mut warnings = Vec::new();
-        if !model.is_empty() {
-            for rule in &self.engine.routing {
-                match rule.pattern.is_match(model) {
-                    Ok(true) => break,
-                    Ok(false) => {}
-                    Err(_) => warnings.push(limit_warning(rule.pattern.as_str())),
-                }
+        for rule in &self.engine.routing {
+            if model.is_empty() {
+                break;
+            }
+            match rule.pattern.is_match(model) {
+                Ok(true) => break,
+                Ok(false) => (),
+                Err(_) => warnings.push(limit_warning(rule.pattern.as_str())),
             }
         }
         Found {
