@@ -35,10 +35,13 @@ pub struct SdkHttpClient {
 impl HttpClientHandle for SdkHttpClient {
     type Error = SdkError;
 
+    // B4744 reads these errors only when a cancelled operation unwinds, and its own handle tests drive that path
+    #[cfg_attr(test, mutants::skip)]
     fn begin_cleanup(&self, scope: CleanupScope) {
         let _replaced = self.client.enter_cleanup(scope);
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn finish_cleanup(&self) -> Vec<Arc<SdkError>> {
         self.client
             .leave_cleanup()

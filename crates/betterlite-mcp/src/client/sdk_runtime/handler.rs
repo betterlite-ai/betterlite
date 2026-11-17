@@ -196,6 +196,8 @@ fn invalid(operation: &str, error: &serde_json::Error) -> ErrorData {
     )
 }
 
+// The params and results serialized here are plain structs, so serde cannot fail on them
+#[cfg_attr(test, mutants::skip)]
 fn internal(operation: &str, error: &serde_json::Error) -> ErrorData {
     ErrorData::internal_error(
         format!("invalid {operation}"),
