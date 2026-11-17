@@ -202,8 +202,9 @@ fn changed_paths(root: &Path, base: &str) -> Result<Vec<Utf8PathBuf>, GateError>
 }
 
 fn package_graph(directory: &Path) -> Result<PackageGraph, GateError> {
+    // not offline: the base can need crates the change dropped from Cargo.lock, and the runner never fetched them
     let output = check_command("cargo")
-        .args(["metadata", "--format-version", "1", "--locked", "--offline"])
+        .args(["metadata", "--format-version", "1", "--locked"])
         .current_dir(directory)
         .output()
         .map_err(|source| GateError::Spawn {
