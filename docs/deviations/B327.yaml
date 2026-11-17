@@ -15,6 +15,9 @@ deviations:
   - what: A route score threshold that is not finite is rejected when the config is read, where LiteLLM accepts a NaN or infinite score_threshold and compares the route mean against it, a value Python's comparison semantics make the route never or always match.
     why: The task requires rejecting nonfinite statistical input, and a rejected config names the malformed route instead of carrying a threshold whose comparison has no useful outcome.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L112-L118
+  - what: An unknown key in the inline route config or in a route file entry is rejected with an error naming the key, where LiteLLM reads the keys it knows and drops every other one, so a misspelled utterance key leaves the route with no utterances.
+    why: A dropped key changes routing without a word, and a route whose utterances or threshold silently vanish routes to the wrong model; the parse error names the field when the config is read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L101-L119
   - what: A document embedding vector that holds a non-finite value or has zero norm fails the index build and reaches the caller, where LiteLLM scores every query against it as NaN and falls back to the default model.
     why: A NaN score cannot be ordered deterministically, and an embedding the provider could not compute is a provider fault rather than a routing miss, so betterlite surfaces the build error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/litellm_encoder.py#L16-L24
