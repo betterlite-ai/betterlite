@@ -47,3 +47,10 @@ path = "fuzz_targets/retry_after.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "route_index"
+path = "fuzz_targets/route_index.rs"
+test = false
+doc = false
+bench = false
