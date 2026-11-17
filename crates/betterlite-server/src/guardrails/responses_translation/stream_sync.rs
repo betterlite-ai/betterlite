@@ -51,6 +51,7 @@ fn text_position(item: &StreamItem) -> TextPosition {
 
 fn unsigned(value: Option<&GuardrailValue>) -> Option<usize> {
     match value {
+        Some(GuardrailValue::SignedInteger(number)) => usize::try_from(*number).ok(),
         Some(GuardrailValue::UnsignedInteger(number)) => usize::try_from(*number).ok(),
         Some(_) | None => None,
     }
@@ -92,9 +93,17 @@ fn sync_event(
         return;
     };
     let position = (output_index, content_index);
-    let Some(rewritten) = rewrites.get(&position) else {
-        return;
-    };
+    if rewrites.contains_key(&position) {
+        sync_text_position(event, position, rewrites, delivered);
+    }
+}
+
+fn sync_text_position(
+    event: &mut Value,
+    position: (usize, usize),
+    rewrites: &BTreeMap<(usize, usize), String>,
+    delivered: &mut BTreeSet<(usize, usize)>,
+) {
     let Some(fields) = event.as_object_mut() else {
         return;
     };
@@ -103,6 +112,9 @@ fn sync_event(
         .and_then(Value::as_str)
         .map(str::to_owned)
     else {
+        return;
+    };
+    let Some(rewritten) = rewrites.get(&position) else {
         return;
     };
     match event_type.as_str() {
@@ -439,13 +451,14 @@ fn write_rewrite_into_event(
         fields.insert(payload_field.to_owned(), arguments);
         return;
     }
-    let Some(item) = fields.get_mut("item") else {
-        return;
-    };
-    match event_type.as_str() {
-        "response.output_item.added" => {
-            write_tool_call_item(item, rewrite.name.as_deref(), None);
-        }
+    if let Some(item) = fields.get_mut("item") {
+        write_item_event(item, event_type.as_str(), rewrite);
+    }
+}
+
+fn write_item_event(item: &mut Value, event_type: &str, rewrite: &ToolCallShape) {
+    match event_type {
+        "response.output_item.added" => write_tool_call_item(item, rewrite.name.as_deref(), None),
         "response.output_item.done" => {
             write_tool_call_item(item, rewrite.name.as_deref(), Some(&rewrite.arguments));
         }

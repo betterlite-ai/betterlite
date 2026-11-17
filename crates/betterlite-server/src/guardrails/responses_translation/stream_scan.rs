@@ -88,6 +88,32 @@ fn part_position(item: &StreamItem) -> PartPosition {
     }
 }
 
+fn accumulate_part(parts: &mut Vec<(PartPosition, PartText)>, item: &StreamItem) {
+    let text = item_text(item, "text");
+    let delta = item_text(item, "delta");
+    if text.is_none() && delta.is_none() {
+        return;
+    }
+    let position = part_position(item);
+    let index = match parts.iter().position(|(existing, _)| *existing == position) {
+        Some(index) => index,
+        None => {
+            let index = parts.len();
+            parts.push((position, PartText::default()));
+            index
+        }
+    };
+    let Some((_, part)) = parts.get_mut(index) else {
+        return;
+    };
+    if let Some(text) = text {
+        part.done = Some(text.to_owned());
+    }
+    if let Some(delta) = delta {
+        part.deltas.push_str(delta);
+    }
+}
+
 #[must_use]
 pub fn streaming_string_so_far(events: &[Value]) -> String {
     let mut parts: Vec<(PartPosition, PartText)> = Vec::new();
@@ -95,29 +121,7 @@ pub fn streaming_string_so_far(events: &[Value]) -> String {
         let Some(item) = event_item(event) else {
             continue;
         };
-        let text = item_text(&item, "text");
-        let delta = item_text(&item, "delta");
-        if text.is_none() && delta.is_none() {
-            continue;
-        }
-        let position = part_position(&item);
-        let index = match parts.iter().position(|(existing, _)| *existing == position) {
-            Some(index) => index,
-            None => {
-                let index = parts.len();
-                parts.push((position, PartText::default()));
-                index
-            }
-        };
-        let Some((_, part)) = parts.get_mut(index) else {
-            continue;
-        };
-        if let Some(text) = text {
-            part.done = Some(text.to_owned());
-        }
-        if let Some(delta) = delta {
-            part.deltas.push_str(delta);
-        }
+        accumulate_part(&mut parts, &item);
     }
     let mut joined = String::new();
     for (_, part) in &parts {

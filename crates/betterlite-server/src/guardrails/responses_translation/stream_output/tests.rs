@@ -485,7 +485,7 @@ async fn item_done_reads_a_custom_tool_call_with_a_zero_index() {
 #[case::negative(json!(-1))]
 #[case::fraction(json!(1.5))]
 #[tokio::test]
-async fn item_done_uses_zero_when_the_output_index_is_not_an_integer(#[case] index: Value) {
+async fn item_done_uses_zero_when_the_output_index_is_not_a_usable_integer(#[case] index: Value) {
     let events = json!([
         {"type": "response.output_item.done", "output_index": index, "item": function_call_item("{}")}
     ]);

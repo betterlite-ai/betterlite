@@ -229,9 +229,12 @@ async fn terminal_scan<G>(
 where
     G: GuardrailContract,
 {
-    let Some(response) = last.get_mut("response").filter(|value| value.is_object()) else {
+    let Some(response) = last.get_mut("response") else {
         return Ok(false);
     };
+    if !response.is_object() {
+        return Ok(false);
+    }
     let scan = scan_envelope(response)?;
     if scan.extracted.texts.is_empty() && scan.extracted.tool_calls.is_empty() {
         return Ok(false);
