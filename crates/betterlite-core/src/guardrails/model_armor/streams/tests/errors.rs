@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use crate::guardrails::model_armor::streams::chunk::Chunk;
@@ -6,7 +8,7 @@ use crate::guardrails::model_armor::streams::errors::{
 };
 use crate::guardrails::model_armor::streams::surface::Surface;
 
-use super::support::{FakeWire, Setup, bytes, chunk, value};
+use super::support::{FakeWire, Setup, bytes, chunk, fixture, value};
 
 fn http(status: u16, detail: GuardrailValue) -> HttpError {
     HttpError { status, detail }
@@ -53,10 +55,9 @@ fn error_payload_overwrites_a_code_the_detail_already_carries() {
 #[test]
 fn frame_error_uses_anthropic_frames_on_the_anthropic_surface() {
     let frames = vec![bytes("event: error\ndata: {}\n\n")];
-    let wire = FakeWire::new(Setup {
-        frames: frames.clone(),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.frames = frames.clone();
+    let wire = FakeWire::new(setup);
     let error = http(
         400,
         value(r#"{"error": "Streaming response blocked by Model Armor"}"#),
@@ -80,10 +81,9 @@ fn error_frame_anthropic_message_is_empty_without_a_message_field() {
 #[test]
 fn frame_error_uses_responses_error_items_when_the_wire_builds_them() {
     let items = vec![chunk(r#"{"type": "error"}"#)];
-    let wire = FakeWire::new(Setup {
-        responses: Some(items.clone()),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.responses = Some(items.clone());
+    let wire = FakeWire::new(setup);
     let error = http(500, GuardrailValue::Text("boom".to_owned()));
     let framed = frame_error(&wire, Surface::Responses, &error).expect("the frames build");
     assert_eq!(framed, items);
@@ -103,10 +103,9 @@ fn frame_error_falls_back_to_sse_for_responses_without_items() {
 
 #[test]
 fn frame_error_falls_back_to_sse_for_an_empty_responses_item_list() {
-    let wire = FakeWire::new(Setup {
-        responses: Some(Vec::new()),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.responses = Some(Vec::new());
+    let wire = FakeWire::new(setup);
     let error = http(500, GuardrailValue::Text("boom".to_owned()));
     let framed = frame_error(&wire, Surface::Responses, &error).expect("the frames build");
     assert_eq!(
@@ -135,10 +134,10 @@ fn frame_error_encodes_sse_for_opaque_frames() {
 fn error_sse_frame_wraps_the_payload_under_error() {
     let framed =
         sse_frame(&value(r#"{"message": "boom", "code": "500"}"#)).expect("the frame encodes");
-    let Chunk::Bytes(framed) = &framed[0] else {
+    let Chunk::Bytes(raw) = &framed[0] else {
         panic!("the fallback frame is raw SSE");
     };
-    let text = std::str::from_utf8(framed).expect("the frame is utf-8");
+    let text = from_utf8(raw).expect("the frame is utf-8");
     assert_eq!(
         text,
         "data: {\"error\":{\"code\":\"500\",\"message\":\"boom\"}}\n\n"

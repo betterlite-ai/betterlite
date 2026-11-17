@@ -1,11 +1,14 @@
+use rstest::rstest;
+
 use crate::guardrails::model_armor::streams::assembly::Assembly;
+use crate::guardrails::model_armor::streams::chunk::Chunk;
 use crate::guardrails::model_armor::streams::responses::{
     content_to_scan, delta_field_texts, response_text,
 };
 use crate::guardrails::model_armor::streams::surface::Surface;
 use crate::guardrails::model_armor::streams::wire::OutputParts;
 
-use super::support::{FakeWire, Setup, chunk, value};
+use super::support::{FakeFailure, FakeWire, Setup, chunk, fixture, value};
 
 #[test]
 fn responses_delta_joins_one_field_across_its_events() {
@@ -104,22 +107,33 @@ fn responses_delta_ignores_a_non_text_delta() {
     assert!(delta_field_texts(&chunks).is_empty());
 }
 
+#[rstest]
+#[case::output_text("response.output_text.delta")]
+#[case::refusal("response.refusal.delta")]
+#[case::reasoning_summary("response.reasoning_summary_text.delta")]
+#[case::function_arguments("response.function_call_arguments.delta")]
+#[case::custom_tool_input("response.custom_tool_call_input.delta")]
+#[case::mcp_arguments("response.mcp_call_arguments.delta")]
+fn responses_delta_collects_every_delta_event_type(#[case] event_type: &str) {
+    let payload = format!(r#"{{"type": "{event_type}", "delta": "The secret"}}"#);
+    let chunks = [chunk(&payload)];
+    assert_eq!(delta_field_texts(&chunks), vec!["The secret".to_owned()]);
+}
+
 #[test]
 fn responses_delta_ignores_a_chunk_without_a_payload() {
-    let chunks =
-        [crate::guardrails::model_armor::streams::chunk::Chunk::Bytes(b"data: {}\n\n".to_vec())];
+    let chunks = [Chunk::Bytes(b"data: {}\n\n".to_vec())];
     assert!(delta_field_texts(&chunks).is_empty());
 }
 
 #[test]
 fn responses_delta_fields_the_body_lacks_are_scanned_after_it() {
-    let wire = FakeWire::new(Setup {
-        parts: vec![OutputParts {
-            texts: vec!["The answer".to_owned()],
-            encoded_calls: Vec::new(),
-        }],
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.parts = vec![OutputParts {
+        texts: vec!["The answer".to_owned()],
+        encoded_calls: Vec::new(),
+    }];
+    let wire = FakeWire::new(setup);
     let body = Assembly::Responses(value(r#"{"output": [{"index": 0}]}"#));
     let chunks = [
         chunk(
@@ -151,13 +165,12 @@ fn responses_delta_fields_join_the_scan_without_a_leading_newline() {
 
 #[test]
 fn responses_delta_fields_already_in_the_body_are_not_repeated() {
-    let wire = FakeWire::new(Setup {
-        parts: vec![OutputParts {
-            texts: vec!["The answer".to_owned(), "thinking".to_owned()],
-            encoded_calls: Vec::new(),
-        }],
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.parts = vec![OutputParts {
+        texts: vec!["The answer".to_owned(), "thinking".to_owned()],
+        encoded_calls: Vec::new(),
+    }];
+    let wire = FakeWire::new(setup);
     let body = Assembly::Responses(value(r#"{"output": [{"index": 0}]}"#));
     let chunks = [
         chunk(
@@ -174,13 +187,12 @@ fn responses_delta_fields_already_in_the_body_are_not_repeated() {
 
 #[test]
 fn responses_delta_tool_arguments_are_scanned_when_the_body_lacks_them() {
-    let wire = FakeWire::new(Setup {
-        parts: vec![OutputParts {
-            texts: vec!["The answer".to_owned()],
-            encoded_calls: Vec::new(),
-        }],
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.parts = vec![OutputParts {
+        texts: vec!["The answer".to_owned()],
+        encoded_calls: Vec::new(),
+    }];
+    let wire = FakeWire::new(setup);
     let body = Assembly::Responses(value(r#"{"output": [{"index": 0}]}"#));
     let chunks = [
         chunk(
@@ -197,10 +209,9 @@ fn responses_delta_tool_arguments_are_scanned_when_the_body_lacks_them() {
 
 #[test]
 fn content_to_scan_reads_chat_message_text_through_the_wire() {
-    let wire = FakeWire::new(Setup {
-        model_text: Some("The secret".to_owned()),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.model_text = Some("The secret".to_owned());
+    let wire = FakeWire::new(setup);
     let body = Assembly::Model(value(r#"{"choices": []}"#));
     let content =
         content_to_scan(&wire, Surface::ChatCompletions, &body, &[]).expect("the content reads");
@@ -209,10 +220,9 @@ fn content_to_scan_reads_chat_message_text_through_the_wire() {
 
 #[test]
 fn content_to_scan_is_empty_for_a_completion() {
-    let wire = FakeWire::new(Setup {
-        model_text: Some("ignored".to_owned()),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.model_text = Some("ignored".to_owned());
+    let wire = FakeWire::new(setup);
     let body = Assembly::Completion(value(r#"{"choices": []}"#));
     let content =
         content_to_scan(&wire, Surface::ChatCompletions, &body, &[]).expect("the content reads");
@@ -223,24 +233,26 @@ fn content_to_scan_is_empty_for_a_completion() {
 fn content_to_scan_surfaces_an_unreadable_model_text() {
     let wire = FakeWire::new(Setup::default());
     let body = Assembly::Model(value(r#"{"choices": []}"#));
-    assert!(content_to_scan(&wire, Surface::ChatCompletions, &body, &[]).is_err());
+    assert!(matches!(
+        content_to_scan(&wire, Surface::ChatCompletions, &body, &[]),
+        Err(FakeFailure)
+    ));
 }
 
 #[test]
 fn response_text_joins_texts_then_encoded_calls_of_every_item() {
-    let wire = FakeWire::new(Setup {
-        parts: vec![
-            OutputParts {
-                texts: vec!["one".to_owned()],
-                encoded_calls: vec!["{\"a\":1}".to_owned()],
-            },
-            OutputParts {
-                texts: vec!["two".to_owned()],
-                encoded_calls: Vec::new(),
-            },
-        ],
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.parts = vec![
+        OutputParts {
+            texts: vec!["one".to_owned()],
+            encoded_calls: vec!["{\"a\":1}".to_owned()],
+        },
+        OutputParts {
+            texts: vec!["two".to_owned()],
+            encoded_calls: Vec::new(),
+        },
+    ];
+    let wire = FakeWire::new(setup);
     let body = value(r#"{"output": [{"index": 0}, {"index": 1}]}"#);
     assert_eq!(response_text(&wire, &body), "onetwo{\"a\":1}");
 }

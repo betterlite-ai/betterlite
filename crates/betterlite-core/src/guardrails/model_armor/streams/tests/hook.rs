@@ -1,11 +1,13 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use crate::guardrails::model_armor::streams::assembly::Assembly;
+use crate::guardrails::model_armor::streams::errors::StreamError;
 use crate::guardrails::model_armor::streams::hook::{StreamHook, StreamSettings, buffered_stream};
 use crate::guardrails::streaming_rewrite::shapes::RequestData;
 
 use super::support::{
-    EmitReply, FakeWire, ScanReply, Setup, Verdict, WireFlags, bytes, chunk, frame_text, value,
+    EmitReply, FakeFailure, FakeWire, ScanReply, Setup, Verdict, WireFlags, bytes, chunk, fixture,
+    frame_text, value,
 };
 
 fn settings(mask_response_content: bool) -> StreamSettings {
@@ -36,13 +38,12 @@ const CHAT_JSON: &str =
     r#"{"id": "chatcmpl-1", "choices": [{"message": {"content": "The secret"}}]}"#;
 
 fn chat_wire(scan: ScanReply) -> FakeWire {
-    FakeWire::new(Setup {
-        chat: Some(Assembly::Model(value(CHAT_JSON))),
-        model_text: Some("The secret".to_owned()),
-        scan,
-        logging: value(r#"{"logged": true}"#),
-        ..Setup::default()
-    })
+    let mut setup = fixture();
+    setup.chat = Some(Assembly::Model(value(CHAT_JSON)));
+    setup.model_text = Some("The secret".to_owned());
+    setup.scan = scan;
+    setup.logging = value(r#"{"logged": true}"#);
+    FakeWire::new(setup)
 }
 
 #[tokio::test]
@@ -63,7 +64,7 @@ async fn assemble_failure_blocks_a_chat_stream_with_a_500_frame() {
     );
     assert_eq!(wire.applied(), vec!["model-armor".to_owned()]);
     assert!(wire.scans().is_empty());
-    assert!(data.get("metadata").is_none());
+    assert!(!data.contains_key("metadata"));
 }
 
 #[tokio::test]
@@ -83,20 +84,19 @@ async fn assemble_failure_forwards_unscanned_when_fail_on_error_is_false() {
         .expect("the stream is forwarded");
     assert_eq!(items, vec![original]);
     assert!(wire.applied().is_empty());
-    assert!(data.get("metadata").is_none());
+    assert!(!data.contains_key("metadata"));
 }
 
 #[tokio::test]
 async fn assembly_failure_blocks_an_anthropic_stream_with_anthropic_frames() {
     let frames = vec![bytes("event: error\ndata: {}\n\n")];
-    let wire = FakeWire::new(Setup {
-        wire: WireFlags {
-            anthropic: true,
-            ..WireFlags::default()
-        },
-        frames: frames.clone(),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.wire = WireFlags {
+        anthropic: true,
+        sse_error: false,
+    };
+    setup.frames = frames.clone();
+    let wire = FakeWire::new(setup);
     let mut data = request_data("{}");
     let hook = StreamHook {
         wire: &wire,
@@ -119,10 +119,9 @@ async fn assembly_failure_blocks_an_anthropic_stream_with_anthropic_frames() {
 #[tokio::test]
 async fn assembly_failure_blocks_a_responses_stream_with_error_items() {
     let items = vec![chunk(r#"{"type": "error"}"#)];
-    let wire = FakeWire::new(Setup {
-        responses: Some(items.clone()),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.responses = Some(items.clone());
+    let wire = FakeWire::new(setup);
     let mut data = request_data("{}");
     let hook = StreamHook {
         wire: &wire,
@@ -139,16 +138,15 @@ async fn assembly_failure_blocks_a_responses_stream_with_error_items() {
 
 #[tokio::test]
 async fn terminal_error_stream_is_yielded_without_scanning() {
-    let wire = FakeWire::new(Setup {
-        wire: WireFlags {
-            sse_error: true,
-            ..WireFlags::default()
-        },
-        chat: Some(Assembly::Model(value(CHAT_JSON))),
-        model_text: Some("The secret".to_owned()),
-        scan: ScanReply::Armor(value("{}")),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.wire = WireFlags {
+        anthropic: false,
+        sse_error: true,
+    };
+    setup.chat = Some(Assembly::Model(value(CHAT_JSON)));
+    setup.model_text = Some("The secret".to_owned());
+    setup.scan = ScanReply::Armor(value("{}"));
+    let wire = FakeWire::new(setup);
     let mut data = request_data("{}");
     let original = bytes("data: {\"error\": {\"message\": \"blocked\"}}\n\n");
     let hook = StreamHook {
@@ -210,11 +208,10 @@ async fn scanned_content_reaches_the_wire() {
 
 #[tokio::test]
 async fn empty_content_skips_the_scan() {
-    let wire = FakeWire::new(Setup {
-        chat: Some(Assembly::Model(value(r#"{"choices": []}"#))),
-        model_text: Some(String::new()),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.chat = Some(Assembly::Model(value(r#"{"choices": []}"#)));
+    setup.model_text = Some(String::new());
+    let wire = FakeWire::new(setup);
     let mut data = request_data("{}");
     let original = chunk(r#"{"id": "chatcmpl-1", "choices": []}"#);
     let hook = StreamHook {
@@ -229,23 +226,22 @@ async fn empty_content_skips_the_scan() {
         .expect("the stream passes through");
     assert_eq!(items, vec![original]);
     assert!(wire.scans().is_empty());
-    assert!(data.get("metadata").is_none());
+    assert!(!data.contains_key("metadata"));
 }
 
 #[tokio::test]
 async fn blocked_stream_frames_the_error_and_records_metadata() {
-    let wire = FakeWire::new(Setup {
-        chat: Some(Assembly::Model(value(CHAT_JSON))),
-        model_text: Some("The secret".to_owned()),
-        scan: ScanReply::Armor(value(r#"{"sanitizationResult": {}}"#)),
-        verdict: Verdict {
-            block: true,
-            ..Verdict::default()
-        },
-        logging: value(r#"{"logged": true}"#),
-        block_detail: value(r#"{"error": "Streaming response blocked by Model Armor"}"#),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.chat = Some(Assembly::Model(value(CHAT_JSON)));
+    setup.model_text = Some("The secret".to_owned());
+    setup.scan = ScanReply::Armor(value(r#"{"sanitizationResult": {}}"#));
+    setup.verdict = Verdict {
+        block: true,
+        deidentify: false,
+    };
+    setup.logging = value(r#"{"logged": true}"#);
+    setup.block_detail = value(r#"{"error": "Streaming response blocked by Model Armor"}"#);
+    let wire = FakeWire::new(setup);
     let mut data = request_data("{}");
     let hook = StreamHook {
         wire: &wire,
@@ -271,17 +267,16 @@ async fn sanitized_stream_rewrites_the_body_and_emits_the_chunks() {
     let emitted = vec![chunk(
         r#"{"id": "chatcmpl-1", "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"content": "[REDACTED]"}}]}"#,
     )];
-    let wire = FakeWire::new(Setup {
-        chat: Some(Assembly::Model(value(
-            r#"{"id": "chatcmpl-1", "choices": [{"message": {"content": "The secret"}}, {"message": {"content": ""}}]}"#,
-        ))),
-        model_text: Some("The secret".to_owned()),
-        scan: ScanReply::Armor(value(r#"{"sanitizationResult": {}}"#)),
-        sanitized: Some("[REDACTED]".to_owned()),
-        logging: value(r#"{"logged": true}"#),
-        emit: EmitReply::Chunks(emitted.clone()),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.chat = Some(Assembly::Model(value(
+        r#"{"id": "chatcmpl-1", "choices": [{"message": {"content": "The secret"}}, {"message": {"content": ""}}]}"#,
+    )));
+    setup.model_text = Some("The secret".to_owned());
+    setup.scan = ScanReply::Armor(value(r#"{"sanitizationResult": {}}"#));
+    setup.sanitized = Some("[REDACTED]".to_owned());
+    setup.logging = value(r#"{"logged": true}"#);
+    setup.emit = EmitReply::Chunks(emitted.clone());
+    let wire = FakeWire::new(setup);
     let mut data = request_data("{}");
     let hook = StreamHook {
         wire: &wire,
@@ -309,15 +304,14 @@ async fn resolve_outcome_masking_off_forwards_the_original_chunks() {
     let emitted = vec![chunk(
         r#"{"id": "chatcmpl-1", "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"content": "[REDACTED]"}}]}"#,
     )];
-    let wire = FakeWire::new(Setup {
-        chat: Some(Assembly::Model(value(CHAT_JSON))),
-        model_text: Some("The secret".to_owned()),
-        scan: ScanReply::Armor(value(r#"{"sanitizationResult": {}}"#)),
-        sanitized: Some("[REDACTED]".to_owned()),
-        logging: value(r#"{"logged": true}"#),
-        emit: EmitReply::Chunks(emitted),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.chat = Some(Assembly::Model(value(CHAT_JSON)));
+    setup.model_text = Some("The secret".to_owned());
+    setup.scan = ScanReply::Armor(value(r#"{"sanitizationResult": {}}"#));
+    setup.sanitized = Some("[REDACTED]".to_owned());
+    setup.logging = value(r#"{"logged": true}"#);
+    setup.emit = EmitReply::Chunks(emitted);
+    let wire = FakeWire::new(setup);
     let mut data = request_data("{}");
     let original = chunk(r#"{"id": "chatcmpl-1", "choices": []}"#);
     let hook = StreamHook {
@@ -340,14 +334,13 @@ async fn resolve_outcome_masking_off_forwards_the_original_chunks() {
 
 #[tokio::test]
 async fn rewrite_emit_failure_is_raised_when_fail_on_error_is_true() {
-    let wire = FakeWire::new(Setup {
-        chat: Some(Assembly::Model(value(CHAT_JSON))),
-        model_text: Some("The secret".to_owned()),
-        scan: ScanReply::Armor(value("{}")),
-        sanitized: Some("[REDACTED]".to_owned()),
-        emit: EmitReply::Fail,
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.chat = Some(Assembly::Model(value(CHAT_JSON)));
+    setup.model_text = Some("The secret".to_owned());
+    setup.scan = ScanReply::Armor(value("{}"));
+    setup.sanitized = Some("[REDACTED]".to_owned());
+    setup.emit = EmitReply::Fail;
+    let wire = FakeWire::new(setup);
     let mut data = request_data("{}");
     let hook = StreamHook {
         wire: &wire,
@@ -356,19 +349,21 @@ async fn rewrite_emit_failure_is_raised_when_fail_on_error_is_true() {
         settings: settings(true),
         chunks: vec![chunk(r#"{"id": "chatcmpl-1", "choices": []}"#)],
     };
-    assert!(buffered_stream(hook).await.is_err());
+    assert!(matches!(
+        buffered_stream(hook).await,
+        Err(StreamError::Wiring(FakeFailure))
+    ));
 }
 
 #[tokio::test]
 async fn rewrite_emit_failure_forwards_when_fail_on_error_is_false() {
-    let wire = FakeWire::new(Setup {
-        chat: Some(Assembly::Model(value(CHAT_JSON))),
-        model_text: Some("The secret".to_owned()),
-        scan: ScanReply::Armor(value("{}")),
-        sanitized: Some("[REDACTED]".to_owned()),
-        emit: EmitReply::Fail,
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.chat = Some(Assembly::Model(value(CHAT_JSON)));
+    setup.model_text = Some("The secret".to_owned());
+    setup.scan = ScanReply::Armor(value("{}"));
+    setup.sanitized = Some("[REDACTED]".to_owned());
+    setup.emit = EmitReply::Fail;
+    let wire = FakeWire::new(setup);
     let mut data = request_data("{}");
     let original = chunk(r#"{"id": "chatcmpl-1", "choices": []}"#);
     let hook = StreamHook {
@@ -402,7 +397,7 @@ async fn scan_api_failure_blocks_with_a_500_frame() {
         frame_text(&items),
         "data: {\"error\":{\"code\":\"500\",\"message\":\"Model Armor API error (upstream 500)\"}}\n\n"
     );
-    assert!(data.get("metadata").is_none());
+    assert!(!data.contains_key("metadata"));
     assert!(wire.applied().is_empty());
 }
 
@@ -424,7 +419,7 @@ async fn scan_api_failure_forwards_when_fail_on_error_is_false() {
         .await
         .expect("the stream is forwarded");
     assert_eq!(items, vec![original]);
-    assert!(data.get("metadata").is_none());
+    assert!(!data.contains_key("metadata"));
 }
 
 #[tokio::test]
@@ -438,7 +433,10 @@ async fn unexpected_scan_failure_is_raised_when_fail_on_error_is_true() {
         settings: settings(true),
         chunks: vec![chunk(r#"{"id": "chatcmpl-1", "choices": []}"#)],
     };
-    assert!(buffered_stream(hook).await.is_err());
+    assert!(matches!(
+        buffered_stream(hook).await,
+        Err(StreamError::Wiring(FakeFailure))
+    ));
 }
 
 #[tokio::test]
@@ -461,10 +459,9 @@ async fn unexpected_scan_failure_forwards_when_fail_on_error_is_false() {
 
 #[tokio::test]
 async fn model_text_failure_is_raised_regardless_of_fail_on_error() {
-    let wire = FakeWire::new(Setup {
-        chat: Some(Assembly::Model(value(CHAT_JSON))),
-        ..Setup::default()
-    });
+    let mut setup = fixture();
+    setup.chat = Some(Assembly::Model(value(CHAT_JSON)));
+    let wire = FakeWire::new(setup);
     let mut data = request_data("{}");
     let hook = StreamHook {
         wire: &wire,
@@ -473,7 +470,10 @@ async fn model_text_failure_is_raised_regardless_of_fail_on_error() {
         settings: fail_open(true),
         chunks: vec![chunk(r#"{"id": "chatcmpl-1", "choices": []}"#)],
     };
-    assert!(buffered_stream(hook).await.is_err());
+    assert!(matches!(
+        buffered_stream(hook).await,
+        Err(StreamError::Wiring(FakeFailure))
+    ));
 }
 
 #[tokio::test]

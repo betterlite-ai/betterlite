@@ -1,5 +1,5 @@
 use std::future::{Future, ready};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
@@ -10,56 +10,53 @@ use crate::guardrails::model_armor::streams::surface::Surface;
 use crate::guardrails::model_armor::streams::wire::{OutputParts, ScanFailure, StreamWire};
 use crate::guardrails::streaming_rewrite::shapes::RequestData;
 
-#[derive(Debug)]
-pub struct FakeFailure;
+#[derive(Debug, thiserror::Error)]
+#[error("the fake wiring failed")]
+pub(crate) struct FakeFailure;
 
-impl std::fmt::Display for FakeFailure {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("the fake wiring failed")
-    }
-}
-
-impl std::error::Error for FakeFailure {}
-
-pub enum ScanReply {
+pub(crate) enum ScanReply {
     Armor(GuardrailValue),
     Api(String),
     Unexpected,
 }
 
-pub enum EmitReply {
+pub(crate) enum EmitReply {
     Chunks(Vec<Chunk>),
     Fail,
 }
 
 // The two classifiers the fake wire answers with.
 #[derive(Default)]
-pub struct WireFlags {
-    pub anthropic: bool,
-    pub sse_error: bool,
+pub(crate) struct WireFlags {
+    pub(crate) anthropic: bool,
+    pub(crate) sse_error: bool,
 }
 
 // The verdict the fake scan reaches on the content it was handed.
 #[derive(Default)]
-pub struct Verdict {
-    pub block: bool,
-    pub deidentify: bool,
+pub(crate) struct Verdict {
+    pub(crate) block: bool,
+    pub(crate) deidentify: bool,
 }
 
-pub struct Setup {
-    pub wire: WireFlags,
-    pub chat: Option<Assembly>,
-    pub anthropic_body: Option<Assembly>,
-    pub model_text: Option<String>,
-    pub parts: Vec<OutputParts>,
-    pub scan: ScanReply,
-    pub verdict: Verdict,
-    pub sanitized: Option<String>,
-    pub logging: GuardrailValue,
-    pub block_detail: GuardrailValue,
-    pub emit: EmitReply,
-    pub frames: Vec<Chunk>,
-    pub responses: Option<Vec<Chunk>>,
+pub(crate) struct Setup {
+    pub(crate) wire: WireFlags,
+    pub(crate) chat: Option<Assembly>,
+    pub(crate) anthropic_body: Option<Assembly>,
+    pub(crate) model_text: Option<String>,
+    pub(crate) parts: Vec<OutputParts>,
+    pub(crate) scan: ScanReply,
+    pub(crate) verdict: Verdict,
+    pub(crate) sanitized: Option<String>,
+    pub(crate) logging: GuardrailValue,
+    pub(crate) block_detail: GuardrailValue,
+    pub(crate) emit: EmitReply,
+    pub(crate) frames: Vec<Chunk>,
+    pub(crate) responses: Option<Vec<Chunk>>,
+}
+
+pub(crate) fn fixture() -> Setup {
+    Setup::default()
 }
 
 impl Default for Setup {
@@ -83,7 +80,7 @@ impl Default for Setup {
 }
 
 #[derive(Default)]
-pub struct Log {
+pub(crate) struct Log {
     scans: Mutex<Vec<String>>,
     applied: Mutex<Vec<String>>,
     emitted: Mutex<Vec<GuardrailValue>>,
@@ -92,47 +89,60 @@ pub struct Log {
     builders: Mutex<Vec<&'static str>>,
 }
 
-pub struct FakeWire {
-    pub setup: Setup,
-    log: Log,
+pub(crate) struct FakeWire {
+    pub(crate) setup: Setup,
+    pub(crate) log: Log,
 }
 
 impl FakeWire {
-    pub fn new(setup: Setup) -> Self {
+    pub(crate) fn new(setup: Setup) -> Self {
         Self {
             setup,
             log: Log::default(),
         }
     }
 
-    pub fn scans(&self) -> Vec<String> {
+    pub(crate) fn scans(&self) -> Vec<String> {
         let scans = self.log.scans.lock().expect("the fake log lock");
         scans.clone()
     }
 
-    pub fn applied(&self) -> Vec<String> {
+    pub(crate) fn applied(&self) -> Vec<String> {
         let applied = self.log.applied.lock().expect("the fake log lock");
         applied.clone()
     }
 
-    pub fn emitted(&self) -> Vec<GuardrailValue> {
+    pub(crate) fn emitted(&self) -> Vec<GuardrailValue> {
         let emitted = self.log.emitted.lock().expect("the fake log lock");
         emitted.clone()
     }
 
-    pub fn frame_messages(&self) -> Vec<String> {
+    pub(crate) fn frame_messages(&self) -> Vec<String> {
         let frames = self.log.frames.lock().expect("the fake log lock");
         frames.clone()
     }
 
-    pub fn block_args(&self) -> Vec<bool> {
+    pub(crate) fn block_args(&self) -> Vec<bool> {
         let args = self.log.block_args.lock().expect("the fake log lock");
         args.clone()
     }
 
-    pub fn builders(&self) -> Vec<&'static str> {
+    pub(crate) fn builders(&self) -> Vec<&'static str> {
         let builders = self.log.builders.lock().expect("the fake log lock");
         builders.clone()
+    }
+
+    fn assemble_named(
+        &self,
+        builder: &'static str,
+        body: &Option<Assembly>,
+    ) -> impl Future<Output = Option<Assembly>> + Send {
+        self.log
+            .builders
+            .lock()
+            .expect("the fake log lock")
+            .push(builder);
+        ready(body.clone())
     }
 }
 
@@ -148,31 +158,21 @@ impl StreamWire for FakeWire {
     }
 
     fn assemble_chat(&self, _chunks: &[Chunk]) -> impl Future<Output = Option<Assembly>> + Send {
-        self.log
-            .builders
-            .lock()
-            .expect("the fake log lock")
-            .push("chat");
-        ready(self.setup.chat.clone())
+        self.assemble_named("chat", &self.setup.chat)
     }
 
     fn assemble_anthropic(
         &self,
         _chunks: &[Chunk],
     ) -> impl Future<Output = Option<Assembly>> + Send {
-        self.log
-            .builders
-            .lock()
-            .expect("the fake log lock")
-            .push("anthropic");
-        ready(self.setup.anthropic_body.clone())
+        self.assemble_named("anthropic", &self.setup.anthropic_body)
     }
 
     fn model_text(&self, _body: &GuardrailValue) -> Result<String, FakeFailure> {
-        match &self.setup.model_text {
-            Some(text) => Ok(text.clone()),
-            None => Err(FakeFailure),
-        }
+        self.setup
+            .model_text
+            .as_ref()
+            .map_or(Err(FakeFailure), |text| Ok(text.clone()))
     }
 
     fn output_parts(&self, item: &GuardrailValue) -> OutputParts {
@@ -235,7 +235,7 @@ impl StreamWire for FakeWire {
         self.log
             .emitted
             .lock()
-            .expect("the fake log lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(body.clone());
         match &self.setup.emit {
             EmitReply::Chunks(chunks) => Ok(chunks.clone()),
@@ -247,7 +247,7 @@ impl StreamWire for FakeWire {
         self.log
             .frames
             .lock()
-            .expect("the fake log lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(message.to_owned());
         Ok(self.setup.frames.clone())
     }
@@ -274,23 +274,23 @@ impl StreamWire for FakeWire {
     }
 }
 
-pub fn value(json: &str) -> GuardrailValue {
+pub(crate) fn value(json: &str) -> GuardrailValue {
     serde_json::from_str(json).expect("the fixture is valid JSON")
 }
 
-pub fn chunk(json: &str) -> Chunk {
+pub(crate) fn chunk(json: &str) -> Chunk {
     Chunk::Json(value(json))
 }
 
-pub fn bytes(text: &str) -> Chunk {
+pub(crate) fn bytes(text: &str) -> Chunk {
     Chunk::Bytes(text.as_bytes().to_vec())
 }
 
-pub fn model_body() -> Assembly {
+pub(crate) fn model_body() -> Assembly {
     Assembly::Model(value(r#"{"id": "chatcmpl-1", "choices": []}"#))
 }
 
-pub fn frame_text(items: &[Chunk]) -> String {
+pub(crate) fn frame_text(items: &[Chunk]) -> String {
     items
         .iter()
         .filter_map(|item| match item {
