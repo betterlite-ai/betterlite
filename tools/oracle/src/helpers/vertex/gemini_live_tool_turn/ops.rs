@@ -30,12 +30,12 @@ pub(crate) struct Input {
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Ids {
-    #[serde(default)]
-    conversation_id: Option<String>,
-    #[serde(default)]
-    response_id: Option<String>,
-    #[serde(default)]
-    output_item_id: Option<String>,
+    #[serde(rename = "conversation_id", default)]
+    conversation: Option<String>,
+    #[serde(rename = "response_id", default)]
+    response: Option<String>,
+    #[serde(rename = "output_item_id", default)]
+    output_item: Option<String>,
 }
 
 pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
@@ -51,9 +51,9 @@ pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
         Uuid::from_u128(drawn.saturating_mul(UUID_PATTERN))
     };
     let turn_input = ToolTurnInput {
-        conversation_id: input.ids.conversation_id.as_deref(),
-        response_id: input.ids.response_id.as_deref(),
-        output_item_id: input.ids.output_item_id.as_deref(),
+        conversation_id: input.ids.conversation.as_deref(),
+        response_id: input.ids.response.as_deref(),
+        output_item_id: input.ids.output_item.as_deref(),
         session_configuration_request: input.session_configuration_request.as_deref(),
     };
     let turn = {
