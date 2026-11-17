@@ -93,7 +93,7 @@ fn transform_recovers_a_recorded_terminal_message() {
 #[test]
 fn transform_drops_recovered_items_that_are_not_objects() {
     let mut response = decoded(envelope(json!([])));
-    let recording = r#"data: {"type":"response.completed","response":{"output":[1,{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi"}]}]}}"#;
+    let recording = r#"[1,{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi"}]}]"#;
     let (result, lines) = run(&mut response, &recorded_state(recording));
     let record = result.expect("the recovered response converts");
     assert_eq!(
@@ -143,13 +143,17 @@ fn transform_reports_unknown_items_for_a_failed_status() {
 #[test]
 fn transform_builds_an_empty_choice_for_an_incomplete_response() {
     let mut response = decoded_with(
-        json!([reasoning_item("rs_1", json!([summary_block("why")]))]),
+        json!([reasoning_item("rs_1", json!([summary_block("why")]), None)]),
         json!({"status": "incomplete"}),
     );
     let record = record_of(&mut response);
     let mut expected = chat_message("", "assistant");
     expected["reasoning_content"] = json!("why");
-    expected["reasoning_items"] = json!([reasoning_record("rs_1", json!([summary_block("why")]))]);
+    expected["reasoning_items"] = json!([reasoning_record(
+        "rs_1",
+        json!([summary_block("why")]),
+        None
+    )]);
     assert_eq!(
         choices_value(&record),
         json!([{"finish_reason": "length", "index": 0, "message": expected}])

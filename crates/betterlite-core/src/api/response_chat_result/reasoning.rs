@@ -7,7 +7,7 @@ use betterlite_prompts::reasoning_fields::replay_groups::ReasoningItemKind;
 use serde_json::Value;
 
 use super::error::{ResponseChatResultError as Error, serialized};
-use super::records::{ChatChoice, ChatMessage};
+use super::records::{ChatChoice, ChatMessage, ChatRole};
 use crate::api::response_chat_history::metadata::IncompleteFinish;
 use crate::api::response_chat_history::reasoning::{
     ReasoningOutputItem, ReasoningRecord, ReasoningSummaryBlock, chat_reasoning_items,
@@ -38,7 +38,13 @@ pub(super) fn empty_incomplete_choice(
     let text = reasoning_text(&records);
     let mut message = ChatMessage {
         content: Some(String::new()),
-        ..ChatMessage::default()
+        role: ChatRole::Assistant,
+        tool_calls: None,
+        function_call: None,
+        provider_specific_fields: None,
+        reasoning_content: None,
+        reasoning_items: None,
+        annotations: None,
     };
     if !text.is_empty() {
         message.reasoning_content = Some(text);

@@ -29,8 +29,12 @@ pub(super) fn raw_message_choice(
         let message = ChatMessage {
             content: Some(raw_text(part)?),
             role: raw_role(item.get("role"))?,
+            tool_calls: None,
+            function_call: None,
+            provider_specific_fields: None,
+            reasoning_content: None,
+            reasoning_items: None,
             annotations: raw_annotations(part.get("annotations"))?,
-            ..ChatMessage::default()
         };
         return Ok(Some(ChatChoice {
             finish_reason: "stop".to_owned(),

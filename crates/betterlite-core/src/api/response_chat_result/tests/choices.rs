@@ -125,6 +125,21 @@ fn raw_message_keeps_only_the_first_output_text_block() {
 }
 
 #[test]
+fn raw_messages_number_their_choices() {
+    let choices = choices_of(json!([
+        {"type": "message", "role": "assistant", "content": [output_text("a")]},
+        {"type": "message", "role": "assistant", "content": [output_text("b")]},
+    ]));
+    assert_eq!(
+        choices,
+        json!([
+            text_choice("a", "assistant", 0),
+            text_choice("b", "assistant", 1),
+        ])
+    );
+}
+
+#[test]
 fn raw_message_missing_role_defaults_assistant() {
     let choices = choices_of(json!([{
         "type": "message",
@@ -272,7 +287,11 @@ fn unknown_items_create_no_choice() {
 #[test]
 fn typed_reasoning_flushes_onto_the_first_text_choice() {
     let choices = choices_of(json!([
-        reasoning_item("rs_1", json!([summary_block("one"), summary_block("two")])),
+        reasoning_item(
+            "rs_1",
+            json!([summary_block("one"), summary_block("two")]),
+            Some("enc_1"),
+        ),
         {"type": "message", "id": "msg_1", "role": "assistant", "status": "completed",
          "content": [output_text("a"), output_text("b")]},
     ]));
@@ -280,7 +299,8 @@ fn typed_reasoning_flushes_onto_the_first_text_choice() {
     first["reasoning_content"] = json!("one two");
     first["reasoning_items"] = json!([reasoning_record(
         "rs_1",
-        json!([summary_block("one"), summary_block("two")])
+        json!([summary_block("one"), summary_block("two")]),
+        Some("enc_1")
     )]);
     assert_eq!(
         choices,
@@ -294,14 +314,18 @@ fn typed_reasoning_flushes_onto_the_first_text_choice() {
 #[test]
 fn typed_reasoning_replaces_rather_than_concatenates() {
     let choices = choices_of(json!([
-        reasoning_item("rs_1", json!([summary_block("one")])),
-        reasoning_item("rs_2", json!([summary_block("two")])),
+        reasoning_item("rs_1", json!([summary_block("one")]), None),
+        reasoning_item("rs_2", json!([summary_block("two")]), None),
         {"type": "message", "id": "msg_1", "role": "assistant", "status": "completed",
          "content": [output_text("a")]},
     ]));
     let mut first = chat_message("a", "assistant");
     first["reasoning_content"] = json!("two");
-    first["reasoning_items"] = json!([reasoning_record("rs_2", json!([summary_block("two")]))]);
+    first["reasoning_items"] = json!([reasoning_record(
+        "rs_2",
+        json!([summary_block("two")]),
+        None
+    )]);
     assert_eq!(
         choices,
         json!([{"finish_reason": "stop", "index": 0, "message": first}])
@@ -311,13 +335,13 @@ fn typed_reasoning_replaces_rather_than_concatenates() {
 #[test]
 fn typed_reasoning_without_summary_keeps_an_empty_string() {
     let choices = choices_of(json!([
-        reasoning_item("rs_1", json!([])),
+        reasoning_item("rs_1", json!([]), None),
         {"type": "message", "id": "msg_1", "role": "assistant", "status": "completed",
          "content": [output_text("a")]},
     ]));
     let mut first = chat_message("a", "assistant");
     first["reasoning_content"] = json!("");
-    first["reasoning_items"] = json!([reasoning_record("rs_1", json!([]))]);
+    first["reasoning_items"] = json!([reasoning_record("rs_1", json!([]), None)]);
     assert_eq!(
         choices,
         json!([{"finish_reason": "stop", "index": 0, "message": first}])
@@ -391,16 +415,75 @@ fn raw_custom_tool_call_carries_its_input() {
 }
 
 #[test]
+fn tool_calls_keep_provider_specific_fields_on_the_call_only() {
+    let choices = choices_of(json!([
+        {
+            "type": "function_call", "id": "fc_1", "call_id": "c1", "name": "f", "arguments": "{}",
+            "provider_specific_fields": {"trace": "typed"},
+        },
+        {
+            "type": "function_call", "id": "fc_2", "name": "g", "arguments": "{}",
+            "provider_specific_fields": {"trace": "raw"},
+        },
+    ]));
+    assert_eq!(
+        choices,
+        json!([{
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+                "content": null,
+                "function_call": null,
+                "provider_specific_fields": null,
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "f", "arguments": "{}"},
+                        "index": 0,
+                        "provider_specific_fields": {"trace": "typed"},
+                    },
+                    {
+                        "id": "fc_2",
+                        "type": "function",
+                        "function": {"name": "g", "arguments": "{}"},
+                        "index": 1,
+                        "provider_specific_fields": {"trace": "raw"},
+                    },
+                ],
+            },
+        }])
+    );
+}
+
+#[test]
 fn typed_apply_patch_dumps_its_operation() {
-    let choices = choices_of(json!([{
-        "type": "apply_patch_call", "id": "apc_1", "call_id": "call_ap", "status": "completed",
-        "operation": {"type": "create_file", "diff": "+a", "path": "a", "zz": 1},
-    }]));
-    let arguments = r#"{"diff": "+a", "path": "a", "type": "create_file", "zz": 1}"#;
+    let choices = choices_of(json!([
+        {
+            "type": "apply_patch_call", "id": "apc_1", "call_id": "call_ap", "status": "completed",
+            "operation": {"type": "create_file", "diff": "+a", "path": "a", "zz": 1},
+        },
+        {
+            "type": "apply_patch_call", "id": "apc_2", "call_id": "call_ap2", "status": "completed",
+            "operation": {"type": "update_file", "diff": "+b", "path": "b"},
+        },
+        {
+            "type": "apply_patch_call", "id": "apc_3", "call_id": "call_ap3", "status": "completed",
+            "operation": {"type": "delete_file", "path": "c"},
+        },
+    ]));
+    let created = r#"{"diff": "+a", "path": "a", "type": "create_file", "zz": 1}"#;
+    let updated = r#"{"diff": "+b", "path": "b", "type": "update_file"}"#;
+    let deleted = r#"{"path": "c", "type": "delete_file"}"#;
     assert_eq!(
         choices,
         json!([tool_choice(
-            json!([chunk("call_ap", "apply_patch", arguments, 0)]),
+            json!([
+                chunk("call_ap", "apply_patch", created, 0),
+                chunk("call_ap2", "apply_patch", updated, 1),
+                chunk("call_ap3", "apply_patch", deleted, 2),
+            ]),
             0
         )])
     );
@@ -409,27 +492,34 @@ fn typed_apply_patch_dumps_its_operation() {
 #[test]
 fn tool_calls_carry_unflushed_reasoning() {
     let choices = choices_of(json!([
-        reasoning_item("rs_1", json!([summary_block("why")])),
+        reasoning_item("rs_1", json!([summary_block("why")]), None),
         {"type": "function_call", "id": "fc_1", "call_id": "c1", "name": "f", "arguments": "{}"},
     ]));
     let mut trailing = tool_choice(json!([chunk("c1", "f", "{}", 0)]), 0);
     trailing["message"]["reasoning_content"] = json!("why");
-    trailing["message"]["reasoning_items"] =
-        json!([reasoning_record("rs_1", json!([summary_block("why")]))]);
+    trailing["message"]["reasoning_items"] = json!([reasoning_record(
+        "rs_1",
+        json!([summary_block("why")]),
+        None
+    )]);
     assert_eq!(choices, json!([trailing]));
 }
 
 #[test]
 fn text_flushes_reasoning_so_the_tool_choice_does_not_carry_it() {
     let choices = choices_of(json!([
-        reasoning_item("rs_1", json!([summary_block("why")])),
+        reasoning_item("rs_1", json!([summary_block("why")]), None),
         {"type": "message", "id": "msg_1", "role": "assistant", "status": "completed",
          "content": [output_text("a")]},
         {"type": "function_call", "id": "fc_1", "call_id": "c1", "name": "f", "arguments": "{}"},
     ]));
     let mut first = chat_message("a", "assistant");
     first["reasoning_content"] = json!("why");
-    first["reasoning_items"] = json!([reasoning_record("rs_1", json!([summary_block("why")]))]);
+    first["reasoning_items"] = json!([reasoning_record(
+        "rs_1",
+        json!([summary_block("why")]),
+        None
+    )]);
     assert_eq!(
         choices,
         json!([
@@ -443,16 +533,20 @@ fn text_flushes_reasoning_so_the_tool_choice_does_not_carry_it() {
 fn fallback_collects_typed_and_raw_reasoning() {
     let choice = fallback(
         json!([
-            reasoning_item("rs_1", json!([summary_block("one")])),
-            {"type": "reasoning", "summary": [{"text": "three"}]},
+            reasoning_item("rs_1", json!([summary_block("one")]), None),
+            {
+                "type": "reasoning",
+                "summary": [{"text": "three"}],
+                "encrypted_content": "enc_raw",
+            },
         ]),
         IncompleteFinish::Length,
     );
     let mut expected = chat_message("", "assistant");
     expected["reasoning_content"] = json!("one three");
     expected["reasoning_items"] = json!([
-        reasoning_record("rs_1", json!([summary_block("one")])),
-        reasoning_record("", json!([summary_block("three")])),
+        reasoning_record("rs_1", json!([summary_block("one")]), None),
+        reasoning_record("", json!([summary_block("three")]), Some("enc_raw")),
     ]);
     assert_eq!(
         choice,
@@ -464,12 +558,12 @@ fn fallback_collects_typed_and_raw_reasoning() {
 fn fallback_joins_only_nonempty_summaries() {
     let blocks = json!([summary_block(""), summary_block("x"), summary_block("")]);
     let choice = fallback(
-        json!([reasoning_item("rs_1", blocks.clone())]),
+        json!([reasoning_item("rs_1", blocks.clone(), None)]),
         IncompleteFinish::ContentFilter,
     );
     let mut expected = chat_message("", "assistant");
     expected["reasoning_content"] = json!("x");
-    expected["reasoning_items"] = json!([reasoning_record("rs_1", blocks)]);
+    expected["reasoning_items"] = json!([reasoning_record("rs_1", blocks, None)]);
     assert_eq!(
         choice,
         json!({"finish_reason": "content_filter", "index": 0, "message": expected})

@@ -8,7 +8,7 @@ use serde_json::Value;
 use super::error::{ResponseChatResultError as Error, serialized};
 use super::raw::raw_message_choice;
 use super::reasoning::{PendingReasoning, pending};
-use super::records::{ChatChoice, ChatMessage};
+use super::records::{ChatChoice, ChatMessage, ChatRole};
 use super::tools::{apply_patch_chunk, is_raw_tool_item, raw_tool_chunk, typed_function_chunk};
 use crate::api::response_chat_content::annotations::{AnnotationValue, annotation_fallback};
 use crate::api::responses_tool_results::records::ToolCallChunk;
@@ -126,8 +126,14 @@ impl Assembly {
             return choices;
         }
         let mut message = ChatMessage {
+            content: None,
+            role: ChatRole::Assistant,
             tool_calls: Some(tool_calls),
-            ..ChatMessage::default()
+            function_call: None,
+            provider_specific_fields: None,
+            reasoning_content: None,
+            reasoning_items: None,
+            annotations: None,
         };
         if let Some(pending) = reasoning {
             message.reasoning_content = Some(pending.text);
@@ -155,8 +161,13 @@ fn content_choice(
     };
     let mut message = ChatMessage {
         content: Some(content),
+        role: ChatRole::Assistant,
+        tool_calls: None,
+        function_call: None,
+        provider_specific_fields: None,
+        reasoning_content: None,
+        reasoning_items: None,
         annotations,
-        ..ChatMessage::default()
     };
     if let Some(pending) = reasoning {
         message.reasoning_content = Some(pending.text);

@@ -20,7 +20,7 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 use tracing::field::Field as EventField;
 use tracing::subscriber::with_default;
-use tracing::{Event, Subscriber};
+use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
@@ -53,12 +53,12 @@ pub(super) fn summary_block(content: &str) -> Value {
     json!({"type": "summary_text", "text": content})
 }
 
-pub(super) fn reasoning_record(id: &str, blocks: Value) -> Value {
-    json!({"type": "reasoning", "id": id, "encrypted_content": null, "summary": blocks})
+pub(super) fn reasoning_record(id: &str, blocks: Value, encrypted: Option<&str>) -> Value {
+    json!({"type": "reasoning", "id": id, "encrypted_content": encrypted, "summary": blocks})
 }
 
-pub(super) fn reasoning_item(id: &str, blocks: Value) -> Value {
-    json!({"type": "reasoning", "id": id, "summary": blocks})
+pub(super) fn reasoning_item(id: &str, blocks: Value, encrypted: Option<&str>) -> Value {
+    json!({"type": "reasoning", "id": id, "encrypted_content": encrypted, "summary": blocks})
 }
 
 pub(super) fn envelope(output: Value) -> Value {
@@ -194,6 +194,9 @@ struct Captured(Arc<Mutex<Vec<String>>>);
 
 impl<Inner: Subscriber> Layer<Inner> for Captured {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
+        if *event.metadata().level() != Level::WARN {
+            return;
+        }
         let mut message = String::new();
         event.record(&mut |_field: &EventField, value: &dyn fmt::Debug| {
             message = format!("{value:?}");
