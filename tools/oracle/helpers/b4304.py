@@ -84,22 +84,21 @@ class Handler(Protocol):
     ) -> StreamResult: ...
 
 
-class RecordingHandler(LLMCachingHandler):
-    def __init__(
-        self,
-        original_function: Callable[..., JsonValue],
-        request_kwargs: dict[str, JsonValue],
-        start_time: dt.datetime,
-    ) -> None:
-        super().__init__(original_function, {}, start_time)
-        self.request_kwargs.update(request_kwargs)
+def build_handler(
+    original_function: NamedFunction,
+    request_kwargs: dict[str, JsonValue],
+    start_time: dt.datetime,
+) -> LLMCachingHandler:
+    handler = LLMCachingHandler(original_function, {}, start_time)
+    handler.request_kwargs.update(request_kwargs)
+    return handler
 
 
 HANDLER_FACTORY: Callable[
     [NamedFunction, dict[str, JsonValue], dt.datetime], Handler
 ] = TypeAdapter(
     Callable[[NamedFunction, dict[str, JsonValue], dt.datetime], Handler]
-).validate_python(RecordingHandler)
+).validate_python(build_handler)
 
 
 class StoreResult(TypedDict):
