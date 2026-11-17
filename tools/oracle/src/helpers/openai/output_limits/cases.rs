@@ -82,8 +82,8 @@ pub(crate) fn drop_case(case: &DropCase) -> HelperResult {
     Ok(Value::Object(dropped))
 }
 
-pub(crate) fn marker_case(case: &MarkerCase) -> HelperResult {
-    Ok(Value::Bool(is_output_token_limit_error(&case.message)))
+pub(crate) fn marker_case(case: &MarkerCase) -> Value {
+    Value::Bool(is_output_token_limit_error(&case.message))
 }
 
 pub(crate) async fn build_case(case: &BuildCase) -> HelperResult {

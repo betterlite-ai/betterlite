@@ -26,7 +26,7 @@ impl Helper for Op {
         runtime.block_on(async {
             match input {
                 Input::Drop(case) => cases::drop_case(case),
-                Input::Marker(case) => cases::marker_case(case),
+                Input::Marker(case) => Ok(cases::marker_case(case)),
                 Input::Build(case) => cases::build_case(case).await,
                 Input::Azure(case) => cases::azure_case(case).await,
             }

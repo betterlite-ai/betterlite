@@ -195,7 +195,7 @@ def azure_value(fields: AzureFields) -> JsonValue:
         )
         called = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L164-L194
             "Coroutine[None, None, tuple[dict[str, str], ChatCompletion]]",
-            AzureChatCompletion().make_azure_openai_chat_completion_request(
+            AzureChatCompletion().make_azure_openai_chat_completion_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L164-L194
                 async_client,
                 dict(fields["data"]),
                 fields["timeout"],
@@ -213,7 +213,7 @@ def azure_value(fields: AzureFields) -> JsonValue:
         )
         headers, reply = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L140-L162
             "tuple[dict[str, str], ChatCompletion]",
-            AzureChatCompletion().make_sync_azure_openai_chat_completion_request(
+            AzureChatCompletion().make_sync_azure_openai_chat_completion_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L140-L162
                 client, dict(fields["data"]), fields["timeout"]
             ),
         )
