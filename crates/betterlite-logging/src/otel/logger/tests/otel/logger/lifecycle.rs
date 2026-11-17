@@ -28,8 +28,8 @@ mod baggage {
 
     use betterlite_logging::otel::logger::call_context::seed_identity_baggage;
     use betterlite_logging::otel::model::payloads::RequestIdentity;
-    use opentelemetry::Context;
     use opentelemetry::baggage::BaggageExt as _;
+    use opentelemetry::{Context, StringValue};
 
     use crate::otel::support::with_exporters;
 
@@ -52,12 +52,11 @@ mod baggage {
         let context = seed_identity_baggage(&settings, &identity, Some("gpt-4o"), Context::new());
         let bag = context.baggage();
         assert_eq!(
-            bag.get("litellm.team.id").map(|value| value.as_str()),
+            bag.get("litellm.team.id").map(StringValue::as_str),
             Some("team-a")
         );
         assert_eq!(
-            bag.get("litellm.metadata.route")
-                .map(|value| value.as_str()),
+            bag.get("litellm.metadata.route").map(StringValue::as_str),
             Some("chat")
         );
         // present on the identity, but not on either allowlist
