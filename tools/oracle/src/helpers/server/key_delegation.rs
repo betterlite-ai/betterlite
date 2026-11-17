@@ -69,7 +69,7 @@ pub(crate) struct CallerInput {
     is_ui_session_team_key: bool,
 }
 
-// LiteLLM's BudgetLimitEntry also carries budget_duration, which the check never reads.
+// LiteLLM's BudgetLimitEntry also carries budget_duration; the check never reads it.
 #[derive(Deserialize)]
 pub(crate) struct WindowInput {
     max_budget: JsonData,

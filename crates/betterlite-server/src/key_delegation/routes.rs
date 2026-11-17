@@ -64,7 +64,7 @@ pub fn is_safe_route_transition(
     !read_only || same_preset_set(incoming, existing)
 }
 
-// An unsafe transition falls back to the raw-body check, which keeps the caller's model_fields_set.
+// An unsafe transition falls back to the raw-body check so a supplied null or [] is still refused.
 pub fn enforce_routes_update(
     allowed_routes: &Sent<Vec<JsonData>>,
     existing_allowed_routes: Option<&[JsonData]>,

@@ -4,7 +4,7 @@ use crate::key_delegation::caller::Caller;
 use crate::key_delegation::error::DelegationError;
 use crate::key_delegation::request::KeyDelegationRequest;
 
-// A non-admin cannot detach or rebind a key's user, which would change the role resolved on later requests.
+// A key's user decides the role later requests resolve, so a non-admin may not detach it or point it at another user.
 pub fn validate_ownership_change(
     request: Option<&KeyDelegationRequest>,
     existing_user_id: Option<&str>,
