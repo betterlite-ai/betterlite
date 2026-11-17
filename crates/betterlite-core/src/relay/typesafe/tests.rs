@@ -613,6 +613,27 @@ fn typesafe_reads_a_missing_input_rate_as_zero() {
 }
 
 #[test]
+fn typesafe_reads_a_missing_output_rate_as_zero() {
+    let fixture = Fixture::new(
+        "typesafe",
+        r#"{"model": "gpt-4o-input-only", "usage": {"input_tokens": 100, "output_tokens": 20}}"#,
+        "{}",
+    );
+    let outcome = run_with(
+        &fixture,
+        &[(
+            "typesafe/gpt-4o-input-only",
+            r#"{"litellm_provider": "typesafe", "input_cost_per_token": 0.0000025}"#,
+        )],
+    );
+
+    assert_eq!(
+        decimal(field(&payload(&outcome), "response_cost")),
+        Decimal::new(25, 5)
+    );
+}
+
+#[test]
 fn typesafe_always_returns_the_relayed_result() {
     let fixture = Fixture::new("typesafe", "[]", "\"not an object\"")
         .caller_kwargs(PassThroughLoggingKwargs::default());
