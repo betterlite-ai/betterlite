@@ -208,6 +208,7 @@ async fn bridged_send(
     let mut logger = TracingCompletionLog;
     let executor = CompletionExecutor {
         client: calls.executor.client.clone(),
+        bundled_catalog: Arc::clone(&calls.executor.bundled_catalog),
         catalog: OnceCell::new(),
     };
     executor

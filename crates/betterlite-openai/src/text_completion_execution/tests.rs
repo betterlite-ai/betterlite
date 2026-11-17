@@ -10,6 +10,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyTrust};
 use betterlite_error::envelope::WireField;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::StreamExt as _;
 use http::HeaderMap;
@@ -228,7 +229,7 @@ fn chat_catalog_selection_scenario() {
 }
 
 fn bundled_catalog_scenario() {
-    let bundled = CompletionCatalog::bundled();
+    let bundled = CompletionCatalog::new(&BundledCatalog::default().get());
     assert!(bundled.chat_models.contains("gpt-4o"));
     assert!(bundled.text_models.contains("gpt-3.5-turbo-instruct"));
     assert!(!bundled.text_models.contains("gpt-4o"));
@@ -702,6 +703,7 @@ async fn crossed_send(
     let client = ProxiedClient::outbound(&Arc::new(policy)).expect("client");
     let executor = CompletionExecutor {
         client,
+        bundled_catalog: BundledCatalog::default().get(),
         catalog: OnceCell::new(),
     };
     let mut deployment = deployment("openai/gpt-3.5-turbo-instruct");

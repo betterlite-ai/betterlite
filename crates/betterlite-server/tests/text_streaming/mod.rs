@@ -6,6 +6,7 @@ use std::time::Duration;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyTrust};
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
 use betterlite_openai::text_completion_execution::{
@@ -55,6 +56,7 @@ fn client() -> ProxiedClient {
 fn text_executor() -> CompletionExecutor {
     CompletionExecutor {
         client: client(),
+        bundled_catalog: BundledCatalog::default().get(),
         catalog: OnceCell::new(),
     }
 }

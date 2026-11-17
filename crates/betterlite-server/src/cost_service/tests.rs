@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::str::FromStr as _;
@@ -11,7 +13,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_core::cost::completion::args::{
     ChargeInputs, CompletionArgs, ResponseParts, ToolInputs,
 };
-use betterlite_core::cost::completion::lookup::LookupSettings;
+use betterlite_core::cost::completion::lookup::{CatalogLookup, LookupSettings};
 use betterlite_core::cost::image_dispatch::policy::ImageResponseView;
 use betterlite_core::cost::prepare::{
     BillingTokenCounter, CompletionBillingInput, ResponseView, TypedResponse,
@@ -22,6 +24,8 @@ use betterlite_core::cost::usage::{BillingUsage, ResponseKind};
 use betterlite_core::routes::CallType;
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_logging::fields::usage::Usage;
+use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
 use betterlite_models::image_cost::ImageBilling;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -76,8 +80,15 @@ fn service(adjustments: &AdjustmentSettings) -> CostService<ProviderFormulas> {
         normalizers: name_normalizers(),
     };
     CostService::new(
-        CATALOG.as_bytes(),
-        settings,
+        CatalogLookup::new(
+            CATALOG.as_bytes(),
+            Arc::new(
+                ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Warn)
+                    .expect("the fixture catalog parses"),
+            ),
+            settings,
+        )
+        .expect("the fixture catalog parses"),
         adjustments,
         Policies::native(),
         TimeZoneDatabase::from_env(),
@@ -319,7 +330,12 @@ fn the_slot_builds_the_shared_service_from_the_bundled_catalog() {
     }
     .load("")
     .expect("the empty configuration loads");
-    let slot = Slot::new(&config, &Shared);
+    let slot = Slot::new(
+        &config,
+        &Shared {
+            bundled_catalog: BundledCatalog::default().get(),
+        },
+    );
     let _service = slot
         .service
         .expect("the bundled catalog builds the service");

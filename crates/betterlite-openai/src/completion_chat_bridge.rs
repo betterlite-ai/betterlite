@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
+use betterlite_models::catalog::BundledCatalog;
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
 
@@ -24,7 +25,7 @@ const FINE_TUNED_COMPLETIONS: [&str; 2] = ["ft:babbage-002", "ft:davinci-002"];
 
 // get_llm_provider sends a model in open_ai_text_completion_models to the text provider even untagged
 static TEXT_COMPLETION_MODELS: LazyLock<BTreeSet<String>> =
-    LazyLock::new(|| CompletionCatalog::bundled().text_models);
+    LazyLock::new(|| CompletionCatalog::new(&BundledCatalog::default().get()).text_models);
 
 // Chat kwargs LiteLLM reads itself, so a rebuilt text request must not carry them to the provider
 const CONTROL_PARAMS: [&str; 12] = [

@@ -1,0 +1,38 @@
+kind: helper
+name: nonstring-bucket-fallback
+call:
+  vertex_file_read_settings:
+    params: {gcs_bucket_name: 42, bucket_name: 7}
+    argument: null
+    environment: {GCS_BATCH_BUCKET_NAME: batch-fallback, GCS_BUCKET_NAME: general-fallback}
+calls:
+  - vertex_file_read_settings:
+      params: {gcs_bucket_name: [one, two]}
+      argument: null
+      environment: {GCS_BUCKET_NAME: general-fallback}
+  - vertex_file_read_settings:
+      params: {gcs_bucket_name: true}
+      argument: null
+      environment: {GCS_BUCKET_NAME: general-fallback}
+  - vertex_file_read_settings:
+      params: {gcs_bucket_name: 0}
+      argument: null
+      environment: {GCS_BUCKET_NAME: general-fallback}
+  - vertex_file_read_settings:
+      params: {gcs_bucket_name: ""}
+      argument: null
+      environment: {GCS_BUCKET_NAME: general-fallback}
+  - vertex_file_read_settings:
+      params: {gcs_bucket_name: "", bucket_name: alias-bucket}
+      argument: null
+      environment: {GCS_BUCKET_NAME: general-fallback}
+  - vertex_file_read_settings:
+      params: {gcs_bucket_name: {}, bucket_name: alias-bucket}
+      argument: null
+      environment: {}
+  - vertex_file_read_settings:
+      params: {bucket_name: ""}
+      argument: null
+      environment: {GCS_BATCH_BUCKET_NAME: batch-fallback, GCS_BUCKET_NAME: general-fallback}
+env: {}
+compare: {ignore: []}

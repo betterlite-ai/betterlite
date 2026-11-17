@@ -57,6 +57,7 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
         state: Arc::clone(state),
         execution: Arc::new(CompletionExecutor {
             client: executor.client.clone(),
+            bundled_catalog: Arc::clone(&executor.bundled_catalog),
             catalog: OnceCell::new(),
         }),
         dispatch: Arc::new(Dispatch::new(

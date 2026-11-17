@@ -5,6 +5,7 @@ use ::http::HeaderMap;
 use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
 use betterlite_error::envelope::WireField;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_redact::secret::Redactor;
 use betterlite_streaming::stream_chunk_shaping::creation::system_instant;
@@ -68,6 +69,7 @@ pub struct CompletionStreamAnswer {
 
 pub struct CompletionExecutor {
     pub client: ProxiedClient,
+    pub bundled_catalog: Arc<ModelCatalog>,
     pub catalog: OnceCell<CompletionCatalog>,
 }
 
@@ -91,7 +93,7 @@ impl CompletionExecutor {
     async fn route(&self, deployment: &ChatDeployment) -> CompletionRoute {
         let bundled = self
             .catalog
-            .get_or_init(async || CompletionCatalog::bundled())
+            .get_or_init(async || CompletionCatalog::new(&self.bundled_catalog))
             .await;
         route_for(deployment, bundled)
     }
