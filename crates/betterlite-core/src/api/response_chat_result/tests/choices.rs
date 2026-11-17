@@ -417,44 +417,16 @@ fn raw_custom_tool_call_carries_its_input() {
 #[test]
 fn tool_calls_keep_provider_specific_fields_on_the_call_only() {
     let choices = choices_of(json!([
-        {
-            "type": "function_call", "id": "fc_1", "call_id": "c1", "name": "f", "arguments": "{}",
-            "provider_specific_fields": {"trace": "typed"},
-        },
-        {
-            "type": "function_call", "id": "fc_2", "name": "g", "arguments": "{}",
-            "provider_specific_fields": {"trace": "raw"},
-        },
+        {"type": "function_call", "id": "fc_1", "call_id": "c1", "name": "f", "arguments": "{}",
+         "provider_specific_fields": {"trace": "typed"}},
+        {"type": "function_call", "id": "fc_2", "name": "g", "arguments": "{}",
+         "provider_specific_fields": {"trace": "raw"}},
     ]));
-    assert_eq!(
-        choices,
-        json!([{
-            "finish_reason": "tool_calls",
-            "index": 0,
-            "message": {
-                "content": null,
-                "function_call": null,
-                "provider_specific_fields": null,
-                "role": "assistant",
-                "tool_calls": [
-                    {
-                        "id": "c1",
-                        "type": "function",
-                        "function": {"name": "f", "arguments": "{}"},
-                        "index": 0,
-                        "provider_specific_fields": {"trace": "typed"},
-                    },
-                    {
-                        "id": "fc_2",
-                        "type": "function",
-                        "function": {"name": "g", "arguments": "{}"},
-                        "index": 1,
-                        "provider_specific_fields": {"trace": "raw"},
-                    },
-                ],
-            },
-        }])
-    );
+    let mut typed = chunk("c1", "f", "{}", 0);
+    typed["provider_specific_fields"] = json!({"trace": "typed"});
+    let mut raw = chunk("fc_2", "g", "{}", 1);
+    raw["provider_specific_fields"] = json!({"trace": "raw"});
+    assert_eq!(choices, json!([tool_choice(json!([typed, raw]), 0)]));
 }
 
 #[test]
