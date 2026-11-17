@@ -286,7 +286,7 @@ fn titan_v2_binary_embedding() {
 
 fn assert_v2_binary_preference() {
     // binary wins by key presence alone, even next to a float vector
-    let mut types = json_object(vec![
+    let mut types = object(vec![
         ("binary", list(vec![int(1), int(0), int(7)])),
         ("float", list(vec![float(0.5), float(0.25)])),
     ]);
