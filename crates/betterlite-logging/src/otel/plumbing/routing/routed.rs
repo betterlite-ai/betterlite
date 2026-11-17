@@ -70,8 +70,8 @@ impl fmt::Debug for RouteKey {
     }
 }
 
-// the request fields a route is keyed by; a separate trait keeps the cache to one inherent impl
-pub(crate) trait TenantRouting {
+// the request fields a route is keyed by; a separate trait keeps the cache to one inherent impl, and the lifecycle test crate imports it
+pub trait TenantRouting {
     fn credential_headers(
         &self,
         dynamic_params: Option<&StandardCallbackDynamicParams>,
