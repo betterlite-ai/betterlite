@@ -3,6 +3,7 @@ use std::convert::Infallible;
 use betterlite_anthropic::chat_call::error::ChatCallError;
 use betterlite_anthropic::chat_call::transport::ClientKind;
 use betterlite_anthropic::headers::HeadersError;
+use betterlite_anthropic::response::error::ResponseError;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 
@@ -25,6 +26,7 @@ impl FailureShape {
             ChatCallError::Headers(_) => "HeadersError",
             ChatCallError::Prepare { .. } | ChatCallError::Filter { .. } => "ValueError",
             ChatCallError::PreCall(_) => "PreCallError",
+            ChatCallError::Response(ResponseError::Anthropic { .. }) => "AnthropicError",
             ChatCallError::Response(_) | ChatCallError::Parameter(_) => "ValueError",
             ChatCallError::Open(_) => "AnthropicError",
             ChatCallError::Endpoint { .. }
