@@ -15,8 +15,8 @@ deviations:
       Existing structural field limits remain unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L74-L277
   - what: >-
-      The proxy config accepts a top-level fallback_generalizations block with a rules list and installs it into
-      the router, where LiteLLM reads that block only from the model cost map.
+      The proxy config accepts a top-level fallback_generalizations block with a rules list and reads it as the
+      rule document, where LiteLLM reads that block only from the model cost map.
     why: >-
       betterlite's router loads its catalog rules from config.yaml rather than a remote cost map, so the same
       rule document needs a configured home; a config without the block keeps the cost map's own rules.
