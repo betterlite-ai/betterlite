@@ -20,6 +20,10 @@ pub enum FixtureError {
     TaskCompleted,
     #[error("POSTGRES_TEST_URL is set but empty")]
     EmptyConfiguredUrl,
+    #[error(
+        "POSTGRES_TEST_URL is not set; CI sets it, and cargo nextest starts a local server for it through .config/nextest.toml"
+    )]
+    MissingConfiguredUrl,
     #[error("POSTGRES_TEST_URL is not a PostgreSQL URL: {source}")]
     InvalidConfiguredUrl {
         #[source]
@@ -38,8 +42,6 @@ pub enum FixtureError {
     UnsupportedJwtMappings,
     #[error("configured PostgreSQL server is unreachable: {0}")]
     Connect(#[source] tokio_postgres::Error),
-    #[error("testcontainers could not start PostgreSQL: {0}")]
-    Container(#[source] testcontainers::TestcontainersError),
     #[error("fixture database operation failed: {0}")]
     Database(#[source] tokio_postgres::Error),
     #[error("fixture connection driver failed: {0}")]
