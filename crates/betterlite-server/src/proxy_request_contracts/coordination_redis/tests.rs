@@ -53,25 +53,27 @@ fn keeps_unknown_keys() {
 }
 
 #[test]
-fn hides_both_passwords_in_debug() {
+fn hides_the_passwords_and_url_in_debug() {
     let params = CoordinationRedisParams::from_value(&contract(
-        r#"{"password": "hunter2", "sentinel_password": "sentinel-secret"}"#,
+        r#"{"password": "hunter2", "sentinel_password": "sentinel-secret", "url": "redis://:hunter3@host:6379"}"#,
     ))
     .expect("a params object");
     let text = format!("{params:?}");
     assert!(!text.contains("hunter2"));
     assert!(!text.contains("sentinel-secret"));
+    assert!(!text.contains("hunter3"));
 }
 
 #[test]
-fn writes_both_passwords_on_serialize() {
+fn writes_the_passwords_and_url_on_serialize() {
     let params = CoordinationRedisParams::from_value(&contract(
-        r#"{"password": "hunter2", "sentinel_password": "sentinel-secret"}"#,
+        r#"{"password": "hunter2", "sentinel_password": "sentinel-secret", "url": "redis://:hunter3@host:6379"}"#,
     ))
     .expect("a params object");
     let text = serde_json::to_string(&params).expect("the dump");
     assert!(text.contains(r#""password":"hunter2""#));
     assert!(text.contains(r#""sentinel_password":"sentinel-secret""#));
+    assert!(text.contains(r#""url":"redis://:hunter3@host:6379""#));
 }
 
 #[test]

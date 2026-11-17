@@ -47,8 +47,12 @@ pub struct CoordinationRedisParams {
     pub password: Option<SecretString>,
     #[serde(default)]
     pub username: Option<String>,
-    #[serde(default)]
-    pub url: Option<String>,
+    // LiteLLM's field description says the url embeds the password (redis://:pass@host), so Debug must redact it.
+    #[serde(
+        default,
+        serialize_with = "serde_with::As::<Option<serde_with::FromIntoRef<crate::key_fields::values::ExposedSecret>>>::serialize"
+    )]
+    pub url: Option<SecretString>,
     #[serde(default)]
     pub ssl: Option<bool>,
     #[serde(default)]
@@ -93,5 +97,4 @@ impl CoordinationRedisParams {
     }
 }
 
-#[cfg(test)]
 mod tests;
