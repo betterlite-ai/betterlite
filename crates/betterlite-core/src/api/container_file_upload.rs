@@ -83,19 +83,15 @@ pub fn upload_container_file<Executor>(
 where
     Executor: UploadExecutor,
 {
-    let caller = caller_defaults(request);
     let adapter = BlockingAsAsync { executor };
-    poll_once(aupload_container_file(&adapter, deps, request)).map_or_else(
-        // the adapter cannot park, so the sync entry reaches this only if the poll contract breaks
-        || {
-            Err(error::failure(
-                ContainerFileUploadError::Suspended,
-                caller.provider,
-                deps.redactor,
-            ))
-        },
-        |outcome| outcome,
-    )
+    match poll_once(aupload_container_file(&adapter, deps, request)) {
+        Polled::Ready(outcome) => outcome,
+        Polled::StillWaiting => Err(error::failure(
+            ContainerFileUploadError::Suspended,
+            caller_defaults(request).provider,
+            deps.redactor,
+        )),
+    }
 }
 
 // aupload_container_file: the mock, the named credentials, the managed id, the logging update, then the awaited handler
@@ -150,16 +146,22 @@ where
     }
 }
 
+// the two answers one poll can give: the answer itself, or a future that wants to park
+enum Polled<Output> {
+    Ready(Output),
+    StillWaiting,
+}
+
 // the poll B3363's handler uses for its blocking path: one poll, and the ready future answers it
-fn poll_once<Running>(future: Running) -> Option<Running::Output>
+fn poll_once<Running>(future: Running) -> Polled<Running::Output>
 where
     Running: Future,
 {
     let mut pinned = pin!(future);
     let mut context = Context::from_waker(Waker::noop());
     match pinned.as_mut().poll(&mut context) {
-        Poll::Ready(outcome) => Some(outcome),
-        Poll::Pending => None,
+        Poll::Ready(outcome) => Polled::Ready(outcome),
+        Poll::Pending => Polled::StillWaiting,
     }
 }
 
