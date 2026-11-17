@@ -33,6 +33,9 @@ deviations:
   - what: The discovery, token and userinfo endpoint URLs must be HTTPS unless the login client turns on allow_insecure_http. LiteLLM posts to the token URL the discovery document names, whatever its scheme.
     why: A provider answer decides where the client secret and the authorization code go, so plain HTTP there exposes both. The flag carries fastapi-sso's own name for the case a deployment really needs it.
     link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L568-L584
+  - what: The authorization URL and the token request are built from the typed OAuthClient over betterlite-http, not from oauth2's Client and AsyncHttpClient, although the task names oauth2 as existing request construction.
+    why: oauth2 pins the token URL at construction, its BasicClient sends the client_id only in the Authorization header so the include_client_id option the task requires cannot add it to the body, it has no hook where an additional Authorization header must replace Basic, its parameter order differs from oauthlib's prepare_grant_uri and prepare_token_request, and its error types cannot carry the pinned 400 missing-code and 401 state-cookie answers. The typed OAuthClient with betterlite-http's OutboundRequest keeps every pinned behavior and still runs over the B173 transport.
+    link: https://docs.rs/oauth2/latest/oauth2/
 kept_bugs:
   - what: A callback that supplies state but no sso_state cookie is accepted, because fastapi-sso 0.19.0 requires the cookie only when requires_state is on and GoogleSSO leaves that off.
     why: The task pins the 0.19.0 behavior and rules out B1623's stronger PKCE cookie rule here, and a Google deployment never sends that cookie pair, so rejecting it would break existing logins.

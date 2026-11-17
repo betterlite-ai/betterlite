@@ -40,27 +40,40 @@ struct TokenParameters<'a> {
     include_client_id: bool,
 }
 
-pub async fn exchange(
-    client: &OAuthClient,
-    transport: &ProxiedClient,
-    discovery: &OAuthDiscoveryDocument,
-    request: &ExchangeRequest<'_>,
-) -> Result<OAuthExchange, OAuthClientError> {
-    let callback = Url::parse(request.callback.url).map_err(OAuthClientError::CallbackUrl)?;
+pub struct CallbackParts {
+    pub callback: Url,
+    pub code: String,
+}
+
+pub fn check_callback(request: &CallbackRequest<'_>) -> Result<CallbackParts, OAuthClientError> {
+    let callback = Url::parse(request.url).map_err(OAuthClientError::CallbackUrl)?;
     let pairs: Vec<(String, String)> = callback.query_pairs().into_owned().collect();
     let Some(code) = last_query_value(&pairs, "code").filter(|value| !value.is_empty()) else {
         return Err(OAuthClientError::MissingCode);
     };
-    check_state(&pairs, request.callback.sso_state_cookie)?;
+    check_state(&pairs, request.sso_state_cookie)?;
     if let Some(error) = last_non_blank_query_value(&pairs, "error") {
         return Err(OAuthClientError::Provider {
             error: error.to_owned(),
             description: last_non_blank_query_value(&pairs, "error_description").map(str::to_owned),
         });
     }
-    let redirect_uri = resolved_redirect_uri(client, request, &callback);
+    Ok(CallbackParts {
+        callback,
+        code: code.to_owned(),
+    })
+}
+
+pub async fn exchange(
+    client: &OAuthClient,
+    transport: &ProxiedClient,
+    discovery: &OAuthDiscoveryDocument,
+    request: &ExchangeRequest<'_>,
+) -> Result<OAuthExchange, OAuthClientError> {
+    let parts = check_callback(&request.callback)?;
+    let redirect_uri = resolved_redirect_uri(client, request, &parts.callback);
     let parameters = TokenParameters {
-        code,
+        code: &parts.code,
         redirect_uri: &redirect_uri,
         include_client_id: request.include_client_id,
     };

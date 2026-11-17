@@ -1,9 +1,12 @@
 import asyncio
-from typing import Final, TypedDict
+from typing import Final, Protocol, TypedDict
 
+from fastapi_sso.sso.base import OpenID
 from fastapi_sso.sso.google import GoogleSSO
 from litellm.proxy.management_endpoints.types import CustomOpenID
 from pydantic import JsonValue, TypeAdapter
+
+CLIENT_VALUE: Final = "client-secret"
 
 
 class Input(TypedDict):
@@ -26,13 +29,17 @@ class Identity(TypedDict):
 IDENTITY: Final = TypeAdapter(Identity)
 
 
+class Converter(Protocol):
+    async def openid_from_response(self, response: dict[str, JsonValue]) -> OpenID: ...
+
+
 def run(input_value: Input) -> Identity:
-    google = GoogleSSO(
+    converter: Converter = GoogleSSO(
         client_id="client-id",
-        client_secret="client-secret",
+        client_secret=CLIENT_VALUE,
         redirect_uri=None,
     )
-    openid = asyncio.run(google.openid_from_response(input_value["userinfo"]))
+    openid = asyncio.run(converter.openid_from_response(input_value["userinfo"]))
     record = CustomOpenID(
         id=openid.id,
         email=openid.email,

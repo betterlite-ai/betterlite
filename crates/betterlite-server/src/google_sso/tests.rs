@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use axum::Json;
 use axum::Router;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::routing::{get, post};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -51,10 +51,10 @@ struct Provider {
 }
 
 impl Provider {
-    fn record(&self, method: &'static str, path: &'static str, headers: &HeaderMap, body: &str) {
+    fn record(&self, method: &'static str, uri_path: &str, headers: &HeaderMap, body: &str) {
         self.seen.lock().unwrap().push(Seen {
             method,
-            path: path.to_owned(),
+            path: uri_path.to_owned(),
             authorization: headers
                 .get("authorization")
                 .and_then(|value| value.to_str().ok())
@@ -75,25 +75,51 @@ impl Drop for Running {
     }
 }
 
-async fn discovery(
+async fn read_answer(
     State(provider): State<Provider>,
+    uri: Uri,
     headers: HeaderMap,
 ) -> (StatusCode, Json<Value>) {
-    provider.record("GET", "/discovery", &headers, "");
-    match provider.discovery {
-        DiscoveryReply::Document => (
-            StatusCode::OK,
-            Json(json!({
-                "authorization_endpoint": format!("{}/authorize", provider.base),
-                "token_endpoint": format!("{}/token", provider.base),
-                "userinfo_endpoint": format!("{}/userinfo", provider.base),
-            })),
-        ),
-        DiscoveryReply::NotFound => (StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))),
+    provider.record("GET", uri.path(), &headers, "");
+    if uri.path() == "/discovery" {
+        return match provider.discovery {
+            DiscoveryReply::Document => (
+                StatusCode::OK,
+                Json(json!({
+                    "authorization_endpoint": format!("{}/authorize", provider.base),
+                    "token_endpoint": format!("{}/token", provider.base),
+                    "userinfo_endpoint": format!("{}/userinfo", provider.base),
+                })),
+            ),
+            DiscoveryReply::NotFound => {
+                (StatusCode::NOT_FOUND, Json(json!({"error": "not found"})))
+            }
+        };
     }
+    let token = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .unwrap_or("unknown");
+    (
+        StatusCode::OK,
+        Json(json!({
+            "sub": format!("subject-{token}"),
+            "email": format!("{token}@example.test"),
+            "email_verified": provider.email_verified,
+            "given_name": "Ann",
+            "family_name": "Lee",
+            "name": "Ann Lee",
+            "picture": "https://img.example.test/ann.png",
+        })),
+    )
 }
 
-async fn token(State(provider): State<Provider>, headers: HeaderMap, body: String) -> Json<Value> {
+async fn token_answer(
+    State(provider): State<Provider>,
+    headers: HeaderMap,
+    body: String,
+) -> Json<Value> {
     provider.record("POST", "/token", &headers, &body);
     let code = form_value(&body, "code");
     Json(json!({
@@ -101,24 +127,6 @@ async fn token(State(provider): State<Provider>, headers: HeaderMap, body: Strin
         "refresh_token": format!("refresh-{code}"),
         "id_token": format!("id-{code}"),
         "token_type": "Bearer",
-    }))
-}
-
-async fn userinfo(State(provider): State<Provider>, headers: HeaderMap) -> Json<Value> {
-    provider.record("GET", "/userinfo", &headers, "");
-    let authorization = headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default();
-    let token = authorization.strip_prefix("Bearer ").unwrap_or("unknown");
-    Json(json!({
-        "sub": format!("subject-{token}"),
-        "email": format!("{token}@example.test"),
-        "email_verified": provider.email_verified,
-        "given_name": "Ann",
-        "family_name": "Lee",
-        "name": "Ann Lee",
-        "picture": "https://img.example.test/ann.png",
     }))
 }
 
@@ -139,9 +147,9 @@ async fn serve(email_verified: bool, reply: DiscoveryReply) -> Running {
         seen: Arc::new(Mutex::new(Vec::new())),
     };
     let router = Router::new()
-        .route("/discovery", get(discovery))
-        .route("/token", post(token))
-        .route("/userinfo", get(userinfo))
+        .route("/discovery", get(read_answer))
+        .route("/token", post(token_answer))
+        .route("/userinfo", get(read_answer))
         .with_state(provider.clone());
     let mut tasks = JoinSet::new();
     tasks.spawn(async move { axum::serve(listener, router).await.unwrap() });
@@ -336,7 +344,7 @@ async fn a_state_cookie_that_differs_from_the_state_is_refused() {
         (response.status, response.error_type, response.param),
         (401, ProxyErrorTypes::AuthError, Some("state"))
     );
-    assert_eq!(running.provider.seen.lock().unwrap().len(), 1);
+    assert!(running.provider.seen.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -359,7 +367,7 @@ async fn a_callback_without_a_code_is_a_bad_request() {
         (response.status, response.error_type, response.param),
         (400, ProxyErrorTypes::AuthError, Some("code"))
     );
-    assert_eq!(running.provider.seen.lock().unwrap().len(), 1);
+    assert!(running.provider.seen.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

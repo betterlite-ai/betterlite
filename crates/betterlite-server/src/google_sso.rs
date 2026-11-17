@@ -2,7 +2,9 @@ use betterlite_auth::oauth_client::OAuthClient;
 use betterlite_auth::oauth_client::discovery::{DiscoverySource, fetch_discovery};
 use betterlite_auth::oauth_client::document::OAuthUserInfo;
 use betterlite_auth::oauth_client::error::{OAuthClientError, OAuthErrorResponse};
-use betterlite_auth::oauth_client::exchange::{CallbackRequest, ExchangeRequest, exchange};
+use betterlite_auth::oauth_client::exchange::{
+    CallbackRequest, ExchangeRequest, check_callback, exchange,
+};
 use betterlite_auth::oauth_client::google::{
     GOOGLE_DISCOVERY_URL, GOOGLE_SCOPES, GoogleIdentityError, google_open_id,
 };
@@ -88,8 +90,6 @@ pub async fn get_google_callback_response(
         allow_insecure_http: config.allow_insecure_http,
         additional_headers: HeaderMap::new(),
     };
-    let source = DiscoverySource::WellKnown(config.discovery_url().to_owned());
-    let discovery = fetch_discovery(&client, transport, &source).await?;
     let request = ExchangeRequest {
         callback: CallbackRequest {
             url: callback.url,
@@ -99,6 +99,10 @@ pub async fn get_google_callback_response(
         // fastapi-sso leaves oauthlib's include_client_id default on, so the body names the client.
         include_client_id: true,
     };
+    // fastapi-sso rejects a bad callback before it reads the discovery document.
+    check_callback(&request.callback)?;
+    let source = DiscoverySource::WellKnown(config.discovery_url().to_owned());
+    let discovery = fetch_discovery(&client, transport, &source).await?;
     let exchanged = exchange(&client, transport, &discovery, &request).await?;
     if return_raw_sso_response {
         return Ok(GoogleSsoResponse::Raw(exchanged.userinfo));

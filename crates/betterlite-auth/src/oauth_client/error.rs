@@ -1,5 +1,3 @@
-use std::fmt;
-
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_http::proxy::transport_error::TransportError;
 use http::header::InvalidHeaderValue;
@@ -16,6 +14,18 @@ pub enum OAuthEndpoint {
     Authorization,
     Token,
     Userinfo,
+}
+
+impl OAuthEndpoint {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Discovery => "discovery",
+            Self::Authorization => "authorization",
+            Self::Token => "token",
+            Self::Userinfo => "userinfo",
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -41,9 +51,12 @@ pub enum OAuthClientError {
         error: String,
         description: Option<String>,
     },
-    #[error("the {endpoint} endpoint is not HTTPS and allow_insecure_http is off")]
+    #[error(
+        "the {} endpoint is not HTTPS and allow_insecure_http is off",
+        .endpoint.name()
+    )]
     Insecure { endpoint: OAuthEndpoint },
-    #[error("the {endpoint} endpoint is not a URL: {source}")]
+    #[error("the {} endpoint is not a URL: {source}", .endpoint.name())]
     Endpoint {
         endpoint: OAuthEndpoint,
         #[source]
@@ -69,18 +82,6 @@ pub struct OAuthErrorResponse {
     pub error_type: ProxyErrorTypes,
     pub param: Option<&'static str>,
     pub code: &'static str,
-}
-
-impl fmt::Display for OAuthEndpoint {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = match self {
-            Self::Discovery => "discovery",
-            Self::Authorization => "authorization",
-            Self::Token => "token",
-            Self::Userinfo => "userinfo",
-        };
-        formatter.write_str(name)
-    }
 }
 
 impl OAuthClientError {

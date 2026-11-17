@@ -47,7 +47,8 @@ pub fn transport() -> ProxiedClient {
 }
 
 pub async fn serve_sequence(responses: Vec<(u16, String)>) -> Provider {
-    let replies: Arc<Mutex<VecDeque<(u16, String)>>> = Arc::new(Mutex::new(responses.into()));
+    let replies: Arc<Mutex<VecDeque<(u16, String)>>> =
+        Arc::new(Mutex::new(VecDeque::from(responses)));
     let reply: Reply = Arc::new(move |_request: &SeenRequest| {
         replies
             .lock()
@@ -90,17 +91,22 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<SeenRequest> {
     Ok(parse_request(&buffer, head_end, length))
 }
 
-async fn read_until_head_end(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> io::Result<usize> {
+async fn read_chunk(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> io::Result<()> {
     let mut chunk = [0_u8; 4096];
+    let read = stream.read(&mut chunk).await?;
+    if read == 0 {
+        return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
+    }
+    buffer.extend_from_slice(&chunk[..read]);
+    Ok(())
+}
+
+async fn read_until_head_end(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> io::Result<usize> {
     loop {
         if let Some(position) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
             return Ok(position + 4);
         }
-        let read = stream.read(&mut chunk).await?;
-        if read == 0 {
-            return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
-        }
-        buffer.extend_from_slice(&chunk[..read]);
+        read_chunk(stream, buffer).await?;
         if buffer.len() > MAX_REQUEST_BYTES {
             return Err(io::Error::from(io::ErrorKind::InvalidData));
         }
@@ -108,13 +114,8 @@ async fn read_until_head_end(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> io
 }
 
 async fn read_body(stream: &mut TcpStream, buffer: &mut Vec<u8>, total: usize) -> io::Result<()> {
-    let mut chunk = [0_u8; 4096];
     while buffer.len() < total {
-        let read = stream.read(&mut chunk).await?;
-        if read == 0 {
-            return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
-        }
-        buffer.extend_from_slice(&chunk[..read]);
+        read_chunk(stream, buffer).await?;
     }
     Ok(())
 }

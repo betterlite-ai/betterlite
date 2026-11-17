@@ -459,18 +459,10 @@ async fn overlapping_logins_keep_their_own_tokens() {
     let client = client();
     let transport = transport();
     let discovery = discovery(&client, &provider).await;
-    let alpha = exchange(
-        &client,
-        &transport,
-        &discovery,
-        &exchange_request("https://proxy.test/sso/callback?code=alpha", true),
-    );
-    let beta = exchange(
-        &client,
-        &transport,
-        &discovery,
-        &exchange_request("https://proxy.test/sso/callback?code=beta", true),
-    );
+    let alpha_request = exchange_request("https://proxy.test/sso/callback?code=alpha", true);
+    let beta_request = exchange_request("https://proxy.test/sso/callback?code=beta", true);
+    let alpha = exchange(&client, &transport, &discovery, &alpha_request);
+    let beta = exchange(&client, &transport, &discovery, &beta_request);
     let (alpha, beta) = tokio::join!(alpha, beta);
     let alpha = alpha.unwrap();
     let beta = beta.unwrap();

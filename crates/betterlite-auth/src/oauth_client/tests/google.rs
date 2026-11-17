@@ -96,11 +96,18 @@ fn an_unverified_google_user_is_refused() {
 #[rstest]
 #[case::null(json!({"email": "ann@example.test", "email_verified": null}))]
 #[case::absent(json!({"email": "ann@example.test"}))]
-#[case::verified_without_email(json!({"email_verified": true}))]
 fn a_verified_flag_that_is_not_true_is_refused(#[case] value: serde_json::Value) {
     let error = google_open_id(&userinfo(value)).unwrap_err();
     assert!(matches!(&error, GoogleIdentityError::Unverified { .. }));
     assert_eq!(error.response().status, 401);
+}
+
+#[test]
+fn a_verified_userinfo_without_an_email_has_no_email() {
+    let identity = google_open_id(&userinfo(json!({"email_verified": true}))).unwrap();
+    assert_eq!(identity.id, None);
+    assert_eq!(identity.email, None);
+    assert_eq!(identity.provider.as_deref(), Some("google"));
 }
 
 #[test]
