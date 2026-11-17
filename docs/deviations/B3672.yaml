@@ -1,0 +1,59 @@
+task: B3672
+deviations:
+  - what: >-
+      An undeliverable rewrite is the typed `StreamSyncError::Undeliverable { guardrail_name, reason }`
+      whose Display text is LiteLLM's, not the `UndeliverableStreamRewrite` exception of the policy pipeline.
+    why: >-
+      That exception belongs to B3246 in betterlite-core. Importing it here would pull the policy executor into
+      the guardrail translation crate; the dispatcher converts the typed error into the exception and the text
+      is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L52-L62
+  - what: >-
+      Stream events are JSON objects and the `hasattr(event, "get")` shim for pydantic events is not built. An
+      event that is not an object is skipped, and fields are written into JSON objects only.
+    why: >-
+      Rust has one JSON event type. For the same fields LiteLLM's dict branch and its pydantic branch do the
+      same thing, so the pydantic branch adds nothing to port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1111-L1145
+  - what: >-
+      The `response` entry put into the request data is a copy of the envelope taken before the rewrite, where
+      LiteLLM stores the envelope object itself and later readers see the rewritten one.
+    why: >-
+      A Rust map cannot hold a second mutable reference to the same event. Nothing after the guardrail call
+      reads that entry. B3671 has the same deviation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L947-L949
+  - what: >-
+      Case 2 reads the `function_call` or `custom_tool_call` item directly and builds the tool call with B917's
+      `output_tool_fields`, instead of running the Responses to chat stream translator and then reading the
+      translated chunk's `model`.
+    why: >-
+      For this event type the stateless translator returns a tool call only for those two item types, built by
+      that same function, and the translated chunk's `model` is never set there, so the guardrail inputs carry
+      no model either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1012-L1029
+  - what: >-
+      The `stream_transform_sink` parameter of `process_output_streaming_response` is dropped, and the
+      guardrail's name is a plain `Option<&str>` argument used for the sync and delivery messages, "unknown"
+      when absent.
+    why: >-
+      The Responses handler never reads the sink, and `GuardrailContract` has no name accessor, so the caller
+      passes the configured name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L879-L888
+  - what: >-
+      Indexes are read as non-negative integers, so a negative or boolean `output_index` or `content_index` is
+      not a position. A spread whose scanned event carries one is undeliverable, and the sync skips such an
+      event; a negative `content_index` in the rewrite map is skipped too.
+    why: >-
+      LiteLLM tests `isinstance(value, int)`, which accepts negative ints and bools. A negative content index
+      then reaches Python's negative list indexing and a negative output index only ever matches a rewrite
+      keyed the same way, so no working setup can tell the two apart except through deliberately malformed
+      events.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1133-L1137
+  - what: >-
+      A `response.output_item.done` item whose `content[c]` entry is not an object is skipped, where LiteLLM's
+      `_write_event_field` runs `setattr` on it and raises `AttributeError`, which surfaces as a 500.
+    why: >-
+      A 500 on a malformed provider event is a bug no working setup can rely on; dropping the write keeps the
+      stream usable, and the entry has no `text` field a client could read anyway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1147-L1159
+kept_bugs: []
