@@ -2220,6 +2220,7 @@ dependencies = [
  "betterlite-privacy-openai",
  "betterlite-prometheus",
  "betterlite-redact",
+ "betterlite-secret-managers",
  "betterlite-secrets",
  "chrono",
  "clap",
