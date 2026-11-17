@@ -140,6 +140,7 @@ pub(super) fn additional_model_fields() {
             r#"{"bedrock_output_config_effort_ceiling": "medium"}"#,
         )],
     );
+    parallel_tool_truthiness(&harness);
     deepseek_drops(&harness);
     effort_and_output_config(&answered);
     nova_grounding(&harness);
@@ -180,6 +181,37 @@ fn deepseek_drops(harness: &Harness) {
     assert_eq!(non_string.mapped(), params("{}"));
 }
 
+fn parallel_tool_truthiness(harness: &Harness) {
+    for request in [
+        r#"{"parallel_tool_calls": false}"#,
+        r#"{"parallel_tool_calls": 0}"#,
+        r#"{"parallel_tool_calls": ""}"#,
+        r#"{"parallel_tool_calls": []}"#,
+        r#"{"parallel_tool_calls": {}}"#,
+        r#"{"parallel_tool_calls": null}"#,
+    ] {
+        assert_eq!(
+            harness.mapped(ANTHROPIC, request).mapped(),
+            params(
+                r#"{"_parallel_tool_use_config": {"tool_choice": {"type": "auto", "disable_parallel_tool_use": true}}}"#
+            ),
+            "{request}"
+        );
+    }
+    for enabled in [
+        r#"{"parallel_tool_calls": true}"#,
+        r#"{"parallel_tool_calls": "x"}"#,
+    ] {
+        assert_eq!(
+            harness.mapped(ANTHROPIC, enabled).mapped(),
+            params(
+                r#"{"_parallel_tool_use_config": {"tool_choice": {"type": "auto", "disable_parallel_tool_use": false}}}"#
+            ),
+            "{enabled}"
+        );
+    }
+}
+
 fn effort_and_output_config(harness: &Harness) {
     assert_eq!(
         harness
@@ -189,6 +221,12 @@ fn effort_and_output_config(harness: &Harness) {
             )
             .mapped(),
         params(r#"{"maxTokens": 9000, "thinking": {"type": "enabled", "budget_tokens": 4096}}"#)
+    );
+    assert_eq!(
+        harness
+            .mapped(ANTHROPIC, r#"{"output_config": {"effort": "high"}}"#)
+            .mapped(),
+        params(r#"{"output_config": {"effort": "medium"}}"#)
     );
     assert_eq!(
         harness
