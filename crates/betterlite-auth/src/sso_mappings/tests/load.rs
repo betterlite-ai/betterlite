@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tracing::Subscriber;
-use tracing::subscriber::set_default;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
 
@@ -27,7 +27,7 @@ impl<S: Subscriber> Layer<S> for DebugCount {
     }
 }
 
-fn counted() -> (DebugCount, tracing::subscriber::DefaultGuard) {
+fn counted() -> (DebugCount, DefaultGuard) {
     let count = DebugCount::default();
     let subscriber = tracing_subscriber::registry().with(count.clone());
     (count, set_default(subscriber))

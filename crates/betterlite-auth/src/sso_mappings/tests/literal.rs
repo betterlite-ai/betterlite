@@ -36,7 +36,7 @@ fn text(value: &str) -> Literal {
 #[case::raw_carriage_return("r\"a\\\r\nb\"", text("a\\\nb"))]
 #[case::continued_crlf_line("'a\\\r\nb'", text("ab"))]
 #[case::triple_line_endings("'''a\r\nb'''", text("a\nb"))]
-#[case::non_ascii_text("'é'", text("é"))]
+#[case::non_ascii_text("'\u{e9}'", text("\u{e9}"))]
 #[case::unknown_escape("'\\q'", text("\\q"))]
 #[case::integer("42", Literal::Number)]
 #[case::negative("-42", Literal::Number)]
@@ -135,7 +135,8 @@ fn nested(depth: usize) -> Vec<u8> {
 
 #[test]
 fn accepts_nesting_up_to_the_limit() {
-    assert!(parse_literal(&nested(MAX_LITERAL_DEPTH)).is_ok());
+    let parsed = parse_literal(&nested(MAX_LITERAL_DEPTH)).unwrap();
+    assert!(matches!(parsed, Literal::List(_)));
 }
 
 #[test]

@@ -46,7 +46,7 @@ fn strips_each_segment_but_keeps_its_inner_space() {
 }
 
 #[rstest]
-#[case::separator_control(b"\x1cX-Team=\x1feng".as_slice())]
+#[case::separator_control(b"\x1cX-Team=eng\x1f".as_slice())]
 #[case::no_break_space("\u{a0}X-Team=eng\u{a0}".as_bytes())]
 #[case::ideographic_space("\u{3000}X-Team=eng\u{3000}".as_bytes())]
 fn strips_the_whitespace_python_strips(#[case] raw: &[u8]) {
