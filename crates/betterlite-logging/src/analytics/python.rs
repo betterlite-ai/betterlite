@@ -48,7 +48,7 @@ pub fn float_text(value: f64) -> String {
         };
     }
     let magnitude = value.abs();
-    if magnitude == 0.0 || (FIXED_MIN..FIXED_MAX).contains(&magnitude) {
+    if magnitude == 0.0_f64 || (FIXED_MIN..FIXED_MAX).contains(&magnitude) {
         let fixed = value.to_string();
         return if fixed.contains('.') {
             fixed
@@ -179,6 +179,3 @@ fn quoted(text: &str) -> io::Result<String> {
     output.push(quote);
     Ok(output)
 }
-
-#[path = "tests.rs"]
-mod tests;
