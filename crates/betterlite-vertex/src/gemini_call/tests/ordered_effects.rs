@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::media_fetch::error::ImageFetchError;
 use rstest::rstest;
 use secrecy::SecretString;
 use tempfile::NamedTempFile;
@@ -15,11 +16,10 @@ use tracing::subscriber::with_default;
 use crate::cache_lookup::target::CacheProvider;
 use crate::gemini_call::GeminiReply;
 use crate::gemini_call::error::GeminiCallError;
-use crate::gemini_history::error::HistoryError;
 use crate::gemini_http::call::ClientKind;
 use crate::gemini_http::error::{GeminiHttpError, GeminiStreamError};
-use crate::gemini_media::error::{MediaError, MediaField};
-use crate::gemini_request::error::{BodyError, RequestError};
+use crate::gemini_media::error::MediaError;
+use crate::gemini_request::error::RequestError;
 use crate::gemini_stream::error::StreamError;
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::vertex_embedding_call::post::{ClientTimeout, HANDLER_DEFAULT_TIMEOUT, Timeout};
@@ -527,10 +527,10 @@ fn ordered_effects_target_error_precedes_the_transform(
     assert!(fixture.recorder.opens().is_empty());
 }
 
-// LiteLLM's async branch inlines remote media before the body (L2717, L2810); its sync branch skips that step (L2991)
+// LiteLLM's async branch inlines remote media before the body (L2717, L2810); its sync branch downloads it during conversion
 #[rstest]
-#[case::async_refuses_before_any_fetch_or_send(true, 0, 0)]
-#[case::sync_hands_the_media_to_the_fetcher_then_sends(false, 1, 1)]
+#[case::async_fetches_before_the_send(true, 1, 0)]
+#[case::sync_fetches_before_the_send(false, 1, 0)]
 fn ordered_effects_remote_tool_media_follows_the_branch_transform(
     #[case] acompletion: bool,
     #[case] fetches: usize,
@@ -543,19 +543,11 @@ fn ordered_effects_remote_tool_media_follows_the_branch_transform(
         stream: None,
         timeout: None,
     });
-    if acompletion {
-        let Err(GeminiCallError::Request(RequestError::Body(BodyError::History(
-            HistoryError::Media(refusal),
-        )))) = reply
-        else {
-            panic!("the async transform refuses the remote media");
-        };
-        assert_eq!(
-            refusal,
-            MediaError::RemoteMediaRequired(MediaField::ImageUrl)
-        );
-    } else {
-        assert!(matches!(reply, Ok(GeminiReply::Complete(_))));
+    match reply {
+        Err(GeminiCallError::Request(RequestError::Inline(MediaError::Fetch(
+            ImageFetchError::Rejected { .. },
+        )))) => {}
+        other => panic!("a failed download stops the call, got {other:?}"),
     }
     assert_eq!(fixture.fetches(), fetches);
     assert_eq!(fixture.recorder.posts().len(), posts);
