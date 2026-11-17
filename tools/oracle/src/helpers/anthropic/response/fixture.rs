@@ -66,7 +66,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
     let raw = raw_of(input, &headers);
     let mut envelope = ResponseEnvelope::new(input.id.clone());
     let subscriber = registry().with(warned.clone());
-    let result = with_default(subscriber, || {
+    let boxed = with_default(subscriber, || {
         transform_response(
             &mut envelope,
             &raw,
@@ -77,7 +77,9 @@ pub(super) fn run(input: &Input) -> HelperResult {
             },
             &TokenizerCounter,
         )
+        .map_err(Box::new)
     });
+    let result = boxed.map_err(|error| *error);
     let details = &logging.model_call_details;
     let fired = warned.0.load(Ordering::Relaxed);
     outcome(result, &envelope, details, fired)

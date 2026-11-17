@@ -120,9 +120,10 @@ class Warnings(logging.Handler):
 
 
 @dataclass
-class Logging:
+class Logging(LoggingSink):
     kwargs: dict[str, JsonValue] = field(default_factory=dict)
 
+    @override
     def post_call(self, **kwargs: JsonValue) -> None:
         self.kwargs = kwargs
 

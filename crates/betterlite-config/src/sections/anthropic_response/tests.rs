@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use rstest::rstest;
 
@@ -34,15 +35,19 @@ fn config(global: Option<bool>, deployments: &[Option<bool>]) -> String {
         source.push_str("  []\n");
     }
     for (index, flag) in deployments.iter().enumerate() {
-        source.push_str(&format!(
+        write!(
+            source,
             "  - model_name: m{index}\n    litellm_params:\n      model: anthropic/m{index}\n{}",
             deployment_flag(*flag)
-        ));
+        )
+        .unwrap();
     }
     if let Some(flag) = global {
-        source.push_str(&format!(
-            "litellm_settings:\n  disable_add_prefix_to_prompt: {flag}\n"
-        ));
+        writeln!(
+            source,
+            "litellm_settings:\n  disable_add_prefix_to_prompt: {flag}"
+        )
+        .unwrap();
     }
     source
 }
