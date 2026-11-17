@@ -40,7 +40,7 @@ const TYPE_FIELD: &str = "type";
 // The `thinking` branch: DeepSeek and the GPT reasoning models never take the field, everyone else maps it.
 pub async fn apply_thinking<Source, Transport, Lookup>(
     request: &ConverseParamsRequest<'_, Lookup>,
-    value: &ParamValue,
+    thinking: &ParamValue,
     optional_params: &mut ParamMap,
     environment: &mut CapabilityEnvironment<'_, Source, Transport>,
 ) -> Result<(), ConverseParamsError>
@@ -49,18 +49,17 @@ where
     Transport: ModelInfoClient,
     Lookup: ModelInfoLookup,
 {
-    let base_model = get_bedrock_base_model(request.model);
-    if is_deepseek_model(request.model, &base_model) {
+    let native = is_deepseek_model(request.model, &get_bedrock_base_model(request.model));
+    if native {
         tracing::debug!(
             "Dropping unsupported `thinking` param for Bedrock model={}; it reasons natively.",
             request.model
         );
+    }
+    if native || is_openai_gpt_reasoning_model(request.model) {
         return Ok(());
     }
-    if is_openai_gpt_reasoning_model(request.model) {
-        return Ok(());
-    }
-    if is_explicit_adaptive(value)
+    if is_explicit_adaptive(thinking)
         && !supports_model_capability(
             request.model,
             ADAPTIVE_CAPABILITY,
@@ -70,39 +69,68 @@ where
         )
         .await
     {
-        // A model without adaptive thinking still gets the medium legacy budget, capped by the request's limit.
-        let reasoning = ReasoningRequest {
+        if let Some(mapped) = apply_adaptive_fallback(request, environment).await? {
+            optional_params.insert(THINKING_FIELD.to_owned(), mapped);
+        }
+        return Ok(());
+    }
+    optional_params.insert(THINKING_FIELD.to_owned(), thinking.clone());
+    translate_for_adaptive_model(request, optional_params, environment).await
+}
+
+// A model without adaptive thinking still gets the medium legacy budget, capped by the request's limit.
+async fn apply_adaptive_fallback<Source, Transport, Lookup>(
+    request: &ConverseParamsRequest<'_, Lookup>,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> Result<Option<ParamValue>, ConverseParamsError>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+    Lookup: ModelInfoLookup,
+{
+    let limit = cap_limit(request.non_default_params)?;
+    let mapped = map_reasoning_effort(
+        &ReasoningRequest {
             reasoning_effort: Some(MEDIUM_EFFORT),
             model: request.model,
             custom_llm_provider: BEDROCK_PROVIDER,
             llm_provider: CONVERSE_PROVIDER,
             budgets: request.budgets,
-        };
-        let limit = cap_limit(request.non_default_params)?;
-        let legacy = map_reasoning_effort(&reasoning, environment, request.catalogs).await?;
-        let capped = legacy
-            .as_ref()
-            .and_then(as_object)
-            .and_then(|fields| cap_thinking_to_max_tokens(fields, limit));
-        let Some(thinking) = capped else {
-            tracing::warn!(
-                "{}",
-                DROP_ADAPTIVE_THINKING_WARNING.replacen("%s", request.model, 1)
-            );
-            return Ok(());
-        };
-        optional_params.insert(THINKING_FIELD.to_owned(), transcode(&thinking)?);
-        return Ok(());
-    }
-    optional_params.insert(THINKING_FIELD.to_owned(), value.clone());
-    // B688 turns a legacy budget into an effort only on models that dropped the legacy field.
+        },
+        environment,
+        request.catalogs,
+    )
+    .await?;
+    let Some(capped) = mapped
+        .as_ref()
+        .and_then(as_object)
+        .and_then(|fields| cap_thinking_to_max_tokens(fields, limit))
+    else {
+        tracing::warn!(
+            "{}",
+            DROP_ADAPTIVE_THINKING_WARNING.replacen("%s", request.model, 1)
+        );
+        return Ok(None);
+    };
+    Ok(Some(transcode(&capped)?))
+}
+
+// B688 turns a legacy budget into an effort only on models that dropped the legacy field.
+async fn translate_for_adaptive_model<Source, Transport, Lookup>(
+    request: &ConverseParamsRequest<'_, Lookup>,
+    optional_params: &mut ParamMap,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> Result<(), ConverseParamsError>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+    Lookup: ModelInfoLookup,
+{
     let mut params = OptionalParams {
         reasoning_effort: optional_param_json(optional_params, REASONING_EFFORT_FIELD)?,
         thinking: optional_param_json(optional_params, THINKING_FIELD)?,
         output_config: optional_param_json(optional_params, OUTPUT_CONFIG_FIELD)?,
     };
-    let before_thinking = params.thinking.clone();
-    let before_output = params.output_config.clone();
     let legacy_request = ThinkingRequest {
         model: request.model,
         custom_llm_provider: BEDROCK_PROVIDER,
@@ -113,19 +141,10 @@ where
         },
     };
     translate_legacy_thinking(&legacy_request, &mut params, environment, request.catalogs).await?;
-    if params.thinking != before_thinking {
-        match params.thinking {
-            Some(thinking) => {
-                optional_params.insert(THINKING_FIELD.to_owned(), transcode(&thinking)?);
-            }
-            None => {
-                optional_params.shift_remove(THINKING_FIELD);
-            }
-        }
+    if let Some(thinking) = params.thinking {
+        optional_params.insert(THINKING_FIELD.to_owned(), transcode(&thinking)?);
     }
-    if params.output_config != before_output
-        && let Some(output_config) = params.output_config
-    {
+    if let Some(output_config) = params.output_config {
         optional_params.insert(OUTPUT_CONFIG_FIELD.to_owned(), transcode(&output_config)?);
     }
     Ok(())
@@ -134,7 +153,7 @@ where
 // The `reasoning_effort` branch: only a string reaches B600, after the R1 models get their debug log.
 pub async fn apply_reasoning_effort<Source, Transport, Lookup>(
     request: &ConverseParamsRequest<'_, Lookup>,
-    value: &ParamValue,
+    requested: &ParamValue,
     optional_params: &mut ParamMap,
     environment: &mut CapabilityEnvironment<'_, Source, Transport>,
 ) -> Result<(), ConverseParamsError>
@@ -143,11 +162,10 @@ where
     Transport: ModelInfoClient,
     Lookup: ModelInfoLookup,
 {
-    let ParamValue::Text(effort) = value else {
+    let ParamValue::Text(effort) = requested else {
         return Ok(());
     };
-    let base_model = get_bedrock_base_model(request.model);
-    if rejects_reasoning_effort(request.model, &base_model) {
+    if rejects_reasoning_effort(request.model, &get_bedrock_base_model(request.model)) {
         tracing::debug!(
             "Dropping unsupported `reasoning_effort` param for Bedrock model={}; it always reasons and rejects it.",
             request.model
@@ -167,8 +185,8 @@ where
         environment,
         &sources,
     )
-    .await?;
-    Ok(())
+    .await
+    .map_err(ConverseParamsError::Options)
 }
 
 // The `output_config` branch copies the dict before B690 normalizes the effort ceiling.
@@ -195,10 +213,9 @@ where
 // Python's `max_completion_tokens or max_tokens`: a falsy value falls through, and null is absent.
 fn cap_limit(non_default_params: &ParamMap) -> Result<Option<i64>, ConverseParamsError> {
     let completion = non_default_params.get(MAX_COMPLETION_TOKENS_FIELD);
-    let chosen = if completion.is_some_and(wire::carries_value) {
-        completion
-    } else {
-        non_default_params.get(MAX_TOKENS_FIELD)
+    let chosen = match completion {
+        Some(value) if wire::carries_value(value) => completion,
+        _ => non_default_params.get(MAX_TOKENS_FIELD),
     };
     match chosen {
         None | Some(ParamValue::Null) => Ok(None),

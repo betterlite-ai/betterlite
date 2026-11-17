@@ -52,7 +52,8 @@ where
     Lookup: ModelInfoLookup,
 {
     for (param, value) in request.non_default_params {
-        apply_param(request, optional_params, param, value, names, environment).await?;
+        apply_mapped_param(request, optional_params, param, value, names)?;
+        apply_reasoning_param(request, param, value, optional_params, environment).await?;
     }
     if !request.model.contains(GPT_OSS_MARKER) && !is_nova_2_model(request.model) {
         budget::update_thinking_budget(
@@ -64,20 +65,14 @@ where
     downgrade_forced_tool_choice(request.model, optional_params)
 }
 
-// One param's arm: the literal names check the value shape, the rest resolve capabilities.
-async fn apply_param<Source, Transport, Lookup>(
+// Every parameter the loop maps without resolving a capability, in the arm LiteLLM gives it.
+fn apply_mapped_param<Lookup>(
     request: &ConverseParamsRequest<'_, Lookup>,
     optional_params: &mut ParamMap,
     param: &str,
     value: &ParamValue,
     names: &mut ToolNameMap,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<(), ConverseParamsError>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Lookup: ModelInfoLookup,
-{
+) -> Result<(), ConverseParamsError> {
     match param {
         "max_tokens" | "max_completion_tokens" => {
             let max_tokens = max_tokens_value(request.model, value);
@@ -111,28 +106,36 @@ where
         "web_search_options" if matches!(value, ParamValue::Mapping(_)) => {
             apply_web_search(request.model, optional_params)?;
         }
-        "response_format" if matches!(value, ParamValue::Mapping(_)) => {
-            let thinking_enabled =
-                thinking_request(&transcode(request.non_default_params)?).thinking;
-            apply_response_format(
-                request,
-                optional_params,
-                value,
-                thinking_enabled,
-                environment,
-            )
-            .await?;
-        }
-        "thinking" => {
-            reasoning::apply_thinking(request, value, optional_params, environment).await?;
-        }
-        "reasoning_effort" => {
-            reasoning::apply_reasoning_effort(request, value, optional_params, environment).await?;
-        }
-        "output_config" if matches!(value, ParamValue::Mapping(_)) => {
-            reasoning::apply_output_config(request, value, optional_params).await?;
-        }
         _ => {}
+    }
+    Ok(())
+}
+
+// The arms whose prerequisites resolve capabilities, in the same elif chain's order.
+async fn apply_reasoning_param<Source, Transport, Lookup>(
+    request: &ConverseParamsRequest<'_, Lookup>,
+    param: &str,
+    value: &ParamValue,
+    optional_params: &mut ParamMap,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> Result<(), ConverseParamsError>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+    Lookup: ModelInfoLookup,
+{
+    if param == "response_format" && matches!(value, ParamValue::Mapping(_)) {
+        return apply_response_format(request, optional_params, value, environment).await;
+    }
+    if param == "thinking" {
+        return reasoning::apply_thinking(request, value, optional_params, environment).await;
+    }
+    if param == "reasoning_effort" {
+        return reasoning::apply_reasoning_effort(request, value, optional_params, environment)
+            .await;
+    }
+    if param == "output_config" && matches!(value, ParamValue::Mapping(_)) {
+        return reasoning::apply_output_config(request, value, optional_params).await;
     }
     Ok(())
 }
@@ -141,7 +144,6 @@ async fn apply_response_format<Source, Transport, Lookup>(
     request: &ConverseParamsRequest<'_, Lookup>,
     optional_params: &mut ParamMap,
     value: &ParamValue,
-    thinking_enabled: bool,
     environment: &mut CapabilityEnvironment<'_, Source, Transport>,
 ) -> Result<(), ConverseParamsError>
 where
@@ -150,6 +152,7 @@ where
     Lookup: ModelInfoLookup,
 {
     let encoded: Json = transcode(value)?;
+    let thinking_enabled = thinking_request(&transcode(request.non_default_params)?).thinking;
     let stream: Json = match request.non_default_params.get(STREAM_FIELD) {
         Some(stream) => transcode(stream)?,
         None => Json::Null,
