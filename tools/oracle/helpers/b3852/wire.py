@@ -1,11 +1,11 @@
 from typing import Final, Literal, TypeAlias, TypedDict
 
 import litellm
-from pydantic import JsonValue as Json, TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
 
-Fields: TypeAlias = dict[str, Json]
+Fields: TypeAlias = dict[str, JsonValue]
 Params: TypeAlias = dict[str, str]
 
 KIND = "b3852_memory"
@@ -14,8 +14,8 @@ MODEL = "gpt-4o"
 START_SECONDS = 1_704_067_200.0
 END_SECONDS = START_SECONDS + 1.5
 # log_pre_api_call takes messages untyped, so an empty list literal there would be list[Any]
-MESSAGES: Final[list[Json]] = []
-JSON: Final = TypeAdapter(Json)
+MESSAGES: Final[list[JsonValue]] = []
+JSON: Final = TypeAdapter(JsonValue)
 
 Function: TypeAlias = Literal[
     "pre_call",
@@ -44,4 +44,4 @@ class Input(TypedDict):
     auth_metadata: Params | None
     spaces: list[str]
     project_name: str | None
-    filter: Json
+    filter: JsonValue

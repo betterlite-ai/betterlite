@@ -6,6 +6,7 @@ import litellm
 from litellm.integrations.otel.plumbing.routing import TenantTracerCache
 from opentelemetry.sdk.metrics import MeterProvider as SdkMeterProvider
 from opentelemetry.sdk.trace import TracerProvider
+from pydantic import JsonValue as Json
 from typing_extensions import override
 
 from .exporters import (
@@ -17,7 +18,7 @@ from .exporters import (
     span_records,
 )
 from .payloads import close_kwargs, log_event, payload_document, payload_metadata, pre_call_details
-from .wire import JSON, MESSAGES, MODEL, Input, Json, Params
+from .wire import JSON, MESSAGES, MODEL, Input, Params
 
 
 class ErrorCounter(logging.Handler):
@@ -64,8 +65,9 @@ def run_mcp_tool_call(input_value: Input) -> Json:
     kwargs = close_kwargs(payload, metadata, input_value["credentials"])
     asyncio.run(log_event(logger, kwargs, failed=False))
     records = span_records([default_exporter])
+    names = sorted(record["name"] for record in records)
     return {
-        "names": JSON.validate_python(sorted(record["name"] for record in records)),
+        "names": JSON.validate_python(names),
         "count": len(records),
         "builds": len(factory.specs),
     }
@@ -111,8 +113,9 @@ def run_close_dedup(input_value: Input) -> Json:
     failure = payload_document("completion", "failure", metadata)
     asyncio.run(log_event(logger, close_kwargs(failure, metadata, None), failed=True))
     records = span_records([default_exporter])
+    names = sorted(record["name"] for record in records)
     return {
-        "names": JSON.validate_python(sorted(record["name"] for record in records)),
+        "names": JSON.validate_python(names),
         "count": len(records),
     }
 
@@ -161,9 +164,10 @@ def run_project_headers(input_value: Input) -> Json:
     spec = factory.specs[0]
     header_text = spec.headers
     pairs = header_text.split(",") if header_text is not None else []
+    header_pairs = sorted(pairs)
     return {
         "builds": len(factory.specs),
-        "header_pairs": JSON.validate_python(sorted(pairs)),
+        "header_pairs": JSON.validate_python(header_pairs),
         "endpoint": spec.endpoint,
         "detached": route.detached,
     }

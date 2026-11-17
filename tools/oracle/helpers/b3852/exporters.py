@@ -1,4 +1,4 @@
-from typing import Final, TypedDict
+from typing import TypedDict
 
 from litellm.integrations.otel.logger import OpenTelemetryV2
 from litellm.integrations.otel.model.config import ExporterSpec, OpenTelemetryV2Config
@@ -12,7 +12,6 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SpanExporter
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import Tracer
-from pydantic import TypeAdapter
 from typing_extensions import override
 
 from .wire import KIND, ExporterInput
@@ -86,14 +85,9 @@ class SpanRecord(TypedDict):
     links: int
 
 
-SPAN_RECORD: Final = TypeAdapter(SpanRecord)
-
-
 def span_records(exporters: list[MemoryExporter]) -> list[SpanRecord]:
     return [
-        SPAN_RECORD.validate_python(
-            {"name": span.name, "rooted": span.parent is None, "links": len(span.links)}
-        )
+        SpanRecord(name=span.name, rooted=span.parent is None, links=len(span.links))
         for exporter in exporters
         for span in exporter.get_finished_spans()
     ]
