@@ -104,14 +104,14 @@ impl Lar1Strategy {
         if exact {
             tracing::info!(
                 confidence = %lar1.confidence,
-                classified = target.wire_name(),
+                classified = %target.wire_name(),
                 "LAR-1 confidence routing"
             );
         } else {
             let actual = deployments.get(index).and_then(kind).unwrap_or("unknown");
             tracing::warn!(
-                classified = target.wire_name(),
-                actual,
+                classified = %target.wire_name(),
+                actual = %actual,
                 "LAR-1 has no deployment for the classified type and falls back"
             );
         }

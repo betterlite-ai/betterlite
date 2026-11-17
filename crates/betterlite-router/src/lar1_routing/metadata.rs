@@ -1,5 +1,9 @@
+use std::fmt::{self, Formatter};
+
 use rust_decimal::Decimal;
 use serde::Deserialize;
+use serde::de::value::MapAccessDeserializer;
+use serde::de::{Deserializer, MapAccess, Visitor};
 use thiserror::Error;
 
 // bounded-inputs: the request metadata fragment is untrusted bytes, so it stops before the decoder
@@ -79,6 +83,38 @@ const fn default_confidence() -> Decimal {
     DEFAULT_CONFIDENCE
 }
 
+// LiteLLM rejects a non-dict lar1 value, and serde would otherwise read a JSON array as a sequence
+struct ObjectOnly(Lar1Metadata);
+
+// ast-grep-ignore: no-custom-serde
+impl<'de> Deserialize<'de> for ObjectOnly {
+    // ast-grep-ignore: no-custom-serde
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ObjectVisitor;
+
+        // ast-grep-ignore: no-custom-serde
+        impl<'de> Visitor<'de> for ObjectVisitor {
+            type Value = ObjectOnly;
+
+            fn expecting(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a LAR-1 metadata object")
+            }
+
+            fn visit_map<A>(self, map: A) -> Result<ObjectOnly, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                Lar1Metadata::deserialize(MapAccessDeserializer::new(map)).map(ObjectOnly)
+            }
+        }
+
+        deserializer.deserialize_any(ObjectVisitor)
+    }
+}
+
 impl Default for Lar1Metadata {
     fn default() -> Self {
         Self {
@@ -100,8 +136,9 @@ impl Lar1Metadata {
                 max: MAX_METADATA_BYTES,
             });
         }
-        let metadata: Self =
-            serde_json::from_slice(bytes).map_err(|source| MetadataError::Invalid { source })?;
+        let metadata: Self = serde_json::from_slice::<ObjectOnly>(bytes)
+            .map_err(|source| MetadataError::Invalid { source })?
+            .0;
         let confidence = metadata.confidence;
         if confidence < Decimal::ZERO || confidence > Decimal::ONE {
             return Err(MetadataError::Confidence { confidence });
