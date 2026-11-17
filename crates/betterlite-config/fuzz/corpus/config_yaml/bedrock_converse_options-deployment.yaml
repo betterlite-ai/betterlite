@@ -1,0 +1,11 @@
+model_list:
+- model_name: nova
+  litellm_params:
+    model: bedrock/amazon.nova-pro-v1:0
+    maxTokens: 512
+    stopSequences: [END]
+    temperature: 0.4
+    topP: 0.9
+    topK: 5
+litellm_settings:
+  maxTokens: 1024

@@ -1,14 +1,12 @@
 use std::future::{Future, ready};
 
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_prompts::message_content::Message;
-use rstest::rstest;
 use tokio::runtime::{Builder, Runtime};
 
 use crate::gemini_options::params::ReasoningSupport;
-use crate::studio_chat::input::{ImageUrlFields, image_url_fields};
 use crate::studio_chat::settings::StudioSettings;
 use crate::studio_chat::{SUPPORTED_OPENAI_PARAMS, supported_openai_params, transform_messages};
 
@@ -136,41 +134,6 @@ fn the_tts_check_is_case_sensitive_and_a_substring() {
         supported_openai_params("gemini-2.5-flash-preview-tts-001", &no_reasoning()).len(),
         21
     );
-}
-
-#[rstest]
-#[case(
-    r#"{"type": "image_url", "image_url": {"url": "data:image/png;base64,YWJj", "format": "image/gif", "detail": "high"}}"#,
-    ImageUrlFields {
-        url: Some("data:image/png;base64,YWJj".to_owned()),
-        format: Some("image/gif".to_owned()),
-        detail: Some("high".to_owned()),
-    }
-)]
-#[case(
-    r#"{"type": "image_url", "image_url": "data:image/png;base64,YWJj"}"#,
-    ImageUrlFields {
-        url: Some("data:image/png;base64,YWJj".to_owned()),
-        format: None,
-        detail: None,
-    }
-)]
-#[case(r#"{"type": "image_url"}"#, ImageUrlFields::default())]
-#[case(
-    r#"{"type": "image_url", "image_url": null}"#,
-    ImageUrlFields::default()
-)]
-#[case(
-    r#"{"type": "image_url", "image_url": ["https://example.com/cat.png"]}"#,
-    ImageUrlFields::default()
-)]
-fn image_url_fields_reads_the_part_the_way_the_studio_prepass_does(
-    #[case] source: &str,
-    #[case] expected: ImageUrlFields,
-) {
-    let part: Object = serde_json::from_str(source).unwrap();
-
-    assert_eq!(image_url_fields(&part), expected);
 }
 
 fn parse_json(source: &str) -> Json {

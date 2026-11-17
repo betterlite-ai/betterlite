@@ -1,0 +1,10 @@
+kind: helper
+name: standalone-usage
+call:
+  gemini_live_frames:
+    frames:
+      - '{"usageMetadata": {"promptTokenCount": 4}}'
+      - '{"serverContent": {"turnComplete": true}}'
+calls: []
+env: {}
+compare: {ignore: []}

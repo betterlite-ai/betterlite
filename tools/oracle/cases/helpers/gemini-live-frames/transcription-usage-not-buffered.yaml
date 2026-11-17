@@ -1,0 +1,12 @@
+kind: helper
+name: transcription-usage-not-buffered
+call:
+  gemini_live_frames:
+    model: gemini/gemini-3.5-transcribe-live
+    unbilled_input_audio_bytes: 96000
+    frames:
+      - '{"serverContent": {"inputTranscription": {"text": "hello"}}, "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 5, "totalTokenCount": 15}}'
+      - '{"serverContent": {"turnComplete": true}}'
+calls: []
+env: {}
+compare: {ignore: []}

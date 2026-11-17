@@ -1,0 +1,12 @@
+kind: helper
+name: next-content-after-tool
+call:
+  gemini_live_frames:
+    frames:
+      - '{"toolCall": {"functionCalls": [{"name": "lookup", "args": {"city": "Paris"}}]}}'
+      - '{"serverContent": {"turnComplete": true}, "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 5, "totalTokenCount": 15}}'
+      - '{"serverContent": {"modelTurn": {"parts": [{"text": "hi"}]}}}'
+      - '{"serverContent": {"turnComplete": true}}'
+calls: []
+env: {}
+compare: {ignore: []}
