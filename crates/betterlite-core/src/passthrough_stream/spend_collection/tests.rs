@@ -49,10 +49,11 @@ impl BasePassthroughConfig for CountingConfig {
 
     fn get_complete_url(
         &self,
-        _request: &PassthroughUrlRequest<'_>,
+        request: &PassthroughUrlRequest<'_>,
     ) -> Result<(Url, String), Self::Error> {
         let base = "https://api.test";
-        Ok((Url::parse(base).unwrap(), base.to_owned()))
+        let url = self.format_url(request.target.endpoint, base, None)?;
+        Ok((url, base.to_owned()))
     }
 
     fn create_stream_collector(
@@ -118,8 +119,8 @@ fn owned_spend_builds_the_provider_collector_once_at_construction() {
         assert_eq!(
             *targets,
             vec![(MODEL.to_owned(), PROVIDER.to_owned(), ENDPOINT.to_owned())]
-        );
-    }
+        )
+    };
     PassthroughStreamCollector::add(&mut sink, b"data: one\n\n");
     let mut logging = NoopPassthroughLogging;
     let logged = sink
@@ -146,7 +147,8 @@ fn add_absorbs_a_collector_failure_and_drops_later_chunks() {
         let guarded = state.lock().unwrap_or_else(PoisonError::into_inner);
         assert_eq!(guarded.calls, 1);
         assert!(guarded.chunks.is_empty());
-    }
+        drop(guarded)
+    };
     assert!(spend.take_flush().is_none());
     let errors: Vec<_> = captured
         .events()
@@ -170,9 +172,9 @@ fn add_absorbs_a_collector_failure_and_drops_later_chunks() {
 
 #[test]
 fn should_flush_needs_chunks_and_a_successful_collector() {
-    let (mut empty, _state) = collection();
+    let (mut empty, _empty_state) = collection();
     assert!(empty.take_flush().is_none());
-    let (mut kept, _state) = collection();
+    let (mut kept, _kept_state) = collection();
     kept.add(b"a");
     assert!(kept.take_flush().is_some());
     let (mut failed, state) = collection();
@@ -200,8 +202,8 @@ fn owned_spend_stops_collecting_exactly_past_the_byte_cap() {
     let mut sink = owned_spend(config);
     {
         let chunk = vec![b'a'; MAX_COLLECTED_BYTES];
-        PassthroughStreamCollector::add(&mut sink, &chunk);
-    }
+        PassthroughStreamCollector::add(&mut sink, &chunk)
+    };
     let mut logging = NoopPassthroughLogging;
     assert!(
         sink.build_logged_response(&mut logging)

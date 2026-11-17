@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::fmt::Debug;
 use std::io::{ErrorKind, Read as _, Write as _};
+use std::mem::take;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -162,6 +164,7 @@ impl SpendSink for RecordingSink {
             });
         }
         state.chunks.push(chunk.to_vec());
+        drop(state);
         Ok(())
     }
 
@@ -192,7 +195,10 @@ impl PassthroughStreamCollector for RecordingCollector {
         _logging_obj: &mut dyn PassthroughLogging,
     ) -> Result<Option<Self::Logged>, PassthroughError> {
         let joined = self.chunks.concat();
-        Ok(Some(String::from_utf8(joined).unwrap()))
+        let text = String::from_utf8(joined).map_err(|error| PassthroughError::InvalidUtf8 {
+            source: error.utf8_error(),
+        })?;
+        Ok(Some(text))
     }
 }
 
@@ -270,7 +276,10 @@ impl FakeLogging {
             .clone()
     }
 
-    fn record(&self, collector: BoxedCollector<String>) -> Result<(), FakeFlushError> {
+    fn record(
+        &self,
+        collector: &dyn PassthroughStreamCollector<Logged = String>,
+    ) -> Result<(), FakeFlushError> {
         let mut logging = NoopPassthroughLogging;
         let logged = collector
             .build_logged_response(&mut logging)
@@ -315,14 +324,14 @@ impl SpendLogging<String> for FakeLogging {
             self.started.notify_one();
             gate.notified().await;
         }
-        self.record(collector)
+        self.record(collector.as_ref())
     }
 
     fn flush_collected_chunks(
         &self,
         collector: BoxedCollector<String>,
     ) -> Result<(), Self::FlushError> {
-        self.record(collector)
+        self.record(collector.as_ref())
     }
 }
 
@@ -348,7 +357,7 @@ pub(crate) fn inline_executor() -> RecordingExecutor {
 impl RecordingExecutor {
     pub(crate) fn run_jobs(&self) {
         let mut guard = self.jobs.lock().unwrap_or_else(PoisonError::into_inner);
-        let jobs = std::mem::take(&mut *guard);
+        let jobs = take(&mut *guard);
         drop(guard);
         for job in jobs {
             job();
@@ -420,56 +429,7 @@ pub(crate) struct ScriptedSource {
 }
 
 impl ScriptedSource {
-    #[must_use]
-    pub(crate) fn new(script: Script) -> Self {
-        Self {
-            script,
-            log: Arc::new(Mutex::new(SourceLog::default())),
-        }
-    }
-}
-
-impl AsyncChunkSource for ScriptedSource {
-    fn next_chunk(&mut self) -> BoxFuture<'_, Result<Option<Vec<u8>>, HttpError>> {
-        Box::pin(async move {
-            match self.script.steps.pop_front() {
-                Some(Step::Chunk(bytes)) => Ok(Some(bytes)),
-                Some(Step::Fail) => Err(HttpError::Timeout),
-                None => Ok(None),
-            }
-        })
-    }
-
-    fn read_body(&mut self) -> BoxFuture<'_, Result<Vec<u8>, HttpError>> {
-        Box::pin(async move {
-            {
-                let mut log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
-                log.body_reads = log.body_reads.saturating_add(1);
-            }
-            if self.script.body_fails {
-                return Err(HttpError::Timeout);
-            }
-            Ok(self.script.body.take().unwrap_or_default())
-        })
-    }
-
-    fn close(&mut self) -> BoxFuture<'_, Result<(), HttpError>> {
-        Box::pin(async move {
-            {
-                let mut log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
-                log.closed = log.closed.saturating_add(1);
-            }
-            self.script.steps.clear();
-            if self.script.close_fails {
-                return Err(HttpError::Timeout);
-            }
-            Ok(())
-        })
-    }
-}
-
-impl SyncChunkSource for ScriptedSource {
-    fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, HttpError> {
+    fn take_chunk(&mut self) -> Result<Option<Vec<u8>>, HttpError> {
         match self.script.steps.pop_front() {
             Some(Step::Chunk(bytes)) => Ok(Some(bytes)),
             Some(Step::Fail) => Err(HttpError::Timeout),
@@ -477,14 +437,55 @@ impl SyncChunkSource for ScriptedSource {
         }
     }
 
-    fn close(&mut self) -> Result<(), HttpError> {
-        let mut log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
-        log.closed = log.closed.saturating_add(1);
+    fn take_body(&mut self) -> Result<Vec<u8>, HttpError> {
+        self.note_body_read();
+        if self.script.body_fails {
+            return Err(HttpError::Timeout);
+        }
+        Ok(self.script.body.take().unwrap_or_default())
+    }
+
+    fn finish_close(&mut self) -> Result<(), HttpError> {
+        self.note_close();
         self.script.steps.clear();
         if self.script.close_fails {
             return Err(HttpError::Timeout);
         }
         Ok(())
+    }
+
+    fn note_body_read(&self) {
+        let mut log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
+        log.body_reads = log.body_reads.saturating_add(1);
+    }
+
+    fn note_close(&self) {
+        let mut log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
+        log.closed = log.closed.saturating_add(1);
+    }
+}
+
+impl AsyncChunkSource for ScriptedSource {
+    fn next_chunk(&mut self) -> BoxFuture<'_, Result<Option<Vec<u8>>, HttpError>> {
+        Box::pin(async move { self.take_chunk() })
+    }
+
+    fn read_body(&mut self) -> BoxFuture<'_, Result<Vec<u8>, HttpError>> {
+        Box::pin(async move { self.take_body() })
+    }
+
+    fn close(&mut self) -> BoxFuture<'_, Result<(), HttpError>> {
+        Box::pin(async move { self.finish_close() })
+    }
+}
+
+impl SyncChunkSource for ScriptedSource {
+    fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, HttpError> {
+        self.take_chunk()
+    }
+
+    fn close(&mut self) -> Result<(), HttpError> {
+        self.finish_close()
     }
 }
 
@@ -553,13 +554,16 @@ impl ReplyFixture {
     }
 
     pub(crate) fn into_sync(self) -> SyncResponse {
+        let Self {
+            status_code,
+            headers,
+            script,
+            log,
+        } = self;
         SyncResponse {
-            status_code: self.status_code,
-            headers: self.headers,
-            source: Box::new(ScriptedSource {
-                script: self.script,
-                log: self.log,
-            }),
+            status_code,
+            headers,
+            source: Box::new(ScriptedSource { script, log }),
         }
     }
 }
@@ -633,9 +637,12 @@ impl Fixture {
         fixture
     }
 
-    pub(crate) async fn settled(&self) {
-        self.tracker.close();
-        self.tracker.wait().await;
+    pub(crate) fn settled(&self) -> BoxFuture<'_, ()> {
+        let tracker = self.tracker.clone();
+        Box::pin(async move {
+            tracker.close();
+            tracker.wait().await;
+        })
     }
 }
 
@@ -674,53 +681,41 @@ impl SyncFixture {
 }
 
 pub(crate) struct FakeSender {
-    pub(crate) status_code: u16,
-    pub(crate) headers: HeaderMap,
-    pub(crate) script: Script,
+    pub(crate) reply: ReplyFixture,
     pub(crate) immediate: bool,
     pub(crate) send_fails: bool,
-    pub(crate) log: Arc<Mutex<SourceLog>>,
 }
 
 impl FakeSender {
     #[must_use]
     pub(crate) fn replying(reply: ReplyFixture) -> Self {
         Self {
-            status_code: reply.status_code,
-            headers: reply.headers,
-            script: reply.script,
+            reply,
             immediate: false,
             send_fails: false,
-            log: reply.log,
         }
     }
 
     #[must_use]
     pub(crate) fn immediate() -> Self {
         Self {
-            status_code: 200,
-            headers: HeaderMap::new(),
-            script: script(Vec::new()),
+            reply: ReplyFixture::ok(script(Vec::new())),
             immediate: true,
             send_fails: false,
-            log: Arc::new(Mutex::new(SourceLog::default())),
         }
     }
 
     #[must_use]
     pub(crate) fn failing() -> Self {
         Self {
-            status_code: 200,
-            headers: HeaderMap::new(),
-            script: script(Vec::new()),
+            reply: ReplyFixture::ok(script(Vec::new())),
             immediate: false,
             send_fails: true,
-            log: Arc::new(Mutex::new(SourceLog::default())),
         }
     }
 
     pub(crate) fn log(&self) -> Arc<Mutex<SourceLog>> {
-        Arc::clone(&self.log)
+        Arc::clone(&self.reply.log)
     }
 }
 
@@ -736,11 +731,11 @@ impl PassthroughSender for FakeSender {
                 )))
             }));
         }
-        let status_code = self.status_code;
-        let headers = self.headers.clone();
+        let status_code = self.reply.status_code;
+        let headers = self.reply.headers.clone();
         let source = ScriptedSource {
-            script: self.script.clone(),
-            log: Arc::clone(&self.log),
+            script: self.reply.script.clone(),
+            log: Arc::clone(&self.reply.log),
         };
         PendingSend::Coroutine(Box::pin(async move {
             Ok(AsyncResponse {
@@ -876,7 +871,7 @@ struct EventVisitor {
 }
 
 impl Visit for EventVisitor {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         let text = format!("{value:?}");
         self.capture(field, text);
     }

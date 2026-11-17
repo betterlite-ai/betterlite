@@ -90,16 +90,16 @@ async fn init_of_a_consumed_send_reports_it_was_awaited() {
         error.to_string(),
         "the passthrough request could not be sent"
     );
-    let error = fixture
+    let second = fixture
         .stream
         .init()
         .await
         .expect_err("the send is consumed");
     assert_eq!(
-        error.to_string(),
+        second.to_string(),
         "the async passthrough stream cannot be awaited twice; its send was already consumed"
     );
-    assert!(matches!(error, PassthroughStreamError::AlreadyAwaited));
+    assert!(matches!(second, PassthroughStreamError::AlreadyAwaited));
     assert!(!fixture.stream.initialized);
 }
 

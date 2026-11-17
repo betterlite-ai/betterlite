@@ -4,7 +4,7 @@ use betterlite_http::error::HttpError;
 use futures_util::StreamExt as _;
 use futures_util::stream;
 
-use super::{AsyncChunkSource, StreamBody};
+use super::{AsyncChunkSource as _, StreamBody};
 
 fn body_of(items: Vec<Result<Vec<u8>, HttpError>>, body_limit: usize) -> StreamBody {
     StreamBody {

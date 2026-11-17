@@ -195,12 +195,12 @@ async fn iteration_after_a_status_error_has_no_source() {
         .await
         .expect_err("500 cannot stream");
     assert!(matches!(error, PassthroughStreamError::UpstreamStatus(_)));
-    let error = fixture
+    let second = fixture
         .stream
         .next_chunk()
         .await
         .expect_err("no source was stored");
-    assert!(matches!(error, PassthroughStreamError::AlreadyAwaited));
+    assert!(matches!(second, PassthroughStreamError::AlreadyAwaited));
 }
 
 #[tokio::test]

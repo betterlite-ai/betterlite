@@ -169,10 +169,9 @@ async fn streaming_reply_is_initialized_and_collects_with_the_logging_target() {
     )
     .await
     .expect("the stream starts");
-    let AsyncPassthroughReply::Stream(stream) = reply else {
+    let AsyncPassthroughReply::Stream(mut stream) = reply else {
         panic!("expected a stream");
     };
-    let mut stream = stream;
     assert!(stream.initialized);
     assert_eq!(stream.status_code().expect("initialized"), 200);
     assert_eq!(
@@ -246,10 +245,9 @@ async fn streaming_empty_body_still_returns_a_stream() {
     )
     .await
     .expect("the stream starts");
-    let AsyncPassthroughReply::Stream(stream) = reply else {
+    let AsyncPassthroughReply::Stream(mut stream) = reply else {
         panic!("expected a stream");
     };
-    let mut stream = stream;
     assert_eq!(stream.next_chunk().await.expect("end"), None);
     stream.background_tasks.close();
     stream.background_tasks.wait().await;
@@ -296,10 +294,9 @@ async fn proxied_client_relays_a_streaming_reply_and_collects_chunks() {
     )
     .await
     .expect("the stream starts");
-    let AsyncPassthroughReply::Stream(stream) = reply else {
+    let AsyncPassthroughReply::Stream(mut stream) = reply else {
         panic!("expected a stream");
     };
-    let mut stream = stream;
     let mut body = Vec::new();
     while let Some(chunk) = stream.next_chunk().await.expect("the body streams") {
         body.extend_from_slice(&chunk);

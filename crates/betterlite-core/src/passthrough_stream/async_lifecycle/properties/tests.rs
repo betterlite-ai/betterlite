@@ -36,7 +36,7 @@ fn headers_before_init_names_the_field() {
 
 #[tokio::test]
 async fn accessors_report_the_initialized_response() {
-    let mut fixture = Fixture::ready(ReplyFixture::ok(script(Vec::new()))).await;
+    let fixture = Fixture::ready(ReplyFixture::ok(script(Vec::new()))).await;
     assert_eq!(fixture.stream.status_code().expect("initialized"), 200);
     assert_eq!(
         fixture
