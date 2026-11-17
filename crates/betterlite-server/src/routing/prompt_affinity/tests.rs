@@ -26,10 +26,10 @@ use crate::routing::router_core::RouterServices;
 
 use super::{DualCachePins, PinCache, PromptAffinityInputs};
 
-fn configured(prompt_caching: bool, maximum_base64_length: Option<&str>) -> section::Settings {
+fn configured(prompt_caching: bool, maximum_base64_length: i64) -> section::Settings {
     section::Settings {
         prompt_caching,
-        maximum_base64_length: maximum_base64_length.map(str::to_owned),
+        maximum_base64_length,
     }
 }
 
@@ -68,23 +68,26 @@ fn message_uri(payload: &str) -> Json {
 
 #[test]
 fn the_check_is_off_unless_the_config_names_it() {
-    assert!(!settings(&configured(false, None)).unwrap().enabled);
-    assert!(settings(&configured(true, None)).unwrap().enabled);
+    assert!(!settings(&configured(false, 64)).unwrap().enabled);
+    assert!(settings(&configured(true, 64)).unwrap().enabled);
 }
 
 #[test]
 fn the_configured_base64_limit_decides_which_payloads_shrink() {
     let payload = "A".repeat(12);
     let message = message_uri(&payload);
-    let default = settings(&configured(true, None)).unwrap().truncator;
-    let short = settings(&configured(true, Some("8"))).unwrap().truncator;
+    let default = settings(&configured(true, 64)).unwrap().truncator;
+    let short = settings(&configured(true, 8)).unwrap().truncator;
     assert_eq!(default.truncate_messages(&message).unwrap(), message);
     assert_ne!(short.truncate_messages(&message).unwrap(), message);
 }
 
+// MAX_BASE64_LENGTH_FOR_LOGGING of 0 or below turns truncation off
 #[test]
-fn a_malformed_base64_limit_is_an_error() {
-    assert!(settings(&configured(true, Some("many"))).is_err());
+fn a_negative_base64_limit_turns_truncation_off() {
+    let message = message_uri(&"A".repeat(12));
+    let off = settings(&configured(true, -1)).unwrap().truncator;
+    assert_eq!(off.truncate_messages(&message).unwrap(), message);
 }
 
 #[tokio::test]

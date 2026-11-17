@@ -54,11 +54,23 @@ fn the_configured_list_selects_the_check(#[case] source: &str, #[case] expected:
 #[test]
 fn the_base64_limit_comes_from_the_injected_environment() {
     let configured = settings_with(&[("MAX_BASE64_LENGTH_FOR_LOGGING", "128")], "");
-    assert_eq!(configured.maximum_base64_length.as_deref(), Some("128"));
+    assert_eq!(configured.maximum_base64_length, 128);
 }
 
 #[test]
 fn an_unset_base64_limit_keeps_the_placeholder_default() {
     let configured = settings_with(&[("SOME_OTHER_VARIABLE", "128")], "");
-    assert_eq!(configured.maximum_base64_length, None);
+    assert_eq!(configured.maximum_base64_length, 64);
+}
+
+// litellm.constants.MAX_BASE64_LENGTH_FOR_LOGGING is int(os.getenv(...)), so a value that is not a number stops the load
+#[test]
+fn a_base64_limit_that_is_not_a_number_stops_the_load() {
+    let lookup: BTreeMap<String, String> = [(
+        "MAX_BASE64_LENGTH_FOR_LOGGING".to_owned(),
+        "many".to_owned(),
+    )]
+    .into_iter()
+    .collect();
+    assert!(ConfigLoader { lookup }.load("").is_err());
 }

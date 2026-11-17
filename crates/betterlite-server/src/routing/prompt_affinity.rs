@@ -28,13 +28,15 @@ pub struct PromptAffinitySettings {
     pub truncator: Base64Truncator,
 }
 
-// Router.add_optional_pre_call_checks builds the check off its config list, and the placeholders off the environment
+// Router.add_optional_pre_call_checks builds the check off its config list, and the placeholder limit is already resolved
 pub fn settings(
     section: &section::Settings,
 ) -> Result<PromptAffinitySettings, PromptAffinityError> {
     Ok(PromptAffinitySettings {
         enabled: section.prompt_caching,
-        truncator: Base64Truncator::from_env(section.maximum_base64_length.as_deref())?,
+        truncator: Base64Truncator::new(
+            usize::try_from(section.maximum_base64_length).unwrap_or(0),
+        )?,
     })
 }
 
