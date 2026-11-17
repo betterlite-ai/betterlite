@@ -1,9 +1,14 @@
+use std::collections::BTreeSet;
+use std::sync::LazyLock;
+
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
 
 use crate::chat::deployment::{ChatDeployment, Provider};
 use crate::chat::{ChatMessage, ChatRequest, MessageContent, Role};
+use crate::text_completion_execution::catalog::CompletionCatalog;
 use crate::text_completion_execution::failure::CompletionFailure;
+use crate::text_completion_policy::SUPPORTED_PARAMS;
 use crate::text_completion_request::{CompletionPrompt, CompletionRequest};
 use crate::text_completion_transport::call::TextCompletionRequest as TransportRequest;
 
@@ -16,6 +21,10 @@ const TEXT_COMPLETION_PREFIXES: [&str; 3] = [
 
 // completion() sends the OpenAI fine-tuned completion models to the text endpoint without a conversion
 const FINE_TUNED_COMPLETIONS: [&str; 2] = ["ft:babbage-002", "ft:davinci-002"];
+
+// get_llm_provider sends a model in open_ai_text_completion_models to the text provider even untagged
+static TEXT_COMPLETION_MODELS: LazyLock<BTreeSet<String>> =
+    LazyLock::new(|| CompletionCatalog::bundled().text_models);
 
 // Chat kwargs LiteLLM reads itself, so a rebuilt text request must not carry them to the provider
 const CONTROL_PARAMS: [&str; 12] = [
@@ -54,11 +63,12 @@ pub enum CompletionEndpoint {
 
 #[must_use]
 pub fn chat_endpoint(deployment: &ChatDeployment) -> ChatEndpoint {
-    // the provider tag itself is the prefix, so only a provider that resolved to the prefix matches
+    // the provider tag itself is the prefix, and an untagged model of the set resolves to text-completion-openai
     if let Provider::Unsupported { model } = &deployment.provider
-        && TEXT_COMPLETION_PREFIXES
+        && (TEXT_COMPLETION_PREFIXES
             .iter()
             .any(|prefix| model.starts_with(prefix))
+            || TEXT_COMPLETION_MODELS.contains(model))
     {
         return ChatEndpoint::Text { convert: true };
     }
@@ -81,8 +91,9 @@ pub fn text_endpoint_model(deployment: &ChatDeployment) -> Option<String> {
     match chat_endpoint(deployment) {
         ChatEndpoint::Chat => None,
         ChatEndpoint::Text { .. } => Some(match &deployment.provider {
-            Provider::Unsupported { model } => model
-                .strip_prefix("text-completion-openai/")
+            Provider::Unsupported { model } => TEXT_COMPLETION_PREFIXES
+                .iter()
+                .find_map(|prefix| model.strip_prefix(prefix))
                 .or_else(|| model.strip_prefix("openai/"))
                 .map_or_else(|| model.clone(), str::to_owned),
             Provider::OpenAi { model } => model.clone(),
@@ -122,6 +133,17 @@ pub fn text_request(
     params.remove("model");
     params.remove("messages");
     params.retain(|name, _| !CONTROL_PARAMS.contains(&name.as_str()) && !name.starts_with('_'));
+    // get_optional_params raises UnsupportedParamsError when a set value is outside the text config's list
+    if let Some(name) = params
+        .keys()
+        .find(|name| !SUPPORTED_PARAMS.contains(&name.as_str()))
+    {
+        return Err(failure(
+            400,
+            Some("invalid_request_error"),
+            &format!("the text endpoint does not support the parameter {name}"),
+        ));
+    }
     if request.stream {
         params.insert(String::from("stream"), Value::Bool(true));
         // the proxy asks every streamed text provider for usage, whatever the client sent
@@ -182,6 +204,22 @@ pub fn chat_request(request: &CompletionRequest) -> Result<ChatRequest, Completi
     {
         passthrough.insert(String::from("function_call"), value);
     }
+    // text_completion() hands these to the chat call, whose OpenAI config supports and forwards all three
+    for (name, value) in [
+        (
+            "logit_bias",
+            request
+                .logit_bias
+                .as_ref()
+                .and_then(|bias| serde_json::to_value(bias).ok()),
+        ),
+        ("logprobs", request.logprobs.map(Value::from)),
+        ("top_logprobs", request.top_logprobs.map(Value::from)),
+    ] {
+        if let Some(value) = value {
+            passthrough.insert(String::from(name), value);
+        }
+    }
     Ok(ChatRequest {
         model: request.model.clone(),
         messages: messages
@@ -208,7 +246,7 @@ pub fn chat_request(request: &CompletionRequest) -> Result<ChatRequest, Completi
         max_completion_tokens: None,
         seed: request.seed,
         stop: request.stop.clone(),
-        // a chat logprobs flag is a boolean, so the text request's depth cannot be carried
+        // the chat field is a boolean flag, so the text request's depth rides the passthrough instead
         logprobs: None,
         top_logprobs: None,
         user: request.user.clone(),
