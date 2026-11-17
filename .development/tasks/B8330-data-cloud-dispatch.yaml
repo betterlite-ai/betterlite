@@ -108,5 +108,5 @@ pitfalls:
   - "The Responses branch lowers the model before the gpt check, so GPT-5 matches and a model without gpt gets no config at all."
   - "The snowflake arm also matches a model in the snowflake catalog list when the provider is something else, so keep it after the arms that come before it at L6043."
   - "databricks-oauth-m2m.yaml scripts both replies in the case field upstream, a list the mock answers in arrival order: the token reply first, then the chat reply. A request past the end fails with provider answer sequence exhausted. Only case env values get the mock address, through {{upstream}} (DATABRICKS_API_BASE: {{upstream}}/serving-endpoints); reply bodies are sent as written."
-budget: {max_changed_lines: 1500, max_new_expects: 0}
+budget: {max_changed_lines: 2250, max_new_expects: 0}
 review_level: security

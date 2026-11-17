@@ -1,0 +1,26 @@
+kind: helper
+name: zero-duration-default
+call:
+  vertex_veo_operation:
+    default_duration_seconds: 11
+    calls:
+      - function: create_response
+        model: veo-3.0-generate-001
+        provider: vertex_ai
+        request_data:
+          parameters: {durationSeconds: 0, resolution: 720p}
+        response:
+          name: projects/p/locations/l/publishers/google/models/veo-3.0-generate-001/operations/op-1
+calls:
+  - vertex_veo_operation:
+      default_duration_seconds: 11
+      calls:
+        - function: create_response
+          model: veo-3.0-generate-001
+          provider: vertex_ai
+          request_data:
+            parameters: {resolution: 1080p}
+          response:
+            name: projects/p/locations/l/publishers/google/models/veo-3.0-generate-001/operations/op-1
+env: {DEFAULT_GOOGLE_VIDEO_DURATION_SECONDS: '11'}
+compare: {ignore: []}
