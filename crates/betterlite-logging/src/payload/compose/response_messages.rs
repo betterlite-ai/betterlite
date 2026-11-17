@@ -75,7 +75,7 @@ pub(crate) fn logged_messages(
             .as_ref()
             .map(|messages| Json::List(messages.clone()))
     };
-    let Some(combined) = append_system_prompt_messages(system.as_deref(), messages.as_ref()) else {
+    let Some(combined) = append_system_prompt_messages(system, messages.as_ref()) else {
         return Ok(None);
     };
     composition
