@@ -198,6 +198,7 @@ pub fn server_api_base(settings: &OllamaSettings, api_base: Option<&str>) -> Str
 }
 
 // get_api_key: the passed key, OLLAMA_API_KEY, litellm.api_key, litellm.openai_key, then the secret manager
+#[must_use]
 pub fn selected_key(
     settings: &OllamaSettings,
     globals: &LiteLlmGlobals,
