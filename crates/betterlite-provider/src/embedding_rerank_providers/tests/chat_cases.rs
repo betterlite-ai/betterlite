@@ -1,3 +1,4 @@
+use rstest::rstest;
 use uuid::Uuid;
 
 use super::*;
@@ -185,18 +186,18 @@ fn null_passthrough_fields_never_reach_the_body() {
     );
 }
 
-#[test]
-fn a_parameter_the_caller_set_reaches_the_body_on_both_routes() {
-    for model in ["command-r", "v1/command-r"] {
-        let mut fixture = ChatFixture::new(model);
-        fixture.request = ChatRequest::parse(
-            br#"{"messages":[{"role":"user","content":"hi"}],"max_tokens":16,"n":2}"#,
-        )
-        .unwrap();
-        let body = body_of(&fixture.prepared());
-        assert_eq!(number_field(&body, "max_tokens"), Some(16), "{model}");
-        assert_eq!(number_field(&body, "num_generations"), Some(2), "{model}");
-    }
+#[rstest]
+#[case::v2("command-r")]
+#[case::v1("v1/command-r")]
+fn a_parameter_the_caller_set_reaches_the_body(#[case] model: &str) {
+    let mut fixture = ChatFixture::new(model);
+    fixture.request = ChatRequest::parse(
+        br#"{"messages":[{"role":"user","content":"hi"}],"max_tokens":16,"n":2}"#,
+    )
+    .unwrap();
+    let body = body_of(&fixture.prepared());
+    assert_eq!(number_field(&body, "max_tokens"), Some(16), "{model}");
+    assert_eq!(number_field(&body, "num_generations"), Some(2), "{model}");
 }
 
 #[test]
