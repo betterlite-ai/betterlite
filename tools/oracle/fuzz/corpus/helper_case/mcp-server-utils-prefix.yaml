@@ -1,0 +1,9 @@
+kind: helper
+name: mcp-server-utils-seed-prefix
+call:
+  b6594:
+    function: add_server_prefix_to_name
+    name: get_pets
+    server_name: seed server
+env: {}
+compare: {ignore: []}

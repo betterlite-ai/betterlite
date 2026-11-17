@@ -1,0 +1,16 @@
+kind: helper
+name: mcp-server-utils-known-tool-name-openapi
+call:
+  b6594:
+    function: match_known_tool_name
+    tool_name: get_pets
+    server: {server_id: srv-2, alias: pet-store, spec_path: /openapi.json}
+    names: [Get Pets, get_pet]
+calls:
+  - b6594:
+      function: match_known_tool_name
+      tool_name: Get Pets
+      server: {server_id: srv-2, alias: pet-store, spec_path: /openapi.json}
+      names: [get_pets]
+env: {}
+compare: {ignore: []}

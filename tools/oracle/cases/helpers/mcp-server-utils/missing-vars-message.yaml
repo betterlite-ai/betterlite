@@ -1,0 +1,18 @@
+kind: helper
+name: mcp-server-utils-missing-vars-message
+call:
+  b6594:
+    function: missing_vars_message
+    server_id: srv-1
+    server_name: My Server
+    missing: [TOKEN, API_KEY]
+    setup_url: "https://proxy.test/ui/mcp-servers?fill_env_vars=srv-1"
+calls:
+  - b6594:
+      function: missing_vars_message
+      server_id: srv-2
+      server_name: ""
+      missing: [ONLY]
+      setup_url: "/ui/mcp-servers?fill_env_vars=srv-2"
+env: {}
+compare: {ignore: []}
