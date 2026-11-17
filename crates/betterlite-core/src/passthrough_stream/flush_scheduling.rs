@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::runtime::Handle;
 
 use super::async_lifecycle::AsyncPassthroughStream;
-use super::flush_errors::{run_async_flush, run_sync_flush};
+use super::flush_errors::report_flush_outcome;
 use super::logging::{SpendLogging, SyncFlushExecutor};
 use super::spend_collection::SpendSink;
 use super::sync_lifecycle::PassthroughStreamingResponse;
@@ -32,7 +32,10 @@ where
     let logging = Arc::clone(&stream.logging);
     stream.background_tasks.spawn_on(
         async move {
-            run_async_flush(logging.as_ref(), collector, chunk_count).await;
+            report_flush_outcome(
+                logging.async_flush_collected_chunks(collector).await,
+                chunk_count,
+            );
         },
         &handle,
     );
@@ -53,7 +56,7 @@ where
     stream.flush_scheduled = true;
     let logging = Arc::clone(&stream.logging);
     let job: Box<dyn FnOnce() + Send + 'static> = Box::new(move || {
-        run_sync_flush(logging.as_ref(), collector, chunk_count);
+        report_flush_outcome(logging.flush_collected_chunks(collector), chunk_count);
     });
     if let Err(error) = stream.executor.submit(job) {
         tracing::error!(

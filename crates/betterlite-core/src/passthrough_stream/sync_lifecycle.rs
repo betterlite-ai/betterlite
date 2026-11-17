@@ -30,7 +30,7 @@ where
     L: SpendLogging<S::Logged>,
     E: SyncFlushExecutor,
 {
-    pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, HttpError> {
+    pub fn next_relay_chunk(&mut self) -> Result<Option<Vec<u8>>, HttpError> {
         match self.source.next_chunk() {
             Ok(Some(chunk)) => {
                 self.spend.add(&chunk);
@@ -66,7 +66,7 @@ where
     type Item = Result<Vec<u8>, HttpError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.next_chunk() {
+        match self.next_relay_chunk() {
             Ok(Some(chunk)) => Some(Ok(chunk)),
             Ok(None) => None,
             Err(error) => Some(Err(error)),

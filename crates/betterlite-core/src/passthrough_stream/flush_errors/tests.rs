@@ -7,72 +7,44 @@ use indexmap::IndexMap;
 use tokio_util::task::TaskTracker;
 use tracing::Level;
 
-use super::{run_async_flush, run_sync_flush};
+use super::report_flush_outcome;
 use crate::passthrough_stream::async_lifecycle::AsyncPassthroughStream;
-use crate::passthrough_stream::spend_collection::BoxedCollector;
 use crate::passthrough_stream::sync_lifecycle::PassthroughStreamingResponse;
 use crate::passthrough_stream::tests::{
-    FakeLogging, ReplyFixture, capture, chunk_steps, collection, inline_executor, script,
+    FakeFlushError, FakeLogging, ReplyFixture, capture, chunk_steps, collection, inline_executor,
+    script,
 };
 
-fn collector_with(text: &str) -> (BoxedCollector<String>, usize) {
-    let (mut spend, _state) = collection();
-    spend.add(text.as_bytes());
-    spend.take_flush().expect("the collected chunk flushes")
-}
-
-#[tokio::test]
-async fn async_flush_failure_is_logged_and_swallowed() {
-    let logging = Arc::new(FakeLogging::fixture().failing());
-    let (collector, chunk_count) = collector_with("one");
+#[test]
+fn a_failed_flush_is_logged_with_the_chunk_count() {
     let (captured, _guard) = capture();
-    run_async_flush(logging.as_ref(), collector, chunk_count).await;
-    assert_eq!(chunk_count, 1);
-    assert_eq!(logging.flushed().len(), 1);
+    report_flush_outcome(
+        Err(FakeFlushError {
+            message: "the spend flush failed".to_owned(),
+        }),
+        3,
+    );
     let events = captured.events();
-    assert!(events.iter().any(|event| {
-        event.level == Level::ERROR
-            && event
-                .message
-                .contains("the passthrough spend-tracking flush failed; 1 collected chunks dropped")
-    }));
-    assert!(events.iter().any(|event| {
-        event
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].level, Level::ERROR);
+    assert_eq!(
+        events[0].message,
+        "the passthrough spend-tracking flush failed; 3 collected chunks dropped"
+    );
+    assert!(
+        events[0]
             .fields
             .iter()
             .any(|field| field.contains("the spend flush failed"))
-    }));
-}
-
-#[tokio::test]
-async fn async_flush_success_records_the_collector() {
-    let logging = Arc::new(FakeLogging::fixture());
-    let (collector, chunk_count) = collector_with("one");
-    run_async_flush(logging.as_ref(), collector, chunk_count).await;
-    let flushes = logging.flushed();
-    assert_eq!(flushes.len(), 1);
-    assert_eq!(flushes[0].logged, "one");
+    );
 }
 
 #[test]
-fn sync_flush_failure_is_logged_and_swallowed() {
-    let logging = Arc::new(FakeLogging::fixture().failing());
-    let (collector, chunk_count) = collector_with("one");
+fn a_successful_flush_logs_nothing() {
     let (captured, _guard) = capture();
-    run_sync_flush(logging.as_ref(), collector, chunk_count);
-    assert_eq!(logging.flushed().len(), 1);
-    let messages = captured.messages();
-    assert!(messages.iter().any(|message| {
-        message.contains("the passthrough spend-tracking flush failed; 1 collected chunks dropped")
-    }));
-}
-
-#[test]
-fn sync_flush_success_records_the_collector() {
-    let logging = Arc::new(FakeLogging::fixture());
-    let (collector, chunk_count) = collector_with("one");
-    run_sync_flush(logging.as_ref(), collector, chunk_count);
-    assert_eq!(logging.flushed()[0].logged, "one");
+    let outcome: Result<(), FakeFlushError> = Ok(());
+    report_flush_outcome(outcome, 1);
+    assert!(captured.events().is_empty());
 }
 
 #[tokio::test]
@@ -123,10 +95,10 @@ fn sync_stream_end_survives_a_failing_flush() {
     };
     let (captured, _guard) = capture();
     assert_eq!(
-        stream.next_chunk().expect("first chunk"),
+        stream.next_relay_chunk().expect("first chunk"),
         Some(b"one".to_vec())
     );
-    assert_eq!(stream.next_chunk().expect("end"), None);
+    assert_eq!(stream.next_relay_chunk().expect("end"), None);
     executor.run_jobs();
     assert!(captured.messages().iter().any(|message| {
         message.contains("the passthrough spend-tracking flush failed; 1 collected chunks dropped")

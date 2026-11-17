@@ -30,11 +30,11 @@ fn iteration_passes_chunks_and_feeds_the_sink() {
         inline_executor(),
     );
     assert_eq!(
-        fixture.stream.next_chunk().expect("first chunk"),
+        fixture.stream.next_relay_chunk().expect("first chunk"),
         Some(b"one".to_vec())
     );
     assert_eq!(
-        fixture.stream.next_chunk().expect("second chunk"),
+        fixture.stream.next_relay_chunk().expect("second chunk"),
         Some(b"two".to_vec())
     );
     let chunks = fixture
@@ -53,10 +53,10 @@ fn end_of_stream_submits_the_flush_once() {
         inline_executor(),
     );
     assert_eq!(
-        fixture.stream.next_chunk().expect("first chunk"),
+        fixture.stream.next_relay_chunk().expect("first chunk"),
         Some(b"one".to_vec())
     );
-    assert_eq!(fixture.stream.next_chunk().expect("end"), None);
+    assert_eq!(fixture.stream.next_relay_chunk().expect("end"), None);
     assert_eq!(fixture.executor.scheduled(), 1);
     assert!(fixture.stream.flush_scheduled);
     assert_eq!(
@@ -86,7 +86,7 @@ fn end_of_stream_submits_the_flush_once() {
 #[test]
 fn empty_stream_submits_nothing() {
     let mut fixture = SyncFixture::new(ReplyFixture::ok(script(Vec::new())), inline_executor());
-    assert_eq!(fixture.stream.next_chunk().expect("end"), None);
+    assert_eq!(fixture.stream.next_relay_chunk().expect("end"), None);
     assert_eq!(fixture.executor.scheduled(), 0);
     assert!(!fixture.stream.flush_scheduled);
     assert_eq!(
@@ -104,10 +104,13 @@ fn read_error_submits_the_flush_and_closes() {
     let steps = vec![Step::Chunk(b"one".to_vec()), Step::Fail];
     let mut fixture = SyncFixture::new(ReplyFixture::ok(script(steps)), inline_executor());
     assert_eq!(
-        fixture.stream.next_chunk().expect("first chunk"),
+        fixture.stream.next_relay_chunk().expect("first chunk"),
         Some(b"one".to_vec())
     );
-    let error = fixture.stream.next_chunk().expect_err("the source fails");
+    let error = fixture
+        .stream
+        .next_relay_chunk()
+        .expect_err("the source fails");
     assert!(matches!(error, HttpError::Timeout));
     assert_eq!(fixture.executor.scheduled(), 1);
     fixture.executor.run_jobs();
@@ -129,7 +132,7 @@ fn iterator_next_yields_chunks_until_the_end() {
         inline_executor(),
     );
     let mut seen = Vec::new();
-    while let Some(item) = fixture.stream.next() {
+    for item in fixture.stream.by_ref() {
         seen.push(item.expect("the scripted chunk arrives"));
     }
     assert_eq!(seen, vec![b"one".to_vec(), b"two".to_vec()]);
@@ -172,7 +175,7 @@ fn close_after_chunks_submits_the_flush_once() {
         inline_executor(),
     );
     assert_eq!(
-        fixture.stream.next_chunk().expect("first chunk"),
+        fixture.stream.next_relay_chunk().expect("first chunk"),
         Some(b"one".to_vec())
     );
     fixture.stream.close();
@@ -189,10 +192,10 @@ fn a_rejected_job_is_logged_with_the_chunk_count() {
     let (captured, _guard) = capture();
     let mut fixture = SyncFixture::new(ReplyFixture::ok(script(chunk_steps(&["one"]))), executor);
     assert_eq!(
-        fixture.stream.next_chunk().expect("first chunk"),
+        fixture.stream.next_relay_chunk().expect("first chunk"),
         Some(b"one".to_vec())
     );
-    assert_eq!(fixture.stream.next_chunk().expect("end"), None);
+    assert_eq!(fixture.stream.next_relay_chunk().expect("end"), None);
     assert!(fixture.stream.flush_scheduled);
     let messages = captured.messages();
     assert!(messages.iter().any(|message| message.contains(
@@ -214,7 +217,7 @@ fn close_swallows_a_close_error() {
         inline_executor(),
     );
     assert_eq!(
-        fixture.stream.next_chunk().expect("first chunk"),
+        fixture.stream.next_relay_chunk().expect("first chunk"),
         Some(b"one".to_vec())
     );
     fixture.stream.close();
@@ -239,14 +242,14 @@ fn a_failing_collector_does_not_break_the_sync_relay() {
         .unwrap_or_else(PoisonError::into_inner)
         .fail_at_call = Some(1);
     assert_eq!(
-        fixture.stream.next_chunk().expect("first chunk"),
+        fixture.stream.next_relay_chunk().expect("first chunk"),
         Some(b"one".to_vec())
     );
     assert_eq!(
-        fixture.stream.next_chunk().expect("second chunk"),
+        fixture.stream.next_relay_chunk().expect("second chunk"),
         Some(b"two".to_vec())
     );
-    assert_eq!(fixture.stream.next_chunk().expect("end"), None);
+    assert_eq!(fixture.stream.next_relay_chunk().expect("end"), None);
     assert_eq!(fixture.executor.scheduled(), 0);
     assert_eq!(
         fixture

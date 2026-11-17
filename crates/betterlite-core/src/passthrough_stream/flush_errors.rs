@@ -1,35 +1,13 @@
-use super::logging::SpendLogging;
-use super::spend_collection::BoxedCollector;
+use std::error::Error;
 
 mod tests;
 
 // LiteLLM's created task can fail where nobody awaits it; here the failure is said out loud and the relay goes on
-pub(super) async fn run_async_flush<L, Logged>(
-    logging: &L,
-    collector: BoxedCollector<Logged>,
-    chunk_count: usize,
-) where
-    L: SpendLogging<Logged> + ?Sized,
-    Logged: Send + 'static,
+pub(super) fn report_flush_outcome<E>(outcome: Result<(), E>, chunk_count: usize)
+where
+    E: Error,
 {
-    if let Err(error) = logging.async_flush_collected_chunks(collector).await {
-        tracing::error!(
-            chunks = chunk_count,
-            %error,
-            "the passthrough spend-tracking flush failed; {chunk_count} collected chunks dropped"
-        );
-    }
-}
-
-pub(super) fn run_sync_flush<L, Logged>(
-    logging: &L,
-    collector: BoxedCollector<Logged>,
-    chunk_count: usize,
-) where
-    L: SpendLogging<Logged> + ?Sized,
-    Logged: Send + 'static,
-{
-    if let Err(error) = logging.flush_collected_chunks(collector) {
+    if let Err(error) = outcome {
         tracing::error!(
             chunks = chunk_count,
             %error,
