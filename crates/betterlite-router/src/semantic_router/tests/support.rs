@@ -10,7 +10,6 @@ use std::time::Duration;
 
 use betterlite_openai::chat::{ChatMessage, ContentPart, MessageContent, Role};
 use indexmap::IndexMap;
-use serde_json::Value;
 use serde_json::json;
 use tokio::time::sleep;
 use tokio_util::task::TaskTracker;
@@ -286,31 +285,33 @@ pub(crate) fn user_text(text: &str) -> ChatMessage {
 }
 
 pub(crate) fn text_part(text: &str) -> ContentPart {
-    part("text", IndexMap::from([("text".to_owned(), json!(text))]))
+    ContentPart {
+        kind: "text".to_owned(),
+        fields: IndexMap::from([("text".to_owned(), json!(text))]),
+    }
 }
 
 pub(crate) fn keyless_text_part() -> ContentPart {
-    part("text", IndexMap::new())
+    ContentPart {
+        kind: "text".to_owned(),
+        fields: IndexMap::new(),
+    }
 }
 
 pub(crate) fn numeric_text_part() -> ContentPart {
-    part("text", IndexMap::from([("text".to_owned(), json!(5))]))
+    ContentPart {
+        kind: "text".to_owned(),
+        fields: IndexMap::from([("text".to_owned(), json!(5))]),
+    }
 }
 
 pub(crate) fn image_part() -> ContentPart {
-    part(
-        "image_url",
-        IndexMap::from([
+    ContentPart {
+        kind: "image_url".to_owned(),
+        fields: IndexMap::from([
             ("url".to_owned(), json!("https://example.test/i.png")),
             ("text".to_owned(), json!("not a text block")),
         ]),
-    )
-}
-
-fn part(kind: &str, fields: IndexMap<String, Value>) -> ContentPart {
-    ContentPart {
-        kind: kind.to_owned(),
-        fields,
     }
 }
 

@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::io;
 use std::sync::Arc;
 
 use betterlite_logging::logging_privacy::{CallbackMetadataError, PrivacyContext};
@@ -17,24 +18,24 @@ use super::{CallerRequest, caller_context, decide, proxy_server_request};
 struct FakeEmbedder;
 
 impl RouteEmbedder for FakeEmbedder {
-    type Error = std::io::Error;
+    type Error = io::Error;
 
-    fn embed_documents(
+    async fn embed_documents(
         &self,
         _model: &str,
         texts: Vec<String>,
-    ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        async move { Ok(texts.iter().map(|_text| vec![1.0, 0.0]).collect()) }
+    ) -> Result<Vec<Vec<f64>>, Self::Error> {
+        Ok(texts.iter().map(|_text| vec![1.0_f64, 0.0_f64]).collect())
     }
 
-    fn embed_query(
+    async fn embed_query(
         &self,
         _model: &str,
         _text: String,
         _raw_text: &str,
         _caller: &CallerContext,
-    ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        async move { Ok(vec![vec![1.0, 0.0]]) }
+    ) -> Result<Vec<Vec<f64>>, Self::Error> {
+        Ok(vec![vec![1.0_f64, 0.0_f64]])
     }
 }
 
@@ -62,7 +63,7 @@ fn user_message(text: &str) -> ChatMessage {
     }
 }
 
-fn requested<'a>(metadata: Option<&'a Json>) -> CallerRequest<'a> {
+fn requested(metadata: Option<&Json>) -> CallerRequest<'_> {
     CallerRequest {
         metadata,
         litellm_metadata: None,
@@ -204,7 +205,7 @@ fn an_environment_reference_in_a_callback_param_is_rejected() {
 #[test]
 fn session_ids_reach_the_sub_call_only_as_text() {
     let session = text("session-1");
-    let trace = Json::Number(Number::from(7));
+    let trace = Json::Number(Number::from(7_i32));
     let request = CallerRequest {
         litellm_session_id: Some(&session),
         litellm_trace_id: Some(&trace),
@@ -272,7 +273,7 @@ fn a_trusted_field_does_not_block_the_flag_and_keeps_the_origin_ours() {
 
 #[test]
 fn a_flag_of_the_wrong_type_names_the_field() {
-    let flag = Json::Number(Number::from(1));
+    let flag = Json::Number(Number::from(1_i32));
     let request = CallerRequest {
         turn_off_message_logging: Some(&flag),
         ..requested(None)
@@ -287,14 +288,14 @@ fn a_flag_of_the_wrong_type_names_the_field() {
 
 #[test]
 fn the_proxy_body_carries_the_whole_text() {
-    let body = proxy_server_request("openai/text-embedding-3-small", "aé中🙂");
+    let body = proxy_server_request("openai/text-embedding-3-small", "a\u{e9}\u{4e2d}\u{1f642}");
     assert_eq!(
         body,
         object(&[(
             "body",
             object(&[
                 ("model", text("openai/text-embedding-3-small")),
-                ("input", Json::List(vec![text("aé中🙂")])),
+                ("input", Json::List(vec![text("a\u{e9}\u{4e2d}\u{1f642}")])),
             ]),
         )])
     );

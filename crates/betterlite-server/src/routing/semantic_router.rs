@@ -15,13 +15,13 @@ use indexmap::IndexMap;
 mod tests;
 
 // the request fields LiteLLM's auto router reads, in the shape its caller passes them
-pub struct CallerRequest<'a> {
-    pub metadata: Option<&'a Json>,
-    pub litellm_metadata: Option<&'a Json>,
-    pub litellm_params_metadata: Option<&'a Json>,
-    pub litellm_session_id: Option<&'a Json>,
-    pub litellm_trace_id: Option<&'a Json>,
-    pub turn_off_message_logging: Option<&'a Json>,
+pub struct CallerRequest<'request> {
+    pub metadata: Option<&'request Json>,
+    pub litellm_metadata: Option<&'request Json>,
+    pub litellm_params_metadata: Option<&'request Json>,
+    pub litellm_session_id: Option<&'request Json>,
+    pub litellm_trace_id: Option<&'request Json>,
+    pub turn_off_message_logging: Option<&'request Json>,
 }
 
 // the caller identity, flag and session the embedding sub-call carries, as LiteLLM forwards them
@@ -112,12 +112,14 @@ fn privacy_request(request: &CallerRequest<'_>) -> Result<PrivacyRequest, Callba
 
 fn flag(value: &Json) -> Result<Option<Flag>, CallbackMetadataError> {
     match value {
-        Json::Bool(value) => Ok(Some(Flag::Boolean(*value))),
+        Json::Bool(enabled) => Ok(Some(Flag::Boolean(*enabled))),
         Json::Text(text) => Ok(Some(Flag::Text(text.clone()))),
         Json::Null => Ok(None),
-        _ => Err(CallbackMetadataError::InvalidField {
-            field: "turn_off_message_logging".to_owned(),
-        }),
+        Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Err(CallbackMetadataError::InvalidField {
+                field: "turn_off_message_logging".to_owned(),
+            })
+        }
     }
 }
 
@@ -135,6 +137,8 @@ fn slot_metadata(slot: &Json, field: &str) -> Result<Metadata, CallbackMetadataE
             turn_off_message_logging = flag(value)?;
         } else if !TRUSTED_FIELDS.contains(&name.as_str()) {
             callback_params.insert(name.clone(), value.clone());
+        } else {
+            // a trusted internal field is ignored here, as LiteLLM's dynamic param reader ignores it
         }
     }
     Ok(Metadata {
