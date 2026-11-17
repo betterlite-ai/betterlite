@@ -12,14 +12,14 @@ pub(super) fn reply(
 ) -> Value {
     let choice = envelope.choices.first();
     outcome_value(
-        json!({
+        &json!({
             "kind": "reply",
             "id": envelope.id,
             "object": envelope.object,
             "created": envelope.created,
             "model": envelope.model,
-            "finish_reason": choice.and_then(|choice| choice.finish_reason.clone()),
-            "message": choice.map(|choice| message_state(&choice.message)),
+            "finish_reason": choice.and_then(|chosen| chosen.finish_reason.clone()),
+            "message": choice.map(|chosen| message_state(&chosen.message)),
             "usage": envelope.usage.as_ref().map(usage_state),
             "hidden": envelope.hidden_params,
         }),
@@ -35,7 +35,7 @@ pub(super) fn anthropic_error(
     warned: bool,
 ) -> Value {
     outcome_value(
-        json!({
+        &json!({
             "kind": "error",
             "status": status,
             "headers": headers_state(headers),
@@ -45,7 +45,7 @@ pub(super) fn anthropic_error(
     )
 }
 
-fn outcome_value(outcome: Value, details: &IndexMap<String, Json>, warned: bool) -> Value {
+fn outcome_value(outcome: &Value, details: &IndexMap<String, Json>, warned: bool) -> Value {
     json!({
         "outcome": outcome,
         "logged": logged(details),
@@ -93,7 +93,7 @@ fn logged(details: &IndexMap<String, Json>) -> Value {
     })
 }
 
-fn headers_state(headers: &HeaderMap) -> Value {
+fn headers_state(headers: &HeaderMap) -> Json {
     let mut fields = IndexMap::new();
     for (name, value) in headers {
         // httpx decodes header bytes as latin-1

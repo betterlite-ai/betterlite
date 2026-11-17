@@ -14,6 +14,7 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_oracle_runner::helpers::{HelperCall, invoke};
@@ -21,9 +22,11 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
+use indexmap::IndexMap;
 use serde_json::json;
+use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::layer::{Context, Layer};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use super::Input;
@@ -59,23 +62,11 @@ pub(super) fn run(input: &Input) -> HelperResult {
     let silent = Silent;
     let mut logging = logging_state(&redactor)?;
     let env = logging_env(&redactor, &silent)?;
-    let request = ResponseRequest {
-        messages: &input.messages,
-        optional_params: &input.optional_params,
-        litellm_params: &input.litellm_params,
-        request_data: &input.request_data,
-        json_mode: input.json_mode,
-        now: input.now,
-        disable_add_prefix_to_prompt: input.disable_add_prefix_to_prompt,
-    };
-    let raw = RawResponse {
-        status: input.status,
-        headers: &headers,
-        body: input.raw_text.as_bytes(),
-    };
+    let request = request_of(input);
+    let raw = raw_of(input, &headers);
     let mut envelope = ResponseEnvelope::new(input.id.clone());
     let subscriber = registry().with(warned.clone());
-    let result = tracing::subscriber::with_default(subscriber, || {
+    let result = with_default(subscriber, || {
         transform_response(
             &mut envelope,
             &raw,
@@ -89,12 +80,41 @@ pub(super) fn run(input: &Input) -> HelperResult {
     });
     let details = &logging.model_call_details;
     let fired = warned.0.load(Ordering::Relaxed);
+    outcome(result, &envelope, details, fired)
+}
+
+fn request_of(input: &Input) -> ResponseRequest<'_> {
+    ResponseRequest {
+        messages: &input.messages,
+        optional_params: &input.optional_params,
+        litellm_params: &input.litellm_params,
+        request_data: &input.request_data,
+        json_mode: input.json_mode,
+        now: input.now,
+        disable_add_prefix_to_prompt: input.disable_add_prefix_to_prompt,
+    }
+}
+
+const fn raw_of<'raw>(input: &'raw Input, headers: &'raw HeaderMap) -> RawResponse<'raw> {
+    RawResponse {
+        status: input.status,
+        headers,
+        body: input.raw_text.as_bytes(),
+    }
+}
+
+fn outcome(
+    result: Result<(), ResponseError<TokenCountFailure>>,
+    envelope: &ResponseEnvelope,
+    details: &IndexMap<String, Json>,
+    fired: bool,
+) -> HelperResult {
     match result {
-        Ok(()) => Ok(state::reply(&envelope, details, fired)),
+        Ok(()) => Ok(state::reply(envelope, details, fired)),
         Err(ResponseError::Anthropic {
-            message: _,
             status,
             headers: error_headers,
+            ..
         }) => Ok(state::anthropic_error(
             status,
             &error_headers,
