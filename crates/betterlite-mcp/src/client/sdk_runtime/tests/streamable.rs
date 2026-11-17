@@ -405,6 +405,20 @@ async fn structured_content_that_breaks_the_output_schema_is_a_runtime_failure()
 }
 
 #[tokio::test]
+async fn an_output_schema_that_does_not_compile_is_a_runtime_failure() {
+    let server = TestServer::standard().with_output_schemas();
+    let error = called_on(
+        server,
+        "schema-broken",
+        RAISE,
+        ServerRequestHandlers::default(),
+    )
+    .await
+    .expect_err("the declared schema is not a valid JSON Schema");
+    assert!(matches!(error, SessionError::Runtime(_)), "{error}");
+}
+
+#[tokio::test]
 async fn an_error_result_with_an_output_schema_skips_validation() {
     let server = TestServer::standard().with_output_schemas();
     let (result, listings) = called_on(
@@ -471,7 +485,7 @@ async fn a_complete_listing_drops_the_output_schemas_it_no_longer_carries() {
             let first = <SdkSession as McpSession>::list_tools(session, None)
                 .await
                 .unwrap();
-            assert_eq!(first.tools.len(), 7);
+            assert_eq!(first.tools.len(), 8);
             let second =
                 <SdkSession as McpSession>::list_tools(session, first.next_cursor.as_deref())
                     .await

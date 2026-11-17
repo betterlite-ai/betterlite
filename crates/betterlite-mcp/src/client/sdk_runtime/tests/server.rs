@@ -146,6 +146,11 @@ impl ServerHandler for TestServer {
                 result
             }
             "schema-error" => CallToolResult::error(vec![ContentBlock::text("the tool failed")]),
+            "schema-broken" => {
+                let mut result = CallToolResult::success(vec![ContentBlock::text("broken")]);
+                result.structured_content = Some(json!({"answer": 42}));
+                result
+            }
             "progress" => {
                 let token = context
                     .meta
@@ -313,6 +318,12 @@ fn schema_tools() -> Vec<Tool> {
             JsonObject::new(),
         )
         .with_raw_output_schema(Arc::clone(&schema)),
+        Tool::new(
+            "schema-broken",
+            "a tool whose declared output schema is invalid",
+            JsonObject::new(),
+        )
+        .with_raw_output_schema(Arc::new(broken_output_schema())),
     ]
 }
 
@@ -323,6 +334,11 @@ fn output_schema() -> JsonObject {
         "required": ["answer"]
     }))
     .expect("the test output schema is an object")
+}
+
+fn broken_output_schema() -> JsonObject {
+    serde_json::from_value(json!({"type": "not-a-json-schema-type"}))
+        .expect("the broken test schema is an object")
 }
 
 // The outcome of a server-initiated request is reported through the tool result, so a case asserts on the wire answer
