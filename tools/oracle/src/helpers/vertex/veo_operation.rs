@@ -75,7 +75,7 @@ struct FetchCall {
 }
 
 impl CreateCall {
-    fn context<'a>(&'a self, settings: &'a VertexSettings) -> VideoContext<'a> {
+    fn context<'call>(&'call self, settings: &'call VertexSettings) -> VideoContext<'call> {
         VideoContext {
             provider: self.provider.as_deref(),
             request_data: self.request_data.as_ref(),
@@ -85,7 +85,7 @@ impl CreateCall {
 }
 
 impl EditCall {
-    fn context<'a>(&'a self, settings: &'a VertexSettings) -> VideoContext<'a> {
+    fn context<'call>(&'call self, settings: &'call VertexSettings) -> VideoContext<'call> {
         VideoContext {
             provider: self.provider.as_deref(),
             request_data: self.request_data.as_ref(),

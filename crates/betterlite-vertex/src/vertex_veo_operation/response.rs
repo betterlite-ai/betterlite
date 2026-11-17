@@ -9,10 +9,10 @@ use super::usage::video_usage;
 use crate::provider_metadata::timestamp::{LocalTimeContext, decode_vertex_timestamp};
 
 // the caller-side inputs a processing response reads: whose provider it is, the options it asked for and the loaded settings
-pub struct VideoContext<'a> {
-    pub provider: Option<&'a str>,
-    pub request_data: Option<&'a Object>,
-    pub settings: &'a VertexSettings,
+pub struct VideoContext<'call> {
+    pub provider: Option<&'call str>,
+    pub request_data: Option<&'call Object>,
+    pub settings: &'call VertexSettings,
 }
 
 // transform_video_create_response: the operation name is the polling id, and the model is the one the caller asked for
