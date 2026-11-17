@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-server-utils-prefix-with-spaces
+call:
+  b6594:
+    function: add_server_prefix_to_name
+    name: get pets
+    server_name: My Server
+calls:
+  - b6594:
+      function: add_server_prefix_to_name
+      name: tool
+      server_name: plain
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: mcp-server-utils-setup-url
+call:
+  b6594:
+    function: setup_url
+    server_id: srv/1 with space
+    proxy_base_url: "https://proxy.test///"
+calls:
+  - b6594:
+      function: setup_url
+      server_id: srv-2
+  - b6594:
+      function: setup_url
+      server_id: srv-3
+      proxy_base_url: ""
+env: {}
+compare: {ignore: []}

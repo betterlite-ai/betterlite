@@ -26,6 +26,25 @@ description: >-
   125 oracle, 80 fuzz and 55 config lines; ceiling 800.
 scope:
   paths:
+    - "crates/betterlite-core/src/vertex_embedding_dispatch/tests.rs"
+    - "crates/betterlite-provider/src/vertex_embedding_binding/tests.rs"
+    - "crates/betterlite-vertex/src/vertex_discovery_search/authorization/tests.rs"
+    - "crates/betterlite-vertex"
+    - "tools/oracle/src/helpers/vertex/credentials.rs"
+    - "crates/betterlite-vertex/src/vertex_veo_request/tests.rs"
+    - "crates/betterlite-vertex/src/vertex_rerank/tests.rs"
+    - "crates/betterlite-vertex/src/vertex_rag_store/records/tests.rs"
+    - "crates/betterlite-vertex/src/vertex_rag_store/authorization/tests.rs"
+    - "crates/betterlite-vertex/src/vertex_interactions/tests.rs"
+    - "crates/betterlite-vertex/src/partner_count/tests/support.rs"
+    - "crates/betterlite-vertex/src/partner_count/tests/plans.rs"
+    - "crates/betterlite-vertex/src/google_token_counter/tests.rs"
+    - "crates/betterlite-vertex/src/google_native_content/tests.rs"
+    - "crates/betterlite-vertex/src/credential_sources/tests/getters.rs"
+    - "crates/betterlite-config/tests/fixtures/unsupported/**"
+    - "crates/betterlite-config/src/sections/vertex_credential_sources.rs"
+    - "crates/betterlite-config/src/sections/vertex_credential_sources/**"
+    - "crates/betterlite-config/src/sections.rs"
     - crates/betterlite-vertex/src/vertex_veo_operation.rs
     - crates/betterlite-vertex/src/vertex_veo_operation/**
     - crates/betterlite-config/src/vertex.rs

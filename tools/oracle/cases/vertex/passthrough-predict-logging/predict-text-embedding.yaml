@@ -1,0 +1,18 @@
+kind: helper
+name: vertex-predict-text-embedding
+call:
+  b3639:
+    operation: predict
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/demo/locations/us-central1/publishers/google/models/text-embedding-004:predict
+    status: 200
+    body:
+      predictions:
+        - embeddings:
+            values: [1, 2, 3]
+            statistics: {token_count: 2, truncated: false}
+        - embeddings:
+            values: [4, 5, 6]
+            statistics: {token_count: 3, truncated: false}
+    request_body: null
+env: {}
+compare: {ignore: []}
