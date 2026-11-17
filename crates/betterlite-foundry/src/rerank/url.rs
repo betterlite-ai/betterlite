@@ -68,7 +68,7 @@ fn append_path(api_base: &str, ending: &str) -> Result<String, FoundryRerankErro
     Ok(url.href())
 }
 
-// The diagnostic carries the base the way LiteLLM's repr does; only the text of an error message depends on it
+// The diagnostic carries the base the way LiteLLM's repr does; the URL parser already refused control characters
 fn quoted(text: &str) -> String {
     let quote = if text.contains('\'') && !text.contains('"') {
         '"'
@@ -80,9 +80,6 @@ fn quoted(text: &str) -> String {
     for letter in text.chars() {
         match letter {
             '\\' => rendered.push_str("\\\\"),
-            '\n' => rendered.push_str("\\n"),
-            '\r' => rendered.push_str("\\r"),
-            '\t' => rendered.push_str("\\t"),
             _ if letter == quote => {
                 rendered.push('\\');
                 rendered.push(letter);

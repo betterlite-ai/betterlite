@@ -50,6 +50,7 @@ pub(super) fn rerank_url_api_version() {
     assert_relative("https://", "'https://'");
     assert_relative("/it's", "\"/it's\"");
     assert_relative("/both'\"kinds", "'/both\\'\"kinds'");
+    assert_relative("/a\\b", "'/a\\\\b'");
     for (path, expected) in PATHS {
         let base = format!("{BASE}{path}");
         assert_eq!(
