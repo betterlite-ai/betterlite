@@ -17,10 +17,6 @@ const MESSAGES: &str = "messages";
 const MODEL: &str = "model";
 const ROLE: &str = "role";
 const CONTENT: &str = "content";
-const ROLE_EXPECTED: &str = "'user' or 'assistant'";
-const ROLE_KIND: IssueKind = IssueKind::NotOneOf {
-    expected: ROLE_EXPECTED,
-};
 
 pub struct ChatBody {
     pub(super) messages: Vec<ChatMessage>,
@@ -55,7 +51,6 @@ pub fn decode_body(body: &[u8]) -> Result<ChatBody, BodyError> {
             issues: vec![ValidationIssue::of(
                 IssueKind::Missing,
                 vec![LocPart::Field(BODY)],
-                JsonValue::Null,
             )],
         });
     }
@@ -70,12 +65,11 @@ fn decode_value(value: &JsonValue) -> Result<ChatBody, BodyError> {
             issues: vec![ValidationIssue::of(
                 IssueKind::NotObject,
                 vec![LocPart::Field(BODY)],
-                value.clone(),
             )],
         });
     };
     let mut issues: Vec<ValidationIssue> = Vec::new();
-    let messages = decode_messages(fields, value, &mut issues);
+    let messages = decode_messages(fields, &mut issues);
     let model = decode_model(fields, &mut issues);
     if issues.is_empty() {
         return Ok(ChatBody { messages, model });
@@ -83,11 +77,7 @@ fn decode_value(value: &JsonValue) -> Result<ChatBody, BodyError> {
     Err(BodyError::Issues { issues })
 }
 
-fn decode_messages(
-    fields: &JsonMap,
-    value: &JsonValue,
-    issues: &mut Vec<ValidationIssue>,
-) -> Vec<ChatMessage> {
+fn decode_messages(fields: &JsonMap, issues: &mut Vec<ValidationIssue>) -> Vec<ChatMessage> {
     let mut messages: Vec<ChatMessage> = Vec::new();
     match fields.get(MESSAGES) {
         Some(JsonValue::Array(items)) => {
@@ -100,7 +90,6 @@ fn decode_messages(
                             LocPart::Field(MESSAGES),
                             LocPart::Index(index),
                         ],
-                        item.clone(),
                     ));
                     continue;
                 };
@@ -109,15 +98,13 @@ fn decode_messages(
                 }
             }
         }
-        Some(other) => issues.push(ValidationIssue::of(
+        Some(_) => issues.push(ValidationIssue::of(
             IssueKind::NotList,
             vec![LocPart::Field(BODY), LocPart::Field(MESSAGES)],
-            other.clone(),
         )),
         None => issues.push(ValidationIssue::of(
             IssueKind::Missing,
             vec![LocPart::Field(BODY), LocPart::Field(MESSAGES)],
-            value.clone(),
         )),
     }
     messages
@@ -127,33 +114,27 @@ fn decode_model(fields: &JsonMap, issues: &mut Vec<ValidationIssue>) -> Option<S
     match fields.get(MODEL) {
         None | Some(JsonValue::Null) => None,
         Some(JsonValue::String(name)) => Some(name.clone()),
-        Some(other) => {
+        Some(_) => {
             issues.push(ValidationIssue::of(
                 IssueKind::NotText,
                 vec![LocPart::Field(BODY), LocPart::Field(MODEL)],
-                other.clone(),
             ));
             None
         }
     }
 }
 
-fn field(
-    message: &JsonMap,
+fn field<'message>(
+    message: &'message JsonMap,
     name: &'static str,
     index: usize,
     issues: &mut Vec<ValidationIssue>,
-) -> Option<JsonValue> {
+) -> Option<&'message JsonValue> {
     let Some(value) = message.get(name) else {
-        issues.push(ValidationIssue::at_field(
-            IssueKind::Missing,
-            index,
-            name,
-            JsonValue::Object(message.clone()),
-        ));
+        issues.push(ValidationIssue::at_field(IssueKind::Missing, index, name));
         return None;
     };
-    Some(value.clone())
+    Some(value)
 }
 
 fn decode_message(
@@ -164,20 +145,19 @@ fn decode_message(
     let parsed_role = match field(message, ROLE, index, issues) {
         Some(JsonValue::String(name)) if name == "user" => Some(ChatRole::User),
         Some(JsonValue::String(name)) if name == "assistant" => Some(ChatRole::Assistant),
-        Some(other) => {
-            issues.push(ValidationIssue::at_field(ROLE_KIND, index, ROLE, other));
+        Some(_) => {
+            issues.push(ValidationIssue::at_field(IssueKind::NotOneOf, index, ROLE));
             None
         }
         None => None,
     };
     let parsed_content = match field(message, CONTENT, index, issues) {
-        Some(JsonValue::String(text)) => Some(text),
-        Some(other) => {
+        Some(JsonValue::String(text)) => Some(text.clone()),
+        Some(_) => {
             issues.push(ValidationIssue::at_field(
                 IssueKind::NotText,
                 index,
                 CONTENT,
-                other,
             ));
             None
         }

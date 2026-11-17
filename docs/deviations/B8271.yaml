@@ -2,18 +2,19 @@ task: B8271
 deviations:
   - what: >-
       A body that is not valid JSON answers 422 with loc ["body"] and the
-      decoder's message in ctx.error. LiteLLM's FastAPI answers the same
-      json_invalid type with loc ["body", <character position>] and the Python
-      json module's message. serde_json also rejects the NaN and Infinity
-      literals that Python's json loads accepts.
+      message "JSON decode error". LiteLLM's FastAPI answers the same
+      json_invalid type and message with loc ["body", <character position>].
+      serde_json also rejects the NaN and Infinity literals that Python's
+      json loads accepts.
     why: >-
-      The position, the wording and which inputs count as JSON come from the
-      decoder. betterlite decodes with serde_json, which reports a line and column
-      and its own message, so the two decoders cannot report the same offset for
-      the same input. For the NaN and Infinity literals LiteLLM is worse than a
-      different message: FastAPI accepts them, fails validation, and then cannot
-      render the non-finite input, so it answers 500 where a 422 belongs.
-      body_rejects_non_finite_numbers_as_invalid_json pins the 422.
+      The character position comes from the decoder. betterlite decodes with
+      serde_json, which reports a line and column, so the two decoders cannot
+      name the same position for the same input; both responses carry only
+      type, loc and msg because LiteLLM's RequestValidationError handler strips
+      input and ctx. For the NaN and Infinity literals LiteLLM is worse than a
+      different position: FastAPI accepts them, fails validation, and then
+      cannot render the non-finite input, so it answers 500 where a 422
+      belongs. body_rejects_non_finite_numbers_as_invalid_json pins the 422.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/endpoints.py#L24-L31
   - what: >-
       The route reads the body as JSON whatever the request's content type.
