@@ -53,7 +53,7 @@ fn exposed(value: &Option<Option<SecretString>>) -> Option<&str> {
     value
         .as_ref()
         .and_then(|inner| inner.as_ref())
-        .map(|secret| secret.expose_secret().as_str())
+        .map(|secret| secret.expose_secret())
 }
 
 fn assert_null(fields: &BTreeMap<String, JsonData>, names: &[&str]) {
