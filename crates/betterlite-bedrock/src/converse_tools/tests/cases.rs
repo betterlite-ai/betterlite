@@ -452,8 +452,9 @@ fn definitions_and_unions() {
     );
 }
 
-// serde_json refuses a request nested past 128 levels, so 120 is inside the parsed-input bound the walk meets.
-const DEEP_LEVELS: usize = 120;
+// Each iteration nests the schema two containers deeper, the node and its properties map, so 63 iterations
+// reach 127 containers, the edge of the 128-level parse bound serde_json puts on a request.
+const DEEP_LEVELS: usize = 63;
 
 fn deep_schema() {
     let mut deep = Json::Object(object(r#"{"type": "object"}"#));
