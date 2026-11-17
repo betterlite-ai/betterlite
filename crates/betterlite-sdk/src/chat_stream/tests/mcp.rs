@@ -153,3 +153,31 @@ async fn mcp_list_tools_skip_after_a_shaped_first_chunk() {
     assert!(fields.contains_key("mcp_list_tools"));
     assert!(fields.contains_key("mcp_tool_results"));
 }
+
+#[tokio::test]
+async fn mcp_hook_sees_only_the_final_chunk() {
+    let (world, hook) = world_with_hook(HookAction::Keep);
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), finish_chunk()]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+
+    assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
+    assert!(hook.seen.lock().unwrap().is_empty());
+    let last = only_chunk(stream.next().await);
+    assert_eq!(finish_of(&last).as_deref(), Some("stop"));
+    let seen = hook.seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(finish_of(&seen[0]).as_deref(), Some("stop"));
+}
+
+#[tokio::test]
+async fn mcp_hook_not_called_in_blocking_mode() {
+    let (world, hook) = world_with_hook(HookAction::Keep);
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), finish_chunk()]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
+
+    let seen = drain(&mut stream).await;
+    assert_eq!(seen.len(), 2);
+    assert!(hook.seen.lock().unwrap().is_empty());
+}

@@ -192,6 +192,22 @@ async fn next_effective_model_names_driver_chunks() {
 }
 
 #[tokio::test]
+async fn next_effective_model_survives_a_skipped_chunk() {
+    let mut config = config(CallMode::Blocking);
+    config.provider = Some("openai".to_owned());
+    config.logging_provider = Some("custom".to_owned());
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), empty_choice_chunk()]);
+    let mut stream = start(&world, &mut correlation, config, source);
+
+    assert_eq!(only_chunk(stream.next().await).model, MODEL);
+    let finish = only_chunk(stream.next().await);
+    assert_eq!(finish_of(&finish).as_deref(), Some("stop"));
+    assert_eq!(finish.model, "custom/gpt-4o");
+}
+
+#[tokio::test]
 async fn next_stamps_base_hidden_params() {
     let mut config = config(CallMode::Blocking);
     config.logging_provider = Some("custom".to_owned());

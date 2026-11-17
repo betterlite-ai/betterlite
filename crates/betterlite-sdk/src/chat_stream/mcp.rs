@@ -1,13 +1,8 @@
 use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk};
 
-// _hidden_params["mcp_metadata"], which only a non-empty object counts as.
-pub(super) fn metadata(fields: Option<&JsonObject>) -> Option<&JsonObject> {
-    fields.filter(|fields| !fields.is_empty())
-}
-
 // _add_mcp_list_tools_to_first_chunk: only the tool list, never tool results or the other keys.
 pub(super) fn add_list_tools(chunk: &mut StreamChunk, metadata: Option<&JsonObject>) {
-    let Some(fields) = metadata else {
+    let Some(fields) = metadata.filter(|fields| !fields.is_empty()) else {
         return;
     };
     let Some(tools) = fields
@@ -27,7 +22,7 @@ pub(super) fn add_list_tools(chunk: &mut StreamChunk, metadata: Option<&JsonObje
 
 // _add_mcp_metadata_to_final_chunk: every key of mcp_metadata, replacing what the delta carried.
 pub(super) fn add_final_metadata(chunk: &mut StreamChunk, metadata: Option<&JsonObject>) {
-    let Some(fields) = metadata else {
+    let Some(fields) = metadata.filter(|fields| !fields.is_empty()) else {
         return;
     };
     for choice in &mut chunk.choices {
