@@ -140,6 +140,15 @@ fn passthrough_urls_keep_the_original_bytes() {
 }
 
 #[test]
+fn an_empty_download_is_returned_untouched() {
+    let mut state = context();
+    let original = headers(&[(CONTENT_LENGTH.as_str(), "0")]);
+    let response = transform_file_content_response(b"", URL, &original, false, &mut state);
+    assert!(response.content.is_empty());
+    assert_eq!(response.headers, original);
+}
+
+#[test]
 fn unknown_formats_pass_through_exactly() {
     let binary: &[u8] = b"\x00\x01{\"not\":json}\xff\n\x02";
     let mut state = context();
