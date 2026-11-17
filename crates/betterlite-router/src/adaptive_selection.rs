@@ -6,7 +6,7 @@ mod tests;
 
 use betterlite_models::decisions::Json;
 use betterlite_prompts::message_fields::last_user::get_last_user_message;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use rust_decimal::Decimal;
 
 use crate::adaptive_classification::classifier::Classifier;
@@ -112,7 +112,9 @@ impl AdaptiveSelection {
         request_type: RequestType,
         min_quality_tier: Option<i64>,
     ) -> Result<String, AdaptiveSelectionError> {
-        let eligible = self.eligible_models(min_quality_tier);
+        let mut eligible = self.eligible_models(min_quality_tier);
+        let mut seen = IndexSet::new();
+        eligible.retain(|model| seen.insert(model.clone()));
         if eligible.is_empty() {
             let tier = min_quality_tier.map_or_else(|| "None".to_owned(), |tier| tier.to_string());
             return Err(AdaptiveSelectionError::NoEligibleModels {
@@ -178,14 +180,16 @@ impl AdaptiveSelection {
         &mut self,
         request: PreRoutingRequest<'messages, '_>,
     ) -> Result<PreRoutingResponse<'messages>, AdaptiveSelectionError> {
-        let text = request
-            .messages
-            .and_then(get_last_user_message)
-            .unwrap_or_default();
+        let PreRoutingRequest {
+            messages,
+            headers,
+            metadata,
+        } = request;
+        let text = messages.and_then(get_last_user_message).unwrap_or_default();
         let request_type = self.classifier.classify_prompt(&text);
-        let min_quality_tier = minimum_quality_tier(request.headers, request.metadata.as_ref());
+        let min_quality_tier = minimum_quality_tier(headers, metadata.as_ref());
         let chosen_model = self.pick_model(request_type, min_quality_tier)?;
-        let next_metadata = match request.metadata.take() {
+        let next_metadata = match metadata.take() {
             Some(Json::Object(mut fields)) => {
                 fields.insert(
                     CHOSEN_MODEL_KEY.to_owned(),
@@ -199,7 +203,7 @@ impl AdaptiveSelection {
                 Json::Text(chosen_model.clone()),
             )])),
         };
-        *request.metadata = Some(next_metadata);
+        *metadata = Some(next_metadata);
         let routing_decision = RoutingDecision {
             router_model_name: self.router_name.clone(),
             router_type: RouterKind::Adaptive,
@@ -209,7 +213,7 @@ impl AdaptiveSelection {
         };
         Ok(PreRoutingResponse {
             model: chosen_model,
-            messages: request.messages,
+            messages,
             routing_decision,
         })
     }

@@ -43,6 +43,13 @@ probes:
     operation:
       adaptive_selection:
         check: pick_model
+        available_models: ["a", "a", "b"]
+        samples: ["0.1", "0.9", "0.2"]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pick_model
         available_models: ["plain"]
         min_quality_tier: 3
   - clock: {unix_millis: 1700000000000, monotonic_millis: 0}

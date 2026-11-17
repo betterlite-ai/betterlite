@@ -11,7 +11,7 @@ use rust_decimal::Decimal;
 use super::costs::normalized_cost;
 use super::error::AdaptiveSelectionError;
 use super::pre_routing::{PreRoutingRequest, RouterKind, RoutingCause};
-use super::{AdaptiveSelection, REQUEST_TYPES, default_preferences};
+use super::{AdaptiveSelection, REQUEST_TYPES, StateSnapshot, default_preferences};
 use crate::adaptive_classification::config::{
     AdaptiveRouterConfig, AdaptiveRouterPreferences, AdaptiveRouterWeights,
 };
@@ -79,65 +79,67 @@ fn selection(
 
 #[rstest]
 #[case::balanced_prior_wins(
+    &["fast", "balanced", "top"],
     weights(0.7, 0.3),
-    &[0.2, 0.9, 0.1],
+    &[0.2_f64, 0.9_f64, 0.1_f64],
     &[("fast", "0.0"), ("balanced", "0.5"), ("top", "1.0")],
-    None,
-    "balanced"
+    (None, "balanced")
 )]
 #[case::cost_weight_picks_the_cheapest(
+    &["fast", "balanced", "top"],
     weights(0.0, 1.0),
-    &[0.9, 0.1, 0.5],
+    &[0.9_f64, 0.1_f64, 0.5_f64],
     &[("fast", "1.0"), ("balanced", "0.0"), ("top", "0.5")],
-    None,
-    "balanced"
+    (None, "balanced")
 )]
 #[case::ties_keep_the_first_model(
+    &["fast", "balanced", "top"],
     weights(0.7, 0.3),
-    &[0.5, 0.5, 0.5],
+    &[0.5_f64, 0.5_f64, 0.5_f64],
     &[("fast", "0.5"), ("balanced", "0.5"), ("top", "0.5")],
-    None,
-    "fast"
+    (None, "fast")
 )]
 #[case::tier_three_narrows_to_top(
+    &["fast", "balanced", "top"],
     weights(0.7, 0.3),
-    &[0.5],
+    &[0.5_f64],
     &[("fast", "0.0"), ("balanced", "0.5"), ("top", "1.0")],
-    Some(3),
-    "top"
+    (Some(3), "top")
 )]
 #[case::default_tier_keeps_two_models(
+    &["fast", "balanced", "top"],
     weights(0.7, 0.3),
-    &[0.9, 0.1],
+    &[0.9_f64, 0.1_f64],
     &[("fast", "0.0"), ("balanced", "0.5"), ("top", "1.0")],
-    Some(2),
-    "balanced"
+    (Some(2), "balanced")
 )]
 #[case::absent_cost_counts_as_free(
+    &["fast", "balanced", "top"],
     weights(0.0, 1.0),
-    &[0.5, 0.5, 0.5],
+    &[0.5_f64, 0.5_f64, 0.5_f64],
     &[("fast", "1.0")],
-    None,
-    "balanced"
+    (None, "balanced")
+)]
+#[case::repeated_model_draws_once(
+    &["a", "a", "b"],
+    weights(0.7, 0.3),
+    &[0.1_f64, 0.9_f64, 0.2_f64],
+    &[],
+    (None, "b")
 )]
 fn adaptive_selection_behaviors(
+    #[case] models: &[&str],
     #[case] router_weights: AdaptiveRouterWeights,
     #[case] samples: &[f64],
     #[case] costs: &[(&str, &str)],
-    #[case] min_quality_tier: Option<i64>,
-    #[case] expected: &str,
+    #[case] expectation: (Option<i64>, &'static str),
 ) {
+    let (min_quality_tier, expected) = expectation;
     let preferences = [
         ("fast", 1, &[][..]),
         ("top", 3, &[RequestType::CodeGeneration][..]),
     ];
-    let mut service = selection(
-        &["fast", "balanced", "top"],
-        &preferences,
-        costs,
-        router_weights,
-        samples,
-    );
+    let mut service = selection(models, &preferences, costs, router_weights, samples);
     let selected = service
         .pick_model(RequestType::General, min_quality_tier)
         .unwrap();
@@ -167,7 +169,7 @@ fn adaptive_selection_boundaries(
         &[("fast", 1, &[][..])],
         &[("fast", "0.0"), ("default", "0.0")],
         weights(1.0, 0.0),
-        &[0.9, 0.1],
+        &[0.9_f64, 0.1_f64],
     );
     match expected {
         BoundaryOutcome::Selected(model) => {
@@ -193,7 +195,12 @@ fn adaptive_selection_boundaries(
                         format!("AdaptiveRouter[probe]: no models meet min_quality_tier={tier}")
                     );
                 }
-                other => panic!("expected a refused tier, got {other:?}"),
+                other @ AdaptiveSelectionError::Classification(_)
+                | other @ AdaptiveSelectionError::Bandit(_)
+                | other @ AdaptiveSelectionError::CostNormalization
+                | other @ AdaptiveSelectionError::MissingCell { .. } => {
+                    panic!("expected a refused tier, got {other:?}");
+                }
             }
         }
     }
@@ -246,7 +253,7 @@ fn the_stash_only_lands_in_a_metadata_object(
     #[case] metadata: Option<&str>,
     #[case] expected: &str,
 ) {
-    let mut service = selection(&["fast"], &[], &[], weights(0.7, 0.3), &[0.5]);
+    let mut service = selection(&["fast"], &[], &[], weights(0.7, 0.3), &[0.5_f64]);
     let mut stored = metadata.map(json);
     let messages = vec![message("user", "Hello.")];
     let response = service
@@ -262,7 +269,7 @@ fn the_stash_only_lands_in_a_metadata_object(
 
 #[test]
 fn the_pre_routing_hook_classifies_and_reports_the_decision() {
-    let mut service = selection(&["fast"], &[], &[], weights(0.7, 0.3), &[0.5]);
+    let mut service = selection(&["fast"], &[], &[], weights(0.7, 0.3), &[0.5_f64]);
     let messages = vec![message(
         "user",
         "Write a Python function that reverses a list.",
@@ -289,7 +296,7 @@ fn the_pre_routing_hook_classifies_and_reports_the_decision() {
 
 #[test]
 fn a_request_without_messages_is_general() {
-    let mut service = selection(&["fast"], &[], &[], weights(0.7, 0.3), &[0.5]);
+    let mut service = selection(&["fast"], &[], &[], weights(0.7, 0.3), &[0.5_f64]);
     let mut stored = None;
     let response = service
         .pre_route(PreRoutingRequest {
@@ -325,7 +332,7 @@ fn the_hook_filters_by_the_requested_tier(
         &[("fast", 1, &[][..]), ("top", 3, &[][..])],
         &[("fast", "0.0"), ("top", "0.0")],
         weights(1.0, 0.0),
-        &[0.9, 0.1],
+        &[0.9_f64, 0.1_f64],
     );
     let resolved_headers = headers.map(json);
     let mut stored = metadata.map(json);
@@ -340,23 +347,27 @@ fn the_hook_filters_by_the_requested_tier(
     assert_eq!(response.model, expected);
 }
 
-#[test]
-fn the_snapshot_lists_sorted_cells_with_their_priors() {
-    let service = selection(
+fn snapshot_fixture() -> StateSnapshot {
+    selection(
         &["b", "a"],
         &[("a", 3, &[RequestType::Writing][..]), ("b", 1, &[][..])],
         &[("b", "0.25"), ("a", "1.0")],
-        weights(0.7, 0.3),
+        weights(0.5, 0.5),
         &[],
-    );
-    let snapshot = service.state_snapshot();
+    )
+    .state_snapshot()
+}
+
+#[test]
+fn the_snapshot_reports_the_router_and_its_weights() {
+    let snapshot = snapshot_fixture();
     assert_eq!(snapshot.router_name, "probe");
     assert_eq!(
         snapshot.available_models,
         vec!["b".to_owned(), "a".to_owned()]
     );
-    assert_eq!(snapshot.weights.quality.to_bits(), 0.7_f64.to_bits());
-    assert_eq!(snapshot.weights.economy.to_bits(), 0.3_f64.to_bits());
+    assert_eq!(snapshot.weights.quality.to_bits(), 0.5_f64.to_bits());
+    assert_eq!(snapshot.weights.economy.to_bits(), 0.5_f64.to_bits());
     assert_eq!(
         snapshot.model_costs,
         vec![
@@ -364,6 +375,11 @@ fn the_snapshot_lists_sorted_cells_with_their_priors() {
             ("a".to_owned(), decimal("1.0")),
         ]
     );
+}
+
+#[test]
+fn the_snapshot_lists_sorted_cells_with_their_priors() {
+    let snapshot = snapshot_fixture();
     assert_eq!(snapshot.cells.len(), 2 * REQUEST_TYPES.len());
     let types = snapshot
         .cells
@@ -450,7 +466,13 @@ fn an_unsupported_preference_tier_is_refused() {
         AdaptiveSelectionError::Bandit(BanditMathError::UnsupportedTier { tier }) => {
             assert_eq!(tier, 4);
         }
-        other => panic!("expected an unsupported tier, got {other:?}"),
+        other @ AdaptiveSelectionError::Classification(_)
+        | other @ AdaptiveSelectionError::Bandit(_)
+        | other @ AdaptiveSelectionError::CostNormalization
+        | other @ AdaptiveSelectionError::NoEligibleModels { .. }
+        | other @ AdaptiveSelectionError::MissingCell { .. } => {
+            panic!("expected an unsupported tier, got {other:?}");
+        }
     }
 }
 
@@ -472,6 +494,12 @@ fn a_non_finite_scripted_sample_is_refused() {
         AdaptiveSelectionError::Bandit(BanditMathError::NonFinite { field }) => {
             assert_eq!(field, "scripted sample");
         }
-        other => panic!("expected a refused sample, got {other:?}"),
+        other @ AdaptiveSelectionError::Classification(_)
+        | other @ AdaptiveSelectionError::Bandit(_)
+        | other @ AdaptiveSelectionError::CostNormalization
+        | other @ AdaptiveSelectionError::NoEligibleModels { .. }
+        | other @ AdaptiveSelectionError::MissingCell { .. } => {
+            panic!("expected a refused sample, got {other:?}");
+        }
     }
 }
