@@ -20,70 +20,7 @@ use crate::router_core::pipeline::HealthyDeployments;
 use crate::strategy::Strategy;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
 
-pub(super) async fn run(name: &str) {
-    if selection_cases(name).await {
-        return;
-    }
-    if catalog_cases(name).await {
-        return;
-    }
-    if health_cases(name).await {
-        return;
-    }
-    response_cases(name).await;
-}
-
-async fn selection_cases(name: &str) -> bool {
-    match name {
-        "weighted_pick" => weighted_pick().await,
-        "shared_pool_chat_and_embedding" => shared_pool_chat_and_embedding().await,
-        "callback_narrowed" => callback_narrowed().await,
-        "specific_deployment_pool" => specific_deployment_pool().await,
-        "pinned_short_circuit" => pinned_short_circuit().await,
-        "deployment_id_single" => deployment_id_single().await,
-        "excluded_drop" => excluded_drop().await,
-        "retry_skip_narrow" => retry_skip_narrow().await,
-        "retry_skip_keeps_pool" => retry_skip_keeps_pool().await,
-        _ => return false,
-    }
-    true
-}
-
-async fn catalog_cases(name: &str) -> bool {
-    match name {
-        "group_alias" => group_alias().await,
-        "model_alias_map" => model_alias_map().await,
-        "client_acquired" => client_acquired().await,
-        _ => return false,
-    }
-    true
-}
-
-async fn health_cases(name: &str) -> bool {
-    match name {
-        "healthy_pool" => healthy_pool().await,
-        "healthy_single" => healthy_single().await,
-        "healthy_blocked_pool" => healthy_blocked_pool().await,
-        "order_lowest_wins" => order_lowest_wins().await,
-        "order_after_blocked" => order_after_blocked().await,
-        _ => return false,
-    }
-    true
-}
-
-async fn response_cases(name: &str) {
-    match name {
-        "headers_attach_to_object" => headers_attach_to_object(),
-        "header_model_id_kept" => header_model_id_kept(),
-        "token_count_from_usage" => token_count_from_usage(),
-        "token_count_from_input_output" => token_count_from_input_output(),
-        "override_pre_call_bound" => override_pre_call_bound().await,
-        "override_pre_call_absent" => override_pre_call_absent().await,
-        _ => panic!("unknown case {name}"),
-    }
-}
-
-async fn weighted_pick() {
+pub(super) async fn weighted_pick() {
     let fixture = Fixture::plain(vec![weighted("gpt-4o", "a", 5), weighted("gpt-4o", "b", 0)]);
     let result = run_simple(&fixture, &RequestSetup::new("gpt-4o"))
         .await
@@ -95,7 +32,7 @@ async fn weighted_pick() {
     assert!(result.client.is_none());
 }
 
-async fn shared_pool_chat_and_embedding() {
+pub(super) async fn shared_pool_chat_and_embedding() {
     let deployments = vec![
         weighted("shared", "chat", 1),
         deployment(
@@ -123,7 +60,7 @@ async fn shared_pool_chat_and_embedding() {
     );
 }
 
-async fn callback_narrowed() {
+pub(super) async fn callback_narrowed() {
     let fixture = Fixture::plain(vec![weighted("gpt-4o", "a", 5), weighted("gpt-4o", "b", 0)]);
     let mut random = seeded();
     let result = run_route(
@@ -139,7 +76,7 @@ async fn callback_narrowed() {
     assert_eq!(result.strategy, Some(Strategy::SimpleShuffle));
 }
 
-async fn specific_deployment_pool() {
+pub(super) async fn specific_deployment_pool() {
     let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[])]);
     let mut setup = RequestSetup::new("openai/a");
     setup.specific_deployment = true;
@@ -150,7 +87,7 @@ async fn specific_deployment_pool() {
     assert!(result.aliases.is_empty());
 }
 
-async fn pinned_short_circuit() {
+pub(super) async fn pinned_short_circuit() {
     let fixture = Fixture::plain(group_and_ids(&[("gpt-4o", "a"), ("gpt-4o", "b")]));
     let mut pinned = RequestSetup::new("gpt-4o");
     pinned.pinned = true;
@@ -165,7 +102,7 @@ async fn pinned_short_circuit() {
     assert_eq!(result.strategy, Some(Strategy::SimpleShuffle));
 }
 
-async fn deployment_id_single() {
+pub(super) async fn deployment_id_single() {
     let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[])]);
     let setup = RequestSetup::new("a");
     let result = run_simple(&fixture, &setup).await.unwrap();
@@ -182,7 +119,7 @@ async fn deployment_id_single() {
     );
 }
 
-async fn excluded_drop() {
+pub(super) async fn excluded_drop() {
     let fixture = Fixture::plain(vec![weighted("gpt-4o", "a", 5), weighted("gpt-4o", "b", 0)]);
     let mut setup = RequestSetup::new("gpt-4o");
     setup.excluded = vec![String::from("a")];
@@ -190,7 +127,7 @@ async fn excluded_drop() {
     assert_eq!(picked(&result), "b");
 }
 
-async fn retry_skip_narrow() {
+pub(super) async fn retry_skip_narrow() {
     let fixture = Fixture::plain(vec![weighted("gpt-4o", "a", 5), weighted("gpt-4o", "b", 0)]);
     let mut setup = RequestSetup::new("gpt-4o");
     setup.retry_skipped = vec![String::from("a")];
@@ -198,7 +135,7 @@ async fn retry_skip_narrow() {
     assert_eq!(picked(&result), "b");
 }
 
-async fn retry_skip_keeps_pool() {
+pub(super) async fn retry_skip_keeps_pool() {
     let fixture = Fixture::plain(vec![weighted("gpt-4o", "a", 5), weighted("gpt-4o", "b", 0)]);
     let mut setup = RequestSetup::new("gpt-4o");
     setup.retry_skipped = vec![String::from("a"), String::from("b")];
@@ -206,47 +143,39 @@ async fn retry_skip_keeps_pool() {
     assert_eq!(picked(&result), "a");
 }
 
-async fn group_alias() {
-    let fixture = Fixture::aliased(
-        vec![deployment("gpt-4o", "a", &[])],
-        &[("gpt", "gpt-4o")],
-        &[],
-    );
-    let setup = RequestSetup::new("gpt");
-    let result = run_simple(&fixture, &setup).await.unwrap();
-    assert_eq!(result.group, "gpt-4o");
-    assert_eq!(
-        result.aliases,
-        vec![AliasStep {
-            source: AliasSource::ModelGroupAlias,
-            from: String::from("gpt"),
-            to: String::from("gpt-4o"),
-        }]
-    );
+pub(super) async fn group_alias() {
+    let aliases: (&[(&str, &str)], &[(&str, &str)]) = (&[("gpt", "gpt-4o")], &[]);
+    alias_resolves(aliases, "gpt", "gpt-4o", AliasSource::ModelGroupAlias).await;
 }
 
-async fn model_alias_map() {
-    let fixture = Fixture::aliased(
-        vec![deployment("gpt-4o", "a", &[])],
-        &[],
-        &[("gpt-4o", "gpt-4o-mini")],
-    );
-    let result = run_simple(&fixture, &RequestSetup::new("gpt-4o"))
+pub(super) async fn model_alias_map() {
+    let aliases: (&[(&str, &str)], &[(&str, &str)]) = (&[], &[("gpt-4o", "gpt-4o-mini")]);
+    alias_resolves(aliases, "gpt-4o", "gpt-4o-mini", AliasSource::ModelAliasMap).await;
+}
+
+async fn alias_resolves(
+    aliases: (&[(&str, &str)], &[(&str, &str)]),
+    requested: &str,
+    resolved: &str,
+    source: AliasSource,
+) {
+    let fixture = Fixture::aliased(vec![deployment("gpt-4o", "a", &[])], aliases.0, aliases.1);
+    let result = run_simple(&fixture, &RequestSetup::new(requested))
         .await
         .unwrap();
-    assert_eq!(result.group, "gpt-4o-mini");
+    assert_eq!(result.group, resolved);
     assert_eq!(picked(&result), "a");
     assert_eq!(
         result.aliases,
         vec![AliasStep {
-            source: AliasSource::ModelAliasMap,
-            from: String::from("gpt-4o"),
-            to: String::from("gpt-4o-mini"),
+            source,
+            from: String::from(requested),
+            to: String::from(resolved),
         }]
     );
 }
 
-async fn client_acquired() {
+pub(super) async fn client_acquired() {
     let fixture = Fixture::plain(vec![deployment(
         "gpt-4o",
         "a",
@@ -292,7 +221,7 @@ fn aliased_pool() -> Fixture {
 }
 
 // the healthy view keeps the pool, the alias it resolved and every deployment the catalog holds
-async fn healthy_pool() {
+pub(super) async fn healthy_pool() {
     let fixture = aliased_pool();
     let found = healthy_of(&fixture, "gpt").await;
     assert_eq!(found.group, "gpt-4o");
@@ -300,7 +229,7 @@ async fn healthy_pool() {
     assert_eq!(found.aliases.len(), 1);
 }
 
-async fn healthy_single() {
+pub(super) async fn healthy_single() {
     let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[])]);
     let found = healthy_of(&fixture, "a").await;
     assert_eq!(found.group, "openai/a");
@@ -310,7 +239,7 @@ async fn healthy_single() {
 }
 
 // the healthy view drops what an admin paused, while the whole pool still counts it
-async fn healthy_blocked_pool() {
+pub(super) async fn healthy_blocked_pool() {
     let fixture = Fixture::plain(vec![
         paused("gpt-4o", "paused", &[]),
         deployment("gpt-4o", "live", &[]),
@@ -333,7 +262,7 @@ async fn picked_from(fixture: &Fixture) -> String {
 }
 
 // the lowest declared order narrows the pool before the strategy weighs what is left
-async fn order_lowest_wins() {
+pub(super) async fn order_lowest_wins() {
     let first = deployment("gpt-4o", "a", &[("order", number(1))]);
     let second = with_info(
         "gpt-4o",
@@ -346,14 +275,14 @@ async fn order_lowest_wins() {
 }
 
 // the order filter runs after the paused filter, so a paused order-1 leaves the live order-2 to serve
-async fn order_after_blocked() {
+pub(super) async fn order_after_blocked() {
     let blocked = paused("gpt-4o", "a", &[("order", number(1))]);
     let live = deployment("gpt-4o", "b", &[("order", number(2))]);
     let fixture = Fixture::plain(vec![blocked, live]);
     assert_eq!(picked_from(&fixture).await, "b");
 }
 
-fn headers_attach_to_object() {
+pub(super) fn headers_attach_to_object() {
     let mut prepared = prepare_response(body(&[("id", text("chatcmpl-1"))])).unwrap();
     assert!(!response_has_hidden_params(&prepared));
     ensure_additional_headers(&mut prepared).insert(String::from("x-probe"), text("1"));
@@ -377,7 +306,7 @@ fn headers_attach_to_object() {
     );
 }
 
-fn header_model_id_kept() {
+pub(super) fn header_model_id_kept() {
     let mut prepared = prepare_response(body(&[hidden(&[("model_id", text("b"))])])).unwrap();
     ensure_additional_headers(&mut prepared);
     apply_response_model_id(&mut prepared, Some(&metadata("a")));
@@ -393,7 +322,7 @@ fn header_model_id_kept() {
     );
 }
 
-fn token_count_from_usage() {
+pub(super) fn token_count_from_usage() {
     let response = object(&[(
         "usage",
         Json::Object(object(&[("total_tokens", number(9))])),
@@ -401,7 +330,7 @@ fn token_count_from_usage() {
     assert_eq!(response_total_token_count(&response), 9);
 }
 
-fn token_count_from_input_output() {
+pub(super) fn token_count_from_input_output() {
     let response = object(&[(
         "usage",
         Json::Object(object(&[
@@ -425,14 +354,14 @@ async fn override_attempt(configured: RoutingStrategy, strategy: &str) -> Attemp
 }
 
 // a request that names another strategy gets that selector's override pre-call check, bound as a callback
-async fn override_pre_call_bound() {
+pub(super) async fn override_pre_call_bound() {
     let result = override_attempt(RoutingStrategy::SimpleShuffle, "usage-based-routing-v2").await;
     let target = result.override_pre_call.expect("the override selector");
     assert_eq!(result.bindings.dynamic_callbacks, vec![target]);
 }
 
 // an override naming the configured strategy reuses its default selector, which runs no override pre-call check
-async fn override_pre_call_absent() {
+pub(super) async fn override_pre_call_absent() {
     let result = override_attempt(RoutingStrategy::LeastBusy, "least-busy").await;
     assert_eq!(result.override_pre_call, None);
     assert!(result.bindings.dynamic_callbacks.is_empty());
