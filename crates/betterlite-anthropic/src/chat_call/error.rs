@@ -88,7 +88,6 @@ where
         }
     }
 }
-
 // The stream helper reports the two failures this call already wraps, so ? converts them without a mapping step
 impl<ClientFailure, CounterFailure> From<CompletionError<ClientFailure>>
     for ChatCallError<ClientFailure, CounterFailure>
