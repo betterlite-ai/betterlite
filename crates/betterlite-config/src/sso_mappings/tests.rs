@@ -2,7 +2,16 @@
 
 use std::collections::BTreeMap;
 
+use secrecy::ExposeSecret;
+
 use super::{SsoMappingSources, load_mapping_sources};
+
+fn secret(sources: &SsoMappingSources) -> Option<&str> {
+    sources
+        .client_secret
+        .as_ref()
+        .map(ExposeSecret::expose_secret)
+}
 
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -14,7 +23,11 @@ fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 #[test]
 fn loads_mapping_sources() {
     let absent = load_mapping_sources(&BTreeMap::<String, String>::new());
-    assert_eq!(absent, SsoMappingSources::default());
+    assert!(absent.client_secret.is_none());
+    assert!(absent.scope.is_none());
+    assert!(absent.authorization_endpoint.is_none());
+    assert!(!absent.include_client_id);
+    assert!(absent.sso_headers.is_none());
     let configured = load_mapping_sources(&environment(&[
         ("GENERIC_CLIENT_SECRET", "secret"),
         ("GENERIC_SCOPE", "openid email"),
@@ -30,21 +43,34 @@ fn loads_mapping_sources() {
         ("GENERIC_ROLE_MAPPINGS_DEFAULT_ROLE", "internal_user"),
         ("GENERIC_SSO_HEADERS", "X-Team=eng"),
     ]));
+    assert_eq!(secret(&configured), Some("secret"));
+    assert_eq!(configured.scope.as_deref(), Some("openid email"));
     assert_eq!(
-        configured,
-        SsoMappingSources {
-            client_secret: Some("secret".to_owned()),
-            scope: Some("openid email".to_owned()),
-            authorization_endpoint: Some("https://idp.example/authorize".to_owned()),
-            token_endpoint: Some("https://idp.example/token".to_owned()),
-            userinfo_endpoint: Some("https://idp.example/userinfo".to_owned()),
-            include_client_id: true,
-            role_mappings_roles: Some("{'proxy_admin': ['admins']}".to_owned()),
-            role_mappings_group_claim: Some("groups".to_owned()),
-            role_mappings_default_role: Some("internal_user".to_owned()),
-            sso_headers: Some("X-Team=eng".to_owned()),
-        }
+        configured.authorization_endpoint.as_deref(),
+        Some("https://idp.example/authorize")
     );
+    assert_eq!(
+        configured.token_endpoint.as_deref(),
+        Some("https://idp.example/token")
+    );
+    assert_eq!(
+        configured.userinfo_endpoint.as_deref(),
+        Some("https://idp.example/userinfo")
+    );
+    assert!(configured.include_client_id);
+    assert_eq!(
+        configured.role_mappings_roles.as_deref(),
+        Some("{'proxy_admin': ['admins']}")
+    );
+    assert_eq!(
+        configured.role_mappings_group_claim.as_deref(),
+        Some("groups")
+    );
+    assert_eq!(
+        configured.role_mappings_default_role.as_deref(),
+        Some("internal_user")
+    );
+    assert_eq!(configured.sso_headers.as_deref(), Some("X-Team=eng"));
 }
 
 #[test]
@@ -71,7 +97,7 @@ fn an_empty_source_value_stays_set() {
         ("GENERIC_SSO_HEADERS", ""),
         ("GENERIC_ROLE_MAPPINGS_ROLES", ""),
     ]));
-    assert_eq!(sources.client_secret.as_deref(), Some(""));
+    assert_eq!(secret(&sources), Some(""));
     assert_eq!(sources.scope.as_deref(), Some(""));
     assert_eq!(sources.sso_headers.as_deref(), Some(""));
     assert_eq!(sources.role_mappings_roles.as_deref(), Some(""));

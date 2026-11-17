@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sso_mappings::{
-    GENERIC_AUTHORIZATION_ENDPOINT_ENV, GENERIC_CLIENT_SECRET_ENV, GENERIC_TOKEN_ENDPOINT_ENV,
-    GENERIC_USERINFO_ENDPOINT_ENV, SsoMappingSources,
+    AUTHORIZATION_ENDPOINT_ENV, CLIENT_SECRET_ENV, SsoMappingSources, TOKEN_ENDPOINT_ENV,
+    USERINFO_ENDPOINT_ENV,
 };
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use secrecy::SecretString;
@@ -29,11 +29,11 @@ pub struct MissingVariable(pub Box<ProxyException>);
 pub fn generic_sso_settings(
     sources: &SsoMappingSources,
 ) -> Result<GenericSsoSettings, MissingVariable> {
+    let Some(client_secret) = sources.client_secret.clone() else {
+        return Err(missing_variable(CLIENT_SECRET_ENV));
+    };
     Ok(GenericSsoSettings {
-        client_secret: SecretString::from(require(
-            sources.client_secret.as_deref(),
-            GENERIC_CLIENT_SECRET_ENV,
-        )?),
+        client_secret,
         scope: sources
             .scope
             .as_deref()
@@ -43,16 +43,10 @@ pub fn generic_sso_settings(
             .collect(),
         authorization_endpoint: require(
             sources.authorization_endpoint.as_deref(),
-            GENERIC_AUTHORIZATION_ENDPOINT_ENV,
+            AUTHORIZATION_ENDPOINT_ENV,
         )?,
-        token_endpoint: require(
-            sources.token_endpoint.as_deref(),
-            GENERIC_TOKEN_ENDPOINT_ENV,
-        )?,
-        userinfo_endpoint: require(
-            sources.userinfo_endpoint.as_deref(),
-            GENERIC_USERINFO_ENDPOINT_ENV,
-        )?,
+        token_endpoint: require(sources.token_endpoint.as_deref(), TOKEN_ENDPOINT_ENV)?,
+        userinfo_endpoint: require(sources.userinfo_endpoint.as_deref(), USERINFO_ENDPOINT_ENV)?,
         include_client_id: sources.include_client_id,
     })
 }
@@ -60,17 +54,19 @@ pub fn generic_sso_settings(
 // LiteLLM refuses an unset value only; an explicitly empty secret is accepted
 fn require(value: Option<&str>, variable: &'static str) -> Result<String, MissingVariable> {
     let Some(text) = value else {
-        return Err(MissingVariable(Box::new(ProxyException::new(
-            ProxyExceptionInit {
-                message: format!("{variable} not set. Set it in .env file"),
-                error_type: "auth_error".to_owned(),
-                param: Some(variable.to_owned()),
-                code: ExceptionCode::Status(500),
-                headers: BTreeMap::new(),
-                openai_code: None,
-                provider_specific_fields: BTreeMap::new(),
-            },
-        ))));
+        return Err(missing_variable(variable));
     };
     Ok(text.to_owned())
+}
+
+fn missing_variable(variable: &'static str) -> MissingVariable {
+    MissingVariable(Box::new(ProxyException::new(ProxyExceptionInit {
+        message: format!("{variable} not set. Set it in .env file"),
+        error_type: "auth_error".to_owned(),
+        param: Some(variable.to_owned()),
+        code: ExceptionCode::Status(500),
+        headers: BTreeMap::new(),
+        openai_code: None,
+        provider_specific_fields: BTreeMap::new(),
+    })))
 }
