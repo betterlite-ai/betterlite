@@ -51,23 +51,16 @@ impl TitanV2Settings {
     // the class attributes get_config inspects, with an unset setting still there as None
     #[must_use]
     pub fn attributes(&self) -> ClassAttributes {
-        let attributes = [
-            ("normalize", class_value(self.normalize.map(Json::Bool))),
-            (
-                "dimensions",
-                class_value(
-                    self.dimensions
-                        .map(|length| Json::Number(Number::from(length))),
-                ),
-            ),
-        ];
-        attributes
-            .into_iter()
-            .map(|(name, attribute)| (String::from(name), attribute))
-            .collect()
+        let normalize = self.normalize.map_or(Json::Null, Json::Bool);
+        let dimensions = self
+            .dimensions
+            .map_or(Json::Null, |length| Json::Number(Number::from(length)));
+        [
+            ("normalize", ClassAttribute::Value(normalize)),
+            ("dimensions", ClassAttribute::Value(dimensions)),
+        ]
+        .into_iter()
+        .map(|(name, attribute)| (String::from(name), attribute))
+        .collect()
     }
-}
-
-fn class_value(value: Option<Json>) -> ClassAttribute {
-    ClassAttribute::Value(value.unwrap_or(Json::Null))
 }

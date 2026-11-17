@@ -70,15 +70,14 @@ fn selected_by_type(by_type: &Json) -> Result<Option<&Json>, TitanEmbeddingsErro
             Ok(None)
         }
         Json::List(items) => {
-            if items.iter().any(selected_name) {
+            if items
+                .iter()
+                .any(|item| matches!(item.as_str(), Some("binary" | "float")))
+            {
                 return Err(TitanEmbeddingsError::NotSubscriptable);
             }
             Ok(None)
         }
         Json::Null | Json::Bool(_) | Json::Number(_) => Err(TitanEmbeddingsError::NotIterable),
     }
-}
-
-fn selected_name(item: &Json) -> bool {
-    matches!(item.as_str(), Some("binary" | "float"))
 }

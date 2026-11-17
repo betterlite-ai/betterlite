@@ -1,4 +1,11 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "each case helper states one LiteLLM behavior as a single scenario"
+    )
+)]
 
 use std::collections::BTreeMap;
 
@@ -70,8 +77,8 @@ fn loads_normalize() {
 
     let missing = load("", "normalize: os.environ/TITAN_NORMALIZE", &[]).unwrap_err();
     assert!(matches!(
-        missing,
-        ConfigError::MissingEnvironment { ref variable, ref path }
+        &missing,
+        ConfigError::MissingEnvironment { variable, path }
             if variable == "TITAN_NORMALIZE" && path == "litellm_settings.normalize"
     ));
 
@@ -80,8 +87,8 @@ fn loads_normalize() {
         let wrong = load("", &format!("normalize: {literal}"), &[]).unwrap_err();
         assert!(
             matches!(
-                wrong,
-                ConfigError::InvalidScalar { ref path, .. } if path == "litellm_settings.normalize"
+                &wrong,
+                ConfigError::InvalidScalar { path, .. } if path == "litellm_settings.normalize"
             ),
             "{literal}: {wrong}"
         );
@@ -117,8 +124,8 @@ fn loads_dimensions() {
 
     let missing = load("", "dimensions: os.environ/TITAN_DIMENSIONS", &[]).unwrap_err();
     assert!(matches!(
-        missing,
-        ConfigError::MissingEnvironment { ref variable, ref path }
+        &missing,
+        ConfigError::MissingEnvironment { variable, path }
             if variable == "TITAN_DIMENSIONS" && path == "litellm_settings.dimensions"
     ));
 
@@ -131,8 +138,8 @@ fn loads_dimensions() {
     let not_a_number = load("", "dimensions: wide", &[]).unwrap_err();
     assert!(
         matches!(
-            not_a_number,
-            ConfigError::InvalidInteger { ref path, .. } if path == "litellm_settings.dimensions"
+            &not_a_number,
+            ConfigError::InvalidInteger { path, .. } if path == "litellm_settings.dimensions"
         ),
         "{not_a_number}"
     );

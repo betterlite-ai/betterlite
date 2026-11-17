@@ -42,15 +42,16 @@ fn g1_request(case: &G1Request) -> Value {
 }
 
 // the class settings live on the class across constructions, so each step is applied to the same state
-fn v2_dimensions_normalize(case: &V2DimensionsNormalize) -> Result<Value, Failure> {
+fn v2_dimensions_normalize(case: &V2DimensionsNormalize) -> HelperResult {
     let mut state = TitanV2Settings::default();
     let mut configs = Vec::with_capacity(case.settings.len());
     for step in &case.settings {
         state.apply(step.normalize, step.dimensions);
-        configs.push(serde_json::to_value(get_config(&state.attributes()))?);
+        configs.push(serde_json::to_value(get_config(&state.attributes())).map_err(Failure::from)?);
     }
     let mapped = v2::map_openai_params(&case.non_default, case.optional_params.clone());
-    let request = v2::transform_request(&case.input, &case.inference_params)?;
+    let request =
+        v2::transform_request(&case.input, &case.inference_params).map_err(Failure::from)?;
     Ok(json!({
         "configs": configs,
         "supported": v2::SUPPORTED_OPENAI_PARAMS,
@@ -60,10 +61,11 @@ fn v2_dimensions_normalize(case: &V2DimensionsNormalize) -> Result<Value, Failur
     }))
 }
 
-fn v2_binary_embedding(case: &V2BinaryEmbedding) -> Result<Value, Failure> {
+fn v2_binary_embedding(case: &V2BinaryEmbedding) -> HelperResult {
     let transformed =
-        response::transform_response(&case.response_list, &case.model, v2::by_type_embedding)?;
-    Ok(serde_json::to_value(transformed)?)
+        response::transform_response(&case.response_list, &case.model, v2::by_type_embedding)
+            .map_err(Failure::from)?;
+    Ok(serde_json::to_value(transformed).map_err(Failure::from)?)
 }
 
 fn multimodal_image(case: &MultimodalImage) -> Value {
@@ -87,23 +89,24 @@ fn cohere_v3_input_type(case: &CohereV3InputType) -> Value {
     })
 }
 
-fn token_count_response(case: &TokenCountResponse) -> Result<Value, Failure> {
+fn token_count_response(case: &TokenCountResponse) -> HelperResult {
     let transformed = match &case.provider {
         ResponseProvider::G1 => response::transform_response(
             &case.response_list,
             &case.model,
             response::plain_embedding,
-        )?,
+        ),
         ResponseProvider::V2 => {
-            response::transform_response(&case.response_list, &case.model, v2::by_type_embedding)?
+            response::transform_response(&case.response_list, &case.model, v2::by_type_embedding)
         }
         ResponseProvider::Multimodal => multimodal::transform_response(
             &case.response_list,
             &case.model,
             case.batch_data.as_deref(),
-        )?,
-    };
-    Ok(serde_json::to_value(transformed)?)
+        ),
+    }
+    .map_err(Failure::from)?;
+    Ok(serde_json::to_value(transformed).map_err(Failure::from)?)
 }
 
 // dunders, None, a function, a builtin, a classmethod and a staticmethod all leave get_config
@@ -119,7 +122,7 @@ fn probe_attributes() -> ClassAttributes {
         ),
         (
             "_count",
-            ClassAttribute::Value(Json::Number(serde_json::Number::from(3))),
+            ClassAttribute::Value(Json::Number(serde_json::Number::from(3_i64))),
         ),
         ("_absent", ClassAttribute::Value(Json::Null)),
         ("_function", ClassAttribute::Function),
@@ -155,7 +158,7 @@ impl From<Failure> for Box<HelperError> {
 }
 
 // the class is stripped before the comparison, so it only names the Python failure a reader would see
-fn error_class(failure: &Failure) -> &'static str {
+const fn error_class(failure: &Failure) -> &'static str {
     match failure {
         Failure::Json(_) => "ValueError",
         Failure::Embeddings(error) => match error {

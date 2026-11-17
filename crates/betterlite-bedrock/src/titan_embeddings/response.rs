@@ -40,8 +40,9 @@ pub fn transform_response(
         prompt_tokens = prompt_tokens
             .checked_add(count)
             .ok_or(TitanEmbeddingsError::TokenOverflow)?;
-        let position =
-            u32::try_from(index).map_err(|_source| TitanEmbeddingsError::IndexOverflow)?;
+        let Ok(position) = u32::try_from(index) else {
+            return Err(TitanEmbeddingsError::IndexOverflow);
+        };
         data.push(EmbeddingRecord {
             object: String::from("embedding"),
             embedding: vector,

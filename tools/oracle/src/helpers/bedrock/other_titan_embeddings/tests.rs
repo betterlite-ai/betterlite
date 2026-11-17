@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "the seed test walks the shared corpus once and asserts each parsed case"
+    )
+)]
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::iter;

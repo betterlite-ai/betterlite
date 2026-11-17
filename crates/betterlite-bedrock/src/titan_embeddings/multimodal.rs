@@ -49,11 +49,11 @@ pub fn transform_response(
 }
 
 fn count_images(batch_data: Option<&[Object]>) -> u32 {
-    let Some(batch_data) = batch_data else {
+    let Some(batch) = batch_data else {
         return 0;
     };
     let mut count = 0_u32;
-    for request_data in batch_data {
+    for request_data in batch {
         if request_data.contains_key("inputImage") {
             count = count.saturating_add(1);
         }

@@ -1,6 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "each helper states one LiteLLM behavior as a single scenario"
+    )
+)]
 
-use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Number;
 
@@ -188,64 +194,54 @@ fn assert_v2_mapping() {
         v2::SUPPORTED_OPENAI_PARAMS,
         &["dimensions", "encoding_format"]
     );
-    assert_eq!(
-        v2::map_openai_params(&object(vec![("dimensions", int(512))]), Object::new()),
-        object(vec![("dimensions", int(512))])
+    let dimensions = v2::map_openai_params(&object(vec![("dimensions", int(512))]), Object::new());
+    assert_eq!(dimensions.get("dimensions"), Some(&int(512)));
+    let mapped_float = v2::map_openai_params(
+        &object(vec![("encoding_format", text("float"))]),
+        Object::new(),
     );
     assert_eq!(
-        v2::map_openai_params(
-            &object(vec![("encoding_format", text("float"))]),
-            Object::new()
-        ),
-        object(vec![("embeddingTypes", list(vec![text("float")]))])
+        mapped_float.get("embeddingTypes"),
+        Some(&list(vec![text("float")]))
+    );
+    let base64 = v2::map_openai_params(
+        &object(vec![("encoding_format", text("base64"))]),
+        Object::new(),
     );
     assert_eq!(
-        v2::map_openai_params(
-            &object(vec![("encoding_format", text("base64"))]),
-            Object::new()
-        ),
-        object(vec![("embeddingTypes", list(vec![text("binary")]))])
+        base64.get("embeddingTypes"),
+        Some(&list(vec![text("binary")]))
     );
     // every other encoding, an explicit null included, asks for float
-    assert_eq!(
-        v2::map_openai_params(
-            &object(vec![("encoding_format", text("int8"))]),
-            Object::new()
-        ),
-        object(vec![("embeddingTypes", list(vec![text("float")]))])
+    let int8 = v2::map_openai_params(
+        &object(vec![("encoding_format", text("int8"))]),
+        Object::new(),
     );
-    assert_eq!(
-        v2::map_openai_params(
-            &object(vec![("encoding_format", Json::Null)]),
-            Object::new()
-        ),
-        object(vec![("embeddingTypes", list(vec![text("float")]))])
+    assert_eq!(int8.get("embeddingTypes"), Some(&list(vec![text("float")])));
+    let null = v2::map_openai_params(
+        &object(vec![("encoding_format", Json::Null)]),
+        Object::new(),
     );
-    assert_eq!(
-        v2::map_openai_params(
-            &object(vec![
-                ("dimensions", int(256)),
-                ("encoding_format", text("base64")),
-                ("other", text("ignored")),
-            ]),
-            Object::new()
-        ),
-        object(vec![
+    assert_eq!(null.get("embeddingTypes"), Some(&list(vec![text("float")])));
+    let combined = v2::map_openai_params(
+        &object(vec![
             ("dimensions", int(256)),
-            ("embeddingTypes", list(vec![text("binary")])),
-        ])
+            ("encoding_format", text("base64")),
+            ("other", text("ignored")),
+        ]),
+        Object::new(),
     );
+    assert_eq!(combined.get("dimensions"), Some(&int(256)));
+    assert_eq!(
+        combined.get("embeddingTypes"),
+        Some(&list(vec![text("binary")]))
+    );
+    assert!(!combined.contains_key("other"));
     // map_openai_params mutates the caller's record and hands it back
-    assert_eq!(
-        v2::map_openai_params(
-            &object(vec![("dimensions", int(256))]),
-            object(vec![("normalize", Json::Bool(true))]),
-        ),
-        object(vec![
-            ("normalize", Json::Bool(true)),
-            ("dimensions", int(256)),
-        ])
-    );
+    let optional = object(vec![("normalize", Json::Bool(true))]);
+    let mutated = v2::map_openai_params(&object(vec![("dimensions", int(256))]), optional);
+    assert_eq!(mutated.get("normalize"), Some(&Json::Bool(true)));
+    assert_eq!(mutated.get("dimensions"), Some(&int(256)));
 }
 
 fn assert_v2_request() {
@@ -255,8 +251,10 @@ fn assert_v2_request() {
         ("embeddingTypes", list(vec![text("binary")])),
         ("custom", text("kept")),
     ]);
+    let first = v2::transform_request("hello", &inference).unwrap();
+    let second = v2::transform_request("", &Object::new()).unwrap();
     assert_eq!(
-        v2::transform_request("hello", &inference).unwrap(),
+        first,
         object(vec![
             ("inputText", text("hello")),
             ("dimensions", int(512)),
@@ -265,10 +263,7 @@ fn assert_v2_request() {
             ("custom", text("kept")),
         ])
     );
-    assert_eq!(
-        v2::transform_request("", &Object::new()).unwrap(),
-        object(vec![("inputText", text(""))])
-    );
+    assert_eq!(second, object(vec![("inputText", text(""))]));
     let collision =
         v2::transform_request("hello", &object(vec![("inputText", text("second"))])).unwrap_err();
     assert!(matches!(
@@ -291,75 +286,67 @@ fn titan_v2_binary_embedding() {
 
 fn assert_v2_binary_preference() {
     // binary wins by key presence alone, even next to a float vector
-    let both = object(vec![
-        ("inputTextTokenCount", int(3)),
-        (
-            "embeddingsByType",
-            json_object(vec![
-                ("binary", list(vec![int(1), int(0), int(7)])),
-                ("float", list(vec![float(0.5), float(0.25)])),
-            ]),
-        ),
+    let mut types = json_object(vec![
+        ("binary", list(vec![int(1), int(0), int(7)])),
+        ("float", list(vec![float(0.5), float(0.25)])),
     ]);
-    assert_eq!(v2::by_type_embedding(&both).unwrap(), numbers(&[1, 0, 7]));
-
+    let with_binary = object(vec![
+        ("inputTextTokenCount", int(3)),
+        ("embeddingsByType", Json::Object(types.clone())),
+    ]);
+    assert_eq!(
+        v2::by_type_embedding(&with_binary).unwrap(),
+        numbers(&[1, 0, 7])
+    );
     // an empty binary vector still counts as present and is not replaced by the float vector
+    types.insert(String::from("binary"), list(Vec::new()));
     let empty_binary = object(vec![
         ("inputTextTokenCount", int(1)),
-        (
-            "embeddingsByType",
-            json_object(vec![
-                ("binary", list(Vec::new())),
-                ("float", list(vec![float(0.5)])),
-            ]),
-        ),
+        ("embeddingsByType", Json::Object(types)),
     ]);
     assert_eq!(v2::by_type_embedding(&empty_binary).unwrap(), numbers(&[]));
 }
 
 fn assert_v2_fallbacks() {
-    let float_only = object(vec![
-        ("inputTextTokenCount", int(3)),
+    // float alone answers, then the legacy embedding column when no usable type key is present
+    let cases = [
         (
-            "embeddingsByType",
-            json_object(vec![("float", list(vec![float(0.5), float(0.25)]))]),
+            object(vec![
+                ("inputTextTokenCount", int(3)),
+                (
+                    "embeddingsByType",
+                    json_object(vec![("float", list(vec![float(0.5), float(0.25)]))]),
+                ),
+            ]),
+            floats(&[0.5, 0.25]),
         ),
-    ]);
-    assert_eq!(
-        v2::by_type_embedding(&float_only).unwrap(),
-        floats(&[0.5, 0.25])
-    );
-
-    // without a usable type key the legacy embedding column answers
-    let legacy = object(vec![
-        ("inputTextTokenCount", int(3)),
-        ("embedding", list(vec![float(0.125), float(0.5)])),
         (
-            "embeddingsByType",
-            json_object(vec![("int8", list(vec![int(4)]))]),
+            object(vec![
+                ("inputTextTokenCount", int(3)),
+                ("embedding", list(vec![float(0.125), float(0.5)])),
+                (
+                    "embeddingsByType",
+                    json_object(vec![("int8", list(vec![int(4)]))]),
+                ),
+            ]),
+            floats(&[0.125, 0.5]),
         ),
-    ]);
-    assert_eq!(
-        v2::by_type_embedding(&legacy).unwrap(),
-        floats(&[0.125, 0.5])
-    );
-
-    // a list of names holds neither key, so the legacy column answers as well
-    let list_by_type = object(vec![
-        ("inputTextTokenCount", int(3)),
-        ("embedding", list(vec![float(0.125)])),
-        ("embeddingsByType", list(vec![int(4), int(5)])),
-    ]);
-    assert_eq!(
-        v2::by_type_embedding(&list_by_type).unwrap(),
-        floats(&[0.125])
-    );
-
-    let text = object(vec![("embedding", text("encoded-vector"))]);
-    assert_eq!(
-        v2::by_type_embedding(&text).unwrap(),
-        EmbeddingVector::Base64(String::from("encoded-vector"))
-    );
+        (
+            object(vec![
+                ("inputTextTokenCount", int(3)),
+                ("embedding", list(vec![float(0.125)])),
+                ("embeddingsByType", list(vec![int(4), int(5)])),
+            ]),
+            floats(&[0.125]),
+        ),
+        (
+            object(vec![("embedding", text("encoded-vector"))]),
+            EmbeddingVector::Base64(String::from("encoded-vector")),
+        ),
+    ];
+    for (reply, wanted) in cases {
+        assert_eq!(v2::by_type_embedding(&reply).unwrap(), wanted);
+    }
 }
 
 fn assert_v2_missing_data() {
@@ -512,21 +499,17 @@ fn assert_multimodal_overrides() {
         ("inputImage", text("replacement-image")),
         ("custom", text("kept")),
     ]);
-    assert_eq!(
-        multimodal::transform_request("a plain description", &overrides),
-        object(vec![
-            ("inputText", text("replacement text")),
-            ("inputImage", text("replacement-image")),
-            ("custom", text("kept")),
-        ])
-    );
+    let request = multimodal::transform_request("a plain description", &overrides);
+    let names: Vec<&str> = request.keys().map(String::as_str).collect();
+    assert_eq!(names, ["inputText", "inputImage", "custom"]);
+    assert_eq!(request["inputText"], text("replacement text"));
+    assert_eq!(request["inputImage"], text("replacement-image"));
+    assert_eq!(request["custom"], text("kept"));
 }
 
 fn cohere_v3_input_type() {
     assert_cohere_mapping();
-    assert_cohere_text_request();
-    assert_cohere_image_request();
-    assert_cohere_override_request();
+    assert_cohere_requests();
 }
 
 fn assert_cohere_mapping() {
@@ -534,135 +517,137 @@ fn assert_cohere_mapping() {
         cohere::SUPPORTED_OPENAI_PARAMS,
         &["encoding_format", "dimensions"]
     );
-    assert_eq!(
-        cohere::map_openai_params(
-            &object(vec![("encoding_format", text("base64"))]),
-            Object::new()
-        ),
-        object(vec![("embedding_types", list(vec![text("float")]))])
-    );
-    // a list maps elementwise, and only base64 turns into float
-    assert_eq!(
-        cohere::map_openai_params(
-            &object(vec![(
-                "encoding_format",
-                list(vec![text("base64"), text("int8"), text("uint8")])
-            )]),
-            Object::new()
-        ),
-        object(vec![(
+    let cases = [
+        (
+            object(vec![("encoding_format", text("base64"))]),
             "embedding_types",
-            list(vec![text("float"), text("int8"), text("uint8")])
-        )])
-    );
-    assert_eq!(
-        cohere::map_openai_params(
-            &object(vec![("encoding_format", list(Vec::new()))]),
-            Object::new()
+            list(vec![text("float")]),
         ),
-        object(vec![("embedding_types", list(Vec::new()))])
-    );
-    // any other value is a singleton, and an explicit null survives as one
-    assert_eq!(
-        cohere::map_openai_params(
-            &object(vec![("encoding_format", Json::Null)]),
-            Object::new()
+        // a list maps elementwise, and only base64 turns into float
+        (
+            object(vec![(
+                "encoding_format",
+                list(vec![text("base64"), text("int8"), text("uint8")]),
+            )]),
+            "embedding_types",
+            list(vec![text("float"), text("int8"), text("uint8")]),
         ),
-        object(vec![("embedding_types", list(vec![Json::Null]))])
-    );
-    assert_eq!(
-        cohere::map_openai_params(&object(vec![("dimensions", int(256))]), Object::new()),
-        object(vec![("output_dimension", int(256))])
-    );
-    assert_eq!(
-        cohere::map_openai_params(
-            &object(vec![
-                ("encoding_format", text("base64")),
-                ("dimensions", int(256)),
-                ("other", text("ignored")),
-            ]),
-            Object::new()
+        (
+            object(vec![("encoding_format", list(Vec::new()))]),
+            "embedding_types",
+            list(Vec::new()),
         ),
-        object(vec![
-            ("embedding_types", list(vec![text("float")])),
-            ("output_dimension", int(256)),
-        ])
+        // any other value is a singleton, and an explicit null survives as one
+        (
+            object(vec![("encoding_format", Json::Null)]),
+            "embedding_types",
+            list(vec![Json::Null]),
+        ),
+        (
+            object(vec![("dimensions", int(256))]),
+            "output_dimension",
+            int(256),
+        ),
+    ];
+    for (non_default, name, expected) in cases {
+        let mapped = cohere::map_openai_params(&non_default, Object::new());
+        assert_eq!(mapped.get(name), Some(&expected));
+    }
+    let combined = cohere::map_openai_params(
+        &object(vec![
+            ("encoding_format", text("base64")),
+            ("dimensions", int(256)),
+            ("other", text("ignored")),
+        ]),
+        Object::new(),
     );
+    assert_eq!(
+        combined.get("embedding_types"),
+        Some(&list(vec![text("float")]))
+    );
+    assert_eq!(combined.get("output_dimension"), Some(&int(256)));
+    assert!(!combined.contains_key("other"));
 }
 
-fn assert_cohere_text_request() {
-    let request = cohere::transform_request(
-        "embed-english-v3.0",
-        &[String::from("hello"), String::from("world")],
-        &Object::new(),
-    );
-    assert_eq!(
-        request,
-        object(vec![
-            ("input_type", text("search_document")),
-            ("texts", list(vec![text("hello"), text("world")])),
-        ])
-    );
-    // the delegated parent keeps only the fields CohereEmbeddingRequest declares
-    let inference = object(vec![
-        ("truncate", text("END")),
-        ("embedding_types", list(vec![text("float")])),
-        ("output_dimension", int(256)),
-        ("custom", text("dropped")),
-        ("model", text("dropped-too")),
-    ]);
-    assert_eq!(
-        cohere::transform_request("embed-english-v3.0", &[String::from("hello")], &inference),
-        object(vec![
-            ("input_type", text("search_document")),
-            ("texts", list(vec![text("hello")])),
-            ("truncate", text("END")),
-            ("embedding_types", list(vec![text("float")])),
-            ("output_dimension", int(256)),
-        ])
-    );
-}
-
-fn assert_cohere_image_request() {
-    let image = "data:image/png;base64,aGVsbG8=";
-    assert_eq!(
-        cohere::transform_request("embed-english-v3.0", &[String::from(image)], &Object::new()),
-        object(vec![
-            ("input_type", text("image")),
-            ("images", list(vec![text(image)])),
-        ])
-    );
-    // the last input decides for the whole batch
-    assert_eq!(
-        cohere::transform_request(
+fn assert_cohere_requests() {
+    let cases = [
+        (
             "embed-english-v3.0",
-            &[String::from("hello"), String::from(image)],
-            &Object::new()
+            vec!["hello", "world"],
+            Object::new(),
+            object(vec![
+                ("input_type", text("search_document")),
+                ("texts", list(vec![text("hello"), text("world")])),
+            ]),
         ),
-        object(vec![
-            ("input_type", text("image")),
-            ("images", list(vec![text("hello"), text(image)])),
-        ])
-    );
-}
-
-fn assert_cohere_override_request() {
-    // inference input_type replaces the delegated default, as it is copied after the classification
-    let inference = object(vec![("input_type", text("search_query"))]);
-    assert_eq!(
-        cohere::transform_request("embed-english-v3.0", &[String::from("hello")], &inference),
-        object(vec![
-            ("input_type", text("search_query")),
-            ("texts", list(vec![text("hello")])),
-        ])
-    );
-    assert_eq!(
-        cohere::transform_request("embed-english-v3.0", &[], &Object::new()),
-        object(vec![
-            ("input_type", text("search_document")),
-            ("texts", list(Vec::new())),
-        ])
-    );
+        // the delegated parent keeps only the fields CohereEmbeddingRequest declares
+        (
+            "embed-english-v3.0",
+            vec!["hello"],
+            object(vec![
+                ("truncate", text("END")),
+                ("embedding_types", list(vec![text("float")])),
+                ("output_dimension", int(256)),
+                ("custom", text("dropped")),
+                ("model", text("dropped-too")),
+            ]),
+            object(vec![
+                ("input_type", text("search_document")),
+                ("texts", list(vec![text("hello")])),
+                ("truncate", text("END")),
+                ("embedding_types", list(vec![text("float")])),
+                ("output_dimension", int(256)),
+            ]),
+        ),
+        (
+            "embed-english-v3.0",
+            vec!["data:image/png;base64,aGVsbG8="],
+            Object::new(),
+            object(vec![
+                ("input_type", text("image")),
+                ("images", list(vec![text("data:image/png;base64,aGVsbG8=")])),
+            ]),
+        ),
+        // the last input decides for the whole batch
+        (
+            "embed-english-v3.0",
+            vec!["hello", "data:image/png;base64,aGVsbG8="],
+            Object::new(),
+            object(vec![
+                ("input_type", text("image")),
+                (
+                    "images",
+                    list(vec![text("hello"), text("data:image/png;base64,aGVsbG8=")]),
+                ),
+            ]),
+        ),
+        // inference input_type replaces the delegated default, as it is copied after the classification
+        (
+            "embed-english-v3.0",
+            vec!["hello"],
+            object(vec![("input_type", text("search_query"))]),
+            object(vec![
+                ("input_type", text("search_query")),
+                ("texts", list(vec![text("hello")])),
+            ]),
+        ),
+        (
+            "embed-english-v3.0",
+            Vec::new(),
+            Object::new(),
+            object(vec![
+                ("input_type", text("search_document")),
+                ("texts", list(Vec::new())),
+            ]),
+        ),
+    ];
+    for (model, texts, inference, expected) in cases {
+        let inputs: Vec<String> = texts.into_iter().map(String::from).collect();
+        assert_eq!(
+            cohere::transform_request(model, &inputs, &inference),
+            expected
+        );
+    }
 }
 
 fn token_count_response() {
@@ -672,8 +657,8 @@ fn token_count_response() {
     assert_response_failures();
 }
 
-fn g1_replies() -> Vec<Object> {
-    vec![
+fn assert_g1_response() {
+    let replies = [
         object(vec![
             ("embedding", list(vec![float(0.1), float(0.2)])),
             ("inputTextTokenCount", int(5)),
@@ -683,16 +668,10 @@ fn g1_replies() -> Vec<Object> {
             ("embedding", list(vec![int(1), int(0)])),
             ("inputTextTokenCount", int(7)),
         ]),
-    ]
-}
-
-fn assert_g1_response() {
-    let result = response::transform_response(
-        &g1_replies(),
-        "titan-embed-text-v1",
-        response::plain_embedding,
-    )
-    .unwrap();
+    ];
+    let result =
+        response::transform_response(&replies, "titan-embed-text-v1", response::plain_embedding)
+            .unwrap();
     assert_eq!(result.object, "list");
     assert_eq!(result.model, "titan-embed-text-v1");
     assert_eq!(result.data.len(), 2);
@@ -708,28 +687,30 @@ fn assert_g1_response() {
     assert_eq!(result.usage.prompt_tokens_details, None);
 }
 
-fn v2_replies() -> Vec<Object> {
-    vec![object(vec![
+fn assert_v2_response() {
+    let reply = object(vec![
         ("inputTextTokenCount", int(4)),
         (
             "embeddingsByType",
             json_object(vec![("binary", list(vec![int(255), int(0)]))]),
         ),
-    ])]
-}
-
-fn assert_v2_response() {
+    ]);
     let result =
-        response::transform_response(&v2_replies(), "titan-embed-text-v2", v2::by_type_embedding)
+        response::transform_response(&[reply], "titan-embed-text-v2", v2::by_type_embedding)
             .unwrap();
     assert_eq!(result.object, "list");
     assert_eq!(result.model, "titan-embed-text-v2");
     assert_eq!(result.data.len(), 1);
-    assert_eq!(result.data[0].index, 0);
-    assert_eq!(result.data[0].embedding, numbers(&[255, 0]));
-    assert_eq!(result.usage.prompt_tokens, 4);
-    assert_eq!(result.usage.total_tokens, 4);
-    assert_eq!(result.usage.completion_tokens, 0);
+    let record = &result.data[0];
+    assert_eq!((record.index, &record.embedding), (0, &numbers(&[255, 0])));
+    assert_eq!(
+        (
+            result.usage.prompt_tokens,
+            result.usage.completion_tokens,
+            result.usage.total_tokens,
+        ),
+        (4, 0, 4)
+    );
     assert_eq!(result.usage.prompt_tokens_details, None);
 }
 
@@ -741,7 +722,7 @@ fn multimodal_replies() -> Vec<Object> {
 }
 
 fn assert_multimodal_response() {
-    let batch = vec![
+    let batch = [
         object(vec![("inputImage", text("aGVsbG8="))]),
         object(vec![("inputText", text("hello"))]),
         object(vec![("inputImage", Json::Null)]),

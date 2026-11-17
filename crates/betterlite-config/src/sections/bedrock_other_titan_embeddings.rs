@@ -44,23 +44,55 @@ impl Section for Raw {
         let mut deployments = Settings::default();
         for (index, deployment) in self.model_list.into_iter().enumerate() {
             let prefix = format!("model_list.{index}.litellm_params");
-            let resolved = resolve_fields(deployment.litellm_params, &prefix, lookup)?;
-            deployments.normalize = resolved.normalize.or(deployments.normalize);
-            deployments.dimensions = resolved.dimensions.or(deployments.dimensions);
+            let (normalize, dimensions) =
+                resolve_fields(deployment.litellm_params, &prefix, lookup)?;
+            deployments.normalize = normalize.or(deployments.normalize);
+            deployments.dimensions = dimensions.or(deployments.dimensions);
         }
-        let global = resolve_fields(self.litellm_settings, "litellm_settings", lookup)?;
+        let (normalize, dimensions) =
+            resolve_fields(self.litellm_settings, "litellm_settings", lookup)?;
         Ok(Settings {
-            normalize: deployments.normalize.or(global.normalize),
-            dimensions: deployments.dimensions.or(global.dimensions),
+            normalize: deployments.normalize.or(normalize),
+            dimensions: deployments.dimensions.or(dimensions),
         })
     }
 }
 
-fn resolve_fields<L>(raw: RawFields, prefix: &str, lookup: &L) -> Result<Settings, ConfigError>
+// normalize is a bool, so only an os.environ reference may arrive as text; an empty variable counts as unset
+fn resolve_fields<L>(
+    raw: RawFields,
+    prefix: &str,
+    lookup: &L,
+) -> Result<(Option<bool>, Option<i64>), ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let normalize = resolve_flag(raw.normalize, &format!("{prefix}.normalize"), lookup)?;
+    let flag_path = format!("{prefix}.normalize");
+    let normalize = match raw.normalize {
+        None => None,
+        Some(RawNumber::Boolean(flag)) => Some(flag),
+        Some(RawNumber::Integer(_) | RawNumber::Float(_)) => {
+            return Err(ConfigError::InvalidScalar {
+                path: flag_path,
+                value: false,
+            });
+        }
+        Some(RawNumber::Text(text)) => {
+            let Some(name) = text.strip_prefix("os.environ/") else {
+                return Err(ConfigError::InvalidScalar {
+                    path: flag_path,
+                    value: false,
+                });
+            };
+            let Some(resolved) = lookup.lookup(name) else {
+                return Err(ConfigError::MissingEnvironment {
+                    variable: name.to_owned(),
+                    path: flag_path,
+                });
+            };
+            betterlite_env::flag(name, &resolved)?
+        }
+    };
     let dimensions = resolve_number(
         raw.dimensions,
         &format!("{prefix}.dimensions"),
@@ -73,42 +105,5 @@ where
             }),
         },
     )?;
-    Ok(Settings {
-        normalize,
-        dimensions,
-    })
-}
-
-// normalize is a bool, so only an os.environ reference may arrive as text; an empty variable counts as unset
-fn resolve_flag<L>(
-    value: Option<RawNumber>,
-    path: &str,
-    lookup: &L,
-) -> Result<Option<bool>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    let invalid = || ConfigError::InvalidScalar {
-        path: path.to_owned(),
-        value: false,
-    };
-    match value {
-        RawNumber::Boolean(flag) => Ok(Some(flag)),
-        RawNumber::Integer(_) | RawNumber::Float(_) => Err(invalid()),
-        RawNumber::Text(text) => {
-            let Some(name) = text.strip_prefix("os.environ/") else {
-                return Err(invalid());
-            };
-            let Some(resolved) = lookup.lookup(name) else {
-                return Err(ConfigError::MissingEnvironment {
-                    variable: name.to_owned(),
-                    path: path.to_owned(),
-                });
-            };
-            Ok(betterlite_env::flag(name, &resolved)?)
-        }
-    }
+    Ok((normalize, dimensions))
 }
