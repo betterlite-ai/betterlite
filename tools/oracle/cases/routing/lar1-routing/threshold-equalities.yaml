@@ -1,0 +1,105 @@
+kind: probe
+name: lar1-threshold-equalities
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: cloud-fast-1
+            model: openai/cloud-fast-1
+            kind: cloud-fast
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        routing_strategy_args: '{"confidence_threshold_low": 0.2, "confidence_threshold_medium": 0.5, "confidence_threshold_high": 0.8}'
+        metadata: '{"confidence": 0.1999}'
+  - clock: {unix_millis: 1700000000124, monotonic_millis: 42001}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: cloud-fast-1
+            model: openai/cloud-fast-1
+            kind: cloud-fast
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        routing_strategy_args: '{"confidence_threshold_low": 0.2, "confidence_threshold_medium": 0.5, "confidence_threshold_high": 0.8}'
+        metadata: '{"confidence": 0.2}'
+  - clock: {unix_millis: 1700000000125, monotonic_millis: 42002}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: cloud-fast-1
+            model: openai/cloud-fast-1
+            kind: cloud-fast
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        routing_strategy_args: '{"confidence_threshold_low": 0.2, "confidence_threshold_medium": 0.5, "confidence_threshold_high": 0.8}'
+        metadata: '{"confidence": 0.5}'
+  - clock: {unix_millis: 1700000000126, monotonic_millis: 42003}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: cloud-fast-1
+            model: openai/cloud-fast-1
+            kind: cloud-fast
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        routing_strategy_args: '{"confidence_threshold_low": 0.2, "confidence_threshold_medium": 0.5, "confidence_threshold_high": 0.8}'
+        metadata: '{"confidence": 0.7999}'
+  - clock: {unix_millis: 1700000000127, monotonic_millis: 42004}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: cloud-fast-1
+            model: openai/cloud-fast-1
+            kind: cloud-fast
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        routing_strategy_args: '{"confidence_threshold_low": 0.2, "confidence_threshold_medium": 0.5, "confidence_threshold_high": 0.8}'
+        metadata: '{"confidence": 0.8}'
+compare:
+  ignore: []
