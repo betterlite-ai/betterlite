@@ -1,0 +1,104 @@
+#![cfg(test)]
+
+use std::fs;
+use std::iter::once;
+use std::path::{Path, PathBuf};
+
+use rstest::rstest;
+
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperRun, run_case};
+
+use super::Op;
+
+const OPERATION: &str = "response_chat_result";
+
+#[rstest]
+fn replays_the_response_chat_result_cases(
+    #[base_dir = "../../.."]
+    #[files("cases/helpers/response-chat-result/*.yaml")]
+    path: PathBuf,
+) {
+    assert_eq!(replay_case(&path), Ok(()));
+}
+
+#[test]
+fn replays_the_response_chat_result_seeds() {
+    let seeds = seed_paths();
+    assert!(
+        !seeds.is_empty(),
+        "the response_chat_result seeds are present"
+    );
+    let failures: Vec<String> = seeds
+        .iter()
+        .filter_map(|path| check_seed(path).err())
+        .collect();
+    assert!(failures.is_empty(), "{failures:?}");
+}
+
+#[test]
+fn rejects_a_response_that_is_not_an_object() {
+    let input = serde_json::json!({"model": "caller-model", "response": "not a response"});
+    let error = Op::decode_and_run(&input).expect_err("the string is not a response");
+    assert_eq!(error.class, "ValueError");
+    assert_eq!(error.message, "Unexpected response type: <class 'str'>");
+}
+
+fn seed_paths() -> Vec<PathBuf> {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../fuzz/corpus/helper_case");
+    yaml_paths(&corpus)
+        .into_iter()
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(OPERATION))
+        })
+        .collect()
+}
+
+fn yaml_paths(folder: &Path) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = fs::read_dir(folder)
+        .expect("the folder is readable")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "yaml")
+        })
+        .collect();
+    paths.sort();
+    paths
+}
+
+fn replay_case(path: &Path) -> Result<(), String> {
+    let source = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let case: HelperCase = serde_saphyr::from_str(&source).map_err(|error| error.to_string())?;
+    validate_helper(path, &case).map_err(|error| error.to_string())?;
+    if case.call.operation != OPERATION {
+        return Err(format!(
+            "the case names {} instead of {OPERATION}",
+            case.call.operation
+        ));
+    }
+    match run_case(&[crate::GROUP], &case, false).map_err(|error| error.to_string())? {
+        HelperRun::Match => Ok(()),
+        HelperRun::Difference => Err(format!("{} does not match LiteLLM", path.display())),
+    }
+}
+
+fn check_seed(path: &Path) -> Result<(), String> {
+    let source = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let seed: HelperCase = serde_saphyr::from_str(&source).map_err(|error| error.to_string())?;
+    validate_helper(path, &seed).map_err(|error| error.to_string())?;
+    once(&seed.call).chain(&seed.calls).try_for_each(|call| {
+        if call.operation == OPERATION {
+            Op::check(&call.input)
+        } else {
+            Err(format!(
+                "the seed names {} instead of {OPERATION}",
+                call.operation
+            ))
+        }
+    })
+}
