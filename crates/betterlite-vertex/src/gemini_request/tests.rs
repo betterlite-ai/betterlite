@@ -910,6 +910,23 @@ fn media_assistant_image_fetches(#[case] provider: VertexCapabilityProvider) {
 }
 
 #[test]
+fn media_assistant_image_keeps_hints() {
+    let harness = Harness::new().with_fetch(&[(REMOTE_HTTP, FETCHED)]);
+    let input = media_input(
+        VertexCapabilityProvider::VertexAi,
+        r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","images":[{"type":"image_url","image_url":{"url":"http://example.com/cat","format":"image/jpeg"},"index":0}]},{"role":"user","content":"next"}]"#,
+    );
+    let transformed = harness
+        .run(&input)
+        .expect("the assistant image is downloaded");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"inline_data":{"data":"YWJj","mime_type":"image/jpeg"}}]},{"role":"user","parts":[{"text":"next"}]}]}"#,
+    );
+    assert_eq!(harness.fetcher.converted(), vec![REMOTE_HTTP.to_owned()]);
+}
+
+#[test]
 fn media_assistant_image_string_skipped() {
     let harness = Harness::new();
     let input = media_input(
