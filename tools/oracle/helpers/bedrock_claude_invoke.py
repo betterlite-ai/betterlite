@@ -1,6 +1,9 @@
 import asyncio
 import time
-from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
+from collections.abc import Iterator
+from contextlib import contextmanager
+from functools import partial
+from typing import Final, Literal, Protocol, TypedDict
 
 import httpx
 import litellm
@@ -11,10 +14,9 @@ from litellm.llms.bedrock.chat.invoke_transformations.anthropic_claude3_transfor
     AmazonAnthropicClaudeConfig,
 )
 from litellm.types.utils import ModelResponse
-from pydantic import ConfigDict, JsonValue, TypeAdapter
+from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
-ARBITRARY: Final = ConfigDict(arbitrary_types_allowed=True)
-JSON: Final = TypeAdapter(JsonValue)
 FAILED: Final = "Error: Unable to fetch image from URL after 3 attempts. url={url}"
 
 
@@ -97,7 +99,7 @@ ENVELOPE: Final = TypeAdapter(EnvelopeView)
 class Fetcher:
     def __init__(self, urls: dict[str, str]) -> None:
         self.urls = urls
-        self.calls: list[str] = []
+        self.calls: list[JsonValue] = []
 
     def __call__(self, url: str) -> str:
         self.calls.append(url)
@@ -115,7 +117,6 @@ class AsyncFetcher:
         return self.fetcher(url)
 
 
-@runtime_checkable
 class Transformer(Protocol):
     def transform_request(
         self,
@@ -161,86 +162,87 @@ class Transformer(Protocol):
     ) -> ModelResponse: ...
 
 
-@runtime_checkable
 class Logging(Protocol):
     def post_call(self, **kwargs: JsonValue) -> None: ...
 
 
-class Sink:
+class Sink(Logging):
     def __init__(self) -> None:
         self.kwargs: dict[str, JsonValue] = {}
 
+    @override
     def post_call(self, **kwargs: JsonValue) -> None:
         self.kwargs = kwargs
 
 
-class Clock:
-    def __init__(self, now: int) -> None:
-        self.now = now
-
-    def __call__(self) -> float:
-        return float(self.now)
+CONFIG: Final[Transformer] = AmazonAnthropicClaudeConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L46
 
 
-TRANSFORMER: Final = TypeAdapter[Transformer](Transformer, config=ARBITRARY)
-
-
-def call_body(transformer: Transformer, call: TransformCall) -> dict[str, JsonValue]:
-    fetcher = Fetcher(call["fetch"])
-    saved_url = claude.convert_url_to_base64
+@contextmanager
+def patched_url_fetchers(fetcher: Fetcher) -> Iterator[None]:
+    saved_url = claude.convert_url_to_base64  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L12
     saved_async = image_handling.async_convert_url_to_base64
-    claude.convert_url_to_base64 = fetcher
+    claude.convert_url_to_base64 = fetcher  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L12
     image_handling.async_convert_url_to_base64 = AsyncFetcher(fetcher)
     try:
-        if call["inline"]:
-            body = asyncio.run(
-                transformer.async_transform_request(
-                    call["model"],
-                    call["messages"],
-                    dict(call["optional_params"]),
-                    dict(call["litellm_params"]),
-                    dict(call["headers"]),
-                )
-            )
-        else:
-            body = transformer.transform_request(
+        yield
+    finally:
+        claude.convert_url_to_base64 = saved_url  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L12
+        image_handling.async_convert_url_to_base64 = saved_async
+
+
+def request_body(call: TransformCall) -> dict[str, JsonValue]:
+    if call["inline"]:
+        return asyncio.run(
+            CONFIG.async_transform_request(
                 call["model"],
                 call["messages"],
                 dict(call["optional_params"]),
                 dict(call["litellm_params"]),
                 dict(call["headers"]),
             )
-    finally:
-        claude.convert_url_to_base64 = saved_url
-        image_handling.async_convert_url_to_base64 = saved_async
-    return {"body": body, "fetches": JSON.validate_python(fetcher.calls)}
+        )
+    return CONFIG.transform_request(
+        call["model"],
+        call["messages"],
+        dict(call["optional_params"]),
+        dict(call["litellm_params"]),
+        dict(call["headers"]),
+    )
+
+
+def call_body(call: TransformCall) -> dict[str, JsonValue]:
+    fetcher = Fetcher(call["fetch"])
+    with patched_url_fetchers(fetcher):
+        body = request_body(call)
+    outcome: dict[str, JsonValue] = {"body": body, "fetches": fetcher.calls}
+    return outcome
 
 
 def transforms(argument: Transform) -> JsonValue:
     litellm.register_model(argument["model_cost"])
-    transformer = TRANSFORMER.validate_python(AmazonAnthropicClaudeConfig())
-    return JSON.validate_python(
-        {"calls": [call_body(transformer, call) for call in argument["calls"]]}
-    )
+    calls: list[JsonValue] = []
+    for call in argument["calls"]:
+        calls.append(call_body(call))
+    return {"calls": calls}
 
 
 def maps(argument: MapParams) -> JsonValue:
     litellm.register_model(argument["model_cost"])
-    transformer = TRANSFORMER.validate_python(AmazonAnthropicClaudeConfig())
     answers: list[JsonValue] = []
     for call in argument["calls"]:
-        mapped = transformer.map_openai_params(
+        mapped = CONFIG.map_openai_params(
             dict(call["non_default_params"]),
             dict(call["optional_params"]),
             call["model"],
             drop_params=call["drop_params"],
         )
-        answers.append(JSON.validate_python({"optional_params": mapped}))
-    return JSON.validate_python({"calls": answers})
+        answers.append({"optional_params": mapped})
+    return {"calls": answers}
 
 
-def reply(call: ResponseCall, transformer: Transformer, sink: Sink) -> JsonValue:
-    response = transformer.transform_response(
+def reply(call: ResponseCall, sink: Sink) -> JsonValue:
+    response = CONFIG.transform_response(
         call["model"],
         httpx.Response(200, content=call["raw_text"].encode(), headers={}),
         ModelResponse(id="generated"),
@@ -255,37 +257,34 @@ def reply(call: ResponseCall, transformer: Transformer, sink: Sink) -> JsonValue
     view = ENVELOPE.validate_json(response.model_dump_json())
     choice = view["choices"][0]
     usage = view["usage"]
-    return JSON.validate_python(
-        {
-            "id": view["id"],
-            "model": view["model"],
-            "finish_reason": choice["finish_reason"],
-            "content": choice["message"]["content"],
-            "usage": None
-            if usage is None
-            else {
-                "prompt_tokens": usage["prompt_tokens"],
-                "completion_tokens": usage["completion_tokens"],
-                "total_tokens": usage["total_tokens"],
-                "cache_creation_input_tokens": usage["cache_creation_input_tokens"],
-                "cache_read_input_tokens": usage["cache_read_input_tokens"],
-                "reasoning_tokens": usage["completion_tokens_details"]["reasoning_tokens"],
-                "text_tokens": usage["completion_tokens_details"]["text_tokens"],
-            },
+    outcome: dict[str, JsonValue] = {
+        "id": view["id"],
+        "model": view["model"],
+        "finish_reason": choice["finish_reason"],
+        "content": choice["message"]["content"],
+        "usage": None,
+    }
+    if usage is not None:
+        outcome["usage"] = {
+            "prompt_tokens": usage["prompt_tokens"],
+            "completion_tokens": usage["completion_tokens"],
+            "total_tokens": usage["total_tokens"],
+            "cache_creation_input_tokens": usage["cache_creation_input_tokens"],
+            "cache_read_input_tokens": usage["cache_read_input_tokens"],
+            "reasoning_tokens": usage["completion_tokens_details"]["reasoning_tokens"],
+            "text_tokens": usage["completion_tokens_details"]["text_tokens"],
         }
-    )
+    return outcome
 
 
 def responses(argument: Response) -> JsonValue:
-    transformer = TRANSFORMER.validate_python(AmazonAnthropicClaudeConfig())
     sink = Sink()
     answers: list[JsonValue] = []
     for call in argument["calls"]:
-        clock = Clock(call["now"])
         saved_time = time.time
-        time.time = clock
+        time.time = partial(float, call["now"])
         try:
-            answers.append(reply(call, transformer, sink))
+            answers.append(reply(call, sink))
         finally:
             time.time = saved_time
     return {"calls": answers}
