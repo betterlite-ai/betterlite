@@ -1,0 +1,25 @@
+task: B8271
+deviations:
+  - what: >-
+      A body that is not valid JSON answers 422 with loc ["body"] and the
+      decoder's message in ctx.error. LiteLLM's FastAPI answers the same
+      json_invalid type with loc ["body", <character position>] and the Python
+      json module's message. serde_json also rejects the NaN and Infinity
+      literals that Python's json loads accepts.
+    why: >-
+      The position, the wording and which inputs count as JSON come from the
+      decoder. betterlite decodes with serde_json, which reports a line and column
+      and its own message, so the two decoders cannot report the same offset for
+      the same input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/endpoints.py#L24-L31
+  - what: >-
+      The route reads the body as JSON whatever the request's content type.
+      LiteLLM's FastAPI validates a request without an application/json content
+      type as a raw string, so a valid JSON body sent as text/plain answers 422
+      model_attributes_type instead of streaming.
+    why: >-
+      betterlite parses the declared request body and has no content-type-sensitive
+      body handling. Every client that follows the LiteLLM docs sends the JSON
+      content type, and the task's body is JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/endpoints.py#L24-L31
+kept_bugs: []
