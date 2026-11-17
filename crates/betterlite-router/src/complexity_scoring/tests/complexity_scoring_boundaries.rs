@@ -282,6 +282,7 @@ fn a_margin_holds_a_score_near_any_boundary(#[case] score: f64, #[case] expected
 #[case::whole_window_over(Some(100), Some(101), 1.0, false)]
 #[case::zero_need_on_zero_window(Some(0), Some(0), 0.5, true)]
 #[case::negative_buffer(Some(100), Some(1), -0.5, false)]
+#[case::window_past_u32(Some(u64::MAX), Some(u64::MAX), 1.0, false)]
 fn a_window_holds_a_request_within_its_buffered_budget(
     #[case] window: Option<u64>,
     #[case] needed: Option<u64>,

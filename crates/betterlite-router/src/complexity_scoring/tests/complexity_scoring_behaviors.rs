@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
+use rust_decimal::Decimal;
 use serde_json::Number;
 
 use super::{
@@ -684,6 +685,23 @@ fn signals_are_stored_as_a_list() {
             text("code (api)")
         ]))
     );
+}
+
+#[test]
+fn a_matched_keyword_is_recorded_when_present() {
+    let mut input = base_record!();
+    input.matched_keyword = Some("urgent");
+    let decision = build_routing_decision(&input).unwrap();
+    assert_eq!(decision.get("matched_keyword"), Some(&text("urgent")));
+}
+
+// LiteLLM writes the classifier cost as a float, so a whole number keeps the decimal point its float carries
+#[test]
+fn a_whole_classifier_cost_keeps_the_decimal_point_a_float_carries() {
+    let mut input = base_record!();
+    input.classifier_cost = Some(Decimal::ONE);
+    let decision = build_routing_decision(&input).unwrap();
+    assert_eq!(decision.get("classifier_cost"), Some(&number(1.0)));
 }
 
 #[test]
