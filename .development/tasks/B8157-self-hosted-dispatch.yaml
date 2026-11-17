@@ -16,6 +16,7 @@ description: >-
   Where the source and this text differ, the source at the pinned commit wins.
 scope:
   paths:
+    - "crates/betterlite-provider/Cargo.toml"
     - crates/betterlite-provider/src/self_hosted_dispatch.rs
     - crates/betterlite-provider/src/self_hosted_dispatch/**
     - crates/betterlite-config/src/sections/self_hosted_dispatch.rs
