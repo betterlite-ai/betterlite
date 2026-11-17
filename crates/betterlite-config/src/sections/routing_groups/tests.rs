@@ -68,7 +68,7 @@ fn a_group_reads_its_fields_in_order() {
     );
     assert_eq!(
         groups[1].model_priorities,
-        Some(BTreeMap::from([(String::from("c"), 9_007_199_254_740_991)]))
+        Some(BTreeMap::from([(String::from("c"), 0x001F_FFFF_FFFF_FFFF)]))
     );
 }
 
@@ -133,13 +133,11 @@ fn a_group_without_a_strategy_fails_to_load() {
 
 #[test]
 fn models_must_be_a_list_of_strings() {
-    assert!(
-        settings(
-            "router_settings:\n  routing_groups:\n    - group_name: cheap\n      models: a\n      routing_strategy: simple-shuffle\n",
-            &[],
-        )
-        .is_err()
-    );
+    settings(
+        "router_settings:\n  routing_groups:\n    - group_name: cheap\n      models: a\n      routing_strategy: simple-shuffle\n",
+        &[],
+    )
+    .unwrap_err();
 }
 
 // the fields the router validates are carried verbatim, so a bad value names itself there

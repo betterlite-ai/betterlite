@@ -105,15 +105,15 @@ fn priorities<L>(
 where
     L: EnvironmentLookup,
 {
-    let Some(priorities) = priorities else {
+    let Some(raw_priorities) = priorities else {
         return Ok(None);
     };
     let mut resolved = BTreeMap::new();
-    for (model, priority) in priorities {
+    for (model, priority) in raw_priorities {
         let path = format!("router_settings.routing_groups.{index}.model_priorities.{model}");
         // an empty variable counts as unset, so that model keeps no priority
-        if let Some(priority) = resolve_number(Some(priority), &path, lookup, parse_priority)? {
-            resolved.insert(model, priority);
+        if let Some(value) = resolve_number(Some(priority), &path, lookup, parse_priority)? {
+            resolved.insert(model, value);
         }
     }
     Ok(Some(resolved))
